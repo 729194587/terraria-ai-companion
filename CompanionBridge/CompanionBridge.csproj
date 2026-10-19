@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TModLoaderDirectory Condition="'$(TModLoaderDirectory)' == ''">D:\steam\steamapps\common\tModLoader</TModLoaderDirectory>
+  </PropertyGroup>
+  <Import Project="$(TModLoaderDirectory)\tMLMod.targets" />
+  <PropertyGroup>
+    <AssemblyName>CompanionBridge</AssemblyName>
+  </PropertyGroup>
+</Project>
