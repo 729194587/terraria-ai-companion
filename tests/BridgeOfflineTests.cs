@@ -73,8 +73,45 @@ public static class BridgeOfflineTests
             try { ControlState.Parse(invalid); } catch (Exception) { rejected = true; }
             Check(rejected, "Invalid protocol must be rejected");
         }
+        StateTests();
         NetworkTests();
-        Console.WriteLine("PASS: control lease, ownership, lifecycle, protocol, real TCP framing/disconnect/unload");
+        Console.WriteLine("PASS: state snapshots, control lease, ownership, lifecycle, protocol, real TCP framing/disconnect/unload");
+    }
+
+    private static void StateTests()
+    {
+        Check(ControlState.Parse("{\"v\":1,\"id\":1,\"cmd\":\"get_state\"}").Cmd == "get_state",
+            "State request parses");
+        var state = new ControlState();
+        int session = state.BeginSession();
+        var pending = state.Enqueue(session, new ControlRequest(1, "get_state"), 0);
+        Check(!pending.IsCompleted, "State request must wait for game thread, even while paused");
+        state.Update(false, Ms(1000));
+        Check(pending.Result.Ok && pending.Result.State == PlayerSnapshot.NotInWorld,
+            "Menu returns successful explicit empty state even after movement lease duration");
+        var snapshot = new PlayerSnapshot(true, new StateVector(10.5f, 20), new StateVector(-2, 0), 80, 120);
+        state.Enqueue(session, new ControlRequest(2, "move_right"), Ms(1100));
+        state.Update(true, Ms(1100), snapshot);
+        pending = state.Enqueue(session, new ControlRequest(3, "get_state"), Ms(1500));
+        state.Update(true, Ms(1500), snapshot);
+        Check(pending.Result.State == snapshot && state.Mode == ControlMode.External,
+            "Read returns supplied immutable snapshot without stopping movement");
+        state.Update(true, Ms(1850), snapshot);
+        Check(!state.IsMoving, "State query must not renew 750ms movement lease");
+        state.ToggleManual(Ms(2000));
+        pending = state.Enqueue(session, new ControlRequest(4, "get_state"), Ms(2000));
+        state.Update(true, Ms(2000), snapshot);
+        Check(pending.Result.Ok && state.Mode == ControlMode.Manual, "Read must preserve P mode");
+        pending = state.Enqueue(session, new ControlRequest(5, "get_state"), Ms(2000));
+        state.EndSession(session);
+        Check(!pending.Result.Ok && pending.Result.State == null, "Disconnect clears queued reads");
+        session = state.BeginSession();
+        pending = state.Enqueue(session, new ControlRequest(1, "get_state"), Ms(2100));
+        state.Update(false, Ms(2100), snapshot);
+        Check(pending.Result.Ok && pending.Result.State.InWorld, "Dead player state does not require control eligibility");
+        var move = state.Enqueue(session, new ControlRequest(2, "move_right"), Ms(2200));
+        state.Update(false, Ms(2200));
+        Check(!move.Result.Ok && move.Result.Status == "not_ready", "Menu still rejects movement");
     }
 
     private static void NetworkTests()
@@ -97,10 +134,51 @@ public static class BridgeOfflineTests
         Task<string> ack = reader.ReadLineAsync();
         PumpUntil(() => ack.IsCompleted, state);
         Check(ack.Result.Contains("applied"), "Game thread acknowledgement");
+        Check(!ack.Result.Contains("state"), "Movement response format stays unchanged");
         Task<string> stop = reader.ReadLineAsync();
         PumpUntil(() => stop.IsCompleted, state);
         Check(stop.Result.Contains("applied") && !state.IsMoving, "Coalesced stop");
-        byte[] move = Encoding.UTF8.GetBytes("{\"v\":1,\"id\":3,\"cmd\":\"move_right\"}\n");
+        client.GetStream().Write(Encoding.UTF8.GetBytes("{\"v\":1,\"id\":3,\"cmd\":\"get_state\"}\n"));
+        Task<string> readState = reader.ReadLineAsync();
+        Check(!readState.Wait(50), "Network thread must not return state without a game update");
+        var snapshot = new PlayerSnapshot(true, new StateVector(123.5f, 200), new StateVector(1, -2), 75, 100);
+        var timer = Stopwatch.StartNew();
+        while (!readState.IsCompleted && timer.ElapsedMilliseconds < 2000)
+        {
+            state.Update(true, Stopwatch.GetTimestamp(), snapshot);
+            Thread.Sleep(5);
+        }
+        Check(readState.IsCompleted, "State reply completes after game update");
+        using (var json = JsonDocument.Parse(readState.Result))
+        {
+            var root = json.RootElement;
+            Check(root.GetProperty("id").GetInt32() == 3 && root.GetProperty("ok").GetBoolean(), "State response envelope");
+            var value = root.GetProperty("state");
+            Check(value.GetProperty("inWorld").GetBoolean()
+                && value.GetProperty("position").GetProperty("x").GetSingle() == 123.5f
+                && value.GetProperty("velocity").GetProperty("y").GetSingle() == -2
+                && value.GetProperty("life").GetInt32() == 75
+                && value.GetProperty("lifeMax").GetInt32() == 100, "Real TCP state serialization");
+        }
+        client.GetStream().Write(Encoding.UTF8.GetBytes("{\"v\":1,\"id\":4,\"cmd\":\"get_state\"}\n"));
+        Task<string> menuState = reader.ReadLineAsync();
+        timer.Restart();
+        while (!menuState.IsCompleted && timer.ElapsedMilliseconds < 2000)
+        {
+            state.Update(false, Stopwatch.GetTimestamp(), PlayerSnapshot.NotInWorld);
+            Thread.Sleep(5);
+        }
+        Check(menuState.IsCompleted, "Menu state reply completes");
+        using (var json = JsonDocument.Parse(menuState.Result))
+        {
+            var value = json.RootElement.GetProperty("state");
+            Check(!value.GetProperty("inWorld").GetBoolean()
+                && value.GetProperty("position").ValueKind == JsonValueKind.Null
+                && value.GetProperty("velocity").ValueKind == JsonValueKind.Null
+                && value.GetProperty("life").ValueKind == JsonValueKind.Null
+                && value.GetProperty("lifeMax").ValueKind == JsonValueKind.Null, "Menu fields are explicit nulls");
+        }
+        byte[] move = Encoding.UTF8.GetBytes("{\"v\":1,\"id\":5,\"cmd\":\"move_right\"}\n");
         client.GetStream().Write(move);
         PumpUntil(() => state.IsMoving, state);
         client.Close();

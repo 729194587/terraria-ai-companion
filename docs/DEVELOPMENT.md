@@ -69,7 +69,7 @@ M1.0 与 M0 建议的区别来自范围收缩：M0 考虑失焦运行，M1.0 只
 
 ## 构建、加载与调试
 
-复现命令见 [README](../README.md#构建和测试)。`-build` 指向本项目的 `CompanionBridge` 目录，内部编译器无需 SDK；当前构建输出隔离到 `.local/m13-build`，退出 B 后再复制包到 `.local/m12-b/Mods`。不覆盖角色、世界或 Mod 列表。M1.0/M1.1 旧测试目录为 `.local/tmodloader`。
+复现命令见 [README](../README.md#构建和测试)。`-build` 指向本项目的 `CompanionBridge` 目录，内部编译器无需 SDK；当前 M1.4 构建输出隔离到 `.local/m14-build`，退出 B 后再复制包到 `.local/m12-b/Mods`。不覆盖角色、世界或 Mod 列表。M1.0/M1.1 旧测试目录为 `.local/tmodloader`。
 
 本次实际命令退出码为 0，输出：
 
@@ -81,13 +81,13 @@ Compilation finished with 0 errors and 0 warnings
 Packaging: CompanionBridge
 ```
 
-当前构建产物位于 `.local/m13-build/Mods/CompanionBridge.tmod`。修改源码后重新构建，退出 B 后复制并重新启动，避免旧程序集或文件占用；本轮已更新 B 的测试包并核对 SHA-256 一致。
+当前构建产物位于 `.local/m14-build/Mods/CompanionBridge.tmod`（0.1.5）。修改源码后重新构建，退出 Bridge 客户端后复制并重新启动，避免旧程序集或文件占用；M1.4 尚未复制到 B，不覆盖正在使用的包和存档。
 
 若需从游戏“创意工坊 → 开发 Mod”构建，可将 `CompanionBridge` 源码目录放入当前配置目录的 `ModSources/CompanionBridge` 后执行“构建并重新加载”；本轮仅验证了上面的命令行构建，未执行此菜单流程。
 
 `.csproj` 导入官方 `tMLMod.targets`，继承 `net8.0` / C# 12 和游戏引用。默认安装路径对应本机；其他机器可通过 `-p:TModLoaderDirectory=实际安装目录` 覆盖。需确保 SDK 的 dotnet 在 PATH 中，因为官方打包 target 调用 `dotnet`。此 IDE/SDK 路径尚未实测。
 
-游戏调试时 B 先只启用本 Mod，A 不加载。当前加载日志为 `CompanionBridge M1.3 loaded; TCP 127.0.0.1:18777; auto move is off.`；进入世界记录本地 player 索引和 netMode，手动切换和控制模式变化各有日志，不逐 tick 记录。运行日志可通过游戏的“打开日志”入口查看。共享安装下日志通常为 `tModLoader-Logs/client.log`、`client2.log` 等，不能假定 A/B 文件名固定；按 `Saves Are Located At` 和 Bridge 加载行区分实例。
+游戏调试时 B 先只启用本 Mod，A 不加载。当前加载日志为 `CompanionBridge M1.4 loaded; TCP 127.0.0.1:18777; auto move is off.`；进入世界记录本地 player 索引和 netMode，手动切换和控制模式变化各有日志，不逐 tick 记录。运行日志可通过游戏的“打开日志”入口查看。共享安装下日志通常为 `tModLoader-Logs/client.log`、`client2.log` 等，不能假定 A/B 文件名固定；按 `Saves Are Located At` 和 Bridge 加载行区分实例。
 
 ## 手动验收
 
@@ -160,7 +160,7 @@ Packaging: CompanionBridge
 
 ## M1.2：双客户端联机实验
 
-M1.2 的历史测试包版本为 **0.1.3**，沿用 v0.1.2 的输入钩子、单调时钟和 10 秒保护。该阶段新增行为仅限允许多人客户端控制及显式服务器/断线隔离，没有新增网络协议或通用控制框架。当前 M1.3 包为 0.1.4，详见下节。
+M1.2 的历史测试包版本为 **0.1.3**，沿用 v0.1.2 的输入钩子、单调时钟和 10 秒保护。该阶段新增行为仅限允许多人客户端控制及显式服务器/断线隔离，没有新增网络协议或通用控制框架。M1.3 历史包为 0.1.4，当前 M1.4 包为 0.1.5，详见后文。
 
 ### 当前版本依据
 
@@ -237,7 +237,7 @@ B 第一轮于 `14:17:14.012` 开启，`14:17:15.594` 失焦时 X=`33887.0`，`1
 
 ## M1.3：Python Control Bridge
 
-当前版本 **0.1.4**。沿用输入注入、失焦更新及客户端身份限制，只新增本机控制通道。完整启动和人工验收命令见 [README](../README.md#m13-python-控制)。B 进入世界后运行 `python python/control.py move_right --seconds 5`，无需按 P。脚本每次连接打印实例 ID，正常结束发送 stop，出错退出而不重连。
+本节记录 M1.3 历史版本 **0.1.4**；M1.4 的菜单连接规则和新接口见后文。沿用输入注入、失焦更新及客户端身份限制，只新增本机控制通道。完整启动和人工验收命令见 [README](../README.md#m13-python-控制)。B 进入世界后运行 `python python/control.py move_right --seconds 5`，无需按 P。脚本每次连接打印实例 ID，正常结束发送 stop，出错退出而不重连。
 
 ### 协议和控制优先级
 
@@ -287,6 +287,62 @@ B 第一轮于 `14:17:14.012` 开启，`14:17:15.594` 失焦时 X=`33887.0`，`1
 - P 先撤销外部会话；Python 在手动模式拒绝移动时不追加 stop，避免误关手动模式。
 
 保留此前内置构建 0 错误、0 警告及测试包哈希一致的证据。本次收尾重新运行 C# 实际 IPC 源码测试及 Python 4 项测试，均通过；未重复构建未改动的 C#，未新增游戏测试。离线套接字测试在沙箱外获准运行，仅使用 localhost 临时端口。上述回归不替代游戏内停止、失联保护或手动恢复的验证。
+
+## M1.4：游戏状态读取（0.1.5）
+
+2026-10-19 实现；用户已确认提交 M1.4。只新增底层读取，没有接入 LLM 或 Agent 工具系统。构建和单客户端人工验收命令见 [README](../README.md#m14读取本地玩家状态)。
+
+### 请求、响应与数据含义
+
+复用 `TcpControlServer` 的 loopback TCP、JSON Lines、有界队列、单会话及异步回执，网络层无需新增 Terraria 依赖。握手、版本和递增 ID 规则不变，增加请求：
+
+```json
+{"v":1,"id":1,"cmd":"get_state"}
+```
+
+响应保留 `v/id/ok/status/mode`，成功时 `status:"state"`，增加 `state` 对象：
+
+```json
+{"v":1,"id":1,"ok":true,"status":"state","mode":"none","state":{"inWorld":true,"position":{"x":100.5,"y":200},"velocity":{"x":0,"y":0},"life":80,"lifeMax":100}}
+```
+
+示例数值仅示意。`position` 取本地 Player 的左上角世界像素坐标，X 向右、Y 向下；`velocity` 是原生每模拟 tick 的像素速度；`life` 取 `statLife`，`lifeMax` 取含装备/增益的 `statLifeMax2`。`inWorld` 要求客户端已进入世界且本地玩家 active，但不要求玩家存活或允许移动。菜单、断开的多人连接等返回 `inWorld:false`，其余四项为 JSON null，而不是旧世界缓存或假造零值。原移动响应不新增 `state` 字段。
+
+### 线程、生命周期及失焦暂停
+
+`CompanionSystem.ReadSnapshot()` 只在 `On_Main.DoUpdate` 的游戏线程执行，在原生更新之前复制为不含 Terraria 引用的不可变记录。`ControlState.Update()` 用当前快照完成排队请求，后台任务只序列化记录；不从网络线程读取 Player，不等待游戏/网络任务，也不读上次响应缓存。
+
+查询不设置输入、控制模式或租约期限。原 750ms 外部租约、P 优先级、10 秒手动上限及暂停绕过条件不变。玩家从可控转为不可控时仍断开旧会话；进入/离开世界和卸载仍使用原清理入口。为允许菜单和死亡后的新查询，系统不再每帧断开新会话，玩家钩子也不再对已停止模式重复断线。移动请求在不可控时仍返回 `not_ready`；生命周期边界处的查询可能被中断，需显式重连。
+
+已检查现有钩子顺序：队列处理位于 `orig DoUpdate` 调用之前，先于原有 IL 匹配的单人失焦暂停提前返回。查询不启用 `KeepSimulationRunning`，不调整 `InactiveSleepTime`，不改自动暂停设置；暂停时返回的快照可能与上次相同。此代码检查只说明游戏进入 DoUpdate 时能处理请求，不能证明最小化、失焦节流、自动暂停或主线程卡顿下总能及时调度。CLI 默认套接字超时 2 秒，可用 `--timeout 5` 调整；超时输出错误并退出 1，不返回空状态冒充成功，也不自动重试。
+
+`python python/control.py get_state` 成功退出 0，stdout 是完整格式化 JSON，握手诊断写 stderr。连接失败、忙碌/断开、拒绝、非法响应、超时均退出 1。接口一次只允许一个连接；需要移动同时采样时必须复用同一个 `Bridge`，查询本身不发送 move 或 stop。连续采样占用的时间也计入移动租约。
+
+### 本轮自动验证与待验收项
+
+- tModLoader 内置 .NET 8 编译打包成功，0 错误、0 警告，产物 `.local/m14-build/Mods/CompanionBridge.tmod`。没有部署到 B 或更改角色、世界及配置。
+- C# 离线测试编译实际 `ControlState.cs` / `TcpControlServer.cs`，通过原租约、会话和 TCP 回归，并新增：查询必须等待更新、菜单空状态、死亡快照、不续期移动、不打断手动模式、断线清理、真实 TCP 世界/菜单字段序列化、原移动响应格式兼容。
+- Python 标准库 11 项测试通过，涵盖原移动流程和新增世界/菜单 JSON 输出、缺失快照、连接失败、请求超时、非法超时参数。假服务使用 localhost 临时端口。首次沙箱测试受套接字限制；获准在沙箱外运行后通过。C# 审批曾因超时未完成，按工具允许重试一次后通过。
+- `git diff --check` 通过。离线更新由测试程序模拟，不包含 Terraria Player 或真实暂停行为。
+- M1.4 基础状态读取已有用户真实游戏终端成功输出，详见后面的记录。菜单空状态、字段与画面核对、生命变化、死亡/重进、单人失焦、自动暂停、最小化及原移动/P/租约专项仍待验收。详细操作见 README；历史 M1.3 联机移动成功不能作为状态读取验收。
+
+### 首轮用户超时反馈的排查
+
+用户连续两次运行 get_state，仅出现通用超时，没有 Connected 行，尚未证明完成握手。读取最近 client.log：启动参数及 Saves Are Located At 为 `.local/tmodloader`，加载 CompanionBridge 0.1.2，记录 M1.1 focus experiment；未见 M1.4 TCP 加载行。`.local/m14-build` 已有新包，但此前未部署到该旧配置。这表明最近游戏启动使用了旧版；不能据此认定 M1.4 单人失焦处理失败，也不能仅凭旧版日志断定历史两次超时的确切网络原因。
+
+已修正 Python 错误诊断，分别报告连接、握手和请求超时，并增加连接/握手超时测试；11 项 Python 测试覆盖三种阶段。README 补充沿用旧单人配置时的备份、复制及启动命令。未自动关闭游戏、覆盖运行中的包或操作存档，用户需保存退出后部署，再核对实际加载 0.1.5 并复测。当时真实游戏状态读取仍未验收通过；后续成功响应见下节。
+
+### 用户确认真实世界状态读取成功
+
+2026-10-19，用户在确认此前使用旧启动命令后，提供新的 CLI 完整成功输出。握手实例为 `d9b194534f5343a7aa2bcae0cacf2e9a`，`lease_ms=750`；响应为 `v:1,id:1,ok:true,status:"state",mode:"none"`，状态为 `inWorld:true`、位置 `(33630, 3750)`、速度 `(0, 0)`、生命 `100/100`。
+
+该输出确认 Python → 实际 Bridge → 游戏线程快照 → JSON 回执的基础链路成功运行。它不单独证明字段与游戏画面一致、运动/生命变化正确，也未明确窗口焦点、自动暂停或最小化条件，因此不将这些专项标为通过。未新增 Codex 游戏界面操作或自动化游戏测试；本次仅更新验收记录，无需重复运行未改动代码的测试。用户随后确认提交 M1.4。
+
+用户随后明确说明“走动时是这样的”，并提供第二份成功状态响应：`mode:"manual"`、`inWorld:true`，位置 `(34494.395, 3766)`，速度 `(3.5904074, 0)`，生命 `100/100`。相较第一份静止快照，位置已有变化、水平速度非零，确认真实运动期间的状态采样成功；回执中的控制模式为 manual。该证据不单独证明查询后的持续移动、完整 10 秒手动期限、750ms 外部租约或失焦/最小化条件，相关专项继续保留待验收。
+
+### M1.4 提交前验证
+
+用户确认提交后，重新运行 Python 11 项离线测试及 C# 实际 IPC 源码测试，均通过；`git diff --check` 通过。提交范围仅含 M1.4，DeepSeek/Agent 接入已撤回。沿用已有 tModLoader 构建 0 错误、0 警告的记录；本次未重复构建未改动的 C#，未新增游戏实测，专项待验收状态保持不变。
 
 ## 已知边界
 

@@ -12,6 +12,21 @@ public sealed class CompanionSystem : ModSystem
 {
     private TimeSpan? _previousInactiveSleepTime;
     private ControlMode _lastMode;
+    private bool _wasCanControl;
+
+    // Called only from DoUpdate on the game thread, never from the TCP tasks.
+    private static PlayerSnapshot ReadSnapshot()
+    {
+        if (Main.dedServ || Main.gameMenu
+            || Main.netMode is not (NetmodeID.SinglePlayer or NetmodeID.MultiplayerClient)
+            || (Main.netMode == NetmodeID.MultiplayerClient && Netplay.Disconnect)
+            || !Main.LocalPlayer.active)
+            return PlayerSnapshot.NotInWorld;
+
+        var player = Main.LocalPlayer;
+        return new PlayerSnapshot(true, new StateVector(player.position.X, player.position.Y),
+            new StateVector(player.velocity.X, player.velocity.Y), player.statLife, player.statLifeMax2);
+    }
 
     private static bool CanControl => !Main.dedServ
         && Main.netMode is NetmodeID.SinglePlayer or NetmodeID.MultiplayerClient
@@ -49,8 +64,11 @@ public sealed class CompanionSystem : ModSystem
     private void UpdateExperiment(On_Main.orig_DoUpdate orig, Main self, ref GameTime gameTime)
     {
         // Runs before the vanilla focus early-return, including while unfocused.
-        if (!CanControl) CompanionBridge.Server?.Disconnect();
-        CompanionBridge.Controls.Update(CanControl, Stopwatch.GetTimestamp());
+        bool canControl = CanControl;
+        // Invalidate the old controller on transition; allow fresh read-only sessions in menus/death.
+        if (_wasCanControl && !canControl) CompanionBridge.Server?.Disconnect();
+        _wasCanControl = canControl;
+        CompanionBridge.Controls.Update(canControl, Stopwatch.GetTimestamp(), ReadSnapshot());
         var mode = CompanionBridge.Controls.Mode;
         if (mode != _lastMode)
         {

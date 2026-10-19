@@ -13,7 +13,11 @@ class BridgeError(Exception):
 
 class Bridge:
     def __init__(self, port=18777, timeout=2.0):
-        self.sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+        try:
+            self.sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+        except TimeoutError as error:
+            raise BridgeError(f"TCP connection timeout at 127.0.0.1:{port}; check that the intended "
+                              "client has CompanionBridge 0.1.5+ loaded and the port is reachable") from error
         self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.reader = self.sock.makefile("rb")
         self.request_id = 0
@@ -21,6 +25,10 @@ class Bridge:
             self.hello = self._read()
             if self.hello.get("v") != 1 or self.hello.get("type") != "hello":
                 raise BridgeError("Unsupported Bridge handshake")
+        except TimeoutError as error:
+            self.close()
+            raise BridgeError("Handshake timeout: TCP connected but no Bridge hello received; "
+                              "check the loaded Mod version and port owner before diagnosing game pause") from error
         except BaseException:
             self.close()
             raise
@@ -39,8 +47,13 @@ class Bridge:
     def command(self, cmd):
         self.request_id += 1
         request = {"v": 1, "id": self.request_id, "cmd": cmd}
-        self.sock.sendall((json.dumps(request) + "\n").encode("utf-8"))
-        reply = self._read()
+        try:
+            self.sock.sendall((json.dumps(request) + "\n").encode("utf-8"))
+            reply = self._read()
+        except TimeoutError as error:
+            raise BridgeError(f"Request timeout for {cmd}: Bridge handshake completed, but no reply received; "
+                              "the game update thread may be paused or stalled. Refocus and retry, "
+                              "or increase --timeout") from error
         if reply.get("v") != 1 or reply.get("id") != self.request_id:
             raise BridgeError("Response version/id mismatch")
         if reply.get("ok") is not True:
@@ -69,6 +82,13 @@ class Bridge:
                 if completed:
                     raise BridgeError(f"Stop not acknowledged; closing connection: {error}") from error
 
+    def get_state(self):
+        reply = self.command("get_state")
+        state = reply.get("state")
+        if reply.get("status") != "state" or not isinstance(state, dict):
+            raise BridgeError("Missing game state in response")
+        return reply
+
     def close(self):
         try:
             self.reader.close()
@@ -84,24 +104,31 @@ class Bridge:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("move_right", "stop"))
+    parser.add_argument("command", choices=("move_right", "stop", "get_state"))
     parser.add_argument("--seconds", type=float, default=5.0, help="move duration, 0 < seconds <= 60")
     parser.add_argument("--port", type=int, default=18777)
+    parser.add_argument("--timeout", type=float, default=2.0, help="socket timeout in seconds (default: 2)")
     args = parser.parse_args(argv)
     if not math.isfinite(args.seconds) or not 0 < args.seconds <= 60:
         parser.error("--seconds must be finite and between 0 and 60")
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535")
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
+        parser.error("--timeout must be finite and positive")
     try:
-        with Bridge(args.port) as bridge:
-            print(f"Connected: instance={bridge.hello.get('instance')}, lease={bridge.hello.get('lease_ms')}ms", flush=True)
+        with Bridge(args.port, timeout=args.timeout) as bridge:
+            print(f"Connected: instance={bridge.hello.get('instance')}, lease={bridge.hello.get('lease_ms')}ms",
+                  file=sys.stderr if args.command == "get_state" else sys.stdout, flush=True)
             if args.command == "move_right":
                 bridge.move_right(args.seconds)
+            elif args.command == "get_state":
+                print(json.dumps(bridge.get_state(), ensure_ascii=False, indent=2), flush=True)
             else:
                 print(bridge.command("stop"), flush=True)
         return 0
     except KeyboardInterrupt:
-        print("Interrupted; stop attempted and connection closed.", file=sys.stderr)
+        print("Interrupted; connection closed." if args.command == "get_state"
+              else "Interrupted; stop attempted and connection closed.", file=sys.stderr)
         return 130
     except (OSError, BridgeError, ValueError) as error:
         print(f"Bridge error: {error}", file=sys.stderr)

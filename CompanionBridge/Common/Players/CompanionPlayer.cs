@@ -34,7 +34,7 @@ public sealed class CompanionPlayer : ModPlayer
             _lastHasFocus = Main.hasFocus;
         }
 
-        if (!CanControl)
+        if (!CanControl && CompanionBridge.AutoMoveEnabled)
         {
             CompanionBridge.StopControl();
         }
@@ -42,7 +42,7 @@ public sealed class CompanionPlayer : ModPlayer
 
     public override void UpdateDead()
     {
-        if (Player.whoAmI == Main.myPlayer)
+        if (Player.whoAmI == Main.myPlayer && CompanionBridge.AutoMoveEnabled)
         {
             CompanionBridge.StopControl();
         }

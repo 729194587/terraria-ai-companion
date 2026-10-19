@@ -36,7 +36,7 @@ public sealed class CompanionBridge : Mod
         try
         {
             Server.Start();
-            Logger.Info($"CompanionBridge M1.3 loaded; TCP 127.0.0.1:{TcpControlServer.DefaultPort}; auto move is off.");
+            Logger.Info($"CompanionBridge M1.4 loaded; TCP 127.0.0.1:{TcpControlServer.DefaultPort}; auto move is off.");
         }
         catch (SocketException e)
         {

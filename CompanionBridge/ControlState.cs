@@ -2,12 +2,20 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace CompanionBridge;
 
 internal sealed record ControlRequest(int Id, string Cmd);
-internal sealed record ControlReply(int V, int Id, bool Ok, string Status, string Mode);
+internal sealed record StateVector(float X, float Y);
+internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateVector Velocity,
+    int? Life, int? LifeMax)
+{
+    internal static readonly PlayerSnapshot NotInWorld = new(false, null, null, null, null);
+}
+internal sealed record ControlReply(int V, int Id, bool Ok, string Status, string Mode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PlayerSnapshot State = null);
 internal enum ControlMode { None, Manual, External }
 
 // No Terraria references: the socket side submits requests; the game thread applies them.
@@ -64,22 +72,27 @@ internal sealed class ControlState
         }
     }
 
-    internal void Update(bool canControl, long now)
+    internal void Update(bool canControl, long now, PlayerSnapshot snapshot = null)
     {
         lock (_gate)
         {
             if (!canControl)
             {
                 _mode = ControlMode.None;
-                ClearPending("not_ready");
-                return;
             }
             if (_mode != ControlMode.None && now >= _deadline) _mode = ControlMode.None;
             while (_pending.TryDequeue(out var pending))
             {
                 var request = pending.Request;
+                if (request.Cmd == "get_state" && pending.Session == _session)
+                {
+                    pending.Completion.TrySetResult(Reply(request.Id, true, "state") with
+                        { State = snapshot ?? PlayerSnapshot.NotInWorld });
+                    continue;
+                }
                 string status = "applied";
                 if (pending.Session != _session) status = "disconnected";
+                else if (!canControl) status = "not_ready";
                 else if (request.Cmd == "stop") _mode = ControlMode.None;
                 else if (_mode == ControlMode.Manual) status = "manual_active";
                 else if (now >= pending.ReceivedAt + LeaseTicks) status = "expired";
@@ -130,8 +143,8 @@ internal sealed class ControlState
             || !root.TryGetProperty("v", out var version) || !version.TryGetInt32(out int v) || v != 1
             || !root.TryGetProperty("id", out var id) || !id.TryGetInt32(out int n) || n <= 0
             || !root.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String
-            || cmd.GetString() is not ("move_right" or "stop"))
-            throw new FormatException("Expected v=1, positive id, cmd=move_right or stop.");
+            || cmd.GetString() is not ("move_right" or "stop" or "get_state"))
+            throw new FormatException("Expected v=1, positive id, cmd=move_right, stop or get_state.");
         return new ControlRequest(n, cmd.GetString());
     }
 }

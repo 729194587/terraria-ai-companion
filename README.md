@@ -1,6 +1,6 @@
 # Terraria AI Companion
 
-目标是让独立 tModLoader 客户端中的真实玩家由 AI 控制，未来再接入 Python Agent。**当前 M1.3 实验版为 `0.1.4`：Python 标准库脚本通过本地 TCP 控制移动。编译、离线测试已通过，用户已在双客户端联机中确认 Python 能触发 B 的真实玩家向右移动。**
+目标是让独立 tModLoader 客户端中的真实玩家由 AI 控制，未来再接入 Python Agent。**当前 M1.4 开发版为 `0.1.5`：Python 可通过本地 TCP 控制移动并读取本地玩家状态。M1.3 的真实联机移动已由用户确认；M1.4 已由用户终端输出确认真实世界中的 get_state 成功响应，其他场景待验收。**
 
 工程原则、关键设计判断与验证边界见 [工程说明](docs/ENGINEERING.md)；环境、构建和实验记录见 [开发说明](docs/DEVELOPMENT.md)。
 
@@ -13,9 +13,12 @@
 - 通过 `PostUpdateRunSpeeds()` 注入水平输入，仅控制安装并启用 Bridge 的客户端本地玩家；服务器和远端玩家不执行控制逻辑。
 - 仅自动模式有效时临时关闭后台休眠，关闭后恢复原值。单人模式沿用 M1.1 的失焦暂停处理；多人模式保留原生更新和暂停判断。
 - 进入世界、离开世界、死亡和卸载时清除自动模式。不保存开关状态。
+- `get_state` 在游戏线程读取本地玩家位置、速度和生命；菜单返回明确空状态，查询不激活自动移动。
 - 不修改位置或速度，不创建 NPC 或额外 Player。
 
-**验证状态：v0.1.3 双客户端与 P 控制的核心流程已由用户实测通过。v0.1.4 编译打包为 0 错误、0 警告；实际 C# IPC 源码的租约/TCP 离线测试和 Python 的 4 项测试通过。M1.3 游戏实测仅确认 Python 触发 B 右移；5 秒后停止、断线/停发保护、P 键中断及手动恢复未明确实测，不标为通过。本轮人工测试已结束。**
+**M1.4 自动验证：0.1.5 编译打包 0 错误、0 警告；C# 实际 IPC 源码离线测试及 Python 11 项测试通过。用户已提供真实世界 get_state 成功输出；字段与游戏画面核对、单人失焦专项及移动回归仍待验收。**
+
+**历史验证状态：v0.1.3 双客户端与 P 控制的核心流程已由用户实测通过。v0.1.4 编译打包为 0 错误、0 警告；实际 C# IPC 源码的租约/TCP 离线测试和 Python 的 4 项测试通过。M1.3 游戏实测仅确认 Python 触发 B 右移；5 秒后停止、断线/停发保护、P 键中断及手动恢复未明确实测，不标为通过。本轮人工测试已结束。**
 
 ## 构建和测试
 
@@ -26,16 +29,16 @@ $tml = 'D:\steam\steamapps\common\tModLoader'
 $repo = 'D:\Agent Project\terraria-ai-companion'
 Push-Location $tml
 try {
-    & "$tml\dotnet\dotnet.exe" "$tml\tModLoader.dll" -server -build "$repo\CompanionBridge" -tmlsavedirectory "$repo\.local\m13-build"
+    & "$tml\dotnet\dotnet.exe" "$tml\tModLoader.dll" -server -build "$repo\CompanionBridge" -tmlsavedirectory "$repo\.local\m14-build"
 } finally {
     Pop-Location
 }
 ```
 
-产物为 `.local/m13-build/Mods/CompanionBridge.tmod`。**完全退出 B 后**复制到原 B 配置，再重新启动（本轮已完成复制并核对哈希）：
+产物为 `.local/m14-build/Mods/CompanionBridge.tmod`。**完全退出 B 后**复制到原 B 配置，再重新启动（M1.4 构建不会自动覆盖正在使用的测试包，请手动部署）：
 
 ```powershell
-Copy-Item "$repo\.local\m13-build\Mods\CompanionBridge.tmod" "$repo\.local\m12-b\Mods\CompanionBridge.tmod"
+Copy-Item "$repo\.local\m14-build\Mods\CompanionBridge.tmod" "$repo\.local\m12-b\Mods\CompanionBridge.tmod"
 ```
 
 A 为 `.local/m12-a`（无 Bridge），B 为 `.local/m12-b`（仅启用 Bridge）。沿用测试角色和世界，不覆盖存档、不使用云存档。若首次从 Git 克隆，请先创建 A 的 `Mods/enabled.json` 为 `[]`，B 的为 `["CompanionBridge"]`；这些本地配置不提交到 Git。
@@ -59,7 +62,7 @@ Set-Location 'D:\steam\steamapps\common\tModLoader'
 ```
 
 1. 两端窗口化。A 确认未加载 Bridge，创建 `HumanTest` 角色和测试世界，选择“多人游戏 → 主机并开始”。使用端口 `7777`，为直接 IP 测试关闭 Steam 邀请功能（若界面提供该选项）。
-2. B 确认仅启用 CompanionBridge **0.1.4**，使用不同的 `BridgeTest` 角色，通过“多人游戏 → 通过 IP 加入”连接 **127.0.0.1:7777**，输入 A 设置的密码。
+2. B 确认仅启用 CompanionBridge **0.1.5**，使用不同的 `BridgeTest` 角色，通过“多人游戏 → 通过 IP 加入”连接 **127.0.0.1:7777**，输入 A 设置的密码。
 3. B 在“设置 → 控制 → Mod 控制”中确认“切换自动向右移动”已绑定 **P**；若为空，手动绑定。“模组配置”没有配置选项是正常情况。
 4. 两角色站在彼此可见的安全普通平地。B 按 P，立即切回 A；从 A 观察 B 是否持续右移，同时操作 A 的 A/D 和空格，确认 A 不受影响。
 5. 约 10 秒后观察 B 是否自然减速停止，有无回弹、瞬移或持续走动。多人游戏此时应继续运行，不会恢复单人失焦暂停。
@@ -113,6 +116,59 @@ python -m unittest discover -s tests -p test_control.py -v
 ```
 
 C# 离线测试需 PowerShell 7.4+；只编译实际 IPC 源码，不启动 Terraria。测试会使用 localhost 临时端口。
+
+## M1.4：读取本地玩家状态
+
+只需一个启用 CompanionBridge **0.1.5** 的图形客户端，可沿用 B 配置进入单人测试世界；不需要 A 或联机服务器。Mod 加载后监听 `127.0.0.1:18777`，不需要按 P。
+
+```powershell
+python python/control.py get_state
+python python/control.py get_state --timeout 5
+```
+
+成功时退出码为 0，stdout 仅输出 JSON（握手说明在 stderr），可用 `python python/control.py get_state > state.json` 保存。示例数值仅示意：
+
+```json
+{"v":1,"id":1,"ok":true,"status":"state","mode":"none","state":{"inWorld":true,"position":{"x":100.5,"y":200},"velocity":{"x":0,"y":0},"life":80,"lifeMax":100}}
+```
+
+请求为 `{"v":1,"id":1,"cmd":"get_state"}`，沿用同一连接和递增 ID。`inWorld` 表示已进入支持的客户端世界且本地玩家 active；死亡玩家仍可读取。`position` 是玩家左上角世界像素坐标（X 向右、Y 向下），`velocity` 是原生每模拟 tick 的像素速度，`life` 为 `statLife`，`lifeMax` 为包含加成的 `statLifeMax2`。快照在本次 `DoUpdate` 原生更新之前读取，不保证代表下一帧或远端状态。
+
+菜单或尚未进入世界时成功返回 `inWorld:false`，`position`、`velocity`、`life`、`lifeMax` 全为 `null`，不返回上个世界的缓存。查询不发移动或 stop，不续期租约，也不修改 P 手动模式。进入/离开世界、死亡等生命周期切换可中断已有会话；重新运行命令查询。只支持一个连接，移动脚本占用期间另一个 CLI 可能被关闭；程序可在同一个 `Bridge` 连接中交替调用 `command("move_right")` 和 `get_state()`。
+
+连接失败、忙碌/断开、协议错误或超时退出码为 1，错误在 stderr。默认套接字超时 2 秒，`--timeout` 必须有限且大于 0；超时后关闭连接，不自动重试或声称读到状态。
+
+### 没有 Connected 就超时：先检查加载版本
+
+CLI 会区分 `TCP connection timeout`（连接未建立）、`Handshake timeout`（连接后未收到 hello）和 `Request timeout`（握手完成后请求未收到回执）。只有第三种能进一步怀疑游戏更新暂停，不能把所有超时都归因于失焦。
+
+注意启动时的 `-tmlsavedirectory`：`.local/tmodloader` 是旧 M1.1 配置，原包为 0.1.2；`.local/m12-b` 是后来的联机测试配置。构建 M1.4 不会自动更新任一配置。查看 `client.log` 的 `Saves Are Located At`、加载版本和 `CompanionBridge M1.4 loaded`，确认实际启动的是 0.1.5。
+
+若沿用旧单人配置，**先保存并完全退出该游戏客户端**，再执行以下命令（仅更新 Mod 包，保留该配置的角色和世界）：
+
+```powershell
+Copy-Item '.local/tmodloader/Mods/CompanionBridge.tmod' '.local/tmodloader/Mods/CompanionBridge.pre-m14.tmod.bak'
+Copy-Item '.local/m14-build/Mods/CompanionBridge.tmod' '.local/tmodloader/Mods/CompanionBridge.tmod'
+Set-Location 'D:/steam/steamapps/common/tModLoader'
+./start-tModLoader.bat -tmlsavedirectory 'D:/Agent Project/terraria-ai-companion/.local/tmodloader'
+```
+
+重启后先核对 0.1.5，再在另一个仓库终端运行 `python python/control.py get_state`。不要同时启动多个启用 Bridge 的客户端争用 18777。
+
+### 单客户端人工验收（M1.4 基础读取已确认，其余待测）
+
+2026-10-19，用户提供真实游戏终端输出：握手成功，`ok:true`、`status:"state"`、`mode:"none"`，`inWorld:true`，位置 `(33630, 3750)`，速度 `(0, 0)`，生命 `100/100`。这确认了一次真实世界状态请求成功；尚未提供字段与画面的核对、窗口焦点/暂停设置或最小化情况，不据此将相应专项标为通过。
+
+随后用户在走动时提供第二份成功响应：`mode:"manual"`，位置 `(34494.395, 3766)`，速度 `(3.5904074, 0)`，生命 `100/100`。确认运动中能读到变化的位置及非零水平速度，且该回执中的模式仍为 manual；查询后的持续运动、完整手动期限和外部租约仍未单独确认。
+
+1. 完全退出原 Bridge 客户端，按上面的构建/复制步骤部署 0.1.5，再只启动一个 Bridge 客户端。核对 Mod 版本，主菜单运行 `get_state`，预期 `inWorld:false` 和空字段。
+2. 进入安全单人测试世界，不按 P，关闭自动暂停并关闭背包/设置/聊天；Alt+Tab 到终端运行 `get_state`。预期 `inWorld:true`、生命与游戏 HUD 一致；记录响应耗时及失焦时画面是否暂停。
+3. 手动移动、跳跃或安全受伤后分别采样，核对位置/速度和生命变化。终端切换可能已经让角色减速，零速度本身不能判失败；需要运动中采样时可预先在终端启动带短延迟的查询，再切回游戏移动。
+4. 保持自动移动关闭，分别测试普通失焦、自动暂停开启且背包打开、最小化窗口。记录即时返回还是超时。普通失焦的请求处理入口位于原生暂停提前返回前，但不绕过暂停、不关闭休眠；不能据此认定所有后台情形都会调度更新。若超时，切回游戏重试；不得把它当成 `inWorld:false`。
+5. 在菜单、死亡/复活、退出重进后重新查询，确认无旧世界快照；切换过程中允许已有连接被关闭。退出游戏后运行查询，应报告连接失败。
+6. 回归原移动命令、750ms 停发保护和 P 中断/10 秒上限；程序在同一会话移动期间查询应保留原租约期限，手动 P 模式下查询不应停止右移。
+
+离线测试命令见上节。自动化测试使用纯 C# 快照和 localhost，不启动游戏；它们验证线程交接、字段序列化、无更新时等待、租约隔离和 CLI 错误处理，不能替代以上后台调度、真实 Player 字段及移动回归验收。
 
 ## 范围和限制
 
