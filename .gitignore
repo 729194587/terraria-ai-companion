@@ -4,3 +4,5 @@
 *.user
 *.tmod
 .local/
+__pycache__/
+*.pyc

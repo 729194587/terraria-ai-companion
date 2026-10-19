@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Sockets;
 using Terraria;
 using Terraria.ModLoader;
 
@@ -7,41 +8,49 @@ namespace CompanionBridge;
 public sealed class CompanionBridge : Mod
 {
     internal static ModKeybind ToggleAutoMoveKeybind { get; private set; }
-    private static bool _autoMoveEnabled;
-    private static long _autoMoveStartedAt;
+    internal static ControlState Controls { get; } = new();
+    internal static TcpControlServer Server { get; private set; }
+    internal static bool AutoMoveEnabled => Controls.IsMoving;
 
-    internal static bool AutoMoveEnabled
+    internal static void StopControl()
     {
-        get => _autoMoveEnabled;
-        set
-        {
-            _autoMoveEnabled = value;
-            _autoMoveStartedAt = value ? Stopwatch.GetTimestamp() : 0;
-        }
+        Server?.Disconnect();
+        Controls.Reset();
     }
 
-    internal static bool ExpireAutoMove()
+    internal static void ToggleManual()
     {
-        if (!AutoMoveEnabled || Stopwatch.GetElapsedTime(_autoMoveStartedAt).TotalSeconds < 10)
-            return false;
-
-        AutoMoveEnabled = false;
-        return true;
+        bool wasMoving = AutoMoveEnabled;
+        StopControl();
+        if (!wasMoving) Controls.ToggleManual(Stopwatch.GetTimestamp());
     }
 
     public override void Load()
     {
-        AutoMoveEnabled = false;
+        Controls.Reset();
         if (Main.dedServ)
             return;
 
         ToggleAutoMoveKeybind = KeybindLoader.RegisterKeybind(this, "ToggleAutoMove", "P");
-        Logger.Info("CompanionBridge M1.2 loaded; local client only, PostUpdateRunSpeeds, 10-second limit; auto move is off.");
+        Server = new TcpControlServer(Controls);
+        try
+        {
+            Server.Start();
+            Logger.Info($"CompanionBridge M1.3 loaded; TCP 127.0.0.1:{TcpControlServer.DefaultPort}; auto move is off.");
+        }
+        catch (SocketException e)
+        {
+            Server.Dispose();
+            Server = null;
+            Logger.Error($"Bridge TCP unavailable; manual P still works: {e.Message}");
+        }
     }
 
     public override void Unload()
     {
-        AutoMoveEnabled = false;
+        StopControl();
+        Server?.Dispose();
+        Server = null;
         ToggleAutoMoveKeybind = null;
     }
 }

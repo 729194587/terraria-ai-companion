@@ -17,7 +17,7 @@ public sealed class CompanionPlayer : ModPlayer
 
     public override void OnEnterWorld()
     {
-        CompanionBridge.AutoMoveEnabled = false;
+        CompanionBridge.StopControl();
         _lastHasFocus = Main.hasFocus;
         Mod.Logger.Info($"Bridge local player entered: player={Player.whoAmI}, netMode={Main.netMode}, autoMove=false");
     }
@@ -36,7 +36,7 @@ public sealed class CompanionPlayer : ModPlayer
 
         if (!CanControl)
         {
-            CompanionBridge.AutoMoveEnabled = false;
+            CompanionBridge.StopControl();
         }
     }
 
@@ -44,7 +44,7 @@ public sealed class CompanionPlayer : ModPlayer
     {
         if (Player.whoAmI == Main.myPlayer)
         {
-            CompanionBridge.AutoMoveEnabled = false;
+            CompanionBridge.StopControl();
         }
     }
 
@@ -53,7 +53,7 @@ public sealed class CompanionPlayer : ModPlayer
         if (!CanControl || CompanionBridge.ToggleAutoMoveKeybind?.JustPressed != true)
             return;
 
-        CompanionBridge.AutoMoveEnabled = !CompanionBridge.AutoMoveEnabled;
+        CompanionBridge.ToggleManual();
         Mod.Logger.Info($"Auto move: {(CompanionBridge.AutoMoveEnabled ? "on" : "off")}, player={Player.whoAmI}, netMode={Main.netMode}");
         Main.NewText(CompanionBridge.AutoMoveEnabled
             ? "[CompanionBridge] 自动右移：开启（最多 10 秒）"

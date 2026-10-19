@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using Microsoft.Xna.Framework;
 using MonoMod.Cil;
 using Terraria;
@@ -10,13 +11,15 @@ namespace CompanionBridge.Common.Systems;
 public sealed class CompanionSystem : ModSystem
 {
     private TimeSpan? _previousInactiveSleepTime;
+    private ControlMode _lastMode;
 
-    private static bool KeepSimulationRunning => CompanionBridge.AutoMoveEnabled
-        && !Main.dedServ
+    private static bool CanControl => !Main.dedServ
         && Main.netMode is NetmodeID.SinglePlayer or NetmodeID.MultiplayerClient
         && (Main.netMode != NetmodeID.MultiplayerClient || !Netplay.Disconnect)
         && !Main.gameMenu
         && Main.LocalPlayer.active && !Main.LocalPlayer.dead && !Main.LocalPlayer.ghost;
+
+    private static bool KeepSimulationRunning => CompanionBridge.AutoMoveEnabled && CanControl;
 
     public override void Load()
     {
@@ -46,14 +49,14 @@ public sealed class CompanionSystem : ModSystem
     private void UpdateExperiment(On_Main.orig_DoUpdate orig, Main self, ref GameTime gameTime)
     {
         // Runs before the vanilla focus early-return, including while unfocused.
-        if (CompanionBridge.ExpireAutoMove())
+        if (!CanControl) CompanionBridge.Server?.Disconnect();
+        CompanionBridge.Controls.Update(CanControl, Stopwatch.GetTimestamp());
+        var mode = CompanionBridge.Controls.Mode;
+        if (mode != _lastMode)
         {
-            Mod.Logger.Info($"Auto move: off (10-second experiment limit), x={Main.LocalPlayer.position.X:F1}");
-            Main.NewText("[CompanionBridge] 自动右移：关闭（10 秒实验时限）");
+            Mod.Logger.Info($"Control mode: {_lastMode} -> {mode}");
+            _lastMode = mode;
         }
-
-        if (CompanionBridge.AutoMoveEnabled && !KeepSimulationRunning)
-            CompanionBridge.AutoMoveEnabled = false;
 
         UpdateSleepSetting(self);
         try
@@ -82,13 +85,13 @@ public sealed class CompanionSystem : ModSystem
 
     public override void OnWorldUnload()
     {
-        CompanionBridge.AutoMoveEnabled = false;
+        CompanionBridge.StopControl();
         UpdateSleepSetting(Main.instance);
     }
 
     public override void Unload()
     {
-        CompanionBridge.AutoMoveEnabled = false;
+        CompanionBridge.StopControl();
         if (Main.dedServ)
             return;
 
