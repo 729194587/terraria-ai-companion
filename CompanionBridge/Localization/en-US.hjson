@@ -1,9 +1,1 @@
-Mods: {
-  CompanionBridge: {
-    Keybinds: {
-      ToggleAutoMove: {
-        DisplayName: Toggle auto move right
-      }
-    }
-  }
-}
+Mods.CompanionBridge.Keybinds.ToggleAutoMove.DisplayName: Toggle auto move right
