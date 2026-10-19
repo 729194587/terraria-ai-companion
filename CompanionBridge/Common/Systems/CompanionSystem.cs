@@ -12,11 +12,17 @@ public sealed class CompanionSystem : ModSystem
     private TimeSpan? _previousInactiveSleepTime;
 
     private static bool KeepSimulationRunning => CompanionBridge.AutoMoveEnabled
-        && Main.netMode == NetmodeID.SinglePlayer && !Main.gameMenu
+        && !Main.dedServ
+        && Main.netMode is NetmodeID.SinglePlayer or NetmodeID.MultiplayerClient
+        && (Main.netMode != NetmodeID.MultiplayerClient || !Netplay.Disconnect)
+        && !Main.gameMenu
         && Main.LocalPlayer.active && !Main.LocalPlayer.dead && !Main.LocalPlayer.ghost;
 
     public override void Load()
     {
+        if (Main.dedServ)
+            return;
+
         IL_Main.DoUpdate += BypassUnfocusedPause;
         On_Main.DoUpdate += UpdateExperiment;
     }
@@ -33,7 +39,8 @@ public sealed class CompanionSystem : ModSystem
             throw new InvalidOperationException("CompanionBridge: unsupported DoUpdate focus-pause branch.");
 
         cursor.Index++;
-        cursor.EmitDelegate<Func<bool, bool>>(focused => focused || KeepSimulationRunning);
+        cursor.EmitDelegate<Func<bool, bool>>(focused => focused
+            || (Main.netMode == NetmodeID.SinglePlayer && KeepSimulationRunning));
     }
 
     private void UpdateExperiment(On_Main.orig_DoUpdate orig, Main self, ref GameTime gameTime)
@@ -82,6 +89,9 @@ public sealed class CompanionSystem : ModSystem
     public override void Unload()
     {
         CompanionBridge.AutoMoveEnabled = false;
+        if (Main.dedServ)
+            return;
+
         UpdateSleepSetting(Main.instance);
         On_Main.DoUpdate -= UpdateExperiment;
         IL_Main.DoUpdate -= BypassUnfocusedPause;

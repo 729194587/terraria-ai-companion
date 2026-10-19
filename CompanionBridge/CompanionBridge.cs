@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Terraria;
 using Terraria.ModLoader;
 
 namespace CompanionBridge;
@@ -31,8 +32,11 @@ public sealed class CompanionBridge : Mod
     public override void Load()
     {
         AutoMoveEnabled = false;
+        if (Main.dedServ)
+            return;
+
         ToggleAutoMoveKeybind = KeybindLoader.RegisterKeybind(this, "ToggleAutoMove", "P");
-        Logger.Info("CompanionBridge M1.1 focus experiment loaded; PostUpdateRunSpeeds, 10-second limit; auto move is off.");
+        Logger.Info("CompanionBridge M1.2 loaded; local client only, PostUpdateRunSpeeds, 10-second limit; auto move is off.");
     }
 
     public override void Unload()

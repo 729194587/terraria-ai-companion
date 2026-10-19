@@ -35,7 +35,7 @@ CompanionBridge/
 ## API 与调用顺序
 
 - `KeybindLoader.RegisterKeybind()` 注册快捷键；在 `ModPlayer.ProcessTriggers()` 中读取 `JustPressed`，避免按住时每帧反复切换。依据官方 [ExampleKeybindPlayer](https://github.com/tModLoader/tModLoader/blob/v2026.08.3.0/ExampleMod/Common/Players/ExampleKeybindPlayer.cs) 和 [KeybindSystem](https://github.com/tModLoader/tModLoader/blob/v2026.08.3.0/ExampleMod/Common/Systems/KeybindSystem.cs)。
-- M1.0 与 M1.1 基线使用 `ModPlayer.SetControls()`；失焦暂停实测失败后，M1.1 修复版改为 `PostUpdateRunSpeeds()`。仅在自动模式开启且本地玩家存活、有效、处于单人世界时写入 `controlLeft=false`、`controlRight=true`。关闭时直接返回，不抹除硬件输入，不写位置、速度或其他动作输入。
+- M1.0 与 M1.1 基线使用 `ModPlayer.SetControls()`；失焦暂停实测失败后改为 `PostUpdateRunSpeeds()`。当前 M1.2 仅在自动模式开启且本地玩家存活、有效、处于单人或多人客户端时写入 `controlLeft=false`、`controlRight=true`。排除 dedicated server、服务器模式和正在断开的连接；关闭时直接返回，不抹除硬件输入，不写位置、速度或其他动作输入。
 - `OnEnterWorld()`、`OnWorldUnload()`、`UpdateDead()` 和 Mod 的 `Load()/Unload()` 清除开关；`PreUpdate()` 对本地玩家失效、幽灵或非单人状态再作清理。开关不写入角色存档。卸载后不再注入；控制字段由下一次原生输入更新重置，不强行清空可能来自真人的输入。
 
 已使用安装自带的 Mono.Cecil **只读检查本机 DLL 的 IL**，没有修改程序集。确认调用顺序：
@@ -63,7 +63,7 @@ M1.0 与 M0 建议的区别来自范围收缩：M0 考虑失焦运行，M1.0 只
 
 ## 构建、加载与调试
 
-复现命令见 [README](../README.md#构建和测试)。`-build` 指向本项目的 `CompanionBridge` 目录，内部编译器无需 SDK；`-tmlsavedirectory` 把构建输出、配置和测试存档放在项目 `.local/tmodloader` 中，不覆盖原有角色、世界或 Mod 列表。
+复现命令见 [README](../README.md#构建和测试)。`-build` 指向本项目的 `CompanionBridge` 目录，内部编译器无需 SDK；当前 `-tmlsavedirectory` 把构建输出、配置和测试存档放在项目 `.local/m12-b` 中，不覆盖原有角色、世界或 Mod 列表。M1.0/M1.1 旧测试目录为 `.local/tmodloader`。
 
 本次实际命令退出码为 0，输出：
 
@@ -75,13 +75,13 @@ Compilation finished with 0 errors and 0 warnings
 Packaging: CompanionBridge
 ```
 
-产物位于 `.local/tmodloader/Mods/CompanionBridge.tmod`。修改源码后先退出测试客户端，再执行同一命令并重新启动，避免旧程序集或文件占用。
+当前产物位于 `.local/m12-b/Mods/CompanionBridge.tmod`。修改源码后先退出 B 测试客户端，再执行同一命令并重新启动，避免旧程序集或文件占用。
 
 若需从游戏“创意工坊 → 开发 Mod”构建，可将 `CompanionBridge` 源码目录放入当前配置目录的 `ModSources/CompanionBridge` 后执行“构建并重新加载”；本轮仅验证了上面的命令行构建，未执行此菜单流程。
 
 `.csproj` 导入官方 `tMLMod.targets`，继承 `net8.0` / C# 12 和游戏引用。默认安装路径对应本机；其他机器可通过 `-p:TModLoaderDirectory=实际安装目录` 覆盖。需确保 SDK 的 dotnet 在 PATH 中，因为官方打包 target 调用 `dotnet`。此 IDE/SDK 路径尚未实测。
 
-游戏调试时先只启用本 Mod。当前实验版加载日志为 `CompanionBridge M1.1 focus experiment loaded; PostUpdateRunSpeeds, 10-second limit; auto move is off.`；每次手动切换有一条 `Auto move: on/off`，并在游戏中显示中文提示，不逐 tick 记日志。运行日志可通过游戏的“打开日志”入口查看；当前安装通常位于安装目录 `tModLoader-Logs/client.log`。
+游戏调试时 B 先只启用本 Mod，A 不加载。当前加载日志为 `CompanionBridge M1.2 loaded; local client only, PostUpdateRunSpeeds, 10-second limit; auto move is off.`；进入世界记录本地 player 索引和 netMode，每次手动切换有一条 `Auto move: on/off`，不逐 tick 记日志。运行日志可通过游戏的“打开日志”入口查看。共享安装下日志通常为 `tModLoader-Logs/client.log`、`client2.log` 等，不能假定 A/B 文件名固定；按 `Saves Are Located At` 和 Bridge 加载行区分实例。
 
 ## 手动验收
 
@@ -152,6 +152,83 @@ Packaging: CompanionBridge
 
 收尾重新执行内置构建，输出到 `.local/m11-build`，退出码 0、0 错误、0 警告；`git diff --check` 通过。本轮没有新增运行测试，也没有为文档更新替换用户正在使用的测试包。
 
+## M1.2：双客户端联机实验
+
+当前包版本 **0.1.3**，沿用 v0.1.2 的输入钩子、单调时钟和 10 秒保护。新增行为仅限允许多人客户端控制及显式服务器/断线隔离，没有新增网络协议或通用控制框架。
+
+### 当前版本依据
+
+- 本机仍为 `2026.08.3.0 stable`。`Main.DoUpdate` 的原生失焦提前返回要求 `netMode==0`，多人客户端 `netMode==1` 不走这条路径；`CanPauseGame()` 也只对单人暂停。因此单人失焦暂停的 IL 绕过现在明确限定 `SinglePlayer`，不改变多人分支；自动模式下的临时休眠调整同时用于单人和多人客户端。
+- 玩家输入的焦点限制仍存在，继续使用 `PostUpdateRunSpeeds()` 在原生输入清空后注入。`Player.whoAmI==Main.myPlayer` 限定本地玩家；`!Main.dedServ`、允许的 netMode 和 `!Netplay.Disconnect` 限定可控实例与连接状态。系统层使用相同条件，失效时撤销开关并恢复休眠值。
+- `side = Client` 保持不变。[ModSide.cs](https://github.com/tModLoader/tModLoader/blob/v2026.08.3.0/patches/tModLoader/Terraria/ModLoader/ModSide.cs) 定义客户端 Mod；[ModNet.SyncMods / SyncClientMods](https://github.com/tModLoader/tModLoader/blob/v2026.08.3.0/patches/tModLoader/Terraria/ModLoader/ModNet.cs) 显示强制同步列表针对 `Both`（及必要的 NoSync 依赖），客户端额外的 `Client` Mod 不因服务器缺少它而禁用。本 Mod 没有依赖 Mod，也不发送 `ModPacket`。
+- 本机 DLL 的 `Main.TrySyncingMyPlayer()` 使用原生 `NetMessage.SendData`，包括消息 13（玩家控制）。M1.2 依赖这条既有同步路径，不手动发送移动包、替换 `Main.myPlayer` 或模拟额外 Player。A 已观察到 B 移动和停止；平滑性与详细同步时序未单独验证。
+
+以上是源码/IL 依据；实际握手和移动结果另列在下方验收表中，不以静态检查替代运行验证。
+
+### 隔离配置和启动
+
+| 实例 | 配置根目录 | Mod | 角色/世界 |
+| --- | --- | --- | --- |
+| A：真人、Host & Play | `.local/m12-a` | `Mods/enabled.json` 为 `[]`，无 Bridge 包 | 新建 HumanTest 和测试世界 |
+| B：Bridge 测试玩家 | `.local/m12-b` | 仅 CompanionBridge 0.1.3 | 新建 BridgeTest，通过 IP 加入 A |
+
+两者使用同一安装目录，不复制游戏商业文件，不使用云存档。当前已经创建 A 的空 Mod 列表，B 的包及启用列表由构建生成；没有复制或覆盖旧 `.local/tmodloader` 中的角色、世界、设置和按键绑定。`-tmlsavedirectory` 指定最终目录，不再追加 tModLoader 子目录。以后重新准备配置时，不要在已有用户设置上盲目写入空列表。
+
+构建 B 和两份完整启动命令见 [README](../README.md#m12-双客户端测试)。先在一个 PowerShell 中启动 A，加载完成后在第二个 PowerShell 中运行 B 命令。不要通过 Steam 库重复点击“开始”；不使用 `-skipselect`，以免进入单人世界。
+
+A 选择“多人游戏 → 主机并开始”，如有 Steam 联机开关则关闭，使用默认端口 7777。B 选择“通过 IP 加入”连接 `127.0.0.1`，端口和密码与 A 一致。两端都必须是相同版本 tModLoader（不是原版 Terraria）。仅 B 在 Mod 控制中绑定 P 并启用自动模式；安装和启用 Bridge 本身不会自动接管玩家。
+
+官方 [Main.cs.patch 的本地服务器启动代码](https://github.com/tModLoader/tModLoader/blob/v2026.08.3.0/patches/tModLoader/Terraria/Main.cs.patch) 会把当前 `-tmlsavedirectory` 和 `-modpath` 传给 Host & Play 子进程。收尾已核对 `server.log`：使用 `.local/m12-a`，未见 Bridge 加载记录，与 A 配置一致。
+
+本机双开已由用户确认；若其他环境使用官方脚本无法双开，记录错误后反馈，不能用编译成功替代双开验证。不要编辑游戏 DLL、使用伪造 Player 或照搬发行版未核实的 `-nosteam` 参数。
+
+日志仍位于共享安装的 `tModLoader-Logs`；官方 [Logging.InitLogPaths / GetFreeLogFileName](https://github.com/tModLoader/tModLoader/blob/v2026.08.3.0/patches/tModLoader/Terraria/ModLoader/Logging.cs) 会在文件被占用时分配编号。检查日志内的存档根目录来识别 A/B；B 加入后预期记录 `netMode=1` 和自己的 player 索引。A 及 Host & Play 的服务器日志不应出现 Bridge 加载记录。启动脚本的 launch.log 可能共用，不用它单独判定角色身份。
+
+### 本轮验证状态
+
+内置构建输出到 `.local/m12-b`，退出码 0、**0 错误、0 警告**。只读检查包头和 Info 确认版本为 `0.1.3`、构建版本 `2026.8.3.0`、side 字节为 `1`（Client）；确认 A 无 Bridge 包且启用列表为空，B 仅启用 Bridge；`git diff --check` 通过。
+
+2026-10-19 用户确认已出现两个角色，按 P 自动右移成功。游戏由用户操作，Codex 只读核对运行日志：A 的 `client.log` 使用 `.local/m12-a`，未见 Bridge 加载记录；B 的 `client2.log` 使用 `.local/m12-b`，列出 `Client Side mods: CompanionBridge`，在 `14:16:35.732` 以 `player=1, netMode=1` 进入世界。
+
+B 第一轮于 `14:17:14.012` 开启，`14:17:15.594` 失焦时 X=`33887.0`，`14:17:24.027`（约 10.015 秒后）执行到期关闭时 X=`35376.6`；第二轮于 `14:19:13.179` 开启、`14:19:14.646` 手动关闭。日志证明开关变化及失焦后的端点位移，不单独证明 A 画面中的连续移动、停止或同步平滑性，也不证明 A 的按键未受影响。
+
+用户随后确认从 A 看到 B 按时停止，且真人操作不受影响。因此远端停止与 A 输入隔离已有用户实测依据，不再仅依赖 B 的本地日志；同步平滑性和未单独反馈的清理项目仍待确认。
+
+收尾时用户进一步明确确认：两个独立客户端成功加入同一世界，B 按 P 自动右移，切换回 A 后 B 仍继续移动，A 能正常观察到 B 的移动。这补足了连续失焦移动与远端可见性的人工验收依据。
+
+| 验收项 | 当前结果 |
+| --- | --- |
+| A 无 Bridge，B 包为 0.1.3、side=Client，配置隔离 | 本地文件及两客户端日志已检查，服务器日志也使用 A 配置且未见 Bridge 加载 |
+| 两个真实客户端进入 A 主持的同一世界 | 用户确认两个角色，B 日志确认 netMode=1 加入 |
+| B 保留额外 Client Mod，A 无 Bridge | A 本地无包、日志未加载；B 日志列出 Client Side Mod 并成功加入 |
+| B 按 P 自动右移 | 用户实测确认成功 |
+| A 能观察 B 失焦后持续右移 | 用户明确确认通过 |
+| A 的操作不受影响 | 用户实测确认通过 |
+| B 约 10 秒后在 A 画面中停止 | 用户确认按时停止；B 日志记录约 10.015 秒关闭开关 |
+| B 提前按 P 关闭后手动操作恢复 | B 日志有手动关闭记录；手动恢复待用户确认 |
+| 无明显瞬移、回弹、不同步或断线 | 待用户实测 |
+| B 退出重连、死亡/复活时不恢复旧指令 | 待用户实测 |
+| 0.1.3 单人回归 | 待用户实测 |
+
+先只开两个窗口，使用足够长的安全普通平地，保持双方互相可见；初测不要最小化 B，不使用坐骑、异常状态或额外 Mod。第一轮 B 按 P 后切回 A，观察完整 10 秒；第二轮提前切回 B 按 P，确认关闭，再测手动操作。多人超时后世界继续运行，不会恢复单人失焦暂停；停止的判据是释放输入后的原生减速，不要求瞬间速度归零。
+
+### 排查边界
+
+- 连接失败：先确认 A 已完成 Host & Play、端口/密码一致，再检查同版本与各自日志。无需把客户端 TCP 源端口设成不同值，只有服务器监听 7777。
+- A 要求 Bridge：检查是否误启用旧包/其他 Both Mod；本轮 A 不放置 Bridge 文件，不在全局 Steam 启动选项写入同一个存档路径。
+- B 仅自己画面移动而 A 看不到、或超时后 A 仍看到持续移动：记录两端观察、时间和日志，不以本地输入日志判为同步成功。
+- 同时运行两个图形客户端与 Host & Play 服务器会增加资源占用，可降低 B 的分辨率和画质，但本轮没有测性能或降低模拟更新频率。
+
+### M1.2 收尾 Review
+
+2026-10-19 Review 未发现阻断问题，保留用户实测的 0.1.3 代码，不扩展功能：
+
+- 玩家层和更新层均排除服务器、无效/死亡玩家及正在断开的连接；玩家层额外要求 `whoAmI == Main.myPlayer`，没有修改远端玩家输入。A 不加载 Bridge，B 必须按 P 才开启控制。
+- 10 秒计时和失效关闭仍在更新入口检查。单人 IL 暂停绕过明确限定 `SinglePlayer`，多人保留原生更新路径；关闭后不再注入输入。
+- 休眠原值首次启用时暂存，关闭/失效后恢复；退出世界和卸载先关闭开关再恢复，卸载移除两个钩子。生命周期结论来自代码 Review，相关游戏测试仍按上表保留待测。
+
+收尾重新构建到 `.local/m12-build`，退出码 0、0 错误、0 警告；`git diff --check` 通过。未覆盖正在使用的 B 测试包、角色或世界。游戏实测由用户执行，本轮未新增自动化图形界面测试。
+
 ## 已知边界
 
 - 没有新增第三方依赖，未修改磁盘上的 tModLoader 本体；运行时钩子使用 tModLoader 自带的 MonoMod.Cil。直接读取 Mono.Cecil 仅用于诊断。
@@ -159,4 +236,4 @@ Packaging: CompanionBridge
 - 聊天期间不触发快捷键切换，但未增加自动移动的聊天暂停策略。测试前先关闭自动模式再输入文字。
 - 较晚注入输入可能影响混乱等原生状态语义；异常状态、坐骑和其他 Mod 没有进行兼容性验证。实验限定无异常状态的普通平地。
 - IL 补丁针对当前稳定版的具体分支；升级后必须重新核对并运行测试。
-- 第二客户端、联机、IPC 和 Agent 均未实现；失焦基线失败，0.1.2 的单客户端失焦移动已由用户实测通过，其他验证范围见上表。
+- M1.2 双客户端加入、B 自动右移并在 A 画面中按时停止、A 操作不受影响已由用户确认；同步平滑性及清理仍待上表验收。IPC 和 Agent 未实现；0.1.2 的单客户端失焦移动已实测通过，不能代替新版单人回归结果。
