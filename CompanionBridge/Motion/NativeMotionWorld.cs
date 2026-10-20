@@ -84,29 +84,8 @@ internal sealed class NativeMotionWorld : IMotionWorld
     public bool SafeLanding(PhysicsState state)
     {
         if (!state.Grounded || !SafeSweep(state, state, out _)) return false;
-        // Require a standing area wider than the body, not just one supporting
-        // corner. No plateau-height or obstacle-width threshold is needed.
-        float left = state.Px - 4, right = state.Px + 24, bottom = state.Py + 42;
-        try { Check(left, state.Py - 2, right, bottom + 4, true); }
+        try { Check(state.Px, state.Py - 2, state.Px + 20, state.Py + 46, true); }
         catch (UnsafeMotionException) { return false; }
-        for (int x = (int)Math.Floor(left / 16); x < (int)Math.Ceiling(right / 16); x++)
-        {
-            for (int y = (int)Math.Floor((state.Py - 2) / 16); y < (int)Math.Ceiling((bottom - 4) / 16); y++)
-                if (TerrainClassifier.IntersectsSolid(TerrainReader.ReadCell(x, y),
-                    Math.Max(0, left - x * 16), Math.Min(16, right - x * 16),
-                    state.Py - 2 - y * 16, bottom - 4 - y * 16)) return false;
-            // The extra 4px on each side may meet a slope up to 4px above
-            // the sole; the actual 20x42 body was already checked by native collision.
-            bool support = false;
-            for (int y = (int)Math.Floor((bottom - 16) / 16); y <= (int)Math.Floor((bottom + 4) / 16); y++)
-            {
-                char cell = TerrainReader.ReadCell(x, y);
-                float surface = y * 16 + TerrainClassifier.SurfaceOffset(cell,
-                    Math.Max(0, left - x * 16), Math.Min(16, right - x * 16));
-                support |= Math.Abs(surface - bottom) <= 4;
-            }
-            if (!support) return false;
-        }
-        return true;
+        return MotionSupport.SafeLanding(state, TerrainReader.ReadCell);
     }
 }

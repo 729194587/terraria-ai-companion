@@ -71,7 +71,7 @@ public sealed class CompanionSystem : ModSystem
         _wasCanControl = canControl;
         var snapshot = ReadSnapshot();
         CompanionBridge.Controls.Update(canControl, Stopwatch.GetTimestamp(), snapshot,
-            snapshot.InWorld ? TerrainReader.Read(Main.LocalPlayer) : null, GameNavigation.Controller.Snapshot);
+            snapshot.InWorld ? TerrainReader.Read(Main.LocalPlayer) : null, GameNavigation.Snapshot);
         var mode = CompanionBridge.Controls.Mode;
         if (mode != _lastMode)
         {

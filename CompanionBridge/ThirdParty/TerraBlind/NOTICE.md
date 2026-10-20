@@ -25,8 +25,36 @@ Adapted code:
 - Dry max-fall uses the effective 10.01 value: Player.Update adds 0.01 to
   its reset value 10 before the input hook. Confirmed by local IL and user feedback.
 
+- `Nav/StateSpacePlanner.cs`: adapted `CellKey`, `Label`, `Dominated`,
+  `BuildHoldOptions`, and the `Plan` frontier/labels/came-from expansion, grounded
+  partial-result fallback and reverse action reconstruction into
+  `Motion/StateSpacePlanner.cs`. Replaced Terraria/global field calls with explicit
+  state/parameters/IMotionWorld. The expansion uses our version-corrected predictor,
+  validates braking on every edge and retains its safe-landing/drop restrictions.
+  Since 0.1.12 walking may execute only the moving prefix, retaining its endpoint
+  velocity in search labels. Since 0.1.13 navigation jumps can also hand off after
+  two supported, jump-released landing frames, retaining the extra grounded step
+  used by upstream SimulateSegment. A full braking tail is still validated, and
+  final approaches or unsupported moving handoffs settle. Legacy single jumps
+  keep their settled contract. Short walk
+  approaches, a jump preference cost and cost-aware partial selection reduce
+  unnecessary jumps without changing the physics core.
+  Since 0.1.14 navigation uses a separate bounded 64px descent limit so routes
+  can leave two-tile-high obstacles; legacy single-action prediction keeps its
+  original 16px limit. Full landing/braking validation remains mandatory.
+  Since 0.1.16 rolling-jump support frames also require near-zero downward
+  velocity: native clipped contact can precede TerrainReader's grounded state.
+  Search is bounded to 32 expansions / 25ms between candidates, a 128px rolling
+  horizontal goal and the existing local world window. Horizontal crossing goals
+  replace stand-cell XY goals; maze heuristics, digging, placement, cache/profiler,
+  background planning and global routing are not ported. This is an adapted subset,
+  not a drop-in copy of the complete upstream navigation system.
+
 Reference only (not copied wholesale): `Actions/JumpExecutor.cs` input enumeration
-and landing feedback; `Perception/PhysicsRecorder.cs` frame comparison;
-`Nav/StateSpacePlanner.cs` physics-state expansion. The local lease-bound executor
-is specific to CompanionBridge. No ReplaySystem, PathPlanner, DragonLens, HTTP
-server, world modification, or LLM dependency is imported.
+and landing feedback; `Perception/PhysicsRecorder.cs` frame recording;
+`Nav/RecedingNav.cs` plan/dispatch/verify/replan lifecycle; `Nav/ActionGraphPlanner.cs`
+action graph comparison. `Motion/NavigationTask.cs` is the Bridge-specific lifecycle
+adapter. Existing `LocalMotionController` replays predicted inputs at the installed
+input hook and compares actual post-update states; upstream `ReplaySystem` and
+its hook timing / fake initial velocity are not imported. No PathPlanner,
+DragonLens, HTTP server, world modification, or LLM dependency is imported.

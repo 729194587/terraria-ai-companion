@@ -3,21 +3,37 @@ using System.Collections.Generic;
 
 namespace CompanionBridge.Motion;
 
+internal sealed record LandingFeedback(int ActionNumber, bool Jump, StateVector Predicted,
+    StateVector Actual, float MaxError, StateVector PredictedVelocity = null,
+    StateVector ActualVelocity = null, bool Settled = true);
+
 internal sealed record NavigationSnapshot(int Session, string Status, string Action, string Reason,
     int Frame, int HoldFrames, StateVector PredictedLanding, StateVector ActualLanding, float MaxError,
     StateVector ExpectedPosition = null, StateVector ObservedPosition = null,
-    StateVector ExpectedVelocity = null, StateVector ObservedVelocity = null, int Generation = 0);
+    StateVector ExpectedVelocity = null, StateVector ObservedVelocity = null, int Generation = 0,
+    float? TargetX = null, int CompletedActions = 0, int CompletedJumps = 0,
+    int Expansions = 0, int PlannedActions = 0, double PlanMilliseconds = 0,
+    LandingFeedback LastLanding = null);
 
 // One rolling walk or one jump; no graph, digging, placement, or autonomous retries.
 // Candidate simulation and landing feedback follow TerraBlind JumpExecutor's pattern.
 internal sealed class LocalMotionController
 {
     private Prediction _plan;
-    private int _session, _direction, _generation, _frame, _hold, _badFrames;
+    private int _session, _direction, _generation, _frame, _hold, _badFrames, _supportedLandingFrames;
     private float _maxError;
     private bool _airborne;
     internal NavigationSnapshot Snapshot { get; private set; } = new(0, "idle", "none", "not started", 0, 0, null, null, 0);
     internal bool Terminal => Snapshot.Status is "failed" or "landed";
+    internal bool NeedsPlan => _plan == null;
+
+    internal void LoadPlan(Prediction plan)
+    {
+        _plan = plan;
+        _frame = 0; _badFrames = 0; _supportedLandingFrames = 0; _maxError = 0; _airborne = false;
+        _hold = plan.Frames.FindAll(f => f.Input.Jump).Count;
+        Snapshot = Snapshot with { Status = "running" };
+    }
 
     internal void Begin(int session, int direction, int generation = 0)
     {
@@ -61,7 +77,7 @@ internal sealed class LocalMotionController
                 }
                 if (!_plan.Safe) return Fail($"no safe local action; walk={walkingFailure}; jump={_plan.Reason}");
             }
-            _frame = 0; _badFrames = 0; _maxError = 0; _airborne = false;
+            _frame = 0; _badFrames = 0; _supportedLandingFrames = 0; _maxError = 0; _airborne = false;
         }
         var next = _plan.Frames[_frame];
         // Recheck the immediate step against the current world and actual velocity.
@@ -88,6 +104,9 @@ internal sealed class LocalMotionController
         float velocityError = Math.Max(Math.Abs(expected.Vx - actual.Vx), Math.Abs(expected.Vy - actual.Vy));
         _badFrames = error > 6 || velocityError > 1.5f ? _badFrames + 1 : 0;
         _airborne |= !actual.Grounded;
+        if (_plan.Jump && _plan.ExecuteFrames < _plan.Frames.Count)
+            _supportedLandingFrames = actual.Grounded && world.SafeLanding(actual)
+                && actual.ReleaseJump && actual.JumpFramesLeft == 0 ? _supportedLandingFrames + 1 : 0;
         _frame++;
         Snapshot = Snapshot with { Frame = _frame, MaxError = _maxError };
         if (_badFrames >= 2 || error > 16)
@@ -98,11 +117,19 @@ internal sealed class LocalMotionController
         {
             if (_plan.Jump)
             {
-                bool landed = _airborne && actual.Grounded && world.SafeLanding(actual)
-                    && Math.Abs(actual.Vx) <= 0.1f && Math.Abs(actual.Vy) <= 0.1f
+                bool movingLanding = _plan.ExecuteFrames < _plan.Frames.Count;
+                bool safeSupport = world.SafeLanding(actual);
+                bool landed = _airborne && actual.Grounded && safeSupport
+                    && Math.Abs(actual.Vx - (movingLanding ? _plan.Landing.Vx : 0)) <= 0.1f
+                    && Math.Abs(actual.Vy) <= 0.1f
+                    && (!movingLanding || _supportedLandingFrames >= 2)
                     && Math.Abs(actual.Px - _plan.Landing.Px) <= 8 && Math.Abs(actual.Py - _plan.Landing.Py) <= 4;
                 Snapshot = new(_session, landed ? "landed" : "failed", "jump",
-                    landed ? "landed and settled within prediction tolerance" : "jump landing mismatch",
+                    landed ? movingLanding ? "moving landing verified within prediction tolerance"
+                        : "landed and settled within prediction tolerance"
+                        : $"jump landing mismatch: airborne={_airborne}, grounded={actual.Grounded}, support={safeSupport}, "
+                            + $"supportFrames={_supportedLandingFrames}, releaseJump={actual.ReleaseJump}, jumpCounter={actual.JumpFramesLeft}, "
+                            + $"vxError={Math.Abs(actual.Vx - (movingLanding ? _plan.Landing.Vx : 0)):F3}, vy={actual.Vy:F3}",
                     _frame, _hold, new(_plan.Landing.Px, _plan.Landing.Py), new(actual.Px, actual.Py), _maxError,
                     Snapshot.ExpectedPosition, Snapshot.ObservedPosition, Snapshot.ExpectedVelocity, Snapshot.ObservedVelocity, _generation);
             }

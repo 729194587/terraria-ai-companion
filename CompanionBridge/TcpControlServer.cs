@@ -73,7 +73,7 @@ internal sealed class TcpControlServer : IDisposable
             client.NoDelay = true;
             using var stream = client.GetStream();
             await WriteJson(stream, new { v = 1, type = "hello", instance = _instance,
-                lease_ms = ControlState.LeaseMilliseconds }, token);
+                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "guarded_control", "local_navigation" } }, token);
             writer = WriteReplies(stream, replies.Reader, token);
             var buffer = new byte[256];
             using var line = new MemoryStream();

@@ -8,8 +8,9 @@ using CompanionBridge.Motion;
 
 namespace CompanionBridge;
 
-internal sealed record ControlRequest(int Id, string Cmd, int Direction = 1, bool Jump = false);
-internal sealed record ControlInput(int Direction, bool Jump, bool OverrideJump, bool Predictive = false);
+internal sealed record ControlRequest(int Id, string Cmd, int Direction = 1, bool Jump = false,
+    int? ExpectedGeneration = null, float? TargetX = null);
+internal sealed record ControlInput(int Direction, bool Jump, bool OverrideJump, bool Predictive = false, float? TargetX = null);
 internal sealed record StateVector(float X, float Y);
 internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateVector Velocity,
     int? Life, int? LifeMax)
@@ -120,16 +121,20 @@ internal sealed class ControlState
                 string status = "applied";
                 if (pending.Session != _session) status = "disconnected";
                 else if (!canControl) status = "not_ready";
+                else if (request.ExpectedGeneration is int expected && expected != _generation)
+                    status = "generation_changed";
                 else if (request.Cmd == "stop") { _mode = ControlMode.None; _generation++; }
                 else if (_mode == ControlMode.Manual) status = "manual_active";
                 else if (now >= pending.ReceivedAt + LeaseTicks) status = "expired";
                 else
                 {
-                    if (_mode != ControlMode.External || _input.Predictive != (request.Cmd == "terrain_step"))
+                    if (_mode != ControlMode.External || _input.Predictive != (request.Cmd is "terrain_step" or "navigate")
+                        || _input.TargetX != request.TargetX || _input.Direction != request.Direction)
                         _generation++;
                     _mode = ControlMode.External;
                     _input = new ControlInput(request.Direction, request.Jump,
-                        request.Cmd is "input" or "terrain_step", request.Cmd == "terrain_step");
+                        request.Cmd is "input" or "terrain_step" or "navigate",
+                        request.Cmd is "terrain_step" or "navigate", request.TargetX);
                     _deadline = pending.ReceivedAt + LeaseTicks;
                 }
                 pending.Completion.TrySetResult(Reply(request.Id, status == "applied", status));
@@ -177,7 +182,7 @@ internal sealed class ControlState
             || !root.TryGetProperty("id", out var id) || !id.TryGetInt32(out int n) || n <= 0
             || !root.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String
             || cmd.GetString() is not ("move_right" or "stop" or "get_state" or "get_terrain" or "input"
-                or "terrain_step" or "get_navigation"))
+                or "terrain_step" or "get_navigation" or "navigate"))
             throw new FormatException("Expected v=1, positive id and a supported cmd.");
         int direction = 1;
         bool jump = false;
@@ -193,6 +198,22 @@ internal sealed class ControlState
                 throw new FormatException("input requires direction=-1/0/1 and boolean jump.");
             jump = j.GetBoolean();
         }
-        return new ControlRequest(n, cmd.GetString(), direction, jump);
+        float? targetX = null;
+        if (cmd.GetString() == "navigate")
+        {
+            if (!root.TryGetProperty("targetX", out var target) || target.ValueKind != JsonValueKind.Number
+                || !target.TryGetSingle(out float x) || !float.IsFinite(x) || x < 0 || x > 1000000)
+                throw new FormatException("navigate requires finite targetX in [0,1000000].");
+            targetX = x;
+        }
+        int? expectedGeneration = null;
+        if (root.TryGetProperty("expectedGeneration", out var guard))
+        {
+            if (cmd.GetString() is not ("terrain_step" or "navigate" or "stop")
+                || guard.ValueKind != JsonValueKind.Number || !guard.TryGetInt32(out int expected) || expected < 0)
+                throw new FormatException("expectedGeneration requires terrain_step/navigate/stop and a nonnegative integer.");
+            expectedGeneration = expected;
+        }
+        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX);
     }
 }

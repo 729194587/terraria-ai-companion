@@ -6,7 +6,10 @@ $sources = @(
     (Join-Path $repo 'CompanionBridge/ControlState.cs'),
     (Join-Path $repo 'CompanionBridge/TerrainSnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/MotionSupport.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/LocalMotionController.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/StateSpacePlanner.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/NavigationTask.cs'),
     (Join-Path $repo 'CompanionBridge/TcpControlServer.cs'),
     (Join-Path $PSScriptRoot 'BridgeOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'MotionOfflineTests.cs')

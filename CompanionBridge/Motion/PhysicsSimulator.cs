@@ -117,16 +117,20 @@ internal static class PhysicsSimulator
     // Include braking and stable support in validation. Walking executes only the
     // moving prefix and replans, so an open flat surface does not become stop/start.
     internal static Prediction Predict(PhysicsState start, int direction, int hold,
-        PhysicsParameters ph, IMotionWorld world)
+        PhysicsParameters ph, IMotionWorld world, int walkFrames = WalkFrames, bool rollingJump = false,
+        float maxDropPixels = 16)
     {
         var frames = new List<PredictedFrame>();
         var s = start;
         bool airborne = false;
         int stable = 0;
+        int movingLandingFrames = 0;
+        bool landingChecked = false, extendLanding = false;
         float lastGroundY = start.Py;
         for (int f = 0; f < MaxFrames; f++)
         {
-            bool moving = hold > 0 ? !airborne || !s.Grounded : f < WalkFrames;
+            bool moving = hold > 0 ? !airborne || !s.Grounded
+                || (rollingJump && (Math.Abs(s.Vy) > 0.01f || extendLanding)) : f < walkFrames;
             var input = new PhysicsInput(moving ? direction : 0, f < hold);
             PhysicsState next;
             try
@@ -136,25 +140,44 @@ internal static class PhysicsSimulator
                     return new(false, reason, frames, next, 0, hold > 0);
             }
             catch (UnsafeMotionException error) { return new(false, error.Message, frames, s, 0, hold > 0); }
-            if (hold == 0 && Math.Abs(next.Px - s.Px) < 0.01f && Math.Abs(next.Vx) < 0.01f && f < WalkFrames)
+            if (hold == 0 && Math.Abs(next.Px - s.Px) < 0.01f && Math.Abs(next.Vx) < 0.01f && f < walkFrames)
                 return new(false, "walking blocked", frames, next, 0, false);
             airborne |= !next.Grounded;
-            if (hold > 0 && next.Py - start.Py > 16)
-                return new(false, "jump descent exceeds one tile", frames, next, 0, true);
-            if (hold == 0 && next.Py - lastGroundY > 16)
-                return new(false, "walking drop exceeds one tile", frames, next, 0, false);
+            if (hold > 0 && next.Py - start.Py > maxDropPixels)
+                return new(false, $"jump descent exceeds {maxDropPixels:0}px limit", frames, next, 0, true);
+            if (hold == 0 && next.Py - lastGroundY > maxDropPixels)
+                return new(false, $"walking drop exceeds {maxDropPixels:0}px limit", frames, next, 0, false);
             if (next.Grounded) lastGroundY = next.Py;
             frames.Add(new(input, next));
-            bool doneMoving = hold > 0 ? airborne && next.Grounded && f >= hold : f >= WalkFrames;
+            if (rollingJump && hold > 0 && movingLandingFrames == 0)
+            {
+                // Retain upstream's extra grounded step before handing off a jump.
+                // Both landing states must have safe support and released jump;
+                // the rest of this prediction still proves a full braking tail.
+                bool groundedLanding = airborne && next.Grounded && Math.Abs(next.Vy) < 0.01f && f >= hold;
+                bool supported = groundedLanding
+                    && next.ReleaseJump && next.JumpFramesLeft == 0 && world.SafeLanding(next);
+                if (!landingChecked && groundedLanding)
+                {
+                    landingChecked = true;
+                    extendLanding = supported;
+                }
+                else if (extendLanding)
+                {
+                    extendLanding = false;
+                    if (supported) movingLandingFrames = frames.Count;
+                }
+            }
+            bool doneMoving = hold > 0 ? airborne && next.Grounded && f >= hold : f >= walkFrames;
             stable = doneMoving && next.Grounded && Math.Abs(next.Vx) < 0.01f ? stable + 1 : 0;
             s = next;
             if (stable >= 2)
             {
                 bool safe = direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4) && world.SafeLanding(s);
-                int execute = frames.Count;
+                int execute = movingLandingFrames > 0 ? movingLandingFrames : frames.Count;
                 if (hold == 0)
                 {
-                    execute = WalkFrames;
+                    execute = walkFrames;
                     while (!frames[execute - 1].State.Grounded && execute < frames.Count) execute++;
                 }
                 return new(safe, safe ? "safe landing and braking" : "no safe landing/progress",

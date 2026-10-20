@@ -76,8 +76,51 @@ public static class BridgeOfflineTests
         }
         StateTests();
         TerrainTests();
+        GuardedControlTests();
         NetworkTests();
         Console.WriteLine("PASS: state/terrain snapshots, tile classification, typed input, control lease, ownership, lifecycle, protocol, real TCP framing/disconnect/unload");
+    }
+
+    private static void GuardedControlTests()
+    {
+        var state = new ControlState();
+        int session = state.BeginSession();
+        var start = ControlState.Parse("{\"v\":1,\"id\":1,\"cmd\":\"terrain_step\",\"direction\":1,\"expectedGeneration\":0}");
+        var result = state.Enqueue(session, start, 0);
+        state.Update(true, 0);
+        Check(result.Result.Ok && state.Generation == 1 && state.Input.Predictive, "Guarded start");
+        result = state.Enqueue(session, new(2, "terrain_step", ExpectedGeneration: 1), Ms(100));
+        state.Update(true, Ms(100));
+        Check(result.Result.Ok && state.Generation == 1, "Guarded renewal retains current action");
+        // Expire and receive a recent request in the SAME update: never start a new action.
+        result = state.Enqueue(session, new(3, "terrain_step", ExpectedGeneration: 1), Ms(850));
+        state.Update(true, Ms(850));
+        Check(!result.Result.Ok && result.Result.Status == "generation_changed" && !state.IsMoving,
+            "Expired guarded renewal cannot restart motion");
+        int idle = state.Generation;
+        result = state.Enqueue(session, new(4, "terrain_step", ExpectedGeneration: idle), Ms(900));
+        state.Update(true, Ms(900));
+        Check(result.Result.Ok, "Fresh explicitly observed generation can start");
+        int active = state.Generation;
+        state.ToggleManual(Ms(901));
+        result = state.Enqueue(session, new(5, "terrain_step", ExpectedGeneration: active), Ms(902));
+        var stop = state.Enqueue(session, new(6, "stop", ExpectedGeneration: active), Ms(902));
+        state.Update(true, Ms(902));
+        Check(!result.Result.Ok && !stop.Result.Ok && state.Generation != active,
+            "P invalidates both pending continuation and stale cleanup");
+        state.ToggleManual(Ms(903));
+        int manual = state.Generation;
+        stop = state.Enqueue(session, new(7, "stop", ExpectedGeneration: active), Ms(904));
+        state.Update(true, Ms(904));
+        Check(!stop.Result.Ok && state.Mode == ControlMode.Manual && state.Generation == manual,
+            "Stale stop cannot steal new manual control");
+        foreach (string value in new[] { "null", "true", "-1", "1.5", "\"1\"" })
+        {
+            bool rejected = false;
+            try { ControlState.Parse("{\"v\":1,\"id\":1,\"cmd\":\"stop\",\"expectedGeneration\":" + value + "}"); }
+            catch (FormatException) { rejected = true; }
+            Check(rejected, "Malformed generation guard rejected");
+        }
     }
 
     private static void TerrainTests()
@@ -204,7 +247,8 @@ public static class BridgeOfflineTests
         client.Connect("127.0.0.1", server.Port);
         client.ReceiveTimeout = 2000;
         using var reader = new StreamReader(client.GetStream(), Encoding.UTF8, false, 1024, true);
-        Check(reader.ReadLine().Contains("hello"), "Real TCP hello");
+        string hello = reader.ReadLine();
+        Check(hello.Contains("hello") && hello.Contains("guarded_control"), "Real TCP hello advertises guard");
         // Fragment one command, then coalesce its end and the next command in one write.
         byte[] first = Encoding.UTF8.GetBytes("{\"v\":1,\"id\":1,\"cmd\":\"move_");
         client.GetStream().Write(first);
@@ -282,7 +326,8 @@ public static class BridgeOfflineTests
         PumpUntil(() => state.IsMoving, state);
         Check(state.Input == new ControlInput(-1, true, true), "TCP typed input applied by game pump");
         Check(reader.ReadLine().Contains("applied"), "Typed input TCP acknowledgement");
-        client.GetStream().Write(Encoding.UTF8.GetBytes("{\"v\":1,\"id\":7,\"cmd\":\"terrain_step\",\"direction\":1}\n"));
+        client.GetStream().Write(Encoding.UTF8.GetBytes("{\"v\":1,\"id\":7,\"cmd\":\"terrain_step\",\"direction\":1,\"expectedGeneration\":"
+            + state.Generation + "}\n"));
         var predictiveAck = reader.ReadLineAsync();
         PumpUntil(() => predictiveAck.IsCompleted, state);
         Check(predictiveAck.Result.Contains("applied") && state.Input.Predictive,
