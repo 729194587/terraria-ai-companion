@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Sockets;
 using Terraria;
 using Terraria.ModLoader;
+using CompanionBridge.Motion;
 
 namespace CompanionBridge;
 
@@ -14,6 +15,7 @@ public sealed class CompanionBridge : Mod
 
     internal static void StopControl()
     {
+        GameNavigation.Cancel();
         Server?.Disconnect();
         Controls.Reset();
     }
@@ -36,7 +38,7 @@ public sealed class CompanionBridge : Mod
         try
         {
             Server.Start();
-            Logger.Info($"CompanionBridge M1.4 loaded; TCP 127.0.0.1:{TcpControlServer.DefaultPort}; auto move is off.");
+            Logger.Info($"CompanionBridge M1.5 loaded; TCP 127.0.0.1:{TcpControlServer.DefaultPort}; auto move is off.");
         }
         catch (SocketException e)
         {

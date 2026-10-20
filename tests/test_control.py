@@ -50,13 +50,19 @@ class FakeServer:
                         reply = {"v": 1, "id": request["id"], "ok": not self.reject,
                                  "status": "manual_active" if self.reject else "applied",
                                  "mode": "none" if request["cmd"] == "stop" else "external"}
-                        if request["cmd"] == "get_state":
+                        if request["cmd"] in ("get_state", "get_terrain"):
                             reply.update(status="state", mode="none", state={
                                 "inWorld": self.in_world,
                                 "position": {"x": 100.5, "y": 200.0} if self.in_world else None,
                                 "velocity": {"x": -1.5, "y": 0.0} if self.in_world else None,
                                 "life": 80 if self.in_world else None,
                                 "lifeMax": 100 if self.in_world else None})
+                            if request["cmd"] == "get_terrain":
+                                reply.update(status="terrain", terrain={"originX": 0, "originY": 0,
+                                    "tileSize": 16, "rows": ["." * 45] * 29, "playerWidth": 20,
+                                    "playerHeight": 42, "grounded": True, "supported": True})
+                        if request["cmd"] == "get_navigation":
+                            reply.update(status="navigation", navigation={"status": "idle"})
                         connection.sendall((json.dumps(reply) + "\n").encode())
         except Exception as error:
             self.error = error
@@ -72,6 +78,16 @@ class FakeServer:
 
 
 class ControlTests(unittest.TestCase):
+    def test_navigation_getter_and_lease_request(self):
+        with FakeServer() as server:
+            with Bridge(server.port) as bridge:
+                self.assertEqual(bridge.get_navigation()["navigation"]["status"], "idle")
+                self.assertTrue(bridge.terrain_step(-1)["ok"])
+                with self.assertRaises(ValueError):
+                    bridge.terrain_step(0)
+        self.assertEqual([request["cmd"] for request in server.requests], ["get_navigation", "terrain_step"])
+        self.assertEqual(server.requests[-1]["direction"], -1)
+
     def test_heartbeat_then_explicit_stop(self):
         with FakeServer() as server:
             with Bridge(server.port) as bridge:
@@ -137,6 +153,30 @@ class ControlTests(unittest.TestCase):
             with patch.object(bridge, "command", return_value={"status": "state"}):
                 with self.assertRaisesRegex(BridgeError, "Missing game state"):
                     bridge.get_state()
+
+    def test_input_wire_format_and_validation(self):
+        with FakeServer() as server, Bridge(server.port) as bridge:
+            bridge.input(-1, True)
+            for direction, jump in ((True, False), (2, False), (0, 1)):
+                with self.assertRaises(ValueError):
+                    bridge.input(direction, jump)
+        self.assertEqual(server.requests, [{"v": 1, "id": 1, "cmd": "input", "direction": -1, "jump": True}])
+
+    def test_get_terrain_requires_correct_envelope(self):
+        with FakeServer() as server, Bridge(server.port) as bridge:
+            with patch.object(bridge, "command", return_value={"status": "terrain", "terrain": {"rows": []}}):
+                self.assertEqual(bridge.get_terrain()["terrain"], {"rows": []})
+            with patch.object(bridge, "command", return_value={"status": "state"}):
+                with self.assertRaisesRegex(BridgeError, "Missing terrain"):
+                    bridge.get_terrain()
+
+    def test_cli_full_terrain_window(self):
+        with FakeServer() as server, patch("sys.stdout", new_callable=io.StringIO) as output:
+            self.assertEqual(main(["get_terrain", "--port", str(server.port)]), 0)
+            reply = json.loads(output.getvalue())
+            self.assertEqual(len(reply["terrain"]["rows"]), 29)
+            self.assertEqual(len(reply["terrain"]["rows"][0]), 45)
+            self.assertEqual(reply["state"]["life"], 80)
 
     def test_invalid_timeout_never_connects(self):
         with patch("control.socket.create_connection") as connect:

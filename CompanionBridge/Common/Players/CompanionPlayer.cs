@@ -2,6 +2,7 @@ using Terraria;
 using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
+using CompanionBridge.Motion;
 
 namespace CompanionBridge.Common.Players;
 
@@ -63,10 +64,39 @@ public sealed class CompanionPlayer : ModPlayer
     public override void PostUpdateRunSpeeds()
     {
         if (!CanControl || !CompanionBridge.AutoMoveEnabled)
+        {
+            GameNavigation.Cancel();
             return;
+        }
 
-        // Override horizontal input only. Vanilla handles acceleration and collision.
-        Player.controlLeft = false;
-        Player.controlRight = true;
+        var input = CompanionBridge.Controls.Input;
+        if (input.Predictive)
+        {
+            var predicted = GameNavigation.Before(Player, CompanionBridge.Controls.SessionId, input.Direction,
+                CompanionBridge.Controls.Generation);
+            Player.controlLeft = predicted.Direction < 0;
+            Player.controlRight = predicted.Direction > 0;
+            Player.controlJump = predicted.Jump;
+            Player.controlDown = false;
+            Player.controlUp = false;
+            return;
+        }
+        GameNavigation.Cancel();
+        Player.controlLeft = input.Direction < 0;
+        Player.controlRight = input.Direction > 0;
+        // Verified against 2026.08.3.0 Player.Update: this hook precedes JumpMovement,
+        // with no intervening controlJump write. PreUpdateMovement is too late.
+        // Legacy move_right and manual P retain their original human jump behavior.
+        if (input.OverrideJump)
+        {
+            Player.controlJump = input.Jump;
+            Player.controlDown = false; // Do not drop through one-way platforms.
+        }
+    }
+
+    public override void PostUpdate()
+    {
+        if (CanControl && CompanionBridge.Controls.Mode == ControlMode.External
+            && CompanionBridge.Controls.Input.Predictive) GameNavigation.After(Player);
     }
 }

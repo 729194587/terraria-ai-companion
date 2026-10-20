@@ -5,6 +5,7 @@ using MonoMod.Cil;
 using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
+using CompanionBridge.Motion;
 
 namespace CompanionBridge.Common.Systems;
 
@@ -68,7 +69,9 @@ public sealed class CompanionSystem : ModSystem
         // Invalidate the old controller on transition; allow fresh read-only sessions in menus/death.
         if (_wasCanControl && !canControl) CompanionBridge.Server?.Disconnect();
         _wasCanControl = canControl;
-        CompanionBridge.Controls.Update(canControl, Stopwatch.GetTimestamp(), ReadSnapshot());
+        var snapshot = ReadSnapshot();
+        CompanionBridge.Controls.Update(canControl, Stopwatch.GetTimestamp(), snapshot,
+            snapshot.InWorld ? TerrainReader.Read(Main.LocalPlayer) : null, GameNavigation.Controller.Snapshot);
         var mode = CompanionBridge.Controls.Mode;
         if (mode != _lastMode)
         {

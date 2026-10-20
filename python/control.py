@@ -44,9 +44,10 @@ class Bridge:
             raise BridgeError("Response must be a JSON object")
         return value
 
-    def command(self, cmd):
+    def command(self, cmd, **parameters):
         self.request_id += 1
         request = {"v": 1, "id": self.request_id, "cmd": cmd}
+        request.update(parameters)
         try:
             self.sock.sendall((json.dumps(request) + "\n").encode("utf-8"))
             reply = self._read()
@@ -89,6 +90,28 @@ class Bridge:
             raise BridgeError("Missing game state in response")
         return reply
 
+    def get_terrain(self):
+        reply = self.command("get_terrain")
+        if reply.get("status") != "terrain" or not isinstance(reply.get("terrain"), dict):
+            raise BridgeError("Missing terrain in response (requires CompanionBridge 0.1.6+)")
+        return reply
+
+    def input(self, direction, jump=False):
+        if type(direction) is not int or direction not in (-1, 0, 1) or type(jump) is not bool:
+            raise ValueError("input requires direction=-1/0/1 and boolean jump")
+        return self.command("input", direction=direction, jump=jump)
+
+    def get_navigation(self):
+        reply = self.command("get_navigation")
+        if reply.get("status") != "navigation" or not isinstance(reply.get("navigation"), dict):
+            raise BridgeError("Missing navigation feedback (requires CompanionBridge 0.1.8+)")
+        return reply
+
+    def terrain_step(self, direction):
+        if type(direction) is not int or direction not in (-1, 1):
+            raise ValueError("terrain_step requires direction=-1/1")
+        return self.command("terrain_step", direction=direction)
+
     def close(self):
         try:
             self.reader.close()
@@ -104,7 +127,7 @@ class Bridge:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("move_right", "stop", "get_state"))
+    parser.add_argument("command", choices=("move_right", "stop", "get_state", "get_terrain"))
     parser.add_argument("--seconds", type=float, default=5.0, help="move duration, 0 < seconds <= 60")
     parser.add_argument("--port", type=int, default=18777)
     parser.add_argument("--timeout", type=float, default=2.0, help="socket timeout in seconds (default: 2)")
@@ -118,16 +141,18 @@ def main(argv=None):
     try:
         with Bridge(args.port, timeout=args.timeout) as bridge:
             print(f"Connected: instance={bridge.hello.get('instance')}, lease={bridge.hello.get('lease_ms')}ms",
-                  file=sys.stderr if args.command == "get_state" else sys.stdout, flush=True)
+                  file=sys.stderr if args.command in ("get_state", "get_terrain") else sys.stdout, flush=True)
             if args.command == "move_right":
                 bridge.move_right(args.seconds)
             elif args.command == "get_state":
                 print(json.dumps(bridge.get_state(), ensure_ascii=False, indent=2), flush=True)
+            elif args.command == "get_terrain":
+                print(json.dumps(bridge.get_terrain(), ensure_ascii=False, indent=2), flush=True)
             else:
                 print(bridge.command("stop"), flush=True)
         return 0
     except KeyboardInterrupt:
-        print("Interrupted; connection closed." if args.command == "get_state"
+        print("Interrupted; connection closed." if args.command in ("get_state", "get_terrain")
               else "Interrupted; stop attempted and connection closed.", file=sys.stderr)
         return 130
     except (OSError, BridgeError, ValueError) as error:

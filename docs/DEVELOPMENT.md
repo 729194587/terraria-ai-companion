@@ -29,10 +29,13 @@ CompanionBridge/
   CompanionBridge.cs              # 注册 P、启动/停止 TCP 服务
   ControlState.cs                 # 控制模式、请求队列和租约，无 Terraria 引用
   TcpControlServer.cs             # loopback TCP、JSON Lines 和异步回执
+  TerrainSnapshot.cs              # 纯数据及可离线测试的碰撞分类
+  Common/Systems/TerrainReader.cs  # 游戏线程读取局部 Tile
   Common/Players/CompanionPlayer.cs # 晚期输入、焦点日志、进入世界/死亡清理
   Common/Systems/CompanionSystem.cs # 实验更新入口、失焦暂停补丁、休眠恢复、离开世界清理
   Localization/*.hjson             # 快捷键中英文名称
 python/control.py                 # 标准库命令行客户端
+python/terrain_walk.py            # 有限状态的局部规则运动实验
 tests/                            # 实际 IPC 源码及 Python 的离线测试
 ```
 
@@ -69,7 +72,7 @@ M1.0 与 M0 建议的区别来自范围收缩：M0 考虑失焦运行，M1.0 只
 
 ## 构建、加载与调试
 
-复现命令见 [README](../README.md#构建和测试)。`-build` 指向本项目的 `CompanionBridge` 目录，内部编译器无需 SDK；当前 M1.4 构建输出隔离到 `.local/m14-build`，退出 B 后再复制包到 `.local/m12-b/Mods`。不覆盖角色、世界或 Mod 列表。M1.0/M1.1 旧测试目录为 `.local/tmodloader`。
+复现命令见 [README](../README.md#构建和测试)。`-build` 指向本项目的 `CompanionBridge` 目录，内部编译器无需 SDK；当前 M1.5 构建输出隔离到 `.local/m15-build`，退出 B 后再复制包到 `.local/m12-b/Mods`。不覆盖角色、世界或 Mod 列表。M1.0/M1.1 旧测试目录为 `.local/tmodloader`。
 
 本次实际命令退出码为 0，输出：
 
@@ -81,13 +84,13 @@ Compilation finished with 0 errors and 0 warnings
 Packaging: CompanionBridge
 ```
 
-当前构建产物位于 `.local/m14-build/Mods/CompanionBridge.tmod`（0.1.5）。修改源码后重新构建，退出 Bridge 客户端后复制并重新启动，避免旧程序集或文件占用；M1.4 尚未复制到 B，不覆盖正在使用的包和存档。
+当前构建产物位于 `.local/m15-build/Mods/CompanionBridge.tmod`（0.1.7，斜坡修复包）。修改源码后重新构建，退出 Bridge 客户端后复制并重新启动，避免旧程序集或文件占用；本次 0.1.7 修复包尚未复制到 B 或旧单人配置，不覆盖正在使用的包和存档。
 
 若需从游戏“创意工坊 → 开发 Mod”构建，可将 `CompanionBridge` 源码目录放入当前配置目录的 `ModSources/CompanionBridge` 后执行“构建并重新加载”；本轮仅验证了上面的命令行构建，未执行此菜单流程。
 
 `.csproj` 导入官方 `tMLMod.targets`，继承 `net8.0` / C# 12 和游戏引用。默认安装路径对应本机；其他机器可通过 `-p:TModLoaderDirectory=实际安装目录` 覆盖。需确保 SDK 的 dotnet 在 PATH 中，因为官方打包 target 调用 `dotnet`。此 IDE/SDK 路径尚未实测。
 
-游戏调试时 B 先只启用本 Mod，A 不加载。当前加载日志为 `CompanionBridge M1.4 loaded; TCP 127.0.0.1:18777; auto move is off.`；进入世界记录本地 player 索引和 netMode，手动切换和控制模式变化各有日志，不逐 tick 记录。运行日志可通过游戏的“打开日志”入口查看。共享安装下日志通常为 `tModLoader-Logs/client.log`、`client2.log` 等，不能假定 A/B 文件名固定；按 `Saves Are Located At` 和 Bridge 加载行区分实例。
+游戏调试时 B 先只启用本 Mod，A 不加载。当前加载日志为 `CompanionBridge M1.5 loaded; TCP 127.0.0.1:18777; auto move is off.`；进入世界记录本地 player 索引和 netMode，手动切换和控制模式变化各有日志，不逐 tick 记录。运行日志可通过游戏的“打开日志”入口查看。共享安装下日志通常为 `tModLoader-Logs/client.log`、`client2.log` 等，不能假定 A/B 文件名固定；按 `Saves Are Located At` 和 Bridge 加载行区分实例。
 
 ## 手动验收
 
@@ -343,6 +346,136 @@ B 第一轮于 `14:17:14.012` 开启，`14:17:15.594` 失焦时 X=`33887.0`，`1
 ### M1.4 提交前验证
 
 用户确认提交后，重新运行 Python 11 项离线测试及 C# 实际 IPC 源码测试，均通过；`git diff --check` 通过。提交范围仅含 M1.4，DeepSeek/Agent 接入已撤回。沿用已有 tModLoader 构建 0 错误、0 警告的记录；本次未重复构建未改动的 C#，未新增游戏实测，专项待验收状态保持不变。
+
+## M1.5：局部 Tile 感知与基础规则运动（当前 0.1.7）
+
+本轮开始时工作区干净，HEAD 为 `2bc15f0`（M1.4）；Python 只有 control.py，仓库无已撤销的 DeepSeek Agent 模块、测试或相关接入文档。本轮未恢复该实验，不接入外部模型、不设计通用寻路。本轮完成后等待 Review，尚未提交。
+
+### 跳跃 Hook 的依据
+
+只读检查本机 `2026.08.3.0 stable` 的 tModLoader.dll，使用安装自带 Mono.Cecil，未修改游戏程序集：
+
+```text
+Player.Update:
+  IL_09bf ResetControls
+  IL_1010 PlayerLoader.SetControls（仍受焦点路径限制）
+  ...
+  IL_4649 PlayerLoader.PostUpdateRunSpeeds
+  IL_464f HorizontalMovement
+  IL_4862 UpdateControlHolds
+  IL_486f JumpMovement
+  ...
+  IL_8232 PlayerLoader.PreUpdateMovement
+```
+
+检查了两次运动处理之间的指令，未写入 controlJump；JumpMovement 内读取 controlJump 和 releaseJump，并自行更新 releaseJump。普通步行因而可以在已使用的 PostUpdateRunSpeeds 中设置跳跃输入，再由原生跳跃逻辑处理；PreUpdateMovement 已在跳跃之后，不适合注入这一帧的跳跃。没有强制写 jump、releaseJump、位置或速度，没有新增跳跃 IL 补丁。坐骑、倒置重力、钩爪等不在规则支持范围。Hook 语义可参照官方 [ModPlayer](https://docs.tmodloader.net/docs/stable/class_mod_player.html)，上述精确顺序来自本机 DLL，仍需实际游戏回归。
+
+### 地形读取与分类
+
+TerrainReader 仅在现有 On_Main.DoUpdate 游戏线程内运行，与原 PlayerSnapshot 同一次更新采样。以玩家中心 Tile X 为基准左右各 22 格，脚底 Tile Y 上方 17 格、下方 11 格，共 45×29 格；多留的垂直区域用于起跳后继续观察原落地高度。只复制字符串行和数值；网络任务不访问 Main.tile 或 Player，沿用原队列和 writer。窗口固定有界，JSON 未超出 Python 原 4096 字节响应限制；不读取全世界，不缓存旧世界数据。
+
+先用 WorldGen.InWorld 检查边界；多人客户端再用 Main.sectionManager.TileLoaded 检查该 Tile 是否实际加载，未知返回 ?。分类依据本机 Collision.TileCollision 的 active/inActive、tileSolid、tileSolidTop、frameY 条件，以及官方 [Tile 文档](https://docs.tmodloader.net/docs/stable/struct_tile.html) 的 HasTile / IsActuated / IsHalfBlock / Slope 语义。普通地面用 #；平台/家具顶面用 =：原生入口接受 tileSolid 或 (tileSolidTop 且 frameY==0)，因此 tileSolid=true 的平台样式即使 frameY 非零也保留支撑，只有 tileSolid=false 的家具非顶帧不提供支撑；半砖 h 的表面在 Tile Y×16+8；四种坡形现按原生 Slope 值编码为 1–4，倾斜平台为 a/b；旧版不区分方向的 s 会提示更新游戏包。具体坡形与规则见后面的斜坡修复记录。致动器虚化方块不碰撞；墙与非实心装饰不当作地面。
+
+液体、TouchDamageImmediate/Hot/Bleeding/DestroyTile 以及 Boulders 集合标记为 !；自定义 Mod Tile 标记 ?，不猜测自定义碰撞行为。它不是完整危险检测器，不观察机关、敌人或 Tile 动态未来状态。grounded 结合上次垂直速度、脚底像素与 #/h/= 支撑面判断；supported 限定普通 20×42、正常重力、非坐骑/钩爪/湿身/石化等状态，并不声明游戏中的任意行动安全。
+
+### 协议及输入兼容
+
+新增 get_terrain，status 为 terrain，同时返回原 state 和 terrain；terrain 的字段/符号见 README。无世界时回 not_ready，不提供上个世界快照，原 get_state 菜单行为不变。新增 input 必须包含 direction（-1/0/1 整数）和 jump（JSON 布尔值）；旧命令及响应字段不变，null terrain 不写入旧响应。
+
+ControlState 仍按接收时间计算 750ms 租约，不让排队的旧跳跃获得新期限。input 续租并覆盖方向/跳跃；跳跃松开也是显式输入值，玩家控制层仅在有效控制期间写入。新模式清除 controlDown，避免平台下穿；旧 move_right 和 P 手动模式不覆盖真人跳跃。input(0,false) 仍属于外部租约模式，stop 或到期才退出。查询不续租、不抢手动模式，P 仍优先断开原会话。现有失焦暂停绕过/休眠只受有效控制模式约束，查询自身不启动模拟。
+
+### Python 规则与终止条件
+
+terrain_walk.py 只维持一个连接和指定方向。每个约 100ms 周期读取新快照、验证普通运动范围、重新判断，再发一次 input。250ms 套接字超时；观察迟到或单轮耗时过长均结束，不用过时观察发起下一动作。默认 20 秒，CLI 上限 60 秒，deadline 在观察后和每轮重新检查。没有模型调用、异步计划、后台行为线程或自动重连。
+
+前方 17 个列样本（约 16 格）逐列检查：允许步行地面最多下落 1 格；孤立低障碍高不超过 2 格、宽不超过 2 格，后方确认 4 格原高度平地；连续低台阶可将顶面作为落地位置，要求高度不超过 2 格、至少 4 格同高顶面且至多一个半砖过渡。多个分离障碍仍拒绝。平台仅作为从上落下的支撑，穿过平台侧面/从下上升不视为撞墙。跳跃前检查额外 80 像素上方净空，接近 40 像素以内才起跳；持跳 200ms 后松开。不估算精确物理轨迹、不跨坑；连接平顺的地面坡/平台楼梯允许步行，其他低坡可作有限跳跃候选，不承诺所有低障碍都能越过。
+
+跳跃最多尝试一次；400ms 未观测离地、1.8 秒未完成、落地时身体尚未越过障碍则停止。1 秒前进不足 4 像素也停止。运动中掉血、死亡、异常速度（横速超过 4.1 像素/tick）、缺字段、危险/未知地形或窗口不足均结束。正常规则停止/Ctrl+C 在已成功取得输入控制时尽力 stop，finally 关闭会话；输入拒绝、失联或手动模式时不追加 stop、不重连。stop 回执失败也关闭连接，由原 EOF/租约清理兜底。停止不等于瞬时归零速度，也不能取消已经发生的跳跃；线程挂起时清理只在恢复更新后执行。
+
+### 本轮验证与交付边界
+
+- tModLoader 内置 .NET 8 构建当前 0.1.7 成功，0 错误、0 警告，包在 `.local/m15-build/Mods/CompanionBridge.tmod`。开发时未自动部署或操作游戏界面/存档；后续用户已自行部署并执行首轮测试，见下节。
+- Python 全部 **60 项**测试通过（control 14 项 + terrain_walk 46 项）：原握手/状态/移动回归、真实大小地形响应、新 input 线格式、左右地面、平台/半砖、低障碍、低顶、高墙、深坑/小落差、危险/斜坡/未知、起跳/落地失败、无进展、掉血、迟到观察、P/拒绝不发 stop、失联、Ctrl+C、stop 失败关闭。
+- `git diff --check` 通过。
+- C# 直接编译实际纯逻辑和 TCP 源码，验证分类边界、严格 input 参数、游戏更新前不应用、租约/过期/手动优先/旧接口兼容、查询不续租、断线清队列，以及 localhost 上地形与状态同时序列化、新输入及断线释放。测试中的地形由测试构造，不加载 Terraria Tile 或验证真实碰撞。
+- 核心人工验收仍待逐项确认（已有首轮终端停止反馈，见下节）：平地持续移动、真实起跳和越障、平台落地/侧向通过、深坑前惯性停止、单人失焦/最小化、P/异常退出、多人同步。M1.4 的静止和运动状态实测只证明旧接口，不能代替本轮游戏结果。单客户端步骤见 README；通过后再对 A/B 同步进行复测。
+
+### 首轮地表测试反馈与检查边界修正
+
+用户运行右行 3 秒，输出 walk，随后 `no confirmed flat landing after obstacle`；用户观察为靠近树木时停止。仅凭这个输出不能断定树干被误判。Codex 随后只读 get_terrain，未发送移动、跳跃或 stop：停下时位置 `(33694.656,4358)`、速度零、生命 100/100；以脚底为基准前方索引 0–15 的地面同高，索引 16 高 8 像素，17–20 连续高 16 像素。这更符合升高地面，而非孤立小障碍；读到的是停止后的场景，不能替代停止瞬间日志。
+
+同时用离线场景复现一个独立边界问题：1–2 格宽低障碍刚进入 17 列检查范围末端时，旧规则因检查列表不足 4 格落地数据而提前停止，尽管 45 列实际窗口已经包含这些格子。现已利用同一真实窗口继续检查障碍末端及四个落地格，不放宽高度/宽度、未知地形或深坑规则。新增左右边缘障碍、边缘障碍后深坑、半砖接连续抬高地面回归；全部 Python 44 项通过。
+
+用保存的真实快照重放，修正后明确拒绝为 `obstacle wider than two tiles; raised ground is not a small obstacle`。当时规则仍不支持这种长台阶，不能宣称该场景已能通过；普通树干应遵循非实心标志，不额外按外观设障碍。本次只改 Python/测试/文档，无需重构建或重新部署 Mod。真实平地持续行走、起跳越障、坑前停止与联机观察仍待用户逐项反馈。
+
+### 截图反馈：低台阶与宽障碍混淆
+
+用户提供角色站在平地的截图，终端报告 obstacle wider than two tiles / obstacle too wide。第二次只读采样位置 `(33724.12,4358)`：前方 0–13 列平地，约 224 像素外先有半砖，随后连续地面升高 16 像素。规则把可站立低台阶整片视为必须跨过的孤立障碍，导致近处仍平坦时提前停止，属于规则缺陷。
+
+Python 现区分短障碍跨越和低台阶顶面落地：短障碍保持原宽度/落地区域限制；连续低台阶必须有至少四列同高顶面，高度上限 32 像素，并允许一个半砖过渡。接近后仅尝试一次起跳，落地同时验证身体已越过入口、脚底高度与预期顶面一致。高墙、深坑、未知区域、低顶、无进展、P/失联保护不变。
+
+新增左右台阶起跳/顶面落地、半砖过渡、台阶后深坑和台阶上低顶回归，Python 全部 48 项通过。两份保存的真实快照离线重放均返回 walk；这是停止位置决策修复的证据，不是实际跳跃通过。本次只改 Python/测试/文档，没有驱动角色或重部署游戏包，用户直接重跑脚本即可复测。
+
+### 后续地表反馈：真实斜坡触发停止
+
+用户再次运行右行 5 秒，输出 walk 后因通用的 slope/liquid/hazard/unknown 提示停止，并提供截图。只读快照位置 `(33937.176,4358)`：触发格为 `(2136,273)` 的 s，距玩家右缘约 218.8 像素，处于前方检查范围内。这次对应真实斜坡，而非树木或液体；当时未实现斜坡几何，因此保守停止符合当时限制，不把该反馈记为越障通过。也尚未证明此前低台阶已跳过。
+
+Python 提示现分开显示 slope / liquid or marked hazard / unknown terrain，并包含 Tile 坐标和离玩家包围盒的水平距离。新增一项诊断回归，本次规则测试 35 项通过；原控制 14 项保持此前通过（当前共 49 项）。本次没有改变通行规则、C# 或游戏包，无需重启客户端。测试跳跃可先平整跑道，避免前方约 16 格内包含斜坡；该版本尚未实现斜坡通行，后续修复见下节。
+
+### 斜坡修复：保留几何并区分步行、跳跃与斜顶（0.1.7）
+
+用户要求支持斜坡，以满足本轮自主移动目标。本机枚举核对为 SlopeDownLeft=1、SlopeDownRight=2、SlopeUpLeft=3、SlopeUpRight=4；官方 [Tile 文档](https://docs.tmodloader.net/docs/stable/struct_tile.html) 区分 TopSlope（1/2，底面实心）和 BottomSlope（3/4，顶面实心）。只读 Collision.SlopeCollision IL_04e3–IL_0514：坡 1 按玩家左缘减 Tile X 计算地面高度，坡 2 按 Tile X+16 减玩家右缘计算；天花板三角形分别使用相反的底边界。该核对不替代游戏实测。
+
+协议行字符保留四种普通坡形 1–4；斜平台使用 a/b，避免把平台的单向支撑误作实心侧壁。原查询/输入/租约字段不变。TerrainClassifier.SurfaceOffset 和 Python 脚底读取使用玩家实际水平重叠区计算坡面支撑，半砖保持 8 像素偏移，3/4 的上表面仍为平坦支撑。grounded 检查扩展到脚底上方一个 Tile，并允许已在原生 sloping 状态且非上升中的坡面接触，不写入位置或速度。
+
+Python 将相邻格的左右支撑边界按移动方向连接：地面坡/平台楼梯的入口、出口与相邻地面一致时返回 walk slope；陡侧的低坡仍检查落地/净空后作一次跳跃。斜顶保留三角形实体区域，净空判断使用实际身体重叠区，不再把空角一概当完整方块。旧 s 缺少朝向，仍拒绝猜测并提示 Bridge 0.1.7+；未知坡号、危险或未加载 Tile 仍停止。深坑、低顶、超时、无进展和 P 保护保持。
+
+保留原局部高度上限：相对脚底上搜 32 像素、下搜 16 像素，因此未承诺任意连续长坡或复杂地形。用已保存布局构造两种可能地面坡向的离线场景，均不再因通用 s 提前停止；旧快照本身没有坡向，这不是对真实坡向或实际越障的验证。
+
+验证：Python 全部 60 项（14 控制 + 46 规则）通过；C# 分类/原生脚边偏移/平台/租约/TCP 回归通过；tModLoader 0.1.7 构建 0 错误、0 警告；git diff --check 通过。新增测试包括左右上下坡、斜平台单向通行、身体部分覆盖的坡面、斜顶空角与实心部分、陡侧低坡跳跃候选，以及坡后深坑/高墙。没有真实游戏行走/跳跃验收，也没有自动复制运行中的包或提交代码。
+
+本次必须保存退出客户端后部署 `.local/m15-build/Mods/CompanionBridge.tmod`，重启核对版本 0.1.7，再运行原右行 5 秒命令。优先沿用户原地表路线测试，再测人工坡、斜平台与斜顶负例；记录 walk slope / 起跳 / landed / Stopped 的实际输出和游戏表现。
+
+### 连续坡面与远处障碍修正（Python，Bridge 仍为 0.1.7）
+
+实测中的提前停车有两个决策原因：17 列中的任何失败都在跳跃前直接抛出；各列支撑面又共用当前脚底高度，使连续坡面累计升降后越出局部搜索范围。现保留 17 列预判，按相邻支撑边界逐段更新高度，并沿实际 20px 脚底跨度衔接下坡入口；只有进入速度相关停车范围的失败才中止当前行走。范围预算覆盖 250ms RPC 加 100ms 循环、继续加速及制动，普通地面按加/减速度 0.1px/tick² 估算，速度封顶 4.1，另留 16px 余量，约 82–186px。它不是已验证的游戏制动保证，也不涵盖冰面、特殊装备、游戏停顿或完整 750ms 断发期限。
+
+跳跃先检查接触危险、当前动作走廊和原定落地区域，再执行原有离地/落地/超时反馈，不重建整段远处行走路线。两格高小障碍回到原地面的候选仍交由原跳跃检查，不把它放宽为可步行下落。深坑、未知 Tile、身体净空、平台单向性和半砖/斜坡轮廓保留；未增加跨窄深坑、复杂落点或寻路。
+
+停止信息增加类别，碰撞/缺支撑处带坐标或列、参考高度，近处停车带距离和预算。CLI 在释放控制后将最后失败快照、决策前 Walker 状态和最近 8 次决策保存至 `.local/terrain-walk-failure.json`；`--replay` 只重算一次地形决策，运行时中断只展示原因，不接 IPC。读写诊断文件不参与租约和手动控制生命周期。协议与 C# 源码本轮未变，已有 0.1.7 客户端无需重新部署即可测试 Python 修正。
+
+离线回归覆盖双向连续上下坡及身体跨列下降、远墙接近后停车、近障碍跳跃与远处变化隔离、高速停车范围、近处深坑/危险/落点变化，以及失败快照复算和写文件失败时仍释放控制。Python 68 项（控制 14、地形规则及循环 54）通过，C# 分类/租约/生命周期/localhost TCP 回归通过，0.1.7 构建 0 错误、0 警告。首次完整 IPC 测试受沙箱套接字权限限制，允许 localhost 后重跑通过。两个人工验收场景见 README；真实坡面通行、跳跃和停车惯性仍待游戏验收。未提交或推送。
+
+### TerraBlind 局部预测运动（0.1.8）
+
+暂停先前独立跳跃模型实验；未完成采样改动已保存到 `.local/paused-jump-research`，只读 IL 研究保留在 `.local/jump-research`，未将 `get_motion` 或该采样器并入本轮接口。此前 M1.5 规则修正保留。
+
+参考固定到 TerraBlind `26361f488da986ee8739dded76fabedfa04f6aa8`。README 明确声明 MIT，仓库未提供独立 LICENSE/版权头；保留原声明、作者 Stardust/GitHub Reisenbug、标准 MIT 文本及改造说明于 `CompanionBridge/ThirdParty/TerraBlind`，不改变本项目其他代码的授权范围。`PhysicsSimulator.cs` 的水平分支、跳跃/重力分离、轨迹迭代和原生碰撞调用被提取改造；`JumpExecutor` 的输入候选/落地反馈仅参考，不能直接复用其 PathPlanner/ReplaySystem 和从零速度补偿的假设。`PhysicsRecorder` 无界列表、`StateSpacePlanner` 的场/路径/挖放耦合均未引入；不依赖 TerraBlind 模组、DragonLens、HTTP 或模型服务。
+
+本机 Terraria 1.4.4.9 / tModLoader 2026.08.3.0，核对 DLL SHA-256 `FCC6A9624B12191BE4A15D714A3675440911FEB8C1D374642AB1FD686F0DA0A5`。官方同版本 [Player 补丁](https://github.com/tModLoader/tModLoader/blob/v2026.08.3.0/patches/tModLoader/Terraria/Player.cs.patch) 不包含全部未改动的原版逻辑，缺失部分用本机 Mono.Cecil 只读 IL 核对，未改游戏程序集：
+
+- `Player.Update`：PostUpdateRunSpeeds `IL_4649` → HorizontalMovement `IL_464f` → JumpMovement `IL_486f` → 重力 `IL_6115–6122` → SlopeDownMovement/StepDown/StepUp → DryCollision → SlopingCollision → PostUpdate `IL_863a`。在现有输入钩子读已完成修饰的实时参数，无需照搬上游静态 baked 缓存。
+- `HorizontalMovement`：普通主加速分支跳至 `IL_0f96`，保持上游 else-if；`IL_021b` 的限速只在 trackBoost 非零时执行，不用于普通跑步。基础上限参数 3、加速 0.08；达到上限后存在加速/摩擦交替，不强行把速度夹成 3。
+- `JumpMovement`：`IL_05b2–05d5` 起跳设 `vy=-5.01` 与完整 `jump=15`；`IL_03c7–0453` 续跳才减计数，松开置 jump=0 并允许下次起跳。适配上游模拟对起跳帧的预减计数，显式保留 releaseJump，满按候选为 16 次输入更新。重力每次更新都加 0.4。下落速度上限先初始化为 10，再于 `IL_020d–021a` 无条件加 0.01，输入钩子读取和实际限速使用 10.01。参数/装备/Buff 不符合基础条件则拒绝，不外推至额外跳跃。
+- 实际编译核对 `Collision.WalkDownSlope`、`StepDown`、`StepUp`、`TileCollision` 和 `SlopeCollision` 的 1.4.4.9 签名。预测调用前检查邻近 Tile 已加载且受支持，并保存/恢复碰撞共享标志；危险/液体/Mod Tile 和特殊移动地面不参与预测。支持斜坡/半砖/单向平台的原生几何，不代表集成效果已验收。
+
+落点余量不调用 `SolidCollision`：本机该函数只区分半砖、不检查坡号，会把三角形空角视为实心。余量净空复用 M1.5 的斜坡/半砖区间判定，左右扩展 4px 在脚底带允许同幅坡面高差；实际 20×42 身体及轨迹仍由原生碰撞检查。另核对预测用碰撞方法的直接静态字段写入，均落在已保存/恢复的标志中。
+
+新增 `terrain_step(direction=-1/1)` 进入现有外部租约模式，`get_navigation` 为不续租的纯查询；旧请求/响应及手动模式兼容。游戏线程先验证 12 帧步行和后续制动；步行不能通过时枚举 hold 1/4/8/12/16，最多预测 90 帧，选择安全的一个基础跳跃。平地执行移动前缀后滚动重算，浅下落等待支撑后重算；跳跃包含落地和减速。落脚区域比身体左右各宽 4px，主动跳跃不接受低于起点超过 16px 的落点。单次游戏端计算超过 50ms 则停；没有全局图或自动重试。
+
+控制状态增加仅用于撤销动作的代次：到期、stop、断线/生命周期或控制源切换后旧计划和旧成功结果均失效，覆盖“同一 Update 先到期、再接收新续租”的情况；读查询不改变代次或租约。新 Python 入口遇到 >250ms 循环停顿不再续租。网络线程仍只处理纯 C# 请求/DTO，所有原生 Tile/Player/Collision 调用在本地玩家游戏线程执行，多人客户端仍受原 whoAmI/netMode 隔离。
+
+每帧比较实际与预计状态：连续两次位置误差 >6px 或速度误差 >1.5px/tick、或一次位置误差 >16px 则失败；最终须离地过、恢复支撑、落点安全，实际两轴速度绝对值均 ≤0.1px/tick，稳定位置误差横向 ≤8px/纵向 ≤4px。公差尚未游戏标定；不靠单纯放大公差掩盖偏差。成功完成一次跳跃即停，持续平地行走则直到 Python 时限；查询返回的 `applied` 仍只表示输入意图已接收，`landed` 才是游戏线程实际反馈。
+
+源码推导与离线模拟：无碰撞满按升高约 98.07px（约 6.13 格），碰撞箱、净空、落脚余量与制动仍必须单独通过模拟；不可仅凭此高度判定越障。离线测试使用明确的矩形碰撞替身验证核心运动、输入执行和偏差停止，不能证明 Terraria 原生坡面/平台碰撞或真实联机同步。真实游戏误差及越障结果仍待测；短场景与输出文件见 README。
+
+本轮验证：Python 80 项（IPC 15、旧规则 54、新入口 11）通过；C# 真实 localhost 新旧协议、750ms 查询不续租、手动优先、同帧到期/续租撤销、旧结果隔离通过；运动测试覆盖左右低障碍闭环、持续平地、浅下落支撑、无落点/未知/危险、位置与速度偏差和未停稳不得报成功。0.1.8 构建 0 错误、0 警告，产物在 `.local/prediction-build/Mods`。构建与碰撞替身测试不等于游戏通过；未部署、未提交或推送。
+
+0.1.9 修订：用户首次运行 0.1.8 在第 0 帧被参数检查拒绝，实际报告 MaxFall=10.01；上述 IL 加法此前遗漏，基础模型误用了初始化值 10。现将有效上限修正为 10.01，并把同一参数检查提取为可离线测试的 IsBasic；保持 0.001 检查精度，不扩大容差。用户报告参数通过、其他限速仍拒绝、模拟下落封顶及既有运动回归通过，0.1.9 构建 0 错误、0 警告。尚未证明修订后真实运动通过。
+
+0.1.9 首次成功实测（用户终端日志）：session=1、generation=3，先返回 walk，首帧预计/实际位置 `(34552.95,4342)`、速度 `(0.08,0)` 一致；随后选择 holdFrames=12 的 jump，预计稳定落点 `(34823.582,4326)`。动作第 58 次更新报告 landed，实际稳定落点完全一致、maxError=0、预计与实际末速度均为 `(0,0)`，CLI 正常结束并输出报告路径。证明该次真实步行—预测起跳—稳定落地闭环完成，误差为当前采样阶段/浮点精度下游戏内报告值。未提供障碍尺寸和视觉核对，不将此记为所有低障碍、坡面、平台、P/失焦或多人同步通过；未提交或推送。
+
+0.1.9 双向障碍验收（用户实际观察及终端日志）：平地 session=2 运行 5 秒后因 runtime limit 正常结束，`interrupted` 是当前 CLI 对时限结束的状态标签，不是预测失败。右行 session=3/generation=7 从 walk 转 jump，起跳水平速度约 2.0、hold=8，54 次动作更新后稳定落点 `(33993.664,4342)`；左行 session=4/generation=9 起跳水平速度约 -2.92、hold=4，58 次更新后稳定落点 `(33858.125,4342)`。两次落点与预测一致、maxError=0、末速度两轴为 0；用户明确确认都跳过障碍并随后停止。该场景双向基础越障通过，不推定障碍精确尺寸或其他地形通过；起跳条件不同，不能用 hold 长短单独比较左右模型优劣。一次跳跃完成后结束符合当前实验范围，不修改为自动连续跳跃。P、失焦、危险负例及多人同步仍待专项验收；未提交或推送。
 
 ## 已知边界
 

@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using CompanionBridge;
+using CompanionBridge.Motion;
 
 public static class BridgeOfflineTests
 {
@@ -74,8 +75,88 @@ public static class BridgeOfflineTests
             Check(rejected, "Invalid protocol must be rejected");
         }
         StateTests();
+        TerrainTests();
         NetworkTests();
-        Console.WriteLine("PASS: state snapshots, control lease, ownership, lifecycle, protocol, real TCP framing/disconnect/unload");
+        Console.WriteLine("PASS: state/terrain snapshots, tile classification, typed input, control lease, ownership, lifecycle, protocol, real TCP framing/disconnect/unload");
+    }
+
+    private static void TerrainTests()
+    {
+        char Classify(bool active = true, bool actuated = false, bool solid = true,
+            bool platform = false, int frame = 0, bool half = false, int slope = 0,
+            bool liquid = false, bool harmful = false, bool loaded = true) =>
+            TerrainClassifier.Classify(loaded, active, actuated, solid, platform, frame, half, slope, liquid, harmful);
+        Check(Classify() == '#', "Ordinary full block");
+        Check(Classify(active: false) == '.' && Classify(actuated: true) == '.', "Empty/actuated never collide");
+        Check(Classify(solid: false) == '.', "Decorations are not walls");
+        Check(Classify(platform: true) == '=' && Classify(solid: false, platform: true) == '=', "One-way platforms");
+        Check(Classify(platform: true, frame: 18) == '=', "Solid-top platform styles retain support at nonzero frameY");
+        Check(Classify(solid: false, platform: true, frame: 18) == '.', "Furniture non-top frames have no support");
+        Check(Classify(half: true) == 'h', "Half block remains distinct");
+        for (int slope = 1; slope <= 4; slope++)
+            Check(Classify(slope: slope) == (char)('0' + slope), "All four slope orientations preserved");
+        Check(Classify(platform: true, slope: 1) == 'a' && Classify(platform: true, slope: 2) == 'b',
+            "Sloped platforms remain one-way stairs");
+        Check(Classify(slope: 5) == '?' && Classify(platform: true, slope: 3) == '?', "Unsupported slope fails closed");
+        Check(TerrainClassifier.SurfaceOffset('1', 4, 12) == 4
+            && TerrainClassifier.SurfaceOffset('2', 4, 12) == 4
+            && TerrainClassifier.SurfaceOffset('a', 4, 12) == 4
+            && TerrainClassifier.SurfaceOffset('b', 4, 12) == 4, "Footprint edges select native floor height");
+        Check(TerrainClassifier.SurfaceOffset('1', -4, 20) == 0
+            && TerrainClassifier.SurfaceOffset('2', -4, 20) == 0
+            && TerrainClassifier.SurfaceOffset('3', 4, 12) == 0
+            && TerrainClassifier.SurfaceOffset('4', 4, 12) == 0
+            && float.IsNaN(TerrainClassifier.SurfaceOffset('?', 0, 16)), "Partial footprint clamps and ceiling tops");
+        Check(Classify(liquid: true, active: false) == '!' && Classify(harmful: true) == '!'
+            && Classify(loaded: false) == '?', "Hazards and unloaded terrain are not air");
+
+        var request = ControlState.Parse("{\"v\":1,\"id\":1,\"cmd\":\"input\",\"direction\":-1,\"jump\":true}");
+        Check(request.Direction == -1 && request.Jump, "Typed input parses");
+        foreach (string extra in new[] { "", ",\"direction\":2,\"jump\":false", ",\"direction\":1,\"jump\":1",
+            ",\"direction\":0", ",\"direction\":true,\"jump\":false" })
+        {
+            bool rejected = false;
+            try { ControlState.Parse("{\"v\":1,\"id\":1,\"cmd\":\"input\"" + extra + "}"); }
+            catch (Exception e) when (e is FormatException or InvalidOperationException) { rejected = true; }
+            Check(rejected, "Malformed input rejected");
+        }
+        var state = new ControlState();
+        int session = state.BeginSession();
+        var applied = state.Enqueue(session, request, 0);
+        Check(!applied.IsCompleted && !state.IsMoving, "Input cannot apply on socket thread");
+        state.Update(true, 0);
+        Check(applied.Result.Ok && state.Input == new ControlInput(-1, true, true), "Input applies direction and jump");
+        var terrain = new TerrainSnapshot(10, 20, 16, new[] { ".#=hs!?" }, 20, 42, true, true);
+        var query = state.Enqueue(session, new ControlRequest(2, "get_terrain"), Ms(500));
+        Check(!query.IsCompleted, "Terrain waits for game update");
+        state.Update(true, Ms(500), PlayerSnapshot.NotInWorld, terrain);
+        Check(query.Result.Ok && query.Result.Terrain == terrain, "Terrain snapshot crosses queue as data");
+        state.Update(true, Ms(750));
+        Check(!state.IsMoving, "Terrain query must not renew jump/horizontal lease");
+        state.Enqueue(session, new ControlRequest(3, "input", 0, false), Ms(800));
+        state.Update(true, Ms(800));
+        Check(state.Input == new ControlInput(0, false, true), "Explicit input releases jump and direction");
+        state.Enqueue(session, new ControlRequest(4, "move_right"), Ms(900));
+        state.Update(true, Ms(900));
+        Check(state.Input == new ControlInput(1, false, false), "Legacy move_right preserves human jump");
+        state.ToggleManual(Ms(1000)); // External -> none, then none -> manual.
+        state.ToggleManual(Ms(1000));
+        var denied = state.Enqueue(session, new ControlRequest(5, "input", -1, true), Ms(1000));
+        state.Update(true, Ms(1000));
+        Check(!denied.Result.Ok && denied.Result.Status == "manual_active"
+            && !state.Input.OverrideJump, "Typed input cannot steal manual control");
+        state.EndSession(session);
+        state.Reset();
+        session = state.BeginSession();
+        state.Enqueue(session, new ControlRequest(1, "input", 1, true), Ms(1100));
+        state.Update(true, Ms(1900));
+        Check(!state.IsMoving, "Old queued jump must not activate after lease expiry");
+        var missing = state.Enqueue(session, new ControlRequest(2, "get_terrain"), Ms(2000));
+        state.Update(false, Ms(2000));
+        Check(!missing.Result.Ok && missing.Result.Status == "not_ready", "No world has no terrain");
+        var cleared = state.Enqueue(session, new ControlRequest(3, "get_terrain"), Ms(2000));
+        state.EndSession(session);
+        Check(!cleared.Result.Ok, "Disconnect clears queued terrain reads");
     }
 
     private static void StateTests()
@@ -178,9 +259,53 @@ public static class BridgeOfflineTests
                 && value.GetProperty("life").ValueKind == JsonValueKind.Null
                 && value.GetProperty("lifeMax").ValueKind == JsonValueKind.Null, "Menu fields are explicit nulls");
         }
-        byte[] move = Encoding.UTF8.GetBytes("{\"v\":1,\"id\":5,\"cmd\":\"move_right\"}\n");
+        client.GetStream().Write(Encoding.UTF8.GetBytes("{\"v\":1,\"id\":5,\"cmd\":\"get_terrain\"}\n"));
+        Task<string> readTerrain = reader.ReadLineAsync();
+        timer.Restart();
+        var terrain = new TerrainSnapshot(100, 200, 16, new[] { ".#=hs!?" }, 20, 42, true, true);
+        while (!readTerrain.IsCompleted && timer.ElapsedMilliseconds < 2000)
+        {
+            state.Update(true, Stopwatch.GetTimestamp(), snapshot, terrain);
+            Thread.Sleep(5);
+        }
+        Check(readTerrain.IsCompleted, "Terrain TCP reply completes");
+        using (var json = JsonDocument.Parse(readTerrain.Result))
+        {
+            var root = json.RootElement;
+            Check(root.GetProperty("status").GetString() == "terrain"
+                && root.GetProperty("terrain").GetProperty("rows")[0].GetString() == ".#=hs!?"
+                && root.GetProperty("state").GetProperty("life").GetInt32() == 75,
+                "Terrain and own state serialized in the same reply");
+        }
+        byte[] move = Encoding.UTF8.GetBytes("{\"v\":1,\"id\":6,\"cmd\":\"input\",\"direction\":-1,\"jump\":true}\n");
         client.GetStream().Write(move);
         PumpUntil(() => state.IsMoving, state);
+        Check(state.Input == new ControlInput(-1, true, true), "TCP typed input applied by game pump");
+        Check(reader.ReadLine().Contains("applied"), "Typed input TCP acknowledgement");
+        client.GetStream().Write(Encoding.UTF8.GetBytes("{\"v\":1,\"id\":7,\"cmd\":\"terrain_step\",\"direction\":1}\n"));
+        var predictiveAck = reader.ReadLineAsync();
+        PumpUntil(() => predictiveAck.IsCompleted, state);
+        Check(predictiveAck.Result.Contains("applied") && state.Input.Predictive,
+            "Predictive action enters existing lease over TCP");
+        client.GetStream().Write(Encoding.UTF8.GetBytes("{\"v\":1,\"id\":8,\"cmd\":\"get_navigation\"}\n"));
+        var readNavigation = reader.ReadLineAsync();
+        Check(!readNavigation.Wait(30), "Socket cannot calculate/read navigation without game update");
+        timer.Restart();
+        var navigation = new NavigationSnapshot(state.SessionId, "landed", "jump", "fixture", 40, 8,
+            new(1600, 1000), new(1601, 1000), 1, Generation: state.Generation);
+        while (!readNavigation.IsCompleted && timer.ElapsedMilliseconds < 2000)
+        {
+            state.Update(true, Stopwatch.GetTimestamp(), snapshot, terrain, navigation);
+            Thread.Sleep(5);
+        }
+        Check(readNavigation.IsCompleted, "Navigation reply completes after game update");
+        using (var json = JsonDocument.Parse(readNavigation.Result))
+        {
+            var nav = json.RootElement.GetProperty("navigation");
+            Check(nav.GetProperty("status").GetString() == "landed"
+                && nav.GetProperty("actualLanding").GetProperty("x").GetSingle() == 1601,
+                "Navigation result and actual landing serialized over TCP");
+        }
         client.Close();
         PumpUntil(() => !state.IsMoving, state);
         // Disposal must release the listening port.
