@@ -78,6 +78,7 @@ public static class BridgeOfflineTests
         TerrainTests();
         GuardedControlTests();
         NetworkTests();
+        ChatTests();
         Console.WriteLine("PASS: state/terrain snapshots, tile classification, typed input, control lease, ownership, lifecycle, protocol, real TCP framing/disconnect/unload");
     }
 
@@ -236,6 +237,55 @@ public static class BridgeOfflineTests
         var move = state.Enqueue(session, new ControlRequest(2, "move_right"), Ms(2200));
         state.Update(false, Ms(2200));
         Check(!move.Result.Ok && move.Result.Status == "not_ready", "Menu still rejects movement");
+    }
+
+    private static void ChatTests()
+    {
+        var state = new ControlState();
+        int session = state.BeginSession();
+        state.ObserveChat("first");
+        var request = ControlState.Parse("{\"v\":1,\"id\":1,\"cmd\":\"send_chat\",\"text\":\"hello\",\"chatId\":\"first\"}");
+        var sent = state.Enqueue(session, request, 0);
+        int sends = 0;
+        var snapshot = new PlayerSnapshot(true, new(1, 2), new(0, 0), 80, 100);
+        Check(!sent.IsCompleted, "Socket must never directly send chat");
+        state.ObserveChat("newer");
+        state.Update(true, 0, snapshot, sendChat: text => sends++);
+        Check(sent.Result.Status == "superseded" && sends == 0, "New chat invalidates queued old final reply");
+        sent = state.Enqueue(session, request with { Id = 2, ChatId = "newer" }, 0);
+        state.Update(true, 0, snapshot, sendChat: text => sends++);
+        Check(sent.Result.Ok && sends == 1 && state.Mode == ControlMode.None, "Game-thread chat does not acquire movement lease");
+        sent = state.Enqueue(session, request with { Id = 3, ChatId = "newer" }, 0);
+        state.EndSession(session);
+        state.Update(true, 0, snapshot, sendChat: text => sends++);
+        Check(!sent.Result.Ok && sends == 1, "Disconnect revokes pending chat too");
+        using var server = new TcpControlServer(state, 0);
+        server.Start();
+        using var client = new TcpClient();
+        client.Connect("127.0.0.1", server.Port);
+        client.ReceiveTimeout = 2000;
+        using var reader = new StreamReader(client.GetStream(), Encoding.UTF8, false, 1024, true);
+        Check(reader.ReadLine().Contains("chat_events"), "Chat handshake capability");
+        server.PublishChat(1, "AI", "self", 1);
+        server.PublishChat(255, "server", "system", 1);
+        server.PublishChat(0, "human", "first", 1);
+        using var first = JsonDocument.Parse(reader.ReadLine());
+        Check(first.RootElement.GetProperty("text").GetString() == "first"
+            && first.RootElement.GetProperty("senderId").GetInt32() == 0,
+            "Author filter excludes self/system and pushes human event without request");
+        string id = first.RootElement.GetProperty("eventId").GetString();
+        // An unresolved game-thread reply must not hold up the event writer.
+        client.GetStream().Write(Encoding.UTF8.GetBytes("{\"v\":1,\"id\":1,\"cmd\":\"get_state\"}\n"));
+        server.PublishChat(0, "human", "second", 1);
+        using var second = JsonDocument.Parse(reader.ReadLine());
+        Check(second.RootElement.GetProperty("text").GetString() == "second"
+            && second.RootElement.GetProperty("eventId").GetString() != id,
+            "Unique events bypass unresolved replies on the same connection");
+        var reply = reader.ReadLineAsync();
+        PumpUntil(() => reply.IsCompleted, state);
+        Check(JsonDocument.Parse(reply.Result).RootElement.GetProperty("id").GetInt32() == 1,
+            "Event and response frames remain valid JSON Lines");
+        Console.WriteLine("PASS: author filtering, unsolicited chat, unique events, game-thread send, stale reply rejection and disconnect revocation");
     }
 
     private static void NetworkTests()

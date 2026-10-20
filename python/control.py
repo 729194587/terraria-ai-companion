@@ -1,5 +1,7 @@
 """Minimal CompanionBridge client. Python 3.10+, standard library only."""
 import argparse
+from concurrent.futures import Future, TimeoutError as FutureTimeout
+import threading
 import json
 import math
 import socket
@@ -12,7 +14,14 @@ class BridgeError(Exception):
 
 
 class Bridge:
-    def __init__(self, port=18777, timeout=2.0):
+    def __init__(self, port=18777, timeout=2.0, on_event=None):
+        self.timeout = timeout
+        self.on_event = on_event
+        self._lock = threading.Lock()
+        self._pending = {}
+        self._seen = set()
+        self._failure = None
+        self._receiver = None
         try:
             self.sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
         except TimeoutError as error:
@@ -33,6 +42,46 @@ class Bridge:
             self.close()
             raise
 
+        self.sock.settimeout(None)  # Idle event reception has no request deadline.
+        self._receiver = threading.Thread(target=self._receive, daemon=True, name="bridge-receive")
+        self._receiver.start()
+
+    def _receive(self):
+        try:
+            while True:
+                frame = self._read()
+                if frame.get("v") != 1:
+                    raise BridgeError("Response version mismatch")
+                if frame.get("type") == "chat_message":
+                    event_id = frame.get("eventId")
+                    if (not isinstance(event_id, str) or not event_id
+                            or type(frame.get("senderId")) is not int
+                            or not 0 <= frame["senderId"] < 255
+                            or not isinstance(frame.get("senderName"), str)
+                            or not isinstance(frame.get("text"), str)
+                            or type(frame.get("isSelf")) is not bool):
+                        raise BridgeError("Malformed chat event")
+                    if event_id not in self._seen:
+                        self._seen.add(event_id)
+                        if not frame["isSelf"] and self.on_event:
+                            # Callback must only dispatch, never perform inference here.
+                            self.on_event(frame)
+                    continue
+                with self._lock:
+                    future = self._pending.pop(frame.get("id"), None)
+                if future is None:
+                    raise BridgeError("Response version/id mismatch")
+                future.set_result(frame)
+        except (OSError, ValueError, BridgeError) as error:
+            self._fail(BridgeError(str(error)))
+
+    def _fail(self, error):
+        with self._lock:
+            self._failure = error
+            pending, self._pending = self._pending, {}
+        for future in pending.values():
+            future.set_exception(error)
+
     def _read(self):
         line = self.reader.readline(4097)
         if not line:
@@ -45,18 +94,24 @@ class Bridge:
         return value
 
     def command(self, cmd, **parameters):
-        self.request_id += 1
-        request = {"v": 1, "id": self.request_id, "cmd": cmd}
-        request.update(parameters)
+        future = Future()
         try:
-            self.sock.sendall((json.dumps(request) + "\n").encode("utf-8"))
-            reply = self._read()
-        except TimeoutError as error:
+            with self._lock:
+                if self._failure:
+                    raise self._failure
+                self.request_id += 1
+                request = {"v": 1, "id": self.request_id, "cmd": cmd, **parameters}
+                self._pending[self.request_id] = future
+                self.sock.sendall((json.dumps(request, ensure_ascii=False) + "\n").encode("utf-8"))
+            reply = future.result(timeout=self.timeout)
+        except FutureTimeout as error:
+            self.close()  # No reuse after an ambiguous timeout/late acknowledgement.
             raise BridgeError(f"Request timeout for {cmd}: Bridge handshake completed, but no reply received; "
                               "the game update thread may be paused or stalled. Refocus and retry, "
                               "or increase --timeout") from error
-        if reply.get("v") != 1 or reply.get("id") != self.request_id:
-            raise BridgeError("Response version/id mismatch")
+        except OSError as error:
+            self.close()
+            raise BridgeError(str(error)) from error
         if reply.get("ok") is not True:
             raise BridgeError(f"Command rejected: {reply.get('status', 'unknown')}")
         return reply
@@ -113,6 +168,13 @@ class Bridge:
         return self.command("terrain_step", direction=direction)
 
     def close(self):
+        self._fail(BridgeError("Bridge closed"))
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        if self._receiver and threading.current_thread() is not self._receiver:
+            self._receiver.join(timeout=1)
         try:
             self.reader.close()
         finally:

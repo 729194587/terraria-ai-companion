@@ -23,6 +23,24 @@ internal sealed class TcpControlServer : IDisposable
     private Task _acceptTask, _clientTask;
     private CancellationTokenSource _clientCancellation;
     private int _session;
+    private Channel<object> _events;
+    private long _chatSequence;
+
+    internal void PublishChat(int sender, string name, string text, int localPlayer)
+    {
+        // Author 255 is system text; local-player echoes must never trigger the Agent.
+        if (sender < 0 || sender >= 255 || sender == localPlayer || string.IsNullOrWhiteSpace(text)) return;
+        lock (_gate)
+        {
+            if (_events == null || _clientCancellation == null) return;
+            string id = _instance + ":" + Interlocked.Increment(ref _chatSequence);
+            _state.ObserveChat(id);
+            if (!_events.Writer.TryWrite(new { v = 1, type = "chat_message", eventId = id,
+                senderId = sender, senderName = name, text,
+                receivedAt = DateTimeOffset.UtcNow.ToString("O"), isSelf = false }))
+                Disconnect(); // Explicit failure instead of silently losing messages.
+        }
+    }
     internal int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
     internal TcpControlServer(ControlState state, int port = DefaultPort)
@@ -52,9 +70,11 @@ internal sealed class TcpControlServer : IDisposable
                     if (_clientCancellation != null) { client.Dispose(); continue; }
                     _session = _state.BeginSession();
                     _clientCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
+                    _events = Channel.CreateBounded<object>(ControlState.Capacity);
                     int session = _session;
                     var cancellation = _clientCancellation;
-                    _clientTask = Task.Run(() => Serve(client, session, cancellation));
+                    var events = _events;
+                    _clientTask = Task.Run(() => Serve(client, session, cancellation, events));
                 }
             }
         }
@@ -63,18 +83,24 @@ internal sealed class TcpControlServer : IDisposable
         catch (ObjectDisposedException) when (_shutdown.IsCancellationRequested) { }
     }
 
-    private async Task Serve(TcpClient client, int session, CancellationTokenSource cancellation)
+    private async Task Serve(TcpClient client, int session, CancellationTokenSource cancellation, Channel<object> events)
     {
         var token = cancellation.Token;
         var replies = Channel.CreateBounded<Task<ControlReply>>(ControlState.Capacity);
         Task writer = Task.CompletedTask;
+        Task eventWriter = Task.CompletedTask;
+        using var writeGate = new SemaphoreSlim(1, 1);
         try
         {
             client.NoDelay = true;
             using var stream = client.GetStream();
             await WriteJson(stream, new { v = 1, type = "hello", instance = _instance,
-                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "guarded_control", "local_navigation" } }, token);
-            writer = WriteReplies(stream, replies.Reader, token);
+                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "guarded_control", "local_navigation", "chat_events", "send_chat" } }, writeGate, token);
+            writer = WriteReplies(stream, replies.Reader, writeGate, token);
+            eventWriter = WriteEvents(stream, events.Reader, writeGate, token);
+            // A failed writer must wake the reader and revoke the session as well.
+            _ = Task.WhenAny(writer, eventWriter).ContinueWith(_ => cancellation.Cancel(),
+                CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             var buffer = new byte[256];
             using var line = new MemoryStream();
             var utf8 = new UTF8Encoding(false, true);
@@ -86,7 +112,7 @@ internal sealed class TcpControlServer : IDisposable
                 {
                     if (buffer[i] != (byte)'\n')
                     {
-                        if (line.Length >= 1024) throw new InvalidDataException("Line too long.");
+                        if (line.Length >= 4096) throw new InvalidDataException("Line too long.");
                         line.WriteByte(buffer[i]);
                         continue;
                     }
@@ -104,8 +130,9 @@ internal sealed class TcpControlServer : IDisposable
             _state.EndSession(session);
             cancellation.Cancel();
             replies.Writer.TryComplete();
+            events.Writer.TryComplete();
             client.Dispose();
-            try { await writer; }
+            try { await Task.WhenAll(writer, eventWriter); }
             catch (Exception e) when (e is IOException or SocketException or OperationCanceledException or ObjectDisposedException) { }
             lock (_gate)
             {
@@ -113,6 +140,7 @@ internal sealed class TcpControlServer : IDisposable
                 {
                     _clientCancellation = null;
                     _session = 0;
+                    _events = null;
                 }
             }
             cancellation.Dispose();
@@ -120,16 +148,25 @@ internal sealed class TcpControlServer : IDisposable
     }
 
     private static async Task WriteReplies(NetworkStream stream, ChannelReader<Task<ControlReply>> replies,
-        CancellationToken token)
+        SemaphoreSlim gate, CancellationToken token)
     {
         await foreach (var reply in replies.ReadAllAsync(token))
-            await WriteJson(stream, await reply.WaitAsync(token), token);
+            await WriteJson(stream, await reply.WaitAsync(token), gate, token);
     }
 
-    private static async Task WriteJson(NetworkStream stream, object value, CancellationToken token)
+    private static async Task WriteEvents(NetworkStream stream, ChannelReader<object> events,
+        SemaphoreSlim gate, CancellationToken token)
+    {
+        await foreach (var value in events.ReadAllAsync(token))
+            await WriteJson(stream, value, gate, token);
+    }
+
+    private static async Task WriteJson(NetworkStream stream, object value, SemaphoreSlim gate, CancellationToken token)
     {
         byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, JsonOptions) + "\n");
-        await stream.WriteAsync(bytes, token);
+        await gate.WaitAsync(token);
+        try { await stream.WriteAsync(bytes, token); }
+        finally { gate.Release(); }
     }
 
     internal void Disconnect()

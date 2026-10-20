@@ -9,7 +9,7 @@ using CompanionBridge.Motion;
 namespace CompanionBridge;
 
 internal sealed record ControlRequest(int Id, string Cmd, int Direction = 1, bool Jump = false,
-    int? ExpectedGeneration = null, float? TargetX = null);
+    int? ExpectedGeneration = null, float? TargetX = null, string Text = null, string ChatId = null);
 internal sealed record ControlInput(int Direction, bool Jump, bool OverrideJump, bool Predictive = false, float? TargetX = null);
 internal sealed record StateVector(float X, float Y);
 internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateVector Velocity,
@@ -34,6 +34,8 @@ internal sealed class ControlState
     private int _generation;
     private long _deadline;
     private ControlMode _mode;
+    private string _latestChatId;
+    internal void ObserveChat(string id) { lock (_gate) _latestChatId = id; }
     private ControlInput _input = new(1, false, false);
     private sealed record Pending(int Session, ControlRequest Request, long ReceivedAt,
         TaskCompletionSource<ControlReply> Completion);
@@ -52,6 +54,7 @@ internal sealed class ControlState
             if (_session != 0) throw new InvalidOperationException("Controller already connected.");
             _session = ++_nextSession;
             _lastId = 0;
+            _latestChatId = null;
             return _session;
         }
     }
@@ -84,7 +87,7 @@ internal sealed class ControlState
     }
 
     internal void Update(bool canControl, long now, PlayerSnapshot snapshot = null,
-        TerrainSnapshot terrain = null, NavigationSnapshot navigation = null)
+        TerrainSnapshot terrain = null, NavigationSnapshot navigation = null, Action<string> sendChat = null)
     {
         lock (_gate)
         {
@@ -97,6 +100,19 @@ internal sealed class ControlState
             while (_pending.TryDequeue(out var pending))
             {
                 var request = pending.Request;
+                if (request.Cmd == "send_chat")
+                {
+                    string chatStatus = pending.Session != _session ? "disconnected"
+                        : snapshot?.InWorld != true || sendChat == null ? "not_ready"
+                        : request.ChatId != _latestChatId ? "superseded" : "sent";
+                    if (chatStatus == "sent")
+                    {
+                        try { sendChat(request.Text); }
+                        catch (Exception) { chatStatus = "chat_send_failed"; }
+                    }
+                    pending.Completion.TrySetResult(Reply(request.Id, chatStatus == "sent", chatStatus));
+                    continue;
+                }
                 if (request.Cmd == "get_navigation" && pending.Session == _session)
                 {
                     bool available = snapshot?.InWorld == true;
@@ -182,7 +198,7 @@ internal sealed class ControlState
             || !root.TryGetProperty("id", out var id) || !id.TryGetInt32(out int n) || n <= 0
             || !root.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String
             || cmd.GetString() is not ("move_right" or "stop" or "get_state" or "get_terrain" or "input"
-                or "terrain_step" or "get_navigation" or "navigate"))
+                or "terrain_step" or "get_navigation" or "navigate" or "send_chat"))
             throw new FormatException("Expected v=1, positive id and a supported cmd.");
         int direction = 1;
         bool jump = false;
@@ -214,6 +230,16 @@ internal sealed class ControlState
                 throw new FormatException("expectedGeneration requires terrain_step/navigate/stop and a nonnegative integer.");
             expectedGeneration = expected;
         }
-        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX);
+        string text = null, chatId = null;
+        if (cmd.GetString() == "send_chat")
+        {
+            if (!root.TryGetProperty("text", out var t) || t.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(text = t.GetString()) || text.Length > 400
+                || text.Contains('\n') || text.Contains('\r') || text.Contains('\0')
+                || !root.TryGetProperty("chatId", out var c) || c.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(chatId = c.GetString()) || chatId.Length > 100)
+                throw new FormatException("send_chat requires single-line text (1..400 chars) and chatId.");
+        }
+        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId);
     }
 }
