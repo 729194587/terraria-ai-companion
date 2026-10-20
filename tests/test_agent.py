@@ -180,11 +180,85 @@ class LLMTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(request.headers["Authorization"], "Bearer fake-key")
             data = json.loads(request.content)
             self.assertEqual(data["tools"], TOOLS)
+            self.assertEqual(data["model"], "deepseek-flash")
+            self.assertEqual(data["thinking"], {"type": "disabled"})
+            self.assertNotIn("extra_body", data)
             return httpx.Response(200, json={"choices": [{"finish_reason": "tool_calls", "message": tool()}]})
-        client = LLMClient("https://example.test/v1", "fake-key", "test", transport=httpx.MockTransport(handler))
+        client = LLMClient("https://example.test/v1", "fake-key", "deepseek-flash", transport=httpx.MockTransport(handler))
         try:
             self.assertEqual(await client.complete([], TOOLS), tool())
         finally:
+            await client.close()
+
+    async def test_non_thinking_tool_round_trip_and_next_user_turn(self):
+        requests = []
+        def handler(request):
+            self.assertEqual(request.headers["Authorization"], "Bearer fake-key")
+            data = json.loads(request.content)
+            requests.append(data)
+            self.assertEqual(data["model"], "deepseek-flash")
+            self.assertEqual(data["thinking"], {"type": "disabled"})
+            self.assertEqual(data["tools"], TOOLS)
+            if len(requests) == 1:
+                answer = {**tool(), "reasoning_content": None}
+                reason = "tool_calls"
+            else:
+                messages = data["messages"]
+                self.assertEqual(messages[2], tool())
+                self.assertEqual(messages[3]["role"], "tool")
+                self.assertEqual(messages[3]["tool_call_id"], tool()["tool_calls"][0]["id"])
+                result = json.loads(messages[3]["content"])
+                self.assertTrue(result["valid"])
+                self.assertEqual(result["player"]["life"], 80)
+                self.assertTrue(all("reasoning_content" not in message for message in messages))
+                if len(requests) == 2:
+                    self.assertEqual([m["role"] for m in messages], ["system", "user", "assistant", "tool"])
+                    answer = final("80 HP")
+                else:
+                    self.assertEqual(len(requests), 3)
+                    self.assertEqual(messages[4], final("80 HP"))
+                    self.assertEqual(messages[5]["role"], "user")
+                    answer = final("You asked about my state.")
+                reason = "stop"
+            return httpx.Response(200, json={"choices": [{"finish_reason": reason, "message": answer}]})
+        client = LLMClient("https://example.test/v1", "fake-key", "deepseek-flash",
+                           transport=httpx.MockTransport(handler))
+        game = Game()
+        agent = Agent(game, client)
+        try:
+            agent.receive(event(1, text="Read your state."))
+            await agent.task
+            agent.receive(event(2, text="What did I ask?"))
+            await agent.task
+            self.assertEqual(len(requests), 3)
+            self.assertEqual([params["text"] for _, params in game.sent],
+                             ["80 HP", "You asked about my state."])
+            self.assertEqual(agent.history[2:4], requests[1]["messages"][2:4])
+        finally:
+            await agent.close()
+            await client.close()
+
+    async def test_http_request_cancellation_propagates(self):
+        started, cancelled = asyncio.Event(), asyncio.Event()
+        async def handler(request):
+            self.assertEqual(json.loads(request.content)["thinking"], {"type": "disabled"})
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        client = LLMClient("https://example.test/v1", "fake-key", "deepseek-flash",
+                           transport=httpx.MockTransport(handler))
+        task = asyncio.create_task(client.complete([{"role": "user", "content": "hello"}], TOOLS))
+        try:
+            await asyncio.wait_for(started.wait(), 1)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 1)
+            self.assertTrue(cancelled.is_set())
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
             await client.close()
 
     async def test_http_timeout_and_bad_responses(self):
@@ -192,7 +266,7 @@ class LLMTests(unittest.IsolatedAsyncioTestCase):
                          httpx.Response(200, json={"choices": []}),
                          httpx.Response(200, json={"choices": [{"message": [], "finish_reason": "stop"}]}),
                          httpx.Response(200, json={"choices": [{"message": final(), "finish_reason": "length"}]}),
-                         httpx.ReadTimeout("fixture")):
+                         httpx.ReadTimeout("fixture"), httpx.ConnectError("fixture")):
             def handler(request):
                 if isinstance(response, Exception):
                     raise response

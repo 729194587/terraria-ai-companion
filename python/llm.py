@@ -52,7 +52,10 @@ class LLMClient:
     async def complete(self, messages, tools):
         try:
             response = await self.http.post(self.url, json={"model": self.model,
-                "messages": messages, "tools": tools, "tool_choice": "auto", "max_tokens": 512})
+                "messages": messages, "tools": tools, "tool_choice": "auto", "max_tokens": 512,
+                # DeepSeek defaults to thinking; disable it so tool history needs no reasoning_content.
+                # This is a raw HTTP body, not the OpenAI SDK's extra_body wrapper.
+                "thinking": {"type": "disabled"}})
             response.raise_for_status()
         except httpx.TimeoutException as error:
             raise LLMError("LLM request timed out") from error
