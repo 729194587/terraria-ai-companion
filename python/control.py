@@ -127,6 +127,9 @@ class Bridge:
                                error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
             raise
         if reply.get("ok") is not True:
+            tracing.trace.emit("ipc_error", command=cmd, request=request, category="rejected",
+                               reason=reply.get("status", "unknown"),
+                               elapsed_ms=(time.monotonic() - started) * 1000)
             raise BridgeError(f"Command rejected: {reply.get('status', 'unknown')}")
         return reply
 

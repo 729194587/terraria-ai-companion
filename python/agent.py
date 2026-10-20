@@ -97,10 +97,10 @@ class Agent:
         started = time.monotonic()
         outcome = "completed"
         tracing.trace.emit("agent_start")
-        messages = copy.deepcopy(self.history)
-        base = len(messages)
-        used = 0
         try:
+            messages = copy.deepcopy(self.history)
+            base = len(messages)
+            used = 0
             for _ in range(self.max_model_calls):
                 print(f"LLM request: generation={generation}", file=sys.stderr, flush=True)
                 message = await self.llm.complete(messages, TOOLS)
@@ -193,6 +193,10 @@ class Agent:
                 outcome = "superseded"
                 tracing.trace.emit("agent_result_discarded", reason="newer_generation_after_error",
                                    current_generation=self.generation)
+        except Exception as error:
+            outcome = "failed"
+            tracing.trace.emit("agent_failed", error_type=type(error).__name__)
+            raise
         finally:
             tracing.trace.emit("agent_end", outcome=outcome, elapsed_ms=(time.monotonic() - started) * 1000)
             tracing.context.reset(token)

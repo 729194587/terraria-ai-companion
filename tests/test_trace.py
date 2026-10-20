@@ -21,6 +21,28 @@ from test_control import FakeServer
 
 
 class TraceTests(unittest.TestCase):
+    def test_oversized_event_retained_fields_are_redacted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = tracing.Trace(Path(directory) / "trace.jsonl", enabled=True, max_bytes=800)
+            key = "configured-test-api-key"
+            trace.add_secret(key)
+            token = tracing.context.set({"generation": 7, "chat_event_id": f"chat-{key}",
+                "tool_call_id": f"tool-{key}", "model_request_id": f"model-{key}"})
+            try:
+                trace.emit(f"event-{key}", payload="x" * 5000)
+            finally:
+                tracing.context.reset(token)
+            raw = trace.path.read_text(encoding="utf-8")
+            self.assertNotIn(key, raw)
+            record = json.loads(raw)
+            self.assertEqual(record["type"], "trace_record_dropped")
+            self.assertEqual(record["generation"], 7)
+            self.assertEqual(record["chat_event_id"], "chat-[REDACTED]")
+            self.assertEqual(record["tool_call_id"], "tool-[REDACTED]")
+            self.assertEqual(record["model_request_id"], "model-[REDACTED]")
+            self.assertEqual(record["original_type"], "event-[REDACTED]")
+            self.assertLessEqual(len(raw.encode("utf-8")), 800)
+
     def test_opt_in_default_and_json_lines_rotation(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trace.jsonl"
@@ -90,6 +112,48 @@ class TraceTests(unittest.TestCase):
 
 
 class TraceIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unexpected_exception_records_failure_and_propagates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = tracing.Trace(Path(directory) / "trace.jsonl", enabled=True)
+            error = RuntimeError("unexpected fixture failure")
+            game = Game()
+            with patch.object(tracing, "trace", trace):
+                agent = Agent(game, Model(error))
+                try:
+                    agent.receive(event(1))
+                    with self.assertRaises(RuntimeError) as raised:
+                        await agent.task
+                    self.assertIs(raised.exception, error)
+                finally:
+                    await agent.close()
+            records = [json.loads(line) for line in trace.path.read_text(encoding="utf-8").splitlines()]
+            failed = [r for r in records if r["type"] == "agent_failed"]
+            ended = [r for r in records if r["type"] == "agent_end"]
+            self.assertEqual(len(failed), 1)
+            self.assertEqual(failed[0]["error_type"], "RuntimeError")
+            self.assertEqual(len(ended), 1)
+            self.assertEqual(ended[0]["outcome"], "failed")
+            self.assertEqual(ended[0]["generation"], 1)
+            self.assertEqual(ended[0]["chat_event_id"], "1")
+            self.assertEqual(game.sent, [])
+
+    async def test_rejected_ipc_records_raw_reply_and_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = tracing.Trace(Path(directory) / "trace.jsonl", enabled=True)
+            with patch.object(tracing, "trace", trace), FakeServer(reject=True) as server:
+                with Bridge(server.port) as bridge:
+                    with self.assertRaisesRegex(BridgeError, "Command rejected: manual_active"):
+                        await asyncio.to_thread(bridge.command, "move_right")
+            records = [json.loads(line) for line in trace.path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual([r["type"] for r in records], ["ipc_request", "ipc_reply", "ipc_error"])
+            request, reply, error = records
+            self.assertFalse(reply["reply"]["ok"])
+            self.assertEqual(reply["reply"]["status"], "manual_active")
+            self.assertEqual(error["category"], "rejected")
+            self.assertEqual(error["reason"], "manual_active")
+            self.assertEqual(error["request"], request["request"])
+            self.assertEqual(error["request"]["id"], reply["reply"]["id"])
+
     async def test_complete_real_bridge_and_mock_model_trace(self):
         with tempfile.TemporaryDirectory() as directory:
             trace = tracing.Trace(Path(directory) / "trace.jsonl", enabled=True)

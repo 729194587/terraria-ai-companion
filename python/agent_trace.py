@@ -55,9 +55,9 @@ class Trace:
                 if len(raw) > self.max_bytes:
                     record = {key: record[key] for key in ("timestamp", "session_id", "sequence",
                               "generation", "chat_event_id", "tool_call_id", "model_request_id") if key in record}
-                    raw = (json.dumps({**record, "type": "trace_record_dropped",
+                    raw = (json.dumps(self._redact({**record, "type": "trace_record_dropped",
                         "original_type": event_type, "reason": "event_exceeds_file_limit",
-                        "bytes": len(raw)}, ensure_ascii=False) + "\n").encode("utf-8")
+                        "bytes": len(raw)}), ensure_ascii=False) + "\n").encode("utf-8")
                     if len(raw) > self.max_bytes:
                         return
                 self.path.parent.mkdir(parents=True, exist_ok=True)
