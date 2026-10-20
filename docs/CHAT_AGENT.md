@@ -93,6 +93,29 @@ try {
 
 ## 验证和待验收
 
+### 可选本地 Trace
+
+在启动 Agent 的 PowerShell 中显式设置环境变量：
+
+```powershell
+$env:TERRARIA_AGENT_TRACE = '1'
+python python/agent.py
+```
+
+默认关闭；删除变量（`Remove-Item Env:TERRARIA_AGENT_TRACE`）或改为 `0` 后重新启动即关闭。该开关从进程环境读取，不从 `.env` 读取。无需修改 Mod 或重启游戏。
+
+每次 Python 进程使用独立的 `.local/diagnostics/agent-trace-<session_id>.jsonl`，目录已被 `.gitignore` 的 `.local/` 忽略。单文件最大 5 MiB，保留一份同上限的 `.jsonl.1` 轮转备份，每次运行最多约 10 MiB；不同运行的文件需自行定期删除。单条事件超过 5 MiB 时记录 `trace_record_dropped` 和原因，不伪装为完整上下文；轮转可能淘汰较早的运行片段。
+
+Trace 包含游戏聊天、完整模型上下文和地形，**只写本地，不自动上传**。不记录 HTTP 请求头、认证信息、`.env` 或 HTTP 错误响应正文；已知 API Key 和常见认证字段会脱敏。为了脱敏而替换的内容显示为 `[REDACTED]`，其余请求体/回执/工具消息保持原值。不要在聊天中粘贴其他未配置的密钥。日志写入失败会被忽略，不改变请求、工具结果或调度行为；同步本地写盘有少量额外开销。
+
+每行是独立 JSON，公共字段为 `type`、UTC `timestamp`、`session_id`、单调递增 `sequence`。Agent 范围内还有 `chat_event_id`、`generation`；模型事件有 `model_request_id`；工具与其 IPC 事件有 `tool_call_id`，IPC 回执保留原始 `id`。
+
+按 `session_id + generation` 串起：`chat_received` → `agent_start` → `llm_request`/`llm_response`/`llm_return` → `tool_start` → `ipc_request`/`ipc_reply` → `terrain_diagnostic` → `tool_result` → `tool_message` → 下一次 `llm_request` → `reply_prepared` → `send_chat_start`/`send_chat_result` → `agent_end`。`ipc_reply.reply` 是 C# 实际返回的解析后 JSON 对象；`tool_result.result` 是 Python 整理的结果；`tool_message.message.content` 是实际序列化工具消息，后续请求的 `body.messages` 保留模型收到的完整历史。`llm_response.assistant` 是服务端 assistant 消息及结束原因，`llm_return` 是客户端实际交给 Agent 的字段。
+
+失败/取消分别记录 `llm_error`、`ipc_error`、`tool_cancelled`、`agent_failed`、`agent_cancelled`、`agent_task_done` 等；迟到结果记录 `agent_result_discarded` 的具体检查位置和当前代次。`agent_end.outcome` 标明 completed/failed/cancelled/superseded。任务在开始前被取消时只有 `agent_task_done.cancelled=true`，不会伪造开始事件。取消中的后台只读 IPC 线程可能继续返回，Trace 会保留其原代次；这不表示 Agent 仍消费了该结果或发送了回复。`send_chat` 回执仍不等于服务器投递或画面确认。
+
+地形诊断记录位置、宽高、原点、实际行列长度、各字符数量（含零计数）、全部 `h/1/2/3/4` 的零起点行列和世界 Tile 坐标。预期原点严格复用当前 `TerrainReader.Read` 公式：`floor((x + width/2)/16)-22`、`floor((y + height)/16)-17`。无效网格、陌生字符、`?`、原点不一致只产生 warnings，不修改原数据。诊断在工具验证前执行，因此无效原始回执也能留下线索。没有新增 Tile/实体感知能力；测试使用假游戏服务和模拟模型，真实游戏 Trace 文件仍需现场验收。
+
 离线测试：
 
 ```powershell

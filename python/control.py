@@ -7,6 +7,7 @@ import math
 import socket
 import sys
 import time
+import agent_trace as tracing
 
 
 class BridgeError(Exception):
@@ -95,6 +96,8 @@ class Bridge:
 
     def command(self, cmd, **parameters):
         future = Future()
+        started = time.monotonic()
+        request = None
         try:
             with self._lock:
                 if self._failure:
@@ -102,16 +105,27 @@ class Bridge:
                 self.request_id += 1
                 request = {"v": 1, "id": self.request_id, "cmd": cmd, **parameters}
                 self._pending[self.request_id] = future
+                tracing.trace.emit("ipc_request", request=request)
                 self.sock.sendall((json.dumps(request, ensure_ascii=False) + "\n").encode("utf-8"))
             reply = future.result(timeout=self.timeout)
+            tracing.trace.emit("ipc_reply", command=cmd, reply=reply,
+                               elapsed_ms=(time.monotonic() - started) * 1000)
         except FutureTimeout as error:
+            tracing.trace.emit("ipc_error", command=cmd, request=request, category="timeout",
+                               elapsed_ms=(time.monotonic() - started) * 1000)
             self.close()  # No reuse after an ambiguous timeout/late acknowledgement.
             raise BridgeError(f"Request timeout for {cmd}: Bridge handshake completed, but no reply received; "
                               "the game update thread may be paused or stalled. Refocus and retry, "
                               "or increase --timeout") from error
         except OSError as error:
+            tracing.trace.emit("ipc_error", command=cmd, request=request, category="network",
+                               error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
             self.close()
             raise BridgeError(str(error)) from error
+        except BridgeError as error:
+            tracing.trace.emit("ipc_error", command=cmd, request=request, category="bridge",
+                               error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
+            raise
         if reply.get("ok") is not True:
             raise BridgeError(f"Command rejected: {reply.get('status', 'unknown')}")
         return reply

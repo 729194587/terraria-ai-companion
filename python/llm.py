@@ -1,9 +1,13 @@
 """Small cancellable OpenAI-compatible Chat Completions client."""
 import os
+import asyncio
+import itertools
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
+import agent_trace as tracing
 
 
 class LLMError(Exception):
@@ -48,30 +52,53 @@ class LLMClient:
         self.url = base_url.rstrip("/") + "/chat/completions"
         self.http = httpx.AsyncClient(timeout=timeout, transport=transport,
                                      headers={"Authorization": f"Bearer {api_key}"})
+        self._request_ids = itertools.count(1)
+        tracing.trace.add_secret(api_key)
 
     async def complete(self, messages, tools):
-        try:
-            response = await self.http.post(self.url, json={"model": self.model,
+        request_id = next(self._request_ids)
+        started = time.monotonic()
+        body = {"model": self.model,
                 "messages": messages, "tools": tools, "tool_choice": "auto", "max_tokens": 512,
-                # DeepSeek defaults to thinking; disable it so tool history needs no reasoning_content.
-                # This is a raw HTTP body, not the OpenAI SDK's extra_body wrapper.
-                "thinking": {"type": "disabled"}})
+                # Raw HTTP body, not the OpenAI SDK's extra_body wrapper.
+                "thinking": {"type": "disabled"}}
+        tracing.trace.emit("llm_request", model_request_id=request_id, model=self.model, body=body)
+        try:
+            response = await self.http.post(self.url, json=body)
             response.raise_for_status()
+        except asyncio.CancelledError:
+            tracing.trace.emit("llm_cancelled", model_request_id=request_id,
+                               elapsed_ms=(time.monotonic() - started) * 1000)
+            raise
         except httpx.TimeoutException as error:
+            tracing.trace.emit("llm_error", model_request_id=request_id, category="timeout",
+                               elapsed_ms=(time.monotonic() - started) * 1000)
             raise LLMError("LLM request timed out") from error
         except httpx.HTTPStatusError as error:
+            tracing.trace.emit("llm_error", model_request_id=request_id, category="http",
+                               status_code=error.response.status_code,
+                               elapsed_ms=(time.monotonic() - started) * 1000)
             raise LLMError(f"LLM HTTP {error.response.status_code}") from error
         except httpx.RequestError as error:
+            tracing.trace.emit("llm_error", model_request_id=request_id, category="network",
+                               error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
             raise LLMError(f"LLM network failure ({type(error).__name__})") from error
         try:
             choice = response.json()["choices"][0]
             message = choice["message"]
+            tracing.trace.emit("llm_response", model_request_id=request_id, model=self.model,
+                               assistant=message, finish_reason=choice.get("finish_reason"),
+                               elapsed_ms=(time.monotonic() - started) * 1000)
             if (message["role"] != "assistant" or choice["finish_reason"] not in ("stop", "tool_calls")
                     or not (message.get("tool_calls") or isinstance(message.get("content"), str)
                             and message["content"].strip())):
                 raise ValueError()
-            return {key: message[key] for key in ("role", "content", "tool_calls") if key in message}
+            returned = {key: message[key] for key in ("role", "content", "tool_calls") if key in message}
+            tracing.trace.emit("llm_return", model_request_id=request_id, assistant=returned)
+            return returned
         except (ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
+            tracing.trace.emit("llm_error", model_request_id=request_id, category="invalid_response",
+                               error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
             raise LLMError("Malformed or incomplete LLM response") from error
 
     async def close(self):

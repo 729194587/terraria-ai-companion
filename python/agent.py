@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import json
 import math
 import sys
+import time
+import agent_trace as tracing
 
 from control import Bridge, BridgeError
 from llm import LLMClient, LLMError
@@ -32,6 +34,7 @@ def read_state(bridge):
         raise BridgeError("Local player is not in world")
     # get_terrain already carries its player state from the same game update.
     reply = bridge.get_terrain()
+    tracing.trace.terrain(reply)
     state, terrain = reply.get("state"), reply["terrain"]
     if (not isinstance(state, dict) or state.get("inWorld") is not True
             or not isinstance(state.get("position"), dict) or not isinstance(state.get("velocity"), dict)
@@ -75,13 +78,25 @@ class Agent:
             "receivedAt": event.get("receivedAt")}, ensure_ascii=False)})
         print(f"Chat received: {event['eventId']} sender={event['senderId']}", file=sys.stderr, flush=True)
         self.generation += 1
+        tracing.trace.emit("chat_received", chat_event_id=event["eventId"], generation=self.generation,
+                           chat=event)
         if self.task:
+            if not self.task.done():
+                tracing.trace.emit("agent_cancel_requested", generation=self.generation - 1,
+                                   reason="new_chat", replacement_generation=self.generation)
             self.task.cancel()
         self.task = asyncio.create_task(self._run(self.generation, event["eventId"]))
         self._tasks.add(self.task)
         self.task.add_done_callback(self._tasks.discard)
+        generation, chat_id = self.generation, event["eventId"]
+        self.task.add_done_callback(lambda task: tracing.trace.emit("agent_task_done",
+            generation=generation, chat_event_id=chat_id, cancelled=task.cancelled()))
 
     async def _run(self, generation, chat_id):
+        token = tracing.context.set({"generation": generation, "chat_event_id": chat_id})
+        started = time.monotonic()
+        outcome = "completed"
+        tracing.trace.emit("agent_start")
         messages = copy.deepcopy(self.history)
         base = len(messages)
         used = 0
@@ -90,6 +105,9 @@ class Agent:
                 print(f"LLM request: generation={generation}", file=sys.stderr, flush=True)
                 message = await self.llm.complete(messages, TOOLS)
                 if generation != self.generation:
+                    outcome = "superseded"
+                    tracing.trace.emit("agent_result_discarded", reason="newer_generation_after_llm",
+                                       current_generation=self.generation)
                     return
                 calls = message.get("tool_calls")
                 if calls:
@@ -105,6 +123,9 @@ class Agent:
                     messages.append(message)
                     for call in calls:
                         used += 1
+                        tool_started = time.monotonic()
+                        tool_token = tracing.context.set({**tracing.context.get(), "tool_call_id": call["id"]})
+                        tracing.trace.emit("tool_start", call=call)
                         try:
                             function = call["function"]
                             if function.get("name") != "get_state" or json.loads(function.get("arguments", "")) != {}:
@@ -112,11 +133,23 @@ class Agent:
                             result = await asyncio.to_thread(read_state, self.bridge)
                         except (BridgeError, OSError, ValueError, TypeError, KeyError) as error:
                             result = {"valid": False, "error": str(error)}
+                        except asyncio.CancelledError:
+                            tracing.trace.emit("tool_cancelled", elapsed_ms=(time.monotonic() - tool_started) * 1000)
+                            raise
+                        finally:
+                            tracing.context.reset(tool_token)
+                        tracing.trace.emit("tool_result", tool_call_id=call["id"], result=result,
+                                           success=result.get("valid") is True,
+                                           elapsed_ms=(time.monotonic() - tool_started) * 1000)
                         print(f"Tool result: generation={generation} valid={result['valid']}", file=sys.stderr, flush=True)
                         if generation != self.generation:
+                            outcome = "superseded"
+                            tracing.trace.emit("agent_result_discarded", tool_call_id=call["id"],
+                                               reason="newer_generation_after_tool", current_generation=self.generation)
                             return
                         messages.append({"role": "tool", "tool_call_id": call["id"],
                                          "content": json.dumps(result, ensure_ascii=False)})
+                        tracing.trace.emit("tool_message", tool_call_id=call["id"], message=messages[-1])
                     # Commit only complete assistant/tool batches; cancellation cannot leave orphan calls.
                     self.history.extend(messages[base:])
                     base = len(messages)
@@ -129,19 +162,40 @@ class Agent:
                 if len(text.encode("utf-16-le")) > 800:
                     text = text.encode("utf-16-le")[:794].decode("utf-16-le", errors="ignore") + "..."
                 if generation != self.generation:
+                    outcome = "superseded"
+                    tracing.trace.emit("agent_result_discarded", reason="newer_generation_before_send",
+                                       current_generation=self.generation)
                     return
-                await asyncio.to_thread(self.bridge.command, "send_chat", text=text, chatId=chat_id)
+                tracing.trace.emit("reply_prepared", text=text)
+                tracing.trace.emit("send_chat_start", text=text, chatId=chat_id)
+                reply = await asyncio.to_thread(self.bridge.command, "send_chat", text=text, chatId=chat_id)
+                tracing.trace.emit("send_chat_result", reply=reply)
                 if generation == self.generation:
                     print(f"Chat sent: generation={generation}", file=sys.stderr, flush=True)
                     messages.append({"role": "assistant", "content": text})
                     self.history.extend(messages[base:])
+                else:
+                    outcome = "superseded"
+                    tracing.trace.emit("agent_result_discarded", reason="newer_generation_after_send_ack",
+                                       current_generation=self.generation)
                 return
             raise LLMError("Model call budget exhausted without final reply")
         except asyncio.CancelledError:
+            outcome = "cancelled"
+            tracing.trace.emit("agent_cancelled", reason="task_cancelled")
             raise
         except (LLMError, BridgeError, OSError, ValueError, TypeError, KeyError) as error:
+            outcome = "failed"
+            tracing.trace.emit("agent_failed", error_type=type(error).__name__)
             if generation == self.generation:
                 print(f"Agent error: {error}", file=sys.stderr, flush=True)
+            else:
+                outcome = "superseded"
+                tracing.trace.emit("agent_result_discarded", reason="newer_generation_after_error",
+                                   current_generation=self.generation)
+        finally:
+            tracing.trace.emit("agent_end", outcome=outcome, elapsed_ms=(time.monotonic() - started) * 1000)
+            tracing.context.reset(token)
 
     async def close(self):
         self.generation += 1
@@ -163,6 +217,8 @@ async def run(port, timeout):
         if not {"chat_events", "send_chat"}.issubset(bridge.hello.get("capabilities", [])):
             raise BridgeError("Chat requires CompanionBridge 0.1.17+; loaded client lacks chat capabilities")
         agent = Agent(bridge, llm)
+        if tracing.trace.enabled:
+            print(f"Local trace (contains chat/context): {tracing.trace.path}", file=sys.stderr, flush=True)
         print("Agent ready; other players' chat triggers replies. Ctrl+C closes the session.", flush=True)
         while True:
             # This timeout checks connection health only; chat itself is pushed immediately.
