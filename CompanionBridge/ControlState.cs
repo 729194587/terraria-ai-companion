@@ -21,7 +21,8 @@ internal sealed record ControlReply(int V, int Id, bool Ok, string Status, strin
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PlayerSnapshot State = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TerrainSnapshot Terrain = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NavigationSnapshot Navigation = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] EntityPerception Entities = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] EntityPerception Entities = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObservationSnapshot Observation = null);
 internal enum ControlMode { None, Manual, External }
 
 // No Terraria references: the socket side submits requests; the game thread applies them.
@@ -89,7 +90,7 @@ internal sealed class ControlState
 
     internal void Update(bool canControl, long now, PlayerSnapshot snapshot = null,
         TerrainSnapshot terrain = null, NavigationSnapshot navigation = null, Action<string> sendChat = null,
-        EntityPerception entities = null)
+        EntityPerception entities = null, Func<ObservationSnapshot> readObservation = null)
     {
         lock (_gate)
         {
@@ -99,9 +100,23 @@ internal sealed class ControlState
                 _mode = ControlMode.None;
             }
             if (_mode != ControlMode.None && now >= _deadline) { _mode = ControlMode.None; _generation++; }
+            ObservationSnapshot observation = null;
+            bool observationAttempted = false, observationFailed = false;
             while (_pending.TryDequeue(out var pending))
             {
                 var request = pending.Request;
+                if (request.Cmd == "get_observation" && pending.Session == _session)
+                {
+                    if (!observationAttempted)
+                    {
+                        observationAttempted = true;
+                        try { observation = readObservation?.Invoke(); }
+                        catch (Exception) { observationFailed = true; } // A mod read must not break the update/control loop.
+                    }
+                    pending.Completion.TrySetResult(Reply(request.Id, observation != null,
+                        observationFailed ? "observation_failed" : observation != null ? "observation" : "not_ready") with { Observation = observation });
+                    continue;
+                }
                 if (request.Cmd == "send_chat")
                 {
                     string chatStatus = pending.Session != _session ? "disconnected"
@@ -201,7 +216,7 @@ internal sealed class ControlState
             || !root.TryGetProperty("id", out var id) || !id.TryGetInt32(out int n) || n <= 0
             || !root.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String
             || cmd.GetString() is not ("move_right" or "stop" or "get_state" or "get_terrain" or "input"
-                or "terrain_step" or "get_navigation" or "navigate" or "send_chat"))
+                or "terrain_step" or "get_navigation" or "navigate" or "send_chat" or "get_observation"))
             throw new FormatException("Expected v=1, positive id and a supported cmd.");
         int direction = 1;
         bool jump = false;

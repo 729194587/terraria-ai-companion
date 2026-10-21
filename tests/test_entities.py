@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 from agent import Agent, read_state, SYSTEM, TOOLS
-from control import Bridge, BridgeError
+from control import Bridge, BridgeError, MAX_RESPONSE_BYTES
 from test_agent import Game, Model, event, tool, final
 
 
@@ -86,7 +86,7 @@ class EntityTests(unittest.TestCase):
         bridge = Bridge.__new__(Bridge)
         bridge.reader = io.BytesIO(raw)
         self.assertEqual(bridge._read(), payload)
-        bridge.reader = io.BytesIO(b" " * 65537 + b"\n")
+        bridge.reader = io.BytesIO(b" " * (MAX_RESPONSE_BYTES + 1) + b"\n")
         with self.assertRaises(BridgeError):
             bridge._read()
 

@@ -72,7 +72,7 @@ public sealed class CompanionSystem : ModSystem
         var snapshot = ReadSnapshot();
         CompanionBridge.Controls.Update(canControl, Stopwatch.GetTimestamp(), snapshot,
             snapshot.InWorld ? TerrainReader.Read(Main.LocalPlayer) : null, GameNavigation.Snapshot, ChatBridgeSystem.Send,
-            snapshot.InWorld ? EntityReader.Read(Main.LocalPlayer) : null);
+            snapshot.InWorld ? EntityReader.Read(Main.LocalPlayer) : null, ObservationReader.Read);
         var mode = CompanionBridge.Controls.Mode;
         if (mode != _lastMode)
         {
@@ -105,14 +105,20 @@ public sealed class CompanionSystem : ModSystem
         }
     }
 
+    public override void OnWorldLoad() => ObservationReader.EnterWorld();
+
+    public override void PostDrawTiles() => ObservationReader.CaptureCamera();
+
     public override void OnWorldUnload()
     {
+        ObservationReader.LeaveWorld();
         CompanionBridge.StopControl();
         UpdateSleepSetting(Main.instance);
     }
 
     public override void Unload()
     {
+        ObservationReader.LeaveWorld();
         CompanionBridge.StopControl();
         if (Main.dedServ)
             return;

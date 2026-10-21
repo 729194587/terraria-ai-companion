@@ -1,9 +1,11 @@
-param([switch]$MotionOnly)
+param([switch]$MotionOnly, [string]$ObservationSamplePath)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
 $sources = @(
     (Join-Path $repo 'CompanionBridge/ControlState.cs'),
+    (Join-Path $repo 'CompanionBridge/ObservationSnapshot.cs'),
+    (Join-Path $PSScriptRoot 'ObservationOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/TerrainSnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/EntitySnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
@@ -17,5 +19,9 @@ $sources = @(
 )
 $references = Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName
 Add-Type -Path $sources -ReferencedAssemblies $references
-if (!$MotionOnly) { [BridgeOfflineTests]::Run() }
+if (!$MotionOnly) { [BridgeOfflineTests]::Run(); [ObservationOfflineTests]::Run() }
+if ($ObservationSamplePath -and !$MotionOnly) {
+    [System.IO.File]::WriteAllText($ObservationSamplePath, [ObservationOfflineTests]::SampleJson,
+        [System.Text.UTF8Encoding]::new($false))
+}
 [MotionOfflineTests]::Run()

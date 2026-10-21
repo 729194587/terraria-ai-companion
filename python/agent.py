@@ -14,8 +14,9 @@ from llm import LLMClient, LLMError
 from spatial import describe_space
 
 SYSTEM = """你是 Terraria 中的 AI 玩家，通过游戏内聊天与其他玩家交流。使用对方的语言，简短回答，最多 400 个字符。
-游戏状态相关问题若当前信息不足，必须调用 get_state。不得猜测位置、生命、地形或工具结果。
-工具读取本地角色、局部碰撞地形，以及附近其他玩家和 NPC/生物。仅客户端已知的活动存活实体；不感知掉落物或宝箱。
+游戏状态相关问题若当前信息不足，必须调用 get_state 或 get_observation；普通聊天不必获取完整观察。不得猜测位置、生命、地形或工具结果。
+get_state 保留局部碰撞网格和附近实体；get_observation 返回实际摄像机视口的地形、玩家背包装备快捷栏、NPC、玩家、掉落物、弹幕和环境，不是整个世界地图，不提供宝箱内容。
+精确位置、碰撞和实体状态优先使用结构化工具。视口外、未加载、未知和过期必须区别处理。相交只代表几何范围，不保证光照、遮挡或隐形下实际可见；摄像机与世界阶段可能不同，须检查时间和完整性。
 实体 friendly_npc/critter/hostile_creature/unknown 是基于标志的保守分类，敌对为推断，不保证当前正攻击；其他玩家未判断 PvP 关系。
 实体方向和距离相对 AI 角色中心，世界像素坐标 Y 向下；范围外、未同步、截断、available=false 和 unknown 均不等于没有，也不保证画面可见。
 位置单位为像素，地形坐标为 Tile，Y 向下。supported 表示现有运动模型是否支持角色状态，不表示地面支撑。
@@ -23,6 +24,19 @@ SYSTEM = """你是 Terraria 中的 AI 玩家，通过游戏内聊天与其他玩
 TOOLS = [{"type": "function", "function": {"name": "get_state",
     "description": "读取同次游戏快照的自身状态、45×29 原始碰撞网格、空间信息和附近其他玩家/NPC/生物的名称、分类、位置、方位与距离；注意未知/截断及分类依据。不识别掉落物或宝箱。",
     "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}}]
+TOOLS.append({"type": "function", "function": {"name": "get_observation",
+    "description": "按需读取当前客户端完整摄像机视口，不是世界地图：字典/逐行地形、玩家背包装备快捷栏、NPC/玩家/掉落物/弹幕、环境；检查采样时间、camera年龄、完整性和未知原因。RLE data 为 [重复数,字典索引,...]，indices data 每格一个索引，每行解码长度为 terrain.bounds.width。实体相交仅为几何范围，宝箱内容未知。",
+    "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}})
+
+
+def read_observation(bridge):
+    reply = bridge.get_observation()
+    observation = reply["observation"]
+    return {"valid": observation["status"] != "unavailable", "observation": observation,
+            "receivedAt": datetime.now(timezone.utc).isoformat(),
+            "transportMetrics": reply.get("transportMetrics")}
+
+
 LEGEND = {".": "empty/non-colliding", "#": "solid", "h": "bottom half block",
           "=": "one-way platform", "1": "floor slope descending right", "2": "floor slope rising right",
           "3": "solid top, sloped underside", "4": "solid top, opposite sloped underside",
@@ -113,6 +127,16 @@ class Agent:
         if event.get("isSelf") is not False or event["eventId"] in self._seen:
             return
         self._seen.add(event["eventId"])
+        # Retain call/result pairs, but do not resend old full viewport snapshots on later chats.
+        for message in self.history:
+            if message.get("role") == "tool":
+                try:
+                    old = json.loads(message.get("content", "{}"))
+                    if isinstance(old, dict) and "observation" in old:
+                        message["content"] = json.dumps({"valid": False, "expired": True,
+                            "reason": "Previous viewport snapshot omitted; call get_observation for current data"})
+                except (ValueError, TypeError):
+                    pass
         self.history.append({"role": "user", "content": json.dumps({
             "senderId": event["senderId"], "senderName": event["senderName"],
             "text": event["text"], "eventId": event["eventId"],
@@ -169,9 +193,10 @@ class Agent:
                         tracing.trace.emit("tool_start", call=call)
                         try:
                             function = call["function"]
-                            if function.get("name") != "get_state" or json.loads(function.get("arguments", "")) != {}:
-                                raise ValueError("Only get_state with empty object arguments is supported")
-                            result = await asyncio.to_thread(read_state, self.bridge)
+                            if function.get("name") not in ("get_state", "get_observation") or json.loads(function.get("arguments", "")) != {}:
+                                raise ValueError("Only get_state/get_observation with empty object arguments are supported")
+                            reader = read_observation if function["name"] == "get_observation" else read_state
+                            result = await asyncio.to_thread(reader, self.bridge)
                         except (BridgeError, OSError, ValueError, TypeError, KeyError) as error:
                             result = {"valid": False, "error": str(error)}
                         except asyncio.CancelledError:

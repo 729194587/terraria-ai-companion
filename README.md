@@ -1,6 +1,8 @@
 # Terraria AI Companion
 
-功能分支新增 **Mod 0.1.18 附近实体感知**：现有 `get_state` 在同次快照中返回其他玩家、NPC/生物，保留原始网格和 `spatial`；分类保守，显式标记未知和截断。新包在 `.local/entity-build`，尚未部署或真实游戏验收，详见 [实体感知说明](docs/CHAT_AGENT.md#附近实体018)。
+功能分支新增 **M1.9 / Mod 0.1.19 统一视口观察**：只读 `get_observation` 按需返回摄像机、完整视口 Tile、玩家背包／装备、NPC／玩家／掉落物／弹幕及环境，保留旧工具。离线测试和构建通过；产物 `.local/observation-build`，未部署、未真实游戏验收。接口、编码、测量及限制见 [统一观察说明](docs/OBSERVATION.md)。
+
+**Mod 0.1.18 附近实体感知**：现有 `get_state` 在同次快照中返回其他玩家、NPC/生物，保留原始网格和 `spatial`；分类保守，显式标记未知和截断。历史包在 `.local/entity-build`，详见 [实体感知说明](docs/CHAT_AGENT.md#附近实体018)。
 
 新增 **0.1.17 最小聊天 Agent**：远端真人聊天经 TCP 事件立即触发 Python LLM，模型可调用唯一的 `get_state` 工具读取真实状态和局部地形，再由游戏线程发送聊天回复。支持新消息取消旧请求与迟到结果拦截；未接入导航等动作工具。配置、协议、文件清单和双客户端验收步骤见 [聊天 Agent 说明](docs/CHAT_AGENT.md)。本轮仅构建到 `.local/agent-build`，未部署；以下 0.1.16 导航结论是历史实测，不代表新聊天功能已游戏验收。
 

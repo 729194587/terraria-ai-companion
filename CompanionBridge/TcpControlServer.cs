@@ -13,6 +13,8 @@ namespace CompanionBridge;
 
 internal sealed class TcpControlServer : IDisposable
 {
+    internal const int MaxResponseBytes = 16 * 1024 * 1024; // UTF-8 including newline
+    internal const int MaxRequestBytes = 4096;
     internal const int DefaultPort = 18777;
     private readonly ControlState _state;
     private readonly TcpListener _listener;
@@ -95,7 +97,7 @@ internal sealed class TcpControlServer : IDisposable
             client.NoDelay = true;
             using var stream = client.GetStream();
             await WriteJson(stream, new { v = 1, type = "hello", instance = _instance,
-                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "guarded_control", "local_navigation", "chat_events", "send_chat", "nearby_entities" } }, writeGate, token);
+                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "guarded_control", "local_navigation", "chat_events", "send_chat", "nearby_entities", "viewport_observation_v1" }, maxResponseBytes = MaxResponseBytes }, writeGate, token);
             writer = WriteReplies(stream, replies.Reader, writeGate, token);
             eventWriter = WriteEvents(stream, events.Reader, writeGate, token);
             // A failed writer must wake the reader and revoke the session as well.
@@ -112,7 +114,7 @@ internal sealed class TcpControlServer : IDisposable
                 {
                     if (buffer[i] != (byte)'\n')
                     {
-                        if (line.Length >= 4096) throw new InvalidDataException("Line too long.");
+                        if (line.Length >= MaxRequestBytes) throw new InvalidDataException("Line too long.");
                         line.WriteByte(buffer[i]);
                         continue;
                     }
@@ -163,10 +165,45 @@ internal sealed class TcpControlServer : IDisposable
 
     private static async Task WriteJson(NetworkStream stream, object value, SemaphoreSlim gate, CancellationToken token)
     {
-        byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, JsonOptions) + "\n");
+        byte[] bytes = SerializeFrame(value);
         await gate.WaitAsync(token);
         try { await stream.WriteAsync(bytes, token); }
         finally { gate.Release(); }
+    }
+
+    // Called off the game thread. Serialize the snapshot once, then append a small metrics member.
+    internal static byte[] SerializeFrame(object value)
+    {
+        long started = Stopwatch.GetTimestamp();
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
+        byte[] metrics = null;
+        if (value is ControlReply reply && reply.Observation != null)
+        {
+            double elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            metrics = JsonSerializer.SerializeToUtf8Bytes(new {
+                transportMetrics = new { measuredPayloadBytes = bytes.Length + 1, serializationMilliseconds = elapsed,
+                    measurement = "first full reply serialization; excludes this metrics envelope and network write" }
+            }, JsonOptions);
+        }
+        int length = bytes.Length + (metrics?.Length ?? 1);
+        if (length > MaxResponseBytes)
+        {
+            if (value is not ControlReply oversized) throw new InvalidDataException("response_too_large");
+            return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {
+                v = 1, oversized.Id, ok = false, status = "response_too_large", oversized.Mode,
+                requiredBytes = length, maxResponseBytes = MaxResponseBytes
+            }, JsonOptions) + "\n");
+        }
+        var frame = new byte[length];
+        if (metrics == null) Buffer.BlockCopy(bytes, 0, frame, 0, bytes.Length);
+        else
+        {
+            Buffer.BlockCopy(bytes, 0, frame, 0, bytes.Length - 1);
+            frame[bytes.Length - 1] = (byte)',';
+            Buffer.BlockCopy(metrics, 1, frame, bytes.Length, metrics.Length - 1);
+        }
+        frame[^1] = (byte)'\n';
+        return frame;
     }
 
     internal void Disconnect()

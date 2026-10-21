@@ -8,6 +8,10 @@ import socket
 import sys
 import time
 import agent_trace as tracing
+from observation import validate_observation
+
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_REQUEST_BYTES = 4096
 
 
 class BridgeError(Exception):
@@ -84,14 +88,19 @@ class Bridge:
             future.set_exception(error)
 
     def _read(self):
-        line = self.reader.readline(65537)
+        line = self.reader.readline(MAX_RESPONSE_BYTES + 1)
         if not line:
             raise BridgeError("Bridge closed connection (busy, P override, or world/player changed)")
-        if len(line) > 65536 or not line.endswith(b"\n"):
-            raise BridgeError("Invalid or oversized response")
+        if len(line) > MAX_RESPONSE_BYTES or not line.endswith(b"\n"):
+            raise BridgeError("Invalid, truncated or oversized response (max 16 MiB including newline)")
         value = json.loads(line)
         if not isinstance(value, dict):
             raise BridgeError("Response must be a JSON object")
+        if value.get("status") == "observation":
+            metrics = value.setdefault("transportMetrics", {})
+            if not isinstance(metrics, dict):
+                raise BridgeError("Malformed observation transport metrics")
+            metrics["receivedBytes"] = len(line)
         return value
 
     def command(self, cmd, **parameters):
@@ -104,9 +113,12 @@ class Bridge:
                     raise self._failure
                 self.request_id += 1
                 request = {"v": 1, "id": self.request_id, "cmd": cmd, **parameters}
+                wire = (json.dumps(request, ensure_ascii=False) + "\n").encode("utf-8")
+                if len(wire) - 1 > MAX_REQUEST_BYTES:
+                    raise BridgeError("Request exceeds 4096 UTF-8 bytes")
                 self._pending[self.request_id] = future
                 tracing.trace.emit("ipc_request", request=request)
-                self.sock.sendall((json.dumps(request, ensure_ascii=False) + "\n").encode("utf-8"))
+                self.sock.sendall(wire)
             reply = future.result(timeout=self.timeout)
             tracing.trace.emit("ipc_reply", command=cmd, reply=reply,
                                elapsed_ms=(time.monotonic() - started) * 1000)
@@ -166,6 +178,18 @@ class Bridge:
         reply = self.command("get_terrain")
         if reply.get("status") != "terrain" or not isinstance(reply.get("terrain"), dict):
             raise BridgeError("Missing terrain in response (requires CompanionBridge 0.1.6+)")
+        return reply
+
+    def get_observation(self):
+        if "viewport_observation_v1" not in self.hello.get("capabilities", []):
+            raise BridgeError("get_observation requires viewport_observation_v1 capability")
+        reply = self.command("get_observation")
+        if reply.get("status") != "observation":
+            raise BridgeError("Missing observation in response")
+        try:
+            validate_observation(reply.get("observation"))
+        except (ValueError, TypeError, KeyError) as error:
+            raise BridgeError(str(error)) from error
         return reply
 
     def input(self, direction, jump=False):
