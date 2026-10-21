@@ -36,6 +36,9 @@ internal sealed class ControlState
     private int _generation;
     private long _deadline;
     private ControlMode _mode;
+    private bool _wasCanControl;
+    private bool _controlBlocked;
+    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "send_chat";
     private string _latestChatId;
     internal void ObserveChat(string id) { lock (_gate) _latestChatId = id; }
     private ControlInput _input = new(1, false, false);
@@ -81,6 +84,8 @@ internal sealed class ControlState
             if (request.Id <= _lastId)
                 return Task.FromResult(Reply(request.Id, false, "invalid_id"));
             _lastId = request.Id;
+            if (_controlBlocked && !IsReadOrChat(request.Cmd))
+                return Task.FromResult(Reply(request.Id, false, "not_ready"));
             if (_pending.Count >= Capacity) throw new InvalidOperationException("Command queue full.");
             var completion = new TaskCompletionSource<ControlReply>(TaskCreationOptions.RunContinuationsAsynchronously);
             _pending.Enqueue(new Pending(session, request, receivedAt, completion));
@@ -94,11 +99,10 @@ internal sealed class ControlState
     {
         lock (_gate)
         {
-            if (!canControl)
-            {
-                if (_mode != ControlMode.None) _generation++;
-                _mode = ControlMode.None;
-            }
+            if (!canControl && (_wasCanControl || _mode != ControlMode.None)) RevokeControl();
+            _wasCanControl = canControl;
+            if (canControl) _controlBlocked = false;
+            else if (snapshot?.InWorld == true) _controlBlocked = true;
             if (_mode != ControlMode.None && now >= _deadline) { _mode = ControlMode.None; _generation++; }
             ObservationSnapshot observation = null;
             bool observationAttempted = false, observationFailed = false;
@@ -176,6 +180,30 @@ internal sealed class ControlState
         }
     }
 
+    internal void RevokeControl()
+    {
+        lock (_gate)
+        {
+            // Both the death hook and the next DoUpdate may observe this transition.
+            if (!_controlBlocked || _wasCanControl || _mode != ControlMode.None) _generation++;
+            _mode = ControlMode.None;
+            _input = new(0, false, false);
+            _deadline = 0;
+            _wasCanControl = false;
+            _controlBlocked = true;
+            // A command queued before death cannot be applied after a fast respawn.
+            // Preserve read/chat requests and their order on the same TCP session.
+            int count = _pending.Count;
+            for (int i = 0; i < count; i++)
+            {
+                var pending = _pending.Dequeue();
+                if (IsReadOrChat(pending.Request.Cmd))
+                    _pending.Enqueue(pending);
+                else pending.Completion.TrySetResult(Reply(pending.Request.Id, false, "not_ready"));
+            }
+        }
+    }
+
     internal void ToggleManual(long now)
     {
         lock (_gate)
@@ -192,6 +220,8 @@ internal sealed class ControlState
         lock (_gate)
         {
             _mode = ControlMode.None;
+            _wasCanControl = false;
+            _controlBlocked = false;
             _generation++;
             _deadline = 0;
             ClearPending("reset");

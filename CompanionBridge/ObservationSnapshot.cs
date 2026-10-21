@@ -33,6 +33,19 @@ internal sealed record ObservedEntity(string Kind, string InstanceKey, int Slot,
 }
 internal sealed record EntityCoverage(int MatchedCount, int ReturnedCount, int OmittedCount, string Reason);
 internal sealed record ObservedEntities(ObservedEntity[] Items, EntityCoverage Coverage);
+
+internal static class ObservationEntitySlots
+{
+    // The array slot is authoritative. Entity.whoAmI may be unset/stale (observed for client items).
+    internal static IEnumerable<(int Slot, T Entity)> Enumerate<T>(T[] entities)
+    {
+        for (int slot = 0; slot < entities.Length; slot++) yield return (slot, entities[slot]);
+    }
+
+    internal static string InstanceKey(string observationId, string kind, int slot) =>
+        observationId + ":" + kind + ":" + slot;
+}
+
 internal sealed record ObservationCompleteness(bool CompleteWithinScope, string[] Reasons, string[] Limitations);
 internal sealed record ObservationSnapshot(int SchemaVersion, string WorldSessionId, string ObservationId,
     ulong GameUpdate, string SampledAt, string Phase, string Status, CameraObservation Camera,

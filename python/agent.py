@@ -199,6 +199,8 @@ class Agent:
                             result = await asyncio.to_thread(reader, self.bridge)
                         except (BridgeError, OSError, ValueError, TypeError, KeyError) as error:
                             result = {"valid": False, "error": str(error)}
+                            if isinstance(error, BridgeError) and error.diagnostic is not None:
+                                result["diagnostic"] = error.diagnostic
                         except asyncio.CancelledError:
                             tracing.trace.emit("tool_cancelled", elapsed_ms=(time.monotonic() - tool_started) * 1000)
                             raise

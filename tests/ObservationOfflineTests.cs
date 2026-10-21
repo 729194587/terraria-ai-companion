@@ -19,6 +19,21 @@ public static class ObservationOfflineTests
     }
     public static void Run()
     {
+        // Real trace: two different dropped items had whoAmI=0 and both became item:0.
+        // Exercise the producer's slot enumeration with duplicate/stale IDs and inactive holes.
+        var itemSlots = new (int WhoAmI, bool Active, int Type)[32];
+        itemSlots[5] = (0, true, 23); itemSlots[9] = (0, true, 321);
+        for (int i = 12; i < 32; i++) itemSlots[i] = (0, true, 23);
+        var slottedItems = ObservationEntitySlots.Enumerate(itemSlots).Where(entry => entry.Entity.Active).ToArray();
+        var itemKeys = slottedItems.Select(entry => ObservationEntitySlots.InstanceKey("world:1", "item", entry.Slot)).ToArray();
+        Check(slottedItems.Length == 22 && slottedItems[0].Slot == 5 && slottedItems[1].Slot == 9,
+            "Actual sparse array slots retained, not filtered ordinals or duplicate whoAmI");
+        Check(itemKeys[0] == "world:1:item:5" && itemKeys[1] == "world:1:item:9"
+            && itemKeys.Distinct().Count() == 22, "Different client items keep unique instance keys without dropping any");
+        Check(ObservationEntitySlots.InstanceKey("world:1", "npc", 5) != itemKeys[0]
+            && ObservationEntitySlots.InstanceKey("world:2", "item", 5) != itemKeys[0],
+            "Instance namespace separates entity kinds and observations");
+
         var camera = ObservationGeometry.Camera(1, 42, "fixture", 10, new(100, 200),
             new(13, 27, 1920, 1080), new(2, 2), new(2, 0, 0, 2, -960, -540));
         Check(camera.WorldBounds == new WorldRect(580, 470, 960, 540), "Inverse centered zoom, not screenPosition");

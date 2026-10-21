@@ -192,30 +192,30 @@ internal static class ObservationReader
         {
             var bounds = Bounds(entity);
             if (!ObservationGeometry.Intersects(bounds, camera.WorldCorners)) return;
-            items.Add(new(kind, observationId + ":" + kind + ":" + slot, slot, type, key, name,
+            items.Add(new(kind, ObservationEntitySlots.InstanceKey(observationId, kind, slot), slot, type, key, name,
                 bounds, new(entity.velocity.X, entity.velocity.Y), life, max, classification, basis, true, tick, details));
         }
-        foreach (var p in Main.player)
-            if (p.active) Add(p, "player", p.whoAmI, null, "Terraria/Player", p.name, p.statLife, p.statLifeMax2,
-                p.whoAmI == Main.myPlayer ? "self" : "other_player", "Player identity; current PvP hostility not inferred",
-                new { p.dead, p.ghost, p.hostile, p.team, isLocal = p.whoAmI == Main.myPlayer });
-        foreach (var n in Main.npc)
+        foreach (var (slot, p) in ObservationEntitySlots.Enumerate(Main.player))
+            if (p.active) Add(p, "player", slot, null, "Terraria/Player", p.name, p.statLife, p.statLifeMax2,
+                slot == Main.myPlayer ? "self" : "other_player", "Player identity; current PvP hostility not inferred",
+                new { p.dead, p.ghost, p.hostile, p.team, isLocal = slot == Main.myPlayer });
+        foreach (var (slot, n) in ObservationEntitySlots.Enumerate(Main.npc))
             if (n.active)
             {
                 var evidence = new NpcEvidence(n.friendly, n.townNPC || NPCID.Sets.ActsLikeTownNPC[n.type],
                     NPCID.Sets.CountsAsCritter[n.type], n.damage, n.CanBeChasedBy(), n.ModNPC != null,
                     NPCID.Sets.ProjectileNPC[n.type]);
                 var classification = EntityCollector.Classify(evidence);
-                Add(n, "npc", n.whoAmI, n.type, n.ModNPC?.FullName ?? "Terraria/" + NPCID.Search.GetName(n.type),
+                Add(n, "npc", slot, n.type, n.ModNPC?.FullName ?? "Terraria/" + NPCID.Search.GetName(n.type),
                     n.GivenOrTypeName, n.life, n.lifeMax, classification.Kind, classification.Basis,
                     new { evidence, n.hide, n.dontTakeDamage, n.realLife });
             }
-        foreach (var item in Main.item)
-            if (item.active && !item.IsAir) Add(item, "item", item.whoAmI, item.type,
+        foreach (var (slot, item) in ObservationEntitySlots.Enumerate(Main.item))
+            if (item.active && !item.IsAir) Add(item, "item", slot, item.type,
                 item.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(item.type), item.Name,
-                null, null, "dropped_item", "Active item; life not applicable", ItemData(item, item.whoAmI));
-        foreach (var projectile in Main.projectile)
-            if (projectile.active) Add(projectile, "projectile", projectile.whoAmI, projectile.type,
+                null, null, "dropped_item", "Active item; life not applicable", ItemData(item, slot));
+        foreach (var (slot, projectile) in ObservationEntitySlots.Enumerate(Main.projectile))
+            if (projectile.active) Add(projectile, "projectile", slot, projectile.type,
                 projectile.ModProjectile?.FullName ?? "Terraria/" + ProjectileID.Search.GetName(projectile.type), projectile.Name,
                 null, null, "projectile", "Projectile flags are evidence, not NPC allegiance or current threat",
                 new { projectile.owner, projectile.identity, projectile.friendly, projectile.hostile,

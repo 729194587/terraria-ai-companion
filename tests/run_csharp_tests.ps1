@@ -6,6 +6,7 @@ $sources = @(
     (Join-Path $repo 'CompanionBridge/ControlState.cs'),
     (Join-Path $repo 'CompanionBridge/ObservationSnapshot.cs'),
     (Join-Path $PSScriptRoot 'ObservationOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'DeathLifecycleOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/TerrainSnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/EntitySnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
@@ -19,7 +20,7 @@ $sources = @(
 )
 $references = Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName
 Add-Type -Path $sources -ReferencedAssemblies $references
-if (!$MotionOnly) { [BridgeOfflineTests]::Run(); [ObservationOfflineTests]::Run() }
+if (!$MotionOnly) { [BridgeOfflineTests]::Run(); [ObservationOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run() }
 if ($ObservationSamplePath -and !$MotionOnly) {
     [System.IO.File]::WriteAllText($ObservationSamplePath, [ObservationOfflineTests]::SampleJson,
         [System.Text.UTF8Encoding]::new($false))

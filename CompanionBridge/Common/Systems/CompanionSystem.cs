@@ -14,6 +14,7 @@ public sealed class CompanionSystem : ModSystem
     private TimeSpan? _previousInactiveSleepTime;
     private ControlMode _lastMode;
     private bool _wasCanControl;
+    private bool _wasInWorld;
 
     // Called only from DoUpdate on the game thread, never from the TCP tasks.
     private static PlayerSnapshot ReadSnapshot()
@@ -66,10 +67,11 @@ public sealed class CompanionSystem : ModSystem
     {
         // Runs before the vanilla focus early-return, including while unfocused.
         bool canControl = CanControl;
-        // Invalidate the old controller on transition; allow fresh read-only sessions in menus/death.
-        if (_wasCanControl && !canControl) CompanionBridge.Server?.Disconnect();
-        _wasCanControl = canControl;
         var snapshot = ReadSnapshot();
+        if (_wasInWorld && !snapshot.InWorld) CompanionBridge.StopControl();
+        else if (_wasCanControl && !canControl) CompanionBridge.RevokeControl();
+        _wasInWorld = snapshot.InWorld;
+        _wasCanControl = canControl;
         CompanionBridge.Controls.Update(canControl, Stopwatch.GetTimestamp(), snapshot,
             snapshot.InWorld ? TerrainReader.Read(Main.LocalPlayer) : null, GameNavigation.Snapshot, ChatBridgeSystem.Send,
             snapshot.InWorld ? EntityReader.Read(Main.LocalPlayer) : null, ObservationReader.Read);

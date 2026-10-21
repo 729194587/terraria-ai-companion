@@ -37,7 +37,7 @@ public sealed class CompanionPlayer : ModPlayer
 
         if (!CanControl && CompanionBridge.AutoMoveEnabled)
         {
-            CompanionBridge.StopControl();
+            CompanionBridge.RevokeControl();
         }
     }
 
@@ -45,7 +45,7 @@ public sealed class CompanionPlayer : ModPlayer
     {
         if (Player.whoAmI == Main.myPlayer && CompanionBridge.AutoMoveEnabled)
         {
-            CompanionBridge.StopControl();
+            CompanionBridge.RevokeControl();
         }
     }
 

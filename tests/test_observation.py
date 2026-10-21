@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import socket
 import sys
+import tempfile
 import threading
 import unittest
 from unittest.mock import patch
@@ -12,7 +13,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 from agent import Agent, TOOLS, read_observation
 from control import Bridge, BridgeError, MAX_RESPONSE_BYTES
-from observation import row_indices, validate_observation
+from observation import ObservationValidationError, row_indices, validate_observation
+from agent_trace import Trace
 from test_agent import Game, Model, event, tool, final
 
 
@@ -32,6 +34,86 @@ def fixture():
 
 
 class ObservationTests(unittest.TestCase):
+    @staticmethod
+    def entity():
+        return {"kind": "npc", "instanceKey": "world:1:npc:3", "sampleGameUpdate": 42, "inViewport": True,
+                "boundsWorldPixels": {"x": 0, "y": 0, "width": 10, "height": 10},
+                "velocityPixelsPerTick": {"x": 0, "y": 0}}
+
+    def test_entity_failures_have_field_level_context(self):
+        cases = [
+            ({"kind": "invalid"}, "invalid_kind", "kind"),
+            ({"instanceKey": None}, "invalid_instance_key_type", "instanceKey"),
+            ({"instanceKey": 123}, "invalid_instance_key_type", "instanceKey"),
+            ({"instanceKey": ""}, "empty_instance_key", "instanceKey"),
+            ({"sampleGameUpdate": 41}, "sample_tick_mismatch", "sampleGameUpdate"),
+            ({"sampleGameUpdate": 42.0}, "sample_tick_mismatch", "sampleGameUpdate"),
+            ({"inViewport": False}, "invalid_in_viewport", "inViewport"),
+            ({"inViewport": 1}, "invalid_in_viewport", "inViewport"),
+            ({"inViewport": "true"}, "invalid_in_viewport", "inViewport"),
+        ]
+        for changes, code, field in cases:
+            value = fixture(); entity = {**self.entity(), **changes}
+            value["entities"]["items"] = [entity]
+            value["entities"]["coverage"].update(matchedCount=1, returnedCount=1)
+            with self.subTest(code=code, changes=changes), self.assertRaises(ObservationValidationError) as failure:
+                validate_observation(value)
+            diagnostic = failure.exception.diagnostic
+            self.assertEqual(diagnostic["code"], code)
+            self.assertEqual(diagnostic["observationId"], "world:1")
+            self.assertEqual(diagnostic["gameUpdate"], 42)
+            self.assertEqual(diagnostic["entityIndex"], 0)
+            self.assertEqual(diagnostic["kind"], entity["kind"])
+            self.assertEqual(diagnostic["instanceKey"], entity["instanceKey"])
+            self.assertEqual(diagnostic["field"], field)
+            self.assertEqual(diagnostic["actual"], entity[field])
+            self.assertTrue(diagnostic["expected"])
+
+    def test_missing_duplicate_and_nonobject_entities_are_distinct(self):
+        for case, code, index in (("missing", "missing_instance_key", 0),
+                                  ("duplicate", "duplicate_instance_key", 1),
+                                  ("nonobject", "invalid_entity", 0)):
+            value = fixture(); entity = self.entity()
+            if case == "missing":
+                del entity["instanceKey"]
+            items = [entity, dict(entity)] if case == "duplicate" else [None if case == "nonobject" else entity]
+            value["entities"]["items"] = items
+            value["entities"]["coverage"].update(matchedCount=len(items), returnedCount=len(items))
+            with self.subTest(case=case), self.assertRaises(ObservationValidationError) as failure:
+                validate_observation(value)
+            diagnostic = failure.exception.diagnostic
+            self.assertEqual(diagnostic["code"], code)
+            self.assertEqual(diagnostic["entityIndex"], index)
+            if case == "duplicate":
+                self.assertEqual(diagnostic["firstEntityIndex"], 0)
+            if case == "missing":
+                self.assertFalse(diagnostic["present"])
+
+    def test_valid_entities_still_pass_strict_validation(self):
+        value = fixture()
+        value["entities"]["items"] = [self.entity()]
+        value["entities"]["coverage"].update(matchedCount=1, returnedCount=1)
+        self.assertIs(validate_observation(value), value)
+
+    def test_live_duplicate_item_key_regression(self):
+        # Sanitized shape of the failing live reply: distinct types/bounds, same item:0 key.
+        value = fixture()
+        item = {**self.entity(), "kind": "item", "slot": 0, "instanceKey": "world:1:item:0", "typeId": 23}
+        other = {**item, "typeId": 321,
+                 "boundsWorldPixels": {"x": 30, "y": 0, "width": 20, "height": 20}}
+        value["entities"]["items"] = [item, other]
+        value["entities"]["coverage"].update(matchedCount=2, returnedCount=2)
+        with self.assertRaises(ObservationValidationError) as failure:
+            validate_observation(value)
+        self.assertEqual(failure.exception.diagnostic["code"], "duplicate_instance_key")
+        self.assertEqual(failure.exception.diagnostic["firstEntityIndex"], 0)
+        # Once producer uses the actual array slot, both objects survive unchanged in the observation.
+        for entity, slot in zip(value["entities"]["items"], (4, 17)):
+            entity["slot"] = slot
+            entity["instanceKey"] = f"world:1:item:{slot}"
+        self.assertIs(validate_observation(value), value)
+        self.assertEqual([e["typeId"] for e in value["entities"]["items"]], [23, 321])
+
     def test_bridge_getter_and_versioned_schema(self):
         bridge = Bridge.__new__(Bridge)
         bridge.hello = {"capabilities": ["viewport_observation_v1"]}
@@ -133,6 +215,60 @@ class ObservationTests(unittest.TestCase):
 
 
 class ObservationAgentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_validation_diagnostic_reaches_trace_and_model_error_result(self):
+        value = fixture(); entity = ObservationTests.entity()
+        value["entities"]["items"] = [entity, dict(entity)]
+        value["entities"]["coverage"].update(matchedCount=2, returnedCount=2)
+        bridge = Bridge.__new__(Bridge)
+        bridge.hello = {"capabilities": ["viewport_observation_v1"]}
+        bridge.command = lambda cmd: {"status": "observation", "observation": value}
+        game = Game(); game.get_observation = bridge.get_observation
+        model = Model(tool("get_observation"), final("Observation failed: duplicate_instance_key"))
+        agent = Agent(game, model)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                trace = Trace(Path(directory) / "trace.jsonl", enabled=True)
+                with patch("agent_trace.trace", trace):
+                    agent.receive(event(1)); await agent.task
+                records = [json.loads(line) for line in trace.path.read_text(encoding="utf-8").splitlines()]
+            result = json.loads(model.requests[1][-1]["content"])
+            self.assertFalse(result["valid"])
+            self.assertEqual(result["diagnostic"]["code"], "duplicate_instance_key")
+            self.assertIn('"entityIndex": 1', result["error"])
+            diagnostic_event = next(r for r in records if r["type"] == "observation_validation_failed")
+            self.assertEqual(diagnostic_event["diagnostic"], result["diagnostic"])
+            tool_event = next(r for r in records if r["type"] == "tool_result")
+            self.assertEqual(tool_event["result"]["diagnostic"], result["diagnostic"])
+            self.assertNotIn("player", diagnostic_event)
+            self.assertNotIn("history", diagnostic_event)
+            self.assertEqual(game.sent[-1][1]["text"], "Observation failed: duplicate_instance_key")
+        finally:
+            await agent.close()
+
+    async def test_same_agent_can_read_and_chat_while_dead_then_respawned(self):
+        value = fixture(); value["status"] = "partial"; value["player"]["dead"] = True
+        value["completeness"].update(completeWithinScope=False, reasons=["local_player_dead_or_ghost"])
+        game = Game()
+        def read():
+            return {"observation": validate_observation(copy.deepcopy(value))}
+        game.get_observation = read
+        model = Model(tool("get_observation"), final("dead but observing"), tool("get_observation"), final("respawned"))
+        agent = Agent(game, model)
+        try:
+            agent.receive(event(1)); await agent.task
+            dead = json.loads(model.requests[1][-1]["content"])
+            self.assertTrue(dead["valid"])
+            self.assertEqual(dead["observation"]["status"], "partial")
+            value["player"]["dead"] = False; value["gameUpdate"] = 43; value["observationId"] = "world:2"
+            value["status"] = "ok"; value["completeness"].update(completeWithinScope=True, reasons=[])
+            agent.receive(event(2)); await agent.task
+            revived = json.loads(model.requests[3][-1]["content"])
+            self.assertEqual(revived["observation"]["gameUpdate"], 43)
+            self.assertFalse(revived["observation"]["player"]["dead"])
+            self.assertEqual([p["text"] for _, p in game.sent], ["dead but observing", "respawned"])
+        finally:
+            await agent.close()
+
     async def test_tool_call_reaches_model_and_old_snapshot_expires(self):
         game = Game()
         game.get_observation = lambda: {"observation": fixture()}

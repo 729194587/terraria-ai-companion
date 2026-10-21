@@ -8,14 +8,16 @@ import socket
 import sys
 import time
 import agent_trace as tracing
-from observation import validate_observation
+from observation import ObservationValidationError, validate_observation
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 MAX_REQUEST_BYTES = 4096
 
 
 class BridgeError(Exception):
-    pass
+    def __init__(self, message, diagnostic=None):
+        super().__init__(message)
+        self.diagnostic = diagnostic
 
 
 class Bridge:
@@ -188,6 +190,9 @@ class Bridge:
             raise BridgeError("Missing observation in response")
         try:
             validate_observation(reply.get("observation"))
+        except ObservationValidationError as error:
+            tracing.trace.emit("observation_validation_failed", diagnostic=error.diagnostic)
+            raise BridgeError(str(error), diagnostic=error.diagnostic) from error
         except (ValueError, TypeError, KeyError) as error:
             raise BridgeError(str(error)) from error
         return reply

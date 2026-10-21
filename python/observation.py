@@ -1,5 +1,34 @@
 """Versioned, bounded observation validation; no game or model connection."""
+import json
 import math
+
+
+class ObservationValidationError(ValueError):
+    """Small field-level diagnostic; excludes entity details and conversation history."""
+    def __init__(self, diagnostic):
+        self.diagnostic = diagnostic
+        super().__init__("Observation entity validation failed: " + json.dumps(diagnostic, ensure_ascii=True))
+
+
+def _diagnostic_value(value):
+    if isinstance(value, str):
+        return value if len(value) <= 256 else value[:256] + "...[truncated]"
+    if value is None or type(value) in (bool, int, float):
+        return value
+    return {"type": type(value).__name__}  # Do not log arbitrary nested entity payloads.
+
+
+def _entity_error(observation, index, entity, code, field, expected, **extra):
+    entry = entity if isinstance(entity, dict) else {}
+    diagnostic = {
+        "code": code, "observationId": _diagnostic_value(observation.get("observationId")),
+        "gameUpdate": observation.get("gameUpdate"), "entityIndex": index,
+        "kind": _diagnostic_value(entry.get("kind")), "instanceKey": _diagnostic_value(entry.get("instanceKey")),
+        "field": field, "actual": _diagnostic_value(entry.get(field) if field != "$entity" else entity),
+        "actualType": type(entry.get(field) if field != "$entity" else entity).__name__,
+        "present": field in entry if field != "$entity" else True, "expected": expected, **extra,
+    }
+    raise ObservationValidationError(diagnostic)
 
 
 def _integer(value, minimum=0):
@@ -102,13 +131,27 @@ def validate_observation(value):
                 or coverage["matchedCount"] != coverage["returnedCount"] + coverage["omittedCount"]
                 or coverage["omittedCount"] and completeness["completeWithinScope"]):
             raise ValueError("Inconsistent observation entity coverage")
-        keys = set()
-        for entity in entities["items"]:
-            if (not isinstance(entity, dict) or entity.get("kind") not in ("player", "npc", "item", "projectile")
-                    or not isinstance(entity.get("instanceKey"), str) or entity["instanceKey"] in keys
-                    or entity.get("sampleGameUpdate") != value["gameUpdate"] or entity.get("inViewport") is not True):
-                raise ValueError("Malformed observation entity identity/sample")
-            keys.add(entity["instanceKey"])
+        keys = {}
+        for index, entity in enumerate(entities["items"]):
+            if not isinstance(entity, dict):
+                _entity_error(value, index, entity, "invalid_entity", "$entity", "object")
+            if entity.get("kind") not in ("player", "npc", "item", "projectile"):
+                _entity_error(value, index, entity, "invalid_kind", "kind", "player, npc, item or projectile")
+            if "instanceKey" not in entity:
+                _entity_error(value, index, entity, "missing_instance_key", "instanceKey", "nonempty unique string")
+            if not isinstance(entity["instanceKey"], str):
+                _entity_error(value, index, entity, "invalid_instance_key_type", "instanceKey", "nonempty unique string")
+            if not entity["instanceKey"]:
+                _entity_error(value, index, entity, "empty_instance_key", "instanceKey", "nonempty unique string")
+            if entity["instanceKey"] in keys:
+                _entity_error(value, index, entity, "duplicate_instance_key", "instanceKey", "unique within observation",
+                              firstEntityIndex=keys[entity["instanceKey"]])
+            if type(entity.get("sampleGameUpdate")) is not int or entity["sampleGameUpdate"] != value["gameUpdate"]:
+                _entity_error(value, index, entity, "sample_tick_mismatch", "sampleGameUpdate",
+                              "integer equal to observation gameUpdate", expectedValue=value["gameUpdate"])
+            if entity.get("inViewport") is not True:
+                _entity_error(value, index, entity, "invalid_in_viewport", "inViewport", "boolean true (not 1 or a string)")
+            keys[entity["instanceKey"]] = index
             for field, axes in (("boundsWorldPixels", ("x", "y", "width", "height")),
                                 ("velocityPixelsPerTick", ("x", "y"))):
                 vector = entity.get(field)
