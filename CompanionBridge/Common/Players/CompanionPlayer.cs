@@ -3,6 +3,7 @@ using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
 using CompanionBridge.Motion;
+using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Common.Players;
 
@@ -47,6 +48,9 @@ public sealed class CompanionPlayer : ModPlayer
         {
             CompanionBridge.RevokeControl();
         }
+        if (Player.whoAmI == Main.myPlayer)
+            CompanionBridge.Controls.ConfirmMovementInputReleased(ObservationReader.WorldSessionId,
+                Main.GameUpdateCount, "UpdateDead_after_revoke", Player.dead || Player.ghost);
     }
 
     public override void ProcessTriggers(TriggersSet triggersSet)
@@ -63,6 +67,10 @@ public sealed class CompanionPlayer : ModPlayer
 
     public override void PostUpdateRunSpeeds()
     {
+        if (Player.whoAmI == Main.myPlayer)
+            CompanionBridge.Controls.ConfirmMovementInputReleased(ObservationReader.WorldSessionId,
+                Main.GameUpdateCount, "PostUpdateRunSpeeds_before_bridge_input",
+                !Player.controlLeft && !Player.controlRight && !Player.controlJump);
         if (!CanControl || !CompanionBridge.AutoMoveEnabled)
         {
             GameNavigation.Cancel();

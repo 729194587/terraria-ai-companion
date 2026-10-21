@@ -45,6 +45,9 @@ class MovementBridge(Game):
         self.action.update(status=status, reason=reason, completed=status == "completed", cancelled=status == "cancelled",
                            after=self.state(), elapsedMilliseconds=self.action["durationMs"])
         self.generation += 1
+        self.action['endEvidence'] = {'worldSessionId': 'world', 'gameUpdate': 42 + max(0, len(self.observations)-1),
+                                      'phase': 'PostUpdateRunSpeeds_before_bridge_input'}
+        self.action['endEvidenceStatus'] = 'known'
 
     def command(self, cmd, **parameters):
         with self.lock:
@@ -94,12 +97,48 @@ class MovementBridge(Game):
 
 
 class MovementTests(unittest.IsolatedAsyncioTestCase):
+    async def test_terminal_ack_waits_for_actual_player_release_receipt_without_renewing(self):
+        class DelayedReceipt(MovementBridge):
+            def finish(self, status, reason):
+                super().finish(status, reason)
+                self.receipt = self.action.pop('endEvidence')
+                self.action['endEvidenceStatus'] = 'pending'
+            def command(self, cmd, **parameters):
+                if cmd == 'get_movement' and self.action and self.action['status'] == 'completed':
+                    self.action['endEvidence'] = self.receipt
+                    self.action['endEvidenceStatus'] = 'known'
+                return super().command(cmd, **parameters)
+        bridge = DelayedReceipt(complete_after=1)
+        result = await move(bridge, 'right', 100)
+        self.assertEqual(result['observation']['endGameUpdate'], 42)
+        self.assertTrue(result['execution']['inputReleased'])
+        self.assertEqual(sum(cmd == 'get_movement' for cmd, _ in bridge.calls), 3)
+        self.assertFalse(any(cmd == 'renew_move' for cmd, _ in bridge.calls))
+
+    async def test_paused_player_boundary_never_invents_an_end_update(self):
+        class Paused(MovementBridge):
+            def finish(self, status, reason):
+                super().finish(status, reason)
+                self.action.pop('endEvidence')
+                self.action['endEvidenceStatus'] = 'pending'
+        bridge = Paused(complete_after=1)
+        result = await move(bridge, 'right', 50)
+        self.assertEqual(result['execution']['status'], 'completed')
+        self.assertIsNone(result['execution']['inputReleased'])
+        self.assertIsNone(result['observation']['endGameUpdate'])
+        self.assertTrue(result['observation']['required'])
+        self.assertFalse(any(cmd == 'renew_move' for cmd, _ in bridge.calls))
+
     async def test_left_right_results_and_renewal(self):
         for direction, expected in (("left", 90), ("right", 110)):
             bridge = MovementBridge()
             result = await move(bridge, direction, 200, chat_id="chat:1")
             self.assertTrue(result["completed"])
             self.assertFalse(result["cancelled"])
+            self.assertEqual(result['execution'], {'status': 'completed', 'confirmed': True, 'inputReleased': True})
+            self.assertEqual(result['effects']['displacementWorldPixels'], {'x': expected-100, 'y': 0})
+            self.assertEqual(result['goal']['status'], 'not_applicable')
+            self.assertTrue(result['observation']['required'])
             self.assertEqual(result["beforePositionWorldPixels"]["x"], 100)
             self.assertEqual(result["afterPositionWorldPixels"]["x"], expected)
             start = next(p for c, p in bridge.calls if c == "move_for")
@@ -128,6 +167,25 @@ class MovementTests(unittest.IsolatedAsyncioTestCase):
         result = await task
         self.assertTrue(result["cancelled"])
         self.assertEqual(result["reason"], "stopped")
+        self.assertEqual(stopped['execution']['operation'], 'stop_movement')
+        self.assertEqual(stopped['execution']['status'], 'completed')
+        self.assertEqual(stopped['targetAction']['execution']['status'], 'cancelled')
+        self.assertEqual(result['effects']['knowledge'], 'known')
+        self.assertEqual(result['effects']['displacementWorldPixels'], {'x': 10, 'y': 0})
+        self.assertIsNone(result['effects']['attributedToAction'])
+        again = await stop_movement(bridge)
+        self.assertTrue(again['execution']['noOp'])
+        self.assertEqual(again['targetAction']['execution']['status'], 'cancelled')
+
+    async def test_stop_of_completed_action_is_not_original_action_success(self):
+        bridge = MovementBridge(complete_after=1)
+        moved = await move(bridge, 'right', 100)
+        stopped = await stop_movement(bridge)
+        self.assertTrue(stopped['completed'])  # Legacy field still describes the original action.
+        self.assertTrue(stopped['execution']['noOp'])
+        self.assertEqual(stopped['targetAction']['actionId'], moved['actionId'])
+        self.assertEqual(stopped['goal']['status'], 'not_applicable')
+        self.assertFalse(any(cmd == 'cancel_move' for cmd, _ in bridge.calls))
 
     async def test_lease_cancellation_and_completion_heartbeat_race(self):
         bridge = MovementBridge(complete_after=100); bridge.fail_renew = True
@@ -149,6 +207,9 @@ class MovementTests(unittest.IsolatedAsyncioTestCase):
         result = await move(bridge, "right", 100)
         self.assertFalse(result["valid"])
         self.assertEqual(result["status"], "unknown")
+        self.assertEqual(result['execution'], {'status': 'unknown', 'confirmed': False, 'inputReleased': None})
+        self.assertEqual(result['effects']['knowledge'], 'unknown')
+        self.assertIsNone(result['effects']['displacementWorldPixels'])
         self.assertIsNone(result["completed"])
         self.assertIsNone(result["cancelled"])
         self.assertIsNone(result["afterPositionWorldPixels"])
@@ -169,6 +230,9 @@ class MovementTests(unittest.IsolatedAsyncioTestCase):
         result = await move(bridge, "right", 100)
         self.assertEqual(result["status"], "unknown")
         self.assertIsNone(result["completed"])
+        self.assertEqual(result['effects']['beforePositionWorldPixels'], {'x': 100, 'y': 20})
+        self.assertIsNone(result['effects']['afterPositionWorldPixels'])
+        self.assertEqual(result['execution']['status'], 'unknown')
         self.assertFalse(any(c == "renew_move" for c, _ in bridge.calls))
         class OwnershipChanged(MovementBridge):
             def command(self, cmd, **parameters):
@@ -194,6 +258,32 @@ class MovementTests(unittest.IsolatedAsyncioTestCase):
 
 
 class MovementAgentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_goal_evidence_through_agent_and_stop_after_arrival(self):
+        class Wall(MovementBridge):
+            def finish(self, status, reason):
+                original = self.position['x']
+                super().finish(status, reason)
+                self.position['x'] = original
+                self.action['after'] = self.state()
+        for bridge, expected in ((MovementBridge(), 'achieved'), (Wall(), 'not_achieved')):
+            model = Model(tool('get_observation'),
+                          tool('move', '{"direction":"right","duration_ms":200,"target_position":{"x":110,"y":20},"arrival_tolerance":1}'),
+                          tool('get_observation'), tool('stop_movement'), final('arrived'))
+            agent = Agent(bridge, model)
+            agent.receive(event(1)); await agent.task
+            replies = [json.loads(next(m['content'] for m in reversed(request) if m['role'] == 'tool'))
+                       for request in model.requests[2:]]
+            self.assertEqual(replies[0]['execution']['status'], 'completed')
+            self.assertEqual(replies[0]['goal']['status'], 'unknown')
+            self.assertEqual(replies[0]['effects']['displacementWorldPixels']['x'], 10 if expected == 'achieved' else 0)
+            verified, stopped = replies[1], replies[2]
+            self.assertEqual(verified['movementLoop']['goal']['status'], expected)
+            self.assertEqual(verified['movementLoop']['goal'], stopped['movementLoop']['goal'])
+            self.assertEqual(stopped['execution']['operation'], 'stop_movement')
+            self.assertTrue(stopped['execution']['noOp'])
+            self.assertEqual(agent.last_movement_result['status'], 'arrived' if expected == 'achieved' else 'stopped')
+            self.assertEqual(agent.last_movement_result['execution']['status'], 'completed')
+
     async def test_observe_move_observe_tool_flow(self):
         bridge = MovementBridge()
         model = Model(tool("get_observation"), tool("move", '{"direction":"right","duration_ms":200}'),

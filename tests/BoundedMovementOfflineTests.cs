@@ -17,6 +17,7 @@ public static class BoundedMovementOfflineTests
     }
     public static void Run()
     {
+        EndEvidenceRegression();
         var parsed = ControlState.Parse("{\"v\":1,\"id\":1,\"cmd\":\"move_for\",\"direction\":-1,\"durationMs\":200,\"expectedGeneration\":0}");
         Check(parsed.Direction == -1 && parsed.DurationMs == 200, "Bounded typed movement command");
         foreach (string fields in new[] { "\"direction\":0,\"durationMs\":200,\"expectedGeneration\":0",
@@ -139,5 +140,71 @@ public static class BoundedMovementOfflineTests
             DurationMs: 100), 32).Ok && !between.IsMoving,
             "Takeover and release between decisions invalidate the old observation generation");
         Console.WriteLine("PASS: bounded left/right input, absolute duration, lease, cancellation/ownership, death/respawn, manual and stale-start safety");
+    }
+
+    private static void EndEvidenceRegression()
+    {
+        const string phase = "PostUpdateRunSpeeds_before_bridge_input";
+        foreach (string termination in new[] { "duration", "cancel", "death", "manual", "lease" })
+        {
+            var state = new ControlState(); int session = state.BeginSession();
+            var start = state.Enqueue(session, new(1, "move_for", 1, ExpectedGeneration: 0, DurationMs: 100), 0);
+            state.Update(true, 0, Player(), worldSessionId: "world");
+            int actionId = start.Result.Movement.Action.ActionId;
+            state.ConfirmMovementInputReleased("world", 50, phase, true);
+            Check(Apply(state, session, new(2, "get_movement"), 1).Movement.Action.EndEvidence == null,
+                "A running action cannot acquire release evidence");
+            switch (termination)
+            {
+                case "duration": state.Update(true, Ms(100), Player(110)); break;
+                case "cancel": Apply(state, session, new(3, "cancel_move", ActionId: actionId), 10); break;
+                case "death": state.RevokeControl(Player(life: 0), Ms(10)); break;
+                case "manual": state.ToggleManual(Ms(10)); break;
+                case "lease": state.Update(true, Ms(750), Player(110)); break;
+            }
+            var terminal = Apply(state, session, new(4, "get_movement"), 751,
+                Player(life: termination == "death" ? 0 : 100), termination != "death");
+            Check(terminal.Movement.Action.Status != "running" && terminal.Movement.Action.EndEvidence == null
+                && terminal.Movement.Action.EndEvidenceStatus == "pending",
+                termination + ": terminal request/deadline/revoke is not a player input boundary");
+            state.ConfirmMovementInputReleased("other-world", 77, phase, true);
+            state.ConfirmMovementInputReleased("world", 77, "request_received", true);
+            Check(Apply(state, session, new(5, "get_movement"), 752).Movement.Action.EndEvidence == null,
+                "Wrong world/request-time stamps rejected");
+            state.ConfirmMovementInputReleased("world", 79, phase, false);
+            Check(Apply(state, session, new(51, "get_movement"), 752).Movement.Action.EndEvidence == null,
+                "Lingering/human-held controls or paused player without release proof cannot acquire E");
+            string boundary = termination == "death" ? "UpdateDead_after_revoke" : phase;
+            state.ConfirmMovementInputReleased("world", 80, boundary, true);
+            var evidenced = Apply(state, session, new(52, "get_movement"), 753);
+            Check(evidenced.Movement.Action.EndEvidence == new MovementEndEvidence("world", 80, boundary)
+                && evidenced.Movement.Action.EndEvidenceStatus == "known",
+                termination + ": actual player boundary supplies E, independent of request wall time");
+            state.ConfirmMovementInputReleased("world", 999, phase, true);
+            var repeated = Apply(state, session, new(53, "cancel_move", ActionId: actionId), 754);
+            Check(repeated.Movement.Action.EndEvidence.GameUpdate == 80,
+                "Repeated stops and later player hooks cannot rewrite E");
+            using var json = JsonDocument.Parse(TcpControlServer.SerializeFrame(evidenced));
+            var wire = json.RootElement.GetProperty("movement").GetProperty("action");
+            Check(wire.GetProperty("endEvidence").GetProperty("gameUpdate").GetUInt64() == 80
+                && wire.GetProperty("endEvidence").GetProperty("worldSessionId").GetString() == "world"
+                && wire.GetProperty("endEvidenceStatus").GetString() == "known",
+                "Additive camelCase release evidence survives existing wire serializer");
+        }
+        var legacy = new ControlState(); int legacySession = legacy.BeginSession();
+        Apply(legacy, legacySession, new(1, "move_for", 1, ExpectedGeneration: 0, DurationMs: 100), 0);
+        legacy.Update(true, Ms(100), Player());
+        legacy.ConfirmMovementInputReleased("world", 80, phase, true);
+        Check(Apply(legacy, legacySession, new(2, "get_movement"), 101).Movement.Action.EndEvidenceStatus == "unknown",
+            "Missing start-world context cannot gain fabricated release evidence");
+        var reset = new ControlState(); int resetSession = reset.BeginSession();
+        var queued = reset.Enqueue(resetSession, new(1, "move_for", 1, ExpectedGeneration: 0, DurationMs: 100), 0);
+        reset.Update(true, 0, Player(), worldSessionId: "world");
+        reset.EndSession(resetSession); reset.Reset();
+        reset.ConfirmMovementInputReleased("world", 80, phase, true);
+        int next = reset.BeginSession();
+        Check(Apply(reset, next, new(1, "get_movement"), 1).Movement.Action == null,
+            "Production manual/disconnect/reset teardown never fabricates or leaks old release receipts");
+        Console.WriteLine("PASS: action release receipts at player boundaries, completion/cancel/death/manual/lease, pause, world and immutable E");
     }
 }

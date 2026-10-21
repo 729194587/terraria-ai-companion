@@ -86,6 +86,73 @@ Python 将采样代次传给 move；开始前既比较 get_movement 的当前代
 
 边界修复验证：全部 **214 项 Python 离线测试通过**（其中闭环专项 28 项）；`tests/run_csharp_tests.ps1` 全部 C# 回归通过；`compileall` 和 `git diff --check` 通过。tModLoader 2026.08.3.0 stable / Terraria 1.4.4.9 构建 CompanionBridge 0.1.24 成功，**0 错误、0 警告**，包位于 `.local/stage-a-boundaries-build/Mods/CompanionBridge.tmod`，未复制到客户端配置。
 
+## 导航 A0：移动结果语义（Python 适配）
+
+A0 基线为 `codex/agent-trace` 的 `f0a0f1a`，开始时工作区干净，与导航设计报告的实现描述一致。本次只适配现有水平移动结果，不增加动作、导航工具、C# 协议或运动模型。
+
+原有 `valid/status/completed/cancelled/reason/actionId`、位置、代次和 `movementLoop` 字段保留，新增语义：
+
+| 字段 | 含义 |
+| --- | --- |
+| `execution` | 单次执行状态、是否由 Bridge 确认、注入输入是否已释放。`completed` 不表示目标到达；`inputReleased=null` 表示未知，不承诺停稳 |
+| `effects` | 已知前后位置及 `displacementWorldPixels`；两端缺任一端时 knowledge=unknown、差分=null。只表示观测位置差，`attributedToAction=null`，不归因惯性、其他玩家或世界事件 |
+| `goal` | 原始 move 接口没有目标参数，返回 not_applicable；Agent 将本轮 `movementLoop.goal` 附给 move。目标 `kind=position_xy`，使用碰撞框左上角的世界像素 XY 与原有欧氏距离容差，不能用 CLI 的水平穿越 arrived 替代 |
+| `movementLoop.goal` | `achieved/not_achieved/unknown/not_applicable`。有效观察给出目标判定及 worldSessionId/observationId/gameUpdate/位置/代次证据；动作一开始即清除旧目标判定，等待新观察。取消、unknown、世界/控制变化后不通过后续观察恢复旧任务 |
+| `observation` / `movementLoop.observation` | 原始反馈仍要求动作后地形观察；闭环返回当前所需观察。A0 的 `endGameUpdate=null` 表示未提供结束 tick；A0.1 补齐的证据与降级规则见下节 |
+| `stop_movement.execution` | 描述停止请求本身；`targetAction` 描述所查询的原动作及其身份，legacy completed 仍可能是历史动作 completed。`cancelRequested` 说明是否尝试发送精确取消；noOp 表示不需发送取消，unknown 时 noOp=null。停止不覆盖任务已有终态、目标证据或原动作 effects |
+
+`effects.source=bridge_movement_feedback` 表示 Bridge 动作快照差；有符合原规则的新地形观察后，闭环可记录 `fresh_terrain_observation` 差分及其两端引用。原始工具结果不被之后观察回写。无位移但输入完成时，execution=completed、effects 的差分可为零；新观察目标未到时 goal=not_achieved。只有动作反馈、有位移但缺新观察时，goal=unknown。没有设置目标时为 not_applicable。
+
+终态保持既有锁定规则；已确认抵达后的停止不抹除 achieved/evidence。普通状态查询仍不能授权移动或确认动作后目标，过期相机/同 tick 新 ID 也不能补足证据。预算、50–2000ms 时长、750ms 租约、死亡/手动接管和精确取消逻辑保持不变。A0 没有将末次 running 状态当最终位置，也没有补造 ACK 丢失后的动作结果。
+
+测试沿用 MovementBridge/Scene/GuardTests；覆盖真实工具分发下的到达、碰墙、抵达后停止，以及取消前位移、ACK 丢失、过期/同 tick/状态查询、死亡/世界/代次变化。所有位置与碰撞场景仍是离线夹具，不代表真实游戏验收。
+
+A0 本轮验证：移动专项 **45 项通过**，完整 Python **221 项通过**；`tests/run_csharp_tests.ps1` 完整 C# 回归、`compileall`、`git diff --check` 通过。本机 tModLoader 构建 **0 错误、0 警告**，产物 `.local/a0-build/Mods/CompanionBridge.tmod`；只运行编译打包模式，未启动游戏会话、部署、调用真实模型、提交或推送。
+
+## A0.1：动作输入释放的更新编号证据
+
+本轮开始时 HEAD 仍为 `f0a0f1a`，保留 A0 的 6 个未提交修改文件；没有回退原修改。A0.1 在实际游戏线程边界补齐证据，需要小幅扩展 C#，不改运动模型或控制预算。
+
+### 采集时机与计数依据
+
+1. `ControlState.FinishMovement` 仍处理正常到期、主动 cancel/stop、失租、死亡/控制撤销和内部手动接管，并撤销旧 `_input`。此处只改变原有终态，**不采集结束编号**；TCP 请求时间、请求入队时间、UTC endedAt 都不能充当游戏编号证据。
+2. 动作开始时由 `CompanionSystem.UpdateExperiment` 将同一 `ObservationReader.WorldSessionId` 传入动作记录。正常角色在 `CompanionPlayer.PostUpdateRunSpeeds` 的入口、任何新 Bridge 输入注入之前，检查旧动作已终止、动作/控制 session 仍匹配、世界相同、旧动作已不持有外部控制，且玩家 left/right/jump 控制位均已释放。只有此时调用 `ConfirmMovementInputReleased` 记录当前 `Main.GameUpdateCount`。该检查不清空玩家按键，不改变人类输入或原控制机制；控制位未释放就继续等待证据。
+3. 死亡角色通过本地玩家 `UpdateDead`，在原 `RevokeControl` 路径之后并确认 dead/ghost 时记录独立的 `UpdateDead_after_revoke` 边界。死亡中途撤销、暂停或未再进入玩家钩子时，证据暂缺，不把撤销调用时刻当结束时刻。
+4. 结束编号 E 是“已确认停止旧动作输入”的保守边界，可以晚于逻辑终止/ACK，不声称是停止请求到达 tick，也不表示速度为零或物理立即停止。首份有效证据锁定；后续查询、重复停止或后续玩家钩子不改写 E。
+
+本轮对本机 tModLoader.dll 使用 Mono.Cecil 只读核对：SHA-256 为 `FCC6A9624B12191BE4A15D714A3675440911FEB8C1D374642AB1FD686F0DA0A5`。`Main.get_GameUpdateCount` 读取 `_gameUpdateCount`（UInt32，API 扩展为 ulong）；`Main.DoUpdateInWorld` 在 `SystemLoader.PostUpdatePlayers`（IL_010f）之后才于 IL_0114–011b 递增。因此玩家钩子采 E 后的同 tick 观察不能作为动作后证据；下次 `pre_DoUpdate` 的编号严格大于 E 才满足排序。观察读取与结束钩子均在游戏线程；TCP 线程既不读取游戏计数也不制造释放证据。该结论针对本机版本，未修改游戏程序集。
+
+### 兼容协议与 Python 判定
+
+现有 v1 命令、动作 ID、旧状态与位置字段保留。`movement.action` 新增开始世界 `worldSessionId`，以及：
+
+```json
+{
+  "endEvidenceStatus": "known",
+  "endEvidence": {
+    "worldSessionId": "world",
+    "gameUpdate": 80,
+    "phase": "PostUpdateRunSpeeds_before_bridge_input"
+  }
+}
+```
+
+`endEvidenceStatus` 为 `not_ended`（运行中）、`pending`（已终止，尚未确认玩家释放边界）、`known` 或 `unknown`（例如开始世界缺失）。缺失/未知时 endEvidence=null。另一个有效 phase 为 `UpdateDead_after_revoke`；结束 receipt 嵌在原 action 下，不与其他动作混用。
+
+Python 将有效 receipt 映射到 `observation.endGameUpdate/endEvidence/actionId`，闭环保存对应 actionId，成功目标证据中同时保存 `actionEnd` 与后续 observation 引用。只接受 Bridge 确认的终态、known receipt、非负整数编号、非空世界与已知边界阶段；旧结果、bool/负数编号、请求时间阶段、动作结果 unknown、早于动作前观察的结束编号均不能授权验证。`execution.inputReleased=true` 现在要求有效玩家释放证据，单独 terminal ACK 不足。
+
+正常完成 ACK 若仍为 pending，Python 在**原有动作 deadline（请求时长 + 原有 1 秒余量）**内轮询原 action 的 receipt；终态不续租，不延长动作期限，不重启动作。超出余量仍无证据则保留 execution=completed 及已有位移，闭环终止为 unknown，goal 不报 achieved。取消仍沿用原精确 actionId 取消/立即终止路径；取消回执若早于玩家钩子，可以暂缺 E，不能据此验证抵达。后续只读 get_movement 可在边界经过后返回已锁定证据。
+
+动作后验证同时要求原规则与新规则：同世界、同预期控制代次、有效且非过期的地形观察、新 observationId、比动作前观察更新，且 **observation.gameUpdate > E**。编号等于 E 或介于动作前编号与 E 之间均拒绝，保持 needsObservation 和目标未知；本轮按原终态保护停止，不因后来的观察自动恢复任务。普通状态查询依然不能替代地形观察。没有实际启动动作的 already-at-goal 判定仍只依赖当前有效观察，不要求不存在的动作 receipt。
+
+### 生命周期边界与局限
+
+生产环境 P 接管实际执行 `CompanionBridge.ToggleManual → StopControl → Disconnect/Reset`，会清掉旧动作及连接；不能将离线 `ControlState.ToggleManual` 的可保留 receipt 误称为生产 P 回执。生产接管/退出/断线/reset 后没有足够证据时，Python 保持取消或未知，不恢复旧任务；不跨新 session 回收旧 receipt。
+
+暂停不改变原租约和绝对期限。若控制已终止但玩家钩子未运行、或真实控制位仍被按住，不记录 E；没有大于 E 的有效观察时不确认目标。世界改变或玩家不再更新也可使 receipt 永远不可取得，这是安全降级，不能靠墙钟推算。UInt32 计数回绕不尝试拼接；严格排序失败时保守停止。动作原 afterPosition 仍是终止逻辑处快照，不保证与释放边界同阶段；抵达仍需边界后的新观察。未做真实游戏、暂停恢复、失焦或 Mod 钩子组合验收；离线测试模拟生命周期和控制位门禁，不能证明运行时所有钩子组合。
+
+A0.1 验证：移动专项 **51 项通过**，完整 Python **227 项通过**；完整 C# 回归、`compileall`、`git diff --check` 通过。新增回归覆盖 E 前/等于 E/大于 E、首次刷新后仍检查结束边界、世界/过期/旧协议/非法证据、pending ACK 与暂停、正常到期/取消/死亡/手动/失租的边界确认、重复停止不改写 E，以及 reset 丢弃旧回执。本机 Mod 构建 **0 错误、0 警告**，产物 `.local/a01-build/Mods/CompanionBridge.tmod`；未启动游戏会话、部署、调用真实模型、提交或推送。
+
 ## 后续真实游戏验收
 
 人工确认并部署 0.1.24 后，在安全平地、附近目标与同一高度下：

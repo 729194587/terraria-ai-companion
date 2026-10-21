@@ -1,6 +1,9 @@
 """Per-chat movement guards and result verification, never an action planner."""
 import math
 import time
+import copy
+
+from movement import describe_movement_result, position_effects, movement_end_evidence
 
 
 class LoopBudgetExhausted(Exception):
@@ -48,6 +51,26 @@ class MovementLoop:
         self.observation_authorized = False
         self.observation_authorization = 'missing'
         self.observation_reason = 'no_terrain_observation'
+        self.execution = {'status': 'not_started', 'confirmed': False, 'inputReleased': None}
+        self.effects = position_effects(None, None, None)
+        self.goal_status = 'not_applicable'
+        self.goal_evidence = None
+        self.end_evidence = None
+        self.action_id = None
+
+    def goal_result(self):
+        return {'kind': 'position_xy' if self.target is not None else None,
+                'status': self.goal_status, 'targetPositionWorldPixels': copy.deepcopy(self.target),
+                'arrivalTolerancePixels': self.tolerance if self.target is not None else None,
+                'positionConvention': 'player collision box top-left, world pixels',
+                'evidence': copy.deepcopy(self.goal_evidence)}
+
+    def verify_goal(self):
+        if self.target is not None and self.terminal is None:
+            self.goal_status = 'achieved' if self.at_target() else 'not_achieved'
+            self.goal_evidence = dict(self.observed)
+            if self.end_evidence is not None:
+                self.goal_evidence['actionEnd'] = {**self.end_evidence, 'actionId': self.action_id}
 
     def finish(self, status, reason):
         if self.terminal is None:
@@ -68,6 +91,13 @@ class MovementLoop:
                 'needsObservation': needs_observation,
                 'terrainObservationStatus': self.observation_authorization,
                 'observationReason': self.observation_reason,
+                'execution': copy.deepcopy(self.execution), 'effects': copy.deepcopy(self.effects),
+                'goal': self.goal_result(),
+                'observation': {'required': needs_observation,
+                                'purpose': 'post_action_verification' if self.pending_observation else 'pre_next_action',
+                                'endGameUpdate': self.end_evidence['gameUpdate'] if self.end_evidence else None,
+                                'actionId': self.action_id,
+                                'endEvidence': copy.deepcopy(self.end_evidence)},
                 'targetPositionWorldPixels': self.target, 'arrivalTolerancePixels': self.tolerance,
                 'positionConvention': 'player collision box top-left, world pixels',
                 'consecutiveNoProgress': self.no_progress,
@@ -109,13 +139,27 @@ class MovementLoop:
             if self.pending_observation:
                 self.finish('failed', 'post_action_observation_unavailable_or_stale')
             return
-        if self.pending_observation and self.before:
+        post_action = self.pending_observation and self.before is not None
+        if post_action:
             if source['worldSessionId'] != self.before['worldSessionId']:
                 self.finish('cancelled', 'world_changed')
                 return
             if source['gameUpdate'] <= self.before['gameUpdate'] or source['observationId'] == self.before['observationId']:
                 self.finish('failed', 'post_action_observation_not_newer')
                 return
+        # This bound also applies to later reads after a first successful refresh;
+        # clearing pending_observation must never permit a pre-end goal verdict.
+        if self.before is not None:
+            if self.end_evidence is None:
+                self.finish('unknown', 'action_end_update_unconfirmed')
+                return
+            if source['worldSessionId'] != self.end_evidence['worldSessionId']:
+                self.finish('cancelled', 'action_end_world_changed')
+                return
+            if source['gameUpdate'] <= self.end_evidence['gameUpdate']:
+                self.finish('failed', 'post_action_observation_not_after_end')
+                return
+        if post_action:
             if self.target:
                 progress = math.dist(tuple(self.before['position'][k] for k in ('x','y')), tuple(self.target[k] for k in ('x','y')))
                 progress -= math.dist(tuple(position[k] for k in ('x','y')), tuple(self.target[k] for k in ('x','y')))
@@ -133,6 +177,10 @@ class MovementLoop:
         self.observation_reason = None
         self.pending_observation = False
         self.reason = self.reason if self.terminal else None
+        if post_action and self.terminal is None:
+            self.effects = position_effects(self.before['position'], position, 'fresh_terrain_observation')
+            self.effects['evidence'] = {'before': dict(self.before), 'after': dict(self.observed)}
+        self.verify_goal()
         if self.active and self.at_target():
             self.finish('arrived', 'verified_by_fresh_observation')
         elif self.no_progress >= 2:
@@ -177,6 +225,7 @@ class MovementLoop:
                 return self.blocked('target_changed_mid_chat')
             self.target = {k:target[k] for k in ('x','y')}
             self.tolerance = tolerance
+            self.verify_goal()
         elif 'arrival_tolerance' in arguments and tolerance != self.tolerance:
             raise ValueError('arrival_tolerance can only be set with the first target_position')
         if self.at_target():
@@ -193,9 +242,19 @@ class MovementLoop:
         self.observation_authorized = False
         self.observation_authorization = 'consumed'
         self.observation_reason = 'post_action_observation_required'
+        self.execution = {'status': 'unknown', 'confirmed': False, 'inputReleased': None}
+        self.effects = position_effects(self.before['position'], None, 'pre_action_observation')
+        self.end_evidence = None
+        self.action_id = None
+        if self.target is not None:
+            self.goal_status, self.goal_evidence = 'unknown', None
         return None
 
     def moved(self, result):
+        semantic = describe_movement_result(result)
+        self.execution, self.effects = semantic['execution'], semantic['effects']
+        self.end_evidence = movement_end_evidence(result)
+        self.action_id = result.get('actionId')
         if result.get('status') == 'unknown':
             self.finish('unknown','action_result_unknown_no_retry')
         elif result.get('status') == 'cancelled':
@@ -204,12 +263,22 @@ class MovementLoop:
             self.finish('failed',result.get('reason','action_failed'))
         elif result.get('controlGeneration') != self.before['controlGeneration'] + 2:
             self.finish('cancelled','control_generation_changed_or_unconfirmed')
+        elif self.end_evidence is None:
+            self.finish('unknown', 'action_end_update_unconfirmed')
+        elif self.end_evidence['worldSessionId'] != self.before['worldSessionId']:
+            self.finish('cancelled', 'action_end_world_changed')
+        elif self.end_evidence['gameUpdate'] < self.before['gameUpdate']:
+            self.end_evidence = None
+            self.execution['inputReleased'] = None
+            self.finish('unknown', 'action_end_update_precedes_start_observation')
         else:
             self.expected_generation = result['controlGeneration']
 
     def blocked(self, reason):
-        return {'valid':False, 'status':'not_started', 'completed':False, 'cancelled':False,
-                'reason':reason, 'movementLoop':self.snapshot()}
+        result = describe_movement_result({'valid':False, 'status':'not_started', 'completed':False, 'cancelled':False,
+                                           'reason':reason})
+        result.update(goal=self.goal_result(), movementLoop=self.snapshot())
+        return result
 
     def final_text(self):
         if self.terminal is None:

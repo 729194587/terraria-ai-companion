@@ -18,12 +18,15 @@ internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateV
 {
     internal static readonly PlayerSnapshot NotInWorld = new(false, null, null, null, null);
 }
+internal sealed record MovementEndEvidence(string WorldSessionId, ulong GameUpdate, string Phase);
 internal sealed record MovementSnapshot(int ActionId, int Session, int Generation, int Direction, int DurationMs,
     string Status, string Reason, PlayerSnapshot Before, PlayerSnapshot After, string StartedAt, string EndedAt,
-    double ElapsedMilliseconds)
+    double ElapsedMilliseconds, string WorldSessionId = null, MovementEndEvidence EndEvidence = null)
 {
     public bool Completed => Status == "completed";
     public bool Cancelled => Status == "cancelled";
+    public string EndEvidenceStatus => Status == "running" ? "not_ended"
+        : EndEvidence != null ? "known" : WorldSessionId != null ? "pending" : "unknown";
 }
 internal sealed record MovementFeedback(int Generation, MovementSnapshot Action);
 internal sealed record ControlReply(int V, int Id, bool Ok, string Status, string Mode,
@@ -111,7 +114,8 @@ internal sealed class ControlState
 
     internal void Update(bool canControl, long now, PlayerSnapshot snapshot = null,
         TerrainSnapshot terrain = null, NavigationSnapshot navigation = null, Action<string> sendChat = null,
-        EntityPerception entities = null, Func<ObservationSnapshot> readObservation = null)
+        EntityPerception entities = null, Func<ObservationSnapshot> readObservation = null,
+        string worldSessionId = null)
     {
         lock (_gate)
         {
@@ -151,7 +155,7 @@ internal sealed class ControlState
                     string result = !canControl || snapshot?.InWorld != true ? "not_ready"
                         : now >= pending.ReceivedAt + LeaseTicks ? "expired"
                         : request.Cmd == "renew_move" ? RenewMovement(request, pending.ReceivedAt)
-                        : StartMovement(request, pending.ReceivedAt, now, snapshot);
+                        : StartMovement(request, pending.ReceivedAt, now, snapshot, worldSessionId);
                     pending.Completion.TrySetResult(Reply(request.Id, result == "movement_started" || result == "movement", result) with
                         { State = snapshot, Movement = Movement(now) });
                     continue;
@@ -237,7 +241,8 @@ internal sealed class ControlState
         _movement?.Session != _session ? null : _movement.Status == "running"
             ? _movement with { ElapsedMilliseconds = (now - _moveStartedAt) * 1000.0 / Stopwatch.Frequency } : _movement);
 
-    private string StartMovement(ControlRequest request, long receivedAt, long now, PlayerSnapshot snapshot)
+    private string StartMovement(ControlRequest request, long receivedAt, long now, PlayerSnapshot snapshot,
+        string worldSessionId)
     {
         if (request.Direction is not (-1 or 1) || request.DurationMs is not (>= 50 and <= MaxMoveMilliseconds)
             || request.ExpectedGeneration == null) return "invalid_movement";
@@ -252,7 +257,7 @@ internal sealed class ControlState
         _moveStartedAt = now;
         _moveEndsAt = now + request.DurationMs.Value * Stopwatch.Frequency / 1000;
         _movement = new(++_nextActionId, _session, _generation, request.Direction, request.DurationMs.Value,
-            "running", "started", snapshot, null, DateTimeOffset.UtcNow.ToString("O"), null, 0);
+            "running", "started", snapshot, null, DateTimeOffset.UtcNow.ToString("O"), null, 0, worldSessionId);
         return "movement_started";
     }
 
@@ -272,6 +277,22 @@ internal sealed class ControlState
             After = after, EndedAt = DateTimeOffset.UtcNow.ToString("O"),
             ElapsedMilliseconds = (now - _moveStartedAt) * 1000.0 / Stopwatch.Frequency };
         _input = new(0, false, false);
+    }
+
+    // Game-thread player hook only: normal input has been processed and the terminated
+    // bounded action can no longer inject controls. A TCP request/FinishMovement is NOT
+    // this boundary. Dead players use UpdateDead after revocation instead.
+    internal void ConfirmMovementInputReleased(string worldSessionId, ulong gameUpdate, string phase, bool inputReleased)
+    {
+        lock (_gate)
+        {
+            if (!inputReleased || _movement == null || _movement.Status == "running" || _movement.EndEvidence != null
+                || _session == 0 || _movement.Session != _session
+                || string.IsNullOrEmpty(worldSessionId) || _movement.WorldSessionId != worldSessionId
+                || (_mode == ControlMode.External && _generation == _movement.Generation)
+                || phase is not ("PostUpdateRunSpeeds_before_bridge_input" or "UpdateDead_after_revoke")) return;
+            _movement = _movement with { EndEvidence = new(worldSessionId, gameUpdate, phase) };
+        }
     }
 
     internal void RevokeControl(PlayerSnapshot snapshot = null, long? now = null)

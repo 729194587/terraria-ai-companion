@@ -54,13 +54,19 @@ def result_from(request):
     return json.loads(next(m['content'] for m in reversed(request) if m['role']=='tool'))
 
 
+def end_receipt(world, tick):
+    return {'serverConfirmed': True, 'endEvidenceStatus': 'known', 'endEvidence': {'worldSessionId': world, 'gameUpdate': tick,
+            'phase': 'PostUpdateRunSpeeds_before_bridge_input'}}
+
+
 async def run_scene(answers,game=None,delta=20,result=None,**budgets):
     game=game or Scene();agent=Agent(game,Model(*answers),**budgets)
     async def act(bridge,direction,duration_ms,chat_id,expected_generation):
         if result is None:
             game.x+=delta if direction=='right' else -delta
             game.generation+=2
-            return {'valid':True,'status':'completed','completed':True,'cancelled':False,'controlGeneration':game.generation}
+            return {'valid':True,'status':'completed','completed':True,'cancelled':False,'controlGeneration':game.generation,
+                    **end_receipt(game.world, 100+game.reads)}
         return copy.deepcopy(result)
     with (patch('agent.move',side_effect=act) as action,patch('cost_metrics.emit'),
           patch('agent.stop_movement',new_callable=AsyncMock,return_value={'valid':True,'status':'idle'})):
@@ -85,6 +91,10 @@ class MovementLoopTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(after_stop['status'],expected)
                 self.assertEqual(after_stop['reason'],before_stop['reason'])
                 self.assertEqual(a.last_movement_result['status'],expected)
+                if expected == 'arrived':
+                    self.assertEqual(before_stop['goal'], after_stop['goal'])
+                    self.assertEqual(after_stop['goal']['status'], 'achieved')
+                    self.assertEqual(after_stop['execution']['status'], 'completed')
                 if expected=='arrived':self.assertIn('确认到达',g.sent[-1][1]['text'])
 
     async def test_state_query_requires_observation_without_invalidating_cached_evidence(self):
@@ -136,7 +146,8 @@ class MovementLoopTests(unittest.IsolatedAsyncioTestCase):
         async def act(bridge,direction,duration_ms,chat_id,expected_generation):
             game.x=140 if len(decisions)==1 else 100
             game.generation+=2
-            return {'valid':True,'status':'completed','completed':True,'cancelled':False,'controlGeneration':game.generation}
+            return {'valid':True,'status':'completed','completed':True,'cancelled':False,'controlGeneration':game.generation,
+                    **end_receipt(game.world, 100+game.reads)}
         with patch('agent.move',side_effect=act) as action,patch('cost_metrics.emit'):
             agent.receive(event(1));await agent.task
         self.assertEqual(decisions,[(0,'right',500,'world:1'),(140,'left',200,'world:2')])
@@ -219,7 +230,8 @@ class MovementLoopTests(unittest.IsolatedAsyncioTestCase):
         agent=Agent(game,DeathModel(*answers))
         async def completed(*args,**kwargs):
             game.generation+=2
-            return {'valid':True,'status':'completed','completed':True,'controlGeneration':game.generation}
+            return {'valid':True,'status':'completed','completed':True,'controlGeneration':game.generation,
+                    **end_receipt(game.world, 100+game.reads)}
         with (patch('agent.move',side_effect=completed) as act,
               patch('cost_metrics.emit')):
             agent.receive(event(1));await agent.task
@@ -239,7 +251,8 @@ class MovementLoopTests(unittest.IsolatedAsyncioTestCase):
                 if mode=='world':game.world='other-world'
                 else:setattr(game,mode,True)
                 game.generation+=2
-                return {'valid':True,'status':'completed','completed':True,'controlGeneration':game.generation}
+                return {'valid':True,'status':'completed','completed':True,'controlGeneration':game.generation,
+                        **end_receipt(game.world, 100+game.reads)}
             sequence=[tool('get_exploration_observation'),movement(),tool('get_exploration_observation'),movement(),final()]
             agent=Agent(game,Model(*sequence))
             with patch('agent.move',side_effect=act) as action,patch('cost_metrics.emit'):
@@ -250,6 +263,8 @@ class MovementLoopTests(unittest.IsolatedAsyncioTestCase):
     async def test_completed_without_post_observation_or_goal_cannot_claim_arrival(self):
         a,g,act=await run_scene([tool('get_exploration_observation'),movement(target=100),final('arrived')])
         self.assertEqual(a.last_movement_result['status'],'failed')
+        self.assertEqual(a.last_movement_result['goal']['status'], 'unknown')
+        self.assertEqual(a.last_movement_result['execution']['status'], 'completed')
         self.assertIn('未确认抵达',g.sent[-1][1]['text'])
 
     async def test_explicit_stop_terminates_loop(self):
@@ -301,6 +316,161 @@ class MovementLoopTests(unittest.IsolatedAsyncioTestCase):
 
 
 class GuardTests(unittest.TestCase):
+    def test_later_observation_still_must_follow_last_action_end(self):
+        guard = self.started()
+        guard.moved({'valid': True, 'status': 'completed', 'completed': True,
+                     'controlGeneration': 2, **end_receipt('world', 10)})
+        fresh = self.observation(x=20, tick=11)
+        fresh['controlGeneration'] = 2
+        guard.observe(fresh)
+        self.assertFalse(guard.pending_observation)
+        self.assertEqual(guard.snapshot()['goal']['status'], 'not_achieved')
+        guard.observe({'valid': True, 'player': {}})
+        old = self.observation(x=100, tick=10)
+        old['controlGeneration'] = 2
+        guard.observe(old)
+        self.assertEqual(guard.terminal, 'failed')
+        self.assertEqual(guard.snapshot()['goal']['status'], 'not_achieved')
+        self.assertEqual(guard.snapshot()['goal']['evidence']['gameUpdate'], 11)
+
+    def test_observation_must_be_strictly_after_release_update(self):
+        for observation_tick, expected in ((9, 'failed'), (10, 'failed'), (11, 'arrived')):
+            guard = self.started()
+            guard.moved({'valid': True, 'status': 'completed', 'completed': True,
+                         'controlGeneration': 2, **end_receipt('world', 10)})
+            observed = self.observation(x=100, tick=observation_tick)
+            observed['controlGeneration'] = 2
+            guard.observe(observed)
+            self.assertEqual(guard.terminal, expected)
+            self.assertEqual(guard.snapshot()['observation']['endGameUpdate'], 10)
+            if expected == 'failed':
+                self.assertEqual(guard.reason, 'post_action_observation_not_after_end')
+                self.assertEqual(guard.snapshot()['goal']['status'], 'unknown')
+                self.assertTrue(guard.snapshot()['needsObservation'])
+            else:
+                self.assertEqual(guard.snapshot()['goal']['evidence']['gameUpdate'], 11)
+
+    def test_legacy_missing_or_invalid_end_receipt_never_verifies_arrival(self):
+        cases = [{}, {'endGameUpdate': 1}, end_receipt('world', True), end_receipt('world', -1),
+                 {**end_receipt('world', 1), 'endEvidenceStatus': 'unknown'},
+                 end_receipt('world', 0),
+                 {'serverConfirmed': True, 'endEvidence': {'worldSessionId': 'world', 'gameUpdate': 1,
+                                                          'phase': 'request_received'}},
+                 {**end_receipt('world', 1), 'serverConfirmed': False}]
+        for receipt in cases:
+            guard = self.started()
+            guard.moved({'valid': True, 'status': 'completed', 'completed': True,
+                         'controlGeneration': 2, **receipt})
+            guard.observe(self.observation(x=100, tick=2))
+            self.assertEqual(guard.terminal, 'unknown', receipt)
+            self.assertEqual(guard.snapshot()['goal']['status'], 'unknown')
+            self.assertIsNone(guard.snapshot()['observation']['endGameUpdate'])
+            self.assertIsNotNone(guard.prepare({'direction': 'right', 'duration_ms': 100}))
+
+    def test_end_world_mismatch_and_stale_observation_reject_verification(self):
+        for world in ('world', 'other-world'):
+            guard = self.started()
+            guard.moved({'valid': True, 'status': 'completed', 'completed': True,
+                         'controlGeneration': 2, **end_receipt(world, 1)})
+            observation = self.observation(x=100, tick=2)
+            observation['exploration']['status'] = 'stale'
+            observation['exploration']['camera']['status'] = 'stale'
+            guard.observe(observation)
+            self.assertEqual(guard.terminal, 'failed' if world == 'world' else 'cancelled')
+            self.assertEqual(guard.snapshot()['goal']['status'], 'unknown')
+
+    def started(self, target=None):
+        guard = MovementLoop()
+        guard.observe(self.observation())
+        args = {'direction': 'right', 'duration_ms': 500,
+                'target_position': target or {'x': 100, 'y': 0}}
+        self.assertIsNone(guard.prepare(args))
+        return guard
+
+    def completed(self, guard, x):
+        guard.moved({'valid': True, 'status': 'completed', 'completed': True, 'serverConfirmed': True,
+                     **end_receipt('world', 1),
+                     'controlGeneration': 2, 'beforePositionWorldPixels': {'x': 0, 'y': 0},
+                     'afterPositionWorldPixels': {'x': x, 'y': 0}})
+
+    def test_execution_displacement_and_xy_goal_have_separate_evidence(self):
+        for x, status in ((100, 'achieved'), (0, 'not_achieved')):
+            guard = self.started()
+            self.completed(guard, x)
+            feedback = guard.snapshot()
+            self.assertEqual(feedback['execution']['status'], 'completed')
+            self.assertEqual(feedback['effects']['displacementWorldPixels'], {'x': x, 'y': 0})
+            self.assertEqual(feedback['goal']['status'], 'unknown')
+            self.assertIsNone(feedback['goal']['evidence'])
+            self.assertTrue(feedback['observation']['required'])
+            guard.observe(self.observation(x=x, tick=2))
+            result = guard.snapshot()
+            self.assertEqual(result['goal']['status'], status)
+            self.assertEqual(result['goal']['kind'], 'position_xy')
+            self.assertEqual(result['goal']['evidence']['observationId'], 'world:2')
+            self.assertEqual(result['effects']['source'], 'fresh_terrain_observation')
+            self.assertEqual(feedback['goal']['status'], 'unknown')  # Earlier results remain immutable.
+
+    def test_crossing_x_is_not_xy_arrival_and_navigation_status_is_not_imported(self):
+        guard = self.started({'x': 100, 'y': 50})
+        self.completed(guard, 100)
+        observed = self.observation(x=100, tick=2)
+        observed['navigation'] = {'status': 'arrived', 'targetX': 100}
+        guard.observe(observed)
+        self.assertEqual(guard.snapshot()['goal']['status'], 'not_achieved')
+        self.assertIsNone(guard.terminal)
+        with self.assertRaises(ValueError):
+            guard.prepare({'direction': 'right', 'duration_ms': 100, 'targetX': 100})
+
+    def test_stale_same_tick_and_state_only_do_not_verify_goal_or_erase_displacement(self):
+        for kind in ('stale', 'same_tick', 'state_only'):
+            guard = self.started()
+            self.completed(guard, 100)
+            observed = self.observation(x=100, tick=2)
+            if kind == 'stale':
+                observed['exploration']['camera']['status'] = 'stale'
+            elif kind == 'same_tick':
+                observed['exploration']['gameUpdate'] = 1
+            else:
+                observed = {'valid': True, 'player': {'position': {'x': 100, 'y': 0}}}
+            guard.observe(observed)
+            result = guard.snapshot()
+            self.assertEqual(result['goal']['status'], 'unknown', kind)
+            self.assertIsNone(result['goal']['evidence'])
+            self.assertEqual(result['effects']['displacementWorldPixels'], {'x': 100, 'y': 0})
+            self.assertTrue(result['observation']['required'])
+
+    def test_cancellation_and_unknown_keep_effects_without_goal_success_or_resume(self):
+        for status in ('cancelled', 'unknown'):
+            guard = self.started()
+            guard.moved({'valid': status == 'cancelled', 'status': status,
+                         'serverConfirmed': status == 'cancelled', 'reason': 'manual_override',
+                         'beforePositionWorldPixels': {'x': 0, 'y': 0},
+                         'afterPositionWorldPixels': {'x': 20, 'y': 0} if status == 'cancelled' else None})
+            guard.observe(self.observation(x=100, tick=2))
+            result = guard.snapshot()
+            self.assertEqual(result['status'], status)
+            self.assertEqual(result['goal']['status'], 'unknown')
+            self.assertEqual(result['effects']['displacementWorldPixels'],
+                             {'x': 20, 'y': 0} if status == 'cancelled' else None)
+            self.assertIsNotNone(guard.prepare({'direction': 'right', 'duration_ms': 100}))
+
+    def test_world_generation_and_death_changes_never_verify_old_goal(self):
+        for kind in ('world', 'generation', 'death'):
+            guard = self.started()
+            self.completed(guard, 20)
+            changed = self.observation(x=100, tick=2)
+            if kind == 'world': changed['exploration']['worldSessionId'] = 'other'
+            elif kind == 'generation': changed['controlGeneration'] = 4
+            else: changed['exploration']['player']['dead'] = True
+            guard.observe(changed)
+            guard.observe(self.observation(x=100, tick=2))
+            result = guard.snapshot()
+            self.assertEqual(result['status'], 'cancelled')
+            self.assertEqual(result['goal']['status'], 'unknown')
+            self.assertEqual(result['effects']['displacementWorldPixels'], {'x': 20, 'y': 0})
+            self.assertIsNotNone(guard.prepare({'direction': 'right', 'duration_ms': 100}))
+
     def observation(self,x=0,tick=1):
         return {'valid':True,'controlGeneration':2*(tick-1),'exploration':{'worldSessionId':'world','observationId':'world:'+str(tick),'gameUpdate':tick,
                 'status':'ok','camera':{'status':'recent_render'},'player':{'positionWorldPixels':{'x':x,'y':0},'life':100},
@@ -320,7 +490,8 @@ class GuardTests(unittest.TestCase):
     def test_target_is_immutable_and_arrival_uses_both_axes(self):
         guard=MovementLoop();guard.observe(self.observation())
         args={'direction':'right','duration_ms':500,'target_position':{'x':100,'y':50}}
-        self.assertIsNone(guard.prepare(args));guard.moved({'valid':True,'status':'completed','completed':True,'controlGeneration':2})
+        self.assertIsNone(guard.prepare(args));guard.moved({'valid':True,'status':'completed','completed':True,'controlGeneration':2,
+                                                         **end_receipt('world', 1)})
         guard.observe(self.observation(x=100,tick=2))
         self.assertFalse(guard.at_target())
         self.assertIsNotNone(guard.prepare({**args,'target_position':{'x':100,'y':0}}))
@@ -382,7 +553,7 @@ class GuardTests(unittest.TestCase):
     def test_new_id_without_later_update_after_action_cannot_reauthorize(self):
         guard=MovementLoop();guard.observe(self.observation())
         guard.prepare({'direction':'right','duration_ms':500})
-        guard.moved({'valid':True,'status':'completed','completed':True,'controlGeneration':2})
+        guard.moved({'valid':True,'status':'completed','completed':True,'controlGeneration':2, **end_receipt('world', 1)})
         guard.observe({'valid':True,'player':{}})
         result=self.observation();result['controlGeneration']=2
         result['exploration']['observationId']='world:new-id-same-update'

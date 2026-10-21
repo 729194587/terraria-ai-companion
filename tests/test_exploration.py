@@ -163,7 +163,9 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
             tool('move','{"direction":"right","duration_ms":500}'),
             tool('get_exploration_observation'),final('checked'))
         agent=Agent(bridge,model)
-        with (patch('agent.move',new_callable=AsyncMock,return_value={'valid':True,'status':'completed','completed':True,'controlGeneration':2}) as movement,
+        with (patch('agent.move',new_callable=AsyncMock,return_value={'valid':True,'status':'completed','completed':True,'controlGeneration':2,
+                    'serverConfirmed': True, 'endEvidenceStatus': 'known', 'endEvidence': {'worldSessionId': recorded()['worldSessionId'],
+                    'gameUpdate': recorded()['gameUpdate']+1, 'phase': 'PostUpdateRunSpeeds_before_bridge_input'}}) as movement,
               patch('cost_metrics.emit')):
             agent.receive(event(1));await agent.task
         movement.assert_awaited_once_with(bridge,'right',500,chat_id='1',expected_generation=0)

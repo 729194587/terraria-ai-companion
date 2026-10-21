@@ -14,6 +14,7 @@ namespace CompanionBridge.Common.Systems;
 internal static class ObservationReader
 {
     private static string _worldSession;
+    internal static string WorldSessionId => _worldSession;
     private static long _observation, _render;
     private static CameraSnapshot _camera;
     private static string _cameraError;
