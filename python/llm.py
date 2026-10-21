@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 import httpx
 import agent_trace as tracing
+import cost_metrics
 
 
 class LLMError(Exception):
@@ -58,6 +59,21 @@ class LLMClient:
     async def complete(self, messages, tools):
         request_id = next(self._request_ids)
         started = time.monotonic()
+        accounting = {}
+        outcome = "completed"
+        try:
+            return await self._complete(messages, tools, request_id, started, accounting)
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except Exception:
+            outcome = "failed"
+            raise
+        finally:
+            cost_metrics.record_usage(accounting.get("usage"), request_id,
+                                      (time.monotonic() - started) * 1000, outcome)
+
+    async def _complete(self, messages, tools, request_id, started, accounting):
         body = {"model": self.model,
                 "messages": messages, "tools": tools, "tool_choice": "auto", "max_tokens": 512,
                 # Raw HTTP body, not the OpenAI SDK's extra_body wrapper.
@@ -84,7 +100,9 @@ class LLMClient:
                                error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
             raise LLMError(f"LLM network failure ({type(error).__name__})") from error
         try:
-            choice = response.json()["choices"][0]
+            payload = response.json()
+            accounting["usage"] = payload.get("usage")
+            choice = payload["choices"][0]
             message = choice["message"]
             tracing.trace.emit("llm_response", model_request_id=request_id, model=self.model,
                                assistant=message, finish_reason=choice.get("finish_reason"),
