@@ -34,7 +34,7 @@ def _feedback(reply):
     return feedback
 
 
-def _result(action):
+def _result(action, control_generation=None):
     return {"valid": True, "status": action["status"], "completed": action["completed"],
             "cancelled": action["cancelled"], "reason": action["reason"], "actionId": action["actionId"],
             "direction": "left" if action["direction"] == -1 else "right", "durationMs": action["durationMs"],
@@ -42,7 +42,8 @@ def _result(action):
             "beforePositionWorldPixels": _position(action.get("before")),
             "afterPositionWorldPixels": _position(action.get("after")),
             "serverConfirmed": True,
-            "scope": "horizontal input released; completion does not prove distance reached or zero velocity; use get_observation"}
+            "controlGeneration": control_generation,
+            "scope": "horizontal input released; completion does not prove distance reached or zero velocity; use get_exploration_observation or get_observation"}
 
 
 def _unknown(reason, action=None, before=None):
@@ -59,13 +60,14 @@ async def _command(bridge, cmd, **parameters):
 
 async def _cancel_owned(bridge, action_id):
     reply = await _command(bridge, "cancel_move", actionId=action_id)
-    action = _feedback(reply)["action"]
+    feedback = _feedback(reply)
+    action = feedback["action"]
     if action is None or action["actionId"] != action_id or action["status"] == "running":
         raise BridgeError("Movement cancellation not confirmed for owned action")
-    return _result(action)
+    return _result(action, feedback["generation"])
 
 
-async def move(bridge, direction, duration_ms, chat_id=None):
+async def move(bridge, direction, duration_ms, chat_id=None, expected_generation=None):
     if direction not in ("left", "right") or type(duration_ms) is not int or not 50 <= duration_ms <= MAX_DURATION_MS:
         raise ValueError("move requires direction left/right and integer duration_ms in 50..2000")
     if "bounded_movement_v1" not in bridge.hello.get("capabilities", []):
@@ -76,6 +78,10 @@ async def move(bridge, direction, duration_ms, chat_id=None):
     try:
         initial = await _command(bridge, "get_movement")
         generation = _feedback(initial)["generation"]
+        if expected_generation is not None and generation != expected_generation:
+            return {"valid":True,"status":"cancelled","completed":False,"cancelled":True,
+                    "reason":"control_generation_changed_since_observation","controlGeneration":generation,
+                    "beforePositionWorldPixels":_position(initial.get("state")),"afterPositionWorldPixels":None}
         before = _position(initial.get("state"))
         parameters = {"direction": -1 if direction == "left" else 1, "durationMs": duration_ms,
                       "expectedGeneration": generation}
@@ -86,6 +92,7 @@ async def move(bridge, direction, duration_ms, chat_id=None):
         start_task = asyncio.create_task(_command(bridge, "move_for", **parameters))
         started = await asyncio.shield(start_task)
         action = _feedback(started)["action"]
+        generation = _feedback(started)["generation"]
         if started.get("status") != "movement_started" or action is None:
             raise BridgeError("Missing movement start acknowledgement")
         action_id = action["actionId"]
@@ -95,13 +102,15 @@ async def move(bridge, direction, duration_ms, chat_id=None):
                 return await _cancel_owned(bridge, action_id)
             await asyncio.sleep(POLL_SECONDS)
             reply = await _command(bridge, "get_movement")
-            current = _feedback(reply)["action"]
+            feedback = _feedback(reply)
+            current = feedback["action"]
+            generation = feedback["generation"]
             if current is None or current["actionId"] != action_id:
                 return _unknown("Action ownership changed; no automatic retry", action)
             action = current
             if action["status"] == "running":
                 await _command(bridge, "renew_move", actionId=action_id)
-        return _result(action)
+        return _result(action, generation)
     except asyncio.CancelledError:
         try:
             if action is None and start_task is not None:
@@ -116,10 +125,11 @@ async def move(bridge, direction, duration_ms, chat_id=None):
         if action is not None:
             try:
                 reply = await _command(bridge, "get_movement")
-                current = _feedback(reply)["action"]
+                feedback = _feedback(reply)
+                current = feedback["action"]
                 if current is not None and current["actionId"] == action["actionId"]:
                     if current["status"] != "running":
-                        return _result(current)  # Completion can race the last heartbeat.
+                        return _result(current, feedback["generation"])  # Completion can race the last heartbeat.
                     return await _cancel_owned(bridge, action["actionId"])
             except (BridgeError, OSError, ValueError):
                 pass
@@ -142,7 +152,7 @@ async def stop_movement(bridge):
                     "reason": "No bounded movement action", "beforePositionWorldPixels": None,
                     "afterPositionWorldPixels": _position(reply.get("state"))}
         if action["status"] != "running":
-            return _result(action)
+            return _result(action, _feedback(reply)["generation"])
         return await _cancel_owned(bridge, action["actionId"])
     except (BridgeError, OSError, ValueError) as error:
         return _unknown(str(error), action)

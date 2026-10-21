@@ -32,7 +32,8 @@ internal sealed record ControlReply(int V, int Id, bool Ok, string Status, strin
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NavigationSnapshot Navigation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] EntityPerception Entities = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObservationSnapshot Observation = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] MovementFeedback Movement = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] MovementFeedback Movement = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ControlGeneration = null);
 internal enum ControlMode { None, Manual, External }
 
 // No Terraria references: the socket side submits requests; the game thread applies them.
@@ -164,7 +165,8 @@ internal sealed class ControlState
                         catch (Exception) { observationFailed = true; } // A mod read must not break the update/control loop.
                     }
                     pending.Completion.TrySetResult(Reply(request.Id, observation != null,
-                        observationFailed ? "observation_failed" : observation != null ? "observation" : "not_ready") with { Observation = observation });
+                        observationFailed ? "observation_failed" : observation != null ? "observation" : "not_ready") with
+                        { Observation = observation, ControlGeneration = _generation });
                     continue;
                 }
                 if (request.Cmd == "send_chat")

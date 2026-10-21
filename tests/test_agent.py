@@ -135,7 +135,6 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_errors_and_budgets_never_send_success(self):
         for answers, models, tools in (([LLMError("HTTP failed")], 4, 3),
-                                       ([tool()], 1, 3), ([tool()], 4, 0),
                                        ([{"role": "assistant", "content": None}], 4, 3)):
             game, model = Game(), Model(*answers)
             agent = Agent(game, model, models, tools)
@@ -146,6 +145,14 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(game.sent, [])
             self.assertEqual(sum(m["role"] == "user" for m in agent.history), 1)
             self.assertFalse(any(m["role"] == "assistant" and m.get("content") for m in agent.history))
+
+    async def test_budget_exhaustion_sends_explicit_unconfirmed_result(self):
+        for models,tools in ((1,3),(4,0)):
+            game=Game();agent=Agent(game,Model(tool()),models,tools)
+            agent.receive(event(1));await agent.task
+            self.assertEqual(agent.last_movement_result['status'],'budget_exhausted')
+            self.assertIn('未确认抵达',game.sent[-1][1]['text'])
+            self.assertFalse(any(m['role']=='tool' for m in agent.history))
 
     async def test_ipc_send_failure_does_not_commit_assistant(self):
         game = Game()

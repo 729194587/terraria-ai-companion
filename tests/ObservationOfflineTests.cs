@@ -98,6 +98,8 @@ public static class ObservationOfflineTests
         state.Update(true, 1, readObservation: Read);
         Check(reads == 1 && ReferenceEquals(a.Result.Observation, b.Result.Observation), "One detached snapshot per servicing update");
         Check(a.Result.Observation.GameUpdate == 42 && state.Generation == generation, "Metadata and control generation preserved");
+        Check(a.Result.ControlGeneration == generation && b.Result.ControlGeneration == generation,
+            "Observation replies carry the game-thread control generation without acquiring/renewing control");
         state.Update(true, Stopwatch.Frequency * 750 / 1000);
         Check(!state.IsMoving, "Observation cannot extend control lease");
         var missing = state.Enqueue(session, new(4, "get_observation"), 2);
@@ -111,6 +113,8 @@ public static class ObservationOfflineTests
         byte[] wire = TcpControlServer.SerializeFrame(a.Result);
         SampleJson = Encoding.UTF8.GetString(wire);
         using var json = JsonDocument.Parse(wire);
+        Check(json.RootElement.GetProperty("controlGeneration").GetInt32() == generation,
+            "Additive control generation serialized outside the unchanged observation schema");
         Check(wire.Length > 65536 && wire.Length < TcpControlServer.MaxResponseBytes, "Large observation fits new bounded framing");
         Check(json.RootElement.GetProperty("observation").GetProperty("entities").GetProperty("items").GetArrayLength() == 25,
             "More than twelve entities survive serialization");

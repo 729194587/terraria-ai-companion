@@ -86,9 +86,11 @@ class MovementBridge(Game):
 
     def get_observation(self):
         value = fixture()
+        value['gameUpdate'] += len(self.observations)
+        value['observationId'] = 'world:' + str(value['gameUpdate'])
         value["player"]["positionWorldPixels"] = dict(self.position)
         self.observations.append(copy.deepcopy(value))
-        return {"observation": value}
+        return {"observation": value, "controlGeneration": self.generation}
 
 
 class MovementTests(unittest.IsolatedAsyncioTestCase):
@@ -210,7 +212,7 @@ class MovementAgentTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_user_preempts_movement_and_discards_old_reply(self):
         bridge = MovementBridge(complete_after=100); bridge.start_release = threading.Event()
-        model = Model(tool("move", '{"direction":"left","duration_ms":2000}'), final("stopped"))
+        model = Model(tool("get_observation"), tool("move", '{"direction":"left","duration_ms":2000}'), final("stopped"))
         agent = Agent(bridge, model)
         try:
             agent.receive(event(1))

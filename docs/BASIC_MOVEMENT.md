@@ -1,5 +1,7 @@
 # 0.1.23 Agent 基础限时移动
 
+本文记录 0.1.23 基础版本。0.1.24 阶段 A 已扩展为默认 7 次工具／8 次模型调用、6000ms 累计移动预算，并增加观察前置／后置验证及可选坐标目标；参见 [阶段 A](STAGE_A_MOVEMENT.md)。单次 50–2000ms、750ms 控制租约和按动作 ID 取消保持不变。
+
 仅向 LLM 增加平地水平输入工具，复用 `ControlState` 的 External 模式、750ms 租约和 `CompanionPlayer.PostUpdateRunSpeeds` 输入执行器。没有接入自动寻路、跳跃、越障、攻击或无限行动循环。
 
 ## 工具调用

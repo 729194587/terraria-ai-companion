@@ -173,4 +173,5 @@ def read_exploration_observation(bridge):
     reply = bridge.get_observation()  # Existing on-demand game-thread snapshot + strict validation.
     result = project_observation(reply["observation"])
     return {"valid": result["status"] != "unavailable", "exploration": result,
+            "controlGeneration": reply.get("controlGeneration"),
             "receivedAt": datetime.now(timezone.utc).isoformat()}

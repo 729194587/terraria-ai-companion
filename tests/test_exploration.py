@@ -152,20 +152,25 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
             def get_observation(self):
                 self.reads+=1
                 source=recorded()
+                source['gameUpdate']+=self.reads
+                source['observationId']='recorded-world:'+str(source['gameUpdate'])
+                for entity in source['entities']['items']:
+                    entity['sampleGameUpdate']=source['gameUpdate']
                 source['player']['positionWorldPixels']['x']+=self.reads
                 source['player']['boundsWorldPixels']['x']+=self.reads
-                return {'observation':source}
+                return {'observation':source,'controlGeneration':2*(self.reads-1)}
         bridge=Bridge();model=Model(tool('get_exploration_observation'),
             tool('move','{"direction":"right","duration_ms":500}'),
             tool('get_exploration_observation'),final('checked'))
         agent=Agent(bridge,model)
-        with (patch('agent.move',new_callable=AsyncMock,return_value={'valid':True,'status':'completed'}) as movement,
+        with (patch('agent.move',new_callable=AsyncMock,return_value={'valid':True,'status':'completed','completed':True,'controlGeneration':2}) as movement,
               patch('cost_metrics.emit')):
             agent.receive(event(1));await agent.task
-        movement.assert_awaited_once_with(bridge,'right',500,chat_id='1')
+        movement.assert_awaited_once_with(bridge,'right',500,chat_id='1',expected_generation=0)
         self.assertEqual(bridge.reads,2)
         self.assertEqual(len(model.requests),4)
-        self.assertEqual(bridge.sent[-1][1]['text'],'checked')
+        self.assertEqual(agent.last_movement_result['status'],'stopped')
+        self.assertIn('未确认抵达',bridge.sent[-1][1]['text'])
 
     async def test_agent_dispatch_single_read_and_expired_history(self):
         class RecordedBridge(Game):

@@ -126,6 +126,18 @@ public static class BoundedMovementOfflineTests
         Check(!state.IsMoving, "Disconnect cancels movement");
         int next = state.BeginSession();
         Check(Apply(state, next, new(1, "get_movement"), 4601).Movement.Action == null, "New session cannot see/use old action");
+        // Death or takeover can happen while Python awaits the next model decision between actions.
+        var between = new ControlState(); int betweenSession = between.BeginSession();
+        between.Update(true, 0, Player()); int observedGeneration = between.Generation;
+        between.RevokeControl(Player(life: 0), Ms(10)); between.Update(true, Ms(20), Player());
+        Check(!Apply(between, betweenSession, new(1, "move_for", 1, ExpectedGeneration: observedGeneration,
+            DurationMs: 100), 21).Ok && !between.IsMoving,
+            "Pre-death observation cannot authorize a new action after revival between model turns");
+        observedGeneration = between.Generation;
+        between.ToggleManual(Ms(30)); between.ToggleManual(Ms(31));
+        Check(!Apply(between, betweenSession, new(2, "move_for", 1, ExpectedGeneration: observedGeneration,
+            DurationMs: 100), 32).Ok && !between.IsMoving,
+            "Takeover and release between decisions invalidate the old observation generation");
         Console.WriteLine("PASS: bounded left/right input, absolute duration, lease, cancellation/ownership, death/respawn, manual and stale-start safety");
     }
 }

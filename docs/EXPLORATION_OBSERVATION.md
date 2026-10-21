@@ -8,6 +8,8 @@
 
 工具外壳是 `{valid, exploration, receivedAt}`。`valid` 表示源观察不是 unavailable，不代表新鲜、完整或通路安全。探索对象 schemaVersion=1、sourceSchemaVersion=1，包括：
 
+0.1.24 阶段 A 在工具外壳另附 `controlGeneration`，来自同次游戏线程观察回执，用于阻止死亡／手动接管后执行旧决策；探索对象及原 observation schema 均保持 v1。Agent 还在工具结果外壳附本轮 movementLoop 预算与终止状态。下文体积记录是阶段 A 前保存样本的离线投影，不含这些新增小型外壳字段。
+
 |部分|内容|
 |---|---|
 |元数据|世界／观察 ID、gameUpdate、采样时间、phase、status、坐标和观察范围、主动排除的能力|
