@@ -20,7 +20,8 @@ internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateV
 internal sealed record ControlReply(int V, int Id, bool Ok, string Status, string Mode,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PlayerSnapshot State = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TerrainSnapshot Terrain = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NavigationSnapshot Navigation = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NavigationSnapshot Navigation = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] EntityPerception Entities = null);
 internal enum ControlMode { None, Manual, External }
 
 // No Terraria references: the socket side submits requests; the game thread applies them.
@@ -87,7 +88,8 @@ internal sealed class ControlState
     }
 
     internal void Update(bool canControl, long now, PlayerSnapshot snapshot = null,
-        TerrainSnapshot terrain = null, NavigationSnapshot navigation = null, Action<string> sendChat = null)
+        TerrainSnapshot terrain = null, NavigationSnapshot navigation = null, Action<string> sendChat = null,
+        EntityPerception entities = null)
     {
         lock (_gate)
         {
@@ -131,7 +133,8 @@ internal sealed class ControlState
                     pending.Completion.TrySetResult(Reply(request.Id, available,
                         !available ? "not_ready" : request.Cmd == "get_state" ? "state" : "terrain") with
                         { State = snapshot ?? PlayerSnapshot.NotInWorld,
-                          Terrain = request.Cmd == "get_terrain" ? terrain : null });
+                          Terrain = request.Cmd == "get_terrain" ? terrain : null,
+                          Entities = snapshot?.InWorld == true ? entities : null });
                     continue;
                 }
                 string status = "applied";

@@ -5,6 +5,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 $sources = @(
     (Join-Path $repo 'CompanionBridge/ControlState.cs'),
     (Join-Path $repo 'CompanionBridge/TerrainSnapshot.cs'),
+    (Join-Path $repo 'CompanionBridge/EntitySnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MotionSupport.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/LocalMotionController.cs'),

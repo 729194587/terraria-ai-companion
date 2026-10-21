@@ -95,7 +95,7 @@ internal sealed class TcpControlServer : IDisposable
             client.NoDelay = true;
             using var stream = client.GetStream();
             await WriteJson(stream, new { v = 1, type = "hello", instance = _instance,
-                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "guarded_control", "local_navigation", "chat_events", "send_chat" } }, writeGate, token);
+                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "guarded_control", "local_navigation", "chat_events", "send_chat", "nearby_entities" } }, writeGate, token);
             writer = WriteReplies(stream, replies.Reader, writeGate, token);
             eventWriter = WriteEvents(stream, events.Reader, writeGate, token);
             // A failed writer must wake the reader and revoke the session as well.

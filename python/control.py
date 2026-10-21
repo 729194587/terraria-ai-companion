@@ -84,10 +84,10 @@ class Bridge:
             future.set_exception(error)
 
     def _read(self):
-        line = self.reader.readline(4097)
+        line = self.reader.readline(65537)
         if not line:
             raise BridgeError("Bridge closed connection (busy, P override, or world/player changed)")
-        if len(line) > 4096 or not line.endswith(b"\n"):
+        if len(line) > 65536 or not line.endswith(b"\n"):
             raise BridgeError("Invalid or oversized response")
         value = json.loads(line)
         if not isinstance(value, dict):

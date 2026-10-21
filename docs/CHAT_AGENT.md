@@ -1,4 +1,4 @@
-# 最小聊天 Agent（0.1.17）
+# 最小聊天 Agent（当前 Mod 0.1.18）
 
 本轮实现远端玩家聊天推送 → Python 模型调用 → 可选 `get_state` → 游戏内回复。只向模型开放这一个只读工具。没有新增导航、战斗、建造、Skill、Memory 或任务调度；会话只保存在本次 Python 进程内。
 
@@ -19,15 +19,17 @@
 | 文件 | 用途 |
 | --- | --- |
 | `CompanionBridge/Common/Systems/ChatBridgeSystem.cs` | 接收聊天显示事件、按作者过滤、游戏线程发送普通聊天 |
+| `CompanionBridge/EntitySnapshot.cs`、`Common/Systems/EntityReader.cs` | 有界实体快照、保守分类与游戏线程读取 |
 | `CompanionBridge/TcpControlServer.cs` | 主动事件、并发安全写入、能力声明 |
 | `CompanionBridge/ControlState.cs` | send_chat 解析、排队、聊天代次校验 |
 | `CompanionBridge/Common/Systems/CompanionSystem.cs` | 将游戏线程发送动作传给现有队列 |
-| `CompanionBridge/build.txt` | 版本 0.1.17 |
+| `CompanionBridge/build.txt` | 版本 0.1.18 |
 | `python/control.py` | 复用唯一 Bridge，独立接收线程、id 分发、事件去重 |
 | `python/llm.py` | 可取消的兼容 API 客户端 |
 | `python/agent.py` | 会话、抢占、工具循环、真实状态组合 |
 | `python/requirements.txt`、`.env.example`、`.gitignore` | 单一依赖和环境配置、忽略本地密钥文件 |
 | `tests/test_agent.py`、`tests/BridgeOfflineTests.cs` | 聊天、API、工具、抢占和 TCP 回归 |
+| `tests/test_entities.py`、`tests/run_csharp_tests.ps1` | 实体工具结果、大回执、分类/方向/过滤/序列化测试 |
 | `README.md`、本文件 | 使用方法与验收边界 |
 
 ## 协议
@@ -50,7 +52,7 @@ eventId 为 Mod 实例 GUID + 单调递增序号；重复文本仍是不同消�
 
 成功回执 `{"v":1,"id":3,"ok":true,"status":"sent","mode":"none"}` 表示游戏线程已调用发送接口，**不是服务器投递确认**。过期 chatId 返回 `ok:false,status:"superseded"`；不在世界或没有发送回调为 `not_ready`；接口异常为 `chat_send_failed`。文本限单行 400 UTF-16 单元，Agent 将换行折为空格，超长回复截断并加 `...`，历史保存实际发送文本。
 
-C# hello、回执和事件都经过唯一 `WriteJson`，由同一个 SemaphoreSlim 保护。事件有独立有界队列和写任务，不等待未完成的游戏线程回执；队列溢出会断开并撤销会话，避免默默丢消息。请求行上限从 1024 增至 4096 字节，以容纳中文回复；Python 回帧仍限 4096 字节。事件只在连接期间接收，不重播离线消息。
+C# hello、回执和事件都经过唯一 `WriteJson`，由同一个 SemaphoreSlim 保护。事件有独立有界队列和写任务，不等待未完成的游戏线程回执；队列溢出会断开并撤销会话，避免默默丢消息。请求行上限从 1024 增至 4096 字节，以容纳中文回复；Python 回帧现限 65536 字节，以容纳有界实体列表；请求行仍限 4096 字节。事件只在连接期间接收，不重播离线消息。
 
 Python 一个接收线程持续读取，根据 type/id 分发；请求调用可并发，发送顺序与 id 分配受锁保护。请求超时关闭连接，避免继续使用回执状态不确定的连接。不轮询聊天记录。主异步循环的 200ms 超时仅检查断线，不控制聊天触发时机。
 
@@ -60,13 +62,25 @@ Python 一个接收线程持续读取，根据 type/id 分发；请求调用可�
 
 模型 HTTP 请求可取消；每次 await 后还校验运行代次，丢弃不响应取消的迟到结果。仅当前运行可发回复，且游戏线程发送前再次核对最新 chatId，覆盖“旧发送已入队、新消息随后抵达”的竞态。已完成发送的消息无法撤回。
 
-get_state 复用 Bridge.get_state 和 Bridge.get_terrain；最终 player 和 terrain 采用后者同一游戏更新的快照，避免组合两个时刻的角色/地形。返回 Python 读取开始和接收时间区间、有效性、真实网格、分类 legend、实体识别不可用标记。位置为像素、TileSize=16，Y 向下。`?` 为未知/未加载，`!` 合并液体和危险 Tile；不伪造敌人/宝箱列表或“未发现”结论。
+get_state 复用 Bridge.get_state 和 Bridge.get_terrain；最终 player 和 terrain 采用后者同一游戏更新的快照，避免组合两个时刻的角色/地形。返回 Python 读取开始和接收时间区间、有效性、真实网格、分类 legend、附近实体快照（旧 Mod 则明确不可用）。位置为像素、TileSize=16，Y 向下。`?` 为未知/未加载，`!` 合并液体和危险 Tile；不将未知误报为“未发现”，不识别掉落物或宝箱。
 
 工具结果新增 `spatial`，仅由同一 `get_terrain` 回执的 state/terrain 确定性计算，原始 player、terrain、rows 和 legend 保留不变。`playerAnchors` 给出碰撞矩形中心、底边中心（feet）、顶边中心（head）的世界像素、向下取整的 Tile 坐标及零起点网格行列；不把角色贴图、姿态或重力方向当作已感知。`coordinates` 明确左上角 position、X 向右/Y 向下、索引映射和世界方向，`observedBounds` 给出采样边界；范围外及 `?` 均不能当作空气，`.` 只表示不参与当前碰撞分类。
 
 `nearbySpecialTiles` 列出距角色中心 96px 内最近最多 16 个 `h/1/2/3/4/a/b/=/!/?` 格子，包含采集器类别、网格索引、世界 Tile 坐标、格子中心像素、相对位移、水平/垂直方向及欧氏距离（像素与 Tile）。距离参考为**格子中心到角色中心**，不是碰撞间隙、表面高度或路径长度。排序按距离、行、列固定；提供截断前计数（含零计数）、半径、limit、matchedCount 和 truncated，未列出不代表范围外不存在。原点不一致只警告，仍按实际回执原点映射，不修正数据。所有派生信息明确标记为采集器分类的计算解释，不代表已经在游戏画面中验证半砖、斜坡、可见性或可通行性。
 
 HTTP 失败、超时、JSON/结构异常、调用预算耗尽均明确写 stderr；工具错误交回模型，IPC 断线退出。没有备用虚构回复或游戏状态。日志显示 `Chat received`、`LLM request`、`Tool result`、`Chat sent`，不输出密钥、认证头或 HTTP 错误响应正文。
+
+### 附近实体（0.1.18）
+
+`entities` 由游戏线程在同一次更新、原生更新执行前，与角色和地形一起采集；Python 使用 `get_terrain` 回执中的实体，不组合前一次 `get_state` 的数据。新包构建至 `.local/entity-build/Mods/CompanionBridge.tmod`；本轮不部署或重启，须使用者在保存退出 B 后更新并确认 0.1.18。hello 新增 `nearby_entities` 能力，命令不变。旧包缺少字段时 `available:false`，不当作没有实体。
+
+以 AI 的碰撞矩形中心为参考，读取客户端当前已知、active 且存活的其他玩家和 NPC，排除自身、死亡/幽灵玩家及失活 NPC。范围为中心距离 480px（30 Tile）内，按距离、kind、实例 id 排序，最多返回最近 12 个；`matchedCount` 是截断前数量，`truncated` 显式标记遗漏。实体范围与地形窗口是不同的范围，不保证视线、屏幕可见或完整世界同步。id 是当前槽位，会复用，不是永久身份。
+
+每项包含 kind、实例 id、NPC typeId、类型名/名称、分类及依据、世界中心像素、相对位移、水平/垂直方向和距离。名称/类型名上限各 64 UTF-16 单元，截断时 `nameTruncated:true`。快照含 `sampledAt` UTC、`gameUpdate`、`observerPlayerId` 和 `referenceCenterWorldPixels`。这里只是观察，不触发攻击、寻路或任何实体操作。
+
+分类保留原始 NPC 标志供核查：友好或城镇 NPC 为 `friendly_npc`；小生物注册且接触伤害为零为 `critter`；只有原版、非友好、非城镇、非小生物、正伤害、可追踪且非投射物型 NPC 才推断为 `hostile_creature`。该类**不保证当前攻击意图或实际能伤害玩家**。未知 Mod 生物、非友好但零伤害、不可追踪、矛盾标志或投射物型 NPC 保留 `unknown`，不把 friendly=false 单独作为敌对依据。其他玩家为 `other_player`，不推断 PvP 关系。畸形实体数据降级为实体不可用，角色、原始网格及 spatial 仍可使用。
+
+实现属性已通过本机 tModLoader DLL/IL 核对和编译：`NPC.TypeName`、`GivenOrTypeName`、`NPCID.Sets.CountsAsCritter/ActsLikeTownNPC/ProjectileNPC`、`CanBeChasedBy()`。离线测试覆盖分类、范围/自身过滤、方向、截断、实际 TCP 序列化、旧包兼容和模型工具消息；**真实游戏实体识别尚未验收**。建议新包中依次站近另一玩家、城镇 NPC、小生物和普通敌怪，对照游戏及 Trace 中同次 IPC 回执，并验证 crowded/truncated 情况。
 
 ## 配置和运行
 
@@ -80,7 +94,7 @@ python python/agent.py --port 18777 --timeout 2
 
 BASE_URL 应是 API 根路径，例如以 `/v1` 结尾；程序追加 `/chat/completions`。HTTP 超时默认 30 秒，IPC timeout 默认 2 秒。程序自动读取仓库根目录 `.env` 的三个 LLM 配置项（与运行目录无关），环境变量优先。支持普通 KEY=VALUE 和单/双引号字面值，不展开变量或行尾注释。`.env` 已忽略，不上传；`.env.example` 是可上传 GitHub 的无密钥模板。已按 [DeepSeek 官方文档](https://api-docs.deepseek.com/zh-cn/) 配置 `https://api.deepseek.com` 和 `deepseek-flash`。不要将密钥写入仓库或聊天。进程只保留当前会话，不自动重连。Ctrl+C 退出并关闭 IPC。
 
-先让 A/B 进入同一多人世界，再运行 Agent。A 不加载 Bridge；B 加载 **0.1.17**。同一端口只能一个 Python 控制连接，不同时运行导航脚本。单人模式没有远端真人消息，因此不是本轮交互验收入口。Agent 不取得运动租约，不需要按 P；P 仍会断开外部会话，之后需手动重新启动 Agent。
+先让 A/B 进入同一多人世界，再运行 Agent。A 不加载 Bridge；B 加载 **0.1.18**（实体感知需要新包）。同一端口只能一个 Python 控制连接，不同时运行导航脚本。单人模式没有远端真人消息，因此不是本轮交互验收入口。Agent 不取得运动租约，不需要按 P；P 仍会断开外部会话，之后需手动重新启动 Agent。
 
 本次包已构建至 `.local/agent-build/Mods/CompanionBridge.tmod`，**未部署，未启动/重启客户端**。由使用者按已有 A/B 配置准备新包及客户端，不覆盖角色或世界。重新构建：
 
