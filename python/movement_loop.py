@@ -12,6 +12,23 @@ def vector(value):
             and math.isfinite(value[k]) for k in ('x', 'y')))
 
 
+def terrain_available(source, exploration):
+    """Require terrain evidence; detailed decoding/validation stays in the existing readers."""
+    terrain = source.get('terrain')
+    if not isinstance(terrain, dict) or terrain.get('tileSize') != 16:
+        return False
+    bounds = terrain.get('bounds')
+    if (not isinstance(bounds, dict) or any(type(bounds.get(k)) is not int for k in ('x','y','width','height'))
+            or bounds['width'] <= 0 or bounds['height'] <= 0 or bounds['width']*bounds['height'] > 131072):
+        return False
+    if exploration:
+        return (terrain.get('encoding') == 'semantic_rectangles_v1'
+                and isinstance(terrain.get('regions'),list) and bool(terrain['regions']))
+    return (type(terrain.get('encodingVersion')) is int and terrain['encodingVersion'] == 1
+            and isinstance(terrain.get('palette'),list) and bool(terrain['palette'])
+            and isinstance(terrain.get('rows'),list) and len(terrain['rows']) == bounds['height'])
+
+
 class MovementLoop:
     def __init__(self, max_move_ms=6000, clock=time.monotonic):
         self.max_move_ms, self.clock = max_move_ms, clock
@@ -27,17 +44,30 @@ class MovementLoop:
         self.terminal = None
         self.reason = None
         self.expected_generation = None
+        self.world_session_id = None
+        self.observation_authorized = False
+        self.observation_authorization = 'missing'
+        self.observation_reason = 'no_terrain_observation'
 
     def finish(self, status, reason):
         if self.terminal is None:
             self.terminal, self.reason = status, reason
 
+    def invalidate_observation(self, reason):
+        self.observed = None
+        self.observation_authorized = False
+        self.observation_authorization = 'invalid'
+        self.observation_reason = reason
+
     def snapshot(self):
-        status = self.terminal or ('awaiting_observation' if self.pending_observation or self.observed is None else 'ready')
+        needs_observation = self.pending_observation or not self.observation_authorized or self.observed is None
+        status = self.terminal or ('awaiting_observation' if needs_observation else 'ready')
         return {'status': status,
                 'reason': self.reason, 'reservedMovementMs': self.reserved_ms,
                 'remainingMovementMs': self.max_move_ms-self.reserved_ms,
-                'needsObservation': self.pending_observation or self.observed is None,
+                'needsObservation': needs_observation,
+                'terrainObservationStatus': self.observation_authorization,
+                'observationReason': self.observation_reason,
                 'targetPositionWorldPixels': self.target, 'arrivalTolerancePixels': self.tolerance,
                 'positionConvention': 'player collision box top-left, world pixels',
                 'consecutiveNoProgress': self.no_progress,
@@ -48,13 +78,17 @@ class MovementLoop:
     def observe(self, result):
         source = result.get('exploration') or result.get('observation')
         if not isinstance(source, dict):
-            return  # get_state is still readable; lacks world/tick/death metadata for this loop.
+            # A state-only query provides no new terrain authorization. Keep the evidence,
+            # original receive clock and continuity guards; do not infer a world/control change.
+            self.observation_authorized = False
+            self.observation_authorization = 'not_refreshed'
+            self.observation_reason = 'no_new_terrain_observation'
+            return
         player = source.get('player') or {}
-        old = self.observed
-        changed_world = old and old.get('worldSessionId') != source.get('worldSessionId')
+        changed_world = self.world_session_id is not None and self.world_session_id != source.get('worldSessionId')
         life = player.get('life')
         dead = player.get('dead') is True or player.get('ghost') is True or type(life) in (int,float) and life <= 0
-        self.observed = None
+        self.invalidate_observation('observation_checks_failed')
         generation = result.get('controlGeneration')
         if self.expected_generation is not None and generation != self.expected_generation:
             self.finish('cancelled','control_generation_changed')
@@ -70,7 +104,8 @@ class MovementLoop:
         if (result.get('valid') is not True or source.get('status') not in ('ok','partial')
                 or (source.get('camera') or {}).get('status') != 'recent_render'
                 or not vector(position) or type(source.get('gameUpdate')) is not int
-                or not source.get('worldSessionId') or not source.get('observationId')):
+                or not source.get('worldSessionId') or not source.get('observationId')
+                or not terrain_available(source, 'exploration' in result)):
             if self.pending_observation:
                 self.finish('failed', 'post_action_observation_unavailable_or_stale')
             return
@@ -92,6 +127,10 @@ class MovementLoop:
         self.observed['controlGeneration'] = generation
         self.expected_generation = generation
         self.observed_at = self.clock()
+        self.world_session_id = source['worldSessionId']
+        self.observation_authorized = True
+        self.observation_authorization = 'authorized'
+        self.observation_reason = None
         self.pending_observation = False
         self.reason = self.reason if self.terminal else None
         if self.active and self.at_target():
@@ -113,13 +152,15 @@ class MovementLoop:
             raise ValueError('move requires direction left/right, duration_ms 50..2000; optional target_position and arrival_tolerance')
         if self.terminal:
             return self.blocked('movement_loop_terminated')
+        if self.observed is not None and self.clock()-self.observed_at > 30:
+            self.invalidate_observation('observation_older_than_30_seconds')
+            return self.blocked('observation_older_than_30_seconds')
         if self.pending_observation or self.observed is None:
             if self.reason == 'player_dead_or_ghost':
                 self.finish('cancelled','player_dead_or_ghost')
             return self.blocked('fresh_exploration_or_full_observation_required')
-        if self.clock()-self.observed_at > 30:
-            self.observed = None
-            return self.blocked('observation_older_than_30_seconds')
+        if not self.observation_authorized:
+            return self.blocked('terrain_observation_not_refreshed')
         if type(self.observed['controlGeneration']) is not int or self.observed['controlGeneration'] < 0:
             return self.blocked('control_generation_unavailable_update_bridge')
         target = arguments.get('target_position')
@@ -149,6 +190,9 @@ class MovementLoop:
         self.reserved_ms += duration
         self.before = self.observed.copy()
         self.pending_observation = True
+        self.observation_authorized = False
+        self.observation_authorization = 'consumed'
+        self.observation_reason = 'post_action_observation_required'
         return None
 
     def moved(self, result):

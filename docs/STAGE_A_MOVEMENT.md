@@ -48,11 +48,17 @@
 
 首次移动必须基于本轮新读取的 exploration 或完整 observation；旧聊天历史、get_state 和动作 before/after 不能单独授权下一步。get_state 和完整接口仍可单独读取，不改变它们的底层返回行为。
 
+边界修复采用严格授权：普通 get_state 查询（包括读取失败）之后，下一次移动返回 `terrain_observation_not_refreshed`，必须补充探索／完整观察；没有任何先前观察或仍在等待动作后观察时，返回 `fresh_exploration_or_full_observation_required`。普通查询不会清空原证据、刷新原采样接收时钟、清除动作后观察要求，也不比较缺失的世界／控制字段来虚构状态变化。
+
+`movementLoop.terrainObservationStatus` 区分 `missing`（无证据）、`authorized`（有效地形观察已授权）、`consumed`（动作已使用，需后续观察）、`not_refreshed`（普通查询没有提供新观察）、`invalid`（实际观察校验失败／缺少地形／过期），`observationReason` 说明原因。实际观察必须包含支持的地形结构及有效边界，只有玩家／摄像机而无 terrain 的 partial 结果不能授权移动。地形格、语义矩形的详细校验仍由原有读取／投影逻辑负责。
+
 移动完成后必须再次观察：同一 worldSessionId、新 observationId、严格更大的 gameUpdate、recent_render 摄像机、非 stale/unavailable，且玩家非死亡／幽灵。观察在 Python 收到后超过 30 秒不能再授权移动，需重新读取；这是决策等待上限，不能保证模型推理期间世界静止。
 
 每次成功动作后的新观察比较实际位置：有目标时检查距离减少，无目标时检查水平位移。连续两次未达到 1 像素的进展会锁定 no_progress（包括连续远离目标），不再次执行同样动作。此判断只负责停止，不制定绕路动作。
 
 终止状态：`arrived`、`stopped`、`failed`、`budget_exhausted`、`no_progress`、`unknown`、`cancelled`。工具结果携带当前状态／原因，最终写入 `movement_loop_end` Trace 及 `Agent.last_movement_result`。模型收到结果后仍可观察、读取细节或停止，但终止锁定后不能继续 move。
+
+终态只通过 `MovementLoop.finish()` 确定，一旦确定便不覆盖。再次调用 stop_movement 仍执行原停止接口，但其返回的动作状态不替换任务已有的 arrived/no_progress/cancelled 等状态或原因；没有终态时才记录 stopped/unknown。
 
 `completed` 仅说明单次输入结束。只有最新观察满足固定目标容差才标 arrived；已经在容差内时不启动动作。预算最后一次观察若确认抵达，则允许如实报告成功；未确认时明确报告未抵达。模型最终文字不能覆盖此核验：移动任务的游戏回复由终止状态生成，避免模型口头声称到达而实际尚未抵达。没有移动请求的普通聊天保持模型原有回复。
 
@@ -78,7 +84,7 @@ Python 将采样代次传给 move；开始前既比较 get_movement 的当前代
 
 离线测试使用 mock 模型、明确标注的合成位置与已有脱敏真实观察结构，不把 fake 位移当 Terraria 物理验收。覆盖多次依据新位置改变方向／时长、整批调用拒绝、缺少观察、预算与最后一轮成功、累计时间、连续无进展、目标不一致、目标两轴距离、未知／死亡／接管代次变化、复活后旧任务不恢复、新聊天抢占与原工具回归。C# 覆盖观察代次序列化及死亡／接管后的旧代次拒绝。
 
-本轮验证：全部 **205 项 Python 离线测试通过**；`tests/run_csharp_tests.ps1` 全部 C# 回归通过；`compileall` 和 `git diff --check` 通过。tModLoader 2026.08.3.0 stable / Terraria 1.4.4.9 构建 CompanionBridge 0.1.24 成功，**0 错误、0 警告**，包位于 `.local/stage-a-build/Mods/CompanionBridge.tmod`，未复制到客户端配置。
+边界修复验证：全部 **214 项 Python 离线测试通过**（其中闭环专项 28 项）；`tests/run_csharp_tests.ps1` 全部 C# 回归通过；`compileall` 和 `git diff --check` 通过。tModLoader 2026.08.3.0 stable / Terraria 1.4.4.9 构建 CompanionBridge 0.1.24 成功，**0 错误、0 警告**，包位于 `.local/stage-a-boundaries-build/Mods/CompanionBridge.tmod`，未复制到客户端配置。
 
 ## 后续真实游戏验收
 

@@ -69,6 +69,55 @@ async def run_scene(answers,game=None,delta=20,result=None,**budgets):
 
 
 class MovementLoopTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stop_preserves_arrival_no_progress_and_cancellation(self):
+        cases=[('arrived',100,None,[tool('get_exploration_observation'),movement(target=100),
+                                   tool('get_exploration_observation')]),
+               ('no_progress',0,None,[tool('get_exploration_observation'),movement(target=100),
+                                     tool('get_exploration_observation'),movement(),tool('get_exploration_observation')]),
+               ('cancelled',0,{'valid':True,'status':'cancelled','completed':False,'reason':'manual_override'},
+                [tool('get_exploration_observation'),movement(target=100)])]
+        for expected,delta,result,sequence in cases:
+            with self.subTest(status=expected):
+                a,g,act=await run_scene(sequence+[tool('stop_movement'),final()],delta=delta,result=result)
+                before_stop=result_from(a.llm.requests[-2])['movementLoop']
+                after_stop=result_from(a.llm.requests[-1])['movementLoop']
+                self.assertEqual(before_stop['status'],expected)
+                self.assertEqual(after_stop['status'],expected)
+                self.assertEqual(after_stop['reason'],before_stop['reason'])
+                self.assertEqual(a.last_movement_result['status'],expected)
+                if expected=='arrived':self.assertIn('确认到达',g.sent[-1][1]['text'])
+
+    async def test_state_query_requires_observation_without_invalidating_cached_evidence(self):
+        a,g,act=await run_scene([tool('get_exploration_observation'),tool('get_state'),movement(),
+                                tool('get_exploration_observation'),movement(),tool('get_exploration_observation'),final()])
+        after_state=result_from(a.llm.requests[2])['movementLoop']
+        self.assertTrue(after_state['needsObservation'])
+        self.assertEqual(after_state['observationId'],'world:1')
+        self.assertEqual(after_state['terrainObservationStatus'],'not_refreshed')
+        self.assertEqual(result_from(a.llm.requests[3])['reason'],'terrain_observation_not_refreshed')
+        self.assertEqual(act.await_count,1)
+        self.assertEqual(a.last_movement_result['status'],'stopped')
+
+    async def test_state_query_after_move_cannot_replace_post_action_observation(self):
+        a,g,act=await run_scene([tool('get_exploration_observation'),movement(),tool('get_state'),movement(),
+                                tool('get_exploration_observation'),movement(),tool('get_exploration_observation'),final()])
+        after_state=result_from(a.llm.requests[3])['movementLoop']
+        self.assertTrue(after_state['needsObservation'])
+        self.assertEqual(after_state['terrainObservationStatus'],'not_refreshed')
+        self.assertEqual(act.await_count,2)
+        self.assertEqual(a.last_movement_result['status'],'budget_exhausted')
+
+    async def test_failed_state_query_also_requires_new_observation(self):
+        class FailedState(Scene):
+            def get_state(self):raise BridgeError('fixture state-only query failure')
+        a,g,act=await run_scene([tool('get_exploration_observation'),tool('get_state'),movement(),final()],game=FailedState())
+        self.assertEqual(act.await_count,0)
+        query=result_from(a.llm.requests[2])['movementLoop']
+        self.assertEqual(query['terrainObservationStatus'],'not_refreshed')
+        self.assertEqual(query['observationId'],'world:1')
+        self.assertEqual(result_from(a.llm.requests[3])['reason'],'terrain_observation_not_refreshed')
+        self.assertEqual(a.last_movement_result['status'],'stopped')
+
     async def test_model_decides_again_using_latest_observation_and_verified_goal(self):
         game=Scene();decisions=[]
         class Decisions(Model):
@@ -254,7 +303,9 @@ class MovementLoopTests(unittest.IsolatedAsyncioTestCase):
 class GuardTests(unittest.TestCase):
     def observation(self,x=0,tick=1):
         return {'valid':True,'controlGeneration':2*(tick-1),'exploration':{'worldSessionId':'world','observationId':'world:'+str(tick),'gameUpdate':tick,
-                'status':'ok','camera':{'status':'recent_render'},'player':{'positionWorldPixels':{'x':x,'y':0},'life':100}}}
+                'status':'ok','camera':{'status':'recent_render'},'player':{'positionWorldPixels':{'x':x,'y':0},'life':100},
+                'terrain':{'tileSize':16,'bounds':{'x':0,'y':0,'width':1,'height':1},
+                           'encoding':'semantic_rectangles_v1','regions':[[0,0,1,1,{'knowledge':'read'}]]}}}
 
     def test_expired_observation_and_invalid_target_never_reserve_time(self):
         now=[0];guard=MovementLoop(clock=lambda:now[0]);guard.observe(self.observation());now[0]=31
@@ -287,6 +338,57 @@ class GuardTests(unittest.TestCase):
         reply=guard.prepare({'direction':'right','duration_ms':500})
         self.assertEqual(reply['reason'],'control_generation_unavailable_update_bridge')
         self.assertEqual(guard.reserved_ms,0)
+
+    def test_missing_terrain_is_invalid_and_cannot_authorize_move(self):
+        for kind in ('exploration','observation'):
+            guard=MovementLoop();result=self.observation()
+            source=result.pop('exploration');result[kind]=source
+            source['terrain']=None
+            guard.observe(result)
+            reply=guard.prepare({'direction':'right','duration_ms':500})
+            self.assertIsNotNone(reply)
+            self.assertEqual(reply['movementLoop']['terrainObservationStatus'],'invalid')
+            self.assertEqual(guard.reserved_ms,0)
+
+    def test_readonly_query_does_not_refresh_age_or_claim_world_changed(self):
+        now=[0];guard=MovementLoop(clock=lambda:now[0]);guard.observe(self.observation())
+        evidence=copy.deepcopy(guard.observed);now[0]=10
+        guard.observe({'valid':True,'player':{'position':{'x':1,'y':0}}})
+        self.assertEqual(guard.observed,evidence)
+        self.assertEqual(guard.observed_at,0)
+        self.assertIsNone(guard.terminal)
+        self.assertEqual(guard.expected_generation,0)
+        now[0]=31
+        reply=guard.prepare({'direction':'right','duration_ms':500})
+        self.assertEqual(reply['reason'],'observation_older_than_30_seconds')
+        self.assertEqual(reply['movementLoop']['terrainObservationStatus'],'invalid')
+
+    def test_query_does_not_hide_a_later_cross_world_observation(self):
+        guard=MovementLoop();guard.observe(self.observation())
+        guard.observe({'valid':True,'player':{}})
+        other=self.observation();other['exploration']['worldSessionId']='other-world'
+        guard.observe(other)
+        self.assertEqual(guard.terminal,'cancelled')
+        self.assertEqual(guard.reason,'world_changed')
+
+    def test_refresh_in_same_update_before_any_action_is_not_a_state_change(self):
+        guard=MovementLoop();result=self.observation();guard.observe(result)
+        guard.observe({'valid':True,'player':{}})
+        guard.observe(result)
+        self.assertIsNone(guard.terminal)
+        self.assertEqual(guard.snapshot()['terrainObservationStatus'],'authorized')
+        self.assertIsNone(guard.prepare({'direction':'right','duration_ms':500}))
+
+    def test_new_id_without_later_update_after_action_cannot_reauthorize(self):
+        guard=MovementLoop();guard.observe(self.observation())
+        guard.prepare({'direction':'right','duration_ms':500})
+        guard.moved({'valid':True,'status':'completed','completed':True,'controlGeneration':2})
+        guard.observe({'valid':True,'player':{}})
+        result=self.observation();result['controlGeneration']=2
+        result['exploration']['observationId']='world:new-id-same-update'
+        guard.observe(result)
+        self.assertEqual(guard.terminal,'failed')
+        self.assertEqual(guard.reason,'post_action_observation_not_newer')
 
 
 if __name__=='__main__':unittest.main()
