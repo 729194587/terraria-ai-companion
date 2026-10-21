@@ -16,9 +16,10 @@ MAX_REQUEST_BYTES = 4096
 
 
 class BridgeError(Exception):
-    def __init__(self, message, diagnostic=None):
+    def __init__(self, message, diagnostic=None, status=None):
         super().__init__(message)
         self.diagnostic = diagnostic
+        self.status = status
 
 
 class Bridge:
@@ -160,7 +161,7 @@ class Bridge:
             tracing.trace.emit("ipc_error", command=cmd, request=request, category="rejected",
                                reason=reply.get("status", "unknown"),
                                elapsed_ms=(time.monotonic() - started) * 1000)
-            raise BridgeError(f"Command rejected: {reply.get('status', 'unknown')}")
+            raise BridgeError(f"Command rejected: {reply.get('status', 'unknown')}", status=reply.get("status", "unknown"))
         return reply
 
     def move_right(self, seconds):

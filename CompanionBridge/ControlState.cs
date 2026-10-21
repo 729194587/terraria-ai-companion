@@ -9,7 +9,8 @@ using CompanionBridge.Motion;
 namespace CompanionBridge;
 
 internal sealed record ControlRequest(int Id, string Cmd, int Direction = 1, bool Jump = false,
-    int? ExpectedGeneration = null, float? TargetX = null, string Text = null, string ChatId = null);
+    int? ExpectedGeneration = null, float? TargetX = null, string Text = null, string ChatId = null,
+    int? DurationMs = null, int? ActionId = null);
 internal sealed record ControlInput(int Direction, bool Jump, bool OverrideJump, bool Predictive = false, float? TargetX = null);
 internal sealed record StateVector(float X, float Y);
 internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateVector Velocity,
@@ -17,12 +18,21 @@ internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateV
 {
     internal static readonly PlayerSnapshot NotInWorld = new(false, null, null, null, null);
 }
+internal sealed record MovementSnapshot(int ActionId, int Session, int Generation, int Direction, int DurationMs,
+    string Status, string Reason, PlayerSnapshot Before, PlayerSnapshot After, string StartedAt, string EndedAt,
+    double ElapsedMilliseconds)
+{
+    public bool Completed => Status == "completed";
+    public bool Cancelled => Status == "cancelled";
+}
+internal sealed record MovementFeedback(int Generation, MovementSnapshot Action);
 internal sealed record ControlReply(int V, int Id, bool Ok, string Status, string Mode,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PlayerSnapshot State = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TerrainSnapshot Terrain = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NavigationSnapshot Navigation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] EntityPerception Entities = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObservationSnapshot Observation = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObservationSnapshot Observation = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] MovementFeedback Movement = null);
 internal enum ControlMode { None, Manual, External }
 
 // No Terraria references: the socket side submits requests; the game thread applies them.
@@ -30,6 +40,10 @@ internal sealed class ControlState
 {
     internal const int LeaseMilliseconds = 750;
     internal const int Capacity = 32;
+    internal const int MaxMoveMilliseconds = 2000;
+    private MovementSnapshot _movement;
+    private long _moveStartedAt, _moveEndsAt;
+    private int _nextActionId;
     private readonly object _gate = new();
     private readonly Queue<Pending> _pending = new();
     private int _nextSession, _session, _lastId;
@@ -38,7 +52,7 @@ internal sealed class ControlState
     private ControlMode _mode;
     private bool _wasCanControl;
     private bool _controlBlocked;
-    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "send_chat";
+    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "send_chat" or "get_movement" or "cancel_move";
     private string _latestChatId;
     internal void ObserveChat(string id) { lock (_gate) _latestChatId = id; }
     private ControlInput _input = new(1, false, false);
@@ -69,6 +83,7 @@ internal sealed class ControlState
         lock (_gate)
         {
             if (_session != session) return;
+            FinishMovement(false, "disconnected", Stopwatch.GetTimestamp());
             _session = 0;
             if (_mode == ControlMode.External) { _mode = ControlMode.None; _generation++; }
             ClearPending("disconnected");
@@ -99,16 +114,47 @@ internal sealed class ControlState
     {
         lock (_gate)
         {
-            if (!canControl && (_wasCanControl || _mode != ControlMode.None)) RevokeControl();
+            if (!canControl && (_wasCanControl || _mode != ControlMode.None)) RevokeControl(snapshot, now);
             _wasCanControl = canControl;
             if (canControl) _controlBlocked = false;
             else if (snapshot?.InWorld == true) _controlBlocked = true;
-            if (_mode != ControlMode.None && now >= _deadline) { _mode = ControlMode.None; _generation++; }
+            if (_mode != ControlMode.None && now >= _deadline)
+            {
+                FinishMovement(false, "lease_expired", now, snapshot);
+                _mode = ControlMode.None; _generation++;
+            }
+            else if (_movement?.Status == "running" && now >= _moveEndsAt)
+            {
+                FinishMovement(true, "duration_elapsed", now, snapshot);
+                _mode = ControlMode.None; _generation++;
+            }
             ObservationSnapshot observation = null;
             bool observationAttempted = false, observationFailed = false;
             while (_pending.TryDequeue(out var pending))
             {
                 var request = pending.Request;
+                if (request.Cmd is "get_movement" or "cancel_move" && pending.Session == _session)
+                {
+                    bool match = request.Cmd == "get_movement" || _movement != null && request.ActionId == _movement.ActionId && _movement.Session == _session;
+                    if (match && request.Cmd == "cancel_move" && _movement?.Status == "running")
+                    {
+                        FinishMovement(false, "stopped", now, snapshot);
+                        _mode = ControlMode.None; _generation++;
+                    }
+                    pending.Completion.TrySetResult(Reply(request.Id, match, match ? "movement" : "action_changed") with
+                        { State = snapshot, Movement = Movement(now) });
+                    continue;
+                }
+                if (request.Cmd is "move_for" or "renew_move" && pending.Session == _session)
+                {
+                    string result = !canControl || snapshot?.InWorld != true ? "not_ready"
+                        : now >= pending.ReceivedAt + LeaseTicks ? "expired"
+                        : request.Cmd == "renew_move" ? RenewMovement(request, pending.ReceivedAt)
+                        : StartMovement(request, pending.ReceivedAt, now, snapshot);
+                    pending.Completion.TrySetResult(Reply(request.Id, result == "movement_started" || result == "movement", result) with
+                        { State = snapshot, Movement = Movement(now) });
+                    continue;
+                }
                 if (request.Cmd == "get_observation" && pending.Session == _session)
                 {
                     if (!observationAttempted)
@@ -161,8 +207,13 @@ internal sealed class ControlState
                 else if (!canControl) status = "not_ready";
                 else if (request.ExpectedGeneration is int expected && expected != _generation)
                     status = "generation_changed";
-                else if (request.Cmd == "stop") { _mode = ControlMode.None; _generation++; }
+                else if (request.Cmd == "stop")
+                {
+                    FinishMovement(false, "stopped", now, snapshot);
+                    _mode = ControlMode.None; _generation++;
+                }
                 else if (_mode == ControlMode.Manual) status = "manual_active";
+                else if (_movement?.Status == "running") status = "movement_active";
                 else if (now >= pending.ReceivedAt + LeaseTicks) status = "expired";
                 else
                 {
@@ -180,11 +231,53 @@ internal sealed class ControlState
         }
     }
 
-    internal void RevokeControl()
+    private MovementFeedback Movement(long now) => new(_generation,
+        _movement?.Session != _session ? null : _movement.Status == "running"
+            ? _movement with { ElapsedMilliseconds = (now - _moveStartedAt) * 1000.0 / Stopwatch.Frequency } : _movement);
+
+    private string StartMovement(ControlRequest request, long receivedAt, long now, PlayerSnapshot snapshot)
+    {
+        if (request.Direction is not (-1 or 1) || request.DurationMs is not (>= 50 and <= MaxMoveMilliseconds)
+            || request.ExpectedGeneration == null) return "invalid_movement";
+        if (request.ChatId != null && request.ChatId != _latestChatId) return "superseded";
+        if (request.ExpectedGeneration != _generation) return "generation_changed";
+        if (_mode == ControlMode.Manual) return "manual_active";
+        if (_mode != ControlMode.None) return "control_busy";
+        _generation++;
+        _mode = ControlMode.External;
+        _input = new(request.Direction, false, true); // Existing executor; no jump or predictive navigation.
+        _deadline = receivedAt + LeaseTicks;
+        _moveStartedAt = now;
+        _moveEndsAt = now + request.DurationMs.Value * Stopwatch.Frequency / 1000;
+        _movement = new(++_nextActionId, _session, _generation, request.Direction, request.DurationMs.Value,
+            "running", "started", snapshot, null, DateTimeOffset.UtcNow.ToString("O"), null, 0);
+        return "movement_started";
+    }
+
+    private string RenewMovement(ControlRequest request, long receivedAt)
+    {
+        if (_movement?.Status != "running" || _movement.Session != _session
+            || request.ActionId != _movement.ActionId || _movement.Generation != _generation || _mode != ControlMode.External)
+            return "action_changed";
+        _deadline = receivedAt + LeaseTicks; // The absolute _moveEndsAt never changes.
+        return "movement";
+    }
+
+    private void FinishMovement(bool completed, string reason, long now, PlayerSnapshot after = null)
+    {
+        if (_movement?.Status != "running") return;
+        _movement = _movement with { Status = completed ? "completed" : "cancelled", Reason = reason,
+            After = after, EndedAt = DateTimeOffset.UtcNow.ToString("O"),
+            ElapsedMilliseconds = (now - _moveStartedAt) * 1000.0 / Stopwatch.Frequency };
+        _input = new(0, false, false);
+    }
+
+    internal void RevokeControl(PlayerSnapshot snapshot = null, long? now = null)
     {
         lock (_gate)
         {
             // Both the death hook and the next DoUpdate may observe this transition.
+            FinishMovement(false, "control_unavailable", now ?? Stopwatch.GetTimestamp(), snapshot);
             if (!_controlBlocked || _wasCanControl || _mode != ControlMode.None) _generation++;
             _mode = ControlMode.None;
             _input = new(0, false, false);
@@ -208,6 +301,7 @@ internal sealed class ControlState
     {
         lock (_gate)
         {
+            FinishMovement(false, "manual_override", now);
             ClearPending("manual_override");
             _generation++;
             _mode = _mode == ControlMode.None ? ControlMode.Manual : ControlMode.None;
@@ -219,6 +313,8 @@ internal sealed class ControlState
     {
         lock (_gate)
         {
+            FinishMovement(false, "reset", Stopwatch.GetTimestamp());
+            _movement = null;
             _mode = ControlMode.None;
             _wasCanControl = false;
             _controlBlocked = false;
@@ -246,7 +342,8 @@ internal sealed class ControlState
             || !root.TryGetProperty("id", out var id) || !id.TryGetInt32(out int n) || n <= 0
             || !root.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String
             || cmd.GetString() is not ("move_right" or "stop" or "get_state" or "get_terrain" or "input"
-                or "terrain_step" or "get_navigation" or "navigate" or "send_chat" or "get_observation"))
+                or "terrain_step" or "get_navigation" or "navigate" or "send_chat" or "get_observation"
+                or "move_for" or "renew_move" or "cancel_move" or "get_movement"))
             throw new FormatException("Expected v=1, positive id and a supported cmd.");
         int direction = 1;
         bool jump = false;
@@ -273,9 +370,9 @@ internal sealed class ControlState
         int? expectedGeneration = null;
         if (root.TryGetProperty("expectedGeneration", out var guard))
         {
-            if (cmd.GetString() is not ("terrain_step" or "navigate" or "stop")
+            if (cmd.GetString() is not ("terrain_step" or "navigate" or "stop" or "move_for")
                 || guard.ValueKind != JsonValueKind.Number || !guard.TryGetInt32(out int expected) || expected < 0)
-                throw new FormatException("expectedGeneration requires terrain_step/navigate/stop and a nonnegative integer.");
+                throw new FormatException("expectedGeneration requires a guarded command and a nonnegative integer.");
             expectedGeneration = expected;
         }
         string text = null, chatId = null;
@@ -288,6 +385,26 @@ internal sealed class ControlState
                 || string.IsNullOrWhiteSpace(chatId = c.GetString()) || chatId.Length > 100)
                 throw new FormatException("send_chat requires single-line text (1..400 chars) and chatId.");
         }
-        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId);
+        int? durationMs = null, actionId = null;
+        if (cmd.GetString() == "move_for")
+        {
+            if (!root.TryGetProperty("direction", out var d) || !d.TryGetInt32(out direction) || direction is not (-1 or 1)
+                || !root.TryGetProperty("durationMs", out var ms) || !ms.TryGetInt32(out int duration)
+                || duration is < 50 or > MaxMoveMilliseconds || expectedGeneration == null)
+                throw new FormatException("move_for requires direction=-1/1, durationMs=50..2000 and expectedGeneration.");
+            durationMs = duration;
+            if (root.TryGetProperty("chatId", out var chat))
+            {
+                if (chat.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(chatId = chat.GetString()) || chatId.Length > 100)
+                    throw new FormatException("Invalid movement chatId.");
+            }
+        }
+        if (cmd.GetString() is "renew_move" or "cancel_move")
+        {
+            if (!root.TryGetProperty("actionId", out var a) || !a.TryGetInt32(out int action) || action <= 0)
+                throw new FormatException("Movement continuation/cancellation requires positive actionId.");
+            actionId = action;
+        }
+        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId, durationMs, actionId);
     }
 }

@@ -14,10 +14,10 @@ public sealed class CompanionBridge : Mod
     internal static bool AutoMoveEnabled => Controls.IsMoving;
 
     // Death/ghost: revoke actions while retaining this world's observation/chat connection.
-    internal static void RevokeControl()
+    internal static void RevokeControl(PlayerSnapshot snapshot = null)
     {
         GameNavigation.Cancel();
-        Controls.RevokeControl();
+        Controls.RevokeControl(snapshot);
     }
 
     // World/session teardown and manual takeover retain their existing disconnect semantics.

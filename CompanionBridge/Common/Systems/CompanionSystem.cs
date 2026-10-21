@@ -69,7 +69,7 @@ public sealed class CompanionSystem : ModSystem
         bool canControl = CanControl;
         var snapshot = ReadSnapshot();
         if (_wasInWorld && !snapshot.InWorld) CompanionBridge.StopControl();
-        else if (_wasCanControl && !canControl) CompanionBridge.RevokeControl();
+        else if (_wasCanControl && !canControl) CompanionBridge.RevokeControl(snapshot);
         _wasInWorld = snapshot.InWorld;
         _wasCanControl = canControl;
         CompanionBridge.Controls.Update(canControl, Stopwatch.GetTimestamp(), snapshot,
