@@ -62,6 +62,10 @@ Python 一个接收线程持续读取，根据 type/id 分发；请求调用可�
 
 get_state 复用 Bridge.get_state 和 Bridge.get_terrain；最终 player 和 terrain 采用后者同一游戏更新的快照，避免组合两个时刻的角色/地形。返回 Python 读取开始和接收时间区间、有效性、真实网格、分类 legend、实体识别不可用标记。位置为像素、TileSize=16，Y 向下。`?` 为未知/未加载，`!` 合并液体和危险 Tile；不伪造敌人/宝箱列表或“未发现”结论。
 
+工具结果新增 `spatial`，仅由同一 `get_terrain` 回执的 state/terrain 确定性计算，原始 player、terrain、rows 和 legend 保留不变。`playerAnchors` 给出碰撞矩形中心、底边中心（feet）、顶边中心（head）的世界像素、向下取整的 Tile 坐标及零起点网格行列；不把角色贴图、姿态或重力方向当作已感知。`coordinates` 明确左上角 position、X 向右/Y 向下、索引映射和世界方向，`observedBounds` 给出采样边界；范围外及 `?` 均不能当作空气，`.` 只表示不参与当前碰撞分类。
+
+`nearbySpecialTiles` 列出距角色中心 96px 内最近最多 16 个 `h/1/2/3/4/a/b/=/!/?` 格子，包含采集器类别、网格索引、世界 Tile 坐标、格子中心像素、相对位移、水平/垂直方向及欧氏距离（像素与 Tile）。距离参考为**格子中心到角色中心**，不是碰撞间隙、表面高度或路径长度。排序按距离、行、列固定；提供截断前计数（含零计数）、半径、limit、matchedCount 和 truncated，未列出不代表范围外不存在。原点不一致只警告，仍按实际回执原点映射，不修正数据。所有派生信息明确标记为采集器分类的计算解释，不代表已经在游戏画面中验证半砖、斜坡、可见性或可通行性。
+
 HTTP 失败、超时、JSON/结构异常、调用预算耗尽均明确写 stderr；工具错误交回模型，IPC 断线退出。没有备用虚构回复或游戏状态。日志显示 `Chat received`、`LLM request`、`Tool result`、`Chat sent`，不输出密钥、认证头或 HTTP 错误响应正文。
 
 ## 配置和运行
