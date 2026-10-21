@@ -26,6 +26,8 @@ internal sealed class TcpControlServer : IDisposable
     private CancellationTokenSource _clientCancellation;
     private int _session;
     private Channel<object> _events;
+    private Channel<object> _gameEvents;
+    private int _gameMessagesDropped;
     private long _chatSequence;
 
     internal void PublishChat(int sender, string name, string text, int localPlayer)
@@ -44,6 +46,22 @@ internal sealed class TcpControlServer : IDisposable
         }
     }
     internal int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+    internal void PublishGameMessage(string text, string source, ulong gameUpdate)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        lock (_gate)
+        {
+            if (_gameEvents == null || _clientCancellation == null) return;
+            string id = _instance + ":" + Interlocked.Increment(ref _chatSequence);
+            // Separate bounded queue: notice bursts cannot fill the player-chat queue or revoke chatId.
+            if (_gameEvents.Writer.TryWrite(new { v = 1, type = "game_message", eventId = id,
+                text = text.Length > 1024 ? text[..1024] : text, textTruncated = text.Length > 1024,
+                source, gameUpdate, receivedAt = DateTimeOffset.UtcNow.ToString("O"),
+                droppedBefore = _gameMessagesDropped })) _gameMessagesDropped = 0;
+            else _gameMessagesDropped++;
+        }
+    }
 
     internal TcpControlServer(ControlState state, int port = DefaultPort)
     {
@@ -73,10 +91,13 @@ internal sealed class TcpControlServer : IDisposable
                     _session = _state.BeginSession();
                     _clientCancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
                     _events = Channel.CreateBounded<object>(ControlState.Capacity);
+                    _gameEvents = Channel.CreateBounded<object>(ControlState.Capacity);
+                    _gameMessagesDropped = 0;
                     int session = _session;
                     var cancellation = _clientCancellation;
                     var events = _events;
-                    _clientTask = Task.Run(() => Serve(client, session, cancellation, events));
+                    var gameEvents = _gameEvents;
+                    _clientTask = Task.Run(() => Serve(client, session, cancellation, events, gameEvents));
                 }
             }
         }
@@ -85,23 +106,26 @@ internal sealed class TcpControlServer : IDisposable
         catch (ObjectDisposedException) when (_shutdown.IsCancellationRequested) { }
     }
 
-    private async Task Serve(TcpClient client, int session, CancellationTokenSource cancellation, Channel<object> events)
+    private async Task Serve(TcpClient client, int session, CancellationTokenSource cancellation, Channel<object> events,
+        Channel<object> gameEvents)
     {
         var token = cancellation.Token;
         var replies = Channel.CreateBounded<Task<ControlReply>>(ControlState.Capacity);
         Task writer = Task.CompletedTask;
         Task eventWriter = Task.CompletedTask;
+        Task gameEventWriter = Task.CompletedTask;
         using var writeGate = new SemaphoreSlim(1, 1);
         try
         {
             client.NoDelay = true;
             using var stream = client.GetStream();
             await WriteJson(stream, new { v = 1, type = "hello", instance = _instance,
-                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "guarded_control", "local_navigation", "chat_events", "send_chat", "nearby_entities", "viewport_observation_v1" }, maxResponseBytes = MaxResponseBytes }, writeGate, token);
+                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "guarded_control", "local_navigation", "chat_events", "game_messages_v1", "send_chat", "nearby_entities", "viewport_observation_v1" }, maxResponseBytes = MaxResponseBytes }, writeGate, token);
             writer = WriteReplies(stream, replies.Reader, writeGate, token);
             eventWriter = WriteEvents(stream, events.Reader, writeGate, token);
+            gameEventWriter = WriteEvents(stream, gameEvents.Reader, writeGate, token);
             // A failed writer must wake the reader and revoke the session as well.
-            _ = Task.WhenAny(writer, eventWriter).ContinueWith(_ => cancellation.Cancel(),
+            _ = Task.WhenAny(writer, eventWriter, gameEventWriter).ContinueWith(_ => cancellation.Cancel(),
                 CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             var buffer = new byte[256];
             using var line = new MemoryStream();
@@ -133,8 +157,9 @@ internal sealed class TcpControlServer : IDisposable
             cancellation.Cancel();
             replies.Writer.TryComplete();
             events.Writer.TryComplete();
+            gameEvents.Writer.TryComplete();
             client.Dispose();
-            try { await Task.WhenAll(writer, eventWriter); }
+            try { await Task.WhenAll(writer, eventWriter, gameEventWriter); }
             catch (Exception e) when (e is IOException or SocketException or OperationCanceledException or ObjectDisposedException) { }
             lock (_gate)
             {
@@ -143,6 +168,7 @@ internal sealed class TcpControlServer : IDisposable
                     _clientCancellation = null;
                     _session = 0;
                     _events = null;
+                    _gameEvents = null;
                 }
             }
             cancellation.Dispose();

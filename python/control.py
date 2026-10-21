@@ -1,5 +1,6 @@
 """Minimal CompanionBridge client. Python 3.10+, standard library only."""
 import argparse
+from collections import deque
 from concurrent.futures import Future, TimeoutError as FutureTimeout
 import threading
 import json
@@ -27,6 +28,7 @@ class Bridge:
         self._lock = threading.Lock()
         self._pending = {}
         self._seen = set()
+        self._game_seen = deque(maxlen=128)
         self._failure = None
         self._receiver = None
         try:
@@ -59,6 +61,20 @@ class Bridge:
                 frame = self._read()
                 if frame.get("v") != 1:
                     raise BridgeError("Response version mismatch")
+                if frame.get("type") == "game_message":
+                    if (not isinstance(frame.get("eventId"), str) or not frame["eventId"]
+                            or not isinstance(frame.get("text"), str) or not frame["text"].strip() or len(frame["text"]) > 1024
+                            or frame.get("source") not in ("chat_helper", "main_new_text", "main_new_text_multiline")
+                            or type(frame.get("gameUpdate")) is not int or frame["gameUpdate"] < 0
+                            or not isinstance(frame.get("receivedAt"), str)
+                            or type(frame.get("textTruncated")) is not bool
+                            or type(frame.get("droppedBefore")) is not int or frame["droppedBefore"] < 0):
+                        raise BridgeError("Malformed game message event")
+                    if frame["eventId"] not in self._game_seen:
+                        self._game_seen.append(frame["eventId"])
+                        if self.on_event:
+                            self.on_event(frame)
+                    continue
                 if frame.get("type") == "chat_message":
                     event_id = frame.get("eventId")
                     if (not isinstance(event_id, str) or not event_id
