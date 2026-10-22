@@ -33,8 +33,9 @@ internal static class MotionSupport
 {
     internal const float MinimumSupportPixels = 8;
 
-    // Region goals only accept horizontal ordinary solid tops. Existing horizontal
-    // navigation retains its shape-aware support policy (slopes/half blocks etc.).
+    // Region goals accept full solid tops and flat one-way platform tops.
+    // Existing sweep, grounded, clearance and minimum support checks still apply;
+    // sloped platforms and half blocks are not flat region targets.
     internal static bool SafeFlatLanding(PhysicsState state, Func<int, int, char> readCell)
     {
         if (!SafeLanding(state, readCell)) return false;
@@ -43,7 +44,7 @@ internal static class MotionSupport
         if (Math.Abs(bottom - row * 16) > LandingRegion.FeetTolerance) return false;
         float support = 0;
         for (int x = (int)Math.Floor(state.Px / 16); x < (int)Math.Ceiling((state.Px + PhysicsSimulator.PlayerW) / 16); x++)
-            if (readCell(x, row) == '#')
+            if (readCell(x, row) is '#' or '=')
                 support += Math.Min(state.Px + PhysicsSimulator.PlayerW, (x + 1) * 16) - Math.Max(state.Px, x * 16);
         return support >= MinimumSupportPixels;
     }

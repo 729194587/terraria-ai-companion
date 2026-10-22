@@ -1,4 +1,4 @@
-# 二维落脚导航入口（0.1.30）
+# 二维落脚导航入口（0.1.31）
 
 新增 `navigate_to_landing_region`，从 LLM 接入已有二维落脚导航。保留 `navigate_to_x`、旧 TCP `navigate` 和 `navigate.py` 的水平目标行为；没有重写规划器、落脚判据或执行器。
 
@@ -16,7 +16,7 @@
 
 实际路径：`agent.TOOLS/dispatch → atomic_operations.dispatch → Bridge/TCP start_atomic → ControlState.TargetRegion → ControlInput.TargetRegion → CompanionPlayer.PostUpdateRunSpeeds → GameNavigation.Before(region: ...) → NavigationTask → StateSpacePlanner.Plan(start, LandingRegion, ...) → LocalMotionController`。
 
-原生更新后，`CompanionPlayer.PostUpdate → GameNavigation.After → NavigationTask.After` 用实际玩家位置、速度、跳跃状态及原生碰撞/支撑反馈验证执行。最终 `LandingRegion.Arrived` 要求 X 区间和脚底高度均满足、着地、安全实心平顶支撑、两轴速度绝对值 <=0.1、跳跃释放且计数归零。只经过目标 X 或预测 `reachedGoal=true` 都不等于完成。
+原生更新后，`CompanionPlayer.PostUpdate → GameNavigation.After → NavigationTask.After` 用实际玩家位置、速度、跳跃状态及原生碰撞/支撑反馈验证执行。最终 `LandingRegion.Arrived` 要求 X 区间和脚底高度均满足、着地、安全平顶支撑（完整方块或水平单向平台）、两轴速度绝对值 <=0.1、跳跃释放且计数归零。只经过目标 X 或预测 `reachedGoal=true` 都不等于完成。
 
 ## 协议与动作身份
 
@@ -48,9 +48,9 @@
 
 ## 真实游戏测试
 
-构建包：`.local/landing-navigation-build/Mods/CompanionBridge.tmod`，版本 **0.1.30**。本次仅构建，未复制到客户端配置或部署。用户保存并退出测试客户端后自行加载，重启核对版本及 `atomic_operations_v1`、`landing_region_navigation_v1` 能力。
+构建包：`.local/platform-fixes-build/Mods/CompanionBridge.tmod`，版本 **0.1.31**。合并包已备份部署到B测试配置并确认加载；后续重新部署时须先保存退出客户端，重启核对版本及 `atomic_operations_v1`、`landing_region_navigation_v1` 能力。
 
-使用无装备、无异常 Buff、无坐骑/钩爪、正常重力的普通角色，准备有净空的普通实心平顶平台。沿用原有普通角色/局部物理模型限制；平台、斜坡、半砖不替代二维目标的实心平顶支撑，远目标或不可达高度允许明确失败。
+使用无装备、无异常 Buff、无坐骑/钩爪、正常重力的普通角色，准备有净空的普通实心平顶平台。沿用原有普通角色/局部物理模型限制；水平单向平台可作为最终落点，斜平台、斜坡和半砖仍不作为此平顶目标，远目标或不可达高度允许明确失败。
 
 可启动已有 `python python/agent.py`，让另一玩家在聊天中明确要求落到指定 X 左边缘区间和脚底 Y，检查实际工具调用参数及回执。也可在仓库根目录使用同一个原子入口直接测试（不要与 Agent 同时占用唯一 Bridge 连接），先替换示例坐标：
 
@@ -84,3 +84,9 @@ pwsh -NoProfile -File tests/run_csharp_tests.ps1 -LandingOnly
 ```
 
 本轮验证：Python **242 项通过**（含上述跨语言端到端测试）；C# 全套回归通过；0.1.30 Mod 构建 **0 错误、0 警告**。日志位于 `.local/landing-python-tests.log`、`.local/landing-csharp-tests.log`。未进行真实游戏验证，未部署、提交或推送。
+
+## 0.1.31 木平台抵达修复
+
+真实测试中，目标为 X=[34864,35040]、surfaceY=3712，玩家跳跃后停在 (34870.684,3670)，脚底高度吻合、速度为零；但旧版最终判据只接受 `#`，拒绝脚下 Tile19 水平单向平台（`=`），继而重规划并报告失败。0.1.31 在共享 SafeFlatLanding 中接受 `#` 和 `=`；保留真实着地、净空、危险/未知排除、至少8px支撑、速度与跳跃状态要求。录制坐标回归验证已落地时直接 arrived、不再重规划，并继续拒绝错误高度、空中、非零速度、跳跃未释放和不足支撑。新包尚需加载后复测，不能将该离线回归当成新版实测通过。
+
+0.1.31 合并包还包含快捷栏键号与原生 Down 下穿，详见 [平台与快捷栏修复](PLATFORM_AND_HOTBAR_FIXES.md)。下穿是独立原子动作，不把旧导航绕路当成直接下穿。

@@ -72,7 +72,8 @@ public sealed class CompanionPlayer : ModPlayer
         if (Player.whoAmI != Main.myPlayer) return;
         CompanionBridge.Controls.ConfirmMovementInputReleased(ObservationReader.WorldSessionId,
             Main.GameUpdateCount, "PostUpdateRunSpeeds_before_bridge_input",
-            !Player.controlLeft && !Player.controlRight && !Player.controlJump && !Player.controlUseItem);
+            !Player.controlLeft && !Player.controlRight && !Player.controlJump && !Player.controlUseItem
+                && (CompanionBridge.Controls.AtomicAction?.Operation != "drop_through_platform" || !Player.controlDown));
         if (!CanControl || !CompanionBridge.AutoMoveEnabled)
         {
             GameNavigation.Cancel();

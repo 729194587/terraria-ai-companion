@@ -39,6 +39,7 @@ namespace Terraria
         public bool dead, ghost;
         public bool controlLeft, controlRight, controlJump, controlDown, controlUp, controlUseItem, releaseUseItem;
         public float gravDir = 1;
+        public int jump; public bool releaseJump = true;
         public int width = 20, height = 42;
         public int direction = 1, selectedItem, itemAnimation, itemTime, statLife = 100, statLifeMax2 = 100, team;
         public bool ZoneUnderworldHeight, ZoneRockLayerHeight, ZoneDirtLayerHeight, ZoneSkyHeight;
@@ -100,6 +101,13 @@ namespace Terraria.ModLoader
 }
 namespace CompanionBridge.Common.Systems
 {
+    internal static class TerrainReader
+    {
+        internal static Func<int,int,char> Cell = (x,y) => '.';
+        internal static char ReadCell(int x,int y) => Cell(x,y);
+        internal static TerrainSnapshot Read(Terraria.Player p) => new(0,0,16,Array.Empty<string>(),p.width,p.height,
+            MotionSupport.SafeLanding(new(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,Math.Abs(p.velocity.Y)<0.01f),Cell),true);
+    }
     internal static class ObservationReader
     {
         internal static string WorldSessionId = "hook-test";

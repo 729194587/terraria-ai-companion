@@ -267,7 +267,12 @@ internal sealed class ControlState
             : new(request.Direction, false, true); // Existing executor; no jump or predictive navigation.
         _deadline = receivedAt + LeaseTicks;
         _moveStartedAt = now;
-        int duration = request.Cmd == "start_atomic" ? request.Operation is "navigate_to_x" or "navigate_to_landing_region" ? 30000 : 10000 : request.DurationMs.Value;
+        int duration = request.Cmd == "start_atomic" ? request.Operation switch
+        {
+            "navigate_to_x" or "navigate_to_landing_region" => 30000,
+            "drop_through_platform" => 3000,
+            _ => 10000
+        } : request.DurationMs.Value;
         _moveEndsAt = now + duration * Stopwatch.Frequency / 1000;
         _movement = new(++_nextActionId, _session, _generation, request.Direction, duration,
             "running", "started", snapshot, null, DateTimeOffset.UtcNow.ToString("O"), null, 0, worldSessionId, Operation: request.Operation, TargetRegion: request.TargetRegion);

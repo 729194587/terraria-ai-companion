@@ -29,7 +29,11 @@ public static class AtomicGameOfflineTests
             return controls.AtomicAction;
         }
         var action = Start("select_hotbar_slot", "{\"slot\":3}");
-        Check(action.Completed && player.selectedItem == 3, "Selection verified against actual player field");
+        Check(action.Completed && player.selectedItem == 2, "Selection verified against actual player field");
+        action = Start("select_hotbar_slot", "{\"slot\":1}");
+        Check(action.Completed && player.selectedItem == 0, "UI hotbar 1 selects the first inventory slot");
+        action = Start("select_hotbar_slot", "{\"slot\":0}");
+        Check(action.Completed && player.selectedItem == 9, "UI hotbar 0 selects the tenth inventory slot");
         action = Start("mine_tile", "{\"x\":99,\"y\":99}");
         Check(action.Status == "failed" && !controls.IsMoving, "World boundary rejected at execution");
         Main.tile[20,20] = new Tile { HasTile = true, TileType = 2 };
@@ -96,6 +100,42 @@ public static class AtomicGameOfflineTests
         player.itemAnimation = 1; AtomicOperations.After(player); player.itemAnimation = 0;
         AtomicOperations.Before(player, request);
         Check(controls.AtomicAction.Completed, "Generic use verifies native animation cycle only");
+        var cycle = JsonSerializer.SerializeToElement(controls.AtomicAction.Evidence);
+        Check(cycle.GetProperty("effectStatus").GetString() == "unconfirmed", "Use cycle never proves Finch Staff summon");
+        Main.GameViewMatrix.Zoom = new(1.5f, 1.5f);
+        Main.mouseX = 123; Main.mouseY = 234; Player.tileTargetX = 99; Player.tileTargetY = 98;
+        player.gravDir = -1;
+        Start("use_item"); request = controls.Input.Atomic;
+        Check(controls.AtomicAction.Status == "running" && player.controlUseItem, "Untargeted use bypasses precise aim and zoom/gravity guards");
+        AtomicOperations.Aim(player);
+        Check(Main.mouseX == 123 && Main.mouseY == 234 && Player.tileTargetX == 99 && Player.tileTargetY == 98, "Untargeted use never injects a cursor or tile target");
+        AtomicOperations.After(player);
+        Check(!player.controlUseItem, "Untargeted native input released");
+        player.gravDir = 1;
+        foreach (float zoom in new[] { 1f, 1.25f, 2f })
+        {
+            Main.GameViewMatrix.Zoom = new(zoom, zoom);
+            Main.screenPosition = new(12.5f, 20.25f);
+            Start("use_item", "{\"target\":{\"x\":104,\"y\":96}}"); request = controls.Input.Atomic;
+            Check(controls.AtomicAction.Status == "running", "Targeted use supports zoom");
+            AtomicOperations.Aim(player);
+            Check(Math.Abs(Main.mouseX + Main.screenPosition.X - 104) < 1 && Math.Abs(Main.mouseY + Main.screenPosition.Y - 96) < 1, "ItemCheck world-relative aim is not double scaled");
+            new CompanionBridge.Common.Players.CompanionPlayer { Player = player }.PostItemCheck();
+            Check(Main.mouseX == 123 && Player.tileTargetX == 99, "PostItemCheck restores immediately before PostUpdate");
+            AtomicOperations.After(player);
+            Check(Main.mouseX == 123 && Main.mouseY == 234 && Player.tileTargetX == 99 && Player.tileTargetY == 98 && !player.controlUseItem, "Item cycle restores all cursor and tile state");
+        }
+        Start("use_item", "{\"target\":{\"x\":104,\"y\":96}}");
+        AtomicOperations.Aim(player); controls.RevokeControl(); AtomicOperations.RestoreAim();
+        Check(Main.mouseX == 123 && Main.mouseY == 234 && Player.tileTargetX == 99 && Player.tileTargetY == 98, "Revocation after aim still restores all mouse/tile state");
+        Start("use_item", "{\"target\":{\"x\":104,\"y\":96}}");
+        controls.RevokeControl(); AtomicOperations.Aim(player);
+        Check(!player.controlUseItem && Main.mouseX == 123, "Targeted revoked action cannot inject late cursor/input");
+        Main.screenPosition = new(0,0);
+        Main.tile[5,5] = new Tile { HasTile = true, TileType = 2 };
+        Start("mine_tile", "{\"x\":5,\"y\":5}");
+        Check(controls.AtomicAction.Reason == "item_aim_requires_default_zoom", "Other precise adapters retain verified zoom restriction");
+        Main.GameViewMatrix.Zoom = new(1,1);
         controls.EndSession(session); controls.Reset();
         Console.WriteLine("PASS: actual atomic adapter on game API stubs: reach/bounds, selection, native-use cycle, tile/consumption effects, stale NPCs, doors and cursor restoration (no real game physics)");
     }

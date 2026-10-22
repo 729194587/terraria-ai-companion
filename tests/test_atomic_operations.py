@@ -52,7 +52,7 @@ class Game:
 
 class ValidationTests(unittest.TestCase):
     def test_schema_dispatch_and_tool_names(self):
-        self.assertEqual(15, len(atomic.TOOLS))
+        self.assertEqual(16, len(atomic.TOOLS))
         self.assertTrue(set(atomic.SCHEMAS) <= {t['function']['name'] for t in TOOLS})
         for name, args in [('mine_tile', {'x': 1.5, 'y': 2}), ('place_tile', {'x': True, 'y': 2}),
                            ('select_hotbar_slot', {'slot': 10}), ('navigate_to_x', {'targetX': float('nan')}),
@@ -123,6 +123,30 @@ class AtomicTests(unittest.IsolatedAsyncioTestCase):
         game = Game(); game.hello = {}
         with self.assertRaises(BridgeError): await atomic.dispatch(game, 'use_item', {})
         self.assertEqual([], game.sent)
+
+    async def test_drop_and_hotbar_capabilities_prevent_old_protocol_semantics(self):
+        for name, args, capability in [('select_hotbar_slot', {'slot': 1}, 'hotbar_keys_v1'),
+                                       ('drop_through_platform', {}, 'platform_drop_v1')]:
+            game = Game()
+            with self.assertRaisesRegex(BridgeError, capability):
+                await atomic.dispatch(game, name, args)
+            self.assertEqual([], game.sent)
+            game.hello['capabilities'].append(capability)
+            result = await atomic.dispatch(game, name, args)
+            self.assertTrue(result['completed'])
+            start = next(p for c,p in game.sent if c == 'start_atomic')
+            self.assertEqual(args, start['arguments'])
+
+    async def test_agent_uses_drop_tool_and_reports_its_result(self):
+        from test_agent import tool, final
+        game = Game()
+        game.hello['capabilities'].append('platform_drop_v1')
+        model = Model(tool('drop_through_platform', '{}'), final('已从平台直接下穿。'))
+        agent = Agent(game, model)
+        agent.receive(event(1))
+        await agent.task
+        self.assertEqual('drop_through_platform', next(p['operation'] for c,p in game.sent if c == 'start_atomic'))
+        self.assertTrue(any(c == 'send_chat' for c,_ in game.sent))
 
     async def test_agent_dispatch_and_halts_after_failure(self):
         def call(n, name, args):

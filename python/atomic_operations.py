@@ -20,12 +20,13 @@ TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地�
     tool("get_world_state", "读取客户端昼夜、天气、事件、生物群系和深度。"),
     tool("navigate_to_x", "复用连续导航至玩家左上角水平世界像素targetX；30秒上限，普通角色运动限制仍适用；arrived由游戏物理状态校验。",
          {"targetX": {"type": "number", "minimum": 0, "maximum": 1000000}}, ["targetX"]),
-    tool("navigate_to_landing_region", "二维落脚导航：全部为世界像素，Y向下；minPlayerLeftX/maxPlayerLeftX是玩家碰撞框左边缘的闭区间，surfaceY是脚底目标水平表面高度（非玩家顶部）。原有普通角色/实心平顶限制；30秒上限。仅实际进入X区间、脚底高度误差<=0.5px、安全着地且停稳后完成，不能只经过目标X。",
+    tool("navigate_to_landing_region", "二维落脚导航：全部为世界像素，Y向下；minPlayerLeftX/maxPlayerLeftX是玩家碰撞框左边缘的闭区间，surfaceY是脚底目标水平表面高度（非玩家顶部）。原有普通角色限制；落点支持完整方块顶面和水平单向平台，不支持斜平台/半砖；30秒上限。仅实际进入X区间、脚底高度误差<=0.5px、安全着地且停稳后完成，不能只经过目标X。",
          {key: {"type": "number", "minimum": 0, "maximum": 1000000}
           for key in ("minPlayerLeftX", "maxPlayerLeftX", "surfaceY")},
          ["minPlayerLeftX", "maxPlayerLeftX", "surfaceY"]),
-    tool("select_hotbar_slot", "选择0..9快捷栏槽位并核对选中状态。", {"slot": {"type": "integer", "minimum": 0, "maximum": 9}}, ["slot"]),
-    tool("use_item", "用当前物品完成一次原生使用周期；target可选世界像素{x,y}。completed只证明使用周期，具体效果需感知核验。默认缩放及保守80像素距离。",
+    tool("drop_through_platform", "按原生Down直接穿过当前水平单向平台，不绕到边缘。须已停稳，自动检查同X下方64像素内的第一个安全落点；穿过当前层即松Down，实际落在下一层并停稳才完成，3秒上限。"),
+    tool("select_hotbar_slot", "按游戏显示的快捷键选择：1..9为前九格，0为最右第十格。slot不是背包数组索引。核对实际选中按键。", {"slot": {"type": "integer", "minimum": 0, "maximum": 9}}, ["slot"]),
+    tool("use_item", "用当前物品完成一次原生使用周期；target可选世界像素{x,y}。completed只证明使用周期，具体效果需感知核验。无target保留原生鼠标，不限制画面缩放；有target支持当前缩放，仍限正常重力及80像素。",
          {"target": {"type": "object", "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1000000}, "y": {"type": "number", "minimum": 0, "maximum": 1000000}}, "required": ["x", "y"], "additionalProperties": False}}),
     tool("mine_tile", "以选中镐原生挖掘80像素内Tile，移除才成功；10秒上限。不自动选工具/移动。", TILE, ["x", "y"]),
     tool("attack_entity", "以当前物品攻击scan_entities给出的NPC entityRef；80像素内，生命下降才成功，失活但无伤害证据失败，其他伤害来源可能存在。10秒上限。",
@@ -132,6 +133,9 @@ async def dispatch(bridge, name, arguments, chat_id=None):
         raise BridgeError('Requires atomic_operations_v1; loaded Mod does not support these operations')
     if name == 'navigate_to_landing_region' and 'landing_region_navigation_v1' not in bridge.hello.get('capabilities', []):
         raise BridgeError('Requires landing_region_navigation_v1; no two-dimensional action started')
+    required_capability = {'select_hotbar_slot': 'hotbar_keys_v1', 'drop_through_platform': 'platform_drop_v1'}.get(name)
+    if required_capability and required_capability not in bridge.hello.get('capabilities', []):
+        raise BridgeError(f'Requires {required_capability}; no action started')
     if name in READS:
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         data = reply.get('data')

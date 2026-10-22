@@ -169,6 +169,37 @@ public static class MotionOfflineTests
         }
     }
 
+    // Recorded from the real 0.1.30 game run: native jump landed and settled on
+    // TileID.Platforms (19) at row 232, yet the old '#' only predicate replanned.
+    private sealed class RecordedPlatformWorld : IMotionWorld
+    {
+        internal bool Narrow;
+        internal char Tile(int x, int y) => y == 232 && (Narrow ? x == 2179 : x >= 2179 && x <= 2190) ? '=' : y >= 235 ? '#' : '.';
+        public PhysicsState Move(PhysicsState s, float vx, float vy, float gravity)
+            => throw new Exception("Recorded settled arrival must not need another physics plan");
+        public bool SafeSweep(PhysicsState s, PhysicsState end, out string reason) { reason = null; return true; }
+        public bool SafeLanding(PhysicsState s) => MotionSupport.SafeLanding(s, Tile);
+        public bool SafeFlatLanding(PhysicsState s) => MotionSupport.SafeFlatLanding(s, Tile);
+    }
+    private static void RecordedPlatformArrivalRegression()
+    {
+        var world = new RecordedPlatformWorld();
+        var goal = new LandingRegion(34864,35040,3712);
+        var landed = new PhysicsState(34870.684f,3670,0,0,true);
+        Check(goal.Arrived(landed,world), "Recorded real wood-platform landing must satisfy goal");
+        var task = new NavigationTask();
+        var input = task.Before(3,5,goal,landed,PhysicsParameters.Basic,world);
+        Check(task.Snapshot.Status == "arrived" && input == default && task.Snapshot.PlanNumber == 0,
+            "Already settled on wood platform must arrive without another plan/failure");
+        foreach (var invalid in new[] { landed with { Grounded=false }, landed with { Vx=0.2f },
+            landed with { ReleaseJump=false }, landed with { JumpFramesLeft=1 }, landed with { Py=3718 },
+            landed with { Py=3670.6f } })
+            Check(!goal.Arrived(invalid,world), "Platform support never replaces actual height/grounded/settled checks");
+        world.Narrow = true;
+        Check(!goal.Arrived(landed with { Px=34879 },world), "One pixel of platform is insufficient support");
+        Console.WriteLine("PASS: recorded real Tile19 platform landing arrives without replanning; wrong height, air, velocity, jump and insufficient support still rejected");
+    }
+
     private static void LandingRegionRegression()
     {
         var ph = PhysicsParameters.Basic;
@@ -208,11 +239,13 @@ public static class MotionOfflineTests
         var outsideTask = new NavigationTask();
         outsideTask.Before(202, 1, region, top with { Px = 1650 }, ph, world);
         Check(outsideTask.Snapshot.Status != "arrived", "Task rejects correct height outside X bounds");
-        foreach (char invalid in new[] { '.', '?', '!', '=', 'h' })
+        foreach (char invalid in new[] { '.', '?', '!', 'h', 'a', 'b', '1', '2', '3', '4' })
         {
             world.Override = (x, y) => y == 97 ? invalid : world.BaseTile(x, y);
             Check(!region.Arrived(top, world), "Missing/unknown/hazard/non-solid target support rejected");
         }
+        world.Override = (x, y) => y == 97 ? '=' : world.BaseTile(x, y);
+        Check(region.Arrived(top, world), "Flat one-way platforms are valid settled landing targets");
         world.Override = (x, y) => y == 95 ? '#' : world.BaseTile(x, y);
         Check(!region.Arrived(top, world), "Target body clearance required");
         world.Override = null;
@@ -946,6 +979,7 @@ public static class MotionOfflineTests
         LandingBudgetIncumbentRegression();
         NavigationDiagnosticsRegression();
         LandingRegionRegression();
+        RecordedPlatformArrivalRegression();
         NearGoalMovingRegression();
         foreach (int type in new[] { 147, 216 })
             Check(NavigationBuffPolicy.Rejection(type, 18000, 0, "audited_vanilla") == null,

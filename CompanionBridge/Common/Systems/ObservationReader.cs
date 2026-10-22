@@ -125,9 +125,11 @@ internal static class ObservationReader
         id = p.whoAmI, source = "local_player", positionWorldPixels = new StateVector(p.position.X, p.position.Y),
         boundsWorldPixels = Bounds(p), velocityPixelsPerTick = new StateVector(p.velocity.X, p.velocity.Y),
         life = p.statLife, lifeMax = p.statLifeMax2, mana = p.statMana, manaMax = p.statManaMax2,
-        p.direction, p.dead, p.ghost, selectedSlot = p.selectedItem,
+        p.direction, p.dead, p.ghost, selectedSlot = p.selectedItem, selectedHotbarKey = HotbarSlots.KeyForInventorySlot(p.selectedItem),
+        hotbarNumbering = "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
         hotbarInventorySlots = Enumerable.Range(0, 10).ToArray(),
-        inventory = p.inventory.Select((item, slot) => ItemData(item, slot)).ToArray(),
+        hotbarKeyBindings = Enumerable.Range(0,10).Select(slot => new { key = HotbarSlots.KeyForInventorySlot(slot), inventorySlot = slot }).ToArray(),
+        inventory = p.inventory.Select((item, slot) => ItemData(item, slot, inventory: true)).ToArray(),
         equipment = p.armor.Select((item, slot) => ItemData(item, slot)).ToArray(),
         dyes = p.dye.Select((item, slot) => ItemData(item, slot)).ToArray(),
         miscEquipment = p.miscEquips.Select((item, slot) => ItemData(item, slot)).ToArray(),
@@ -142,7 +144,8 @@ internal static class ObservationReader
             contactStatus = "unknown; no universal player collideX/Y or grounded flag inferred" }
     };
 
-    private static object ItemData(Item item, int slot) => new { slot, empty = item.IsAir,
+    private static object ItemData(Item item, int slot, bool inventory = false) => new { slot,
+        hotbarKey = inventory ? HotbarSlots.KeyForInventorySlot(slot) : null, empty = item.IsAir,
         typeId = item.type, contentKey = item.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(item.type),
         name = item.Name, stack = item.stack, prefix = (int)item.prefix, item.favorited,
         use = new { item.damage, item.pick, item.axe, item.hammer, item.createTile, item.createWall,

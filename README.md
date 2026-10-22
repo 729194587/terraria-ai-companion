@@ -1,5 +1,9 @@
 # Terraria AI Companion
 
+**0.1.32 物品使用与挖掘恢复**：无目标 `use_item` 保留原生鼠标，有目标使用支持当前缩放；使用周期与效果确认分开报告。挖掘距离不足可在确认安全通道后导航接近、重新观察并最多重试一次。Python 251项、C#及原生坐标契约测试通过；构建0错误0警告。本版尚未部署或进行真实游戏验收，详见 [修复与验证记录](docs/ITEM_USE_AND_MINING_RECOVERY.md)。
+
+**0.1.31 平台与快捷栏修复**：修正木平台已落地却报未完成；快捷栏按游戏按键 `1–9、0` 编号；新增 `drop_through_platform()` 原生 Down 下穿（先检查同X下方64px内安全落点，穿过当前层即松Down，实际落地停稳才完成）。最终包 `.local/platform-fixes-build/Mods/CompanionBridge.tmod`；不要使用早期单项修复目录的包。需加载后复测，详见 [平台与快捷栏测试](docs/PLATFORM_AND_HOTBAR_FIXES.md)。
+
 **0.1.30 二维落脚导航入口**：新增 `navigate_to_landing_region(minPlayerLeftX,maxPlayerLeftX,surfaceY)`，Agent → TCP → 控制状态 → 实际玩家挂钩已接入现有二维规划/执行/真实状态反馈。新增目标一致性续租和跨语言协议测试。参数、测试包及真实游戏验收方式见 [二维落脚导航](docs/LANDING_REGION_NAVIGATION.md)。产物 `.local/landing-navigation-build/Mods/CompanionBridge.tmod`；未部署、未真实游戏验收。
 
 **0.1.29 第一版原子操作**：Agent 已接入 6 个感知、8 个行动工具；复用现有 IPC、游戏线程、连续导航、控制代次/租约和输入释放证据。物品动作通过原生使用流程执行，结果按实际状态核验。交互、距离和兼容范围，以及测试与未实测边界见 [原子操作说明](docs/ATOMIC_OPERATIONS.md)。构建产物 `.local/atomic-build/Mods/CompanionBridge.tmod`；未部署、未真实游戏验收。

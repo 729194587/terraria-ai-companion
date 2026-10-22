@@ -25,10 +25,12 @@ public sealed class AtomicNpcIdentity : GlobalNPC
 internal static class AtomicOperations
 {
     private static int _action, _slot, _itemType, _stack, _tileType, _npcLife;
-    private static bool _used, _aimSaved, _inputInjected;
+    private static bool _used, _aimSaved, _inputInjected, _explicitUseTarget;
     private static Vector2 _target;
     private static int _mouseX, _mouseY, _targetX, _targetY;
     private static NPC _npc;
+    private static PlatformDropAction _drop;
+    private static bool _downInjected;
     private static string Ref(NPC n) => ObservationReader.WorldSessionId + ":npc:" + n.whoAmI + ":" + n.GetGlobalNPC<AtomicNpcIdentity>().Token;
     private static void Finish(string status, string reason, object evidence = null) =>
         CompanionBridge.Controls.FinishAtomic(_action, status, reason, evidence,
@@ -80,9 +82,21 @@ internal static class AtomicOperations
         if (action?.Status != "running") return;
         bool first = _action != action.ActionId;
         var a = request.Arguments; string op = request.Operation;
+        if (op == "drop_through_platform")
+        {
+            var terrain = TerrainReader.Read(p);
+            var state = new PhysicsState(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,terrain.Grounded,p.jump,p.releaseJump);
+            if(first) { _action=action.ActionId; _drop=new(); _drop.Begin(state,p.statLife,terrain.Supported,TerrainReader.ReadCell); }
+            _drop.Before(state,p.statLife,TerrainReader.ReadCell);
+            p.controlLeft=p.controlRight=p.controlJump=p.controlUp=p.controlUseItem=false;
+            p.controlDown=_drop.Down; _downInjected=true;
+            if(_drop.Status!="running") Finish(_drop.Status,_drop.Reason);
+            return;
+        }
         if (first)
         {
             _action = action.ActionId; _used = false; _npc = null;
+            _explicitUseTarget = op == "use_item" && a.TryGetProperty("target", out _);
             _slot = p.selectedItem; _itemType = p.HeldItem.type; _stack = p.HeldItem.stack;
             _target = p.Center + new Vector2(p.direction * 32, 0);
             if (op is "navigate_to_x" or "navigate_to_landing_region")
@@ -101,8 +115,10 @@ internal static class AtomicOperations
             if (p.itemAnimation != 0 || p.itemTime != 0) { Finish("failed", "item_busy"); return; }
             if (op == "select_hotbar_slot")
             {
-                p.selectedItem = a.GetProperty("slot").GetInt32();
-                Finish(p.selectedItem == a.GetProperty("slot").GetInt32() ? "completed" : "failed", "selected_slot_verified", new { p.selectedItem }); return;
+                int key=a.GetProperty("slot").GetInt32();
+                p.selectedItem=HotbarSlots.ToInventorySlot(key);
+                Finish(HotbarSlots.KeyForInventorySlot(p.selectedItem)==key ? "completed" : "failed", "selected_hotbar_key_verified",
+                    new { selectedHotbarKey=HotbarSlots.KeyForInventorySlot(p.selectedItem), inventorySlot=p.selectedItem }); return;
             }
             if (op == "attack_entity")
             {
@@ -144,8 +160,10 @@ internal static class AtomicOperations
             _target = _npc.Center;
         }
         int tx = (int)(_target.X / 16), ty = (int)(_target.Y / 16);
-        if (!Loaded(tx, ty)) { Finish("failed", "target_unloaded_or_out_of_world"); return; }
-        if (!Reach(p, _target)) { Finish("failed", "out_of_conservative_80_pixel_reach"); return; }
+        if ((op != "use_item" || _explicitUseTarget) && !Loaded(tx, ty)) { Finish("failed", "target_unloaded_or_out_of_world"); return; }
+        if ((op != "use_item" || _explicitUseTarget) && !Reach(p, _target))
+        { Finish("failed", "out_of_conservative_80_pixel_reach", new { targetTileX = tx, targetTileY = ty,
+            targetTileType = _tileType, maximumDistancePixels = 80 }); return; }
         if (op == "interact_tile")
         {
             if (Main.netMode != NetmodeID.SinglePlayer) { Finish("failed", "door_interaction_multiplayer_not_supported"); return; }
@@ -167,10 +185,11 @@ internal static class AtomicOperations
         }
         if (first) _placeType = p.HeldItem.createTile;
         if (op == "use_item" && _used && p.itemAnimation == 0)
-        { Finish("completed", "native_item_use_cycle_finished", new { effect = "item use cycle only; no target effect promised" }); return; }
+        { Finish("completed", "native_item_use_cycle_finished", new { execution = "native_use_cycle_completed", effectStatus = "unconfirmed",
+            effect = "item use cycle only; summon/heal/hit effects require separate observation" }); return; }
         if (p.HeldItem.IsAir) { Finish("failed", "item_exhausted_before_effect_verified"); return; }
-        if (p.gravDir != 1) { Finish("failed", "item_aim_requires_normal_gravity"); return; }
-        if (Main.GameViewMatrix.Zoom != Vector2.One) { Finish("failed", "item_aim_requires_default_zoom"); return; }
+        if ((op != "use_item" || _explicitUseTarget) && p.gravDir != 1) { Finish("failed", "item_aim_requires_normal_gravity"); return; }
+        if (op != "use_item" && Main.GameViewMatrix.Zoom != Vector2.One) { Finish("failed", "item_aim_requires_default_zoom"); return; }
         // One use cycle for generic use; mining/combat repeat until their effect or deadline.
         if (p.itemAnimation == 0 && p.itemTime == 0) p.releaseUseItem = true;
         p.controlUseItem = op != "use_item" || !_used;
@@ -181,14 +200,20 @@ internal static class AtomicOperations
     internal static void Aim(Player p)
     {
         var action = CompanionBridge.Controls.AtomicAction;
-        if (action?.ActionId != _action || action.Status != "running" || action.Operation is "navigate_to_x" or "navigate_to_landing_region")
+        if (action?.ActionId != _action || action.Status != "running" || action.Operation is "navigate_to_x" or "navigate_to_landing_region" or "drop_through_platform")
         {
             if (_inputInjected) p.controlUseItem = false; // Disconnect/revocation may race between player hooks.
             _inputInjected = false;
             return;
         }
+        // ItemCheck already runs in PlayerInput.SetZoom_World coordinates. Injecting
+        // rendered pixels (or multiplying by Zoom) here would apply zoom twice.
+        // Untargeted use preserves the native cursor, including inverted gravity.
+        if (action.Operation == "use_item" && !_explicitUseTarget) return;
+        if (!ItemAim.TryGetItemCheckMouse(_target, Main.screenPosition, out int x, out int y))
+        { p.controlUseItem = false; _inputInjected = false; Finish("failed", "invalid_item_aim_coordinates"); return; }
         _mouseX = Main.mouseX; _mouseY = Main.mouseY; _targetX = Player.tileTargetX; _targetY = Player.tileTargetY; _aimSaved = true;
-        Main.mouseX = (int)(_target.X - Main.screenPosition.X); Main.mouseY = (int)(_target.Y - Main.screenPosition.Y);
+        Main.mouseX = x; Main.mouseY = y;
         Player.tileTargetX = (int)(_target.X / 16); Player.tileTargetY = (int)(_target.Y / 16);
     }
     internal static void RestoreAim()
@@ -199,9 +224,21 @@ internal static class AtomicOperations
     internal static void After(Player p)
     {
         RestoreAim();
+        if (_downInjected) { p.controlDown=false; _downInjected=false; }
         if (_inputInjected) { p.controlUseItem = false; _inputInjected = false; }
         var action = CompanionBridge.Controls.AtomicAction;
         if (action?.Status != "running") return;
+        if(action.Operation=="drop_through_platform" && action.ActionId==_action)
+        {
+            var terrain=TerrainReader.Read(p);
+            var state=new PhysicsState(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,terrain.Grounded,p.jump,p.releaseJump);
+            _drop.After(state,p.statLife,TerrainReader.ReadCell);
+            if(_drop.Status!="running") Finish(_drop.Status,_drop.Reason,new {
+                startFeetY=_drop.StartFeetY,targetSurfaceY=_drop.TargetSurfaceY,
+                actualPosition=new StateVector(p.position.X,p.position.Y), actualFeetY=p.position.Y+p.height,
+                velocity=new StateVector(p.velocity.X,p.velocity.Y),terrain.Grounded });
+            return;
+        }
         if (action.Operation is "navigate_to_x" or "navigate_to_landing_region")
         {
             var nav = GameNavigation.Snapshot;

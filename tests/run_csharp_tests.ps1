@@ -5,7 +5,11 @@ $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
 $sources = @(
     (Join-Path $repo 'CompanionBridge/AtomicParameters.cs'),
+    (Join-Path $repo 'CompanionBridge/HotbarSlots.cs'),
+    (Join-Path $repo 'CompanionBridge/ItemAim.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/PlatformDropAction.cs'),
     (Join-Path $PSScriptRoot 'AtomicOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'PlatformDropOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'LandingNavigationOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'AtomicGameOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicOperations.cs'),
@@ -46,3 +50,5 @@ if ($ObservationSamplePath -and !$MotionOnly) {
 [AtomicGameOfflineTests]::Run()
 
 [LandingNavigationOfflineTests]::Run()
+
+[PlatformDropOfflineTests]::Run()
