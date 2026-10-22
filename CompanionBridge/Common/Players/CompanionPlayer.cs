@@ -72,7 +72,7 @@ public sealed class CompanionPlayer : ModPlayer
         if (Player.whoAmI != Main.myPlayer) return;
         CompanionBridge.Controls.ConfirmMovementInputReleased(ObservationReader.WorldSessionId,
             Main.GameUpdateCount, "PostUpdateRunSpeeds_before_bridge_input",
-            !Player.controlLeft && !Player.controlRight && !Player.controlJump);
+            !Player.controlLeft && !Player.controlRight && !Player.controlJump && !Player.controlUseItem);
         if (!CanControl || !CompanionBridge.AutoMoveEnabled)
         {
             GameNavigation.Cancel();
@@ -80,6 +80,12 @@ public sealed class CompanionPlayer : ModPlayer
         }
 
         var input = CompanionBridge.Controls.Input;
+        if (input.Atomic != null)
+        {
+            AtomicOperations.Before(Player, input.Atomic);
+            if (CompanionBridge.Controls.Mode != ControlMode.External) return;
+            if (!input.Predictive) { GameNavigation.Cancel(); return; }
+        }
         if (input.Predictive)
         {
             var predicted = GameNavigation.Before(Player, CompanionBridge.Controls.SessionId, input.Direction,
@@ -104,8 +110,20 @@ public sealed class CompanionPlayer : ModPlayer
         }
     }
 
+    public override bool PreItemCheck()
+    {
+        if (Player.whoAmI == Main.myPlayer) AtomicOperations.Aim(Player);
+        return true;
+    }
+
+    public override void PostItemCheck()
+    {
+        if (Player.whoAmI == Main.myPlayer) AtomicOperations.RestoreAim();
+    }
+
     public override void PostUpdate()
     {
+        if (Player.whoAmI == Main.myPlayer) AtomicOperations.After(Player);
         if (CanControl && CompanionBridge.Controls.Mode == ControlMode.External
             && CompanionBridge.Controls.Input.Predictive) GameNavigation.After(Player);
     }

@@ -80,17 +80,7 @@ internal static class ObservationReader
             if (Main.gamePaused) reasons.Add("game_paused; simulation freshness not guaranteed");
             if (!Main.hasFocus) reasons.Add("unfocused; rendering/simulation may be suspended");
             player = ReadPlayer(p);
-            environment = new {
-                source = "client_known; server synchronization age unknown", Main.dayTime, Main.time,
-                timeUnit = "Terraria day/night time units, not UTC", Main.raining, Main.rainTime,
-                Main.maxRaining, Main.windSpeedCurrent, Main.cloudAlpha, Main.bloodMoon, Main.eclipse,
-                Main.snowMoon, Main.pumpkinMoon,
-                sandstorm = Terraria.GameContent.Events.Sandstorm.Happening,
-                invasionTypeClientKnown = Main.invasionType,
-                serverEventProgress = "unknown; no authoritative event progress requested",
-                localPlayerBiomes = Biomes.ToDictionary(prop => prop.Name, prop => (bool)prop.GetValue(p)),
-                biomeScope = "local player's vanilla flags, not per-tile viewport biome or all mod biomes"
-            };
+            environment = ReadEnvironment(p);
             if (_camera == null) reasons.Add("camera_unavailable: " + (_cameraError ?? "no render in this world"));
             else
             {
@@ -119,7 +109,19 @@ internal static class ObservationReader
             Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
 
-    private static object ReadPlayer(Player p) => new {
+    internal static object ReadEnvironment(Player p) => new {
+                source = "client_known; server synchronization age unknown", Main.dayTime, Main.time,
+                timeUnit = "Terraria day/night time units, not UTC", Main.raining, Main.rainTime,
+                Main.maxRaining, Main.windSpeedCurrent, Main.cloudAlpha, Main.bloodMoon, Main.eclipse,
+                Main.snowMoon, Main.pumpkinMoon,
+                sandstorm = Terraria.GameContent.Events.Sandstorm.Happening,
+                invasionTypeClientKnown = Main.invasionType,
+                serverEventProgress = "unknown; no authoritative event progress requested",
+                localPlayerBiomes = Biomes.ToDictionary(prop => prop.Name, prop => (bool)prop.GetValue(p)),
+                biomeScope = "local player's vanilla flags, not per-tile viewport biome or all mod biomes"
+            };
+
+    internal static object ReadPlayer(Player p) => new {
         id = p.whoAmI, source = "local_player", positionWorldPixels = new StateVector(p.position.X, p.position.Y),
         boundsWorldPixels = Bounds(p), velocityPixelsPerTick = new StateVector(p.velocity.X, p.velocity.Y),
         life = p.statLife, lifeMax = p.statLifeMax2, mana = p.statMana, manaMax = p.statManaMax2,
@@ -143,6 +145,8 @@ internal static class ObservationReader
     private static object ItemData(Item item, int slot) => new { slot, empty = item.IsAir,
         typeId = item.type, contentKey = item.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(item.type),
         name = item.Name, stack = item.stack, prefix = (int)item.prefix, item.favorited,
+        use = new { item.damage, item.pick, item.axe, item.hammer, item.createTile, item.createWall,
+            item.useStyle, item.useTime, item.useAnimation, item.consumable, item.ammo, item.shoot },
         customState = item.ModItem == null ? "not_applicable" : "unknown; custom ModItem data not serialized" };
 
     private static ContentType Describe(string kind, int type)
@@ -152,7 +156,7 @@ internal static class ObservationReader
             (kind == "tile" ? TileID.Search.GetName(type) : WallID.Search.GetName(type)), content != null);
     }
 
-    private static TileCell ReadCell(int x, int y, Dictionary<(int, int), object> objects)
+    internal static TileCell ReadCell(int x, int y, Dictionary<(int, int), object> objects)
     {
         if (x < 0 || y < 0 || x >= Main.maxTilesX || y >= Main.maxTilesY) return new("out_of_world");
         if (Main.netMode == NetmodeID.MultiplayerClient && (Main.sectionManager == null || !Main.sectionManager.TileLoaded(x, y)))

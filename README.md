@@ -1,5 +1,7 @@
 # Terraria AI Companion
 
+**0.1.29 第一版原子操作**：Agent 已接入 6 个感知、8 个行动工具；复用现有 IPC、游戏线程、连续导航、控制代次/租约和输入释放证据。物品动作通过原生使用流程执行，结果按实际状态核验。交互、距离和兼容范围，以及测试与未实测边界见 [原子操作说明](docs/ATOMIC_OPERATIONS.md)。构建产物 `.local/atomic-build/Mods/CompanionBridge.tmod`；未部署、未真实游戏验收。
+
 功能分支新增 **M1.9 / Mod 0.1.19 统一视口观察**：只读 `get_observation` 按需返回摄像机、完整视口 Tile、玩家背包／装备、NPC／玩家／掉落物／弹幕及环境，保留旧工具。离线测试和构建通过；产物 `.local/observation-build`，未部署、未真实游戏验收。接口、编码、测量及限制见 [统一观察说明](docs/OBSERVATION.md)。
 
 **Mod 0.1.18 附近实体感知**：现有 `get_state` 在同次快照中返回其他玩家、NPC/生物，保留原始网格和 `spatial`；分类保守，显式标记未知和截断。历史包在 `.local/entity-build`，详见 [实体感知说明](docs/CHAT_AGENT.md#附近实体018)。

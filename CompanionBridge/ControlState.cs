@@ -10,8 +10,8 @@ namespace CompanionBridge;
 
 internal sealed record ControlRequest(int Id, string Cmd, int Direction = 1, bool Jump = false,
     int? ExpectedGeneration = null, float? TargetX = null, string Text = null, string ChatId = null,
-    int? DurationMs = null, int? ActionId = null);
-internal sealed record ControlInput(int Direction, bool Jump, bool OverrideJump, bool Predictive = false, float? TargetX = null);
+    int? DurationMs = null, int? ActionId = null, string Operation = null, JsonElement Arguments = default);
+internal sealed record ControlInput(int Direction, bool Jump, bool OverrideJump, bool Predictive = false, float? TargetX = null, ControlRequest Atomic = null);
 internal sealed record StateVector(float X, float Y);
 internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateVector Velocity,
     int? Life, int? LifeMax)
@@ -21,7 +21,7 @@ internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateV
 internal sealed record MovementEndEvidence(string WorldSessionId, ulong GameUpdate, string Phase);
 internal sealed record MovementSnapshot(int ActionId, int Session, int Generation, int Direction, int DurationMs,
     string Status, string Reason, PlayerSnapshot Before, PlayerSnapshot After, string StartedAt, string EndedAt,
-    double ElapsedMilliseconds, string WorldSessionId = null, MovementEndEvidence EndEvidence = null)
+    double ElapsedMilliseconds, string WorldSessionId = null, MovementEndEvidence EndEvidence = null, string Operation = null, object Evidence = null)
 {
     public bool Completed => Status == "completed";
     public bool Cancelled => Status == "cancelled";
@@ -36,7 +36,8 @@ internal sealed record ControlReply(int V, int Id, bool Ok, string Status, strin
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] EntityPerception Entities = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObservationSnapshot Observation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] MovementFeedback Movement = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ControlGeneration = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ControlGeneration = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] object Data = null);
 internal enum ControlMode { None, Manual, External }
 
 // No Terraria references: the socket side submits requests; the game thread applies them.
@@ -56,7 +57,7 @@ internal sealed class ControlState
     private ControlMode _mode;
     private bool _wasCanControl;
     private bool _controlBlocked;
-    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "send_chat" or "get_movement" or "cancel_move";
+    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "send_chat" or "get_movement" or "cancel_move" or "query_atomic";
     private string _latestChatId;
     internal void ObserveChat(string id) { lock (_gate) _latestChatId = id; }
     private ControlInput _input = new(1, false, false);
@@ -115,7 +116,7 @@ internal sealed class ControlState
     internal void Update(bool canControl, long now, PlayerSnapshot snapshot = null,
         TerrainSnapshot terrain = null, NavigationSnapshot navigation = null, Action<string> sendChat = null,
         EntityPerception entities = null, Func<ObservationSnapshot> readObservation = null,
-        string worldSessionId = null)
+        string worldSessionId = null, Func<ControlRequest, object> queryAtomic = null)
     {
         lock (_gate)
         {
@@ -130,8 +131,9 @@ internal sealed class ControlState
             }
             else if (_movement?.Status == "running" && now >= _moveEndsAt)
             {
-                FinishMovement(true, "duration_elapsed", now, snapshot);
-                _mode = ControlMode.None; _generation++;
+                if (_movement.Operation == null) FinishMovement(true, "duration_elapsed", now, snapshot);
+                else FinishAtomic(_movement.ActionId, "timeout", "action_deadline", null, snapshot);
+                if (_mode != ControlMode.None) { _mode = ControlMode.None; _generation++; }
             }
             ObservationSnapshot observation = null;
             bool observationAttempted = false, observationFailed = false;
@@ -150,7 +152,13 @@ internal sealed class ControlState
                         { State = snapshot, Movement = Movement(now) });
                     continue;
                 }
-                if (request.Cmd is "move_for" or "renew_move" && pending.Session == _session)
+                if (request.Cmd == "query_atomic" && pending.Session == _session)
+                {
+                    try { pending.Completion.TrySetResult(Reply(request.Id, true, "query") with { Data = queryAtomic?.Invoke(request), ControlGeneration = _generation }); }
+                    catch (Exception) { pending.Completion.TrySetResult(Reply(request.Id, false, "query_failed")); }
+                    continue;
+                }
+                if (request.Cmd is "move_for" or "start_atomic" or "renew_move" && pending.Session == _session)
                 {
                     string result = !canControl || snapshot?.InWorld != true ? "not_ready"
                         : now >= pending.ReceivedAt + LeaseTicks ? "expired"
@@ -244,21 +252,37 @@ internal sealed class ControlState
     private string StartMovement(ControlRequest request, long receivedAt, long now, PlayerSnapshot snapshot,
         string worldSessionId)
     {
-        if (request.Direction is not (-1 or 1) || request.DurationMs is not (>= 50 and <= MaxMoveMilliseconds)
+        if (request.Cmd != "start_atomic" && (request.Direction is not (-1 or 1) || request.DurationMs is not (>= 50 and <= MaxMoveMilliseconds))
             || request.ExpectedGeneration == null) return "invalid_movement";
         if (request.ChatId != null && request.ChatId != _latestChatId) return "superseded";
         if (request.ExpectedGeneration != _generation) return "generation_changed";
         if (_mode == ControlMode.Manual) return "manual_active";
-        if (_mode != ControlMode.None) return "control_busy";
+        if (_mode != ControlMode.None || _movement?.Operation != null && _movement.EndEvidenceStatus == "pending") return "control_busy";
         _generation++;
         _mode = ControlMode.External;
-        _input = new(request.Direction, false, true); // Existing executor; no jump or predictive navigation.
+        _input = request.Cmd == "start_atomic"
+            ? new(0, false, true, request.Operation == "navigate_to_x", request.TargetX, request)
+            : new(request.Direction, false, true); // Existing executor; no jump or predictive navigation.
         _deadline = receivedAt + LeaseTicks;
         _moveStartedAt = now;
-        _moveEndsAt = now + request.DurationMs.Value * Stopwatch.Frequency / 1000;
-        _movement = new(++_nextActionId, _session, _generation, request.Direction, request.DurationMs.Value,
-            "running", "started", snapshot, null, DateTimeOffset.UtcNow.ToString("O"), null, 0, worldSessionId);
+        int duration = request.Cmd == "start_atomic" ? request.Operation == "navigate_to_x" ? 30000 : 10000 : request.DurationMs.Value;
+        _moveEndsAt = now + duration * Stopwatch.Frequency / 1000;
+        _movement = new(++_nextActionId, _session, _generation, request.Direction, duration,
+            "running", "started", snapshot, null, DateTimeOffset.UtcNow.ToString("O"), null, 0, worldSessionId, Operation: request.Operation);
         return "movement_started";
+    }
+
+    internal MovementSnapshot AtomicAction { get { lock (_gate) return _movement?.Operation != null && _movement.Session == _session ? _movement : null; } }
+
+    internal void FinishAtomic(int actionId, string status, string reason, object evidence, PlayerSnapshot after = null)
+    {
+        lock (_gate)
+        {
+            if (_movement?.ActionId != actionId || _movement.Status != "running" || _movement.Operation == null) return;
+            FinishMovement(false, reason, Stopwatch.GetTimestamp(), after);
+            _movement = _movement with { Status = status, Evidence = evidence };
+            _mode = ControlMode.None; _generation++;
+        }
     }
 
     private string RenewMovement(ControlRequest request, long receivedAt)
@@ -366,7 +390,7 @@ internal sealed class ControlState
             || !root.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String
             || cmd.GetString() is not ("move_right" or "stop" or "get_state" or "get_terrain" or "input"
                 or "terrain_step" or "get_navigation" or "navigate" or "send_chat" or "get_observation"
-                or "move_for" or "renew_move" or "cancel_move" or "get_movement"))
+                or "move_for" or "renew_move" or "cancel_move" or "get_movement" or "start_atomic" or "query_atomic"))
             throw new FormatException("Expected v=1, positive id and a supported cmd.");
         int direction = 1;
         bool jump = false;
@@ -393,7 +417,7 @@ internal sealed class ControlState
         int? expectedGeneration = null;
         if (root.TryGetProperty("expectedGeneration", out var guard))
         {
-            if (cmd.GetString() is not ("terrain_step" or "navigate" or "stop" or "move_for")
+            if (cmd.GetString() is not ("terrain_step" or "navigate" or "stop" or "move_for" or "start_atomic")
                 || guard.ValueKind != JsonValueKind.Number || !guard.TryGetInt32(out int expected) || expected < 0)
                 throw new FormatException("expectedGeneration requires a guarded command and a nonnegative integer.");
             expectedGeneration = expected;
@@ -428,6 +452,24 @@ internal sealed class ControlState
                 throw new FormatException("Movement continuation/cancellation requires positive actionId.");
             actionId = action;
         }
-        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId, durationMs, actionId);
+        string operation = null;
+        JsonElement arguments = default;
+        if (cmd.GetString() is "start_atomic" or "query_atomic")
+        {
+            if (!root.TryGetProperty("operation", out var op) || op.ValueKind != JsonValueKind.String
+                || !root.TryGetProperty("arguments", out var args) || args.ValueKind != JsonValueKind.Object)
+                throw new FormatException("Atomic operation requires operation and arguments object.");
+            operation = op.GetString(); arguments = args.Clone();
+            AtomicParameters.Validate(operation, arguments, cmd.GetString() == "query_atomic");
+            if (cmd.GetString() == "start_atomic" && expectedGeneration == null)
+                throw new FormatException("Atomic action requires expectedGeneration.");
+            if (operation == "navigate_to_x") targetX = arguments.GetProperty("targetX").GetSingle();
+            if (root.TryGetProperty("chatId", out var chat))
+            {
+                if (chat.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(chatId = chat.GetString()) || chatId.Length > 100)
+                    throw new FormatException("Invalid atomic chatId.");
+            }
+        }
+        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId, durationMs, actionId, operation, arguments);
     }
 }

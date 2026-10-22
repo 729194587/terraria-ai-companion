@@ -75,7 +75,7 @@ public sealed class CompanionSystem : ModSystem
         CompanionBridge.Controls.Update(canControl, Stopwatch.GetTimestamp(), snapshot,
             snapshot.InWorld ? TerrainReader.Read(Main.LocalPlayer) : null, GameNavigation.Snapshot, ChatBridgeSystem.Send,
             snapshot.InWorld ? EntityReader.Read(Main.LocalPlayer) : null, ObservationReader.Read,
-            ObservationReader.WorldSessionId);
+            ObservationReader.WorldSessionId, AtomicOperations.Query);
         var mode = CompanionBridge.Controls.Mode;
         if (mode != _lastMode)
         {
@@ -90,6 +90,7 @@ public sealed class CompanionSystem : ModSystem
         }
         finally
         {
+            AtomicOperations.RestoreAim();
             UpdateSleepSetting(self);
         }
     }
