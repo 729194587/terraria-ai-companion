@@ -84,6 +84,9 @@ internal sealed class NativeMotionWorld : IMotionWorld
     public bool SafeLanding(PhysicsState state)
         => LandingRejection(state) == null;
 
+    public bool SafeFlatLanding(PhysicsState state) => SafeLanding(state)
+        && MotionSupport.SafeFlatLanding(state, TerrainReader.ReadCell);
+
     public string LandingRejection(PhysicsState state)
     {
         if (!state.Grounded) return "not grounded";

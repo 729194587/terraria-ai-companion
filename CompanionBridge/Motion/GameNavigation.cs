@@ -69,12 +69,18 @@ internal static class GameNavigation
     private static PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
         p.accRunSpeed, p.runSlowdown, p.gravity, p.maxFallSpeed, Player.jumpSpeed, Player.jumpHeight);
 
-    internal static PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null)
+    internal static PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
+        LandingRegion region = null)
     {
         _paired = false;
-        _navigation = targetX.HasValue;
+        _navigation = targetX.HasValue || region != null;
         if (!_navigation) { Task.Cancel(); Controller.Begin(session, direction, generation); }
-        else { Controller.Cancel(); Task.Begin(session, generation, targetX.Value, State(p)); }
+        else
+        {
+            Controller.Cancel();
+            if (region != null) Task.Begin(session, generation, region, State(p));
+            else Task.Begin(session, generation, targetX.Value, State(p));
+        }
         string rejection = OrdinaryRejection(p);
         if (rejection != null) return Fail("unsupported navigation state: " + rejection);
         if (_session != session || _generation != generation) _life = p.statLife;
@@ -85,7 +91,8 @@ internal static class GameNavigation
         _world = new NativeMotionWorld(state);
         long started = Stopwatch.GetTimestamp();
         var input = _navigation
-            ? Task.Before(session, generation, targetX.Value, state, Parameters(p), _world)
+            ? region != null ? Task.Before(session, generation, region, state, Parameters(p), _world)
+                : Task.Before(session, generation, targetX.Value, state, Parameters(p), _world)
             : Controller.Before(session, direction, state, Parameters(p), _world, generation);
         if (Stopwatch.GetElapsedTime(started).TotalMilliseconds > 50)
             return Fail("local prediction exceeded 50ms budget");

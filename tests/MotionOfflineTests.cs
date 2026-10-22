@@ -62,6 +62,177 @@ public static class MotionOfflineTests
         public bool SafeLanding(PhysicsState s) => At(s).SafeLanding(s);
     }
 
+    // Synthetic rectangle collisions plus the production tile support checker.
+    // This fixture does not run Terraria's Collision helpers.
+    private sealed class RegionWorld : IMotionWorld
+    {
+        internal readonly World Collision = new() { WallX = 1648, WallWidth = 128,
+            WallHeight = 48, AllowWallLanding = true };
+        internal bool Ceiling;
+        internal Func<int, int, char> Override;
+        internal char Tile(int x, int y) => Override != null ? Override(x, y) : BaseTile(x, y);
+        internal char BaseTile(int x, int y) => y >= 100 || (x >= Collision.WallX / 16
+            && x < (Collision.WallX + Collision.WallWidth) / 16 && y >= (1600 - Collision.WallHeight) / 16)
+            ? '#' : Ceiling && y == 96 ? '#' : '.';
+        public PhysicsState Move(PhysicsState s, float vx, float vy, float gravity)
+        {
+            var next = Collision.Move(s, vx, vy, gravity);
+            if (Ceiling && vy < 0 && s.Py >= 1552 && next.Py < 1552)
+                next = next with { Py = 1552, Vy = 0 };
+            return next;
+        }
+        public bool SafeSweep(PhysicsState s, PhysicsState end, out string reason)
+            => Collision.SafeSweep(s, end, out reason);
+        public bool SafeLanding(PhysicsState s) => Collision.SafeLanding(s) && MotionSupport.SafeLanding(s, Tile);
+        public bool SafeFlatLanding(PhysicsState s) => SafeLanding(s) && MotionSupport.SafeFlatLanding(s, Tile);
+    }
+
+    private static void LandingRegionRegression()
+    {
+        var ph = PhysicsParameters.Basic;
+        var start = new PhysicsState(1600, 1558, 0, 0, true);
+        var region = new LandingRegion(1664, 1744, 1552);
+        var world = new RegionWorld();
+        var route = StateSpacePlanner.Plan(start, region, ph, world, budgetMs: 500);
+        Check(route.Actions.Count > 0 && route.Actions.Any(a => a.Jump), "Raised region has simulated jumping route");
+        var task = new NavigationTask();
+        var actual = start;
+        for (int f = 0; f < 900 && !task.Terminal; f++)
+        {
+            var input = task.Before(200, 1, region, actual, ph, world);
+            actual = PhysicsSimulator.Step(actual, input, ph, world);
+            task.After(actual, world);
+            Check(task.Snapshot.Status != "failed", "Raised region execution: " + task.Snapshot.Reason);
+        }
+        Check(task.Snapshot.Status == "arrived" && region.Arrived(actual, world)
+            && task.Snapshot.CompletedJumps > 0 && task.Snapshot.LastLanding.Settled,
+            "Actual raised landing must be verified and settled before arrival");
+        Check(task.Before(200, 1, region, actual, ph, world) == default && task.Snapshot.Status == "arrived",
+            "Renewal preserves terminal region task");
+        task.Cancel(); task.After(actual, world);
+        Check(task.Snapshot.Status == "idle", "Cancelled region cannot arrive from late After");
+
+        var below = start with { Px = 1680 };
+        Check(!region.Arrived(below, new World()), "Correct X on lower ground is not arrival");
+        var belowTask = new NavigationTask();
+        belowTask.Before(201, 1, region, below, ph, new World());
+        Check(belowTask.Snapshot.Status != "arrived", "Task also rejects correct X at wrong height");
+        var top = new PhysicsState(1680, 1510, 0, 0, true);
+        Check(region.Arrived(top, world), "Ordinary top is valid region geometry");
+        foreach (var bad in new[] { top with { Px = 1650 }, top with { Grounded = false },
+            top with { Vy = 0.2f }, top with { Vx = 0.2f }, top with { ReleaseJump = false },
+            top with { JumpFramesLeft = 1 }, top with { Py = 1510.6f } })
+            Check(!region.Arrived(bad, world), "Region rejects wrong X/height, air, speed and held jump");
+        var outsideTask = new NavigationTask();
+        outsideTask.Before(202, 1, region, top with { Px = 1650 }, ph, world);
+        Check(outsideTask.Snapshot.Status != "arrived", "Task rejects correct height outside X bounds");
+        foreach (char invalid in new[] { '.', '?', '!', '=', 'h' })
+        {
+            world.Override = (x, y) => y == 97 ? invalid : world.BaseTile(x, y);
+            Check(!region.Arrived(top, world), "Missing/unknown/hazard/non-solid target support rejected");
+        }
+        world.Override = (x, y) => y == 95 ? '#' : world.BaseTile(x, y);
+        Check(!region.Arrived(top, world), "Target body clearance required");
+        world.Override = null;
+        var corner = new LandingRegion(1775, 1775, 1552);
+        Check(!corner.Arrived(top with { Px = 1775 }, world), "One pixel target support rejected");
+
+        foreach (var scene in new[] { new RegionWorld { Ceiling = true }, new RegionWorld() })
+        {
+            var goal = scene.Ceiling ? region : new LandingRegion(1664, 1744, 1408);
+            var r = StateSpacePlanner.Plan(start, goal, ph, scene, budgetMs: 500);
+            Check(!r.Actions.Any(a => goal.Arrived(a.Landing, scene)), "Blocked/unreachable region cannot have a final route");
+            var blocked = new NavigationTask(); var s = start;
+            for (int f = 0; f < 1200 && !blocked.Terminal; f++)
+            {
+                var input = blocked.Before(203, 1, goal, s, ph, scene);
+                s = PhysicsSimulator.Step(s, input, ph, scene); blocked.After(s, scene);
+            }
+            Check(blocked.Snapshot.Status == "failed", "Blocked/unreachable task terminates without false arrival");
+        }
+        foreach (bool unknown in new[] { false, true })
+        {
+            var unsafeWorld = new RegionWorld();
+            unsafeWorld.Collision.Unknown = unknown; unsafeWorld.Collision.Hazard = !unknown;
+            Check(StateSpacePlanner.Plan(start, region, ph, unsafeWorld, budgetMs: 500).Actions.Count == 0,
+                "Unknown/hazard trajectory rejected by production predictor");
+        }
+        foreach (int expansions in new[] { 0, 1 })
+        {
+            var bounded = StateSpacePlanner.Plan(start, region, ph, world, maxExpansions: expansions, budgetMs: 500);
+            Check(bounded.Expansions <= expansions, "Region expansion budget retained");
+        }
+        Check(StateSpacePlanner.Plan(start, region, ph, world, budgetMs: 0).Actions.Count == 0,
+            "Zero region time budget yields no speculative route");
+        // Seed only historical counters, then execute a real planned edge through
+        // the production simulator/controller/task. Avoid 256 repeated searches
+        // just to exercise the unchanged action-cap boundary.
+        void Seed(NavigationTask t, string field, object value) => typeof(NavigationTask)
+            .GetField(field, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            .SetValue(t, value);
+        foreach (bool actionCap in new[] { false, true })
+        {
+            var bounded = new NavigationTask(); var s = start;
+            bounded.Begin(207, 1, region, s);
+            if (actionCap) Seed(bounded, "_actions", 255);
+            else { Seed(bounded, "_stalled", 3); Seed(bounded, "_furthest", 0f); }
+            for (int f = 0; f < 100 && !bounded.Terminal; f++)
+            {
+                var input = bounded.Before(207, 1, region, s, ph, world);
+                s = PhysicsSimulator.Step(s, input, ph, world); bounded.After(s, world);
+            }
+            Check(bounded.Snapshot.Status == "failed" && bounded.Snapshot.Reason.Contains("progress/action budget")
+                && bounded.Snapshot.CompletedActions == (actionCap ? 256 : 1),
+                "Verified edge enforces action cap and four-checkpoint stall guard");
+        }
+        // A jump makes real vertical progress while already inside the X interval.
+        // Treat the preceding three checkpoints as stalled: only verified ascent
+        // can reset the guard here, since horizontal distance is already zero.
+        var wide = new LandingRegion(1590, 1744, 1552);
+        task = new(); actual = start;
+        task.Begin(208, 1, wide, actual);
+        Seed(task, "_stalled", 3);
+        for (int f = 0; f < 150 && !task.Terminal && task.Snapshot.CompletedActions == 0; f++)
+        {
+            var input = task.Before(208, 1, wide, actual, ph, world);
+            actual = PhysicsSimulator.Step(actual, input, ph, world); task.After(actual, world);
+        }
+        Check(task.Snapshot.Status != "failed" && task.Snapshot.CompletedJumps == 1
+            && actual.Py < start.Py - 4, "Verified ascent counts as progress inside target X interval");
+        task = new(); actual = start;
+        bool injectedCheckpoint = false;
+        for (int f = 0; f < 900 && !task.Terminal && !injectedCheckpoint; f++)
+        {
+            var input = task.Before(209, 1, region, actual, ph, world);
+            actual = PhysicsSimulator.Step(actual, input, ph, world);
+            // Keep per-frame prediction exact, but report the terminal checkpoint
+            // one pixel high (within the executor's existing 4px landing tolerance).
+            bool checkpoint = actual.Grounded && actual.Py == 1510 && actual.Vx == 0;
+            int completed = task.Snapshot.CompletedActions;
+            task.After(checkpoint ? actual with { Py = actual.Py - 1 } : actual, world);
+            if (checkpoint && task.Snapshot.CompletedActions > completed)
+            { actual = actual with { Py = actual.Py - 1 }; injectedCheckpoint = true; }
+        }
+        Check(injectedCheckpoint && task.Snapshot.Status == "running",
+            "One-pixel checkpoint discrepancy is accepted by existing edge tolerance: " + task.Snapshot.Reason);
+        task.Before(209, 1, region, actual, ph, world);
+        Check(task.Snapshot.Status != "arrived", "Executor landing tolerance does not bypass stricter actual region height");
+        task = new(); actual = start;
+        var first = task.Before(204, 1, region, actual, ph, world);
+        actual = PhysicsSimulator.Step(actual, first, ph, world);
+        task.After(actual with { Py = actual.Py - 40 }, world);
+        Check(task.Snapshot.Status == "failed" && task.Snapshot.Reason.Contains("diverged"),
+            "Region task uses existing executor to reject actual prediction divergence");
+        task = new();
+        task.Before(205, 1, region, start, ph, world);
+        task.Before(205, 2, region, start with { Grounded = false, Vy = -3 }, ph, world);
+        Check(task.Snapshot.Status == "failed", "Generation change discards old airborne region replay");
+        task = new();
+        task.Before(206, 1, region, start, ph with { Gravity = 0.2f }, world);
+        Check(task.Snapshot.Status == "failed", "Unsupported region physics rejected");
+        Console.WriteLine("PASS: raised landing region planning/task execution, exact goal predicates, safety, unreachable/blocked routes, budgets and divergence (synthetic collisions)");
+    }
+
     private static void SequentialJumps()
     {
         var world = new TwoObstacles();
@@ -517,6 +688,7 @@ public static class MotionOfflineTests
 
     public static void Run()
     {
+        LandingRegionRegression();
         NearGoalMovingRegression();
         foreach (int type in new[] { 147, 216 })
             Check(NavigationBuffPolicy.Rejection(type, 18000, 0, "audited_vanilla") == null,

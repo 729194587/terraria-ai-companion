@@ -31,6 +31,8 @@ internal interface IMotionWorld
     PhysicsState Move(PhysicsState start, float vx, float vy, float gravity);
     bool SafeSweep(PhysicsState start, PhysicsState end, out string reason);
     bool SafeLanding(PhysicsState state);
+    // Opt in only when the world can verify an ordinary horizontal solid top.
+    bool SafeFlatLanding(PhysicsState state) => false;
     string LandingRejection(PhysicsState state) => SafeLanding(state) ? null : "unsafe foot support or body clearance";
 }
 

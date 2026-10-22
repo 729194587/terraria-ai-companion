@@ -2,11 +2,51 @@ using System;
 
 namespace CompanionBridge.Motion;
 
+// World pixels, Y increases downward. X bounds constrain the player's LEFT
+// collision edge, not its centre; SurfaceY constrains Py + PlayerH (the feet).
+internal sealed record LandingRegion
+{
+    internal float MinPlayerLeftX { get; }
+    internal float MaxPlayerLeftX { get; }
+    internal float SurfaceY { get; }
+    internal const float FeetTolerance = 0.5f;
+
+    internal LandingRegion(float minPlayerLeftX, float maxPlayerLeftX, float surfaceY)
+    {
+        if (!float.IsFinite(minPlayerLeftX) || !float.IsFinite(maxPlayerLeftX)
+            || !float.IsFinite(surfaceY) || minPlayerLeftX > maxPlayerLeftX)
+            throw new ArgumentException("Landing region requires finite ordered coordinates");
+        MinPlayerLeftX = minPlayerLeftX; MaxPlayerLeftX = maxPlayerLeftX; SurfaceY = surfaceY;
+    }
+
+    internal float Distance(PhysicsState s) => Math.Max(0, Math.Max(MinPlayerLeftX - s.Px, s.Px - MaxPlayerLeftX))
+        + Math.Max(0, Math.Abs(s.Py + PhysicsSimulator.PlayerH - SurfaceY) - FeetTolerance);
+    internal bool Contains(PhysicsState s) => Distance(s) == 0;
+    internal bool Arrived(PhysicsState s, IMotionWorld world) => Contains(s) && s.Grounded
+        && Math.Abs(s.Vx) <= 0.1f && Math.Abs(s.Vy) <= 0.1f
+        && s.ReleaseJump && s.JumpFramesLeft == 0 && world.SafeLanding(s) && world.SafeFlatLanding(s);
+}
+
 // Shared by native navigation and offline terrain fixtures, so support checks
 // are tested against real tile coordinates rather than collision-world guesses.
 internal static class MotionSupport
 {
     internal const float MinimumSupportPixels = 8;
+
+    // Region goals only accept horizontal ordinary solid tops. Existing horizontal
+    // navigation retains its shape-aware support policy (slopes/half blocks etc.).
+    internal static bool SafeFlatLanding(PhysicsState state, Func<int, int, char> readCell)
+    {
+        if (!SafeLanding(state, readCell)) return false;
+        float bottom = state.Py + PhysicsSimulator.PlayerH;
+        int row = (int)Math.Round(bottom / 16);
+        if (Math.Abs(bottom - row * 16) > LandingRegion.FeetTolerance) return false;
+        float support = 0;
+        for (int x = (int)Math.Floor(state.Px / 16); x < (int)Math.Ceiling((state.Px + PhysicsSimulator.PlayerW) / 16); x++)
+            if (readCell(x, row) == '#')
+                support += Math.Min(state.Px + PhysicsSimulator.PlayerW, (x + 1) * 16) - Math.Max(state.Px, x * 16);
+        return support >= MinimumSupportPixels;
+    }
 
     internal static bool SafeLanding(PhysicsState state, Func<int, int, char> readCell)
         => LandingRejection(state, readCell) == null;

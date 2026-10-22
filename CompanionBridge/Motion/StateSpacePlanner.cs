@@ -34,6 +34,15 @@ internal static class StateSpacePlanner
     // a safe braking tail, but can hand off on supported ground with residual speed.
     internal static Route Plan(PhysicsState start, float targetX, PhysicsParameters ph,
         IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, int? goalDirection = null)
+        => PlanCore(start, targetX, null, ph, world, maxExpansions, budgetMs, goalDirection);
+
+    internal static Route Plan(PhysicsState start, LandingRegion region, PhysicsParameters ph,
+        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25)
+        => PlanCore(start, Math.Clamp(start.Px, region.MinPlayerLeftX, region.MaxPlayerLeftX),
+            region, ph, world, maxExpansions, budgetMs, null);
+
+    private static Route PlanCore(PhysicsState start, float targetX, LandingRegion region, PhysicsParameters ph,
+        IMotionWorld world, int maxExpansions, double budgetMs, int? goalDirection)
     {
         var watch = Stopwatch.StartNew();
         var rejected = new Dictionary<string, int>();
@@ -43,15 +52,27 @@ internal static class StateSpacePlanner
         // Preserve the task's crossing direction after reaching/passing targetX;
         // recomputing it from the current position would reverse an overshot goal.
         int sign = goalDirection ?? (targetX >= start.Px ? 1 : -1);
-        float H(PhysicsState s) => Math.Max(0, sign * (goal - s.Px)) / ph.MaxRun;
-        if (sign * (targetX - start.Px) <= 12)
+        // Region H is the indicator of geometric non-membership (X OR feet Y).
+        // Every edge costs >= one executed frame, jumps add 20. Any path from
+        // outside the geometry needs at least one edge, so H <= remaining G.
+        // Inside geometry H=0 even if settling/support is still needed. This also
+        // stays consistent across native StepUp/Down positional corrections;
+        // no unproved horizontal/vertical speed bound is used for region goals.
+        float H(PhysicsState s) => region != null ? (region.Contains(s) ? 0 : 1)
+            : Math.Max(0, sign * (goal - s.Px)) / ph.MaxRun;
+        float Distance(PhysicsState s) => region?.Distance(s) ?? H(s);
+        bool Reached(PhysicsState s) => region != null ? region.Arrived(s, world)
+            : H(s) <= 4 && (!finalGoal || Math.Abs(s.Vx) <= 0.1f)
+                && s.Grounded && world.SafeLanding(s);
+        if (region != null ? region.Contains(start) : sign * (targetX - start.Px) <= 12)
         {
             // Distance alone is not a terminal physical state. Use the same
             // bounded simulation, sweep/drop/landing checks and stable tail as
             // other actions, but release direction rather than accelerate again.
             var brake = PhysicsSimulator.Predict(start, 0, 0, ph, world,
                 walkFrames: 0, maxDropPixels: MaxDropPixels);
-            if (brake.Safe && sign * (targetX - brake.Landing.Px) <= 12
+            if (brake.Safe && (region != null ? region.Arrived(brake.Landing, world)
+                    : sign * (targetX - brake.Landing.Px) <= 12)
                 && Math.Abs(brake.Landing.Vx) <= 0.1f)
                 return new(new() { brake }, 0, watch.Elapsed.TotalMilliseconds);
             if (!brake.Safe) Reject("braking: " + brake.Reason);
@@ -63,15 +84,14 @@ internal static class StateSpacePlanner
         came[start] = (start, null, 0);
         open.Enqueue(start, H(start));
         PhysicsState best = start;
-        float bestDistance = H(start);
+        float bestDistance = Distance(start);
         float bestScore = float.MaxValue;
         int expansions = 0;
         bool timedOut = false;
         while (open.Count > 0 && expansions < maxExpansions && !timedOut)
         {
             var cur = open.Dequeue();
-            if (H(cur) <= 4 && (!finalGoal || Math.Abs(cur.Vx) <= 0.1f)
-                && cur.Grounded && world.SafeLanding(cur))
+            if (Reached(cur))
             { best = cur; break; }
             expansions++;
             foreach (int dir in new[] { sign, -sign })
@@ -90,7 +110,8 @@ internal static class StateSpacePlanner
                         // Predict still checks the complete braking/landing trajectory.
                         // Carry the observed prefix velocity into the next search node;
                         // The final approach or an unsafe handoff executes the tail.
-                        bool settle = sign * (targetX - edge.Landing.Px) <= 12
+                        bool settle = (region != null ? region.Contains(edge.Landing)
+                                : sign * (targetX - edge.Landing.Px) <= 12)
                             || !world.SafeLanding(edge.Frames[edge.ExecuteFrames - 1].State);
                         int execute = settle ? edge.Frames.Count : edge.ExecuteFrames;
                         edge = edge with { ExecuteFrames = execute, Landing = edge.Frames[execute - 1].State,
@@ -113,8 +134,10 @@ internal static class StateSpacePlanner
                         open.Enqueue(next, ng + H(next));
                         // Cost-aware partial fallback: choosing only the farthest landing
                         // discards the walk/jump costs whenever the budget is exhausted.
-                        float distance = H(next), score = ng + distance;
-                        if (next.Grounded && distance < H(start) - 0.01f
+                        // Region pixel distance only ranks safe partial checkpoints;
+                        // it is NOT the A* heuristic (the queue uses ng + H above).
+                        float distance = Distance(next), score = ng + distance;
+                        if (next.Grounded && world.SafeLanding(next) && distance < Distance(start) - 0.01f
                             && (score < bestScore - 0.01f || (Math.Abs(score - bestScore) <= 0.01f && distance < bestDistance)))
                         { best = next; bestDistance = distance; bestScore = score; }
                     }

@@ -9,6 +9,7 @@ internal sealed class NavigationTask
     private readonly LocalMotionController _executor = new();
     private int _session, _generation, _direction, _actions, _jumps;
     private float _targetX, _furthest;
+    private LandingRegion _region;
     private int _stalled;
     private Route _route;
     private bool _executing;
@@ -30,12 +31,19 @@ internal sealed class NavigationTask
     }
 
     internal void Begin(int session, int generation, float targetX, PhysicsState state)
+        => BeginCore(session, generation, targetX, null, state);
+
+    internal void Begin(int session, int generation, LandingRegion region, PhysicsState state)
+        => BeginCore(session, generation, region.MinPlayerLeftX, region, state);
+
+    private void BeginCore(int session, int generation, float targetX, LandingRegion region, PhysicsState state)
     {
-        if (_session != session || _generation != generation || _targetX != targetX)
+        if (_session != session || _generation != generation || _targetX != targetX || _region != region)
         {
             Cancel(); _session = session; _generation = generation; _targetX = targetX;
+            _region = region;
             _direction = targetX >= state.Px ? 1 : -1;
-            _actions = _jumps = _stalled = 0; _furthest = _direction * state.Px;
+            _actions = _jumps = _stalled = 0; _furthest = Progress(state);
             Snapshot = new(session, "running", "plan", "navigation started", 0, 0, null, null, 0,
                 Generation: generation, TargetX: targetX);
         }
@@ -43,9 +51,18 @@ internal sealed class NavigationTask
 
     internal PhysicsInput Before(int session, int generation, float targetX, PhysicsState state,
         PhysicsParameters ph, IMotionWorld world)
+        => BeforeCore(session, generation, targetX, null, state, ph, world);
+
+    internal PhysicsInput Before(int session, int generation, LandingRegion region, PhysicsState state,
+        PhysicsParameters ph, IMotionWorld world)
+        => BeforeCore(session, generation, region.MinPlayerLeftX, region, state, ph, world);
+
+    private PhysicsInput BeforeCore(int session, int generation, float targetX, LandingRegion region, PhysicsState state,
+        PhysicsParameters ph, IMotionWorld world)
     {
-        Begin(session, generation, targetX, state);
+        BeginCore(session, generation, targetX, region, state);
         if (Terminal) return default;
+        if (region != null && !ph.IsBasic) return Fail("unsupported landing-region physics");
         if (!_executing)
         {
             if (!state.Grounded) return Fail("replan requires grounded player");
@@ -53,10 +70,14 @@ internal sealed class NavigationTask
             if (landingRejection != null)
                 return Fail($"replan requires safe foot support and body clearance: {landingRejection}; "
                     + $"position=({state.Px},{state.Py}), velocity=({state.Vx},{state.Vy})");
-            if (_direction * (targetX - state.Px) <= 12 && Math.Abs(state.Vx) <= 0.1f)
-            { Snapshot = Snapshot with { Status = "arrived", Reason = "horizontal goal crossed on safe settled ground" }; return default; }
+            if (region != null ? region.Arrived(state, world)
+                : _direction * (targetX - state.Px) <= 12 && Math.Abs(state.Vx) <= 0.1f
+                    && Math.Abs(state.Vy) <= 0.1f && state.ReleaseJump && state.JumpFramesLeft == 0)
+            { Snapshot = Snapshot with { Status = "arrived", Reason = region != null
+                ? "landing region verified on safe settled ground" : "horizontal goal crossed on safe settled ground" }; return default; }
             if (!state.ReleaseJump || state.JumpFramesLeft != 0) return default;
-            _route = StateSpacePlanner.Plan(state, targetX, ph, world, goalDirection: _direction);
+            _route = region != null ? StateSpacePlanner.Plan(state, region, ph, world)
+                : StateSpacePlanner.Plan(state, targetX, ph, world, goalDirection: _direction);
             Snapshot = Snapshot with { Action = "plan", Expansions = _route.Expansions,
                 PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds };
             if (_route.Actions.Count == 0) return Fail("no safe local route: " + _route.FailureReason);
@@ -92,7 +113,7 @@ internal sealed class NavigationTask
                 new(state.Px, state.Py), _executor.Snapshot.MaxError,
                 new(landing.Vx, landing.Vy), new(state.Vx, state.Vy),
                 Math.Abs(state.Vx) <= 0.1f && Math.Abs(state.Vy) <= 0.1f);
-            float forward = _direction * state.Px;
+            float forward = Progress(state);
             _stalled = forward >= _furthest + 4 ? 0 : _stalled + 1;
             _furthest = Math.Max(_furthest, forward);
             _executing = false;
@@ -102,6 +123,11 @@ internal sealed class NavigationTask
             if (_stalled >= 4 || _actions >= 256) Fail("navigation progress/action budget exhausted");
         }
     }
+
+    // Only called at initialization and after the executor verifies actual support,
+    // velocity and position. Best-ever distance prevents ascent/descent cycles
+    // from resetting the four-action stall guard. The 256-action cap is unchanged.
+    private float Progress(PhysicsState state) => _region != null ? -_region.Distance(state) : _direction * state.Px;
 
     private void Publish() => Snapshot = _executor.Snapshot with
     {
