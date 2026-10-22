@@ -12,6 +12,8 @@ internal static class GameNavigation
 {
     internal static LocalMotionController Controller { get; } = new();
     internal static NavigationTask Task { get; } = new();
+    private static readonly NavigationDiagnostics Diagnostics = new(line =>
+        ModContent.GetInstance<CompanionBridge>().Logger.Info(line));
     internal static NavigationSnapshot Snapshot => _navigation ? Task.Snapshot : Controller.Snapshot;
     private static bool _navigation;
     private static int _session, _generation;
@@ -74,7 +76,11 @@ internal static class GameNavigation
     {
         _paired = false;
         _navigation = targetX.HasValue || region != null;
-        if (!_navigation) { Task.Cancel(); Controller.Begin(session, direction, generation); }
+        if (!_navigation)
+        {
+            Task.Cancel(); Diagnostics.Observe(Task.Snapshot);
+            Controller.Begin(session, direction, generation);
+        }
         else
         {
             Controller.Cancel();
@@ -96,6 +102,7 @@ internal static class GameNavigation
             : Controller.Before(session, direction, state, Parameters(p), _world, generation);
         if (Stopwatch.GetElapsedTime(started).TotalMilliseconds > 50)
             return Fail("local prediction exceeded 50ms budget");
+        if (_navigation) Diagnostics.Observe(Task.Snapshot);
         _paired = true;
         return input;
     }
@@ -105,16 +112,21 @@ internal static class GameNavigation
         if (!_paired) return;
         _paired = false;
         if (p.statLife < _life || p.dead) { Fail("life decreased/dead"); return; }
-        if (_navigation) Task.After(State(p), _world);
+        if (_navigation) { Task.After(State(p), _world); Diagnostics.Observe(Task.Snapshot); }
         else Controller.After(State(p), _world);
     }
 
-    private static PhysicsInput Fail(string reason) => _navigation ? Task.Fail(reason) : Controller.Fail(reason);
+    private static PhysicsInput Fail(string reason)
+    {
+        var input = _navigation ? Task.Fail(reason) : Controller.Fail(reason);
+        if (_navigation) Diagnostics.Observe(Task.Snapshot);
+        return input;
+    }
 
     internal static void Cancel()
     {
         _paired = false; _world = null; _session = _generation = 0;
-        Task.Cancel(); _navigation = false;
+        Task.Cancel(); Diagnostics.Observe(Task.Snapshot); _navigation = false;
         Controller.Cancel();
     }
 }

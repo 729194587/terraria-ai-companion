@@ -443,7 +443,9 @@ public static class BridgeOfflineTests
         Check(!readNavigation.Wait(30), "Socket cannot calculate/read navigation without game update");
         timer.Restart();
         var navigation = new NavigationSnapshot(state.SessionId, "landed", "jump", "fixture", 40, 8,
-            new(1600, 1000), new(1601, 1000), 1, Generation: state.Generation);
+            new(1600, 1000), new(1601, 1000), 1, Generation: state.Generation,
+            Expansions: 32, PlannedActions: 2, PlanMilliseconds: 24.75, ReachedGoal: true,
+            TimeBudgetReached: true, PlanNumber: 2, TargetRegion: new(1600, 1680, 1042));
         while (!readNavigation.IsCompleted && timer.ElapsedMilliseconds < 2000)
         {
             state.Update(true, Stopwatch.GetTimestamp(), snapshot, terrain, navigation);
@@ -456,6 +458,11 @@ public static class BridgeOfflineTests
             Check(nav.GetProperty("status").GetString() == "landed"
                 && nav.GetProperty("actualLanding").GetProperty("x").GetSingle() == 1601,
                 "Navigation result and actual landing serialized over TCP");
+            Check(nav.GetProperty("reachedGoal").GetBoolean() && nav.GetProperty("timeBudgetReached").GetBoolean()
+                && nav.GetProperty("planNumber").GetInt32() == 2 && nav.GetProperty("expansions").GetInt32() == 32
+                && nav.GetProperty("plannedActions").GetInt32() == 2 && nav.GetProperty("planMilliseconds").GetDouble() == 24.75
+                && nav.GetProperty("targetRegion").GetProperty("surfaceY").GetSingle() == 1042,
+                "Existing get_navigation TCP response preserves complete incumbent, budget and goal diagnostics");
         }
         client.Close();
         PumpUntil(() => !state.IsMoving, state);

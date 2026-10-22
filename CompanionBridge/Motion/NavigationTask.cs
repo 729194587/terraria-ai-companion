@@ -7,7 +7,7 @@ namespace CompanionBridge.Motion;
 internal sealed class NavigationTask
 {
     private readonly LocalMotionController _executor = new();
-    private int _session, _generation, _direction, _actions, _jumps;
+    private int _session, _generation, _direction, _actions, _jumps, _plans;
     private float _targetX, _furthest;
     private LandingRegion _region;
     private int _stalled;
@@ -19,7 +19,7 @@ internal sealed class NavigationTask
 
     internal void Cancel()
     {
-        _executor.Cancel(); _session = 0; _executing = false; _lastLanding = null;
+        _executor.Cancel(); _session = 0; _executing = false; _lastLanding = null; _route = null;
         Snapshot = new(0, "idle", "none", "control released", 0, 0, null, null, 0);
     }
 
@@ -43,9 +43,9 @@ internal sealed class NavigationTask
             Cancel(); _session = session; _generation = generation; _targetX = targetX;
             _region = region;
             _direction = targetX >= state.Px ? 1 : -1;
-            _actions = _jumps = _stalled = 0; _furthest = Progress(state);
+            _actions = _jumps = _stalled = _plans = 0; _furthest = Progress(state);
             Snapshot = new(session, "running", "plan", "navigation started", 0, 0, null, null, 0,
-                Generation: generation, TargetX: targetX);
+                Generation: generation, TargetX: targetX, TargetRegion: region);
         }
     }
 
@@ -78,8 +78,10 @@ internal sealed class NavigationTask
             if (!state.ReleaseJump || state.JumpFramesLeft != 0) return default;
             _route = region != null ? StateSpacePlanner.Plan(state, region, ph, world)
                 : StateSpacePlanner.Plan(state, targetX, ph, world, goalDirection: _direction);
+            _plans++;
             Snapshot = Snapshot with { Action = "plan", Expansions = _route.Expansions,
-                PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds };
+                PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds,
+                PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached };
             if (_route.Actions.Count == 0) return Fail("no safe local route: " + _route.FailureReason);
             var edge = _route.Actions[0];
             _executor.Cancel();
@@ -134,6 +136,7 @@ internal sealed class NavigationTask
         Status = _executor.Snapshot.Status == "failed" ? "failed" : "running",
         TargetX = _targetX, CompletedActions = _actions, CompletedJumps = _jumps,
         Expansions = _route.Expansions, PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds,
-        LastLanding = _lastLanding
+        LastLanding = _lastLanding, PlanNumber = _plans, ReachedGoal = _route.ReachedGoal,
+        TimeBudgetReached = _route.TimeBudgetReached, TargetRegion = _region
     };
 }

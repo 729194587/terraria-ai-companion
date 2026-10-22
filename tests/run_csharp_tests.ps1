@@ -19,6 +19,7 @@ $sources = @(
     (Join-Path $repo 'CompanionBridge/Motion/LocalMotionController.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/StateSpacePlanner.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationTask.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/NavigationDiagnostics.cs'),
     (Join-Path $repo 'CompanionBridge/TcpControlServer.cs'),
     (Join-Path $PSScriptRoot 'BridgeOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'MotionOfflineTests.cs'),

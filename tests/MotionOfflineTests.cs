@@ -338,6 +338,142 @@ public static class MotionOfflineTests
         Console.WriteLine("PASS: complete landing incumbent survives bounded search; goal and time-budget diagnostics");
     }
 
+    // Deliberately delay one synthetic collision call to exercise the real 25ms
+    // deadline deterministically; this is not a Terraria performance measurement.
+    private sealed class DelayedWorld : IMotionWorld
+    {
+        private readonly IMotionWorld _world;
+        private readonly bool _afterGoal;
+        private bool _delayed, _goalSeen;
+        internal DelayedWorld(IMotionWorld world, bool afterGoal = false) { _world = world; _afterGoal = afterGoal; }
+        public PhysicsState Move(PhysicsState s, float vx, float vy, float gravity)
+        {
+            if (!_delayed && (!_afterGoal || _goalSeen)) { _delayed = true; System.Threading.Thread.Sleep(35); }
+            return _world.Move(s, vx, vy, gravity);
+        }
+        public bool SafeSweep(PhysicsState s, PhysicsState end, out string reason) => _world.SafeSweep(s, end, out reason);
+        public bool SafeLanding(PhysicsState s) => _world.SafeLanding(s);
+        public bool SafeFlatLanding(PhysicsState s)
+        {
+            bool safe = _world.SafeFlatLanding(s);
+            _goalSeen |= safe;
+            return safe;
+        }
+    }
+
+    private static void NavigationDiagnosticsRegression()
+    {
+        var logs = new System.Collections.Generic.List<string>();
+        var diagnostics = new NavigationDiagnostics(logs.Add);
+        JsonDocument Log(int index) => JsonDocument.Parse(logs[index].Substring("Navigation ".Length));
+        var world = new RegionWorld();
+        var goal = new LandingRegion(1664, 1744, 1552);
+        var task = new NavigationTask();
+        var actual = new PhysicsState(1680, 1510, 0.2f, 0, true);
+        double milliseconds = 0;
+        for (int f = 0; f < 20 && !task.Terminal; f++)
+        {
+            var input = task.Before(400, 7, goal, actual, PhysicsParameters.Basic, world);
+            diagnostics.Observe(task.Snapshot);
+            if (task.Snapshot.PlanNumber > 0)
+            {
+                if (milliseconds == 0) milliseconds = task.Snapshot.PlanMilliseconds;
+                Check(task.Snapshot.ReachedGoal == true && task.Snapshot.TimeBudgetReached == false
+                    && task.Snapshot.PlanNumber == 1 && task.Snapshot.TargetRegion == goal
+                    && task.Snapshot.PlanMilliseconds == milliseconds && task.Snapshot.PlannedActions == 1,
+                    "Route diagnostics persist through executor publication and actual checkpoints");
+            }
+            actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, world);
+            task.After(actual, world); diagnostics.Observe(task.Snapshot);
+        }
+        Check(task.Snapshot.Status == "arrived" && logs.Count == 2,
+            "Exactly one plan and one actual-arrival log; no per-frame spam");
+        using (var json = Log(0))
+        {
+            var nav = json.RootElement.GetProperty("navigation");
+            Check(json.RootElement.GetProperty("event").GetString() == "navigation_plan"
+                && json.RootElement.GetProperty("goalKind").GetString() == "landing_region"
+                && nav.GetProperty("reachedGoal").GetBoolean() && !nav.GetProperty("timeBudgetReached").GetBoolean()
+                && nav.GetProperty("planMilliseconds").GetDouble() == milliseconds
+                && nav.GetProperty("expansions").GetInt32() == task.Snapshot.Expansions
+                && nav.GetProperty("planNumber").GetInt32() == 1 && nav.GetProperty("generation").GetInt32() == 7
+                && nav.GetProperty("targetRegion").GetProperty("surfaceY").GetSingle() == 1552
+                && nav.GetProperty("targetRegion").GetProperty("minPlayerLeftX").GetSingle() == 1664
+                && nav.GetProperty("targetRegion").GetProperty("maxPlayerLeftX").GetSingle() == 1744,
+                "Structured game log preserves exact planner data, identity and region geometry");
+        }
+        using (var json = Log(1))
+            Check(json.RootElement.GetProperty("event").GetString() == "navigation_state"
+                && json.RootElement.GetProperty("navigation").GetProperty("status").GetString() == "arrived",
+                "Predicted complete goal and observed arrival have separate log events");
+        task.Cancel(); diagnostics.Observe(task.Snapshot); diagnostics.Observe(task.Snapshot);
+        Check(logs.Count == 3 && task.Snapshot.ReachedGoal == null && task.Snapshot.TimeBudgetReached == null
+            && task.Snapshot.PlanNumber == 0 && task.Snapshot.TargetRegion == null,
+            "Cancellation clears stale DTO diagnostics and is logged only once");
+        using (var json = Log(2))
+            Check(json.RootElement.GetProperty("event").GetString() == "navigation_cancel"
+                && json.RootElement.GetProperty("navigation").GetProperty("generation").GetInt32() == 7,
+                "Cancellation log remains attributable to the old generation");
+        task.Before(400, 8, goal, actual with { Vx = 0, Vy = 0 }, PhysicsParameters.Basic, world);
+        diagnostics.Observe(task.Snapshot);
+        Check(task.Snapshot.Status == "arrived" && task.Snapshot.PlanNumber == 0 && task.Snapshot.ReachedGoal == null,
+            "Already-at-goal new generation does not fabricate a search result");
+        using (var json = Log(3))
+            Check(json.RootElement.GetProperty("navigation").GetProperty("reachedGoal").ValueKind == JsonValueKind.Null,
+                "No planning is distinguishable from a false goal result in JSON");
+
+        foreach (bool blocked in new[] { false, true })
+        {
+            var scene = new RegionWorld();
+            if (blocked) scene.Collision.WallX = 1624;
+            var delayed = new DelayedWorld(scene);
+            task = new(); logs.Clear(); diagnostics = new(logs.Add);
+            actual = new(1600, 1558, 0, 0, true);
+            var input = task.Before(401, 9, goal, actual, PhysicsParameters.Basic, delayed);
+            diagnostics.Observe(task.Snapshot);
+            Check(task.Snapshot.PlanNumber == 1 && task.Snapshot.TimeBudgetReached == true
+                && task.Snapshot.ReachedGoal == false && task.Snapshot.PlanMilliseconds >= 25
+                && task.Snapshot.Expansions == 1 && (task.Snapshot.PlannedActions == 0) == blocked,
+                "Real planner timeout diagnostics survive both executable partial and empty failure paths");
+            using (var json = Log(0))
+                Check(json.RootElement.GetProperty("navigation").GetProperty("timeBudgetReached").GetBoolean(),
+                    "Checked time budget is observable in game log serialization");
+            if (!blocked)
+            {
+                actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, delayed);
+                task.After(actual, delayed); diagnostics.Observe(task.Snapshot);
+                Check(task.Snapshot.TimeBudgetReached == true && logs.Count == 1,
+                    "Executor publication retains partial-route timeout without duplicating plan log");
+                task.Fail("local prediction exceeded 50ms budget"); diagnostics.Observe(task.Snapshot);
+                Check(task.Snapshot.TimeBudgetReached == true && task.Snapshot.PlanMilliseconds >= 25,
+                    "Adapter watchdog failure retains last search diagnostics");
+            }
+            Check(task.Snapshot.Status == "failed" && logs.Count == 2,
+                "No-route or adapter failure has one plan record and one terminal state record");
+        }
+        task = new(); logs.Clear(); diagnostics = new(logs.Add);
+        var afterGoal = new DelayedWorld(new RegionWorld(), afterGoal: true);
+        task.Before(401, 10, goal, new(1600, 1558, 0, 0, true), PhysicsParameters.Basic, afterGoal);
+        diagnostics.Observe(task.Snapshot);
+        Check(task.Snapshot.Status == "running" && task.Snapshot.ReachedGoal == true
+            && task.Snapshot.TimeBudgetReached == true && logs.Count == 1,
+            "Complete incumbent plus deadline exit remains a running prediction, not actual arrival");
+        using (var json = Log(0))
+            Check(json.RootElement.GetProperty("navigation").GetProperty("reachedGoal").GetBoolean()
+                && json.RootElement.GetProperty("navigation").GetProperty("timeBudgetReached").GetBoolean(),
+                "Both true flags survive the actual planner/task/log chain together");
+        task = new(); logs.Clear(); diagnostics = new(logs.Add);
+        task.Before(402, 10, 1800, new(1600, 1558, 0, 0, true), PhysicsParameters.Basic, new World { LandingAllowed = false });
+        diagnostics.Observe(task.Snapshot);
+        Check(task.Snapshot.Status == "failed" && task.Snapshot.PlanNumber == 0
+            && task.Snapshot.ReachedGoal == null && task.Snapshot.TimeBudgetReached == null && logs.Count == 1,
+            "Failure before planning logs a terminal reason without invented zero/false search results");
+        var local = new LocalMotionController();
+        Check(local.Snapshot.PlanNumber == 0 && local.Snapshot.ReachedGoal == null,
+            "Standalone local executor does not claim A* diagnostics");
+        Console.WriteLine("PASS: planning diagnostics through task, checkpoints, failure/cancel/generation, structured log and no-plan states");
+    }
+
     private static void SequentialJumps()
     {
         var world = new TwoObstacles();
@@ -375,14 +511,18 @@ public static class MotionOfflineTests
         {
             IMotionWorld scene = dir == 1 ? world : new World { WallX = 1544, WallWidth = 32 };
             var task = new NavigationTask();
+            var logLines = new System.Collections.Generic.List<string>();
+            var diagnostics = new NavigationDiagnostics(logLines.Add);
             var actual = start;
             float goal = dir == 1 ? 2080 : 1400;
             int maxPlanned = 0;
             for (int f = 0; f < 1800 && !task.Terminal; f++)
             {
                 var input = task.Before(80, 5, goal, actual, ph, scene);
+                diagnostics.Observe(task.Snapshot);
                 actual = PhysicsSimulator.Step(actual, input, ph, scene);
                 task.After(actual, scene);
+                diagnostics.Observe(task.Snapshot);
                 maxPlanned = Math.Max(maxPlanned, task.Snapshot.PlannedActions);
                 Check(task.Snapshot.Status != "failed", "Continuous navigation: " + task.Snapshot.Reason);
             }
@@ -396,6 +536,16 @@ public static class MotionOfflineTests
             Check(System.Text.Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(task.Snapshot)) < 3500,
                 "Task feedback including persistent landing fits the IPC response limit");
             Check(dir != 1 || maxPlanned >= 2, "Search looks beyond its first executable edge");
+            var planLogs = logLines.Where(line => line.Contains("\"event\":\"navigation_plan\"")).ToList();
+            Check(planLogs.Count == task.Snapshot.PlanNumber && planLogs.Count >= 2,
+                "Every real replan has one persistent, monotonically numbered log");
+            for (int i = 0; i < planLogs.Count; i++)
+            {
+                using var json = JsonDocument.Parse(planLogs[i].Substring("Navigation ".Length));
+                Check(json.RootElement.GetProperty("goalKind").GetString() == "horizontal"
+                    && json.RootElement.GetProperty("navigation").GetProperty("planNumber").GetInt32() == i + 1,
+                    "Horizontal replans keep their goal kind and sequence in the same logging path");
+            }
             Check(task.Before(80, 5, goal, actual, ph, scene) == default,
                 "Lease renewals cannot restart an arrived task");
             task.Cancel();
@@ -794,6 +944,7 @@ public static class MotionOfflineTests
     public static void Run()
     {
         LandingBudgetIncumbentRegression();
+        NavigationDiagnosticsRegression();
         LandingRegionRegression();
         NearGoalMovingRegression();
         foreach (int type in new[] { 147, 216 })

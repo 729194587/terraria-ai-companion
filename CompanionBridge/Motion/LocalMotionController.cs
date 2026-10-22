@@ -13,7 +13,8 @@ internal sealed record NavigationSnapshot(int Session, string Status, string Act
     StateVector ExpectedVelocity = null, StateVector ObservedVelocity = null, int Generation = 0,
     float? TargetX = null, int CompletedActions = 0, int CompletedJumps = 0,
     int Expansions = 0, int PlannedActions = 0, double PlanMilliseconds = 0,
-    LandingFeedback LastLanding = null);
+    LandingFeedback LastLanding = null, bool? ReachedGoal = null, bool? TimeBudgetReached = null,
+    int PlanNumber = 0, LandingRegion TargetRegion = null);
 
 // One rolling walk or one jump; no graph, digging, placement, or autonomous retries.
 // Candidate simulation and landing feedback follow TerraBlind JumpExecutor's pattern.

@@ -6,9 +6,9 @@ namespace CompanionBridge.Motion;
 // collision edge, not its centre; SurfaceY constrains Py + PlayerH (the feet).
 internal sealed record LandingRegion
 {
-    internal float MinPlayerLeftX { get; }
-    internal float MaxPlayerLeftX { get; }
-    internal float SurfaceY { get; }
+    public float MinPlayerLeftX { get; }
+    public float MaxPlayerLeftX { get; }
+    public float SurfaceY { get; }
     internal const float FeetTolerance = 0.5f;
 
     internal LandingRegion(float minPlayerLeftX, float maxPlayerLeftX, float surfaceY)
