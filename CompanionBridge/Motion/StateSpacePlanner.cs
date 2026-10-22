@@ -33,14 +33,29 @@ internal static class StateSpacePlanner
     // A horizontal crossing goal, within a rolling local horizon. Candidates prove
     // a safe braking tail, but can hand off on supported ground with residual speed.
     internal static Route Plan(PhysicsState start, float targetX, PhysicsParameters ph,
-        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25)
+        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, int? goalDirection = null)
     {
         var watch = Stopwatch.StartNew();
         var rejected = new Dictionary<string, int>();
         void Reject(string reason) => rejected[reason] = rejected.GetValueOrDefault(reason) + 1;
         float goal = start.Px + Math.Clamp(targetX - start.Px, -128, 128);
-        int sign = Math.Sign(goal - start.Px);
+        bool finalGoal = goal == targetX;
+        // Preserve the task's crossing direction after reaching/passing targetX;
+        // recomputing it from the current position would reverse an overshot goal.
+        int sign = goalDirection ?? (targetX >= start.Px ? 1 : -1);
         float H(PhysicsState s) => Math.Max(0, sign * (goal - s.Px)) / ph.MaxRun;
+        if (sign * (targetX - start.Px) <= 12)
+        {
+            // Distance alone is not a terminal physical state. Use the same
+            // bounded simulation, sweep/drop/landing checks and stable tail as
+            // other actions, but release direction rather than accelerate again.
+            var brake = PhysicsSimulator.Predict(start, 0, 0, ph, world,
+                walkFrames: 0, maxDropPixels: MaxDropPixels);
+            if (brake.Safe && sign * (targetX - brake.Landing.Px) <= 12
+                && Math.Abs(brake.Landing.Vx) <= 0.1f)
+                return new(new() { brake }, 0, watch.Elapsed.TotalMilliseconds);
+            if (!brake.Safe) Reject("braking: " + brake.Reason);
+        }
         var labels = new Dictionary<CellKey, List<Label>>();
         var came = new Dictionary<PhysicsState, (PhysicsState Prev, Prediction Edge, float G)>();
         var open = new PriorityQueue<PhysicsState, float>();
@@ -55,7 +70,9 @@ internal static class StateSpacePlanner
         while (open.Count > 0 && expansions < maxExpansions && !timedOut)
         {
             var cur = open.Dequeue();
-            if (H(cur) <= 4) { best = cur; break; }
+            if (H(cur) <= 4 && (!finalGoal || Math.Abs(cur.Vx) <= 0.1f)
+                && cur.Grounded && world.SafeLanding(cur))
+            { best = cur; break; }
             expansions++;
             foreach (int dir in new[] { sign, -sign })
             {

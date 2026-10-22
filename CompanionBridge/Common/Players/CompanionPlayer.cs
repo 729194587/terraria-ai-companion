@@ -67,10 +67,12 @@ public sealed class CompanionPlayer : ModPlayer
 
     public override void PostUpdateRunSpeeds()
     {
-        if (Player.whoAmI == Main.myPlayer)
-            CompanionBridge.Controls.ConfirmMovementInputReleased(ObservationReader.WorldSessionId,
-                Main.GameUpdateCount, "PostUpdateRunSpeeds_before_bridge_input",
-                !Player.controlLeft && !Player.controlRight && !Player.controlJump);
+        // ModPlayer hooks also run for remote players. They must never reset
+        // the shared local navigation task or its Before/After pairing.
+        if (Player.whoAmI != Main.myPlayer) return;
+        CompanionBridge.Controls.ConfirmMovementInputReleased(ObservationReader.WorldSessionId,
+            Main.GameUpdateCount, "PostUpdateRunSpeeds_before_bridge_input",
+            !Player.controlLeft && !Player.controlRight && !Player.controlJump);
         if (!CanControl || !CompanionBridge.AutoMoveEnabled)
         {
             GameNavigation.Cancel();

@@ -1,6 +1,9 @@
 using System;
 using System.Diagnostics;
+using System.Collections.Generic;
 using Terraria;
+using Terraria.ID;
+using Terraria.ModLoader;
 using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Motion;
@@ -19,18 +22,48 @@ internal static class GameNavigation
     private static PhysicsState State(Player p) => new(p.position.X, p.position.Y,
         p.velocity.X, p.velocity.Y, TerrainReader.Read(p).Grounded, p.jump, p.releaseJump);
 
-    internal static bool Ordinary(Player p)
+    internal static bool Ordinary(Player p) => OrdinaryRejection(p) == null;
+
+    private static string OrdinaryRejection(Player p)
     {
         var ph = Parameters(p);
-        bool ordinary = !p.mount.Active && p.gravDir == 1 && !p.wet && !p.pulley && p.grapCount == 0
-            && !p.webbed && !p.stoned && !p.frozen && !p.sliding && !p.autoJump && !p.windPushed
-            && !p.slippy && !p.slippy2 && !p.sticky && !p.powerrun && !p.AnyExtraJumpUsable()
-            && p.wingsLogic == 0 && p.rocketBoots == 0 && p.itemAnimation == 0
-            && p.width == 20 && p.height == 42 && Math.Abs(p.velocity.X) <= 3.2f
-            && ph.IsBasic;
-        for (int i = 0; i < 10; i++) ordinary &= p.armor[i].IsAir;
-        for (int i = 0; i < p.buffTime.Length; i++) ordinary &= p.buffTime[i] == 0;
-        return ordinary;
+        List<string> reasons = null;
+        void Reject(bool condition, string reason)
+        {
+            if (condition) (reasons ??= new()).Add(reason);
+        }
+        Reject(p.mount.Active, "mount_active");
+        Reject(p.gravDir != 1, "unsupported_gravity");
+        Reject(p.wet, "wet");
+        Reject(p.pulley, "pulley");
+        Reject(p.grapCount != 0, "grappling");
+        Reject(p.webbed, "webbed");
+        Reject(p.stoned, "stoned");
+        Reject(p.frozen, "frozen");
+        Reject(p.sliding, "sliding");
+        Reject(p.autoJump, "auto_jump");
+        Reject(p.windPushed, "wind_pushed");
+        Reject(p.slippy || p.slippy2, "slippery");
+        Reject(p.sticky, "sticky");
+        Reject(p.powerrun, "power_run");
+        Reject(p.AnyExtraJumpUsable(), "extra_jump_usable");
+        Reject(p.wingsLogic != 0, "functional_wings");
+        Reject(p.rocketBoots != 0, "rocket_boots");
+        Reject(p.itemAnimation != 0, "item_animation");
+        Reject(p.width != 20 || p.height != 42, "unsupported_body_size");
+        Reject(!(Math.Abs(p.velocity.X) <= 3.2f), "unsupported_horizontal_velocity");
+        if (!ph.IsBasic) Reject(true, $"unsupported_physics: {ph}");
+        for (int i = 0; i < 10; i++)
+            if (!p.armor[i].IsAir) Reject(true, $"equipment: slot={i}, type={p.armor[i].type}, name={p.armor[i].Name}");
+        for (int i = 0; i < p.buffTime.Length; i++)
+        {
+            int type = p.buffType[i];
+            // Only resolve names for rejected effects; no per-tick string work for allowed buffs.
+            if (NavigationBuffPolicy.Rejection(type, p.buffTime[i], i, null) == null) continue;
+            string key = BuffLoader.GetBuff(type)?.FullName ?? "Terraria/" + BuffID.Search.GetName(type);
+            Reject(true, NavigationBuffPolicy.Rejection(type, p.buffTime[i], i, key));
+        }
+        return reasons == null ? null : string.Join("; ", reasons);
     }
 
     private static PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
@@ -42,7 +75,8 @@ internal static class GameNavigation
         _navigation = targetX.HasValue;
         if (!_navigation) { Task.Cancel(); Controller.Begin(session, direction, generation); }
         else { Controller.Cancel(); Task.Begin(session, generation, targetX.Value, State(p)); }
-        if (!Ordinary(p)) return Fail($"unsupported player/equipment/buff/physics parameters: {Parameters(p)}");
+        string rejection = OrdinaryRejection(p);
+        if (rejection != null) return Fail("unsupported navigation state: " + rejection);
         if (_session != session || _generation != generation) _life = p.statLife;
         _session = session; _generation = generation;
         if (p.statLife < _life) return Fail("life decreased");

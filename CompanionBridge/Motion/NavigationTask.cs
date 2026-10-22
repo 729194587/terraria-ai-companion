@@ -49,11 +49,14 @@ internal sealed class NavigationTask
         if (!_executing)
         {
             if (!state.Grounded) return Fail("replan requires grounded player");
-            if (!world.SafeLanding(state)) return Fail("replan requires safe foot support and body clearance");
+            string landingRejection = world.LandingRejection(state);
+            if (landingRejection != null)
+                return Fail($"replan requires safe foot support and body clearance: {landingRejection}; "
+                    + $"position=({state.Px},{state.Py}), velocity=({state.Vx},{state.Vy})");
             if (_direction * (targetX - state.Px) <= 12 && Math.Abs(state.Vx) <= 0.1f)
             { Snapshot = Snapshot with { Status = "arrived", Reason = "horizontal goal crossed on safe settled ground" }; return default; }
             if (!state.ReleaseJump || state.JumpFramesLeft != 0) return default;
-            _route = StateSpacePlanner.Plan(state, targetX, ph, world);
+            _route = StateSpacePlanner.Plan(state, targetX, ph, world, goalDirection: _direction);
             Snapshot = Snapshot with { Action = "plan", Expansions = _route.Expansions,
                 PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds };
             if (_route.Actions.Count == 0) return Fail("no safe local route: " + _route.FailureReason);

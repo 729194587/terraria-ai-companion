@@ -13,7 +13,7 @@ public static class MotionOfflineTests
     }
 
     // Rectangular collision test double, NOT a substitute for Terraria collision integration.
-    private sealed class World : IMotionWorld
+    internal sealed class World : IMotionWorld
     {
         internal float WallX = float.PositiveInfinity, WallWidth = 16, WallHeight = 32;
         internal bool Hazard, Unknown, LandingAllowed = true, AllowWallLanding;
@@ -164,6 +164,92 @@ public static class MotionOfflineTests
             Check(rejected, "Invalid navigation target rejected before game-thread dispatch");
         }
         Console.WriteLine("PASS: TerraBlind state-space route, continuous multi-obstacle navigation, arrival, cancellation, divergence and guarded lease");
+    }
+
+    // Only translates a synthetic flat collision fixture to the recorded player's Y.
+    // The live JSON records motion states, not the complete terrain or every tick.
+    private sealed class RecordedHeightWorld : IMotionWorld
+    {
+        private readonly World _world = new();
+        private const float OffsetY = 2160; // recorded Py=3718, fixture Py=1558
+        private static PhysicsState Local(PhysicsState s) => s with { Py = s.Py - OffsetY };
+        public PhysicsState Move(PhysicsState s, float vx, float vy, float gravity)
+        {
+            var next = _world.Move(Local(s), vx, vy, gravity);
+            return next with { Py = next.Py + OffsetY };
+        }
+        public bool SafeSweep(PhysicsState s, PhysicsState end, out string reason)
+            => _world.SafeSweep(Local(s), Local(end), out reason);
+        public bool SafeLanding(PhysicsState s) => _world.SafeLanding(Local(s));
+    }
+
+    private static void NearGoalMovingRegression()
+    {
+        var ph = PhysicsParameters.Basic;
+        var world = new RecordedHeightWorld();
+        var recorded = new PhysicsState(33822.105f, 3718, 2.399997f, 0, true);
+        var route = StateSpacePlanner.Plan(recorded, 33823.395f, ph, world, budgetMs: 500);
+        Check(route.Actions.Count > 0,
+            $"Recorded near-goal moving state needs an executable action, not empty route: expansions={route.Expansions}; {route.FailureReason}");
+        Check(route.Actions[0].Frames[0].Input == new PhysicsInput(0, false),
+            "Near-goal moving state should brake rather than accelerate toward/through the goal");
+        Check(route.Actions[0].ExecuteFrames == route.Actions[0].Frames.Count
+            && Math.Abs(route.Actions[0].Landing.Vx) <= 0.1f,
+            "Braking must execute its complete safe settled tail");
+        foreach (int dir in new[] { -1, 1 })
+        {
+            foreach (float offset in new[] { 1.29f, 0f, -2f })
+            {
+                var actual = recorded with { Px = 1600, Py = 3718, Vx = dir * 2.399997f };
+                float target = actual.Px + dir * offset;
+                var task = new NavigationTask();
+                // Retain the original crossing direction when the real state has
+                // reached or slightly passed targetX, as a continuing task would.
+                task.Begin(94, 3, target, actual with { Px = target - dir * 32 });
+                int frames = 0;
+                while (!task.Terminal && frames++ < 120)
+                {
+                    var input = task.Before(94, 3, target, actual, ph, world);
+                    if (frames == 1) Check(task.Snapshot.Status != "arrived", "Proximity with speed is not arrival");
+                    Check(!input.Jump && input.Direction == 0, "Near/crossed goal releases input to brake");
+                    if (task.Snapshot.Status == "arrived")
+                        Check(Math.Abs(actual.Vx) <= 0.1f && world.SafeLanding(actual),
+                            "Task cannot declare arrival before observed safe settled ground");
+                    actual = PhysicsSimulator.Step(actual, input, ph, world);
+                    task.After(actual, world);
+                }
+                Check(task.Snapshot.Status == "arrived" && task.Snapshot.CompletedActions == 1
+                    && task.Snapshot.LastLanding.Settled && Math.Abs(actual.Vx) <= 0.1f
+                    && dir * (target - actual.Px) <= 12,
+                    "Both directions and exact/crossed targets require one verified braking action before arrival");
+            }
+        }
+        var stopped = new NavigationTask();
+        stopped.Before(95, 3, 33823.395f, recorded with { Vx = 0 }, ph, world);
+        Check(stopped.Snapshot.Status == "arrived" && stopped.Snapshot.CompletedActions == 0,
+            "An already settled safe position still needs no artificial action");
+        foreach (bool unknown in new[] { false, true })
+        {
+            var unsafeWorld = new World { Hazard = !unknown, Unknown = unknown };
+            var unsafeStart = new PhysicsState(1600, 1558, 2.4f, 0, true);
+            var unsafeRoute = StateSpacePlanner.Plan(unsafeStart, 1601.29f, ph, unsafeWorld, budgetMs: 500);
+            Check(unsafeRoute.Actions.Count == 0 && unsafeRoute.FailureReason.Contains(unknown ? "unknown" : "hazard"),
+                "An unsafe braking path must fail with the actual rejection reason");
+            var task = new NavigationTask();
+            task.Before(96, 3, 1601.29f, unsafeStart, ph, unsafeWorld);
+            Check(task.Snapshot.Status == "failed", "Proximity must not bypass unsafe body/support checks");
+        }
+        var blocked = new NavigationTask();
+        var wall = new World { WallX = 1640, WallWidth = 64, WallHeight = 1000 };
+        var atWall = new PhysicsState(1600, 1558, 0, 0, true);
+        for (int frame = 0; frame < 300 && !blocked.Terminal; frame++)
+        {
+            var input = blocked.Before(97, 3, 1800, atWall, ph, wall);
+            atWall = PhysicsSimulator.Step(atWall, input, ph, wall);
+            blocked.After(atWall, wall);
+        }
+        Check(blocked.Snapshot.Status == "failed", "An impassable wall still terminates as failed, never arrived");
+        Console.WriteLine("PASS: recorded near-goal moving root, safe full braking, bidirectional exact/crossed goals and genuine failure");
     }
 
     private static void SmoothWalkRegression()
@@ -372,6 +458,13 @@ public static class MotionOfflineTests
         Check(!MotionSupport.SafeLanding(new(34145, 4310, 0, 0, true), Tile), "Air with a stale grounded flag rejected");
         Check(!MotionSupport.SafeLanding(new(34112, 4310, 0, 0, false), Tile), "Airborne state rejected");
         Check(!MotionSupport.SafeLanding(new(34112, 4326, 0, 0, true), Tile), "Body embedded in block rejected");
+        Check(MotionSupport.LandingRejection(new(34143, 4310, 0, 0, true), Tile)
+            .StartsWith("insufficient foot support: 1.000px"), "Diagnostic reports actual contact width without lowering safety threshold");
+        Check(MotionSupport.LandingRejection(new(34112, 4326, 0, 0, true), Tile)
+            .Contains("body intersects solid at (2132,272)"), "Diagnostic locates body collision");
+        Check(MotionSupport.LandingRejection(new(34112, 4310, 0, 0, true),
+            (x, y) => x == 2132 && y == 272 ? '?' : Tile(x, y))
+            .Contains("unknown/hazard support cell at (2132,272)"), "Diagnostic locates unknown support");
         foreach (char danger in new[] { '?', '!' })
             Check(!MotionSupport.SafeLanding(new(34112, 4310, 0, 0, true),
                 (x, y) => x == 2132 && y == 272 ? danger : Tile(x, y)), "Unknown or harmful support rejected");
@@ -424,6 +517,22 @@ public static class MotionOfflineTests
 
     public static void Run()
     {
+        NearGoalMovingRegression();
+        foreach (int type in new[] { 147, 216 })
+            Check(NavigationBuffPolicy.Rejection(type, 18000, 0, "audited_vanilla") == null,
+                "Recorded MonsterBanner/BabyBird effects must not block ordinary navigation");
+        foreach (int type in new[] { 3, 8, 26, 146, 148, 215, 217, 9999 })
+        {
+            string rejection = NavigationBuffPolicy.Rejection(type, 120, 2, "test/effect");
+            Check(rejection != null && rejection.Contains($"type={type}") && rejection.Contains("slot=2")
+                && rejection.Contains("test/effect") && rejection.Contains("timeTicks=120"),
+                "Movement-changing, unreviewed and Mod buffs still reject with actual effect details");
+            Check(NavigationBuffPolicy.Rejection(type, 0, 2, "test/effect") == null,
+                "An expired slot is not an active buff");
+        }
+        Check(NavigationBuffPolicy.Rejection(147, 1, 0, "Terraria/MonsterBanner") == null
+            && NavigationBuffPolicy.Rejection(3, 1, 1, "Terraria/Swiftness") != null,
+            "An allowed banner cannot hide a concurrent unsupported movement buff");
         var ph = PhysicsParameters.Basic;
         var reported = new PhysicsParameters(0.08f, 3, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);
         Check(reported.IsBasic, "Real-game reported 10.01 fall cap passes the same eligibility check used in-game");

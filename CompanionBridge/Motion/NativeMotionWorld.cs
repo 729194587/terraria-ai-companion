@@ -82,10 +82,14 @@ internal sealed class NativeMotionWorld : IMotionWorld
     }
 
     public bool SafeLanding(PhysicsState state)
+        => LandingRejection(state) == null;
+
+    public string LandingRejection(PhysicsState state)
     {
-        if (!state.Grounded || !SafeSweep(state, state, out _)) return false;
+        if (!state.Grounded) return "not grounded";
+        if (!SafeSweep(state, state, out string reason)) return reason;
         try { Check(state.Px, state.Py - 2, state.Px + 20, state.Py + 46, true); }
-        catch (UnsafeMotionException) { return false; }
-        return MotionSupport.SafeLanding(state, TerrainReader.ReadCell);
+        catch (UnsafeMotionException error) { return error.Message; }
+        return MotionSupport.LandingRejection(state, TerrainReader.ReadCell);
     }
 }
