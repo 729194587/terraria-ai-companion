@@ -62,9 +62,9 @@ Navigation {"event":"navigation_state","goalKind":"landing_region","navigation":
 
 ## 二维落脚真实验收的入口前提
 
-**当前 `navigate.py`、TCP `navigate` 以及 `CompanionPlayer` 正常入口仍只传 `targetX`。本轮不增加二维协议或调试命令，因此上述水平测试不能充当二维落脚验收。**
+**历史范围（0.1.28）：当时 `navigate.py`、TCP `navigate` 及正常玩家入口只传 `targetX`，上述水平测试不能充当二维落脚验收。0.1.30 已新增独立的 `navigate_to_landing_region` 原子工具及真实更新入口，当前调用方法见 [二维落脚导航](LANDING_REGION_NAVIGATION.md)；旧 `navigate.py`/TCP `navigate` 仍保持水平导航语义。**
 
-真正的二维测试必须有一个游戏内测试调用方，在现有真实 Before/After 挂钩、控制 session/generation、续租和取消生命周期内，持续向 `GameNavigation.Before(..., region: new LandingRegion(minPlayerLeftX,maxPlayerLeftX,surfaceY))` 提供固定目标。仅从控制台调用一次 Plan/Before，或绕开真实输入/After 核验，都不足以验收执行闭环。
+二维验收需要调用方（0.1.30 已由上述原子工具接入），在现有真实 Before/After 挂钩、控制 session/generation、续租和取消生命周期内，持续向 `GameNavigation.Before(..., region: new LandingRegion(minPlayerLeftX,maxPlayerLeftX,surfaceY))` 提供固定目标。仅从控制台调用一次 Plan/Before，或绕开真实输入/After 核验，都不足以验收执行闭环。
 
 若尚无该调用方，二维游戏验收入口仍是后续前置项；本轮可以完成日志链路的水平冒烟验收，不应宣布二维游戏验证通过。
 

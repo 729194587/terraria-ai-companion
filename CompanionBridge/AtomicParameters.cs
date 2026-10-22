@@ -1,11 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using CompanionBridge.Motion;
 
 namespace CompanionBridge;
 
 internal static class AtomicParameters
 {
+    internal static LandingRegion ReadLandingRegion(JsonElement args)
+    {
+        Validate("navigate_to_landing_region", args, false);
+        return new(args.GetProperty("minPlayerLeftX").GetSingle(), args.GetProperty("maxPlayerLeftX").GetSingle(),
+            args.GetProperty("surfaceY").GetSingle());
+    }
+
     internal static void Validate(string op, JsonElement args, bool query)
     {
         var keys = new HashSet<string>();
@@ -28,6 +36,12 @@ internal static class AtomicParameters
         }
         switch (op)
         {
+            case "navigate_to_landing_region":
+                Fields("minPlayerLeftX", "maxPlayerLeftX", "surfaceY");
+                foreach (string key in keys) Number(args.GetProperty(key), 0, 1000000);
+                if (args.GetProperty("minPlayerLeftX").GetDouble() > args.GetProperty("maxPlayerLeftX").GetDouble())
+                    throw new FormatException("Landing X bounds must be ordered.");
+                break;
             case "navigate_to_x": Fields("targetX"); Number(args.GetProperty("targetX"), 0, 1000000); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
             case "mine_tile": case "place_tile": case "interact_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;

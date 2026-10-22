@@ -52,7 +52,7 @@ class Game:
 
 class ValidationTests(unittest.TestCase):
     def test_schema_dispatch_and_tool_names(self):
-        self.assertEqual(14, len(atomic.TOOLS))
+        self.assertEqual(15, len(atomic.TOOLS))
         self.assertTrue(set(atomic.SCHEMAS) <= {t['function']['name'] for t in TOOLS})
         for name, args in [('mine_tile', {'x': 1.5, 'y': 2}), ('place_tile', {'x': True, 'y': 2}),
                            ('select_hotbar_slot', {'slot': 10}), ('navigate_to_x', {'targetX': float('nan')}),

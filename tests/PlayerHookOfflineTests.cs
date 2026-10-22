@@ -39,6 +39,7 @@ namespace Terraria
         public bool dead, ghost;
         public bool controlLeft, controlRight, controlJump, controlDown, controlUp, controlUseItem, releaseUseItem;
         public float gravDir = 1;
+        public int width = 20, height = 42;
         public int direction = 1, selectedItem, itemAnimation, itemTime, statLife = 100, statLifeMax2 = 100, team;
         public bool ZoneUnderworldHeight, ZoneRockLayerHeight, ZoneDirtLayerHeight, ZoneSkyHeight;
         public string name = "test-player";
@@ -133,10 +134,11 @@ namespace CompanionBridge.Motion
         internal static int Cancellations;
         private static bool _paired;
         internal static PhysicsInput Before(Terraria.Player player, int session, int direction,
-            int generation, float? targetX = null)
+            int generation, float? targetX = null, LandingRegion region = null)
         {
             _paired = true;
-            return Task.Before(session, generation, targetX.Value, State, PhysicsParameters.Basic, World);
+            return region != null ? Task.Before(session, generation, region, State, PhysicsParameters.Basic, World)
+                : Task.Before(session, generation, targetX.Value, State, PhysicsParameters.Basic, World);
         }
         internal static void After(Terraria.Player player)
         {

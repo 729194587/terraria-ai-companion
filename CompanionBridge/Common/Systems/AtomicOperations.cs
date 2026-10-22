@@ -85,8 +85,16 @@ internal static class AtomicOperations
             _action = action.ActionId; _used = false; _npc = null;
             _slot = p.selectedItem; _itemType = p.HeldItem.type; _stack = p.HeldItem.stack;
             _target = p.Center + new Vector2(p.direction * 32, 0);
-            if (op == "navigate_to_x")
+            if (op is "navigate_to_x" or "navigate_to_landing_region")
             {
+                if (op == "navigate_to_landing_region")
+                {
+                    var region = request.TargetRegion;
+                    if (region == null || region.MinPlayerLeftX < 16 || region.MaxPlayerLeftX > (Main.maxTilesX - 1) * 16 - p.width
+                        || region.SurfaceY < p.height + 16 || region.SurfaceY > (Main.maxTilesY - 1) * 16)
+                        Finish("failed", "landing_region_out_of_world");
+                    return;
+                }
                 if (request.TargetX < 16 || request.TargetX > (Main.maxTilesX - 2) * 16) Finish("failed", "navigation_target_out_of_world");
                 return;
             }
@@ -121,7 +129,7 @@ internal static class AtomicOperations
             if (p.HeldItem.IsAir && op != "interact_tile") { Finish("failed", "selected_item_empty"); return; }
             p.releaseUseItem = true;
         }
-        if (op == "navigate_to_x") return;
+        if (op is "navigate_to_x" or "navigate_to_landing_region") return;
         p.controlLeft = p.controlRight = p.controlJump = false;
         p.controlUseItem = false;
         if (p.selectedItem != _slot || p.HeldItem.type != _itemType && !p.HeldItem.IsAir)
@@ -173,7 +181,7 @@ internal static class AtomicOperations
     internal static void Aim(Player p)
     {
         var action = CompanionBridge.Controls.AtomicAction;
-        if (action?.ActionId != _action || action.Status != "running" || action.Operation == "navigate_to_x")
+        if (action?.ActionId != _action || action.Status != "running" || action.Operation is "navigate_to_x" or "navigate_to_landing_region")
         {
             if (_inputInjected) p.controlUseItem = false; // Disconnect/revocation may race between player hooks.
             _inputInjected = false;
@@ -194,10 +202,11 @@ internal static class AtomicOperations
         if (_inputInjected) { p.controlUseItem = false; _inputInjected = false; }
         var action = CompanionBridge.Controls.AtomicAction;
         if (action?.Status != "running") return;
-        if (action.Operation == "navigate_to_x")
+        if (action.Operation is "navigate_to_x" or "navigate_to_landing_region")
         {
             var nav = GameNavigation.Snapshot;
-            if (nav.Generation == action.Generation && nav.Session == action.Session && nav.Status is "arrived" or "failed")
+            if (nav.Generation == action.Generation && nav.Session == action.Session && nav.TargetRegion == action.TargetRegion
+                && nav.Status is "arrived" or "failed")
                 CompanionBridge.Controls.FinishAtomic(action.ActionId, nav.Status == "arrived" ? "completed" : "failed", nav.Reason, nav);
             return;
         }

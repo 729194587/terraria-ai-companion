@@ -10,8 +10,8 @@ namespace CompanionBridge;
 
 internal sealed record ControlRequest(int Id, string Cmd, int Direction = 1, bool Jump = false,
     int? ExpectedGeneration = null, float? TargetX = null, string Text = null, string ChatId = null,
-    int? DurationMs = null, int? ActionId = null, string Operation = null, JsonElement Arguments = default);
-internal sealed record ControlInput(int Direction, bool Jump, bool OverrideJump, bool Predictive = false, float? TargetX = null, ControlRequest Atomic = null);
+    int? DurationMs = null, int? ActionId = null, string Operation = null, JsonElement Arguments = default, LandingRegion TargetRegion = null);
+internal sealed record ControlInput(int Direction, bool Jump, bool OverrideJump, bool Predictive = false, float? TargetX = null, ControlRequest Atomic = null, LandingRegion TargetRegion = null);
 internal sealed record StateVector(float X, float Y);
 internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateVector Velocity,
     int? Life, int? LifeMax)
@@ -21,7 +21,7 @@ internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateV
 internal sealed record MovementEndEvidence(string WorldSessionId, ulong GameUpdate, string Phase);
 internal sealed record MovementSnapshot(int ActionId, int Session, int Generation, int Direction, int DurationMs,
     string Status, string Reason, PlayerSnapshot Before, PlayerSnapshot After, string StartedAt, string EndedAt,
-    double ElapsedMilliseconds, string WorldSessionId = null, MovementEndEvidence EndEvidence = null, string Operation = null, object Evidence = null)
+    double ElapsedMilliseconds, string WorldSessionId = null, MovementEndEvidence EndEvidence = null, string Operation = null, object Evidence = null, LandingRegion TargetRegion = null)
 {
     public bool Completed => Status == "completed";
     public bool Cancelled => Status == "cancelled";
@@ -258,17 +258,19 @@ internal sealed class ControlState
         if (request.ExpectedGeneration != _generation) return "generation_changed";
         if (_mode == ControlMode.Manual) return "manual_active";
         if (_mode != ControlMode.None || _movement?.Operation != null && _movement.EndEvidenceStatus == "pending") return "control_busy";
+        if (request.Operation == "navigate_to_landing_region"
+            && (request.TargetRegion == null || request.TargetX != null)) return "invalid_landing_region";
         _generation++;
         _mode = ControlMode.External;
         _input = request.Cmd == "start_atomic"
-            ? new(0, false, true, request.Operation == "navigate_to_x", request.TargetX, request)
+            ? new(0, false, true, request.Operation is "navigate_to_x" or "navigate_to_landing_region", request.TargetX, request, request.TargetRegion)
             : new(request.Direction, false, true); // Existing executor; no jump or predictive navigation.
         _deadline = receivedAt + LeaseTicks;
         _moveStartedAt = now;
-        int duration = request.Cmd == "start_atomic" ? request.Operation == "navigate_to_x" ? 30000 : 10000 : request.DurationMs.Value;
+        int duration = request.Cmd == "start_atomic" ? request.Operation is "navigate_to_x" or "navigate_to_landing_region" ? 30000 : 10000 : request.DurationMs.Value;
         _moveEndsAt = now + duration * Stopwatch.Frequency / 1000;
         _movement = new(++_nextActionId, _session, _generation, request.Direction, duration,
-            "running", "started", snapshot, null, DateTimeOffset.UtcNow.ToString("O"), null, 0, worldSessionId, Operation: request.Operation);
+            "running", "started", snapshot, null, DateTimeOffset.UtcNow.ToString("O"), null, 0, worldSessionId, Operation: request.Operation, TargetRegion: request.TargetRegion);
         return "movement_started";
     }
 
@@ -290,6 +292,9 @@ internal sealed class ControlState
         if (_movement?.Status != "running" || _movement.Session != _session
             || request.ActionId != _movement.ActionId || _movement.Generation != _generation || _mode != ControlMode.External)
             return "action_changed";
+        if (_movement.TargetRegion != null && request.ExpectedGeneration == null) return "generation_required";
+        if (request.ExpectedGeneration is int expected && expected != _movement.Generation) return "generation_changed";
+        if (request.TargetRegion != _movement.TargetRegion) return "target_changed";
         _deadline = receivedAt + LeaseTicks; // The absolute _moveEndsAt never changes.
         return "movement";
     }
@@ -417,7 +422,7 @@ internal sealed class ControlState
         int? expectedGeneration = null;
         if (root.TryGetProperty("expectedGeneration", out var guard))
         {
-            if (cmd.GetString() is not ("terrain_step" or "navigate" or "stop" or "move_for" or "start_atomic")
+            if (cmd.GetString() is not ("terrain_step" or "navigate" or "stop" or "move_for" or "start_atomic" or "renew_move")
                 || guard.ValueKind != JsonValueKind.Number || !guard.TryGetInt32(out int expected) || expected < 0)
                 throw new FormatException("expectedGeneration requires a guarded command and a nonnegative integer.");
             expectedGeneration = expected;
@@ -452,6 +457,12 @@ internal sealed class ControlState
                 throw new FormatException("Movement continuation/cancellation requires positive actionId.");
             actionId = action;
         }
+        LandingRegion targetRegion = null;
+        if (root.TryGetProperty("targetRegion", out var region))
+        {
+            if (cmd.GetString() != "renew_move") throw new FormatException("targetRegion is only a renewal guard; use atomic arguments to start.");
+            targetRegion = AtomicParameters.ReadLandingRegion(region);
+        }
         string operation = null;
         JsonElement arguments = default;
         if (cmd.GetString() is "start_atomic" or "query_atomic")
@@ -463,6 +474,7 @@ internal sealed class ControlState
             AtomicParameters.Validate(operation, arguments, cmd.GetString() == "query_atomic");
             if (cmd.GetString() == "start_atomic" && expectedGeneration == null)
                 throw new FormatException("Atomic action requires expectedGeneration.");
+            if (operation == "navigate_to_landing_region") targetRegion = AtomicParameters.ReadLandingRegion(arguments);
             if (operation == "navigate_to_x") targetX = arguments.GetProperty("targetX").GetSingle();
             if (root.TryGetProperty("chatId", out var chat))
             {
@@ -470,6 +482,6 @@ internal sealed class ControlState
                     throw new FormatException("Invalid atomic chatId.");
             }
         }
-        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId, durationMs, actionId, operation, arguments);
+        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId, durationMs, actionId, operation, arguments, targetRegion);
     }
 }

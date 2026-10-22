@@ -64,7 +64,7 @@ public static class MotionOfflineTests
 
     // Synthetic rectangle collisions plus the production tile support checker.
     // This fixture does not run Terraria's Collision helpers.
-    private sealed class RegionWorld : IMotionWorld
+    internal sealed class RegionWorld : IMotionWorld
     {
         internal readonly World Collision = new() { WallX = 1648, WallWidth = 128,
             WallHeight = 48, AllowWallLanding = true };

@@ -1,11 +1,12 @@
 param([switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
-    [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly)
+    [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
 $sources = @(
     (Join-Path $repo 'CompanionBridge/AtomicParameters.cs'),
     (Join-Path $PSScriptRoot 'AtomicOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'LandingNavigationOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'AtomicGameOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicOperations.cs'),
     (Join-Path $repo 'CompanionBridge/ControlState.cs'),
@@ -32,6 +33,8 @@ $sources = @(
 )
 $references = Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName
 Add-Type -Path $sources -ReferencedAssemblies $references
+if ($LandingProtocolHost) { [LandingNavigationOfflineTests]::RunProtocolHost(); return }
+if ($LandingOnly) { [LandingNavigationOfflineTests]::Run(); return }
 if ($LandingBudgetAudit) { [MotionOfflineTests]::AuditLandingBudget($BudgetRepetitions, $BudgetColdOnly.IsPresent); return }
 if (!$MotionOnly) { [AtomicOfflineTests]::Run(); [BridgeOfflineTests]::Run(); [ObservationOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); [GameMessageOfflineTests]::Run(); [BoundedMovementOfflineTests]::Run() }
 if ($ObservationSamplePath -and !$MotionOnly) {
@@ -41,3 +44,5 @@ if ($ObservationSamplePath -and !$MotionOnly) {
 [MotionOfflineTests]::Run()
 [PlayerHookOfflineTests]::Run()
 [AtomicGameOfflineTests]::Run()
+
+[LandingNavigationOfflineTests]::Run()

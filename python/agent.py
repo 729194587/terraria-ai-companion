@@ -59,7 +59,7 @@ TOOLS.extend([
 ])
 
 TOOLS.extend(atomic_operations.TOOLS)
-SYSTEM += "\n原子行动仅在用户要求时调用。先感知确认目标和所选物品；动作status=completed且有endEvidence才证明执行完成。use_item只确认原生使用周期；攻击成功为观察到伤害，不保证击杀或伤害归因。failed/timeout/cancelled/unknown应停止并说明原因，不自动重试。navigate_to_x使用已有连续导航；所有原子行动互斥，接收新聊天会取消旧行动。scan_entities的entityRef不可用槽位或观察instanceKey替代。每次动作后重新感知再做决定。"
+SYSTEM += "\n原子行动仅在用户要求时调用。先感知确认目标和所选物品；动作status=completed且有endEvidence才证明执行完成。use_item只确认原生使用周期；攻击成功为观察到伤害，不保证击杀或伤害归因。failed/timeout/cancelled/unknown应停止并说明原因，不自动重试。navigate_to_x使用已有水平连续导航；navigate_to_landing_region指定X左边缘闭区间与脚底表面Y，使用二维落脚导航，不能用move的target_position代替；所有原子行动互斥，接收新聊天会取消旧行动。scan_entities的entityRef不可用槽位或观察instanceKey替代。每次动作后重新感知再做决定。"
 
 
 def read_observation(bridge):

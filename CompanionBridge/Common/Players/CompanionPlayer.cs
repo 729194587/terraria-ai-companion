@@ -89,7 +89,7 @@ public sealed class CompanionPlayer : ModPlayer
         if (input.Predictive)
         {
             var predicted = GameNavigation.Before(Player, CompanionBridge.Controls.SessionId, input.Direction,
-                CompanionBridge.Controls.Generation, input.TargetX);
+                CompanionBridge.Controls.Generation, input.TargetX, region: input.TargetRegion);
             Player.controlLeft = predicted.Direction < 0;
             Player.controlRight = predicted.Direction > 0;
             Player.controlJump = predicted.Jump;

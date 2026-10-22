@@ -20,6 +20,10 @@ TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地�
     tool("get_world_state", "读取客户端昼夜、天气、事件、生物群系和深度。"),
     tool("navigate_to_x", "复用连续导航至玩家左上角水平世界像素targetX；30秒上限，普通角色运动限制仍适用；arrived由游戏物理状态校验。",
          {"targetX": {"type": "number", "minimum": 0, "maximum": 1000000}}, ["targetX"]),
+    tool("navigate_to_landing_region", "二维落脚导航：全部为世界像素，Y向下；minPlayerLeftX/maxPlayerLeftX是玩家碰撞框左边缘的闭区间，surfaceY是脚底目标水平表面高度（非玩家顶部）。原有普通角色/实心平顶限制；30秒上限。仅实际进入X区间、脚底高度误差<=0.5px、安全着地且停稳后完成，不能只经过目标X。",
+         {key: {"type": "number", "minimum": 0, "maximum": 1000000}
+          for key in ("minPlayerLeftX", "maxPlayerLeftX", "surfaceY")},
+         ["minPlayerLeftX", "maxPlayerLeftX", "surfaceY"]),
     tool("select_hotbar_slot", "选择0..9快捷栏槽位并核对选中状态。", {"slot": {"type": "integer", "minimum": 0, "maximum": 9}}, ["slot"]),
     tool("use_item", "用当前物品完成一次原生使用周期；target可选世界像素{x,y}。completed只证明使用周期，具体效果需感知核验。默认缩放及保守80像素距离。",
          {"target": {"type": "object", "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1000000}, "y": {"type": "number", "minimum": 0, "maximum": 1000000}}, "required": ["x", "y"], "additionalProperties": False}}),
@@ -50,6 +54,8 @@ def validate(name, arguments):
     if name not in SCHEMAS:
         raise ValueError('Unsupported atomic operation')
     check(arguments, SCHEMAS[name])
+    if name == 'navigate_to_landing_region' and arguments['minPlayerLeftX'] > arguments['maxPlayerLeftX']:
+        raise ValueError('Landing X bounds must be ordered')
 
 
 async def command(bridge, cmd, **args):
@@ -59,9 +65,26 @@ async def command(bridge, cmd, **args):
 def result(action, generation):
     return {'valid': True, 'status': action['status'], 'reason': action['reason'],
             'operation': action.get('operation'), 'actionId': action['actionId'],
+            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'),
             'evidence': action.get('evidence'), 'endEvidence': action.get('endEvidence'),
             'endEvidenceStatus': action.get('endEvidenceStatus'), 'controlGeneration': generation,
             'completed': action['status'] == 'completed', 'cancelled': action['status'] == 'cancelled'}
+
+
+def same_landing_action(expected, current):
+    return isinstance(current, dict) and all(current.get(key) == expected.get(key) for key in
+        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion'))
+
+
+def verify_landing_start(action, arguments):
+    region = action.get('targetRegion')
+    if (not isinstance(region, dict) or set(region) != set(arguments)
+            or any(type(region[key]) not in (int, float) or not math.isfinite(region[key])
+                   or not math.isclose(region[key], arguments[key], rel_tol=1e-7, abs_tol=0.001) for key in arguments)
+            or type(action.get('session')) is not int or action['session'] <= 0
+            or type(action.get('generation')) is not int or action['generation'] < 0
+            or not isinstance(action.get('worldSessionId'), str) or not action['worldSessionId']):
+        raise BridgeError('Landing target/identity missing or different in start receipt')
 
 
 async def terminal(bridge, action, generation):
@@ -70,7 +93,8 @@ async def terminal(bridge, action, generation):
         await asyncio.sleep(0.05)
         reply = await command(bridge, 'get_movement')
         current = reply['movement']['action']
-        if current is None or current['actionId'] != action['actionId']:
+        if (current is None or current['actionId'] != action['actionId']
+                or action.get('operation') == 'navigate_to_landing_region' and not same_landing_action(action, current)):
             return {'valid': False, 'status': 'unknown', 'reason': 'action_changed_before_release_evidence'}
         action, generation = current, reply['movement']['generation']
     out = result(action, generation)
@@ -106,6 +130,8 @@ async def dispatch(bridge, name, arguments, chat_id=None):
         return {'valid': True, 'player': reply['state'], 'motion': {k: reply['terrain'][k] for k in ('grounded', 'supported', 'playerWidth', 'playerHeight')}}
     if 'atomic_operations_v1' not in bridge.hello.get('capabilities', []):
         raise BridgeError('Requires atomic_operations_v1; loaded Mod does not support these operations')
+    if name == 'navigate_to_landing_region' and 'landing_region_navigation_v1' not in bridge.hello.get('capabilities', []):
+        raise BridgeError('Requires landing_region_navigation_v1; no two-dimensional action started')
     if name in READS:
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         data = reply.get('data')
@@ -115,6 +141,7 @@ async def dispatch(bridge, name, arguments, chat_id=None):
     if name == 'stop_action':
         return await stop(bridge)
     start_task, action = None, None
+    landing_invalid = False
     try:
         initial = await command(bridge, 'get_movement')
         params = {'operation': name, 'arguments': arguments, 'expectedGeneration': initial['movement']['generation']}
@@ -125,6 +152,12 @@ async def dispatch(bridge, name, arguments, chat_id=None):
         action = reply['movement']['action']
         if action is None or reply['status'] != 'movement_started' or action.get('operation') != name:
             raise BridgeError('Missing atomic start receipt')
+        landing_identity = None
+        if name == 'navigate_to_landing_region':
+            landing_invalid = True
+            verify_landing_start(action, arguments)
+            landing_invalid = False
+            landing_identity = dict(action)
         action_id = action['actionId']
         deadline = asyncio.get_running_loop().time() + action['durationMs'] / 1000 + 1
         while action['status'] == 'running':
@@ -136,9 +169,14 @@ async def dispatch(bridge, name, arguments, chat_id=None):
             current = reply['movement']['action']
             if current is None or current['actionId'] != action_id:
                 return {'valid': False, 'status': 'unknown', 'reason': 'action_ownership_changed'}
+            if landing_identity is not None and not same_landing_action(landing_identity, current):
+                landing_invalid = True
+                raise BridgeError('Landing action target/session/generation/world changed')
             action = current
             if action['status'] == 'running':
-                await command(bridge, 'renew_move', actionId=action_id)
+                guards = {} if landing_identity is None else {'expectedGeneration': landing_identity['generation'],
+                                                              'targetRegion': landing_identity['targetRegion']}
+                await command(bridge, 'renew_move', actionId=action_id, **guards)
         return await terminal(bridge, action, reply['movement']['generation'])
     except asyncio.CancelledError:
         try:
@@ -154,6 +192,8 @@ async def dispatch(bridge, name, arguments, chat_id=None):
         if action is not None:
             try:
                 stopped = await stop(bridge, action['actionId'])
+                if landing_invalid:
+                    return {**stopped, 'valid': False, 'status': 'unknown', 'completed': False, 'reason': str(error)}
                 return {**stopped, 'supervisorError': str(error)}
             except (BridgeError, OSError, KeyError, ValueError):
                 pass

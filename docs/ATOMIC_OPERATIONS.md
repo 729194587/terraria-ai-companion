@@ -1,4 +1,4 @@
-# 第一版原子操作（Mod 0.1.29）
+# 第一版原子操作（Mod 0.1.30）
 
 参考 [Numen 仓库](https://github.com/Dwinovo/minecraft-numen/tree/1.21.1) 中“可组合工具、原生玩家规则、真实回执”的设计思路。开发站点 https://numen.dwinovo.cn/zh/develop/ 本次访问失败；没有声称核验其全部接口，也没有复制 Minecraft API 或源码。
 
@@ -6,7 +6,7 @@
 
 `agent.py TOOLS / dispatch → atomic_operations.py 校验与异步编排 → Bridge.command → TCP → ControlState.Update → 游戏线程适配器 / 原有导航 → MovementSnapshot + endEvidence → Python 工具结果 → LLM`。
 
-保留原有工具、旧协议和实验脚本。新包握手声明 `atomic_operations_v1`；新操作不向旧包降级发送未经保护的输入。Agent 仍每次模型决策只执行一个工具，沿用工具/模型调用次数预算。新聊天取消旧任务，迟到聊天结果继续由原有 chatId/代次机制拦截。动作失败、超时、取消或未知后，本轮禁止继续发起动作，可继续读取状态。
+保留原有工具、旧协议和实验脚本。新包握手声明 `atomic_operations_v1`，二维导航另需 `landing_region_navigation_v1`；新操作不向旧包降级发送未经保护的输入。Agent 仍每次模型决策只执行一个工具，沿用工具/模型调用次数预算。新聊天取消旧任务，迟到聊天结果继续由原有 chatId/代次机制拦截。动作失败、超时、取消或未知后，本轮禁止继续发起动作，可继续读取状态。
 
 世界位置、目标、实体半径：像素，Y 向下。Tile：整数格，每格 16 像素。快捷栏：0..9。
 
@@ -19,6 +19,7 @@
 | `inspect_inventory()` | 复用 `ObservationReader.ReadPlayer` 背包/快捷栏/选中槽位/装备及附带玩家状态 |
 | `get_world_state()` | 复用提取后的 `ReadEnvironment`，附生物群系深度标志、地表/岩层高度和世界尺寸 |
 | `navigate_to_x(targetX)` | `start_atomic → ControlInput.Predictive → 原有 GameNavigation/NavigationTask/物理模拟与落点验证`；原有 settled/crossed 水平目标判据报告 arrived 才完成，不承诺精确 XY；30 秒上限 |
+| `navigate_to_landing_region(minPlayerLeftX,maxPlayerLeftX,surfaceY)` | Agent/IPC 固定二维目标 → 实际玩家挂钩传入 `region` → 已有二维规划/动作执行/反馈；按 X 区间、脚底高度、安全支撑与停稳核验。30 秒上限，详见 [二维落脚导航](LANDING_REGION_NAVIGATION.md) |
 | `select_hotbar_slot(slot)` | 游戏线程赋值并核对 `selectedItem`；物品忙碌时拒绝 |
 | `use_item(target?)` | `start_atomic → PostUpdateRunSpeeds → PreItemCheck → 原生 ItemCheck → PostUpdate`；确认实际出现并结束一次物品动画周期。target 为世界像素 `{x,y}`；省略时朝当前方向 32 像素使用。成功只表示使用周期，不承诺治疗/命中/其他效果 |
 | `mine_tile(x,y)` | 原生使用选中镐，Tile 消失才完成；不自动选工具/接近，不直接 KillTile、不绕过镐力/保护 |
@@ -60,9 +61,9 @@ NPC 引用由世界会话、NPC 槽位和 `InstancePerEntity GlobalNPC` 实例 T
 
 ## 验证与产物
 
-- Python：**236 项通过**。`python -B -m unittest discover -s tests -v`，新增参数/能力、感知复用、终态/证据、启动取消竞态、精确取消和 Agent dispatch/失败禁止重试测试。
+- Python：**242 项通过**，含新增跨语言二维调用链回归。`python -B -m unittest discover -s tests -v`，新增参数/能力、感知复用、终态/证据、启动取消竞态、精确取消和 Agent dispatch/失败禁止重试测试。
 - C#：**全部通过**。`pwsh -NoProfile -File tests/run_csharp_tests.ps1`，原有 IPC/导航/生命周期回归；新增真实 ControlState 协议/互斥/租约/绝对超时/释放边界测试，以及真实 AtomicOperations 适配器对游戏 API 替身的选择/范围/目标/放置消耗/伤害/门/光标恢复测试。替身不模拟真实 Terraria ItemCheck、物理或联机同步。
-- Mod 构建：**0 错误、0 警告**。tModLoader 自带 .NET，`-server -build CompanionBridge -tmlsavedirectory .local/atomic-build`；输出 `.local/atomic-build/Mods/CompanionBridge.tmod`。
+- Mod 构建：**0 错误、0 警告**。tModLoader 自带 .NET，`-server -build CompanionBridge -tmlsavedirectory .local/landing-navigation-build`；输出 `.local/landing-navigation-build/Mods/CompanionBridge.tmod`。
 - 本轮未复制包到任何客户端配置、未部署、未启动新包、未进行真实游戏验收；离线 PASS 不等于原生物品时序/光标或多人同步已实测。
 
-真实游戏验收仍需在用户选择的测试世界加载新包：核对 0.1.29 和能力握手；依次读取感知、选槽、使用物品、挖近处土块、放回一格、攻击近处敌对 NPC、开关单人门、水平导航；每项核对画面与 effect/endEvidence；另测远目标/空物品/过期 entityRef、Ctrl+C/新聊天/P/断线/死亡、暂停和多人观察。该步骤需要部署新包，本任务按“不部署”要求保留为待验收。
+真实游戏验收仍需在用户选择的测试世界加载新包：核对 0.1.30 和能力握手；依次读取感知、选槽、使用物品、挖近处土块、放回一格、攻击近处敌对 NPC、开关单人门、水平导航；每项核对画面与 effect/endEvidence；另测远目标/空物品/过期 entityRef、Ctrl+C/新聊天/P/断线/死亡、暂停和多人观察。该步骤需要部署新包，本任务按“不部署”要求保留为待验收。
