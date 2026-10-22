@@ -131,6 +131,41 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(project_observation(source)['terrain']['supportColumns'],
                          [[-4,5,None,'unsupported_or_unknown_gravity']])
 
+    def test_underfoot_uses_recorded_feet_row_not_body_row(self):
+        # Reported empty mine target (2183,233); actual adjacent ground row235.
+        cells=[cell(hasTile=y>=235,solid=y>=235,tileType=0 if y>=235 else None)
+               for y in range(230,238) for x in range(2180,2188)]
+        source=synthetic(cells,8)
+        source['terrain']['bounds'].update(x=2180,y=230)
+        source['player']['boundsWorldPixels'].update(x=34934.523,y=3718,width=20,height=42)
+        snapshot=copy.deepcopy(source)
+        footing=project_observation(source)['terrain']['underfoot']
+        self.assertEqual({'x':34944.523,'y':3760},footing['feetWorldPixels'])
+        self.assertEqual({'x':2184,'y':235},footing['centerFootTile'])
+        self.assertEqual([(2183,235),(2184,235)],[(c['x'],c['y']) for c in footing['candidates']])
+        self.assertTrue(all(c['hasTile'] and c['tileType']==0 for c in footing['candidates']))
+        self.assertEqual(source,snapshot)
+
+    def test_underfoot_preserves_empty_unknown_outside_and_gravity_semantics(self):
+        source=synthetic([cell(),cell(knowledge='unloaded'),cell(),cell()],4)
+        source['terrain']['bounds'].update(x=0,y=0)
+        footing=project_observation(source)['terrain']['underfoot']
+        self.assertFalse(footing['candidates'][0]['hasTile'])
+        self.assertNotIn('hasTile',footing['candidates'][1])
+        self.assertEqual('unloaded',footing['candidates'][1]['stateOverrides']['knowledge'])
+        source['player']['boundsWorldPixels']['y']=1000
+        footing=project_observation(source)['terrain']['underfoot']
+        self.assertEqual('outside_observation',footing['candidates'][0]['stateOverrides']['knowledge'])
+        source['player']['movement']['gravDir']=-1
+        footing=project_observation(source)['terrain']['underfoot']
+        self.assertEqual('unsupported_or_unknown_gravity',footing['status'])
+        self.assertEqual([],footing['candidates'])
+
+    def test_underfoot_exact_boundary_does_not_include_next_column(self):
+        source=synthetic([cell() for _ in range(8)],8)
+        source['player']['boundsWorldPixels'].update(x=0,y=-42,width=16,height=42)
+        self.assertEqual([0],[c['x'] for c in project_observation(source)['terrain']['underfoot']['candidates']])
+
     def test_synthetic_stale_dead_truncated_and_unavailable(self):
         source=recorded();source['status']='stale';source['camera']['status']='stale'
         source['player']['dead']=True

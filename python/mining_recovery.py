@@ -1,6 +1,6 @@
 """One bounded Agent-side recovery; never moves inside the mining adapter.
 
-Only a fully observed, level, empty walking corridor is accepted. Navigation
+Only a fully observed level corridor without solid body obstructions is accepted. Navigation
 still plans and verifies the actual landing; unknown or complex routes stop.
 """
 import math
@@ -42,8 +42,9 @@ def _tile(reply, args, world, update, tile_type):
 
 
 def _landing(x, y, t, tx, ty):
-    # Conservative level corridor only; all body cells must be empty and both
-    # edges supported. No slopes, holes, liquid, hazards, or unknown cells.
+    # A flat one-way platform is not a solid side/body obstruction. Native
+    # navigation validates its actual collision; solid/unsafe/unknown cells stop.
+    # Verify the whole landing band and route, not only one selected point.
     feet = y + 42
     if abs(feet / 16 - round(feet / 16)) > .001 or t.get("tileSize") != 16:
         raise ValueError("no_proven_level_approach")
@@ -58,16 +59,24 @@ def _landing(x, y, t, tx, ty):
     direction = 1 if tx > x + 10 else -1
     candidate = tx - direction * dx - 10
     candidate = math.ceil(candidate) if direction > 0 else math.floor(candidate)
-    if abs(candidate - x) > 640:
+    # A point goal usually cannot be hit by discrete native acceleration/braking.
+    # Use up to one tile of tolerance, entirely inside the 72px reach circle.
+    if direction > 0:
+        lower, upper = candidate, min(candidate + 16, math.floor(tx + dx - 10))
+    else:
+        lower, upper = max(candidate - 16, math.ceil(tx - dx - 10)), candidate
+    if upper - lower < 4:
+        raise ValueError("no_usable_landing_region")
+    if max(abs(lower - x), abs(upper - x)) > 640:
         raise ValueError("approach_outside_local_scope")
-    left, right = min(x, candidate), max(x, candidate) + 20
+    left, right = min(x, lower), max(x, upper) + 20
     for cx in range(math.floor(left / 16), math.floor((right - .01) / 16) + 1):
         if cell(cx, round(feet / 16)) not in ("#", "="):
             raise ValueError("no_proven_safe_support")
         for cy in range(math.floor(y / 16), math.floor((feet - .01) / 16) + 1):
-            if cell(cx, cy) != ".":
+            if cell(cx, cy) not in (".", "="):
                 raise ValueError("approach_blocked_hazardous_or_unknown")
-    return {"minPlayerLeftX": candidate, "maxPlayerLeftX": candidate, "surfaceY": feet}
+    return {"minPlayerLeftX": lower, "maxPlayerLeftX": upper, "surfaceY": feet}
 
 
 async def recover(args, failure, invoke):

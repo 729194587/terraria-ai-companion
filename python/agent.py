@@ -12,6 +12,7 @@ import agent_trace as tracing
 import cost_metrics
 import atomic_operations
 import mining_recovery
+import agent_diagnostics as diagnostics
 
 from control import Bridge, BridgeError
 from llm import LLMClient, LLMError
@@ -60,7 +61,7 @@ TOOLS.extend([
 ])
 
 TOOLS.extend(atomic_operations.TOOLS)
-SYSTEM += "\n当前能力以提供的工具定义为准；向用户说明快捷栏一律使用游戏按键1–9、0，0是最右第十格；select_hotbar_slot.slot就是按键编号，不是inventory.slot/selectedSlot这类内部数组索引。读取物品时优先使用hotbarKey、selectedHotbarKey和hotbarKeyBindings；不得把数组0号说成快捷键0。用户要求直接下平台/按Down下平台时，先观察确认，优先drop_through_platform原生向下穿落，再观察决定是否水平移动；不要先绕到平台边缘再返回来冒充直接下穿。该工具只支持停稳的水平单向平台和下方64像素内安全落点，失败时说明原因。旧阶段A/MovementLoop的限制只描述move闭环，不应推广到导航工具。用户要求跳上、跳过、到某个平台或不同高度位置时，先观察并确定可信的目标X区间和脚底surfaceY，再优先调用navigate_to_landing_region；水平目标且需要越障时可用navigate_to_x。不能凭旧平地规则直接拒绝，也不能承诺任意高度都可达；应以实际导航结果说明失败原因。若目标无法从观察可靠确定，询问具体目标。原子行动仅在用户要求时调用。先感知确认目标和所选物品；动作status=completed且有endEvidence才证明执行完成。use_item无target时保留原生鼠标直接使用，有target时才精确瞄准；只确认原生使用周期，effectStatus=unconfirmed不证明召唤，不能称雀杖召唤成功，须明确效果未确认；攻击成功为观察到伤害，不保证击杀或伤害归因。failed/timeout/cancelled/unknown应停止并说明原因；唯一例外是mine_tile的out_of_conservative_80_pixel_reach，Agent可在本轮最多一次执行有界恢复：重新观察玩家地形和原目标、证明安全接近后用既有导航、再次观察核对目标与80像素距离、最多重试一次原挖掘；恢复无安全路径、目标失效或任何再次失败立即停止，不能改挖其他格。navigate_to_x使用已有水平连续导航；navigate_to_landing_region指定X左边缘闭区间与脚底表面Y，使用二维落脚导航，不能用move的target_position代替；所有原子行动互斥，接收新聊天会取消旧行动。scan_entities的entityRef不可用槽位或观察instanceKey替代。每次动作后重新感知再做决定。"
+SYSTEM += "\n当前能力以提供的工具定义为准；向用户说明快捷栏一律使用游戏按键1–9、0，0是最右第十格；select_hotbar_slot.slot就是按键编号，不是inventory.slot/selectedSlot这类内部数组索引。读取物品时优先使用hotbarKey、selectedHotbarKey和hotbarKeyBindings；不得把数组0号说成快捷键0。用户要求直接下平台/按Down下平台时，先观察确认，优先drop_through_platform原生向下穿落，再观察决定是否水平移动；不要先绕到平台边缘再返回来冒充直接下穿。该工具只支持停稳的水平单向平台和下方64像素内安全落点，失败时说明原因。旧阶段A/MovementLoop的限制只描述move闭环，不应推广到导航工具。用户要求跳上、跳过、到某个平台或不同高度位置时，先观察并确定可信的目标X区间和脚底surfaceY，再优先调用navigate_to_landing_region；水平目标且需要越障时可用navigate_to_x。不能凭旧平地规则直接拒绝，也不能承诺任意高度都可达；应以实际导航结果说明失败原因。若目标无法从观察可靠确定，询问具体目标。原子行动仅在用户要求时调用。先感知确认目标和所选物品；用户说挖脚下时，用本轮get_exploration_observation的terrain.underfoot：feetWorldPixels是碰撞框底部，centerFootTile/candidates才是脚底相邻格，玩家positionWorldPixels是左上角，不能用身体中心格或顶部格当脚下。须先inspect_tile确认所选候选knowledge=read且hasTile=true，再mine_tile；空格/未知先重新观察或说明无法确定，不发挖掘动作，不静默改挖其他格。半砖/坡地/倒重力或空中不把候选当成支撑；移除支撑可能下落，不能承诺安全。挖掘前必须inspect_inventory核对selectedSlot对应物品的use.pick>0，必要时先按hotbarKey选择镐，再调用mine_tile，不要先用错误物品尝试挖掘后才换镐；动作status=completed且有endEvidence才证明执行完成。use_item无target时保留原生鼠标直接使用，有target时才精确瞄准；只确认原生使用周期，effectStatus=unconfirmed不证明召唤，不能称雀杖召唤成功，须明确效果未确认；攻击成功为观察到伤害，不保证击杀或伤害归因。failed/timeout/cancelled/unknown应停止并说明原因；唯一例外是mine_tile的out_of_conservative_80_pixel_reach，Agent可在本轮最多一次执行有界恢复：重新观察玩家地形和原目标、证明安全接近后用既有导航、再次观察核对目标与80像素距离、最多重试一次原挖掘；恢复无安全路径、目标失效或任何再次失败立即停止，不能改挖其他格。navigate_to_x使用已有水平连续导航；navigate_to_landing_region指定X左边缘闭区间与脚底表面Y，使用二维落脚导航，不能用move的target_position代替；所有原子行动互斥，接收新聊天会取消旧行动。scan_entities的entityRef不可用槽位或观察instanceKey替代。每次动作后重新感知再做决定。"
 
 
 def read_observation(bridge):
@@ -220,6 +221,7 @@ class Agent:
         used = 0
         last_atomic_action = None
         atomic_halted = False
+        first_atomic_failure = None
         mining_recovery_used = False
         unconfirmed_item_effect = False
         tool_limit = self.max_tool_calls
@@ -267,6 +269,7 @@ class Agent:
                         tool_started = time.monotonic()
                         tool_token = tracing.context.set({**tracing.context.get(), "tool_call_id": call["id"]})
                         tracing.trace.emit("tool_start", call=call)
+                        name, arguments = None, None
                         try:
                             function = call["function"]
                             name = function.get("name")
@@ -275,11 +278,13 @@ class Agent:
                                 result = {"valid": False, "error": "one_tool_per_model_decision_required; entire batch not executed"}
                             elif name in atomic_operations.SCHEMAS:
                                 if name not in atomic_operations.READS and name != "stop_action" and atomic_halted:
-                                    result = {"valid": False, "status": "failed", "reason": "previous_atomic_action_failed; no automatic retry"}
+                                    result = {"valid": False, "status": "failed", "reason": "previous_atomic_action_failed; no automatic retry",
+                                              "blocked": True, "previousFailure": copy.deepcopy(first_atomic_failure)}
                                 else:
                                     result = await atomic_operations.dispatch(self.bridge, name, arguments, chat_id)
                                     if name == "mine_tile" and not mining_recovery_used and mining_recovery.eligible(result):
                                         mining_recovery_used = True
+                                        diagnostics.tool_result(name, arguments, result)
                                         # One fixed six-call allowance, not an unbounded retry loop.
                                         tool_limit += 6
                                         async def recovery_call(operation, parameters):
@@ -288,12 +293,15 @@ class Agent:
                                             reply = await atomic_operations.dispatch(self.bridge, operation, parameters, chat_id)
                                             costs.tool(operation, json.dumps(reply, ensure_ascii=False))
                                             tracing.trace.emit("mining_recovery_step", operation=operation, result=reply)
+                                            diagnostics.tool_result(operation, parameters, reply, recovery=True)
                                             return reply
                                         result = await mining_recovery.recover(arguments, result, recovery_call)
                                     if name == "use_item" and result.get("status") == "completed":
                                         unconfirmed_item_effect = True
                                 if name not in atomic_operations.READS:
                                     last_atomic_action = result
+                                    if result.get("status") != "completed" and first_atomic_failure is None:
+                                        first_atomic_failure = copy.deepcopy(result)
                                     atomic_halted |= result.get("status") != "completed"
                                     movement_loop.invalidate_observation("atomic_action_requires_new_observation")
                             elif name == "move":
@@ -321,6 +329,8 @@ class Agent:
                             if name in atomic_operations.SCHEMAS and name not in atomic_operations.READS:
                                 atomic_halted = True
                                 last_atomic_action = {**result, "reason": str(error)}
+                                if first_atomic_failure is None:
+                                    first_atomic_failure = copy.deepcopy(last_atomic_action)
                             if name == "move" and movement_loop.pending_observation:
                                 movement_loop.finish("failed", "movement_tool_error")
                             elif name in ("get_observation", "get_exploration_observation"):
@@ -345,6 +355,7 @@ class Agent:
                                                           remainingModelCalls=self.max_model_calls-model_index-1)
                         result_content = json.dumps(result, ensure_ascii=False)
                         costs.tool(name, result_content)
+                        diagnostics.tool_result(name, arguments, result)
                         tracing.trace.emit("tool_result", tool_call_id=call["id"], result=result,
                                            success=result.get("valid") is True,
                                            elapsed_ms=(time.monotonic() - tool_started) * 1000)
@@ -366,7 +377,8 @@ class Agent:
                 if not isinstance(text, str) or not text.strip():
                     raise LLMError("Missing final assistant text")
                 if last_atomic_action is not None and atomic_halted:
-                    text = "行动未完成：" + str(last_atomic_action.get("reason", "unknown"))
+                    root_failure = first_atomic_failure or last_atomic_action
+                    text = "行动未完成：" + str(root_failure.get("reason", root_failure.get("error", "unknown")))
                 elif unconfirmed_item_effect:
                     text = "物品原生使用周期已完成；实际效果（包括雀杖是否成功召唤）未确认。"
                 elif movement_loop.active and last_atomic_action is None:
@@ -413,6 +425,7 @@ class Agent:
         except (LLMError, BridgeError, OSError, ValueError, TypeError, KeyError) as error:
             outcome = "failed"
             tracing.trace.emit("agent_failed", error_type=type(error).__name__)
+            diagnostics.emit("agent_failed", error_type=type(error).__name__, reason=str(error))
             if generation == self.generation:
                 print(f"Agent error: {error}", file=sys.stderr, flush=True)
                 if movement_loop.active:
@@ -428,6 +441,7 @@ class Agent:
         except Exception as error:
             outcome = "failed"
             tracing.trace.emit("agent_failed", error_type=type(error).__name__)
+            diagnostics.emit("agent_failed", error_type=type(error).__name__, reason=str(error))
             raise
         finally:
             summary = movement_loop.snapshot()
@@ -490,16 +504,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=18777)
     parser.add_argument("--timeout", type=float, default=2)
+    parser.add_argument("--log-file", type=str, help="Local bounded JSONL runtime log; default .local/diagnostics/agent-runtime-*.jsonl")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535 or not 0 < args.timeout < float("inf"):
         parser.error("port must be 1..65535 and timeout finite/positive")
+    log_path = diagnostics.configure(args.log_file)
+    if log_path:
+        print(f"Runtime log: {log_path}", file=sys.stderr, flush=True)
+    diagnostics.emit("session_start", port=args.port, timeout=args.timeout)
     try:
         asyncio.run(run(args.port, args.timeout))
     except KeyboardInterrupt:
         return 130
     except (LLMError, BridgeError, OSError) as error:
         print(f"Agent error: {error}", file=sys.stderr)
+        diagnostics.emit("startup_error", error_type=type(error).__name__, reason=str(error))
         return 1
+    finally:
+        diagnostics.emit("session_end")
     return 0
 
 

@@ -85,6 +85,20 @@ public static class NativeItemAimTests
             && i.Operand is MethodReference m && m.Name == "SetZoom_Unscaled"), "Unexpected unscaled switch before ItemCheck");
         var itemCheck = player.Methods.Single(m => m.Name == "ItemCheck" && m.Parameters.Count == 0);
         Check(itemCheck.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "PreItemCheck"), "Actual ItemCheck must invoke the production hook");
+        var mining = player.Methods.Single(m => m.Name == "ItemCheck_UseMiningTools");
+        var pickDispatch = mining.Body.Instructions.Single(i => i.Operand is MethodReference m
+            && m.Name == "ItemCheck_UseMiningTools_ActuallyUseMiningTool");
+        Check(pickDispatch.Previous.Operand is FieldReference fy && fy.Name=="tileTargetY"
+            && pickDispatch.Previous.Previous.Operand is FieldReference fx && fx.Name=="tileTargetX",
+            "Native mining must forward injected tile coordinates directly to the actual tool operation");
+        foreach(var method in player.Methods.Where(m => m.Name is "ItemCheck_Inner" or "ItemCheck_OwnerOnlyCode"
+            || m.Name.StartsWith("ItemCheck_UseMiningTools")))
+        {
+            Check(!method.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name.StartsWith("SetZoom")
+                || i.Operand is FieldReference f && f.Name=="GameViewMatrix"),"Unexpected mining zoom transform");
+            Check(!method.Body.Instructions.Any(i => i.OpCode==OpCodes.Stsfld && i.Operand is FieldReference f
+                && f.Name is "tileTargetX" or "tileTargetY"),"Mining path must not overwrite injected tile targets");
+        }
         using var stream = new MemoryStream(); fixture.Write(stream); stream.Position = 0;
         var assembly = AssemblyLoadContext.Default.LoadFromStream(stream);
         var main = assembly.GetType("Terraria.Main"); var input = assembly.GetType("Terraria.GameInput.PlayerInput");
@@ -118,6 +132,6 @@ public static class NativeItemAimTests
             nativeWorld = (Vector2)main.GetMethod("get_MouseWorld").Invoke(null,null);
             Check(Vector2.Distance(nativeWorld,world) < 1.42f,"Injected coordinates do not reconstruct target world pixels");
         }
-        Console.WriteLine("PASS: installed tModLoader IL: SpriteViewMatrix.ZoomMatrix -> PlayerInput.SetZoom_World -> Main.MouseWorld; production ItemCheck injection, zoom 1/1.25/1.5/2, camera offsets, integer rounding; no game launched");
+        Console.WriteLine("PASS: installed tModLoader IL: SpriteViewMatrix.ZoomMatrix -> PlayerInput.SetZoom_World -> Main.MouseWorld; production ItemCheck injection and native mining tile dispatch, zoom 1/1.25/1.5/2, camera offsets, integer rounding; no game launched");
     }
 }

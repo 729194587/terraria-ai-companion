@@ -1,5 +1,7 @@
 # Terraria AI Companion
 
+**0.1.33 挖掘缩放修复**：恢复接近已由真实日志确认抵达并重挖；新增挖掘非默认缩放支持与原生IL契约验证，拆分空目标/未选镐错误。还包含默认运行日志和安全落脚区间恢复修复。新包 `.local/mining-zoom-build/Mods/CompanionBridge.tmod`，需要更新游戏端，详见 [验证记录](docs/ITEM_USE_AND_MINING_RECOVERY.md)。
+
 **0.1.32 物品使用与挖掘恢复**：无目标 `use_item` 保留原生鼠标，有目标使用支持当前缩放；使用周期与效果确认分开报告。挖掘距离不足可在确认安全通道后导航接近、重新观察并最多重试一次。Python 251项、C#及原生坐标契约测试通过；构建0错误0警告。本版尚未部署或进行真实游戏验收，详见 [修复与验证记录](docs/ITEM_USE_AND_MINING_RECOVERY.md)。
 
 **0.1.31 平台与快捷栏修复**：修正木平台已落地却报未完成；快捷栏按游戏按键 `1–9、0` 编号；新增 `drop_through_platform()` 原生 Down 下穿（先检查同X下方64px内安全落点，穿过当前层即松Down，实际落地停稳才完成）。最终包 `.local/platform-fixes-build/Mods/CompanionBridge.tmod`；不要使用早期单项修复目录的包。需加载后复测，详见 [平台与快捷栏测试](docs/PLATFORM_AND_HOTBAR_FIXES.md)。

@@ -157,7 +157,10 @@ class AtomicTests(unittest.IsolatedAsyncioTestCase):
         agent.receive(event(1))
         await agent.task
         self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
-        self.assertIn('previous_atomic_action_failed', next(p['text'] for c, p in game.sent if c == 'send_chat'))
+        self.assertIn('verified_effect', next(p['text'] for c, p in game.sent if c == 'send_chat'))
+        blocked = json.loads(model.requests[-1][-1]['content'])
+        self.assertTrue(blocked['blocked'])
+        self.assertEqual('verified_effect', blocked['previousFailure']['reason'])
 
 
 if __name__ == '__main__': unittest.main()

@@ -15,11 +15,11 @@ public static class AtomicGameOfflineTests
         controls.Reset(); int session = controls.BeginSession(), id = 0;
         Main.myPlayer = 0; Main.netMode = 0;
         var player = Main.player[0] = new Player { position = new(88, 88) };
-        MovementSnapshot Start(string operation, string args = "{}")
+        MovementSnapshot Start(string operation, string args = "{}", int pickPower = 50)
         {
             controls.Reset();
             player.itemAnimation = player.itemTime = 0; player.selectedItem = 0;
-            player.inventory[0] = new Item { pick = 50, createTile = operation == "attack_entity" ? -1 : 2, consumable = true };
+            player.inventory[0] = new Item { pick = pickPower, createTile = operation == "attack_entity" ? -1 : 2, consumable = true };
             var request = new ControlRequest(++id, "start_atomic", ExpectedGeneration: controls.Generation,
                 Operation: operation, Arguments: JsonDocument.Parse(args).RootElement.Clone());
             var pending = controls.Enqueue(session, request, Stopwatch.GetTimestamp());
@@ -133,7 +133,33 @@ public static class AtomicGameOfflineTests
         Check(!player.controlUseItem && Main.mouseX == 123, "Targeted revoked action cannot inject late cursor/input");
         Main.screenPosition = new(0,0);
         Main.tile[5,5] = new Tile { HasTile = true, TileType = 2 };
+        foreach(float zoom in new[] {1f,1.25f,1.5f,2f})
+        {
+            Main.GameViewMatrix.Zoom=new(zoom,zoom);
+            Main.tile[5,5]=new Tile { HasTile=true,TileType=19 };
+            Start("mine_tile", "{\"x\":5,\"y\":5}"); request=controls.Input.Atomic;
+            Check(controls.AtomicAction.Status=="running" && player.controlUseItem,"Mining accepts nondefault zoom");
+            new CompanionBridge.Common.Players.CompanionPlayer { Player=player }.PreItemCheck();
+            Check(Player.tileTargetX==5 && Player.tileTargetY==5 && Main.mouseX==88 && Main.mouseY==88,
+                "Native mining hook receives exact tile and world-relative cursor at any zoom");
+            new CompanionBridge.Common.Players.CompanionPlayer { Player=player }.PostItemCheck();
+            AtomicOperations.After(player);
+            Check(Main.mouseX==123 && Main.mouseY==234 && Player.tileTargetX==99 && Player.tileTargetY==98,
+                "Mining restores all mouse/tile state at nondefault zoom");
+            Check(controls.AtomicAction.Status=="running","Mouse injection alone never proves mining");
+            Main.tile[5,5].HasTile=false;
+            AtomicOperations.Before(player,request);
+            Check(controls.AtomicAction.Completed,"Mining still requires observed tile disappearance");
+        }
         Start("mine_tile", "{\"x\":5,\"y\":5}");
+        Check(controls.AtomicAction.Reason=="target_tile_missing","Empty target has a distinct failure");
+        Main.tile[5,5]=new Tile { HasTile=true,TileType=19 };
+        Start("mine_tile", "{\"x\":5,\"y\":5}",pickPower:0);
+        Check(controls.AtomicAction.Reason=="selected_item_not_pickaxe"
+            && JsonSerializer.SerializeToElement(controls.AtomicAction.Evidence).GetProperty("pickPower").GetInt32()==0,
+            "Wrong selected item has distinct failure with actual item evidence");
+        Main.tile[5,5].HasTile=false;
+        Start("place_tile", "{\"x\":5,\"y\":5}");
         Check(controls.AtomicAction.Reason == "item_aim_requires_default_zoom", "Other precise adapters retain verified zoom restriction");
         Main.GameViewMatrix.Zoom = new(1,1);
         controls.EndSession(session); controls.Reset();

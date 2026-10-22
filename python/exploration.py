@@ -86,13 +86,41 @@ def _terrain(terrain, player):
                 support[-1][1] += 1
             else:
                 support.append([x, 1, ground, status])
+    underfoot = None
+    if box:
+        center_x = box["x"] + box["width"] / 2
+        feet = box["y"] + box["height"]
+        feet_row = math.floor(feet / terrain["tileSize"])
+        first_x = math.floor(box["x"] / terrain["tileSize"])
+        last_x = math.ceil((box["x"] + box["width"]) / terrain["tileSize"]) - 1
+        candidates = []
+        normal_gravity = player.get("movement", {}).get("gravDir") == 1
+        if normal_gravity:
+            for x in range(first_x, min(last_x + 1, first_x + 8)):
+                cx, cy = x - bounds["x"], feet_row - bounds["y"]
+                entry = {"x": x, "y": feet_row}
+                if 0 <= cx < bounds["width"] and 0 <= cy < bounds["height"]:
+                    raw = palette[rows[cy][cx]]
+                    entry["stateOverrides"] = _state(raw)
+                    if raw["knowledge"] == "read":
+                        entry.update(hasTile=raw["hasTile"], tileType=raw.get("tileType"))
+                else:
+                    entry["stateOverrides"] = {"knowledge": "outside_observation"}
+                candidates.append(entry)
+        underfoot = {"feetWorldPixels": {"x": center_x, "y": feet},
+            "centerFootTile": {"x": math.floor(center_x / terrain["tileSize"]), "y": feet_row},
+            "status": "geometric_candidates" if normal_gravity else "unsupported_or_unknown_gravity",
+            "candidates": candidates, "truncated": normal_gravity and last_x - first_x + 1 > 8,
+            "interpretation": "Same-snapshot cells immediately at collision-box feet, not body/center tiles. "
+                "Not proof of ground contact, support, material safety or a safe fall after removal. "
+                "Re-observe and inspect_tile before mining; empty/unknown candidates are not mining targets."}
     return {"tileSize": terrain["tileSize"], "bounds": copy.deepcopy(bounds),
             "encoding": "semantic_rectangles_v1", "readCellDefaults": dict(CELL_DEFAULTS),
             "regionFields": ["tileX", "tileY", "width", "height", "stateOverrides"],
             "regions": regions, "unknownCount": terrain["unknownCount"],
             "uninterpretedCount": terrain["uninterpretedCount"],
             "supportColumnFields": ["tileX", "width", "supportTileY", "status"],
-            "supportColumns": support,
+            "supportColumns": support, "underfoot": underfoot,
             "interpretation": "Regions partition all sampled cells. Defaults apply only to knowledge=read. "
                 "SolidTop is one-way; actuated tiles do not block. Shape, liquid amount/type and hazards are independent. "
                 "Support columns start at box bottom, scan down: geometric candidates, not reachable floors or safe paths; "
@@ -164,7 +192,7 @@ def project_observation(observation):
                   entities=_entities(observation.get("entities")),
                   investigate=_investigate(observation.get("interactables")),
                   exclusions=["inventory/equipment/buffs", "detailed environment", "raw tile palette/grid",
-                              "walls/paint/ordinary tile frames/materials", "mod interaction interpretation"])
+                              "walls/paint/ordinary tile frames/materials except underfoot tile IDs", "mod interaction interpretation"])
     return result
 
 

@@ -200,6 +200,48 @@ public static class MotionOfflineTests
         Console.WriteLine("PASS: recorded real Tile19 platform landing arrives without replanning; wrong height, air, velocity, jump and insufficient support still rejected");
     }
 
+    // Replays the 0.1.32 recovery scene with synthetic ordinary floor/platform
+    // collision; planner, executor, reach geometry and support checks are real.
+    private sealed class RecordedMiningApproachWorld : IMotionWorld
+    {
+        internal char Tile(int x,int y) => y >= 235 ? '#' : y == 232 && x >= 2179 && x <= 2190 ? '=' : '.';
+        public PhysicsState Move(PhysicsState s,float vx,float vy,float gravity)
+        {
+            float x=s.Px+vx, y=s.Py+vy, surface=3760;
+            if(x+20>2179*16 && x<2191*16 && s.Py+42<=3712 && y+42>=3712) surface=3712;
+            bool grounded=vy>=0 && y+42>=surface;
+            return new(x,grounded?surface-42:y,vx,grounded?0:vy,grounded);
+        }
+        public bool SafeSweep(PhysicsState s,PhysicsState end,out string reason) { reason=null; return true; }
+        public bool SafeLanding(PhysicsState s) => MotionSupport.SafeLanding(s,Tile);
+        public bool SafeFlatLanding(PhysicsState s) => MotionSupport.SafeFlatLanding(s,Tile);
+    }
+    private static void RecordedMiningApproachRegression()
+    {
+        var world=new RecordedMiningApproachWorld();
+        foreach(var scene in new[] { (Left:34793f,TileX:2179), (Left:34873f,TileX:2184) })
+        {
+            var goal=new LandingRegion(scene.Left,scene.Left+16,3760);
+            var state=new PhysicsState(34722.652f,3718,0,0,true);
+            // Exclude JIT from this correctness replay; retain the production
+            // 50ms per-plan guard during actual task execution below.
+            StateSpacePlanner.Plan(state,goal,PhysicsParameters.Basic,world,budgetMs:500);
+            var task=new NavigationTask();
+            for(int frame=0;frame<600 && !task.Terminal;frame++)
+            {
+                var input=task.Before(2,19,goal,state,PhysicsParameters.Basic,world);
+                state=PhysicsSimulator.Step(state,input,PhysicsParameters.Basic,world);
+                task.After(state,world);
+            }
+            Check(task.Snapshot.Status=="arrived" && goal.Arrived(state,world),
+                "Recorded mining approach must settle within band: "+task.Snapshot.Reason);
+            float dx=state.Px+10-(scene.TileX*16+8),dy=state.Py+21-(232*16+8);
+            Check(Math.Sqrt(dx*dx+dy*dy)<=72 && task.Snapshot.CompletedJumps==0,
+                "Recovered landing remains in conservative mining reach without jumping");
+        }
+        Console.WriteLine("PASS: both recorded mining approaches settle inside reachable bands using production planner/executor and unchanged budget (synthetic collision)");
+    }
+
     private static void LandingRegionRegression()
     {
         var ph = PhysicsParameters.Basic;
@@ -980,6 +1022,7 @@ public static class MotionOfflineTests
         NavigationDiagnosticsRegression();
         LandingRegionRegression();
         RecordedPlatformArrivalRegression();
+        RecordedMiningApproachRegression();
         NearGoalMovingRegression();
         foreach (int type in new[] { 147, 216 })
             Check(NavigationBuffPolicy.Rejection(type, 18000, 0, "audited_vanilla") == null,

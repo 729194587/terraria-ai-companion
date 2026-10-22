@@ -137,7 +137,11 @@ internal static class AtomicOperations
                 _target = new(x * 16 + 8, y * 16 + 8);
                 if (!Loaded(x, y)) { Finish("failed", "tile_unloaded_or_out_of_world"); return; }
                 _tileType = Main.tile[x, y].HasTile ? Main.tile[x, y].TileType : -1;
-                if (op == "mine_tile" && (_tileType < 0 || p.HeldItem.pick <= 0)) { Finish("failed", "requires_existing_tile_and_selected_pickaxe"); return; }
+                if (op == "mine_tile" && _tileType < 0)
+                { Finish("failed", "target_tile_missing", new { targetTileX=x, targetTileY=y }); return; }
+                if (op == "mine_tile" && p.HeldItem.pick <= 0)
+                { Finish("failed", "selected_item_not_pickaxe", new { selectedHotbarKey=HotbarSlots.KeyForInventorySlot(p.selectedItem),
+                    inventorySlot=p.selectedItem, selectedItemType=p.HeldItem.type, pickPower=p.HeldItem.pick, targetTileX=x, targetTileY=y, targetTileType=_tileType }); return; }
                 if (op == "place_tile" && (_tileType >= 0 || p.HeldItem.createTile < 0 || !p.HeldItem.consumable
                     || Main.tileFrameImportant[p.HeldItem.createTile] || p.HeldItem.ModItem != null))
                 { Finish("failed", "only_empty_cell_and_consumable_single_block_supported"); return; }
@@ -189,7 +193,7 @@ internal static class AtomicOperations
             effect = "item use cycle only; summon/heal/hit effects require separate observation" }); return; }
         if (p.HeldItem.IsAir) { Finish("failed", "item_exhausted_before_effect_verified"); return; }
         if ((op != "use_item" || _explicitUseTarget) && p.gravDir != 1) { Finish("failed", "item_aim_requires_normal_gravity"); return; }
-        if (op != "use_item" && Main.GameViewMatrix.Zoom != Vector2.One) { Finish("failed", "item_aim_requires_default_zoom"); return; }
+        if (op is not ("use_item" or "mine_tile") && Main.GameViewMatrix.Zoom != Vector2.One) { Finish("failed", "item_aim_requires_default_zoom"); return; }
         // One use cycle for generic use; mining/combat repeat until their effect or deadline.
         if (p.itemAnimation == 0 && p.itemTime == 0) p.releaseUseItem = true;
         p.controlUseItem = op != "use_item" || !_used;
