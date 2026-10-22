@@ -8,7 +8,10 @@ using System.Linq;
 
 namespace CompanionBridge.Motion;
 
-internal sealed record Route(List<Prediction> Actions, int Expansions, double Milliseconds, string FailureReason = null);
+// ReachedGoal includes feasible incumbents at budget exhaustion, not a claim of
+// optimality. TimeBudgetReached records a checked deadline exit (not preemption).
+internal sealed record Route(List<Prediction> Actions, int Expansions, double Milliseconds, string FailureReason = null,
+    bool ReachedGoal = false, bool TimeBudgetReached = false);
 
 internal static class StateSpacePlanner
 {
@@ -74,7 +77,7 @@ internal static class StateSpacePlanner
             if (brake.Safe && (region != null ? region.Arrived(brake.Landing, world)
                     : sign * (targetX - brake.Landing.Px) <= 12)
                 && Math.Abs(brake.Landing.Vx) <= 0.1f)
-                return new(new() { brake }, 0, watch.Elapsed.TotalMilliseconds);
+                return new(new() { brake }, 0, watch.Elapsed.TotalMilliseconds, ReachedGoal: true);
             if (!brake.Safe) Reject("braking: " + brake.Reason);
         }
         var labels = new Dictionary<CellKey, List<Label>>();
@@ -86,13 +89,16 @@ internal static class StateSpacePlanner
         PhysicsState best = start;
         float bestDistance = Distance(start);
         float bestScore = float.MaxValue;
+        PhysicsState? complete = null;
+        float completeCost = float.PositiveInfinity;
+        bool reachedGoal = false;
         int expansions = 0;
         bool timedOut = false;
         while (open.Count > 0 && expansions < maxExpansions && !timedOut)
         {
             var cur = open.Dequeue();
             if (Reached(cur))
-            { best = cur; break; }
+            { best = cur; reachedGoal = true; break; }
             expansions++;
             foreach (int dir in new[] { sign, -sign })
             {
@@ -124,6 +130,17 @@ internal static class StateSpacePlanner
                         // Prefer walking when it makes comparable progress. Braking at
                         // every walk boundary previously made flat-ground jumps cheaper.
                         float ng = came[cur].G + edge.ExecuteFrames + (edge.Jump ? 20 : 0);
+                        // A bounded search may generate a complete landing long
+                        // before its cost lets it reach the front of the queue.
+                        // Preserve that feasible incumbent even if velocity/cell
+                        // dominance would prune it or a cheaper partial route wins
+                        // the fallback score. Continue A* normally; only the budget
+                        // fallback uses an unproven-optimal complete incumbent.
+                        if (region != null && ng < completeCost && Reached(next))
+                        {
+                            complete = next; completeCost = ng;
+                            came[next] = (cur, edge, ng);
+                        }
                         var key = Cell(next);
                         if (!labels.TryGetValue(key, out var list)) labels[key] = list = new();
                         if (Dominated(list, ng, next)) continue;
@@ -146,6 +163,7 @@ internal static class StateSpacePlanner
                 if (timedOut) break;
             }
         }
+        if (!reachedGoal && complete.HasValue) { best = complete.Value; reachedGoal = true; }
         var actions = new List<Prediction>();
         for (var k = best; came.TryGetValue(k, out var e) && !e.Prev.Equals(k); k = e.Prev)
             actions.Add(e.Edge);
@@ -154,6 +172,6 @@ internal static class StateSpacePlanner
             .Take(3).Select(p => $"{p.Key} ({p.Value} candidates)")) : null;
         if (actions.Count == 0 && string.IsNullOrEmpty(failure)) failure = "no forward grounded route within expansion/span budget";
         if (actions.Count == 0 && timedOut) failure = "search time budget reached; " + failure;
-        return new(actions, expansions, watch.Elapsed.TotalMilliseconds, failure);
+        return new(actions, expansions, watch.Elapsed.TotalMilliseconds, failure, reachedGoal, timedOut);
     }
 }

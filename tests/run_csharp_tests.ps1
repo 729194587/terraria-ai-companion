@@ -1,4 +1,5 @@
-param([switch]$MotionOnly, [string]$ObservationSamplePath)
+param([switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
+    [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
@@ -26,6 +27,7 @@ $sources = @(
 )
 $references = Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName
 Add-Type -Path $sources -ReferencedAssemblies $references
+if ($LandingBudgetAudit) { [MotionOfflineTests]::AuditLandingBudget($BudgetRepetitions, $BudgetColdOnly.IsPresent); return }
 if (!$MotionOnly) { [BridgeOfflineTests]::Run(); [ObservationOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); [GameMessageOfflineTests]::Run(); [BoundedMovementOfflineTests]::Run() }
 if ($ObservationSamplePath -and !$MotionOnly) {
     [System.IO.File]::WriteAllText($ObservationSamplePath, [ObservationOfflineTests]::SampleJson,

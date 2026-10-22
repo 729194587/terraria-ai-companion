@@ -87,6 +87,88 @@ public static class MotionOfflineTests
         public bool SafeFlatLanding(PhysicsState s) => SafeLanding(s) && MotionSupport.SafeFlatLanding(s, Tile);
     }
 
+    // Opt-in audit: run before other tests so the first sample includes planner JIT.
+    // A nonempty partial route is deliberately NOT counted as a complete route.
+    public static void AuditLandingBudget(int repetitions = 100, bool coldOnly = false)
+    {
+        if (repetitions <= 0) throw new ArgumentOutOfRangeException(nameof(repetitions));
+        var start = new PhysicsState(1600, 1558, 0, 0, true);
+        var scenes = new[] {
+            (Name: "right-48", Wall: 1648f, Width: 128f, Height: 48f, Min: 1664f, Max: 1744f),
+            (Name: "left-48", Wall: 1456f, Width: 128f, Height: 48f, Min: 1472f, Max: 1552f),
+            (Name: "near-32", Wall: 1632f, Width: 128f, Height: 32f, Min: 1648f, Max: 1728f),
+            (Name: "high-80", Wall: 1648f, Width: 128f, Height: 80f, Min: 1664f, Max: 1744f),
+            (Name: "approach-48", Wall: 1728f, Width: 64f, Height: 48f, Min: 1744f, Max: 1760f),
+            (Name: "narrow-48", Wall: 1648f, Width: 128f, Height: 48f, Min: 1680f, Max: 1696f),
+            (Name: "inside-x-48", Wall: 1648f, Width: 128f, Height: 48f, Min: 1590f, Max: 1744f)
+        };
+        foreach (var scene in scenes)
+        {
+            var world = new RegionWorld();
+            world.Collision.WallX = scene.Wall; world.Collision.WallWidth = scene.Width;
+            world.Collision.WallHeight = scene.Height;
+            var goal = new LandingRegion(scene.Min, scene.Max, 1600 - scene.Height);
+            foreach (int budget in new[] { 25, 500 })
+                for (int repeat = 0; repeat < repetitions; repeat++)
+                {
+                    var timer = Stopwatch.StartNew();
+                    // Exercise the production overload defaults, including maxExpansions=32.
+                    var route = budget == 25 ? StateSpacePlanner.Plan(start, goal, PhysicsParameters.Basic, world)
+                        : StateSpacePlanner.Plan(start, goal, PhysicsParameters.Basic, world, budgetMs: budget);
+                    double elapsed = timer.Elapsed.TotalMilliseconds;
+                    var actual = start;
+                    foreach (var edge in route.Actions)
+                        foreach (var frame in edge.Frames.Take(edge.ExecuteFrames))
+                        {
+                            var previous = actual;
+                            actual = PhysicsSimulator.Step(actual, frame.Input, PhysicsParameters.Basic, world);
+                            Check(world.SafeSweep(previous, actual, out _), "Audit route replay must be safe");
+                            Check(Math.Abs(actual.Px - frame.State.Px) < 0.001f && Math.Abs(actual.Py - frame.State.Py) < 0.001f,
+                                "Audit route must replay the actual production predictions");
+                        }
+                    bool complete = route.Actions.Count > 0 && goal.Arrived(actual, world);
+                    Check(route.ReachedGoal == complete, "Goal diagnostic must agree with physical route replay");
+                    Console.WriteLine(JsonSerializer.Serialize(new { scene = scene.Name, budget, repeat,
+                        complete, actions = route.Actions.Count, route.Expansions, route.Milliseconds,
+                        wallMs = elapsed, endX = actual.Px, endY = actual.Py, route.FailureReason,
+                        route.ReachedGoal, route.TimeBudgetReached }));
+                    if (coldOnly) return;
+                }
+            int directGoals = 0;
+            foreach (int dir in new[] { 1, -1 })
+                for (int hold = 2; hold <= 16; hold += 2)
+                {
+                    var edge = PhysicsSimulator.Predict(start, dir, Math.Min(hold, 15), PhysicsParameters.Basic,
+                        world, walkFrames: 24, rollingJump: true, maxDropPixels: StateSpacePlanner.MaxDropPixels);
+                    if (edge.Safe && goal.Arrived(edge.Landing, world)) directGoals++;
+                }
+            foreach (int limit in new[] { 1, 256 })
+            {
+                // Diagnostic references only: production still uses 32 expansions/25ms.
+                var reference = StateSpacePlanner.Plan(start, goal, PhysicsParameters.Basic, world,
+                    maxExpansions: limit, budgetMs: 500);
+                Console.WriteLine(JsonSerializer.Serialize(new { kind = "reference", scene = scene.Name,
+                    limit, directGoals, complete = reference.Actions.Count > 0 && goal.Arrived(reference.Actions.Last().Landing, world),
+                    reference.Expansions, reference.Milliseconds }));
+            }
+            for (int repeat = 0; repeat < 10; repeat++)
+            {
+                var task = new NavigationTask(); var actual = start; int frames = 0, plans = 0, maxExpansions = 0;
+                double maxMs = 0;
+                while (frames++ < 900 && !task.Terminal)
+                {
+                    var input = task.Before(300, 1, goal, actual, PhysicsParameters.Basic, world);
+                    if (task.Snapshot.Frame == 0 && task.Snapshot.Action != "plan")
+                    { plans++; maxMs = Math.Max(maxMs, task.Snapshot.PlanMilliseconds); maxExpansions = Math.Max(maxExpansions, task.Snapshot.Expansions); }
+                    actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, world); task.After(actual, world);
+                }
+                Console.WriteLine(JsonSerializer.Serialize(new { kind = "task", scene = scene.Name, repeat,
+                    complete = task.Snapshot.Status == "arrived" && goal.Arrived(actual, world), frames,
+                    plans, maxMs, maxExpansions, task.Snapshot.Status, task.Snapshot.Reason }));
+            }
+        }
+    }
+
     private static void LandingRegionRegression()
     {
         var ph = PhysicsParameters.Basic;
@@ -231,6 +313,29 @@ public static class MotionOfflineTests
         task.Before(206, 1, region, start, ph with { Gravity = 0.2f }, world);
         Check(task.Snapshot.Status == "failed", "Unsupported region physics rejected");
         Console.WriteLine("PASS: raised landing region planning/task execution, exact goal predicates, safety, unreachable/blocked routes, budgets and divergence (synthetic collisions)");
+    }
+
+    private static void LandingBudgetIncumbentRegression()
+    {
+        var start = new PhysicsState(1600, 1558, 0, 0, true);
+        var world = new RegionWorld();
+        var goal = new LandingRegion(1664, 1744, 1552);
+        bool candidateExists = Enumerable.Range(1, 8).Any(option =>
+        {
+            var edge = PhysicsSimulator.Predict(start, 1, Math.Min(option * 2, 15), PhysicsParameters.Basic,
+                world, walkFrames: 24, rollingJump: true, maxDropPixels: StateSpacePlanner.MaxDropPixels);
+            return edge.Safe && goal.Arrived(edge.Landing, world);
+        });
+        Check(candidateExists, "Root expansion contains a physically validated complete landing candidate");
+        var route = StateSpacePlanner.Plan(start, goal, PhysicsParameters.Basic, world, maxExpansions: 1, budgetMs: 500);
+        Check(route.Actions.Count > 0 && goal.Arrived(route.Actions.Last().Landing, world),
+            "Budget exhaustion must retain a complete candidate rather than prefer a cheaper partial route");
+        Check(route.ReachedGoal && !route.TimeBudgetReached && route.Expansions == 1,
+            "Complete incumbent diagnostic distinguishes node exhaustion from timeout");
+        var noTime = StateSpacePlanner.Plan(start, goal, PhysicsParameters.Basic, world, budgetMs: 0);
+        Check(!noTime.ReachedGoal && noTime.TimeBudgetReached && noTime.Actions.Count == 0,
+            "Zero time budget cannot fabricate a complete incumbent");
+        Console.WriteLine("PASS: complete landing incumbent survives bounded search; goal and time-budget diagnostics");
     }
 
     private static void SequentialJumps()
@@ -688,6 +793,7 @@ public static class MotionOfflineTests
 
     public static void Run()
     {
+        LandingBudgetIncumbentRegression();
         LandingRegionRegression();
         NearGoalMovingRegression();
         foreach (int type in new[] { 147, 216 })
