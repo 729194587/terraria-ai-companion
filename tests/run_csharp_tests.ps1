@@ -1,10 +1,14 @@
 param([switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
-    [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly)
+    [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly, [switch]$AuthorityNetworkOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
 $sources = @(
     (Join-Path $repo 'CompanionBridge/AtomicParameters.cs'),
+    (Join-Path $repo 'CompanionBridge/AtomicAuthority.cs'),
+    (Join-Path $repo 'CompanionBridge/Common/Systems/NativeAuthorityWorld.cs'),
+    (Join-Path $PSScriptRoot 'AtomicAuthorityOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'AuthorityNetworkStubs.cs'),
     (Join-Path $repo 'CompanionBridge/HotbarSlots.cs'),
     (Join-Path $repo 'CompanionBridge/ItemAim.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/PlatformDropAction.cs'),
@@ -12,6 +16,8 @@ $sources = @(
     (Join-Path $PSScriptRoot 'PlatformDropOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'LandingNavigationOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'AtomicGameOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'AtomicExtensionsOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'LocalInputOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicOperations.cs'),
     (Join-Path $repo 'CompanionBridge/ControlState.cs'),
     (Join-Path $repo 'CompanionBridge/GameMessageCapture.cs'),
@@ -36,6 +42,13 @@ $sources = @(
     (Join-Path $PSScriptRoot 'PlayerHookOfflineTests.cs')
 )
 $references = Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName
+if ($AuthorityNetworkOnly) {
+    $sources += (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicMultiplayer.cs')
+    $sources += (Join-Path $PSScriptRoot 'AuthorityNetworkOfflineTests.cs')
+    Add-Type -Path $sources -ReferencedAssemblies $references -CompilerOptions '/define:ATOMIC_NETWORK_TESTS'
+    [AuthorityNetworkOfflineTests]::Run()
+    return
+}
 Add-Type -Path $sources -ReferencedAssemblies $references
 if ($LandingProtocolHost) { [LandingNavigationOfflineTests]::RunProtocolHost(); return }
 if ($LandingOnly) { [LandingNavigationOfflineTests]::Run(); return }
@@ -48,6 +61,9 @@ if ($ObservationSamplePath -and !$MotionOnly) {
 [MotionOfflineTests]::Run()
 [PlayerHookOfflineTests]::Run()
 [AtomicGameOfflineTests]::Run()
+[AtomicExtensionsOfflineTests]::Run()
+[LocalInputOfflineTests]::Run()
+[AtomicAuthorityOfflineTests]::Run()
 
 [LandingNavigationOfflineTests]::Run()
 

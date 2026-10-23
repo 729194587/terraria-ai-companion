@@ -15,11 +15,11 @@ public static class AtomicGameOfflineTests
         controls.Reset(); int session = controls.BeginSession(), id = 0;
         Main.myPlayer = 0; Main.netMode = 0;
         var player = Main.player[0] = new Player { position = new(88, 88) };
-        MovementSnapshot Start(string operation, string args = "{}", int pickPower = 50)
+        MovementSnapshot Start(string operation, string args = "{}", int pickPower = 50, int stackCount = 10)
         {
             controls.Reset();
             player.itemAnimation = player.itemTime = 0; player.selectedItem = 0;
-            player.inventory[0] = new Item { pick = pickPower, createTile = operation == "attack_entity" ? -1 : 2, consumable = true };
+            player.inventory[0] = new Item { pick = pickPower, stack = stackCount, createTile = operation == "attack_entity" ? -1 : 2, consumable = true };
             var request = new ControlRequest(++id, "start_atomic", ExpectedGeneration: controls.Generation,
                 Operation: operation, Arguments: JsonDocument.Parse(args).RootElement.Clone());
             var pending = controls.Enqueue(session, request, Stopwatch.GetTimestamp());
@@ -89,6 +89,7 @@ public static class AtomicGameOfflineTests
         AtomicOperations.Aim(player);
         Check(!player.controlUseItem, "Revocation between injection and ItemCheck blocks late item use");
         Main.tile[5,5] = new Tile { HasTile = true, TileType = 10 };
+        Main.tile[5,6] = Main.tile[5,7] = new Tile { HasTile = true, TileType = 10 };
         action = Start("interact_tile", "{\"x\":5,\"y\":5}");
         Check(action.Completed && Main.tile[5,5].TileType == 11, "Supported door checks resulting type");
         Main.netMode = 1;
@@ -158,9 +159,45 @@ public static class AtomicGameOfflineTests
         Check(controls.AtomicAction.Reason=="selected_item_not_pickaxe"
             && JsonSerializer.SerializeToElement(controls.AtomicAction.Evidence).GetProperty("pickPower").GetInt32()==0,
             "Wrong selected item has distinct failure with actual item evidence");
+        foreach(float zoom in new[] {1f,1.25f,1.5f,2f})
+        {
+            Main.GameViewMatrix.Zoom=new(zoom,zoom); Main.screenPosition=new(12.5f,20.25f);
+            Main.tile[5,5].HasTile=false;
+            Start("place_tile", "{\"x\":5,\"y\":5}",stackCount:1); request=controls.Input.Atomic;
+            Check(controls.AtomicAction.Status=="running" && player.controlUseItem,"Placement accepts nondefault zoom");
+            new CompanionBridge.Common.Players.CompanionPlayer { Player=player }.PreItemCheck();
+            Check(Player.tileTargetX==5 && Player.tileTargetY==5
+                && Math.Abs(Main.mouseX+Main.screenPosition.X-88)<1 && Math.Abs(Main.mouseY+Main.screenPosition.Y-88)<1,
+                "Placement receives exact tile and world-relative cursor under zoom and camera translation");
+            new CompanionBridge.Common.Players.CompanionPlayer { Player=player }.PostItemCheck();
+            AtomicOperations.After(player);
+            Check(Main.mouseX==123 && Main.mouseY==234 && Player.tileTargetX==99 && Player.tileTargetY==98
+                && !player.controlUseItem,"Placement restores cursor/Tile target and releases injected input");
+            Check(controls.AtomicAction.Status=="running","Placement input alone never counts as completion");
+            Main.tile[5,5]=new Tile {HasTile=true,TileType=2}; player.inventory[0].stack=0;
+            AtomicOperations.Before(player,request);
+            Check(controls.AtomicAction.Completed,"Expected native tile plus consumption of last item proves placement");
+            Main.tile[5,5].HasTile=false;
+            Start("place_tile", "{\"x\":5,\"y\":5}"); request=controls.Input.Atomic;
+            Main.tile[5,5]=new Tile {HasTile=true,TileType=2};
+            AtomicOperations.Before(player,request);
+            Check(controls.AtomicAction.Status=="failed","Appearance without consumption never proves placement at nondefault zoom");
+            Main.tile[5,5].HasTile=false;
+            Start("place_tile", "{\"x\":5,\"y\":5}"); request=controls.Input.Atomic;
+            Main.tile[5,5]=new Tile {HasTile=true,TileType=19}; player.inventory[0].stack--;
+            AtomicOperations.Before(player,request);
+            Check(controls.AtomicAction.Status=="failed","Wrong tile with consumption never proves placement");
+        }
         Main.tile[5,5].HasTile=false;
         Start("place_tile", "{\"x\":5,\"y\":5}");
-        Check(controls.AtomicAction.Reason == "item_aim_requires_default_zoom", "Other precise adapters retain verified zoom restriction");
+        AtomicOperations.Aim(player); controls.RevokeControl(); AtomicOperations.RestoreAim(); AtomicOperations.Aim(player);
+        Check(!player.controlUseItem && Main.mouseX==123 && Main.mouseY==234 && Player.tileTargetX==99 && Player.tileTargetY==98,
+            "Placement cancellation restores all mouse/Tile state and blocks late use");
+        Main.screenPosition=new(0,0);
+        npc.active=true;
+        reference="hook-test:npc:0:"+npc.GetGlobalNPC<AtomicNpcIdentity>().Token;
+        Start("attack_entity",JsonSerializer.Serialize(new {entityRef=reference}));
+        Check(controls.AtomicAction.Reason == "item_aim_requires_default_zoom", "Unverified ranged/combat scope keeps its zoom restriction");
         Main.GameViewMatrix.Zoom = new(1,1);
         controls.EndSession(session); controls.Reset();
         Console.WriteLine("PASS: actual atomic adapter on game API stubs: reach/bounds, selection, native-use cycle, tile/consumption effects, stale NPCs, doors and cursor restoration (no real game physics)");

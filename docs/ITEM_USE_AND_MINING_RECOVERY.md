@@ -79,3 +79,5 @@ C# mine_tile 仍只负责挖指定格子，不导航。距离失败附带原目�
 Python探索投影现在增加同次采样的terrain.underfoot：feetWorldPixels、centerFootTile、碰撞框底部覆盖列的candidates，附真实已知/未知状态、hasTile和Tile类型。只从已有观察解码，不额外读取游戏、硬编码玩家尺寸或自动改挖目标。候选不等于安全支撑/地面接触；未知、视口外、倒重力、空格、斜坡与半砖不作安全推断。Agent提示明确要求先inspect_tile核验候选确有Tile，再执行mine_tile，不把身体中心坐标当脚下。默认日志同步保存这部分几何和inspect_tile结果，便于核对目标选择。
 
 该修改只涉及Python感知、提示和日志，无需重新部署Mod，用户重启Agent后生效；实际模型的新目标选择仍需真实游戏验收。
+
+0.1.34进一步核验并开放单格方块放置的当前缩放支持，原因、范围与验证见 [单格放置缩放修复](PLACEMENT_ZOOM_FIX.md)。

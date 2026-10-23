@@ -140,6 +140,25 @@ internal sealed class ControlState
             while (_pending.TryDequeue(out var pending))
             {
                 var request = pending.Request;
+                if (request.Cmd == "begin_local_turn" && pending.Session == _session)
+                {
+                    string localStatus = !canControl || snapshot?.InWorld != true ? "not_ready"
+                        : now >= pending.ReceivedAt + LeaseTicks ? "expired"
+                        : _mode == ControlMode.Manual ? "manual_active" : "local_turn_started";
+                    if (localStatus == "local_turn_started")
+                    {
+                        _latestChatId = "local:" + _session + ":" + request.Id;
+                        if (_mode == ControlMode.External)
+                        {
+                            FinishMovement(false, "new_local_input", now, snapshot);
+                            _mode = ControlMode.None; _generation++;
+                        }
+                    }
+                    pending.Completion.TrySetResult(Reply(request.Id, localStatus == "local_turn_started", localStatus) with
+                    { Data = localStatus == "local_turn_started" ? new { chatId = _latestChatId } : null,
+                        ControlGeneration = _generation, Movement = Movement(now) });
+                    continue;
+                }
                 if (request.Cmd is "get_movement" or "cancel_move" && pending.Session == _session)
                 {
                     bool match = request.Cmd == "get_movement" || _movement != null && request.ActionId == _movement.ActionId && _movement.Session == _session;
@@ -281,13 +300,19 @@ internal sealed class ControlState
 
     internal MovementSnapshot AtomicAction { get { lock (_gate) return _movement?.Operation != null && _movement.Session == _session ? _movement : null; } }
 
+    internal void UpdateAtomicEvidence(int actionId, object evidence)
+    {
+        lock (_gate) if (_movement?.ActionId == actionId && _movement.Status == "running")
+            _movement = _movement with { Evidence = evidence };
+    }
+
     internal void FinishAtomic(int actionId, string status, string reason, object evidence, PlayerSnapshot after = null)
     {
         lock (_gate)
         {
             if (_movement?.ActionId != actionId || _movement.Status != "running" || _movement.Operation == null) return;
             FinishMovement(false, reason, Stopwatch.GetTimestamp(), after);
-            _movement = _movement with { Status = status, Evidence = evidence };
+            _movement = _movement with { Status = status, Evidence = evidence ?? _movement.Evidence };
             _mode = ControlMode.None; _generation++;
         }
     }
@@ -400,8 +425,15 @@ internal sealed class ControlState
             || !root.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String
             || cmd.GetString() is not ("move_right" or "stop" or "get_state" or "get_terrain" or "input"
                 or "terrain_step" or "get_navigation" or "navigate" or "send_chat" or "get_observation"
-                or "move_for" or "renew_move" or "cancel_move" or "get_movement" or "start_atomic" or "query_atomic"))
+                or "move_for" or "renew_move" or "cancel_move" or "get_movement" or "start_atomic" or "query_atomic" or "begin_local_turn"))
             throw new FormatException("Expected v=1, positive id and a supported cmd.");
+        if (cmd.GetString() == "begin_local_turn")
+        {
+            var names = new HashSet<string>();
+            foreach (var field in root.EnumerateObject())
+                if (!names.Add(field.Name)) throw new FormatException("Duplicate local turn field.");
+            if (!names.SetEquals(new[] { "v", "id", "cmd" })) throw new FormatException("begin_local_turn takes no parameters.");
+        }
         int direction = 1;
         bool jump = false;
         if (cmd.GetString() == "terrain_step" && (!root.TryGetProperty("direction", out var navDirection)

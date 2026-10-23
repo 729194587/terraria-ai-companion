@@ -1,4 +1,4 @@
-"""Reactive Terraria chat Agent. Run after both players have joined the same world."""
+"""Terraria Agent with multiplayer chat or opt-in local terminal input."""
 import argparse
 import asyncio
 import copy
@@ -6,7 +6,9 @@ from collections import deque
 from datetime import datetime, timezone
 import json
 import math
+import queue
 import sys
+import threading
 import time
 import agent_trace as tracing
 import cost_metrics
@@ -62,6 +64,7 @@ TOOLS.extend([
 
 TOOLS.extend(atomic_operations.TOOLS)
 SYSTEM += "\n当前能力以提供的工具定义为准；向用户说明快捷栏一律使用游戏按键1–9、0，0是最右第十格；select_hotbar_slot.slot就是按键编号，不是inventory.slot/selectedSlot这类内部数组索引。读取物品时优先使用hotbarKey、selectedHotbarKey和hotbarKeyBindings；不得把数组0号说成快捷键0。用户要求直接下平台/按Down下平台时，先观察确认，优先drop_through_platform原生向下穿落，再观察决定是否水平移动；不要先绕到平台边缘再返回来冒充直接下穿。该工具只支持停稳的水平单向平台和下方64像素内安全落点，失败时说明原因。旧阶段A/MovementLoop的限制只描述move闭环，不应推广到导航工具。用户要求跳上、跳过、到某个平台或不同高度位置时，先观察并确定可信的目标X区间和脚底surfaceY，再优先调用navigate_to_landing_region；水平目标且需要越障时可用navigate_to_x。不能凭旧平地规则直接拒绝，也不能承诺任意高度都可达；应以实际导航结果说明失败原因。若目标无法从观察可靠确定，询问具体目标。原子行动仅在用户要求时调用。先感知确认目标和所选物品；用户说挖脚下时，用本轮get_exploration_observation的terrain.underfoot：feetWorldPixels是碰撞框底部，centerFootTile/candidates才是脚底相邻格，玩家positionWorldPixels是左上角，不能用身体中心格或顶部格当脚下。须先inspect_tile确认所选候选knowledge=read且hasTile=true，再mine_tile；空格/未知先重新观察或说明无法确定，不发挖掘动作，不静默改挖其他格。半砖/坡地/倒重力或空中不把候选当成支撑；移除支撑可能下落，不能承诺安全。挖掘前必须inspect_inventory核对selectedSlot对应物品的use.pick>0，必要时先按hotbarKey选择镐，再调用mine_tile，不要先用错误物品尝试挖掘后才换镐；动作status=completed且有endEvidence才证明执行完成。use_item无target时保留原生鼠标直接使用，有target时才精确瞄准；只确认原生使用周期，effectStatus=unconfirmed不证明召唤，不能称雀杖召唤成功，须明确效果未确认；攻击成功为观察到伤害，不保证击杀或伤害归因。failed/timeout/cancelled/unknown应停止并说明原因；唯一例外是mine_tile的out_of_conservative_80_pixel_reach，Agent可在本轮最多一次执行有界恢复：重新观察玩家地形和原目标、证明安全接近后用既有导航、再次观察核对目标与80像素距离、最多重试一次原挖掘；恢复无安全路径、目标失效或任何再次失败立即停止，不能改挖其他格。navigate_to_x使用已有水平连续导航；navigate_to_landing_region指定X左边缘闭区间与脚底表面Y，使用二维落脚导航，不能用move的target_position代替；所有原子行动互斥，接收新聊天会取消旧行动。scan_entities的entityRef不可用槽位或观察instanceKey替代。每次动作后重新感知再做决定。"
+SYSTEM += "\n第一轮扩展：寻找Tile优先scan_tiles有界矩形扫描；partial_unloaded不证明未加载区域没有目标。inspect_inventory默认仅选中物品；查数量/槽位用mode=item及精确contentKey或本地名称；快捷栏用mode=hotbar，完整背包明确mode=full。背景墙用mine_wall/place_wall，不用mine_tile；锤击形状用hammer_tile，先核对纯锤和目标限制。interact_tile支持原版门、未锁宝箱、开关、拉杆；多人墙/锤击/交互需同版本服务器回执和客户端状态一致，不能以本地预测或启动ACK当成功；unknown/timeout且mutationSent时不得盲目重试，宝箱只开关不搬物品，开关或拉杆的Frame变化不证明下游电路效果。不能将unsupported或未核验效果说成成功。"
 
 
 def read_observation(bridge):
@@ -150,13 +153,18 @@ def entity_result(reply):
 
 
 class Agent:
-    def __init__(self, bridge, llm, max_model_calls=8, max_tool_calls=7, max_movement_ms=6000):
+    def __init__(self, bridge, llm, max_model_calls=8, max_tool_calls=7, max_movement_ms=6000, *, local_input=False):
         self.bridge, self.llm = bridge, llm
+        self.local_input = local_input
+        self._active_turn_id = None
         self.max_model_calls, self.max_tool_calls = max_model_calls, max_tool_calls
         if type(max_movement_ms) is not int or not 0 <= max_movement_ms <= 6000:
             raise ValueError('max_movement_ms must be an integer in 0..6000')
         self.max_movement_ms = max_movement_ms
         self.history = [{"role": "system", "content": SYSTEM}]
+        if local_input:
+            self.history[0]['content'] += ('\n当前为本地终端测试模式：真人从终端输入指令，回复显示在终端。'
+                '你控制的仍是实际游戏中的本地角色；所有工具、观察、安全和失败停止规则保持有效。')
         self.generation = 0
         self.task = None
         self._tasks = set()
@@ -179,9 +187,40 @@ class Agent:
                                buffered=len(self._game_events), evicted=self._game_events_evicted,
                                server_dropped=self._game_events_dropped)
             return  # Passive memory: no model call, cancellation, chatId or history mutation.
-        if event.get("isSelf") is not False or event["eventId"] in self._seen:
+        if self.local_input or event.get("isSelf") is not False or event["eventId"] in self._seen:
             return
         self._seen.add(event["eventId"])
+        self._start_turn(event)
+
+    def _invalidate_turn(self):
+        self.generation += 1
+        if self.task and not self.task.done():
+            tracing.trace.emit("agent_cancel_requested", generation=self.generation - 1,
+                               reason="new_input", replacement_generation=self.generation)
+            self.task.cancel()
+
+    async def receive_local(self, text):
+        if not self.local_input:
+            raise ValueError('Local input requires --local-input')
+        if not isinstance(text, str) or not text.strip() or len(text) > 2000 or any(c in text for c in '\r\n\0'):
+            raise ValueError('Local instruction must be one nonempty line, at most 2000 characters')
+        if 'local_terminal_input_v1' not in self.bridge.hello.get('capabilities', []):
+            raise BridgeError('Local input requires local_terminal_input_v1 (Mod 0.1.36+)')
+        self._invalidate_turn()
+        generation = self.generation
+        self._active_turn_id = None
+        reply = await asyncio.to_thread(self.bridge.command, 'begin_local_turn')
+        data = reply.get('data')
+        chat_id = data.get('chatId') if isinstance(data, dict) else None
+        if reply.get('status') != 'local_turn_started' or not isinstance(chat_id, str) or not 1 <= len(chat_id) <= 100:
+            raise BridgeError('Missing local turn identity from Mod')
+        if generation != self.generation:
+            return
+        self._start_turn({'eventId': chat_id, 'senderId': None, 'senderName': 'Local terminal',
+                          'text': text.strip(), 'source': 'local_terminal',
+                          'receivedAt': datetime.now(timezone.utc).isoformat()}, generation)
+
+    def _start_turn(self, event, generation=None):
         # Retain call/result pairs, but do not resend old full viewport snapshots on later chats.
         for message in self.history:
             if message.get("role") == "tool":
@@ -193,19 +232,19 @@ class Agent:
                             "reason": f"Previous viewport snapshot omitted; call {refresh} for current data"})
                 except (ValueError, TypeError):
                     pass
-        self.history.append({"role": "user", "content": json.dumps({
+        user = {
             "senderId": event["senderId"], "senderName": event["senderName"],
             "text": event["text"], "eventId": event["eventId"],
-            "receivedAt": event.get("receivedAt")}, ensure_ascii=False)})
+            "receivedAt": event.get("receivedAt")}
+        if event.get('source') == 'local_terminal':
+            user['source'] = 'local_terminal'
+        self.history.append({"role": "user", "content": json.dumps(user, ensure_ascii=False)})
         print(f"Chat received: {event['eventId']} sender={event['senderId']}", file=sys.stderr, flush=True)
-        self.generation += 1
+        if generation is None:
+            self._invalidate_turn()
+        self._active_turn_id = event['eventId']
         tracing.trace.emit("chat_received", chat_event_id=event["eventId"], generation=self.generation,
                            chat=event)
-        if self.task:
-            if not self.task.done():
-                tracing.trace.emit("agent_cancel_requested", generation=self.generation - 1,
-                                   reason="new_chat", replacement_generation=self.generation)
-            self.task.cancel()
         self.task = asyncio.create_task(self._run(self.generation, event["eventId"]))
         self._tasks.add(self.task)
         self.task.add_done_callback(self._tasks.discard)
@@ -397,7 +436,7 @@ class Agent:
                     return
                 await self._send_reply(text, chat_id)
                 if generation == self.generation:
-                    print(f"Chat sent: generation={generation}", file=sys.stderr, flush=True)
+                    print(f"{'Terminal reply' if self.local_input else 'Chat sent'}: generation={generation}", file=sys.stderr, flush=True)
                     messages.append({"role": "assistant", "content": text})
                     self.history.extend(messages[base:])
                 else:
@@ -457,6 +496,13 @@ class Agent:
 
     async def _send_reply(self, text, chat_id):
         tracing.trace.emit("reply_prepared", text=text)
+        if self.local_input:
+            if chat_id != self._active_turn_id:
+                raise BridgeError('Local reply superseded')
+            print(f"Agent: {text}", flush=True)
+            tracing.trace.emit('terminal_reply', text=text, chatId=chat_id)
+            diagnostics.emit('terminal_reply', chatId=chat_id)
+            return
         tracing.trace.emit("send_chat_start", text=text, chatId=chat_id)
         reply = await asyncio.to_thread(self.bridge.command, "send_chat", text=text, chatId=chat_id)
         tracing.trace.emit("send_chat_result", reply=reply)
@@ -469,7 +515,74 @@ class Agent:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def run(port, timeout):
+async def terminal_loop(agent, bridge, events, stream=None):
+    # stdin is blocking on Windows. A bounded daemon reader lets Ctrl+C, EOF,
+    # disconnect and async action cancellation finish without joining input().
+    stream = sys.stdin if stream is None else stream
+    lines = queue.Queue(maxsize=16)
+    stopped = threading.Event()
+
+    def put(kind, value=None):
+        while not stopped.is_set():
+            try:
+                lines.put((kind, value), timeout=.1)
+                return
+            except queue.Full:
+                pass
+
+    def read():
+        try:
+            while not stopped.is_set():
+                line = stream.readline(2002)
+                if not line:
+                    put('eof')
+                    return
+                text = line.rstrip('\r\n')
+                if len(text) > 2000:
+                    while line and not line.endswith('\n') and not stopped.is_set():
+                        line = stream.readline(2002)
+                    put('invalid', 'Local instruction exceeds 2000 characters')
+                else:
+                    put('line', text)
+        except (OSError, ValueError) as error:
+            put('error', str(error))
+
+    threading.Thread(target=read, daemon=True, name='terminal-input').start()
+    try:
+        while True:
+            if bridge._failure:
+                raise bridge._failure
+            for _ in range(32):
+                try:
+                    agent.receive(events.get_nowait())  # Local mode retains passive game events only.
+                except asyncio.QueueEmpty:
+                    break
+            try:
+                kind, value = lines.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(.05)
+                continue
+            if kind == 'eof' or kind == 'line' and value.strip().lower() == '/quit':
+                return
+            if kind == 'error':
+                raise OSError('Terminal input failed: ' + value)
+            if kind == 'invalid':
+                print(value, file=sys.stderr, flush=True)
+            elif value.strip():
+                try:
+                    await agent.receive_local(value)
+                except ValueError as error:
+                    print(f'Invalid local input: {error}', file=sys.stderr, flush=True)
+                except BridgeError as error:
+                    if not error.status:
+                        raise
+                    print(f'Local input rejected: {error}', file=sys.stderr, flush=True)
+                    diagnostics.emit('local_input_rejected', reason=str(error))
+    finally:
+        stopped.set()
+
+
+async def run(port, timeout, local_input=False):
     llm = LLMClient()
     bridge = None
     agent = None
@@ -478,11 +591,17 @@ async def run(port, timeout):
         events = asyncio.Queue()
         bridge = await asyncio.to_thread(Bridge, port, timeout,
             lambda event: loop.call_soon_threadsafe(events.put_nowait, event))
-        if not {"chat_events", "send_chat"}.issubset(bridge.hello.get("capabilities", [])):
+        if local_input and 'local_terminal_input_v1' not in bridge.hello.get('capabilities', []):
+            raise BridgeError('Local input requires local_terminal_input_v1; load Mod 0.1.36+')
+        if not local_input and not {"chat_events", "send_chat"}.issubset(bridge.hello.get("capabilities", [])):
             raise BridgeError("Chat requires CompanionBridge 0.1.17+; loaded client lacks chat capabilities")
-        agent = Agent(bridge, llm)
+        agent = Agent(bridge, llm, local_input=local_input)
         if tracing.trace.enabled:
             print(f"Local trace (contains chat/context): {tracing.trace.path}", file=sys.stderr, flush=True)
+        if local_input:
+            print('Agent ready; enter one instruction per line. New input cancels the previous turn. /quit or Ctrl+C exits.', flush=True)
+            await terminal_loop(agent, bridge, events)
+            return
         print("Agent ready; other players' chat triggers replies. Ctrl+C closes the session.", flush=True)
         while True:
             # This timeout checks connection health only; chat itself is pushed immediately.
@@ -504,6 +623,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=18777)
     parser.add_argument("--timeout", type=float, default=2)
+    parser.add_argument("--local-input", action="store_true", help="Read human instructions from stdin; replies go to terminal (Mod 0.1.36+)")
     parser.add_argument("--log-file", type=str, help="Local bounded JSONL runtime log; default .local/diagnostics/agent-runtime-*.jsonl")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535 or not 0 < args.timeout < float("inf"):
@@ -511,9 +631,9 @@ def main():
     log_path = diagnostics.configure(args.log_file)
     if log_path:
         print(f"Runtime log: {log_path}", file=sys.stderr, flush=True)
-    diagnostics.emit("session_start", port=args.port, timeout=args.timeout)
+    diagnostics.emit("session_start", port=args.port, timeout=args.timeout, inputMode='terminal' if args.local_input else 'game_chat')
     try:
-        asyncio.run(run(args.port, args.timeout))
+        asyncio.run(run(args.port, args.timeout, local_input=args.local_input))
     except KeyboardInterrupt:
         return 130
     except (LLMError, BridgeError, OSError) as error:

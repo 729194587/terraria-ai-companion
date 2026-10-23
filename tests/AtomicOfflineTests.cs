@@ -16,7 +16,7 @@ public static class AtomicOfflineTests
     }
     public static void Run()
     {
-        foreach (var op in new[] { "mine_tile", "place_tile", "interact_tile" })
+        foreach (var op in new[] { "mine_tile", "place_tile", "interact_tile", "mine_wall", "place_wall", "hammer_tile" })
         {
             Parse(1, op, "{\"x\":1,\"y\":2}");
             Invalid(op, "{\"x\":-1,\"y\":2}"); Invalid(op, "{\"x\":1.5,\"y\":2}");
@@ -27,6 +27,18 @@ public static class AtomicOfflineTests
         Invalid("use_item", "{\"target\":{\"x\":1,\"y\":2,\"z\":3}}");
         Invalid("scan_entities", "{\"category\":\"bad\",\"radius\":100}", true);
         Invalid("scan_entities", "{\"category\":\"npc\",\"radius\":1601}", true);
+        Parse(1,"scan_tiles","{\"minX\":0,\"minY\":0,\"maxX\":63,\"maxY\":63,\"tileTypes\":[0,2],\"maxResults\":256}",true);
+        foreach(string args in new[] {
+            "{\"minX\":0,\"minY\":0,\"maxX\":64,\"maxY\":63,\"tileTypes\":[2]}",
+            "{\"minX\":2,\"minY\":0,\"maxX\":0,\"maxY\":0,\"tileTypes\":[2]}",
+            "{\"minX\":0,\"minY\":0,\"maxX\":1,\"maxY\":1,\"tileTypes\":[]}",
+            "{\"minX\":0,\"minY\":0,\"maxX\":1,\"maxY\":1,\"tileTypes\":[2,2]}",
+            "{\"minX\":0,\"minY\":0,\"maxX\":1,\"maxY\":1,\"tileTypes\":[true]}",
+            "{\"minX\":0,\"minY\":0,\"maxX\":1,\"maxY\":1,\"tileTypes\":[2],\"maxResults\":257}",
+            "{\"minX\":0,\"minY\":0,\"maxX\":1,\"maxY\":1,\"tileTypes\":[2],\"extra\":1}" }) Invalid("scan_tiles",args,true);
+        foreach(string args in new[] {"{\"mode\":\"all\"}","{\"mode\":true}","{\"mode\":\"item\"}","{\"item\":\"Stone\"}","{\"mode\":\"full\",\"item\":\"Stone\"}","{\"mode\":\"item\",\"item\":\"\"}","{\"extra\":1}"}) Invalid("inspect_inventory",args,true);
+        foreach(string mode in new[]{"selected","hotbar","full"}) Parse(1,"inspect_inventory","{\"mode\":\""+mode+"\"}",true);
+        Parse(1,"inspect_inventory","{\"mode\":\"item\",\"item\":\"Terraria/StoneBlock\"}",true);
         var controls = new ControlState(); int session = controls.BeginSession(); long now = Stopwatch.GetTimestamp();
         var state = new PlayerSnapshot(true, new(100, 100), new(0, 0), 100, 100);
         int id = 1;
@@ -44,6 +56,9 @@ public static class AtomicOfflineTests
         Check(!Apply(Parse(id++, "use_item") with { ExpectedGeneration = generation }).Ok, "Atomic actions mutually exclusive");
         var query = Apply(Parse(id++, "inspect_inventory", query: true));
         Check(query.Ok && query.Data != null && controls.Generation == generation, "Queries use callback on update and never acquire control");
+        var brokenQuery=controls.Enqueue(session,Parse(id++,"scan_tiles","{\"minX\":0,\"minY\":0,\"maxX\":0,\"maxY\":0,\"tileTypes\":[2]}",true),now);
+        controls.Update(true,now,state,worldSessionId:"atomic-test",queryAtomic:r=>throw new Exception("read failed"));
+        Check(!brokenQuery.Result.Ok && brokenQuery.Result.Status=="query_failed","Read failure distinct from empty scan");
         controls.FinishAtomic(action.ActionId + 1, "completed", "bad", null);
         Check(controls.AtomicAction.Status == "running", "Stale completion cannot finish another action");
         controls.FinishAtomic(action.ActionId, "completed", "tile_removed", new { removed = true }, state);
@@ -72,6 +87,22 @@ public static class AtomicOfflineTests
         Check(controls.AtomicAction.Status == "cancelled" && controls.AtomicAction.Reason == "lease_expired", "Lease expiry cancels atomic input");
         controls.EndSession(session);
         Check(!controls.IsMoving, "Disconnect clears control");
+        foreach(string op in new[]{"mine_wall","place_wall","hammer_tile","interact_tile"})
+        {
+            controls.Reset(); session=controls.BeginSession();
+            Apply(Parse(id++,op,"{\"x\":5,\"y\":5}") with { ExpectedGeneration=controls.Generation });
+            action=controls.AtomicAction;
+            Check(action.DurationMs==10000 && action.Status=="running","Extension ACK remains running with bounded deadline");
+            for(int half=1;half<=20;half++) Apply(new(id++,"renew_move",ActionId:action.ActionId),now+half*Stopwatch.Frequency/2);
+            Check(controls.AtomicAction.Status=="timeout" && !controls.IsMoving,"Extension absolute timeout survives renewals");
+            controls.ConfirmMovementInputReleased("atomic-test",6,"PostUpdateRunSpeeds_before_bridge_input",true);
+            Check(controls.AtomicAction.EndEvidenceStatus=="known","Extension timeout uses normal release evidence");
+            now+=11*Stopwatch.Frequency;
+            Apply(Parse(id++,op,"{\"x\":5,\"y\":5}") with { ExpectedGeneration=controls.Generation });
+            action=controls.AtomicAction; Apply(new(id++,"cancel_move",ActionId:action.ActionId));
+            Check(controls.AtomicAction.Status=="cancelled" && !controls.IsMoving,"Extension cancellation uses normal action identity");
+            controls.EndSession(session);
+        }
         Console.WriteLine("PASS: atomic protocol bounds, query callback, shared lease/generation, mutual exclusion, effect/release evidence, stale completion, cancel and absolute timeout");
     }
 }

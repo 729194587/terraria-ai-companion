@@ -9,6 +9,10 @@ namespace CompanionBridge.Common.Players;
 
 public sealed class CompanionPlayer : ModPlayer
 {
+    public override void PlayerDisconnect()
+    {
+        if (Main.netMode == NetmodeID.Server) AtomicMultiplayer.Disconnect(Player.whoAmI);
+    }
     private bool _lastHasFocus;
 
     private bool CanControl => Player.whoAmI == Main.myPlayer

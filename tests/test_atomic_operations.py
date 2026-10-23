@@ -14,7 +14,7 @@ from test_agent import Model, event
 
 class Game:
     def __init__(self, outcome='completed', pending=False):
-        self.hello = {'capabilities': ['atomic_operations_v1']}
+        self.hello = {'capabilities': ['atomic_operations_v1', 'atomic_extensions_v1', 'server_confirmed_interactions_v1']}
         self.action = None
         self.sent = []
         self.outcome, self.pending = outcome, pending
@@ -52,7 +52,7 @@ class Game:
 
 class ValidationTests(unittest.TestCase):
     def test_schema_dispatch_and_tool_names(self):
-        self.assertEqual(16, len(atomic.TOOLS))
+        self.assertEqual(20, len(atomic.TOOLS))
         self.assertTrue(set(atomic.SCHEMAS) <= {t['function']['name'] for t in TOOLS})
         for name, args in [('mine_tile', {'x': 1.5, 'y': 2}), ('place_tile', {'x': True, 'y': 2}),
                            ('select_hotbar_slot', {'slot': 10}), ('navigate_to_x', {'targetX': float('nan')}),

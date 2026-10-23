@@ -99,6 +99,70 @@ public static class NativeItemAimTests
             Check(!method.Body.Instructions.Any(i => i.OpCode==OpCodes.Stsfld && i.Operand is FieldReference f
                 && f.Name is "tileTargetX" or "tileTargetY"),"Mining path must not overwrite injected tile targets");
         }
+        var placing = player.Methods.Single(m => m.Name == "PlaceThing_Tiles_PlaceIt");
+        var placeCall = placing.Body.Instructions.Single(i => i.Operand is MethodReference m
+            && m.DeclaringType.FullName=="Terraria.WorldGen" && m.Name=="PlaceTile");
+        // WorldGen.PlaceTile's first two arguments must be the injected tile target,
+        // followed by native item type/style/force/player arguments (not pixels).
+        var argsBeforePlace = placing.Body.Instructions.TakeWhile(i => i!=placeCall).TakeLast(8).ToArray();
+        Check(argsBeforePlace[0].OpCode==OpCodes.Ldsfld && argsBeforePlace[0].Operand is FieldReference px && px.Name=="tileTargetX"
+            && argsBeforePlace[1].OpCode==OpCodes.Ldsfld && argsBeforePlace[1].Operand is FieldReference py && py.Name=="tileTargetY",
+            "Ordinary native PlaceTile must receive the exact injected tile indices");
+        foreach(var method in player.Methods.Where(m => m.Name is "PlaceThing" or "PlaceThing_Tiles" or "PlaceThing_Tiles_PlaceIt"))
+        {
+            Check(!method.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name.StartsWith("SetZoom")
+                || i.Operand is FieldReference f && f.Name=="GameViewMatrix"),"Unexpected native placement zoom transform");
+            Check(!method.Body.Instructions.Any(i => i.OpCode==OpCodes.Stsfld && i.Operand is FieldReference f
+                && f.Name is "tileTargetX" or "tileTargetY"),"Placement must not overwrite the injected target in its main path");
+        }
+        // Structural contracts from the installed game. These check the real native
+        // paths, but do not execute world mutation, permission hooks or game timing.
+        bool Calls(MethodDefinition method,string name) => method.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name==name);
+        bool Uses(MethodDefinition method,string name) => method.Body.Instructions.Any(i => i.Operand is FieldReference f && f.Name==name);
+        Check(Calls(mining,"IsTargetTileInItemRange") && Uses(mining,"noBuilding") && Uses(mining,"toolTime"),
+            "Native mining tools must retain range, building permission and tool cooldown gates");
+        var wallHit=player.Methods.Single(m=>m.Name=="ItemCheck_UseMiningTools_TryHittingWall");
+        Check(Calls(wallHit,"CanPlayerSmashWall") && Calls(wallHit,"PickWall") && Uses(wallHit,"hammer")
+            && Uses(wallHit,"controlUseItem") && Uses(wallHit,"itemAnimation"),"Walls must use native hammer checks and PickWall, never PickTile");
+        Check(!Calls(wallHit,"PickTile"),"Wall branch cannot mine a solid tile");
+        var pounding=player.Methods.Single(m=>m.Name=="ItemCheck_UseMiningTools_TryPoundingTile");
+        Check(Calls(pounding,"PoundTile") && Calls(pounding,"SlopeTile") && Uses(pounding,"poundRelease"),"Native hammer shape cycle and release gate");
+        var wallPlacement=player.Methods.Single(m=>m.Name=="PlaceThing_Walls");
+        Check(Calls(wallPlacement,"PlaceWall"),"Native wall placement entry calls WorldGen.PlaceWall");
+        Check(Uses(wallPlacement,"tileTargetX") && Uses(wallPlacement,"tileTargetY"),"Native PlaceWall uses injected tile coordinates");
+        var wiring=game.MainModule.Types.Single(t=>t.FullName=="Terraria.Wiring").Methods.Single(m=>m.Name=="HitSwitch");
+        Check(Calls(wiring,"HitSwitch") && Calls(wiring,"TripWire") && Calls(wiring,"get_frameY") && Calls(wiring,"get_frameX"),
+            "Native switch/lever path retains ModLoader veto, frame change and wire dispatch");
+        Check(player.Methods.Single(m=>m.Name=="OpenChest").IsPublic,"Supported native chest UI helper must be public");
+        var interactCheck=player.Methods.Single(m=>m.Name=="TileInteractionsCheck");
+        var interactUse=player.Methods.Single(m=>m.Name=="TileInteractionsUse");
+        Check(interactCheck.IsPublic && Calls(interactCheck,"TileInteractionsUse"),"Public interaction wrapper must dispatch to native use");
+        Check(Uses(interactUse,"releaseUseTile") && Uses(interactUse,"tileInteractAttempted")
+            && Calls(interactUse,"OpenChest") && Calls(interactUse,"HitSwitch"),"Native interaction gates and distinct chest/wiring paths");
+        // Pin the actual installed vanilla wire contract used by NativeAuthorityWorld.
+        // Case bodies remain structural inspection, not a live server execution.
+        var getData=game.MainModule.Types.Single(t=>t.FullName=="Terraria.MessageBuffer").Methods.Single(m=>m.Name=="GetData");
+        var cases=(Instruction[])getData.Body.Instructions.First(i=>i.OpCode==OpCodes.Switch && i.Operand is Instruction[] a && a.Length>100).Operand;
+        Instruction[] Case(int id)
+        {
+            var start=cases[id-1]; int end=cases.Where(i=>i.Offset>start.Offset).Min(i=>i.Offset);
+            return getData.Body.Instructions.Where(i=>i.Offset>=start.Offset && i.Offset<end).ToArray();
+        }
+        void Reads(int id,params string[] expected)
+        {
+            var actual=Case(id).Where(i=>i.Operand is MethodReference m && m.DeclaringType.FullName=="System.IO.BinaryReader")
+                .Select(i=>((MethodReference)i.Operand).Name).Take(expected.Length).ToArray();
+            Check(actual.SequenceEqual(expected),"Installed native message "+id+" binary layout changed");
+        }
+        bool CaseCalls(int id,string name)=>Case(id).Any(i=>i.Operand is MethodReference m && m.Name==name);
+        Reads(17,"ReadByte","ReadInt16","ReadInt16","ReadInt16","ReadByte");
+        Reads(19,"ReadByte","ReadInt16","ReadInt16","ReadByte");
+        Reads(31,"ReadInt16","ReadInt16"); Reads(33,"ReadInt16","ReadInt16","ReadInt16","ReadByte");
+        Reads(59,"ReadInt16","ReadInt16");
+        foreach(string name in new[]{"KillWall","PlaceWall","PoundTile","SlopeTile"}) Check(CaseCalls(17,name),"Missing server tile mutation handler "+name);
+        Check(CaseCalls(19,"OpenDoor") && CaseCalls(19,"CloseDoor"),"Server door handler changed");
+        Check(CaseCalls(31,"FindChest") && CaseCalls(31,"UsingChest"),"Server chest ownership path changed");
+        Check(CaseCalls(59,"SetCurrentUser") && CaseCalls(59,"HitSwitch"),"Server wiring actor/dispatch changed");
         using var stream = new MemoryStream(); fixture.Write(stream); stream.Position = 0;
         var assembly = AssemblyLoadContext.Default.LoadFromStream(stream);
         var main = assembly.GetType("Terraria.Main"); var input = assembly.GetType("Terraria.GameInput.PlayerInput");
@@ -117,7 +181,8 @@ public static class NativeItemAimTests
         {
             viewType.GetMethod("set_Zoom").Invoke(view,new object[] { new Vector2(zoom) });
             Set(main,"screenPosition",camera);
-            var world = camera + new Vector2(853.25f,456.75f);
+            foreach(var world in new[] { camera + new Vector2(853.25f,456.75f),new Vector2(2194*16+8,235*16+8) })
+            {
             // Rendered screen -> the game's actual inverse input transform.
             var matrix = (Matrix)viewType.GetMethod("get_ZoomMatrix").Invoke(view,null);
             var rendered = Vector2.Transform(world-camera,matrix);
@@ -132,6 +197,7 @@ public static class NativeItemAimTests
             nativeWorld = (Vector2)main.GetMethod("get_MouseWorld").Invoke(null,null);
             Check(Vector2.Distance(nativeWorld,world) < 1.42f,"Injected coordinates do not reconstruct target world pixels");
         }
-        Console.WriteLine("PASS: installed tModLoader IL: SpriteViewMatrix.ZoomMatrix -> PlayerInput.SetZoom_World -> Main.MouseWorld; production ItemCheck injection and native mining tile dispatch, zoom 1/1.25/1.5/2, camera offsets, integer rounding; no game launched");
+        }
+        Console.WriteLine("PASS: installed tModLoader IL: executed native input/zoom transforms; structural contracts for mining/walls/hammer/interactions and server packet layouts 17/19/31/33/59; world effects and network timing not executed; no game launched");
     }
 }

@@ -1,5 +1,13 @@
 # Terraria AI Companion
 
+**0.1.36 本地终端测试入口**：`python -u -B python/agent.py --local-input` 接收真人终端指令，沿用现有模型/工具/成本统计，回复仅输出终端。Mod 注册会话指令身份，保留动作安全校验。需加载0.1.36包；产物 `.local/local-input-build/Mods/CompanionBridge.tmod`，未部署。详见 [配置与测试](docs/CHAT_AGENT.md#本地终端输入mod-0136)。
+
+**0.1.37 多人原子确认**：墙挖掘/放置、锤击、门/宝箱/开关/拉杆已接入带动作身份的服务器原生执行与回执；成功还需客户端状态一致及原输入释放证据。服务器和所有客户端都需同版本 Mod（side=Both）。构建产物与联机验收说明见 [多人原子确认](docs/MULTIPLAYER_ATOMIC_CONFIRMATION.md)；已按用户要求部署至本地A/B测试配置；A启动需加 `-companionbridgeport 18778`，B仍用默认18777。真实联机验收待完成。
+
+**0.1.35 第一轮原子扩展（历史）**：新增有界 `scan_tiles`、`mine_wall`、`place_wall`、`hammer_tile`，背包支持紧凑定向查询，单人交互扩展至原版未锁宝箱/开关/拉杆。复用原动作生命周期和实际状态核验；构建包 `.local/atomic-extensions-build/Mods/CompanionBridge.tmod`，未部署、待游戏验收。参数、默认背包输出兼容影响及限制见 [原子操作说明](docs/ATOMIC_OPERATIONS.md)。
+
+**0.1.34 单格放置缩放修复**：普通方块放置复用已核验的ItemCheck坐标空间，支持当前画面缩放；保留目标、消费与实际Tile结果共同核验、取消和状态恢复。新包 `.local/placement-zoom-build/Mods/CompanionBridge.tmod`，已部署至B测试配置，真实放置待验收，详见 [原因与测试](docs/PLACEMENT_ZOOM_FIX.md)。
+
 **0.1.33 挖掘缩放修复**：恢复接近已由真实日志确认抵达并重挖；新增挖掘非默认缩放支持与原生IL契约验证，拆分空目标/未选镐错误。还包含默认运行日志和安全落脚区间恢复修复。新包 `.local/mining-zoom-build/Mods/CompanionBridge.tmod`，需要更新游戏端，详见 [验证记录](docs/ITEM_USE_AND_MINING_RECOVERY.md)。
 
 **0.1.32 物品使用与挖掘恢复**：无目标 `use_item` 保留原生鼠标，有目标使用支持当前缩放；使用周期与效果确认分开报告。挖掘距离不足可在确认安全通道后导航接近、重新观察并最多重试一次。Python 251项、C#及原生坐标契约测试通过；构建0错误0警告。本版尚未部署或进行真实游戏验收，详见 [修复与验证记录](docs/ITEM_USE_AND_MINING_RECOVERY.md)。
@@ -80,7 +88,7 @@ A 为 `.local/m12-a`（无 Bridge），B 为 `.local/m12-b`（仅启用 Bridge�
 
 ```powershell
 Set-Location 'D:\steam\steamapps\common\tModLoader'
-.\start-tModLoader.bat -tmlsavedirectory 'D:\Agent Project\terraria-ai-companion\.local\m12-a'
+.\start-tModLoader.bat -tmlsavedirectory 'D:\Agent Project\terraria-ai-companion\.local\m12-a' -companionbridgeport 18778
 ```
 
 客户端 B（Bridge）：

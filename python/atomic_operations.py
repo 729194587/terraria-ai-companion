@@ -16,7 +16,13 @@ TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地�
     tool("inspect_tile", "读取指定Tile类型、Frame、形状、液体、墙/线/颜色；越界或未加载显式未知。", TILE, ["x", "y"]),
     tool("scan_entities", "按世界像素半径扫描客户端已知NPC、掉落物、其他玩家；NPC entityRef仅当前世界实例有效；截断不等于没有。",
          {"category": {"type": "string", "enum": ["all", "npc", "item", "player"]}, "radius": {"type": "number", "minimum": 1, "maximum": 1600}}, ["category", "radius"]),
-    tool("inspect_inventory", "读取背包、快捷栏、选中槽位和原版装备数组；Mod自定义装备槽未知。"),
+    tool("scan_tiles", "按Tile格坐标闭区间[minX,maxX]×[minY,maxY]扫描指定tileTypes；1格16像素，Y向下。面积<=4096，最多返回256；未加载不等于空。类型ID来自inspect_tile/观察。",
+         {**{k: {"type": "integer", "minimum": 0, "maximum": 100000} for k in ('minX', 'minY', 'maxX', 'maxY')},
+          "tileTypes": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535}, "minItems": 1, "maxItems": 32, "uniqueItems": True},
+          "maxResults": {"type": "integer", "minimum": 1, "maximum": 256}}, ['minX', 'minY', 'maxX', 'maxY', 'tileTypes']),
+    tool("inspect_inventory", "默认仅选中物品；mode=hotbar查快捷栏，mode=item按item精确匹配contentKey或当前语言名称，返回总数和槽位；mode=full明确请求完整背包及装备。槽位是数组索引，hotbarKey是游戏按键。",
+         {"mode": {"type": "string", "enum": ['selected', 'hotbar', 'item', 'full']},
+          "item": {"type": "string", "minLength": 1, "maxLength": 150}}),
     tool("get_world_state", "读取客户端昼夜、天气、事件、生物群系和深度。"),
     tool("navigate_to_x", "复用连续导航至玩家左上角水平世界像素targetX；30秒上限，普通角色运动限制仍适用；arrived由游戏物理状态校验。",
          {"targetX": {"type": "number", "minimum": 0, "maximum": 1000000}}, ["targetX"]),
@@ -31,11 +37,14 @@ TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地�
     tool("mine_tile", "以选中镐原生挖掘80像素内Tile，支持当前缩放，仍限正常重力；移除才成功，10秒上限。调用前inspect_inventory确认所选为镐，必要时先select_hotbar_slot。不在该原子操作内自动选工具/移动。", TILE, ["x", "y"]),
     tool("attack_entity", "以当前物品攻击scan_entities给出的NPC entityRef；80像素内，生命下降才成功，失活但无伤害证据失败，其他伤害来源可能存在。10秒上限。",
          {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
-    tool("interact_tile", "首版仅支持单人模式原版门开关，80像素内；其他对象/多人返回具体失败原因。", TILE, ["x", "y"]),
-    tool("place_tile", "用选中消耗品在80像素内空格放单格方块；Tile类型与物品消耗共同核验；不支持多格家具或ModItem。10秒上限。", TILE, ["x", "y"]),
+    tool("mine_wall", "选中纯锤原生挖背景墙；80像素内，前景必须为空；实际墙消失才成功。多人需同版本服务器确认；10秒上限，可取消。", TILE, ['x', 'y']),
+    tool("place_wall", "选中原版消耗型墙物品，在80像素内无墙格原生放置；正确墙类型和消耗一件共同核验，多人需服务器确认；自动补邻墙或自动涂漆不支持，10秒上限。", TILE, ['x', 'y']),
+    tool("hammer_tile", "选中纯锤对80像素内原版普通方块/平台原生锤击；目标无背景墙，实际形状变化才成功，多人需服务器确认。不支持家具/破坏型锤目标。10秒上限。", TILE, ['x', 'y']),
+    tool("interact_tile", "80像素内原版门、未锁宝箱、开关、拉杆基础交互；多格任一占用格可指定；宝箱核验打开/关闭，开关及拉杆核验Frame切换，不证明下游电路效果。多人需同版本服务器确认。", TILE, ["x", "y"]),
+    tool("place_tile", "用选中消耗品在80像素内空格放单格方块，支持当前画面缩放，仍限正常重力；Tile类型与物品消耗共同核验；不支持多格家具或ModItem。10秒上限。", TILE, ["x", "y"]),
     tool("stop_action", "取消当前Agent动作并等待游戏线程输入释放证据，不抢占手动控制。")]
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
-READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_entities', 'inspect_inventory', 'get_world_state'}
+READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
 
 
 def validate(name, arguments):
@@ -46,6 +55,13 @@ def validate(name, arguments):
                 raise ValueError('Unexpected or missing atomic parameters')
             for key, item in value.items():
                 check(item, schema['properties'][key])
+        elif kind == 'array':
+            if not isinstance(value, list) or not schema.get('minItems', 0) <= len(value) <= schema.get('maxItems', math.inf):
+                raise ValueError('Invalid array length')
+            for entry in value:
+                check(entry, schema['items'])
+            if schema.get('uniqueItems') and len(set(value)) != len(value):
+                raise ValueError('Duplicate array items')
         elif kind in ('number', 'integer'):
             if type(value) not in ((int,) if kind == 'integer' else (int, float)) or not math.isfinite(value) or not schema.get('minimum', -math.inf) <= value <= schema.get('maximum', math.inf):
                 raise ValueError('Invalid finite coordinate, radius or slot')
@@ -55,6 +71,12 @@ def validate(name, arguments):
     if name not in SCHEMAS:
         raise ValueError('Unsupported atomic operation')
     check(arguments, SCHEMAS[name])
+    if name == 'scan_tiles':
+        width, height = arguments['maxX'] - arguments['minX'] + 1, arguments['maxY'] - arguments['minY'] + 1
+        if width <= 0 or height <= 0 or width * height > 4096:
+            raise ValueError('Scan requires ordered bounds and area <=4096 tiles')
+    if name == 'inspect_inventory' and (('item' in arguments) != (arguments.get('mode') == 'item')):
+        raise ValueError('item is required only for mode=item')
     if name == 'navigate_to_landing_region' and arguments['minPlayerLeftX'] > arguments['maxPlayerLeftX']:
         raise ValueError('Landing X bounds must be ordered')
 
@@ -134,8 +156,12 @@ async def dispatch(bridge, name, arguments, chat_id=None):
     if name == 'navigate_to_landing_region' and 'landing_region_navigation_v1' not in bridge.hello.get('capabilities', []):
         raise BridgeError('Requires landing_region_navigation_v1; no two-dimensional action started')
     required_capability = {'select_hotbar_slot': 'hotbar_keys_v1', 'drop_through_platform': 'platform_drop_v1'}.get(name)
+    if name in ('scan_tiles', 'mine_wall', 'place_wall', 'hammer_tile', 'inspect_inventory', 'interact_tile'):
+        required_capability = 'atomic_extensions_v1'
     if required_capability and required_capability not in bridge.hello.get('capabilities', []):
         raise BridgeError(f'Requires {required_capability}; no action started')
+    if name in ('mine_wall', 'place_wall', 'hammer_tile', 'interact_tile') and 'server_confirmed_interactions_v1' not in bridge.hello.get('capabilities', []):
+        raise BridgeError('Requires server_confirmed_interactions_v1 (CompanionBridge 0.1.37+); no action started')
     if name in READS:
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         data = reply.get('data')

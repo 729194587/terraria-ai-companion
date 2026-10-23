@@ -16,6 +16,14 @@ internal sealed class TcpControlServer : IDisposable
     internal const int MaxResponseBytes = 16 * 1024 * 1024; // UTF-8 including newline
     internal const int MaxRequestBytes = 4096;
     internal const int DefaultPort = 18777;
+    internal static int ParseLaunchPort(string value)
+    {
+        if (value == null) return DefaultPort;
+        if (!int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int port)
+            || port is < 1024 or > 65535)
+            throw new FormatException("-companionbridgeport must be an integer in 1024..65535");
+        return port;
+    }
     private readonly ControlState _state;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _shutdown = new();
@@ -120,7 +128,7 @@ internal sealed class TcpControlServer : IDisposable
             client.NoDelay = true;
             using var stream = client.GetStream();
             await WriteJson(stream, new { v = 1, type = "hello", instance = _instance,
-                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "atomic_operations_v1", "hotbar_keys_v1", "platform_drop_v1", "landing_region_navigation_v1", "guarded_control", "local_navigation", "bounded_movement_v1", "movement_loop_v1", "chat_events", "game_messages_v1", "send_chat", "nearby_entities", "viewport_observation_v1" }, maxResponseBytes = MaxResponseBytes }, writeGate, token);
+                lease_ms = ControlState.LeaseMilliseconds, capabilities = new[] { "local_terminal_input_v1", "server_confirmed_interactions_v1", "atomic_operations_v1", "atomic_extensions_v1", "hotbar_keys_v1", "platform_drop_v1", "landing_region_navigation_v1", "guarded_control", "local_navigation", "bounded_movement_v1", "movement_loop_v1", "chat_events", "game_messages_v1", "send_chat", "nearby_entities", "viewport_observation_v1" }, maxResponseBytes = MaxResponseBytes }, writeGate, token);
             writer = WriteReplies(stream, replies.Reader, writeGate, token);
             eventWriter = WriteEvents(stream, events.Reader, writeGate, token);
             gameEventWriter = WriteEvents(stream, gameEvents.Reader, writeGate, token);

@@ -20,6 +20,14 @@ public static class BridgeOfflineTests
 
     public static void Run()
     {
+        Check(TcpControlServer.ParseLaunchPort(null)==18777 && TcpControlServer.ParseLaunchPort("18778")==18778,
+            "Default Agent port is compatible; other local clients can use a separate explicit port");
+        foreach(string invalid in new[]{"", "0", "1023", "65536", "-1", "18778.0", " 18778", "+18778"})
+        {
+            bool rejected=false;
+            try { TcpControlServer.ParseLaunchPort(invalid); } catch(FormatException) { rejected=true; }
+            Check(rejected,"Invalid launch port must fail explicitly");
+        }
         var state = new ControlState();
         int session = state.BeginSession();
         var reply = state.Enqueue(session, new ControlRequest(1, "move_right"), 0);
@@ -312,7 +320,8 @@ public static class BridgeOfflineTests
         client.Connect("127.0.0.1", server.Port);
         client.ReceiveTimeout = 2000;
         using var reader = new StreamReader(client.GetStream(), Encoding.UTF8, false, 1024, true);
-        Check(reader.ReadLine().Contains("chat_events"), "Chat handshake capability");
+        string capabilities = reader.ReadLine();
+        Check(capabilities.Contains("chat_events") && capabilities.Contains("local_terminal_input_v1"), "Chat and local input handshake capabilities");
         server.PublishChat(1, "AI", "self", 1);
         server.PublishChat(255, "server", "system", 1);
         server.PublishChat(0, "human", "first", 1);
@@ -332,6 +341,19 @@ public static class BridgeOfflineTests
         PumpUntil(() => reply.IsCompleted, state);
         Check(JsonDocument.Parse(reply.Result).RootElement.GetProperty("id").GetInt32() == 1,
             "Event and response frames remain valid JSON Lines");
+        client.GetStream().Write(Encoding.UTF8.GetBytes("{\"v\":1,\"id\":2,\"cmd\":\"begin_local_turn\"}\n"));
+        var localReply=reader.ReadLineAsync();
+        var localTimer=Stopwatch.StartNew();
+        while(!localReply.IsCompleted && localTimer.ElapsedMilliseconds<2000)
+        {
+            state.Update(true,Stopwatch.GetTimestamp(),snapshot,worldSessionId:"local-network-test");
+            Thread.Sleep(5);
+        }
+        Check(localReply.IsCompleted,"Local input registration returns over actual TCP");
+        using var localJson=JsonDocument.Parse(localReply.Result);
+        Check(localJson.RootElement.GetProperty("ok").GetBoolean()
+            && localJson.RootElement.GetProperty("data").GetProperty("chatId").GetString().StartsWith("local:"),
+            "Game-thread local identity survives actual response serialization");
         Console.WriteLine("PASS: author filtering, unsolicited chat, unique events, game-thread send, stale reply rejection and disconnect revocation");
     }
 

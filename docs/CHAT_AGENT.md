@@ -94,7 +94,7 @@ python python/agent.py --port 18777 --timeout 2
 
 BASE_URL 应是 API 根路径，例如以 `/v1` 结尾；程序追加 `/chat/completions`。HTTP 超时默认 30 秒，IPC timeout 默认 2 秒。程序自动读取仓库根目录 `.env` 的三个 LLM 配置项（与运行目录无关），环境变量优先。支持普通 KEY=VALUE 和单/双引号字面值，不展开变量或行尾注释。`.env` 已忽略，不上传；`.env.example` 是可上传 GitHub 的无密钥模板。已按 [DeepSeek 官方文档](https://api-docs.deepseek.com/zh-cn/) 配置 `https://api.deepseek.com` 和 `deepseek-flash`。不要将密钥写入仓库或聊天。进程只保留当前会话，不自动重连。Ctrl+C 退出并关闭 IPC。
 
-先让 A/B 进入同一多人世界，再运行 Agent。A 不加载 Bridge；B 加载 **0.1.18**（实体感知需要新包）。同一端口只能一个 Python 控制连接，不同时运行导航脚本。单人模式没有远端真人消息，因此不是本轮交互验收入口。Agent 不取得运动租约，不需要按 P；P 仍会断开外部会话，之后需手动重新启动 Agent。
+先让 A/B 进入同一多人世界，再运行 Agent。当前0.1.37要求服务器和所有客户端（包括A/B）均加载同版本 CompanionBridge，详见 [多人原子确认](MULTIPLAYER_ATOMIC_CONFIRMATION.md)；旧0.1.18仅B加载的方式是历史配置。同一端口只能一个 Python 控制连接，不同时运行导航脚本。默认聊天模式中，单人没有远端真人消息；单人测试请使用下方0.1.36的本地终端入口。Agent 不取得运动租约，不需要按 P；P 仍会断开外部会话，之后需手动重新启动 Agent。
 
 本次包已构建至 `.local/agent-build/Mods/CompanionBridge.tmod`，**未部署，未启动/重启客户端**。由使用者按已有 A/B 配置准备新包及客户端，不覆盖角色或世界。重新构建：
 
@@ -110,6 +110,30 @@ try {
 ```
 
 ## 验证和待验收
+
+### 本地终端输入（Mod 0.1.36+）
+
+进入加载 CompanionBridge 0.1.36+ 的测试世界后（多人当前使用0.1.37并需服务器/所有客户端同版本），在 PowerShell 运行：
+
+```powershell
+Set-Location 'D:\Agent Project\terraria-ai-companion'
+$env:TERRARIA_AGENT_TRACE = '1'
+python -u -B python/agent.py --local-input --port 18777 --timeout 2
+```
+
+看到 `Agent ready` 后，直接输入一行真人指令并回车，例如“向右移动一小段距离”。回复显示为 `Agent: ...`，不会发送游戏聊天。模型仍使用相同 `.env` 配置、历史、工具定义、预算、原子 dispatch、观察授权、失败停止和成本统计；不是直接执行指定工具的脚本。没有 `--local-input` 时仍保留原多人聊天行为。
+
+- 本地模式只接受终端真人输入；多人聊天不触发模型，但游戏系统提示继续进入原有被动记忆。两种入口不混用。角色、目标与动作限制仍以实际 Mod 回执为准，不能让多人限定失败的操作变为成功。
+- 每行最多2000字符，拒绝换行/NUL；空行忽略。新输入取消上一轮，迟到模型结果不会输出回复或发起动作。`/quit`、输入结束（EOF）或 Ctrl+C 退出并取消未完成动作、关闭 IPC。EOF 不等待最后一行任务完成，因此推荐交互输入并等回复后再退出。
+- 阻塞 stdin 使用有界队列（最多16行）和 daemon 读取线程，不占用 asyncio 工作线程或阻止退出。IPC 断线时即使没有新键盘输入也会退出，不自动重连。
+- 需要新能力 `local_terminal_input_v1`，旧0.1.35包会明确拒绝启动本地模式，不能省略 chatId 降级执行。Mod 游戏线程处理无参数 `begin_local_turn`，生成属于当前 TCP session 的 chatId，供普通 move_for/start_atomic 使用；沿用 expectedGeneration、最新指令身份、租约和绝对截止。
+- 注册新指令不会启动动作，也不会获取手动控制权。若有旧外部动作，Mod 将其置为 cancelled/new_local_input 并释放控制源；新动作仍须等待原有游戏线程 endEvidence。未进世界、死亡、过期注册、手动P控制均不能借此入口绕过。
+- 终端真人输入在模型消息中标记 `source=local_terminal`、senderId=null，不伪造另一玩家的聊天事件。本地回复记录 terminal_reply，运行日志记录身份但不记录回复文本；开启 Trace 时包含完整文本。`llm_cost/chat_cost` 仍输出终端并写 Trace，token 数值来自实际模型 usage，缺失为 unknown/null；默认 runtime 日志不含 token 统计。
+- 同一 Bridge 端口仅允许一个控制连接，不同时运行另一个 Agent 或手动 IPC 脚本。关闭自动暂停；若观察提示摄像机过期，输入后切回游戏再检查结果，不把过期观察当成可移动依据。
+
+本地入口历史构建：`.local/local-input-build/Mods/CompanionBridge.tmod`（0.1.36）。当前0.1.37产物与多人要求见 [多人原子确认](MULTIPLAYER_ATOMIC_CONFIRMATION.md)。只构建未部署；当前之前部署的0.1.35需要在用户保存退出客户端后更新，不能只重启 Python。离线测试覆盖真实 Agent/LLM mock HTTP 的 usage、工具循环/安全拒绝、终端输出、抢占/关闭取消、EOF和断线；C#测试覆盖真实控制状态及本机 TCP 注册回执、过期/死亡/手动/旧会话/迟到动作/释放边界。模型服务、Windows交互式控制台、真实游戏动作仍需现场验收，未自动启动游戏或付费模型请求。
+
+本地入口验证记录（2026-10-22）：Python 全量回归283项通过；随后补充观察授权与原子失败停止测试，入口专项13项通过。C#完整测试（含真实本机TCP注册）通过；0.1.36 Mod构建0错误0警告；`git diff --check`通过。日志为 `.local/local-input-python-tests.log`、`local-input-python-focused.log`、`local-input-csharp-tests.log`、`local-input-build.log`。以上不代表真实游戏或实际模型服务已验收。
 
 ### 可选本地 Trace
 
