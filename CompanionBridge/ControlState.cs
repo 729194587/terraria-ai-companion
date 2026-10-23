@@ -300,6 +300,23 @@ internal sealed class ControlState
 
     internal MovementSnapshot AtomicAction { get { lock (_gate) return _movement?.Operation != null && _movement.Session == _session ? _movement : null; } }
 
+    // Synchronous game-thread mutations share the same gate as cancel/disconnect.
+    // A cancellation receipt cannot overtake an inventory mutation already admitted.
+    internal bool WithAtomicOwnership(MovementSnapshot expected, Action mutate)
+    {
+        lock (_gate)
+        {
+            if (_mode != ControlMode.External || _movement?.Status != "running"
+                || _session != expected.Session || _generation != expected.Generation
+                || _movement.ActionId != expected.ActionId || _movement.Session != expected.Session
+                || _movement.Generation != expected.Generation || _movement.WorldSessionId != expected.WorldSessionId
+                || _movement.Operation != expected.Operation
+                || _input.Atomic?.ChatId is string chat && chat != _latestChatId) return false;
+            mutate();
+            return true;
+        }
+    }
+
     internal void UpdateAtomicEvidence(int actionId, object evidence)
     {
         lock (_gate) if (_movement?.ActionId == actionId && _movement.Status == "running")

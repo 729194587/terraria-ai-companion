@@ -83,6 +83,8 @@ internal static class AtomicOperations
     internal static object CompactItem(Item item, int slot) => new { slot, hotbarKey = HotbarSlots.KeyForInventorySlot(slot),
         typeId = item.type, contentKey = item.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(item.type),
         name = item.Name, stack = item.IsAir ? 0 : item.stack,
+        empty = item.IsAir, prefix = item.IsAir ? 0 : (int)item.prefix, maxStack = item.IsAir ? 0 : item.maxStack,
+        favorited = !item.IsAir && item.favorited, inventoryToken = AtomicInventory.Token(item,slot),
         use = new { item.pick, item.axe, item.hammer, item.createTile, item.createWall } };
 
     // Project only this tool's response; the shared full snapshot stays unchanged.
@@ -125,7 +127,9 @@ internal static class AtomicOperations
                 slots = slots.Select(s => new { slot = s.Slot, hotbarKey = HotbarSlots.KeyForInventorySlot(s.Slot), stack = s.Item.stack }).ToArray(),
                 scope = "player.inventory including hotbar, ammo, coins; excludes equipment, banks, chests, mouse item" };
         }
-        var indices = mode == "hotbar" ? Enumerable.Range(0, Math.Min(10, p.inventory.Length)) : new[] { p.selectedItem };
+        var indices = mode == "slots" ? args.GetProperty("slots").EnumerateArray().Select(s=>s.GetInt32())
+            : mode == "hotbar" ? Enumerable.Range(0, Math.Min(10, p.inventory.Length)) : new[] { p.selectedItem };
+        if (indices.Any(i=>i>=p.inventory.Length)) return new {status="inventory_slot_out_of_range",inventory=Array.Empty<object>()};
         return new { status = "ok", selectedSlot = p.selectedItem, selectedHotbarKey = HotbarSlots.KeyForInventorySlot(p.selectedItem),
             inventory = indices.Select(i => CompactItem(p.inventory[i], i)).ToArray() };
     }
@@ -141,6 +145,12 @@ internal static class AtomicOperations
         }
         bool first = _action != action.ActionId;
         var a = request.Arguments; string op = request.Operation;
+        if (AtomicInventory.IsOperation(op))
+        {
+            _action=action.ActionId;
+            AtomicInventory.Before(p,request,action);
+            return;
+        }
         if (op == "drop_through_platform")
         {
             var terrain = TerrainReader.Read(p);

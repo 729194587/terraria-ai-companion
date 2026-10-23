@@ -2,6 +2,8 @@
 import asyncio
 import copy
 import math
+import re
+from time import perf_counter
 from control import BridgeError
 
 
@@ -14,6 +16,10 @@ TILE = {"x": {"type": "integer", "minimum": 0, "maximum": 100000},
         "y": {"type": "integer", "minimum": 0, "maximum": 100000}}
 TYPE_IDS = {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535},
             "minItems": 1, "maxItems": 32, "uniqueItems": True}
+INVENTORY_SLOT = {"type": "integer", "minimum": 0, "maximum": 49}
+INVENTORY_TOKEN = {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"}
+INVENTORY_GUARDS = {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN,
+                    "destinationToken": INVENTORY_TOKEN}
 TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地面支撑及运动模型支持状态。"),
     tool("get_player_status", "紧凑玩家状态：生命/魔力、运动和液体、所选完整物品、非空装备及活跃Buff；背包仅槽位摘要。不是完整背包，Mod自定义状态未知。"),
     tool("resolve_content", "按内容键或名称解析当前已加载的item/tile/wall ID。item支持本地化名称；tile/wall名称仅内容符号（如Terraria/Dirt），不是本地化地图名称。默认精确匹配，search为包含搜索；歧义必须选择候选，不猜ID。",
@@ -36,9 +42,21 @@ TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地�
          {**{k: {"type": "integer", "minimum": 0, "maximum": 100000} for k in ('minX', 'minY', 'maxX', 'maxY')},
           "tileTypes": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535}, "minItems": 1, "maxItems": 32, "uniqueItems": True},
           "maxResults": {"type": "integer", "minimum": 1, "maximum": 256}}, ['minX', 'minY', 'maxX', 'maxY', 'tileTypes']),
-    tool("inspect_inventory", "默认仅选中物品；mode=hotbar查快捷栏，mode=item按item精确匹配contentKey或当前语言名称，返回总数和槽位；mode=full请求全部背包/装备槽位及完整活跃Buff集合（空物品槽紧凑表示，空Buff槽省略）；Mod自定义状态未知。槽位是数组索引，hotbarKey是游戏按键。",
-         {"mode": {"type": "string", "enum": ['selected', 'hotbar', 'item', 'full']},
-          "item": {"type": "string", "minLength": 1, "maxLength": 150}}),
+    tool("inspect_inventory", "默认仅选中物品；mode=slots配slots读取指定内部索引（0..58，最多16项），返回inventoryToken供背包动作防旧快照校验；快捷栏用hotbar；item按精确contentKey或本地名称查数量/槽位；full查全部背包/装备及活跃Buff。背包动作仅0..49普通物品槽，hotbarKey是游戏按键，Mod自定义状态未知。",
+         {"mode": {"type": "string", "enum": ['selected', 'hotbar', 'item', 'full', 'slots']},
+          "item": {"type": "string", "minLength": 1, "maxLength": 150},
+          "slots": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 58},
+                    "minItems": 1, "maxItems": 16, "uniqueItems": True}}),
+    tool("transfer_inventory_item", "单人：在0..49普通背包槽搬运指定count；空目标可拆分，兼容同类目标可堆叠，容量不足则整个请求不执行。sourceToken/destinationToken须取本轮inspect_inventory对应槽。经原生拆分/堆叠钩子，核对数量与下一更新状态；不碰鼠标、箱子、装备、钱币或弹药槽。失败/未知后停止。",
+         {**INVENTORY_GUARDS, "destinationSlot": INVENTORY_SLOT,
+          "count": {"type": "integer", "minimum": 1, "maximum": 9999}},
+         ['sourceSlot', 'destinationSlot', 'sourceToken', 'destinationToken', 'count']),
+    tool("swap_inventory_slots", "单人：交换两个0..49普通背包槽的完整物品，不合并、不丢弃；保留物品实例。两个token须来自当前槽位观察；下一游戏更新核验。鼠标持物、使用中、旧快照或多人会拒绝。",
+         {**INVENTORY_GUARDS, "destinationSlot": INVENTORY_SLOT},
+         ['sourceSlot', 'destinationSlot', 'sourceToken', 'destinationToken']),
+    tool("hold_inventory_item", "单人：将sourceSlot完整物品与指定hotbarKey对应槽交换后选择该快捷键；目标原物品回源槽。即使同类也不合并，source已在目标槽则只选择。sourceToken/destinationToken来自两槽当前观察；核验槽位与下一更新持用状态。不自动使用物品。",
+         {**INVENTORY_GUARDS, "hotbarKey": {"type": "integer", "minimum": 0, "maximum": 9}},
+         ['sourceSlot', 'hotbarKey', 'sourceToken', 'destinationToken']),
     tool("get_world_state", "读取客户端昼夜、天气、事件、生物群系和深度。"),
     tool("navigate_to_x", "复用连续导航至玩家左上角水平世界像素targetX；30秒上限，普通角色运动限制仍适用；arrived由游戏物理状态校验。",
          {"targetX": {"type": "number", "minimum": 0, "maximum": 1000000}}, ["targetX"]),
@@ -85,7 +103,7 @@ def validate(name, arguments):
             if type(value) not in ((int,) if kind == 'integer' else (int, float)) or not math.isfinite(value) or not schema.get('minimum', -math.inf) <= value <= schema.get('maximum', math.inf):
                 raise ValueError('Invalid finite coordinate, radius or slot')
         elif kind == 'string':
-            if not isinstance(value, str) or not schema.get('minLength', 0) <= len(value) <= schema.get('maxLength', math.inf) or 'enum' in schema and value not in schema['enum']:
+            if not isinstance(value, str) or not schema.get('minLength', 0) <= len(value) <= schema.get('maxLength', math.inf) or 'enum' in schema and value not in schema['enum'] or 'pattern' in schema and re.fullmatch(schema['pattern'], value) is None:
                 raise ValueError('Invalid category or entity reference')
     if name not in SCHEMAS:
         raise ValueError('Unsupported atomic operation')
@@ -96,6 +114,10 @@ def validate(name, arguments):
             raise ValueError('Scan requires ordered bounds and area <=4096 tiles')
     if name == 'inspect_inventory' and (('item' in arguments) != (arguments.get('mode') == 'item')):
         raise ValueError('item is required only for mode=item')
+    if name == 'inspect_inventory' and (('slots' in arguments) != (arguments.get('mode') == 'slots')):
+        raise ValueError('slots is required only for mode=slots')
+    if name in ('transfer_inventory_item', 'swap_inventory_slots') and arguments['sourceSlot'] == arguments['destinationSlot']:
+        raise ValueError('Inventory source/destination must be different slots')
     if name == 'scan_entities':
         if 'typeIds' in arguments and arguments['category'] not in ('npc', 'item'):
             raise ValueError('typeIds requires category=npc or item')
@@ -193,10 +215,13 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             lifecycle.update(copy.deepcopy(fields))
     validate(name, arguments)
     if name == 'wait':
-        loop = asyncio.get_running_loop()
-        started = loop.time()
-        await asyncio.sleep(arguments['milliseconds'] / 1000)
-        return {'valid': True, 'status': 'completed', 'elapsedMilliseconds': (loop.time() - started) * 1000,
+        started = perf_counter()
+        # asyncio's event-loop clock can have a coarse resolution on Windows and
+        # allow early timer callbacks. Keep waiting against a precise monotonic clock.
+        duration = arguments['milliseconds'] / 1000
+        while (remaining := duration - (perf_counter() - started)) > 0:
+            await asyncio.sleep(remaining)
+        return {'valid': True, 'status': 'completed', 'elapsedMilliseconds': (perf_counter() - started) * 1000,
                 'clock': 'host_monotonic', 'effectStatus': 'not_applicable'}
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
@@ -216,6 +241,9 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         required_capability = 'atomic_foundations_v1'
     if name in ('scan_tiles', 'mine_wall', 'place_wall', 'hammer_tile', 'inspect_inventory', 'interact_tile'):
         required_capability = 'atomic_extensions_v1'
+    if (name in ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item')
+            or name == 'inspect_inventory' and arguments.get('mode') == 'slots'):
+        required_capability = 'inventory_operations_v1'
     if required_capability and required_capability not in bridge.hello.get('capabilities', []):
         raise BridgeError(f'Requires {required_capability}; no action started')
     if name in ('mine_wall', 'place_wall', 'hammer_tile', 'interact_tile') and 'server_confirmed_interactions_v1' not in bridge.hello.get('capabilities', []):

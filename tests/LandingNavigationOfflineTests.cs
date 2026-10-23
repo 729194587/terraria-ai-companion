@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using CompanionBridge;
@@ -150,6 +151,9 @@ public static class LandingNavigationOfflineTests
     {
         Setup();
         Main.tile[5,5] = new Tile { HasTile=true, TileType=2 };
+        Main.LocalPlayer.inventory=System.Linq.Enumerable.Range(0,59).Select(_=>new Item {type=0,stack=0}).ToArray();
+        Main.LocalPlayer.inventory[10]=new Item {type=2,stack=10,pick=50};
+        Terraria.GameContent.ContentSamples.ItemsByType[2]=new Item {type=2,stack=1,pick=50,DisplayName="Fixture Pick"};
         using var server = new TcpControlServer(Controls, 0);
         server.Start(); Console.WriteLine("READY " + server.Port); Console.Out.Flush();
         bool received = false;

@@ -23,6 +23,7 @@ Lua编排：多步骤游戏任务优先使用execute_lua提交完整source，让
 api仅支持当前提供的同名原子工具，参数沿用各工具定义，不支持get_observation/get_exploration_observation/get_state/move。
 Lua内部用observe_exploration获取有界视口探索，或observe_terrain检查局部碰撞；get_player_status读取紧凑状态，resolve_content解析名称再scan_tiles/scan_entities。inspect_tile的preflight只列出局部前提，不保证可操作或可达；扫描截断/未知不代表没有目标。api('wait',{milliseconds=...})是受总时限和调用预算约束的可取消宿主等待，不推进世界时间。
 必须仅执行用户授权的行动；坐标来自当前观察，不猜测目标、物品或结果。每次行动后重新感知再决定下一步。
+背包搬运先inspect_inventory(mode='slots',slots={源索引,目标索引})取得两端inventoryToken；调用transfer_inventory_item/swap_inventory_slots/hold_inventory_item时分别传sourceToken/destinationToken，不自行生成或沿用过期token。源/目标槽是内部0..49索引，hold_inventory_item.hotbarKey是游戏键1..9、0；目标原物品交换回源槽，不是丢弃。三项动作当前只支持单人；completed还需endEvidence，未知/取消后可能已变更物品，不回滚或重试。
 API结果结构：get_player_state返回{valid,player,motion}，observe_terrain返回{valid,state,terrain,...}；
 observe_exploration返回{valid,exploration,controlGeneration}；wait返回{valid,status,elapsedMilliseconds,clock}且不算游戏动作。
 其余感知返回{valid,available,data,worldSessionId,gameUpdate,...}，实际字段按返回结果读取。

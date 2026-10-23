@@ -25,6 +25,60 @@ from test_agent import event, tool, final
 
 @unittest.skipUnless(shutil.which('pwsh'), 'PowerShell 7 needed for compiled C# TCP integration')
 class LuaProtocolTests(unittest.IsolatedAsyncioTestCase):
+    async def test_lua_to_csharp_inventory_split_and_hold_with_release(self):
+        repo = Path(__file__).resolve().parents[1]
+        process = await asyncio.create_subprocess_exec(
+            shutil.which('pwsh'), '-NoProfile', '-File', str(repo / 'tests/run_csharp_tests.ps1'),
+            '-LandingProtocolHost', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        bridge = None
+        try:
+            line = await asyncio.wait_for(process.stdout.readline(), 30)
+            self.assertTrue(line.startswith(b'READY '), line)
+            bridge = await asyncio.to_thread(Bridge, int(line.split()[1]), 2)
+            result = await LuaRuntime(bridge).execute('''
+                local before=api('inspect_inventory',{mode='slots',slots={10,9}})
+                assert(before.valid and before.data.status == 'ok')
+                local from=before.data.inventory[1]
+                local to=before.data.inventory[2]
+                local split=api('transfer_inventory_item',{sourceSlot=10,destinationSlot=9,count=3,
+                    sourceToken=from.inventoryToken,destinationToken=to.inventoryToken})
+                assert(split.valid and split.completed and split.endEvidenceStatus == 'known')
+                local after=api('inspect_inventory',{mode='slots',slots={10,9}})
+                assert(after.data.inventory[1].stack == 7 and after.data.inventory[2].stack == 3)
+                local hold=api('hold_inventory_item',{sourceSlot=10,hotbarKey=0,
+                    sourceToken=after.data.inventory[1].inventoryToken,
+                    destinationToken=after.data.inventory[2].inventoryToken})
+                assert(hold.valid and hold.completed and hold.endEvidenceStatus == 'known')
+                local selected=api('inspect_inventory',{mode='selected'})
+                assert(selected.data.selectedSlot == 9 and selected.data.selectedHotbarKey == 0)
+                assert(selected.data.inventory[1].stack == 7)
+                return {split=split,hold=hold,after=selected}
+            ''', chat_id='landing-e2e')
+            self.assertEqual('completed', result['status'], result)
+            self.assertEqual('released', result['actionState'])
+            self.assertEqual(5, result['calls'])
+            self.assertEqual('local_inventory_verified', result['value']['hold']['evidence']['effectStatus'])
+            # Execute the shipped fixed program too; replace only its configured
+            # content key with the offline registry symbol, without changing logic.
+            source = (repo / 'examples/lua/hold_inventory_item.lua').read_text(encoding='utf-8')
+            source = source.replace('Terraria/CopperPickaxe', 'Terraria/Type2')
+            fixed = await LuaRuntime(bridge).execute(source, chat_id='landing-e2e')
+            self.assertEqual('completed', fixed['status'], fixed)
+            self.assertTrue(fixed['value']['action']['completed'])
+            self.assertEqual(0, fixed['value']['after']['data']['selectedHotbarKey'])
+            self.assertEqual(4, fixed['calls'])
+        finally:
+            if bridge:
+                bridge.close()
+            try:
+                await asyncio.wait_for(process.wait(), 3)
+            except asyncio.TimeoutError:
+                process.terminate()
+                await process.wait()
+            await process.stdout.read()
+            self.assertEqual(b'', await process.stderr.read())
+
     async def test_model_http_agent_lua_to_actual_csharp_action(self):
         repo = Path(__file__).resolve().parents[1]
         process = await asyncio.create_subprocess_exec(

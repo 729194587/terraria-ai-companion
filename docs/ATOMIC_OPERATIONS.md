@@ -1,4 +1,6 @@
-# 原子操作（Mod 0.1.38）
+# 原子操作（Mod 0.1.39）
+
+0.1.39 新增单人背包持用、整件交换、指定数量搬运/拆分/堆叠及槽位token校验，见 [背包操作](INVENTORY_OPERATIONS.md)。
 
 0.1.38 新增紧凑状态、内容解析、目标前置检查、扫描筛选/距离排序，以及 Lua 内有界探索和可取消等待。接口及验证边界见 [基础能力扩展](ATOMIC_FOUNDATIONS.md)。
 
@@ -70,7 +72,7 @@ NPC 引用由世界会话、NPC 槽位和 `InstancePerEntity GlobalNPC` 实例 T
 
 ## 第一轮扩展参数、回执与支持范围
 
-四个新工具及修改后的 `inspect_inventory`、`interact_tile` 要求能力 `atomic_extensions_v1`。墙、锤击与 interact_tile 还要求 `server_confirmed_interactions_v1`（包括单人调用，以免旧包语义混用）。旧 Mod 缺少所需能力时 Python 在发送前拒绝，不将新语义发送给旧适配器。旧 `mine_tile/place_tile/use_item` 参数及语义不变。20 个原子工具共用现有 Agent dispatch；没有新执行器或控制源。
+四个新工具及修改后的 `inspect_inventory`、`interact_tile` 要求能力 `atomic_extensions_v1`。墙、锤击与 interact_tile 还要求 `server_confirmed_interactions_v1`（包括单人调用，以免旧包语义混用）。旧 Mod 缺少所需能力时 Python 在发送前拒绝，不将新语义发送给旧适配器。旧 `mine_tile/place_tile/use_item` 参数及语义不变。这些原子工具共用现有 Agent dispatch；没有新执行器或控制源。
 
 ### scan_tiles
 

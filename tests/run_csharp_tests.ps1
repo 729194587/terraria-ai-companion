@@ -1,5 +1,6 @@
 param([switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
-    [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly, [switch]$AuthorityNetworkOnly)
+    [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly, [switch]$AuthorityNetworkOnly,
+    [switch]$InventoryOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
@@ -18,8 +19,10 @@ $sources = @(
     (Join-Path $PSScriptRoot 'AtomicGameOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'AtomicExtensionsOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'AtomicFoundationsOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'InventoryOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'LocalInputOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicOperations.cs'),
+    (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicInventory.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicQueries.cs'),
     (Join-Path $repo 'CompanionBridge/ControlState.cs'),
     (Join-Path $repo 'CompanionBridge/GameMessageCapture.cs'),
@@ -52,6 +55,7 @@ if ($AuthorityNetworkOnly) {
     return
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
+if ($InventoryOnly) { [InventoryOfflineTests]::Run(); return }
 if ($LandingProtocolHost) { [LandingNavigationOfflineTests]::RunProtocolHost(); return }
 if ($LandingOnly) { [LandingNavigationOfflineTests]::Run(); return }
 if ($LandingBudgetAudit) { [MotionOfflineTests]::AuditLandingBudget($BudgetRepetitions, $BudgetColdOnly.IsPresent); return }
@@ -65,6 +69,7 @@ if ($ObservationSamplePath -and !$MotionOnly) {
 [AtomicGameOfflineTests]::Run()
 [AtomicExtensionsOfflineTests]::Run()
 [AtomicFoundationsOfflineTests]::Run()
+[InventoryOfflineTests]::Run()
 [LocalInputOfflineTests]::Run()
 [AtomicAuthorityOfflineTests]::Run()
 
