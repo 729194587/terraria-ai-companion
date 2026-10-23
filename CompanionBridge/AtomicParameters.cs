@@ -27,7 +27,18 @@ internal static class AtomicParameters
         {
             switch (op)
             {
-                case "get_player_state": case "get_world_state": Fields(); break;
+                case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
+                case "resolve_content":
+                    if (keys.Except(new[] { "kind", "query", "mode", "maxResults" }).Any()
+                        || !keys.Contains("kind") || !keys.Contains("query")) throw new FormatException("Invalid resolver parameters.");
+                    if (args.GetProperty("kind").ValueKind != JsonValueKind.String
+                        || args.GetProperty("kind").GetString() is not ("item" or "tile" or "wall")) throw new FormatException("Invalid content kind.");
+                    if (args.GetProperty("query").ValueKind != JsonValueKind.String
+                        || args.GetProperty("query").GetString().Length is < 1 or > 150) throw new FormatException("Invalid content query.");
+                    if (keys.Contains("mode") && (args.GetProperty("mode").ValueKind != JsonValueKind.String
+                        || args.GetProperty("mode").GetString() is not ("exact" or "search"))) throw new FormatException("Invalid resolver mode.");
+                    if (keys.Contains("maxResults")) Integer("maxResults",1,32);
+                    break;
                 case "inspect_inventory":
                     if (keys.Except(new[] { "mode", "item" }).Any()) throw new FormatException("Unexpected inventory parameters.");
                     string mode = args.TryGetProperty("mode", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : keys.Contains("mode") ? null : "selected";
@@ -49,6 +60,23 @@ internal static class AtomicParameters
                     break;
                 case "inspect_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
                 case "scan_entities":
+                    if (keys.Contains("maxResults")) { Integer("maxResults",1,128); keys.Remove("maxResults"); }
+                    if (keys.Contains("typeIds"))
+                    {
+                        var ids=args.GetProperty("typeIds"); var unique=new HashSet<int>();
+                        if (ids.ValueKind != JsonValueKind.Array || ids.GetArrayLength() is < 1 or > 32) throw new FormatException("Invalid entity typeIds.");
+                        foreach (var id in ids.EnumerateArray())
+                            if (!id.TryGetInt32(out int v) || v is < 0 or > 65535 || !unique.Add(v)) throw new FormatException("Invalid entity typeIds.");
+                        if (args.GetProperty("category").GetString() is not ("npc" or "item")) throw new FormatException("typeIds requires npc/item.");
+                        keys.Remove("typeIds");
+                    }
+                    if (keys.Contains("npcFilter"))
+                    {
+                        if (args.GetProperty("category").GetString() != "npc" || args.GetProperty("npcFilter").ValueKind != JsonValueKind.String
+                            || args.GetProperty("npcFilter").GetString() is not ("all" or "hostile_creature" or "friendly_npc" or "critter" or "unknown"))
+                            throw new FormatException("Invalid NPC filter.");
+                        keys.Remove("npcFilter");
+                    }
                     Fields("category", "radius"); Number(args.GetProperty("radius"), 1, 1600);
                     if (args.GetProperty("category").GetString() is not ("all" or "npc" or "item" or "player")) throw new FormatException("Invalid category."); break;
                 default: throw new FormatException("Unsupported query.");

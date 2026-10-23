@@ -56,7 +56,7 @@ Bridge、socket、续租和动作监督始终在父进程。Lua 的同步回调�
 同一时刻最多有一个 Lua API 请求，动作真实终态或失败返回后才可继续。
 
 API 名称、参数和能力要求直接复用 `atomic_operations.TOOLS/SCHEMAS/validate/dispatch`，
-目前 20 项；见 [原子操作说明](ATOMIC_OPERATIONS.md)。例如：
+目前24项（含宿主等待）；新增接口见 [基础能力扩展](ATOMIC_FOUNDATIONS.md)。见 [原子操作说明](ATOMIC_OPERATIONS.md)。例如：
 
 ```lua
 local inventory = api('inspect_inventory', {mode='hotbar'})

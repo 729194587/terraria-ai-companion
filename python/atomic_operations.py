@@ -12,12 +12,27 @@ def tool(name, description, properties=None, required=None):
 
 TILE = {"x": {"type": "integer", "minimum": 0, "maximum": 100000},
         "y": {"type": "integer", "minimum": 0, "maximum": 100000}}
+TYPE_IDS = {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "minItems": 1, "maxItems": 32, "uniqueItems": True}
 TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地面支撑及运动模型支持状态。"),
+    tool("get_player_status", "紧凑玩家状态：生命/魔力、运动和液体、所选完整物品、非空装备及活跃Buff；背包仅槽位摘要。不是完整背包，Mod自定义状态未知。"),
+    tool("resolve_content", "按内容键或名称解析当前已加载的item/tile/wall ID。item支持本地化名称；tile/wall名称仅内容符号（如Terraria/Dirt），不是本地化地图名称。默认精确匹配，search为包含搜索；歧义必须选择候选，不猜ID。",
+         {"kind": {"type": "string", "enum": ["item", "tile", "wall"]},
+          "query": {"type": "string", "minLength": 1, "maxLength": 150},
+          "mode": {"type": "string", "enum": ["exact", "search"]},
+          "maxResults": {"type": "integer", "minimum": 1, "maximum": 32}}, ["kind", "query"]),
+    tool("observe_exploration", "Lua可调用的有界视口探索观察：以玩家为中心裁剪Tile半径（默认8，最大8），最多16实体及32调查候选，保留未知/时效/覆盖说明。不是寻路或全世界；没有返回的区域/实体不能视为空。",
+         {"radiusTiles": {"type": "integer", "minimum": 1, "maximum": 8},
+          "maxEntities": {"type": "integer", "minimum": 1, "maximum": 16}}),
+    tool("wait", "可取消的宿主真实时间等待，milliseconds为1..10000。不会推进游戏时间、持有按键或确认游戏效果；受Lua总时限和工具次数预算约束。",
+         {"milliseconds": {"type": "integer", "minimum": 1, "maximum": 10000}}, ["milliseconds"]),
     tool("observe_terrain", "复用get_terrain读取45×29局部碰撞及同次玩家状态；Tile为16像素。"),
-    tool("inspect_tile", "读取指定Tile类型、Frame、形状、液体、墙/线/颜色；越界或未加载显式未知。", TILE, ["x", "y"]),
-    tool("scan_entities", "按世界像素半径扫描客户端已知NPC、掉落物、其他玩家；NPC entityRef仅当前世界实例有效；截断不等于没有。",
-         {"category": {"type": "string", "enum": ["all", "npc", "item", "player"]}, "radius": {"type": "number", "minimum": 1, "maximum": 1600}}, ["category", "radius"]),
-    tool("scan_tiles", "按Tile格坐标闭区间[minX,maxX]×[minY,maxY]扫描指定tileTypes；1格16像素，Y向下。面积<=4096，最多返回256；未加载不等于空。类型ID来自inspect_tile/观察。",
+    tool("inspect_tile", "读取指定Tile类型、Frame、形状、液体、墙/线/颜色，附内容键及距离/工具等preflight局部前提（不保证可达或可执行）；越界或未加载显式未知。", TILE, ["x", "y"]),
+    tool("scan_entities", "按世界像素半径扫描客户端已知NPC、掉落物、其他玩家；先按typeIds/npcFilter筛选，再按玩家中心距离排序截断；npcFilter须category=npc，typeIds须npc/item。NPC entityRef仅当前世界实例有效；截断不等于没有。",
+         {"category": {"type": "string", "enum": ["all", "npc", "item", "player"]}, "radius": {"type": "number", "minimum": 1, "maximum": 1600},
+          "typeIds": TYPE_IDS, "maxResults": {"type": "integer", "minimum": 1, "maximum": 128},
+          "npcFilter": {"type": "string", "enum": ["all", "hostile_creature", "friendly_npc", "critter", "unknown"]}}, ["category", "radius"]),
+    tool("scan_tiles", "按Tile格坐标闭区间[minX,maxX]×[minY,maxY]扫描指定tileTypes；1格16像素，Y向下。面积<=4096，先按玩家中心距离排序再截断，最多返回256；未加载不等于空。类型ID来自inspect_tile/观察。",
          {**{k: {"type": "integer", "minimum": 0, "maximum": 100000} for k in ('minX', 'minY', 'maxX', 'maxY')},
           "tileTypes": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535}, "minItems": 1, "maxItems": 32, "uniqueItems": True},
           "maxResults": {"type": "integer", "minimum": 1, "maximum": 256}}, ['minX', 'minY', 'maxX', 'maxY', 'tileTypes']),
@@ -46,6 +61,9 @@ TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地�
     tool("stop_action", "取消当前Agent动作并等待游戏线程输入释放证据，不抢占手动控制。")]
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
+READS |= {'get_player_status', 'resolve_content', 'observe_exploration'}
+UTILITIES = {'wait'}
+ACTIONS = set(SCHEMAS) - READS - UTILITIES
 
 
 def validate(name, arguments):
@@ -78,6 +96,11 @@ def validate(name, arguments):
             raise ValueError('Scan requires ordered bounds and area <=4096 tiles')
     if name == 'inspect_inventory' and (('item' in arguments) != (arguments.get('mode') == 'item')):
         raise ValueError('item is required only for mode=item')
+    if name == 'scan_entities':
+        if 'typeIds' in arguments and arguments['category'] not in ('npc', 'item'):
+            raise ValueError('typeIds requires category=npc or item')
+        if 'npcFilter' in arguments and arguments['category'] != 'npc':
+            raise ValueError('npcFilter requires category=npc')
     if name == 'navigate_to_landing_region' and arguments['minPlayerLeftX'] > arguments['maxPlayerLeftX']:
         raise ValueError('Landing X bounds must be ordered')
 
@@ -169,6 +192,15 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         if lifecycle is not None:
             lifecycle.update(copy.deepcopy(fields))
     validate(name, arguments)
+    if name == 'wait':
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        await asyncio.sleep(arguments['milliseconds'] / 1000)
+        return {'valid': True, 'status': 'completed', 'elapsedMilliseconds': (loop.time() - started) * 1000,
+                'clock': 'host_monotonic', 'effectStatus': 'not_applicable'}
+    if name == 'observe_exploration':
+        from exploration import read_bounded_exploration
+        return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
     if name in ('get_player_state', 'observe_terrain'):
         reply = await asyncio.to_thread(bridge.get_terrain)
         if name == 'observe_terrain':
@@ -179,6 +211,9 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'navigate_to_landing_region' and 'landing_region_navigation_v1' not in bridge.hello.get('capabilities', []):
         raise BridgeError('Requires landing_region_navigation_v1; no two-dimensional action started')
     required_capability = {'select_hotbar_slot': 'hotbar_keys_v1', 'drop_through_platform': 'platform_drop_v1'}.get(name)
+    if (name in ('get_player_status', 'resolve_content')
+            or name == 'scan_entities' and set(arguments) - {'category', 'radius'}):
+        required_capability = 'atomic_foundations_v1'
     if name in ('scan_tiles', 'mine_wall', 'place_wall', 'hammer_tile', 'inspect_inventory', 'interact_tile'):
         required_capability = 'atomic_extensions_v1'
     if required_capability and required_capability not in bridge.hello.get('capabilities', []):

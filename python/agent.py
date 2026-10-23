@@ -80,7 +80,7 @@ def tool_result_metrics(name, result):
         action_success = result.get('actionSuccess')
         return {'result_valid': valid, 'action_success': action_success,
                 'success': valid and result.get('programCompleted') is True and action_success is not False}
-    if name in atomic_operations.SCHEMAS and name not in atomic_operations.READS:
+    if name in atomic_operations.SCHEMAS and name in atomic_operations.ACTIONS:
         action_success = valid and result.get("status") == "completed"
     elif name in ("move", "stop_movement"):
         execution = result.get("execution", {})
@@ -204,7 +204,7 @@ def history_receipts(messages):
     names = {call["id"]: call["function"].get("name")
              for message in retained for call in message.get("tool_calls") or []}
     payloads = {"get_observation": "observation",
-                "get_exploration_observation": "exploration"}
+                "get_exploration_observation": "exploration", "observe_exploration": "exploration"}
     for message in retained:
         if message.get("role") != "tool":
             continue
@@ -521,7 +521,7 @@ class Agent:
                                     diagnostics.tool_result(operation, parameters, reply)
                                     tracing.trace.emit('lua_tool_result', operation=operation, result=reply,
                                                        **tool_result_metrics(operation, reply))
-                                    if operation not in atomic_operations.READS:
+                                    if operation in atomic_operations.ACTIONS:
                                         actions.append(reply)
                                         if not reply.get('blocked'):
                                             last_atomic_action = reply
@@ -569,7 +569,7 @@ class Agent:
                                 elif not atomic_halted:
                                     lua_failure = None
                             elif name in atomic_operations.SCHEMAS:
-                                if name not in atomic_operations.READS and name != "stop_action" and atomic_halted:
+                                if name in atomic_operations.ACTIONS and name != "stop_action" and atomic_halted:
                                     result = {"valid": False, "status": "failed", "reason": "previous_atomic_action_failed; no automatic retry",
                                               "blocked": True, "previousFailure": copy.deepcopy(first_atomic_failure)}
                                 else:
@@ -590,7 +590,7 @@ class Agent:
                                         result = await mining_recovery.recover(arguments, result, recovery_call)
                                     if name == "use_item" and result.get("status") == "completed":
                                         unconfirmed_item_effect = True
-                                if name not in atomic_operations.READS:
+                                if name in atomic_operations.ACTIONS:
                                     last_atomic_action = result
                                     if result.get("status") != "completed" and first_atomic_failure is None:
                                         first_atomic_failure = copy.deepcopy(result)
@@ -621,7 +621,7 @@ class Agent:
                             if name == lua_agent.TOOL_NAME:
                                 lua_failure = {**result, 'status': 'host_error', 'reason': str(error)}
                                 atomic_halted |= last_atomic_action is not None
-                            if name in atomic_operations.SCHEMAS and name not in atomic_operations.READS:
+                            if name in atomic_operations.SCHEMAS and name in atomic_operations.ACTIONS:
                                 atomic_halted = True
                                 last_atomic_action = {**result, "reason": str(error)}
                                 if first_atomic_failure is None:

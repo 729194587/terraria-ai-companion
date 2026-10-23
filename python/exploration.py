@@ -203,3 +203,79 @@ def read_exploration_observation(bridge):
     return {"valid": result["status"] != "unavailable", "exploration": result,
             "controlGeneration": reply.get("controlGeneration"),
             "receivedAt": datetime.now(timezone.utc).isoformat()}
+
+
+def read_bounded_exploration(bridge, radiusTiles=8, maxEntities=16):
+    """Crop before semantic projection; omission is explicit, never air/safety evidence."""
+    from lua_worker import encode, VALUE_BYTES, ValueLimit
+    reply = bridge.get_observation()
+    source = reply['observation']
+    validate_observation(source)
+    sample = copy.deepcopy(source)
+    terrain, player = sample.get('terrain'), sample.get('player')
+    crop = None
+    if terrain is not None and player is not None:
+        box = player['boundsWorldPixels']
+        cx = math.floor((box['x'] + box['width'] / 2) / terrain['tileSize'])
+        cy = math.floor((box['y'] + box['height'] / 2) / terrain['tileSize'])
+        bounds = terrain['bounds']
+        x0, y0 = max(bounds['x'], cx-radiusTiles), max(bounds['y'], cy-radiusTiles)
+        x1 = min(bounds['x']+bounds['width'], cx+radiusTiles+1)
+        y1 = min(bounds['y']+bounds['height'], cy+radiusTiles+1)
+        if x1 > x0 and y1 > y0:
+            rows = [list(row_indices(row, len(terrain['palette']), bounds['width']))
+                    for row in terrain['rows'][y0-bounds['y']:y1-bounds['y']]]
+            rows = [row[x0-bounds['x']:x1-bounds['x']] for row in rows]
+            cells = [terrain['palette'][index] for row in rows for index in row]
+            crop = dict(x=x0, y=y0, width=x1-x0, height=y1-y0)
+            terrain.update(bounds=crop, rows=[dict(encoding='indices', data=row) for row in rows],
+                           unknownCount=sum(c['knowledge'] != 'read' for c in cells),
+                           uninterpretedCount=sum(c['collisionKnowledge'] != 'known' for c in cells))
+        else:
+            sample['terrain'] = None
+    else:
+        sample['terrain'] = None
+    entities = sample.get('entities')
+    omitted_entities = 0
+    if entities is not None:
+        def distance(e):
+            box = e['boundsWorldPixels']
+            pbox = player['boundsWorldPixels'] if player else dict(x=0, y=0, width=0, height=0)
+            return ((box['x']+box['width']/2-pbox['x']-pbox['width']/2)**2
+                    + (box['y']+box['height']/2-pbox['y']-pbox['height']/2)**2, e['kind'], e['slot'])
+        items = sorted(entities['items'], key=distance)
+        entities['items'] = items[:maxEntities]
+        omitted_entities = len(items) - len(entities['items'])
+        entities['coverage'].update(returnedCount=len(entities['items']),
+            omittedCount=entities['coverage'].get('omittedCount', 0)+omitted_entities)
+    candidates = sample.get('interactables')
+    omitted_candidates = 0
+    if candidates is not None:
+        items = candidates['items']
+        inside = [i for i in items if crop and crop['x'] <= i['anchorTile']['x'] < crop['x']+crop['width']
+                  and crop['y'] <= i['anchorTile']['y'] < crop['y']+crop['height']]
+        candidates['items'] = inside[:32]
+        omitted_candidates = len(items)-len(candidates['items'])
+    sample["completeness"]["completeWithinScope"] = False
+    sample["completeness"]["reasons"].append("bounded_exploration_projection")
+    if sample["status"] == "ok":
+        sample["status"] = "partial"
+    result = project_observation(sample)
+    result['completeness']['completeWithinScope'] = False
+    result['completeness']['reasons'] = list(dict.fromkeys(
+        result['completeness']['reasons'] + ['bounded_exploration_projection']))
+    result['projectionCoverage'] = dict(radiusTiles=radiusTiles, terrainBounds=crop,
+        entitySort='nearest_first', omittedEntities=omitted_entities, omittedCandidates=omitted_candidates,
+        outside='unobserved_or_omitted; never infer empty, safe or reachable')
+    if result.get('investigate') is not None:
+        result['investigate']['omittedCount'] = omitted_candidates
+        result['investigate']['candidateCount'] = result['investigate']['returnedCount'] + omitted_candidates
+    out = dict(valid=result['status'] != 'unavailable', exploration=result,
+               controlGeneration=reply.get('controlGeneration'))
+    try:
+        encode(out, VALUE_BYTES)
+    except ValueLimit:
+        # Never drop hazards or release evidence to make the payload fit.
+        return dict(valid=False, reason='exploration_result_limit', worldSessionId=source['worldSessionId'],
+                    gameUpdate=source['gameUpdate'], suggestion='Use smaller radiusTiles/maxEntities')
+    return out

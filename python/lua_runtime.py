@@ -195,7 +195,7 @@ class LuaRuntime:
                 if type(name) is not str:
                     raise Interrupted('bad_argument')
                 atomic.validate(name, args)
-                if halted and name not in atomic.READS:
+                if halted and name in atomic.ACTIONS:
                     result = {'valid': False, 'status': 'blocked', 'reason': 'previous_action_failed', 'blocked': True}
                     if on_result is not None:
                         on_result(name, args, result)
@@ -212,7 +212,7 @@ class LuaRuntime:
                         on_result(name, args, result)
                     tracing.trace.emit('lua_api_result', call_id=sequence, operation=name, result=result,
                                        elapsed_ms=(monotonic() - started) * 1000)
-                    if name not in atomic.READS:
+                    if name in atomic.ACTIONS:
                         out['lastAction'] = bounded_action(result)
                         if lifecycle.get('uncertain') or not safe_terminal(result):
                             out['actionState'] = 'unknown'
