@@ -20,7 +20,7 @@ TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地�
          {**{k: {"type": "integer", "minimum": 0, "maximum": 100000} for k in ('minX', 'minY', 'maxX', 'maxY')},
           "tileTypes": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535}, "minItems": 1, "maxItems": 32, "uniqueItems": True},
           "maxResults": {"type": "integer", "minimum": 1, "maximum": 256}}, ['minX', 'minY', 'maxX', 'maxY', 'tileTypes']),
-    tool("inspect_inventory", "默认仅选中物品；mode=hotbar查快捷栏，mode=item按item精确匹配contentKey或当前语言名称，返回总数和槽位；mode=full明确请求完整背包及装备。槽位是数组索引，hotbarKey是游戏按键。",
+    tool("inspect_inventory", "默认仅选中物品；mode=hotbar查快捷栏，mode=item按item精确匹配contentKey或当前语言名称，返回总数和槽位；mode=full请求全部背包/装备槽位及完整活跃Buff集合（空物品槽紧凑表示，空Buff槽省略）；Mod自定义状态未知。槽位是数组索引，hotbarKey是游戏按键。",
          {"mode": {"type": "string", "enum": ['selected', 'hotbar', 'item', 'full']},
           "item": {"type": "string", "minLength": 1, "maxLength": 150}}),
     tool("get_world_state", "读取客户端昼夜、天气、事件、生物群系和深度。"),

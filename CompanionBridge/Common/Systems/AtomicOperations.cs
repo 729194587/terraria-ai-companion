@@ -110,10 +110,29 @@ internal static class AtomicOperations
         name = item.Name, stack = item.IsAir ? 0 : item.stack,
         use = new { item.pick, item.axe, item.hammer, item.createTile, item.createWall } };
 
+    // Project only this tool's response; the shared full snapshot stays unchanged.
+    internal static object FullInventory(object snapshot)
+    {
+        var source = System.Text.Json.JsonSerializer.SerializeToElement(snapshot);
+        var result = source.EnumerateObject().ToDictionary(p => p.Name, p => (object)p.Value);
+        foreach (string name in new[] { "inventory", "equipment", "dyes", "miscEquipment", "miscDyes" })
+            result[name] = source.GetProperty(name).EnumerateArray().Select(item =>
+                item.GetProperty("empty").GetBoolean()
+                    ? (object)new { slot = item.GetProperty("slot").GetInt32(), empty = true }
+                    : item).ToArray();
+        result["buffs"] = source.GetProperty("buffs").EnumerateArray()
+            .Where(buff => buff.GetProperty("typeId").GetInt32() > 0
+                        && buff.GetProperty("timeTicks").GetInt32() > 0).ToArray();
+        result["buffScope"] = "Complete active buffs in player.buffType/buffTime; empty/inactive slots omitted; slot indices retained";
+        result["scope"] = "All slots of player.inventory, armor, dye, miscEquips, miscDyes; includes vanilla social slots; excludes banks, chests, mouse item and Mod accessory slots";
+        result["customState"] = "unknown; Mod custom player/item/buff state and Mod accessory slots not read";
+        return result;
+    }
+
     private static object Inventory(Player p, System.Text.Json.JsonElement args)
     {
         string mode = args.TryGetProperty("mode", out var value) ? value.GetString() : "selected";
-        if (mode == "full") return ObservationReader.ReadPlayer(p);
+        if (mode == "full") return FullInventory(ObservationReader.ReadPlayer(p));
         if (mode == "item")
         {
             string wanted = args.GetProperty("item").GetString();

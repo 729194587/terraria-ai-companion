@@ -13,6 +13,9 @@ public static class AtomicExtensionsOfflineTests
 {
     static void Check(bool ok, string reason) { if (!ok) throw new Exception(reason); }
     static JsonElement Json(object value) => JsonSerializer.SerializeToElement(value);
+    public static string ProjectInventoryJson(string input)
+        => JsonSerializer.Serialize(AtomicOperations.FullInventory(JsonDocument.Parse(input).RootElement));
+
     public static void Run()
     {
         var controls=CompanionBridge.CompanionBridge.Controls;
@@ -64,7 +67,40 @@ public static class AtomicExtensionsOfflineTests
         query=Query("inspect_inventory",new {}).GetProperty("data");
         Check(query.GetProperty("inventory").GetArrayLength()==1 && query.GetProperty("selectedSlot").GetInt32()==0,"Default selected-only response");
         Check(Query("inspect_inventory",new {mode="hotbar"}).GetProperty("data").GetProperty("inventory").GetArrayLength()==10,"Hotbar explicit");
-        Check(Query("inspect_inventory",new {mode="full"}).GetProperty("data").TryGetProperty("statLife",out _),"Full mode reuses existing observation reader");
+        object Empty(int slot) => new { slot, empty=true, typeId=0, stack=0, name="", use=new {damage=0} };
+        object Filled(int slot) => new { slot, empty=false, typeId=5000, contentKey="Fixture/ModPick",
+            name="Mod pick", stack=7, hotbarKey=HotbarSlots.KeyForInventorySlot(slot), prefix=3, favorited=true,
+            use=new {pick=100,axe=20,hammer=30,damage=40,createTile=2,createWall=1,
+                useStyle=1,useTime=10,useAnimation=10,consumable=true,ammo=0,shoot=0},
+            customState="unknown; custom ModItem data not serialized" };
+        var slots = new object[] { Empty(0), Filled(1), Filled(9) };
+        ObservationReader.PlayerSnapshot = new { selectedSlot=9, selectedHotbarKey=0,
+            hotbarKeyBindings=Enumerable.Range(0,10).Select(slot => new { key=HotbarSlots.KeyForInventorySlot(slot), inventorySlot=slot }).ToArray(),
+            inventory=slots, equipment=slots, dyes=slots, miscEquipment=slots, miscDyes=slots,
+            buffs=new[] { new {slot=0,typeId=0,timeTicks=0,contentKey=(string)null},
+                new {slot=1,typeId=5000,timeTicks=600,contentKey="Fixture/ModBuff"},
+                new {slot=2,typeId=2,timeTicks=0,contentKey="Terraria/Expired"},
+                new {slot=3,typeId=3,timeTicks=20,contentKey="Terraria/Active"} } };
+        var fullBefore=Json(ObservationReader.PlayerSnapshot);
+        query=Query("inspect_inventory",new {mode="full"}).GetProperty("data");
+        foreach(string name in new[] {"inventory","equipment","dyes","miscEquipment","miscDyes"})
+        {
+            var items=query.GetProperty(name);
+            Check(items.GetArrayLength()==3 && items[0].EnumerateObject().Count()==2
+                && items[0].GetProperty("slot").GetInt32()==0 && items[0].GetProperty("empty").GetBoolean(),"All empty slots compact with explicit indices");
+            Check(items[1].GetRawText()==fullBefore.GetProperty(name)[1].GetRawText()
+                && items[2].GetRawText()==fullBefore.GetProperty(name)[2].GetRawText(),"Nonempty Mod item identity, count and all action attributes retained");
+        }
+        Check(query.GetProperty("selectedHotbarKey").GetInt32()==0
+            && query.GetProperty("hotbarKeyBindings")[9].GetProperty("key").GetInt32()==0
+            && query.GetProperty("inventory")[1].GetProperty("hotbarKey").GetInt32()==2,"Hotbar mapping preserved");
+        Check(query.GetProperty("buffs").GetArrayLength()==2
+            && query.GetProperty("buffs")[0].GetRawText()==fullBefore.GetProperty("buffs")[1].GetRawText()
+            && query.GetProperty("buffs")[1].GetRawText()==fullBefore.GetProperty("buffs")[3].GetRawText(),"All active buffs retain slot/type/content key/duration; inactive omitted");
+        Check(query.GetProperty("buffScope").GetString().Contains("Complete active")
+            && query.GetProperty("customState").GetString().Contains("unknown"),"Coverage and unknown custom state explicit");
+        Check(Json(ObservationReader.PlayerSnapshot).GetRawText()==fullBefore.GetRawText(),"Shared full snapshot unchanged");
+        ObservationReader.PlayerSnapshot=null;
         player.inventory[1].stack=player.inventory[4].stack=0;
         Check(Query("inspect_inventory",new {mode="item",item="Stone"}).GetProperty("data").GetProperty("count").GetInt32()==0,"Known item absent reports zero");
         Check(Query("inspect_inventory",new {mode="item",item="NoSuchItem"}).GetProperty("data").GetProperty("status").GetString()=="unknown_item","Unknown name differs from zero");

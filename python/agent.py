@@ -19,14 +19,15 @@ import agent_diagnostics as diagnostics
 from control import Bridge, BridgeError
 from llm import LLMClient, LLMError
 from spatial import describe_space
+from observation import project_model_observation
 from movement import move, stop_movement
 from exploration import read_exploration_observation
 from movement_loop import MovementLoop, LoopBudgetExhausted
 
 SYSTEM = """你是 Terraria 中的 AI 玩家，通过游戏内聊天与其他玩家交流。使用对方的语言，简短回答，最多 400 个字符。
 游戏状态相关问题若当前信息不足，必须调用 get_state、get_exploration_observation 或 get_observation；普通聊天不必获取完整观察。不得猜测位置、生命、地形或工具结果。
-get_state 保留局部碰撞网格和附近实体；get_observation 返回实际摄像机视口的地形、玩家背包装备快捷栏、NPC、玩家、掉落物、弹幕和环境，不是整个世界地图，不提供宝箱内容。
-探索或移动前后优先用 get_exploration_observation：同一完整观察的探索投影，返回玩家、语义地形矩形、潜在落差、实体和调查候选，不含背包装备或原始逐格数据。矩形坐标为 Tile，stateOverrides 继承 readCellDefaults 仅限 knowledge=read；未加载不可当空气。supportColumns 不是可达路径，调查候选不保证可交互。需要物品、精确材质/Frame 或其他细节再用 get_observation。
+get_state 保留局部碰撞网格和附近实体；get_observation 返回实际摄像机视口的地形、玩家导航与安全状态（不含背包、装备、染料、特殊装备和Buff数组；按需调用inspect_inventory）、NPC、玩家、掉落物、弹幕和环境，不是整个世界地图，不提供宝箱内容。
+探索或移动前后优先用 get_exploration_observation：同一完整观察的探索投影，返回玩家、语义地形矩形、潜在落差、实体和调查候选，不含背包装备或原始逐格数据。矩形坐标为 Tile，stateOverrides 继承 readCellDefaults 仅限 knowledge=read；未加载不可当空气。supportColumns 不是可达路径，调查候选不保证可交互。物品及Buff按需用inspect_inventory；精确材质/Frame 或其他场景细节再用 get_observation。
 精确位置、碰撞和实体状态优先使用结构化工具。视口外、未加载、未知和过期必须区别处理。相交只代表几何范围，不保证光照、遮挡或隐形下实际可见；摄像机与世界阶段可能不同，须检查时间和完整性。
 实体 friendly_npc/critter/hostile_creature/unknown 是基于标志的保守分类，敌对为推断，不保证当前正攻击；其他玩家未判断 PvP 关系。
 实体方向和距离相对 AI 角色中心，世界像素坐标 Y 向下；范围外、未同步、截断、available=false 和 unknown 均不等于没有，也不保证画面可见。
@@ -43,7 +44,7 @@ TOOLS = [{"type": "function", "function": {"name": "get_state",
     "description": "读取同次游戏快照的自身状态、45×29 原始碰撞网格、空间信息和附近其他玩家/NPC/生物的名称、分类、位置、方位与距离；注意未知/截断及分类依据。不识别掉落物或宝箱。",
     "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}}]
 TOOLS.append({"type": "function", "function": {"name": "get_observation",
-    "description": "按需读取当前客户端完整摄像机视口，不是世界地图：字典/逐行地形、玩家背包装备快捷栏、NPC/玩家/掉落物/弹幕、环境；检查采样时间、camera年龄、完整性和未知原因。RLE data 为 [重复数,字典索引,...]，indices data 每格一个索引，每行解码长度为 terrain.bounds.width。实体相交仅为几何范围，宝箱内容未知。",
+    "description": "按需读取当前客户端完整摄像机视口，不是世界地图：字典/逐行地形、玩家导航与安全状态（不含背包、装备、染料、特殊装备和Buff数组；按需调用inspect_inventory）、NPC/玩家/掉落物/弹幕、环境；检查采样时间、camera年龄、完整性和未知原因。RLE data 为 [重复数,字典索引,...]，indices data 每格一个索引，每行解码长度为 terrain.bounds.width。实体相交仅为几何范围，宝箱内容未知。",
     "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}})
 TOOLS.append({"type": "function", "function": {"name": "get_exploration_observation",
     "description": "探索专用视口观察：位置/速度/生命、连续语义地形矩形、障碍与潜在落差、独立液体/危险、实体和未确认调查候选。保留过期/未知/未加载/截断；无完整背包、环境、palette 或逐格编码。非寻路与安全通行保证，细节再查 get_observation。",
@@ -82,7 +83,7 @@ def tool_result_metrics(name, result):
 
 def read_observation(bridge):
     reply = bridge.get_observation()
-    observation = reply["observation"]
+    observation = project_model_observation(reply["observation"])
     return {"valid": observation["status"] != "unavailable", "observation": observation,
             "controlGeneration": reply.get("controlGeneration"),
             "receivedAt": datetime.now(timezone.utc).isoformat(),

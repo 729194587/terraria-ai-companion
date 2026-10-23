@@ -1,4 +1,5 @@
 """Versioned, bounded observation validation; no game or model connection."""
+import copy
 import json
 import math
 
@@ -162,3 +163,17 @@ def validate_observation(value):
                                      or terrain["unknownCount"] or terrain["uninterpretedCount"]):
         raise ValueError("Incomplete observation marked complete")
     return value
+
+
+def project_model_observation(value):
+    """Validate the complete wire snapshot before removing inventory detail."""
+    validate_observation(value)
+    result = copy.deepcopy(value)
+    player = result.get("player")
+    if player is not None:
+        for key in ("inventory", "equipment", "dyes", "miscEquipment", "miscDyes", "buffs"):
+            player.pop(key, None)
+        player["inventoryScope"] = (
+            "Inventory, equipment, dyes, misc equipment and buffs omitted; "
+            "call inspect_inventory as needed. Mod custom state remains unknown.")
+    return result

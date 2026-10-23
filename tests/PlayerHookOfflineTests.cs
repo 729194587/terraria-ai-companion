@@ -262,7 +262,8 @@ namespace CompanionBridge.Common.Systems
     internal static class ObservationReader
     {
         internal static string WorldSessionId = "hook-test";
-        internal static object ReadPlayer(Terraria.Player p) => new { p.statLife };
+        internal static object PlayerSnapshot;
+        internal static object ReadPlayer(Terraria.Player p) => PlayerSnapshot ?? new { p.statLife };
         internal static object ReadEnvironment(Terraria.Player p) => new { dayTime = true };
         internal static TileCell ReadCell(int x, int y, System.Collections.Generic.Dictionary<(int,int), object> objects)
         {

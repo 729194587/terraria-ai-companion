@@ -279,7 +279,9 @@ class ObservationAgentTests(unittest.IsolatedAsyncioTestCase):
             agent.receive(event(1)); await agent.task
             result = json.loads(model.requests[1][-1]["content"])
             self.assertTrue(result["valid"])
-            self.assertEqual(result["observation"], fixture())
+            expected = fixture()
+            expected["player"]["inventoryScope"] = result["observation"]["player"]["inventoryScope"]
+            self.assertEqual(result["observation"], expected)
             agent.receive(event(2)); await agent.task
             old = [m for m in model.requests[2] if m["role"] == "tool"]
             self.assertTrue(json.loads(old[0]["content"])["expired"])
