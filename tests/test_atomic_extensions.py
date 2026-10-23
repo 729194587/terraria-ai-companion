@@ -118,4 +118,5 @@ class ExtensionDispatchTests(unittest.IsolatedAsyncioTestCase):
         agent.receive(event(1))
         await agent.task
         self.assertEqual('hammer_tile', next(p['operation'] for c, p in game.sent if c == 'start_atomic'))
-        self.assertEqual(1, sum(c == 'query_atomic' for c, _ in game.sent))
+        queries = [p["arguments"]["mode"] for c, p in game.sent if c == "query_atomic"]
+        self.assertEqual(["full", "hotbar", "full", "full"], queries)

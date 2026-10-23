@@ -219,7 +219,7 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
         agent=Agent(bridge,model)
         with patch('cost_metrics.emit'):
             agent.receive(event(1));await agent.task
-            result=json.loads(model.requests[1][-1]['content'])
+            result=json.loads(model.requests[1][-2]['content'])
             self.assertIn('exploration',result);self.assertTrue(result['valid'])
             self.assertEqual(bridge.reads,1)
             agent.receive(event(2));await agent.task
@@ -233,7 +233,7 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
         agent=Agent(bridge,model)
         with patch('cost_metrics.emit'):
             agent.receive(event(1));await agent.task
-        self.assertFalse(json.loads(model.requests[1][-1]['content'])['valid'])
+        self.assertFalse(json.loads(model.requests[1][-2]['content'])['valid'])
         source=recorded();source.update(status='unavailable',player=None,terrain=None,entities=None,camera=None,
                                        environment=None,interactables=None)
         source['completeness']['completeWithinScope']=False

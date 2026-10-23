@@ -135,7 +135,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         summaries = [data for name, data in records if name == "chat_cost"]
         self.assertEqual([s["model_calls"] for s in summaries], [2, 1])
         self.assertEqual([s["tool_calls"] for s in summaries], [1, 0])
-        size = len(model.requests[1][-1]["content"].encode("utf-8"))
+        size = len(model.requests[1][-2]["content"].encode("utf-8"))
         self.assertEqual(summaries[0]["tool_result_utf8_bytes"], size)
         self.assertEqual(summaries[1]["repeated_tool_utf8_bytes"], size)
         self.assertIsNone(summaries[0]["tokens"]["input_tokens"]["known_sum"])

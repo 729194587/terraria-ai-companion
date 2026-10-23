@@ -77,7 +77,7 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(model.requests), 1)
         agent.receive(event(3))
         await agent.task
-        self.assertEqual([m["role"] for m in model.requests[1]], ["system", "user", "assistant", "user"])
+        self.assertEqual([m["role"] for m in model.requests[1]], ["system", "user", "assistant", "user", "user"])
         self.assertEqual([p["text"] for _, p in game.sent], ["你好", "again"])
 
     async def test_real_tool_result_format_and_history(self):
@@ -86,9 +86,9 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         agent.receive(event(1))
         await agent.task
         request = model.requests[1]
-        self.assertEqual([m["role"] for m in request], ["system", "user", "assistant", "tool"])
-        self.assertEqual(request[-1]["tool_call_id"], "call_1")
-        result = json.loads(request[-1]["content"])
+        self.assertEqual([m["role"] for m in request], ["system", "user", "assistant", "tool", "user"])
+        self.assertEqual(request[-2]["tool_call_id"], "call_1")
+        result = json.loads(request[-2]["content"])
         self.assertEqual(result["player"]["life"], 80)
         self.assertFalse(result["entities"]["available"])
         self.assertEqual(len(result["terrain"]["rows"]), 29)
@@ -103,7 +103,7 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
             agent = Agent(game, model)
             agent.receive(event(1))
             await agent.task
-            result = json.loads(model.requests[1][-1]["content"])
+            result = json.loads(model.requests[1][-2]["content"])
             self.assertFalse(result["valid"])
             self.assertIn("error", result)
 
@@ -219,7 +219,7 @@ class LLMTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["player"]["life"], 80)
                 self.assertTrue(all("reasoning_content" not in message for message in messages))
                 if len(requests) == 2:
-                    self.assertEqual([m["role"] for m in messages], ["system", "user", "assistant", "tool"])
+                    self.assertEqual([m["role"] for m in messages], ["system", "user", "assistant", "tool", "user"])
                     answer = final("80 HP")
                 else:
                     self.assertEqual(len(requests), 3)

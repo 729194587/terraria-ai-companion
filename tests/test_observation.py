@@ -231,7 +231,7 @@ class ObservationAgentTests(unittest.IsolatedAsyncioTestCase):
                 with patch("agent_trace.trace", trace):
                     agent.receive(event(1)); await agent.task
                 records = [json.loads(line) for line in trace.path.read_text(encoding="utf-8").splitlines()]
-            result = json.loads(model.requests[1][-1]["content"])
+            result = json.loads(model.requests[1][-2]["content"])
             self.assertFalse(result["valid"])
             self.assertEqual(result["diagnostic"]["code"], "duplicate_instance_key")
             self.assertIn('"entityIndex": 1', result["error"])
@@ -256,13 +256,13 @@ class ObservationAgentTests(unittest.IsolatedAsyncioTestCase):
         agent = Agent(game, model)
         try:
             agent.receive(event(1)); await agent.task
-            dead = json.loads(model.requests[1][-1]["content"])
+            dead = json.loads(model.requests[1][-2]["content"])
             self.assertTrue(dead["valid"])
             self.assertEqual(dead["observation"]["status"], "partial")
             value["player"]["dead"] = False; value["gameUpdate"] = 43; value["observationId"] = "world:2"
             value["status"] = "ok"; value["completeness"].update(completeWithinScope=True, reasons=[])
             agent.receive(event(2)); await agent.task
-            revived = json.loads(model.requests[3][-1]["content"])
+            revived = json.loads(model.requests[3][-2]["content"])
             self.assertEqual(revived["observation"]["gameUpdate"], 43)
             self.assertFalse(revived["observation"]["player"]["dead"])
             self.assertEqual([p["text"] for _, p in game.sent], ["dead but observing", "respawned"])
@@ -277,7 +277,7 @@ class ObservationAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("get_observation", [t["function"]["name"] for t in TOOLS])
         try:
             agent.receive(event(1)); await agent.task
-            result = json.loads(model.requests[1][-1]["content"])
+            result = json.loads(model.requests[1][-2]["content"])
             self.assertTrue(result["valid"])
             expected = fixture()
             expected["player"]["inventoryScope"] = result["observation"]["player"]["inventoryScope"]
@@ -302,7 +302,7 @@ class ObservationAgentTests(unittest.IsolatedAsyncioTestCase):
             agent = Agent(game, model)
             try:
                 agent.receive(event(1)); await agent.task
-                result = json.loads(model.requests[1][-1]["content"])
+                result = json.loads(model.requests[1][-2]["content"])
                 self.assertEqual(result["valid"], not fail)
                 if not fail:
                     self.assertFalse(result["observation"]["completeness"]["completeWithinScope"])

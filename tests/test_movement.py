@@ -375,7 +375,7 @@ class MovementAgentTests(unittest.IsolatedAsyncioTestCase):
         try:
             agent.receive(event(1)); await agent.task
             self.assertEqual(len(bridge.observations), 2)
-            result = json.loads(model.requests[2][-1]["content"])
+            result = json.loads(model.requests[2][-2]["content"])
             self.assertTrue(result["completed"])
             self.assertEqual(bridge.observations[0]["player"]["positionWorldPixels"]["x"], 100)
             self.assertEqual(bridge.observations[1]["player"]["positionWorldPixels"]["x"], 110)
@@ -404,7 +404,7 @@ class MovementAgentTests(unittest.IsolatedAsyncioTestCase):
             bridge = MovementBridge(); model = Model(call, final("done")); agent = Agent(bridge, model)
             try:
                 agent.receive(event(1)); await agent.task
-                self.assertEqual(json.loads(model.requests[1][-1]["content"])["valid"], valid)
+                self.assertEqual(json.loads(model.requests[1][-2]["content"])["valid"], valid)
                 self.assertFalse(any(c == "move_for" for c, _ in bridge.calls))
             finally:
                 await agent.close()

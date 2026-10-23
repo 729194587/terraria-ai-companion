@@ -199,7 +199,7 @@ class TraceIntegrationTests(unittest.IsolatedAsyncioTestCase):
             message = next(r["message"] for r in records if r["type"] == "tool_message")
             self.assertEqual(json.loads(message["content"]), result)
             model_requests = [r for r in records if r["type"] == "llm_request"]
-            self.assertEqual(model_requests[1]["body"]["messages"][-1], message)
+            self.assertEqual(model_requests[1]["body"]["messages"][-2], message)
             self.assertEqual(model_requests[1]["body"], requests[1] | {
                 "messages": trace._redact(requests[1]["messages"])})
             self.assertEqual(model_requests[0]["body"]["thinking"], {"type": "disabled"})

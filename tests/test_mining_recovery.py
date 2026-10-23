@@ -53,7 +53,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["mine_tile", "observe_terrain", "inspect_tile", "navigate_to_landing_region",
                           "observe_terrain", "inspect_tile", "mine_tile"], [n for n, _ in calls])
         self.assertEqual(calls[0], calls[-1])
-        result = json.loads(model.requests[-1][-1]["content"])
+        result = json.loads(model.requests[-1][-2]["content"])
         self.assertEqual(1, result["recovery"]["retryCount"])
         self.assertEqual("completed", result["status"])
 

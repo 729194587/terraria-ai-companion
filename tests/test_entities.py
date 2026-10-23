@@ -102,7 +102,7 @@ class EntityAgentTests(unittest.IsolatedAsyncioTestCase):
         try:
             agent.receive(event(1))
             await agent.task
-            result = json.loads(model.requests[1][-1]["content"])
+            result = json.loads(model.requests[1][-2]["content"])
             self.assertEqual(result["entities"], reply["entities"])
             self.assertIn("spatial", result)
             self.assertEqual(result["terrain"]["rows"], reply["terrain"]["rows"])

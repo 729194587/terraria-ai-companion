@@ -178,7 +178,7 @@ class LocalInputTests(unittest.IsolatedAsyncioTestCase):
             await agent.receive_local('向右移动一小段距离')
             await agent.task
         self.assertFalse(any(c == 'move_for' for c, _ in game.sent))
-        result = json.loads(model.requests[1][-1]['content'])
+        result = json.loads(model.requests[1][-2]['content'])
         self.assertFalse(result['valid'])
 
     async def test_local_atomic_failure_still_blocks_followup_action(self):
@@ -190,7 +190,7 @@ class LocalInputTests(unittest.IsolatedAsyncioTestCase):
             await agent.task
         self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
         self.assertIn('行动未完成', output.getvalue())
-        self.assertTrue(json.loads(model.requests[-1][-1]['content'])['blocked'])
+        self.assertTrue(json.loads(model.requests[-1][-2]['content'])['blocked'])
 
     async def test_terminal_blank_oversize_and_eof(self):
         class Sink:
