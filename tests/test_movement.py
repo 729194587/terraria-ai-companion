@@ -1,13 +1,17 @@
 import asyncio
 import copy
+import io
 import json
 from pathlib import Path
 import sys
 import threading
+import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 from agent import Agent, TOOLS
+import agent_trace as tracing
 from control import BridgeError
 from movement import move, stop_movement
 from test_agent import Game, Model, event, tool, final
@@ -94,6 +98,84 @@ class MovementBridge(Game):
         value["player"]["positionWorldPixels"] = dict(self.position)
         self.observations.append(copy.deepcopy(value))
         return {"observation": value, "controlGeneration": self.generation}
+
+
+class StopMovementTraceTests(unittest.IsolatedAsyncioTestCase):
+    async def stop_event(self, bridge):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = tracing.Trace(Path(directory) / 'stop.jsonl', enabled=True)
+            with patch.object(tracing, 'trace', trace), patch('sys.stderr', new_callable=io.StringIO):
+                agent = Agent(bridge, Model(tool('stop_movement'), final('stopped')))
+                agent.receive(event(1))
+                await agent.task
+            records = [json.loads(line) for line in trace.path.read_text(encoding='utf-8').splitlines()]
+        return next(record for record in records if record['type'] == 'tool_result')
+
+    def started_bridge(self):
+        bridge = MovementBridge(complete_after=100)
+        bridge.command('move_for', direction=1, durationMs=100, expectedGeneration=0)
+        return bridge
+
+    def assert_stop_event(self, record, original_status, released, success, no_op, cancel_requested):
+        self.assertTrue(record['result_valid'])
+        self.assertIs(record['action_success'], success)
+        self.assertIs(record['success'], success)
+        result = record['result']
+        self.assertTrue(result['valid'])
+        self.assertEqual(original_status, result['status'])
+        self.assertEqual(original_status == 'completed', result['completed'])
+        self.assertEqual(original_status == 'cancelled', result['cancelled'])
+        self.assertIs(result['cancelRequested'], cancel_requested)
+        self.assertEqual({'status': 'completed' if success else 'unknown', 'confirmed': success,
+                          'inputReleased': released, 'operation': 'stop_movement', 'noOp': no_op},
+                         result['execution'])
+        if original_status == 'idle':
+            self.assertIsNone(result['targetAction'])
+        else:
+            self.assertEqual(result['actionId'], result['targetAction']['actionId'])
+            self.assertEqual({'status': original_status, 'confirmed': True, 'inputReleased': released},
+                             result['targetAction']['execution'])
+
+    async def test_idle_stop_is_a_confirmed_noop(self):
+        bridge = MovementBridge()
+        record = await self.stop_event(bridge)
+        self.assert_stop_event(record, 'idle', None, True, True, False)
+        self.assertFalse(any(cmd == 'cancel_move' for cmd, _ in bridge.calls))
+
+    async def test_terminal_action_with_release_evidence_is_confirmed(self):
+        for status in ('completed', 'cancelled'):
+            with self.subTest(status=status):
+                bridge = self.started_bridge()
+                bridge.finish(status, 'already_ended')
+                record = await self.stop_event(bridge)
+                self.assert_stop_event(record, status, True, True, True, False)
+                self.assertFalse(any(cmd == 'cancel_move' for cmd, _ in bridge.calls))
+
+    async def test_terminal_action_without_valid_release_evidence_is_not_success(self):
+        for status in ('completed', 'cancelled'):
+            for evidence in ('missing', 'unknown', 'pending', 'missing_receipt', 'invalid_phase'):
+                with self.subTest(status=status, evidence=evidence):
+                    bridge = self.started_bridge()
+                    bridge.finish(status, 'already_ended')
+                    if evidence == 'missing':
+                        bridge.action.pop('endEvidenceStatus')
+                        bridge.action.pop('endEvidence')
+                    elif evidence == 'missing_receipt':
+                        bridge.action.pop('endEvidence')
+                    elif evidence == 'invalid_phase':
+                        bridge.action['endEvidence']['phase'] = 'unverified'
+                    else:
+                        bridge.action['endEvidenceStatus'] = evidence
+                    record = await self.stop_event(bridge)
+                    self.assert_stop_event(record, status, None, False, None, False)
+                    self.assertFalse(any(cmd == 'cancel_move' for cmd, _ in bridge.calls))
+
+    async def test_normal_cancellation_with_release_evidence_is_confirmed(self):
+        bridge = self.started_bridge()
+        record = await self.stop_event(bridge)
+        self.assert_stop_event(record, 'cancelled', True, True, False, True)
+        self.assertEqual([{'actionId': bridge.action['actionId']}],
+                         [params for cmd, params in bridge.calls if cmd == 'cancel_move'])
 
 
 class MovementTests(unittest.IsolatedAsyncioTestCase):

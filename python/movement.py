@@ -211,11 +211,14 @@ async def stop_movement(bridge):
     # Legacy status/completed still describe the queried movement, not this stop request.
     result['targetAction'] = {'actionId': result.get('actionId'),
                               'execution': dict(result['execution'])} if result.get('actionId') else None
-    result['execution'] = {'status': 'unknown' if result['status'] == 'unknown' else 'completed',
-                          'confirmed': result['status'] != 'unknown',
+    # A terminal action receipt alone does not establish that its inputs were released.
+    confirmed = result['valid'] is True and (result['status'] == 'idle'
+                                           or result['execution']['inputReleased'] is True)
+    result['execution'] = {'status': 'completed' if confirmed else 'unknown',
+                          'confirmed': confirmed,
                           'inputReleased': result['execution']['inputReleased'],
                           'operation': 'stop_movement',
-                          'noOp': None if result['status'] == 'unknown' else not result['cancelRequested']}
+                          'noOp': not result['cancelRequested'] if confirmed else None}
     return result
 
 
