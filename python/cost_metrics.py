@@ -118,8 +118,9 @@ class TaskCosts:
         emit("tool_cost", tool_ordinal=self.tool_calls,
              name=tool_name(name), result_utf8_bytes=size)
 
-    def summary(self, outcome):
-        emit("chat_cost", outcome=outcome, model_calls=self.model_calls,
+    def summary(self, outcome, *, task_outcome="unknown", action_outcome=None):
+        emit("chat_cost", outcome=outcome, task_outcome=task_outcome,
+             action_outcome=action_outcome, model_calls=self.model_calls,
              model_elapsed_ms=round(self.model_elapsed_ms, 3),
              tokens={field: {"known_sum": self.totals[field] if self.known[field] else None,
                             "reported_requests": self.known[field],

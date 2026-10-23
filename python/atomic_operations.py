@@ -94,7 +94,7 @@ def result(action, generation):
             'completed': action['status'] == 'completed', 'cancelled': action['status'] == 'cancelled'}
 
 
-def same_landing_action(expected, current):
+def same_action(expected, current):
     return isinstance(current, dict) and all(current.get(key) == expected.get(key) for key in
         ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion'))
 
@@ -117,7 +117,7 @@ async def terminal(bridge, action, generation):
         reply = await command(bridge, 'get_movement')
         current = reply['movement']['action']
         if (current is None or current['actionId'] != action['actionId']
-                or action.get('operation') == 'navigate_to_landing_region' and not same_landing_action(action, current)):
+                or not same_action(action, current)):
             return {'valid': False, 'status': 'unknown', 'reason': 'action_changed_before_release_evidence'}
         action, generation = current, reply['movement']['generation']
     out = result(action, generation)
@@ -131,16 +131,22 @@ async def terminal(bridge, action, generation):
     return out
 
 
-async def stop(bridge, action_id=None):
+async def stop(bridge, action_id=None, expected_action=None):
     reply = await command(bridge, 'get_movement')
     action = reply['movement']['action']
     if action is None:
+        if action_id is not None:
+            return {'valid': False, 'status': 'unknown', 'completed': False, 'reason': 'action_missing', 'actionId': action_id}
         return {'valid': True, 'status': 'completed', 'reason': 'no_agent_action', 'noOp': True}
-    if action_id is not None and action['actionId'] != action_id:
+    if (action_id is not None and action['actionId'] != action_id
+            or expected_action is not None and not same_action(expected_action, action)):
         return {'valid': False, 'status': 'cancelled', 'reason': 'ownership_changed'}
     if action['status'] == 'running':
+        owned = action
         reply = await command(bridge, 'cancel_move', actionId=action['actionId'])
         action = reply['movement']['action']
+        if not same_action(owned, action) or action['status'] == 'running':
+            return {'valid': False, 'status': 'unknown', 'completed': False, 'reason': 'cancellation_unconfirmed'}
     return await terminal(bridge, action, reply['movement']['generation'])
 
 
@@ -192,14 +198,15 @@ async def dispatch(bridge, name, arguments, chat_id=None):
         deadline = asyncio.get_running_loop().time() + action['durationMs'] / 1000 + 1
         while action['status'] == 'running':
             if asyncio.get_running_loop().time() >= deadline:
-                stopped = await stop(bridge, action_id)
-                return {**stopped, 'status': 'timeout' if stopped['valid'] else 'unknown', 'completed': False, 'reason': 'supervisor_deadline'}
+                stopped = await stop(bridge, action_id, action)
+                return {**stopped, 'status': 'timeout' if stopped['valid'] else 'unknown', 'completed': False,
+                        'cleanupReason': stopped['reason'], 'reason': 'supervisor_deadline'}
             await asyncio.sleep(0.1)
             reply = await command(bridge, 'get_movement')
             current = reply['movement']['action']
             if current is None or current['actionId'] != action_id:
                 return {'valid': False, 'status': 'unknown', 'reason': 'action_ownership_changed'}
-            if landing_identity is not None and not same_landing_action(landing_identity, current):
+            if landing_identity is not None and not same_action(landing_identity, current):
                 landing_invalid = True
                 raise BridgeError('Landing action target/session/generation/world changed')
             action = current
@@ -214,14 +221,14 @@ async def dispatch(bridge, name, arguments, chat_id=None):
                 reply = await start_task
                 action = reply['movement']['action']
             if action is not None:
-                await stop(bridge, action['actionId'])
+                await stop(bridge, action['actionId'], action)
         except (BridgeError, OSError, KeyError, ValueError):
             pass
         raise
     except (BridgeError, OSError, KeyError, ValueError) as error:
         if action is not None:
             try:
-                stopped = await stop(bridge, action['actionId'])
+                stopped = await stop(bridge, action['actionId'], action)
                 if landing_invalid:
                     return {**stopped, 'valid': False, 'status': 'unknown', 'completed': False, 'reason': str(error)}
                 return {**stopped, 'supervisorError': str(error)}

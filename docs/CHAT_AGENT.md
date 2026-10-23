@@ -158,6 +158,10 @@ Trace 包含游戏聊天、完整模型上下文和地形，**只写本地，不
 
 地形诊断记录位置、宽高、原点、实际行列长度、各字符数量（含零计数）、全部 `h/1/2/3/4` 的零起点行列和世界 Tile 坐标。预期原点严格复用当前 `TerrainReader.Read` 公式：`floor((x + width/2)/16)-22`、`floor((y + height)/16)-17`。无效网格、陌生字符、`?`、原点不一致只产生 warnings，不修改原数据。诊断在工具验证前执行，因此无效原始回执也能留下线索。没有新增 Tile/实体感知能力；测试使用假游戏服务和模拟模型，真实游戏 Trace 文件仍需现场验收。
 
+`tool_result.result_valid` 保留原先 `success` 所表达的结果有效性；`success` 现在按工具契约判断：读取以有效性为准，原子动作须有效且 `status=completed`，旧移动/停止以 `execution` 的完成及释放证据（或停止空操作）为准。`action_success` 对读取为 null，对动作记录同一成功判断；原子动作的 failed/timeout/cancelled/unknown 均不计成功。仓库内没有读取旧 `success` 的消费者；外部分析若需要原先的有效率，应改读 `result_valid`。
+
+`agent_end` 和 `chat_cost` 的 `outcome` 保留既有运行生命周期/移动闭环终态含义（也包括 budget_exhausted 等），不能当作任务成功率。两者新增 `task_outcome`：已知原子失败、预算耗尽或运行中止为 not_completed；只有移动闭环已验证 arrived 才记 completed；其余为 unknown，模型正常回复或单次原子操作完成不证明整个任务完成。`action_outcome` 记录首个原子失败的状态，否则为最后一个原子动作状态；无原子动作则为 null。`agent_end.action_reason` 保留对应原因，成本事件不含原因文本。故已知挖掘失败后正常回复会同时记录 `outcome=completed`、`task_outcome=not_completed`、`action_outcome=failed`；预算耗尽也不会替换原动作失败原因。
+
 离线测试：
 
 ```powershell

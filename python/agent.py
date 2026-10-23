@@ -67,6 +67,19 @@ SYSTEM += "\n当前能力以提供的工具定义为准；向用户说明快捷�
 SYSTEM += "\n第一轮扩展：寻找Tile优先scan_tiles有界矩形扫描；partial_unloaded不证明未加载区域没有目标。inspect_inventory默认仅选中物品；查数量/槽位用mode=item及精确contentKey或本地名称；快捷栏用mode=hotbar，完整背包明确mode=full。背景墙用mine_wall/place_wall，不用mine_tile；锤击形状用hammer_tile，先核对纯锤和目标限制。interact_tile支持原版门、未锁宝箱、开关、拉杆；多人墙/锤击/交互需同版本服务器回执和客户端状态一致，不能以本地预测或启动ACK当成功；unknown/timeout且mutationSent时不得盲目重试，宝箱只开关不搬物品，开关或拉杆的Frame变化不证明下游电路效果。不能将unsupported或未核验效果说成成功。"
 
 
+def tool_result_metrics(name, result):
+    valid = result.get("valid") is True
+    action_success = None
+    if name in atomic_operations.SCHEMAS and name not in atomic_operations.READS:
+        action_success = valid and result.get("status") == "completed"
+    elif name in ("move", "stop_movement"):
+        execution = result.get("execution", {})
+        action_success = valid and execution.get("status") == "completed" and (
+            execution.get("inputReleased") is True or execution.get("noOp") is True)
+    return {"result_valid": valid, "action_success": action_success,
+            "success": valid if action_success is None else action_success}
+
+
 def read_observation(bridge):
     reply = bridge.get_observation()
     observation = reply["observation"]
@@ -396,7 +409,7 @@ class Agent:
                         costs.tool(name, result_content)
                         diagnostics.tool_result(name, arguments, result)
                         tracing.trace.emit("tool_result", tool_call_id=call["id"], result=result,
-                                           success=result.get("valid") is True,
+                                           **tool_result_metrics(name, result),
                                            elapsed_ms=(time.monotonic() - tool_started) * 1000)
                         print(f"Tool result: generation={generation} name={name} valid={result['valid']} "
                               f"status={result.get('status')} reason={result.get('reason')}", file=sys.stderr, flush=True)
@@ -447,9 +460,14 @@ class Agent:
             raise LoopBudgetExhausted("model_call_limit")
         except LoopBudgetExhausted as error:
             outcome = "budget_exhausted"
-            movement_loop.finish("budget_exhausted",str(error))
-            if generation == self.generation:
+            if first_atomic_failure is not None:
+                text = "行动未完成：" + str(first_atomic_failure.get("reason", first_atomic_failure.get("error", "unknown"))) + "；本轮预算已用尽。"
+            elif movement_loop.active and last_atomic_action is None:
+                movement_loop.finish("budget_exhausted", str(error))
                 text = movement_loop.final_text()
+            else:
+                text = "本轮预算已用尽，未确认任务完成。"
+            if generation == self.generation:
                 try:
                     await self._send_reply(text,chat_id)
                     if generation == self.generation:
@@ -489,9 +507,20 @@ class Agent:
             if generation == self.generation:
                 self.last_movement_result = summary
             tracing.trace.emit("movement_loop_end", result=summary)
-            costs.summary(outcome)
+            # outcome retains its existing lifecycle meaning. A normal model
+            # return alone cannot establish that the player's task was achieved.
+            action_result = first_atomic_failure if first_atomic_failure is not None else last_atomic_action
+            task_outcome = "unknown"
+            if first_atomic_failure is not None or outcome != "completed":
+                task_outcome = "completed" if outcome == "arrived" else "not_completed"
+            elif movement_loop.active and last_atomic_action is None:
+                task_outcome = "completed" if movement_loop.terminal == "arrived" else "not_completed"
+            task_result = {"task_outcome": task_outcome,
+                           "action_outcome": action_result.get("status", "unknown") if action_result is not None else None,
+                           "action_reason": action_result.get("reason", action_result.get("error")) if action_result is not None else None}
+            costs.summary(outcome, task_outcome=task_outcome, action_outcome=task_result["action_outcome"])
             cost_metrics.current.reset(cost_token)
-            tracing.trace.emit("agent_end", outcome=outcome, elapsed_ms=(time.monotonic() - started) * 1000)
+            tracing.trace.emit("agent_end", outcome=outcome, **task_result, elapsed_ms=(time.monotonic() - started) * 1000)
             tracing.context.reset(token)
 
     async def _send_reply(self, text, chat_id):

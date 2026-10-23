@@ -150,8 +150,8 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         for models,tools in ((1,3),(4,0)):
             game=Game();agent=Agent(game,Model(tool()),models,tools)
             agent.receive(event(1));await agent.task
-            self.assertEqual(agent.last_movement_result['status'],'budget_exhausted')
-            self.assertIn('未确认抵达',game.sent[-1][1]['text'])
+            self.assertNotEqual(agent.last_movement_result['status'],'budget_exhausted')
+            self.assertEqual('本轮预算已用尽，未确认任务完成。',game.sent[-1][1]['text'])
             self.assertFalse(any(m['role']=='tool' for m in agent.history))
 
     async def test_ipc_send_failure_does_not_commit_assistant(self):
