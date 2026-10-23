@@ -28,7 +28,7 @@ class RequestContextTests(unittest.IsolatedAsyncioTestCase):
                 ("get_observation", "observation", "read_observation"),
                 ("get_exploration_observation", "exploration", "read_exploration_observation")):
             with self.subTest(name=name):
-                payload = {"valid": True, key: {"large": "x" * 10000}}
+                payload = {"valid": True, key: {"status": "ok", "large": "x" * 10000}}
                 model = Model(tool(name), tool("get_state"), final(), final())
                 agent = Agent(Game(), model)
                 records = []
@@ -106,3 +106,38 @@ class ReceiptTests(unittest.TestCase):
             before = copy.deepcopy(batch)
             self.assertEqual(history_receipts(batch), before)
             self.assertEqual(batch, before)
+
+
+    def assert_observation_receipts(self, name, key):
+        for result in (
+                {"valid": False, "reason": "snapshot failed", key: {"status": "ok"}},
+                {"valid": False, key: {"status": "unavailable", "reason": "not in world"}},
+                {"valid": True, key: {"status": "unavailable", "reason": "not in world"}},
+                {"valid": 1, key: {"status": "ok"}},
+                {key: {"status": "ok"}},
+                {"valid": True, "error": "read failed", key: {"status": "ok"}},
+                {"valid": True, key: {}},
+                {"valid": True, key: {"status": "unexpected"}},
+                {"valid": True, key: []},
+                {"valid": True, key: None}):
+            with self.subTest(result=result):
+                batch = [tool(name), {"role": "tool", "tool_call_id": "call_1",
+                                      "content": json.dumps(result)}]
+                before = copy.deepcopy(batch)
+                self.assertEqual(history_receipts(batch), before)
+                self.assertEqual(batch, before)
+        for status in ("ok", "partial", "stale"):
+            batch = [tool(name), {"role": "tool", "tool_call_id": "call_1",
+                                  "content": json.dumps({"valid": True, key: {"status": status}})}]
+            before = copy.deepcopy(batch)
+            persisted = history_receipts(batch)
+            self.assertTrue(json.loads(persisted[-1]["content"])["expired"])
+            self.assertEqual(batch, before)
+            self.assertEqual(persisted[0], batch[0])
+            self.assertEqual(persisted[-1]["tool_call_id"], "call_1")
+
+    def test_invalid_full_observation_with_dictionary_is_preserved(self):
+        self.assert_observation_receipts("get_observation", "observation")
+
+    def test_invalid_exploration_with_dictionary_is_preserved(self):
+        self.assert_observation_receipts("get_exploration_observation", "exploration")

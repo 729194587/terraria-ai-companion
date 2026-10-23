@@ -92,7 +92,7 @@ def read_observation(bridge):
 def history_receipts(messages):
     """Copy complete batches for persistence, leaving turn-local results intact.
 
-    Only named viewport readers with expected dictionary payloads qualify.
+    Only valid named viewport readers with available dictionary payloads qualify.
     Other tools, errors and malformed results retain their exact content.
     Already-persisted history is never rewritten.
     """
@@ -112,7 +112,12 @@ def history_receipts(messages):
             result = json.loads(message.get("content", ""))
         except (ValueError, TypeError):
             continue
-        if not isinstance(result, dict) or not isinstance(result.get(key), dict):
+        if (not isinstance(result, dict) or result.get("valid") is not True
+                or "error" in result):
+            continue
+        snapshot = result.get(key)
+        if (not isinstance(snapshot, dict)
+                or snapshot.get("status") not in ("ok", "partial", "stale")):
             continue
         message["content"] = json.dumps({
             "valid": False, "expired": True,
