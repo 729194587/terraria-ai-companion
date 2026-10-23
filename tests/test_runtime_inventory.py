@@ -82,10 +82,20 @@ class RuntimeInventoryTests(unittest.IsolatedAsyncioTestCase):
         first, second = (runtime(r) for r in model.requests[:2])
         self.assertEqual((first["status"], first["worldSessionId"], first["gameUpdate"]), ("available", "world-a", 7))
         self.assertEqual(first["items"][0]["count"], 7)
-        self.assertEqual(first["items"][0]["hotbarKeys"], [1, 0])
+        self.assertEqual(first["items"][0]["stacks"], [
+            {"inventorySlot": 0, "hotbarKey": 1, "count": 3},
+            {"inventorySlot": 9, "hotbarKey": 0, "count": 4}])
         self.assertEqual(first["selected"]["hotbarKey"], 0)
         self.assertEqual(first["selected"]["inventorySlot"], 9)
-        self.assertEqual(first["selected"]["use"]["pick"], 50)
+        self.assertEqual(first["selected"], {
+            "inventorySlot": 9, "hotbarKey": 0, "empty": False,
+            "contentKey": "Terraria/StoneBlock", "name": "stone", "count": 4, "prefix": 0})
+        self.assertNotIn('"use":', json.dumps(first))
+        self.assertNotIn('"damage":', json.dumps(first))
+        self.assertEqual(first["items"][1]["stacks"],
+                         [{"inventorySlot": 10, "hotbarKey": None, "count": 1}])
+        self.assertEqual(first["items"][2]["stacks"],
+                         [{"inventorySlot": 11, "hotbarKey": None, "count": 2}])
         self.assertEqual(first["emptySlots"], 8)
         self.assertEqual(len(first["items"]), 3)
         self.assertEqual([i["count"] for i in first["items"][1:]], [1, 2])
@@ -207,3 +217,40 @@ class InventorySummaryTests(unittest.TestCase):
         value["data"]["inventory"][9]["prefix"] = 1
         result = inventory_summary({"valid": True, **value})
         self.assertEqual(len(result["items"]), 4)
+
+
+    def test_execution_property_differences_remain_separate_without_exposing_use(self):
+        value = snapshot()
+        value["data"]["inventory"][9]["use"]["pick"] = 100
+        before = copy.deepcopy(value)
+        result = inventory_summary({"valid": True, **value})
+        self.assertEqual(len(result["items"]), 4)
+        self.assertNotIn('"use":', json.dumps(result))
+        self.assertEqual(value, before)
+
+    def test_unknown_custom_state_prevents_merging_even_for_vanilla_items(self):
+        value = snapshot()
+        for slot in (0, 9):
+            value["data"]["inventory"][slot]["customState"] = "unknown; GlobalItem data"
+        result = inventory_summary({"valid": True, **value})
+        self.assertEqual(len(result["items"]), 4)
+        self.assertEqual([entry["count"] for entry in result["items"]], [3, 4, 1, 2])
+        self.assertTrue(all("unknown" in entry["customState"] for entry in result["items"]))
+
+
+class InventoryDetailContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_inspect_inventory_keeps_details_outside_runtime_summary(self):
+        game = InventoryGame()
+        model = Model(tool("inspect_inventory", '{"mode":"full"}'), final())
+        agent = Agent(game, model)
+        before = copy.deepcopy(game.current["data"])
+        agent.receive(event(1))
+        await agent.task
+        for request in model.requests:
+            self.assertNotIn('"use":', json.dumps(runtime(request)))
+        detailed = next(m for m in model.requests[1] if m["role"] == "tool")
+        result = json.loads(detailed["content"])
+        self.assertEqual(result["data"], before)
+        self.assertEqual(result["data"]["inventory"][0]["use"]["pick"], 50)
+        self.assertEqual(result["data"]["inventory"][0]["use"]["damage"], 4)
+        self.assertEqual(result["data"]["inventory"][0]["use"]["useTime"], 10)

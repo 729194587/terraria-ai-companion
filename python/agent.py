@@ -132,34 +132,36 @@ def inventory_summary(result):
                 or item.get("hotbarKey") != key_for_slot(slot)):
             raise ValueError("invalid_inventory_item")
         entry = {"contentKey": item["contentKey"], "name": item["name"],
-                 "count": item["stack"], "prefix": item["prefix"],
-                 "use": {k: use[k] for k in (*use_fields, "consumable")}}
+                 "count": item["stack"], "prefix": item["prefix"]}
         if slot == selected:
             selected_item = copy.deepcopy(entry)
             selected_item["empty"] = False
         # Unknown Mod item state is never evidence of instance equivalence.
         mergeable = (item["contentKey"].startswith("Terraria/")
                      and item.get("customState") == "not_applicable")
-        identity = json.dumps({k: v for k, v in entry.items() if k != "count"}, sort_keys=True)
+        # Compare execution properties privately; never include them in runtime context.
+        identity = json.dumps({**{k: v for k, v in entry.items() if k != "count"},
+                               "use": {k: use[k] for k in (*use_fields, "consumable")}},
+                              sort_keys=True)
         if mergeable and identity in groups:
             target = groups[identity]
             target["count"] += entry["count"]
         else:
             target = entry
-            target["hotbarKeys"] = []
+            target["stacks"] = []
             entries.append(target)
             if mergeable:
                 groups[identity] = target
             else:
-                target.update(inventorySlot=slot, customState="unknown; instances kept separate")
-        if key_for_slot(slot) is not None:
-            target["hotbarKeys"].append(key_for_slot(slot))
+                target["customState"] = "unknown; instances kept separate"
+        target["stacks"].append({"inventorySlot": slot, "hotbarKey": key_for_slot(slot),
+                                 "count": item["stack"]})
     summary = {"status": "available", "scope": "player.inventory only, including hotbar, coins and ammo; excludes equipment, banks, chests and mouse item",
                "items": entries, "emptySlots": empty, "totalSlots": len(items),
                "selected": {"inventorySlot": selected, "hotbarKey": key_for_slot(selected),
                             **selected_item},
-               "hotbarNumbering": "hotbarKeys are keyboard labels 1..9,0; inventorySlot is an internal array index",
-               "details": "Snapshot data only; inspect_inventory for exact slots/equipment; existing action checks remain authoritative"}
+               "hotbarNumbering": "hotbarKey is a keyboard label 1..9,0 (null outside hotbar); inventorySlot is an internal array index",
+               "details": "Snapshot data only; inspect_inventory for operation capabilities, detailed item properties and equipment; existing action checks remain authoritative"}
     for key in ("worldSessionId", "gameUpdate"):
         value = result.get(key)
         if key == "worldSessionId" and isinstance(value, str) and value:
