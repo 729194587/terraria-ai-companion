@@ -1,5 +1,6 @@
 """Bounded, local runtime diagnostics; no chat, prompts, inventory or HTTP payloads."""
 from datetime import datetime
+import hashlib
 from pathlib import Path
 import sys
 import agent_trace as tracing
@@ -33,6 +34,14 @@ def tool_result(name, arguments, result, *, recovery=False):
             "actionGeneration", "controlGeneration", "endEvidenceStatus", "endEvidence",
             "evidence", "recovery", "blocked", "previousFailure")
     summary = {key: result[key] for key in keys if key in result}
+    if name == 'execute_lua':
+        source = arguments.get('source') if isinstance(arguments, dict) else None
+        arguments = {'sourceSha256': hashlib.sha256(source.encode()).hexdigest()
+                     if isinstance(source, str) else None}
+        for key in ('runId', 'calls', 'programCompleted', 'actionSuccess', 'actionState',
+                    'taskOutcome', 'lastAction', 'cleanup', 'sourceSha256'):
+            if key in result:
+                summary[key] = result[key]
     if name == "inspect_tile":
         for key in ("data", "worldSessionId", "gameUpdate"):
             if key in result:

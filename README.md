@@ -1,6 +1,6 @@
 # Terraria AI Companion
 
-**Lua 编排第一阶段**：完整 Lua 程序通过隔离 Worker 调用现有 20 项原子 API，父进程复用 dispatcher、动作续租、取消和结束证据；支持有界嵌套结果与分支。入口 `python python/lua_runtime.py examples/lua/inspect.lua`（先安装 Python requirements）；尚未接入 LLM、尚未真实游戏验收。设计、用法、资源边界与验证见 [Lua Runtime](docs/LUA_RUNTIME.md)。
+**Lua 编排第二阶段**：Agent 已默认开放 `execute_lua`，模型可提交完整程序组合现有20项原子API；内部调用共享轮次预算，保留源码并沿用动作结束证据、取消和未知状态保护。真实模型已通过模拟后端联通，真实游戏任务待第三阶段验收。运行 `python python/agent.py --local-input`（先安装 Python requirements、配置现有 `.env`）；详见 [Lua Agent](docs/LUA_AGENT.md)。第一阶段固定脚本入口与运行时边界见 [Lua Runtime](docs/LUA_RUNTIME.md)。
 
 **0.1.36 本地终端测试入口**：`python -u -B python/agent.py --local-input` 接收真人终端指令，沿用现有模型/工具/成本统计，回复仅输出终端。Mod 注册会话指令身份，保留动作安全校验。需加载0.1.36包；产物 `.local/local-input-build/Mods/CompanionBridge.tmod`，未部署。详见 [配置与测试](docs/CHAT_AGENT.md#本地终端输入mod-0136)。
 

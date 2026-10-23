@@ -41,7 +41,10 @@ def load_config(path=None):
 
 
 class LLMClient:
-    def __init__(self, base_url=None, api_key=None, model=None, timeout=30, transport=None):
+    def __init__(self, base_url=None, api_key=None, model=None, timeout=30, transport=None, max_tokens=2048):
+        if type(max_tokens) is not int or not 1 <= max_tokens <= 8192:
+            raise ValueError('max_tokens must be an integer in 1..8192')
+        self.max_tokens = max_tokens
         config = load_config()
         base_url = base_url or config.get("LLM_BASE_URL", "")
         api_key = api_key or config.get("LLM_API_KEY", "")
@@ -75,7 +78,7 @@ class LLMClient:
 
     async def _complete(self, messages, tools, request_id, started, accounting):
         body = {"model": self.model,
-                "messages": messages, "tools": tools, "tool_choice": "auto", "max_tokens": 512,
+                "messages": messages, "tools": tools, "tool_choice": "auto", "max_tokens": self.max_tokens,
                 # Raw HTTP body, not the OpenAI SDK's extra_body wrapper.
                 "thinking": {"type": "disabled"}}
         tracing.trace.emit("llm_request", model_request_id=request_id, model=self.model, body=body)

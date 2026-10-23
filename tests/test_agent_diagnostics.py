@@ -13,6 +13,18 @@ from test_agent import Agent, Game, Model, event, tool, final
 
 
 class LogTests(unittest.TestCase):
+    def test_lua_runtime_log_keeps_summary_without_source_or_return_data(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(diagnostics, 'log', tracing.Trace(enabled=False)):
+            path = diagnostics.configure(Path(directory) / 'lua.jsonl')
+            diagnostics.tool_result('execute_lua', {'source': 'return "private program"'}, {
+                'valid': True, 'status': 'completed', 'programCompleted': True,
+                'actionSuccess': None, 'value': {'scene': 'private observation'}, 'calls': 0})
+            raw = path.read_text(encoding='utf-8')
+            self.assertNotIn('private program', raw)
+            self.assertNotIn('private observation', raw)
+            self.assertTrue(json.loads(raw)['arguments']['sourceSha256'])
+            self.assertTrue(json.loads(raw)['result']['programCompleted'])
+
     def test_runtime_log_filters_payloads_and_redacts_registered_secrets(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(diagnostics, "log", tracing.Trace(enabled=False)), patch.object(tracing, "trace", tracing.Trace(enabled=False)):
             path = diagnostics.configure(Path(directory)/"run.jsonl")

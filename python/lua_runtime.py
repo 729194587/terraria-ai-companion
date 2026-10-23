@@ -60,7 +60,7 @@ class LuaRuntime:
     """One exclusive run per Bridge. Unknown action state permanently fences it.
 
     execute() accepts a complete program, so a future Agent tool can await it with
-    its chat_id and cancel its task. It does not register an LLM tool in phase 1.
+    its chat_id and cancel its task. Model-facing policy lives in lua_agent/agent.
     """
     _active_runs = 0
     max_workers = 2
@@ -69,7 +69,8 @@ class LuaRuntime:
         self.bridge = bridge
         self.last_result = None
 
-    async def execute(self, source, *, chat_id=None, limits=Limits(), cancel=None):
+    async def execute(self, source, *, chat_id=None, limits=Limits(), cancel=None,
+                      allow_actions=True, on_result=None):
         limits.validate()
         out = {'runId': uuid.uuid4().hex, 'status': 'unknown', 'calls': 0, 'value': None,
                'actionState': 'idle', 'lastAction': None, 'cleanup': None, 'trace': []}
@@ -168,7 +169,7 @@ class LuaRuntime:
                 process.start()
             finally:
                 child.close()
-            sequence, halted = 0, False
+            sequence, halted = 0, not allow_actions
             while True:
                 active = asyncio.create_task(asyncio.to_thread(connection.recv_bytes, FRAME_BYTES))
                 active_role = 'receive'
@@ -195,7 +196,9 @@ class LuaRuntime:
                     raise Interrupted('bad_argument')
                 atomic.validate(name, args)
                 if halted and name not in atomic.READS:
-                    result = {'valid': False, 'status': 'blocked', 'reason': 'previous_action_failed'}
+                    result = {'valid': False, 'status': 'blocked', 'reason': 'previous_action_failed', 'blocked': True}
+                    if on_result is not None:
+                        on_result(name, args, result)
                 else:
                     lifecycle = {}
                     started = monotonic()
@@ -205,6 +208,8 @@ class LuaRuntime:
                     active_role = 'dispatch'
                     result = await watch(active)
                     active = None
+                    if on_result is not None:
+                        on_result(name, args, result)
                     tracing.trace.emit('lua_api_result', call_id=sequence, operation=name, result=result,
                                        elapsed_ms=(monotonic() - started) * 1000)
                     if name not in atomic.READS:

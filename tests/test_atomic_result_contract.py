@@ -19,6 +19,37 @@ from test_atomic_operations import Game
 
 
 class StopContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_terminal_transition_between_poll_and_renew_requires_same_identity_and_release(self):
+        for mode in ('completed', 'failed', 'missing_release', 'new_owner', 'still_running'):
+            with self.subTest(mode=mode):
+                game = Game(pending=True)
+                original = game.command
+                def command(cmd, **params):
+                    if cmd == 'renew_move':
+                        if mode != 'still_running':
+                            game.pending = False
+                            game.outcome = 'failed' if mode == 'failed' else 'completed'
+                        if mode == 'new_owner':
+                            game.action['session'] = 99
+                        raise BridgeError('terminal renewal rejected', status='action_changed')
+                    reply = original(cmd, **params)
+                    if cmd == 'get_movement' and game.action and mode == 'missing_release':
+                        reply['movement']['action']['endEvidenceStatus'] = 'unknown'
+                    return reply
+                game.command = command
+                result = await atomic.dispatch(game, 'use_item', {})
+                if mode in ('completed', 'failed'):
+                    self.assertTrue(result['valid'], result)
+                    self.assertEqual(mode, result['status'])
+                    self.assertNotIn('supervisorError', result)
+                    self.assertFalse(any(cmd == 'cancel_move' for cmd, _ in game.sent))
+                elif mode == 'missing_release':
+                    self.assertFalse(result['valid'])
+                    self.assertEqual('unknown', result['status'])
+                else:
+                    self.assertFalse(result.get('completed', False), result)
+                    self.assertIn('supervisorError', result)
+
     async def start(self):
         game = Game(pending=True)
         game.command('start_atomic', operation='mine_tile')

@@ -234,7 +234,21 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             if action['status'] == 'running':
                 guards = {} if landing_identity is None else {'expectedGeneration': landing_identity['generation'],
                                                               'targetRegion': landing_identity['targetRegion']}
-                await command(bridge, 'renew_move', actionId=action_id, **guards)
+                try:
+                    await command(bridge, 'renew_move', actionId=action_id, **guards)
+                except BridgeError as error:
+                    if error.status != 'action_changed':
+                        raise
+                    # The game may finish between our running snapshot and the
+                    # renewal. Accept only the exact owned terminal action, then
+                    # use the normal release-evidence verifier; never retry it.
+                    reply = await command(bridge, 'get_movement')
+                    current = reply['movement']['action']
+                    if (not same_action(action, current)
+                            or current.get('status') not in ('completed', 'failed', 'timeout', 'cancelled')):
+                        raise
+                    action = current
+                    track(action=action)
         return await terminal(bridge, action, reply['movement']['generation'])
     except asyncio.CancelledError:
         try:
