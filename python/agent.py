@@ -89,6 +89,42 @@ def read_observation(bridge):
             "transportMetrics": reply.get("transportMetrics")}
 
 
+def history_receipts(messages):
+    """Copy complete batches for persistence, leaving turn-local results intact.
+
+    Only valid named viewport readers with available dictionary payloads qualify.
+    Other tools, errors and malformed results retain their exact content.
+    Already-persisted history is never rewritten.
+    """
+    retained = copy.deepcopy(messages)
+    names = {call["id"]: call["function"].get("name")
+             for message in retained for call in message.get("tool_calls") or []}
+    payloads = {"get_observation": "observation",
+                "get_exploration_observation": "exploration"}
+    for message in retained:
+        if message.get("role") != "tool":
+            continue
+        name = names.get(message.get("tool_call_id"))
+        key = payloads.get(name)
+        if key is None:
+            continue
+        try:
+            result = json.loads(message.get("content", ""))
+        except (ValueError, TypeError):
+            continue
+        if (not isinstance(result, dict) or result.get("valid") is not True
+                or "error" in result):
+            continue
+        snapshot = result.get(key)
+        if (not isinstance(snapshot, dict)
+                or snapshot.get("status") not in ("ok", "partial", "stale")):
+            continue
+        message["content"] = json.dumps({
+            "valid": False, "expired": True,
+            "reason": f"Previous viewport snapshot omitted; call {name} for current data"})
+    return retained
+
+
 LEGEND = {".": "empty/non-colliding", "#": "solid", "h": "bottom half block",
           "=": "one-way platform", "1": "floor slope descending right", "2": "floor slope rising right",
           "3": "solid top, sloped underside", "4": "solid top, opposite sloped underside",
@@ -234,17 +270,6 @@ class Agent:
                           'receivedAt': datetime.now(timezone.utc).isoformat()}, generation)
 
     def _start_turn(self, event, generation=None):
-        # Retain call/result pairs, but do not resend old full viewport snapshots on later chats.
-        for message in self.history:
-            if message.get("role") == "tool":
-                try:
-                    old = json.loads(message.get("content", "{}"))
-                    if isinstance(old, dict) and ("observation" in old or "exploration" in old):
-                        refresh = "get_exploration_observation" if "exploration" in old else "get_observation"
-                        message["content"] = json.dumps({"valid": False, "expired": True,
-                            "reason": f"Previous viewport snapshot omitted; call {refresh} for current data"})
-                except (ValueError, TypeError):
-                    pass
         user = {
             "senderId": event["senderId"], "senderName": event["senderName"],
             "text": event["text"], "eventId": event["eventId"],
@@ -282,19 +307,29 @@ class Agent:
         tracing.trace.emit("agent_start")
         try:
             messages = copy.deepcopy(self.history)
+            # Freeze the existing bounded event coverage for this turn.
+            runtime_context = None
             if self._game_events:
-                messages.insert(1, {"role": "user", "content": json.dumps({
+                runtime_context = {
                     "recentGameEvents": list(self._game_events),
                     "coverage": {"scope": "client messages received during this connection only",
                                  "maxEvents": self._game_events.maxlen, "evictedCount": self._game_events_evicted,
-                                 "serverDroppedCount": self._game_events_dropped}}, ensure_ascii=False)})
+                                 "serverDroppedCount": self._game_events_dropped}}
+            user_index = len(messages) - 1
             base = len(messages)
             for model_index in range(self.max_model_calls):
                 print(f"LLM request: generation={generation}", file=sys.stderr, flush=True)
-                costs.request(messages)
+                # Only the request copy carries runtime data; base indexes working messages.
+                request = messages
+                if runtime_context is not None:
+                    request = copy.deepcopy(messages)
+                    user = json.loads(request[user_index]["content"])
+                    user.update(runtime_context)
+                    request[user_index]["content"] = json.dumps(user, ensure_ascii=False)
+                costs.request(request)
                 model_started = time.monotonic()
                 try:
-                    message = await self.llm.complete(messages, TOOLS)
+                    message = await self.llm.complete(request, TOOLS)
                 finally:
                     costs.model_elapsed_ms += (time.monotonic() - model_started) * 1000
                 if generation != self.generation:
@@ -422,7 +457,7 @@ class Agent:
                                          "content": result_content})
                         tracing.trace.emit("tool_message", tool_call_id=call["id"], message=messages[-1])
                     # Commit only complete assistant/tool batches; cancellation cannot leave orphan calls.
-                    self.history.extend(messages[base:])
+                    self.history.extend(history_receipts(messages[base:]))
                     base = len(messages)
                     continue
                 text = message.get("content")
@@ -451,7 +486,7 @@ class Agent:
                 if generation == self.generation:
                     print(f"{'Terminal reply' if self.local_input else 'Chat sent'}: generation={generation}", file=sys.stderr, flush=True)
                     messages.append({"role": "assistant", "content": text})
-                    self.history.extend(messages[base:])
+                    self.history.extend(history_receipts(messages[base:]))
                 else:
                     outcome = "superseded"
                     tracing.trace.emit("agent_result_discarded", reason="newer_generation_after_send_ack",
