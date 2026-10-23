@@ -1,5 +1,6 @@
 """LLM atomic operations. One Bridge session, game-thread actions and release receipts."""
 import asyncio
+import copy
 import math
 from control import BridgeError
 
@@ -150,7 +151,23 @@ async def stop(bridge, action_id=None, expected_action=None):
     return await terminal(bridge, action, reply['movement']['generation'])
 
 
-async def dispatch(bridge, name, arguments, chat_id=None):
+async def dispatch(bridge, name, arguments, chat_id=None, *, lifecycle=None, owner=None):
+    # A Lua run owns the whole atomic session, including its cancellation cleanup.
+    if getattr(bridge, '_lua_poisoned', False):
+        raise BridgeError('Lua session has unresolved action state; reconnect required')
+    if getattr(bridge, '_lua_owner', None) is not owner:
+        raise BridgeError('Atomic session is owned by a Lua run')
+    bridge._atomic_inflight = getattr(bridge, '_atomic_inflight', 0) + 1
+    try:
+        return await _dispatch(bridge, name, arguments, chat_id, lifecycle=lifecycle)
+    finally:
+        bridge._atomic_inflight -= 1
+
+
+async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
+    def track(**fields):
+        if lifecycle is not None:
+            lifecycle.update(copy.deepcopy(fields))
     validate(name, arguments)
     if name in ('get_player_state', 'observe_terrain'):
         reply = await asyncio.to_thread(bridge.get_terrain)
@@ -183,9 +200,11 @@ async def dispatch(bridge, name, arguments, chat_id=None):
         params = {'operation': name, 'arguments': arguments, 'expectedGeneration': initial['movement']['generation']}
         if chat_id is not None:
             params['chatId'] = chat_id
+        track(start_attempted=True)
         start_task = asyncio.create_task(command(bridge, 'start_atomic', **params))
         reply = await asyncio.shield(start_task)
         action = reply['movement']['action']
+        track(action=action)
         if action is None or reply['status'] != 'movement_started' or action.get('operation') != name:
             raise BridgeError('Missing atomic start receipt')
         landing_identity = None
@@ -204,12 +223,14 @@ async def dispatch(bridge, name, arguments, chat_id=None):
             await asyncio.sleep(0.1)
             reply = await command(bridge, 'get_movement')
             current = reply['movement']['action']
-            if current is None or current['actionId'] != action_id:
-                return {'valid': False, 'status': 'unknown', 'reason': 'action_ownership_changed'}
-            if landing_identity is not None and not same_action(landing_identity, current):
+            if landing_identity is not None and current is not None and not same_action(landing_identity, current):
                 landing_invalid = True
                 raise BridgeError('Landing action target/session/generation/world changed')
+            if current is None or not same_action(action, current):
+                track(uncertain=True)
+                return {'valid': False, 'status': 'unknown', 'reason': 'action_ownership_changed'}
             action = current
+            track(action=action)
             if action['status'] == 'running':
                 guards = {} if landing_identity is None else {'expectedGeneration': landing_identity['generation'],
                                                               'targetRegion': landing_identity['targetRegion']}
@@ -220,10 +241,13 @@ async def dispatch(bridge, name, arguments, chat_id=None):
             if action is None and start_task is not None:
                 reply = await start_task
                 action = reply['movement']['action']
+                track(action=action)
             if action is not None:
-                await stop(bridge, action['actionId'], action)
+                track(cleanup=await stop(bridge, action['actionId'], action))
+            elif start_task is not None:
+                track(uncertain=True)
         except (BridgeError, OSError, KeyError, ValueError):
-            pass
+            track(uncertain=True)
         raise
     except (BridgeError, OSError, KeyError, ValueError) as error:
         if action is not None:
@@ -234,4 +258,5 @@ async def dispatch(bridge, name, arguments, chat_id=None):
                 return {**stopped, 'supervisorError': str(error)}
             except (BridgeError, OSError, KeyError, ValueError):
                 pass
+        track(uncertain=bool(start_task is not None))
         return {'valid': False, 'status': 'failed' if getattr(error, 'status', None) else 'unknown', 'completed': False, 'reason': str(error)}
