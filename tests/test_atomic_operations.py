@@ -124,6 +124,24 @@ class AtomicTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(BridgeError): await atomic.dispatch(game, 'use_item', {})
         self.assertEqual([], game.sent)
 
+    async def test_local_capability_rejections_are_explicit_and_precede_rpc(self):
+        for name, args, capability in (
+                ('use_item', {}, 'atomic_operations_v1'),
+                ('navigate_to_landing_region', {'minPlayerLeftX': 1, 'maxPlayerLeftX': 2, 'surfaceY': 3},
+                 'landing_region_navigation_v1'),
+                ('select_hotbar_slot', {'slot': 1}, 'hotbar_keys_v1'),
+                ('drop_through_platform', {}, 'platform_drop_v1'),
+                ('interact_tile', {'x': 5, 'y': 5}, 'atomic_extensions_v1'),
+                ('interact_tile', {'x': 5, 'y': 5}, 'server_confirmed_interactions_v1')):
+            with self.subTest(capability=capability):
+                game = Game()
+                game.hello['capabilities'] = [c for c in game.hello['capabilities'] if c != capability]
+                lifecycle = {}
+                with self.assertRaisesRegex(atomic.PreDispatchRejected, capability):
+                    await atomic.dispatch(game, name, args, lifecycle=lifecycle)
+                self.assertEqual([], game.sent)
+                self.assertFalse(lifecycle.get('start_attempted'))
+
     async def test_drop_and_hotbar_capabilities_prevent_old_protocol_semantics(self):
         for name, args, capability in [('select_hotbar_slot', {'slot': 1}, 'hotbar_keys_v1'),
                                        ('drop_through_platform', {}, 'platform_drop_v1')]:

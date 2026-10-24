@@ -192,6 +192,35 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result['value']['read']['valid'])
         self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
 
+    async def test_predispatch_rejection_preserves_agent_barrier_without_poison(self):
+        game = RuntimeGame()
+        game.hello['capabilities'].remove('server_confirmed_interactions_v1')
+        agent, model, _ = await self.run_agent(program('''
+            local rejected = api('interact_tile', {x=5,y=5})
+            return {rejected=rejected, readable=api('inspect_inventory').valid}
+        '''), tool('use_item'), program('''
+            local blocked = api('use_item')
+            return {blocked=blocked, readable=api('inspect_inventory').valid}
+        '''), final('完成'), game=game)
+        receipts = lua_results(model)
+        first = next(r for r in receipts if r.get('value', {}).get('rejected'))
+        self.assertTrue(first['programCompleted'])
+        self.assertFalse(first['actionSuccess'])
+        self.assertEqual('idle', first['actionState'])
+        self.assertEqual('not_dispatched', first['value']['rejected']['dispatchState'])
+        self.assertEqual('failed', first['lastAction']['status'])
+        self.assertTrue(first['value']['readable'])
+        direct = json.loads(model.requests[2][-2]['content'])
+        self.assertTrue(direct['blocked'])
+        self.assertEqual(first['lastAction'], direct['previousFailure'])
+        following = next(r for r in receipts if r.get('value', {}).get('blocked'))
+        self.assertTrue(following['value']['blocked']['blocked'])
+        self.assertTrue(following['value']['readable'])
+        self.assertFalse(any(c in ('start_atomic', 'cancel_move') for c, _ in game.sent))
+        self.assertFalse(game.closed)
+        self.assertFalse(getattr(game, '_lua_poisoned', False))
+        self.assertIn('server_confirmed_interactions_v1', agent.history[-1]['content'])
+
     async def test_script_error_after_action_stops_further_programs_and_preserves_action_status(self):
         records = []
         with patch('cost_metrics.emit', side_effect=lambda kind, **data: records.append((kind, data))):
