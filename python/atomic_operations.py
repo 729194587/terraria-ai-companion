@@ -5,6 +5,15 @@ import math
 from control import BridgeError
 
 
+class PreDispatchRejected(BridgeError):
+    """A local capability guard rejected the call before any game RPC.
+
+    Keep the BridgeError contract for direct callers, while allowing the Lua
+    host to distinguish this positive refusal from transport/receipt failures.
+    Never use this type for errors inferred from a missing action or start task.
+    """
+
+
 def tool(name, description, properties=None, required=None):
     return {"type": "function", "function": {"name": name, "description": description,
         "parameters": {"type": "object", "properties": properties or {}, "required": required or [], "additionalProperties": False}}}
@@ -207,9 +216,9 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             return {'valid': True, **reply}
         return {'valid': True, 'player': reply['state'], 'motion': {k: reply['terrain'][k] for k in ('grounded', 'supported', 'playerWidth', 'playerHeight')}}
     if 'atomic_operations_v1' not in bridge.hello.get('capabilities', []):
-        raise BridgeError('Requires atomic_operations_v1; loaded Mod does not support these operations')
+        raise PreDispatchRejected('Requires atomic_operations_v1; loaded Mod does not support these operations')
     if name == 'navigate_to_landing_region' and 'landing_region_navigation_v1' not in bridge.hello.get('capabilities', []):
-        raise BridgeError('Requires landing_region_navigation_v1; no two-dimensional action started')
+        raise PreDispatchRejected('Requires landing_region_navigation_v1; no two-dimensional action started')
     required_capability = {'select_hotbar_slot': 'hotbar_keys_v1', 'drop_through_platform': 'platform_drop_v1'}.get(name)
     if (name in ('get_player_status', 'resolve_content')
             or name == 'scan_entities' and set(arguments) - {'category', 'radius'}):
@@ -217,9 +226,9 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name in ('scan_tiles', 'mine_wall', 'place_wall', 'hammer_tile', 'inspect_inventory', 'interact_tile'):
         required_capability = 'atomic_extensions_v1'
     if required_capability and required_capability not in bridge.hello.get('capabilities', []):
-        raise BridgeError(f'Requires {required_capability}; no action started')
+        raise PreDispatchRejected(f'Requires {required_capability}; no action started')
     if name in ('mine_wall', 'place_wall', 'hammer_tile', 'interact_tile') and 'server_confirmed_interactions_v1' not in bridge.hello.get('capabilities', []):
-        raise BridgeError('Requires server_confirmed_interactions_v1 (CompanionBridge 0.1.37+); no action started')
+        raise PreDispatchRejected('Requires server_confirmed_interactions_v1 (CompanionBridge 0.1.37+); no action started')
     if name in READS:
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         data = reply.get('data')
