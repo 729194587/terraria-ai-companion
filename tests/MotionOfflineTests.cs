@@ -13,7 +13,7 @@ public static class MotionOfflineTests
     }
 
     // Rectangular collision test double, NOT a substitute for Terraria collision integration.
-    private sealed class World : IMotionWorld
+    internal sealed class World : IMotionWorld
     {
         internal float WallX = float.PositiveInfinity, WallWidth = 16, WallHeight = 32;
         internal bool Hazard, Unknown, LandingAllowed = true, AllowWallLanding;
@@ -62,6 +62,493 @@ public static class MotionOfflineTests
         public bool SafeLanding(PhysicsState s) => At(s).SafeLanding(s);
     }
 
+    // Synthetic rectangle collisions plus the production tile support checker.
+    // This fixture does not run Terraria's Collision helpers.
+    internal sealed class RegionWorld : IMotionWorld
+    {
+        internal readonly World Collision = new() { WallX = 1648, WallWidth = 128,
+            WallHeight = 48, AllowWallLanding = true };
+        internal bool Ceiling;
+        internal Func<int, int, char> Override;
+        internal char Tile(int x, int y) => Override != null ? Override(x, y) : BaseTile(x, y);
+        internal char BaseTile(int x, int y) => y >= 100 || (x >= Collision.WallX / 16
+            && x < (Collision.WallX + Collision.WallWidth) / 16 && y >= (1600 - Collision.WallHeight) / 16)
+            ? '#' : Ceiling && y == 96 ? '#' : '.';
+        public PhysicsState Move(PhysicsState s, float vx, float vy, float gravity)
+        {
+            var next = Collision.Move(s, vx, vy, gravity);
+            if (Ceiling && vy < 0 && s.Py >= 1552 && next.Py < 1552)
+                next = next with { Py = 1552, Vy = 0 };
+            return next;
+        }
+        public bool SafeSweep(PhysicsState s, PhysicsState end, out string reason)
+            => Collision.SafeSweep(s, end, out reason);
+        public bool SafeLanding(PhysicsState s) => Collision.SafeLanding(s) && MotionSupport.SafeLanding(s, Tile);
+        public bool SafeFlatLanding(PhysicsState s) => SafeLanding(s) && MotionSupport.SafeFlatLanding(s, Tile);
+    }
+
+    // Opt-in audit: run before other tests so the first sample includes planner JIT.
+    // A nonempty partial route is deliberately NOT counted as a complete route.
+    public static void AuditLandingBudget(int repetitions = 100, bool coldOnly = false)
+    {
+        if (repetitions <= 0) throw new ArgumentOutOfRangeException(nameof(repetitions));
+        var start = new PhysicsState(1600, 1558, 0, 0, true);
+        var scenes = new[] {
+            (Name: "right-48", Wall: 1648f, Width: 128f, Height: 48f, Min: 1664f, Max: 1744f),
+            (Name: "left-48", Wall: 1456f, Width: 128f, Height: 48f, Min: 1472f, Max: 1552f),
+            (Name: "near-32", Wall: 1632f, Width: 128f, Height: 32f, Min: 1648f, Max: 1728f),
+            (Name: "high-80", Wall: 1648f, Width: 128f, Height: 80f, Min: 1664f, Max: 1744f),
+            (Name: "approach-48", Wall: 1728f, Width: 64f, Height: 48f, Min: 1744f, Max: 1760f),
+            (Name: "narrow-48", Wall: 1648f, Width: 128f, Height: 48f, Min: 1680f, Max: 1696f),
+            (Name: "inside-x-48", Wall: 1648f, Width: 128f, Height: 48f, Min: 1590f, Max: 1744f)
+        };
+        foreach (var scene in scenes)
+        {
+            var world = new RegionWorld();
+            world.Collision.WallX = scene.Wall; world.Collision.WallWidth = scene.Width;
+            world.Collision.WallHeight = scene.Height;
+            var goal = new LandingRegion(scene.Min, scene.Max, 1600 - scene.Height);
+            foreach (int budget in new[] { 25, 500 })
+                for (int repeat = 0; repeat < repetitions; repeat++)
+                {
+                    var timer = Stopwatch.StartNew();
+                    // Exercise the production overload defaults, including maxExpansions=32.
+                    var route = budget == 25 ? StateSpacePlanner.Plan(start, goal, PhysicsParameters.Basic, world)
+                        : StateSpacePlanner.Plan(start, goal, PhysicsParameters.Basic, world, budgetMs: budget);
+                    double elapsed = timer.Elapsed.TotalMilliseconds;
+                    var actual = start;
+                    foreach (var edge in route.Actions)
+                        foreach (var frame in edge.Frames.Take(edge.ExecuteFrames))
+                        {
+                            var previous = actual;
+                            actual = PhysicsSimulator.Step(actual, frame.Input, PhysicsParameters.Basic, world);
+                            Check(world.SafeSweep(previous, actual, out _), "Audit route replay must be safe");
+                            Check(Math.Abs(actual.Px - frame.State.Px) < 0.001f && Math.Abs(actual.Py - frame.State.Py) < 0.001f,
+                                "Audit route must replay the actual production predictions");
+                        }
+                    bool complete = route.Actions.Count > 0 && goal.Arrived(actual, world);
+                    Check(route.ReachedGoal == complete, "Goal diagnostic must agree with physical route replay");
+                    Console.WriteLine(JsonSerializer.Serialize(new { scene = scene.Name, budget, repeat,
+                        complete, actions = route.Actions.Count, route.Expansions, route.Milliseconds,
+                        wallMs = elapsed, endX = actual.Px, endY = actual.Py, route.FailureReason,
+                        route.ReachedGoal, route.TimeBudgetReached }));
+                    if (coldOnly) return;
+                }
+            int directGoals = 0;
+            foreach (int dir in new[] { 1, -1 })
+                for (int hold = 2; hold <= 16; hold += 2)
+                {
+                    var edge = PhysicsSimulator.Predict(start, dir, Math.Min(hold, 15), PhysicsParameters.Basic,
+                        world, walkFrames: 24, rollingJump: true, maxDropPixels: StateSpacePlanner.MaxDropPixels);
+                    if (edge.Safe && goal.Arrived(edge.Landing, world)) directGoals++;
+                }
+            foreach (int limit in new[] { 1, 256 })
+            {
+                // Diagnostic references only: production still uses 32 expansions/25ms.
+                var reference = StateSpacePlanner.Plan(start, goal, PhysicsParameters.Basic, world,
+                    maxExpansions: limit, budgetMs: 500);
+                Console.WriteLine(JsonSerializer.Serialize(new { kind = "reference", scene = scene.Name,
+                    limit, directGoals, complete = reference.Actions.Count > 0 && goal.Arrived(reference.Actions.Last().Landing, world),
+                    reference.Expansions, reference.Milliseconds }));
+            }
+            for (int repeat = 0; repeat < 10; repeat++)
+            {
+                var task = new NavigationTask(); var actual = start; int frames = 0, plans = 0, maxExpansions = 0;
+                double maxMs = 0;
+                while (frames++ < 900 && !task.Terminal)
+                {
+                    var input = task.Before(300, 1, goal, actual, PhysicsParameters.Basic, world);
+                    if (task.Snapshot.Frame == 0 && task.Snapshot.Action != "plan")
+                    { plans++; maxMs = Math.Max(maxMs, task.Snapshot.PlanMilliseconds); maxExpansions = Math.Max(maxExpansions, task.Snapshot.Expansions); }
+                    actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, world); task.After(actual, world);
+                }
+                Console.WriteLine(JsonSerializer.Serialize(new { kind = "task", scene = scene.Name, repeat,
+                    complete = task.Snapshot.Status == "arrived" && goal.Arrived(actual, world), frames,
+                    plans, maxMs, maxExpansions, task.Snapshot.Status, task.Snapshot.Reason }));
+            }
+        }
+    }
+
+    // Recorded from the real 0.1.30 game run: native jump landed and settled on
+    // TileID.Platforms (19) at row 232, yet the old '#' only predicate replanned.
+    private sealed class RecordedPlatformWorld : IMotionWorld
+    {
+        internal bool Narrow;
+        internal char Tile(int x, int y) => y == 232 && (Narrow ? x == 2179 : x >= 2179 && x <= 2190) ? '=' : y >= 235 ? '#' : '.';
+        public PhysicsState Move(PhysicsState s, float vx, float vy, float gravity)
+            => throw new Exception("Recorded settled arrival must not need another physics plan");
+        public bool SafeSweep(PhysicsState s, PhysicsState end, out string reason) { reason = null; return true; }
+        public bool SafeLanding(PhysicsState s) => MotionSupport.SafeLanding(s, Tile);
+        public bool SafeFlatLanding(PhysicsState s) => MotionSupport.SafeFlatLanding(s, Tile);
+    }
+    private static void RecordedPlatformArrivalRegression()
+    {
+        var world = new RecordedPlatformWorld();
+        var goal = new LandingRegion(34864,35040,3712);
+        var landed = new PhysicsState(34870.684f,3670,0,0,true);
+        Check(goal.Arrived(landed,world), "Recorded real wood-platform landing must satisfy goal");
+        var task = new NavigationTask();
+        var input = task.Before(3,5,goal,landed,PhysicsParameters.Basic,world);
+        Check(task.Snapshot.Status == "arrived" && input == default && task.Snapshot.PlanNumber == 0,
+            "Already settled on wood platform must arrive without another plan/failure");
+        foreach (var invalid in new[] { landed with { Grounded=false }, landed with { Vx=0.2f },
+            landed with { ReleaseJump=false }, landed with { JumpFramesLeft=1 }, landed with { Py=3718 },
+            landed with { Py=3670.6f } })
+            Check(!goal.Arrived(invalid,world), "Platform support never replaces actual height/grounded/settled checks");
+        world.Narrow = true;
+        Check(!goal.Arrived(landed with { Px=34879 },world), "One pixel of platform is insufficient support");
+        Console.WriteLine("PASS: recorded real Tile19 platform landing arrives without replanning; wrong height, air, velocity, jump and insufficient support still rejected");
+    }
+
+    // Replays the 0.1.32 recovery scene with synthetic ordinary floor/platform
+    // collision; planner, executor, reach geometry and support checks are real.
+    private sealed class RecordedMiningApproachWorld : IMotionWorld
+    {
+        internal char Tile(int x,int y) => y >= 235 ? '#' : y == 232 && x >= 2179 && x <= 2190 ? '=' : '.';
+        public PhysicsState Move(PhysicsState s,float vx,float vy,float gravity)
+        {
+            float x=s.Px+vx, y=s.Py+vy, surface=3760;
+            if(x+20>2179*16 && x<2191*16 && s.Py+42<=3712 && y+42>=3712) surface=3712;
+            bool grounded=vy>=0 && y+42>=surface;
+            return new(x,grounded?surface-42:y,vx,grounded?0:vy,grounded);
+        }
+        public bool SafeSweep(PhysicsState s,PhysicsState end,out string reason) { reason=null; return true; }
+        public bool SafeLanding(PhysicsState s) => MotionSupport.SafeLanding(s,Tile);
+        public bool SafeFlatLanding(PhysicsState s) => MotionSupport.SafeFlatLanding(s,Tile);
+    }
+    private static void RecordedMiningApproachRegression()
+    {
+        var world=new RecordedMiningApproachWorld();
+        foreach(var scene in new[] { (Left:34793f,TileX:2179), (Left:34873f,TileX:2184) })
+        {
+            var goal=new LandingRegion(scene.Left,scene.Left+16,3760);
+            var state=new PhysicsState(34722.652f,3718,0,0,true);
+            // Exclude JIT from this correctness replay; retain the production
+            // 50ms per-plan guard during actual task execution below.
+            StateSpacePlanner.Plan(state,goal,PhysicsParameters.Basic,world,budgetMs:500);
+            var task=new NavigationTask();
+            for(int frame=0;frame<600 && !task.Terminal;frame++)
+            {
+                var input=task.Before(2,19,goal,state,PhysicsParameters.Basic,world);
+                state=PhysicsSimulator.Step(state,input,PhysicsParameters.Basic,world);
+                task.After(state,world);
+            }
+            Check(task.Snapshot.Status=="arrived" && goal.Arrived(state,world),
+                "Recorded mining approach must settle within band: "+task.Snapshot.Reason);
+            float dx=state.Px+10-(scene.TileX*16+8),dy=state.Py+21-(232*16+8);
+            Check(Math.Sqrt(dx*dx+dy*dy)<=72 && task.Snapshot.CompletedJumps==0,
+                "Recovered landing remains in conservative mining reach without jumping");
+        }
+        Console.WriteLine("PASS: both recorded mining approaches settle inside reachable bands using production planner/executor and unchanged budget (synthetic collision)");
+    }
+
+    private static void LandingRegionRegression()
+    {
+        var ph = PhysicsParameters.Basic;
+        var start = new PhysicsState(1600, 1558, 0, 0, true);
+        var region = new LandingRegion(1664, 1744, 1552);
+        var world = new RegionWorld();
+        var route = StateSpacePlanner.Plan(start, region, ph, world, budgetMs: 500);
+        Check(route.Actions.Count > 0 && route.Actions.Any(a => a.Jump), "Raised region has simulated jumping route");
+        var task = new NavigationTask();
+        var actual = start;
+        for (int f = 0; f < 900 && !task.Terminal; f++)
+        {
+            var input = task.Before(200, 1, region, actual, ph, world);
+            actual = PhysicsSimulator.Step(actual, input, ph, world);
+            task.After(actual, world);
+            Check(task.Snapshot.Status != "failed", "Raised region execution: " + task.Snapshot.Reason);
+        }
+        Check(task.Snapshot.Status == "arrived" && region.Arrived(actual, world)
+            && task.Snapshot.CompletedJumps > 0 && task.Snapshot.LastLanding.Settled,
+            "Actual raised landing must be verified and settled before arrival");
+        Check(task.Before(200, 1, region, actual, ph, world) == default && task.Snapshot.Status == "arrived",
+            "Renewal preserves terminal region task");
+        task.Cancel(); task.After(actual, world);
+        Check(task.Snapshot.Status == "idle", "Cancelled region cannot arrive from late After");
+
+        var below = start with { Px = 1680 };
+        Check(!region.Arrived(below, new World()), "Correct X on lower ground is not arrival");
+        var belowTask = new NavigationTask();
+        belowTask.Before(201, 1, region, below, ph, new World());
+        Check(belowTask.Snapshot.Status != "arrived", "Task also rejects correct X at wrong height");
+        var top = new PhysicsState(1680, 1510, 0, 0, true);
+        Check(region.Arrived(top, world), "Ordinary top is valid region geometry");
+        foreach (var bad in new[] { top with { Px = 1650 }, top with { Grounded = false },
+            top with { Vy = 0.2f }, top with { Vx = 0.2f }, top with { ReleaseJump = false },
+            top with { JumpFramesLeft = 1 }, top with { Py = 1510.6f } })
+            Check(!region.Arrived(bad, world), "Region rejects wrong X/height, air, speed and held jump");
+        var outsideTask = new NavigationTask();
+        outsideTask.Before(202, 1, region, top with { Px = 1650 }, ph, world);
+        Check(outsideTask.Snapshot.Status != "arrived", "Task rejects correct height outside X bounds");
+        foreach (char invalid in new[] { '.', '?', '!', 'h', 'a', 'b', '1', '2', '3', '4' })
+        {
+            world.Override = (x, y) => y == 97 ? invalid : world.BaseTile(x, y);
+            Check(!region.Arrived(top, world), "Missing/unknown/hazard/non-solid target support rejected");
+        }
+        world.Override = (x, y) => y == 97 ? '=' : world.BaseTile(x, y);
+        Check(region.Arrived(top, world), "Flat one-way platforms are valid settled landing targets");
+        world.Override = (x, y) => y == 95 ? '#' : world.BaseTile(x, y);
+        Check(!region.Arrived(top, world), "Target body clearance required");
+        world.Override = null;
+        var corner = new LandingRegion(1775, 1775, 1552);
+        Check(!corner.Arrived(top with { Px = 1775 }, world), "One pixel target support rejected");
+
+        foreach (var scene in new[] { new RegionWorld { Ceiling = true }, new RegionWorld() })
+        {
+            var goal = scene.Ceiling ? region : new LandingRegion(1664, 1744, 1408);
+            var r = StateSpacePlanner.Plan(start, goal, ph, scene, budgetMs: 500);
+            Check(!r.Actions.Any(a => goal.Arrived(a.Landing, scene)), "Blocked/unreachable region cannot have a final route");
+            var blocked = new NavigationTask(); var s = start;
+            for (int f = 0; f < 1200 && !blocked.Terminal; f++)
+            {
+                var input = blocked.Before(203, 1, goal, s, ph, scene);
+                s = PhysicsSimulator.Step(s, input, ph, scene); blocked.After(s, scene);
+            }
+            Check(blocked.Snapshot.Status == "failed", "Blocked/unreachable task terminates without false arrival");
+        }
+        foreach (bool unknown in new[] { false, true })
+        {
+            var unsafeWorld = new RegionWorld();
+            unsafeWorld.Collision.Unknown = unknown; unsafeWorld.Collision.Hazard = !unknown;
+            Check(StateSpacePlanner.Plan(start, region, ph, unsafeWorld, budgetMs: 500).Actions.Count == 0,
+                "Unknown/hazard trajectory rejected by production predictor");
+        }
+        foreach (int expansions in new[] { 0, 1 })
+        {
+            var bounded = StateSpacePlanner.Plan(start, region, ph, world, maxExpansions: expansions, budgetMs: 500);
+            Check(bounded.Expansions <= expansions, "Region expansion budget retained");
+        }
+        Check(StateSpacePlanner.Plan(start, region, ph, world, budgetMs: 0).Actions.Count == 0,
+            "Zero region time budget yields no speculative route");
+        // Seed only historical counters, then execute a real planned edge through
+        // the production simulator/controller/task. Avoid 256 repeated searches
+        // just to exercise the unchanged action-cap boundary.
+        void Seed(NavigationTask t, string field, object value) => typeof(NavigationTask)
+            .GetField(field, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            .SetValue(t, value);
+        foreach (bool actionCap in new[] { false, true })
+        {
+            var bounded = new NavigationTask(); var s = start;
+            bounded.Begin(207, 1, region, s);
+            if (actionCap) Seed(bounded, "_actions", 255);
+            else { Seed(bounded, "_stalled", 3); Seed(bounded, "_furthest", 0f); }
+            for (int f = 0; f < 100 && !bounded.Terminal; f++)
+            {
+                var input = bounded.Before(207, 1, region, s, ph, world);
+                s = PhysicsSimulator.Step(s, input, ph, world); bounded.After(s, world);
+            }
+            Check(bounded.Snapshot.Status == "failed" && bounded.Snapshot.Reason.Contains("progress/action budget")
+                && bounded.Snapshot.CompletedActions == (actionCap ? 256 : 1),
+                "Verified edge enforces action cap and four-checkpoint stall guard");
+        }
+        // A jump makes real vertical progress while already inside the X interval.
+        // Treat the preceding three checkpoints as stalled: only verified ascent
+        // can reset the guard here, since horizontal distance is already zero.
+        var wide = new LandingRegion(1590, 1744, 1552);
+        task = new(); actual = start;
+        task.Begin(208, 1, wide, actual);
+        Seed(task, "_stalled", 3);
+        for (int f = 0; f < 150 && !task.Terminal && task.Snapshot.CompletedActions == 0; f++)
+        {
+            var input = task.Before(208, 1, wide, actual, ph, world);
+            actual = PhysicsSimulator.Step(actual, input, ph, world); task.After(actual, world);
+        }
+        Check(task.Snapshot.Status != "failed" && task.Snapshot.CompletedJumps == 1
+            && actual.Py < start.Py - 4, "Verified ascent counts as progress inside target X interval");
+        task = new(); actual = start;
+        bool injectedCheckpoint = false;
+        for (int f = 0; f < 900 && !task.Terminal && !injectedCheckpoint; f++)
+        {
+            var input = task.Before(209, 1, region, actual, ph, world);
+            actual = PhysicsSimulator.Step(actual, input, ph, world);
+            // Keep per-frame prediction exact, but report the terminal checkpoint
+            // one pixel high (within the executor's existing 4px landing tolerance).
+            bool checkpoint = actual.Grounded && actual.Py == 1510 && actual.Vx == 0;
+            int completed = task.Snapshot.CompletedActions;
+            task.After(checkpoint ? actual with { Py = actual.Py - 1 } : actual, world);
+            if (checkpoint && task.Snapshot.CompletedActions > completed)
+            { actual = actual with { Py = actual.Py - 1 }; injectedCheckpoint = true; }
+        }
+        Check(injectedCheckpoint && task.Snapshot.Status == "running",
+            "One-pixel checkpoint discrepancy is accepted by existing edge tolerance: " + task.Snapshot.Reason);
+        task.Before(209, 1, region, actual, ph, world);
+        Check(task.Snapshot.Status != "arrived", "Executor landing tolerance does not bypass stricter actual region height");
+        task = new(); actual = start;
+        var first = task.Before(204, 1, region, actual, ph, world);
+        actual = PhysicsSimulator.Step(actual, first, ph, world);
+        task.After(actual with { Py = actual.Py - 40 }, world);
+        Check(task.Snapshot.Status == "failed" && task.Snapshot.Reason.Contains("diverged"),
+            "Region task uses existing executor to reject actual prediction divergence");
+        task = new();
+        task.Before(205, 1, region, start, ph, world);
+        task.Before(205, 2, region, start with { Grounded = false, Vy = -3 }, ph, world);
+        Check(task.Snapshot.Status == "failed", "Generation change discards old airborne region replay");
+        task = new();
+        task.Before(206, 1, region, start, ph with { Gravity = 0.2f }, world);
+        Check(task.Snapshot.Status == "failed", "Unsupported region physics rejected");
+        Console.WriteLine("PASS: raised landing region planning/task execution, exact goal predicates, safety, unreachable/blocked routes, budgets and divergence (synthetic collisions)");
+    }
+
+    private static void LandingBudgetIncumbentRegression()
+    {
+        var start = new PhysicsState(1600, 1558, 0, 0, true);
+        var world = new RegionWorld();
+        var goal = new LandingRegion(1664, 1744, 1552);
+        bool candidateExists = Enumerable.Range(1, 8).Any(option =>
+        {
+            var edge = PhysicsSimulator.Predict(start, 1, Math.Min(option * 2, 15), PhysicsParameters.Basic,
+                world, walkFrames: 24, rollingJump: true, maxDropPixels: StateSpacePlanner.MaxDropPixels);
+            return edge.Safe && goal.Arrived(edge.Landing, world);
+        });
+        Check(candidateExists, "Root expansion contains a physically validated complete landing candidate");
+        var route = StateSpacePlanner.Plan(start, goal, PhysicsParameters.Basic, world, maxExpansions: 1, budgetMs: 500);
+        Check(route.Actions.Count > 0 && goal.Arrived(route.Actions.Last().Landing, world),
+            "Budget exhaustion must retain a complete candidate rather than prefer a cheaper partial route");
+        Check(route.ReachedGoal && !route.TimeBudgetReached && route.Expansions == 1,
+            "Complete incumbent diagnostic distinguishes node exhaustion from timeout");
+        var noTime = StateSpacePlanner.Plan(start, goal, PhysicsParameters.Basic, world, budgetMs: 0);
+        Check(!noTime.ReachedGoal && noTime.TimeBudgetReached && noTime.Actions.Count == 0,
+            "Zero time budget cannot fabricate a complete incumbent");
+        Console.WriteLine("PASS: complete landing incumbent survives bounded search; goal and time-budget diagnostics");
+    }
+
+    // Deliberately delay one synthetic collision call to exercise the real 25ms
+    // deadline deterministically; this is not a Terraria performance measurement.
+    private sealed class DelayedWorld : IMotionWorld
+    {
+        private readonly IMotionWorld _world;
+        private readonly bool _afterGoal;
+        private bool _delayed, _goalSeen;
+        internal DelayedWorld(IMotionWorld world, bool afterGoal = false) { _world = world; _afterGoal = afterGoal; }
+        public PhysicsState Move(PhysicsState s, float vx, float vy, float gravity)
+        {
+            if (!_delayed && (!_afterGoal || _goalSeen)) { _delayed = true; System.Threading.Thread.Sleep(35); }
+            return _world.Move(s, vx, vy, gravity);
+        }
+        public bool SafeSweep(PhysicsState s, PhysicsState end, out string reason) => _world.SafeSweep(s, end, out reason);
+        public bool SafeLanding(PhysicsState s) => _world.SafeLanding(s);
+        public bool SafeFlatLanding(PhysicsState s)
+        {
+            bool safe = _world.SafeFlatLanding(s);
+            _goalSeen |= safe;
+            return safe;
+        }
+    }
+
+    private static void NavigationDiagnosticsRegression()
+    {
+        var logs = new System.Collections.Generic.List<string>();
+        var diagnostics = new NavigationDiagnostics(logs.Add);
+        JsonDocument Log(int index) => JsonDocument.Parse(logs[index].Substring("Navigation ".Length));
+        var world = new RegionWorld();
+        var goal = new LandingRegion(1664, 1744, 1552);
+        var task = new NavigationTask();
+        var actual = new PhysicsState(1680, 1510, 0.2f, 0, true);
+        double milliseconds = 0;
+        for (int f = 0; f < 20 && !task.Terminal; f++)
+        {
+            var input = task.Before(400, 7, goal, actual, PhysicsParameters.Basic, world);
+            diagnostics.Observe(task.Snapshot);
+            if (task.Snapshot.PlanNumber > 0)
+            {
+                if (milliseconds == 0) milliseconds = task.Snapshot.PlanMilliseconds;
+                Check(task.Snapshot.ReachedGoal == true && task.Snapshot.TimeBudgetReached == false
+                    && task.Snapshot.PlanNumber == 1 && task.Snapshot.TargetRegion == goal
+                    && task.Snapshot.PlanMilliseconds == milliseconds && task.Snapshot.PlannedActions == 1,
+                    "Route diagnostics persist through executor publication and actual checkpoints");
+            }
+            actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, world);
+            task.After(actual, world); diagnostics.Observe(task.Snapshot);
+        }
+        Check(task.Snapshot.Status == "arrived" && logs.Count == 2,
+            "Exactly one plan and one actual-arrival log; no per-frame spam");
+        using (var json = Log(0))
+        {
+            var nav = json.RootElement.GetProperty("navigation");
+            Check(json.RootElement.GetProperty("event").GetString() == "navigation_plan"
+                && json.RootElement.GetProperty("goalKind").GetString() == "landing_region"
+                && nav.GetProperty("reachedGoal").GetBoolean() && !nav.GetProperty("timeBudgetReached").GetBoolean()
+                && nav.GetProperty("planMilliseconds").GetDouble() == milliseconds
+                && nav.GetProperty("expansions").GetInt32() == task.Snapshot.Expansions
+                && nav.GetProperty("planNumber").GetInt32() == 1 && nav.GetProperty("generation").GetInt32() == 7
+                && nav.GetProperty("targetRegion").GetProperty("surfaceY").GetSingle() == 1552
+                && nav.GetProperty("targetRegion").GetProperty("minPlayerLeftX").GetSingle() == 1664
+                && nav.GetProperty("targetRegion").GetProperty("maxPlayerLeftX").GetSingle() == 1744,
+                "Structured game log preserves exact planner data, identity and region geometry");
+        }
+        using (var json = Log(1))
+            Check(json.RootElement.GetProperty("event").GetString() == "navigation_state"
+                && json.RootElement.GetProperty("navigation").GetProperty("status").GetString() == "arrived",
+                "Predicted complete goal and observed arrival have separate log events");
+        task.Cancel(); diagnostics.Observe(task.Snapshot); diagnostics.Observe(task.Snapshot);
+        Check(logs.Count == 3 && task.Snapshot.ReachedGoal == null && task.Snapshot.TimeBudgetReached == null
+            && task.Snapshot.PlanNumber == 0 && task.Snapshot.TargetRegion == null,
+            "Cancellation clears stale DTO diagnostics and is logged only once");
+        using (var json = Log(2))
+            Check(json.RootElement.GetProperty("event").GetString() == "navigation_cancel"
+                && json.RootElement.GetProperty("navigation").GetProperty("generation").GetInt32() == 7,
+                "Cancellation log remains attributable to the old generation");
+        task.Before(400, 8, goal, actual with { Vx = 0, Vy = 0 }, PhysicsParameters.Basic, world);
+        diagnostics.Observe(task.Snapshot);
+        Check(task.Snapshot.Status == "arrived" && task.Snapshot.PlanNumber == 0 && task.Snapshot.ReachedGoal == null,
+            "Already-at-goal new generation does not fabricate a search result");
+        using (var json = Log(3))
+            Check(json.RootElement.GetProperty("navigation").GetProperty("reachedGoal").ValueKind == JsonValueKind.Null,
+                "No planning is distinguishable from a false goal result in JSON");
+
+        foreach (bool blocked in new[] { false, true })
+        {
+            var scene = new RegionWorld();
+            if (blocked) scene.Collision.WallX = 1624;
+            var delayed = new DelayedWorld(scene);
+            task = new(); logs.Clear(); diagnostics = new(logs.Add);
+            actual = new(1600, 1558, 0, 0, true);
+            var input = task.Before(401, 9, goal, actual, PhysicsParameters.Basic, delayed);
+            diagnostics.Observe(task.Snapshot);
+            Check(task.Snapshot.PlanNumber == 1 && task.Snapshot.TimeBudgetReached == true
+                && task.Snapshot.ReachedGoal == false && task.Snapshot.PlanMilliseconds >= 25
+                && task.Snapshot.Expansions == 1 && (task.Snapshot.PlannedActions == 0) == blocked,
+                "Real planner timeout diagnostics survive both executable partial and empty failure paths");
+            using (var json = Log(0))
+                Check(json.RootElement.GetProperty("navigation").GetProperty("timeBudgetReached").GetBoolean(),
+                    "Checked time budget is observable in game log serialization");
+            if (!blocked)
+            {
+                actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, delayed);
+                task.After(actual, delayed); diagnostics.Observe(task.Snapshot);
+                Check(task.Snapshot.TimeBudgetReached == true && logs.Count == 1,
+                    "Executor publication retains partial-route timeout without duplicating plan log");
+                task.Fail("local prediction exceeded 50ms budget"); diagnostics.Observe(task.Snapshot);
+                Check(task.Snapshot.TimeBudgetReached == true && task.Snapshot.PlanMilliseconds >= 25,
+                    "Adapter watchdog failure retains last search diagnostics");
+            }
+            Check(task.Snapshot.Status == "failed" && logs.Count == 2,
+                "No-route or adapter failure has one plan record and one terminal state record");
+        }
+        task = new(); logs.Clear(); diagnostics = new(logs.Add);
+        var afterGoal = new DelayedWorld(new RegionWorld(), afterGoal: true);
+        task.Before(401, 10, goal, new(1600, 1558, 0, 0, true), PhysicsParameters.Basic, afterGoal);
+        diagnostics.Observe(task.Snapshot);
+        Check(task.Snapshot.Status == "running" && task.Snapshot.ReachedGoal == true
+            && task.Snapshot.TimeBudgetReached == true && logs.Count == 1,
+            "Complete incumbent plus deadline exit remains a running prediction, not actual arrival");
+        using (var json = Log(0))
+            Check(json.RootElement.GetProperty("navigation").GetProperty("reachedGoal").GetBoolean()
+                && json.RootElement.GetProperty("navigation").GetProperty("timeBudgetReached").GetBoolean(),
+                "Both true flags survive the actual planner/task/log chain together");
+        task = new(); logs.Clear(); diagnostics = new(logs.Add);
+        task.Before(402, 10, 1800, new(1600, 1558, 0, 0, true), PhysicsParameters.Basic, new World { LandingAllowed = false });
+        diagnostics.Observe(task.Snapshot);
+        Check(task.Snapshot.Status == "failed" && task.Snapshot.PlanNumber == 0
+            && task.Snapshot.ReachedGoal == null && task.Snapshot.TimeBudgetReached == null && logs.Count == 1,
+            "Failure before planning logs a terminal reason without invented zero/false search results");
+        var local = new LocalMotionController();
+        Check(local.Snapshot.PlanNumber == 0 && local.Snapshot.ReachedGoal == null,
+            "Standalone local executor does not claim A* diagnostics");
+        Console.WriteLine("PASS: planning diagnostics through task, checkpoints, failure/cancel/generation, structured log and no-plan states");
+    }
+
     private static void SequentialJumps()
     {
         var world = new TwoObstacles();
@@ -99,14 +586,18 @@ public static class MotionOfflineTests
         {
             IMotionWorld scene = dir == 1 ? world : new World { WallX = 1544, WallWidth = 32 };
             var task = new NavigationTask();
+            var logLines = new System.Collections.Generic.List<string>();
+            var diagnostics = new NavigationDiagnostics(logLines.Add);
             var actual = start;
             float goal = dir == 1 ? 2080 : 1400;
             int maxPlanned = 0;
             for (int f = 0; f < 1800 && !task.Terminal; f++)
             {
                 var input = task.Before(80, 5, goal, actual, ph, scene);
+                diagnostics.Observe(task.Snapshot);
                 actual = PhysicsSimulator.Step(actual, input, ph, scene);
                 task.After(actual, scene);
+                diagnostics.Observe(task.Snapshot);
                 maxPlanned = Math.Max(maxPlanned, task.Snapshot.PlannedActions);
                 Check(task.Snapshot.Status != "failed", "Continuous navigation: " + task.Snapshot.Reason);
             }
@@ -120,6 +611,16 @@ public static class MotionOfflineTests
             Check(System.Text.Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(task.Snapshot)) < 3500,
                 "Task feedback including persistent landing fits the IPC response limit");
             Check(dir != 1 || maxPlanned >= 2, "Search looks beyond its first executable edge");
+            var planLogs = logLines.Where(line => line.Contains("\"event\":\"navigation_plan\"")).ToList();
+            Check(planLogs.Count == task.Snapshot.PlanNumber && planLogs.Count >= 2,
+                "Every real replan has one persistent, monotonically numbered log");
+            for (int i = 0; i < planLogs.Count; i++)
+            {
+                using var json = JsonDocument.Parse(planLogs[i].Substring("Navigation ".Length));
+                Check(json.RootElement.GetProperty("goalKind").GetString() == "horizontal"
+                    && json.RootElement.GetProperty("navigation").GetProperty("planNumber").GetInt32() == i + 1,
+                    "Horizontal replans keep their goal kind and sequence in the same logging path");
+            }
             Check(task.Before(80, 5, goal, actual, ph, scene) == default,
                 "Lease renewals cannot restart an arrived task");
             task.Cancel();
@@ -164,6 +665,92 @@ public static class MotionOfflineTests
             Check(rejected, "Invalid navigation target rejected before game-thread dispatch");
         }
         Console.WriteLine("PASS: TerraBlind state-space route, continuous multi-obstacle navigation, arrival, cancellation, divergence and guarded lease");
+    }
+
+    // Only translates a synthetic flat collision fixture to the recorded player's Y.
+    // The live JSON records motion states, not the complete terrain or every tick.
+    private sealed class RecordedHeightWorld : IMotionWorld
+    {
+        private readonly World _world = new();
+        private const float OffsetY = 2160; // recorded Py=3718, fixture Py=1558
+        private static PhysicsState Local(PhysicsState s) => s with { Py = s.Py - OffsetY };
+        public PhysicsState Move(PhysicsState s, float vx, float vy, float gravity)
+        {
+            var next = _world.Move(Local(s), vx, vy, gravity);
+            return next with { Py = next.Py + OffsetY };
+        }
+        public bool SafeSweep(PhysicsState s, PhysicsState end, out string reason)
+            => _world.SafeSweep(Local(s), Local(end), out reason);
+        public bool SafeLanding(PhysicsState s) => _world.SafeLanding(Local(s));
+    }
+
+    private static void NearGoalMovingRegression()
+    {
+        var ph = PhysicsParameters.Basic;
+        var world = new RecordedHeightWorld();
+        var recorded = new PhysicsState(33822.105f, 3718, 2.399997f, 0, true);
+        var route = StateSpacePlanner.Plan(recorded, 33823.395f, ph, world, budgetMs: 500);
+        Check(route.Actions.Count > 0,
+            $"Recorded near-goal moving state needs an executable action, not empty route: expansions={route.Expansions}; {route.FailureReason}");
+        Check(route.Actions[0].Frames[0].Input == new PhysicsInput(0, false),
+            "Near-goal moving state should brake rather than accelerate toward/through the goal");
+        Check(route.Actions[0].ExecuteFrames == route.Actions[0].Frames.Count
+            && Math.Abs(route.Actions[0].Landing.Vx) <= 0.1f,
+            "Braking must execute its complete safe settled tail");
+        foreach (int dir in new[] { -1, 1 })
+        {
+            foreach (float offset in new[] { 1.29f, 0f, -2f })
+            {
+                var actual = recorded with { Px = 1600, Py = 3718, Vx = dir * 2.399997f };
+                float target = actual.Px + dir * offset;
+                var task = new NavigationTask();
+                // Retain the original crossing direction when the real state has
+                // reached or slightly passed targetX, as a continuing task would.
+                task.Begin(94, 3, target, actual with { Px = target - dir * 32 });
+                int frames = 0;
+                while (!task.Terminal && frames++ < 120)
+                {
+                    var input = task.Before(94, 3, target, actual, ph, world);
+                    if (frames == 1) Check(task.Snapshot.Status != "arrived", "Proximity with speed is not arrival");
+                    Check(!input.Jump && input.Direction == 0, "Near/crossed goal releases input to brake");
+                    if (task.Snapshot.Status == "arrived")
+                        Check(Math.Abs(actual.Vx) <= 0.1f && world.SafeLanding(actual),
+                            "Task cannot declare arrival before observed safe settled ground");
+                    actual = PhysicsSimulator.Step(actual, input, ph, world);
+                    task.After(actual, world);
+                }
+                Check(task.Snapshot.Status == "arrived" && task.Snapshot.CompletedActions == 1
+                    && task.Snapshot.LastLanding.Settled && Math.Abs(actual.Vx) <= 0.1f
+                    && dir * (target - actual.Px) <= 12,
+                    "Both directions and exact/crossed targets require one verified braking action before arrival");
+            }
+        }
+        var stopped = new NavigationTask();
+        stopped.Before(95, 3, 33823.395f, recorded with { Vx = 0 }, ph, world);
+        Check(stopped.Snapshot.Status == "arrived" && stopped.Snapshot.CompletedActions == 0,
+            "An already settled safe position still needs no artificial action");
+        foreach (bool unknown in new[] { false, true })
+        {
+            var unsafeWorld = new World { Hazard = !unknown, Unknown = unknown };
+            var unsafeStart = new PhysicsState(1600, 1558, 2.4f, 0, true);
+            var unsafeRoute = StateSpacePlanner.Plan(unsafeStart, 1601.29f, ph, unsafeWorld, budgetMs: 500);
+            Check(unsafeRoute.Actions.Count == 0 && unsafeRoute.FailureReason.Contains(unknown ? "unknown" : "hazard"),
+                "An unsafe braking path must fail with the actual rejection reason");
+            var task = new NavigationTask();
+            task.Before(96, 3, 1601.29f, unsafeStart, ph, unsafeWorld);
+            Check(task.Snapshot.Status == "failed", "Proximity must not bypass unsafe body/support checks");
+        }
+        var blocked = new NavigationTask();
+        var wall = new World { WallX = 1640, WallWidth = 64, WallHeight = 1000 };
+        var atWall = new PhysicsState(1600, 1558, 0, 0, true);
+        for (int frame = 0; frame < 300 && !blocked.Terminal; frame++)
+        {
+            var input = blocked.Before(97, 3, 1800, atWall, ph, wall);
+            atWall = PhysicsSimulator.Step(atWall, input, ph, wall);
+            blocked.After(atWall, wall);
+        }
+        Check(blocked.Snapshot.Status == "failed", "An impassable wall still terminates as failed, never arrived");
+        Console.WriteLine("PASS: recorded near-goal moving root, safe full braking, bidirectional exact/crossed goals and genuine failure");
     }
 
     private static void SmoothWalkRegression()
@@ -372,6 +959,13 @@ public static class MotionOfflineTests
         Check(!MotionSupport.SafeLanding(new(34145, 4310, 0, 0, true), Tile), "Air with a stale grounded flag rejected");
         Check(!MotionSupport.SafeLanding(new(34112, 4310, 0, 0, false), Tile), "Airborne state rejected");
         Check(!MotionSupport.SafeLanding(new(34112, 4326, 0, 0, true), Tile), "Body embedded in block rejected");
+        Check(MotionSupport.LandingRejection(new(34143, 4310, 0, 0, true), Tile)
+            .StartsWith("insufficient foot support: 1.000px"), "Diagnostic reports actual contact width without lowering safety threshold");
+        Check(MotionSupport.LandingRejection(new(34112, 4326, 0, 0, true), Tile)
+            .Contains("body intersects solid at (2132,272)"), "Diagnostic locates body collision");
+        Check(MotionSupport.LandingRejection(new(34112, 4310, 0, 0, true),
+            (x, y) => x == 2132 && y == 272 ? '?' : Tile(x, y))
+            .Contains("unknown/hazard support cell at (2132,272)"), "Diagnostic locates unknown support");
         foreach (char danger in new[] { '?', '!' })
             Check(!MotionSupport.SafeLanding(new(34112, 4310, 0, 0, true),
                 (x, y) => x == 2132 && y == 272 ? danger : Tile(x, y)), "Unknown or harmful support rejected");
@@ -424,6 +1018,27 @@ public static class MotionOfflineTests
 
     public static void Run()
     {
+        LandingBudgetIncumbentRegression();
+        NavigationDiagnosticsRegression();
+        LandingRegionRegression();
+        RecordedPlatformArrivalRegression();
+        RecordedMiningApproachRegression();
+        NearGoalMovingRegression();
+        foreach (int type in new[] { 147, 216 })
+            Check(NavigationBuffPolicy.Rejection(type, 18000, 0, "audited_vanilla") == null,
+                "Recorded MonsterBanner/BabyBird effects must not block ordinary navigation");
+        foreach (int type in new[] { 3, 8, 26, 146, 148, 215, 217, 9999 })
+        {
+            string rejection = NavigationBuffPolicy.Rejection(type, 120, 2, "test/effect");
+            Check(rejection != null && rejection.Contains($"type={type}") && rejection.Contains("slot=2")
+                && rejection.Contains("test/effect") && rejection.Contains("timeTicks=120"),
+                "Movement-changing, unreviewed and Mod buffs still reject with actual effect details");
+            Check(NavigationBuffPolicy.Rejection(type, 0, 2, "test/effect") == null,
+                "An expired slot is not an active buff");
+        }
+        Check(NavigationBuffPolicy.Rejection(147, 1, 0, "Terraria/MonsterBanner") == null
+            && NavigationBuffPolicy.Rejection(3, 1, 1, "Terraria/Swiftness") != null,
+            "An allowed banner cannot hide a concurrent unsupported movement buff");
         var ph = PhysicsParameters.Basic;
         var reported = new PhysicsParameters(0.08f, 3, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);
         Check(reported.IsBasic, "Real-game reported 10.01 fall cap passes the same eligibility check used in-game");

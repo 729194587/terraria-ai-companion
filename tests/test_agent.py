@@ -77,7 +77,7 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(model.requests), 1)
         agent.receive(event(3))
         await agent.task
-        self.assertEqual([m["role"] for m in model.requests[1]], ["system", "user", "assistant", "user"])
+        self.assertEqual([m["role"] for m in model.requests[1]], ["system", "user", "assistant", "user", "user"])
         self.assertEqual([p["text"] for _, p in game.sent], ["你好", "again"])
 
     async def test_real_tool_result_format_and_history(self):
@@ -86,9 +86,9 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
         agent.receive(event(1))
         await agent.task
         request = model.requests[1]
-        self.assertEqual([m["role"] for m in request], ["system", "user", "assistant", "tool"])
-        self.assertEqual(request[-1]["tool_call_id"], "call_1")
-        result = json.loads(request[-1]["content"])
+        self.assertEqual([m["role"] for m in request], ["system", "user", "assistant", "tool", "user"])
+        self.assertEqual(request[-2]["tool_call_id"], "call_1")
+        result = json.loads(request[-2]["content"])
         self.assertEqual(result["player"]["life"], 80)
         self.assertFalse(result["entities"]["available"])
         self.assertEqual(len(result["terrain"]["rows"]), 29)
@@ -103,7 +103,7 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
             agent = Agent(game, model)
             agent.receive(event(1))
             await agent.task
-            result = json.loads(model.requests[1][-1]["content"])
+            result = json.loads(model.requests[1][-2]["content"])
             self.assertFalse(result["valid"])
             self.assertIn("error", result)
 
@@ -135,7 +135,6 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_errors_and_budgets_never_send_success(self):
         for answers, models, tools in (([LLMError("HTTP failed")], 4, 3),
-                                       ([tool()], 1, 3), ([tool()], 4, 0),
                                        ([{"role": "assistant", "content": None}], 4, 3)):
             game, model = Game(), Model(*answers)
             agent = Agent(game, model, models, tools)
@@ -146,6 +145,14 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(game.sent, [])
             self.assertEqual(sum(m["role"] == "user" for m in agent.history), 1)
             self.assertFalse(any(m["role"] == "assistant" and m.get("content") for m in agent.history))
+
+    async def test_budget_exhaustion_sends_explicit_unconfirmed_result(self):
+        for models,tools in ((1,3),(4,0)):
+            game=Game();agent=Agent(game,Model(tool()),models,tools)
+            agent.receive(event(1));await agent.task
+            self.assertNotEqual(agent.last_movement_result['status'],'budget_exhausted')
+            self.assertEqual('本轮预算已用尽，未确认任务完成。',game.sent[-1][1]['text'])
+            self.assertFalse(any(m['role']=='tool' for m in agent.history))
 
     async def test_ipc_send_failure_does_not_commit_assistant(self):
         game = Game()
@@ -212,7 +219,7 @@ class LLMTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["player"]["life"], 80)
                 self.assertTrue(all("reasoning_content" not in message for message in messages))
                 if len(requests) == 2:
-                    self.assertEqual([m["role"] for m in messages], ["system", "user", "assistant", "tool"])
+                    self.assertEqual([m["role"] for m in messages], ["system", "user", "assistant", "tool", "user"])
                     answer = final("80 HP")
                 else:
                     self.assertEqual(len(requests), 3)

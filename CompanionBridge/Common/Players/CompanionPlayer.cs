@@ -3,11 +3,16 @@ using Terraria.GameInput;
 using Terraria.ID;
 using Terraria.ModLoader;
 using CompanionBridge.Motion;
+using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Common.Players;
 
 public sealed class CompanionPlayer : ModPlayer
 {
+    public override void PlayerDisconnect()
+    {
+        if (Main.netMode == NetmodeID.Server) AtomicMultiplayer.Disconnect(Player.whoAmI);
+    }
     private bool _lastHasFocus;
 
     private bool CanControl => Player.whoAmI == Main.myPlayer
@@ -37,7 +42,7 @@ public sealed class CompanionPlayer : ModPlayer
 
         if (!CanControl && CompanionBridge.AutoMoveEnabled)
         {
-            CompanionBridge.StopControl();
+            CompanionBridge.RevokeControl();
         }
     }
 
@@ -45,8 +50,11 @@ public sealed class CompanionPlayer : ModPlayer
     {
         if (Player.whoAmI == Main.myPlayer && CompanionBridge.AutoMoveEnabled)
         {
-            CompanionBridge.StopControl();
+            CompanionBridge.RevokeControl();
         }
+        if (Player.whoAmI == Main.myPlayer)
+            CompanionBridge.Controls.ConfirmMovementInputReleased(ObservationReader.WorldSessionId,
+                Main.GameUpdateCount, "UpdateDead_after_revoke", Player.dead || Player.ghost);
     }
 
     public override void ProcessTriggers(TriggersSet triggersSet)
@@ -63,6 +71,13 @@ public sealed class CompanionPlayer : ModPlayer
 
     public override void PostUpdateRunSpeeds()
     {
+        // ModPlayer hooks also run for remote players. They must never reset
+        // the shared local navigation task or its Before/After pairing.
+        if (Player.whoAmI != Main.myPlayer) return;
+        CompanionBridge.Controls.ConfirmMovementInputReleased(ObservationReader.WorldSessionId,
+            Main.GameUpdateCount, "PostUpdateRunSpeeds_before_bridge_input",
+            !Player.controlLeft && !Player.controlRight && !Player.controlJump && !Player.controlUseItem
+                && (CompanionBridge.Controls.AtomicAction?.Operation != "drop_through_platform" || !Player.controlDown));
         if (!CanControl || !CompanionBridge.AutoMoveEnabled)
         {
             GameNavigation.Cancel();
@@ -70,10 +85,16 @@ public sealed class CompanionPlayer : ModPlayer
         }
 
         var input = CompanionBridge.Controls.Input;
+        if (input.Atomic != null)
+        {
+            AtomicOperations.Before(Player, input.Atomic);
+            if (CompanionBridge.Controls.Mode != ControlMode.External) return;
+            if (!input.Predictive) { GameNavigation.Cancel(); return; }
+        }
         if (input.Predictive)
         {
             var predicted = GameNavigation.Before(Player, CompanionBridge.Controls.SessionId, input.Direction,
-                CompanionBridge.Controls.Generation, input.TargetX);
+                CompanionBridge.Controls.Generation, input.TargetX, region: input.TargetRegion);
             Player.controlLeft = predicted.Direction < 0;
             Player.controlRight = predicted.Direction > 0;
             Player.controlJump = predicted.Jump;
@@ -94,8 +115,20 @@ public sealed class CompanionPlayer : ModPlayer
         }
     }
 
+    public override bool PreItemCheck()
+    {
+        if (Player.whoAmI == Main.myPlayer) AtomicOperations.Aim(Player);
+        return true;
+    }
+
+    public override void PostItemCheck()
+    {
+        if (Player.whoAmI == Main.myPlayer) AtomicOperations.RestoreAim();
+    }
+
     public override void PostUpdate()
     {
+        if (Player.whoAmI == Main.myPlayer) AtomicOperations.After(Player);
         if (CanControl && CompanionBridge.Controls.Mode == ControlMode.External
             && CompanionBridge.Controls.Input.Predictive) GameNavigation.After(Player);
     }

@@ -1,5 +1,38 @@
 # TerraBlind 连续导航集成原型（0.1.16）
 
+## 0.1.27：多人玩家更新隔离（2026-10-21 修复，2026-10-22 已部署 B，待游戏复测）
+
+本次实测报告目标 X=34094.1，运行采样中 frame 始终为 1、completedActions 始终为 0，但实际 X 持续变化，最后以 `replan requires safe foot support and body clearance` 失败。`CompanionPlayer.PostUpdateRunSpeeds` 对远程玩家同样执行；远程玩家不满足 CanControl，原分支会调用全局 `GameNavigation.Cancel`，清空本地任务及 Before/After 配对。现在入口先排除非本地玩家；本地玩家的取消、死亡、手动输入和租约处理保持原样。
+
+`tests/PlayerHookOfflineTests.cs` 通过最小 Terraria 桩编译并调用实际玩家钩子，配合现有真实 NavigationTask、规划器、执行器及矩形碰撞替身，交错远程和本地钩子，验证帧推进、动作完成、单格障碍任务停稳抵达、终态保留、远程输入不变，以及本地死亡和手动控制。移除新增入口保护的临时源码副本会在“Remote player must not cancel the shared local task”断言失败，修复源码通过。此测试不模拟原生 StepUp 或真实多人时序。
+
+落脚检查保留所有原阈值和检查范围，新增失败原因：身体碰撞/未知危险格坐标、实际脚部接触宽度，以及重新规划时的实际位置和速度。旧日志未包含地形及该检查瞬间的状态，无法确定原场地落脚拒绝的具体子条件，因此没有放宽安全规则，也不声称已消除所有单格障碍问题。完整 Python 227 项、完整 C# 回归、compileall、diff 检查通过；本机 Mod 构建零错误零警告，产物 `.local/player-hook-build/Mods/CompanionBridge.tmod`。2026-10-22 已备份旧包并部署至 `.local/m12-b/Mods`，SHA-256 核对一致；仍待真实游戏复测结果。
+
+## 0.1.26：近目标运动状态与制动（2026-10-21，未游戏复测）
+
+依据 `.local/navigation-live-01.json`：目标 X=33823.395，失败采样位置 `(33822.105,3718)`、Vx=2.399997、Vy=0，距目标约 1.29px；规划器 `expansions=0/plannedActions=0`。`StateSpacePlanner` 的 `H=max(0,有向剩余距离)/MaxRun` 在该状态约为 0.43，满足旧的 `H<=4`，根节点在生成候选前就被当作已接近目标退出。回溯根节点没有动作；`NavigationTask` 同时要求速度不超过 0.1 才抵达，因此将空路径报为 `no safe local route`。不是该次展开预算耗尽；不应通过增大预算或放宽抵达速度来处理。
+
+先将报告中的精确运动状态放进已有碰撞替身（平地高度平移到报告的 Y），修复前离线测试得到相同的零展开空路径。报告没有完整 Tile 或逐帧轨迹，所以该替身只复现已确定的规划判定错误，不冒充真实场地回放。修复前输出保存于 `.local/near-goal-red.log`。
+
+修复内容：
+
+- `PhysicsSimulator.Predict` 允许显式的 direction=0、hold=0、walkFrames=0 制动候选，执行完整稳定尾段；只有这种纯制动不要求新增水平进展。仍逐帧调用同一运动模型、SafeSweep、下降上限和最终 SafeLanding，并要求连续两帧稳定。普通步行、跳跃的进展/安全判据保持。
+- `StateSpacePlanner` 对近目标且能安全停在原有到达区域内的状态优先交出该制动动作；最终目标的搜索结束还需停稳和安全支撑，不能仅凭距离返回空动作。局部 128px 中途目标仍是可保速交接的检查点，不要求每个中途目标都停下。
+- `NavigationTask` 将原任务的水平穿越方向传给规划器，防止已经略过目标后重规划反转语义，或恰在目标 X 时方向变成零。仍由原任务/执行器执行、核验反馈后抵达；没有修改 12px 有向水平到达范围、0.1 速度门槛、控制租约或取消机制。该目标本来就是水平穿越，不是精确 XY 站位。
+- 检查 `LocalMotionController` 后沿用其逐帧输入、实际/预测偏差保护及动作尾段完成反馈，无需另加“附近就成功”分支。
+
+回归覆盖真实失败状态、左右方向、目标 X 恰相等/略过目标、必须先有完整制动反馈再抵达、已停稳无需多余动作、危险/未知制动拒绝及不可穿越高墙仍失败。此前 Buff 门禁修复的未提交修改保留。有限窗口、物理模型适用范围与碰撞替身限制仍在；离线通过不能证明实际游戏或多人/Mod 钩子组合已可靠。
+
+本轮验证：完整 Python **227 项通过**，`tests/run_csharp_tests.ps1` 完整 C# 回归、`compileall`、`git diff --check` 通过。本机构建 **0 错误、0 警告**，0.1.26 包位于 `.local/near-goal-build/Mods/CompanionBridge.tmod`。未启动游戏、部署、调用真实模型、提交或推送；仍需后续真实场地确认预测/实际制动与任务生命周期。
+
+## 0.1.25：Buff 门禁修复
+
+0.1.25 门禁修复验证：完整 C# 离线回归、Python 导航 CLI 7 项及 `git diff --check` 通过；本机 tModLoader 构建 0 错误、0 警告。包在 `.local/navigation-buff-build/Mods/CompanionBridge.tmod`，后续已按用户指示部署至 `.local/m12-b/Mods`；用户此次导航报告已通过 Buff 门禁并到达目标附近，随后暴露上节的规划判定错误。代码仍未提交或推送。
+
+2026-10-21（当前 0.1.25）Buff 门禁修复：`navigate.py` 仍使用受限基础物理模型，但不再拒绝所有 Buff。新增 `NavigationBuffPolicy`，明确放行本次同位置只读观察中的 `MonsterBanner`（147，旗帜战斗效果）和 `BabyBird`（216，雀随从维持效果）；本机 Terraria 1.4.4.9 的 BuffID/Player.UpdateBuffs 与旗帜攻击、防御入口经只读 IL 核对，这两种原版效果不修改玩家运动。不取消玩家 Buff，不要求离开旗帜范围。其余未审查/Mod Buff 仍拒绝，速度/跳跃/重力参数、装备、特殊状态、地形危险、掉血与控制租约保护保持原限制；不是通用能力感知导航。下文历史“无 Buff”验收要求应理解为“除这两种已确认效果外无其他 Buff”。
+
+`unsupported navigation state` 现在列出实际拒绝项：Buff 的 slot/type/contentKey/timeTicks，装备槽位/类型，或 wet、extra_jump_usable 等状态。仅参数不匹配时才附 `unsupported_physics`，避免基础参数正确却因 Buff 被拒时只打印参数。离线测试覆盖两种效果的放行、与 Swiftness 等效果混用时仍拒绝、未知/Mod/相邻 ID 不误放行、过期槽位及拒绝信息；既有物理/安全测试继续适用。真实游戏复测尚未进行。
+
 最新状态：0.1.16 已部署至 `.local/tmodloader/Mods`，并通过本次右向连续通行游戏实测。用户确认从障碍上跳下后继续行走、连续跳跃并越过另一障碍。报告为 `arrived`，同一 generation=3 内完成 21 段动作、3 次跳跃；三次跳跃交接速度分别为 2.7199996、2.8599992、2.24px/tick，均 `settled=false`、`maxError=0`。最终位置 X=34567.723、目标 X=34567.656，停稳速度为零。成功报告保存为 `.local/navigation-0.1.16-success.json`。这确认本次右向场地的端到端链路，不代表左向、所有地形或中断专项均已实测。代码仍未提交。以下保留先前集成与验收记录。
 
 0.1.15 报告中预测/实际落点同为 `(33971.63,4342)`，预测/实际水平速度同为 2.6399996、Vy=0、maxError=0，但返回 `jump landing mismatch`。原回执未暴露支撑帧数和跳跃标志，不能仅凭报告断言是哪一个布尔条件失败。检查发现原生模拟接触标志可能在下降被碰撞截短、垂直速度仍为正时成立，而真实地面观察在普通平地要求 Vy=0；原预测提前计入了这一帧。新增碰撞替身专门保留这次接触的正 Vy，位置/速度保持一致、实际着地按零 Vy 观察，在修改前复现落地校验失败。

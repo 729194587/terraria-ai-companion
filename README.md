@@ -1,5 +1,27 @@
 # Terraria AI Companion
 
+**0.1.36 本地终端测试入口**：`python -u -B python/agent.py --local-input` 接收真人终端指令，沿用现有模型/工具/成本统计，回复仅输出终端。Mod 注册会话指令身份，保留动作安全校验。需加载0.1.36包；产物 `.local/local-input-build/Mods/CompanionBridge.tmod`，未部署。详见 [配置与测试](docs/CHAT_AGENT.md#本地终端输入mod-0136)。
+
+**0.1.37 多人原子确认**：墙挖掘/放置、锤击、门/宝箱/开关/拉杆已接入带动作身份的服务器原生执行与回执；成功还需客户端状态一致及原输入释放证据。服务器和所有客户端都需同版本 Mod（side=Both）。构建产物与联机验收说明见 [多人原子确认](docs/MULTIPLAYER_ATOMIC_CONFIRMATION.md)；已按用户要求部署至本地A/B测试配置；A启动需加 `-companionbridgeport 18778`，B仍用默认18777。真实联机验收待完成。
+
+**0.1.35 第一轮原子扩展（历史）**：新增有界 `scan_tiles`、`mine_wall`、`place_wall`、`hammer_tile`，背包支持紧凑定向查询，单人交互扩展至原版未锁宝箱/开关/拉杆。复用原动作生命周期和实际状态核验；构建包 `.local/atomic-extensions-build/Mods/CompanionBridge.tmod`，未部署、待游戏验收。参数、默认背包输出兼容影响及限制见 [原子操作说明](docs/ATOMIC_OPERATIONS.md)。
+
+**0.1.34 单格放置缩放修复**：普通方块放置复用已核验的ItemCheck坐标空间，支持当前画面缩放；保留目标、消费与实际Tile结果共同核验、取消和状态恢复。新包 `.local/placement-zoom-build/Mods/CompanionBridge.tmod`，已部署至B测试配置，真实放置待验收，详见 [原因与测试](docs/PLACEMENT_ZOOM_FIX.md)。
+
+**0.1.33 挖掘缩放修复**：恢复接近已由真实日志确认抵达并重挖；新增挖掘非默认缩放支持与原生IL契约验证，拆分空目标/未选镐错误。还包含默认运行日志和安全落脚区间恢复修复。新包 `.local/mining-zoom-build/Mods/CompanionBridge.tmod`，需要更新游戏端，详见 [验证记录](docs/ITEM_USE_AND_MINING_RECOVERY.md)。
+
+**0.1.32 物品使用与挖掘恢复**：无目标 `use_item` 保留原生鼠标，有目标使用支持当前缩放；使用周期与效果确认分开报告。挖掘距离不足可在确认安全通道后导航接近、重新观察并最多重试一次。Python 251项、C#及原生坐标契约测试通过；构建0错误0警告。本版尚未部署或进行真实游戏验收，详见 [修复与验证记录](docs/ITEM_USE_AND_MINING_RECOVERY.md)。
+
+**0.1.31 平台与快捷栏修复**：修正木平台已落地却报未完成；快捷栏按游戏按键 `1–9、0` 编号；新增 `drop_through_platform()` 原生 Down 下穿（先检查同X下方64px内安全落点，穿过当前层即松Down，实际落地停稳才完成）。最终包 `.local/platform-fixes-build/Mods/CompanionBridge.tmod`；不要使用早期单项修复目录的包。需加载后复测，详见 [平台与快捷栏测试](docs/PLATFORM_AND_HOTBAR_FIXES.md)。
+
+**0.1.30 二维落脚导航入口**：新增 `navigate_to_landing_region(minPlayerLeftX,maxPlayerLeftX,surfaceY)`，Agent → TCP → 控制状态 → 实际玩家挂钩已接入现有二维规划/执行/真实状态反馈。新增目标一致性续租和跨语言协议测试。参数、测试包及真实游戏验收方式见 [二维落脚导航](docs/LANDING_REGION_NAVIGATION.md)。产物 `.local/landing-navigation-build/Mods/CompanionBridge.tmod`；未部署、未真实游戏验收。
+
+**0.1.29 第一版原子操作**：Agent 已接入 6 个感知、8 个行动工具；复用现有 IPC、游戏线程、连续导航、控制代次/租约和输入释放证据。物品动作通过原生使用流程执行，结果按实际状态核验。交互、距离和兼容范围，以及测试与未实测边界见 [原子操作说明](docs/ATOMIC_OPERATIONS.md)。构建产物 `.local/atomic-build/Mods/CompanionBridge.tmod`；未部署、未真实游戏验收。
+
+功能分支新增 **M1.9 / Mod 0.1.19 统一视口观察**：只读 `get_observation` 按需返回摄像机、完整视口 Tile、玩家背包／装备、NPC／玩家／掉落物／弹幕及环境，保留旧工具。离线测试和构建通过；产物 `.local/observation-build`，未部署、未真实游戏验收。接口、编码、测量及限制见 [统一观察说明](docs/OBSERVATION.md)。
+
+**Mod 0.1.18 附近实体感知**：现有 `get_state` 在同次快照中返回其他玩家、NPC/生物，保留原始网格和 `spatial`；分类保守，显式标记未知和截断。历史包在 `.local/entity-build`，详见 [实体感知说明](docs/CHAT_AGENT.md#附近实体018)。
+
 新增 **0.1.17 最小聊天 Agent**：远端真人聊天经 TCP 事件立即触发 Python LLM，模型可调用唯一的 `get_state` 工具读取真实状态和局部地形，再由游戏线程发送聊天回复。支持新消息取消旧请求与迟到结果拦截；未接入导航等动作工具。配置、协议、文件清单和双客户端验收步骤见 [聊天 Agent 说明](docs/CHAT_AGENT.md)。本轮仅构建到 `.local/agent-build`，未部署；以下 0.1.16 导航结论是历史实测，不代表新聊天功能已游戏验收。
 
 **0.1.16 右向连续通行已通过本次游戏实测**：从障碍顶部跳下，连续跑跳越过后续障碍，最终到达并停稳。报告为 `arrived`，21 段动作、3 次跳跃；三次跳跃交接均保持非零水平速度，回执最大位置误差为零。该结论限于本次场地与右向任务，左向及中断专项仍待复测。
@@ -66,7 +88,7 @@ A 为 `.local/m12-a`（无 Bridge），B 为 `.local/m12-b`（仅启用 Bridge�
 
 ```powershell
 Set-Location 'D:\steam\steamapps\common\tModLoader'
-.\start-tModLoader.bat -tmlsavedirectory 'D:\Agent Project\terraria-ai-companion\.local\m12-a'
+.\start-tModLoader.bat -tmlsavedirectory 'D:\Agent Project\terraria-ai-companion\.local\m12-a' -companionbridgeport 18778
 ```
 
 客户端 B（Bridge）：

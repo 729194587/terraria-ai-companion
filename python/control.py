@@ -1,5 +1,6 @@
 """Minimal CompanionBridge client. Python 3.10+, standard library only."""
 import argparse
+from collections import deque
 from concurrent.futures import Future, TimeoutError as FutureTimeout
 import threading
 import json
@@ -7,10 +8,18 @@ import math
 import socket
 import sys
 import time
+import agent_trace as tracing
+from observation import ObservationValidationError, validate_observation
+
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_REQUEST_BYTES = 4096
 
 
 class BridgeError(Exception):
-    pass
+    def __init__(self, message, diagnostic=None, status=None):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+        self.status = status
 
 
 class Bridge:
@@ -20,6 +29,7 @@ class Bridge:
         self._lock = threading.Lock()
         self._pending = {}
         self._seen = set()
+        self._game_seen = deque(maxlen=128)
         self._failure = None
         self._receiver = None
         try:
@@ -52,6 +62,20 @@ class Bridge:
                 frame = self._read()
                 if frame.get("v") != 1:
                     raise BridgeError("Response version mismatch")
+                if frame.get("type") == "game_message":
+                    if (not isinstance(frame.get("eventId"), str) or not frame["eventId"]
+                            or not isinstance(frame.get("text"), str) or not frame["text"].strip() or len(frame["text"]) > 1024
+                            or frame.get("source") not in ("chat_helper", "main_new_text", "main_new_text_multiline")
+                            or type(frame.get("gameUpdate")) is not int or frame["gameUpdate"] < 0
+                            or not isinstance(frame.get("receivedAt"), str)
+                            or type(frame.get("textTruncated")) is not bool
+                            or type(frame.get("droppedBefore")) is not int or frame["droppedBefore"] < 0):
+                        raise BridgeError("Malformed game message event")
+                    if frame["eventId"] not in self._game_seen:
+                        self._game_seen.append(frame["eventId"])
+                        if self.on_event:
+                            self.on_event(frame)
+                    continue
                 if frame.get("type") == "chat_message":
                     event_id = frame.get("eventId")
                     if (not isinstance(event_id, str) or not event_id
@@ -83,37 +107,61 @@ class Bridge:
             future.set_exception(error)
 
     def _read(self):
-        line = self.reader.readline(4097)
+        line = self.reader.readline(MAX_RESPONSE_BYTES + 1)
         if not line:
             raise BridgeError("Bridge closed connection (busy, P override, or world/player changed)")
-        if len(line) > 4096 or not line.endswith(b"\n"):
-            raise BridgeError("Invalid or oversized response")
+        if len(line) > MAX_RESPONSE_BYTES or not line.endswith(b"\n"):
+            raise BridgeError("Invalid, truncated or oversized response (max 16 MiB including newline)")
         value = json.loads(line)
         if not isinstance(value, dict):
             raise BridgeError("Response must be a JSON object")
+        if value.get("status") == "observation":
+            metrics = value.setdefault("transportMetrics", {})
+            if not isinstance(metrics, dict):
+                raise BridgeError("Malformed observation transport metrics")
+            metrics["receivedBytes"] = len(line)
         return value
 
     def command(self, cmd, **parameters):
         future = Future()
+        started = time.monotonic()
+        request = None
         try:
             with self._lock:
                 if self._failure:
                     raise self._failure
                 self.request_id += 1
                 request = {"v": 1, "id": self.request_id, "cmd": cmd, **parameters}
+                wire = (json.dumps(request, ensure_ascii=False) + "\n").encode("utf-8")
+                if len(wire) - 1 > MAX_REQUEST_BYTES:
+                    raise BridgeError("Request exceeds 4096 UTF-8 bytes")
                 self._pending[self.request_id] = future
-                self.sock.sendall((json.dumps(request, ensure_ascii=False) + "\n").encode("utf-8"))
+                tracing.trace.emit("ipc_request", request=request)
+                self.sock.sendall(wire)
             reply = future.result(timeout=self.timeout)
+            tracing.trace.emit("ipc_reply", command=cmd, reply=reply,
+                               elapsed_ms=(time.monotonic() - started) * 1000)
         except FutureTimeout as error:
+            tracing.trace.emit("ipc_error", command=cmd, request=request, category="timeout",
+                               elapsed_ms=(time.monotonic() - started) * 1000)
             self.close()  # No reuse after an ambiguous timeout/late acknowledgement.
             raise BridgeError(f"Request timeout for {cmd}: Bridge handshake completed, but no reply received; "
                               "the game update thread may be paused or stalled. Refocus and retry, "
                               "or increase --timeout") from error
         except OSError as error:
+            tracing.trace.emit("ipc_error", command=cmd, request=request, category="network",
+                               error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
             self.close()
             raise BridgeError(str(error)) from error
+        except BridgeError as error:
+            tracing.trace.emit("ipc_error", command=cmd, request=request, category="bridge",
+                               error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
+            raise
         if reply.get("ok") is not True:
-            raise BridgeError(f"Command rejected: {reply.get('status', 'unknown')}")
+            tracing.trace.emit("ipc_error", command=cmd, request=request, category="rejected",
+                               reason=reply.get("status", "unknown"),
+                               elapsed_ms=(time.monotonic() - started) * 1000)
+            raise BridgeError(f"Command rejected: {reply.get('status', 'unknown')}", status=reply.get("status", "unknown"))
         return reply
 
     def move_right(self, seconds):
@@ -149,6 +197,21 @@ class Bridge:
         reply = self.command("get_terrain")
         if reply.get("status") != "terrain" or not isinstance(reply.get("terrain"), dict):
             raise BridgeError("Missing terrain in response (requires CompanionBridge 0.1.6+)")
+        return reply
+
+    def get_observation(self):
+        if "viewport_observation_v1" not in self.hello.get("capabilities", []):
+            raise BridgeError("get_observation requires viewport_observation_v1 capability")
+        reply = self.command("get_observation")
+        if reply.get("status") != "observation":
+            raise BridgeError("Missing observation in response")
+        try:
+            validate_observation(reply.get("observation"))
+        except ObservationValidationError as error:
+            tracing.trace.emit("observation_validation_failed", diagnostic=error.diagnostic)
+            raise BridgeError(str(error), diagnostic=error.diagnostic) from error
+        except (ValueError, TypeError, KeyError) as error:
+            raise BridgeError(str(error)) from error
         return reply
 
     def input(self, direction, jump=False):

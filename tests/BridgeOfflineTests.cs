@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Sockets;
@@ -19,6 +20,14 @@ public static class BridgeOfflineTests
 
     public static void Run()
     {
+        Check(TcpControlServer.ParseLaunchPort(null)==18777 && TcpControlServer.ParseLaunchPort("18778")==18778,
+            "Default Agent port is compatible; other local clients can use a separate explicit port");
+        foreach(string invalid in new[]{"", "0", "1023", "65536", "-1", "18778.0", " 18778", "+18778"})
+        {
+            bool rejected=false;
+            try { TcpControlServer.ParseLaunchPort(invalid); } catch(FormatException) { rejected=true; }
+            Check(rejected,"Invalid launch port must fail explicitly");
+        }
         var state = new ControlState();
         int session = state.BeginSession();
         var reply = state.Enqueue(session, new ControlRequest(1, "move_right"), 0);
@@ -79,7 +88,53 @@ public static class BridgeOfflineTests
         GuardedControlTests();
         NetworkTests();
         ChatTests();
+        EntityTests();
         Console.WriteLine("PASS: state/terrain snapshots, tile classification, typed input, control lease, ownership, lifecycle, protocol, real TCP framing/disconnect/unload");
+    }
+
+    private static void EntityTests()
+    {
+        var passive = new NpcEvidence(false, false, false, 0, true, false, false);
+        Check(EntityCollector.Classify(passive).Kind == "unknown", "friendly=false alone is not hostility");
+        Check(EntityCollector.Classify(passive with { Friendly = true }).Kind == "friendly_npc", "Friendly NPC classification");
+        Check(EntityCollector.Classify(passive with { TownNpc = true }).Kind == "friendly_npc", "Town NPC classification");
+        Check(EntityCollector.Classify(passive with { Critter = true }).Kind == "critter", "Neutral critter is not hostile");
+        Check(EntityCollector.Classify(passive with { Critter = true, Friendly = true }).Kind == "critter", "Friendly critter retains creature classification");
+        Check(EntityCollector.Classify(passive with { Damage = 10 }).Kind == "hostile_creature", "Damaging chaseable vanilla creature inference");
+        Check(EntityCollector.Classify(passive with { Damage = 10, Modded = true }).Kind == "unknown", "Modded hostility stays unknown");
+        Check(EntityCollector.Classify(passive with { Damage = 10, Chaseable = false }).Kind == "unknown", "Untargetable NPC not assumed hostile");
+        Check(EntityCollector.Classify(passive with { Damage = 10, Critter = true }).Kind == "unknown", "Damaging critter is ambiguous");
+        Check(EntityCollector.Classify(passive with { Friendly = true, ProjectileNpc = true }).Kind == "unknown", "Projectile-like NPC not assumed friendly creature");
+        var candidates = new List<EntityCandidate> {
+            new("player", 1, null, "Player", "self", new(100, 200)),
+            new("player", 2, null, "Player", "human", new(84, 200)),
+            new("npc", 3, 1, "Slime", "Slime", new(100, 216), Evidence: passive with { Damage = 10 }),
+            new("npc", 4, 1, "Slime", "inactive", new(100, 200), false, passive),
+            new("player", 5, null, "Player", "far", new(581, 200)),
+            new("player", 6, null, "Player", "boundary", new(580, 200)) };
+        var entities = EntityCollector.Build(candidates, 1, new(100, 200), 42, "fixture-time");
+        Check(entities.MatchedCount == 3 && !entities.Truncated && entities.Items.Length == 3, "Self/inactive/range filters");
+        Check(entities.Items[0].Id == 3 && entities.Items[0].Vertical == "below"
+            && entities.Items[0].DistancePixels == 16, "NPC center and deterministic tie sorting");
+        Check(entities.Items[1].Id == 2 && entities.Items[1].Horizontal == "left"
+            && entities.Items[1].DeltaPixels.X == -16, "Player-relative direction and distance");
+        Check(entities.GameUpdate == 42 && entities.SampledAt == "fixture-time", "Sample metadata preserved");
+        for (int i = 10; i < 30; i++) candidates.Add(new("player", i, null, "Player", new string('x', 100), new(100 + i, 200)));
+        var crowded = EntityCollector.Build(candidates, 1, new(100, 200), 43, "next");
+        Check(crowded.Truncated && crowded.Items.Length == 12 && crowded.MatchedCount == 23, "Entity limit declares truncation");
+        Check(crowded.Items[0].NameTruncated && crowded.Items[0].Name.Length == 64, "Names bounded explicitly");
+        var state = new ControlState();
+        int session = state.BeginSession();
+        var pending = state.Enqueue(session, new ControlRequest(1, "get_terrain"), 0);
+        var player = new PlayerSnapshot(true, new(90, 179), new(0, 0), 80, 100);
+        var terrain = new TerrainSnapshot(0, 0, 16, new[] { ".h12" }, 20, 42, true, true);
+        state.Update(true, 0, player, terrain, entities: entities);
+        Check(pending.Result.State == player && pending.Result.Terrain == terrain && pending.Result.Entities == entities,
+            "State, terrain and entities cross queue in the same reply");
+        pending = state.Enqueue(session, new ControlRequest(2, "get_state"), 0);
+        state.Update(false, 0, PlayerSnapshot.NotInWorld, entities: entities);
+        Check(pending.Result.Entities == null, "Menu cannot return an old entity snapshot");
+        Console.WriteLine("PASS: conservative entity classification, self/radius filters, directions, truncation and same-reply snapshots");
     }
 
     private static void GuardedControlTests()
@@ -265,7 +320,8 @@ public static class BridgeOfflineTests
         client.Connect("127.0.0.1", server.Port);
         client.ReceiveTimeout = 2000;
         using var reader = new StreamReader(client.GetStream(), Encoding.UTF8, false, 1024, true);
-        Check(reader.ReadLine().Contains("chat_events"), "Chat handshake capability");
+        string capabilities = reader.ReadLine();
+        Check(capabilities.Contains("chat_events") && capabilities.Contains("local_terminal_input_v1"), "Chat and local input handshake capabilities");
         server.PublishChat(1, "AI", "self", 1);
         server.PublishChat(255, "server", "system", 1);
         server.PublishChat(0, "human", "first", 1);
@@ -285,6 +341,19 @@ public static class BridgeOfflineTests
         PumpUntil(() => reply.IsCompleted, state);
         Check(JsonDocument.Parse(reply.Result).RootElement.GetProperty("id").GetInt32() == 1,
             "Event and response frames remain valid JSON Lines");
+        client.GetStream().Write(Encoding.UTF8.GetBytes("{\"v\":1,\"id\":2,\"cmd\":\"begin_local_turn\"}\n"));
+        var localReply=reader.ReadLineAsync();
+        var localTimer=Stopwatch.StartNew();
+        while(!localReply.IsCompleted && localTimer.ElapsedMilliseconds<2000)
+        {
+            state.Update(true,Stopwatch.GetTimestamp(),snapshot,worldSessionId:"local-network-test");
+            Thread.Sleep(5);
+        }
+        Check(localReply.IsCompleted,"Local input registration returns over actual TCP");
+        using var localJson=JsonDocument.Parse(localReply.Result);
+        Check(localJson.RootElement.GetProperty("ok").GetBoolean()
+            && localJson.RootElement.GetProperty("data").GetProperty("chatId").GetString().StartsWith("local:"),
+            "Game-thread local identity survives actual response serialization");
         Console.WriteLine("PASS: author filtering, unsolicited chat, unique events, game-thread send, stale reply rejection and disconnect revocation");
     }
 
@@ -357,15 +426,24 @@ public static class BridgeOfflineTests
         Task<string> readTerrain = reader.ReadLineAsync();
         timer.Restart();
         var terrain = new TerrainSnapshot(100, 200, 16, new[] { ".#=hs!?" }, 20, 42, true, true);
+        var entitySnapshot = EntityCollector.Build(new[] {
+            new EntityCandidate("player", 0, null, "Player", "Human", new(117.5f, 221))
+        }, 1, new(133.5f, 221), 99, "tcp-fixture-time");
         while (!readTerrain.IsCompleted && timer.ElapsedMilliseconds < 2000)
         {
-            state.Update(true, Stopwatch.GetTimestamp(), snapshot, terrain);
+            state.Update(true, Stopwatch.GetTimestamp(), snapshot, terrain, entities: entitySnapshot);
             Thread.Sleep(5);
         }
         Check(readTerrain.IsCompleted, "Terrain TCP reply completes");
         using (var json = JsonDocument.Parse(readTerrain.Result))
         {
             var root = json.RootElement;
+            var observation = root.GetProperty("entities");
+            Check(observation.GetProperty("available").GetBoolean()
+                && observation.GetProperty("gameUpdate").GetInt64() == 99
+                && observation.GetProperty("items")[0].GetProperty("horizontal").GetString() == "left"
+                && observation.GetProperty("items")[0].GetProperty("distancePixels").GetSingle() == 16,
+                "Entities serialize with the same terrain/state TCP reply");
             Check(root.GetProperty("status").GetString() == "terrain"
                 && root.GetProperty("terrain").GetProperty("rows")[0].GetString() == ".#=hs!?"
                 && root.GetProperty("state").GetProperty("life").GetInt32() == 75,
@@ -387,7 +465,9 @@ public static class BridgeOfflineTests
         Check(!readNavigation.Wait(30), "Socket cannot calculate/read navigation without game update");
         timer.Restart();
         var navigation = new NavigationSnapshot(state.SessionId, "landed", "jump", "fixture", 40, 8,
-            new(1600, 1000), new(1601, 1000), 1, Generation: state.Generation);
+            new(1600, 1000), new(1601, 1000), 1, Generation: state.Generation,
+            Expansions: 32, PlannedActions: 2, PlanMilliseconds: 24.75, ReachedGoal: true,
+            TimeBudgetReached: true, PlanNumber: 2, TargetRegion: new(1600, 1680, 1042));
         while (!readNavigation.IsCompleted && timer.ElapsedMilliseconds < 2000)
         {
             state.Update(true, Stopwatch.GetTimestamp(), snapshot, terrain, navigation);
@@ -400,6 +480,11 @@ public static class BridgeOfflineTests
             Check(nav.GetProperty("status").GetString() == "landed"
                 && nav.GetProperty("actualLanding").GetProperty("x").GetSingle() == 1601,
                 "Navigation result and actual landing serialized over TCP");
+            Check(nav.GetProperty("reachedGoal").GetBoolean() && nav.GetProperty("timeBudgetReached").GetBoolean()
+                && nav.GetProperty("planNumber").GetInt32() == 2 && nav.GetProperty("expansions").GetInt32() == 32
+                && nav.GetProperty("plannedActions").GetInt32() == 2 && nav.GetProperty("planMilliseconds").GetDouble() == 24.75
+                && nav.GetProperty("targetRegion").GetProperty("surfaceY").GetSingle() == 1042,
+                "Existing get_navigation TCP response preserves complete incumbent, budget and goal diagnostics");
         }
         client.Close();
         PumpUntil(() => !state.IsMoving, state);

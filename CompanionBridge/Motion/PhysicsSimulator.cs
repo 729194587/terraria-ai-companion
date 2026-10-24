@@ -31,6 +31,9 @@ internal interface IMotionWorld
     PhysicsState Move(PhysicsState start, float vx, float vy, float gravity);
     bool SafeSweep(PhysicsState start, PhysicsState end, out string reason);
     bool SafeLanding(PhysicsState state);
+    // Opt in only when the world can verify a flat solid or one-way platform top.
+    bool SafeFlatLanding(PhysicsState state) => false;
+    string LandingRejection(PhysicsState state) => SafeLanding(state) ? null : "unsafe foot support or body clearance";
 }
 
 internal sealed class UnsafeMotionException : Exception
@@ -121,6 +124,7 @@ internal static class PhysicsSimulator
         float maxDropPixels = 16)
     {
         var frames = new List<PredictedFrame>();
+        bool brakingOnly = direction == 0 && hold == 0 && walkFrames == 0;
         var s = start;
         bool airborne = false;
         int stable = 0;
@@ -173,9 +177,10 @@ internal static class PhysicsSimulator
             s = next;
             if (stable >= 2)
             {
-                bool safe = direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4) && world.SafeLanding(s);
+                bool safe = (brakingOnly || direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4))
+                    && world.SafeLanding(s);
                 int execute = movingLandingFrames > 0 ? movingLandingFrames : frames.Count;
-                if (hold == 0)
+                if (hold == 0 && !brakingOnly)
                 {
                     execute = walkFrames;
                     while (!frames[execute - 1].State.Grounded && execute < frames.Count) execute++;

@@ -8,7 +8,10 @@ using System.Linq;
 
 namespace CompanionBridge.Motion;
 
-internal sealed record Route(List<Prediction> Actions, int Expansions, double Milliseconds, string FailureReason = null);
+// ReachedGoal includes feasible incumbents at budget exhaustion, not a claim of
+// optimality. TimeBudgetReached records a checked deadline exit (not preemption).
+internal sealed record Route(List<Prediction> Actions, int Expansions, double Milliseconds, string FailureReason = null,
+    bool ReachedGoal = false, bool TimeBudgetReached = false);
 
 internal static class StateSpacePlanner
 {
@@ -33,14 +36,50 @@ internal static class StateSpacePlanner
     // A horizontal crossing goal, within a rolling local horizon. Candidates prove
     // a safe braking tail, but can hand off on supported ground with residual speed.
     internal static Route Plan(PhysicsState start, float targetX, PhysicsParameters ph,
+        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, int? goalDirection = null)
+        => PlanCore(start, targetX, null, ph, world, maxExpansions, budgetMs, goalDirection);
+
+    internal static Route Plan(PhysicsState start, LandingRegion region, PhysicsParameters ph,
         IMotionWorld world, int maxExpansions = 32, double budgetMs = 25)
+        => PlanCore(start, Math.Clamp(start.Px, region.MinPlayerLeftX, region.MaxPlayerLeftX),
+            region, ph, world, maxExpansions, budgetMs, null);
+
+    private static Route PlanCore(PhysicsState start, float targetX, LandingRegion region, PhysicsParameters ph,
+        IMotionWorld world, int maxExpansions, double budgetMs, int? goalDirection)
     {
         var watch = Stopwatch.StartNew();
         var rejected = new Dictionary<string, int>();
         void Reject(string reason) => rejected[reason] = rejected.GetValueOrDefault(reason) + 1;
         float goal = start.Px + Math.Clamp(targetX - start.Px, -128, 128);
-        int sign = Math.Sign(goal - start.Px);
-        float H(PhysicsState s) => Math.Max(0, sign * (goal - s.Px)) / ph.MaxRun;
+        bool finalGoal = goal == targetX;
+        // Preserve the task's crossing direction after reaching/passing targetX;
+        // recomputing it from the current position would reverse an overshot goal.
+        int sign = goalDirection ?? (targetX >= start.Px ? 1 : -1);
+        // Region H is the indicator of geometric non-membership (X OR feet Y).
+        // Every edge costs >= one executed frame, jumps add 20. Any path from
+        // outside the geometry needs at least one edge, so H <= remaining G.
+        // Inside geometry H=0 even if settling/support is still needed. This also
+        // stays consistent across native StepUp/Down positional corrections;
+        // no unproved horizontal/vertical speed bound is used for region goals.
+        float H(PhysicsState s) => region != null ? (region.Contains(s) ? 0 : 1)
+            : Math.Max(0, sign * (goal - s.Px)) / ph.MaxRun;
+        float Distance(PhysicsState s) => region?.Distance(s) ?? H(s);
+        bool Reached(PhysicsState s) => region != null ? region.Arrived(s, world)
+            : H(s) <= 4 && (!finalGoal || Math.Abs(s.Vx) <= 0.1f)
+                && s.Grounded && world.SafeLanding(s);
+        if (region != null ? region.Contains(start) : sign * (targetX - start.Px) <= 12)
+        {
+            // Distance alone is not a terminal physical state. Use the same
+            // bounded simulation, sweep/drop/landing checks and stable tail as
+            // other actions, but release direction rather than accelerate again.
+            var brake = PhysicsSimulator.Predict(start, 0, 0, ph, world,
+                walkFrames: 0, maxDropPixels: MaxDropPixels);
+            if (brake.Safe && (region != null ? region.Arrived(brake.Landing, world)
+                    : sign * (targetX - brake.Landing.Px) <= 12)
+                && Math.Abs(brake.Landing.Vx) <= 0.1f)
+                return new(new() { brake }, 0, watch.Elapsed.TotalMilliseconds, ReachedGoal: true);
+            if (!brake.Safe) Reject("braking: " + brake.Reason);
+        }
         var labels = new Dictionary<CellKey, List<Label>>();
         var came = new Dictionary<PhysicsState, (PhysicsState Prev, Prediction Edge, float G)>();
         var open = new PriorityQueue<PhysicsState, float>();
@@ -48,14 +87,18 @@ internal static class StateSpacePlanner
         came[start] = (start, null, 0);
         open.Enqueue(start, H(start));
         PhysicsState best = start;
-        float bestDistance = H(start);
+        float bestDistance = Distance(start);
         float bestScore = float.MaxValue;
+        PhysicsState? complete = null;
+        float completeCost = float.PositiveInfinity;
+        bool reachedGoal = false;
         int expansions = 0;
         bool timedOut = false;
         while (open.Count > 0 && expansions < maxExpansions && !timedOut)
         {
             var cur = open.Dequeue();
-            if (H(cur) <= 4) { best = cur; break; }
+            if (Reached(cur))
+            { best = cur; reachedGoal = true; break; }
             expansions++;
             foreach (int dir in new[] { sign, -sign })
             {
@@ -73,7 +116,8 @@ internal static class StateSpacePlanner
                         // Predict still checks the complete braking/landing trajectory.
                         // Carry the observed prefix velocity into the next search node;
                         // The final approach or an unsafe handoff executes the tail.
-                        bool settle = sign * (targetX - edge.Landing.Px) <= 12
+                        bool settle = (region != null ? region.Contains(edge.Landing)
+                                : sign * (targetX - edge.Landing.Px) <= 12)
                             || !world.SafeLanding(edge.Frames[edge.ExecuteFrames - 1].State);
                         int execute = settle ? edge.Frames.Count : edge.ExecuteFrames;
                         edge = edge with { ExecuteFrames = execute, Landing = edge.Frames[execute - 1].State,
@@ -86,6 +130,17 @@ internal static class StateSpacePlanner
                         // Prefer walking when it makes comparable progress. Braking at
                         // every walk boundary previously made flat-ground jumps cheaper.
                         float ng = came[cur].G + edge.ExecuteFrames + (edge.Jump ? 20 : 0);
+                        // A bounded search may generate a complete landing long
+                        // before its cost lets it reach the front of the queue.
+                        // Preserve that feasible incumbent even if velocity/cell
+                        // dominance would prune it or a cheaper partial route wins
+                        // the fallback score. Continue A* normally; only the budget
+                        // fallback uses an unproven-optimal complete incumbent.
+                        if (region != null && ng < completeCost && Reached(next))
+                        {
+                            complete = next; completeCost = ng;
+                            came[next] = (cur, edge, ng);
+                        }
                         var key = Cell(next);
                         if (!labels.TryGetValue(key, out var list)) labels[key] = list = new();
                         if (Dominated(list, ng, next)) continue;
@@ -96,8 +151,10 @@ internal static class StateSpacePlanner
                         open.Enqueue(next, ng + H(next));
                         // Cost-aware partial fallback: choosing only the farthest landing
                         // discards the walk/jump costs whenever the budget is exhausted.
-                        float distance = H(next), score = ng + distance;
-                        if (next.Grounded && distance < H(start) - 0.01f
+                        // Region pixel distance only ranks safe partial checkpoints;
+                        // it is NOT the A* heuristic (the queue uses ng + H above).
+                        float distance = Distance(next), score = ng + distance;
+                        if (next.Grounded && world.SafeLanding(next) && distance < Distance(start) - 0.01f
                             && (score < bestScore - 0.01f || (Math.Abs(score - bestScore) <= 0.01f && distance < bestDistance)))
                         { best = next; bestDistance = distance; bestScore = score; }
                     }
@@ -106,6 +163,7 @@ internal static class StateSpacePlanner
                 if (timedOut) break;
             }
         }
+        if (!reachedGoal && complete.HasValue) { best = complete.Value; reachedGoal = true; }
         var actions = new List<Prediction>();
         for (var k = best; came.TryGetValue(k, out var e) && !e.Prev.Equals(k); k = e.Prev)
             actions.Add(e.Edge);
@@ -114,6 +172,6 @@ internal static class StateSpacePlanner
             .Take(3).Select(p => $"{p.Key} ({p.Value} candidates)")) : null;
         if (actions.Count == 0 && string.IsNullOrEmpty(failure)) failure = "no forward grounded route within expansion/span budget";
         if (actions.Count == 0 && timedOut) failure = "search time budget reached; " + failure;
-        return new(actions, expansions, watch.Elapsed.TotalMilliseconds, failure);
+        return new(actions, expansions, watch.Elapsed.TotalMilliseconds, failure, reachedGoal, timedOut);
     }
 }
