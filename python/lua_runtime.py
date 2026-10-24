@@ -263,18 +263,30 @@ class LuaRuntime:
                     active = asyncio.create_task(atomic.dispatch(self.bridge, name, args, chat_id,
                                                                  lifecycle=lifecycle, owner=owner))
                     active_role = 'dispatch'
-                    result = await watch(active)
+                    rejected_before_dispatch = False
+                    try:
+                        result = await watch(active)
+                    except atomic.PreDispatchRejected as error:
+                        # Only this explicit local refusal proves no RPC/action
+                        # occurred. No-start by itself does NOT prove safety:
+                        # the initial movement query can fail ambiguously too.
+                        rejected_before_dispatch = not (lifecycle.get('start_attempted')
+                            or lifecycle.get('action') is not None or lifecycle.get('uncertain'))
+                        result = {'valid': False, 'status': 'failed' if rejected_before_dispatch else 'unknown',
+                                  'completed': False, 'reason': str(error),
+                                  'dispatchState': 'not_dispatched' if rejected_before_dispatch else 'unconfirmed'}
                     active = None
                     if on_result is not None:
                         on_result(name, args, result)
                     call_end(result.get('status'), result=result)
                     if name in atomic.ACTIONS:
                         out['lastAction'] = bounded_action(result)
-                        if lifecycle.get('uncertain') or not safe_terminal(result):
+                        if lifecycle.get('uncertain') or not (rejected_before_dispatch or safe_terminal(result)):
                             out['actionState'] = 'unknown'
                             out['status'] = 'action_unknown'
                             break
-                        out['actionState'] = 'released'
+                        if not rejected_before_dispatch:
+                            out['actionState'] = 'released'
                         halted |= result.get('status') != 'completed'
                 call_end(result.get('status'), result=result)
                 try:

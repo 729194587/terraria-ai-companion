@@ -205,6 +205,108 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(BridgeError):
             await atomic.dispatch(game, 'use_item', {})
 
+    async def test_capability_rejection_allows_reads_but_blocks_later_mutation(self):
+        game = RuntimeGame()
+        game.hello['capabilities'].remove('server_confirmed_interactions_v1')
+        r, _, runtime = await self.run_lua('''
+            local rejected = api('interact_tile', {x=5,y=5})
+            assert(not rejected.valid and not rejected.completed)
+            local read = api('inspect_inventory')
+            local blocked = api('use_item')
+            return {rejected=rejected, readable=read.valid, blocked=blocked.status}
+        ''', game)
+        self.assertEqual(('completed', 'idle'), (r['status'], r['actionState']), r)
+        rejection = r['value']['rejected']
+        self.assertEqual('failed', rejection['status'])
+        self.assertEqual('not_dispatched', rejection['dispatchState'])
+        self.assertIn('server_confirmed_interactions_v1', rejection['reason'])
+        self.assertTrue(r['value']['readable'])
+        self.assertEqual('blocked', r['value']['blocked'])
+        self.assertEqual(rejection, r['lastAction'])
+        self.assertEqual(3, r['calls'])
+        self.assertFalse(any(c in ('start_atomic', 'cancel_move') for c, _ in game.sent))
+        self.assertFalse(game.closed)
+        self.assertFalse(getattr(game, '_lua_poisoned', False))
+        second = await runtime.execute("return api('inspect_inventory').valid")
+        self.assertEqual(('completed', True), (second['status'], second['value']))
+
+    async def test_capability_rejection_preserves_prior_release_evidence(self):
+        game = RuntimeGame()
+        game.hello['capabilities'].remove('server_confirmed_interactions_v1')
+        r, _, _ = await self.run_lua('''
+            assert(api('use_item').completed)
+            local rejected = api('interact_tile', {x=5,y=5})
+            return {status=rejected.status, readable=api('inspect_inventory').valid,
+                    blocked=api('use_item').status}
+        ''', game)
+        self.assertEqual(('completed', 'released'), (r['status'], r['actionState']), r)
+        self.assertEqual({'status': 'failed', 'readable': True, 'blocked': 'blocked'}, r['value'])
+        self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
+        self.assertFalse(game.closed)
+
+    async def test_prestart_query_fault_is_not_a_capability_rejection(self):
+        for error in (BridgeError('query timeout'), OSError('connection lost'),
+                      BridgeError('query rejected', status='not_ready')):
+            with self.subTest(error=str(error)):
+                game = RuntimeGame()
+                original = game.command
+                queries = 0
+                def fault(cmd, **params):
+                    nonlocal queries
+                    if cmd == 'get_movement':
+                        queries += 1
+                        if queries == 2:  # Runtime preflight succeeds; dispatcher query fails.
+                            raise error
+                    return original(cmd, **params)
+                game.command = fault
+                r, _, _ = await self.run_lua("api('use_item'); return api('inspect_inventory')", game)
+                self.assertEqual(('action_unknown', 'unknown'), (r['status'], r['actionState']), r)
+                self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
+                self.assertTrue(game.closed)
+                self.assertTrue(game._lua_poisoned)
+
+    async def test_start_without_ack_still_fences_bridge(self):
+        game = RuntimeGame(pending=True)
+        original = game.command
+        def lost_ack(cmd, **params):
+            reply = original(cmd, **params)
+            if cmd == 'start_atomic':
+                raise BridgeError('start acknowledgement lost')
+            return reply
+        game.command = lost_ack
+        r, _, _ = await self.run_lua("api('use_item'); return api('inspect_inventory')", game)
+        self.assertEqual(('action_unknown', 'unknown'), (r['status'], r['actionState']), r)
+        self.assertEqual('running', game.action['status'])
+        self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
+        self.assertFalse(any(c == 'query_atomic' for c, _ in game.sent))
+        self.assertTrue(game.closed)
+        self.assertTrue(game._lua_poisoned)
+
+    async def test_changed_action_identity_still_fences_bridge(self):
+        game = RuntimeGame()
+        original = game.command
+        def replaced(cmd, **params):
+            reply = original(cmd, **params)
+            if cmd == 'get_movement' and game.action:
+                reply['movement']['action']['actionId'] += 1
+            return reply
+        game.command = replaced
+        r, _, _ = await self.run_lua("api('use_item'); return api('inspect_inventory')", game)
+        self.assertEqual(('action_unknown', 'unknown'), (r['status'], r['actionState']), r)
+        self.assertEqual('action_ownership_changed', r['lastAction']['reason'])
+        self.assertTrue(game.closed)
+        self.assertTrue(game._lua_poisoned)
+
+    async def test_result_text_cannot_claim_safe_predispatch_rejection(self):
+        async def ambiguous(*args, **kwargs):
+            return {'valid': False, 'status': 'failed', 'completed': False,
+                    'dispatchState': 'not_dispatched', 'reason': 'untrusted claim'}
+        with patch.object(atomic, 'dispatch', ambiguous):
+            r, game, _ = await self.run_lua("return api('use_item')")
+        self.assertEqual(('action_unknown', 'unknown'), (r['status'], r['actionState']), r)
+        self.assertTrue(game.closed)
+        self.assertTrue(game._lua_poisoned)
+
     async def test_event_cancel_waits_for_release(self):
         game, cancel = RuntimeGame(pending=True), asyncio.Event()
         runtime = LuaRuntime(game)

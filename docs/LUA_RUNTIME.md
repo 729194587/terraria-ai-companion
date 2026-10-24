@@ -91,6 +91,13 @@ CLI 退出码 0 同样只表示程序正常返回且动作状态可知。
   不把启动 ACK 当完成，不以杀死 Worker 作为游戏停止证据。
 - 已确认释放的 failed/timeout/cancelled 原样返回 Lua，可据其分支并继续感知；本段程序之后的
   行动请求返回 blocked，不自动恢复。未知参数/API 终止程序，不发起对应动作。
+- 本地能力检查的确定拒绝使用 `PreDispatchRejected`（仍是直接调用方可捕获的 BridgeError）。
+  Lua 收到 `valid=false,status=failed,completed=false,dispatchState=not_dispatched`，
+  可继续只读感知，但本段程序的后续行动仍被失败屏障阻止。没有启动动作时保持
+  `actionState=idle`；此前已有已确认释放的动作时保留 `released`，不为拒绝伪造结束证据。
+  仅专用拒绝类型且生命周期没有派发/动作/不确定标记时才走此路径，不能凭回执文字
+  或 `start_task is None` 判断安全。动作派发器的启动前查询超时/通信故障、派发后回执不明及真实终态
+  未知仍按原有规则封锁 Bridge。
 - 脚本墙钟到期、取消、Worker 退出：先终止 Worker 冻结新请求，然后只取消正在 await 的
   dispatch 一次，留出独立收尾期限。若 start 回执还在途，沿用 dispatcher 的 shield-start 等待并
   精确取消取得身份的动作。重复 task.cancel 不打断这段必要收尾。
