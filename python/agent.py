@@ -18,6 +18,7 @@ import lua_agent
 from dataclasses import replace
 from lua_runtime import LuaRuntime, Limits as LuaLimits
 import agent_diagnostics as diagnostics
+import evidence
 
 from control import Bridge, BridgeError
 from llm import LLMClient, LLMError
@@ -220,11 +221,18 @@ def history_receipts(messages):
                 or "error" in result):
             continue
         if name == lua_agent.TOOL_NAME:
+            changed=False
             if 'value' in result:
                 result.pop('value')
                 result['valueExpired'] = True
                 result['valueExpiryReason'] = 'Previous Lua return data omitted; query current state before acting'
-                message['content'] = json.dumps(result, ensure_ascii=False)
+                changed=True
+            if 'logs' in result:
+                result.pop('logs')
+                result['logsExpired']=True
+                changed=True
+            if changed:
+                message['content']=json.dumps(result,ensure_ascii=False)
             continue
         snapshot = result.get(key)
         if (not isinstance(snapshot, dict)
@@ -417,7 +425,9 @@ class Agent:
             await asyncio.gather(asyncio.shield(previous), return_exceptions=True)
 
     async def _run(self, generation, chat_id):
-        token = tracing.context.set({"generation": generation, "chat_event_id": chat_id})
+        bundle = evidence.Bundle(self.lua_store.directory.parent / 'evidence',metadata={'generation':generation,'chat_event_id':chat_id})
+        evidence_token = evidence.current.set(bundle)
+        token = tracing.context.set({"generation": generation, "chat_event_id": chat_id, 'task_id': bundle.id})
         started = time.monotonic()
         outcome = "completed"
         movement_loop = MovementLoop(self.max_movement_ms)
@@ -429,10 +439,25 @@ class Agent:
         unconfirmed_item_effect = False
         lua_failure = None
         lua_seconds = 0
+        lua_calls = actions_used = 0
         tool_limit = self.max_tool_calls
+
+        def mutation_budget_reason():
+            # A normally returned program can consume the last API call/second.
+            # Keep that success receipt, but fence every later mutation entry.
+            if lua_calls >= self.lua_limits.calls:
+                return 'lua_api_budget_exhausted'
+            if lua_seconds >= self.lua_limits.seconds:
+                return 'lua_time_budget_exhausted'
+            if actions_used >= self.lua_limits.actions:
+                return 'action_budget_exhausted'
+            return None
+
         costs = cost_metrics.TaskCosts(self._cost_exposures)
         cost_token = cost_metrics.current.set(costs)
         tracing.trace.emit("agent_start")
+        diagnostics.emit('agent_start', maxModelTools=self.max_tool_calls, maxLuaCalls=self.lua_limits.calls,
+                         maxActionAttempts=self.lua_limits.actions, maxLuaSeconds=self.lua_limits.seconds)
         try:
             await self._wait_lua_cleanup()
             if generation != self.generation:
@@ -464,7 +489,9 @@ class Agent:
                 request.append({"role": "user", "content": json.dumps(
                     {"runtimeInventory": inventory, 'runtimeLua': {
                         'remainingToolCalls': tool_limit - used,
-                        'remainingApiCallsIfExecutedNow': max(0, min(self.lua_limits.calls, tool_limit - used - 1)),
+                        'remainingApiCallsIfExecutedNow': max(0, self.lua_limits.calls - lua_calls) if tool_limit>used else 0,
+                        'remainingLuaApiCalls': max(0,self.lua_limits.calls-lua_calls),
+                        'remainingActionAttempts': max(0, self.lua_limits.actions - actions_used),
                         'remainingSeconds': max(0, self.lua_limits.seconds - lua_seconds),
                         'maxSourceUtf8Bytes': lua_agent.SOURCE_BYTES}}, ensure_ascii=False)})
                 costs.request(request)
@@ -506,11 +533,12 @@ class Agent:
                                 result = {"valid": False, "error": "one_tool_per_model_decision_required; entire batch not executed"}
                             elif name == lua_agent.TOOL_NAME:
                                 source = lua_agent.validate_arguments(arguments)
-                                remaining = min(self.lua_limits.calls, tool_limit - used)
+                                remaining = self.lua_limits.calls - lua_calls
                                 seconds = self.lua_limits.seconds - lua_seconds
                                 if remaining < 1 or seconds < .05:
                                     raise LoopBudgetExhausted('lua_shared_budget; no program executed')
                                 program = self.lua_store.save(source)
+                                bundle.source(source)
                                 diagnostics.emit('lua_program_saved', **program)
                                 tracing.trace.emit('lua_program_saved', **program)
                                 actions = []
@@ -538,13 +566,15 @@ class Agent:
                                 receipt = None
                                 try:
                                     receipt = await runtime.execute(source, chat_id=chat_id,
-                                        limits=replace(self.lua_limits, seconds=seconds, calls=remaining),
+                                        limits=replace(self.lua_limits, seconds=seconds, calls=remaining,
+                                                       actions=max(0,self.lua_limits.actions-actions_used)),
                                         allow_actions=not atomic_halted, on_result=observe_lua)
                                 finally:
                                     lua_seconds += time.monotonic() - lua_started
                                     actual = receipt if receipt is not None else runtime.last_result
                                     if actual is not None:
-                                        used += actual['calls']
+                                        lua_calls += actual['calls']
+                                        actions_used += actual.get('actions',0)
                                         costs.lua_api_calls += actual['calls']
                                         diagnostics.emit('lua_program_end', sourceSha256=program['sourceSha256'],
                                             runId=actual['runId'], status=actual['status'], calls=actual['calls'],
@@ -565,14 +595,20 @@ class Agent:
                                     lua_failure = result
                                     # A syntax-only failure may be corrected within budget;
                                     # after any action, fail closed for the rest of this turn.
-                                    atomic_halted |= last_atomic_action is not None or result['actionState'] == 'unknown'
+                                    atomic_halted |= (last_atomic_action is not None or result['actionState'] == 'unknown'
+                                        or result['status'] in ('call_limit','action_limit','timeout','instruction_limit',
+                                            'memory_limit','value_limit','result_limit','log_limit','worker_error','host_error'))
                                 elif not atomic_halted:
                                     lua_failure = None
                             elif name in atomic_operations.SCHEMAS:
-                                if name in atomic_operations.ACTIONS and name != "stop_action" and atomic_halted:
+                                if name in atomic_operations.BUDGETED_ACTIONS and (budget_reason := mutation_budget_reason()):
+                                    result = {'valid':False,'status':'failed','reason':budget_reason,'blocked':True}
+                                elif name in atomic_operations.ACTIONS and name != "stop_action" and atomic_halted:
                                     result = {"valid": False, "status": "failed", "reason": "previous_atomic_action_failed; no automatic retry",
                                               "blocked": True, "previousFailure": copy.deepcopy(first_atomic_failure)}
                                 else:
+                                    if name in atomic_operations.BUDGETED_ACTIONS:
+                                        actions_used += 1
                                     result = await atomic_operations.dispatch(self.bridge, name, arguments, chat_id)
                                     if name == "mine_tile" and not mining_recovery_used and mining_recovery.eligible(result):
                                         mining_recovery_used = True
@@ -580,8 +616,12 @@ class Agent:
                                         # One fixed six-call allowance, not an unbounded retry loop.
                                         tool_limit += 6
                                         async def recovery_call(operation, parameters):
-                                            nonlocal used
+                                            nonlocal used, actions_used
                                             used += 1
+                                            if operation in atomic_operations.BUDGETED_ACTIONS:
+                                                if budget_reason := mutation_budget_reason():
+                                                    return {'valid':False,'status':'failed','reason':budget_reason,'blocked':True}
+                                                actions_used += 1
                                             reply = await atomic_operations.dispatch(self.bridge, operation, parameters, chat_id)
                                             costs.tool(operation, json.dumps(reply, ensure_ascii=False))
                                             tracing.trace.emit("mining_recovery_step", operation=operation, result=reply)
@@ -597,9 +637,15 @@ class Agent:
                                     atomic_halted |= result.get("status") != "completed"
                                     movement_loop.invalidate_observation("atomic_action_requires_new_observation")
                             elif name == "move":
-                                result = ({"valid": False, "error": "previous_atomic_action_failed"} if atomic_halted
-                                          else movement_loop.prepare(arguments))
+                                if budget_reason := mutation_budget_reason():
+                                    result = {'valid':False,'status':'failed','error':budget_reason,'blocked':True}
+                                    first_atomic_failure = first_atomic_failure or copy.deepcopy(result)
+                                    atomic_halted = True
+                                else:
+                                    result = ({"valid": False, "error": "previous_atomic_action_failed"} if atomic_halted
+                                              else movement_loop.prepare(arguments))
                                 if result is None:
+                                    actions_used += 1
                                     result = await move(self.bridge, arguments["direction"], arguments["duration_ms"], chat_id=chat_id,
                                                         expected_generation=movement_loop.before["controlGeneration"])
                                     movement_loop.moved(result)
@@ -768,6 +814,11 @@ class Agent:
             costs.summary(outcome, task_outcome=task_outcome, action_outcome=task_result["action_outcome"])
             cost_metrics.current.reset(cost_token)
             tracing.trace.emit("agent_end", outcome=outcome, **task_result, elapsed_ms=(time.monotonic() - started) * 1000)
+            diagnostics.emit('agent_end', outcome=outcome, **task_result, modelToolCalls=used,
+                luaApiCalls=lua_calls, actionAttempts=actions_used, elapsed_ms=(time.monotonic()-started)*1000,
+                runtimeLogHealth=diagnostics.log.health(), traceHealth=tracing.trace.health(), evidence=bundle.receipt())
+            bundle.finish(status=outcome, **task_result, modelToolCalls=used, luaApiCalls=lua_calls, actionAttempts=actions_used)
+            evidence.current.reset(evidence_token)
             tracing.context.reset(token)
 
     async def _send_reply(self, text, chat_id):
