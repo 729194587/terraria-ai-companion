@@ -1,5 +1,7 @@
 # Lua 编排第一阶段
 
+第二阶段已接入 Agent/LLM，使用方法与新增宿主策略见 [Lua Agent](LUA_AGENT.md)。下文保留第一阶段设计与验证记录。
+
 基线：干净的 `feat/atomic-operations-v1` / `ae4d8037bbfee1c32560df7e4b61f28aee621833`。
 采用当前 0.1.37 原子操作、多人与输入释放契约；没有合并旧实验分支。
 `lua_worker.py` 改编自 `origin/spike/lua-orchestrator-prototype` 的
@@ -170,10 +172,9 @@ pwsh -NoProfile -File tests/run_csharp_tests.ps1
 日志保存在本机 `.local/lua-stage1-python-tests.log`、`.local/lua-stage1-csharp-tests.log`、
 `.local/lua-stage1-final-lua-tests.log`，不提交生成日志或虚拟环境。
 
-## 进入第二阶段
+## 第二阶段接入
 
-无需重建 runtime：Agent 工具只需把生成的完整 source 交给 execute，并正确传递 chat_id、
-轮次预算与取消。还需接入 Lua API 描述/提示词、脚本保留、成本统计、任务级结果解释、
-新聊天取消/关闭等待的宿主集成测试，以及在确定测试世界做单人/多人最小验收。
+已基于 execute 接入 Agent 工具、Lua API 描述/提示词、脚本保留、成本统计、任务级结果解释、
+新聊天取消/关闭等待及宿主集成测试；见 [第二阶段实现](LUA_AGENT.md)。真实游戏最小验收仍待第三阶段。
 若计划接受主动敌对代码，先补 OS 权限/进程资源隔离；现有实现不作此安全承诺。
 不在本阶段引入 Skill 系统、扩充原子能力或改造感知系统。

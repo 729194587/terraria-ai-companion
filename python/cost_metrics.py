@@ -11,6 +11,7 @@ import agent_trace as tracing
 current = ContextVar("task_cost_metrics", default=None)
 FIELDS = ("input_tokens", "output_tokens", "cached_input_tokens", "non_cached_input_tokens")
 TOOLS = {"get_state", "get_observation", "get_exploration_observation", "move", "stop_movement",
+         "execute_lua",
          "get_player_state", "observe_terrain", "inspect_tile", "scan_tiles", "scan_entities", "inspect_inventory", "get_world_state",
          "mine_wall", "place_wall", "hammer_tile",
          "drop_through_platform", "navigate_to_x", "navigate_to_landing_region", "select_hotbar_slot", "use_item", "mine_tile", "attack_entity", "interact_tile", "place_tile", "stop_action"}
@@ -65,6 +66,7 @@ class TaskCosts:
         self.totals = {field: 0 for field in FIELDS}
         self.known = {field: 0 for field in FIELDS}
         self.tool_calls = self.tool_result_bytes = 0
+        self.lua_api_calls = 0
         self.context_bytes = self.repeated_bytes = 0
         self.observation_bytes = self.repeated_observation_bytes = 0
 
@@ -127,6 +129,7 @@ class TaskCosts:
                             "unreported_requests": self.model_calls - self.known[field]}
                      for field in FIELDS},
              tool_calls=self.tool_calls, tool_result_utf8_bytes=self.tool_result_bytes,
+             lua_api_calls=self.lua_api_calls,
              submitted_tool_utf8_bytes=self.context_bytes,
              repeated_tool_utf8_bytes=self.repeated_bytes,
              submitted_observation_utf8_bytes=self.observation_bytes,
