@@ -230,6 +230,28 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('completed', lua_results(model)[0]['status'])
         self.assertEqual(10,sum(c=='query_atomic' and p['operation']=='inspect_inventory' and p['arguments'].get('mode')!='full' for c,p in game.sent))
 
+    async def test_exact_lua_api_exhaustion_blocks_direct_actions_but_allows_reads_and_stop(self):
+        for name, arguments in (('use_item', '{}'), ('move', '{"direction":"right","duration_ms":100}')):
+            with self.subTest(tool=name):
+                _, model, game = await self.run_agent(
+                    program("api('inspect_inventory'); return api('inspect_inventory')"),
+                    tool(name, arguments), tool('inspect_inventory'), tool('stop_action'),
+                    tool(name, arguments), final('stopped'), lua_limits=Limits(calls=2))
+                receipt = lua_results(model)[0]
+                self.assertEqual(('completed', 2), (receipt['status'], receipt['calls']))
+                self.assertTrue(receipt['programCompleted'])
+                self.assertEqual(0, json.loads(model.requests[1][-1]['content'])['runtimeLua']['remainingLuaApiCalls'])
+                for request in (model.requests[2], model.requests[5]):
+                    blocked = json.loads(request[-2]['content'])
+                    self.assertTrue(blocked['blocked'], blocked)
+                    self.assertEqual('lua_api_budget_exhausted', blocked.get('reason', blocked.get('error')))
+                self.assertTrue(json.loads(model.requests[3][-2]['content'])['valid'])
+                stopped = json.loads(model.requests[4][-2]['content'])
+                self.assertTrue(stopped['valid'])
+                self.assertTrue(stopped['noOp'])
+                self.assertFalse(any(c in ('start_atomic', 'move_for') for c, _ in game.sent))
+                self.assertFalse(game.closed)
+
     async def test_wall_budget_is_shared_across_programs(self):
         class SlowRuntime:
             last_result = None
@@ -244,6 +266,15 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
                                              lua_limits=Limits(seconds=.05))
         self.assertEqual(2, len(model.requests))
         self.assertEqual(1, len(list(self.store.directory.glob('*.lua'))))
+
+        for name, arguments in (('use_item', '{}'), ('move', '{"direction":"right","duration_ms":100}')):
+            with self.subTest(tool=name), patch('agent.LuaRuntime', SlowRuntime):
+                _, model, game = await self.run_agent(program('return 1'), tool(name, arguments),
+                                                     final('stopped'), lua_limits=Limits(seconds=.05))
+                blocked = json.loads(model.requests[-1][-2]['content'])
+                self.assertTrue(blocked['blocked'], blocked)
+                self.assertEqual('lua_time_budget_exhausted', blocked.get('reason', blocked.get('error')))
+                self.assertFalse(any(c in ('start_atomic', 'move_for') for c, _ in game.sent))
 
     async def test_invalid_arguments_and_archive_failure_do_not_start_worker(self):
         for arguments in ({'source': 'return 1', 'seconds': 1}, {'source': '中'*6000}):

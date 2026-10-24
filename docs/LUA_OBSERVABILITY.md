@@ -24,6 +24,11 @@
 | 60秒Lua墙钟 | 多段程序共享，含Worker启动和API等待；清理另有默认3秒预算；直接工具仍用原有期限 |
 
 资源耗尽后停止本轮行动，不切换直接工具绕过；停止和必要清理保留原有路径。
+即使Lua恰好用完API额度并正常返回，后续直接原子变更和旧move也被拒绝；
+累计Lua墙钟达到上限时采用同一屏障。不会把这份正常完成的程序回执改成失败。
+直接只读观察及wait仍可使用，继续受模型工具次数及各自期限限制，不恢复Lua额度；
+API用尽后不能再提交Lua程序（包括只读程序）。stop_action/stop_movement不受变更屏障限制，
+但不豁免真实停止结果的身份和结束证据校验，必要收尾保持独立清理预算。
 直接挖掘恢复的固定查询allowance保留，其动作也计预算。失败停止/未知会话封锁没有放宽。
 runtimeLua返回剩余模型工具、内部API、动作和秒数；remainingApiCallsIfExecutedNow还考虑能否提交包装。
 成本tool_calls仍统计包装与内部工具结果总数，它与模型工具预算消耗不同。
@@ -44,6 +49,9 @@ log只接受字符串，每程序最多32条、每条512 UTF-8字节，不调用
 Worker的私有行钩子捕获API位置（包括尾调用）；宿主验证行号范围。
 关联链为 `task_id → lua_run_id/source_sha256 → lua_call_id/lua_line → 游戏actionId/session/actionGeneration/worldSessionId`。
 参数校验失败也有开始和错误事件；unknown动作先记录实际回执再结束；取消/Worker退出保留cleanup。
+失败屏障或allow_actions=false合成的blocked回执未派发动作，不占动作额度，
+不替换最后真实动作/释放状态，也不因缺少终态证据封锁Bridge；真实派发（含stop_action）
+若返回未知或缺少释放证据，仍封锁整个Bridge，不能通过新建Runtime绕过。
 failure字段包含kind/message/call/line/retryAllowed/actionState；retryAllowed=false不授予重试权限。
 Lua自身错误带errorLine，成功API之后的脚本错误不会被归咎于上一个API。
 
@@ -87,6 +95,8 @@ source-<sha256>.lua是脱敏源码副本；events.jsonl保存API、感知摘要�
 日志限额、脱敏、保留/导出、磁盘不可写、原生异常及原有取消/身份/释放证据。
 真实tModLoader构建只验证API兼容性；未部署、未做真实模型/真实游戏或多人验收。
 
-2026-10-24验证：完整Python回归401项通过，C#离线/协议回归通过，真实tModLoader构建0错误、0警告。
-本地日志为 `.local/lua-observability-full-python.log`、`.local/lua-observability-csharp.log`，
-构建产物在 `.local/lua-observability-build`，均不提交仓库。
+2026-10-24边界修正验证：完整Python回归405项通过（含API精确耗尽后直接use_item/旧move、
+只读与停止保留、未派发blocked不封锁、失败屏障下停止与真实未知封锁），
+C#离线/协议回归通过，真实tModLoader构建0错误、0警告。
+本地日志为 `.local/lua-boundary-full-python.log`、`.local/lua-boundary-csharp.log`、
+`.local/lua-boundary-build.log`；构建产物在 `.local/lua-boundary-build`，均不提交仓库。

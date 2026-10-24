@@ -441,6 +441,18 @@ class Agent:
         lua_seconds = 0
         lua_calls = actions_used = 0
         tool_limit = self.max_tool_calls
+
+        def mutation_budget_reason():
+            # A normally returned program can consume the last API call/second.
+            # Keep that success receipt, but fence every later mutation entry.
+            if lua_calls >= self.lua_limits.calls:
+                return 'lua_api_budget_exhausted'
+            if lua_seconds >= self.lua_limits.seconds:
+                return 'lua_time_budget_exhausted'
+            if actions_used >= self.lua_limits.actions:
+                return 'action_budget_exhausted'
+            return None
+
         costs = cost_metrics.TaskCosts(self._cost_exposures)
         cost_token = cost_metrics.current.set(costs)
         tracing.trace.emit("agent_start")
@@ -589,8 +601,8 @@ class Agent:
                                 elif not atomic_halted:
                                     lua_failure = None
                             elif name in atomic_operations.SCHEMAS:
-                                if (name in atomic_operations.BUDGETED_ACTIONS and actions_used >= self.lua_limits.actions):
-                                    result = {'valid':False,'status':'failed','reason':'action_budget_exhausted','blocked':True}
+                                if name in atomic_operations.BUDGETED_ACTIONS and (budget_reason := mutation_budget_reason()):
+                                    result = {'valid':False,'status':'failed','reason':budget_reason,'blocked':True}
                                 elif name in atomic_operations.ACTIONS and name != "stop_action" and atomic_halted:
                                     result = {"valid": False, "status": "failed", "reason": "previous_atomic_action_failed; no automatic retry",
                                               "blocked": True, "previousFailure": copy.deepcopy(first_atomic_failure)}
@@ -607,8 +619,8 @@ class Agent:
                                             nonlocal used, actions_used
                                             used += 1
                                             if operation in atomic_operations.BUDGETED_ACTIONS:
-                                                if actions_used >= self.lua_limits.actions:
-                                                    return {'valid':False,'status':'failed','reason':'action_budget_exhausted','blocked':True}
+                                                if budget_reason := mutation_budget_reason():
+                                                    return {'valid':False,'status':'failed','reason':budget_reason,'blocked':True}
                                                 actions_used += 1
                                             reply = await atomic_operations.dispatch(self.bridge, operation, parameters, chat_id)
                                             costs.tool(operation, json.dumps(reply, ensure_ascii=False))
@@ -625,8 +637,8 @@ class Agent:
                                     atomic_halted |= result.get("status") != "completed"
                                     movement_loop.invalidate_observation("atomic_action_requires_new_observation")
                             elif name == "move":
-                                if actions_used >= self.lua_limits.actions:
-                                    result = {'valid':False,'status':'failed','error':'action_budget_exhausted','blocked':True}
+                                if budget_reason := mutation_budget_reason():
+                                    result = {'valid':False,'status':'failed','error':budget_reason,'blocked':True}
                                     first_atomic_failure = first_atomic_failure or copy.deepcopy(result)
                                     atomic_halted = True
                                 else:

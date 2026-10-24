@@ -248,7 +248,9 @@ class LuaRuntime:
                 if type(name) is not str:
                     raise Interrupted('bad_argument')
                 atomic.validate(name, args)
-                if halted and name in atomic.ACTIONS:
+                if halted and name in atomic.BUDGETED_ACTIONS:
+                    # No dispatch occurred: this is not an unknown game action.
+                    # stop_action still dispatches and must prove release below.
                     result = {'valid': False, 'status': 'blocked', 'reason': 'previous_action_failed', 'blocked': True}
                     if on_result is not None:
                         on_result(name, args, result)
