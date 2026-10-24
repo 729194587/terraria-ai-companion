@@ -1,0 +1,89 @@
+# 背包原子能力第一批：CompanionBridge 0.1.39
+
+基线 `4b6f491d219b94c6b2f4567974fb7386fe9723b4`（P0基础能力），开始时工作区干净。
+本批先完成后续采集、制作、放置共同需要的背包持用与搬运。没有合入旧实验分支，
+没有部署或操作真实游戏。目标型接近、砍树/拾取、配方合成和多格家具放置仍是后续批次。
+
+## 调用与参数
+
+所有背包动作走现有 `start_atomic`、独占控制、租约/绝对期限、取消、游戏线程结束证据链路，
+也直接进入 Agent/Lua 白名单。握手能力 `inventory_operations_v1`；旧Mod在RPC前拒绝新动作和slots查询。
+
+| 接口 | 语义 |
+| --- | --- |
+| `inspect_inventory(mode='slots',slots=[...])` | 按请求顺序读取1..16个不同内部索引（0..58），返回每槽typeId、stack、prefix、maxStack、favorited、empty、hotbarKey、工具属性与inventoryToken。空格明确表示；不是完整背包/装备快照 |
+| `transfer_inventory_item(sourceSlot,destinationSlot,count,sourceToken,destinationToken)` | 在两个0..49普通背包槽移动精确1..9999件。目标为空时可全量搬运或拆分；目标非空时必须同类型/前缀、原生CanStack允许且有完整容量。不会自动换目标、部分装满、溢出丢弃或交换异类物品 |
+| `swap_inventory_slots(sourceSlot,destinationSlot,sourceToken,destinationToken)` | 交换两端完整物品实例，不合并、不重新生成物品；可与空格交换。源/目标必须不同 |
+| `hold_inventory_item(sourceSlot,hotbarKey,sourceToken,destinationToken)` | 将源物品与指定快捷栏槽整件交换，再选择该快捷键。目标原物品回源槽，即使同类也不堆叠；源本就在目标槽则只选择。不会自动使用物品 |
+
+`sourceSlot/destinationSlot` 为内部数组0..49；`hotbarKey`为游戏键帽1..9、0（0映射内部9）。
+钱币50..53、弹药54..57、鼠标关联58可查询，但本批不能搬运；箱子、银行、垃圾与装备槽也不在范围内。
+三个新增动作目前只支持单人；多人返回 `inventory_requires_single_player`，不修改背包。
+旧 `select_hotbar_slot` 保留原来的单人/多人选择语义。
+
+默认selected及hotbar紧凑查询也补充上述元数据；item数量查询和full格式保持原有职责，
+需要动作token时按需查询slots。`get_player_status`的selectedItem不保证带token。
+
+## Terraria规则与状态保护
+
+没有把普通背包索引直接设成selectedItem，也没有从内容模板生成替代物品。
+空槽搬运/拆分调用 `ItemLoader.TransferWithLimit`；堆叠先验证类型、前缀、数量和容量，
+再调用 `CanStack` 与 `StackItems`，正常执行GlobalItem/ModItem的拆分、堆叠钩子。
+整件交换用与原生槽位实现一致的 `Utils.Swap` 原语，保留对象实例；它不是模拟鼠标点击。
+完成后调用 `Recipe.FindRecipes` 刷新原生配方可用性，不执行合成。
+参考[tModLoader ItemLoader接口](https://docs.tmodloader.net/docs/stable/class_item_loader.html)与
+[官方实现](https://github.com/tModLoader/tModLoader/blob/stable/patches/tModLoader/Terraria/ModLoader/ItemLoader.cs)。
+
+收藏标记遵循原生规则：部分拆到空槽时新堆不收藏、原堆保持；合并时可将收藏标记转移至目标堆。
+不会为了表面一致而绕过这些规则。原生堆叠兼容性钩子仍可拒绝操作。
+
+inventoryToken是64位十六进制不透明摘要，绑定世界、Bridge会话、玩家、槽位、物品实例及
+已公开的类型/数量/前缀/最大堆叠/收藏标记。空格按值判断，避免原生替换空物品对象导致误报。
+两端任一已变化或令牌来自另一世界/会话时拒绝；令牌不能由模型生成，也不应当作持久物品ID。
+它不证明任意Mod自定义状态未变化，亦不宣称完整验证了Mod钩子的全部外部副作用。
+
+鼠标持物、物品使用中、鼠标关联持用槽、数量不足、目标不兼容、容量不足和旧快照都先拒绝。
+原生钩子与库存变更在 `ControlState.WithAtomicOwnership` 锁内执行，和取消、断线共享同一所有权门：
+取消不能先回执“已停止”，随后这个已获准批次才在锁外继续改物品。
+若某个Mod钩子阻塞游戏线程，无法从Lua中强行中断；宿主必须走超时/未知收尾，不伪造游戏线程释放证据。
+
+## 完成、失败与未知
+
+1. 开始前校验两端token、数量、容量、控制所有权及世界身份。
+2. 调用任何可能产生副作用的原生钩子前，记录`mutationAttempted=true`及两端原状态。
+3. 核对期望的类型/数量/前缀/收藏语义及其他背包槽未被同步钩子意外修改，记录立即读回状态。
+4. 保持动作running，下一次游戏更新再核对两端token、所选槽、单人模式与所有权。
+5. 核对成功才completed；后续真实玩家挂钩提供endEvidence。Python照旧等待释放证据，启动ACK不算成功。
+
+明确的前置失败返回failed；异常发生在钩子/变更之后、读回不一致、刷新配方意外改库存或确认前状态变化，
+返回unknown。可能已发生的变化保留在evidence，不自动回滚、重放或补齐。
+消息/任务取消在已执行变更后发生时，cancelled同样不表示物品已还原。
+Lua遇unknown继续沿用会话封锁/断开；失败后的行动禁令保留，未新增自动恢复例外。
+
+回执只包含有界的槽位元数据、令牌和读回证据，不复制不受控的物品显示文本或Mod自定义数据。
+数量/状态“已验证”限于本地背包契约，不证明物品已使用、已制作或世界任务完成。
+
+## 固定Lua与集中验收
+
+[固定持用程序](../examples/lua/hold_inventory_item.lua)按内容键查找物品，重新读取两端槽位，
+校验源类型后持用，再读取当前选中物品。默认是铜镐→快捷键0，可修改顶部两项配置。
+只在玩家授权该交换时执行；目标原物品会交换回源槽。正常路径4次内部API，加包装共5额度，
+仍在现有Agent默认7个共享工具额度内；本批没有修改调用/动作预算。
+
+离线验证包括参数、快照过期、原生钩子存储替身、部分变更/异常、下一更新确认、
+取消/断线排序；真实Lua→dispatcher→TCP→生产C#查询/动作/玩家挂钩测试使用合成世界和存储替身，
+并执行固定Lua文件（仅将物品内容键换为测试注册表中的名称）。
+真实tModLoader构建只验证API兼容性；以上都不等同于游戏内验收。
+
+以后集中游戏测试时依次核对：普通物品全量搬运；部分拆分/合并及收藏/前缀；
+背包→十个快捷键的交换与持用；满槽/使用中/鼠标持物拒绝；动作期间新聊天、手动抢占、
+暂停/切世界；最后再测试实际使用Mod的物品与堆叠钩子。多人库存同步是单独的后续实现与验收项。
+
+聚焦测试：`pwsh -NoProfile -File tests/run_csharp_tests.ps1 -InventoryOnly`；
+Python测试：`python -m unittest discover -s tests -p test_inventory_operations.py -v`；
+跨语言测试：`python -m unittest discover -s tests -p test_lua_protocol.py -v`。
+
+2026-10-23验证结果：完整Python回归387项通过，C#离线/协议回归通过，真实tModLoader构建
+0错误、0警告。日志及构建产物仅留在 `.local/inventory-primitives-*`，不提交游戏产物。
+回归发现的Windows短等待计时问题也一并修复：用高精度单调时钟重检截止时间，
+避免事件循环时钟分辨率/早醒导致过早完成或返回0毫秒；包含确定性早醒、取消与超时测试。

@@ -40,11 +40,19 @@ internal static class AtomicParameters
                     if (keys.Contains("maxResults")) Integer("maxResults",1,32);
                     break;
                 case "inspect_inventory":
-                    if (keys.Except(new[] { "mode", "item" }).Any()) throw new FormatException("Unexpected inventory parameters.");
+                    if (keys.Except(new[] { "mode", "item", "slots" }).Any()) throw new FormatException("Unexpected inventory parameters.");
                     string mode = args.TryGetProperty("mode", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : keys.Contains("mode") ? null : "selected";
-                    if (mode is not ("selected" or "hotbar" or "item" or "full")) throw new FormatException("Invalid inventory mode.");
+                    if (mode is not ("selected" or "hotbar" or "item" or "full" or "slots")) throw new FormatException("Invalid inventory mode.");
                     if (keys.Contains("item") != (mode == "item")) throw new FormatException("item required only in item mode.");
                     if (mode == "item" && (args.GetProperty("item").ValueKind != JsonValueKind.String || args.GetProperty("item").GetString().Length is < 1 or > 150)) throw new FormatException("Invalid item identifier.");
+                    if (keys.Contains("slots") != (mode == "slots")) throw new FormatException("slots required only in slots mode.");
+                    if (mode == "slots")
+                    {
+                        var slots=args.GetProperty("slots"); var unique=new HashSet<int>();
+                        if (slots.ValueKind != JsonValueKind.Array || slots.GetArrayLength() is < 1 or > 16) throw new FormatException("Invalid inventory slots.");
+                        foreach(var slot in slots.EnumerateArray())
+                            if (!slot.TryGetInt32(out int v) || v is < 0 or > 58 || !unique.Add(v)) throw new FormatException("Invalid inventory slots.");
+                    }
                     break;
                 case "scan_tiles":
                     if (keys.Contains("maxResults")) { Integer("maxResults", 1, 256); keys.Remove("maxResults"); }
@@ -85,6 +93,23 @@ internal static class AtomicParameters
         }
         switch (op)
         {
+            case "transfer_inventory_item": case "swap_inventory_slots": case "hold_inventory_item":
+                if (op == "transfer_inventory_item") { Fields("sourceSlot","destinationSlot","sourceToken","destinationToken","count"); Integer("count",1,9999); }
+                else if (op == "hold_inventory_item") { Fields("sourceSlot","hotbarKey","sourceToken","destinationToken"); Integer("hotbarKey",0,9); }
+                else Fields("sourceSlot","destinationSlot","sourceToken","destinationToken");
+                Integer("sourceSlot",0,49);
+                if (op != "hold_inventory_item")
+                {
+                    Integer("destinationSlot",0,49);
+                    if (args.GetProperty("sourceSlot").GetInt32() == args.GetProperty("destinationSlot").GetInt32()) throw new FormatException("Inventory slots must differ.");
+                }
+                foreach(string name in new[] {"sourceToken","destinationToken"})
+                {
+                    var token=args.GetProperty(name);
+                    if (token.ValueKind != JsonValueKind.String || token.GetString().Length != 64
+                        || token.GetString().Any(c => !(c is >= '0' and <= '9' or >= 'a' and <= 'f'))) throw new FormatException("Invalid inventory token.");
+                }
+                break;
             case "navigate_to_landing_region":
                 Fields("minPlayerLeftX", "maxPlayerLeftX", "surfaceY");
                 foreach (string key in keys) Number(args.GetProperty(key), 0, 1000000);

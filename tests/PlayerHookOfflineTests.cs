@@ -16,6 +16,7 @@ namespace Terraria
         public static Player LocalPlayer => player[myPlayer];
         public static NPC[] npc = { new(), new() };
         public static Item[] item = { new(), new() };
+        public static Item mouseItem = new() {type=0,stack=0};
         public static Tile[,] tile = new Tile[100, 100];
         public static bool[] tileFrameImportant = new bool[1000];
         public static bool[] tileSolid = new bool[1000], tileHammer = new bool[1000];
@@ -90,15 +91,20 @@ namespace Terraria
     }
     public sealed class Item : Entity
     {
-        public int type = 1, stack = 10, pick, axe, hammer, createTile = -1, createWall = -1, damage = 10;
+        public int type = 1, stack = 10, pick, axe, hammer, createTile = -1, createWall = -1, damage = 10, maxStack=9999;
+        public byte prefix;
+        public bool favorited;
         public bool consumable;
         public Terraria.ModLoader.ModItem ModItem;
         public string DisplayName = "test-item";
         public string Name => DisplayName;
         public bool IsAir => type == 0 || stack <= 0;
         public void TurnToAir() { type=0; stack=0; }
+        public Item Clone() => (Item)MemberwiseClone();
     }
     public struct Tile { public bool HasTile, IsHalfBlock, IsActuated; public ushort TileType, WallType; public int Slope; public short TileFrameX, TileFrameY; }
+    public static class Utils { public static void Swap<T>(ref T a,ref T b) { (a,b)=(b,a); } }
+    public static class Recipe { public static Action Refresh; public static void FindRecipes() => Refresh?.Invoke(); }
     public static class Chest
     {
         public static bool Locked, Blocked;
@@ -205,6 +211,28 @@ namespace Terraria.ModLoader
     public static class WallLoader { public static int WallCount = 1000; public static ModType GetWall(int type) => null; }
     public static class ItemLoader
     {
+        // Storage substitutes for native transfer hooks, not proof of game/Mod behavior.
+        public static Func<Terraria.Item,Terraria.Item,bool> StackPermission;
+        public static Action<Terraria.Item,Terraria.Item,int> OnStack,OnSplit;
+        public static bool CanStack(Terraria.Item destination,Terraria.Item source)
+            => destination.prefix==source.prefix && (StackPermission?.Invoke(destination,source) ?? true);
+        public static Terraria.Item TransferWithLimit(Terraria.Item source,int count)
+        {
+            var destination=source.Clone();
+            if(source.stack<=count) source.TurnToAir();
+            else {
+                destination.stack=0; destination.favorited=false; OnSplit?.Invoke(destination,source,count);
+                destination.stack+=count;source.stack-=count;
+            }
+            return destination;
+        }
+        public static void StackItems(Terraria.Item destination,Terraria.Item source,out int moved,bool infiniteSource=false,int? numToTransfer=null)
+        {
+            moved=numToTransfer??Math.Min(source.stack,destination.maxStack-destination.stack);
+            OnStack?.Invoke(destination,source,moved);
+            if(source.favorited) {destination.favorited=true;source.favorited=false;}
+            destination.stack+=moved;if(!infiniteSource) source.stack-=moved;
+        }
         public static bool Usable = true, Consume = true;
         public static bool CanUseItem(Terraria.Item item,Terraria.Player player) => Usable;
         public static bool ConsumeItem(Terraria.Item item,Terraria.Player player) => Consume;

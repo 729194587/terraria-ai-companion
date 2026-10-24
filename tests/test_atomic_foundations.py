@@ -9,7 +9,7 @@ import multiprocessing as mp
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'python'))
 import atomic_operations as atomic
@@ -109,6 +109,13 @@ class FoundationProjectionTests(unittest.TestCase):
 
 
 class FoundationAsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_wait_does_not_complete_on_early_timer_wakeup(self):
+        with patch('atomic_operations.perf_counter', side_effect=[0, 0, .0005, .001, .001]), \
+                patch('atomic_operations.asyncio.sleep', new_callable=AsyncMock) as sleep:
+            result = await atomic.dispatch(ObservedGame(), 'wait', {'milliseconds': 1})
+        self.assertEqual(2, sleep.await_count)
+        self.assertEqual(1, result['elapsedMilliseconds'])
+
     async def asyncTearDown(self):
         self.assertFalse(mp.active_children(), 'Lua Worker leaked')
 
