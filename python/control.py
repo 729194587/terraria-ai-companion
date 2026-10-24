@@ -2,6 +2,7 @@
 import argparse
 from collections import deque
 from concurrent.futures import Future, TimeoutError as FutureTimeout
+from contextvars import ContextVar
 import threading
 import json
 import math
@@ -13,6 +14,7 @@ from observation import ObservationValidationError, validate_observation
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 MAX_REQUEST_BYTES = 4096
+command_owner = ContextVar('bridge_command_owner', default=None)
 
 
 class BridgeError(Exception):
@@ -123,6 +125,10 @@ class Bridge:
         return value
 
     def command(self, cmd, **parameters):
+        if getattr(self, '_lua_poisoned', False):
+            raise BridgeError('Lua action state unresolved; reconnect required')
+        if getattr(self, '_lua_owner', None) is not command_owner.get():
+            raise BridgeError('Bridge session is owned by a Lua run')
         future = Future()
         started = time.monotonic()
         request = None

@@ -1,5 +1,7 @@
 # Terraria AI Companion
 
+**Lua 编排第一阶段**：完整 Lua 程序通过隔离 Worker 调用现有 20 项原子 API，父进程复用 dispatcher、动作续租、取消和结束证据；支持有界嵌套结果与分支。入口 `python python/lua_runtime.py examples/lua/inspect.lua`（先安装 Python requirements）；尚未接入 LLM、尚未真实游戏验收。设计、用法、资源边界与验证见 [Lua Runtime](docs/LUA_RUNTIME.md)。
+
 **0.1.36 本地终端测试入口**：`python -u -B python/agent.py --local-input` 接收真人终端指令，沿用现有模型/工具/成本统计，回复仅输出终端。Mod 注册会话指令身份，保留动作安全校验。需加载0.1.36包；产物 `.local/local-input-build/Mods/CompanionBridge.tmod`，未部署。详见 [配置与测试](docs/CHAT_AGENT.md#本地终端输入mod-0136)。
 
 **0.1.37 多人原子确认**：墙挖掘/放置、锤击、门/宝箱/开关/拉杆已接入带动作身份的服务器原生执行与回执；成功还需客户端状态一致及原输入释放证据。服务器和所有客户端都需同版本 Mod（side=Both）。构建产物与联机验收说明见 [多人原子确认](docs/MULTIPLAYER_ATOMIC_CONFIRMATION.md)；已按用户要求部署至本地A/B测试配置；A启动需加 `-companionbridgeport 18778`，B仍用默认18777。真实联机验收待完成。
