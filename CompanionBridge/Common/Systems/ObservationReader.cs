@@ -125,6 +125,7 @@ internal static class ObservationReader
         id = p.whoAmI, source = "local_player", positionWorldPixels = new StateVector(p.position.X, p.position.Y),
         boundsWorldPixels = Bounds(p), velocityPixelsPerTick = new StateVector(p.velocity.X, p.velocity.Y),
         life = p.statLife, lifeMax = p.statLifeMax2, mana = p.statMana, manaMax = p.statManaMax2,
+        p.name, p.statDefense, p.breath, p.breathMax, p.immune, p.immuneTime,
         p.direction, p.dead, p.ghost, selectedSlot = p.selectedItem, selectedHotbarKey = HotbarSlots.KeyForInventorySlot(p.selectedItem),
         hotbarNumbering = "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
         hotbarInventorySlots = Enumerable.Range(0, 10).ToArray(),

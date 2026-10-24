@@ -17,8 +17,10 @@ $sources = @(
     (Join-Path $PSScriptRoot 'LandingNavigationOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'AtomicGameOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'AtomicExtensionsOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'AtomicFoundationsOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'LocalInputOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicOperations.cs'),
+    (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicQueries.cs'),
     (Join-Path $repo 'CompanionBridge/ControlState.cs'),
     (Join-Path $repo 'CompanionBridge/GameMessageCapture.cs'),
     (Join-Path $PSScriptRoot 'GameMessageOfflineTests.cs'),
@@ -62,6 +64,7 @@ if ($ObservationSamplePath -and !$MotionOnly) {
 [PlayerHookOfflineTests]::Run()
 [AtomicGameOfflineTests]::Run()
 [AtomicExtensionsOfflineTests]::Run()
+[AtomicFoundationsOfflineTests]::Run()
 [LocalInputOfflineTests]::Run()
 [AtomicAuthorityOfflineTests]::Run()
 

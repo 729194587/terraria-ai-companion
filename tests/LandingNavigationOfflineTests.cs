@@ -36,7 +36,8 @@ public static class LandingNavigationOfflineTests
         var p = Main.LocalPlayer;
         var state = GameNavigation.State;
         Controls.Update(true, Stopwatch.GetTimestamp(), new(true, new(state.Px,state.Py), new(state.Vx,state.Vy),100,100),
-            navigation: GameNavigation.Snapshot, sendChat: chat, worldSessionId: ObservationReader.WorldSessionId);
+            navigation: GameNavigation.Snapshot, sendChat: chat, worldSessionId: ObservationReader.WorldSessionId,
+            queryAtomic: AtomicOperations.Query);
         p.controlLeft = p.controlRight = p.controlJump = p.controlUseItem = false;
         _hook.PostUpdateRunSpeeds();
         var input = new PhysicsInput(p.controlRight ? 1 : p.controlLeft ? -1 : 0, p.controlJump);
@@ -148,6 +149,7 @@ public static class LandingNavigationOfflineTests
     public static void RunProtocolHost()
     {
         Setup();
+        Main.tile[5,5] = new Tile { HasTile=true, TileType=2 };
         using var server = new TcpControlServer(Controls, 0);
         server.Start(); Console.WriteLine("READY " + server.Port); Console.Out.Flush();
         bool received = false;

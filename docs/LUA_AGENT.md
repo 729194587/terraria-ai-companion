@@ -25,7 +25,9 @@
 `source` 是唯一参数，最多 16 KiB UTF-8。模型不能改墙钟、调用数或存档路径。
 现有直接工具保留兼容；提示词要求多步骤任务优先使用 Lua。每次模型响应仍只允许一个工具，
 内部 `api` 可以顺序多次执行。Lua 不支持调用外部 `get_observation/get_exploration_observation`
-或旧 `move`；需要视口确定目标时先调用外部观察，程序内用已有原子感知重新核验。
+或旧 `move`；0.1.38起，程序内可用 `observe_exploration` 读取有界视口探索，
+用 `get_player_status` 获取紧凑状态、`resolve_content` 解析名称、`wait` 可取消等待。
+完整说明见 [基础能力扩展](ATOMIC_FOUNDATIONS.md)。
 
 模型通过同名直接工具获得权威的参数 Schema 与能力限制；Lua 工具描述从当前 SCHEMAS
 自动列出白名单。提示词补充结果层级、数组索引、json.null、可用函数、失败停止和效果确认语义。

@@ -10,7 +10,7 @@ namespace Terraria
     public static class Main
     {
         public static int myPlayer, netMode = 1, maxTilesX = 100, maxTilesY = 100, mouseX, mouseY;
-        public static bool dedServ, gameMenu, hasFocus;
+        public static bool dedServ, gameMenu, hasFocus, hardMode, expertMode, masterMode;
         public static ulong GameUpdateCount;
         public static Player[] player = { new(), new() };
         public static Player LocalPlayer => player[myPlayer];
@@ -77,6 +77,10 @@ namespace Terraria
     }
     public sealed class NPC : Entity
     {
+        public static bool downedBoss1, downedBoss2, downedBoss3;
+        public bool townNPC;
+        public int damage;
+        public object ModNPC;
         public int type, life = 100, lifeMax = 100;
         public bool friendly, dontTakeDamage;
         public string GivenOrTypeName => "test-npc";
@@ -186,13 +190,19 @@ namespace Terraria.ID
     }
     public sealed class TestSearch { public string GetName(int type) => "Type"+type; }
     public static class ItemID { public static TestSearch Search = new(); }
+    public static class WallID { public static TestSearch Search = new(); }
+    public static class NPCID { public static class Sets {
+        public static bool[] ActsLikeTownNPC = new bool[1000], CountsAsCritter = new bool[1000], ProjectileNPC = new bool[1000];
+    } }
     public static class NetmodeID { public const int SinglePlayer = 0, MultiplayerClient = 1, Server = 2; }
 }
 namespace Terraria.GameInput { public sealed class TriggersSet { } }
 namespace Terraria.ModLoader
 {
     public class ModItem { public string FullName = "Test/Item"; }
-    public static class TileLoader { public static int TileCount = 1000; public static object GetTile(int type) => null; }
+    public class ModType { public string FullName; }
+    public static class TileLoader { public static int TileCount = 1000; public static ModType GetTile(int type) => null; }
+    public static class WallLoader { public static int WallCount = 1000; public static ModType GetWall(int type) => null; }
     public static class ItemLoader
     {
         public static bool Usable = true, Consume = true;

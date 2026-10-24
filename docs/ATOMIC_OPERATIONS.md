@@ -1,4 +1,6 @@
-# 原子操作（Mod 0.1.37：多人服务器确认）
+# 原子操作（Mod 0.1.38）
+
+0.1.38 新增紧凑状态、内容解析、目标前置检查、扫描筛选/距离排序，以及 Lua 内有界探索和可取消等待。接口及验证边界见 [基础能力扩展](ATOMIC_FOUNDATIONS.md)。
 
 0.1.37 已接入墙、锤击与白名单交互的多人服务器确认，服务器和所有客户端必须使用同版本 CompanionBridge（side=Both）。实现与联机验收方法见 [多人原子确认](MULTIPLAYER_ATOMIC_CONFIRMATION.md)。下方 0.1.35 验证记录保留为历史结果。
 
@@ -78,7 +80,7 @@ NPC 引用由世界会话、NPC 槽位和 `InstancePerEntity GlobalNPC` 实例 T
 
 所有坐标是非负整数 Tile 格，闭区间，X 向右/Y 向下，每格 16 像素；不是玩家/屏幕像素。必须提供明确边界和 1..32 个不重复的类型 ID（0 是土块，不是空气），类型来自观察字典或 inspect_tile；游戏线程按当前 TileLoader.TileCount 再校验类型。拒绝反向边界、世界越界和面积超过 4096 格的请求，不自动裁剪。maxResults 默认 128，范围 1..256。
 
-按 Y 再 X 扫描整个有界区域；不因返回达到上限而提前结束，因此 matchedCount 是可读格的精确匹配数。返回 items 仅含 `{x,y,typeId}`，附 returnedCount、matchedCount、truncated、scannedCount、unknownCount、complete 和请求 bounds。无匹配且全部可读时 status=not_found；有未加载格时 status=partial_unloaded（即使 items 为空），不能声称那些格没有目标。truncated 仅表示匹配结果被数量上限截断，独立于未知格。查询异常由 IPC 返回 query_failed；未进世界 available=false；越界/无效类型有独立 reason。查询不获取控制权或附带完整观察。
+扫描整个有界区域；不因返回达到上限而提前结束，因此 matchedCount 是可读格的精确匹配数。0.1.38起按玩家中心距离、Y、X排序后截断，items 包含 `{x,y,typeId,contentKey,distancePixels}`；旧包保持原先的行优先输出。附 returnedCount、matchedCount、truncated、scannedCount、unknownCount、complete 和请求 bounds。无匹配且全部可读时 status=not_found；有未加载格时 status=partial_unloaded（即使 items 为空），不能声称那些格没有目标。truncated 仅表示匹配结果被数量上限截断，独立于未知格。查询异常由 IPC 返回 query_failed；未进世界 available=false；越界/无效类型有独立 reason。查询不获取控制权或附带完整观察。
 
 ### inspect_inventory
 

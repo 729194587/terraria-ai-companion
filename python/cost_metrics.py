@@ -11,7 +11,7 @@ import agent_trace as tracing
 current = ContextVar("task_cost_metrics", default=None)
 FIELDS = ("input_tokens", "output_tokens", "cached_input_tokens", "non_cached_input_tokens")
 TOOLS = {"get_state", "get_observation", "get_exploration_observation", "move", "stop_movement",
-         "execute_lua",
+         "execute_lua", "get_player_status", "resolve_content", "observe_exploration", "wait",
          "get_player_state", "observe_terrain", "inspect_tile", "scan_tiles", "scan_entities", "inspect_inventory", "get_world_state",
          "mine_wall", "place_wall", "hammer_tile",
          "drop_through_platform", "navigate_to_x", "navigate_to_landing_region", "select_hotbar_slot", "use_item", "mine_tile", "attack_entity", "interact_tile", "place_tile", "stop_action"}

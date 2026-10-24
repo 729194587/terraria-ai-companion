@@ -93,6 +93,15 @@ class LuaProtocolTests(unittest.IsolatedAsyncioTestCase):
             bridge = await asyncio.to_thread(Bridge, int(line.split()[1]), 2)
             runtime = LuaRuntime(bridge)
             result = await runtime.execute('''
+                local content=api('resolve_content',{kind='tile',query='Terraria/Type2'})
+                assert(content.valid and content.data.status == 'ok')
+                local tiles=api('scan_tiles',{minX=4,minY=4,maxX=5,maxY=5,
+                    tileTypes={content.data.candidates[1].typeId},maxResults=1})
+                assert(tiles.valid and tiles.data.returnedCount == 1)
+                local target=api('inspect_tile',{x=tiles.data.items[1].x,y=tiles.data.items[1].y})
+                assert(target.valid and target.data.preflightStatus == 'partial_checks_only')
+                local pause=api('wait',{milliseconds=1})
+                assert(pause.valid)
                 local r = api('navigate_to_landing_region', {
                     minPlayerLeftX=1664,maxPlayerLeftX=1744,surfaceY=1552})
                 assert(r.valid and r.completed)
@@ -109,7 +118,7 @@ class LuaProtocolTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(action['evidence']['completedJumps'], 0)
             self.assertEqual('PostUpdateRunSpeeds_before_bridge_input', action['endEvidence']['phase'])
             self.assertTrue(result['value']['stop']['valid'])
-            self.assertEqual(2, result['calls'])
+            self.assertEqual(6, result['calls'])
         finally:
             if bridge:
                 bridge.close()

@@ -62,50 +62,25 @@ internal static class AtomicOperations
                     return new { available = false, reason = "scan_out_of_world" };
                 var types = a.GetProperty("tileTypes").EnumerateArray().Select(t => t.GetInt32()).ToHashSet();
                 if (types.Any(t => t >= TileLoader.TileCount)) return new { available = false, reason = "invalid_tile_type" };
-                int limit = a.TryGetProperty("maxResults", out var cap) ? cap.GetInt32() : 128;
-                var tiles = new List<object>(); int matches = 0, unread = 0;
-                var objects = new Dictionary<(int, int), object>();
-                for (int sy = minY; sy <= maxY; sy++) for (int sx = minX; sx <= maxX; sx++)
-                {
-                    var cell = ObservationReader.ReadCell(sx, sy, objects);
-                    if (cell.Knowledge != "read") { unread++; continue; }
-                    if (!cell.HasTile || !cell.TileType.HasValue || !types.Contains(cell.TileType.Value)) continue;
-                    matches++;
-                    if (tiles.Count < limit) tiles.Add(new { x = sx, y = sy, typeId = cell.TileType.Value });
-                }
-                data = new { items = tiles, matchedCount = matches, returnedCount = tiles.Count, truncated = matches > tiles.Count,
-                    unknownCount = unread, complete = unread == 0,
-                    status = unread > 0 ? "partial_unloaded" : matches == 0 ? "not_found" : "ok",
-                    bounds = new { minX, minY, maxX, maxY }, scannedCount = (maxX-minX+1)*(maxY-minY+1),
-                    coordinates = "tile cells; inclusive bounds; 16 pixels per cell; +X right,+Y down" }; break;
+                data = AtomicQueries.ScanTiles(p, a); break;
             case "get_world_state": data = new { environment = ObservationReader.ReadEnvironment(p),
+                progression = new { Main.hardMode, Main.expertMode, Main.masterMode,
+                    NPC.downedBoss1, NPC.downedBoss2, NPC.downedBoss3,
+                    scope = "Client-known difficulty and first three boss flags; not a complete progression ledger" },
                 depth = new { tileY = p.Center.Y / 16, Main.worldSurface, Main.rockLayer, Main.maxTilesX, Main.maxTilesY },
                 depthLayer = p.ZoneUnderworldHeight ? "underworld" : p.ZoneRockLayerHeight ? "cavern" : p.ZoneDirtLayerHeight ? "underground" : p.ZoneSkyHeight ? "space" : "surface" }; break;
             case "inspect_tile":
                 int x = a.GetProperty("x").GetInt32(), y = a.GetProperty("y").GetInt32();
-                data = new { x, y, cell = ObservationReader.ReadCell(x, y, new()) }; break;
-            case "scan_entities":
-                string category = a.GetProperty("category").GetString(); float radius = a.GetProperty("radius").GetSingle();
-                var list = new List<object>(); int matched = 0;
-                void Add(Entity e, string kind, int slot, string name, object details)
-                {
-                    float distance = Vector2.Distance(p.Center, e.Center);
-                    if (distance > radius) return;
-                    matched++;
-                    if (list.Count < 128) list.Add(new { kind, slot, name, centerWorldPixels = new StateVector(e.Center.X, e.Center.Y), distancePixels = distance, details });
-                }
-                if (category is "all" or "npc") foreach (var n in Main.npc) if (n.active)
-                    Add(n, "npc", n.whoAmI, n.GivenOrTypeName, new { entityRef = Ref(n), n.type, n.life, n.lifeMax, n.friendly, n.dontTakeDamage, chaseable = n.CanBeChasedBy() });
-                if (category is "all" or "player") foreach (var other in Main.player) if (other.active && other.whoAmI != Main.myPlayer)
-                    Add(other, "player", other.whoAmI, other.name, new { other.dead, other.statLife, other.team });
-                if (category is "all" or "item") for (int i = 0; i < Main.item.Length; i++) { var item = Main.item[i]; if (item.active && !item.IsAir) Add(item, "item", i, item.Name, new { item.type, item.stack }); }
-                data = new { items = list, matchedCount = matched, truncated = matched > list.Count, radiusPixels = radius, scope = "client-known entities; synchronization age/visibility unknown" }; break;
+                data = AtomicQueries.InspectTile(p, x, y); break;
+            case "scan_entities": data = AtomicQueries.ScanEntities(p, a, Ref); break;
+            case "resolve_content": data = AtomicQueries.Resolve(a); break;
+            case "get_player_status": data = AtomicQueries.PlayerStatus(ObservationReader.ReadPlayer(p)); break;
             default: throw new ArgumentException("Unsupported query");
         }
         return new { available = true, worldSessionId = ObservationReader.WorldSessionId, gameUpdate = Main.GameUpdateCount, data };
     }
 
-    private static object CompactItem(Item item, int slot) => new { slot, hotbarKey = HotbarSlots.KeyForInventorySlot(slot),
+    internal static object CompactItem(Item item, int slot) => new { slot, hotbarKey = HotbarSlots.KeyForInventorySlot(slot),
         typeId = item.type, contentKey = item.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(item.type),
         name = item.Name, stack = item.IsAir ? 0 : item.stack,
         use = new { item.pick, item.axe, item.hammer, item.createTile, item.createWall } };
