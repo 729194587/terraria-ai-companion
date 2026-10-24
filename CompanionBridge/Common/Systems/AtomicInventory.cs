@@ -104,8 +104,12 @@ internal static class AtomicInventory
             var before=new { source=Describe(p,from), destination=Describe(p,to), selectedSlot=p.selectedItem };
             string[] allBefore=p.inventory.Select((item,slot)=>Token(item,slot)).ToArray();
             bool attempted=false;
-            void Unknown(string reason) => Finish(action,"unknown",reason,new {mutationAttempted=attempted,before,
+            string phase="permission";
+            string Bounded(string value,int length) => value==null ? null : value[..Math.Min(value.Length,length)];
+            void Unknown(string reason,Exception error=null) => Finish(action,"unknown",reason,new {mutationAttempted=attempted,before,
                 source=Describe(p,from),destination=Describe(p,to),
+                nativeError=error==null ? null : new {phase,type=Bounded(error.GetType().FullName,256),
+                    message=Bounded(error.Message,512),stack=Bounded(error.StackTrace,2048)},
                 effectStatus="unknown; no rollback or automatic retry"});
             try
             {
@@ -121,6 +125,7 @@ internal static class AtomicInventory
                 }
                 if (!Owned(action)) return;
                 int moved=count;
+                phase="transfer_or_swap";
                 if (transfer)
                 {
                     if (destination.IsAir) p.inventory[to]=ItemLoader.TransferWithLimit(source,count);
@@ -129,6 +134,7 @@ internal static class AtomicInventory
                 }
                 else if (from!=to) Utils.Swap(ref p.inventory[from],ref p.inventory[to]);
                 if (hold && Owned(action)) p.selectedItem=to;
+                phase="recipe_refresh";
                 Recipe.FindRecipes(); // Native refresh can invoke mod conditions; verify after it too.
 
                 var afterS=Read(p.inventory[from]); var afterD=Read(p.inventory[to]);
@@ -149,7 +155,7 @@ internal static class AtomicInventory
                 _pending=new(action,from,to,Token(p.inventory[from],from),Token(p.inventory[to],to),p.selectedItem,Main.GameUpdateCount,evidence);
                 CompanionBridge.Controls.UpdateAtomicEvidence(action.ActionId,evidence);
             }
-            catch (Exception) { Unknown("inventory_native_exception"); }
+            catch (Exception error) { Unknown("inventory_native_exception",error); }
         });
         if (!admitted) Finish(action,"cancelled","inventory_ownership_lost_before_mutation",new {mutationAttempted=false});
     }

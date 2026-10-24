@@ -157,6 +157,11 @@ public static class InventoryOfflineTests
         ItemLoader.OnStack=(d,s,_)=>{s.stack--;d.stack++;throw new Exception("fixture");};
         Start("transfer_inventory_item",Args("transfer_inventory_item"));
         Check(controls.AtomicAction.Status=="unknown" && p.inventory[10].stack==9 && p.inventory[0].stack==11,"Exception after effect remains unknown with observed effect retained");
+        var nativeError=JsonSerializer.SerializeToElement(controls.AtomicAction.Evidence,Json).GetProperty("nativeError");
+        Check(nativeError.GetProperty("phase").GetString()=="transfer_or_swap"
+            && nativeError.GetProperty("type").GetString()=="System.Exception"
+            && nativeError.GetProperty("message").GetString()=="fixture"
+            && nativeError.GetProperty("stack").GetString().Length>0,"Bounded native exception cause and phase retained without changing unknown semantics");
         Reset();p.inventory[10]=Item();Recipe.Refresh=()=>p.inventory[20]=Item(type:3);
         Start("hold_inventory_item",Args("hold_inventory_item"));
         Check(controls.AtomicAction.Status=="unknown","Unexpected recipe refresh side effect does not pass verification");

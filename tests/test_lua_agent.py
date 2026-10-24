@@ -132,8 +132,8 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(result['actionSuccess'])
                 self.assertEqual('unknown', result['taskOutcome'])
                 self.assertEqual(2, result['value']['after']['data']['slot'])
-                self.assertEqual(3, result['movementLoop']['remainingToolCalls'])
-                self.assertEqual(2, json.loads(body['messages'][-1]['content'])['runtimeLua']['remainingApiCallsIfExecutedNow'])
+                self.assertEqual(6, result['movementLoop']['remainingToolCalls'])
+                self.assertEqual(61, json.loads(body['messages'][-1]['content'])['runtimeLua']['remainingApiCallsIfExecutedNow'])
                 answer, reason = final('快捷栏已切换并重新读取'), 'stop'
             return httpx.Response(200, json={'choices': [{'message': answer, 'finish_reason': reason}],
                 'usage': {'prompt_tokens': 100, 'completion_tokens': 30}})
@@ -212,25 +212,23 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('读取完成', next(p['text'] for c, p in game.sent if c == 'send_chat'))
         self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
 
-    async def test_shared_budget_stops_internal_loop_and_later_direct_action(self):
+    async def test_lua_call_budget_stops_internal_loop_and_later_direct_action(self):
         records = []
         with patch('cost_metrics.emit', side_effect=lambda kind, **data: records.append((kind, data))):
             _, model, game = await self.run_agent(program('''
                 for i=1,10 do api('inspect_inventory') end
                 api('use_item')
-            '''), tool('use_item'), max_tool_calls=3)
+            '''), tool('use_item'), final('budget exhausted'), max_tool_calls=3, lua_limits=Limits(calls=2))
         result = lua_results(model)[0]
         self.assertEqual(('call_limit', 2), (result['status'], result['calls']))
-        self.assertEqual(0, result['movementLoop']['remainingToolCalls'])
+        self.assertEqual(2, result['movementLoop']['remainingToolCalls'])
         self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
-        self.assertEqual(3, next(data for kind, data in records if kind == 'chat_cost')['tool_calls'])
+        self.assertEqual(4, next(data for kind, data in records if kind == 'chat_cost')['tool_calls'])
 
-    async def test_no_nested_budget_means_no_worker_or_archive(self):
-        with patch('agent.LuaRuntime') as runtime:
-            _, _, game = await self.run_agent(program("api('use_item')"), max_tool_calls=1)
-        runtime.assert_not_called()
-        self.assertFalse(self.store.directory.exists())
-        self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
+    async def test_one_model_tool_can_use_multiple_internal_api_calls(self):
+        _, model, game = await self.run_agent(program("for i=1,10 do api('inspect_inventory') end"), final('read'), max_tool_calls=1)
+        self.assertEqual('completed', lua_results(model)[0]['status'])
+        self.assertEqual(10,sum(c=='query_atomic' and p['operation']=='inspect_inventory' and p['arguments'].get('mode')!='full' for c,p in game.sent))
 
     async def test_wall_budget_is_shared_across_programs(self):
         class SlowRuntime:

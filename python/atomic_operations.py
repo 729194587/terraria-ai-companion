@@ -82,6 +82,7 @@ READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 's
 READS |= {'get_player_status', 'resolve_content', 'observe_exploration'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
+BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
 
 
 def validate(name, arguments):

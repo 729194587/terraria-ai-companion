@@ -6,6 +6,7 @@ import json
 import sys
 
 import agent_trace as tracing
+import agent_diagnostics as diagnostics
 
 
 current = ContextVar("task_cost_metrics", default=None)
@@ -45,6 +46,7 @@ def emit(event, **fields):
                   "generation": tracing.context.get().get("generation"), **fields}
         print("Cost: " + json.dumps(record, ensure_ascii=True), file=sys.stderr, flush=True)
         tracing.trace.emit(event, **fields)
+        diagnostics.emit(event, **fields)
     except Exception:
         pass  # Telemetry must not interrupt actions or chat.
 

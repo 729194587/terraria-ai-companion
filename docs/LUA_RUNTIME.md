@@ -1,5 +1,7 @@
 # Lua 编排第一阶段
 
+0.1.40增加源码行号、受限log、任务证据包与独立动作预算，当前行为见 [可观测性与预算](LUA_OBSERVABILITY.md)。
+
 第二阶段已接入 Agent/LLM，使用方法与新增宿主策略见 [Lua Agent](LUA_AGENT.md)。下文保留第一阶段设计与验证记录。
 
 基线：干净的 `feat/atomic-operations-v1` / `ae4d8037bbfee1c32560df7e4b61f28aee621833`。
@@ -118,18 +120,20 @@ CLI 退出码 0 同样只表示程序正常返回且动作状态可知。
 | 整段墙钟 | 默认 60s，宿主可配 0.05–300s；包含启动/查询/游戏动作等待 |
 | 收尾预算 | 独立默认 3s，可配 0.05–10s；另有短进程回收/关闭开销，非硬实时保证 |
 | API 请求数 | 默认 64、最多 256；失败尝试和 blocked 请求也计数 |
+| 变更动作 | 默认8、最多32次尝试；停止不占用，Agent整轮与直接动作共享 |
+| 阶段日志 | 每程序32条、每条512 UTF-8字节；独立于API次数 |
 | Lua 指令 | 默认 1,000,000、最多 10,000,000；每 100 条 hook 检查 |
 | Lua allocator | 默认 16MB、最多 64MB；不等于进程 RSS 限额 |
 | 单个 API 请求帧 | 16 KiB；现有游戏 TCP 仍有独立 4096 字节请求约束 |
 | 单个 API 返回/脚本值 | UTF-8 JSON 256 KiB；深度 24、节点 20,000、对象键 256 bytes |
-| Worker 帧 | 值预算 + 1024 bytes 协议开销，编号严格递增 |
+| Worker 帧 | 值预算 + 1024 bytes 协议开销；API与阶段日志各自编号递增 |
 | 回执 | 有界脚本值、末动作和最多 256 条简短调用记录；程序状态与动作状态分开 |
 
 超大感知返回报告 result_limit 并终止，不能静默删掉嵌套数据、数组条目或成功证据。
 应使用 inspect_inventory 的 selected/hotbar/item 模式、有界 scan_tiles 等已有接口。
 若动作回执自身超限，宿主保留标记 payloadOmitted 的末动作摘要；不会把裁剪数据交给 Lua。
 
-环境只开放 type/tonumber/tostring/pairs/ipairs/next/assert/error、api 和 json helpers。
+环境只开放 type/tonumber/tostring/pairs/ipairs/next/assert/error、api、json helpers和受限log。
 没有 io/os/package/require/load/debug/python、pcall/xpcall/coroutine、元表接口或 print；
 移除字符串默认元表，Python eval/builtins/属性访问关闭。每次运行创建全新 VM，变量不跨程序保留。
 这提供语言权限和资源边界，**不是 OS 级敌对代码沙箱**：Worker 仍继承宿主系统权限，

@@ -90,6 +90,6 @@ class FailureTests(unittest.IsolatedAsyncioTestCase):
                 companion.receive(event(1)); await companion.task
             self.assertIn("item_aim_requires_default_zoom",game.sent[-1][1]["text"])
             records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
-            blocked = records[-1]["result"]
+            blocked = next(row['result'] for row in reversed(records) if row['type']=='tool_result' and row['name']=='use_item')
             self.assertTrue(blocked["blocked"])
             self.assertEqual("item_aim_requires_default_zoom",blocked["previousFailure"]["reason"])

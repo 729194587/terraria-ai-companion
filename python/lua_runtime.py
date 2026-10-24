@@ -11,6 +11,8 @@ from time import monotonic
 import uuid
 
 import agent_trace as tracing
+import agent_diagnostics as diagnostics
+import evidence
 import atomic_operations as atomic
 from control import Bridge, BridgeError, command_owner
 from lua_worker import (worker, encode, decode, ValueLimit, SOURCE_BYTES,
@@ -24,6 +26,7 @@ class Limits:
     instructions: int = 1_000_000
     memory: int = 16_000_000
     cleanup_seconds: float = 3
+    actions: int = 8
 
     def validate(self):
         for value, low, high in ((self.seconds, .05, 300), (self.calls, 1, 256),
@@ -34,6 +37,8 @@ class Limits:
                 raise ValueError('Invalid trusted Lua limit')
         if any(type(v) is not int for v in (self.calls, self.instructions, self.memory)):
             raise ValueError('Integer budgets required')
+        if type(self.actions) is not int or not 0 <= self.actions <= 32:
+            raise ValueError('Action budget must be an integer in 0..32')
 
 
 class Interrupted(Exception):
@@ -65,15 +70,16 @@ class LuaRuntime:
     _active_runs = 0
     max_workers = 2
 
-    def __init__(self, bridge):
+    def __init__(self, bridge, *, evidence_root=None):
         self.bridge = bridge
+        self.evidence_root = evidence_root
         self.last_result = None
 
     async def execute(self, source, *, chat_id=None, limits=Limits(), cancel=None,
                       allow_actions=True, on_result=None):
         limits.validate()
         out = {'runId': uuid.uuid4().hex, 'status': 'unknown', 'calls': 0, 'value': None,
-               'actionState': 'idle', 'lastAction': None, 'cleanup': None, 'trace': []}
+               'actions': 0, 'logs': [], 'actionState': 'idle', 'lastAction': None, 'cleanup': None, 'trace': []}
         if type(source) is not str or len(source) > SOURCE_BYTES or len(source.encode('utf-8')) > SOURCE_BYTES:
             return {**out, 'status': 'source_limit'}
         if getattr(self.bridge, '_lua_poisoned', False):
@@ -92,9 +98,36 @@ class LuaRuntime:
         active_role = None
         lifecycle = {}
         deadline = monotonic() + limits.seconds
-        token = tracing.context.set({**tracing.context.get(), 'lua_run_id': out['runId']})
-        tracing.trace.emit('lua_start', source_sha256=hashlib.sha256(source.encode()).hexdigest(),
-                           source_bytes=len(source.encode()), limits=vars(limits), chat_id=chat_id)
+        bundle = evidence.current.get()
+        owns_bundle = bundle is None
+        if owns_bundle:
+            bundle = evidence.Bundle(self.evidence_root,metadata={'chat_event_id':chat_id,'lua_run_id':out['runId']})
+        evidence_token = evidence.current.set(bundle)
+        digest = bundle.source(source)
+        token = tracing.context.set({**tracing.context.get(), 'task_id': bundle.id,
+                                    'lua_run_id': out['runId'], 'source_sha256': digest})
+        call_token, call_open, call_meta, failure_call = None, False, {}, None
+        def emit(event, **fields):
+            tracing.trace.emit(event, **fields)
+            diagnostics.emit(event, **fields)
+        def call_end(status, *, result=None, error=None):
+            nonlocal call_open, failure_call
+            if not call_open:
+                return
+            row = {**call_meta, 'status': status, 'elapsed_ms': (monotonic()-call_started)*1000}
+            if result is not None:
+                row.update(valid=result.get('valid'), reason=result.get('reason'),
+                           observation=diagnostics.observation_summary(call_meta['operation'], result))
+                if call_meta['operation'] in atomic.ACTIONS:
+                    row['action'] = bounded_action(result)
+            if error is not None:
+                row['error'] = str(error)[:512]
+            if error is not None or status=='unknown':
+                failure_call = dict(call_meta)
+            out['trace'].append({key:row[key] for key in ('id','operation','line','status','valid','reason','elapsed_ms','error') if key in row})
+            emit('lua_api_result' if result is not None else 'lua_api_error', **row)
+            call_open = False
+        emit('lua_start', source_sha256=digest, source_bytes=len(source.encode()), limits=vars(limits), chat_id=chat_id)
 
         async def watch(task):
             while True:
@@ -144,7 +177,7 @@ class LuaRuntime:
                             out['actionState'] = 'released'
                             out['lastAction'] = bounded_action(result)
                 if active_role == 'dispatch':
-                    tracing.trace.emit('lua_cleanup', action=lifecycle.get('action'),
+                    emit('lua_cleanup', action=lifecycle.get('action'),
                                        start_attempted=lifecycle.get('start_attempted', False),
                                        cleanup=out['cleanup'], action_state=out['actionState'])
             if out['actionState'] == 'unknown' and not getattr(self.bridge, '_lua_poisoned', False):
@@ -171,27 +204,47 @@ class LuaRuntime:
                 child.close()
             sequence, halted = 0, not allow_actions
             while True:
+                if call_token is not None:
+                    tracing.context.reset(call_token)
+                    call_token = None
                 active = asyncio.create_task(asyncio.to_thread(connection.recv_bytes, FRAME_BYTES))
                 active_role = 'receive'
                 message = decode(await watch(active))
                 active = None
+                if message.get('type') == 'log':
+                    if (message.get('id') != len(out['logs'])+1 or len(out['logs'])>=32
+                            or type(message.get('line')) is not int or not 0 <= message['line'] <= source.count('\n')+1
+                            or type(message.get('message')) is not str or len(message['message'].encode('utf-8'))>512):
+                        raise Interrupted('protocol_error')
+                    out['logs'].append({k:message[k] for k in ('id','line','message')})
+                    emit('lua_progress', **out['logs'][-1])
+                    continue
                 if message.get('type') == 'done':
                     if message.get('status') not in ('completed', 'script_error', 'instruction_limit',
-                            'memory_limit', 'value_limit', 'bad_argument', 'protocol_error', 'worker_error'):
+                            'memory_limit', 'value_limit', 'bad_argument', 'protocol_error', 'worker_error', 'log_limit'):
                         raise Interrupted('protocol_error')
                     out.update(status=message['status'], value=message.get('value'))
                     if 'error' in message:
                         out['error'] = message['error']
+                    if type(message.get('line')) is int and 0 <= message['line'] <= source.count('\n')+1:
+                        out['errorLine'] = message['line']
                     break
                 if (message.get('type') != 'call' or type(message.get('id')) is not int
                         or message['id'] != sequence + 1):
                     raise Interrupted('protocol_error')
                 encode(message, REQUEST_BYTES)
+                sequence += 1
+                name, args = message.get('name'), message.get('arguments')
+                line = message.get('line', 0)
+                if type(line) is not int or not 0 <= line <= source.count('\n')+1:
+                    raise Interrupted('protocol_error')
+                call_meta = {'id':sequence, 'operation':name, 'line':line}
+                call_token = tracing.context.set({**tracing.context.get(), 'lua_call_id':sequence, 'lua_line':line})
+                call_started, call_open = monotonic(), True
+                emit('lua_api_start', **call_meta, arguments=args)
                 if out['calls'] >= limits.calls:
                     raise Interrupted('call_limit')
-                sequence += 1
                 out['calls'] += 1
-                name, args = message.get('name'), message.get('arguments')
                 if type(name) is not str:
                     raise Interrupted('bad_argument')
                 atomic.validate(name, args)
@@ -201,8 +254,10 @@ class LuaRuntime:
                         on_result(name, args, result)
                 else:
                     lifecycle = {}
-                    started = monotonic()
-                    tracing.trace.emit('lua_api_start', call_id=sequence, operation=name, arguments=args)
+                    if name in atomic.BUDGETED_ACTIONS:
+                        if out['actions'] >= limits.actions:
+                            raise Interrupted('action_limit')
+                        out['actions'] += 1
                     active = asyncio.create_task(atomic.dispatch(self.bridge, name, args, chat_id,
                                                                  lifecycle=lifecycle, owner=owner))
                     active_role = 'dispatch'
@@ -210,8 +265,7 @@ class LuaRuntime:
                     active = None
                     if on_result is not None:
                         on_result(name, args, result)
-                    tracing.trace.emit('lua_api_result', call_id=sequence, operation=name, result=result,
-                                       elapsed_ms=(monotonic() - started) * 1000)
+                    call_end(result.get('status'), result=result)
                     if name in atomic.ACTIONS:
                         out['lastAction'] = bounded_action(result)
                         if lifecycle.get('uncertain') or not safe_terminal(result):
@@ -220,9 +274,7 @@ class LuaRuntime:
                             break
                         out['actionState'] = 'released'
                         halted |= result.get('status') != 'completed'
-                out['trace'].append({'id': sequence, 'operation': name, 'valid': result.get('valid'),
-                                     'status': result.get('status'),
-                                     'reason': str(result['reason'])[:256] if result.get('reason') is not None else None})
+                call_end(result.get('status'), result=result)
                 try:
                     encode(result, VALUE_BYTES)
                 except ValueLimit:
@@ -272,11 +324,27 @@ class LuaRuntime:
                     out['status'] = 'cancelled'
             if out['actionState'] == 'unknown':
                 out['value'] = None
+            call_end(out['status'], error=out.get('error',out['status']))
+            if out['status'] != 'completed':
+                out['failure'] = {'kind': 'limit' if 'limit' in out['status'] else out['status'],
+                    'message': out.get('error',out['status']), 'call': failure_call,
+                    'line': out.get('errorLine',(failure_call or {}).get('line')), 'retryAllowed': False,
+                    'actionState': out['actionState']}
             self.bridge._lua_owner = None
             LuaRuntime._active_runs -= 1
             command_owner.reset(owner_token)
             self.last_result = out
+            if call_token is not None:
+                tracing.context.reset(call_token)
             tracing.trace.emit('lua_end', **out)
+            diagnostics.emit('lua_end', status=out['status'], calls=out['calls'], actions=out['actions'],
+                 actionState=out['actionState'], lastAction=out['lastAction'], cleanup=out['cleanup'],
+                 failure=out.get('failure'), runtimeLogHealth=diagnostics.log.health(),
+                 traceHealth=tracing.trace.health(), elapsed_ms=(limits.seconds-(deadline-monotonic()))*1000)
+            if owns_bundle:
+                bundle.finish(status=out['status'], actionState=out['actionState'], runId=out['runId'])
+            out['evidence'] = bundle.receipt()
+            evidence.current.reset(evidence_token)
             tracing.context.reset(token)
         if cancelled:
             raise asyncio.CancelledError

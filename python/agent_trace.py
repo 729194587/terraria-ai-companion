@@ -22,6 +22,8 @@ class Trace:
         self.max_bytes = max_bytes
         self._lock = threading.Lock()
         self._sequence = 0
+        self.write_errors = 0
+        self.dropped_records = 0
         self._secrets = set()
 
     def add_secret(self, value):
@@ -53,8 +55,10 @@ class Trace:
                           **context.get(), **data}
                 raw = (json.dumps(self._redact(record), ensure_ascii=False) + "\n").encode("utf-8")
                 if len(raw) > self.max_bytes:
+                    self.dropped_records += 1
                     record = {key: record[key] for key in ("timestamp", "session_id", "sequence",
-                              "generation", "chat_event_id", "tool_call_id", "model_request_id") if key in record}
+                              "task_id", "generation", "chat_event_id", "tool_call_id", "model_request_id",
+                              "lua_run_id", "lua_call_id", "lua_line", "source_sha256") if key in record}
                     raw = (json.dumps(self._redact({**record, "type": "trace_record_dropped",
                         "original_type": event_type, "reason": "event_exceeds_file_limit",
                         "bytes": len(raw)}), ensure_ascii=False) + "\n").encode("utf-8")
@@ -76,8 +80,12 @@ class Trace:
                             pass
                         raise
         except Exception:
+            self.write_errors += 1
             # Diagnostics must not turn an otherwise successful Agent operation into a failure.
             pass
+
+    def health(self):
+        return {'enabled': self.enabled, 'writeErrors': self.write_errors, 'recordsDropped': self.dropped_records}
 
     def terrain(self, reply):
         if not self.enabled:
