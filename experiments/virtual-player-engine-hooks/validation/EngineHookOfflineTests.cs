@@ -1,0 +1,468 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.Loader;
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Threading;
+using Mono.Cecil;
+using Mono.Cecil.Cil;
+using MonoMod.Cil;
+using MonoMod.RuntimeDetour;
+using MonoMod.Utils;
+using VirtualPlayerEngineProbe;
+
+// These are isolated storage/effect fixtures, NOT game Players, fake connections
+// in Terraria, or a live multiplayer test. Installed complete IL drives them.
+public static class EngineHookOfflineTests
+{
+    public const string EngineHash = "FCC6A9624B12191BE4A15D714A3675440911FEB8C1D374642AB1FD686F0DA0A5";
+    public const string HooksHash = "595D26FB3BBE27548D030943B5ED2437F690D1C002129BAD21FAFEAEB8118F7A";
+    public class EntityState { public bool active; }
+    public class PlayerState : EntityState { }
+    public static class MainState
+    {
+        public static PlayerState[] player;
+        public static int maxNetPlayers;
+    }
+    public class AddressState { public string GetFriendlyName() => "fixture"; }
+    public class SocketState
+    {
+        public bool Connected = true;
+        public AddressState GetRemoteAddress() => new();
+    }
+    public class RemoteState
+    {
+        public int Id, State, Updates, Resets;
+        public bool IsActive, PendingTerminationApproved;
+        public bool PendingTermination { get; set; }
+        public SocketState Socket;
+        public string StatusText2;
+        public bool IsConnected() => Socket?.Connected == true;
+        public void Update() => Updates++;
+        public void SetPendingTermination(string _) => PendingTermination = true;
+        public void Reset()
+        {
+            Resets++; State = 0; IsActive = false; PendingTermination = false;
+            MainState.player[Id] = new PlayerState();
+            Socket = null;
+        }
+    }
+    public static class NetState
+    {
+        public static RemoteState[] Clients;
+        public static bool HasClients, IsListening;
+        public static object fullBuffer = new();
+        public static int Stops, Kicks;
+        public static Func<int> Allocator;
+        public static int FindNextOpenClientSlot() => Allocator();
+        public static void StopListening() => Stops++;
+        public static void KickClient(SocketState _, TextState __) => Kicks++;
+    }
+    public static class MessageState
+    {
+        public static List<int> Disconnected = new();
+        public static void SyncDisconnectedPlayer(int slot) => Disconnected.Add(slot);
+    }
+    public static class HookState
+    {
+        public static List<int> Disconnected = new();
+        public static void PlayerDisconnect(int slot) => Disconnected.Add(slot);
+    }
+    public static class LanguageState { public static string GetTextValue(string key, object value) => key; }
+    public static class LoggingState { public static void ServerConsoleLine(string _) { } }
+    public class TextState { public static TextState FromKey(string _, object[] __) => new(); }
+    public static StartupReservation Reservation = new();
+    public static bool Reserved(int slot) => Reservation.IsReserved(slot);
+    public static bool CleanupEligible(int slot)
+    {
+        var c = NetState.Clients[slot];
+        return Reservation.MaySkipDisconnectedSlot(slot, c.IsConnected(), c.IsActive, c.State, c.PendingTermination);
+    }
+    private static int checks;
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
+    public static int DetourSmokeTarget() => 7;
+    private static void Check(bool ok, string label)
+    {
+        if (!ok) throw new Exception("FAIL: " + label);
+        checks++;
+        Console.WriteLine("PASS: " + label);
+    }
+
+    public static void Run(string gamePath, string output)
+    {
+        string dll = Path.Combine(gamePath, "tModLoader.dll");
+        Check(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(dll))) == EngineHash, "exact installed engine fingerprint");
+        string hooks = Path.Combine(gamePath, "Libraries/TerrariaHooks/0.0.0.0/TerrariaHooks.dll");
+        Check(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(hooks))) == HooksHash, "exact generated hooks fingerprint");
+        using var game = AssemblyDefinition.ReadAssembly(dll);
+        using var hookAssembly = AssemblyDefinition.ReadAssembly(hooks);
+        var smoke = typeof(EngineHookOfflineTests).GetMethod(nameof(DetourSmokeTarget));
+        string runtimeName = null;
+        Check((int)smoke.Invoke(null, null) == 7, "RuntimeDetour fixture begins unmodified");
+        using (var hook = new ILHook(smoke, il => {
+            runtimeName = il.Method.Name;
+            Console.WriteLine("RuntimeDetour IL identity: " + runtimeName);
+            var value = il.Body.Instructions.Single(i => i.OpCode == OpCodes.Ldc_I4_7);
+            value.OpCode = OpCodes.Ldc_I4_8;
+        }))
+        {
+            Check(runtimeName.Contains(nameof(DetourSmokeTarget), StringComparison.Ordinal), "real installed RuntimeDetour embeds target identity in DMD name");
+            Check((int)smoke.Invoke(null, null) == 8, "real installed RuntimeDetour installs fixture IL hook");
+        }
+        Check((int)smoke.Invoke(null, null) == 7, "real installed RuntimeDetour disposal restores original fixture method");
+        // Reflect method bodies only: no native method is invoked or detoured,
+        // no Terraria Main instance/static initializer/world is started.
+        var runtimeEngine = AssemblyLoadContext.Default.LoadFromAssemblyPath(dll);
+        foreach (string name in new[] { "FindNextOpenClientSlot", "UpdateConnectedClients" })
+        {
+            var target = runtimeEngine.GetType("Terraria.Netplay").GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static);
+            using var dmd = new DynamicMethodDefinition(target);
+            using var context = new ILContext(dmd.Definition);
+            int before = dmd.Definition.Body.Instructions.Count;
+            context.Invoke(il => {
+                var test = il.Module.ImportReference(typeof(EngineHookOfflineTests).GetMethod(nameof(Reserved)));
+                if (name == "FindNextOpenClientSlot") EnginePatches.Allocator(il.Method, test);
+                else EnginePatches.Cleanup(il.Method, test);
+            });
+            Check(dmd.Definition.Body.Instructions.Count == before + 3, "actual native reflection/DMD/ILContext handler shape: " + name);
+        }
+        var types = game.MainModule.Types.ToDictionary(t => t.FullName);
+        MethodDefinition Method(string type, string name) => types[type].Methods.Single(m => m.Name == name);
+        var allocate = Method("Terraria.Netplay", "FindNextOpenClientSlot");
+        var cleanup = Method("Terraria.Netplay", "UpdateConnectedClients");
+        var accept = Method("Terraria.Netplay", "OnConnectionAccepted");
+        var start = Method("Terraria.Netplay", "StartServer");
+        var initialize = Method("Terraria.Netplay", "InitializeServer");
+        var sync = Method("Terraria.NetMessage", "SyncOnePlayer");
+        var unload = Method("Terraria.ModLoader.ModContent", "UnloadModContent");
+        var server = Method("Terraria.Main", "DedServ_PostModLoad");
+        var allMethods = game.MainModule.GetTypes().SelectMany(t => t.Methods).Where(m => m.HasBody).ToArray();
+        string[] Callers(string type, string name) => allMethods.SelectMany(m => m.Body.Instructions
+            .Where(i => i.Operand is MethodReference r && r.DeclaringType.FullName == type && r.Name == name)
+            .Select(_ => m.DeclaringType.FullName + "::" + m.Name)).OrderBy(n => n).ToArray();
+        Check(Callers("Terraria.Netplay", "FindNextOpenClientSlot").SequenceEqual(new[] {
+            "Terraria.Netplay::OnConnectionAccepted", "Terraria.Netplay::OnConnectionAccepted" }),
+            "whole installed module has no allocator bypass call sites");
+        Check(Callers("Terraria.RemoteClient", "Reset").SequenceEqual(new[] {
+            "Terraria.Netplay::InitializeServer", "Terraria.Netplay::OnConnectionAccepted", "Terraria.Netplay::UpdateConnectedClients" }),
+            "whole installed module has only the three investigated RemoteClient.Reset call sites");
+        Check(Callers("Terraria.Netplay", "StartListening").SequenceEqual(new[] {
+            "Terraria.Netplay::InitializeServer", "Terraria.Netplay::StartListeningIfNeeded" }),
+            "whole installed module has only startup/network-loop listener entry points");
+        foreach (var m in new[] { allocate, cleanup, accept, start, initialize, sync, unload, server,
+            Method("Terraria.Netplay", "ServerLoop"), Method("Terraria.RemoteClient", "Reset"),
+            Method("Terraria.RemoteClient", "CheckSection"), Method("Terraria.Main", "UpdateServer"),
+            Method("Terraria.NetMessage", "SyncConnectedPlayer"), Method("Terraria.NetMessage", "SyncDisconnectedPlayer"),
+            Method("Terraria.WorldGen", "SaveAndQuit"), Method("Terraria.WorldGen", "SaveAndQuitCallBack"),
+            Method("Terraria.WorldGen", "clearWorld"), Method("Terraria.ModLoader.ModLoader", "Mods_Unload") })
+            File.WriteAllLines(Path.Combine(output, m.DeclaringType.Name + "-" + m.Name + ".il.txt"),
+                new[] { m.FullName }.Concat(m.Body.Instructions.Select(i => i.ToString())));
+        int CallOffset(MethodDefinition m, string name) => m.Body.Instructions.First(i => i.Operand is MethodReference r && r.Name == name).Offset;
+        Check(CallOffset(initialize, "StartListening") >= 0 && CallOffset(start, "InitializeServer") < CallOffset(start, "Start"),
+            "reservation must precede orig StartServer: InitializeServer already starts listening");
+        Check(accept.Body.Instructions.Count(i => i.Operand is MethodReference m && m.Name == allocate.Name) == 2,
+            "accept selects slot and rechecks availability through same allocator");
+        Check(CallOffset(unload, "RemoveAll") < CallOffset(unload, "UnloadContent"),
+            "native detours are removed before Mod.UnloadContent: Unload alone is too late");
+        Check(CallOffset(Method("Terraria.ModLoader.ModLoader", "Mods_Unload"), "clearWorld")
+            < CallOffset(Method("Terraria.ModLoader.ModLoader", "Mods_Unload"), "UnloadModContent"),
+            "ClearWorld hook precedes native hook removal");
+        Check(CallOffset(server, "StartServer") < CallOffset(server, "OnWorldUnload"), "server simulation scope includes normal world teardown");
+        Check(CallOffset(Method("Terraria.Main", "UpdateServer"), "CheckSection") >= 0, "active Player also enters native client section delivery");
+        foreach (var pair in new[] { ("Terraria.On_Netplay", "StartServer"), ("Terraria.IL_Netplay", allocate.Name),
+            ("Terraria.IL_Netplay", cleanup.Name), ("Terraria.On_NetMessage", sync.Name),
+            ("Terraria.On_RemoteClient", "CheckSection"), ("Terraria.On_Main", "DedServ_PostModLoad") })
+            Check(hookAssembly.MainModule.Types.Single(t => t.FullName == pair.Item1).Events.Any(e => e.Name == pair.Item2),
+                "generated interception exists: " + pair.Item1 + "." + pair.Item2);
+
+        // Apply the SAME transformations used by the live IL handlers to complete
+        // installed methods, before remapping their external storage/effects.
+        var predicate = game.MainModule.ImportReference(typeof(EngineHookOfflineTests).GetMethod(nameof(Reserved)));
+        int allocatorCount = allocate.Body.Instructions.Count, cleanupCount = cleanup.Body.Instructions.Count;
+        // Real MonoMod ILContext.Invoke changes branch operands to ILLabel before
+        // invoking handlers. Testing raw Cecil alone would miss that runtime shape.
+        using (var context = new ILContext(allocate)) context.Invoke(il => {
+            Check(il.Body.Instructions.Any(i => i.Operand is ILLabel), "allocator tested inside real MonoMod label pipeline");
+            EnginePatches.Allocator(il.Method, predicate);
+        });
+        using (var context = new ILContext(cleanup)) context.Invoke(il => {
+            Check(il.Body.Instructions.Any(i => i.Operand is ILLabel), "cleanup tested inside real MonoMod label pipeline");
+            EnginePatches.Cleanup(il.Method, il.Module.ImportReference(typeof(EngineHookOfflineTests).GetMethod(nameof(CleanupEligible))));
+        });
+        Check(allocate.Body.Instructions.Count == allocatorCount + 3 && cleanup.Body.Instructions.Count == cleanupCount + 3,
+            "only three per-slot eligibility instructions added to each native method");
+        foreach (var m in new[] { allocate, cleanup })
+            File.WriteAllLines(Path.Combine(output, m.Name + "-patched.il.txt"), m.Body.Instructions.Select(i => i.ToString()));
+
+        using var fixture = AssemblyDefinition.CreateAssembly(new AssemblyNameDefinition("EngineHookFixture", new Version(1, 0)), "EngineHookFixture", ModuleKind.Dll);
+        var module = fixture.MainModule;
+        var map = new Dictionary<string, Type> {
+            ["Terraria.Main"] = typeof(MainState), ["Terraria.Entity"] = typeof(EntityState), ["Terraria.Player"] = typeof(PlayerState),
+            ["Terraria.RemoteClient"] = typeof(RemoteState), ["Terraria.Netplay"] = typeof(NetState), ["Terraria.NetMessage"] = typeof(MessageState),
+            ["Terraria.Player/Hooks"] = typeof(HookState), ["Terraria.Net.Sockets.ISocket"] = typeof(SocketState),
+            ["Terraria.Net.RemoteAddress"] = typeof(AddressState), ["Terraria.Localization.Language"] = typeof(LanguageState),
+            ["Terraria.ModLoader.Logging"] = typeof(LoggingState), ["Terraria.Localization.NetworkText"] = typeof(TextState),
+            ["Terraria.MessageBuffer"] = typeof(object)
+        };
+        var runner = new TypeDefinition("Fixture", "Runner", Mono.Cecil.TypeAttributes.Public | Mono.Cecil.TypeAttributes.Abstract
+            | Mono.Cecil.TypeAttributes.Sealed, module.TypeSystem.Object);
+        module.Types.Add(runner);
+        TypeReference ImportType(TypeReference t) => t is ArrayType a ? new ArrayType(ImportType(a.ElementType))
+            : map.TryGetValue(t.FullName, out var mapped) ? module.ImportReference(mapped) : module.ImportReference(t);
+        foreach (var src in new[] { allocate, cleanup, accept })
+        {
+            var dst = new MethodDefinition(src.Name, Mono.Cecil.MethodAttributes.Public | Mono.Cecil.MethodAttributes.Static, ImportType(src.ReturnType));
+            foreach (var p in src.Parameters) dst.Parameters.Add(new ParameterDefinition(p.Name, p.Attributes, ImportType(p.ParameterType)));
+            runner.Methods.Add(dst);
+            dst.Body.InitLocals = src.Body.InitLocals; dst.Body.MaxStackSize = src.Body.MaxStackSize;
+            foreach (var v in src.Body.Variables) dst.Body.Variables.Add(new VariableDefinition(ImportType(v.VariableType)));
+            var ins = src.Body.Instructions.ToDictionary(i => i, _ => Instruction.Create(OpCodes.Nop));
+            object Import(object operand) => operand switch {
+                Instruction i => ins[i], Instruction[] branches => branches.Select(i => ins[i]).ToArray(),
+                VariableDefinition v => dst.Body.Variables[v.Index], ParameterDefinition p => dst.Parameters[p.Index],
+                FieldReference f when map.TryGetValue(f.DeclaringType.FullName, out var t) => module.ImportReference(t.GetField(f.Name)),
+                MethodReference m when map.TryGetValue(m.DeclaringType.FullName, out var t) => module.ImportReference(t.GetMethods()
+                    .Single(x => x.Name == m.Name && x.GetParameters().Length == m.Parameters.Count)),
+                FieldReference f => module.ImportReference(f), MethodReference m => module.ImportReference(m), TypeReference t => ImportType(t), _ => operand
+            };
+            foreach (var i in src.Body.Instructions) { ins[i].OpCode = i.OpCode; ins[i].Operand = Import(i.Operand); dst.Body.Instructions.Add(ins[i]); }
+            foreach (var e in src.Body.ExceptionHandlers) dst.Body.ExceptionHandlers.Add(new ExceptionHandler(e.HandlerType) {
+                TryStart = ins[e.TryStart], TryEnd = e.TryEnd == null ? null : ins[e.TryEnd], HandlerStart = ins[e.HandlerStart],
+                HandlerEnd = e.HandlerEnd == null ? null : ins[e.HandlerEnd], CatchType = e.CatchType == null ? null : ImportType(e.CatchType)
+            });
+        }
+        using var bytes = new MemoryStream(); fixture.Write(bytes); bytes.Position = 0;
+        var loaded = AssemblyLoadContext.Default.LoadFromStream(bytes).GetType("Fixture.Runner");
+        var tick = (Action)loaded.GetMethod(cleanup.Name).CreateDelegate(typeof(Action));
+        var next = (Func<int>)loaded.GetMethod(allocate.Name).CreateDelegate(typeof(Func<int>));
+        var accepted = (Action<SocketState>)loaded.GetMethod(accept.Name).CreateDelegate(typeof(Action<SocketState>));
+        void Reset()
+        {
+            MainState.maxNetPlayers = 4;
+            MainState.player = Enumerable.Range(0, 256).Select(_ => new PlayerState()).ToArray();
+            NetState.Clients = Enumerable.Range(0, 256).Select(i => new RemoteState { Id = i }).ToArray();
+            NetState.Allocator = next; NetState.Stops = NetState.Kicks = 0; NetState.IsListening = true;
+            MessageState.Disconnected.Clear(); HookState.Disconnected.Clear();
+            Reservation = new StartupReservation();
+        }
+        Reset();
+        Check(next() == 0, "empty reservation leaves native first-free allocation unchanged");
+        MainState.player[1].active = true; tick();
+        Check(!MainState.player[1].active && HookState.Disconnected.SequenceEqual(new[] { 1 }), "unreserved disconnected human cleanup remains native");
+        Reset();
+        Check(Reservation.ArmBeforeListening(false, 4), "one slot armed before listener callback");
+        Check(Reservation.Snapshot.Slot == 3 && !Reservation.IsReserved(255), "reservation stays in configured range and excludes server sentinel");
+        // Model an immediate accept inside InitializeServer, before StartServer returns.
+        accepted(new SocketState());
+        MainState.player[0].active = true; NetState.Clients[0].State = 10; NetState.Clients[0].IsActive = true;
+        MainState.player[3].active = true;
+        var actor = MainState.player[3];
+        accepted(new SocketState()); accepted(new SocketState()); accepted(new SocketState());
+        Check(NetState.Clients.Take(3).All(c => c.IsConnected()) && !NetState.Clients[3].IsConnected(), "complete native accept path never assigns reserved slot");
+        Check(next() == -1 && NetState.Kicks == 1 && NetState.Stops > 0, "reserved slot reduces capacity; full-server native rejection preserved");
+        tick();
+        Check(actor.active && ReferenceEquals(MainState.player[3], actor) && NetState.Clients[3].Resets == 0, "patched native cleanup retains reserved actor without active rewrites");
+        Check(MainState.player[0].active && NetState.Clients[0].Updates == 1 && NetState.HasClients, "connected human updates and HasClients remain native");
+        NetState.Clients[1].IsActive = true; NetState.Clients[1].Socket.Connected = false;
+        tick(); tick();
+        Check(NetState.Clients[1].Resets == 2 && MessageState.Disconnected.SequenceEqual(new[] { 1 }), "human connection loss still synchronizes and resets");
+        Exception fault = null;
+        var network = new Thread(() => { try { for (int i = 0; i < 10000; i++) { tick(); if (next() == 3) throw new Exception("reserved allocator leak"); } } catch (Exception e) { fault = e; } });
+        network.Start();
+        for (int i = 0; i < 10000; i++) if (!Reservation.IsReserved(3)) throw new Exception("reservation changed");
+        Check(network.Join(10000) && fault == null && actor.active, "10,000 concurrent native network loops preserve immutable reservation and actor");
+        Exception wrongThread = null;
+        var worker = new Thread(() => { try { Reservation.Release(); } catch (Exception e) { wrongThread = e; } });
+        worker.Start(); worker.Join();
+        Check(wrongThread is InvalidOperationException && Reservation.IsReserved(3), "off-thread release rejected without changing reservation");
+        // Cleanup engine object FIRST; release allocator visibility LAST.
+        MainState.player[3].active = false; MainState.player[3] = new PlayerState();
+        Reservation.Release(); Reservation.Release();
+        Check(!Reservation.IsReserved(3) && !Reservation.ArmBeforeListening(false, 4), "release is idempotent and this process cannot dynamically re-arm");
+        foreach (var c in NetState.Clients.Take(3)) c.Socket = new SocketState();
+        Check(next() == 3, "despawn release returns slot to native human allocator");
+        accepted(new SocketState()); MainState.player[3].active = true; tick();
+        Check(MainState.player[3].active && NetState.Clients[3].IsConnected(), "released slot can subsequently host a genuine connection fixture");
+        var late = new StartupReservation();
+        Check(!late.ArmBeforeListening(true, 4) && late.Snapshot == null, "already-listening startup fails closed");
+        Check(!new StartupReservation().ArmBeforeListening(false, 1) && !new StartupReservation().ArmBeforeListening(false, 256), "unsupported capacity fails closed");
+        Reset(); Reservation.ArmBeforeListening(false, 4);
+        MainState.player[3].active = true; NetState.Clients[3].Socket = new SocketState();
+        NetState.Clients[3].IsActive = true; NetState.Clients[3].State = 10;
+        tick();
+        Check(MainState.player[3].active && NetState.Clients[3].Updates == 1 && NetState.HasClients,
+            "unexpected real connection in reserved slot falls through to native human update");
+        NetState.Clients[3].Socket.Connected = false; tick(); tick();
+        Check(NetState.Clients[3].Resets == 1 && MessageState.Disconnected.SequenceEqual(new[] { 3 }),
+            "reservation never suppresses native disconnect/reset for an unexpected human");
+        Console.WriteLine($"EngineHookOfflineTests: {checks} checks passed; actual IL fixtures only; G1 LIVE NOT RUN.");
+    }
+
+    public static void AuditPackage(string package)
+    {
+        if (!File.Exists(package)) throw new FileNotFoundException("Build isolated probe before package audit.", package);
+        using var file = File.OpenRead(package);
+        using var reader = new BinaryReader(file);
+        Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
+        string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.1.0", "isolated package identity");
+        int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
+        for (int i = 0; i < count; i++)
+        {
+            string name = reader.ReadString(); int length = reader.ReadInt32(), compressed = reader.ReadInt32();
+            if (name == "VirtualPlayerEngineProbe.dll") { dllOffset = offset; size = length; packed = compressed; }
+            offset += compressed;
+        }
+        Check(dllOffset >= 0, "compiled probe DLL is packaged");
+        file.Position += dllOffset;
+        using var payload = new MemoryStream(reader.ReadBytes(packed));
+        using var bytes = new MemoryStream();
+        if (packed == size) payload.CopyTo(bytes);
+        else { using var inflate = new System.IO.Compression.DeflateStream(payload, System.IO.Compression.CompressionMode.Decompress); inflate.CopyTo(bytes); }
+        Check(bytes.Length == size, "packaged DLL size verified");
+        bytes.Position = 0;
+        using var probe = AssemblyDefinition.ReadAssembly(bytes);
+        IEnumerable<TypeDefinition> Walk(TypeDefinition t) => new[] { t }.Concat(t.NestedTypes.SelectMany(Walk));
+        var types = probe.MainModule.Types.SelectMany(Walk).ToArray();
+        var methods = types.SelectMany(t => t.Methods).Where(m => m.HasBody).ToArray();
+        var ins = methods.SelectMany(m => m.Body.Instructions).ToArray();
+        var mod = types.Single(t => t.Name == "VirtualPlayerEngineProbe");
+        var session = types.Single(t => t.Name == "ProbeSession");
+        Check(mod.Fields.Single(f => f.Name == "EngineHash").Constant as string == EngineHash
+            && mod.Fields.Single(f => f.Name == "HooksHash").Constant as string == HooksHash, "runtime pins both investigated assemblies");
+        Check(!probe.MainModule.AssemblyReferences.Any(a => a.Name.Contains("CompanionBridge")), "no production Bridge dependency");
+        var constructions = ins.Where(i => i.OpCode == OpCodes.Newobj).Select(i => (MethodReference)i.Operand).ToArray();
+        Check(constructions.Count(m => m.DeclaringType.FullName == "Terraria.Player") == 1,
+            "one genuine Player construction site, confined to spawn");
+        Check(!constructions.Any(m => m.DeclaringType.FullName is "Terraria.RemoteClient" or "Terraria.NPC"
+            || m.DeclaringType.FullName.Contains("Socket") || m.DeclaringType.FullName.Contains("Process")), "no fake RemoteClient, socket, NPC or process construction");
+        Check(!ins.Any(i => (i.OpCode == OpCodes.Stfld || i.OpCode == OpCodes.Stsfld) && i.Operand is FieldReference f
+            && (f.DeclaringType.FullName == "Terraria.RemoteClient" || f.FullName == "System.Int32 Terraria.Main::myPlayer")),
+            "no connection state or Main.myPlayer writes");
+        Check(ins.Count(i => i.OpCode == OpCodes.Stfld && i.Operand is FieldReference f && f.Name == "active"
+            && i.Previous.OpCode == OpCodes.Ldc_I4_1) == 1, "active=true has exactly one initialization site, no repair loop");
+        Check(!ins.Any(i => i.Operand is MethodReference m && (m.Name == "SendData"
+            || m.DeclaringType.FullName == "Terraria.Player" && m.Name is "Update" or "Spawn" or "Teleport")),
+            "no custom player sync, manual update, native Spawn side effects or movement shortcut");
+        var refs = ins.Where(i => i.Operand is MethodReference).Select(i => (MethodReference)i.Operand).ToArray();
+        foreach (var hook in new[] { "FindNextOpenClientSlot", "UpdateConnectedClients", "StartServer", "OnConnectionAccepted", "SyncOnePlayer", "CheckSection", "DedServ_PostModLoad", "clearWorld" })
+            Check(refs.Any(m => m.Name == "add_" + hook) && refs.Any(m => m.Name == "remove_" + hook), "hook subscription has rollback pair: " + hook);
+        var start = mod.Methods.Single(m => m.Name == "StartServer");
+        int CallOffset(MethodDefinition m, string name) => m.Body.Instructions.First(i => i.Operand is MethodReference r && r.Name == name).Offset;
+        Check(CallOffset(start, "ArmBeforeListening") < CallOffset(start, "Invoke"), "compiled live reservation publishes BEFORE orig StartServer");
+        var scope = mod.Methods.Single(m => m.Name == "ServerScope");
+        Check(scope.Body.ExceptionHandlers.Any(e => e.HandlerType == ExceptionHandlerType.Finally)
+            && scope.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "Finish")
+            && start.Body.Instructions.Any(i => i.Operand is FieldReference f && f.Name == "scopeThread"),
+            "compiled spawn startup requires an entered simulation scope with finally teardown");
+        var clearWorld = mod.Methods.Single(m => m.Name == "ClearWorld");
+        Check(CallOffset(clearWorld, "Finish") < CallOffset(clearWorld, "Invoke"), "compiled pre-clearWorld fuse precedes native world mutation/unhook");
+        Check(refs.Any(m => m.Name == "QueueMainThreadAction") && refs.Any(m => m.Name == "DoesPlayerSlotCountAsAHost"), "compiled command queue retains native host authorization");
+        Check(session.Methods.Single(m => m.Name == "Spawn").Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "AssertOwner"), "spawn checks simulation-thread ownership");
+        RunCompiledTeardown(probe, session.Methods.Single(m => m.Name == "Finish"));
+        Console.WriteLine($"Engine probe package: loader={version}; bytes={file.Length}; DLL={size}; {checks} total checks; G1 LIVE NOT RUN.");
+    }
+
+    public sealed class TeardownDetail { public TeardownDetail(string reason, bool same, bool human) { } }
+    public static class TeardownState
+    {
+        public static StartupReservation Reservation;
+        public static PlayerState Actor, previous;
+        public static int slot;
+        public static bool connectedHook;
+        public static string Phase, Fault;
+        public static bool ThrowLog, ThrowDisconnect;
+        public static int Disconnects, Logs;
+        public static StartupReservation get_Reservation() => Reservation;
+        public static void SignalFault(string reason) => Fault = reason;
+        public static void Log(string name, object detail)
+        {
+            Logs++;
+            if (!Reservation.IsReserved(3)) throw new Exception("released before teardown log/restoration");
+            if (ThrowLog) throw new IOException("fixture log failure");
+        }
+        public static void PlayerDisconnect(int id)
+        {
+            Disconnects++;
+            if (ThrowDisconnect) throw new InvalidOperationException("fixture disconnect hook failure");
+        }
+    }
+
+    private static void RunCompiledTeardown(AssemblyDefinition probe, MethodDefinition src)
+    {
+        using var fixture = AssemblyDefinition.CreateAssembly(new AssemblyNameDefinition("CompiledTeardownFixture", new Version(1, 0)), "CompiledTeardownFixture", ModuleKind.Dll);
+        var module = fixture.MainModule;
+        var map = new Dictionary<string, Type> {
+            ["VirtualPlayerEngineProbe.ProbeSession"] = typeof(TeardownState),
+            ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"] = typeof(TeardownState),
+            ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),
+            ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),
+            ["Terraria.Player"] = typeof(PlayerState), ["Terraria.Entity"] = typeof(EntityState),
+            ["Terraria.Main"] = typeof(MainState), ["Terraria.Netplay"] = typeof(NetState),
+            ["Terraria.RemoteClient"] = typeof(RemoteState), ["Terraria.Player/Hooks"] = typeof(TeardownState)
+        };
+        var runner = new TypeDefinition("Fixture", "Teardown", Mono.Cecil.TypeAttributes.Public | Mono.Cecil.TypeAttributes.Abstract
+            | Mono.Cecil.TypeAttributes.Sealed, module.TypeSystem.Object); module.Types.Add(runner);
+        TypeReference Type(TypeReference t) => t is ArrayType a ? new ArrayType(Type(a.ElementType))
+            : map.TryGetValue(t.FullName, out var mapped) ? module.ImportReference(mapped) : module.ImportReference(t);
+        var dst = new MethodDefinition("Finish", Mono.Cecil.MethodAttributes.Public | Mono.Cecil.MethodAttributes.Static, module.TypeSystem.Void);
+        dst.Parameters.Add(new ParameterDefinition("reason", Mono.Cecil.ParameterAttributes.None, module.TypeSystem.String));
+        runner.Methods.Add(dst); dst.Body.InitLocals = src.Body.InitLocals; dst.Body.MaxStackSize = src.Body.MaxStackSize;
+        foreach (var v in src.Body.Variables) dst.Body.Variables.Add(new VariableDefinition(Type(v.VariableType)));
+        var instructions = src.Body.Instructions.ToDictionary(i => i, _ => Instruction.Create(OpCodes.Nop));
+        object Import(object operand) => operand switch {
+            Instruction i => instructions[i], Instruction[] branches => branches.Select(i => instructions[i]).ToArray(),
+            VariableDefinition v => dst.Body.Variables[v.Index], ParameterDefinition p => dst.Parameters[p.Index],
+            FieldReference f when map.TryGetValue(f.DeclaringType.FullName, out var t) => module.ImportReference(t.GetField(f.Name)),
+            MethodReference m when m.DeclaringType.Name.StartsWith("<>f__AnonymousType") => module.ImportReference(typeof(TeardownDetail).GetConstructors().Single()),
+            MethodReference m when map.TryGetValue(m.DeclaringType.FullName, out var t) => module.ImportReference(t.GetMethods()
+                .Single(x => x.Name == m.Name && x.GetParameters().Length == m.Parameters.Count)),
+            FieldReference f => module.ImportReference(f), MethodReference m => module.ImportReference(m), TypeReference t => Type(t), _ => operand
+        };
+        foreach (var i in src.Body.Instructions) { instructions[i].OpCode = i.OpCode; instructions[i].Operand = Import(i.Operand); dst.Body.Instructions.Add(instructions[i]); }
+        foreach (var e in src.Body.ExceptionHandlers) dst.Body.ExceptionHandlers.Add(new ExceptionHandler(e.HandlerType) {
+            TryStart = instructions[e.TryStart], TryEnd = e.TryEnd == null ? null : instructions[e.TryEnd], HandlerStart = instructions[e.HandlerStart],
+            HandlerEnd = e.HandlerEnd == null ? null : instructions[e.HandlerEnd], CatchType = e.CatchType == null ? null : Type(e.CatchType)
+        });
+        using var bytes = new MemoryStream(); fixture.Write(bytes); bytes.Position = 0;
+        var loaded = AssemblyLoadContext.Default.LoadFromStream(bytes).GetType("Fixture.Teardown");
+        var finish = (Action<string>)loaded.GetMethod("Finish").CreateDelegate(typeof(Action<string>));
+        void Reset()
+        {
+            MainState.player = Enumerable.Range(0, 256).Select(_ => new PlayerState()).ToArray();
+            NetState.Clients = Enumerable.Range(0, 256).Select(i => new RemoteState { Id = i }).ToArray();
+            TeardownState.Reservation = new(); TeardownState.Reservation.ArmBeforeListening(false, 4);
+            TeardownState.slot = 3; TeardownState.previous = MainState.player[3];
+            TeardownState.Actor = MainState.player[3] = new PlayerState { active = true };
+            TeardownState.connectedHook = true; TeardownState.Fault = null;
+            TeardownState.ThrowLog = TeardownState.ThrowDisconnect = false; TeardownState.Disconnects = TeardownState.Logs = 0;
+        }
+        Reset(); var original = TeardownState.previous;
+        finish("despawn"); finish("duplicate");
+        Check(TeardownState.Actor == null && ReferenceEquals(MainState.player[3], original)
+            && TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 1 && TeardownState.Logs == 1,
+            "actual packaged teardown IL restores placeholder, disconnects once, then releases; idempotent");
+        Reset(); TeardownState.ThrowDisconnect = true;
+        try { finish("hook throws"); throw new Exception("exception lost"); } catch (InvalidOperationException) { }
+        Check(TeardownState.Actor == null && TeardownState.Reservation.Snapshot == null, "actual teardown finally releases after disconnect-hook exception");
+        Reset(); TeardownState.ThrowLog = true;
+        try { finish("log throws"); throw new Exception("exception lost"); } catch (IOException) { }
+        Check(TeardownState.Actor == null && TeardownState.Reservation.Snapshot == null, "actual teardown releases even after log failure");
+        Reset(); Exception wrong = null;
+        var thread = new Thread(() => { try { finish("foreign-thread clearWorld"); } catch (Exception e) { wrong = e; } });
+        thread.Start(); thread.Join();
+        Check(wrong is InvalidOperationException && TeardownState.Actor.active && TeardownState.Reservation.IsReserved(3)
+            && TeardownState.Disconnects == 0, "actual teardown rejects foreign-thread unload before Player mutation");
+        finish("owner cleanup");
+        Reset(); var human = new PlayerState { active = true }; MainState.player[3] = human; NetState.Clients[3].Socket = new SocketState();
+        finish("unexpected human");
+        Check(ReferenceEquals(MainState.player[3], human) && human.active && TeardownState.Disconnects == 0
+            && TeardownState.Fault != null, "actual teardown never overwrites/deactivates/disconnects an unexpected human");
+        Reset(); TeardownState.Actor = null; TeardownState.slot = -1;
+        finish("world exit before spawn");
+        Check(TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 0, "actual teardown releases unused startup reservation");
+    }
+}
