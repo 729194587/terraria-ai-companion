@@ -66,12 +66,35 @@
 | 定向离线检查 | **359 项通过**：239 个 G1/G2/生命周期/包检查，35 个 G3.1 文件/API 检查，85 个 G4 控制/当前 IL/包检查 |
 | 控制夹具 | 直接编译生产 ActorAction/ActorControl 源码，用显式 Terraria 存储/传输替身和简单确定性物理夹具驱动；完成、停止、遇阻超时、每帧释放、最终发包参数、异线程、死亡/禁用、重复帧、日志异常、原生异常、同步异常、失效引用/世界/代次、连接过渡和未知对象不写入通过 |
 | 本机引擎更新结构 | 从实际 DLL 读取并验证调用链、SetControls 本地门槛、注入点顺序、水平加速段、碰撞对 position 的原生更新、编译包不调用 LocalPlayer/手动 Update/teleport，检查通过 |
-| 完整原生服务器 G4 移动 | **未执行**；夹具位移不等于实际世界物理位移 |
-| 单窗口 Host & Play G4 | **未执行**；未声称客户端位置已实测同步 |
+| 原生服务器 G4 固定右移动 | **Host & Play 实测确认两次完成**，各 40 次原生更新、约 65.03516 px，结束 vx=0/right=false；不外推至全部地形 |
+| 单窗口 Host & Play G4 | **固定右移动、自然完成停止、客户端最终位置已确认**；用户观察移动成功，客户端最终坐标匹配服务器。主动 stop、遇阻超时、销毁取消等仍仅有离线检查 |
 | 远程多人 G4 | **未执行** |
 
 先前 PR #13 的单窗口持久化结果不作为 G4 移动通过的证据。本轮也未重新执行 G3 的无客户端原生持久化/故障注入测试。
-G4 的简单夹具物理明确不是 Terraria physics；不以其完成距离/更新次数证明真实地形中的行走结果。尚需验证原生服务器位移、停止后速度、客户端观察与重复动作。
+G4 的简单夹具物理明确不是 Terraria physics；不以其完成距离/更新次数证明真实地形中的行走结果。实际移动证据来自下述用户 Host & Play 测试；主动 stop、障碍、击退及更复杂地形仍待实测。
+
+### 2026-10-25 单窗口实测记录
+
+同一 world `6603d0f55bfa4a498c201a3609fda90a`、角色代次 1、槽位 254：
+
+- 23:48:43.128 开始，23:48:43.798 Completed：x 从 33680 到 33745.035，dx=65.03516，40 次原生更新，vx=0、right=false、无 fault。
+- 23:48:49.010 再次开始，23:48:49.679 Completed：x 到 33810.07，dx=65.03516，40 次原生更新，vx=0、right=false、无 fault。
+- 23:49:34.920 客户端 `client-slot-snapshot`：槽位 254，x=33810.07、vx=0、controlRight=false，与服务器第二次停止结果一致。用户反馈“移动成功”。
+
+证据在本机 tModLoader-Logs/server.log、client.log 的上述探针事件，不提交含连接参数的完整日志。
+
+### 已发现缺口：无客户端角色的服务端受击权威
+
+用户随后报告怪物未能伤害 AI。当前 G4 移动通过**不代表完整玩家受击/生存兼容通过**；PR 继续保持 Draft。
+再次核对同一本机 DLL，确认以下独立原生边界：
+
+- 常规 `NPC.TargetClosest` 扫描 0..254 的 active、非 dead/ghost Player 后调用 TryTrackingTarget；并没有仅因角色无连接就一概排除。这仅证明可成为常规候选，不能保证所有 NPC 类型或本次场景实际选择了 AI。
+- `Player.Update` 在 IL `0x659c..0x65a7` 比较 Main.myPlayer 与 this.whoAmI；不相等就跳至 `0x6b7d`。`Update_NPCCollision()` 调用位于被跳过的 `0x6b3d`。服务器 myPlayer=255，AI=254，因此当前自然更新不会执行它的 NPC 接触受击路径；图形客户端也不会替远端 AI 执行本地受击路径。
+- 普通敌对弹幕的玩家受击段中，`Projectile.Damage` 在 `0x4e43..0x4e68` 对 netMode==Server 直接返回；随后选择 Main.myPlayer。本机这一段同样不能自动承担无客户端 AI 的弹幕受击。
+- Hurt 的部分闪避和致死处理仍依赖 myPlayer。不能通过伪装 Main.myPlayer、开启整个本地玩家分支，或简单扣 statLife 来声称兼容完整受击；需要单独审查原生伤害、免疫帧、击退、死亡和同步边界。
+
+当前探针没有主动设置 creativeGodMode 或永久 immune，也没有完成服务器 AI 专属受击执行端。本轮只定位并记录缺口，**未修改伤害、NPC 选敌或死亡机制，未声称问题已修复**。后续受击兼容必须继续绑定已验证的 Player/世界/角色代次，保持真人路径与未知槽位不变，并分别验证 NPC 接触、敌对弹幕、免疫/击退、致死和客户端生命同步。
+本机审计输出在 `.local/damage-api-audit/`。
 
 0.4.0 包 SHA256：`9D29167DEF64D7320142D541AB09F28A5C1A3668D9F926D7A564D7D73D0D1E15`。
 构建：`.local/virtual-player-control-build/Mods/VirtualPlayerEngineProbe.tmod`。离线输出：`.local/g4-verification.txt`。
