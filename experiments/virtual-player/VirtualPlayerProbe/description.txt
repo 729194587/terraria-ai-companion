@@ -1,0 +1,2 @@
+Issue #8 isolated negative probe. Reports native no-client Player lifecycle blockers.
+Spawn and movement deliberately fail closed; G1-G3 have not passed live testing.
