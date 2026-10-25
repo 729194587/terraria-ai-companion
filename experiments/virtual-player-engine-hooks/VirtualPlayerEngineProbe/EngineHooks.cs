@@ -50,6 +50,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
             if (ModLoader.Mods.Any(m => m != this && m.Name != "ModLoader"))
                 throw new InvalidOperationException("G1 isolation requires this probe and tModLoader only.");
             NetworkStateSync.Reset();
+            ProbeAnnouncements.ResetNotices();
             if (Main.dedServ) InstallServerHooks();
             else
             {
@@ -171,6 +172,13 @@ public sealed class VirtualPlayerEngineProbe : Mod
         return true;
     }
     internal static void SignalFault(string reason) => Interlocked.CompareExchange(ref fault, reason, null);
+    internal static void WarnAnnouncement(Exception error)
+    {
+        // Chat is cosmetic: a notification failure must not undo a valid actor
+        // or prevent an otherwise safe teardown. Do not retry partial broadcasts.
+        try { Instance?.Logger.Warn("G2 lifecycle chat notice failed; no retry.", error); }
+        catch { /* Logging failure must not change Player lifecycle either. */ }
+    }
 
     private void StartServer(On_Netplay.orig_StartServer orig)
     {

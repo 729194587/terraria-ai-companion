@@ -47,7 +47,7 @@ public static class NetworkSyncOfflineTests
         public string Key = "fixture";
         public string Format(object[] args) => "fixture";
     }
-    public static class LangState { public static LocalizedState[] mp = Enumerable.Range(0, 30).Select(_ => new LocalizedState()).ToArray(); }
+    public static class LangState { public static LocalizedState[] mp = Enumerable.Range(0, 30).Select(i => new LocalizedState { Key="native-mp-"+i }).ToArray(); }
     public static class ItemSlots
     {
         public static int Inventory0 = 0, Armor0 = 59, Dye0 = 79, Misc0 = 89, MiscDye0 = 94;
@@ -57,6 +57,7 @@ public static class NetworkSyncOfflineTests
     public class RevengeState { public void SendAllMarkersToPlayer(int id) { } }
     public static class NpcState { public static RevengeState RevengeManager = new(); }
     public readonly record struct Packet(int Type, int Remote, int Ignore, int Slot, float Value, bool Active);
+    public readonly record struct Notice(string Key, string Name, int R, int G, int B, int Ignore);
     public static class Effects
     {
         public static StartupReservation Reservation;
@@ -69,9 +70,14 @@ public static class NetworkSyncOfflineTests
         public static PlayerState owner;
         public static ItemState savedHelmet, debugHelmet;
         public static ColorState savedShirt;
+        public static PlayerState joinedActor;
+        public static string joinedName;
+        public static bool joinNoticeAttempted, leaveNoticeAttempted, ThrowNotice;
+        public static long JoinNotices, LeaveNotices, NoticeFailures;
         public static MethodInfo nativeFull = typeof(Effects).GetMethod(nameof(InvokeFull));
         public static Action<int, int, int> InvokePatched;
         public static List<Packet> Packets = new();
+        public static List<Notice> Notices = new();
         public static int Announcements, Disconnects, ModPayloads;
         public static int ThrowPacket = -1;
         public static Action OnPacket;
@@ -92,7 +98,13 @@ public static class NetworkSyncOfflineTests
         }
         public static void SyncPlayer(PlayerState player, int remote, int ignore, bool newPlayer) => ModPayloads++;
         public static void PlayerDisconnect(int slot) => Disconnects++;
-        public static void BroadcastChatMessage(EngineHookOfflineTests.TextState text, ColorState color, int ignore) => Announcements++;
+        public static void BroadcastChatMessage(EngineHookOfflineTests.TextState text, ColorState color, int ignore)
+        {
+            Announcements++;
+            Notices.Add(new(text.Key,text.Args?.FirstOrDefault() as string,color.R,color.G,color.B,ignore));
+            if(ThrowNotice) throw new IOException("fixture chat failure after partial send");
+        }
+        public static void WarnAnnouncement(Exception _) { }
         public static void ServerConsoleLine(string line) { }
         public static void SendNPCHousesAndTravelShop(int id) { }
         public static void SendAnglerQuest(int id) { }
@@ -117,6 +129,7 @@ public static class NetworkSyncOfflineTests
         var session = probe.MainModule.Types.Single(t => t.Name == "ProbeSession");
         var adapter = probe.MainModule.Types.Single(t => t.Name == "NetworkStateSync");
         var debug = probe.MainModule.Types.Single(t => t.Name == "ProbeDebugAppearance");
+        var noticeType = probe.MainModule.Types.Single(t => t.Name == "ProbeAnnouncements");
         Check(adapter.Methods.All(m => !m.HasBody || !m.Body.Instructions.Any(i => i.OpCode == OpCodes.Stfld
             || i.Operand is MethodReference r && r.Name is "Configure" or "SetDefaults")),
             "sync adapter has no character/item/appearance writes or initialization calls");
@@ -134,7 +147,8 @@ public static class NetworkSyncOfflineTests
         var support = mod.Methods.Where(m => m.Name is "IsNetworkActor" or "OwnedWithoutConnection" or "SyncOne")
             .Concat(session.Methods.Where(m => m.Name == "Quarantine"))
             .Concat(adapter.Methods.Where(m => m.HasBody && m.Name != ".cctor"))
-            .Concat(debug.Methods.Where(m => m.HasBody)).ToArray();
+            .Concat(debug.Methods.Where(m => m.HasBody))
+            .Concat(noticeType.Methods.Where(m => m.HasBody)).ToArray();
 
         var baseline = Compile(nativeMethods, "SyncBaseline");
         int originalCount = one.Body.Instructions.Count;
@@ -176,6 +190,9 @@ public static class NetworkSyncOfflineTests
         var tick = (Action<PlayerState>)fixture.GetMethod("Tick").CreateDelegate(typeof(Action<PlayerState>));
         var style = (Action<PlayerState>)fixture.GetMethod("Toggle").CreateDelegate(typeof(Action<PlayerState>));
         var clearDebug = (Action)fixture.GetMethod("Clear").CreateDelegate(typeof(Action));
+        var joinNotice = (Action<PlayerState>)fixture.GetMethod("Join").CreateDelegate(typeof(Action<PlayerState>));
+        var leftNotice = (Action<PlayerState>)fixture.GetMethod("Left").CreateDelegate(typeof(Action<PlayerState>));
+        var resetNotices = (Action)fixture.GetMethod("ResetNotices").CreateDelegate(typeof(Action));
         var leave = (Action<PlayerState>)fixture.GetMethod("Leave").CreateDelegate(typeof(Action<PlayerState>));
         var owns = (Func<int,bool>)fixture.GetMethod("IsNetworkActor").CreateDelegate(typeof(Func<int,bool>));
         var resetAdapter = (Action)fixture.GetMethod("Reset").CreateDelegate(typeof(Action));
@@ -188,7 +205,8 @@ public static class NetworkSyncOfflineTests
             Effects.Actor = MainState.player[3]; Effects.Actor.active = true;
             Effects.Ready = Effects.EngineMainThread = true; Effects.Quarantined = false; Effects.Fault = Effects.Phase = null;
             Effects.Packets.Clear(); Effects.Announcements = Effects.Disconnects = Effects.ModPayloads = 0;
-            Effects.OnPacket = null; Effects.ThrowPacket = -1; resetAdapter(); clearDebug();
+            Effects.Notices.Clear(); Effects.ThrowNotice=false;
+            Effects.OnPacket = null; Effects.ThrowPacket = -1; resetAdapter(); clearDebug(); resetNotices();
         }
         foreach (int state in new[] { 0, 10 }) foreach (bool active in new[] { false, true })
         {
@@ -316,6 +334,31 @@ public static class NetworkSyncOfflineTests
         Reset(); Exception threadError=null;
         var worker=new Thread(()=>{try{full(Effects.Actor);}catch(Exception e){threadError=e;}}); worker.Start(); worker.Join();
         Check(threadError is InvalidOperationException && Effects.Packets.Count==0, "actual sync rejects foreign-thread publication before any packet");
+        Reset(); Effects.Actor.name="Notice probe"; full(Effects.Actor); joinNotice(Effects.Actor); joinNotice(Effects.Actor);
+        Check(Effects.Notices.Count==1 && Effects.JoinNotices==1 && Effects.Notices[0]==new Notice(LangState.mp[19].Key,"Notice probe",255,240,20,3),
+            "successful AI join uses native localized yellow announcement exactly once");
+        full(Effects.Actor); MainState.GameUpdateCount=300; tick(Effects.Actor);
+        MainState.player[0].active=true; NetState.Clients[0].State=10; lateJoin(0);
+        Check(Effects.Notices.Count(n=>n.Name=="Notice probe")==1 && Effects.JoinNotices==1 && !NetState.Clients[3].IsAnnouncementCompleted,
+            "resync, periodic refresh and late join never repeat AI join notice or write native announcement flags");
+        leave(Effects.Actor); Effects.Actor.active=false; leftNotice(Effects.Actor); leftNotice(Effects.Actor);
+        Check(Effects.LeaveNotices==1 && Effects.Notices.Last()==new Notice(LangState.mp[20].Key,"Notice probe",255,240,20,3),
+            "confirmed AI teardown uses native localized yellow leave announcement exactly once");
+        Reset(); Effects.ThrowPacket=4;
+        try{full(Effects.Actor);}catch(TargetInvocationException){}
+        Effects.ThrowPacket=-1; leave(Effects.Actor); leftNotice(Effects.Actor);
+        Check(Effects.Notices.Count==0 && Effects.JoinNotices==0 && Effects.LeaveNotices==0,
+            "failed initial publication and its rollback never announce a successful join or leave");
+        Reset(); full(Effects.Actor); joinNotice(Effects.Actor); var replacement=MainState.player[3]=new PlayerState{whoAmI=3,active=true};
+        try{leftNotice(Effects.Actor);throw new Exception("unknown actor announced");}catch(InvalidOperationException){}
+        Check(Effects.Notices.Count==1 && Effects.LeaveNotices==0 && replacement.active && Effects.Reservation.IsReserved(3),
+            "lost AI ownership prevents leave announcement for unknown Player");
+        Reset(); full(Effects.Actor); Effects.ThrowNotice=true; joinNotice(Effects.Actor); Effects.ThrowNotice=false; joinNotice(Effects.Actor);
+        Check(Effects.Notices.Count==1 && Effects.NoticeFailures==1 && Effects.Fault==null && !Effects.Quarantined && Effects.Actor.active,
+            "partially failing join chat is not retried and never faults or rolls back valid AI");
+        leave(Effects.Actor); Effects.Actor.active=false; Effects.ThrowNotice=true; leftNotice(Effects.Actor); Effects.ThrowNotice=false; leftNotice(Effects.Actor);
+        Check(Effects.Notices.Count==2 && Effects.NoticeFailures==2 && Effects.Fault==null && !Effects.Quarantined && Effects.Departures==1,
+            "failing leave chat is not retried and never blocks successful Player departure");
         Console.WriteLine($"G2NetworkSync: {checks} targeted checks passed; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.");
         return checks;
     }
@@ -338,6 +381,7 @@ public static class NetworkSyncOfflineTests
             ["Terraria.Program"]=typeof(Effects), ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"]=typeof(Effects),
             ["VirtualPlayerEngineProbe.ProbeSession"]=typeof(Effects), ["VirtualPlayerEngineProbe.NetworkStateSync"]=typeof(Effects),
             ["VirtualPlayerEngineProbe.ProbeDebugAppearance"]=typeof(Effects),
+            ["VirtualPlayerEngineProbe.ProbeAnnouncements"]=typeof(Effects),
             ["VirtualPlayerEngineProbe.StartupReservation"]=typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"]=typeof(StartupReservation.View),
             ["Terraria.On_NetMessage/orig_SyncOnePlayer"]=typeof(Action<int,int,int>)

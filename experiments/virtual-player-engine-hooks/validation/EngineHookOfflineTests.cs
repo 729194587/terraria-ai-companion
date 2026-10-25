@@ -91,7 +91,12 @@ public static class EngineHookOfflineTests
     }
     public static class LanguageState { public static string GetTextValue(string key, object value) => key; }
     public static class LoggingState { public static void ServerConsoleLine(string _) { } }
-    public class TextState { public static TextState FromKey(string _, object[] __) => new(); }
+    public class TextState
+    {
+        public string Key;
+        public object[] Args;
+        public static TextState FromKey(string key, object[] args) => new() { Key=key, Args=args };
+    }
     public static StartupReservation Reservation = new();
     public static PlayerState FixtureActor;
     public static bool Reserved(int slot) => Reservation.IsReserved(slot);
@@ -408,7 +413,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.2.1", "isolated G2 package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.2.2", "isolated G2 package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -640,6 +645,12 @@ public static class EngineHookOfflineTests
             }
         }
     }
+    public static class LifecycleAnnouncements
+    {
+        public static int Joins, Leaves;
+        public static void Join(PlayerState _) => Joins++;
+        public static void Left(PlayerState _) { if (Joins>Leaves) Leaves++; }
+    }
     public static class TeardownState
     {
         public static StartupReservation Reservation;
@@ -681,6 +692,7 @@ public static class EngineHookOfflineTests
         var map = new Dictionary<string, Type> {
             ["VirtualPlayerEngineProbe.ProbeSession"] = typeof(TeardownState),
             ["VirtualPlayerEngineProbe.NetworkStateSync"] = typeof(LifecycleNetworkState),
+            ["VirtualPlayerEngineProbe.ProbeAnnouncements"] = typeof(LifecycleAnnouncements),
             ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"] = typeof(TeardownState),
             ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),
@@ -755,6 +767,7 @@ public static class EngineHookOfflineTests
             TeardownState.OnConnect = TeardownState.OnDisconnect = null; TeardownState.Connects = 0;
             TeardownState.Ready = WorldState.Clear = true;
             LifecycleNetworkState.ThrowFull = LifecycleNetworkState.ThrowLeave = false;
+            LifecycleAnnouncements.Joins = LifecycleAnnouncements.Leaves = 0;
         }
         Reset(); var original = TeardownState.previous;
         finish("despawn"); finish("duplicate");
@@ -893,10 +906,11 @@ public static class EngineHookOfflineTests
         BeforeCreate(); var baseline = MainState.player[3];
         spawn(); var created = TeardownState.Actor; spawn();
         Check(created != null && !ReferenceEquals(created, baseline) && ReferenceEquals(MainState.player[3], created)
-            && created.whoAmI == 3 && created.active && TeardownState.Connects == 1 && eligible(3),
+            && created.whoAmI == 3 && created.active && TeardownState.Connects == 1 && eligible(3)
+            && LifecycleAnnouncements.Joins == 1,
             "actual packaged Spawn privately constructs, publishes once and duplicate spawn is idempotent");
         finish("spawn lifecycle");
-        Check(ReferenceEquals(MainState.player[3], baseline) && TeardownState.Reservation.Snapshot == null,
+        Check(ReferenceEquals(MainState.player[3], baseline) && TeardownState.Reservation.Snapshot == null && LifecycleAnnouncements.Leaves == 1,
             "actual packaged Spawn/Finish restore the original baseline in one lifecycle");
         BeforeCreate(); baseline = MainState.player[3];
         PlayerState.OnConstruct = () => throw new IOException("constructor failure");
@@ -966,7 +980,8 @@ public static class EngineHookOfflineTests
         BeforeCreate(); var failedSyncBaseline = MainState.player[3]; LifecycleNetworkState.ThrowFull = true;
         try { spawn(); throw new Exception("full send failure lost"); } catch (IOException) { }
         Check(TeardownState.Actor == null && ReferenceEquals(MainState.player[3], failedSyncBaseline)
-            && TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 1,
+            && TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 1
+            && LifecycleAnnouncements.Joins == 0 && LifecycleAnnouncements.Leaves == 0,
             "actual G2 Spawn rolls back published actor after native initial-sync failure");
         Reset(); var retainedActor = TeardownState.Actor; LifecycleNetworkState.ThrowLeave = true;
         try { finish("departure fails"); throw new Exception("unsafe departure release"); } catch (InvalidOperationException) { }

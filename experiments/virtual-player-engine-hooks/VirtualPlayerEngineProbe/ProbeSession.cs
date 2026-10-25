@@ -147,6 +147,7 @@ internal static class ProbeSession
                 }
                 NetworkStateSync.Full(candidate);
                 Log("spawn");
+                ProbeAnnouncements.Join(candidate);
             }
             catch
             {
@@ -224,7 +225,11 @@ internal static class ProbeSession
                         Log("teardown-quarantined", new { reason, same, occupied });
                         throw new InvalidOperationException("STOP: callback changed ownership; no restoration/release.");
                     }
-                    if (same) Main.player[slot] = previous;
+                    if (same)
+                    {
+                        ProbeAnnouncements.Left(owned);
+                        Main.player[slot] = previous;
+                    }
                     Actor = previous = null;
                     connectedHook = false;
                     Phase = "released; fresh server process required to re-arm";
@@ -298,6 +303,8 @@ internal static class ProbeSession
             accepts = Interlocked.Read(ref VirtualPlayerEngineProbe.Accepts),
             fullSnapshots = NetworkStateSync.FullSnapshots, controlPackets = NetworkStateSync.Controls,
             departures = NetworkStateSync.Departures,
+            joinNotices = ProbeAnnouncements.JoinNotices, leaveNotices = ProbeAnnouncements.LeaveNotices,
+            noticeFailures = ProbeAnnouncements.NoticeFailures,
             fault = VirtualPlayerEngineProbe.Fault, liveGateResult = "not automatically assessed", detail }));
     }
 }
