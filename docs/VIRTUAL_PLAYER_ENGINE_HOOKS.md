@@ -6,6 +6,26 @@
 
 分支 `spike/virtual-player-engine-hooks` 从 `main` 的 `9a57b3bae8d888f79c2da6c41cbc5b5ec66085c6` 开始，只新增本报告和 `experiments/virtual-player-engine-hooks/`。main、CompanionBridge、Python、Lua、TCP、原子操作和 PR #9 均保持原样。
 
+## PR #11 审查后的修正（Probe 0.1.1）
+
+针对 [三项审查意见](https://github.com/729194587/terraria-ai-companion/pull/11#issuecomment-6393766604)，补齐了实际 Host & Play 路径和线程证据，并修复清理时连接过渡态保护弱于网络保护的问题。不要部署旧的 Probe 0.1.0。
+
+**当前安装版本的 Host & Play 是双进程机制：一个真人图形客户端，加一个原生无图形服务器子进程。** 前两项意见需要结合这一区别理解：图形进程的 `dedServ=false` 不意味着整个 Host & Play 没有 `dedServ=true` 的服务器。不会把 actor 移到真人图形客户端；图形端现在安装启动观察钩子，服务器子进程安装生命周期钩子。
+
+以下路径均已检查当前 DLL 的完整 IL，并添加定向结构断言，不是依据模式名称推测：
+
+| 进程/阶段 | 当前 DLL 的路径 |
+| --- | --- |
+| 图形窗口提交 Host & Play 密码 | `Main.OnSubmitServerPassword()` 在 `IL_013f` 设置 `tModLoader.dll -server ...`，含 `-autoshutdown`，传递 `-modpath` 和独立存档目录；随后启动该 Process，再 `StartTcpClient` 连接 host |
+| Steam 路径 | `Steam.NetClientSocialModule.LaunchLocalServer` 在已有 Arguments 后追加 Steam/lobby 参数，最终对该 Process 调用 Start；不替换为同进程服务器 |
+| 子进程参数分派 | `Program.ProcessLaunchArgs` 识别 `-server`；`LaunchGame_` 设置 Main.dedServ；`RunGame` 根据它进入 `Main.DedServ()`，而图形客户端进入 Game.Run |
+| 子进程加载 Probe | `DedServ` 先设 dedServ=true，再调用 `ModLoader.Reload`；Reload 的服务器分支同步执行 Load，然后进入 `DedServ_PostModLoad`，所以生命周期钩子已安装 |
+| 模拟线程 | `Program.LaunchGame` 先将当前 Thread 记录为 Program.MainThread；该调用链同步进入 DedServ/scope/服务器循环/Game.Update；Main.Update 再同步执行 ConsumeAllMainThreadActions |
+
+运行时不只信任捕获的线程 ID：服务器 scope 和 StartServer 同时要求 `Main.dedServ && Program.IsMainThread`；spawn、清理与更新检查还要求捕获的 owner ID 一致。日志增加 `role`、`programMainThread` 和 `programIsMainThread`。这仍不是实际 Mod 启动/Steam 会话已通过的证据，G1 live 保留 not attempted。
+
+第三项已改为统一 `ConnectionIdle` 谓词：必须已知 RemoteClient，且 `!IsConnected && !IsActive && State==0 && !PendingTermination && !PendingTerminationApproved`。初始槽位验证、网络 eligibility、同步/区块隔离及 teardown 共用该策略。任何过渡态、未知连接对象或 Player 引用冲突都进入 quarantine，保留 actor/占位/预留，不修改 Player、不发断开通知、不释放槽位；重复清理与 spawn 被拒绝。pre-clearWorld 因而中止，而非带着未知连接状态继续清世界/撤销钩子。
+
 ## 实验决策与范围
 
 前置离线检查验证了槽位过滤、原生连接接受、清理分支和线程所有权后，才实现真实 Player 创建。采用**监听开始前固定预留、每个服务器进程仅一轮 actor 生命周期**，避免本轮引入动态抢槽、接受连接锁或清理循环确认协议。
@@ -56,10 +76,11 @@
 
 ## 实际拦截点、线程与真人边界
 
-总计九个订阅，其中同一个清理方法分别有 IL 过滤和 On 计数；无连接状态伪造。
+服务器进程九个订阅，图形客户端一个启动观察订阅；其中服务器的清理方法分别有 IL 过滤和 On 计数。无连接状态伪造。
 
 | 拦截 | 线程/频率 | 行为与回滚 |
 | --- | --- | --- |
+| `On_Main.OnSubmitServerPassword` | 图形进程的引擎主线程，每次 UI 启动 Host & Play | 仅记录 graphical-host-launch，然后调用原生启动/连接路径；不创建进程、不 arm、不创建 actor、不记录密码 |
 | `IL_Netplay.FindNextOpenClientSlot` | 接受连接回调所在的 TCP/Steam 路径，每次原生选槽 | 循环体前增加 `ldloc; call IsReserved; brtrue next`；保留原生容量、连接检查及满服行为 |
 | `IL_Netplay.UpdateConnectedClients` | 网络循环，每槽位每轮 | 待终止分支前增加三条 eligibility 指令，只跳过被本 Probe 预留且无任何连接活动/终止状态的槽位 |
 | `On_Netplay.StartServer` | 服务器模拟线程，每次开服 | 仅首次且尚未监听、外层模拟 scope 已进入时 arm，然后调用 orig；重复开服不重新抢槽 |
@@ -67,7 +88,7 @@
 | `On_Netplay.OnConnectionAccepted` | TCP/Steam 接受线程，每次接受 | 原样调用 orig，记录实际 Socket 归属槽位；不延迟、替代或伪造连接 |
 | `On_NetMessage.SyncOnePlayer` | 依据调用者可在游戏/网络路径 | 仅对保留且无连接状态的槽位返回；所有真人调用保留 orig |
 | `On_RemoteClient.CheckSection` | 正常活动玩家区块检查路径 | 仅对无连接保留槽位返回；不伪造 TileSections，不改变真人发送 |
-| `On_Main.DedServ_PostModLoad` | 服务器模拟调用范围 | 记录并约束 scope 线程，finally 保证该线程在离开模拟范围时清理 actor/预留 |
+| `On_Main.DedServ_PostModLoad` | 原生 Host & Play 子进程的模拟调用范围 | 校验引擎 Program.MainThread 并捕获 scope 线程；finally 在正常空闲状态下清理，连接异常则隔离并停止 |
 | `On_WorldGen.clearWorld` | 依原生调用者而异 | 在任何 clearWorld 原生写入、RemoveAll 之前执行 teardown；有活动预留时若线程不符，直接抛错中止该不支持的清理流程 |
 
 预留读视图用 `Volatile.Read/Write` 发布不可变 `(slot,capacity,session)`，计数用 Interlocked。不持锁调用原生代码，也没有网络线程等待游戏线程的协议。预留只会从一个固定槽位变为空，不会在服务器运行中扩展。
@@ -75,9 +96,9 @@
 保护真人的规则：
 
 1. AI 的活动态不参与 `HasClients` 计数；不会假扮 host，也不延长 Host & Play 的原生生命周期。
-2. 如果保留槽位意外出现 connected/IsActive/非零 State/待终止状态，eligibility 立即返回 false，保留真人的原生更新/断开/Reset，并记录 fault；下一游戏更新停止 actor。不会为了留住 AI 而吞掉真人清理。
-3. teardown 同时核对 Player 引用和连接。如果槽位已变成真人，不覆盖数组、不调用该槽位的断开钩子，也不将其 active 清零。
-4. 所有写入都先 `AssertOwner`。图形客户端不安装引擎钩子，不替换其 LocalPlayer，不修改任何 Main.myPlayer 或 RemoteClient 字段。
+2. 如果保留槽位意外出现 connected/IsActive/非零 State/待终止或终止已批准状态，eligibility 立即返回 false，保留真人的原生更新/断开/Reset，并记录 fault。下一模拟更新的 teardown 只会隔离，不能为停止 actor 而改写该槽位。
+3. teardown 同时核对预留、Player 引用和完整连接过渡态。异常时不覆盖数组、不调用断开钩子、不将 active 清零，也不清空自己的引用或释放预留。
+4. 所有写入先检查引擎 `Program.IsMainThread` 与 `AssertOwner`。图形客户端仅观察原生启动，不安装服务器槽位钩子，不替换 LocalPlayer，不修改任何 Main.myPlayer 或 RemoteClient 字段。
 
 ### 创建与清理
 
@@ -85,11 +106,13 @@
 
 不调用 `Player.Spawn`/EnterWorld：这些路径有本地 UI/所有者副作用。初始位置仅在世界出生点附近最多向上检查 12 格空位，不清理 Tile。后续完全由原生 Player.Update 更新，没有手动额外 Update、输入注入或逐帧坐标修补。自然重力产生的位置变化不算 G2 验证。
 
-despawn 对自己的对象设为不活动，调用一次断开通知，恢复最初的空闲占位对象，再发布空预留。finally 覆盖断开钩子和日志异常。重复 despawn 无副作用。actor 死亡、失去活动态或引用变化时停止，不自动复活/修复。
+正常空闲且对象归属明确时，despawn 对自己的对象设为不活动，调用一次断开通知，恢复最初的空闲占位对象，再发布空预留。finally 覆盖断开钩子和日志异常。重复正常 despawn 无副作用。actor 死亡/不活动时停止，不自动复活；引用或连接状态不明时只隔离，不修复。
 
 正常 OnWorldUnload、clearWorld 入口和服务器模拟 scope 的 finally 都可幂等触发此清理。Mod.Unload 只验证早期清理已完成、移除订阅。部分安装失败则在任何服务器启动前逆序撤销订阅。
 
 **不支持活动服务器上的后台/并发热卸载。** pre-clearWorld 保险会在错误线程上中止原生 clearWorld，从而防止接下来先撤销钩子、再留下 actor。若遇到此保险，保存异常和日志，按停止条件处理；不要绕过断言或重试 spawn。正常用户流程是先 despawn 或退出测试世界，再关闭/重载 Mod。强制结束进程不承诺 finally 执行；本实验无档案写入，也不修改安装 DLL。
+
+**quarantine 是停止条件，不是成功清理。** Probe 停止后续动作和自动清理重试，但不冻结引擎、不吞真人原生清理；预留持续保留。该状态可能中止原生清世界/卸载并产生异常，须保存证据并结束这次隔离测试进程，不原地热重载、解除预留或重试 spawn。不能把这一分支记作 G1 通过。
 
 ### G1 同步隔离的限制
 
@@ -117,21 +140,21 @@ despawn 对自己的对象设为不活动，调用一次断开通知，恢复最
 Compilation finished with 0 errors and 0 warnings
 Packaging: VirtualPlayerEngineProbe
 Verification CLR: 8.0.0; no Terraria game process or world.
-EngineHookOfflineTests: 44 checks passed; actual IL fixtures only; G1 LIVE NOT RUN.
-Engine probe package: loader=2026.8.3.0; bytes=31138; DLL=44544;
-74 total checks; G1 LIVE NOT RUN.
+EngineHookOfflineTests: 53 checks passed; actual IL fixtures only; G1 LIVE NOT RUN.
+Engine probe package: loader=2026.8.3.0; bytes=32713; DLL=49152; 107 total checks; G1 LIVE NOT RUN.
 ```
 
 验证范围：
 
 - 两个固定 DLL 的指纹和已生成钩子、启动/监听/卸载顺序；遍历包含嵌套类型的整个安装模块，断言分配器、Reset 与监听入口的直接方法引用均在已调查路径中。
+- 图形 Host & Play → 原生/Steam 子进程 → 参数分派 → 同步 Mod.Load → 模拟 scope → 原生更新/命令队列的完整路径；验证器导出这些完整方法。图形观察钩子和服务器 scope/线程保护另有实际包审计。
 - 真实 MonoMod RuntimeDetour 对测试方法的安装、执行变化、Dispose 后恢复；该测试**不 detour 游戏方法**。
 - 只反射原生方法体，经过真实 DynamicMethodDefinition → ILContext 路径应用生产补丁；没有调用原生方法或启动世界。
 - 对安装 DLL 的完整分配、接受连接、清理函数体使用隔离存储/外部效果替身执行。接受路径包含 Reset/Socket 赋值、满服和监听处理，两个循环仅增加各三条 eligibility 指令。
 - 空预留保留原生行为；预留保护、真人更新/断开、满服、即时接受、释放后真人复用、重复/过晚 arm、错误线程，以及保留槽位意外出现真人时仍执行其原生清理。
 - 10,000 次原生网络循环与主线程预留读取并发，不反复写 active。连接接受夹具与真实 TCP/Steam 回调调度并非同一件事，没有冒充真实网络压力测试。
 - 审计实际 `.tmod`：无 Bridge 引用，无假 RemoteClient/Socket/NPC/进程创建，无连接状态/myPlayer 写入，仅一次 Player 创建和 active=true，无自定义 actor 发包/额外 Player.Update/移动捷径，钩子具备撤销配对。
-- 执行实际包内 `Finish` 的完整 IL（替换存储、通知和日志效果），验证占位恢复、断开一次、释放顺序、异常 finally、错误线程拒绝、真人冲突和未 spawn 即退出。
+- 执行实际包内 `Finish` 的完整 IL（替换存储、通知和日志效果），验证正常恢复/释放、异常 finally、错误线程/引擎主线程身份拒绝；对已断开但活动、State=-1/1/3/10、待终止、终止已批准、未知 RemoteClient、Player 引用冲突及 spawn 前过渡态，验证不写 Player、不调用断开、不提前释放，并禁止重复清理。
 
 夹具对象不是游戏内 Player/Socket。未验证真实 Mod.Load 安装链、Native Player.Update 的场景表现、Steam host 权限、原生退出/热卸载的真实时序或真人客户端。没有运行全量测试。
 
@@ -162,7 +185,7 @@ finally { Pop-Location }
 ```
 
 4. 确认只启用 VirtualPlayerEngineProbe。新建角色和世界，通过 Multiplayer → Host & Play 进入。只开这一个真人图形窗口；Host & Play 的服务器进程是正常机制，不是第二个 AI 客户端。
-5. 在服务器日志先确认：指纹匹配、hooks ready、server-scope-enter、pre-listen-reservation 的 armed=true、reservation-ready，且无 fault。失败则停止，不关闭检查。容量不足 2 时不会 arm。
+5. 图形客户端日志应出现 graphical host-launch hook ready，以及 `graphical-host-launch`（`role=graphical-client`、`dedServ=false`、`programIsMainThread=true`）。服务器日志应先出现指纹匹配、hooks ready，再依次出现 server-scope-enter、pre-listen-reservation 的 armed=true、reservation-ready，且无 fault。服务器事件的 `role=native-server`、`dedServ=true`、`programIsMainThread=true`，生命周期事件的 thread 应等于 programMainThread；预留建立后还应等于 ownerThread。用进程列表确认两个不同 PID 及父子关系。任一证据缺失就停止，不关闭检查；容量不足 2 时不会 arm。
 
 ### 命令与预期
 
@@ -179,7 +202,7 @@ finally { Pop-Location }
 
 1. 在安全出生点让真人静止，执行 status 和 allocator，记录基线。真人应有独立 connected slot；reserved slot 无 connected Socket/State=10；此时 actorSlot=-1。
 2. 执行 spawn、status，再执行一次 spawn。期望同一个 actorSlot，`sameReference=true`、`active=true`、`dead=false`，与真人 slot 不同。AI 使用真实 Main.player 元素，但不要求画面出现该角色。
-3. 间隔约 5、15、30 秒取 status。`networkLoops`、`loopsSinceSpawn`、actor Pre/PostUpdates 和 cleanupSkips 应持续增加，actor 引用保持，connected=false、remoteState=0、remoteActive=false。actor 名称仅用于辨认，名字本身不是身份/存活证明。
+3. 间隔约 5、15、30 秒取 status。`networkLoops`、`loopsSinceSpawn`、actor Pre/PostUpdates 和 cleanupSkips 应持续增加，actor 引用保持，connected=false、remoteState=0、remoteActive=false、pendingTermination=false、terminationApproved=false。actor 名称仅用于辨认，名字本身不是身份/存活证明。
 4. 真人手动左右移动、跳跃、打开关闭背包，期间取 status。确认输入没有被接管，真人 slot 不变，其更新计数/位置变化正常。保存录像；静态包检查不能替代这一观察。
 5. allocator 始终不得返回 reserved slot。记录服务器进程与图形进程列表，确认没有额外 AI 游戏客户端。
 
@@ -203,11 +226,11 @@ finally { Pop-Location }
 3. 完全退出并新建一次 Host & Play 服务器进程；重新 spawn 后直接正常退出世界，验证 `OnWorldUnload` 或 server-scope 的 teardown，不能残留 actor/预留。保存这次日志后再重启，避免日志被覆盖。
 4. 另一次全新服务器会话不 spawn 就退出，验证空预留也释放。回到模组菜单后再卸载/重新加载 Probe，检查没有 hook/unload 错误。不要在活动服务器上强行热卸载以绕过清理。
 
-若 actor 死亡/不活动、引用改变、线程不符、权限失败、初始化失败、出现 connected 状态或任何 fault，停止该轮，保存证据并正常退出。不得通过补设 active、改 State 或修改 myPlayer 继续。
+若 actor 死亡/不活动、引用改变、线程不符、权限失败、初始化失败、出现任何连接过渡态或 fault，停止该轮并保存证据。未隔离且能正常退出时使用正常退出流程；若已出现 teardown-quarantined，不重试 despawn/清世界/热卸载，按上面的 quarantine 停止条件结束隔离测试进程。不得通过补设 active、改 State、释放预留或修改 myPlayer 继续。
 
 ## 日志采集、回滚和结论记录
 
-JSON 行带 `probe=VirtualPlayerEngineProbe`，包括 UTC、服务器进程 ID、world session、预留 session/slot/capacity、当前/owner 线程、netMode/myPlayer、actor 的位置/速度/生命状态及真实连接状态、原生更新次数、真人快照和 teardown。`worldSnapshot=false` 的网络日志只记录元数据，humans 空数组不表示无人连接。
+JSON 行带 `probe=VirtualPlayerEngineProbe`，包括 UTC、进程 ID/role、world session、预留 session/slot/capacity、当前/owner/programMainThread 和 programIsMainThread、netMode/myPlayer、actor 的位置/速度/生命状态及连接/终止状态、原生更新次数、真人快照和 teardown。`worldSnapshot=false` 的图形启动/网络日志只记录元数据，humans 空数组不表示无人连接。
 
 ```powershell
 $repo = 'D:\Agent Project\terraria-ai-companion'
@@ -230,7 +253,7 @@ Copy-Item -LiteralPath (Join-Path $repo '.local/virtual-player-engine-validation
 
 | Gate | 本次结果 | 不足以证明的事项 |
 | --- | --- | --- |
-| G0 | passed in offline tests | 74 项定向检查和独立编译通过，不能证明真实 Mod 启动与游戏行为 |
+| G0 | passed in offline tests | 107 项定向检查和独立编译通过，不能证明真实 Mod 启动与游戏行为 |
 | G1 | not attempted | Host & Play 原生 Player 存活、真人输入/后续连接、正常退出均需按以上步骤实测 |
 | G2/G3 | not attempted / out of scope | 没有动作、AI、完整玩家同步、可见性或动画验收 |
 

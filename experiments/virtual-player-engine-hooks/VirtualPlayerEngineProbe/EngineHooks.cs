@@ -44,21 +44,16 @@ public sealed class VirtualPlayerEngineProbe : Mod
                 || Hash(typeof(On_Netplay).Assembly.Location) != HooksHash)
                 throw new InvalidOperationException("Unsupported engine/hooks fingerprint; no hooks installed.");
             Logger.Info($"Engine fingerprint confirmed: Terraria 1.4.4.9 / tML {BuildInfo.tMLVersion}; {EngineHash}");
-            if (!Main.dedServ) return; // Host graphical window is a normal client.
             if (ModLoader.Mods.Any(m => m != this && m.Name != "ModLoader"))
                 throw new InvalidOperationException("G1 isolation requires this probe and tModLoader only.");
-            Install(() => IL_Netplay.FindNextOpenClientSlot += PatchAllocator, () => IL_Netplay.FindNextOpenClientSlot -= PatchAllocator);
-            Install(() => IL_Netplay.UpdateConnectedClients += PatchCleanup, () => IL_Netplay.UpdateConnectedClients -= PatchCleanup);
-            Install(() => On_Netplay.StartServer += StartServer, () => On_Netplay.StartServer -= StartServer);
-            Install(() => On_Netplay.UpdateConnectedClients += NetworkTick, () => On_Netplay.UpdateConnectedClients -= NetworkTick);
-            Install(() => On_Netplay.OnConnectionAccepted += Accepted, () => On_Netplay.OnConnectionAccepted -= Accepted);
-            Install(() => On_NetMessage.SyncOnePlayer += SyncOne, () => On_NetMessage.SyncOnePlayer -= SyncOne);
-            Install(() => On_RemoteClient.CheckSection += Sections, () => On_RemoteClient.CheckSection -= Sections);
-            Install(() => On_Main.DedServ_PostModLoad += ServerScope, () => On_Main.DedServ_PostModLoad -= ServerScope);
-            Install(() => On_WorldGen.clearWorld += ClearWorld, () => On_WorldGen.clearWorld -= ClearWorld);
-            Ready = allocatorPatched && cleanupPatched;
-            if (!Ready) throw new InvalidOperationException("Incomplete IL hook installation.");
-            Logger.Info("G1 hooks ready; no actor exists. One reservation will arm before the first native StartServer.");
+            if (Main.dedServ) InstallServerHooks();
+            else
+            {
+                // Current native Host & Play launches a separate -server process.
+                // Observe that graphical entrypoint; never host an actor in its client.
+                Install(() => On_Main.OnSubmitServerPassword += GraphicalHostLaunch, () => On_Main.OnSubmitServerPassword -= GraphicalHostLaunch);
+                Logger.Info("G1 graphical host-launch hook ready; engine hooks belong to the native -server child process.");
+            }
         }
         catch (Exception e)
         {
@@ -67,6 +62,30 @@ public sealed class VirtualPlayerEngineProbe : Mod
             Undo(); // No server/actor has been started during Mod.Load.
             Logger.Error("G0 blocked; spawn disabled.", e);
         }
+    }
+
+    private void InstallServerHooks()
+    {
+        Install(() => IL_Netplay.FindNextOpenClientSlot += PatchAllocator, () => IL_Netplay.FindNextOpenClientSlot -= PatchAllocator);
+        Install(() => IL_Netplay.UpdateConnectedClients += PatchCleanup, () => IL_Netplay.UpdateConnectedClients -= PatchCleanup);
+        Install(() => On_Netplay.StartServer += StartServer, () => On_Netplay.StartServer -= StartServer);
+        Install(() => On_Netplay.UpdateConnectedClients += NetworkTick, () => On_Netplay.UpdateConnectedClients -= NetworkTick);
+        Install(() => On_Netplay.OnConnectionAccepted += Accepted, () => On_Netplay.OnConnectionAccepted -= Accepted);
+        Install(() => On_NetMessage.SyncOnePlayer += SyncOne, () => On_NetMessage.SyncOnePlayer -= SyncOne);
+        Install(() => On_RemoteClient.CheckSection += Sections, () => On_RemoteClient.CheckSection -= Sections);
+        Install(() => On_Main.DedServ_PostModLoad += ServerScope, () => On_Main.DedServ_PostModLoad -= ServerScope);
+        Install(() => On_WorldGen.clearWorld += ClearWorld, () => On_WorldGen.clearWorld -= ClearWorld);
+        Ready = allocatorPatched && cleanupPatched;
+        if (!Ready) throw new InvalidOperationException("Incomplete IL hook installation.");
+        Logger.Info("G1 hooks ready; no actor exists. One reservation will arm before the first native StartServer.");
+    }
+
+    private void GraphicalHostLaunch(On_Main.orig_OnSubmitServerPassword orig, Main self)
+    {
+        if (Main.dedServ || !Program.IsMainThread)
+            throw new InvalidOperationException("Unexpected graphical Host & Play launch context.");
+        ProbeSession.Log("graphical-host-launch", "orig launches the native -server -autoshutdown child; no credentials logged");
+        orig(self); // Includes native process launch and normal host-client connect.
     }
 
     private void Install(Action add, Action remove)
@@ -102,11 +121,13 @@ public sealed class VirtualPlayerEngineProbe : Mod
     // Allocator readers consult metadata only. The view exists before ANY native
     // listener/accept/network loop starts, and can only shrink after actor teardown.
     public static bool IsReserved(int slot) => Reservation.IsReserved(slot);
+    internal static bool ConnectionIdle(RemoteClient c) => c != null && StartupReservation.ConnectionIdle(
+        c.IsConnected(), c.IsActive, c.State, c.PendingTermination, c.PendingTerminationApproved);
     private static bool OwnedWithoutConnection(int slot)
     {
         if (!IsReserved(slot)) return false;
         var c = Netplay.Clients[slot];
-        if (c != null && Reservation.MaySkipDisconnectedSlot(slot, c.IsConnected(), c.IsActive, c.State, c.PendingTermination)) return true;
+        if (ConnectionIdle(c)) return true;
         SignalFault("Reserved slot unexpectedly acquired connection state; native human paths retained.");
         return false;
     }
@@ -125,7 +146,8 @@ public sealed class VirtualPlayerEngineProbe : Mod
             ProbeSession.Finish("unexpected second StartServer");
             SignalFault("Server restart in same process is unsupported.");
         }
-        bool armed = Ready && Fault == null && Volatile.Read(ref scopeThread) == Environment.CurrentManagedThreadId
+        bool armed = Ready && Fault == null && Main.dedServ && Program.IsMainThread
+            && Volatile.Read(ref scopeThread) == Environment.CurrentManagedThreadId
             && Reservation.ArmBeforeListening(Netplay.IsListening, Main.maxNetPlayers);
         if (!armed) SignalFault("Reservation could not arm before listening; fresh Host & Play server process required.");
         ProbeSession.Log("pre-listen-reservation", new { armed, Main.maxNetPlayers });
@@ -158,6 +180,8 @@ public sealed class VirtualPlayerEngineProbe : Mod
     }
     private void ServerScope(On_Main.orig_DedServ_PostModLoad orig, Main self, out bool reload)
     {
+        if (!Main.dedServ || !Program.IsMainThread)
+            throw new InvalidOperationException("Dedicated server scope must run on engine Program.MainThread.");
         if (Interlocked.CompareExchange(ref scopeThread, Environment.CurrentManagedThreadId, 0) != 0)
             throw new InvalidOperationException("Concurrent/reentrant server simulation scope is unsupported.");
         try { ProbeSession.Log("server-scope-enter"); orig(self, out reload); }

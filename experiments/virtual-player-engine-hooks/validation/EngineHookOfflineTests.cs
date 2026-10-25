@@ -45,7 +45,7 @@ public static class EngineHookOfflineTests
         public void SetPendingTermination(string _) => PendingTermination = true;
         public void Reset()
         {
-            Resets++; State = 0; IsActive = false; PendingTermination = false;
+            Resets++; State = 0; IsActive = false; PendingTermination = PendingTerminationApproved = false;
             MainState.player[Id] = new PlayerState();
             Socket = null;
         }
@@ -79,7 +79,7 @@ public static class EngineHookOfflineTests
     public static bool CleanupEligible(int slot)
     {
         var c = NetState.Clients[slot];
-        return Reservation.MaySkipDisconnectedSlot(slot, c.IsConnected(), c.IsActive, c.State, c.PendingTermination);
+        return Reservation.MaySkipDisconnectedSlot(slot, c.IsConnected(), c.IsActive, c.State, c.PendingTermination, c.PendingTerminationApproved);
     }
     private static int checks;
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
@@ -139,6 +139,16 @@ public static class EngineHookOfflineTests
         var sync = Method("Terraria.NetMessage", "SyncOnePlayer");
         var unload = Method("Terraria.ModLoader.ModContent", "UnloadModContent");
         var server = Method("Terraria.Main", "DedServ_PostModLoad");
+        var hostLaunch = types["Terraria.Main"].Methods.Single(m => m.Name == "OnSubmitServerPassword" && m.Parameters.Count == 0);
+        var steamLaunch = Method("Terraria.Social.Steam.NetClientSocialModule", "LaunchLocalServer");
+        var processArgs = Method("Terraria.Program", "ProcessLaunchArgs");
+        var launch = Method("Terraria.Program", "LaunchGame");
+        var launchInner = Method("Terraria.Program", "LaunchGame_");
+        var runGame = Method("Terraria.Program", "RunGame");
+        var dedicated = Method("Terraria.Main", "DedServ");
+        var reload = Method("Terraria.ModLoader.ModLoader", "Reload");
+        var update = Method("Terraria.Main", "Update");
+        var consume = Method("Terraria.Main", "ConsumeAllMainThreadActions");
         var allMethods = game.MainModule.GetTypes().SelectMany(t => t.Methods).Where(m => m.HasBody).ToArray();
         string[] Callers(string type, string name) => allMethods.SelectMany(m => m.Body.Instructions
             .Where(i => i.Operand is MethodReference r && r.DeclaringType.FullName == type && r.Name == name)
@@ -153,6 +163,8 @@ public static class EngineHookOfflineTests
             "Terraria.Netplay::InitializeServer", "Terraria.Netplay::StartListeningIfNeeded" }),
             "whole installed module has only startup/network-loop listener entry points");
         foreach (var m in new[] { allocate, cleanup, accept, start, initialize, sync, unload, server,
+            hostLaunch, steamLaunch, processArgs, launch, launchInner, runGame, dedicated, reload, update, consume,
+            Method("Terraria.Program", "get_IsMainThread"),
             Method("Terraria.Netplay", "ServerLoop"), Method("Terraria.RemoteClient", "Reset"),
             Method("Terraria.RemoteClient", "CheckSection"), Method("Terraria.Main", "UpdateServer"),
             Method("Terraria.NetMessage", "SyncConnectedPlayer"), Method("Terraria.NetMessage", "SyncDisconnectedPlayer"),
@@ -161,6 +173,41 @@ public static class EngineHookOfflineTests
             File.WriteAllLines(Path.Combine(output, m.DeclaringType.Name + "-" + m.Name + ".il.txt"),
                 new[] { m.FullName }.Concat(m.Body.Instructions.Select(i => i.ToString())));
         int CallOffset(MethodDefinition m, string name) => m.Body.Instructions.First(i => i.Operand is MethodReference r && r.Name == name).Offset;
+        bool Literal(MethodDefinition m, string text) => m.Body.Instructions.Any(i => i.OpCode == OpCodes.Ldstr
+            && i.Operand is string value && value.Contains(text, StringComparison.Ordinal));
+        Check(Literal(hostLaunch, "-autoshutdown") && Literal(hostLaunch, "tModLoader.dll -server ")
+            && hostLaunch.Body.Instructions.Any(i => i.OpCode == OpCodes.Newobj && i.Operand is MethodReference r
+                && r.DeclaringType.FullName == "System.Diagnostics.Process")
+            && CallOffset(hostLaunch, "LaunchLocalServer") < CallOffset(hostLaunch, "StartTcpClient")
+            && CallOffset(hostLaunch, "Start") < CallOffset(hostLaunch, "StartTcpClient"),
+            "graphical Host & Play launches native -server/-autoshutdown child before connecting host client");
+        Check(Literal(hostLaunch, "-modpath") && Literal(hostLaunch, "-tmlsavedirectory"),
+            "native Host & Play propagates mod path and isolated save profile to child");
+        Check(Literal(steamLaunch, " -steam -localsteamid ")
+            && CallOffset(steamLaunch, "get_Arguments") < CallOffset(steamLaunch, "set_Arguments")
+            && CallOffset(steamLaunch, "set_Arguments") < CallOffset(steamLaunch, "Start"),
+            "Steam Host & Play appends its flags to existing child arguments then starts that Process");
+        Check(Literal(processArgs, "-server") && processArgs.Body.Instructions.Any(i => i.OpCode == OpCodes.Stind_I1)
+            && launchInner.Body.Instructions.Take(3).Any(i => i.Operand is FieldReference f && f.Name == "dedServ"),
+            "child -server argument feeds Main.dedServ before RunGame");
+        var dedBranch = runGame.Body.Instructions.Single(i => i.Offset == 0x83);
+        Check(dedBranch.Operand is FieldReference df && df.Name == "dedServ"
+            && dedBranch.Next.OpCode == OpCodes.Brfalse_S && ((Instruction)dedBranch.Next.Operand).Offset == 0x92
+            && CallOffset(runGame, "DedServ") == 0x8b,
+            "RunGame dispatches server child to DedServ, graphical process to Game.Run");
+        Check(CallOffset(launch, "get_CurrentThread") < CallOffset(launch, "set_MainThread")
+            && CallOffset(launch, "set_MainThread") < CallOffset(launch, "LaunchGame_"),
+            "engine captures Program.MainThread before game/server launch");
+        Check(dedicated.Body.Instructions.Single(i => i.Offset == 0xa6).Operand is FieldReference d && d.Name == "dedServ"
+            && CallOffset(dedicated, "Reload") < CallOffset(dedicated, "DedServ_PostModLoad")
+            && reload.Body.Instructions.Take(8).Any(i => i.Operand is MethodReference r && r.Name == "Load"),
+            "server child sets dedServ then synchronously loads mods before entering hooked simulation scope");
+        Check(server.Body.Instructions.Any(i => i.Operand is MethodReference r && r.Name == "Update"
+                && r.DeclaringType.FullName == "Microsoft.Xna.Framework.Game")
+            && CallOffset(update, "DoUpdate") < CallOffset(update, "ConsumeAllMainThreadActions")
+            && consume.Body.Instructions.Any(i => i.Operand is MethodReference r && r.Name == "Invoke")
+            && !consume.Body.Instructions.Any(i => i.Operand is MethodReference r && r.DeclaringType.FullName == "System.Threading.Tasks.Task"),
+            "server scope calls Game.Update synchronously and drains queued commands on that same thread");
         Check(CallOffset(initialize, "StartListening") >= 0 && CallOffset(start, "InitializeServer") < CallOffset(start, "Start"),
             "reservation must precede orig StartServer: InitializeServer already starts listening");
         Check(accept.Body.Instructions.Count(i => i.Operand is MethodReference m && m.Name == allocate.Name) == 2,
@@ -174,7 +221,8 @@ public static class EngineHookOfflineTests
         Check(CallOffset(Method("Terraria.Main", "UpdateServer"), "CheckSection") >= 0, "active Player also enters native client section delivery");
         foreach (var pair in new[] { ("Terraria.On_Netplay", "StartServer"), ("Terraria.IL_Netplay", allocate.Name),
             ("Terraria.IL_Netplay", cleanup.Name), ("Terraria.On_NetMessage", sync.Name),
-            ("Terraria.On_RemoteClient", "CheckSection"), ("Terraria.On_Main", "DedServ_PostModLoad") })
+            ("Terraria.On_RemoteClient", "CheckSection"), ("Terraria.On_Main", "DedServ_PostModLoad"),
+            ("Terraria.On_Main", "OnSubmitServerPassword") })
             Check(hookAssembly.MainModule.Types.Single(t => t.FullName == pair.Item1).Events.Any(e => e.Name == pair.Item2),
                 "generated interception exists: " + pair.Item1 + "." + pair.Item2);
 
@@ -308,7 +356,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.1.0", "isolated package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.1.1", "isolated reviewed package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -348,7 +396,7 @@ public static class EngineHookOfflineTests
             || m.DeclaringType.FullName == "Terraria.Player" && m.Name is "Update" or "Spawn" or "Teleport")),
             "no custom player sync, manual update, native Spawn side effects or movement shortcut");
         var refs = ins.Where(i => i.Operand is MethodReference).Select(i => (MethodReference)i.Operand).ToArray();
-        foreach (var hook in new[] { "FindNextOpenClientSlot", "UpdateConnectedClients", "StartServer", "OnConnectionAccepted", "SyncOnePlayer", "CheckSection", "DedServ_PostModLoad", "clearWorld" })
+        foreach (var hook in new[] { "FindNextOpenClientSlot", "UpdateConnectedClients", "StartServer", "OnConnectionAccepted", "SyncOnePlayer", "CheckSection", "DedServ_PostModLoad", "clearWorld", "OnSubmitServerPassword" })
             Check(refs.Any(m => m.Name == "add_" + hook) && refs.Any(m => m.Name == "remove_" + hook), "hook subscription has rollback pair: " + hook);
         var start = mod.Methods.Single(m => m.Name == "StartServer");
         int CallOffset(MethodDefinition m, string name) => m.Body.Instructions.First(i => i.Operand is MethodReference r && r.Name == name).Offset;
@@ -356,8 +404,22 @@ public static class EngineHookOfflineTests
         var scope = mod.Methods.Single(m => m.Name == "ServerScope");
         Check(scope.Body.ExceptionHandlers.Any(e => e.HandlerType == ExceptionHandlerType.Finally)
             && scope.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "Finish")
-            && start.Body.Instructions.Any(i => i.Operand is FieldReference f && f.Name == "scopeThread"),
-            "compiled spawn startup requires an entered simulation scope with finally teardown");
+            && start.Body.Instructions.Any(i => i.Operand is FieldReference f && f.Name == "scopeThread")
+            && scope.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "get_IsMainThread")
+            && start.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "get_IsMainThread"),
+            "compiled startup requires server scope AND engine MainThread identity with finally teardown");
+        var graphical = mod.Methods.Single(m => m.Name == "GraphicalHostLaunch");
+        Check(graphical.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "Invoke")
+            && graphical.Body.Instructions.Any(i => i.Operand is FieldReference f && f.Name == "dedServ")
+            && !graphical.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name is "Spawn" or "StartServer" or "ArmBeforeListening"),
+            "graphical hook observes native launch without arming or spawning actor in human client");
+        var idle = mod.Methods.Single(m => m.Name == "ConnectionIdle");
+        Check(idle.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "ConnectionIdle")
+            && idle.Body.Instructions.Any(i => i.Operand is FieldReference f && f.Name == "PendingTerminationApproved")
+            && new[] { mod.Methods.Single(m => m.Name == "OwnedWithoutConnection"),
+                session.Methods.Single(m => m.Name == "CheckInitialSlot"), session.Methods.Single(m => m.Name == "Finish") }
+                .All(m => m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.Name == "ConnectionIdle")),
+            "spawn validation, network eligibility and teardown share full connection/transition policy");
         var clearWorld = mod.Methods.Single(m => m.Name == "ClearWorld");
         Check(CallOffset(clearWorld, "Finish") < CallOffset(clearWorld, "Invoke"), "compiled pre-clearWorld fuse precedes native world mutation/unhook");
         Check(refs.Any(m => m.Name == "QueueMainThreadAction") && refs.Any(m => m.Name == "DoesPlayerSlotCountAsAHost"), "compiled command queue retains native host authorization");
@@ -372,11 +434,14 @@ public static class EngineHookOfflineTests
         public static StartupReservation Reservation;
         public static PlayerState Actor, previous;
         public static int slot;
-        public static bool connectedHook;
+        public static bool connectedHook, Quarantined, EngineMainThread = true;
         public static string Phase, Fault;
         public static bool ThrowLog, ThrowDisconnect;
         public static int Disconnects, Logs;
         public static StartupReservation get_Reservation() => Reservation;
+        public static bool get_IsMainThread() => EngineMainThread;
+        public static bool ConnectionIdle(RemoteState c) => c != null && StartupReservation.ConnectionIdle(
+            c.IsConnected(), c.IsActive, c.State, c.PendingTermination, c.PendingTerminationApproved);
         public static void SignalFault(string reason) => Fault = reason;
         public static void Log(string name, object detail)
         {
@@ -402,6 +467,7 @@ public static class EngineHookOfflineTests
             ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),
             ["Terraria.Player"] = typeof(PlayerState), ["Terraria.Entity"] = typeof(EntityState),
             ["Terraria.Main"] = typeof(MainState), ["Terraria.Netplay"] = typeof(NetState),
+            ["Terraria.Program"] = typeof(TeardownState),
             ["Terraria.RemoteClient"] = typeof(RemoteState), ["Terraria.Player/Hooks"] = typeof(TeardownState)
         };
         var runner = new TypeDefinition("Fixture", "Teardown", Mono.Cecil.TypeAttributes.Public | Mono.Cecil.TypeAttributes.Abstract
@@ -438,6 +504,7 @@ public static class EngineHookOfflineTests
             TeardownState.slot = 3; TeardownState.previous = MainState.player[3];
             TeardownState.Actor = MainState.player[3] = new PlayerState { active = true };
             TeardownState.connectedHook = true; TeardownState.Fault = null;
+            TeardownState.Quarantined = false; TeardownState.EngineMainThread = true;
             TeardownState.ThrowLog = TeardownState.ThrowDisconnect = false; TeardownState.Disconnects = TeardownState.Logs = 0;
         }
         Reset(); var original = TeardownState.previous;
@@ -457,10 +524,39 @@ public static class EngineHookOfflineTests
         Check(wrong is InvalidOperationException && TeardownState.Actor.active && TeardownState.Reservation.IsReserved(3)
             && TeardownState.Disconnects == 0, "actual teardown rejects foreign-thread unload before Player mutation");
         finish("owner cleanup");
-        Reset(); var human = new PlayerState { active = true }; MainState.player[3] = human; NetState.Clients[3].Socket = new SocketState();
-        finish("unexpected human");
-        Check(ReferenceEquals(MainState.player[3], human) && human.active && TeardownState.Disconnects == 0
-            && TeardownState.Fault != null, "actual teardown never overwrites/deactivates/disconnects an unexpected human");
+        Reset(); TeardownState.EngineMainThread = false;
+        try { finish("same thread but not engine main thread"); throw new Exception("engine thread check missing"); } catch (InvalidOperationException) { }
+        Check(TeardownState.Actor.active && TeardownState.Reservation.IsReserved(3) && TeardownState.Disconnects == 0,
+            "actual teardown requires Program.IsMainThread even when captured thread ID matches");
+        void ExpectQuarantine(string label, Action prepare)
+        {
+            Reset(); prepare(); var player = MainState.player[3]; var actor = TeardownState.Actor; var placeholder = TeardownState.previous;
+            try { finish(label); throw new Exception("quarantine missing"); } catch (InvalidOperationException) { }
+            Check(ReferenceEquals(MainState.player[3], player) && player.active
+                && ReferenceEquals(TeardownState.Actor, actor) && actor.active
+                && ReferenceEquals(TeardownState.previous, placeholder) && TeardownState.slot == 3
+                && TeardownState.Reservation.IsReserved(3) && TeardownState.Disconnects == 0
+                && TeardownState.Fault != null && TeardownState.Quarantined,
+                "actual teardown quarantines without Player writes/release: " + label);
+            try { finish("repeat quarantined cleanup"); throw new Exception("quarantine retried"); } catch (InvalidOperationException) { }
+            Check(TeardownState.Reservation.IsReserved(3) && TeardownState.Logs == 1, "quarantined cleanup cannot retry/release: " + label);
+        }
+        ExpectQuarantine("connected human", () => { MainState.player[3] = new PlayerState { active = true }; NetState.Clients[3].Socket = new SocketState(); });
+        ExpectQuarantine("disconnected but IsActive", () => { NetState.Clients[3].Socket = new SocketState { Connected = false }; NetState.Clients[3].IsActive = true; });
+        ExpectQuarantine("handshake State=1", () => NetState.Clients[3].State = 1);
+        ExpectQuarantine("negative State=-1", () => NetState.Clients[3].State = -1);
+        ExpectQuarantine("spawn State=3", () => NetState.Clients[3].State = 3);
+        ExpectQuarantine("State=10 with no socket", () => NetState.Clients[3].State = 10);
+        ExpectQuarantine("PendingTermination", () => NetState.Clients[3].PendingTermination = true);
+        ExpectQuarantine("PendingTerminationApproved", () => NetState.Clients[3].PendingTerminationApproved = true);
+        ExpectQuarantine("unknown RemoteClient", () => NetState.Clients[3] = null);
+        ExpectQuarantine("unknown Player reference despite idle connection", () => MainState.player[3] = new PlayerState { active = true });
+        Reset(); TeardownState.Actor = null; TeardownState.slot = -1; NetState.Clients[3].State = 1;
+        var beforeSpawnPlayer = MainState.player[3];
+        try { finish("transition before actor creation"); throw new Exception("unused reservation released early"); } catch (InvalidOperationException) { }
+        Check(TeardownState.Reservation.IsReserved(3) && ReferenceEquals(MainState.player[3], beforeSpawnPlayer)
+            && TeardownState.Disconnects == 0 && TeardownState.Quarantined,
+            "connection transition before spawn also quarantines startup reservation without release");
         Reset(); TeardownState.Actor = null; TeardownState.slot = -1;
         finish("world exit before spawn");
         Check(TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 0, "actual teardown releases unused startup reservation");

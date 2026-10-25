@@ -14,8 +14,10 @@ public sealed class StartupReservation
     public int OwnerThread { get; private set; }
     public View Snapshot => Volatile.Read(ref current);
     public bool IsReserved(int slot) => Snapshot is { } view && view.Slot == slot;
-    public bool MaySkipDisconnectedSlot(int slot, bool connected, bool active, int state, bool pending)
-        => IsReserved(slot) && !connected && !active && state == 0 && !pending;
+    public static bool ConnectionIdle(bool connected, bool active, int state, bool pending, bool terminationApproved)
+        => !connected && !active && state == 0 && !pending && !terminationApproved;
+    public bool MaySkipDisconnectedSlot(int slot, bool connected, bool active, int state, bool pending, bool terminationApproved)
+        => IsReserved(slot) && ConnectionIdle(connected, active, state, pending, terminationApproved);
 
     public bool ArmBeforeListening(bool alreadyListening, int capacity)
     {
@@ -30,6 +32,12 @@ public sealed class StartupReservation
     {
         if (OwnerThread == 0 || OwnerThread != Environment.CurrentManagedThreadId)
             throw new InvalidOperationException("Player lifecycle must run on the server simulation thread.");
+    }
+
+    public void AssertOwner(bool engineMainThread)
+    {
+        if (!engineMainThread) throw new InvalidOperationException("Engine Program.IsMainThread is false.");
+        AssertOwner();
     }
 
     public void Release()
