@@ -1,6 +1,5 @@
 using System;
 using System.Reflection;
-using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
 
@@ -15,33 +14,17 @@ internal static class NetworkStateSync
         new[] { typeof(int), typeof(int), typeof(int) }, null)
         ?? throw new MissingMethodException("Native SyncOnePlayer(int,int,int) is unavailable.");
     private static ulong controlTick, fullTick;
-    private static bool possiblyVisible, leaveAttempted, alternateStyle;
+    private static bool possiblyVisible, leaveAttempted;
     internal static long FullSnapshots, Controls, Departures;
 
     internal static void Reset()
     {
         controlTick = fullTick = 0;
-        possiblyVisible = leaveAttempted = alternateStyle = false;
+        possiblyVisible = leaveAttempted = false;
         FullSnapshots = Controls = Departures = 0;
     }
 
-    internal static void Configure(Player player)
-    {
-        player.name = "G2_NoClient_Probe";
-        player.hair = 0;
-        player.skinVariant = 0;
-        player.hairColor = new Color(230, 140, 45);
-        player.shirtColor = new Color(30, 180, 200);
-        player.underShirtColor = new Color(45, 75, 110);
-        player.pantsColor = new Color(65, 75, 100);
-        player.shoeColor = new Color(100, 65, 45);
-        player.inventory[0].SetDefaults(ItemID.Torch);
-        player.inventory[0].stack = 1;
-        player.armor[0].SetDefaults(ItemID.CopperHelmet);
-        player.selectedItem = 0;
-    }
-
-    private static void Require(Player expected, bool inactiveAllowed = false)
+    internal static void Require(Player expected, bool inactiveAllowed = false)
     {
         var reservation = VirtualPlayerEngineProbe.Reservation;
         reservation.AssertOwner(Program.IsMainThread);
@@ -65,19 +48,6 @@ internal static class NetworkStateSync
     {
         Require(expected);
         FullSnapshots++;
-    }
-
-    internal static void Style(Player expected)
-    {
-        VirtualPlayerEngineProbe.Reservation.AssertOwner(Program.IsMainThread);
-        lock (VirtualPlayerEngineProbe.Reservation.Gate)
-        {
-            Require(expected);
-            alternateStyle = !alternateStyle;
-            expected.shirtColor = alternateStyle ? new Color(190, 65, 170) : new Color(30, 180, 200);
-            expected.armor[0].SetDefaults(alternateStyle ? ItemID.IronHelmet : ItemID.CopperHelmet);
-            Full(expected);
-        }
     }
 
     internal static void Full(Player expected)

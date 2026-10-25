@@ -4,7 +4,7 @@
 
 | 验证层级 | 本次结果 | 证据范围 |
 | --- | --- | --- |
-| 离线定向验证 | 216 项通过，编译零错误/零警告 | 167 项 G1 前置/包审计及 49 项 G2 检查；不启动 Terraria 世界 |
+| 离线定向验证 | 227 项通过，编译零错误/零警告 | 167 项 G1 前置/包审计及 60 项 G2 检查；不启动 Terraria 世界 |
 | G2 单窗口 Host & Play | **not attempted** | 本次只准备构建/profile，尚未观察客户端画面或实际收包 |
 | G2 远程多人、后加入客户端 | **not attempted** | 原生晚加入方法体仅在隔离夹具中执行，不能当作远程实测 |
 
@@ -17,6 +17,14 @@ G1 曾完成的单 host 存活/清理实测不转记为 G2 通过。本轮没有
 继续使用 G1 的监听前预留、原生分配器过滤、accept/network/lifecycle 共用 Gate、Program.IsMainThread + owner 校验、引用基线、quarantine 及每服务器进程一轮生命周期。只允许 Probe 与 ModLoader 共存，仍不创建 AI Socket/RemoteClient、不把连接 State 写成 10、不更改 Main.myPlayer、不通过每帧补设 active 保活。
 
 版本仍固定 Terraria 1.4.4.9 / tML 2026.08.3.0、引擎提交和两个 DLL SHA256；具体值见 [G1 报告](VIRTUAL_PLAYER_ENGINE_HOOKS.md)。指纹失败或 IL 安装失败时拒绝 spawn，逆序撤销已装订阅。
+
+### 0.2.1：角色数据与测试外观分离
+
+移除 0.2.0 的 NetworkStateSync.Configure 及默认 spawn 对它的调用。默认创建只保留实验 Player 的槽位/名称、基础生命和出生位置等生命周期设置，不再覆盖发型、配色、selectedItem、背包或装备，不赠送火把/头盔。NetworkStateSync 仅消费已经初始化的角色状态并同步，Full/Tick/晚加入/Leave 不初始化或重置角色数据；现有 IL、消息类型、路由、频率及失败策略保持不变。
+
+测试外观独立放在 ProbeDebugAppearance，只有显式 `/vph debug-style` 才将衣服改紫色并临时装备铁头盔。它保存原衣服颜色与原头盔 Item 对象，第二次调用恢复原对象（包括 stack、prefix 和附加数据），不修改物品栏或发型，不生成火把。恢复前若头盔已被其他逻辑替换，明确拒绝覆盖该对象。同步期间不会重新应用测试外观，调试覆盖层不写角色档案。
+
+正式角色数据初始化与网络同步必须分离。既定后续方向为：**G3 优先恢复已有角色档案；没有档案时按原版新角色规则初始化**，随后交给本同步层发布。当前仍是 engine Player 构造实验，没有实现正式新角色的初始物品规则、档案加载或保存，不将 new Player 构造器等同于完整原版新角色流程。
 
 ### SyncOnePlayer 的窄 IL 适配
 
@@ -32,10 +40,10 @@ G1 曾完成的单 host 存活/清理实测不转记为 G2 通过。本轮没有
 
 ### 初次、持续与晚加入同步
 
-- 构造时私有设置 `G2_NoClient_Probe` 的身份、橙色头发/蓝绿色衣服、铜头盔和第 0 格火把；初始空位检查移至世界出生点右侧 64 像素，最多向上寻找 12 格空位。确认原预留与原占位引用不变后才发布。
+- 构造时仅设置实验名称 `G2_NoClient_Probe` 等生命周期元数据，保留构造后的角色外观和物品数据；初始空位检查位于世界出生点右侧 64 像素，最多向上寻找 12 格空位。确认原预留与原占位引用不变后才发布。
 - PlayerConnect 后调用已适配的原生 SyncOnePlayer，广播 PlayerActive、PlayerInfo、PlayerControls、生命/魔力、装备、物品栏、染料、loadout 及 ModPlayer 的原生负载。参数和字段编码全部由引擎负责；没有自建身份/装备协议。
 - PostUpdatePlayers 每 6 个游戏 tick 最多发送一次原生 `PlayerControls`（13），以约 10 Hz 发布当前的位置、速度、方向、控制位与 selectedItem。安装 DLL 的该 serializer 字段已离线核查。
-- 每 300 tick 使用原生全量负载刷新一次外观/装备；`/vph style` 立即切换蓝绿/紫色衣服与铜/铁头盔并全量发布，`/vph resync` 强制重发。当前仅一个 actor，采用五秒全量刷新保证覆盖，尚未优化为装备变化差量协议。
+- 每 300 tick 使用原生全量负载刷新一次当前外观/装备；`/vph debug-style` 显式启用/恢复测试覆盖层并全量发布，`/vph resync` 只强制重发当前数据。当前仅一个 actor，采用五秒全量刷新保证覆盖，尚未优化为装备变化差量协议。
 - 原生 `SyncConnectedPlayer` 的 active-player 循环会调用同一个 SyncOnePlayer，传入加入者 remote id；因此无需额外接管真人加入流程即可向晚加入者定向发送当前 AI 状态。夹具验证了这条完整原生调用路径与路由，真实晚加入尚未执行。
 
 本轮同步当前服务器状态，不产生自动行走指令，也不额外调用 Player.Update/Spawn/Teleport。AI 静止为正常情况；消息字段/发送频率通过离线检查不等于 AI 行走动画已实测。
@@ -60,37 +68,39 @@ PowerShell 7，从仓库根目录运行（脚本支持 `-TModLoaderPath`）：
 
 G2 输出目录与原 G1 分开：
 
-- 包：`.local/virtual-player-network-build/Mods/VirtualPlayerEngineProbe.tmod`，版本 **0.2.0**，42274 字节。
-- SHA256：`C82E6E9B4604E25524D0B59DAE1B7058F08F1E9C3CBDAA5F42730800E78C2696`。
+- 包：`.local/virtual-player-network-build/Mods/VirtualPlayerEngineProbe.tmod`，版本 **0.2.1**，42380 字节。
+- SHA256：`029FEF3C1A6497F45D8358B62BC00B2599AE283B61AD3C46FB067CCD6D301815`。
 - 日志：`.local/virtual-player-network-build.log`、`.local/virtual-player-network-validation.log`；原生/补丁 IL 检查产物在 `.local/virtual-player-network-validation/`。
-- 已准备：`.local/virtual-player-network-host-20261025-181203/`，只部署并启用 0.2.0；尚未启动游戏或创建世界/角色。原 G1 profile、0.1.4 包与用户日志保留。
+- 已准备：`.local/virtual-player-network-host-20261025-182751/`，只部署并启用 0.2.1；尚未启动游戏或创建世界/角色。旧 G2/G1 profile 与用户日志保留。
 
 本机输出：
 
 ```text
 Compilation finished with 0 errors and 0 warnings
-G2NetworkSync: 49 targeted checks passed; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.
-Engine probe package: loader=2026.8.3.0; bytes=42274; DLL=71168; 167 prerequisite/package + 49 G2 = 216 total targeted checks; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.
+G2NetworkSync: 60 targeted checks passed; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.
+Engine probe package: loader=2026.8.3.0; bytes=42380; DLL=71168; 167 prerequisite/package + 60 G2 = 227 total targeted checks; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.
 ```
 
 验证器使用安装随附 .NET 8 引用/运行时，执行完整原生 SyncOnePlayer、SyncOnePlayer_ItemArray、SyncConnectedPlayer，以及包内归属判定、同步包装和 NetworkStateSync 方法；仅替换引擎存储、传输与无关世界/公告效果。没有运行游戏入口、创建真实网络连接或验证字节在客户端呈现。
 
 新增检查覆盖：原生控制 serializer 的位置/速度/方向/控制位/selectedItem；真实 DMD/ILContext 安装形态；guard、公告边界、断开调用或签名不匹配时无局部修改；完整真人同步前后负载/公告/断开效果一致；预留槽位意外为真人/替换对象时原生路径一致；AI 引用/身份/连接/线程校验；native full 负载与晚加入路由；控制限频、装备/外观重发；初始/持续/离开失败、部分发送后的离开补偿、未知对象不发送离开；实际 Spawn/Finish 在初次同步失败后回滚、离开失败时保留 actor/预留。计数代表调用/序列化完成，不是客户端收包确认。
 
+0.2.1 额外填入已有角色的名称、发型、皮肤样式、全部配色、selectedItem，以及背包/装备/染料/misc/loadout 中的自定义 type、stack、prefix 和附加数据，执行初次全量、重同步、控制包、周期刷新、原生晚加入和离开路径，逐项比较数据及 Item 对象引用不变。另审计默认 Spawn 不调用调试初始化、同步适配器无角色字段写入/SetDefaults，执行实际调试覆盖层以验证原物品保留、精确恢复和外部替换拒绝。
+
 ## 用户手工验证：一个图形窗口
 
 1. 退出上一轮 Host & Play 及其服务器，保留 Steam 正常运行。手工启动新 profile：
 
    ```powershell
-   & 'D:\Agent Project\terraria-ai-companion\.local\virtual-player-network-host-20261025-181203\start-host-play.ps1'
+   & 'D:\Agent Project\terraria-ai-companion\.local\virtual-player-network-host-20261025-182751\start-host-play.ps1'
    ```
 
    启动脚本校验包哈希，并对 enabled.json 中额外启用的 Mod 明确报错，不替用户修改启用列表。游戏内也只启用 Probe，避免重现 HEROsMod 导致的加载阻塞。
 2. 新建角色及 Classic 世界，经 Multiplayer → Host & Play 进入。留在世界出生点附近。`/vph status` 应为 reserved/no actor、fault=none；服务器应有 G2 network hooks ready、armed=true 及 reserved=true 的首监听记录。
-3. `/vph spawn`：回复给出 actor slot（本机通常为 254）。预期在出生点右侧约四格看到蓝绿衣服、铜头盔的 Player，悬停/名称识别为 G2_NoClient_Probe。仍只有一个真人图形窗口，AI 无客户端连接。若看不到，记录画面与两端日志，不以服务端 spawn 成功代替可见性验收。
+3. `/vph spawn`：回复给出 actor slot（本机通常为 254）。预期在出生点右侧约四格看到 Player，悬停/名称识别为 G2_NoClient_Probe；默认外观保留 engine Player 构造值，不应有测试赠送的头盔或火把。仍只有一个真人图形窗口，AI 无客户端连接。若看不到，记录画面与两端日志，不以服务端 spawn 成功代替可见性验收。
 4. `/vpc 254`（以实际 slot 替换）：这是图形客户端本地只读诊断，应显示 active=true、相同名称和服务器对应的位置/头盔。客户端日志有 client-slot-snapshot；名字仅用于诊断，服务端归属从不依赖名字。
 5. 在 5、15、30 秒取 `/vph status` 与 `/vpc 254`：服务器 active/sameReference=true、connected=false、fault=none，full/control 计数增长，客户端仍可见。手动移动、跳跃、切换真人装备，确认操作对象仍是自己，AI 世界位置没有随镜头错误漂移；未测试到的 AI 运动动画另记未验。
-6. `/vph style`：预期 AI 衣服变紫色、铜头盔变铁头盔；`/vpc 254` 的头盔与 client.log 中 shirt 数值应变化，真人外观不变。再执行一次应恢复。`/vph resync` 后仍是同一 AI，不应新增角色/产生真人重复加入公告。
+6. 先记录默认 `/vpc 254`，再执行 `/vph debug-style`：预期 AI 衣服变紫色、临时装备铁头盔；`/vpc 254` 的头盔与 client.log 中 shirt 数值应变化，真人外观不变。执行 `/vph resync` 并等待周期刷新，覆盖层应保持；再次 `/vph debug-style` 应恢复原头盔和衣服颜色，继续 resync 不应重置它们或新增角色/产生真人重复加入公告。
 7. `/vph despawn`：预期 AI 从画面消失；`/vpc 254` 为 active=false（名字可能保留，这是原生 inactive 的正常表现）；`/vph status` 为 actorSlot=-1、reservation=null、fault=none、left=1。重复 despawn 不重复发离开消息。本进程不再 spawn。
 8. 如需验证带可见 AI 的退世界：另开全新 Host & Play 服务器、spawn 后直接正常退出世界。保存服务器 OnWorldUnload teardown 与客户端退出日志。尚未执行就保留 not attempted。
 
@@ -98,6 +108,6 @@ Engine probe package: loader=2026.8.3.0; bytes=42274; DLL=71168; 167 prerequisit
 
 ## 远程多人验收（留待有参与者时）
 
-在 AI 已存在并切换过 style 后，让另一位真人从另一机器正常加入；对方应直接获得当前 AI 身份、位置和装备，host/加入者均正常控制。加入者退出后 AI 仍存在；host despawn 后各端同时消失。检查 native-accept 的实际槽位不等于 AI 预留，原生真人公告/断开仍正常。没有真实执行就继续标 not attempted，不需要为完成本轮离线实现而临时找人。
+在 AI 已存在并显式启用 debug-style 后，让另一位真人从另一机器正常加入；对方应直接获得当前 AI 身份、位置和装备，host/加入者均正常控制。加入者退出后 AI 仍存在；host despawn 后各端同时消失。检查 native-accept 的实际槽位不等于 AI 预留，原生真人公告/断开仍正常。没有真实执行就继续标 not attempted，不需要为完成本轮离线实现而临时找人。
 
-回滚使用原 G1 构建和 profile，先结束本次服务器，不覆盖旧角色/世界。0.2.0 与 0.1.4 内部 Mod 名相同，必须用独立 profile 分别启用，不同时加载两个版本。Draft PR 不自动转正或合并。
+回滚使用原 G1 构建和 profile，先结束本次服务器，不覆盖旧角色/世界。0.2.x 与 0.1.4 内部 Mod 名相同，必须用独立 profile 分别启用，不同时加载两个版本。Draft PR 不自动转正或合并。

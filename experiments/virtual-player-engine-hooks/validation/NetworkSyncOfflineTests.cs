@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Threading;
+using System.Text.Json;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
@@ -15,13 +16,14 @@ using VirtualPlayerEngineProbe;
 // Only storage, transport and unrelated announcement/world effects are fixtures.
 public static class NetworkSyncOfflineTests
 {
-    public class ItemState { public int prefix, type; public void SetDefaults(int id) => type=id; }
+    public class ItemState { public int prefix, type, stack; public string customData; public void SetDefaults(int id) => type=id; }
     public class LoadoutState { public ItemState[] Armor = Items(20), Dye = Items(10); }
     private static ItemState[] Items(int count) => Enumerable.Range(0, count).Select(_ => new ItemState()).ToArray();
     public class PlayerState : EngineHookOfflineTests.PlayerState
     {
         public int chest, CurrentLoadoutIndex;
-        public ColorState shirtColor;
+        public int hair, skinVariant, selectedItem;
+        public ColorState shirtColor, hairColor, underShirtColor, pantsColor, shoeColor, eyeColor, skinColor;
         public ItemState[] inventory = Items(59), armor = Items(20), dye = Items(10), miscEquips = Items(5), miscDyes = Items(5);
         public LoadoutState[] Loadouts = Enumerable.Range(0, 3).Select(_ => new LoadoutState()).ToArray();
     }
@@ -63,7 +65,10 @@ public static class NetworkSyncOfflineTests
         public static string Fault, Phase;
         public static long FullSnapshots, Controls, Departures, SyncSkips;
         public static ulong controlTick, fullTick;
-        public static bool possiblyVisible, leaveAttempted, alternateStyle;
+        public static bool possiblyVisible, leaveAttempted;
+        public static PlayerState owner;
+        public static ItemState savedHelmet, debugHelmet;
+        public static ColorState savedShirt;
         public static MethodInfo nativeFull = typeof(Effects).GetMethod(nameof(InvokeFull));
         public static Action<int, int, int> InvokePatched;
         public static List<Packet> Packets = new();
@@ -111,6 +116,16 @@ public static class NetworkSyncOfflineTests
         var mod = probe.MainModule.Types.Single(t => t.Name == "VirtualPlayerEngineProbe");
         var session = probe.MainModule.Types.Single(t => t.Name == "ProbeSession");
         var adapter = probe.MainModule.Types.Single(t => t.Name == "NetworkStateSync");
+        var debug = probe.MainModule.Types.Single(t => t.Name == "ProbeDebugAppearance");
+        Check(adapter.Methods.All(m => !m.HasBody || !m.Body.Instructions.Any(i => i.OpCode == OpCodes.Stfld
+            || i.Operand is MethodReference r && r.Name is "Configure" or "SetDefaults")),
+            "sync adapter has no character/item/appearance writes or initialization calls");
+        var spawn = session.Methods.Single(m => m.Name == "Spawn");
+        Check(!spawn.Body.Instructions.Any(i => i.Operand is MethodReference m
+                && (m.DeclaringType.FullName == debug.FullName || m.Name is "Configure" or "SetDefaults"))
+            && !spawn.Body.Instructions.Any(i => i.Operand is FieldReference f
+                && f.Name is "inventory" or "armor" or "shirtColor" or "hairColor" or "hair" or "skinVariant"),
+            "default Spawn never applies debug appearance, equipment or inventory initialization");
         var policy = mod.Methods.Single(m => m.Name == "IsNetworkActor");
         var controlBody = native.Methods.Single(m => m.Name == "SendData").Body.Instructions
             .Where(i => i.Offset >= 0x10e2 && i.Offset < 0x1378).ToArray();
@@ -118,7 +133,8 @@ public static class NetworkSyncOfflineTests
             Check(controlBody.Any(i => i.Operand is FieldReference f && f.Name == field), "installed native PlayerControls serializer includes " + field);
         var support = mod.Methods.Where(m => m.Name is "IsNetworkActor" or "OwnedWithoutConnection" or "SyncOne")
             .Concat(session.Methods.Where(m => m.Name == "Quarantine"))
-            .Concat(adapter.Methods.Where(m => m.HasBody && m.Name is not (".cctor" or "Configure"))).ToArray();
+            .Concat(adapter.Methods.Where(m => m.HasBody && m.Name != ".cctor"))
+            .Concat(debug.Methods.Where(m => m.HasBody)).ToArray();
 
         var baseline = Compile(nativeMethods, "SyncBaseline");
         int originalCount = one.Body.Instructions.Count;
@@ -158,7 +174,8 @@ public static class NetworkSyncOfflineTests
         var lateJoin = (Action<int>)fixture.GetMethod("SyncConnectedPlayer").CreateDelegate(typeof(Action<int>));
         var full = (Action<PlayerState>)fixture.GetMethod("Full").CreateDelegate(typeof(Action<PlayerState>));
         var tick = (Action<PlayerState>)fixture.GetMethod("Tick").CreateDelegate(typeof(Action<PlayerState>));
-        var style = (Action<PlayerState>)fixture.GetMethod("Style").CreateDelegate(typeof(Action<PlayerState>));
+        var style = (Action<PlayerState>)fixture.GetMethod("Toggle").CreateDelegate(typeof(Action<PlayerState>));
+        var clearDebug = (Action)fixture.GetMethod("Clear").CreateDelegate(typeof(Action));
         var leave = (Action<PlayerState>)fixture.GetMethod("Leave").CreateDelegate(typeof(Action<PlayerState>));
         var owns = (Func<int,bool>)fixture.GetMethod("IsNetworkActor").CreateDelegate(typeof(Func<int,bool>));
         var resetAdapter = (Action)fixture.GetMethod("Reset").CreateDelegate(typeof(Action));
@@ -171,7 +188,7 @@ public static class NetworkSyncOfflineTests
             Effects.Actor = MainState.player[3]; Effects.Actor.active = true;
             Effects.Ready = Effects.EngineMainThread = true; Effects.Quarantined = false; Effects.Fault = Effects.Phase = null;
             Effects.Packets.Clear(); Effects.Announcements = Effects.Disconnects = Effects.ModPayloads = 0;
-            Effects.OnPacket = null; Effects.ThrowPacket = -1; resetAdapter();
+            Effects.OnPacket = null; Effects.ThrowPacket = -1; resetAdapter(); clearDebug();
         }
         foreach (int state in new[] { 0, 10 }) foreach (bool active in new[] { false, true })
         {
@@ -232,10 +249,44 @@ public static class NetworkSyncOfflineTests
         Check(Effects.Packets.Count==1 && Effects.Packets[0].Type==13 && Effects.Controls==1, "native movement/control packet sent after six ticks");
         MainState.GameUpdateCount=300; tick(Effects.Actor);
         Check(Effects.FullSnapshots==2 && Effects.Packets.Any(p=>p.Type==5), "bounded native full refresh republishes equipment/appearance");
-        Reset(); style(Effects.Actor); int helmet=Effects.Actor.armor[0].type; int red=Effects.Actor.shirtColor.R;
+        ItemState[] CharacterItems(PlayerState p) => p.inventory.Concat(p.armor).Concat(p.dye).Concat(p.miscEquips).Concat(p.miscDyes)
+            .Concat(p.Loadouts.SelectMany(l => l.Armor.Concat(l.Dye))).ToArray();
+        void SeedCharacter(PlayerState p)
+        {
+            p.name="Existing character"; p.hair=17; p.skinVariant=3; p.selectedItem=8;
+            p.hairColor=new(1,2,3); p.shirtColor=new(11,12,13); p.underShirtColor=new(21,22,23);
+            p.pantsColor=new(31,32,33); p.shoeColor=new(41,42,43); p.eyeColor=new(51,52,53); p.skinColor=new(61,62,63);
+            int n=0;
+            foreach(var item in CharacterItems(p)) { item.type=1000+n; item.stack=1+n; item.prefix=n%8; item.customData="saved-"+n++; }
+        }
+        string CharacterSnapshot(PlayerState p) => JsonSerializer.Serialize(new { p.name,p.hair,p.skinVariant,p.selectedItem,
+            colors=new[]{p.hairColor,p.shirtColor,p.underShirtColor,p.pantsColor,p.shoeColor,p.eyeColor,p.skinColor},
+            items=CharacterItems(p).Select(i=>new{i.type,i.stack,i.prefix,i.customData}).ToArray()
+        },new JsonSerializerOptions{IncludeFields=true});
+        Reset(); SeedCharacter(Effects.Actor); var originalData=CharacterSnapshot(Effects.Actor); var originalItems=CharacterItems(Effects.Actor);
+        void CharacterUnchanged(string operation) => Check(CharacterSnapshot(Effects.Actor)==originalData
+            && CharacterItems(Effects.Actor).SequenceEqual(originalItems), "existing character data and Item instances preserved by "+operation);
+        full(Effects.Actor); CharacterUnchanged("initial full sync");
+        full(Effects.Actor); CharacterUnchanged("explicit resync");
+        MainState.GameUpdateCount=6; tick(Effects.Actor); CharacterUnchanged("control sync");
+        MainState.GameUpdateCount=300; tick(Effects.Actor); CharacterUnchanged("periodic equipment/appearance refresh");
+        MainState.player[0].active=true; NetState.Clients[0].State=10; lateJoin(0); CharacterUnchanged("native late-join sync");
+        leave(Effects.Actor); CharacterUnchanged("departure sync");
+        Reset(); SeedCharacter(Effects.Actor); originalData=CharacterSnapshot(Effects.Actor); var savedHead=Effects.Actor.armor[0];
+        style(Effects.Actor); var overlayHead=Effects.Actor.armor[0];
+        Check(!ReferenceEquals(overlayHead,savedHead) && savedHead.type==1059 && savedHead.customData=="saved-59"
+            && Effects.Actor.inventory[0].type==1000 && Effects.Actor.selectedItem==8,
+            "explicit debug overlay preserves original helmet data and never grants/resets inventory items");
+        full(Effects.Actor);
+        Check(ReferenceEquals(Effects.Actor.armor[0],overlayHead) && Effects.Actor.shirtColor.R==190,
+            "resync preserves explicitly selected debug appearance without reinitialization");
         style(Effects.Actor);
-        Check(Effects.FullSnapshots==2 && Effects.Actor.armor[0].type!=helmet && Effects.Actor.shirtColor.R!=red,
-            "actual style command changes AI appearance/equipment and publishes each native snapshot");
+        Check(Effects.FullSnapshots==3 && ReferenceEquals(Effects.Actor.armor[0],savedHead) && CharacterSnapshot(Effects.Actor)==originalData,
+            "second debug toggle restores exact original equipment instance and appearance");
+        style(Effects.Actor); var externalHead=Effects.Actor.armor[0]=new ItemState{type=7777,customData="external"}; int packetsBefore=Effects.Packets.Count;
+        try { style(Effects.Actor); throw new Exception("external equipment overwritten"); } catch(InvalidOperationException) { }
+        Check(ReferenceEquals(Effects.Actor.armor[0],externalHead) && Effects.Packets.Count==packetsBefore,
+            "debug restore refuses to overwrite externally replaced equipment");
         Reset(); full(Effects.Actor); Effects.Packets.Clear(); Effects.ThrowPacket=13; MainState.GameUpdateCount=6;
         try { tick(Effects.Actor); throw new Exception("controls failure swallowed"); } catch(IOException) { }
         Effects.ThrowPacket=-1;
@@ -286,6 +337,7 @@ public static class NetworkSyncOfflineTests
             ["Terraria.NPC"]=typeof(NpcState), ["Terraria.GameContent.CoinLossRevengeSystem"]=typeof(RevengeState),
             ["Terraria.Program"]=typeof(Effects), ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"]=typeof(Effects),
             ["VirtualPlayerEngineProbe.ProbeSession"]=typeof(Effects), ["VirtualPlayerEngineProbe.NetworkStateSync"]=typeof(Effects),
+            ["VirtualPlayerEngineProbe.ProbeDebugAppearance"]=typeof(Effects),
             ["VirtualPlayerEngineProbe.StartupReservation"]=typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"]=typeof(StartupReservation.View),
             ["Terraria.On_NetMessage/orig_SyncOnePlayer"]=typeof(Action<int,int,int>)

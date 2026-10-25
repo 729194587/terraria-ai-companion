@@ -27,6 +27,7 @@ internal static class ProbeSession
 
     internal static void Reset()
     {
+        ProbeDebugAppearance.Clear();
         Actor = previous = null;
         slot = -1;
         spawnedAt = 0;
@@ -116,10 +117,12 @@ internal static class ProbeSession
                 if (!clear) throw new InvalidOperationException("No clear test spawn position; no actor allocated.");
                 // Constructors/ModPlayer initialization can throw or reenter. Keep the
                 // candidate private, then revalidate the original lease and placeholder.
-                var candidate = new Player { whoAmI = view.Slot, name = "G1_NoClient_Probe", width = 20, height = 42,
+                // This probe only allocates an engine Player. Future character
+                // creation must restore an existing profile first, otherwise use
+                // vanilla new-character rules, independently of synchronization.
+                var candidate = new Player { whoAmI = view.Slot, name = "G2_NoClient_Probe", width = 20, height = 42,
                     statLife = 100, statLifeMax = 100, statLifeMax2 = 100,
                     position = new Vector2(x, y), SpawnX = -1, SpawnY = -1 };
-                NetworkStateSync.Configure(candidate);
                 if (!ReferenceEquals(Reservation.Snapshot, view) || Quarantined || VirtualPlayerEngineProbe.Fault != null
                     || Main.maxNetPlayers != view.Capacity || slot != view.Slot || previous == null || previous.active
                     || Main.player == null || slot >= Main.player.Length || Netplay.Clients == null || slot >= Netplay.Clients.Length
@@ -344,7 +347,7 @@ public sealed class ProbeCommand : ModCommand
 {
     public override string Command => "vph";
     public override CommandType Type => CommandType.World | CommandType.Console;
-    public override string Usage => "/vph status|allocator|spawn|style|resync|despawn";
+    public override string Usage => "/vph status|allocator|spawn|debug-style|resync|despawn";
     public override string Description => "G2 network experiment; server/host only, one spawn lifecycle per server process.";
     public override void Action(CommandCaller caller, string input, string[] args)
     {
@@ -368,7 +371,7 @@ public sealed class ProbeCommand : ModCommand
                 if (action == "status") ProbeSession.Log("status");
                 else if (action == "allocator") ProbeSession.Allocator();
                 else if (action == "spawn") ProbeSession.Spawn();
-                else if (action == "style") NetworkStateSync.Style(ProbeSession.Actor ?? throw new InvalidOperationException("Spawn the probe first."));
+                else if (action == "debug-style") ProbeDebugAppearance.Toggle(ProbeSession.Actor ?? throw new InvalidOperationException("Spawn the probe first."));
                 else if (action == "resync") NetworkStateSync.Full(ProbeSession.Actor ?? throw new InvalidOperationException("Spawn the probe first."));
                 else if (action == "despawn") ProbeSession.Finish("authorized despawn");
                 else throw new InvalidOperationException(Usage);
