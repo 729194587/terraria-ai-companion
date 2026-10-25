@@ -24,11 +24,12 @@ public static class EngineHookOfflineTests
     {
         public bool active;
         public int whoAmI, width, height;
-        public VectorState position;
+        public VectorState position, velocity;
     }
     public struct VectorState
     {
         public float X, Y;
+        public static VectorState Zero => new(0,0);
         public VectorState(float x, float y) { X = x; Y = y; }
     }
     public class PlayerState : EntityState
@@ -36,7 +37,8 @@ public static class EngineHookOfflineTests
         public static Action OnConstruct;
         public int statLife, statLifeMax, statLifeMax2, SpawnX, SpawnY;
         public string name;
-        public bool dead;
+        public bool dead, controlLeft, controlRight, controlUp, controlDown, controlJump, controlUseItem, controlUseTile;
+        public int respawnTimer, fallStart;
         public PlayerState() => OnConstruct?.Invoke();
     }
     public static class MainState
@@ -413,7 +415,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.2.2", "isolated G2 package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.3.0", "isolated G3.1 package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -456,6 +458,9 @@ public static class EngineHookOfflineTests
         Check(methods.Where(m => m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.Name == "SendData"))
             .All(m => m.DeclaringType.Name == "NetworkStateSync"), "G2 native packet sends confined to ownership-checked adapter");
         var refs = ins.Where(i => i.Operand is MethodReference).Select(i => (MethodReference)i.Operand).ToArray();
+        Check(!refs.Any(m=>m.Name=="SetAsActive"),"G3 never calls PlayerFileData.SetAsActive");
+        Check(refs.Any(m=>m.DeclaringType.FullName=="Terraria.Player" && m.Name=="SavePlayer")
+            && refs.Any(m=>m.DeclaringType.FullName=="Terraria.Player" && m.Name=="LoadPlayer"),"G3 uses native player save/load APIs");
         foreach (var hook in new[] { "FindNextOpenClientSlot", "UpdateConnectedClients", "StartServer", "StartListening", "OnConnectionAccepted", "SyncOnePlayer", "CheckSection", "DedServ_PostModLoad", "clearWorld", "OnSubmitServerPassword" })
             Check(refs.Any(m => m.Name == "add_" + hook) && refs.Any(m => m.Name == "remove_" + hook), "hook subscription has rollback pair: " + hook);
         var start = mod.Methods.Single(m => m.Name == "StartServer");
@@ -519,7 +524,8 @@ public static class EngineHookOfflineTests
         public static string get_Fault() => Fault;
         public static bool get_IsMainThread() => EngineMainThread;
         public static void SignalFault(string reason) => Fault ??= reason;
-        public static void Finish(string _) => throw new Exception("unexpected teardown in startup fixture");
+        public static void Finish(string _, bool keep) => throw new Exception("unexpected teardown in startup fixture");
+        public static void Update() { }
         public static void CheckInitialSlot()
         {
             if (!Reservation.IsReserved(254)) throw new Exception("initial validation lost reservation");
@@ -538,6 +544,7 @@ public static class EngineHookOfflineTests
         var map = new Dictionary<string, Type> {
             ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"] = typeof(StartupState),
             ["VirtualPlayerEngineProbe.ProbeSession"] = typeof(StartupState),
+            ["VirtualPlayerEngineProbe.CharacterSelfTest"] = typeof(StartupState),
             ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),
             ["Terraria.Main"] = typeof(StartupState), ["Terraria.Netplay"] = typeof(StartupState),
@@ -634,6 +641,7 @@ public static class EngineHookOfflineTests
     }
     public static class LifecycleNetworkState
     {
+        public static void Reset() { }
         public static bool ThrowFull, ThrowLeave;
         public static void Full(PlayerState _) { if (ThrowFull) throw new IOException("fixture native full sync failed"); }
         public static void Leave(PlayerState _)
@@ -647,9 +655,19 @@ public static class EngineHookOfflineTests
     }
     public static class LifecycleAnnouncements
     {
+        public static void ResetNotices() { }
         public static int Joins, Leaves;
         public static void Join(PlayerState _) => Joins++;
         public static void Left(PlayerState _) { if (Joins>Leaves) Leaves++; }
+    }
+    public static class LifecycleCharacterStore
+    {
+        public static PlayerState Candidate;
+        public static bool FailedSave;
+        public static PlayerState AcquireCandidate() { var p=Candidate; Candidate=null; return p; }
+        public static void AssertMayRetire(PlayerState p) { if(p!=null && FailedSave) throw new IOException("unsaved state"); }
+        public static void Clear() { }
+        public static void Update() { }
     }
     public static class TeardownState
     {
@@ -693,6 +711,9 @@ public static class EngineHookOfflineTests
             ["VirtualPlayerEngineProbe.ProbeSession"] = typeof(TeardownState),
             ["VirtualPlayerEngineProbe.NetworkStateSync"] = typeof(LifecycleNetworkState),
             ["VirtualPlayerEngineProbe.ProbeAnnouncements"] = typeof(LifecycleAnnouncements),
+            ["VirtualPlayerEngineProbe.CharacterStore"] = typeof(LifecycleCharacterStore),
+            ["VirtualPlayerEngineProbe.CharacterSelfTest"] = typeof(LifecycleCharacterStore),
+            ["VirtualPlayerEngineProbe.ProbeDebugAppearance"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"] = typeof(TeardownState),
             ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),
@@ -744,7 +765,8 @@ public static class EngineHookOfflineTests
         }
         using var bytes = new MemoryStream(); fixture.Write(bytes); bytes.Position = 0;
         var loaded = AssemblyLoadContext.Default.LoadFromStream(bytes).GetType("Fixture.Teardown");
-        var finish = (Action<string>)loaded.GetMethod("Finish").CreateDelegate(typeof(Action<string>));
+        var finishWithLease = (Action<string,bool>)loaded.GetMethod("Finish").CreateDelegate(typeof(Action<string,bool>));
+        Action<string> finish = reason => finishWithLease(reason,false);
         var spawn = (Action)loaded.GetMethod("Spawn").CreateDelegate(typeof(Action));
         var initial = (Action)loaded.GetMethod("CheckInitialSlot").CreateDelegate(typeof(Action));
         var eligible = (Func<int, bool>)loaded.GetMethod("OwnedWithoutConnection").CreateDelegate(typeof(Func<int, bool>));
@@ -768,6 +790,7 @@ public static class EngineHookOfflineTests
             TeardownState.Ready = WorldState.Clear = true;
             LifecycleNetworkState.ThrowFull = LifecycleNetworkState.ThrowLeave = false;
             LifecycleAnnouncements.Joins = LifecycleAnnouncements.Leaves = 0;
+            LifecycleCharacterStore.Candidate=null; LifecycleCharacterStore.FailedSave=false;
         }
         Reset(); var original = TeardownState.previous;
         finish("despawn"); finish("duplicate");
@@ -912,12 +935,25 @@ public static class EngineHookOfflineTests
         finish("spawn lifecycle");
         Check(ReferenceEquals(MainState.player[3], baseline) && TeardownState.Reservation.Snapshot == null && LifecycleAnnouncements.Leaves == 1,
             "actual packaged Spawn/Finish restore the original baseline in one lifecycle");
+        BeforeCreate(); baseline=MainState.player[3]; spawn();
+        finishWithLease("G3 normal despawn",true);
+        Check(TeardownState.Actor==null && ReferenceEquals(MainState.player[3],baseline) && TeardownState.Reservation.IsReserved(3),
+            "G3 despawn retains original lease and idle baseline");
+        var restored=new PlayerState{statLife=117,name="restored profile"}; LifecycleCharacterStore.Candidate=restored;
+        spawn();
+        Check(ReferenceEquals(TeardownState.Actor,restored) && restored.statLife==117 && restored.name=="restored profile",
+            "G3 publishes private loaded candidate without resetting character data");
+        LifecycleCharacterStore.FailedSave=true;
+        try{finishWithLease("save failed",true);throw new Exception("live data lost");}catch(IOException){}
+        Check(ReferenceEquals(MainState.player[3],restored) && restored.active && TeardownState.Reservation.IsReserved(3),
+            "G3 failed save prevents retirement of live actor");
+        LifecycleCharacterStore.FailedSave=false; finish("G3 recovered");
         BeforeCreate(); baseline = MainState.player[3];
         PlayerState.OnConstruct = () => throw new IOException("constructor failure");
         try { spawn(); throw new Exception("constructor exception lost"); } catch (IOException) { }
         PlayerState.OnConstruct = null;
         Check(TeardownState.Actor == null && ReferenceEquals(MainState.player[3], baseline) && !baseline.active
-            && TeardownState.Reservation.Snapshot == null && TeardownState.Connects == 0 && TeardownState.Disconnects == 0,
+            && TeardownState.Reservation.IsReserved(3) && TeardownState.Connects == 0 && TeardownState.Disconnects == 0,
             "actual constructor failure rolls back known unused slot without publishing or disconnecting");
         BeforeCreate(); unknown = new PlayerState();
         PlayerState.OnConstruct = () => MainState.player[3] = unknown;
@@ -937,7 +973,7 @@ public static class EngineHookOfflineTests
         TeardownState.OnConnect = () => throw new IOException("connect failure");
         try { spawn(); throw new Exception("connect exception lost"); } catch (IOException) { }
         Check(TeardownState.Actor == null && ReferenceEquals(MainState.player[3], baseline)
-            && TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 1,
+            && TeardownState.Reservation.IsReserved(3) && TeardownState.Disconnects == 1,
             "actual connect failure rolls back published actor and disconnects exactly once");
         BeforeCreate(); unknown = new PlayerState { active = true };
         TeardownState.OnConnect = () => MainState.player[3] = unknown;
@@ -947,8 +983,8 @@ public static class EngineHookOfflineTests
             "actual connect replacement quarantines without touching unknown Player or releasing");
         BeforeCreate(); WorldState.Clear = false;
         try { spawn(); throw new Exception("blocked location accepted"); } catch (InvalidOperationException) { }
-        Check(TeardownState.Actor == null && TeardownState.Reservation.Snapshot == null && TeardownState.Connects == 0,
-            "actual no-clear-position failure releases only the verified unused baseline");
+        Check(TeardownState.Actor == null && TeardownState.Reservation.IsReserved(3) && TeardownState.Connects == 0,
+            "actual no-clear-position failure retains the verified unused baseline and lease");
         BeforeCreate(); Exception spawnThread = null;
         var wrongCreator = new Thread(() => { try { spawn(); } catch (Exception e) { spawnThread = e; } });
         wrongCreator.Start(); wrongCreator.Join();
@@ -980,7 +1016,7 @@ public static class EngineHookOfflineTests
         BeforeCreate(); var failedSyncBaseline = MainState.player[3]; LifecycleNetworkState.ThrowFull = true;
         try { spawn(); throw new Exception("full send failure lost"); } catch (IOException) { }
         Check(TeardownState.Actor == null && ReferenceEquals(MainState.player[3], failedSyncBaseline)
-            && TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 1
+            && TeardownState.Reservation.IsReserved(3) && TeardownState.Disconnects == 1
             && LifecycleAnnouncements.Joins == 0 && LifecycleAnnouncements.Leaves == 0,
             "actual G2 Spawn rolls back published actor after native initial-sync failure");
         Reset(); var retainedActor = TeardownState.Actor; LifecycleNetworkState.ThrowLeave = true;

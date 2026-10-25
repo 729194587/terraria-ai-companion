@@ -12,6 +12,7 @@ internal static class ProbeDebugAppearance
     private static Player owner;
     private static Item savedHelmet, debugHelmet;
     private static Color savedShirt;
+    internal static bool IsApplied(Player p) => ReferenceEquals(owner, p);
 
     internal static void Clear()
     {

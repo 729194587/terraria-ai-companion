@@ -18,7 +18,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
     internal const string HooksHash = "595D26FB3BBE27548D030943B5ED2437F690D1C002129BAD21FAFEAEB8118F7A";
     internal const string Commit = "c9545cf27d56c456321e1896274c02adf67d0140";
     private readonly Stack<Action> rollback = new();
-    private bool allocatorPatched, cleanupPatched, syncPatched;
+    private bool allocatorPatched, cleanupPatched, syncPatched, savePatched;
     internal static VirtualPlayerEngineProbe Instance;
     internal static bool Ready;
     internal static StartupReservation Reservation = new();
@@ -51,6 +51,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
                 throw new InvalidOperationException("G1 isolation requires this probe and tModLoader only.");
             NetworkStateSync.Reset();
             ProbeAnnouncements.ResetNotices();
+            CharacterStore.Reset();
             if (Main.dedServ) InstallServerHooks();
             else
             {
@@ -74,15 +75,18 @@ public sealed class VirtualPlayerEngineProbe : Mod
         Install(() => IL_Netplay.FindNextOpenClientSlot += PatchAllocator, () => IL_Netplay.FindNextOpenClientSlot -= PatchAllocator);
         Install(() => IL_Netplay.UpdateConnectedClients += PatchCleanup, () => IL_Netplay.UpdateConnectedClients -= PatchCleanup);
         Install(() => IL_NetMessage.SyncOnePlayer += PatchPlayerSync, () => IL_NetMessage.SyncOnePlayer -= PatchPlayerSync);
+        Install(() => IL_Player.SavePlayer += PatchCharacterSave, () => IL_Player.SavePlayer -= PatchCharacterSave);
+        Install(() => On_WorldGen.SaveAndQuit += GuardCharacterExit, () => On_WorldGen.SaveAndQuit -= GuardCharacterExit);
         Install(() => On_Netplay.StartServer += StartServer, () => On_Netplay.StartServer -= StartServer);
         Install(() => On_Netplay.StartListening += Listen, () => On_Netplay.StartListening -= Listen);
         Install(() => On_Netplay.UpdateConnectedClients += NetworkTick, () => On_Netplay.UpdateConnectedClients -= NetworkTick);
+        Install(() => On_Netplay.UpdateInMainThread += MainNetworkTick, () => On_Netplay.UpdateInMainThread -= MainNetworkTick);
         Install(() => On_Netplay.OnConnectionAccepted += Accepted, () => On_Netplay.OnConnectionAccepted -= Accepted);
         Install(() => On_NetMessage.SyncOnePlayer += SyncOne, () => On_NetMessage.SyncOnePlayer -= SyncOne);
         Install(() => On_RemoteClient.CheckSection += Sections, () => On_RemoteClient.CheckSection -= Sections);
         Install(() => On_Main.DedServ_PostModLoad += ServerScope, () => On_Main.DedServ_PostModLoad -= ServerScope);
         Install(() => On_WorldGen.clearWorld += ClearWorld, () => On_WorldGen.clearWorld -= ClearWorld);
-        Ready = allocatorPatched && cleanupPatched && syncPatched;
+        Ready = allocatorPatched && cleanupPatched && syncPatched && savePatched;
         if (!Ready) throw new InvalidOperationException("Incomplete IL hook installation.");
         Logger.Info("G2 network hooks ready; no actor exists. One reservation will arm before the first native StartServer.");
     }
@@ -129,9 +133,24 @@ public sealed class VirtualPlayerEngineProbe : Mod
         EnginePatches.PlayerSync(il.Method, il.Module.ImportReference(typeof(VirtualPlayerEngineProbe).GetMethod(nameof(IsNetworkActor))));
         syncPatched = true;
     }
+    private void PatchCharacterSave(ILContext il)
+    {
+        PersistencePatches.SavePlayer(il.Method, il.Module.ImportReference(typeof(CharacterIo).GetMethod(nameof(CharacterIo.IsCharacterFile))));
+        savePatched = true;
+    }
+    private void GuardCharacterExit(On_WorldGen.orig_SaveAndQuit orig, Action callback)
+    {
+        if (CharacterIo.Active)
+        {
+            CharacterIo.ExitRequests++;
+            throw new InvalidOperationException("Character IO cannot request WorldGen.SaveAndQuit.");
+        }
+        orig(callback);
+    }
 
     public static bool IsNetworkActor(int slot)
     {
+        if (!IsReserved(slot)) return false;
         lock (Reservation.Gate)
             return Main.netMode == Terraria.ID.NetmodeID.Server && Ready && Fault == null
                 && !ProbeSession.Quarantined && OwnedWithoutConnection(slot)
@@ -201,7 +220,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
             legacyIsListening = Netplay.IsListening, tcpListenerExists, listenerEntries = entries });
         try { orig(); }
         catch { ProbeSession.Finish("StartServer exception"); throw; }
-        if (armed) ProbeSession.CheckInitialSlot();
+        if (armed) { ProbeSession.CheckInitialSlot(); CharacterSelfTest.Update(); }
     }
     private bool Listen(On_Netplay.orig_StartListening orig)
     {
@@ -238,6 +257,12 @@ public sealed class VirtualPlayerEngineProbe : Mod
             if (IsReserved(slot)) ProbeSession.Quarantine("STOP: native accept assigned reserved slot.");
             ProbeSession.Log("native-accept", new { slot, reserved = IsReserved(slot), thread = Environment.CurrentManagedThreadId });
         }
+    }
+    private void MainNetworkTick(On_Netplay.orig_UpdateInMainThread orig)
+    {
+        if (Reservation.Snapshot == null) { orig(); return; }
+        Reservation.AssertOwner(Program.IsMainThread);
+        lock (Reservation.Gate) orig();
     }
     private void SyncOne(On_NetMessage.orig_SyncOnePlayer orig, int slot, int toWho, int fromWho)
     {

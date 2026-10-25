@@ -120,9 +120,16 @@ internal static class ProbeSession
                 // This probe only allocates an engine Player. Future character
                 // creation must restore an existing profile first, otherwise use
                 // vanilla new-character rules, independently of synchronization.
-                var candidate = new Player { whoAmI = view.Slot, name = "G2_NoClient_Probe", width = 20, height = 42,
+                var candidate = CharacterStore.AcquireCandidate() ?? new Player { whoAmI = view.Slot, name = "G31_NoClient_Probe", width = 20, height = 42,
                     statLife = 100, statLifeMax = 100, statLifeMax2 = 100,
                     position = new Vector2(x, y), SpawnX = -1, SpawnY = -1 };
+                candidate.whoAmI = view.Slot;
+                candidate.position = new Vector2(x, y);
+                candidate.velocity = Vector2.Zero;
+                candidate.SpawnX = candidate.SpawnY = -1;
+                candidate.controlLeft = candidate.controlRight = candidate.controlUp = candidate.controlDown = false;
+                candidate.controlJump = candidate.controlUseItem = candidate.controlUseTile = false;
+                candidate.dead = false; candidate.respawnTimer = 0; candidate.fallStart = y / 16;
                 if (!ReferenceEquals(Reservation.Snapshot, view) || Quarantined || VirtualPlayerEngineProbe.Fault != null
                     || Main.maxNetPlayers != view.Capacity || slot != view.Slot || previous == null || previous.active
                     || Main.player == null || slot >= Main.player.Length || Netplay.Clients == null || slot >= Netplay.Clients.Length
@@ -132,6 +139,8 @@ internal static class ProbeSession
                     throw new InvalidOperationException("Publication refused; reservation quarantined.");
                 }
                 Actor = candidate;
+                NetworkStateSync.Reset();
+                ProbeAnnouncements.ResetNotices();
                 Main.player[slot] = candidate;
                 candidate.active = true; // Exactly once; never repaired by update/network hooks.
                 spawnedAt = Interlocked.Read(ref VirtualPlayerEngineProbe.NetworkLoops);
@@ -152,14 +161,14 @@ internal static class ProbeSession
             catch
             {
                 creating = false;
-                Finish("spawn failed");
+                Finish("spawn failed", keepReservation: true);
                 throw;
             }
             finally { creating = false; }
         }
     }
 
-    internal static void Finish(string reason)
+    internal static void Finish(string reason, bool keepReservation = false)
     {
         if (Reservation.Snapshot == null && Actor == null) return;
         // The pre-clearWorld fuse aborts a foreign-thread unload BEFORE native
@@ -169,6 +178,7 @@ internal static class ProbeSession
         {
             if (creating || finishing) throw new InvalidOperationException("Reentrant Player lifecycle rejected.");
             if (Quarantined) throw new InvalidOperationException("STOP: slot remains quarantined; do not retry or unload in place.");
+            CharacterStore.AssertMayRetire(Actor);
             var view = Reservation.Snapshot;
             int target = view?.Slot ?? slot;
             var owned = Actor;
@@ -230,15 +240,15 @@ internal static class ProbeSession
                         ProbeAnnouncements.Left(owned);
                         Main.player[slot] = previous;
                     }
-                    Actor = previous = null;
+                    Actor = null;
                     connectedHook = false;
-                    Phase = "released; fresh server process required to re-arm";
+                    ProbeDebugAppearance.Clear();
+                    Phase = keepReservation ? "reserved; no actor" : "released; fresh server process required to re-arm";
                     try { Log("teardown", new { reason, same, occupied }); }
                     finally
                     {
                         // Native allocator may reuse the slot only AFTER actor cleanup.
-                        Reservation.Release();
-                        slot = -1;
+                        if (!keepReservation) { Reservation.Release(); previous = null; slot = -1; }
                     }
                 }
             }
@@ -319,6 +329,7 @@ public sealed class ProbeSystem : ModSystem
     }
     public override void PostUpdatePlayers()
     {
+        CharacterSelfTest.Update();
         if (VirtualPlayerEngineProbe.Reservation.Snapshot == null) return;
         VirtualPlayerEngineProbe.Reservation.AssertOwner(Program.IsMainThread);
         if (ProbeSession.Quarantined)
@@ -346,16 +357,19 @@ public sealed class ProbeSystem : ModSystem
 public sealed class ProbePlayer : ModPlayer
 {
     internal long PreUpdates, PostUpdates;
+    internal string PersistentMarker = "";
     public override void PreUpdate() => PreUpdates++;
     public override void PostUpdate() => PostUpdates++;
+    public override void SaveData(Terraria.ModLoader.IO.TagCompound tag) => tag["g31Marker"] = PersistentMarker;
+    public override void LoadData(Terraria.ModLoader.IO.TagCompound tag) => PersistentMarker = tag.GetString("g31Marker");
 }
 
 public sealed class ProbeCommand : ModCommand
 {
     public override string Command => "vph";
     public override CommandType Type => CommandType.World | CommandType.Console;
-    public override string Usage => "/vph status|allocator|spawn|debug-style|resync|despawn";
-    public override string Description => "G2 network experiment; server/host only, one spawn lifecycle per server process.";
+    public override string Usage => "/vph status|spawn|save [id]|load [id]|inspect|fixture|test-save-failure|debug-style|resync|despawn";
+    public override string Description => "G3.1 character persistence experiment; server/host only.";
     public override void Action(CommandCaller caller, string input, string[] args)
     {
         if (Interlocked.CompareExchange(ref ProbeSession.Pending, 1, 0) != 0) { caller.Reply("G1 command pending."); return; }
@@ -373,24 +387,30 @@ public sealed class ProbeCommand : ModCommand
                     && Netplay.Clients[id].IsConnected() && NetMessage.DoesPlayerSlotCountAsAHost(id);
                 if (Main.netMode != NetmodeID.Server || !(host || caller.CommandType == CommandType.Console))
                     throw new InvalidOperationException("Server console or native Host & Play host authorization required.");
-                if (copy.Length > 1) throw new InvalidOperationException(Usage);
+                if (copy.Length > 2) throw new InvalidOperationException(Usage);
                 string action = copy.Length == 0 ? "status" : copy[0];
+                if (copy.Length == 2 && action is not ("save" or "load")) throw new InvalidOperationException(Usage);
                 if (action == "status") ProbeSession.Log("status");
                 else if (action == "allocator") ProbeSession.Allocator();
                 else if (action == "spawn") ProbeSession.Spawn();
+                else if (action == "save") CharacterStore.Save(copy.Length == 2 ? copy[1] : null);
+                else if (action == "load") CharacterStore.Load(copy.Length == 2 ? copy[1] : null);
+                else if (action == "fixture") CharacterSelfTest.Seed();
+                else if (action == "inspect") caller.Reply(CharacterStore.Inspect());
+                else if (action == "test-save-failure") CharacterStore.TestSaveFailure();
                 else if (action == "debug-style") ProbeDebugAppearance.Toggle(ProbeSession.Actor ?? throw new InvalidOperationException("Spawn the probe first."));
                 else if (action == "resync") NetworkStateSync.Full(ProbeSession.Actor ?? throw new InvalidOperationException("Spawn the probe first."));
-                else if (action == "despawn") ProbeSession.Finish("authorized despawn");
+                else if (action == "despawn") ProbeSession.Finish("authorized despawn", keepReservation: true);
                 else throw new InvalidOperationException(Usage);
                 if (action == "spawn" && ProbeSession.Actor != null)
-                    caller.Reply($"G2：已创建 Player，slot={ProbeSession.Actor.whoAmI}。请观察出生点右侧的 G2_NoClient_Probe；/vpc {ProbeSession.Actor.whoAmI} 查看客户端状态。");
-                else caller.Reply($"G2: {ProbeSession.Phase}; actorSlot={ProbeSession.Actor?.whoAmI ?? -1}; " +
+                    caller.Reply($"G3.1：已创建 Player，slot={ProbeSession.Actor.whoAmI}。请观察出生点右侧的 G31_NoClient_Probe；/vpc {ProbeSession.Actor.whoAmI} 查看客户端状态。");
+                else caller.Reply($"G3.1: {ProbeSession.Phase}; actorSlot={ProbeSession.Actor?.whoAmI ?? -1}; id={CharacterStore.CurrentId ?? "none"}; " +
                     $"fault={VirtualPlayerEngineProbe.Fault ?? "none"}; full={NetworkStateSync.FullSnapshots}, controls={NetworkStateSync.Controls}, left={NetworkStateSync.Departures}.");
             }
             catch (Exception e)
             {
                 ProbeSession.Log("command-refused", new { reason = e.Message });
-                caller.Reply("G1 probe: " + e.Message);
+                caller.Reply("G3.1 probe: " + e.Message);
             }
             finally { Interlocked.Exchange(ref ProbeSession.Pending, 0); }
         });

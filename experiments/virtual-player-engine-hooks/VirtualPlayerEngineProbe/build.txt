@@ -1,5 +1,5 @@
-displayName = Virtual Player Engine Probe (G2 network experimental)
+displayName = Virtual Player Engine Probe (G3.1 persistence experimental)
 author = Terraria AI Companion
-version = 0.2.2
+version = 0.3.0
 side = Both
 buildIgnore = *.csproj, *.user, obj/*, bin/*, .vs/*
