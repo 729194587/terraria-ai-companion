@@ -86,6 +86,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
         Install(() => On_RemoteClient.CheckSection += Sections, () => On_RemoteClient.CheckSection -= Sections);
         Install(() => On_Main.DedServ_PostModLoad += ServerScope, () => On_Main.DedServ_PostModLoad -= ServerScope);
         Install(() => On_WorldGen.clearWorld += ClearWorld, () => On_WorldGen.clearWorld -= ClearWorld);
+        Install(() => On_Player.Update += ActorControl.Update, () => On_Player.Update -= ActorControl.Update);
         Ready = allocatorPatched && cleanupPatched && syncPatched && savePatched;
         if (!Ready) throw new InvalidOperationException("Incomplete IL hook installation.");
         Logger.Info("G2 network hooks ready; no actor exists. One reservation will arm before the first native StartServer.");

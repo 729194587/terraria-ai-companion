@@ -14,6 +14,7 @@ namespace VirtualPlayerEngineProbe;
 internal static class ProbeSession
 {
     internal static Player Actor;
+    internal static long ActorGeneration;
     private static Player previous;
     private static int slot = -1;
     private static long spawnedAt;
@@ -27,6 +28,8 @@ internal static class ProbeSession
 
     internal static void Reset()
     {
+        ActorControl.Reset();
+        ActorGeneration = 0;
         ProbeDebugAppearance.Clear();
         Actor = previous = null;
         slot = -1;
@@ -138,6 +141,7 @@ internal static class ProbeSession
                     Quarantine("Player construction changed reserved slot ownership; candidate was not published.");
                     throw new InvalidOperationException("Publication refused; reservation quarantined.");
                 }
+                ActorGeneration = checked(ActorGeneration + 1);
                 Actor = candidate;
                 NetworkStateSync.Reset();
                 ProbeAnnouncements.ResetNotices();
@@ -199,6 +203,7 @@ internal static class ProbeSession
                 Log("teardown-quarantined", new { reason, same, occupied });
                 throw new InvalidOperationException("STOP: occupied/transitioning slot quarantined; native clearWorld/unload must not continue.");
             }
+            ActorControl.Retire(owned);
             finishing = true;
             try
             {
@@ -330,6 +335,7 @@ public sealed class ProbeSystem : ModSystem
     public override void PostUpdatePlayers()
     {
         CharacterSelfTest.Update();
+        ActorControl.CheckBinding();
         if (VirtualPlayerEngineProbe.Reservation.Snapshot == null) return;
         VirtualPlayerEngineProbe.Reservation.AssertOwner(Program.IsMainThread);
         if (ProbeSession.Quarantined)
@@ -360,6 +366,7 @@ public sealed class ProbePlayer : ModPlayer
     internal string PersistentMarker = "";
     public override void PreUpdate() => PreUpdates++;
     public override void PostUpdate() => PostUpdates++;
+    public override void PostUpdateRunSpeeds() => ActorControl.BeforeMovement(Player);
     public override void SaveData(Terraria.ModLoader.IO.TagCompound tag) => tag["g31Marker"] = PersistentMarker;
     public override void LoadData(Terraria.ModLoader.IO.TagCompound tag) => PersistentMarker = tag.GetString("g31Marker");
 }
@@ -368,13 +375,15 @@ public sealed class ProbeCommand : ModCommand
 {
     public override string Command => "vph";
     public override CommandType Type => CommandType.World | CommandType.Console;
-    public override string Usage => "/vph status|spawn|save [id]|load [id]|profiles|inspect|fixture|test-save-failure|debug-style|resync|despawn";
-    public override string Description => "G3.1 character persistence experiment; server/host only.";
+    public override string Usage => "/vph walk|stop|motion|status|spawn|save [id]|load [id]|profiles|inspect|fixture|test-save-failure|debug-style|resync|despawn";
+    public override string Description => "G4 server control experiment; server/host only.";
     public override void Action(CommandCaller caller, string input, string[] args)
     {
         if (Interlocked.CompareExchange(ref ProbeSession.Pending, 1, 0) != 0) { caller.Reply("G1 command pending."); return; }
         string session = ProbeSession.WorldSession;
         Player requester = caller.Player;
+        Player commandedActor = ProbeSession.Actor;
+        long commandedGeneration = ProbeSession.ActorGeneration;
         var copy = (string[])args.Clone();
         Main.QueueMainThreadAction(() => {
             try
@@ -390,6 +399,17 @@ public sealed class ProbeCommand : ModCommand
                 if (copy.Length > 2) throw new InvalidOperationException(Usage);
                 string action = copy.Length == 0 ? "status" : copy[0];
                 if (copy.Length == 2 && action is not ("save" or "load")) throw new InvalidOperationException(Usage);
+                if (action == "walk")
+                {
+                    ActorControl.Start(commandedActor, commandedGeneration, session);
+                    caller.Reply("AI 开始向右走约4格；/vph motion 看结果，/vph stop 停止。"); return;
+                }
+                if (action == "stop")
+                {
+                    ActorControl.Stop(commandedActor, commandedGeneration, session);
+                    caller.Reply(ActorControl.Summary()); return;
+                }
+                if (action == "motion") { ActorControl.CheckBinding(); caller.Reply(ActorControl.Summary()); return; }
                 if (action == "status") ProbeSession.Log("status");
                 else if (action == "allocator") ProbeSession.Allocator();
                 else if (action == "spawn") ProbeSession.Spawn();

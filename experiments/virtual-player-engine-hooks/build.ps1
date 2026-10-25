@@ -1,7 +1,7 @@
 param([string]$TModLoaderPath = 'D:/steam/steamapps/common/tModLoader')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$output = Join-Path $repo '.local/virtual-player-character-build'
+$output = Join-Path $repo '.local/virtual-player-control-build'
 Push-Location $TModLoaderPath
 try {
     & (Join-Path $TModLoaderPath 'dotnet/dotnet.exe') (Join-Path $TModLoaderPath 'tModLoader.dll') `

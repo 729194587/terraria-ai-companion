@@ -415,7 +415,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.3.1", "isolated G3.1 package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.4.0", "isolated G4 package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -501,6 +501,7 @@ public static class EngineHookOfflineTests
         RunCompiledStartup(start, listen);
         RunCompiledLifecycle(probe, session, mod);
         int networkChecks = NetworkSyncOfflineTests.Run(gameDirectory, probe);
+        ControlOfflineTests.AuditPackage(probe);
         Console.WriteLine($"Engine probe package: loader={version}; bytes={file.Length}; DLL={size}; {checks} prerequisite/package + {networkChecks} G2 = {checks + networkChecks} total targeted checks; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.");
     }
 
@@ -668,6 +669,7 @@ public static class EngineHookOfflineTests
         public static void AssertMayRetire(PlayerState p) { if(p!=null && FailedSave) throw new IOException("unsaved state"); }
         public static void Clear() { }
         public static void Update() { }
+        public static void Retire(PlayerState p) { }
     }
     public static class TeardownState
     {
@@ -675,7 +677,7 @@ public static class EngineHookOfflineTests
         public static PlayerState Actor, previous;
         public static int slot;
         public static bool connectedHook, creating, finishing, Quarantined, EngineMainThread = true, Ready = true;
-        public static long spawnedAt, NetworkLoops, Accepts, CleanupSkips;
+        public static long spawnedAt, NetworkLoops, Accepts, CleanupSkips, ActorGeneration;
         public static string Phase, Fault;
         public static bool ThrowLog, ThrowDisconnect;
         public static int Disconnects, Logs;
@@ -714,6 +716,7 @@ public static class EngineHookOfflineTests
             ["VirtualPlayerEngineProbe.CharacterStore"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.CharacterSelfTest"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.ProbeDebugAppearance"] = typeof(LifecycleCharacterStore),
+            ["VirtualPlayerEngineProbe.ActorControl"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"] = typeof(TeardownState),
             ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),
