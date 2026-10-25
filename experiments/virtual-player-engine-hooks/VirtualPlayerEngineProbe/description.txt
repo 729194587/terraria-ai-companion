@@ -1,3 +1,3 @@
-Issue #10: version-pinned, one-shot server Player lifecycle experiment.
-No fake client, movement, AI or persistence. G1 live validation is user-operated.
+G2: version-pinned, one-shot server Player visibility and native state synchronization.
+No fake client, autonomous movement, AI or persistence. Live validation is user-operated.
 Use only in a fresh Host & Play test world with this mod alone.

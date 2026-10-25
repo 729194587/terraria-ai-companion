@@ -104,7 +104,7 @@ internal static class ProbeSession
             creating = true;
             try
             {
-                int x = Main.spawnTileX * 16, y = Main.spawnTileY * 16 - 42;
+                int x = Main.spawnTileX * 16 + 64, y = Main.spawnTileY * 16 - 42;
                 bool clear = false;
                 // Initialization only, not a teleport/movement driver. Never clear tiles.
                 for (int up = 0; up <= 12; up++)
@@ -119,6 +119,7 @@ internal static class ProbeSession
                 var candidate = new Player { whoAmI = view.Slot, name = "G1_NoClient_Probe", width = 20, height = 42,
                     statLife = 100, statLifeMax = 100, statLifeMax2 = 100,
                     position = new Vector2(x, y), SpawnX = -1, SpawnY = -1 };
+                NetworkStateSync.Configure(candidate);
                 if (!ReferenceEquals(Reservation.Snapshot, view) || Quarantined || VirtualPlayerEngineProbe.Fault != null
                     || Main.maxNetPlayers != view.Capacity || slot != view.Slot || previous == null || previous.active
                     || Main.player == null || slot >= Main.player.Length || Netplay.Clients == null || slot >= Netplay.Clients.Length
@@ -131,7 +132,7 @@ internal static class ProbeSession
                 Main.player[slot] = candidate;
                 candidate.active = true; // Exactly once; never repaired by update/network hooks.
                 spawnedAt = Interlocked.Read(ref VirtualPlayerEngineProbe.NetworkLoops);
-                Phase = "actor exists; G1 live result requires user verification";
+                Phase = "actor exists; G2 visibility requires client verification";
                 connectedHook = true;
                 Player.Hooks.PlayerConnect(slot); // Includes native pressure-plate reset.
                 if (Main.player == null || slot >= Main.player.Length || Netplay.Clients == null || slot >= Netplay.Clients.Length
@@ -141,6 +142,7 @@ internal static class ProbeSession
                     Quarantine("PlayerConnect changed actor/connection ownership.");
                     throw new InvalidOperationException("Connect callback changed ownership; reservation quarantined.");
                 }
+                NetworkStateSync.Full(candidate);
                 Log("spawn");
             }
             catch
@@ -190,6 +192,7 @@ internal static class ProbeSession
                 {
                     if (owned != null)
                     {
+                        NetworkStateSync.Leave(owned);
                         owned.active = false;
                         if (connectedHook)
                         {
@@ -290,6 +293,8 @@ internal static class ProbeSession
             syncSkips = Interlocked.Read(ref VirtualPlayerEngineProbe.SyncSkips),
             sectionSkips = Interlocked.Read(ref VirtualPlayerEngineProbe.SectionSkips),
             accepts = Interlocked.Read(ref VirtualPlayerEngineProbe.Accepts),
+            fullSnapshots = NetworkStateSync.FullSnapshots, controlPackets = NetworkStateSync.Controls,
+            departures = NetworkStateSync.Departures,
             fault = VirtualPlayerEngineProbe.Fault, liveGateResult = "not automatically assessed", detail }));
     }
 }
@@ -317,6 +322,13 @@ public sealed class ProbeSystem : ModSystem
         if (p.whoAmI != view.Slot || !ReferenceEquals(Main.player[view.Slot], p) || !p.active || p.dead)
             VirtualPlayerEngineProbe.SignalFault("Actor reference/activity/death changed; no automatic repair or respawn.");
         if (VirtualPlayerEngineProbe.Fault != null) { ProbeSession.Finish("stop condition: " + VirtualPlayerEngineProbe.Fault); return; }
+        try { NetworkStateSync.Tick(p); }
+        catch (Exception e)
+        {
+            NetworkStateSync.Fail(e);
+            ProbeSession.Finish("G2 synchronization failure");
+            return;
+        }
         if (Main.GameUpdateCount % 60 == 0) ProbeSession.Log("sample");
     }
 }
@@ -332,8 +344,8 @@ public sealed class ProbeCommand : ModCommand
 {
     public override string Command => "vph";
     public override CommandType Type => CommandType.World | CommandType.Console;
-    public override string Usage => "/vph status|allocator|spawn|despawn";
-    public override string Description => "G1 engine experiment; server/host only, one spawn lifecycle per server process.";
+    public override string Usage => "/vph status|allocator|spawn|style|resync|despawn";
+    public override string Description => "G2 network experiment; server/host only, one spawn lifecycle per server process.";
     public override void Action(CommandCaller caller, string input, string[] args)
     {
         if (Interlocked.CompareExchange(ref ProbeSession.Pending, 1, 0) != 0) { caller.Reply("G1 command pending."); return; }
@@ -356,10 +368,14 @@ public sealed class ProbeCommand : ModCommand
                 if (action == "status") ProbeSession.Log("status");
                 else if (action == "allocator") ProbeSession.Allocator();
                 else if (action == "spawn") ProbeSession.Spawn();
+                else if (action == "style") NetworkStateSync.Style(ProbeSession.Actor ?? throw new InvalidOperationException("Spawn the probe first."));
+                else if (action == "resync") NetworkStateSync.Full(ProbeSession.Actor ?? throw new InvalidOperationException("Spawn the probe first."));
                 else if (action == "despawn") ProbeSession.Finish("authorized despawn");
                 else throw new InvalidOperationException(Usage);
-                caller.Reply($"G1 probe: {ProbeSession.Phase}; actorSlot={ProbeSession.Actor?.whoAmI ?? -1}; " +
-                    $"fault={VirtualPlayerEngineProbe.Fault ?? "none"}. Details in server.log; no live pass is inferred.");
+                if (action == "spawn" && ProbeSession.Actor != null)
+                    caller.Reply($"G2：已创建 Player，slot={ProbeSession.Actor.whoAmI}。请观察出生点右侧的 G2_NoClient_Probe；/vpc {ProbeSession.Actor.whoAmI} 查看客户端状态。");
+                else caller.Reply($"G2: {ProbeSession.Phase}; actorSlot={ProbeSession.Actor?.whoAmI ?? -1}; " +
+                    $"fault={VirtualPlayerEngineProbe.Fault ?? "none"}; full={NetworkStateSync.FullSnapshots}, controls={NetworkStateSync.Controls}, left={NetworkStateSync.Departures}.");
             }
             catch (Exception e)
             {
@@ -368,5 +384,29 @@ public sealed class ProbeCommand : ModCommand
             }
             finally { Interlocked.Exchange(ref ProbeSession.Pending, 0); }
         });
+    }
+}
+
+// Read-only client diagnostics. The slot is supplied explicitly, never inferred
+// from a name as authority. This command cannot publish or mutate any Player.
+public sealed class ClientProbeCommand : ModCommand
+{
+    public override string Command => "vpc";
+    public override CommandType Type => CommandType.Chat;
+    public override string Usage => "/vpc <server actor slot>";
+    public override string Description => "Read the local client's native Player state for a probe slot.";
+    public override void Action(CommandCaller caller, string input, string[] args)
+    {
+        if (!Program.IsMainThread || Main.netMode != NetmodeID.MultiplayerClient || Main.gameMenu
+            || args.Length != 1 || !int.TryParse(args[0], out int id) || id < 0 || id >= Main.maxPlayers)
+        { caller.Reply(Usage + " (active multiplayer client required)"); return; }
+        var p = Main.player[id];
+        caller.Reply($"客户端 slot={id}, active={p.active}, name={p.name}, pos=({p.position.X:F1},{p.position.Y:F1}), " +
+            $"helmet={p.armor[0].type}, selected={p.selectedItem}。");
+        Mod.Logger.Info(JsonSerializer.Serialize(new { probe = "VirtualPlayerEngineProbe", eventName = "client-slot-snapshot",
+            utc = DateTime.UtcNow.ToString("O"), role = "graphical-client", slot = id, p.active, p.name,
+            x = p.position.X, y = p.position.Y, vx = p.velocity.X, vy = p.velocity.Y,
+            p.direction, p.controlLeft, p.controlRight, p.controlJump, p.selectedItem, helmet = p.armor[0].type,
+            shirt = new { p.shirtColor.R, p.shirtColor.G, p.shirtColor.B }, readOnlyDiagnostic = true }));
     }
 }

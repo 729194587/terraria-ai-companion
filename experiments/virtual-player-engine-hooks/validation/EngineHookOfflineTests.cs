@@ -102,6 +102,7 @@ public static class EngineHookOfflineTests
             && StartupReservation.ConnectionIdle(c.IsConnected(), c.IsActive, c.State, c.PendingTermination, c.PendingTerminationApproved);
     }
     private static int checks;
+    private static string gameDirectory;
     private static bool nativeInitialIsListening;
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
     public static int DetourSmokeTarget() => 7;
@@ -114,6 +115,7 @@ public static class EngineHookOfflineTests
 
     public static void Run(string gamePath, string output)
     {
+        gameDirectory = gamePath;
         string dll = Path.Combine(gamePath, "tModLoader.dll");
         Check(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(dll))) == EngineHash, "exact installed engine fingerprint");
         string hooks = Path.Combine(gamePath, "Libraries/TerrariaHooks/0.0.0.0/TerrariaHooks.dll");
@@ -406,7 +408,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.1.4", "isolated reviewed package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.2.0", "isolated G2 package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -443,9 +445,11 @@ public static class EngineHookOfflineTests
             "no connection state, native listener state or Main.myPlayer writes");
         Check(ins.Count(i => i.OpCode == OpCodes.Stfld && i.Operand is FieldReference f && f.Name == "active"
             && i.Previous.OpCode == OpCodes.Ldc_I4_1) == 1, "active=true has exactly one initialization site, no repair loop");
-        Check(!ins.Any(i => i.Operand is MethodReference m && (m.Name == "SendData"
-            || m.DeclaringType.FullName == "Terraria.Player" && m.Name is "Update" or "Spawn" or "Teleport")),
-            "no custom player sync, manual update, native Spawn side effects or movement shortcut");
+        Check(!ins.Any(i => i.Operand is MethodReference m
+            && m.DeclaringType.FullName == "Terraria.Player" && m.Name is "Update" or "Spawn" or "Teleport"),
+            "no manual update, native Spawn side effects or movement shortcut");
+        Check(methods.Where(m => m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.Name == "SendData"))
+            .All(m => m.DeclaringType.Name == "NetworkStateSync"), "G2 native packet sends confined to ownership-checked adapter");
         var refs = ins.Where(i => i.Operand is MethodReference).Select(i => (MethodReference)i.Operand).ToArray();
         foreach (var hook in new[] { "FindNextOpenClientSlot", "UpdateConnectedClients", "StartServer", "StartListening", "OnConnectionAccepted", "SyncOnePlayer", "CheckSection", "DedServ_PostModLoad", "clearWorld", "OnSubmitServerPassword" })
             Check(refs.Any(m => m.Name == "add_" + hook) && refs.Any(m => m.Name == "remove_" + hook), "hook subscription has rollback pair: " + hook);
@@ -486,7 +490,8 @@ public static class EngineHookOfflineTests
             "native placeholder baseline is established before spawn and never replaced by spawn");
         RunCompiledStartup(start, listen);
         RunCompiledLifecycle(probe, session, mod);
-        Console.WriteLine($"Engine probe package: loader={version}; bytes={file.Length}; DLL={size}; {checks} total checks; G1 LIVE NOT RUN.");
+        int networkChecks = NetworkSyncOfflineTests.Run(gameDirectory, probe);
+        Console.WriteLine($"Engine probe package: loader={version}; bytes={file.Length}; DLL={size}; {checks} prerequisite/package + {networkChecks} G2 = {checks + networkChecks} total targeted checks; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.");
     }
 
     public sealed class StartupDetail
@@ -622,6 +627,20 @@ public static class EngineHookOfflineTests
         public static bool InWorld(int x, int y, int fluff) => true;
         public static bool SolidCollision(VectorState position, int width, int height) => !Clear;
     }
+    public static class LifecycleNetworkState
+    {
+        public static bool ThrowFull, ThrowLeave;
+        public static void Configure(PlayerState _) { }
+        public static void Full(PlayerState _) { if (ThrowFull) throw new IOException("fixture native full sync failed"); }
+        public static void Leave(PlayerState _)
+        {
+            if (ThrowLeave)
+            {
+                TeardownState.Quarantined = true;
+                throw new IOException("fixture native departure failed");
+            }
+        }
+    }
     public static class TeardownState
     {
         public static StartupReservation Reservation;
@@ -662,6 +681,7 @@ public static class EngineHookOfflineTests
         var module = fixture.MainModule;
         var map = new Dictionary<string, Type> {
             ["VirtualPlayerEngineProbe.ProbeSession"] = typeof(TeardownState),
+            ["VirtualPlayerEngineProbe.NetworkStateSync"] = typeof(LifecycleNetworkState),
             ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"] = typeof(TeardownState),
             ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),
@@ -735,6 +755,7 @@ public static class EngineHookOfflineTests
             TeardownState.creating = TeardownState.finishing = false;
             TeardownState.OnConnect = TeardownState.OnDisconnect = null; TeardownState.Connects = 0;
             TeardownState.Ready = WorldState.Clear = true;
+            LifecycleNetworkState.ThrowFull = LifecycleNetworkState.ThrowLeave = false;
         }
         Reset(); var original = TeardownState.previous;
         finish("despawn"); finish("duplicate");
@@ -943,5 +964,15 @@ public static class EngineHookOfflineTests
         Check(concurrentAccept.Join(2000) && excluded && acceptFailure == null && TeardownState.Actor.active,
             "actual Spawn holds Gate across construction/publication and excludes concurrent native accept");
         finish("concurrent lifecycle");
+        BeforeCreate(); var failedSyncBaseline = MainState.player[3]; LifecycleNetworkState.ThrowFull = true;
+        try { spawn(); throw new Exception("full send failure lost"); } catch (IOException) { }
+        Check(TeardownState.Actor == null && ReferenceEquals(MainState.player[3], failedSyncBaseline)
+            && TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 1,
+            "actual G2 Spawn rolls back published actor after native initial-sync failure");
+        Reset(); var retainedActor = TeardownState.Actor; LifecycleNetworkState.ThrowLeave = true;
+        try { finish("departure fails"); throw new Exception("unsafe departure release"); } catch (InvalidOperationException) { }
+        Check(TeardownState.Quarantined && retainedActor.active && ReferenceEquals(MainState.player[3], retainedActor)
+            && TeardownState.Reservation.IsReserved(3) && TeardownState.Disconnects == 0,
+            "actual G2 teardown retains actor/reservation when departure cannot be synchronized");
     }
 }

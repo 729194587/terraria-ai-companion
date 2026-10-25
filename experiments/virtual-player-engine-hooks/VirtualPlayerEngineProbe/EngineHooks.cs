@@ -18,7 +18,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
     internal const string HooksHash = "595D26FB3BBE27548D030943B5ED2437F690D1C002129BAD21FAFEAEB8118F7A";
     internal const string Commit = "c9545cf27d56c456321e1896274c02adf67d0140";
     private readonly Stack<Action> rollback = new();
-    private bool allocatorPatched, cleanupPatched;
+    private bool allocatorPatched, cleanupPatched, syncPatched;
     internal static VirtualPlayerEngineProbe Instance;
     internal static bool Ready;
     internal static StartupReservation Reservation = new();
@@ -49,6 +49,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
             Logger.Info($"Engine fingerprint confirmed: Terraria 1.4.4.9 / tML {BuildInfo.tMLVersion}; {EngineHash}");
             if (ModLoader.Mods.Any(m => m != this && m.Name != "ModLoader"))
                 throw new InvalidOperationException("G1 isolation requires this probe and tModLoader only.");
+            NetworkStateSync.Reset();
             if (Main.dedServ) InstallServerHooks();
             else
             {
@@ -71,6 +72,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
     {
         Install(() => IL_Netplay.FindNextOpenClientSlot += PatchAllocator, () => IL_Netplay.FindNextOpenClientSlot -= PatchAllocator);
         Install(() => IL_Netplay.UpdateConnectedClients += PatchCleanup, () => IL_Netplay.UpdateConnectedClients -= PatchCleanup);
+        Install(() => IL_NetMessage.SyncOnePlayer += PatchPlayerSync, () => IL_NetMessage.SyncOnePlayer -= PatchPlayerSync);
         Install(() => On_Netplay.StartServer += StartServer, () => On_Netplay.StartServer -= StartServer);
         Install(() => On_Netplay.StartListening += Listen, () => On_Netplay.StartListening -= Listen);
         Install(() => On_Netplay.UpdateConnectedClients += NetworkTick, () => On_Netplay.UpdateConnectedClients -= NetworkTick);
@@ -79,9 +81,9 @@ public sealed class VirtualPlayerEngineProbe : Mod
         Install(() => On_RemoteClient.CheckSection += Sections, () => On_RemoteClient.CheckSection -= Sections);
         Install(() => On_Main.DedServ_PostModLoad += ServerScope, () => On_Main.DedServ_PostModLoad -= ServerScope);
         Install(() => On_WorldGen.clearWorld += ClearWorld, () => On_WorldGen.clearWorld -= ClearWorld);
-        Ready = allocatorPatched && cleanupPatched;
+        Ready = allocatorPatched && cleanupPatched && syncPatched;
         if (!Ready) throw new InvalidOperationException("Incomplete IL hook installation.");
-        Logger.Info("G1 hooks ready; no actor exists. One reservation will arm before the first native StartServer.");
+        Logger.Info("G2 network hooks ready; no actor exists. One reservation will arm before the first native StartServer.");
     }
 
     private void GraphicalHostLaunch(On_Main.orig_OnSubmitServerPassword orig, Main self)
@@ -120,6 +122,19 @@ public sealed class VirtualPlayerEngineProbe : Mod
     {
         EnginePatches.Cleanup(il.Method, il.Module.ImportReference(typeof(VirtualPlayerEngineProbe).GetMethod(nameof(SkipCleanup))));
         cleanupPatched = true;
+    }
+    private void PatchPlayerSync(ILContext il)
+    {
+        EnginePatches.PlayerSync(il.Method, il.Module.ImportReference(typeof(VirtualPlayerEngineProbe).GetMethod(nameof(IsNetworkActor))));
+        syncPatched = true;
+    }
+
+    public static bool IsNetworkActor(int slot)
+    {
+        lock (Reservation.Gate)
+            return Main.netMode == Terraria.ID.NetmodeID.Server && Ready && Fault == null
+                && !ProbeSession.Quarantined && OwnedWithoutConnection(slot)
+                && ProbeSession.Actor.active && !ProbeSession.Actor.dead;
     }
 
     // Allocator readers consult metadata only. The view exists before ANY native
@@ -221,8 +236,16 @@ public sealed class VirtualPlayerEngineProbe : Mod
         if (!IsReserved(slot)) { orig(slot, toWho, fromWho); return; }
         lock (Reservation.Gate)
         {
-            if (OwnedWithoutConnection(slot)) { Interlocked.Increment(ref SyncSkips); return; }
-            orig(slot, toWho, fromWho);
+            if (!OwnedWithoutConnection(slot)) { orig(slot, toWho, fromWho); return; }
+            if (!IsNetworkActor(slot)) { Interlocked.Increment(ref SyncSkips); return; }
+            var expected = ProbeSession.Actor;
+            try
+            {
+                Reservation.AssertOwner(Program.IsMainThread);
+                orig(slot, toWho, fromWho);
+                NetworkStateSync.SnapshotCompleted(expected);
+            }
+            catch (Exception e) { NetworkStateSync.Fail(e); throw; }
         }
     }
     private void Sections(On_RemoteClient.orig_CheckSection orig, int slot, Vector2 position, int fluff)
