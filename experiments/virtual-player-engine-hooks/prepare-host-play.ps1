@@ -50,12 +50,14 @@ if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash -ne '__HASH__') 
 $enabled = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Mods/enabled.json') -Raw | ConvertFrom-Json
 $extra = @($enabled | Where-Object { $_ -notin @('VirtualPlayerEngineProbe', 'ModLoader') })
 if ($extra.Count) { throw ('G2 isolation: disable these mods before launch: ' + ($extra -join ', ')) }
+$listeners = @(Get-NetTCPConnection -LocalPort 7777 -State Listen -ErrorAction SilentlyContinue)
+if ($listeners.Count) { throw ('Host & Play port 7777 is already in use (PID ' + (($listeners.OwningProcess | Select-Object -Unique) -join ', ') + '). Close the previous server before retrying.') }
 Push-Location $TModLoaderPath
 try { & (Join-Path $TModLoaderPath 'start-tModLoader.bat') -tmlsavedirectory $PSScriptRoot -modpath (Join-Path $PSScriptRoot 'Mods') }
 finally { Pop-Location }
 '@
 Set-Content -LiteralPath (Join-Path $profile 'start-host-play.ps1') -Value $launcher.Replace('__HASH__', $packageHash).Replace('__TML__', $TModLoaderPath.Replace("'", "''"))
-Set-Content -LiteralPath (Join-Path $profile 'BUILD.txt') -Value @('VirtualPlayerEngineProbe 0.2.2 (G2)', ('SHA256=' + $packageHash),
+Set-Content -LiteralPath (Join-Path $profile 'BUILD.txt') -Value @('VirtualPlayerEngineProbe 0.2.3 (G2)', ('SHA256=' + $packageHash),
     'Offline validation only. SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.',
     'Run start-host-play.ps1 manually; reuse the existing test character/world; Multiplayer > Host & Play.',
     '/vph status, /vph spawn, /vpc <slot>, /vph debug-style, /vph resync, /vph despawn.')

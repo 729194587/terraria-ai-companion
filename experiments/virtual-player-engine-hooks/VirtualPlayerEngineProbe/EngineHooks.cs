@@ -77,6 +77,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
         Install(() => On_Netplay.StartServer += StartServer, () => On_Netplay.StartServer -= StartServer);
         Install(() => On_Netplay.StartListening += Listen, () => On_Netplay.StartListening -= Listen);
         Install(() => On_Netplay.UpdateConnectedClients += NetworkTick, () => On_Netplay.UpdateConnectedClients -= NetworkTick);
+        Install(() => On_Netplay.UpdateInMainThread += MainNetworkTick, () => On_Netplay.UpdateInMainThread -= MainNetworkTick);
         Install(() => On_Netplay.OnConnectionAccepted += Accepted, () => On_Netplay.OnConnectionAccepted -= Accepted);
         Install(() => On_NetMessage.SyncOnePlayer += SyncOne, () => On_NetMessage.SyncOnePlayer -= SyncOne);
         Install(() => On_RemoteClient.CheckSection += Sections, () => On_RemoteClient.CheckSection -= Sections);
@@ -132,6 +133,9 @@ public sealed class VirtualPlayerEngineProbe : Mod
 
     public static bool IsNetworkActor(int slot)
     {
+        // Native SyncOnePlayer also calls this for humans while holding their
+        // MessageBuffer. Never acquire the reservation gate on that fast path.
+        if (!IsReserved(slot)) return false;
         lock (Reservation.Gate)
             return Main.netMode == Terraria.ID.NetmodeID.Server && Ready && Fault == null
                 && !ProbeSession.Quarantined && OwnedWithoutConnection(slot)
@@ -223,6 +227,15 @@ public sealed class VirtualPlayerEngineProbe : Mod
             orig();
             Interlocked.Increment(ref NetworkLoops);
         }
+    }
+    private void MainNetworkTick(On_Netplay.orig_UpdateInMainThread orig)
+    {
+        if (Reservation.Snapshot == null) { orig(); return; }
+        Reservation.AssertOwner(Program.IsMainThread);
+        // CheckBytes locks a MessageBuffer before invoking player sync. Take
+        // Gate first, matching NetworkTick -> inline ReceiveBytes -> buffer.
+        // This also covers an AI snapshot sent inside a human late-join packet.
+        lock (Reservation.Gate) orig();
     }
     private void Accepted(On_Netplay.orig_OnConnectionAccepted orig, ISocket socket)
     {

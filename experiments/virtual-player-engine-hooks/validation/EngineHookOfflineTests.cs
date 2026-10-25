@@ -413,7 +413,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.2.2", "isolated G2 package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.2.3", "isolated G2 package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -456,7 +456,7 @@ public static class EngineHookOfflineTests
         Check(methods.Where(m => m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.Name == "SendData"))
             .All(m => m.DeclaringType.Name == "NetworkStateSync"), "G2 native packet sends confined to ownership-checked adapter");
         var refs = ins.Where(i => i.Operand is MethodReference).Select(i => (MethodReference)i.Operand).ToArray();
-        foreach (var hook in new[] { "FindNextOpenClientSlot", "UpdateConnectedClients", "StartServer", "StartListening", "OnConnectionAccepted", "SyncOnePlayer", "CheckSection", "DedServ_PostModLoad", "clearWorld", "OnSubmitServerPassword" })
+        foreach (var hook in new[] { "FindNextOpenClientSlot", "UpdateConnectedClients", "UpdateInMainThread", "StartServer", "StartListening", "OnConnectionAccepted", "SyncOnePlayer", "CheckSection", "DedServ_PostModLoad", "clearWorld", "OnSubmitServerPassword" })
             Check(refs.Any(m => m.Name == "add_" + hook) && refs.Any(m => m.Name == "remove_" + hook), "hook subscription has rollback pair: " + hook);
         var start = mod.Methods.Single(m => m.Name == "StartServer");
         int CallOffset(MethodDefinition m, string name) => m.Body.Instructions.First(i => i.Operand is MethodReference r && r.Name == name).Offset;
