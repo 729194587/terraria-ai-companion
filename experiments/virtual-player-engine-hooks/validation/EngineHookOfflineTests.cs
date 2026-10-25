@@ -82,6 +82,7 @@ public static class EngineHookOfflineTests
         return Reservation.MaySkipDisconnectedSlot(slot, c.IsConnected(), c.IsActive, c.State, c.PendingTermination, c.PendingTerminationApproved);
     }
     private static int checks;
+    private static bool nativeInitialIsListening;
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
     public static int DetourSmokeTarget() => 7;
     private static void Check(bool ok, string label)
@@ -136,6 +137,18 @@ public static class EngineHookOfflineTests
         var accept = Method("Terraria.Netplay", "OnConnectionAccepted");
         var start = Method("Terraria.Netplay", "StartServer");
         var initialize = Method("Terraria.Netplay", "InitializeServer");
+        var netDefaults = Method("Terraria.Netplay", ".cctor");
+        var listeningDefault = netDefaults.Body.Instructions.Single(i => i.OpCode == OpCodes.Stsfld
+            && i.Operand is FieldReference f && f.Name == "IsListening");
+        nativeInitialIsListening = listeningDefault.Previous.OpCode == OpCodes.Ldc_I4_1;
+        Check(nativeInitialIsListening, "installed Netplay static initializer sets IsListening=true before any listener exists");
+        Check(!netDefaults.Body.Instructions.Any(i => i.OpCode == OpCodes.Stsfld
+                && i.Operand is FieldReference f && f.Name == "TcpListener")
+            && game.MainModule.GetTypes().SelectMany(t => t.Methods).Where(m => m.HasBody)
+                .Where(m => m.Body.Instructions.Any(i => i.OpCode == OpCodes.Stsfld
+                    && i.Operand is FieldReference f && f.FullName == "Terraria.Net.Sockets.ISocket Terraria.Netplay::TcpListener"))
+                .Select(m => m.FullName).SequenceEqual(new[] { initialize.FullName }),
+            "native TcpListener starts null and only InitializeServer assigns it");
         var sync = Method("Terraria.NetMessage", "SyncOnePlayer");
         var unload = Method("Terraria.ModLoader.ModContent", "UnloadModContent");
         var server = Method("Terraria.Main", "DedServ_PostModLoad");
@@ -163,6 +176,7 @@ public static class EngineHookOfflineTests
             "Terraria.Netplay::InitializeServer", "Terraria.Netplay::StartListeningIfNeeded" }),
             "whole installed module has only startup/network-loop listener entry points");
         foreach (var m in new[] { allocate, cleanup, accept, start, initialize, sync, unload, server,
+            netDefaults, Method("Terraria.Netplay", "StartListening"), Method("Terraria.Netplay", "StartListeningIfNeeded"),
             hostLaunch, steamLaunch, processArgs, launch, launchInner, runGame, dedicated, reload, update, consume,
             Method("Terraria.Program", "get_IsMainThread"),
             Method("Terraria.Netplay", "ServerLoop"), Method("Terraria.RemoteClient", "Reset"),
@@ -225,6 +239,8 @@ public static class EngineHookOfflineTests
             ("Terraria.On_Main", "OnSubmitServerPassword") })
             Check(hookAssembly.MainModule.Types.Single(t => t.FullName == pair.Item1).Events.Any(e => e.Name == pair.Item2),
                 "generated interception exists: " + pair.Item1 + "." + pair.Item2);
+        Check(hookAssembly.MainModule.Types.Single(t => t.FullName == "Terraria.On_Netplay").Events.Any(e => e.Name == "StartListening"),
+            "generated interception exists: Terraria.On_Netplay.StartListening");
 
         // Apply the SAME transformations used by the live IL handlers to complete
         // installed methods, before remapping their external storage/effects.
@@ -356,7 +372,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.1.2", "isolated reviewed package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.1.3", "isolated reviewed package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -388,19 +404,24 @@ public static class EngineHookOfflineTests
         Check(!constructions.Any(m => m.DeclaringType.FullName is "Terraria.RemoteClient" or "Terraria.NPC"
             || m.DeclaringType.FullName.Contains("Socket") || m.DeclaringType.FullName.Contains("Process")), "no fake RemoteClient, socket, NPC or process construction");
         Check(!ins.Any(i => (i.OpCode == OpCodes.Stfld || i.OpCode == OpCodes.Stsfld) && i.Operand is FieldReference f
-            && (f.DeclaringType.FullName == "Terraria.RemoteClient" || f.FullName == "System.Int32 Terraria.Main::myPlayer")),
-            "no connection state or Main.myPlayer writes");
+            && (f.DeclaringType.FullName == "Terraria.RemoteClient" || f.FullName == "System.Int32 Terraria.Main::myPlayer"
+                || f.FullName == "System.Boolean Terraria.Netplay::IsListening" || f.FullName == "Terraria.Net.Sockets.ISocket Terraria.Netplay::TcpListener")),
+            "no connection state, native listener state or Main.myPlayer writes");
         Check(ins.Count(i => i.OpCode == OpCodes.Stfld && i.Operand is FieldReference f && f.Name == "active"
             && i.Previous.OpCode == OpCodes.Ldc_I4_1) == 1, "active=true has exactly one initialization site, no repair loop");
         Check(!ins.Any(i => i.Operand is MethodReference m && (m.Name == "SendData"
             || m.DeclaringType.FullName == "Terraria.Player" && m.Name is "Update" or "Spawn" or "Teleport")),
             "no custom player sync, manual update, native Spawn side effects or movement shortcut");
         var refs = ins.Where(i => i.Operand is MethodReference).Select(i => (MethodReference)i.Operand).ToArray();
-        foreach (var hook in new[] { "FindNextOpenClientSlot", "UpdateConnectedClients", "StartServer", "OnConnectionAccepted", "SyncOnePlayer", "CheckSection", "DedServ_PostModLoad", "clearWorld", "OnSubmitServerPassword" })
+        foreach (var hook in new[] { "FindNextOpenClientSlot", "UpdateConnectedClients", "StartServer", "StartListening", "OnConnectionAccepted", "SyncOnePlayer", "CheckSection", "DedServ_PostModLoad", "clearWorld", "OnSubmitServerPassword" })
             Check(refs.Any(m => m.Name == "add_" + hook) && refs.Any(m => m.Name == "remove_" + hook), "hook subscription has rollback pair: " + hook);
         var start = mod.Methods.Single(m => m.Name == "StartServer");
         int CallOffset(MethodDefinition m, string name) => m.Body.Instructions.First(i => i.Operand is MethodReference r && r.Name == name).Offset;
         Check(CallOffset(start, "ArmBeforeListening") < CallOffset(start, "Invoke"), "compiled live reservation publishes BEFORE orig StartServer");
+        var listen = mod.Methods.Single(m => m.Name == "Listen");
+        Check(CallOffset(listen, "Increment") < CallOffset(listen, "Invoke")
+            && CallOffset(listen, "Log") < CallOffset(listen, "Invoke"),
+            "compiled native listener observation records entry/reservation before original TCP/Steam listen");
         var scope = mod.Methods.Single(m => m.Name == "ServerScope");
         Check(scope.Body.ExceptionHandlers.Any(e => e.HandlerType == ExceptionHandlerType.Finally)
             && scope.Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "Finish")
@@ -429,8 +450,134 @@ public static class EngineHookOfflineTests
             && !session.Methods.Single(m => m.Name == "Spawn").Body.Instructions.Any(i => i.OpCode == OpCodes.Stsfld
                 && i.Operand is FieldReference f && f.Name == "previous"),
             "native placeholder baseline is established before spawn and never replaced by spawn");
+        RunCompiledStartup(start, listen);
         RunCompiledTeardown(probe, session.Methods.Single(m => m.Name == "Finish"));
         Console.WriteLine($"Engine probe package: loader={version}; bytes={file.Length}; DLL={size}; {checks} total checks; G1 LIVE NOT RUN.");
+    }
+
+    public sealed class StartupDetail
+    {
+        public readonly bool Armed, LegacyListening, TcpExists;
+        public readonly int Entries;
+        public StartupDetail(bool armed, int capacity, bool legacyListening, bool tcpExists, int entries)
+        { Armed = armed; LegacyListening = legacyListening; TcpExists = tcpExists; Entries = entries; }
+    }
+    public sealed class ListenerDetail { public ListenerDetail(int entry, bool reserved) { } }
+    public static class StartupState
+    {
+        public static StartupReservation Reservation;
+        public static bool Ready, dedServ, EngineMainThread, IsListening;
+        public static object TcpListener;
+        public static int scopeThread, listenerEntries, maxNetPlayers, InitialChecks, NativeCalls;
+        public static long Accepts, NetworkLoops;
+        public static string Fault;
+        public static StartupDetail PreListen;
+        public static string get_Fault() => Fault;
+        public static bool get_IsMainThread() => EngineMainThread;
+        public static void SignalFault(string reason) => Fault ??= reason;
+        public static void Finish(string _) => throw new Exception("unexpected teardown in startup fixture");
+        public static void CheckInitialSlot()
+        {
+            if (!Reservation.IsReserved(254)) throw new Exception("initial validation lost reservation");
+            InitialChecks++;
+        }
+        public static void Log(string name, object detail)
+        { if (name == "pre-listen-reservation") PreListen = (StartupDetail)detail; }
+    }
+
+    private static void RunCompiledStartup(MethodDefinition start, MethodDefinition listen)
+    {
+        // Execute the packaged handlers, substituting only engine storage and
+        // orig effects. The native flag default comes from installed .cctor IL.
+        using var fixture = AssemblyDefinition.CreateAssembly(new AssemblyNameDefinition("CompiledStartupFixture", new Version(1, 0)), "CompiledStartupFixture", ModuleKind.Dll);
+        var module = fixture.MainModule;
+        var map = new Dictionary<string, Type> {
+            ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"] = typeof(StartupState),
+            ["VirtualPlayerEngineProbe.ProbeSession"] = typeof(StartupState),
+            ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),
+            ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),
+            ["Terraria.Main"] = typeof(StartupState), ["Terraria.Netplay"] = typeof(StartupState),
+            ["Terraria.Program"] = typeof(StartupState), ["Terraria.Net.Sockets.ISocket"] = typeof(object),
+            ["Terraria.On_Netplay/orig_StartServer"] = typeof(Action),
+            ["Terraria.On_Netplay/orig_StartListening"] = typeof(Func<bool>)
+        };
+        var runner = new TypeDefinition("Fixture", "Startup", Mono.Cecil.TypeAttributes.Public | Mono.Cecil.TypeAttributes.Abstract
+            | Mono.Cecil.TypeAttributes.Sealed, module.TypeSystem.Object); module.Types.Add(runner);
+        TypeReference Type(TypeReference t) => map.TryGetValue(t.FullName, out var mapped) ? module.ImportReference(mapped) : module.ImportReference(t);
+        foreach (var src in new[] { start, listen })
+        {
+            var dst = new MethodDefinition(src.Name, Mono.Cecil.MethodAttributes.Public | Mono.Cecil.MethodAttributes.Static, Type(src.ReturnType));
+            // Preserve instance-handler argument indices; the handlers do not read this.
+            dst.Parameters.Add(new ParameterDefinition("unusedThis", Mono.Cecil.ParameterAttributes.None, module.TypeSystem.Object));
+            foreach (var p in src.Parameters) dst.Parameters.Add(new ParameterDefinition(p.Name, p.Attributes, Type(p.ParameterType)));
+            runner.Methods.Add(dst); dst.Body.InitLocals = src.Body.InitLocals; dst.Body.MaxStackSize = src.Body.MaxStackSize;
+            foreach (var v in src.Body.Variables) dst.Body.Variables.Add(new VariableDefinition(Type(v.VariableType)));
+            var instructions = src.Body.Instructions.ToDictionary(i => i, _ => Instruction.Create(OpCodes.Nop));
+            object Import(object operand) => operand switch {
+                Instruction i => instructions[i], Instruction[] branches => branches.Select(i => instructions[i]).ToArray(),
+                VariableDefinition v => dst.Body.Variables[v.Index], ParameterDefinition p => dst.Parameters[p.Index + 1],
+                FieldReference f when map.TryGetValue(f.DeclaringType.FullName, out var t) => module.ImportReference(t.GetField(f.Name)),
+                MethodReference m when m.DeclaringType.Name.StartsWith("<>f__AnonymousType") => module.ImportReference(
+                    (m.Parameters.Count == 5 ? typeof(StartupDetail) : typeof(ListenerDetail)).GetConstructors().Single()),
+                MethodReference m when map.TryGetValue(m.DeclaringType.FullName, out var t) => module.ImportReference(t.GetMethods()
+                    .Single(x => x.Name == m.Name && x.GetParameters().Length == m.Parameters.Count)),
+                FieldReference f => module.ImportReference(f), MethodReference m => module.ImportReference(m), TypeReference t => Type(t), _ => operand
+            };
+            foreach (var i in src.Body.Instructions) { instructions[i].OpCode = i.OpCode; instructions[i].Operand = Import(i.Operand); dst.Body.Instructions.Add(instructions[i]); }
+            foreach (var e in src.Body.ExceptionHandlers) dst.Body.ExceptionHandlers.Add(new ExceptionHandler(e.HandlerType) {
+                TryStart = instructions[e.TryStart], TryEnd = e.TryEnd == null ? null : instructions[e.TryEnd], HandlerStart = instructions[e.HandlerStart],
+                HandlerEnd = e.HandlerEnd == null ? null : instructions[e.HandlerEnd], CatchType = e.CatchType == null ? null : Type(e.CatchType)
+            });
+        }
+        using var bytes = new MemoryStream(); fixture.Write(bytes); bytes.Position = 0;
+        var loaded = AssemblyLoadContext.Default.LoadFromStream(bytes).GetType("Fixture.Startup");
+        var begin = (Action<object, Action>)loaded.GetMethod(start.Name).CreateDelegate(typeof(Action<object, Action>));
+        var listening = (Func<object, Func<bool>, bool>)loaded.GetMethod(listen.Name).CreateDelegate(typeof(Func<object, Func<bool>, bool>));
+        void Reset()
+        {
+            StartupState.Reservation = new(); StartupState.Ready = StartupState.dedServ = StartupState.EngineMainThread = true;
+            StartupState.IsListening = nativeInitialIsListening; StartupState.TcpListener = null;
+            StartupState.scopeThread = Environment.CurrentManagedThreadId; StartupState.maxNetPlayers = 255;
+            StartupState.listenerEntries = StartupState.InitialChecks = StartupState.NativeCalls = 0;
+            StartupState.Accepts = StartupState.NetworkLoops = 0; StartupState.Fault = null; StartupState.PreListen = null;
+        }
+        Reset(); bool reservedAtListen = false;
+        begin(null, () => {
+            StartupState.TcpListener = new object();
+            listening(null, () => { StartupState.NativeCalls++; reservedAtListen = StartupState.Reservation.IsReserved(254); return true; });
+        });
+        Check(StartupState.IsListening && StartupState.PreListen.Armed && StartupState.PreListen.LegacyListening
+            && !StartupState.PreListen.TcpExists && StartupState.PreListen.Entries == 0
+            && StartupState.Reservation.IsReserved(254) && reservedAtListen && StartupState.InitialChecks == 1
+            && StartupState.NativeCalls == 1 && StartupState.Fault == null,
+            "actual packaged startup/listener IL arms with installed IsListening=true default BEFORE native listen");
+        StartupState.Reservation.Release();
+        Check(!listening(null, () => { StartupState.NativeCalls++; return false; })
+            && StartupState.listenerEntries == 2 && StartupState.NativeCalls == 2 && StartupState.Fault == null,
+            "actual listener hook preserves native retry/result after normal reservation release");
+        foreach (string evidence in new[] { "TCP listener object", "prior listener entry", "prior accept", "prior network loop" })
+        {
+            Reset();
+            if (evidence == "TCP listener object") StartupState.TcpListener = new object();
+            else if (evidence == "prior listener entry") StartupState.listenerEntries = 1;
+            else if (evidence == "prior accept") StartupState.Accepts = 1;
+            else StartupState.NetworkLoops = 1;
+            begin(null, () => StartupState.NativeCalls++);
+            Check(StartupState.Reservation.Snapshot == null && !StartupState.PreListen.Armed && StartupState.Fault != null
+                && StartupState.NativeCalls == 1 && StartupState.InitialChecks == 0 && StartupState.IsListening,
+                "actual startup rejects late arm without changing human orig/flag: " + evidence);
+        }
+        Reset(); StartupState.EngineMainThread = false;
+        begin(null, () => StartupState.NativeCalls++);
+        Check(StartupState.Reservation.Snapshot == null && StartupState.Fault != null && StartupState.NativeCalls == 1,
+            "actual startup still rejects non-engine-main-thread context");
+        Reset(); begin(null, () => StartupState.NativeCalls++); StartupState.Reservation.Release();
+        begin(null, () => StartupState.NativeCalls++);
+        Check(StartupState.Reservation.Snapshot == null && StartupState.Fault != null && StartupState.InitialChecks == 1,
+            "actual startup cannot re-arm after release even without remaining native evidence");
+        Reset(); bool result = listening(null, () => { StartupState.NativeCalls++; return true; });
+        Check(result && StartupState.Fault != null && StartupState.NativeCalls == 1 && StartupState.Reservation.Snapshot == null,
+            "first listener entry without reservation disables spawn and retains native listen");
     }
 
     public sealed class TeardownDetail { public TeardownDetail(string reason, bool same, bool human) { } }

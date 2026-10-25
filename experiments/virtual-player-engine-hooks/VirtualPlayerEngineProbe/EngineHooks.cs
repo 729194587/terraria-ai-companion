@@ -23,6 +23,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
     internal static bool Ready;
     internal static StartupReservation Reservation = new();
     internal static long NetworkLoops, CleanupSkips, SyncSkips, SectionSkips, Accepts;
+    private static int listenerEntries;
     private static int scopeThread;
     private static string fault;
     internal static string Fault => Volatile.Read(ref fault);
@@ -35,6 +36,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
         fault = null;
         NetworkLoops = CleanupSkips = SyncSkips = SectionSkips = Accepts = 0;
         scopeThread = 0;
+        listenerEntries = 0;
         string Hash(string path) { using var input = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(input)); }
         try
         {
@@ -69,6 +71,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
         Install(() => IL_Netplay.FindNextOpenClientSlot += PatchAllocator, () => IL_Netplay.FindNextOpenClientSlot -= PatchAllocator);
         Install(() => IL_Netplay.UpdateConnectedClients += PatchCleanup, () => IL_Netplay.UpdateConnectedClients -= PatchCleanup);
         Install(() => On_Netplay.StartServer += StartServer, () => On_Netplay.StartServer -= StartServer);
+        Install(() => On_Netplay.StartListening += Listen, () => On_Netplay.StartListening -= Listen);
         Install(() => On_Netplay.UpdateConnectedClients += NetworkTick, () => On_Netplay.UpdateConnectedClients -= NetworkTick);
         Install(() => On_Netplay.OnConnectionAccepted += Accepted, () => On_Netplay.OnConnectionAccepted -= Accepted);
         Install(() => On_NetMessage.SyncOnePlayer += SyncOne, () => On_NetMessage.SyncOnePlayer -= SyncOne);
@@ -146,14 +149,30 @@ public sealed class VirtualPlayerEngineProbe : Mod
             ProbeSession.Finish("unexpected second StartServer");
             SignalFault("Server restart in same process is unsupported.");
         }
+        // Netplay.IsListening is initialized TRUE by the engine before any socket
+        // exists. Reject actual startup evidence instead; never rewrite that flag.
+        bool tcpListenerExists = Netplay.TcpListener != null;
+        int entries = Volatile.Read(ref listenerEntries);
+        bool startupObserved = tcpListenerExists || entries != 0
+            || Interlocked.Read(ref Accepts) != 0 || Interlocked.Read(ref NetworkLoops) != 0;
         bool armed = Ready && Fault == null && Main.dedServ && Program.IsMainThread
             && Volatile.Read(ref scopeThread) == Environment.CurrentManagedThreadId
-            && Reservation.ArmBeforeListening(Netplay.IsListening, Main.maxNetPlayers);
+            && Reservation.ArmBeforeListening(startupObserved, Main.maxNetPlayers);
         if (!armed) SignalFault("Reservation could not arm before listening; fresh Host & Play server process required.");
-        ProbeSession.Log("pre-listen-reservation", new { armed, Main.maxNetPlayers });
+        ProbeSession.Log("pre-listen-reservation", new { armed, Main.maxNetPlayers,
+            legacyIsListening = Netplay.IsListening, tcpListenerExists, listenerEntries = entries });
         try { orig(); }
         catch { ProbeSession.Finish("StartServer exception"); throw; }
         if (armed) ProbeSession.CheckInitialSlot();
+    }
+    private bool Listen(On_Netplay.orig_StartListening orig)
+    {
+        int entry = Interlocked.Increment(ref listenerEntries);
+        bool reserved = Reservation.Snapshot != null;
+        if (entry == 1 && !reserved)
+            SignalFault("First native listener entry had no startup reservation; live spawn disabled.");
+        ProbeSession.Log("native-listener-entry", new { entry, reserved });
+        return orig(); // Observation only; TCP/Steam and native retries remain intact.
     }
     private void NetworkTick(On_Netplay.orig_UpdateConnectedClients orig)
     {

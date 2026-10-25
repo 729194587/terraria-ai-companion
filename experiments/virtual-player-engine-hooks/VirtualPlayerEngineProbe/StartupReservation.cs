@@ -19,11 +19,11 @@ public sealed class StartupReservation
     public bool MaySkipDisconnectedSlot(int slot, bool connected, bool active, int state, bool pending, bool terminationApproved)
         => IsReserved(slot) && ConnectionIdle(connected, active, state, pending, terminationApproved);
 
-    public bool ArmBeforeListening(bool alreadyListening, int capacity)
+    public bool ArmBeforeListening(bool nativeStartupObserved, int capacity)
     {
         if (Interlocked.CompareExchange(ref started, 1, 0) != 0) return false;
         OwnerThread = Environment.CurrentManagedThreadId;
-        if (alreadyListening || capacity < 2 || capacity > 255) return false;
+        if (nativeStartupObserved || capacity < 2 || capacity > 255) return false;
         Volatile.Write(ref current, new View(capacity - 1, capacity, Guid.NewGuid()));
         return true;
     }
