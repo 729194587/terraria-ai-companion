@@ -29,6 +29,7 @@ internal static class ProbeSession
     internal static void Reset()
     {
         ActorControl.Reset();
+        ActorItemUse.Reset();
         ActorGeneration = 0;
         ProbeDebugAppearance.Clear();
         Actor = previous = null;
@@ -204,6 +205,7 @@ internal static class ProbeSession
                 Log("teardown-quarantined", new { reason, same, occupied });
                 throw new InvalidOperationException("STOP: occupied/transitioning slot quarantined; native clearWorld/unload must not continue.");
             }
+            ActorItemUse.Retire(owned);
             ActorControl.Retire(owned);
             finishing = true;
             try
@@ -376,7 +378,7 @@ public sealed class ProbeCommand : ModCommand
 {
     public override string Command => "vph";
     public override CommandType Type => CommandType.World | CommandType.Console;
-    public override string Usage => "/vph walk|stop|motion|life|bag|test-hurt|test-death|status|spawn|save [id]|load [id]|profiles|inspect|fixture|test-save-failure|debug-style|resync|despawn";
+    public override string Usage => "/vph item-fixture|slot <1-10>|use|use-stop|item|walk|stop|motion|life|bag|test-hurt|test-death|status|spawn|save [id]|load [id]|profiles|inspect|fixture|test-save-failure|debug-style|resync|despawn";
     public override string Description => "G4 server control experiment; server/host only.";
     public override void Action(CommandCaller caller, string input, string[] args)
     {
@@ -399,7 +401,20 @@ public sealed class ProbeCommand : ModCommand
                     throw new InvalidOperationException("Server console or native Host & Play host authorization required.");
                 if (copy.Length > 2) throw new InvalidOperationException(Usage);
                 string action = copy.Length == 0 ? "status" : copy[0];
-                if (copy.Length == 2 && action is not ("save" or "load")) throw new InvalidOperationException(Usage);
+                if (copy.Length == 2 && action is not ("save" or "load" or "slot")) throw new InvalidOperationException(Usage);
+                if (action is "item-fixture" or "slot" or "use" or "use-stop" or "item")
+                {
+                    ActorItemUse.Capture(commandedActor,session,commandedGeneration);
+                    if(action=="item-fixture") {caller.Reply(ActorItemUse.Fixture(commandedActor,session,commandedGeneration));return;}
+                    if(action=="slot")
+                    {
+                        if(copy.Length!=2||!int.TryParse(copy[1],out int hotbar))throw new InvalidOperationException("/vph slot 1–10");
+                        ActorItemUse.Select(commandedActor,session,commandedGeneration,hotbar-1);
+                    }
+                    if(action=="use")ActorItemUse.Start(commandedActor,session,commandedGeneration);
+                    if(action=="use-stop")ActorItemUse.Stop(commandedActor,session,commandedGeneration);
+                    caller.Reply(ActorItemUse.Summary());return;
+                }
                 if (action == "walk")
                 {
                     ActorControl.Start(commandedActor, commandedGeneration, session);

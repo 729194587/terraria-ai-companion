@@ -103,7 +103,7 @@ internal static class NativeSurvival
             }
             catch(Exception e)
             {
-                if(Owns(p))ActorControl.Retire(p);
+                if(Owns(p)){ActorItemUse.Retire(p);ActorControl.Retire(p);}
                 ProbeSession.Quarantine("Native survival failed; no rollback/retry of partial item or damage transaction: "+(e.InnerException??e).Message);
                 throw;
             }
@@ -127,7 +127,7 @@ internal static class NativeSurvival
             if(!p.dead&&!p.ghost)npcCollision.Invoke(p,null); // Original local-only update region was skipped for this AI.
             if(p.dead&&p.respawnTimer<=0&&p.difficulty!=2)
             {
-                ActorControl.Retire(p);p.FindSpawn();
+                ActorItemUse.Retire(p);ActorControl.Retire(p);p.FindSpawn();
                 p.Spawn(PlayerSpawnContext.ReviveFromDeath);
                 if(!Owns(p)||p.dead)throw new InvalidOperationException("Native respawn failed ownership/state validation.");
                 ProbeSession.ActorGeneration=checked(ProbeSession.ActorGeneration+1);
@@ -163,7 +163,7 @@ internal static class NativeSurvival
     internal static void Kill(On_Player.orig_KillMe orig,Player p,PlayerDeathReason source,double damage,int direction,bool pvp)
     {
         if(!Owns(p)){orig(p,source,damage,direction,pvp);return;}
-        bool wasDead=p.dead;ActorControl.Retire(p);orig(p,source,damage,direction,pvp);
+        bool wasDead=p.dead;ActorItemUse.Retire(p);ActorControl.Retire(p);orig(p,source,damage,direction,pvp);
         if(!Owns(p))throw new InvalidOperationException("Kill callback changed AI ownership.");
         if(!wasDead&&p.dead)
         {

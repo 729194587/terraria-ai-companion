@@ -63,3 +63,5 @@ namespace VirtualPlayerEngineProbe
         public static void Fail(Exception e)=>VirtualPlayerEngineProbe.Fault=e.Message;
     }
 }
+
+namespace VirtualPlayerEngineProbe { internal static class ActorItemUse { internal static bool Running => false; } }

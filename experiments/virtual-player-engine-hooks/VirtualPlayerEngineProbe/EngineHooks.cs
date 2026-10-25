@@ -88,6 +88,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
         Install(() => On_Main.DedServ_PostModLoad += ServerScope, () => On_Main.DedServ_PostModLoad -= ServerScope);
         Install(() => On_WorldGen.clearWorld += ClearWorld, () => On_WorldGen.clearWorld -= ClearWorld);
         NativeSurvival.Install(Install);
+        ActorItemUse.Install(Install);
         Install(() => On_Player.Update += NativeSurvival.Update, () => On_Player.Update -= NativeSurvival.Update);
         Ready = allocatorPatched && cleanupPatched && syncPatched && savePatched;
         if (!Ready) throw new InvalidOperationException("Incomplete IL hook installation.");
@@ -223,7 +224,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
             legacyIsListening = Netplay.IsListening, tcpListenerExists, listenerEntries = entries });
         try { orig(); }
         catch { ProbeSession.Finish("StartServer exception"); throw; }
-        if (armed) { ProbeSession.CheckInitialSlot(); CharacterSelfTest.Update();SurvivalSelfTest.RunIfRequested(); }
+        if (armed) { ProbeSession.CheckInitialSlot(); CharacterSelfTest.Update();SurvivalSelfTest.RunIfRequested();ItemUseSelfTest.RunIfRequested(); }
     }
     private bool Listen(On_Netplay.orig_StartListening orig)
     {

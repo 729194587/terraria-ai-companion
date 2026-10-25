@@ -1,5 +1,5 @@
-displayName = Virtual Player Engine Probe (Native survival experimental)
+displayName = Virtual Player Engine Probe (Native item use experimental)
 author = Terraria AI Companion
-version = 0.5.0
+version = 0.6.0
 side = Both
 buildIgnore = *.csproj, *.user, obj/*, bin/*, .vs/*
