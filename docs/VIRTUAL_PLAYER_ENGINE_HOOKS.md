@@ -2,11 +2,23 @@
 
 2026-10-25。关联 [Issue #10](https://github.com/729194587/terraria-ai-companion/issues/10)；调查基线为未合并的 [Draft PR #9](https://github.com/729194587/terraria-ai-companion/pull/9) 及其 [报告](https://github.com/729194587/terraria-ai-companion/blob/731ee1123091f4a67fa7578c4f6e9b9bc9a69710/docs/VIRTUAL_PLAYER_SPIKE.md)。
 
-**结果：G0 = passed in offline tests；G1 live = blocked（0.1.2 启动），0.1.3 live = not attempted。** 用户已用独立 profile 启动 0.1.2 Host & Play，确认图形启动和服务器钩子链，但预留失败后停止，未创建实验 Player。0.1.3 已修正该判定并通过离线检查，尚待用户重新测试。真实 Player 存活、真人输入/后续分配和正常退出清理仍未验证。构建或夹具通过不是 G1 live pass。G2/G3、移动命令、Agent、Lua、档案、物品使用和战斗均未实施。
+**结果：G0 = passed in offline tests；G1 实现及 0.1.4 构建已完成，G1 live = not attempted。** 0.1.2 的真实启动因预留判定误报而 blocked；0.1.3 修正监听判定。0.1.4 参考本地 TerraPlayerBot，补齐 accept/网络清理与发布的互斥、仅保护已确认 AI 对象的窄断线分支、构造失败与回调后回滚检查。真实 Player 存活、真人输入/后续分配和正常退出清理仍需 Host & Play 验证。构建或夹具通过不是 G1 live pass。G2/G3、移动命令、Agent、Lua、档案、物品使用和战斗均未实施。
 
 分支 `spike/virtual-player-engine-hooks` 从 `main` 的 `9a57b3bae8d888f79c2da6c41cbc5b5ec66085c6` 开始，只新增本报告和 `experiments/virtual-player-engine-hooks/`。main、CompanionBridge、Python、Lua、TCP、原子操作和 PR #9 均保持原样。
 
-## PR #11 审查后的修正（当前 Probe 0.1.3）
+## G1 实现补齐（当前 Probe 0.1.4）
+
+直接参考 `D:\Agent Project\terrabot\TerraPlayerBot\BotConnectionSlots.cs` 的 `Gate`、`Accept`、`Lease.Publish`，以及 `TerraPlayerBotSystem.cs` 的 `PatchSyntheticPlayerDisconnect` / `IsSyntheticBotSlot`。只沿用槽位事务及对象归属思路，保留本 Probe 的监听前固定预留、严格连接空闲判定和一轮生命周期设计。
+
+- `OnConnectionAccepted` 的整个原生选槽、Reset、Socket 赋值和满服处理，与游戏线程的验证/构造/发布/回滚、整个原生 `UpdateConnectedClients` 共用 `Reservation.Gate`。因此不会在 predicate 返回后、原生活动态写入前插入 spawn，也不会在 accept 事务中途释放预留。锁内不排队等待游戏线程；线程断言在生命周期取得锁前执行。分配器仍只读不可变预留。
+- 断线 IL 保护从整个槽位入口移到原生 `StatusText2=""` 后的 `IL_00ab`，跳至原生递增点 `IL_00d4`。只有预留匹配、当前元素与 `Actor` 引用相同、`whoAmI` 匹配且完整连接状态 idle 时，才跳过 `active=false` / `PlayerDisconnect`。待终止审批、连接 Update、断线过渡处理和 `HasClients` 完全保留。仅有预留、尚无 actor 时，不拦截原生 Player 清理。
+- `new Player` 的候选对象先保持私有；构造及 ModPlayer 初始化完成后，在同一 Gate 内重新核对原预留、容量、原 inactive 占位引用和连接状态，再发布到 `Main.player` 并仅一次设 active。`PlayerConnect` 返回后再验对象归属。重复 spawn 也重新校验对象/连接，创建和清理拒绝回调重入。
+- 构造失败但占位仍已知安全时，释放未使用预留；发布后的连接回调失败按同一 teardown 回滚。构造或回调替换对象、激活恢复占位、改变身份/连接过渡态时，保留预留并 quarantine。断开通知最多一次，且通知返回/抛错后再次验证对象、活动态和连接状态，确认安全才恢复原占位并释放；日志异常仍通过 finally 释放已确认安全的槽位。
+- 同步/区块隔离也要求真实 AI 引用归属；非预留真人槽位直接调用原函数。Quarantine 后继续提供每秒诊断快照，但不重试 spawn/清理。重新 Load 清空上轮已正常结束的诊断状态。
+
+当前版本编译零错误、零警告；164 项定向检查通过（59 项原生检查）。新增用例执行实际包内的 `Spawn`、`CheckInitialSlot`、`Finish`、AI 归属谓词、accept/network 包装 IL，仅替换引擎存储及外部效果。验证内容包含构造抛错/替换后抛错、发布后连接失败、回调中替换 Player/激活占位/改身份/再激活 actor/置待终止、重入、错误线程，以及构造过程中并发 accept 被 Gate 阻止。网络包装还在 orig 前检测待终止过渡态，保证未到达窄 IL 保护点的路径也能 quarantine，同时仍调用原生处理。未运行全量测试或游戏入口。
+
+## PR #11 早期审查修正（0.1.2 / 0.1.3）
 
 针对 [三项审查意见](https://github.com/729194587/terraria-ai-companion/pull/11#issuecomment-6393766604)，补齐了实际 Host & Play 路径和线程证据，并修复清理时连接过渡态保护弱于网络保护的问题。0.1.2 继续修复 `5791b74` 中未 spawn 时的 Player 归属缺口，0.1.3 修复真实开服暴露的监听状态误判；不要部署旧的 Probe 0.1.0/0.1.1/0.1.2。
 
@@ -42,12 +54,12 @@
 
 ## 实验决策与范围
 
-前置离线检查验证了槽位过滤、原生连接接受、清理分支和线程所有权后，才实现真实 Player 创建。采用**监听开始前固定预留、每个服务器进程仅一轮 actor 生命周期**，避免本轮引入动态抢槽、接受连接锁或清理循环确认协议。
+采用**监听开始前固定预留、每个服务器进程仅一轮 actor 生命周期**。0.1.4 增加同步 Gate 协调接受连接、网络清理和生命周期写入；不引入动态抢槽或跨线程确认协议。
 
 - 在原生 `StartServer` 之前发布不可变预留，选 `Main.maxNetPlayers - 1`，要求配置容量在 2..255。不会使用 255 哨兵，也不会占 slot 0。
 - 所有本机原生接受连接的选槽调用都会经过已修改的分配器；没有先选中候选、再临时发布预留的窗口。
 - 预留会暂时减少一个真人可用连接槽位，**即使尚未执行 spawn**。
-- 只有游戏/服务器模拟线程可以创建、替换或清理 actor。网络线程只读取原子发布的预留和连接状态，增加诊断计数。
+- 只有游戏/服务器模拟线程可以创建、替换或清理 actor。网络线程在 Gate 内读取预留、AI 引用及连接状态，只修改诊断元数据；原生网络逻辑保留对真人对象的处理。
 - despawn 先拆除 actor，再释放预留。本进程不重新 arm；重复 spawn 在 actor 存在时幂等，despawn 后需完全退出 Host & Play 的服务器进程，再开始新的测试会话。
 - 仅允许此 Probe 与 tModLoader 默认 Mod 共存。安装其他 Mod（包括 CompanionBridge 或 PR #9 的 Probe）会禁用本实验，避免未调查的重置/分配/断开钩子。
 
@@ -78,7 +90,7 @@
 | `Netplay..cctor` / `StartListening` | IsListening 默认 true；TcpListener 默认 null，初始化时创建；StartListening 同时调用 Social/TCP 实现，默认标志不是实际监听证据 |
 | `FindNextOpenClientSlot` | 循环体 `IL_0004`，递增点 `IL_0014`；按连接状态选槽 |
 | `OnConnectionAccepted` | `IL_001a` 选槽；`IL_002b` Reset；`IL_0038` 赋 Socket；`IL_0070` 再检查可用槽位 |
-| `UpdateConnectedClients` | 每槽位入口 `IL_0009` 在待终止检查之前；递增点 `IL_00d4`；原生停用位于 `IL_00c7` |
+| `UpdateConnectedClients` | 每槽位入口 `IL_0009`；保护插在断线非活动分支 `StatusText2` 写入后的 `IL_00ab`；递增点 `IL_00d4`；原生停用位于 `IL_00c7` |
 | `SyncOnePlayer` | State 非 10 时进入离线路径，最终还会调用 `Player.Hooks.PlayerDisconnect` |
 | `Main.UpdateServer` | `IL_01e6..IL_0205` 给活动 Player 调用 `CheckSection`，不要求它有连接 |
 | `RemoteClient.CheckSection` | 会更新区块/接收状态；无客户端 actor 不应走这条发送路径 |
@@ -97,32 +109,32 @@
 | --- | --- | --- |
 | `On_Main.OnSubmitServerPassword` | 图形进程的引擎主线程，每次 UI 启动 Host & Play | 仅记录 graphical-host-launch，然后调用原生启动/连接路径；不创建进程、不 arm、不创建 actor、不记录密码 |
 | `IL_Netplay.FindNextOpenClientSlot` | 接受连接回调所在的 TCP/Steam 路径，每次原生选槽 | 循环体前增加 `ldloc; call IsReserved; brtrue next`；保留原生容量、连接检查及满服行为 |
-| `IL_Netplay.UpdateConnectedClients` | 网络循环，每槽位每轮 | 待终止分支前增加三条 eligibility 指令，只跳过被本 Probe 预留且无任何连接活动/终止状态的槽位 |
+| `IL_Netplay.UpdateConnectedClients` | 网络循环，断线非活动连接分支 | `StatusText2` 写入后增加三条指令；仅对预留/引用/身份及 idle 连接均确认的 AI，跳过 Player 停用/断开通知 |
 | `On_Netplay.StartServer` | 服务器模拟线程，每次开服 | 仅首次且无实际启动证据、外层模拟 scope 已进入时 arm，然后调用 orig；IsListening 仅日志观察，重复开服不重新抢槽 |
 | `On_Netplay.StartListening` | 初始化的模拟线程或原生监听重试的网络线程 | orig 前计数并记录预留；首调用无预留则 fault，仍原样调用 orig 并返回原值；不写 Player/世界或网络字段 |
-| `On_Netplay.UpdateConnectedClients` | 网络循环 | 原样调用 orig，完成后增加 networkLoops；不访问/修改 AI Player |
-| `On_Netplay.OnConnectionAccepted` | TCP/Steam 接受线程，每次接受 | 原样调用 orig，记录实际 Socket 归属槽位；不延迟、替代或伪造连接 |
-| `On_NetMessage.SyncOnePlayer` | 依据调用者可在游戏/网络路径 | 仅对保留且无连接状态的槽位返回；所有真人调用保留 orig |
-| `On_RemoteClient.CheckSection` | 正常活动玩家区块检查路径 | 仅对无连接保留槽位返回；不伪造 TileSections，不改变真人发送 |
+| `On_Netplay.UpdateConnectedClients` | 网络循环 | 在 Gate 内完整调用 orig，完成后增加 networkLoops，排除与发布/回滚的交错 |
+| `On_Netplay.OnConnectionAccepted` | TCP/Steam 接受线程，每次接受 | 在同一 Gate 内完整调用 orig，记录实际 Socket 归属槽位；原生选槽/Reset/满服处理保留 |
+| `On_NetMessage.SyncOnePlayer` | 依据调用者可在游戏/网络路径 | 非预留槽位直接 orig；预留槽位在 Gate 内检查已确认 AI 引用及 idle 连接，满足才返回 |
+| `On_RemoteClient.CheckSection` | 正常活动玩家区块检查路径 | 同上，仅隔离已确认 AI；不伪造 TileSections，不改变真人发送 |
 | `On_Main.DedServ_PostModLoad` | 原生 Host & Play 子进程的模拟调用范围 | 校验引擎 Program.MainThread 并捕获 scope 线程；finally 在正常空闲状态下清理，连接异常则隔离并停止 |
 | `On_WorldGen.clearWorld` | 依原生调用者而异 | 在任何 clearWorld 原生写入、RemoveAll 之前执行 teardown；有活动预留时若线程不符，直接抛错中止该不支持的清理流程 |
 
-预留读视图用 `Volatile.Read/Write` 发布不可变 `(slot,capacity,session)`，计数用 Interlocked。不持锁调用原生代码，也没有网络线程等待游戏线程的协议。预留只会从一个固定槽位变为空，不会在服务器运行中扩展。
+预留读视图用 `Volatile.Read/Write` 发布不可变 `(slot,capacity,session)`，计数用 Interlocked。Gate 是可重入 Monitor，原生 accept/网络 pass 与游戏线程发布/回滚互斥；锁内不等待主线程命令完成，生命周期用 creating/finishing 阻止回调重入。预留只会从一个固定槽位变为空，不会在服务器运行中扩展。
 
 保护真人的规则：
 
 1. AI 的活动态不参与 `HasClients` 计数；不会假扮 host，也不延长 Host & Play 的原生生命周期。
-2. 如果保留槽位意外出现 connected/IsActive/非零 State/待终止或终止已批准状态，eligibility 立即返回 false，保留真人的原生更新/断开/Reset，并记录 fault。下一模拟更新的 teardown 只会隔离，不能为停止 actor 而改写该槽位。
+2. 如果归属谓词发现保留槽位出现 connected/IsActive/非零 State/待终止或终止已批准状态，立即 quarantine 并返回 false；原生连接更新/终止/Reset 分支不经过断线保护点，始终执行。未知 Player 引用同样不拦截原生清理；Probe 自身不写该 Player、不释放预留。
 3. teardown 同时核对预留、初始占位基线、当前 Player 引用/活动状态和完整连接过渡态。Actor 尚不存在也必须证明当前对象是已知 inactive 占位；异常时不覆盖数组、不调用断开钩子、不将 active 清零，也不清空自己的引用或释放预留。
 4. 所有写入先检查引擎 `Program.IsMainThread` 与 `AssertOwner`。图形客户端仅观察原生启动，不安装服务器槽位钩子，不替换 LocalPlayer，不修改任何 Main.myPlayer 或 RemoteClient 字段。
 
 ### 创建与清理
 
-`/vph spawn` 在模拟线程重新验证指纹/钩子就绪、session、容量和槽位空闲，再执行一次 `new Terraria.Player`，放入专用 Main.player 元素，设置身份、基础生命、尺寸和初始空闲位置，最后仅一次 `active=true`。原生构造器初始化 ModPlayer 实例；调用 `Player.Hooks.PlayerConnect` 完成原生压力板重置及连接通知。
+`/vph spawn` 在模拟线程重新验证指纹/钩子就绪、session、容量和槽位空闲，再在 Gate 内执行一次 `new Terraria.Player`，私有设置身份、基础生命、尺寸和初始空闲位置；构造完成后重验原预留/占位/连接，才放入专用 Main.player 元素，最后仅一次 `active=true`。原生构造器初始化 ModPlayer 实例；调用 `Player.Hooks.PlayerConnect` 完成原生压力板重置及连接通知，并在返回后再次校验归属。
 
 不调用 `Player.Spawn`/EnterWorld：这些路径有本地 UI/所有者副作用。初始位置仅在世界出生点附近最多向上检查 12 格空位，不清理 Tile。后续完全由原生 Player.Update 更新，没有手动额外 Update、输入注入或逐帧坐标修补。自然重力产生的位置变化不算 G2 验证。
 
-正常空闲且对象归属明确时，despawn 对自己的对象设为不活动，调用一次断开通知，恢复原生初始化后首次验证的空闲占位对象，再发布空预留。未 spawn 时，只有该占位引用和 inactive 状态均保持才可释放。finally 覆盖断开钩子和日志异常。重复正常 despawn 无副作用。actor 死亡/不活动时停止，不自动复活；引用或连接状态不明时只隔离，不修复。
+正常空闲且对象归属明确时，despawn 对自己的对象设为不活动，调用一次断开通知；通知返回或抛错后重验预留、actor/占位引用、身份/活动态和连接，仍安全才恢复原生初始化后首次验证的空闲占位对象，再发布空预留。未 spawn 时，只有该占位引用和 inactive 状态均保持才可释放。finally 覆盖断开钩子和日志异常；回调改变归属则停止恢复/释放并 quarantine。重复正常 despawn 无副作用。actor 死亡/不活动时停止，不自动复活。
 
 正常 OnWorldUnload、clearWorld 入口和服务器模拟 scope 的 finally 都可幂等触发此清理。Mod.Unload 只验证早期清理已完成、移除订阅。部分安装失败则在任何服务器启动前逆序撤销订阅。
 
@@ -156,8 +168,8 @@
 Compilation finished with 0 errors and 0 warnings
 Packaging: VirtualPlayerEngineProbe
 Verification CLR: 8.0.0; no Terraria game process or world.
-EngineHookOfflineTests: 56 checks passed; actual IL fixtures only; G1 LIVE NOT RUN.
-Engine probe package: loader=2026.8.3.0; bytes=33890; DLL=51712; 134 total checks; G1 LIVE NOT RUN.
+EngineHookOfflineTests: 59 checks passed; actual IL fixtures only; G1 LIVE NOT RUN.
+Engine probe package: loader=2026.8.3.0; bytes=35274; DLL=55296; 164 total checks; G1 LIVE NOT RUN.
 ```
 
 验证范围：
@@ -173,14 +185,15 @@ Engine probe package: loader=2026.8.3.0; bytes=33890; DLL=51712; 134 total check
 - 执行实际包内 `Finish` 的完整 IL（替换存储、通知和日志效果），验证正常恢复/释放、异常 finally、错误线程/引擎主线程身份拒绝；对已断开但活动、State=-1/1/3/10、待终止、终止已批准、未知 RemoteClient、Player 引用冲突及 spawn 前过渡态，验证不写 Player、不调用断开、不提前释放，并禁止重复清理。
 - 同一实际 teardown IL 额外覆盖 Actor=null、RemoteClient idle 时的 active 原始占位、基线建立前 active Player、inactive 替换对象、null Player 和缺失基线，以及 actor 存在但恢复占位变为 active。逐一验证保留 Player/引用/活动状态/预留，且重复调用仍不能释放；正向验证已知 inactive 原始占位可在未 spawn 退出时释放。
 - 读取安装 .cctor 的 IsListening=true 初值和 TcpListener 写入位置，实际执行包内 StartServer/Listen 完整 IL（替换引擎存储及 orig 效果）：在默认标志为 true 时预留先于首个监听；已有 TCP 对象/监听调用/accept/网络循环时拒绝过晚 arm，保留真人 orig 和标志；验证错误主线程、释放后不能 re-arm，以及监听重试/原生返回值。
+- 执行实际包内 Spawn/CheckInitialSlot/归属谓词/accept/network 包装，覆盖构造与连接失败、构造后再次验证引用、回调替换或重新激活对象、错误线程与重入，以及构造/发布期间并发 accept 的锁互斥。断线 IL 另验证原生 StatusText2 处理仍执行、仅有预留不保护未知 Player、待终止审批/Reset 不受 synthetic guard 影响。
 
-夹具对象不是游戏内 Player/Socket。0.1.2 已观察到真实 Mod.Load 安装链及 host 接受，但 0.1.3 的新入口仍未实测；Native Player.Update 场景表现、命令的 Steam host 权限、带 actor 的退出/热卸载或后续真人分配均未验证。验证器的 G1 LIVE NOT RUN 指本次离线验证不运行游戏，并不抹去上一轮 blocked 记录。没有运行全量测试。
+夹具对象不是游戏内 Player/Socket。0.1.2 已观察到真实 Mod.Load 安装链及 host 接受，0.1.4 未启动游戏；Native Player.Update 场景表现、命令的 Steam host 权限、带 actor 的退出/热卸载或后续真人分配均未验证。验证器的 G1 LIVE NOT RUN 指本次离线验证不运行游戏，并不抹去上一轮 blocked 记录。没有运行全量测试。
 
 日志：`.local/virtual-player-engine-native.log`、`.local/virtual-player-engine-build.log`、`.local/virtual-player-engine-validation.log`。原生及补丁后 IL 在 `.local/virtual-player-engine-validation/`。这些本机生成内容不提交。
 
 ## 用户操作：全新 Host & Play G1
 
-以下步骤需用户手工执行；使用 0.1.3 新进程、新 profile。旧 0.1.2 会话已结束，不自动替用户启动游戏。
+以下步骤需用户手工执行；使用 0.1.4 新进程、新 profile。不会自动启动游戏。已准备的本地构建与启动入口见本节末。
 
 ### 隔离、备份与启动
 
@@ -191,7 +204,7 @@ Engine probe package: loader=2026.8.3.0; bytes=33890; DLL=51712; 134 total check
 ```powershell
 $repo = 'D:\Agent Project\terraria-ai-companion'
 $tml = 'D:\steam\steamapps\common\tModLoader'
-$profile = Join-Path $repo '.local/virtual-player-engine-host-20261025'
+$profile = Join-Path $repo ('.local/virtual-player-engine-host-g1-014-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 if (Test-Path -LiteralPath $profile) { throw '请选择未存在的新 profile，或先备份旧实验目录' }
 New-Item -ItemType Directory -Path (Join-Path $profile 'Mods') | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo '.local/virtual-player-engine-build/Mods/VirtualPlayerEngineProbe.tmod') `
@@ -246,6 +259,18 @@ finally { Pop-Location }
 
 若 actor 死亡/不活动、引用改变、线程不符、权限失败、初始化失败、出现任何连接过渡态或 fault，停止该轮并保存证据。未隔离且能正常退出时使用正常退出流程；若已出现 teardown-quarantined，不重试 despawn/清世界/热卸载，按上面的 quarantine 停止条件结束隔离测试进程。不得通过补设 active、改 State、释放预留或修改 myPlayer 继续。
 
+### 本次已准备的 0.1.4 构建
+
+构建文件：`.local/virtual-player-engine-build/Mods/VirtualPlayerEngineProbe.tmod`，SHA256 为 `66C21539E4BCF892373BE5657C8BC57418DC24212CBCE0160610FF9522E0DE4E`。
+
+已创建全新隔离目录 `.local/virtual-player-engine-host-g1-014-20261025-171417/`，其中 `Mods/` 只部署该版本并启用 Probe，副本哈希已核对；未启动游戏、未创建世界/角色。从仓库根目录手工运行：
+
+```powershell
+& './.local/virtual-player-engine-host-g1-014-20261025-171417/start-host-play.ps1'
+```
+
+启动脚本先验证部署包哈希，再以该目录为 `-tmlsavedirectory` 调用原生启动器；新建角色与小型 Classic 世界后按上面的 G1-A/B/C 执行。该 profile、脚本和构建仅是本机产物，不提交用户数据；其他机器使用前面的 build/verify 与部署步骤。
+
 ## 日志采集、回滚和结论记录
 
 JSON 行带 `probe=VirtualPlayerEngineProbe`，包括 UTC、进程 ID/role、world session、预留 session/slot/capacity、当前/owner/programMainThread 和 programIsMainThread、netMode/myPlayer、actor 的位置/速度/生命状态及连接/终止状态、原生更新次数、真人快照和 teardown。`worldSnapshot=false` 的图形启动/网络日志只记录元数据，humans 空数组不表示无人连接。
@@ -271,9 +296,10 @@ Copy-Item -LiteralPath (Join-Path $repo '.local/virtual-player-engine-validation
 
 | Gate | 本次结果 | 不足以证明的事项 |
 | --- | --- | --- |
-| G0 | passed in offline tests | 134 项定向检查和独立编译通过，不能证明 0.1.3 真实游戏行为 |
+| G0 | passed in offline tests | 164 项定向检查和独立编译通过，不能证明 0.1.4 真实游戏行为 |
 | G1（0.1.2） | blocked | 真实启动/钩子/线程链已观察，但预留误判失败，未 spawn、未进入存活测试 |
-| G1（0.1.3） | not attempted | 已修复判定，尚需全新 Host & Play 实测存活、真人输入/后续连接、清理 |
+| G1（0.1.3） | not attempted | 已修复监听判定；由 0.1.4 接续实现 |
+| G1（0.1.4） | implementation complete; live not attempted | 已补齐槽位事务、引用保护与失败回滚；尚需全新 Host & Play 实测存活、真人输入/后续连接、清理 |
 | G2/G3 | not attempted / out of scope | 没有动作、AI、完整玩家同步、可见性或动画验收 |
 
 停止条件：任何分配器/接受路径绕过预留、跨线程 Player 写入、真人被重置/清理被吞、需要广泛改写同步、钩子回滚失败或上述异常卸载保险触发，都停止投入当前 live 方案并提交最小复现。不给未实测能力标通过，不自动合并 Draft PR。

@@ -1,5 +1,5 @@
 displayName = Virtual Player Engine Probe (G1 experimental)
 author = Terraria AI Companion
-version = 0.1.3
+version = 0.1.4
 side = Both
 buildIgnore = *.csproj, *.user, obj/*, bin/*, .vs/*

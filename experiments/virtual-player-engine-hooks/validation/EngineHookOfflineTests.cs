@@ -20,12 +20,30 @@ public static class EngineHookOfflineTests
 {
     public const string EngineHash = "FCC6A9624B12191BE4A15D714A3675440911FEB8C1D374642AB1FD686F0DA0A5";
     public const string HooksHash = "595D26FB3BBE27548D030943B5ED2437F690D1C002129BAD21FAFEAEB8118F7A";
-    public class EntityState { public bool active; }
-    public class PlayerState : EntityState { }
+    public class EntityState
+    {
+        public bool active;
+        public int whoAmI, width, height;
+        public VectorState position;
+    }
+    public struct VectorState
+    {
+        public float X, Y;
+        public VectorState(float x, float y) { X = x; Y = y; }
+    }
+    public class PlayerState : EntityState
+    {
+        public static Action OnConstruct;
+        public int statLife, statLifeMax, statLifeMax2, SpawnX, SpawnY;
+        public string name;
+        public bool dead;
+        public PlayerState() => OnConstruct?.Invoke();
+    }
     public static class MainState
     {
         public static PlayerState[] player;
         public static int maxNetPlayers;
+        public static int netMode, spawnTileX, spawnTileY;
     }
     public class AddressState { public string GetFriendlyName() => "fixture"; }
     public class SocketState
@@ -75,11 +93,13 @@ public static class EngineHookOfflineTests
     public static class LoggingState { public static void ServerConsoleLine(string _) { } }
     public class TextState { public static TextState FromKey(string _, object[] __) => new(); }
     public static StartupReservation Reservation = new();
+    public static PlayerState FixtureActor;
     public static bool Reserved(int slot) => Reservation.IsReserved(slot);
     public static bool CleanupEligible(int slot)
     {
         var c = NetState.Clients[slot];
-        return Reservation.MaySkipDisconnectedSlot(slot, c.IsConnected(), c.IsActive, c.State, c.PendingTermination, c.PendingTerminationApproved);
+        return Reservation.IsReserved(slot) && FixtureActor != null && ReferenceEquals(MainState.player[slot], FixtureActor)
+            && StartupReservation.ConnectionIdle(c.IsConnected(), c.IsActive, c.State, c.PendingTermination, c.PendingTerminationApproved);
     }
     private static int checks;
     private static bool nativeInitialIsListening;
@@ -287,7 +307,7 @@ public static class EngineHookOfflineTests
             object Import(object operand) => operand switch {
                 Instruction i => ins[i], Instruction[] branches => branches.Select(i => ins[i]).ToArray(),
                 VariableDefinition v => dst.Body.Variables[v.Index], ParameterDefinition p => dst.Parameters[p.Index],
-                FieldReference f when map.TryGetValue(f.DeclaringType.FullName, out var t) => module.ImportReference(t.GetField(f.Name)),
+                FieldReference f when map.TryGetValue(f.DeclaringType.FullName, out var t) => module.ImportReference(t.GetField(f.Name) ?? throw new InvalidOperationException("Fixture field missing: " + f.FullName)),
                 MethodReference m when map.TryGetValue(m.DeclaringType.FullName, out var t) => module.ImportReference(t.GetMethods()
                     .Single(x => x.Name == m.Name && x.GetParameters().Length == m.Parameters.Count)),
                 FieldReference f => module.ImportReference(f), MethodReference m => module.ImportReference(m), TypeReference t => ImportType(t), _ => operand
@@ -311,6 +331,7 @@ public static class EngineHookOfflineTests
             NetState.Allocator = next; NetState.Stops = NetState.Kicks = 0; NetState.IsListening = true;
             MessageState.Disconnected.Clear(); HookState.Disconnected.Clear();
             Reservation = new StartupReservation();
+            FixtureActor = null;
         }
         Reset();
         Check(next() == 0, "empty reservation leaves native first-free allocation unchanged");
@@ -324,11 +345,13 @@ public static class EngineHookOfflineTests
         MainState.player[0].active = true; NetState.Clients[0].State = 10; NetState.Clients[0].IsActive = true;
         MainState.player[3].active = true;
         var actor = MainState.player[3];
+        FixtureActor = actor;
         accepted(new SocketState()); accepted(new SocketState()); accepted(new SocketState());
         Check(NetState.Clients.Take(3).All(c => c.IsConnected()) && !NetState.Clients[3].IsConnected(), "complete native accept path never assigns reserved slot");
         Check(next() == -1 && NetState.Kicks == 1 && NetState.Stops > 0, "reserved slot reduces capacity; full-server native rejection preserved");
         tick();
         Check(actor.active && ReferenceEquals(MainState.player[3], actor) && NetState.Clients[3].Resets == 0, "patched native cleanup retains reserved actor without active rewrites");
+        Check(NetState.Clients[3].StatusText2 == "", "synthetic guard runs after native disconnected status handling");
         Check(MainState.player[0].active && NetState.Clients[0].Updates == 1 && NetState.HasClients, "connected human updates and HasClients remain native");
         NetState.Clients[1].IsActive = true; NetState.Clients[1].Socket.Connected = false;
         tick(); tick();
@@ -362,6 +385,17 @@ public static class EngineHookOfflineTests
         NetState.Clients[3].Socket.Connected = false; tick(); tick();
         Check(NetState.Clients[3].Resets == 1 && MessageState.Disconnected.SequenceEqual(new[] { 3 }),
             "reservation never suppresses native disconnect/reset for an unexpected human");
+        Reset(); Reservation.ArmBeforeListening(false, 4);
+        MainState.player[3].active = true; tick();
+        Check(!MainState.player[3].active && HookState.Disconnected.SequenceEqual(new[] { 3 }),
+            "reservation alone never suppresses native cleanup for an unknown Player");
+        Reset(); Reservation.ArmBeforeListening(false, 4);
+        FixtureActor = MainState.player[3]; FixtureActor.active = true;
+        NetState.Clients[3].PendingTermination = NetState.Clients[3].PendingTerminationApproved = true;
+        tick();
+        Check(NetState.Clients[3].Resets == 1 && !ReferenceEquals(MainState.player[3], FixtureActor)
+            && MessageState.Disconnected.SequenceEqual(new[] { 3 }),
+            "narrow synthetic guard cannot bypass native termination approval/Reset branch");
         Console.WriteLine($"EngineHookOfflineTests: {checks} checks passed; actual IL fixtures only; G1 LIVE NOT RUN.");
     }
 
@@ -372,7 +406,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.1.3", "isolated reviewed package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.1.4", "isolated reviewed package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -451,7 +485,7 @@ public static class EngineHookOfflineTests
                 && i.Operand is FieldReference f && f.Name == "previous"),
             "native placeholder baseline is established before spawn and never replaced by spawn");
         RunCompiledStartup(start, listen);
-        RunCompiledTeardown(probe, session.Methods.Single(m => m.Name == "Finish"));
+        RunCompiledLifecycle(probe, session, mod);
         Console.WriteLine($"Engine probe package: loader={version}; bytes={file.Length}; DLL={size}; {checks} total checks; G1 LIVE NOT RUN.");
     }
 
@@ -516,7 +550,7 @@ public static class EngineHookOfflineTests
             object Import(object operand) => operand switch {
                 Instruction i => instructions[i], Instruction[] branches => branches.Select(i => instructions[i]).ToArray(),
                 VariableDefinition v => dst.Body.Variables[v.Index], ParameterDefinition p => dst.Parameters[p.Index + 1],
-                FieldReference f when map.TryGetValue(f.DeclaringType.FullName, out var t) => module.ImportReference(t.GetField(f.Name)),
+                FieldReference f when map.TryGetValue(f.DeclaringType.FullName, out var t) => module.ImportReference(t.GetField(f.Name) ?? throw new InvalidOperationException("Fixture field missing: " + f.FullName)),
                 MethodReference m when m.DeclaringType.Name.StartsWith("<>f__AnonymousType") => module.ImportReference(
                     (m.Parameters.Count == 5 ? typeof(StartupDetail) : typeof(ListenerDetail)).GetConstructors().Single()),
                 MethodReference m when map.TryGetValue(m.DeclaringType.FullName, out var t) => module.ImportReference(t.GetMethods()
@@ -581,34 +615,48 @@ public static class EngineHookOfflineTests
     }
 
     public sealed class TeardownDetail { public TeardownDetail(string reason, bool same, bool human) { } }
+    public sealed class AcceptDetail { public AcceptDetail(int slot, bool reserved, int thread) { } }
+    public static class WorldState
+    {
+        public static bool Clear = true;
+        public static bool InWorld(int x, int y, int fluff) => true;
+        public static bool SolidCollision(VectorState position, int width, int height) => !Clear;
+    }
     public static class TeardownState
     {
         public static StartupReservation Reservation;
         public static PlayerState Actor, previous;
         public static int slot;
-        public static bool connectedHook, Quarantined, EngineMainThread = true;
+        public static bool connectedHook, creating, finishing, Quarantined, EngineMainThread = true, Ready = true;
+        public static long spawnedAt, NetworkLoops, Accepts, CleanupSkips;
         public static string Phase, Fault;
         public static bool ThrowLog, ThrowDisconnect;
         public static int Disconnects, Logs;
+        public static int Connects;
+        public static Action OnConnect, OnDisconnect;
         public static StartupReservation get_Reservation() => Reservation;
         public static bool get_IsMainThread() => EngineMainThread;
+        public static string get_Fault() => Fault;
+        public static bool IsReserved(int id) => Reservation.IsReserved(id);
         public static bool ConnectionIdle(RemoteState c) => c != null && StartupReservation.ConnectionIdle(
             c.IsConnected(), c.IsActive, c.State, c.PendingTermination, c.PendingTerminationApproved);
         public static void SignalFault(string reason) => Fault = reason;
         public static void Log(string name, object detail)
         {
             Logs++;
-            if (!Reservation.IsReserved(3)) throw new Exception("released before teardown log/restoration");
+            if (name == "teardown" && !Reservation.IsReserved(3)) throw new Exception("released before teardown log/restoration");
             if (ThrowLog) throw new IOException("fixture log failure");
         }
         public static void PlayerDisconnect(int id)
         {
             Disconnects++;
+            OnDisconnect?.Invoke();
             if (ThrowDisconnect) throw new InvalidOperationException("fixture disconnect hook failure");
         }
+        public static void PlayerConnect(int id) { Connects++; OnConnect?.Invoke(); }
     }
 
-    private static void RunCompiledTeardown(AssemblyDefinition probe, MethodDefinition src)
+    private static void RunCompiledLifecycle(AssemblyDefinition probe, TypeDefinition session, TypeDefinition mod)
     {
         using var fixture = AssemblyDefinition.CreateAssembly(new AssemblyNameDefinition("CompiledTeardownFixture", new Version(1, 0)), "CompiledTeardownFixture", ModuleKind.Dll);
         var module = fixture.MainModule;
@@ -620,44 +668,73 @@ public static class EngineHookOfflineTests
             ["Terraria.Player"] = typeof(PlayerState), ["Terraria.Entity"] = typeof(EntityState),
             ["Terraria.Main"] = typeof(MainState), ["Terraria.Netplay"] = typeof(NetState),
             ["Terraria.Program"] = typeof(TeardownState),
-            ["Terraria.RemoteClient"] = typeof(RemoteState), ["Terraria.Player/Hooks"] = typeof(TeardownState)
+            ["Terraria.RemoteClient"] = typeof(RemoteState), ["Terraria.Player/Hooks"] = typeof(TeardownState),
+            ["Microsoft.Xna.Framework.Vector2"] = typeof(VectorState),
+            ["Terraria.WorldGen"] = typeof(WorldState), ["Terraria.Collision"] = typeof(WorldState),
+            ["Terraria.Net.Sockets.ISocket"] = typeof(SocketState),
+            ["Terraria.On_Netplay/orig_OnConnectionAccepted"] = typeof(Action<SocketState>),
+            ["Terraria.On_Netplay/orig_UpdateConnectedClients"] = typeof(Action)
         };
         var runner = new TypeDefinition("Fixture", "Teardown", Mono.Cecil.TypeAttributes.Public | Mono.Cecil.TypeAttributes.Abstract
             | Mono.Cecil.TypeAttributes.Sealed, module.TypeSystem.Object); module.Types.Add(runner);
         TypeReference Type(TypeReference t) => t is ArrayType a ? new ArrayType(Type(a.ElementType))
             : map.TryGetValue(t.FullName, out var mapped) ? module.ImportReference(mapped) : module.ImportReference(t);
-        var dst = new MethodDefinition("Finish", Mono.Cecil.MethodAttributes.Public | Mono.Cecil.MethodAttributes.Static, module.TypeSystem.Void);
-        dst.Parameters.Add(new ParameterDefinition("reason", Mono.Cecil.ParameterAttributes.None, module.TypeSystem.String));
-        runner.Methods.Add(dst); dst.Body.InitLocals = src.Body.InitLocals; dst.Body.MaxStackSize = src.Body.MaxStackSize;
-        foreach (var v in src.Body.Variables) dst.Body.Variables.Add(new VariableDefinition(Type(v.VariableType)));
-        var instructions = src.Body.Instructions.ToDictionary(i => i, _ => Instruction.Create(OpCodes.Nop));
-        object Import(object operand) => operand switch {
-            Instruction i => instructions[i], Instruction[] branches => branches.Select(i => instructions[i]).ToArray(),
-            VariableDefinition v => dst.Body.Variables[v.Index], ParameterDefinition p => dst.Parameters[p.Index],
-            FieldReference f when map.TryGetValue(f.DeclaringType.FullName, out var t) => module.ImportReference(t.GetField(f.Name)),
-            MethodReference m when m.DeclaringType.Name.StartsWith("<>f__AnonymousType") => module.ImportReference(typeof(TeardownDetail).GetConstructors().Single()),
-            MethodReference m when map.TryGetValue(m.DeclaringType.FullName, out var t) => module.ImportReference(t.GetMethods()
-                .Single(x => x.Name == m.Name && x.GetParameters().Length == m.Parameters.Count)),
-            FieldReference f => module.ImportReference(f), MethodReference m => module.ImportReference(m), TypeReference t => Type(t), _ => operand
-        };
-        foreach (var i in src.Body.Instructions) { instructions[i].OpCode = i.OpCode; instructions[i].Operand = Import(i.Operand); dst.Body.Instructions.Add(instructions[i]); }
-        foreach (var e in src.Body.ExceptionHandlers) dst.Body.ExceptionHandlers.Add(new ExceptionHandler(e.HandlerType) {
-            TryStart = instructions[e.TryStart], TryEnd = e.TryEnd == null ? null : instructions[e.TryEnd], HandlerStart = instructions[e.HandlerStart],
-            HandlerEnd = e.HandlerEnd == null ? null : instructions[e.HandlerEnd], CatchType = e.CatchType == null ? null : Type(e.CatchType)
-        });
+        var sources = session.Methods.Where(m => m.Name is "Finish" or "Spawn" or "CheckInitialSlot" or "Quarantine")
+            .Concat(mod.Methods.Where(m => m.Name is "OwnedWithoutConnection" or "SkipCleanup" or "Accepted" or "NetworkTick")).ToArray();
+        var copies = sources.ToDictionary(m => m.FullName, m => new MethodDefinition(m.Name,
+            Mono.Cecil.MethodAttributes.Public | Mono.Cecil.MethodAttributes.Static, Type(m.ReturnType)));
+        foreach (var src in sources)
+        {
+            var dst = copies[src.FullName];
+            if (src.HasThis) dst.Parameters.Add(new ParameterDefinition("unusedThis", Mono.Cecil.ParameterAttributes.None, module.TypeSystem.Object));
+            foreach (var p in src.Parameters) dst.Parameters.Add(new ParameterDefinition(p.Name, p.Attributes, Type(p.ParameterType)));
+            runner.Methods.Add(dst); dst.Body.InitLocals = src.Body.InitLocals; dst.Body.MaxStackSize = src.Body.MaxStackSize;
+            foreach (var v in src.Body.Variables) dst.Body.Variables.Add(new VariableDefinition(Type(v.VariableType)));
+            var instructions = src.Body.Instructions.ToDictionary(i => i, _ => Instruction.Create(OpCodes.Nop));
+            object Import(object operand) => operand switch {
+                Instruction i => instructions[i], Instruction[] branches => branches.Select(i => instructions[i]).ToArray(),
+                VariableDefinition v => dst.Body.Variables[v.Index], ParameterDefinition p => dst.Parameters[p.Index + (src.HasThis ? 1 : 0)],
+                FieldReference f when map.TryGetValue(f.DeclaringType.FullName, out var t) => module.ImportReference(t.GetField(f.Name) ?? throw new InvalidOperationException("Fixture field missing: " + f.FullName)),
+                MethodReference m when copies.TryGetValue(m.FullName, out var copy) => copy,
+                MethodReference m when m.DeclaringType.Name.StartsWith("<>f__AnonymousType") => module.ImportReference(
+                    (((GenericInstanceType)m.DeclaringType).GenericArguments[0].MetadataType == MetadataType.String
+                        ? typeof(TeardownDetail) : typeof(AcceptDetail)).GetConstructors().Single()),
+                MethodReference m when m.Name == ".ctor" && map.TryGetValue(m.DeclaringType.FullName, out var t) => module.ImportReference(
+                    t.GetConstructors().Single(x => x.GetParameters().Length == m.Parameters.Count)),
+                MethodReference m when map.TryGetValue(m.DeclaringType.FullName, out var t) => module.ImportReference(t.GetMethods()
+                    .Single(x => x.Name == m.Name && x.GetParameters().Length == m.Parameters.Count)),
+                FieldReference f => module.ImportReference(f), MethodReference m => module.ImportReference(m), TypeReference t => Type(t), _ => operand
+            };
+            foreach (var i in src.Body.Instructions) { instructions[i].OpCode = i.OpCode; instructions[i].Operand = Import(i.Operand); dst.Body.Instructions.Add(instructions[i]); }
+            foreach (var e in src.Body.ExceptionHandlers) dst.Body.ExceptionHandlers.Add(new ExceptionHandler(e.HandlerType) {
+                TryStart = instructions[e.TryStart], TryEnd = e.TryEnd == null ? null : instructions[e.TryEnd], HandlerStart = instructions[e.HandlerStart],
+                HandlerEnd = e.HandlerEnd == null ? null : instructions[e.HandlerEnd], CatchType = e.CatchType == null ? null : Type(e.CatchType)
+            });
+        }
         using var bytes = new MemoryStream(); fixture.Write(bytes); bytes.Position = 0;
         var loaded = AssemblyLoadContext.Default.LoadFromStream(bytes).GetType("Fixture.Teardown");
         var finish = (Action<string>)loaded.GetMethod("Finish").CreateDelegate(typeof(Action<string>));
+        var spawn = (Action)loaded.GetMethod("Spawn").CreateDelegate(typeof(Action));
+        var initial = (Action)loaded.GetMethod("CheckInitialSlot").CreateDelegate(typeof(Action));
+        var eligible = (Func<int, bool>)loaded.GetMethod("OwnedWithoutConnection").CreateDelegate(typeof(Func<int, bool>));
+        var accepted = (Action<object, Action<SocketState>, SocketState>)loaded.GetMethod("Accepted")
+            .CreateDelegate(typeof(Action<object, Action<SocketState>, SocketState>));
+        var networkTick = (Action<object, Action>)loaded.GetMethod("NetworkTick").CreateDelegate(typeof(Action<object, Action>));
         void Reset()
         {
+            PlayerState.OnConstruct = null;
             MainState.player = Enumerable.Range(0, 256).Select(_ => new PlayerState()).ToArray();
+            MainState.maxNetPlayers = 4; MainState.netMode = 2;
             NetState.Clients = Enumerable.Range(0, 256).Select(i => new RemoteState { Id = i }).ToArray();
             TeardownState.Reservation = new(); TeardownState.Reservation.ArmBeforeListening(false, 4);
             TeardownState.slot = 3; TeardownState.previous = MainState.player[3];
-            TeardownState.Actor = MainState.player[3] = new PlayerState { active = true };
+            TeardownState.Actor = MainState.player[3] = new PlayerState { active = true, whoAmI = 3 };
             TeardownState.connectedHook = true; TeardownState.Fault = null;
             TeardownState.Quarantined = false; TeardownState.EngineMainThread = true;
             TeardownState.ThrowLog = TeardownState.ThrowDisconnect = false; TeardownState.Disconnects = TeardownState.Logs = 0;
+            TeardownState.creating = TeardownState.finishing = false;
+            TeardownState.OnConnect = TeardownState.OnDisconnect = null; TeardownState.Connects = 0;
+            TeardownState.Ready = WorldState.Clear = true;
         }
         Reset(); var original = TeardownState.previous;
         finish("despawn"); finish("duplicate");
@@ -738,5 +815,133 @@ public static class EngineHookOfflineTests
         Check(TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 0
             && ReferenceEquals(MainState.player[3], unusedPlaceholder) && !unusedPlaceholder.active,
             "actual teardown releases unused reservation only with known unchanged inactive placeholder");
+
+        foreach (string mutation in new[] { "replacement", "restore activated", "pending termination", "identity", "reactivated" })
+        {
+            Reset(); var owned = TeardownState.Actor; var replacement = new PlayerState { active = true };
+            TeardownState.OnDisconnect = () => {
+                if (mutation == "replacement") MainState.player[3] = replacement;
+                else if (mutation == "restore activated") TeardownState.previous.active = true;
+                else if (mutation == "pending termination") NetState.Clients[3].PendingTermination = true;
+                else if (mutation == "identity") owned.whoAmI = 2;
+                else owned.active = true;
+            };
+            try { finish(mutation); throw new Exception("callback ownership check missing"); } catch (InvalidOperationException) { }
+            Check(TeardownState.Quarantined && TeardownState.Reservation.IsReserved(3)
+                && ReferenceEquals(TeardownState.Actor, owned) && TeardownState.Disconnects == 1
+                && (mutation != "replacement" || ReferenceEquals(MainState.player[3], replacement) && replacement.active),
+                "actual teardown revalidates AFTER disconnect callback and retains unknown slot: " + mutation);
+        }
+        Reset(); bool reentryRejected = false;
+        TeardownState.OnDisconnect = () => {
+            try { finish("nested"); } catch (InvalidOperationException) { reentryRejected = true; }
+        };
+        finish("outer");
+        Check(reentryRejected && TeardownState.Disconnects == 1 && TeardownState.Reservation.Snapshot == null,
+            "actual teardown rejects callback reentry and outer cleanup remains safe");
+
+        Reset(); Check(eligible(3) && !eligible(2), "actual packaged predicate protects only reference-confirmed reserved actor");
+        Reset(); TeardownState.Actor = null;
+        Check(!eligible(3), "actual packaged predicate never treats reservation alone as Player ownership");
+        Reset(); var unknown = MainState.player[3] = new PlayerState { active = true };
+        Check(!eligible(3) && TeardownState.Quarantined && unknown.active && TeardownState.Reservation.IsReserved(3),
+            "actual predicate quarantines replacement without writes/release and leaves native cleanup available");
+        foreach (string state in new[] { "connected", "active", "state", "pending", "approved", "unknown" })
+        {
+            Reset();
+            if (state == "connected") NetState.Clients[3].Socket = new SocketState();
+            else if (state == "active") NetState.Clients[3].IsActive = true;
+            else if (state == "state") NetState.Clients[3].State = 1;
+            else if (state == "pending") NetState.Clients[3].PendingTermination = true;
+            else if (state == "approved") NetState.Clients[3].PendingTerminationApproved = true;
+            else NetState.Clients[3] = null;
+            Check(!eligible(3) && TeardownState.Quarantined && TeardownState.Actor.active && TeardownState.Reservation.IsReserved(3),
+                "actual predicate quarantines connection transition while retaining native paths: " + state);
+        }
+        Reset(); NetState.Clients[3].PendingTermination = true;
+        bool nativeTransitionCalled = false;
+        networkTick(null, () => nativeTransitionCalled = true);
+        Check(nativeTransitionCalled && TeardownState.Quarantined && TeardownState.Actor.active
+            && TeardownState.Reservation.IsReserved(3),
+            "actual network wrapper quarantines waiting termination before native branch bypasses IL guard");
+
+        void BeforeCreate()
+        {
+            Reset(); BeforeSpawn(); TeardownState.previous = null; TeardownState.slot = -1;
+            initial();
+        }
+        BeforeCreate(); var baseline = MainState.player[3];
+        spawn(); var created = TeardownState.Actor; spawn();
+        Check(created != null && !ReferenceEquals(created, baseline) && ReferenceEquals(MainState.player[3], created)
+            && created.whoAmI == 3 && created.active && TeardownState.Connects == 1 && eligible(3),
+            "actual packaged Spawn privately constructs, publishes once and duplicate spawn is idempotent");
+        finish("spawn lifecycle");
+        Check(ReferenceEquals(MainState.player[3], baseline) && TeardownState.Reservation.Snapshot == null,
+            "actual packaged Spawn/Finish restore the original baseline in one lifecycle");
+        BeforeCreate(); baseline = MainState.player[3];
+        PlayerState.OnConstruct = () => throw new IOException("constructor failure");
+        try { spawn(); throw new Exception("constructor exception lost"); } catch (IOException) { }
+        PlayerState.OnConstruct = null;
+        Check(TeardownState.Actor == null && ReferenceEquals(MainState.player[3], baseline) && !baseline.active
+            && TeardownState.Reservation.Snapshot == null && TeardownState.Connects == 0 && TeardownState.Disconnects == 0,
+            "actual constructor failure rolls back known unused slot without publishing or disconnecting");
+        BeforeCreate(); unknown = new PlayerState();
+        PlayerState.OnConstruct = () => MainState.player[3] = unknown;
+        try { spawn(); throw new Exception("publication validation missing"); } catch (InvalidOperationException) { }
+        PlayerState.OnConstruct = null;
+        Check(TeardownState.Actor == null && ReferenceEquals(MainState.player[3], unknown) && !unknown.active
+            && TeardownState.Quarantined && TeardownState.Reservation.IsReserved(3) && TeardownState.Connects == 0,
+            "actual post-constructor validation refuses replacement baseline without overwriting/releasing");
+        BeforeCreate(); unknown = new PlayerState { active = true };
+        PlayerState.OnConstruct = () => { MainState.player[3] = unknown; throw new IOException("constructor mutated then failed"); };
+        try { spawn(); throw new Exception("unsafe constructor rollback accepted"); } catch (InvalidOperationException) { }
+        PlayerState.OnConstruct = null;
+        Check(TeardownState.Quarantined && ReferenceEquals(MainState.player[3], unknown) && unknown.active
+            && TeardownState.Actor == null && TeardownState.Reservation.IsReserved(3) && TeardownState.Disconnects == 0,
+            "actual throwing constructor retains unknown Player/reservation instead of unsafe rollback");
+        BeforeCreate(); baseline = MainState.player[3];
+        TeardownState.OnConnect = () => throw new IOException("connect failure");
+        try { spawn(); throw new Exception("connect exception lost"); } catch (IOException) { }
+        Check(TeardownState.Actor == null && ReferenceEquals(MainState.player[3], baseline)
+            && TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 1,
+            "actual connect failure rolls back published actor and disconnects exactly once");
+        BeforeCreate(); unknown = new PlayerState { active = true };
+        TeardownState.OnConnect = () => MainState.player[3] = unknown;
+        try { spawn(); throw new Exception("connect mutation lost"); } catch (InvalidOperationException) { }
+        Check(TeardownState.Quarantined && ReferenceEquals(MainState.player[3], unknown) && unknown.active
+            && TeardownState.Reservation.IsReserved(3) && TeardownState.Disconnects == 0,
+            "actual connect replacement quarantines without touching unknown Player or releasing");
+        BeforeCreate(); WorldState.Clear = false;
+        try { spawn(); throw new Exception("blocked location accepted"); } catch (InvalidOperationException) { }
+        Check(TeardownState.Actor == null && TeardownState.Reservation.Snapshot == null && TeardownState.Connects == 0,
+            "actual no-clear-position failure releases only the verified unused baseline");
+        BeforeCreate(); Exception spawnThread = null;
+        var wrongCreator = new Thread(() => { try { spawn(); } catch (Exception e) { spawnThread = e; } });
+        wrongCreator.Start(); wrongCreator.Join();
+        Check(spawnThread is InvalidOperationException && TeardownState.Actor == null && TeardownState.Reservation.IsReserved(3),
+            "actual Spawn rejects foreign thread before construction/publication");
+
+        // Execute the packaged accept/network wrappers, including their locks.
+        BeforeCreate(); bool acceptHeld = false, networkHeld = false;
+        accepted(null, _ => acceptHeld = Monitor.IsEntered(TeardownState.Reservation.Gate), new SocketState());
+        networkTick(null, () => networkHeld = Monitor.IsEntered(TeardownState.Reservation.Gate));
+        Check(acceptHeld && networkHeld, "actual accept and complete native network pass share lifecycle Gate");
+        using var entered = new ManualResetEventSlim(); using var completed = new ManualResetEventSlim();
+        Exception acceptFailure = null;
+        var concurrentAccept = new Thread(() => {
+            entered.Set();
+            try { accepted(null, _ => { }, new SocketState()); } catch (Exception e) { acceptFailure = e; }
+            finally { completed.Set(); }
+        });
+        bool excluded = false;
+        PlayerState.OnConstruct = () => {
+            concurrentAccept.Start();
+            if (!entered.Wait(2000)) throw new Exception("accept worker not started");
+            excluded = !completed.Wait(100);
+        };
+        spawn(); PlayerState.OnConstruct = null;
+        Check(concurrentAccept.Join(2000) && excluded && acceptFailure == null && TeardownState.Actor.active,
+            "actual Spawn holds Gate across construction/publication and excludes concurrent native accept");
+        finish("concurrent lifecycle");
     }
 }

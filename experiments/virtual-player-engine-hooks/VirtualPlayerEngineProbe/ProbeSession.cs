@@ -18,71 +18,139 @@ internal static class ProbeSession
     private static int slot = -1;
     private static long spawnedAt;
     private static bool connectedHook;
+    private static bool creating, finishing;
     internal static string WorldSession = "none";
     internal static string Phase = "not armed";
     internal static int Pending;
-    internal static bool Quarantined;
+    internal static volatile bool Quarantined;
     internal static StartupReservation Reservation => VirtualPlayerEngineProbe.Reservation;
+
+    internal static void Reset()
+    {
+        Actor = previous = null;
+        slot = -1;
+        spawnedAt = 0;
+        connectedHook = creating = finishing = Quarantined = false;
+        WorldSession = "none";
+        Phase = "not armed";
+        Pending = 0;
+    }
+
+    // Also callable under Gate from native network callbacks. Never writes Player.
+    internal static void Quarantine(string reason)
+    {
+        Quarantined = true;
+        Phase = "quarantined; no Player/slot changes or reservation release";
+        VirtualPlayerEngineProbe.SignalFault(reason);
+    }
 
     internal static void CheckInitialSlot()
     {
         Reservation.AssertOwner(Program.IsMainThread);
-        var view = Reservation.Snapshot;
-        if (view == null) return;
-        var c = Netplay.Clients[view.Slot];
-        var candidate = Main.player[view.Slot];
-        bool firstValidation = previous == null && slot == -1;
-        if (!VirtualPlayerEngineProbe.ConnectionIdle(c) || candidate == null || candidate.active
-            || !firstValidation && (slot != view.Slot || !ReferenceEquals(candidate, previous)))
+        lock (Reservation.Gate)
         {
-            VirtualPlayerEngineProbe.SignalFault("Initial dedicated slot is occupied or its Player ownership is unknown.");
-            Finish("initial slot validation failed");
-            return;
+            var view = Reservation.Snapshot;
+            if (view == null) return;
+            bool inRange = Main.player != null && view.Slot < Main.player.Length
+                && Netplay.Clients != null && view.Slot < Netplay.Clients.Length;
+            var c = inRange ? Netplay.Clients[view.Slot] : null;
+            var candidate = inRange ? Main.player[view.Slot] : null;
+            bool firstValidation = previous == null && slot == -1;
+            if (!VirtualPlayerEngineProbe.ConnectionIdle(c) || candidate == null || candidate.active
+                || !firstValidation && (slot != view.Slot || !ReferenceEquals(candidate, previous)))
+            {
+                Quarantine("Initial dedicated slot is occupied or its Player ownership is unknown.");
+                throw new InvalidOperationException("Initial slot validation failed; reservation quarantined.");
+            }
+            // Capture the native idle placeholder once, before any spawn. Revalidation
+            // must never adopt a replacement object as a new ownership baseline.
+            if (firstValidation) { previous = candidate; slot = view.Slot; }
+            Phase = "reserved; no actor";
+            Log("reservation-ready");
         }
-        // Capture the native idle placeholder once, before any spawn. Revalidation
-        // must never adopt a replacement object as a new ownership baseline.
-        if (firstValidation) { previous = candidate; slot = view.Slot; }
-        Phase = "reserved; no actor";
-        Log("reservation-ready");
     }
 
     internal static void Spawn()
     {
         Reservation.AssertOwner(Program.IsMainThread);
-        if (Quarantined || VirtualPlayerEngineProbe.Fault != null)
-            throw new InvalidOperationException("G1 fault/quarantine; new server process required.");
-        if (Actor != null) { Log("spawn-idempotent"); return; }
-        var view = Reservation.Snapshot ?? throw new InvalidOperationException("No reservation. Restart Host & Play; re-arming is disabled.");
-        if (!VirtualPlayerEngineProbe.Ready || VirtualPlayerEngineProbe.Fault != null
-            || Main.netMode != NetmodeID.Server || Main.maxNetPlayers != view.Capacity)
-            throw new InvalidOperationException("G0 contract or server capacity changed; spawn disabled.");
-        CheckInitialSlot();
-        if (Reservation.Snapshot == null) throw new InvalidOperationException("Slot validation failed.");
-        int x = Main.spawnTileX * 16, y = Main.spawnTileY * 16 - 42;
-        bool clear = false;
-        // Initialization only, not a teleport/movement driver. Never clear tiles.
-        for (int up = 0; up <= 12; up++)
+        lock (Reservation.Gate)
         {
-            int cy = y - up * 16;
-            if (WorldGen.InWorld(x / 16, cy / 16, 10) && !Collision.SolidCollision(new Vector2(x, cy), 20, 42))
-            { y = cy; clear = true; break; }
+            if (creating || finishing) throw new InvalidOperationException("Reentrant Player lifecycle rejected.");
+            if (Quarantined || VirtualPlayerEngineProbe.Fault != null)
+                throw new InvalidOperationException("G1 fault/quarantine; new server process required.");
+            var view = Reservation.Snapshot ?? throw new InvalidOperationException("No reservation. Restart Host & Play; re-arming is disabled.");
+            if (!VirtualPlayerEngineProbe.Ready || VirtualPlayerEngineProbe.Fault != null
+                || Main.netMode != NetmodeID.Server || Main.maxNetPlayers != view.Capacity)
+                throw new InvalidOperationException("G0 contract or server capacity changed; spawn disabled.");
+            if (Actor != null)
+            {
+                if (Main.player == null || view.Slot >= Main.player.Length
+                    || Netplay.Clients == null || view.Slot >= Netplay.Clients.Length
+                    || !ReferenceEquals(Main.player[view.Slot], Actor) || Actor.whoAmI != view.Slot
+                    || !VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[view.Slot]))
+                {
+                    Quarantine("Duplicate spawn found changed actor/connection ownership.");
+                    throw new InvalidOperationException("Actor ownership changed; reservation quarantined.");
+                }
+                if (!Actor.active || Actor.dead)
+                {
+                    VirtualPlayerEngineProbe.SignalFault("Actor activity/death changed; no automatic respawn.");
+                    Finish("inactive actor");
+                    throw new InvalidOperationException("Actor stopped; new server process required.");
+                }
+                Log("spawn-idempotent"); return;
+            }
+            CheckInitialSlot();
+            creating = true;
+            try
+            {
+                int x = Main.spawnTileX * 16, y = Main.spawnTileY * 16 - 42;
+                bool clear = false;
+                // Initialization only, not a teleport/movement driver. Never clear tiles.
+                for (int up = 0; up <= 12; up++)
+                {
+                    int cy = y - up * 16;
+                    if (WorldGen.InWorld(x / 16, cy / 16, 10) && !Collision.SolidCollision(new Vector2(x, cy), 20, 42))
+                    { y = cy; clear = true; break; }
+                }
+                if (!clear) throw new InvalidOperationException("No clear test spawn position; no actor allocated.");
+                // Constructors/ModPlayer initialization can throw or reenter. Keep the
+                // candidate private, then revalidate the original lease and placeholder.
+                var candidate = new Player { whoAmI = view.Slot, name = "G1_NoClient_Probe", width = 20, height = 42,
+                    statLife = 100, statLifeMax = 100, statLifeMax2 = 100,
+                    position = new Vector2(x, y), SpawnX = -1, SpawnY = -1 };
+                if (!ReferenceEquals(Reservation.Snapshot, view) || Quarantined || VirtualPlayerEngineProbe.Fault != null
+                    || Main.maxNetPlayers != view.Capacity || slot != view.Slot || previous == null || previous.active
+                    || Main.player == null || slot >= Main.player.Length || Netplay.Clients == null || slot >= Netplay.Clients.Length
+                    || !ReferenceEquals(Main.player[slot], previous) || !VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[slot]))
+                {
+                    Quarantine("Player construction changed reserved slot ownership; candidate was not published.");
+                    throw new InvalidOperationException("Publication refused; reservation quarantined.");
+                }
+                Actor = candidate;
+                Main.player[slot] = candidate;
+                candidate.active = true; // Exactly once; never repaired by update/network hooks.
+                spawnedAt = Interlocked.Read(ref VirtualPlayerEngineProbe.NetworkLoops);
+                Phase = "actor exists; G1 live result requires user verification";
+                connectedHook = true;
+                Player.Hooks.PlayerConnect(slot); // Includes native pressure-plate reset.
+                if (Main.player == null || slot >= Main.player.Length || Netplay.Clients == null || slot >= Netplay.Clients.Length
+                    || !ReferenceEquals(Main.player[slot], candidate) || candidate.whoAmI != slot || previous.active
+                    || !VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[slot]))
+                {
+                    Quarantine("PlayerConnect changed actor/connection ownership.");
+                    throw new InvalidOperationException("Connect callback changed ownership; reservation quarantined.");
+                }
+                Log("spawn");
+            }
+            catch
+            {
+                creating = false;
+                Finish("spawn failed");
+                throw;
+            }
+            finally { creating = false; }
         }
-        if (!clear) throw new InvalidOperationException("No clear test spawn position; no actor allocated.");
-        Actor = new Player { whoAmI = view.Slot, name = "G1_NoClient_Probe", width = 20, height = 42,
-            statLife = 100, statLifeMax = 100, statLifeMax2 = 100,
-            position = new Vector2(x, y), SpawnX = -1, SpawnY = -1 };
-        slot = view.Slot;
-        Main.player[slot] = Actor;
-        Actor.active = true; // Exactly once; never repaired by update/network hooks.
-        spawnedAt = Interlocked.Read(ref VirtualPlayerEngineProbe.NetworkLoops);
-        Phase = "actor exists; G1 live result requires user verification";
-        try
-        {
-            connectedHook = true;
-            Player.Hooks.PlayerConnect(slot); // Includes native pressure-plate reset.
-            Log("spawn");
-        }
-        catch { Finish("connect hook failed"); throw; }
     }
 
     internal static void Finish(string reason)
@@ -91,51 +159,79 @@ internal static class ProbeSession
         // The pre-clearWorld fuse aborts a foreign-thread unload BEFORE native
         // world clear / hook removal. No Player is touched from that thread.
         Reservation.AssertOwner(Program.IsMainThread);
-        if (Quarantined) throw new InvalidOperationException("STOP: slot remains quarantined; do not retry or unload in place.");
-        var view = Reservation.Snapshot;
-        int target = view?.Slot ?? slot;
-        var owned = Actor;
-        bool inRange = view != null && target >= 0 && Main.player != null && target < Main.player.Length
-            && Netplay.Clients != null && target < Netplay.Clients.Length;
-        var current = inRange ? Main.player[target] : null;
-        bool baselineKnown = inRange && slot == target && previous != null && !previous.active;
-        bool same = owned != null && ReferenceEquals(current, owned);
-        bool playerSafe = baselineKnown && (owned != null ? same
-            : current != null && !current.active && ReferenceEquals(current, previous));
-        bool occupied = !inRange || !VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[target]);
-        if (occupied || !playerSafe)
+        lock (Reservation.Gate)
         {
-            Quarantined = true;
-            Phase = "quarantined; no Player/slot changes or reservation release";
-            VirtualPlayerEngineProbe.SignalFault("STOP: teardown found connection transition or active/unknown Player ownership; reservation retained.");
-            Log("teardown-quarantined", new { reason, same, occupied });
-            throw new InvalidOperationException("STOP: occupied/transitioning slot quarantined; native clearWorld/unload must not continue.");
-        }
-        try
-        {
-            if (owned != null)
+            if (creating || finishing) throw new InvalidOperationException("Reentrant Player lifecycle rejected.");
+            if (Quarantined) throw new InvalidOperationException("STOP: slot remains quarantined; do not retry or unload in place.");
+            var view = Reservation.Snapshot;
+            int target = view?.Slot ?? slot;
+            var owned = Actor;
+            bool inRange = view != null && target >= 0 && Main.player != null && target < Main.player.Length
+                && Netplay.Clients != null && target < Netplay.Clients.Length;
+            var current = inRange ? Main.player[target] : null;
+            var restore = previous;
+            bool baselineKnown = inRange && slot == target && previous != null && !previous.active;
+            bool same = owned != null && ReferenceEquals(current, owned) && owned.whoAmI == target;
+            bool playerSafe = baselineKnown && (owned != null ? same
+                : current != null && !current.active && ReferenceEquals(current, previous));
+            bool occupied = !inRange || !VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[target]);
+            if (occupied || !playerSafe)
             {
-                owned.active = false;
-                if (connectedHook)
+                Quarantined = true;
+                Phase = "quarantined; no Player/slot changes or reservation release";
+                VirtualPlayerEngineProbe.SignalFault("STOP: teardown found connection transition or active/unknown Player ownership; reservation retained.");
+                Log("teardown-quarantined", new { reason, same, occupied });
+                throw new InvalidOperationException("STOP: occupied/transitioning slot quarantined; native clearWorld/unload must not continue.");
+            }
+            finishing = true;
+            try
+            {
+                try
                 {
+                    if (owned != null)
+                    {
+                        owned.active = false;
+                        if (connectedHook)
+                        {
+                            connectedHook = false;
+                            Player.Hooks.PlayerDisconnect(slot);
+                        }
+                    }
+                }
+                finally
+                {
+                    // Disconnect callbacks can mutate/reenter even on the owner thread.
+                    // Never restore or release based only on the pre-callback snapshot.
+                    bool stillSafe = !Quarantined && ReferenceEquals(Reservation.Snapshot, view)
+                        && slot == target && ReferenceEquals(Actor, owned)
+                        && ReferenceEquals(previous, restore) && previous != null && !previous.active
+                        && Main.player != null && target < Main.player.Length
+                        && ReferenceEquals(Main.player[target], current)
+                        && (owned == null ? !current.active : owned.whoAmI == target && !owned.active)
+                        && Netplay.Clients != null && target < Netplay.Clients.Length
+                        && VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[target]);
+                    if (!stillSafe)
+                    {
+                        Quarantined = true;
+                        Phase = "quarantined; no Player/slot changes or reservation release";
+                        VirtualPlayerEngineProbe.SignalFault("STOP: disconnect callback changed slot ownership; reservation retained.");
+                        Log("teardown-quarantined", new { reason, same, occupied });
+                        throw new InvalidOperationException("STOP: callback changed ownership; no restoration/release.");
+                    }
+                    if (same) Main.player[slot] = previous;
+                    Actor = previous = null;
                     connectedHook = false;
-                    Player.Hooks.PlayerDisconnect(slot);
+                    Phase = "released; fresh server process required to re-arm";
+                    try { Log("teardown", new { reason, same, occupied }); }
+                    finally
+                    {
+                        // Native allocator may reuse the slot only AFTER actor cleanup.
+                        Reservation.Release();
+                        slot = -1;
+                    }
                 }
             }
-        }
-        finally
-        {
-            if (same) Main.player[slot] = previous;
-            Actor = previous = null;
-            connectedHook = false;
-            Phase = "released; fresh server process required to re-arm";
-            try { Log("teardown", new { reason, same, occupied }); }
-            finally
-            {
-                // Native allocator may reuse the slot only AFTER actor cleanup.
-                Reservation.Release();
-                slot = -1;
-            }
+            finally { finishing = false; }
         }
     }
 
@@ -160,12 +256,13 @@ internal static class ProbeSession
         {
             if (Actor is { } p)
             {
-                var c = Netplay.Clients[p.whoAmI];
+                int id = view?.Slot ?? -1;
+                var c = Netplay.Clients != null && id >= 0 && id < Netplay.Clients.Length ? Netplay.Clients[id] : null;
                 actor = new { p.whoAmI, p.active, p.dead, x = p.position.X, y = p.position.Y,
                     vx = p.velocity.X, vy = p.velocity.Y,
                     preUpdates = p.GetModPlayer<ProbePlayer>().PreUpdates,
                     postUpdates = p.GetModPlayer<ProbePlayer>().PostUpdates,
-                    sameReference = ReferenceEquals(Main.player[p.whoAmI], p),
+                    sameReference = Main.player != null && id >= 0 && id < Main.player.Length && ReferenceEquals(Main.player[id], p),
                     connected = c?.IsConnected(), socketType = c?.Socket?.GetType().FullName,
                     remoteState = c?.State, remoteActive = c?.IsActive,
                     pendingTermination = c?.PendingTermination, terminationApproved = c?.PendingTerminationApproved };
@@ -207,10 +304,17 @@ public sealed class ProbeSystem : ModSystem
     }
     public override void PostUpdatePlayers()
     {
-        if (ProbeSession.Actor == null || ProbeSession.Quarantined) return;
+        if (VirtualPlayerEngineProbe.Reservation.Snapshot == null) return;
         VirtualPlayerEngineProbe.Reservation.AssertOwner(Program.IsMainThread);
+        if (ProbeSession.Quarantined)
+        {
+            if (Main.GameUpdateCount % 60 == 0) ProbeSession.Log("quarantine-sample");
+            return;
+        }
+        if (ProbeSession.Actor == null) return;
         var p = ProbeSession.Actor;
-        if (!ReferenceEquals(Main.player[p.whoAmI], p) || !p.active || p.dead)
+        var view = VirtualPlayerEngineProbe.Reservation.Snapshot;
+        if (p.whoAmI != view.Slot || !ReferenceEquals(Main.player[view.Slot], p) || !p.active || p.dead)
             VirtualPlayerEngineProbe.SignalFault("Actor reference/activity/death changed; no automatic repair or respawn.");
         if (VirtualPlayerEngineProbe.Fault != null) { ProbeSession.Finish("stop condition: " + VirtualPlayerEngineProbe.Fault); return; }
         if (Main.GameUpdateCount % 60 == 0) ProbeSession.Log("sample");

@@ -4,20 +4,19 @@ using System.Threading;
 namespace VirtualPlayerEngineProbe;
 
 // One reservation, published BEFORE native StartServer can start either listener.
-// No late claims, re-arming, Player references or engine writes. Readers on accept,
-// network and game threads see one immutable snapshot, not mutable collections.
+// No late claims or re-arming. Gate coordinates native accept/network callbacks
+// with game-thread publication/teardown; the allocator reads immutable metadata.
 public sealed class StartupReservation
 {
     public sealed record View(int Slot, int Capacity, Guid Session);
     private View current;
     private int started;
+    public object Gate { get; } = new();
     public int OwnerThread { get; private set; }
     public View Snapshot => Volatile.Read(ref current);
     public bool IsReserved(int slot) => Snapshot is { } view && view.Slot == slot;
     public static bool ConnectionIdle(bool connected, bool active, int state, bool pending, bool terminationApproved)
         => !connected && !active && state == 0 && !pending && !terminationApproved;
-    public bool MaySkipDisconnectedSlot(int slot, bool connected, bool active, int state, bool pending, bool terminationApproved)
-        => IsReserved(slot) && ConnectionIdle(connected, active, state, pending, terminationApproved);
 
     public bool ArmBeforeListening(bool nativeStartupObserved, int capacity)
     {

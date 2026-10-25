@@ -15,8 +15,8 @@ public static class EnginePatches
             "Terraria.RemoteClient", "IsConnected");
 
     public static void Cleanup(MethodDefinition method, MethodReference reserved)
-        => Filter(method, reserved, "UpdateConnectedClients", 0x0009, 0x00d4, 1,
-            "Terraria.RemoteClient", "get_PendingTermination");
+        => Filter(method, reserved, "UpdateConnectedClients", 0x00ab, 0x00d4, 1,
+            "Terraria.Player/Hooks", "PlayerDisconnect");
 
     private static void Filter(MethodDefinition method, MethodReference reserved, string name,
         int entryOffset, int nextOffset, int local, string declaringType, string callName)
@@ -28,8 +28,13 @@ public static class EnginePatches
         var instructions = method.Body.Instructions;
         var entry = instructions.SingleOrDefault(i => i.Offset == entryOffset);
         var next = instructions.SingleOrDefault(i => i.Offset == nextOffset);
-        if (entry?.OpCode != OpCodes.Ldsfld || entry.Operand is not FieldReference f
-            || f.FullName != "Terraria.RemoteClient[] Terraria.Netplay::Clients"
+        bool entryMatches = local == 0
+            ? entry?.OpCode == OpCodes.Ldsfld && entry.Operand is FieldReference f
+                && f.FullName == "Terraria.RemoteClient[] Terraria.Netplay::Clients"
+            : entry?.OpCode == OpCodes.Ldloc_1 && entry.Previous?.OpCode == OpCodes.Stfld
+                && entry.Previous.Operand is FieldReference status
+                && status.FullName == "System.String Terraria.RemoteClient::StatusText2";
+        if (!entryMatches
             || next == null || next.OpCode != (local == 0 ? OpCodes.Ldloc_0 : OpCodes.Ldloc_1)
             || !instructions.Any(i => i.Operand is MethodReference m
                 && m.DeclaringType.FullName == declaringType && m.Name == callName)
@@ -37,7 +42,7 @@ public static class EnginePatches
             throw new InvalidOperationException("Unsupported installed IL shape: " + name);
         var incoming = instructions.Where(i => ReferenceEquals(i.Operand, entry)
             || i.Operand is ILLabel label && ReferenceEquals(label.Target, entry)).ToArray();
-        if (incoming.Length != 1) throw new InvalidOperationException("Unexpected loop edges: " + name);
+        if (incoming.Length != (local == 0 ? 1 : 0)) throw new InvalidOperationException("Unexpected entry edges: " + name);
         var processor = method.Body.GetILProcessor();
         var load = Instruction.Create(local == 0 ? OpCodes.Ldloc_0 : OpCodes.Ldloc_1);
         processor.InsertBefore(entry, load);

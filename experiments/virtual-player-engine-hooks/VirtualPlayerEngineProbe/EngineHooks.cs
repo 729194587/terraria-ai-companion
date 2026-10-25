@@ -35,6 +35,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
         Reservation = new();
         fault = null;
         NetworkLoops = CleanupSkips = SyncSkips = SectionSkips = Accepts = 0;
+        ProbeSession.Reset();
         scopeThread = 0;
         listenerEntries = 0;
         string Hash(string path) { using var input = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(input)); }
@@ -128,11 +129,25 @@ public sealed class VirtualPlayerEngineProbe : Mod
         c.IsConnected(), c.IsActive, c.State, c.PendingTermination, c.PendingTerminationApproved);
     private static bool OwnedWithoutConnection(int slot)
     {
-        if (!IsReserved(slot)) return false;
-        var c = Netplay.Clients[slot];
-        if (ConnectionIdle(c)) return true;
-        SignalFault("Reserved slot unexpectedly acquired connection state; native human paths retained.");
-        return false;
+        lock (Reservation.Gate)
+        {
+            if (!IsReserved(slot)) return false;
+            bool inRange = Main.player != null && slot >= 0 && slot < Main.player.Length
+                && Netplay.Clients != null && slot < Netplay.Clients.Length;
+            if (!inRange || !ConnectionIdle(Netplay.Clients[slot]))
+            {
+                ProbeSession.Quarantine("Reserved slot acquired unknown/transitioning connection state; native human paths retained.");
+                return false;
+            }
+            var actor = ProbeSession.Actor;
+            if (actor == null) return false; // A reservation alone never owns a Player.
+            if (!ReferenceEquals(Main.player[slot], actor) || actor.whoAmI != slot)
+            {
+                ProbeSession.Quarantine("Reserved Player reference/identity changed; native cleanup retained.");
+                return false;
+            }
+            return true;
+        }
     }
     public static bool SkipCleanup(int slot)
     {
@@ -176,26 +191,48 @@ public sealed class VirtualPlayerEngineProbe : Mod
     }
     private void NetworkTick(On_Netplay.orig_UpdateConnectedClients orig)
     {
-        orig();
-        Interlocked.Increment(ref NetworkLoops);
+        lock (Reservation.Gate)
+        {
+            // Pending-termination branches never reach the narrow IL guard.
+            // Detect them before native handling, while leaving that handling intact.
+            var view = Reservation.Snapshot;
+            if (view != null) OwnedWithoutConnection(view.Slot);
+            orig();
+            Interlocked.Increment(ref NetworkLoops);
+        }
     }
     private void Accepted(On_Netplay.orig_OnConnectionAccepted orig, ISocket socket)
     {
-        orig(socket); // Observation only; filtering is in the original allocator.
-        Interlocked.Increment(ref Accepts);
-        int slot = Array.FindIndex(Netplay.Clients, c => c != null && ReferenceEquals(c.Socket, socket));
-        if (IsReserved(slot)) SignalFault("STOP: native accept assigned reserved slot.");
-        ProbeSession.Log("native-accept", new { slot, reserved = IsReserved(slot), thread = Environment.CurrentManagedThreadId });
+        lock (Reservation.Gate)
+        {
+            // Includes native selection, Reset, socket assignment and full-server
+            // handling. Publish/release cannot interleave with this transaction.
+            orig(socket);
+            Interlocked.Increment(ref Accepts);
+            int slot = -1;
+            for (int i = 0; i < Netplay.Clients.Length; i++)
+                if (Netplay.Clients[i] != null && ReferenceEquals(Netplay.Clients[i].Socket, socket)) { slot = i; break; }
+            if (IsReserved(slot)) ProbeSession.Quarantine("STOP: native accept assigned reserved slot.");
+            ProbeSession.Log("native-accept", new { slot, reserved = IsReserved(slot), thread = Environment.CurrentManagedThreadId });
+        }
     }
     private void SyncOne(On_NetMessage.orig_SyncOnePlayer orig, int slot, int toWho, int fromWho)
     {
-        if (OwnedWithoutConnection(slot)) { Interlocked.Increment(ref SyncSkips); return; }
-        orig(slot, toWho, fromWho);
+        if (!IsReserved(slot)) { orig(slot, toWho, fromWho); return; }
+        lock (Reservation.Gate)
+        {
+            if (OwnedWithoutConnection(slot)) { Interlocked.Increment(ref SyncSkips); return; }
+            orig(slot, toWho, fromWho);
+        }
     }
     private void Sections(On_RemoteClient.orig_CheckSection orig, int slot, Vector2 position, int fluff)
     {
-        if (OwnedWithoutConnection(slot)) { Interlocked.Increment(ref SectionSkips); return; }
-        orig(slot, position, fluff);
+        if (!IsReserved(slot)) { orig(slot, position, fluff); return; }
+        lock (Reservation.Gate)
+        {
+            if (OwnedWithoutConnection(slot)) { Interlocked.Increment(ref SectionSkips); return; }
+            orig(slot, position, fluff);
+        }
     }
     private void ServerScope(On_Main.orig_DedServ_PostModLoad orig, Main self, out bool reload)
     {
