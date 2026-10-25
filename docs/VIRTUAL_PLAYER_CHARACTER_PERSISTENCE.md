@@ -2,6 +2,7 @@
 
 版本：VirtualPlayerEngineProbe **0.3.0**；分支 `codex/virtual-player-character-persistence`。
 从指定提交 `2a5dd5939afc16e0561f08d4e083ccfd882e4bc4` 分叉，未修改 main、G1 / PR #11 或 G2 / PR #12 分支。PR 保持 Draft。
+Draft PR #13 的比较基准为固定快照分支 `codex/g31-base-g2-2a5dd59`，其内容就是指定 G2 提交；避免后续 G2 提交造成比较基准漂移或冲突。该快照不增加实现变更，也不修改 G2 PR。
 
 ## 本机原生 API 核对
 
