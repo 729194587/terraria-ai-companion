@@ -79,7 +79,7 @@ debug-style 启用时拒绝保存，必须再执行一次恢复覆盖层后保�
 | 编译 | 0 errors / 0 warnings，0.3.1 `.tmod` |
 | 定向离线 | 239 个既有/生命周期/包审计检查 + 35 个 G3.1 文件/API/IL/短 ID 检查；包括真人保存成功及失败路径逐项等价、G2 不重置角色数据、重复生命周期、失败保存禁止销毁、路径与配对文件拒绝、真实 DMD 及畸形 IL 拒绝 |
 | 隔离原生服务器持久化（0.3.0；0.3.1 未重跑原生实测） | 两个独立进程；每进程两次保存/正常销毁/加载/再保存；第二进程读取第一进程档案；原生写入失败保留状态且禁止销毁；调试覆盖拒绝保存；损坏 `.plr` 回退对象拒绝；SaveAndQuit 请求计数为 0 |
-| 单窗口 Host & Play G3.1 | **未执行，待用户实测** |
+| 单窗口 Host & Play G3.1（0.3.1） | **持久化闭环已执行并由日志确认**：同世界两次销毁/加载、再次保存、退出并重开后的跨进程加载，摘要一致且无 fault；用户反馈恢复后看起来一致。没有据此标记所有客户端字段逐项视觉核验、图形环境故障注入或调试覆盖测试通过 |
 | 远程多人 G3.1 | **未执行** |
 
 原生测试运行在新建 workspace 隔离 profile，只复制测试世界，不加载或写入真人角色档案。测试报告明确标注 hostAndPlay / remoteMultiplayer 未执行。
@@ -90,6 +90,19 @@ debug-style 启用时拒绝保存，必须再执行一次恢复覆盖层后保�
 0.3.0 构建的原生证据位于本机 `.local/character-native-validation-510eac644eca4e6ca4f41c8179076a71/process-1-result.json` 和 `process-2-result.json`：均为 `native-persistence-selftest-passed`、`roundTrips=2`、`corruptLoadRejected=true`、`saveFailureRetained=true`、`exitRequests=0`；第二份 `restoredFromPriorProcess=true`。0.3.0 离线输出为 `.local/g31-verification.txt`。0.3.1 的 274 项定向离线检查输出为 `.local/g31-short-id-verification.txt`，新增短 ID 唯一解析、歧义拒绝、未提交档案排除和安全输入测试。0.3.1 构建 SHA256：`15733757C4F24C0D7BF64E2449565A60527D9910E560FF8CD8BF0F427CA7C2ED`。
 
 ## 单窗口真实验证步骤
+
+### 2026-10-25 已执行记录
+
+用户完成以下核心步骤，原生 Host & Play 日志确认档案 `b15f0e6ae2314c1291c9772f9b9a9e4f`：
+
+- 原服务器进程 `24072`：21:48:39 保存；21:48:55 销毁；21:49:05 加载；21:50:00 再保存；21:50:09 销毁；21:50:27 再加载；21:50:49 最后保存；21:50:58 销毁；21:51:05 世界卸载。
+- 重开服务器进程 `13444`：21:51:40 无参数 load 因两份已存档案而拒绝，未加载错误档案；用户改用 `/vph load b15f0e`，21:54:14 成功加载到预留槽位 254，无 fault。
+- 三次保存及上述三次加载的角色摘要均为 `07F55B7ACEA4CDC49700B65D3F6D12B7D71C48D15A3F32D6FD0447A390B6F1DD`。因此服务器验证范围内的背包、装备、染料、外观、生命/魔力、永久升级计数和本 ModPlayer marker 在此次往返及重开中保持一致。
+- 用户反馈“完成测试的指令了，应该是一样的”。该反馈仅作为恢复后的总体观察，不扩大为每项客户端字段均已逐项视觉确认。远程多人、Host & Play 中的故障注入/调试覆盖检查仍未验证。
+
+证据来自安装目录 `tModLoader-Logs/Old/2023-09-08-45.zip` 内的旧 `server.log` 与当前 `tModLoader-Logs/server.log`；只提取上述探针事件，不将含连接参数的完整日志提交到仓库。
+
+### 重复验证
 
 先退出旧 tModLoader / Host & Play，再运行：
 
