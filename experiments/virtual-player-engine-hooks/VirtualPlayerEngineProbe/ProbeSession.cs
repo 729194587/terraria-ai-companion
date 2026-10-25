@@ -30,13 +30,18 @@ internal static class ProbeSession
         var view = Reservation.Snapshot;
         if (view == null) return;
         var c = Netplay.Clients[view.Slot];
-        if (!VirtualPlayerEngineProbe.ConnectionIdle(c) || Main.player[view.Slot].active)
+        var candidate = Main.player[view.Slot];
+        bool firstValidation = previous == null && slot == -1;
+        if (!VirtualPlayerEngineProbe.ConnectionIdle(c) || candidate == null || candidate.active
+            || !firstValidation && (slot != view.Slot || !ReferenceEquals(candidate, previous)))
         {
-            VirtualPlayerEngineProbe.SignalFault("Initial dedicated slot is not empty after native initialization.");
+            VirtualPlayerEngineProbe.SignalFault("Initial dedicated slot is occupied or its Player ownership is unknown.");
             Finish("initial slot validation failed");
             return;
         }
-        slot = view.Slot;
+        // Capture the native idle placeholder once, before any spawn. Revalidation
+        // must never adopt a replacement object as a new ownership baseline.
+        if (firstValidation) { previous = candidate; slot = view.Slot; }
         Phase = "reserved; no actor";
         Log("reservation-ready");
     }
@@ -63,7 +68,6 @@ internal static class ProbeSession
             { y = cy; clear = true; break; }
         }
         if (!clear) throw new InvalidOperationException("No clear test spawn position; no actor allocated.");
-        previous = Main.player[view.Slot];
         Actor = new Player { whoAmI = view.Slot, name = "G1_NoClient_Probe", width = 20, height = 42,
             statLife = 100, statLifeMax = 100, statLifeMax2 = 100,
             position = new Vector2(x, y), SpawnX = -1, SpawnY = -1 };
@@ -91,13 +95,19 @@ internal static class ProbeSession
         var view = Reservation.Snapshot;
         int target = view?.Slot ?? slot;
         var owned = Actor;
-        bool same = owned != null && view != null && slot == target && slot >= 0 && ReferenceEquals(Main.player[slot], owned);
-        bool occupied = target < 0 || !VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[target]);
-        if (occupied || owned != null && !same)
+        bool inRange = view != null && target >= 0 && Main.player != null && target < Main.player.Length
+            && Netplay.Clients != null && target < Netplay.Clients.Length;
+        var current = inRange ? Main.player[target] : null;
+        bool baselineKnown = inRange && slot == target && previous != null && !previous.active;
+        bool same = owned != null && ReferenceEquals(current, owned);
+        bool playerSafe = baselineKnown && (owned != null ? same
+            : current != null && !current.active && ReferenceEquals(current, previous));
+        bool occupied = !inRange || !VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[target]);
+        if (occupied || !playerSafe)
         {
             Quarantined = true;
             Phase = "quarantined; no Player/slot changes or reservation release";
-            VirtualPlayerEngineProbe.SignalFault("STOP: teardown found connection transition/unknown ownership; reservation retained.");
+            VirtualPlayerEngineProbe.SignalFault("STOP: teardown found connection transition or active/unknown Player ownership; reservation retained.");
             Log("teardown-quarantined", new { reason, same, occupied });
             throw new InvalidOperationException("STOP: occupied/transitioning slot quarantined; native clearWorld/unload must not continue.");
         }

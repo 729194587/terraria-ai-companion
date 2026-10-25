@@ -356,7 +356,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.1.1", "isolated reviewed package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.1.2", "isolated reviewed package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -424,6 +424,11 @@ public static class EngineHookOfflineTests
         Check(CallOffset(clearWorld, "Finish") < CallOffset(clearWorld, "Invoke"), "compiled pre-clearWorld fuse precedes native world mutation/unhook");
         Check(refs.Any(m => m.Name == "QueueMainThreadAction") && refs.Any(m => m.Name == "DoesPlayerSlotCountAsAHost"), "compiled command queue retains native host authorization");
         Check(session.Methods.Single(m => m.Name == "Spawn").Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "AssertOwner"), "spawn checks simulation-thread ownership");
+        Check(session.Methods.Single(m => m.Name == "CheckInitialSlot").Body.Instructions.Any(i => i.OpCode == OpCodes.Stsfld
+                && i.Operand is FieldReference f && f.Name == "previous")
+            && !session.Methods.Single(m => m.Name == "Spawn").Body.Instructions.Any(i => i.OpCode == OpCodes.Stsfld
+                && i.Operand is FieldReference f && f.Name == "previous"),
+            "native placeholder baseline is established before spawn and never replaced by spawn");
         RunCompiledTeardown(probe, session.Methods.Single(m => m.Name == "Finish"));
         Console.WriteLine($"Engine probe package: loader={version}; bytes={file.Length}; DLL={size}; {checks} total checks; G1 LIVE NOT RUN.");
     }
@@ -531,15 +536,18 @@ public static class EngineHookOfflineTests
         void ExpectQuarantine(string label, Action prepare)
         {
             Reset(); prepare(); var player = MainState.player[3]; var actor = TeardownState.Actor; var placeholder = TeardownState.previous;
+            var playerActive = player?.active; var actorActive = actor?.active; var placeholderActive = placeholder?.active;
+            int originalSlot = TeardownState.slot; bool originalConnectedHook = TeardownState.connectedHook;
+            bool Unchanged() => ReferenceEquals(MainState.player[3], player) && player?.active == playerActive
+                && ReferenceEquals(TeardownState.Actor, actor) && actor?.active == actorActive
+                && ReferenceEquals(TeardownState.previous, placeholder) && placeholder?.active == placeholderActive
+                && TeardownState.slot == originalSlot && TeardownState.connectedHook == originalConnectedHook
+                && TeardownState.Reservation.IsReserved(3) && TeardownState.Disconnects == 0;
             try { finish(label); throw new Exception("quarantine missing"); } catch (InvalidOperationException) { }
-            Check(ReferenceEquals(MainState.player[3], player) && player.active
-                && ReferenceEquals(TeardownState.Actor, actor) && actor.active
-                && ReferenceEquals(TeardownState.previous, placeholder) && TeardownState.slot == 3
-                && TeardownState.Reservation.IsReserved(3) && TeardownState.Disconnects == 0
-                && TeardownState.Fault != null && TeardownState.Quarantined,
+            Check(Unchanged() && TeardownState.Fault != null && TeardownState.Quarantined,
                 "actual teardown quarantines without Player writes/release: " + label);
             try { finish("repeat quarantined cleanup"); throw new Exception("quarantine retried"); } catch (InvalidOperationException) { }
-            Check(TeardownState.Reservation.IsReserved(3) && TeardownState.Logs == 1, "quarantined cleanup cannot retry/release: " + label);
+            Check(Unchanged() && TeardownState.Logs == 1, "quarantined cleanup cannot retry/release: " + label);
         }
         ExpectQuarantine("connected human", () => { MainState.player[3] = new PlayerState { active = true }; NetState.Clients[3].Socket = new SocketState(); });
         ExpectQuarantine("disconnected but IsActive", () => { NetState.Clients[3].Socket = new SocketState { Connected = false }; NetState.Clients[3].IsActive = true; });
@@ -551,14 +559,37 @@ public static class EngineHookOfflineTests
         ExpectQuarantine("PendingTerminationApproved", () => NetState.Clients[3].PendingTerminationApproved = true);
         ExpectQuarantine("unknown RemoteClient", () => NetState.Clients[3] = null);
         ExpectQuarantine("unknown Player reference despite idle connection", () => MainState.player[3] = new PlayerState { active = true });
-        Reset(); TeardownState.Actor = null; TeardownState.slot = -1; NetState.Clients[3].State = 1;
+        void BeforeSpawn()
+        {
+            TeardownState.Actor = null; TeardownState.connectedHook = false;
+            MainState.player[3] = TeardownState.previous;
+        }
+        ExpectQuarantine("pre-spawn active original placeholder with idle RemoteClient", () => {
+            BeforeSpawn(); MainState.player[3].active = true;
+        });
+        ExpectQuarantine("initial active Player before placeholder baseline exists", () => {
+            BeforeSpawn(); TeardownState.previous = null; TeardownState.slot = -1; MainState.player[3].active = true;
+        });
+        ExpectQuarantine("pre-spawn inactive replacement Player with idle RemoteClient", () => {
+            BeforeSpawn(); MainState.player[3] = new PlayerState();
+        });
+        ExpectQuarantine("pre-spawn null Player with idle RemoteClient", () => {
+            BeforeSpawn(); MainState.player[3] = null;
+        });
+        ExpectQuarantine("pre-spawn unestablished placeholder baseline", () => {
+            BeforeSpawn(); TeardownState.previous = null; TeardownState.slot = -1;
+        });
+        ExpectQuarantine("active restoration placeholder while actor exists", () => TeardownState.previous.active = true);
+        Reset(); BeforeSpawn(); NetState.Clients[3].State = 1;
         var beforeSpawnPlayer = MainState.player[3];
         try { finish("transition before actor creation"); throw new Exception("unused reservation released early"); } catch (InvalidOperationException) { }
         Check(TeardownState.Reservation.IsReserved(3) && ReferenceEquals(MainState.player[3], beforeSpawnPlayer)
             && TeardownState.Disconnects == 0 && TeardownState.Quarantined,
             "connection transition before spawn also quarantines startup reservation without release");
-        Reset(); TeardownState.Actor = null; TeardownState.slot = -1;
+        Reset(); BeforeSpawn(); var unusedPlaceholder = MainState.player[3];
         finish("world exit before spawn");
-        Check(TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 0, "actual teardown releases unused startup reservation");
+        Check(TeardownState.Reservation.Snapshot == null && TeardownState.Disconnects == 0
+            && ReferenceEquals(MainState.player[3], unusedPlaceholder) && !unusedPlaceholder.active,
+            "actual teardown releases unused reservation only with known unchanged inactive placeholder");
     }
 }

@@ -6,9 +6,9 @@
 
 分支 `spike/virtual-player-engine-hooks` 从 `main` 的 `9a57b3bae8d888f79c2da6c41cbc5b5ec66085c6` 开始，只新增本报告和 `experiments/virtual-player-engine-hooks/`。main、CompanionBridge、Python、Lua、TCP、原子操作和 PR #9 均保持原样。
 
-## PR #11 审查后的修正（Probe 0.1.1）
+## PR #11 审查后的修正（当前 Probe 0.1.2）
 
-针对 [三项审查意见](https://github.com/729194587/terraria-ai-companion/pull/11#issuecomment-6393766604)，补齐了实际 Host & Play 路径和线程证据，并修复清理时连接过渡态保护弱于网络保护的问题。不要部署旧的 Probe 0.1.0。
+针对 [三项审查意见](https://github.com/729194587/terraria-ai-companion/pull/11#issuecomment-6393766604)，补齐了实际 Host & Play 路径和线程证据，并修复清理时连接过渡态保护弱于网络保护的问题。0.1.2 继续修复 `5791b74` 中未 spawn 时的 Player 归属缺口；不要部署旧的 Probe 0.1.0/0.1.1。
 
 **当前安装版本的 Host & Play 是双进程机制：一个真人图形客户端，加一个原生无图形服务器子进程。** 前两项意见需要结合这一区别理解：图形进程的 `dedServ=false` 不意味着整个 Host & Play 没有 `dedServ=true` 的服务器。不会把 actor 移到真人图形客户端；图形端现在安装启动观察钩子，服务器子进程安装生命周期钩子。
 
@@ -25,6 +25,8 @@
 运行时不只信任捕获的线程 ID：服务器 scope 和 StartServer 同时要求 `Main.dedServ && Program.IsMainThread`；spawn、清理与更新检查还要求捕获的 owner ID 一致。日志增加 `role`、`programMainThread` 和 `programIsMainThread`。这仍不是实际 Mod 启动/Steam 会话已通过的证据，G1 live 保留 not attempted。
 
 第三项已改为统一 `ConnectionIdle` 谓词：必须已知 RemoteClient，且 `!IsConnected && !IsActive && State==0 && !PendingTermination && !PendingTerminationApproved`。初始槽位验证、网络 eligibility、同步/区块隔离及 teardown 共用该策略。任何过渡态、未知连接对象或 Player 引用冲突都进入 quarantine，保留 actor/占位/预留，不修改 Player、不发断开通知、不释放槽位；重复清理与 spawn 被拒绝。pre-clearWorld 因而中止，而非带着未知连接状态继续清世界/撤销钩子。
+
+0.1.2 额外要求 **Player 对象归属可证实**，即使 `Actor == null` 且 RemoteClient 完全 idle。原生初始化后，首次成功的 CheckInitialSlot 仅对非 null、inactive Player 建立一次 `(slot, previous)` 占位基线；spawn 前重验不得采纳替换对象，Spawn 也不再重记 previous。未 spawn 的 teardown 仅允许该已知、引用不变、仍 inactive 的占位对象释放预留；active Player、inactive 替换对象、null 引用、缺失基线或槽位不匹配均 quarantine。已有 actor 时还要求当前元素就是 actor，且待恢复占位非 null/inactive。StartServer 在基线建立前异常退出同样无法证明归属，故保留预留并停止，不冒险释放。
 
 ## 实验决策与范围
 
@@ -97,7 +99,7 @@
 
 1. AI 的活动态不参与 `HasClients` 计数；不会假扮 host，也不延长 Host & Play 的原生生命周期。
 2. 如果保留槽位意外出现 connected/IsActive/非零 State/待终止或终止已批准状态，eligibility 立即返回 false，保留真人的原生更新/断开/Reset，并记录 fault。下一模拟更新的 teardown 只会隔离，不能为停止 actor 而改写该槽位。
-3. teardown 同时核对预留、Player 引用和完整连接过渡态。异常时不覆盖数组、不调用断开钩子、不将 active 清零，也不清空自己的引用或释放预留。
+3. teardown 同时核对预留、初始占位基线、当前 Player 引用/活动状态和完整连接过渡态。Actor 尚不存在也必须证明当前对象是已知 inactive 占位；异常时不覆盖数组、不调用断开钩子、不将 active 清零，也不清空自己的引用或释放预留。
 4. 所有写入先检查引擎 `Program.IsMainThread` 与 `AssertOwner`。图形客户端仅观察原生启动，不安装服务器槽位钩子，不替换 LocalPlayer，不修改任何 Main.myPlayer 或 RemoteClient 字段。
 
 ### 创建与清理
@@ -106,7 +108,7 @@
 
 不调用 `Player.Spawn`/EnterWorld：这些路径有本地 UI/所有者副作用。初始位置仅在世界出生点附近最多向上检查 12 格空位，不清理 Tile。后续完全由原生 Player.Update 更新，没有手动额外 Update、输入注入或逐帧坐标修补。自然重力产生的位置变化不算 G2 验证。
 
-正常空闲且对象归属明确时，despawn 对自己的对象设为不活动，调用一次断开通知，恢复最初的空闲占位对象，再发布空预留。finally 覆盖断开钩子和日志异常。重复正常 despawn 无副作用。actor 死亡/不活动时停止，不自动复活；引用或连接状态不明时只隔离，不修复。
+正常空闲且对象归属明确时，despawn 对自己的对象设为不活动，调用一次断开通知，恢复原生初始化后首次验证的空闲占位对象，再发布空预留。未 spawn 时，只有该占位引用和 inactive 状态均保持才可释放。finally 覆盖断开钩子和日志异常。重复正常 despawn 无副作用。actor 死亡/不活动时停止，不自动复活；引用或连接状态不明时只隔离，不修复。
 
 正常 OnWorldUnload、clearWorld 入口和服务器模拟 scope 的 finally 都可幂等触发此清理。Mod.Unload 只验证早期清理已完成、移除订阅。部分安装失败则在任何服务器启动前逆序撤销订阅。
 
@@ -141,7 +143,7 @@ Compilation finished with 0 errors and 0 warnings
 Packaging: VirtualPlayerEngineProbe
 Verification CLR: 8.0.0; no Terraria game process or world.
 EngineHookOfflineTests: 53 checks passed; actual IL fixtures only; G1 LIVE NOT RUN.
-Engine probe package: loader=2026.8.3.0; bytes=32713; DLL=49152; 107 total checks; G1 LIVE NOT RUN.
+Engine probe package: loader=2026.8.3.0; bytes=32875; DLL=49152; 120 total checks; G1 LIVE NOT RUN.
 ```
 
 验证范围：
@@ -155,6 +157,7 @@ Engine probe package: loader=2026.8.3.0; bytes=32713; DLL=49152; 107 total check
 - 10,000 次原生网络循环与主线程预留读取并发，不反复写 active。连接接受夹具与真实 TCP/Steam 回调调度并非同一件事，没有冒充真实网络压力测试。
 - 审计实际 `.tmod`：无 Bridge 引用，无假 RemoteClient/Socket/NPC/进程创建，无连接状态/myPlayer 写入，仅一次 Player 创建和 active=true，无自定义 actor 发包/额外 Player.Update/移动捷径，钩子具备撤销配对。
 - 执行实际包内 `Finish` 的完整 IL（替换存储、通知和日志效果），验证正常恢复/释放、异常 finally、错误线程/引擎主线程身份拒绝；对已断开但活动、State=-1/1/3/10、待终止、终止已批准、未知 RemoteClient、Player 引用冲突及 spawn 前过渡态，验证不写 Player、不调用断开、不提前释放，并禁止重复清理。
+- 同一实际 teardown IL 额外覆盖 Actor=null、RemoteClient idle 时的 active 原始占位、基线建立前 active Player、inactive 替换对象、null Player 和缺失基线，以及 actor 存在但恢复占位变为 active。逐一验证保留 Player/引用/活动状态/预留，且重复调用仍不能释放；正向验证已知 inactive 原始占位可在未 spawn 退出时释放。
 
 夹具对象不是游戏内 Player/Socket。未验证真实 Mod.Load 安装链、Native Player.Update 的场景表现、Steam host 权限、原生退出/热卸载的真实时序或真人客户端。没有运行全量测试。
 
@@ -253,7 +256,7 @@ Copy-Item -LiteralPath (Join-Path $repo '.local/virtual-player-engine-validation
 
 | Gate | 本次结果 | 不足以证明的事项 |
 | --- | --- | --- |
-| G0 | passed in offline tests | 107 项定向检查和独立编译通过，不能证明真实 Mod 启动与游戏行为 |
+| G0 | passed in offline tests | 120 项定向检查和独立编译通过，不能证明真实 Mod 启动与游戏行为 |
 | G1 | not attempted | Host & Play 原生 Player 存活、真人输入/后续连接、正常退出均需按以上步骤实测 |
 | G2/G3 | not attempted / out of scope | 没有动作、AI、完整玩家同步、可见性或动画验收 |
 
