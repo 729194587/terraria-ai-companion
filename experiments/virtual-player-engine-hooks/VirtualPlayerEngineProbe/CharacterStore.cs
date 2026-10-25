@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Linq;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.IO;
@@ -27,6 +28,9 @@ internal static class CharacterStore
             throw new IOException("Last save failed; live Player retained. Save successfully before despawning/exiting.");
     }
     private static CharacterFiles Files => new(Main.SavePath);
+    internal static string DisplayId => CurrentId == null ? "none" : Files.ShortId(CurrentId);
+    internal static string Profiles() => "Profiles: " + string.Join(", ", Files.KnownIds().Select(id => Files.ShortId(id)))
+        + ". /vph load [short ID]; omit ID for current/only profile.";
 
     internal static string Inspect()
     {
@@ -46,7 +50,7 @@ internal static class CharacterStore
             NetworkStateSync.Require(p);
             failedSave = p;
             if (ProbeDebugAppearance.IsApplied(p)) throw new InvalidOperationException("Restore debug-style before saving character data.");
-            string id = CharacterFiles.ValidateId(requestedId ?? CurrentId ?? CharacterFiles.NewId());
+            string id = requestedId == null ? CurrentId ?? CharacterFiles.NewId() : Files.Resolve(requestedId);
             try
             {
                 var files = Files; var path = files.Begin(id);
@@ -78,7 +82,7 @@ internal static class CharacterStore
         {
             if (ProbeSession.Actor != null) throw new InvalidOperationException("Save and despawn the current Player before loading.");
             ProbeSession.CheckInitialSlot();
-            string id = CharacterFiles.ValidateId(requestedId ?? CurrentId);
+            string id = Files.Resolve(requestedId ?? CurrentId);
             var (path, manifest) = Files.Open(id);
             var p = CharacterIo.Read(path);
             if (CharacterIo.State(p) != manifest.StateHash) throw new IOException("Character state fingerprint differs from committed generation.");

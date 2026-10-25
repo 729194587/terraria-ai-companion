@@ -368,7 +368,7 @@ public sealed class ProbeCommand : ModCommand
 {
     public override string Command => "vph";
     public override CommandType Type => CommandType.World | CommandType.Console;
-    public override string Usage => "/vph status|spawn|save [id]|load [id]|inspect|fixture|test-save-failure|debug-style|resync|despawn";
+    public override string Usage => "/vph status|spawn|save [id]|load [id]|profiles|inspect|fixture|test-save-failure|debug-style|resync|despawn";
     public override string Description => "G3.1 character persistence experiment; server/host only.";
     public override void Action(CommandCaller caller, string input, string[] args)
     {
@@ -397,6 +397,7 @@ public sealed class ProbeCommand : ModCommand
                 else if (action == "load") CharacterStore.Load(copy.Length == 2 ? copy[1] : null);
                 else if (action == "fixture") CharacterSelfTest.Seed();
                 else if (action == "inspect") caller.Reply(CharacterStore.Inspect());
+                else if (action == "profiles") caller.Reply(CharacterStore.Profiles());
                 else if (action == "test-save-failure") CharacterStore.TestSaveFailure();
                 else if (action == "debug-style") ProbeDebugAppearance.Toggle(ProbeSession.Actor ?? throw new InvalidOperationException("Spawn the probe first."));
                 else if (action == "resync") NetworkStateSync.Full(ProbeSession.Actor ?? throw new InvalidOperationException("Spawn the probe first."));
@@ -404,7 +405,7 @@ public sealed class ProbeCommand : ModCommand
                 else throw new InvalidOperationException(Usage);
                 if (action == "spawn" && ProbeSession.Actor != null)
                     caller.Reply($"G3.1：已创建 Player，slot={ProbeSession.Actor.whoAmI}。请观察出生点右侧的 G31_NoClient_Probe；/vpc {ProbeSession.Actor.whoAmI} 查看客户端状态。");
-                else caller.Reply($"G3.1: {ProbeSession.Phase}; actorSlot={ProbeSession.Actor?.whoAmI ?? -1}; id={CharacterStore.CurrentId ?? "none"}; " +
+                else caller.Reply($"G3.1: {ProbeSession.Phase}; actorSlot={ProbeSession.Actor?.whoAmI ?? -1}; id={CharacterStore.DisplayId}; " +
                     $"fault={VirtualPlayerEngineProbe.Fault ?? "none"}; full={NetworkStateSync.FullSnapshots}, controls={NetworkStateSync.Controls}, left={NetworkStateSync.Departures}.");
             }
             catch (Exception e)

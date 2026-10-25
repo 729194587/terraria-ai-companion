@@ -1,6 +1,6 @@
 # G3.1：独立 AI Player 角色存档实验
 
-版本：VirtualPlayerEngineProbe **0.3.0**；分支 `codex/virtual-player-character-persistence`。
+版本：VirtualPlayerEngineProbe **0.3.1**；分支 `codex/virtual-player-character-persistence`。
 从指定提交 `2a5dd5939afc16e0561f08d4e083ccfd882e4bc4` 分叉，未修改 main、G1 / PR #11 或 G2 / PR #12 分支。PR 保持 Draft。
 Draft PR #13 的比较基准为固定快照分支 `codex/g31-base-g2-2a5dd59`，其内容就是指定 G2 提交；避免后续 G2 提交造成比较基准漂移或冲突。该快照不增加实现变更，也不修改 G2 PR。
 
@@ -46,7 +46,7 @@ Main.SavePath/VirtualPlayerEngineProbe/Characters/
     <32位GUID代次>/character.tplr
 ```
 
-首次 save 自动生成角色 ID；参数仅接受严格的小写 32 位 GUID。路径始终在独立根目录中，拒绝目录/文件 reparse point，禁止使用真人 Players 目录或任意路径。
+首次 save 自动生成角色 ID；磁盘目录 ID 仅接受严格的小写 32 位 GUID。命令可使用唯一的短 ID 前缀（至少 6 位小写十六进制），先解析到已提交档案的完整 GUID，再构造路径；有歧义时拒绝。路径始终在独立根目录中，拒绝目录/文件 reparse point，禁止使用真人 Players 目录或任意路径。
 每次保存先做目录实际写入/flush 探测，再新建代次。原生文件写完且无 ModSaveErrors 后，使用原生 LoadPlayer 回读验证，再记录两文件 SHA256 和状态摘要；flush 新 manifest 后替换 current.json。
 读取只接受已提交且双文件 hash 正确的代次，不扫描/收养残缺文件。旧代次和失败代次留存，不自动删除。不声称可以抵抗磁盘硬件故障或提供双文件系统级事务。
 
@@ -76,9 +76,9 @@ debug-style 启用时拒绝保存，必须再执行一次恢复覆盖层后保�
 
 | 层级 | 结果与范围 |
 | --- | --- |
-| 编译 | 0 errors / 0 warnings，0.3.0 `.tmod` |
-| 定向离线 | 239 个既有/生命周期/包审计检查 + 26 个 G3.1 文件/API/IL 检查；包括真人保存成功及失败路径逐项等价、G2 不重置角色数据、重复生命周期、失败保存禁止销毁、路径与配对文件拒绝、真实 DMD 及畸形 IL 拒绝 |
-| 隔离原生服务器持久化 | 两个独立进程；每进程两次保存/正常销毁/加载/再保存；第二进程读取第一进程档案；原生写入失败保留状态且禁止销毁；调试覆盖拒绝保存；损坏 `.plr` 回退对象拒绝；SaveAndQuit 请求计数为 0 |
+| 编译 | 0 errors / 0 warnings，0.3.1 `.tmod` |
+| 定向离线 | 239 个既有/生命周期/包审计检查 + 35 个 G3.1 文件/API/IL/短 ID 检查；包括真人保存成功及失败路径逐项等价、G2 不重置角色数据、重复生命周期、失败保存禁止销毁、路径与配对文件拒绝、真实 DMD 及畸形 IL 拒绝 |
+| 隔离原生服务器持久化（0.3.0；0.3.1 未重跑原生实测） | 两个独立进程；每进程两次保存/正常销毁/加载/再保存；第二进程读取第一进程档案；原生写入失败保留状态且禁止销毁；调试覆盖拒绝保存；损坏 `.plr` 回退对象拒绝；SaveAndQuit 请求计数为 0 |
 | 单窗口 Host & Play G3.1 | **未执行，待用户实测** |
 | 远程多人 G3.1 | **未执行** |
 
@@ -86,8 +86,8 @@ debug-style 启用时拒绝保存，必须再执行一次恢复覆盖层后保�
 往返摘要涵盖全部 inventory/armor/dye/miscEquips/miscDyes/loadouts 的原生 ItemIO 标签、外观色彩、发型、生命/魔力与永久升级计数、本 ModPlayer 的持久 marker。测试用 37 个火把、铁头盔、红染料、非默认外观和生命/魔力；ModPlayer marker 必须跨对象及进程保持一致。
 当前实验强制仅启用探针与 ModLoader，未验证任意第三方 ModPlayer/ModItem 的兼容性；不能外推为所有 Mod 数据实测通过。位置、速度和控制是世界状态，恢复时有意重建。生命/魔力在实际世界运行后可能随再生等游戏规则变化。
 
-本次交付包 SHA256：`FEAEA1301476CE2D76CB7FCFBCA86097408A6C0FBB4E085E1DA8B75C5202C26D`。
-最终构建的原生证据位于本机 `.local/character-native-validation-510eac644eca4e6ca4f41c8179076a71/process-1-result.json` 和 `process-2-result.json`：均为 `native-persistence-selftest-passed`、`roundTrips=2`、`corruptLoadRejected=true`、`saveFailureRetained=true`、`exitRequests=0`；第二份 `restoredFromPriorProcess=true`。离线输出为 `.local/g31-verification.txt`。
+0.3.0 原生验证包 SHA256：`FEAEA1301476CE2D76CB7FCFBCA86097408A6C0FBB4E085E1DA8B75C5202C26D`。
+0.3.0 构建的原生证据位于本机 `.local/character-native-validation-510eac644eca4e6ca4f41c8179076a71/process-1-result.json` 和 `process-2-result.json`：均为 `native-persistence-selftest-passed`、`roundTrips=2`、`corruptLoadRejected=true`、`saveFailureRetained=true`、`exitRequests=0`；第二份 `restoredFromPriorProcess=true`。0.3.0 离线输出为 `.local/g31-verification.txt`。0.3.1 的 274 项定向离线检查输出为 `.local/g31-short-id-verification.txt`，新增短 ID 唯一解析、歧义拒绝、未提交档案排除和安全输入测试。0.3.1 构建 SHA256：`15733757C4F24C0D7BF64E2449565A60527D9910E560FF8CD8BF0F427CA7C2ED`。
 
 ## 单窗口真实验证步骤
 
@@ -109,20 +109,20 @@ debug-style 启用时拒绝保存，必须再执行一次恢复覆盖层后保�
 /vph save
 ```
 
-save 成功回复含 `id=<32位ID>`，请记下。应看到 AI 和显式 fixture 的外观；默认 spawn 本身没有测试头盔或赠送物品。继续：
+save 成功回复显示唯一的短 ID（通常 6 位）。同一世界可直接 `/vph load` 恢复最近保存/加载的角色；重启后只有一份档案时也可省略 ID。有多份档案时用 `/vph profiles` 查看短 ID，再输入 `/vph load <短ID>`；完整 GUID 仍兼容。以下 `<刚才的ID>` 可以省略：应看到 AI 和显式 fixture 的外观；默认 spawn 本身没有测试头盔或赠送物品。继续：
 
 ```text
 /vph despawn
-/vph load <刚才的ID>
+/vph load
 /vph inspect
 /vph save
 /vph despawn
-/vph load <同一ID>
+/vph load
 /vph inspect
 ```
 
 应看到离开/加入消息和同一外观。服务器每次 save 会立即回读比较上述数据，不一致就报错而不提交。inspect 可比对物品、marker 和生命/魔力；不要把游戏中的自然再生误判成存档修改。
-再 save、despawn 后正常退出世界和游戏，重新使用同一入口开同一世界，**直接 `/vph load <ID>`，不要先 spawn**，检查跨进程恢复。
+再 save、despawn 后正常退出世界和游戏，重新使用同一入口开同一世界，**直接 `/vph load`（唯一档案）或 `/vph load <短ID>`，不要先 spawn**，检查跨进程恢复。
 
 故障与调试覆盖检查（仅这个隔离测试 profile）：
 

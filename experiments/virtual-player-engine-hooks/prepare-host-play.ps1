@@ -57,7 +57,7 @@ try { & (Join-Path $TModLoaderPath 'start-tModLoader.bat') -tmlsavedirectory $PS
 finally { Pop-Location }
 '@
 Set-Content -LiteralPath (Join-Path $profile 'start-host-play.ps1') -Value $launcher.Replace('__HASH__', $packageHash).Replace('__TML__', $TModLoaderPath.Replace("'", "''"))
-Set-Content -LiteralPath (Join-Path $profile 'BUILD.txt') -Value @('VirtualPlayerEngineProbe 0.3.0 (G3.1)', ('SHA256=' + $packageHash),
+Set-Content -LiteralPath (Join-Path $profile 'BUILD.txt') -Value @('VirtualPlayerEngineProbe 0.3.1 (G3.1)', ('SHA256=' + $packageHash),
     'Offline checks and isolated native persistence tested. SINGLE-WINDOW G3.1 NOT RUN; REMOTE MULTIPLAYER NOT RUN.',
     'Run start-host-play.ps1 manually; reuse the existing test character/world; Multiplayer > Host & Play.',
     '/vph status, /vph spawn, /vpc <slot>, /vph debug-style, /vph resync, /vph despawn.')

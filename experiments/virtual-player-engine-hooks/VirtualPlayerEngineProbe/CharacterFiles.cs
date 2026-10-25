@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -14,6 +15,34 @@ public sealed class CharacterFiles
     public string Root { get; }
     public CharacterFiles(string savePath) => Root = Path.GetFullPath(Path.Combine(savePath, "VirtualPlayerEngineProbe", "Characters"));
     public static string NewId() => Guid.NewGuid().ToString("N");
+    public string[] KnownIds()
+    {
+        CheckPath(Root);
+        if (!Directory.Exists(Root)) return Array.Empty<string>();
+        return Directory.GetDirectories(Root).Select(Path.GetFileName)
+            .Where(id => id.Length == 32 && Guid.TryParseExact(id, "N", out var guid) && guid.ToString("N") == id)
+            .Where(id => { var directory = DirectoryFor(id); return File.Exists(Path.Combine(directory, "current.json")); })
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+    }
+    public string Resolve(string selector)
+    {
+        if (selector?.Length == 32) return ValidateId(selector);
+        if (selector != null && (selector.Length < 6 || selector.Length > 32
+            || selector.Any(c => !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f'))))
+            throw new ArgumentException("Use a profile's short ID (at least 6 lowercase hex characters).");
+        var matches = KnownIds().Where(id => selector == null || id.StartsWith(selector, StringComparison.Ordinal)).ToArray();
+        if (matches.Length != 1) throw new IOException(matches.Length == 0 ? "No matching saved profile. Use /vph profiles."
+            : "Multiple profiles match. Use /vph profiles and specify a longer ID.");
+        return matches[0];
+    }
+    public string ShortId(string id)
+    {
+        ValidateId(id);
+        var ids = KnownIds();
+        int length = 6;
+        while (length < 32 && ids.Count(other => other.StartsWith(id.Substring(0, length), StringComparison.Ordinal)) > 1) length++;
+        return id.Substring(0, length);
+    }
     public static string ValidateId(string id)
     {
         if (id == null || id.Length != 32 || !Guid.TryParseExact(id, "N", out var parsed) || parsed.ToString("N") != id)

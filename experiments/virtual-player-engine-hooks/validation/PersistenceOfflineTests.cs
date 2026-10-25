@@ -50,6 +50,11 @@ public static class PersistenceOfflineTests
         string safe=CharacterFiles.NewId();
         var first=files.Begin(safe); File.WriteAllText(first,"native-plr-1"); File.WriteAllText(Path.ChangeExtension(first,".tplr"),"native-tplr-1");
         files.Commit(safe,first,"state1"); Check(files.Open(safe).Path==first,"committed native pair opens");
+        Check(files.Resolve(safe.Substring(0,6))==safe && files.Resolve(null)==safe,"short ID and sole-profile default resolve original GUID");
+        var uncommitted=CharacterFiles.NewId(); files.Begin(uncommitted);
+        Check(!files.KnownIds().Contains(uncommitted),"uncommitted generation is not offered as a saved profile");
+        foreach(var invalid in new[]{"../", "ABCDEF", "12345", "abcdef/../"})
+            Reject(()=>files.Resolve(invalid),"unsafe short selector rejected: "+invalid);
         var incomplete=files.Begin(safe); File.WriteAllText(incomplete,"partial");
         Reject(()=>files.Commit(safe,incomplete,"state2"),"incomplete pair cannot commit");
         Check(files.Open(safe).Path==first,"failed generation retains old pointer");
@@ -59,6 +64,14 @@ public static class PersistenceOfflineTests
         Reject(()=>files.Open(safe),"tampered ModPlayer file rejected before native load");
         var blocked=CharacterFiles.NewId(); File.WriteAllText(files.DirectoryFor(blocked),"blocked directory");
         Reject(()=>files.Begin(blocked),"unwritable destination fails before native save");
+        var collisionA="abcdef"+new string('0',26); var collisionB="abcdef1"+new string('0',25);
+        foreach(var id in new[]{collisionA,collisionB}) {
+            var path=files.Begin(id);File.WriteAllText(path,"plr");File.WriteAllText(Path.ChangeExtension(path,".tplr"),"tplr");files.Commit(id,path,"state");
+        }
+        Reject(()=>files.Resolve("abcdef"),"ambiguous prefix never silently chooses a profile");
+        Check(files.ShortId(collisionA).Length==7 && files.Resolve(files.ShortId(collisionA))==collisionA
+            && files.Resolve(files.ShortId(collisionB))==collisionB,"collisions display longer unique short IDs");
+        Reject(()=>files.Resolve(null),"multiple profiles require selection after restart");
 
         using var native=AssemblyDefinition.ReadAssembly(Path.Combine(gamePath,"tModLoader.dll"));
         var player=native.MainModule.Types.Single(t=>t.FullName=="Terraria.Player");
