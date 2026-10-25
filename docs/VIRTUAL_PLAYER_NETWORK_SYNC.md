@@ -92,12 +92,18 @@ PowerShell 7，从仓库根目录运行（脚本支持 `-TModLoaderPath`）：
 ./experiments/virtual-player-engine-hooks/prepare-host-play.ps1
 ```
 
+prepare-host-play 默认复用固定目录 `.local/virtual-player-network-host/`，不再每版创建空存档。首次准备时自动从已有完整 G2 实验目录复制 Players、Worlds 及相关设置；本机来源为 `.local/virtual-player-network-host-20261025-182751/`，原目录保留。之后不再导入或覆盖角色/世界，只更新模组、启动脚本和构建说明，保留 enabled.json。模组包变更前完整备份固定目录到 `.local/virtual-player-network-backups/<时间戳>/`；准备时检测到 tModLoader 运行则拒绝更新。
+
+同版本重复测试可在同一图形客户端退出世界后重新 Host & Play，继续使用原角色和地图。升级前关闭 tModLoader 及服务器，运行 build/verify/prepare 后仍用同一固定启动入口。只有需要全新隔离基线时才显式执行 `prepare-host-play.ps1 -Fresh`，创建独立的空 profile；不把“新服务器进程”误解为必须新角色/新世界。
+
+此次仅修改准备脚本及文档，未改变 0.2.2 模组。已核对导入、重复执行以及用旧包/启动器模拟 0.2.1→0.2.2 更新后，全部 12 个 Players/Worlds 文件与源目录逐字节哈希一致，目标包哈希与已验证构建一致，升级备份已生成，启动脚本语法检查通过。未为脚本改动重跑 C# 检查或全量测试，也未启动游戏。
+
 G2 输出目录与原 G1 分开：
 
 - 包：`.local/virtual-player-network-build/Mods/VirtualPlayerEngineProbe.tmod`，版本 **0.2.2**，43504 字节。
 - SHA256：`9C3E16817BC92B61210A71E5BD0F2F56BCDA47A87F67505317B9655A13F3CDAF`。
 - 日志：`.local/virtual-player-network-build.log`、`.local/virtual-player-network-validation.log`；原生/补丁 IL 检查产物在 `.local/virtual-player-network-validation/`。
-- 已准备：`.local/virtual-player-network-host-20261025-185123/`，只部署并启用 0.2.2，尚未启动游戏。0.2.1 的实测目录及旧 G2/G1 profile、用户日志保留。
+- 默认入口：`.local/virtual-player-network-host/start-host-play.ps1`，部署 0.2.2，并已有复制自先前完整实验目录的角色/世界；无需重建。旧临时 G2/G1 profile、用户日志及升级备份保留。
 
 本机输出：
 
@@ -117,14 +123,14 @@ Engine probe package: loader=2026.8.3.0; bytes=43504; DLL=73216; 167 prerequisit
 
 ## 用户手工验证：一个图形窗口
 
-1. 退出上一轮 Host & Play 及其服务器，保留 Steam 正常运行。手工启动新 profile：
+1. 首次切到固定目录或升级模组时，先关闭上一轮 tModLoader 及其服务器，保留 Steam 正常运行，手工启动固定 profile：
 
    ```powershell
-   & 'D:\Agent Project\terraria-ai-companion\.local\virtual-player-network-host-20261025-185123\start-host-play.ps1'
+   & 'D:\Agent Project\terraria-ai-companion\.local\virtual-player-network-host\start-host-play.ps1'
    ```
 
    启动脚本校验包哈希，并对 enabled.json 中额外启用的 Mod 明确报错，不替用户修改启用列表。游戏内也只启用 Probe，避免重现 HEROsMod 导致的加载阻塞。
-2. 新建角色及 Classic 世界，经 Multiplayer → Host & Play 进入。留在世界出生点附近。`/vph status` 应为 reserved/no actor、fault=none；服务器应有 G2 network hooks ready、armed=true 及 reserved=true 的首监听记录。
+2. 选择已有实验角色及 Classic 世界，经 Multiplayer → Host & Play 进入；只有从未创建过存档或显式选择 -Fresh 时才创建一次。留在世界出生点附近。`/vph status` 应为 reserved/no actor、fault=none；服务器应有 G2 network hooks ready、armed=true 及 reserved=true 的首监听记录。
 3. `/vph spawn`：回复给出 actor slot（本机通常为 254）。预期在出生点右侧约四格看到 Player，悬停/名称识别为 G2_NoClient_Probe；左下角出现一次原生黄色加入消息，重复 spawn 不再出现。默认外观保留 engine Player 构造值，不应有测试赠送的头盔或火把。仍只有一个真人图形窗口，AI 无客户端连接。若看不到，记录画面与两端日志，不以服务端 spawn 成功代替可见性验收。
 4. `/vpc 254`（以实际 slot 替换）：这是图形客户端本地只读诊断，应显示 active=true、相同名称和服务器对应的位置/头盔。客户端日志有 client-slot-snapshot；名字仅用于诊断，服务端归属从不依赖名字。
 5. 在 5、15、30 秒取 `/vph status` 与 `/vpc 254`：服务器 active/sameReference=true、connected=false、fault=none，full/control 计数增长，客户端仍可见。手动移动、跳跃、切换真人装备，确认操作对象仍是自己，AI 世界位置没有随镜头错误漂移；未测试到的 AI 运动动画另记未验。
@@ -138,4 +144,4 @@ Engine probe package: loader=2026.8.3.0; bytes=43504; DLL=73216; 167 prerequisit
 
 在 AI 已存在并显式启用 debug-style 后，让另一位真人从另一机器正常加入；对方应直接获得当前 AI 身份、位置和装备，host/加入者均正常控制。加入者退出后 AI 仍存在；host despawn 后各端同时消失。检查 native-accept 的实际槽位不等于 AI 预留，原生真人公告/断开仍正常。没有真实执行就继续标 not attempted，不需要为完成本轮离线实现而临时找人。
 
-回滚使用原 G1 构建和 profile，先结束本次服务器，不覆盖旧角色/世界。0.2.x 与 0.1.4 内部 Mod 名相同，必须用独立 profile 分别启用，不同时加载两个版本。Draft PR 不自动转正或合并。
+回滚前先结束游戏及本次服务器，可使用原 G1 构建/profile，或将固定目录的完整升级备份复制到另一空目录并通过其中的启动器运行，不覆盖当前角色/世界。0.2.x 与 0.1.4 内部 Mod 名相同，必须用独立 profile 分别启用，不同时加载两个版本。Draft PR 不自动转正或合并。
