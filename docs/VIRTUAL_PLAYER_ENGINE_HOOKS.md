@@ -2,7 +2,7 @@
 
 2026-10-25。关联 [Issue #10](https://github.com/729194587/terraria-ai-companion/issues/10)；调查基线为未合并的 [Draft PR #9](https://github.com/729194587/terraria-ai-companion/pull/9) 及其 [报告](https://github.com/729194587/terraria-ai-companion/blob/731ee1123091f4a67fa7578c4f6e9b9bc9a69710/docs/VIRTUAL_PLAYER_SPIKE.md)。
 
-**结果：G0 = passed in offline tests；G1 实现及 0.1.4 构建已完成，G1 live = not attempted。** 0.1.2 的真实启动因预留判定误报而 blocked；0.1.3 修正监听判定。0.1.4 参考本地 TerraPlayerBot，补齐 accept/网络清理与发布的互斥、仅保护已确认 AI 对象的窄断线分支、构造失败与回调后回滚检查。真实 Player 存活、真人输入/后续分配和正常退出清理仍需 Host & Play 验证。构建或夹具通过不是 G1 live pass。G2/G3、移动命令、Agent、Lua、档案、物品使用和战斗均未实施。
+**结果：G0 = passed in offline tests；G1 live = partial（0.1.4 单 host 存活及退出清理已有实测，第二真人加入/退出待验）。** 0.1.2 的真实启动因预留判定误报而 blocked；0.1.3 修正监听判定。0.1.4 已在 Host & Play 创建无客户端的真实 Player，持续原生更新并保持引用；用户确认真人控制及手动 despawn 符合预期，随后另一服务器会话记录了带 actor 退世界时的 OnWorldUnload 清理。第二真人暂无法参与，不将多人后续分配标为通过。G2/G3、移动命令、Agent、Lua、档案、物品使用和战斗均未实施。
 
 分支 `spike/virtual-player-engine-hooks` 从 `main` 的 `9a57b3bae8d888f79c2da6c41cbc5b5ec66085c6` 开始，只新增本报告和 `experiments/virtual-player-engine-hooks/`。main、CompanionBridge、Python、Lua、TCP、原子操作和 PR #9 均保持原样。
 
@@ -16,7 +16,22 @@
 - 构造失败但占位仍已知安全时，释放未使用预留；发布后的连接回调失败按同一 teardown 回滚。构造或回调替换对象、激活恢复占位、改变身份/连接过渡态时，保留预留并 quarantine。断开通知最多一次，且通知返回/抛错后再次验证对象、活动态和连接状态，确认安全才恢复原占位并释放；日志异常仍通过 finally 释放已确认安全的槽位。
 - 同步/区块隔离也要求真实 AI 引用归属；非预留真人槽位直接调用原函数。Quarantine 后继续提供每秒诊断快照，但不重试 spawn/清理。重新 Load 清空上轮已正常结束的诊断状态。
 
-当前版本编译零错误、零警告；164 项定向检查通过（59 项原生检查）。新增用例执行实际包内的 `Spawn`、`CheckInitialSlot`、`Finish`、AI 归属谓词、accept/network 包装 IL，仅替换引擎存储及外部效果。验证内容包含构造抛错/替换后抛错、发布后连接失败、回调中替换 Player/激活占位/改身份/再激活 actor/置待终止、重入、错误线程，以及构造过程中并发 accept 被 Gate 阻止。网络包装还在 orig 前检测待终止过渡态，保证未到达窄 IL 保护点的路径也能 quarantine，同时仍调用原生处理。未运行全量测试或游戏入口。
+当前版本编译零错误、零警告；164 项定向检查通过（59 项原生检查）。新增用例执行实际包内的 `Spawn`、`CheckInitialSlot`、`Finish`、AI 归属谓词、accept/network 包装 IL，仅替换引擎存储及外部效果。验证内容包含构造抛错/替换后抛错、发布后连接失败、回调中替换 Player/激活占位/改身份/再激活 actor/置待终止、重入、错误线程，以及构造过程中并发 accept 被 Gate 阻止。网络包装还在 orig 前检测待终止过渡态，保证未到达窄 IL 保护点的路径也能 quarantine，同时仍调用原生处理。离线验证不运行游戏入口，未运行全量测试；后续用户手工启动的实测记录如下。
+
+## 0.1.4 单 host 实测记录
+
+2026-10-25（以下时间为 UTC+8），使用本报告的隔离 profile 和 0.1.4 原包，未修改代码或重新构建。第一次启用 HEROsMod 的会话在 Mod.Load 触发隔离检查，全部槽位钩子未安装、未创建 actor；禁用 HEROsMod 并重新开服后正常进入。未通过放宽共存限制绕过该检查。
+
+| 项目 | 实际证据与结果 |
+| --- | --- |
+| 监听前预留及 host 接受 | 17:38:38.816 的 pre-listen-reservation 为 armed=true，预留 slot 254；17:38:38.873 首次监听 entry=1/reserved=true；native-accept 将真人分配至 slot 0 |
+| 无客户端 Player 存活 | 17:39:36.316 spawn 于 slot 254；到 17:40:45.975 已持续约 69.66 秒，Pre/PostUpdates=4178、cleanupSkips=351960；active=true、dead=false、sameReference=true、connected=false、Socket=null、连接/终止状态均 idle、fault=null |
+| 真人控制及手动 despawn | 用户执行移动/跳跃及 despawn/status 步骤后确认符合预期；报告为用户确认。保留的首轮日志快照截至上述存活样本，不冒充独立保存了手动 despawn 后的 status |
+| 带 actor 正常退出世界 | 新服务器 PID 24160：17:45:41.518 spawn；17:45:49.919 原生 host 离开并触发自动关闭，随后正常保存世界；17:45:51.630 记录 teardown，reason=OnWorldUnload、same=true、occupied=false、actor=null、actorSlot=-1、fault=null。该会话恰有一次 spawn 和一次 teardown，全部 16 个 probe 事件均无 fault/quarantine；采集时该服务器 PID 已不存在 |
+| 预留释放证据边界 | teardown 记录位于恢复占位之后、finally 的 Reservation.Release 之前，因此该行仍包含 reservation。实际代码在日志后立即执行 Release，未见异常且服务器进程已退出，支持正常退出路径完成；本轮没有释放后的独立运行时快照，不把该日志中的 reservation 误记为 null |
+| 第二真人后续加入/退出 | 用户当前无第二真人参与，保留为未验证；离线分配/断开夹具不替代此项 |
+
+本地证据目录（不提交个人日志）：`.local/engine-g1-014-blocked-20261025-173444/`、`.local/engine-g1-live-spawn-20261025-174046/`、`.local/engine-g1-live-world-exit-20261025-174700/`。最后一个目录包含客户端/服务器日志、提取的 probe-events.jsonl 和 summary.json。世界日志记录 GameMode=0（Classic）、6400×1800；不是步骤建议的小型世界，未观察到因此影响本轮槽位/生命周期结果。G1 整体保留 partial，Draft PR 不自动转正或合并。
 
 ## PR #11 早期审查修正（0.1.2 / 0.1.3）
 
@@ -187,7 +202,7 @@ Engine probe package: loader=2026.8.3.0; bytes=35274; DLL=55296; 164 total check
 - 读取安装 .cctor 的 IsListening=true 初值和 TcpListener 写入位置，实际执行包内 StartServer/Listen 完整 IL（替换引擎存储及 orig 效果）：在默认标志为 true 时预留先于首个监听；已有 TCP 对象/监听调用/accept/网络循环时拒绝过晚 arm，保留真人 orig 和标志；验证错误主线程、释放后不能 re-arm，以及监听重试/原生返回值。
 - 执行实际包内 Spawn/CheckInitialSlot/归属谓词/accept/network 包装，覆盖构造与连接失败、构造后再次验证引用、回调替换或重新激活对象、错误线程与重入，以及构造/发布期间并发 accept 的锁互斥。断线 IL 另验证原生 StatusText2 处理仍执行、仅有预留不保护未知 Player、待终止审批/Reset 不受 synthetic guard 影响。
 
-夹具对象不是游戏内 Player/Socket。0.1.2 已观察到真实 Mod.Load 安装链及 host 接受，0.1.4 未启动游戏；Native Player.Update 场景表现、命令的 Steam host 权限、带 actor 的退出/热卸载或后续真人分配均未验证。验证器的 G1 LIVE NOT RUN 指本次离线验证不运行游戏，并不抹去上一轮 blocked 记录。没有运行全量测试。
+夹具对象不是游戏内 Player/Socket。验证器的 G1 LIVE NOT RUN 仅指离线检查不运行游戏；后续 0.1.4 已由用户完成上面的单 host 实测，原生更新、host 命令和带 actor 退世界已有证据。第二真人后续分配/退出、活动服务器热卸载等未验证，不扩大结论。没有运行全量测试。
 
 日志：`.local/virtual-player-engine-native.log`、`.local/virtual-player-engine-build.log`、`.local/virtual-player-engine-validation.log`。原生及补丁后 IL 在 `.local/virtual-player-engine-validation/`。这些本机生成内容不提交。
 
@@ -263,7 +278,7 @@ finally { Pop-Location }
 
 构建文件：`.local/virtual-player-engine-build/Mods/VirtualPlayerEngineProbe.tmod`，SHA256 为 `66C21539E4BCF892373BE5657C8BC57418DC24212CBCE0160610FF9522E0DE4E`。
 
-已创建全新隔离目录 `.local/virtual-player-engine-host-g1-014-20261025-171417/`，其中 `Mods/` 只部署该版本并启用 Probe，副本哈希已核对；未启动游戏、未创建世界/角色。从仓库根目录手工运行：
+已创建隔离目录 `.local/virtual-player-engine-host-g1-014-20261025-171417/`，创建时仅部署并启用 Probe，副本哈希已核对；随后用户用它完成了上面的实测，目录目前已有世界/角色，不再视为全新目录。后续运行前确认只启用 Probe。从仓库根目录手工运行：
 
 ```powershell
 & './.local/virtual-player-engine-host-g1-014-20261025-171417/start-host-play.ps1'
@@ -299,7 +314,7 @@ Copy-Item -LiteralPath (Join-Path $repo '.local/virtual-player-engine-validation
 | G0 | passed in offline tests | 164 项定向检查和独立编译通过，不能证明 0.1.4 真实游戏行为 |
 | G1（0.1.2） | blocked | 真实启动/钩子/线程链已观察，但预留误判失败，未 spawn、未进入存活测试 |
 | G1（0.1.3） | not attempted | 已修复监听判定；由 0.1.4 接续实现 |
-| G1（0.1.4） | implementation complete; live not attempted | 已补齐槽位事务、引用保护与失败回滚；尚需全新 Host & Play 实测存活、真人输入/后续连接、清理 |
+| G1（0.1.4） | partial live verification | 单 host 无客户端存活和退世界清理有日志证据，真人控制/手动 despawn 经用户确认；第二真人后续加入/退出保留待验，释放后快照与完整 PID 父子枚举未单独采集 |
 | G2/G3 | not attempted / out of scope | 没有动作、AI、完整玩家同步、可见性或动画验收 |
 
 停止条件：任何分配器/接受路径绕过预留、跨线程 Player 写入、真人被重置/清理被吞、需要广泛改写同步、钩子回滚失败或上述异常卸载保险触发，都停止投入当前 live 方案并提交最小复现。不给未实测能力标通过，不自动合并 Draft PR。
