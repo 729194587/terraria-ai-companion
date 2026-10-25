@@ -96,6 +96,7 @@ internal static class ProbeSession
                     Quarantine("Duplicate spawn found changed actor/connection ownership.");
                     throw new InvalidOperationException("Actor ownership changed; reservation quarantined.");
                 }
+                if (NativeSurvival.ManagedDead(Actor)) throw new InvalidOperationException("AI is waiting for native respawn; do not spawn another Player.");
                 if (!Actor.active || Actor.dead)
                 {
                     VirtualPlayerEngineProbe.SignalFault("Actor activity/death changed; no automatic respawn.");
@@ -346,7 +347,7 @@ public sealed class ProbeSystem : ModSystem
         if (ProbeSession.Actor == null) return;
         var p = ProbeSession.Actor;
         var view = VirtualPlayerEngineProbe.Reservation.Snapshot;
-        if (p.whoAmI != view.Slot || !ReferenceEquals(Main.player[view.Slot], p) || !p.active || p.dead)
+        if (p.whoAmI != view.Slot || !ReferenceEquals(Main.player[view.Slot], p) || !p.active || p.dead && !NativeSurvival.ManagedDead(p))
             VirtualPlayerEngineProbe.SignalFault("Actor reference/activity/death changed; no automatic repair or respawn.");
         if (VirtualPlayerEngineProbe.Fault != null) { ProbeSession.Finish("stop condition: " + VirtualPlayerEngineProbe.Fault); return; }
         try { NetworkStateSync.Tick(p); }
@@ -375,7 +376,7 @@ public sealed class ProbeCommand : ModCommand
 {
     public override string Command => "vph";
     public override CommandType Type => CommandType.World | CommandType.Console;
-    public override string Usage => "/vph walk|stop|motion|status|spawn|save [id]|load [id]|profiles|inspect|fixture|test-save-failure|debug-style|resync|despawn";
+    public override string Usage => "/vph walk|stop|motion|life|bag|test-hurt|test-death|status|spawn|save [id]|load [id]|profiles|inspect|fixture|test-save-failure|debug-style|resync|despawn";
     public override string Description => "G4 server control experiment; server/host only.";
     public override void Action(CommandCaller caller, string input, string[] args)
     {
@@ -410,6 +411,13 @@ public sealed class ProbeCommand : ModCommand
                     caller.Reply(ActorControl.Summary()); return;
                 }
                 if (action == "motion") { ActorControl.CheckBinding(); caller.Reply(ActorControl.Summary()); return; }
+                if (action == "life") { caller.Reply(NativeSurvival.Summary());return; }
+                if (action == "bag") { caller.Reply(NativeSurvival.Bag());return; }
+                if (action is "test-hurt" or "test-death")
+                {
+                    NativeSurvival.Debug(commandedActor,session,commandedGeneration,action=="test-death");
+                    caller.Reply(NativeSurvival.Summary());return;
+                }
                 if (action == "status") ProbeSession.Log("status");
                 else if (action == "allocator") ProbeSession.Allocator();
                 else if (action == "spawn") ProbeSession.Spawn();

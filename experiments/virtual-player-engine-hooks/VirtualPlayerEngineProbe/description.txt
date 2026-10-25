@@ -1,3 +1,2 @@
-G4: version-pinned server Player walk-right/stop experiment with native synchronization and independent character profiles.
-Explicit host commands only; no fake client, pathfinding or combat. G4 live movement validation is pending.
-Use the isolated G4 Host & Play profile with this mod alone; existing test characters/worlds can be reused.
+Native survival experiment: AI-owned pickup, NPC/projectile damage, death and original player respawn timing. Existing control, sync and character profiles are retained.
+Use only the isolated survival Host & Play profile with this mod alone. Hardcore archives are unsupported. Live client survival validation is pending.

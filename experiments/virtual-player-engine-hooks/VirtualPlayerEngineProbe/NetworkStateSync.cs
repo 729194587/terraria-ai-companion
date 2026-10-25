@@ -40,7 +40,7 @@ internal static class NetworkStateSync
             throw new InvalidOperationException("G2 sync ownership check failed; slot quarantined.");
         }
         if (ProbeSession.Quarantined || !VirtualPlayerEngineProbe.Ready
-            || !inactiveAllowed && (VirtualPlayerEngineProbe.Fault != null || !expected.active || expected.dead))
+                || !inactiveAllowed && (VirtualPlayerEngineProbe.Fault != null || !expected.active || expected.dead && !NativeSurvival.ManagedDead(expected)))
             throw new InvalidOperationException("G2 sync stopped; lifecycle cleanup required.");
     }
 
@@ -73,6 +73,7 @@ internal static class NetworkStateSync
         lock (VirtualPlayerEngineProbe.Reservation.Gate)
         {
             Require(expected);
+            if(expected.dead)return; // Death is sent once; late joins get DeadSnapshot, not repeated remote Spawn/UI events.
             try
             {
                 if (Main.GameUpdateCount - controlTick >= 6)

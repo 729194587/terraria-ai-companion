@@ -27,5 +27,6 @@ public static class Program
         if (args.Length > 2 && !string.IsNullOrEmpty(args[2])) EngineHookOfflineTests.AuditPackage(args[2]);
         PersistenceOfflineTests.Run(args[0],args[1]);
         ControlOfflineTests.Run(args[0]);
+        SurvivalOfflineTests.Run(args[0]);
     }
 }

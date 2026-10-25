@@ -415,7 +415,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.4.0", "isolated G4 package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.5.0", "isolated survival package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -453,10 +453,12 @@ public static class EngineHookOfflineTests
         Check(ins.Count(i => i.OpCode == OpCodes.Stfld && i.Operand is FieldReference f && f.Name == "active"
             && i.Previous.OpCode == OpCodes.Ldc_I4_1) == 1, "active=true has exactly one initialization site, no repair loop");
         Check(!ins.Any(i => i.Operand is MethodReference m
-            && m.DeclaringType.FullName == "Terraria.Player" && m.Name is "Update" or "Spawn" or "Teleport"),
-            "no manual update, native Spawn side effects or movement shortcut");
+            && m.DeclaringType.FullName == "Terraria.Player" && m.Name is "Update" or "Teleport")
+            && methods.Where(m=>m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.FullName=="Terraria.Player"&&r.Name=="Spawn"))
+                .All(m=>m.DeclaringType.FullName.StartsWith("VirtualPlayerEngineProbe.NativeSurvival")),
+            "no manual player update/teleport; native Spawn confined to audited AI respawn scope");
         Check(methods.Where(m => m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.Name == "SendData"))
-            .All(m => m.DeclaringType.Name == "NetworkStateSync"), "G2 native packet sends confined to ownership-checked adapter");
+            .All(m => m.DeclaringType.Name == "NetworkStateSync"||m.DeclaringType.FullName.StartsWith("VirtualPlayerEngineProbe.NativeSurvival")), "native packet sends confined to ownership-checked sync/survival adapters");
         var refs = ins.Where(i => i.Operand is MethodReference).Select(i => (MethodReference)i.Operand).ToArray();
         Check(!refs.Any(m=>m.Name=="SetAsActive"),"G3 never calls PlayerFileData.SetAsActive");
         Check(refs.Any(m=>m.DeclaringType.FullName=="Terraria.Player" && m.Name=="SavePlayer")
@@ -527,6 +529,7 @@ public static class EngineHookOfflineTests
         public static void SignalFault(string reason) => Fault ??= reason;
         public static void Finish(string _, bool keep) => throw new Exception("unexpected teardown in startup fixture");
         public static void Update() { }
+        public static void RunIfRequested() { }
         public static void CheckInitialSlot()
         {
             if (!Reservation.IsReserved(254)) throw new Exception("initial validation lost reservation");
@@ -546,6 +549,7 @@ public static class EngineHookOfflineTests
             ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"] = typeof(StartupState),
             ["VirtualPlayerEngineProbe.ProbeSession"] = typeof(StartupState),
             ["VirtualPlayerEngineProbe.CharacterSelfTest"] = typeof(StartupState),
+            ["VirtualPlayerEngineProbe.SurvivalSelfTest"] = typeof(StartupState),
             ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),
             ["Terraria.Main"] = typeof(StartupState), ["Terraria.Netplay"] = typeof(StartupState),
@@ -670,6 +674,7 @@ public static class EngineHookOfflineTests
         public static void Clear() { }
         public static void Update() { }
         public static void Retire(PlayerState p) { }
+        public static bool ManagedDead(PlayerState p) => false;
     }
     public static class TeardownState
     {
@@ -717,6 +722,7 @@ public static class EngineHookOfflineTests
             ["VirtualPlayerEngineProbe.CharacterSelfTest"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.ProbeDebugAppearance"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.ActorControl"] = typeof(LifecycleCharacterStore),
+            ["VirtualPlayerEngineProbe.NativeSurvival"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"] = typeof(TeardownState),
             ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),

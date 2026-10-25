@@ -52,6 +52,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
             NetworkStateSync.Reset();
             ProbeAnnouncements.ResetNotices();
             CharacterStore.Reset();
+            NativeSurvival.Reset();
             if (Main.dedServ) InstallServerHooks();
             else
             {
@@ -86,7 +87,8 @@ public sealed class VirtualPlayerEngineProbe : Mod
         Install(() => On_RemoteClient.CheckSection += Sections, () => On_RemoteClient.CheckSection -= Sections);
         Install(() => On_Main.DedServ_PostModLoad += ServerScope, () => On_Main.DedServ_PostModLoad -= ServerScope);
         Install(() => On_WorldGen.clearWorld += ClearWorld, () => On_WorldGen.clearWorld -= ClearWorld);
-        Install(() => On_Player.Update += ActorControl.Update, () => On_Player.Update -= ActorControl.Update);
+        NativeSurvival.Install(Install);
+        Install(() => On_Player.Update += NativeSurvival.Update, () => On_Player.Update -= NativeSurvival.Update);
         Ready = allocatorPatched && cleanupPatched && syncPatched && savePatched;
         if (!Ready) throw new InvalidOperationException("Incomplete IL hook installation.");
         Logger.Info("G2 network hooks ready; no actor exists. One reservation will arm before the first native StartServer.");
@@ -155,7 +157,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
         lock (Reservation.Gate)
             return Main.netMode == Terraria.ID.NetmodeID.Server && Ready && Fault == null
                 && !ProbeSession.Quarantined && OwnedWithoutConnection(slot)
-                && ProbeSession.Actor.active && !ProbeSession.Actor.dead;
+                && ProbeSession.Actor.active && (!ProbeSession.Actor.dead || NativeSurvival.ManagedDead(ProbeSession.Actor));
     }
 
     // Allocator readers consult metadata only. The view exists before ANY native
@@ -221,7 +223,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
             legacyIsListening = Netplay.IsListening, tcpListenerExists, listenerEntries = entries });
         try { orig(); }
         catch { ProbeSession.Finish("StartServer exception"); throw; }
-        if (armed) { ProbeSession.CheckInitialSlot(); CharacterSelfTest.Update(); }
+        if (armed) { ProbeSession.CheckInitialSlot(); CharacterSelfTest.Update();SurvivalSelfTest.RunIfRequested(); }
     }
     private bool Listen(On_Netplay.orig_StartListening orig)
     {
@@ -277,6 +279,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
             {
                 Reservation.AssertOwner(Program.IsMainThread);
                 orig(slot, toWho, fromWho);
+                NativeSurvival.DeadSnapshot(expected,toWho,fromWho);
                 NetworkStateSync.SnapshotCompleted(expected);
             }
             catch (Exception e) { NetworkStateSync.Fail(e); throw; }

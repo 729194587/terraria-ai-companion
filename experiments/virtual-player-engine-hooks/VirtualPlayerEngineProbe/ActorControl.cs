@@ -27,7 +27,7 @@ internal static class ActorControl
     private static void Healthy(Player p)
     {
         NetworkStateSync.Require(p);
-        if (Main.gameMenu || Netplay.Disconnect || p.ghost || p.mount.Active || p.frozen || p.stoned || p.webbed
+        if (Main.gameMenu || Netplay.Disconnect || p.dead || p.ghost || p.mount.Active || p.frozen || p.stoned || p.webbed
             || p.tongued || p.shimmering || p.isControlledByFilm || p.sleeping.isSleeping || p.sitting.isSitting)
             throw new InvalidOperationException("Actor is not in a supported walking state.");
         if (!float.IsFinite(p.position.X) || !float.IsFinite(p.position.Y)
@@ -132,6 +132,7 @@ internal static class ActorControl
                 executing = context; injected = false;
                 orig(p, slot); // Exactly one natural engine update; never call Player.Update manually.
                 if (!Owned(context)) { Invalidate(context); return; }
+                if (p.dead) { context.Stop(ActionPhase.Cancelled,"actor died");Release(context,true);Result(context);return; }
                 Healthy(p);
                 if (!injected) throw new InvalidOperationException("Native server movement hook was not reached.");
                 context.Observe(p.position.X);

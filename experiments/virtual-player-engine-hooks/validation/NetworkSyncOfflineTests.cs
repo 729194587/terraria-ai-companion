@@ -60,6 +60,8 @@ public static class NetworkSyncOfflineTests
     public readonly record struct Notice(string Key, string Name, int R, int G, int B, int Ignore);
     public static class Effects
     {
+        public static bool ManagedDead(PlayerState p)=>false;
+        public static void DeadSnapshot(PlayerState p,int toWho,int fromWho) { }
         public static StartupReservation Reservation;
         public static PlayerState Actor;
         public static bool Ready = true, Quarantined, EngineMainThread = true;
@@ -380,6 +382,7 @@ public static class NetworkSyncOfflineTests
             ["Terraria.NPC"]=typeof(NpcState), ["Terraria.GameContent.CoinLossRevengeSystem"]=typeof(RevengeState),
             ["Terraria.Program"]=typeof(Effects), ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"]=typeof(Effects),
             ["VirtualPlayerEngineProbe.ProbeSession"]=typeof(Effects), ["VirtualPlayerEngineProbe.NetworkStateSync"]=typeof(Effects),
+            ["VirtualPlayerEngineProbe.NativeSurvival"]=typeof(Effects),
             ["VirtualPlayerEngineProbe.ProbeDebugAppearance"]=typeof(Effects),
             ["VirtualPlayerEngineProbe.ProbeAnnouncements"]=typeof(Effects),
             ["VirtualPlayerEngineProbe.StartupReservation"]=typeof(StartupReservation),

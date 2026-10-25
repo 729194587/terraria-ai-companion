@@ -92,7 +92,7 @@ public static class ControlOfflineTests
             };
             ActorControl.Update(native,p,3);
             if(fault=="duplicate")ActorControl.Update(native,p,3);
-            Check(ActorControl.Current.Phase==ActionPhase.Failed&&Released(p)&&p.velocity.X==0,"AI error isolation and input release: "+fault);
+            Check(ActorControl.Current.Phase==(fault=="death"?ActionPhase.Cancelled:ActionPhase.Failed)&&Released(p)&&p.velocity.X==0,"AI error isolation and input release: "+fault);
         }
         p=Reset();Start(p);ActorControl.Update((player,slot)=>{
             ActorControl.BeforeMovement(player);Main.player[3]=new Player{whoAmI=3,controlRight=true,velocity=new Vector{X=7}};

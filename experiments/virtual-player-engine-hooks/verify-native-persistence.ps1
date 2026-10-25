@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 if (!$WorldPath) { $WorldPath = Join-Path $repo '.local/virtual-player-network-host/Worlds/test.wld' }
 $WorldPath = (Resolve-Path -LiteralPath $WorldPath).Path
-$package = Join-Path $repo '.local/virtual-player-control-build/Mods/VirtualPlayerEngineProbe.tmod'
+$package = Join-Path $repo '.local/virtual-player-survival-build/Mods/VirtualPlayerEngineProbe.tmod'
 if (!(Test-Path -LiteralPath $package)) { throw 'Build the G3.1 probe first.' }
 if (@(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue).Count) { throw "Diagnostic port $Port is in use." }
 $profile = Join-Path $repo ('.local/character-native-validation-' + [guid]::NewGuid().ToString('N'))

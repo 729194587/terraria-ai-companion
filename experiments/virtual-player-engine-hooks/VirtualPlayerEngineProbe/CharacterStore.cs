@@ -48,6 +48,7 @@ internal static class CharacterStore
         {
             var p = ProbeSession.Actor ?? throw new InvalidOperationException("Spawn/load a Player first.");
             NetworkStateSync.Require(p);
+            if(p.dead)throw new InvalidOperationException("Wait for native respawn before saving the character.");
             failedSave = p;
             if (ProbeDebugAppearance.IsApplied(p)) throw new InvalidOperationException("Restore debug-style before saving character data.");
             string id = requestedId == null ? CurrentId ?? CharacterFiles.NewId() : Files.Resolve(requestedId);
@@ -85,6 +86,7 @@ internal static class CharacterStore
             string id = Files.Resolve(requestedId ?? CurrentId);
             var (path, manifest) = Files.Open(id);
             var p = CharacterIo.Read(path);
+            if(p.difficulty==2)throw new InvalidOperationException("Hardcore AI profiles require independent permanent-death archive management and are not supported by this experiment.");
             if (CharacterIo.State(p) != manifest.StateHash) throw new IOException("Character state fingerprint differs from committed generation.");
             prepared = p;
             try
