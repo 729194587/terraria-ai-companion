@@ -5,10 +5,27 @@
 | 验证层级 | 本次结果 | 证据范围 |
 | --- | --- | --- |
 | 离线定向验证 | 227 项通过，编译零错误/零警告 | 167 项 G1 前置/包审计及 60 项 G2 检查；不启动 Terraria 世界 |
-| G2 单窗口 Host & Play | **not attempted** | 本次只准备构建/profile，尚未观察客户端画面或实际收包 |
+| G2 单窗口 Host & Play | **passed for tested subset（0.2.1）** | 两端日志确认客户端收到 AI 状态及手动离开；用户确认画面可见、debug-style 切换与恢复正常 |
 | G2 远程多人、后加入客户端 | **not attempted** | 原生晚加入方法体仅在隔离夹具中执行，不能当作远程实测 |
+| G2 动态移动、带 AI 退世界 | **not attempted** | 本轮 AI 静止并手动 despawn，没有动态运动或带可见 AI 直接退出的验收 |
 
 G1 曾完成的单 host 存活/清理实测不转记为 G2 通过。本轮没有全量测试，也没有角色存档、挖矿、Lua、Agent、自动移动或战斗集成。
+
+## 0.2.1 单窗口实测记录
+
+2026-10-25 18:37–18:40（UTC+8），用户手工运行新版隔离 profile，依次执行 status/spawn、客户端快照、两次 debug-style、resync 和 despawn/status。使用包版本 0.2.1，构建与消息机制未作现场修改。
+
+| 项目 | 实测证据 |
+| --- | --- |
+| 创建与持续发布 | 18:37:42.393 spawn 于 slot 254；该 Player 在服务器 active=true、sameReference=true、connected=false、Socket=null，完整连接状态 idle；到 18:39:59.522 手动清理前生命周期约 137.13 秒 |
+| 客户端状态 | 18:38:26.786 的 client-slot-snapshot 为 active=true、name=G2_NoClient_Probe，位置 (33680,3318) 与服务器一致；helmet=0，shirt RGB=(175,165,140)，没有默认测试头盔或强制测试配色 |
+| 画面与测试覆盖层 | 用户明确确认“看到了，切换和恢复都正常”；据此将可见、debug-style 外观/装备切换与恢复记录为用户目视通过。未单独采集覆盖层生效期间的 /vpc 快照或录像，不将其误写为中间状态日志证据 |
+| 离开与恢复后状态 | 18:39:59.522 teardown 的 reason=authorized despawn、same=true、occupied=false；18:40:11.386 客户端 active=false，helmet=0、shirt RGB=(175,165,140) 与初始值一致，保留名字为原生 inactive 的预期表现 |
+| 释放后状态 | 18:40:26.656 status 为 actor=null、actorSlot=-1、reservation=null、fault=null，fullSnapshots=30、controlPackets=1371、departures=1。该会话的 Probe 事件无 fault/quarantine |
+
+计数表示服务器的原生同步调用完成，不代表每个包均有客户端交付确认；本轮仅证明所采集的静止位置、外观/装备及离开行为。背包/染料/loadout 的不重置回归仍是离线执行证据，未在游戏内逐物品检查。远程多人、真实晚加入、AI 动态运动及 G2 带 actor 退世界保留未实测，不将本轮扩大为 G2 全部能力通过。PR 继续 Draft。
+
+两端完整日志及提取事件仅保存在本地 `.local/engine-g2-live-single-window-20261025-184226/`，包含 client.log、server.log、两端 probe-events.jsonl 和 summary.json；不提交个人日志。
 
 ## 独立实现与原生边界
 
@@ -71,7 +88,7 @@ G2 输出目录与原 G1 分开：
 - 包：`.local/virtual-player-network-build/Mods/VirtualPlayerEngineProbe.tmod`，版本 **0.2.1**，42380 字节。
 - SHA256：`029FEF3C1A6497F45D8358B62BC00B2599AE283B61AD3C46FB067CCD6D301815`。
 - 日志：`.local/virtual-player-network-build.log`、`.local/virtual-player-network-validation.log`；原生/补丁 IL 检查产物在 `.local/virtual-player-network-validation/`。
-- 已准备：`.local/virtual-player-network-host-20261025-182751/`，只部署并启用 0.2.1；尚未启动游戏或创建世界/角色。旧 G2/G1 profile 与用户日志保留。
+- 已准备：`.local/virtual-player-network-host-20261025-182751/`，部署并启用 0.2.1，随后由用户完成上面的实测；目录目前已有角色/世界，不再视为全新目录。旧 G2/G1 profile 与用户日志保留。
 
 本机输出：
 
@@ -81,7 +98,7 @@ G2NetworkSync: 60 targeted checks passed; SINGLE-WINDOW LIVE NOT RUN; REMOTE MUL
 Engine probe package: loader=2026.8.3.0; bytes=42380; DLL=71168; 167 prerequisite/package + 60 G2 = 227 total targeted checks; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.
 ```
 
-验证器使用安装随附 .NET 8 引用/运行时，执行完整原生 SyncOnePlayer、SyncOnePlayer_ItemArray、SyncConnectedPlayer，以及包内归属判定、同步包装和 NetworkStateSync 方法；仅替换引擎存储、传输与无关世界/公告效果。没有运行游戏入口、创建真实网络连接或验证字节在客户端呈现。
+验证器使用安装随附 .NET 8 引用/运行时，执行完整原生 SyncOnePlayer、SyncOnePlayer_ItemArray、SyncConnectedPlayer，以及包内归属判定、同步包装和 NetworkStateSync 方法；仅替换引擎存储、传输与无关世界/公告效果。上述 SINGLE-WINDOW LIVE NOT RUN / REMOTE MULTIPLAYER LIVE NOT RUN 仅表示该离线验证器不运行游戏入口或网络；之后用户完成的真实单窗口结果单独记录在上节，不混用两类证据。
 
 新增检查覆盖：原生控制 serializer 的位置/速度/方向/控制位/selectedItem；真实 DMD/ILContext 安装形态；guard、公告边界、断开调用或签名不匹配时无局部修改；完整真人同步前后负载/公告/断开效果一致；预留槽位意外为真人/替换对象时原生路径一致；AI 引用/身份/连接/线程校验；native full 负载与晚加入路由；控制限频、装备/外观重发；初始/持续/离开失败、部分发送后的离开补偿、未知对象不发送离开；实际 Spawn/Finish 在初次同步失败后回滚、离开失败时保留 actor/预留。计数代表调用/序列化完成，不是客户端收包确认。
 
