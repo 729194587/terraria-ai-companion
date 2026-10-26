@@ -423,7 +423,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.6.0", "isolated survival package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.7.0", "isolated survival package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -466,7 +466,7 @@ public static class EngineHookOfflineTests
                 .All(m=>m.DeclaringType.FullName.StartsWith("VirtualPlayerEngineProbe.NativeSurvival")),
             "no manual player update/teleport; native Spawn confined to audited AI respawn scope");
         Check(methods.Where(m => m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.Name == "SendData"))
-            .All(m => m.DeclaringType.Name == "NetworkStateSync"||m.DeclaringType.Name == "ActorItemUse"||m.DeclaringType.FullName.StartsWith("VirtualPlayerEngineProbe.NativeSurvival")), "native packet sends confined to ownership-checked sync/survival adapters");
+            .All(m => m.DeclaringType.Name == "NetworkStateSync"||m.DeclaringType.Name == "ActorItemUse"||m.DeclaringType.Name == "ActorMining"||m.DeclaringType.FullName.StartsWith("VirtualPlayerEngineProbe.NativeSurvival")), "native packet sends confined to ownership-checked sync/survival adapters");
         var refs = ins.Where(i => i.Operand is MethodReference).Select(i => (MethodReference)i.Operand).ToArray();
         Check(!refs.Any(m=>m.Name=="SetAsActive"),"G3 never calls PlayerFileData.SetAsActive");
         Check(refs.Any(m=>m.DeclaringType.FullName=="Terraria.Player" && m.Name=="SavePlayer")
@@ -511,6 +511,7 @@ public static class EngineHookOfflineTests
         RunCompiledStartup(start, listen);
         RunCompiledLifecycle(probe, session, mod);
         ItemUseOfflineTests.Audit(probe,gameDirectory);
+        MiningOfflineTests.Audit(probe);
         int networkChecks = NetworkSyncOfflineTests.Run(gameDirectory, probe);
         ControlOfflineTests.AuditPackage(probe);
         Console.WriteLine($"Engine probe package: loader={version}; bytes={file.Length}; DLL={size}; {checks} prerequisite/package + {networkChecks} G2 = {checks + networkChecks} total targeted checks; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.");
@@ -560,6 +561,7 @@ public static class EngineHookOfflineTests
             ["VirtualPlayerEngineProbe.CharacterSelfTest"] = typeof(StartupState),
             ["VirtualPlayerEngineProbe.SurvivalSelfTest"] = typeof(StartupState),
             ["VirtualPlayerEngineProbe.ItemUseSelfTest"] = typeof(StartupState),
+            ["VirtualPlayerEngineProbe.MiningSelfTest"] = typeof(StartupState),
             ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"] = typeof(StartupReservation.View),
             ["Terraria.Main"] = typeof(StartupState), ["Terraria.Netplay"] = typeof(StartupState),
@@ -733,6 +735,7 @@ public static class EngineHookOfflineTests
             ["VirtualPlayerEngineProbe.ProbeDebugAppearance"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.ActorControl"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.ActorItemUse"] = typeof(LifecycleCharacterStore),
+            ["VirtualPlayerEngineProbe.ActorMining"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.NativeSurvival"] = typeof(LifecycleCharacterStore),
             ["VirtualPlayerEngineProbe.VirtualPlayerEngineProbe"] = typeof(TeardownState),
             ["VirtualPlayerEngineProbe.StartupReservation"] = typeof(StartupReservation),

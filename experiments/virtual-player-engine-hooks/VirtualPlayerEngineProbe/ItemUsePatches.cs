@@ -27,7 +27,7 @@ public static class ItemUsePatches
         il.InsertBefore(entry,guard);il.InsertBefore(entry,Instruction.Create(OpCodes.Call,predicate));
         il.InsertBefore(entry,Instruction.Create(OpCodes.Brtrue,target));
     }
-    public static void Patch(MethodDefinition m,string operation,MethodReference predicate)
+    public static void Patch(MethodDefinition m,string operation,MethodReference predicate,MethodReference miningDispatch=null,MethodReference miningOnly=null)
     {
         Require(!m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.FullName==predicate.FullName));
         if(operation=="inner")
@@ -50,10 +50,12 @@ public static class ItemUsePatches
                 &&Call(At(m,0x054f),"ItemCheck_MeleeHitNPCs")
                 &&At(m,0x01a7)?.OpCode==OpCodes.Ldarg_0&&At(m,0x01e8)?.OpCode==OpCodes.Ldarg_0
                 &&Field(At(m,0x01b6),"toolTime"));
+            if(miningOnly!=null)Require(Call(At(m,0x0543),"ItemCheck_CutTiles")&&At(m,0x0570)?.OpCode==OpCodes.Ret);
             // Air-swing experiment: retain native melee; skip cursor-driven tools,
             // placement and accessory projectiles. No global tile target substitution.
             Guard(m,0x017d,0x01a7,predicate);
-            Guard(m,0x01e8,0x044d,predicate);
+            Guard(m,0x01e8,0x044d,miningDispatch??predicate);
+            if(miningOnly!=null)Guard(m,0x044d,0x0570,miningOnly); // G7 cannot cut neighboring tiles or attack.
         }
         else throw new ArgumentException(operation);
     }

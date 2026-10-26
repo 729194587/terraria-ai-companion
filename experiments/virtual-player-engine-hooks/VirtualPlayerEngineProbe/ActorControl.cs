@@ -58,7 +58,7 @@ internal static class ActorControl
         {
             Captured(expected, generation, world);
             Healthy(expected);
-            if(ActorItemUse.Running)throw new InvalidOperationException("Wait for item use to finish, or /vph use-stop.");
+            if(ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Wait for item use/mining to finish, or stop it.");
             if (Current?.Phase == ActionPhase.Running) throw new InvalidOperationException("An action is already running.");
             if (Math.Abs(expected.velocity.X) > 0.01f) throw new InvalidOperationException("Wait until the actor is horizontally stationary.");
             Current = new ActorAction<Player>(expected, world, generation, expected.position.X);

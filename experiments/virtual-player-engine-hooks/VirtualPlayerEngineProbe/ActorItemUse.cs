@@ -34,7 +34,7 @@ internal static class ActorItemUse
     }
     private static void Idle(Player p)
     {
-        if(Running||ActorControl.Current?.Phase==ActionPhase.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
+        if(Running||ActorMining.Running||ActorControl.Current?.Phase==ActionPhase.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
             throw new InvalidOperationException("Wait for walking/item animation/cooldown to finish, or /vph use-stop.");
     }
     internal static bool Supported(int type)=>type==ItemID.WoodenSword||type==ItemID.CopperPickaxe||type==ItemID.Apple;
@@ -71,13 +71,16 @@ internal static class ActorItemUse
         // Release an old input; the next natural ItemCheck supplies one press.
         p.controlUseItem=false;p.releaseUseItem=true;
     }
-    public static bool Allowed(Player p)=>executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
-        &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&Supported(executing.Type);
+    public static bool Allowed(Player p)=>ActorMining.Allowed(p)||(executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
+        &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&Supported(executing.Type));
+    public static bool SkipCursor(Player p){if(ActorMining.Allowed(p))ActorMining.Strike(p);return Allowed(p);}
     internal static void Install(Action<Action,Action> install)
     {
         var predicate=typeof(ActorItemUse).GetMethod(nameof(Allowed));
         ILContext.Manipulator inner=il=>ItemUsePatches.Patch(il.Method,"inner",il.Module.ImportReference(predicate));
-        ILContext.Manipulator melee=il=>ItemUsePatches.Patch(il.Method,"melee",il.Module.ImportReference(predicate));
+        ILContext.Manipulator melee=il=>ItemUsePatches.Patch(il.Method,"melee",il.Module.ImportReference(predicate),
+            il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipCursor))),
+            il.Module.ImportReference(typeof(ActorMining).GetMethod(nameof(ActorMining.Allowed))));
         install(()=>IL_Player.ItemCheck_Inner+=inner,()=>IL_Player.ItemCheck_Inner-=inner);
         install(()=>IL_Player.ItemCheck_OwnerOnlyCode+=melee,()=>IL_Player.ItemCheck_OwnerOnlyCode-=melee);
         install(()=>On_Player.ItemCheckWrapped+=Update,()=>On_Player.ItemCheckWrapped-=Update);
@@ -90,6 +93,7 @@ internal static class ActorItemUse
         if(!ReferenceEquals(p,ProbeSession.Actor)){orig(p,index);return;}
         // Never run the UI wrapper for an AI, even when idle or quarantined.
         if(!NativeSurvival.Owns(p))return;
+        if(ActorMining.Running){ActorMining.Update(p);return;}
         var c=Current;
         if(!Running||!ReferenceEquals(c.Actor,p))return;
         if(!Binding(c))

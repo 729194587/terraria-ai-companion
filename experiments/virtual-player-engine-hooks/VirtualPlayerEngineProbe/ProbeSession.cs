@@ -29,7 +29,7 @@ internal static class ProbeSession
     internal static void Reset()
     {
         ActorControl.Reset();
-        ActorItemUse.Reset();
+        ActorItemUse.Reset();ActorMining.Reset();
         ActorGeneration = 0;
         ProbeDebugAppearance.Clear();
         Actor = previous = null;
@@ -205,7 +205,7 @@ internal static class ProbeSession
                 Log("teardown-quarantined", new { reason, same, occupied });
                 throw new InvalidOperationException("STOP: occupied/transitioning slot quarantined; native clearWorld/unload must not continue.");
             }
-            ActorItemUse.Retire(owned);
+            ActorMining.Retire(owned);ActorItemUse.Retire(owned);
             ActorControl.Retire(owned);
             finishing = true;
             try
@@ -378,7 +378,7 @@ public sealed class ProbeCommand : ModCommand
 {
     public override string Command => "vph";
     public override CommandType Type => CommandType.World | CommandType.Console;
-    public override string Usage => "/vph item-fixture|slot <1-10>|use|use-stop|item|walk|stop|motion|life|bag|test-hurt|test-death|status|spawn|save [id]|load [id]|profiles|inspect|fixture|test-save-failure|debug-style|resync|despawn";
+    public override string Usage => "/vph mine <x> <y>|mine-status|mine-stop|item-fixture|slot <1-10>|use|use-stop|item|walk|stop|motion|life|bag|test-hurt|test-death|status|spawn|save [id]|load [id]|profiles|inspect|fixture|test-save-failure|debug-style|resync|despawn";
     public override string Description => "G4 server control experiment; server/host only.";
     public override void Action(CommandCaller caller, string input, string[] args)
     {
@@ -399,9 +399,22 @@ public sealed class ProbeCommand : ModCommand
                     && Netplay.Clients[id].IsConnected() && NetMessage.DoesPlayerSlotCountAsAHost(id);
                 if (Main.netMode != NetmodeID.Server || !(host || caller.CommandType == CommandType.Console))
                     throw new InvalidOperationException("Server console or native Host & Play host authorization required.");
-                if (copy.Length > 2) throw new InvalidOperationException(Usage);
+                if (copy.Length > 3) throw new InvalidOperationException(Usage);
                 string action = copy.Length == 0 ? "status" : copy[0];
-                if (copy.Length == 2 && action is not ("save" or "load" or "slot")) throw new InvalidOperationException(Usage);
+                if ((copy.Length == 3 && action != "mine") || (copy.Length == 2 && action is not ("save" or "load" or "slot"))) throw new InvalidOperationException(Usage);
+                if(action is "mine" or "mine-status" or "mine-stop")
+                {
+                    ActorItemUse.Capture(commandedActor,session,commandedGeneration);
+                    if(action=="mine")
+                    {
+                        if(copy.Length!=3||!int.TryParse(copy[1],out int x)||!int.TryParse(copy[2],out int y))
+                            throw new InvalidOperationException("/vph mine <tileX> <tileY>");
+                        ActorMining.Start(commandedActor,session,commandedGeneration,x,y);
+                    }
+                    else if(copy.Length!=1)throw new InvalidOperationException(Usage);
+                    if(action=="mine-stop")ActorMining.Stop(commandedActor,session,commandedGeneration);
+                    caller.Reply(ActorMining.Summary());return;
+                }
                 if (action is "item-fixture" or "slot" or "use" or "use-stop" or "item")
                 {
                     ActorItemUse.Capture(commandedActor,session,commandedGeneration);

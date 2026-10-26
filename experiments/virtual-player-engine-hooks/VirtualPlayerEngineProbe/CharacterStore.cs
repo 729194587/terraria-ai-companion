@@ -49,7 +49,7 @@ internal static class CharacterStore
             var p = ProbeSession.Actor ?? throw new InvalidOperationException("Spawn/load a Player first.");
             NetworkStateSync.Require(p);
             if(p.dead)throw new InvalidOperationException("Wait for native respawn before saving the character.");
-            if (ActorItemUse.Running) throw new InvalidOperationException("Wait for item use to finish before saving, or /vph use-stop.");
+            if (ActorItemUse.Running||ActorMining.Running) throw new InvalidOperationException("Wait for item use to finish before saving, or /vph use-stop.");
             failedSave = p;
             if (ProbeDebugAppearance.IsApplied(p)) throw new InvalidOperationException("Restore debug-style before saving character data.");
             string id = requestedId == null ? CurrentId ?? CharacterFiles.NewId() : Files.Resolve(requestedId);

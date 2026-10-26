@@ -23,10 +23,11 @@ public static class Program
     private static void Run(string[] args)
     {
         Console.WriteLine("Verification CLR: " + Environment.Version + "; no Terraria game process or world.");
-        if(args.Length>3&&args[3]=="item-use")
+        if(args.Length>3&&args[3] is "item-use" or "mining")
         {
             EngineHookOfflineTests.ReadNativeDefaults(args[0]);
             ItemUseOfflineTests.Run(args[0]);
+            if(args[3]=="mining")MiningOfflineTests.Run(args[0]);
             if(!string.IsNullOrEmpty(args[2]))EngineHookOfflineTests.AuditPackage(args[2]);
             return;
         }

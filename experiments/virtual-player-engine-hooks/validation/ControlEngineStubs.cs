@@ -65,3 +65,5 @@ namespace VirtualPlayerEngineProbe
 }
 
 namespace VirtualPlayerEngineProbe { internal static class ActorItemUse { internal static bool Running => false; } }
+
+namespace VirtualPlayerEngineProbe { internal static class ActorMining { internal static bool Running => false; } }
