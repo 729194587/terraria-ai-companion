@@ -65,10 +65,10 @@ public sealed class ServerAiSystem : ModSystem
             Program.LaunchParameters.TryGetValue("-companionbridgeport", out var humanArg);
             Program.LaunchParameters.TryGetValue("-companionaiport", out var aiArg);
             int port = AiReadOnlyServer.ParsePort(aiArg ?? Environment.GetEnvironmentVariable("COMPANION_AI_PORT"), TcpControlServer.ParseLaunchPort(humanArg));
-            server = new(port);
+            server = new(port, new AiAtomicActions());
             server.Start();
             spawnPending = true;
-            Mod.Logger.Info($"G8.1 read-only AI IPC listening on 127.0.0.1:{port}; awaiting server reservation.");
+            Mod.Logger.Info($"G8.2 AI IPC listening on 127.0.0.1:{port}; select_hotbar_slot enabled; awaiting server reservation.");
         }
         catch (Exception e) { server?.Dispose(); server = null; Mod.Logger.Error("AI IPC unavailable; human paths remain available.", e); }
     }
@@ -85,7 +85,7 @@ public sealed class ServerAiSystem : ModSystem
                 try { ProbeSession.Spawn(); }
                 catch (Exception e) { EngineRuntime.SignalFault("G8.1 initial actor creation failed: " + e.Message); Mod.Logger.Error("AI creation stopped.", e); }
             }
-            server.Tick(Capture);
+            server.Tick(Capture, Select);
         }
     }
     private static AiReadOnlyProtocol.Identity Capture()
@@ -105,7 +105,16 @@ public sealed class ServerAiSystem : ModSystem
             selectedItem = p.selectedItem >= 0 && p.selectedItem < inventory.Length ? inventory[p.selectedItem] : null,
             inventory
         };
-        return new(p, ProbeSession.WorldSession, ProbeSession.ActorGeneration, p.whoAmI, state);
+        return new(p, ProbeSession.WorldSession, ProbeSession.ActorGeneration, p.whoAmI, state, p.selectedItem, Main.GameUpdateCount, !p.dead && !p.ghost);
+    }
+    private static void Select(AiReadOnlyProtocol.Identity expected, int slot)
+    {
+        EngineRuntime.Reservation.AssertOwner(Program.IsMainThread);
+        // G6 performs its own reference/session/generation, idle and native sync checks.
+        var p = (Player)expected.Actor;
+        int before = p.selectedItem;
+        ActorItemUse.Select(p, expected.World, expected.Generation, slot);
+        ProbeSession.Log("atomic-select", new { beforeSlot = before, selectedSlot = p.selectedItem, expected.Generation, expected.World });
     }
     private void Stop() { spawnPending = false; server?.Dispose(); server = null; }
     public override void OnWorldUnload() => Stop();

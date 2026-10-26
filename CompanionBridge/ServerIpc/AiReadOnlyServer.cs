@@ -24,12 +24,13 @@ internal sealed class AiReadOnlyServer : IDisposable
     private readonly ConcurrentQueue<Guid> closed = new();
     private readonly CancellationTokenSource stop = new();
     private readonly TcpListener listener;
-    private readonly AiReadOnlyProtocol protocol = new();
+    private readonly AiReadOnlyProtocol protocol;
+    private readonly AiAtomicActions actions;
     private int queued, clients;
     internal int PendingCount => Volatile.Read(ref queued);
     internal int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
     private readonly int ownerThread;
-    internal AiReadOnlyServer(int port) { listener = new(IPAddress.Loopback, port); listener.ExclusiveAddressUse = true; ownerThread = Environment.CurrentManagedThreadId; }
+    internal AiReadOnlyServer(int port, AiAtomicActions actions = null) { this.actions = actions; protocol = new(actions); listener = new(IPAddress.Loopback, port); listener.ExclusiveAddressUse = true; ownerThread = Environment.CurrentManagedThreadId; }
     internal void Start() { listener.Start(4); _ = Accept(); }
     private async Task Accept()
     {
@@ -88,17 +89,18 @@ internal sealed class AiReadOnlyServer : IDisposable
             closed.Enqueue(connection); Interlocked.Decrement(ref clients);
         }
     }
-    internal void Tick(Func<AiReadOnlyProtocol.Identity> capture)
+    internal void Tick(Func<AiReadOnlyProtocol.Identity> capture, Action<AiReadOnlyProtocol.Identity, int> select = null)
     {
         AssertOwner();
         while (closed.TryDequeue(out var connection)) protocol.Forget(connection);
+        actions?.Tick(capture, select);
         // Bound work per simulation tick; workers never invoke capture.
         for (int i = 0; i < 16 && jobs.TryDequeue(out var job); i++)
         {
             Interlocked.Decrement(ref queued);
             if (job.Token.IsCancellationRequested || stop.IsCancellationRequested || Environment.TickCount64 >= job.Deadline)
             { job.Reply.TrySetCanceled(); continue; }
-            try { job.Reply.TrySetResult(protocol.Handle(job.Connection, job.Line, capture)); }
+            try { job.Reply.TrySetResult(protocol.Handle(job.Connection, job.Line, capture, job.Token)); }
             catch { job.Reply.TrySetResult("{\"v\":1,\"ok\":false,\"error\":\"engine_unavailable\"}"); }
         }
     }

@@ -152,7 +152,7 @@ def result(action, generation):
 
 def same_action(expected, current):
     return isinstance(current, dict) and all(current.get(key) == expected.get(key) for key in
-        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion'))
+        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'actorId', 'actorSlot'))
 
 
 def verify_landing_start(action, arguments):
@@ -178,11 +178,25 @@ async def terminal(bridge, action, generation):
         action, generation = current, reply['movement']['generation']
     out = result(action, generation)
     end = action.get('endEvidence')
+    server_ai_end = (isinstance(end, dict)
+                     and 'server_ai_atomic_v1' in bridge.hello.get('capabilities', [])
+                     and end.get('phase') == 'ServerAI_game_thread_no_input'
+                     and end.get('inputsAcquired') is False
+                     and isinstance(action.get('actorId'), str) and bool(action['actorId'])
+                     and end.get('actorId') == action['actorId']
+                     and end.get('actorGeneration') == action.get('generation')
+                     and end.get('actorSlot') == action.get('actorSlot')
+                     and (action.get('status') != 'completed'
+                          or end.get('selectionVerified') is True
+                          and action.get('evidence', {}).get('selectionApplied') is True
+                          and end.get('selectedSlot') == action.get('evidence', {}).get('targetSlot')))
+    valid_phase = server_ai_end if 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []) else (
+        isinstance(end, dict) and end.get('phase') in ('PostUpdateRunSpeeds_before_bridge_input', 'UpdateDead_after_revoke'))
     if (action.get('endEvidenceStatus') != 'known' or not isinstance(end, dict)
             or type(end.get('gameUpdate')) is not int or end['gameUpdate'] < 0
             or not isinstance(end.get('worldSessionId'), str) or not end['worldSessionId']
             or end['worldSessionId'] != action.get('worldSessionId')
-            or end.get('phase') not in ('PostUpdateRunSpeeds_before_bridge_input', 'UpdateDead_after_revoke')):
+            or not valid_phase):
         out.update(valid=False, status='unknown', completed=False, reason='missing_game_thread_release_evidence', terminalActionStatus=action['status'])
     return out
 
@@ -224,6 +238,9 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         if lifecycle is not None:
             lifecycle.update(copy.deepcopy(fields))
     validate(name, arguments)
+    supported = getattr(bridge, 'supported_atomic_operations', None)
+    if supported is not None and name not in supported:
+        raise PreDispatchRejected(f'{name} is unsupported by this backend; no action started')
     if name == 'wait':
         started = perf_counter()
         # asyncio's event-loop clock can have a coarse resolution on Windows and

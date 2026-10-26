@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.41","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.42","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -37,6 +37,9 @@ public static class ServerAiPackageTests
         Check(Calls(capture,"Require")&&Calls(capture,"AssertOwner"),"native snapshot reuses audited binding guard on owner thread");
         Check(!adapter.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.Operand is MethodReference r&&r.Name=="get_LocalPlayer"),"server adapter has no LocalPlayer fallback");
         Check(Calls(pump,"get_IsMainThread")&&Calls(pump,"get_Gate")&&Calls(pump,"Tick"),"simulation pump enforces thread then Gate before dispatch");
+        var select=adapter.Methods.Single(m=>m.Name=="Select");
+        Check(Calls(select,"AssertOwner")&&select.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.Name=="ActorItemUse"&&r.Name=="Select"),"server atomic selection delegates to G6 after owner assertion");
+        Check(!select.Body.Instructions.Any(i=>i.OpCode==OpCodes.Stfld&&i.Operand is FieldReference r&&r.DeclaringType.FullName=="Terraria.Player"),"adapter does not reimplement native selection or mutate Player fields");
         Check(!Calls(adapter.Methods.Single(m=>m.Name=="OnWorldLoad"),"Start")&&!Calls(adapter.Methods.Single(m=>m.Name=="OnWorldLoad"),"Spawn"),"worker world-load callback never starts listener or actor");
         var started=adapter.Methods.Single(m=>m.Name=="Started");
         int CallOffset(string name)=>started.Body.Instructions.First(i=>i.Operand is MethodReference r&&r.Name==name).Offset;

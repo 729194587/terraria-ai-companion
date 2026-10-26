@@ -1,7 +1,7 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader')
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$OutputPath)
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
-$output=Join-Path $repo '.local/companion-g81-build'
+$output=if($OutputPath){[IO.Path]::GetFullPath($OutputPath)}else{Join-Path $repo '.local/companion-g82-build'}
 Push-Location $TModLoaderPath
 try {
     & (Join-Path $TModLoaderPath 'dotnet/dotnet.exe') (Join-Path $TModLoaderPath 'tModLoader.dll') -server -build (Join-Path $repo 'CompanionBridge') -tmlsavedirectory $output

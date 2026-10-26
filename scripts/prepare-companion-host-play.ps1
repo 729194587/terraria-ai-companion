@@ -1,11 +1,11 @@
 param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$SeedProfile,[int]$AiPort=18779)
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
-$package=Join-Path $repo '.local/companion-g81-build/Mods/CompanionBridge.tmod'
+$package=Join-Path $repo '.local/companion-g82-build/Mods/CompanionBridge.tmod'
 if(!(Test-Path -LiteralPath $package)){throw 'Run scripts/build-companion.ps1 first.'}
 if($AiPort -lt 1024 -or $AiPort -gt 65535 -or $AiPort -eq 18777 -or $AiPort -eq 7777){throw 'Choose a distinct AI IPC port.'}
 # Always create a new profile; older experiments and formal saves stay intact.
-$profile=Join-Path $repo ('.local/companion-g81-host-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+$profile=Join-Path $repo ('.local/companion-g82-host-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Path "$profile/Mods" | Out-Null
 if($SeedProfile){
     $seed=(Resolve-Path -LiteralPath $SeedProfile).Path
@@ -23,7 +23,7 @@ $ErrorActionPreference='Stop'
 $package=Join-Path $PSScriptRoot 'Mods/CompanionBridge.tmod'
 if((Get-FileHash -LiteralPath $package).Hash -ne '__HASH__'){throw 'Package changed; prepare a new isolated profile.'}
 $enabled=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Mods/enabled.json') -Raw | ConvertFrom-Json
-if(@($enabled|Where-Object {$_ -notin @('CompanionBridge','ModLoader')}).Count){throw 'G8.1 requires CompanionBridge and tModLoader only.'}
+if(@($enabled|Where-Object {$_ -notin @('CompanionBridge','ModLoader')}).Count){throw 'G8.2 requires CompanionBridge and tModLoader only.'}
 foreach($port in @(7777,18777,__PORT__)){
     if(@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).Count){throw "Port $port is occupied; close the previous test before launch."}
 }
@@ -39,3 +39,4 @@ $launcher=$launcher.Replace('__TML__',$TModLoaderPath.Replace("'","''")).Replace
 [IO.File]::WriteAllText("$profile/start-host-play.ps1",$launcher,[Text.UTF8Encoding]::new($true))
 Write-Output "Prepared only; graphical Host & Play NOT RUN: $profile/start-host-play.ps1"
 Write-Output "After manually selecting Multiplayer > Host & Play, run: python scripts/ai_player_state.py --port $AiPort"
+Write-Output "Explicit Lua selection test (existing Lua dependencies required): python scripts/server_ai_select.py --port $AiPort --key 2"

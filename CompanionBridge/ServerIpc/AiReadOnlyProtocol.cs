@@ -1,22 +1,25 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Threading;
 
 namespace CompanionBridge.ServerIpc;
 
 // Transport-independent. Only the simulation thread may call Handle/Clear.
 internal sealed class AiReadOnlyProtocol
 {
-    internal sealed record Identity(object Actor, string World, long Generation, int Slot, object State);
+    internal sealed record Identity(object Actor, string World, long Generation, int Slot, object State, int SelectedSlot = -1, ulong GameUpdate = 0, bool CanAct = true);
     internal sealed record Binding(string actor, string world, long generation, int slot);
     private sealed record Lease(Identity Identity, Binding Binding);
     private readonly Dictionary<Guid, Lease> leases = new();
     private object actor;
     private string actorId;
-    internal void Clear() { leases.Clear(); actor = null; actorId = null; }
-    internal void Forget(Guid connection) => leases.Remove(connection);
+    private readonly AiAtomicActions actions;
+    internal AiReadOnlyProtocol(AiAtomicActions actions = null) { this.actions = actions; }
+    internal void Clear() { leases.Clear(); actor = null; actorId = null; actions?.Clear(); }
+    internal void Forget(Guid connection) { leases.Remove(connection); actions?.Forget(connection); }
 
-    internal string Handle(Guid connection, string line, Func<Identity> capture)
+    internal string Handle(Guid connection, string line, Func<Identity> capture, CancellationToken disconnected = default)
     {
         string id = null;
         object Reply(bool ok, object data = null, Binding binding = null, string error = null) => new { v = 1, id, ok, binding, data, error };
@@ -26,15 +29,18 @@ internal sealed class AiReadOnlyProtocol
             var root = doc.RootElement;
             var names = new HashSet<string>(StringComparer.Ordinal);
             foreach (var p in root.EnumerateObject())
-                if (!names.Add(p.Name) || p.Name is not ("v" or "id" or "op" or "binding")) throw new FormatException();
+                if (!names.Add(p.Name) || p.Name is not ("v" or "id" or "op" or "binding" or "actionId" or "operation" or "arguments" or "expiresAtUnixMs")) throw new FormatException();
             id = root.GetProperty("id").GetString();
             if (string.IsNullOrWhiteSpace(id) || id.Length > 64 || root.GetProperty("v").GetInt32() != 1) throw new FormatException();
             string op = root.GetProperty("op").GetString();
-            if (op is not ("bind" or "state")) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+            bool execution = op is "start" or "action" or "cancel";
+            if (op is not ("bind" or "state") && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+            foreach (string field in names)
+                if (field is "actionId" && !execution || field is "operation" or "arguments" or "expiresAtUnixMs" && op != "start") throw new FormatException();
             if (op == "bind" && root.TryGetProperty("binding", out _)) throw new FormatException();
             // Reject malformed bindings before invoking the engine adapter.
             Binding requested = null;
-            if (op == "state")
+            if (op != "bind")
             {
                 var b = root.GetProperty("binding");
                 var fields = new HashSet<string>(StringComparer.Ordinal);
@@ -63,11 +69,16 @@ internal sealed class AiReadOnlyProtocol
                 if (!ReferenceEquals(actor, current.Actor)) { actor = current.Actor; actorId = Guid.NewGuid().ToString("N"); }
                 var binding = new Binding(actorId, current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
-                return JsonSerializer.Serialize(Reply(true, binding: binding));
+                return JsonSerializer.Serialize(Reply(true, data: actions == null ? null : new { capabilities = AiAtomicActions.Capabilities }, binding: binding));
             }
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)
                 return JsonSerializer.Serialize(Reply(false, error: "stale_binding"));
+            if (execution)
+            {
+                var reply = actions.Handle(connection, op, root, current, lease.Binding, disconnected);
+                return JsonSerializer.Serialize(Reply(reply.Error == null, reply.Data, lease.Binding, reply.Error));
+            }
             return JsonSerializer.Serialize(Reply(true, current.State, lease.Binding));
         }
         catch (Exception e) when (e is JsonException or FormatException or InvalidOperationException or KeyNotFoundException or OverflowException)
