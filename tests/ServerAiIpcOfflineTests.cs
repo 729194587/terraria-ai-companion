@@ -31,14 +31,32 @@ public static class ServerAiIpcOfflineTests
         var binding=Json(protocol.Handle(connection,Bind(),Capture)).GetProperty("binding");
         Check(binding.GetProperty("world").GetString()=="world-1"&&binding.GetProperty("generation").GetInt64()==1,"bind returns world and generation");
         Check(Json(protocol.Handle(connection,State(binding),Capture)).GetProperty("data").GetProperty("life").GetInt32()==100,"bound state returned");
+        int beforeRejected=captures;
         Check(Error(protocol.Handle(Guid.NewGuid(),State(binding),Capture),"not_bound"),"binding cannot cross connections");
+        Check(captures==beforeRejected,"unbound state rejects before capture");
         Check(Error(protocol.Handle(connection,Bind(),Capture),"already_bound"),"connection cannot silently rebind");
+        Check(captures==beforeRejected,"duplicate bind rejects before capture");
+        foreach(var mismatched in new[]{
+            new AiReadOnlyProtocol.Binding("wrong-actor","world-1",1,7),
+            new AiReadOnlyProtocol.Binding(binding.GetProperty("actor").GetString(),"wrong-world",1,7),
+            new AiReadOnlyProtocol.Binding(binding.GetProperty("actor").GetString(),"world-1",2,7),
+            new AiReadOnlyProtocol.Binding(binding.GetProperty("actor").GetString(),"world-1",1,8)})
+        {
+            Check(Error(protocol.Handle(connection,State(Json(JsonSerializer.Serialize(mismatched))),Capture),"stale_binding"),"mismatched binding rejects before engine validation");
+            Check(captures==beforeRejected,"mismatched binding never invokes capture");
+        }
         current=current with {Actor=new object()};
         Check(Error(protocol.Handle(connection,State(binding),Capture),"stale_binding"),"object replacement rejected even at same slot/generation");
+        Check(captures==++beforeRejected,"matching lease still captures current object for secondary validation");
         current=current with {Actor=actor,Generation=2};
         Check(Error(protocol.Handle(connection,State(binding),Capture),"stale_binding"),"old generation rejected");
+        Check(captures==++beforeRejected,"current generation change is checked after capture");
         current=current with {Generation=1,World="world-2"};
         Check(Error(protocol.Handle(connection,State(binding),Capture),"stale_binding"),"old world rejected");
+        Check(captures==++beforeRejected,"current world change is checked after capture");
+        current=current with {World="world-1",Slot=8};
+        Check(Error(protocol.Handle(connection,State(binding),Capture),"stale_binding"),"current slot replacement rejects matching old binding");
+        Check(captures==++beforeRejected,"current slot change is checked after capture");
         current=null;
         Check(Error(protocol.Handle(connection,State(binding),Capture),"identity_unavailable"),"missing identity cannot fall back to human");
         Check(Error(protocol.Handle(connection,State(binding),()=>throw new InvalidOperationException()),"engine_unavailable"),"engine/quarantine failures return structured refusal");

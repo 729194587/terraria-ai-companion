@@ -43,6 +43,16 @@ internal sealed class AiReadOnlyProtocol
                 requested = new(b.GetProperty("actor").GetString(), b.GetProperty("world").GetString(),
                     b.GetProperty("generation").GetInt64(), b.GetProperty("slot").GetInt32());
             }
+            Lease lease = null;
+            if (op == "bind")
+            {
+                if (leases.ContainsKey(connection)) return JsonSerializer.Serialize(Reply(false, error: "already_bound"));
+            }
+            else
+            {
+                if (!leases.TryGetValue(connection, out lease)) return JsonSerializer.Serialize(Reply(false, error: "not_bound"));
+                if (lease.Binding != requested) return JsonSerializer.Serialize(Reply(false, error: "stale_binding"));
+            }
             Identity current;
             try { current = capture(); }
             catch { return JsonSerializer.Serialize(Reply(false, error: "engine_unavailable")); }
@@ -50,14 +60,12 @@ internal sealed class AiReadOnlyProtocol
                 return JsonSerializer.Serialize(Reply(false, error: "identity_unavailable"));
             if (op == "bind")
             {
-                if (leases.ContainsKey(connection)) return JsonSerializer.Serialize(Reply(false, error: "already_bound"));
                 if (!ReferenceEquals(actor, current.Actor)) { actor = current.Actor; actorId = Guid.NewGuid().ToString("N"); }
                 var binding = new Binding(actorId, current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
                 return JsonSerializer.Serialize(Reply(true, binding: binding));
             }
-            if (!leases.TryGetValue(connection, out var lease)) return JsonSerializer.Serialize(Reply(false, error: "not_bound"));
-            if (lease.Binding != requested || !ReferenceEquals(lease.Identity.Actor, current.Actor)
+            if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)
                 return JsonSerializer.Serialize(Reply(false, error: "stale_binding"));
             return JsonSerializer.Serialize(Reply(true, current.State, lease.Binding));

@@ -83,6 +83,8 @@ python scripts/ai_player_state.py --port 18779
 背包逐项提供 slot、type、stack、prefix、name；只含 inventory，不含盔甲/箱子。
 每份状态均在同一个游戏线程处理点复制；actor ID 是对象身份的不透明标识，slot 不是身份。
 角色复活代次、对象或世界改变后旧绑定失效；需要新连接重新 bind，不能原连接静默换人。
+协议先验证连接 lease：重复 bind、未绑定的 state、与连接 binding 不一致的 state
+均在调用引擎 capture 前拒绝；通过后仍二次核对当前 Actor 引用、世界、代次与槽位。
 
 错误响应 `ok:false`，`error` 为 `invalid_request`、`unsupported_operation`、
 `identity_unavailable`、`engine_unavailable`、`not_bound`、`already_bound` 或 `stale_binding`。
@@ -93,17 +95,19 @@ python scripts/ai_player_state.py --port 18779
 
 ## 验证（2026-10-26）
 
-未运行全量测试。以下是本轮实际执行的定向验证：
+未运行全量测试。下表保留初次实现的历史回归结果；本次审计修订重跑正式包构建、
+IPC、正式包 IL、日志证据过滤测试及隔离原生 G8.1，不重复运行未修改的 G1–G7 回归。
 
 | 验证 | 结果与证据性质 |
 | --- | --- |
-| 正式包与实验包构建 | 均 0 errors / 0 warnings |
-| G8.1 IPC | 30 项离线替身/真实 loopback 检查通过；含对象/世界/代次、跨连接绑定、协议、线程拒绝、断开取消、端口释放 |
+| 正式包与实验包构建 | 初次实现均 0 errors / 0 warnings；本次正式包重建亦 0 errors / 0 warnings |
+| G8.1 IPC | 本次 45 项离线替身/真实 loopback 检查通过；新增拒绝请求前 capture 计数不变，以及实际替身对象/世界/代次/槽位变化后的二次校验 |
 | 正式包 IL 审计 | 19 项通过；实际构建 DLL，含 TCP 零 Terraria 访问、后台世界加载不创建监听器/角色、原生启动顺序、正式真人存档 marker 保护 |
-| 现有 BridgeOnly | 真人 TCP、Player hook、输入归属及死亡/重生回归通过；离线替身与真实 loopback，非图形验证 |
-| 共享运行时 MiningOnly | 266 项通过；本机真实 DLL/IL、编译后的控制/生命周期替身、73 项 G2 含并发锁顺序回归；非图形验证 |
-| 原生 G7 Mining | 37 项通过；真实 ItemCheck/PickTile、进度、破坏、掉落与发包，石块与草皮泥土；启动阶段显式驱动，非实时帧节奏 |
-| 正式原生 G8.1 | 隔离复制世界中真实 native server；实际 TCP 与 Python 查询、旧代次/动作拒绝、正常退出与 reservation 释放通过 |
+| 现有 BridgeOnly（初次实现） | 真人 TCP、Player hook、输入归属及死亡/重生回归通过；离线替身与真实 loopback，非图形验证 |
+| 共享运行时 MiningOnly（初次实现） | 266 项通过；本机真实 DLL/IL、编译后的控制/生命周期替身、73 项 G2 含并发锁顺序回归；非图形验证 |
+| 原生 G7 Mining（初次实现） | 37 项通过；真实 ItemCheck/PickTile、进度、破坏、掉落与发包，石块与草皮泥土；启动阶段显式驱动，非实时帧节奏 |
+| 原生日志证据过滤 | 混入其他进程、其他世界、PID 复用但运行时间外的事件，不能使测试通过；本次事件被接受；6 项不完整/不安全 teardown 反例均拒绝 |
+| 正式原生 G8.1 | 本次隔离复制世界中真实 native server；实际 TCP 与 Python 查询、请求 binding 不匹配/动作拒绝、正常退出与本次进程的角色清理及 reservation 释放通过 |
 | 图形 Host & Play / 远程多人 | 本轮均未执行，不计为通过 |
 
 本轮首次原生运行暴露了后台世界加载时序：提前开放监听器会使启动中的请求超时。
@@ -113,13 +117,20 @@ python scripts/ai_player_state.py --port 18779
 不属于 IPC 协议，也不会在普通启动器中启用。
 
 最终原生证据与包哈希见 [G81_NATIVE_EVIDENCE.json](G81_NATIVE_EVIDENCE.json)。
-完整原始日志保存在对应 `.local/companion-g81-native-*`；正式世界未修改。
+原生 binding 不匹配测试仅将请求 generation 改为当前值加一，未引发实际角色代次变化；
+不属于原生旧代次生命周期测试。真实对象、世界、代次和槽位变化的拒绝由离线替身验证，
+真实原生死亡/重生代次变化仍未执行，生产安全约束未放宽。
+日志检查同时匹配本次 Process ID、绑定 WorldSession 与进程起止 UTC；
+仅在这些事件内核验 spawn、角色清理与 reservation 释放。匹配事件保存为对应
+`.local/companion-g81-native-*/server.log`，不以共享安装日志中的历史 teardown 判定通过；
+本进程 stdout/stderr 同样保存在该隔离目录。正式世界未修改。
 本轮新准备的 Host & Play 入口仅准备，未运行。历史用户确认的 G7 挖掘不能替代 G8.1 图形验收。
 
 定向重跑命令（测试编译使用 PowerShell 7；本机可用 Codex bundled pwsh.exe）：
 
 ```powershell
 pwsh -NoProfile -File tests/run_server_ai_ipc_tests.ps1 -PackagePath .local/companion-g81-build/Mods/CompanionBridge.tmod
+pwsh -NoProfile -File tests/run_server_ai_native_evidence_tests.ps1
 pwsh -NoProfile -File tests/run_csharp_tests.ps1 -BridgeOnly
 pwsh -NoProfile -File experiments/virtual-player-engine-hooks/verify.ps1 -MiningOnly
 powershell -NoProfile -File experiments/virtual-player-engine-hooks/verify-native.ps1 -Suite Mining

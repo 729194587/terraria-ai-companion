@@ -1,5 +1,6 @@
 param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'server_ai_native_evidence.ps1')
 $repo=Split-Path $PSScriptRoot -Parent
 if(!$WorldPath){$WorldPath=Join-Path $repo '.local/virtual-player-control-host/Worlds/test.wld'}
 $WorldPath=(Resolve-Path -LiteralPath $WorldPath).Path
@@ -23,6 +24,7 @@ $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
 $process=[Diagnostics.Process]::Start($info)
+$startedUtc=$process.StartTime.ToUniversalTime()
 $stdout=$process.StandardOutput.ReadToEndAsync()
 $stderr=$process.StandardError.ReadToEndAsync()
 $client=$null
@@ -51,9 +53,9 @@ try {
     if(!$bound.ok){throw 'Native actor never became available'}
     $state=Request @{v=1;id='native-state';op='state';binding=$bound.binding}
     if(!$state.ok -or !$state.data.active -or $state.data.inventory.Count -lt 50 -or $bound.binding.generation -lt 1){throw 'Native state contract failed'}
-    $old=@{actor=$bound.binding.actor;world=$bound.binding.world;generation=([long]$bound.binding.generation+1);slot=$bound.binding.slot}
-    $stale=Request @{v=1;id='native-stale';op='state';binding=$old}
-    if($stale.ok -or $stale.error -ne 'stale_binding'){throw 'Stale generation was not rejected'}
+    $mismatchedBinding=@{actor=$bound.binding.actor;world=$bound.binding.world;generation=([long]$bound.binding.generation+1);slot=$bound.binding.slot}
+    $bindingMismatch=Request @{v=1;id='native-binding-mismatch';op='state';binding=$mismatchedBinding}
+    if($bindingMismatch.ok -or $bindingMismatch.error -ne 'stale_binding'){throw 'Mismatched request binding was not rejected'}
     $action=Request @{v=1;id='native-mine';op='mine'}
     if($action.ok -or $action.error -ne 'unsupported_operation'){throw 'Action isolation failed'}
     $pythonText=& python (Join-Path $repo 'scripts/ai_player_state.py') --port $IpcPort
@@ -64,12 +66,13 @@ try {
     [IO.File]::WriteAllText("$profile/g81-test-stop",'The isolated harness requests native main-thread shutdown after read-only TCP assertions.')
     if(!$process.WaitForExit(20000)){throw 'Native graceful unload timed out'}
     if($process.ExitCode -ne 0){throw "Native server exited $($process.ExitCode)"}
-    $output=$stdout.GetAwaiter().GetResult()
+    $exitedUtc=$process.ExitTime.ToUniversalTime()
     $nativeLog=Join-Path $TModLoaderPath 'tModLoader-Logs/server.log'
-    $log=Get-Content -LiteralPath $nativeLog -Raw
-    Copy-Item -LiteralPath $nativeLog -Destination "$profile/server.log"
-    if($log -notmatch '"eventName":"teardown"' -or $log -notmatch '"Phase":"released; fresh server process required to re-arm"'){throw 'Native actor/reservation teardown evidence missing'}
-    $report=@{result='passed';mode='isolated real native dedicated server; no graphical Host & Play';binding=$bound.binding;state=$state.data;pythonClient='passed';staleError=$stale.error;actionError=$action.error;exitCode=$process.ExitCode;packageSHA256=(Get-FileHash -LiteralPath $package).Hash}
+    $events=@(Get-ServerAiRunEvents -Lines (Get-Content -LiteralPath $nativeLog) -ProcessId $process.Id -WorldSession $bound.binding.world -StartedUtc $startedUtc -ExitedUtc $exitedUtc)
+    # Persist only this process/world/time window, never search a shared log as evidence.
+    $events|ForEach-Object {$_|ConvertTo-Json -Compress -Depth 12}|Set-Content -LiteralPath "$profile/server.log"
+    $lifecycle=Assert-ServerAiRunTeardown -Events $events
+    $report=@{result='passed';mode='isolated real native dedicated server; no graphical Host & Play';binding=$bound.binding;state=$state.data;pythonClient='passed';bindingMismatchError=$bindingMismatch.error;bindingMismatchTest='request generation is current generation + 1; no native lifecycle change';nativeGenerationLifecycle='NOT RUN';actionError=$action.error;exitCode=$process.ExitCode;processId=$process.Id;startedUtc=$startedUtc.ToString('O');exitedUtc=$exitedUtc.ToString('O');logScope='process ID + bound world session + process lifetime';spawn=$lifecycle.spawn;teardown=$lifecycle.teardown;packageSHA256=(Get-FileHash -LiteralPath $package).Hash}
     $report|ConvertTo-Json -Depth 12|Set-Content -LiteralPath "$profile/result.json"
     Write-Output "Native AI IPC passed: $profile/result.json"
 } finally {

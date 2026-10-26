@@ -3,11 +3,15 @@
   "formalVersion": "0.1.41",
   "date": "2026-10-26",
   "mode": "isolated real native dedicated server; no graphical Host & Play",
-  "profile": ".local/companion-g81-native-07e15ea20f53433db1590ceb2f6934f6",
-  "packageSHA256": "4AE19C6B6D43B8E88C1E9EEEAC86C82622D0D6B2FE44A03591E06EE60235930A",
+  "profile": ".local/companion-g81-native-fb5c140b179a4f03b4771cf30c928adf",
+  "packageSHA256": "7FFF2C4591011B7CFA5EF3611E274944333030F6904C8ED77DFB60B051B3C9D7",
+  "processId": 24476,
+  "startedUtc": "2026-10-26T13:48:27.2106676Z",
+  "exitedUtc": "2026-10-26T13:48:56.2978989Z",
+  "logScope": "process ID + bound world session + process lifetime",
   "binding": {
-    "actor": "81a4f6c00f044f719304a32ebef2538e",
-    "world": "f6bed8d8871f4a9394e9dfef6d89e4ad",
+    "actor": "098154adf607433595632e30872944a0",
+    "world": "24d21ec23b2c4d6c90bf069ff6a0bdd1",
     "generation": 1,
     "slot": 254
   },
@@ -33,11 +37,15 @@
     "inventorySlots": 59
   },
   "pythonClient": "passed",
-  "staleError": "stale_binding",
+  "bindingMismatchError": "stale_binding",
+  "bindingMismatchTest": "request generation is current generation + 1; no native lifecycle change",
+  "nativeGenerationLifecycle": "NOT RUN",
   "actionError": "unsupported_operation",
   "exitCode": 0,
   "spawn": {
-    "utc": "2026-10-26T12:44:16.9638716Z",
+    "utc": "2026-10-26T13:48:53.8927525Z",
+    "process": 24476,
+    "WorldSession": "24d21ec23b2c4d6c90bf069ff6a0bdd1",
     "thread": 4,
     "programMainThread": 4,
     "programIsMainThread": true,
@@ -64,7 +72,9 @@
     "fault": null
   },
   "teardown": {
-    "utc": "2026-10-26T12:44:18.639404Z",
+    "utc": "2026-10-26T13:48:56.2808409Z",
+    "process": 24476,
+    "WorldSession": "24d21ec23b2c4d6c90bf069ff6a0bdd1",
     "thread": 4,
     "Phase": "released; fresh server process required to re-arm",
     "actorSlot": -1,
