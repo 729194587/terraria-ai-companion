@@ -1,0 +1,83 @@
+{
+  "baseline": "2903551",
+  "formalVersion": "0.1.41",
+  "date": "2026-10-26",
+  "mode": "isolated real native dedicated server; no graphical Host & Play",
+  "profile": ".local/companion-g81-native-07e15ea20f53433db1590ceb2f6934f6",
+  "packageSHA256": "4AE19C6B6D43B8E88C1E9EEEAC86C82622D0D6B2FE44A03591E06EE60235930A",
+  "binding": {
+    "actor": "81a4f6c00f044f719304a32ebef2538e",
+    "world": "f6bed8d8871f4a9394e9dfef6d89e4ad",
+    "generation": 1,
+    "slot": 254
+  },
+  "snapshot": {
+    "tick": 0,
+    "name": "G31_NoClient_Probe",
+    "active": true,
+    "dead": false,
+    "position": {
+      "x": 33680,
+      "y": 3318
+    },
+    "life": 100,
+    "lifeMax": 100,
+    "selectedSlot": 0,
+    "selectedItem": {
+      "slot": 0,
+      "type": 0,
+      "stack": 0,
+      "prefix": 0,
+      "name": ""
+    },
+    "inventorySlots": 59
+  },
+  "pythonClient": "passed",
+  "staleError": "stale_binding",
+  "actionError": "unsupported_operation",
+  "exitCode": 0,
+  "spawn": {
+    "utc": "2026-10-26T12:44:16.9638716Z",
+    "thread": 4,
+    "programMainThread": 4,
+    "programIsMainThread": true,
+    "myPlayer": 255,
+    "actor": {
+      "whoAmI": 254,
+      "active": true,
+      "dead": false,
+      "x": 33680,
+      "y": 3318,
+      "vx": 0,
+      "vy": 0,
+      "preUpdates": 0,
+      "postUpdates": 0,
+      "sameReference": true,
+      "connected": false,
+      "socketType": null,
+      "remoteState": 0,
+      "remoteActive": false,
+      "pendingTermination": false,
+      "terminationApproved": false
+    },
+    "fullSnapshots": 1,
+    "fault": null
+  },
+  "teardown": {
+    "utc": "2026-10-26T12:44:18.639404Z",
+    "thread": 4,
+    "Phase": "released; fresh server process required to re-arm",
+    "actorSlot": -1,
+    "actor": null,
+    "departures": 1,
+    "detail": {
+      "reason": "OnWorldUnload",
+      "same": true,
+      "occupied": false
+    },
+    "fault": null
+  },
+  "graphicalHostAndPlay": "NOT RUN",
+  "remoteMultiplayer": "NOT RUN",
+  "fullTestSuite": "NOT RUN"
+}

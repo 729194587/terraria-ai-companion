@@ -23,7 +23,7 @@ try {
 } finally { $refPack.Dispose() }
 $references = @(Get-ChildItem $refsPath -Filter '*.dll' | Select-Object -ExpandProperty FullName) + @($cecil, $utils, $detour)
 $sources = @('VirtualPlayerEngineProbe/StartupReservation.cs', 'VirtualPlayerEngineProbe/EnginePatches.cs', 'validation/EngineHookOfflineTests.cs', 'validation/NetworkSyncOfflineTests.cs', 'VirtualPlayerEngineProbe/CharacterFiles.cs', 'VirtualPlayerEngineProbe/PersistencePatches.cs', 'validation/PersistenceOfflineTests.cs', 'VirtualPlayerEngineProbe/ActorAction.cs', 'VirtualPlayerEngineProbe/ActorControl.cs', 'validation/ControlEngineStubs.cs', 'validation/ControlOfflineTests.cs', 'VirtualPlayerEngineProbe/SurvivalPatches.cs', 'validation/SurvivalOfflineTests.cs', 'VirtualPlayerEngineProbe/MiningPatches.cs', 'validation/MiningOfflineTests.cs', 'VirtualPlayerEngineProbe/ItemUsePatches.cs', 'validation/ItemUseOfflineTests.cs', 'VirtualPlayerEngineProbe/ItemOwnershipPatches.cs', 'validation/PickupOwnershipOfflineTests.cs', 'validation/ProbeUxOfflineTests.cs', 'validation/Program.cs') |
-    ForEach-Object { Join-Path $PSScriptRoot $_ }
+    ForEach-Object { if ($_.StartsWith("VirtualPlayerEngineProbe/")) { Join-Path $repo ("CompanionBridge/ServerPlayerRuntime/" + (Split-Path $_ -Leaf)) } else { Join-Path $PSScriptRoot $_ } }
 $harness = Join-Path $output ('EngineChecks-' + [guid]::NewGuid().ToString('N') + '.dll')
 # Compile against tML's bundled .NET 8 references, not PowerShell's runtime.
 # MonoMod 1.3.2 does not support this machine's PowerShell .NET 10 CLR.

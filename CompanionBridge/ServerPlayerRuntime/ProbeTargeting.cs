@@ -86,6 +86,7 @@ internal static class ProbeTargeting
 
 public sealed class ProbeTargetingSystem : ModSystem
 {
+    public override bool IsLoadingEnabled(Mod mod) => mod.Name == "VirtualPlayerEngineProbe";
     public override void ModifyInterfaceLayers(List<GameInterfaceLayer> layers)
     {
         if(Main.dedServ)return;
@@ -96,6 +97,7 @@ public sealed class ProbeTargetingSystem : ModSystem
 
 public sealed class ProbeTargetCommand : ModCommand
 {
+    public override bool IsLoadingEnabled(Mod mod) => mod.Name == "VirtualPlayerEngineProbe";
     public override string Command=>"vptarget";
     public override CommandType Type=>CommandType.Chat;
     public override string Usage=>"/vptarget";
@@ -109,6 +111,7 @@ public sealed class ProbeTargetCommand : ModCommand
 
 public sealed class ProbeMouseMineCommand : ModCommand
 {
+    public override bool IsLoadingEnabled(Mod mod) => mod.Name == "VirtualPlayerEngineProbe";
     public override string Command=>"vpmine";
     public override CommandType Type=>CommandType.Chat;
     public override string Usage=>"/vpmine";

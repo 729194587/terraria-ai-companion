@@ -12,14 +12,14 @@ using Terraria.Net.Sockets;
 
 namespace VirtualPlayerEngineProbe;
 
-public sealed class VirtualPlayerEngineProbe : Mod
+public sealed class VirtualPlayerEngineProbe
 {
     internal const string EngineHash = "FCC6A9624B12191BE4A15D714A3675440911FEB8C1D374642AB1FD686F0DA0A5";
     internal const string HooksHash = "595D26FB3BBE27548D030943B5ED2437F690D1C002129BAD21FAFEAEB8118F7A";
     internal const string Commit = "c9545cf27d56c456321e1896274c02adf67d0140";
     private readonly Stack<Action> rollback = new();
     private bool allocatorPatched, cleanupPatched, syncPatched, savePatched;
-    internal static VirtualPlayerEngineProbe Instance;
+    internal static Mod Instance;
     internal static bool Ready;
     internal static StartupReservation Reservation = new();
     internal static long NetworkLoops, CleanupSkips, SyncSkips, SectionSkips, Accepts;
@@ -28,9 +28,9 @@ public sealed class VirtualPlayerEngineProbe : Mod
     private static string fault;
     internal static string Fault => Volatile.Read(ref fault);
 
-    public override void Load()
+    public void Load(Mod owner)
     {
-        Instance = this;
+        Instance = owner;
         Ready = false;
         Reservation = new();
         fault = null;
@@ -46,8 +46,8 @@ public sealed class VirtualPlayerEngineProbe : Mod
                 || Hash(typeof(Main).Assembly.Location) != EngineHash
                 || Hash(typeof(On_Netplay).Assembly.Location) != HooksHash)
                 throw new InvalidOperationException("Unsupported engine/hooks fingerprint; no hooks installed.");
-            Logger.Info($"Engine fingerprint confirmed: Terraria 1.4.4.9 / tML {BuildInfo.tMLVersion}; {EngineHash}");
-            if (ModLoader.Mods.Any(m => m != this && m.Name != "ModLoader"))
+            Instance.Logger.Info($"Engine fingerprint confirmed: Terraria 1.4.4.9 / tML {BuildInfo.tMLVersion}; {EngineHash}");
+            if (ModLoader.Mods.Any(m => m != Instance && m.Name != "ModLoader"))
                 throw new InvalidOperationException("G1 isolation requires this probe and tModLoader only.");
             NetworkStateSync.Reset();
             ProbeAnnouncements.ResetNotices();
@@ -59,7 +59,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
                 // Current native Host & Play launches a separate -server process.
                 // Observe that graphical entrypoint; never host an actor in its client.
                 Install(() => On_Main.OnSubmitServerPassword += GraphicalHostLaunch, () => On_Main.OnSubmitServerPassword -= GraphicalHostLaunch);
-                Logger.Info("G1 graphical host-launch hook ready; engine hooks belong to the native -server child process.");
+                Instance.Logger.Info("G1 graphical host-launch hook ready; engine hooks belong to the native -server child process.");
             }
         }
         catch (Exception e)
@@ -67,7 +67,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
             Ready = false;
             SignalFault(e.Message);
             Undo(); // No server/actor has been started during Mod.Load.
-            Logger.Error("G0 blocked; spawn disabled.", e);
+            Instance.Logger.Error("G0 blocked; spawn disabled.", e);
         }
     }
 
@@ -94,7 +94,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
         Install(() => On_Player.Update += NativeSurvival.Update, () => On_Player.Update -= NativeSurvival.Update);
         Ready = allocatorPatched && cleanupPatched && syncPatched && savePatched;
         if (!Ready) throw new InvalidOperationException("Incomplete IL hook installation.");
-        Logger.Info("G2 network hooks ready; no actor exists. One reservation will arm before the first native StartServer.");
+        Instance.Logger.Info("G2 network hooks ready; no actor exists. One reservation will arm before the first native StartServer.");
     }
 
     private void GraphicalHostLaunch(On_Main.orig_OnSubmitServerPassword orig, Main self)
@@ -112,7 +112,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
     }
     private void Undo() { while (rollback.TryPop(out var remove)) remove(); }
 
-    public override void Unload()
+    public void Unload()
     {
         // tML normally calls RemoveAll before this method. clearWorld and the
         // simulation-scope finally must have removed the actor BEFORE that.
@@ -120,7 +120,7 @@ public sealed class VirtualPlayerEngineProbe : Mod
             throw new InvalidOperationException("STOP: native unload reached before G1 teardown. Do not retry live spawn.");
         Ready = false;
         Undo();
-        Logger.Info("G1 teardown: no actor/reservation; hook subscriptions removed (or already removed by tML).");
+        Instance.Logger.Info("G1 teardown: no actor/reservation; hook subscriptions removed (or already removed by tML).");
         Instance = null;
     }
 

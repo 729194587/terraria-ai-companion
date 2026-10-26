@@ -6,4 +6,7 @@
   <PropertyGroup>
     <AssemblyName>VirtualPlayerEngineProbe</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../CompanionBridge/ServerPlayerRuntime/*.cs" Link="ServerPlayerRuntime/%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

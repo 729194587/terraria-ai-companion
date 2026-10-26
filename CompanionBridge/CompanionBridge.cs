@@ -42,7 +42,10 @@ public sealed class CompanionBridge : Mod
     {
         Controls.Reset();
         if (Main.dedServ)
+        {
+            ServerIpc.ServerAiSystem.LoadRuntime(this);
             return;
+        }
 
         ToggleAutoMoveKeybind = KeybindLoader.RegisterKeybind(this, "ToggleAutoMove", "P");
         Program.LaunchParameters.TryGetValue("-companionbridgeport", out string portArgument);
@@ -63,6 +66,7 @@ public sealed class CompanionBridge : Mod
 
     public override void Unload()
     {
+        ServerIpc.ServerAiSystem.UnloadRuntime();
         StopControl();
         Server?.Dispose();
         Server = null;

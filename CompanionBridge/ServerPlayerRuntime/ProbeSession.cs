@@ -385,15 +385,19 @@ public sealed class ProbePlayer : ModPlayer
     internal string PersistentMarker = "";
     public override void PreUpdate() => PreUpdates++;
     public override void PostUpdate() => PostUpdates++;
-    public override bool PreItemCheck(){ProbeTargeting.Capture(Player);return true;}
-    public override void PostItemCheck()=>ProbeTargeting.Observe(Player);
+    public override bool PreItemCheck(){if (VirtualPlayerEngineProbe.Instance?.Name == "VirtualPlayerEngineProbe") ProbeTargeting.Capture(Player);return true;}
+    public override void PostItemCheck(){if (VirtualPlayerEngineProbe.Instance?.Name == "VirtualPlayerEngineProbe") ProbeTargeting.Observe(Player);}
     public override void PostUpdateRunSpeeds() => ActorControl.BeforeMovement(Player);
-    public override void SaveData(Terraria.ModLoader.IO.TagCompound tag) => tag["g31Marker"] = PersistentMarker;
+    public override void SaveData(Terraria.ModLoader.IO.TagCompound tag)
+    {
+        if (Mod.Name == "VirtualPlayerEngineProbe" || ReferenceEquals(Player, ProbeSession.Actor)) tag["g31Marker"] = PersistentMarker;
+    }
     public override void LoadData(Terraria.ModLoader.IO.TagCompound tag) => PersistentMarker = tag.GetString("g31Marker");
 }
 
 public sealed class ProbeCommand : ModCommand
 {
+    public override bool IsLoadingEnabled(Mod mod) => mod.Name == "VirtualPlayerEngineProbe";
     public override string Command => "vph";
     public override CommandType Type => CommandType.World | CommandType.Console;
     public override string Usage => "/vph mine <x> <y>|mine-status|mine-stop|item-fixture|slot <1-10>|use|use-stop|item|walk|stop|motion|life|bag|test-hurt|test-death|status|spawn|save [id]|load [id]|profiles|inspect|fixture|test-save-failure|debug-style|resync|despawn";
@@ -501,6 +505,7 @@ public sealed class ProbeCommand : ModCommand
 // from a name as authority. This command cannot publish or mutate any Player.
 public sealed class ClientProbeCommand : ModCommand
 {
+    public override bool IsLoadingEnabled(Mod mod) => mod.Name == "VirtualPlayerEngineProbe";
     public override string Command => "vpc";
     public override CommandType Type => CommandType.Chat;
     public override string Usage => "/vpc <server actor slot>";
