@@ -1,0 +1,2 @@
+G6 native item-use experiment: explicit hotbar selection and one-use wooden sword/copper pickaxe air swings or apple consumption. Native lifecycle, survival, sync and private character profiles are retained.
+Use only the isolated G6 Host & Play profile with this mod alone. Test items are explicit opt-in; existing inventory is never overwritten. Graphical and remote multiplayer item use are not yet verified.
