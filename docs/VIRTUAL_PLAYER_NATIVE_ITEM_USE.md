@@ -1,5 +1,7 @@
 # G6：无客户端 AI Player 快捷栏与物品使用
 
+> 本文保留 G6 / 0.6.0 的历史实现与验证范围。当前累计包、构建/验证/Host & Play 入口见 [单窗口集成说明](VIRTUAL_PLAYER_SINGLE_WINDOW.md)；旧 profile 和历史包不删除。
+
 版本 **0.6.0**，分支 `codex/virtual-player-item-use`，以 PR #15 最新提交 `bc005238434b4149e12166b69b13f338df53e064` 为基础。独立 Draft PR；不修改 main 或 PR #11–15 的分支。本轮范围是木剑、铜镐的**空挥**和苹果消耗，不包括定点挖方块、通用物品管理或自动战斗。
 
 ## 本机调用链依据

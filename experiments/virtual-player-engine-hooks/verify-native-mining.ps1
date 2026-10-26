@@ -1,6 +1,8 @@
 param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27837,[switch]$Failure)
 $ErrorActionPreference='Stop'
-$repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+. (Join-Path $PSScriptRoot 'probe-paths.ps1')
+$paths=Get-ProbePaths
+$repo=$paths.Repository
 if(!$WorldPath){$WorldPath=Join-Path $repo '.local/virtual-player-control-host/Worlds/test.wld'}
 $WorldPath=(Resolve-Path -LiteralPath $WorldPath).Path
 if(@(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue).Count){throw 'Diagnostic port is in use.'}
@@ -9,7 +11,7 @@ New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds"|Out-Null
 Copy-Item -LiteralPath $WorldPath -Destination "$profile/Worlds/test.wld"
 $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
-Copy-Item -LiteralPath (Join-Path $repo '.local/virtual-player-mining-build/Mods/VirtualPlayerEngineProbe.tmod') -Destination "$profile/Mods"
+Copy-Item -LiteralPath $paths.Package -Destination "$profile/Mods"
 Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value '["VirtualPlayerEngineProbe"]'
 $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",
     '-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-miningselftest')

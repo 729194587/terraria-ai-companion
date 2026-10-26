@@ -1,5 +1,5 @@
-displayName = Virtual Player Engine Probe (Fixed-target mining experimental)
+displayName = Virtual Player Engine Probe (Single-window integration experimental)
 author = Terraria AI Companion
-version = 0.7.0
+version = 0.7.1
 side = Both
 buildIgnore = *.csproj, *.user, obj/*, bin/*, .vs/*

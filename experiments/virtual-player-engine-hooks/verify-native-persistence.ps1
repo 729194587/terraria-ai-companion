@@ -4,11 +4,13 @@ param(
     [int]$Port = 27831
 )
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+. (Join-Path $PSScriptRoot 'probe-paths.ps1')
+$paths=Get-ProbePaths
+$repo=$paths.Repository
 if (!$WorldPath) { $WorldPath = Join-Path $repo '.local/virtual-player-network-host/Worlds/test.wld' }
 $WorldPath = (Resolve-Path -LiteralPath $WorldPath).Path
-$package = Join-Path $repo '.local/virtual-player-survival-build/Mods/VirtualPlayerEngineProbe.tmod'
-if (!(Test-Path -LiteralPath $package)) { throw 'Build the G3.1 probe first.' }
+$package = $paths.Package
+if (!(Test-Path -LiteralPath $package)) { throw 'Build the current probe first.' }
 if (@(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue).Count) { throw "Diagnostic port $Port is in use." }
 $profile = Join-Path $repo ('.local/character-native-validation-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path "$profile/Mods", "$profile/Worlds" | Out-Null
@@ -28,7 +30,9 @@ foreach ($round in 1,2) {
         -WorkingDirectory $TModLoaderPath -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput "$profile/native-$round.stdout.log" -RedirectStandardError "$profile/native-$round.stderr.log"
     try {
+        $null=$process.Handle
         if (!$process.WaitForExit(90000)) { throw 'Isolated native validation timed out.' }
+        $process.WaitForExit();$process.Refresh()
         if ($process.ExitCode -ne 0) { throw "Native diagnostic process failed: $($process.ExitCode)" }
         $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
         if ($result.result -ne 'native-persistence-selftest-passed' -or !$result.corruptLoadRejected `

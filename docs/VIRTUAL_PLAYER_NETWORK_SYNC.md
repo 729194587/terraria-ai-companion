@@ -1,12 +1,16 @@
 # G2：无客户端 Virtual Player 的原生网络同步与可见性
 
+> 当前累计单窗口入口见 [单窗口集成说明](VIRTUAL_PLAYER_SINGLE_WINDOW.md)。本报告保留 G2 历史证据与 0.2.3 死锁修复记录；下面的 241 项及 0.2.x 包路径是当时结果，不能当作当前包的验证结果。整理分支已恢复 `63f44eb` 的两项原生调用链检查与四项并发/线程回归，当前验证重新覆盖 73 项 G2 检查。后续 G3–G7 不扩大这里记录的历史实测范围。
+
 2026-10-25。基线为 [Draft PR #11](https://github.com/729194587/terraria-ai-companion/pull/11) 的 `e5e5b2050ba7e49be520189eb08b96c18aa483b7`（G1 实现 `bac3a2d`，其后补充实测报告）。G2 使用独立分支 `codex/virtual-player-network-sync`，Draft PR 的 base 为 `spike/virtual-player-engine-hooks`。不推送 G1 分支、不改 main、不扩大 PR #11 的 diff；G1 技术报告保持原样。
 
 | 验证层级 | 本次结果 | 证据范围 |
 | --- | --- | --- |
-| 离线定向验证 | 234 项通过，编译零错误/零警告 | 167 项 G1 前置/包审计及 67 项 G2 检查；不启动 Terraria 世界 |
+| 离线定向验证 | 241 项通过，编译零错误/零警告 | 168 项 G1 前置/包审计及 73 项 G2 检查；不启动 Terraria 世界 |
 | G2 单窗口 Host & Play | **passed for tested subset（0.2.1）** | 两端日志确认客户端收到 AI 状态及手动离开；用户确认画面可见、debug-style 切换与恢复正常 |
 | 0.2.2 黄色加入/离开提示 | **not attempted in live game** | 新功能通过离线本地化参数、颜色、去重及失败测试，尚未观察游戏画面 |
+| 0.2.2 Host & Play 再次启动 | **blocked：已定位锁顺序死锁** | 接受 host 后、创建 AI 前挂起；0.2.3 已修复并通过并发回归 |
+| 0.2.3 Host & Play 重试 | **passed for startup/handshake** | 用户确认正常进入原世界；日志确认新钩子安装、host 加入，无挂起警告或 Probe fault |
 | G2 远程多人、后加入客户端 | **not attempted** | 原生晚加入方法体仅在隔离夹具中执行，不能当作远程实测 |
 | G2 动态移动、带 AI 退世界 | **not attempted** | 本轮 AI 静止并手动 despawn，没有动态运动或带可见 AI 直接退出的验收 |
 
@@ -51,6 +55,20 @@ ProbeAnnouncements 在成功的初次全量同步及 spawn 日志之后，调用
 该提示使用独立生命周期状态去重，继续跳过 SyncOnePlayer 中的 RemoteClient 公告状态写入。重复 spawn、resync、周期刷新、debug-style 和晚加入的状态同步不重复发送 AI 加入消息；初次同步失败的创建/回滚不发送加入或离开提示。失去归属时不替未知 Player 发消息。广播调用前先记为已尝试，部分发送后抛错也不自动重试，避免重复黄字。
 
 聊天广播属于提示效果，失败只计入 noticeFailures 并写警告，不设置同步 fault、不撤销有效 AI、不阻塞已确认安全的清理。网络状态发布/离开包原有的严格失败与 quarantine 策略保持不变。日志新增 joinNotices、leaveNotices、noticeFailures；它们表示调用结果，不是客户端交付确认。此功能尚未游戏实测，不复用 0.2.1 的通过结果。
+
+### 0.2.3：修复 host 加入时的消息缓冲锁死锁
+
+2026-10-25 19:06–19:09（UTC+8），固定 profile 的 0.2.2 服务器已监听并接受 slot 0，但在首次 host 握手处理时挂起，watchdog 连续报 Server hung。此时 Actor 尚未创建，不能归因为角色/地图导入或黄色公告。用户再次开服时，旧 PID 20052 仍监听 7777，第二服务器因端口占用失败。
+
+保存日志/存档后，使用 Microsoft dotnet-stack 8.0.547301 读取挂起服务器的实际线程栈：主线程为 `CheckBytes → GetData → SyncConnectedPlayer → SyncOnePlayer → IsNetworkActor`，持有原生 MessageBuffer 锁后等待 Gate；网络线程为 `NetworkTick → UpdateConnectedClients → RemoteClient.TryRead → AsyncReceive → ServerReadCallBack → ReceiveBytes`，持有 Gate 且同步执行接收回调，等待该 MessageBuffer。形成 `buffer → Gate` 与 `Gate → buffer` 的循环等待。此前离线 RemoteClient.Update 替身未模拟同步接收回调，单窗口已通过的会话也未触发该竞争。
+
+修复包含两点：非预留槽位的 IsNetworkActor 在取得 Gate 前直接返回 false，真人判断不触碰该锁；服务器新增 On_Netplay.UpdateInMainThread 包装，在原生 CheckBytes 获取缓冲锁之前取得 Gate，与网络线程统一为 `Gate → buffer`。这也覆盖 active AI 被原生晚加入循环同步的路径，不能只靠真人快速路径掩盖晚加入时的同类风险。无预留时直接调用 orig；有预留时校验 owner/Program.IsMainThread，保留原生接收、发送及真人同步逻辑。
+
+新增完整安装模块调用关系检查，确认服务器 CheckBytes 位于 UpdateInMainThread 范围；实际包内并发回归复现缓冲锁与 Gate 交错，验证真人判断无需等 Gate，AI 晚加入与同步接收在统一锁顺序下完成，并检查错误线程拒绝、释放预留后原生路径保留。测试用有超时的缓冲锁获取避免回归自身永久挂起，不冒充真实联机压力测试。
+
+日志、线程栈及当时的角色/世界备份位于 `.local/engine-g2-hang-20261025-191137/`；仅结束了已确认挂起的测试服务器 PID 20052，后续确认旧图形客户端已退出、端口释放。0.2.3 已备份并部署到固定 profile，12 个角色/世界文件哈希未变。启动脚本新增 7777 监听检查，遇到遗留服务器时给出占用 PID，避免继续重复启动。
+
+用户随后重试并确认正常进入原世界。19:23:19 日志确认 0.2.3 及 UpdateInMainThread 钩子安装；19:23:33 两端分别记录 host 已加入和 Entering world，原 Classic 世界仍为 4200×1200。服务器 PID 26204 的保存日志中已有一次 AI spawn、无 Server hung 警告或 Probe fault。这是修复后真实启动/握手通过的证据，不能扩大为黄色提示画面、远程晚加入或动态运动均已通过。两端日志、Probe 事件及摘要保存在 `.local/engine-g2-hangfix-live-20261025-192424/`。
 
 ### SyncOnePlayer 的窄 IL 适配
 
@@ -100,17 +118,17 @@ prepare-host-play 默认复用固定目录 `.local/virtual-player-network-host/`
 
 G2 输出目录与原 G1 分开：
 
-- 包：`.local/virtual-player-network-build/Mods/VirtualPlayerEngineProbe.tmod`，版本 **0.2.2**，43504 字节。
-- SHA256：`9C3E16817BC92B61210A71E5BD0F2F56BCDA47A87F67505317B9655A13F3CDAF`。
+- 包：`.local/virtual-player-network-build/Mods/VirtualPlayerEngineProbe.tmod`，版本 **0.2.3**，43670 字节。
+- SHA256：`5FFA59C1E9A4C6E041B5D0CAB2BE74EFB86C64AE0ADE169F885E0A47F6DD820F`。
 - 日志：`.local/virtual-player-network-build.log`、`.local/virtual-player-network-validation.log`；原生/补丁 IL 检查产物在 `.local/virtual-player-network-validation/`。
-- 默认入口：`.local/virtual-player-network-host/start-host-play.ps1`，部署 0.2.2，并已有复制自先前完整实验目录的角色/世界；无需重建。旧临时 G2/G1 profile、用户日志及升级备份保留。
+- 默认入口：`.local/virtual-player-network-host/start-host-play.ps1`，部署 0.2.3，并保留已有角色/世界；无需重建。旧临时 G2/G1 profile、用户日志及升级备份保留。
 
 本机输出：
 
 ```text
 Compilation finished with 0 errors and 0 warnings
-G2NetworkSync: 67 targeted checks passed; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.
-Engine probe package: loader=2026.8.3.0; bytes=43504; DLL=73216; 167 prerequisite/package + 67 G2 = 234 total targeted checks; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.
+G2NetworkSync: 73 targeted checks passed; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.
+Engine probe package: loader=2026.8.3.0; bytes=43670; DLL=73728; 168 prerequisite/package + 73 G2 = 241 total targeted checks; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.
 ```
 
 验证器使用安装随附 .NET 8 引用/运行时，执行完整原生 SyncOnePlayer、SyncOnePlayer_ItemArray、SyncConnectedPlayer，以及包内归属判定、同步包装和 NetworkStateSync 方法；仅替换引擎存储、传输与无关世界/公告效果。上述 SINGLE-WINDOW LIVE NOT RUN / REMOTE MULTIPLAYER LIVE NOT RUN 仅表示该离线验证器不运行游戏入口或网络；之后用户完成的真实单窗口结果单独记录在上节，不混用两类证据。

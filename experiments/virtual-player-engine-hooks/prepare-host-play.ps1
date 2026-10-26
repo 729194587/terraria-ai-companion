@@ -1,30 +1,32 @@
 param([string]$TModLoaderPath = 'D:/steam/steamapps/common/tModLoader', [switch]$Fresh)
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$package = Join-Path $repo '.local/virtual-player-item-use-build/Mods/VirtualPlayerEngineProbe.tmod'
-if (!(Test-Path -LiteralPath $package)) { throw 'Run the item-use build and verify scripts first.' }
+. (Join-Path $PSScriptRoot 'probe-paths.ps1')
+$paths=Get-ProbePaths
+$repo=$paths.Repository
+$package = $paths.Package
+if (!(Test-Path -LiteralPath $package)) { throw 'Run build.ps1 and verify.ps1 first.' }
 $packageHash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
 $runningTml = @(Get-Process -Name dotnet,tModLoader -ErrorAction SilentlyContinue |
     Where-Object { $_.ProcessName -eq 'tModLoader' -or $_.Path -like '*tModLoader*' })
 if ($runningTml.Count) { throw 'Close tModLoader and its Host & Play server before updating/copying the test profile.' }
-$profile = Join-Path $repo '.local/virtual-player-item-use-host'
+$profile = $paths.Host
 if ($Fresh) {
-    $profile = Join-Path $repo ('.local/virtual-player-item-use-host-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $profile = $paths.Host+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss')
     if (Test-Path -LiteralPath $profile) { throw 'Fresh profile already exists; retry to choose a new timestamp.' }
 }
 $deployedPackage = Join-Path $profile 'Mods/VirtualPlayerEngineProbe.tmod'
 if (Test-Path -LiteralPath $profile) {
     if (!(Test-Path -LiteralPath $deployedPackage) -or (Get-FileHash -LiteralPath $deployedPackage -Algorithm SHA256).Hash -ne $packageHash) {
-        $backup = Join-Path $repo ('.local/virtual-player-item-use-backups/' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+        $backup = Join-Path $paths.Backups (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
         if (Test-Path -LiteralPath $backup) { throw 'Backup already exists; retry instead of overwriting it.' }
         New-Item -ItemType Directory -Path (Split-Path $backup -Parent) -Force | Out-Null
         Copy-Item -LiteralPath $profile -Destination $backup -Recurse
         Write-Output ('Backup before update: ' + $backup)
     }
 } elseif (!$Fresh) {
-    # Seed once from an existing complete G5 test profile; never merge/overwrite
+    # Seed once from an existing complete G7 test profile; never merge/overwrite
     # saves on subsequent updates. Original profiles remain available for rollback.
-    $source = Get-ChildItem -LiteralPath (Join-Path $repo '.local') -Directory -Filter 'virtual-player-survival-host*' |
+    $source = Get-ChildItem -LiteralPath (Join-Path $repo '.local') -Directory -Filter 'virtual-player-mining-host*' |
         Where-Object { @(Get-ChildItem -LiteralPath (Join-Path $_.FullName 'Players') -File -Filter '*.plr' -ErrorAction SilentlyContinue).Count -gt 0 `
             -and @(Get-ChildItem -LiteralPath (Join-Path $_.FullName 'Worlds') -File -Filter '*.wld' -ErrorAction SilentlyContinue).Count -gt 0 } |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -46,10 +48,10 @@ $launcher = @'
 param([string]$TModLoaderPath = '__TML__')
 $ErrorActionPreference = 'Stop'
 $package = Join-Path $PSScriptRoot 'Mods/VirtualPlayerEngineProbe.tmod'
-if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash -ne '__HASH__') { throw 'Survival package changed; build and verify before preparing a new profile.' }
+if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash -ne '__HASH__') { throw 'Integrated package changed; build and verify before preparing a new profile.' }
 $enabled = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Mods/enabled.json') -Raw | ConvertFrom-Json
 $extra = @($enabled | Where-Object { $_ -notin @('VirtualPlayerEngineProbe', 'ModLoader') })
-if ($extra.Count) { throw ('Survival isolation: disable these mods before launch: ' + ($extra -join ', ')) }
+if ($extra.Count) { throw ('Probe isolation: disable these mods before launch: ' + ($extra -join ', ')) }
 $listeners = @(Get-NetTCPConnection -LocalPort 7777 -State Listen -ErrorAction SilentlyContinue)
 if ($listeners.Count) { throw ('Host & Play port 7777 is already in use (PID ' + (($listeners.OwningProcess | Select-Object -Unique) -join ', ') + '). Close the previous server before retrying.') }
 Push-Location $TModLoaderPath
@@ -57,10 +59,10 @@ try { & (Join-Path $TModLoaderPath 'start-tModLoader.bat') -tmlsavedirectory $PS
 finally { Pop-Location }
 '@
 Set-Content -LiteralPath (Join-Path $profile 'start-host-play.ps1') -Value $launcher.Replace('__HASH__', $packageHash).Replace('__TML__', $TModLoaderPath.Replace("'", "''"))
-Set-Content -LiteralPath (Join-Path $profile 'BUILD.txt') -Value @('VirtualPlayerEngineProbe 0.6.0 (Native item use)', ('SHA256=' + $packageHash),
-    'See G6 technical report for actual offline/native validation results. HOST AND PLAY ITEM USE NOT RUN; REMOTE MULTIPLAYER NOT RUN.',
+Set-Content -LiteralPath (Join-Path $profile 'BUILD.txt') -Value @(('VirtualPlayerEngineProbe '+$paths.Version+' (Single-window integration)'), ('SHA256=' + $packageHash),
+    'See VIRTUAL_PLAYER_SINGLE_WINDOW.md for actual offline/native validation results. CURRENT HOST AND PLAY NOT RUN; REMOTE MULTIPLAYER NOT RUN.',
     'Run start-host-play.ps1 manually; reuse the existing test character/world; Multiplayer > Host & Play.',
-    '/vph load (or spawn), /vph item-fixture, /vph slot <reported number>, /vph use, /vph item, /vph use-stop; sword/pick are air swings.')
+    '/vph load (or spawn), /vph item-fixture, /vph slot <reported number>, /vph mine <tileX> <tileY>, /vph mine-status, /vph mine-stop; current selected real pickaxe.')
 Write-Output ('Prepared: ' + $profile)
 Write-Output ('SHA256: ' + $packageHash)
 Write-Output ('Manual launch: ' + (Join-Path $profile 'start-host-play.ps1'))

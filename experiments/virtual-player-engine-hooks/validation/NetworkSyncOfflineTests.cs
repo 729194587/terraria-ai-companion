@@ -67,6 +67,7 @@ public static class NetworkSyncOfflineTests
         public static bool Ready = true, Quarantined, EngineMainThread = true;
         public static string Fault, Phase;
         public static long FullSnapshots, Controls, Departures, SyncSkips;
+        public static long NetworkLoops;
         public static ulong controlTick, fullTick;
         public static bool possiblyVisible, leaveAttempted;
         public static PlayerState owner;
@@ -142,11 +143,21 @@ public static class NetworkSyncOfflineTests
                 && f.Name is "inventory" or "armor" or "shirtColor" or "hairColor" or "hair" or "skinVariant"),
             "default Spawn never applies debug appearance, equipment or inventory initialization");
         var policy = mod.Methods.Single(m => m.Name == "IsNetworkActor");
+        var engineNetplay = game.MainModule.Types.Single(t => t.FullName == "Terraria.Netplay");
+        var engineMethods = game.MainModule.GetTypes().SelectMany(t => t.Methods).Where(m => m.HasBody).ToArray();
+        string[] NativeCallers(string type,string name) => engineMethods.Where(m => m.Body.Instructions.Any(i => i.Operand is MethodReference r
+            && r.DeclaringType.FullName==type && r.Name==name)).Select(m=>m.FullName).OrderBy(x=>x).ToArray();
+        Check(NativeCallers("Terraria.MessageBuffer","GetData").SequenceEqual(new[]{"System.Void Terraria.NetMessage::CheckBytes(System.Int32)"}),
+            "all installed GetData calls pass through native buffer-locked CheckBytes");
+        Check(NativeCallers("Terraria.Netplay","UpdateServerInMainThread").SequenceEqual(new[]{"System.Void Terraria.Netplay::UpdateInMainThread()"})
+            && engineNetplay.Methods.Single(m=>m.Name=="UpdateServerInMainThread").Body.Instructions.Any(i=>i.Operand is MethodReference r
+                && r.DeclaringType.FullName=="Terraria.NetMessage" && r.Name=="CheckBytes"),
+            "main-thread network hook encloses native server CheckBytes before it takes message-buffer locks");
         var controlBody = native.Methods.Single(m => m.Name == "SendData").Body.Instructions
             .Where(i => i.Offset >= 0x10e2 && i.Offset < 0x1378).ToArray();
         foreach (string field in new[] { "position", "velocity", "direction", "controlLeft", "controlRight", "controlJump", "controlUseItem", "selectedItem" })
             Check(controlBody.Any(i => i.Operand is FieldReference f && f.Name == field), "installed native PlayerControls serializer includes " + field);
-        var support = mod.Methods.Where(m => m.Name is "IsNetworkActor" or "OwnedWithoutConnection" or "SyncOne")
+        var support = mod.Methods.Where(m => m.Name is "IsNetworkActor" or "OwnedWithoutConnection" or "SyncOne" or "MainNetworkTick" or "NetworkTick")
             .Concat(session.Methods.Where(m => m.Name == "Quarantine"))
             .Concat(adapter.Methods.Where(m => m.HasBody && m.Name != ".cctor"))
             .Concat(debug.Methods.Where(m => m.HasBody))
@@ -195,6 +206,8 @@ public static class NetworkSyncOfflineTests
         var joinNotice = (Action<PlayerState>)fixture.GetMethod("Join").CreateDelegate(typeof(Action<PlayerState>));
         var leftNotice = (Action<PlayerState>)fixture.GetMethod("Left").CreateDelegate(typeof(Action<PlayerState>));
         var resetNotices = (Action)fixture.GetMethod("ResetNotices").CreateDelegate(typeof(Action));
+        var networkPass = (Action<object,Action>)fixture.GetMethod("NetworkTick").CreateDelegate(typeof(Action<object,Action>));
+        var mainNetworkPass = (Action<object,Action>)fixture.GetMethod("MainNetworkTick").CreateDelegate(typeof(Action<object,Action>));
         var leave = (Action<PlayerState>)fixture.GetMethod("Leave").CreateDelegate(typeof(Action<PlayerState>));
         var owns = (Func<int,bool>)fixture.GetMethod("IsNetworkActor").CreateDelegate(typeof(Func<int,bool>));
         var resetAdapter = (Action)fixture.GetMethod("Reset").CreateDelegate(typeof(Action));
@@ -361,6 +374,53 @@ public static class NetworkSyncOfflineTests
         leave(Effects.Actor); Effects.Actor.active=false; Effects.ThrowNotice=true; leftNotice(Effects.Actor); Effects.ThrowNotice=false; leftNotice(Effects.Actor);
         Check(Effects.Notices.Count==2 && Effects.NoticeFailures==2 && Effects.Fault==null && !Effects.Quarantined && Effects.Departures==1,
             "failing leave chat is not retried and never blocks successful Player departure");
+        // Model the captured deadlock: main holds CheckBytes' buffer; network
+        // holds Gate and its synchronous receive callback needs that buffer.
+        // TryEnter bounds the regression: the old predicate fails, never hangs.
+        Reset(); var messageBuffer = new object();
+        using var gateHeld = new ManualResetEventSlim(); using var receiveReady = new ManualResetEventSlim();
+        bool received=false; Exception receiveError=null;
+        var inlineReceive = new Thread(()=>{
+            try { networkPass(null,()=>{
+                gateHeld.Set(); if(!receiveReady.Wait(2000))throw new Exception("main did not reach buffer");
+                if(Monitor.TryEnter(messageBuffer,500)){try{received=true;}finally{Monitor.Exit(messageBuffer);}}
+            }); } catch(Exception e){receiveError=e;}
+        }) { IsBackground=true };
+        bool humanOwned;
+        lock(messageBuffer)
+        {
+            inlineReceive.Start(); if(!gateHeld.Wait(2000))throw new Exception("network did not hold Gate");
+            receiveReady.Set(); humanOwned=owns(0);
+        }
+        Check(inlineReceive.Join(2000) && receiveError==null && received && !humanOwned,
+            "actual human eligibility never waits for Gate while native main thread holds a message buffer");
+        Reset(); MainState.player[0].active=true; NetState.Clients[0].State=10;
+        using var workerStarted = new ManualResetEventSlim(); using var nativeNetworkEntered = new ManualResetEventSlim();
+        bool receiveAfterMain=false, networkExcluded=false; Exception orderedError=null;
+        var orderedReceive = new Thread(()=>{
+            workerStarted.Set();
+            try { networkPass(null,()=>{
+                nativeNetworkEntered.Set();
+                if(Monitor.TryEnter(messageBuffer,500)){try{receiveAfterMain=true;}finally{Monitor.Exit(messageBuffer);}}
+            }); }catch(Exception e){orderedError=e;}
+        }) { IsBackground=true };
+        mainNetworkPass(null,()=>{
+            lock(messageBuffer)
+            {
+                orderedReceive.Start(); if(!workerStarted.Wait(2000))throw new Exception("receive worker did not start");
+                networkExcluded=!nativeNetworkEntered.Wait(60);
+                lateJoin(0); // Includes the actual patched AI predicate under buffer + Gate.
+            }
+        });
+        Check(orderedReceive.Join(2000) && orderedError==null && networkExcluded && receiveAfterMain
+            && Effects.Packets.Any(p=>p.Slot==3 && p.Remote==0),
+            "actual main-network wrapper orders Gate before buffer and completes AI late-join with concurrent inline receive");
+        Reset(); Exception mainThreadError=null; bool foreignOrig=false;
+        var wrongMain = new Thread(()=>{try{mainNetworkPass(null,()=>foreignOrig=true);}catch(Exception e){mainThreadError=e;}});
+        wrongMain.Start(); wrongMain.Join();
+        Check(mainThreadError is InvalidOperationException && !foreignOrig,"main network scope rejects wrong simulation thread before native work");
+        Effects.Reservation.Release(); bool noReservationOrig=false; mainNetworkPass(null,()=>noReservationOrig=true);
+        Check(noReservationOrig,"absent/released reservation preserves native main-network processing");
         Console.WriteLine($"G2NetworkSync: {checks} targeted checks passed; SINGLE-WINDOW LIVE NOT RUN; REMOTE MULTIPLAYER LIVE NOT RUN.");
         return checks;
     }
@@ -387,7 +447,9 @@ public static class NetworkSyncOfflineTests
             ["VirtualPlayerEngineProbe.ProbeAnnouncements"]=typeof(Effects),
             ["VirtualPlayerEngineProbe.StartupReservation"]=typeof(StartupReservation),
             ["VirtualPlayerEngineProbe.StartupReservation/View"]=typeof(StartupReservation.View),
-            ["Terraria.On_NetMessage/orig_SyncOnePlayer"]=typeof(Action<int,int,int>)
+            ["Terraria.On_NetMessage/orig_SyncOnePlayer"]=typeof(Action<int,int,int>),
+            ["Terraria.On_Netplay/orig_UpdateInMainThread"]=typeof(Action),
+            ["Terraria.On_Netplay/orig_UpdateConnectedClients"]=typeof(Action)
         };
         TypeReference TypeRef(TypeReference t)=>t is ArrayType a ? new ArrayType(TypeRef(a.ElementType))
             : map.TryGetValue(t.FullName,out var type)?module.ImportReference(type):module.ImportReference(t);

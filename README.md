@@ -1,5 +1,7 @@
 # Terraria AI Companion
 
+无客户端原生 Player 的当前单窗口集成实验入口见 [实验说明](experiments/virtual-player-engine-hooks/README.md)（G1–G7、拾取归属修复及 G2 并发回归，独立构建/profile）。
+
 **Lua 编排第二阶段**：Agent 已默认开放 `execute_lua`，模型可提交完整程序组合现有20项原子API；内部调用共享轮次预算，保留源码并沿用动作结束证据、取消和未知状态保护。真实模型已通过模拟后端联通，真实游戏任务待第三阶段验收。运行 `python python/agent.py --local-input`（先安装 Python requirements、配置现有 `.env`）；详见 [Lua Agent](docs/LUA_AGENT.md)。第一阶段固定脚本入口与运行时边界见 [Lua Runtime](docs/LUA_RUNTIME.md)。
 
 **0.1.36 本地终端测试入口**：`python -u -B python/agent.py --local-input` 接收真人终端指令，沿用现有模型/工具/成本统计，回复仅输出终端。Mod 注册会话指令身份，保留动作安全校验。需加载0.1.36包；产物 `.local/local-input-build/Mods/CompanionBridge.tmod`，未部署。详见 [配置与测试](docs/CHAT_AGENT.md#本地终端输入mod-0136)。

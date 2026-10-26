@@ -1,5 +1,7 @@
 # G7：无客户端 AI Player 定点挖掘实验
 
+> 本文保留 G7 / 0.7.0 的实现和历史验证证据。含 PR #18 修复的当前累计包与统一入口见 [单窗口集成说明](VIRTUAL_PLAYER_SINGLE_WINDOW.md)；当前脚本不再默认构建到下面的历史包路径，旧 profile 保留。
+
 版本 **0.7.0**。基线是 Draft PR #16 的 G6 提交 `ee6c349d67e841bb8984a055a6bb6264e7c77c95`，独立分支 `codex/virtual-player-single-tile-mining`，PR 目标为 `codex/virtual-player-item-use`。不修改 main、PR #15 或 #16。
 
 本轮仅补齐已有 `mine_tile(x,y)` 语义的服务器执行能力与 `/vph` 诊断。旧项目的 atomic_operations、Lua Runtime、Python Agent、TCP 协议、动作生命周期与任务调度器均未重建或接入。后续通过适配层复用旧系统的结果和调度；本实验上下文不是另一套通用框架。

@@ -32,6 +32,9 @@ public static class Program
             return;
         }
         EngineHookOfflineTests.Run(args[0], args[1]);
+        ItemUseOfflineTests.Run(args[0]);
+        MiningOfflineTests.Run(args[0]);
+        PickupOwnershipOfflineTests.Run(args[0]);
         if (args.Length > 2 && !string.IsNullOrEmpty(args[2])) EngineHookOfflineTests.AuditPackage(args[2]);
         PersistenceOfflineTests.Run(args[0],args[1]);
         ControlOfflineTests.Run(args[0]);
