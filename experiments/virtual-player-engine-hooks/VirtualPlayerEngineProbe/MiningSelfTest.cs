@@ -15,7 +15,7 @@ namespace VirtualPlayerEngineProbe;
 internal static class MiningSelfTest
 {
     private static bool ran;
-    internal static bool DenyTile;
+    internal static bool DenyTile,ThrowInPick;
     private static int hitPackets,tilePackets,dropPackets;
     private static bool watchFirstPress;
     private static readonly List<bool> firstPressControls=new();
@@ -56,11 +56,11 @@ internal static class MiningSelfTest
             void Start()=>ActorMining.Start(p,world,generation,x,y);
             if(failure)
             {
-                Start();ItemUseSelfTest.Throw=true;bool threw=false;
-                try{Frame();}catch{threw=true;}finally{ItemUseSelfTest.Throw=false;}
+                Start();ThrowInPick=true;bool threw=false;
+                try{Frame();}catch{threw=true;}finally{ThrowInPick=false;}
                 Check(threw&&ProbeSession.Quarantined&&!ActorMining.Running&&!p.controlUseItem&&p.itemAnimation==0
                     &&ProbeSession.Reservation.IsReserved(p.whoAmI)&&ReferenceEquals(Main.player[p.whoAmI],p),"Native exception did not release/quarantine/retain reservation.");
-                File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",checks,nativeExceptionQuarantine=true,processTerminationRequired=true}));return;
+                File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",checks,nativeExceptionQuarantine=true,exceptionInsidePickTile=true,processTerminationRequired=true}));return;
             }
             bool stale=false;try{ActorMining.Start(p,world,generation-1,x,y);}catch(InvalidOperationException){stale=true;}
             Check(stale,"Queued stale incarnation accepted.");
@@ -116,6 +116,36 @@ internal static class MiningSelfTest
                 return new{actionId=c.Id,c.X,c.Y,c.TileType,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.AnimationPeak,c.Destroyed,progressBeforeDestruction=progress,worldDrop=true,hitPackets,tilePackets,dropPackets,firstTickControls};
             }
             evidence.Add(Mine(TileID.Stone));
+            // Surface grass is a solid block, distinct from cuttable plants.
+            // Reproduce the live failure with a real copper pick and native API.
+            for(int round=0;round<2;round++)
+            {
+                Target(TileID.Grass);int dirtBefore=Main.item.Where(i=>i.active&&i.type==ItemID.DirtBlock).Sum(i=>i.stack);
+                Start();bool stripped=false,earlyGrassCompletion=false;
+                for(int i=0;ActorMining.Running&&i<610;i++)
+                {
+                    Frame();
+                    if(Main.tile[x,y].HasTile&&Main.tile[x,y].TileType==TileID.Dirt)
+                    {stripped=true;earlyGrassCompletion|=ActorMining.Current.Phase==ActionPhase.Completed;}
+                }
+                var grass=ActorMining.Current;
+                Check(grass.Phase==ActionPhase.Completed&&!Main.tile[x,y].HasTile,"Native grass block failed: "+ActorMining.Summary());
+                Check(stripped&&!earlyGrassCompletion&&grass.Transforms==1&&grass.TileType==TileID.Grass&&grass.ExpectedType==TileID.Dirt,"Grass -> Dirt was not attributed to this native pick, or was falsely completed.");
+                Check(Main.item.Where(i=>i.active&&i.type==ItemID.DirtBlock).Sum(i=>i.stack)>dirtBefore,"Native grass mining produced no dirt world drop.");
+                evidence.Add(new{grassBlock=true,round,grass.Ticks,grass.Swings,grass.Strikes,grass.ProposedDamage,grass.PeakDamage,grass.Transforms,grass.Destroyed});
+            }
+            Target(TileID.Grass);Start();WorldGen.KillTile(x,y,true);Frame();
+            Check(ActorMining.Current.Reason==ActorMining.Failure.TargetChanged&&Main.tile[x,y].HasTile,"External grass stripping was adopted as owned progress.");
+            Target(TileID.Grass);Start();Main.tile[x,y].TileType=TileID.Dirt;Frame();
+            Check(ActorMining.Current.Reason==ActorMining.Failure.TargetChanged,"External Grass -> Dirt replacement was adopted.");
+            Target(TileID.Stone);int oldHit=p.hitTile.HitObject(x,y,1);p.hitTile.AddDamage(oldHit,70,true);
+            var other=Main.tile[x+1,y];other.HasTile=true;other.TileType=TileID.Stone;
+            int otherHit=p.hitTile.HitObject(x+1,y,1);p.hitTile.AddDamage(otherHit,20,true);
+            Start();Frame();
+            Check(ActorMining.Current.PeakDamage==35,"New action inherited stale target damage.");
+            int remaining=p.hitTile.TryFinding(x+1,y,1);
+            Check(remaining>=0&&p.hitTile.AddDamage(remaining,0,false)==20,"Clearing target progress changed another cached target.");
+            ActorMining.Stop(p,world,generation);
             Target(TileID.Stone);DenyTile=true;try{Start();Frame();}finally{DenyTile=false;}
             Check(ActorMining.Current.Reason==ActorMining.Failure.NoPickPower&&Main.tile[x,y].HasTile,"Native GlobalTile protection hook bypassed.");
             Target(TileID.Obsidian);Start();Frame();Check(ActorMining.Current.Phase==ActionPhase.Failed
@@ -149,5 +179,9 @@ internal static class MiningSelfTest
 // Inert except during the explicit private-profile test.
 public sealed class MiningDiagnosticTile : GlobalTile
 {
-    public override bool CanKillTile(int i,int j,int type,ref bool blockDamaged)=>!MiningSelfTest.DenyTile;
+    public override bool CanKillTile(int i,int j,int type,ref bool blockDamaged)
+    {
+        if(MiningSelfTest.ThrowInPick)throw new InvalidOperationException("G7 intentional native CanKillTile failure");
+        return !MiningSelfTest.DenyTile;
+    }
 }

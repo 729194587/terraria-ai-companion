@@ -17,7 +17,7 @@ internal static class ActorMining
     {
         internal readonly Guid Id=Guid.NewGuid();
         internal Player Actor;internal Item Item;internal string World;internal long Generation;
-        internal int Slot,Type,Prefix,Pick, X,Y,TileType,FrameX,FrameY,Ticks,Swings,Strikes,Damage,PeakDamage,AnimationPeak;
+        internal int Slot,Type,Prefix,Pick, X,Y,TileType,ExpectedType,FrameX,FrameY,Ticks,Swings,Strikes,Damage,PeakDamage,AnimationPeak,ProposedDamage,Transforms;
         internal byte Slope;internal bool Half,Actuated,Destroyed,ExternalChange;
         internal ActionPhase Phase=ActionPhase.Running;internal Failure Reason;internal string Detail="";
     }
@@ -27,10 +27,10 @@ internal static class ActorMining
     [ThreadStatic] private static Context rangeContext;
     internal static Context Current;
     private static Context executing;
-    private static bool striking;
+    private static bool striking,picking;
     private static ulong? suppressPickupTick;
     internal static bool Running=>Current?.Phase==ActionPhase.Running;
-    internal static void Reset(){Current=executing=rangeContext=null;striking=false;suppressPickupTick=null;}
+    internal static void Reset(){Current=executing=rangeContext=null;striking=picking=false;suppressPickupTick=null;}
     internal static void Install(Action<Action,Action> install)
     {
         using(var a=AssemblyDefinition.ReadAssembly(typeof(Player).Assembly.Location))
@@ -44,6 +44,8 @@ internal static class ActorMining
             inRange=(Func<Player,Item,bool>)dmd.Generate().CreateDelegate(typeof(Func<Player,Item,bool>));
         }
         install(()=>On_HitTile.AddDamage+=Damage,()=>On_HitTile.AddDamage-=Damage);
+        install(()=>On_Player.PickTile+=Pick,()=>On_Player.PickTile-=Pick);
+        install(()=>On_Player.DoesPickTargetTransformOnKill+=TransformPrediction,()=>On_Player.DoesPickTargetTransformOnKill-=TransformPrediction);
         install(()=>On_WorldGen.KillTile+=Kill,()=>On_WorldGen.KillTile-=Kill);
         install(()=>On_WorldGen.PlaceTile+=Place,()=>On_WorldGen.PlaceTile-=Place);
         install(()=>On_Player.GrabItems+=Grab,()=>On_Player.GrabItems-=Grab);
@@ -67,7 +69,7 @@ internal static class ActorMining
     private static bool SupportedTool(Item i)=>!i.IsAir&&i.pick>0&&i.axe==0&&i.hammer==0&&!i.channel&&i.shoot<=0;
     private static bool Same(Context c)
     {
-        var t=Main.tile[c.X,c.Y];return t.HasTile&&t.TileType==c.TileType
+        var t=Main.tile[c.X,c.Y];return t.HasTile&&t.TileType==c.ExpectedType
             &&(byte)t.Slope==c.Slope&&t.IsHalfBlock==c.Half&&t.IsActuated==c.Actuated;
     }
     private static bool Healthy(Player p)=>!p.dead&&!p.ghost&&!p.CCed&&!p.noItems&&!p.noBuilding&&!p.frozen&&!p.stoned&&!p.mount.Active
@@ -84,17 +86,18 @@ internal static class ActorMining
             var c=new Context{Actor=p,World=world,Generation=generation,X=x,Y=y,Slot=p.selectedItem,Item=p.HeldItem};Current=c;
             void Reject(Failure reason,string detail){c.Phase=ActionPhase.Failed;c.Reason=reason;c.Detail=detail;Emit(c);}
             if(!Healthy(p)){Reject(Failure.ActorUnavailable,"Actor cannot mine in its current state.");return;}
-            if(p.selectedItem<0||p.selectedItem>9||!SupportedTool(c.Item)){Reject(Failure.InvalidTool,"Select a real non-projectile pickaxe in hotbar 1–10; combined axe/hammer tools are outside G7.");return;}
             c.Type=c.Item.type;c.Prefix=c.Item.prefix;c.Pick=c.Item.pick;
             if(!WorldGen.InWorld(x,y,2)||!Main.tile[x,y].HasTile){Reject(Failure.InvalidTarget,"Target must be an occupied in-world tile.");return;}
             var t=Main.tile[x,y];int type=t.TileType;
+            c.TileType=c.ExpectedType=type;c.FrameX=t.TileFrameX;c.FrameY=t.TileFrameY;c.Slope=(byte)t.Slope;c.Half=t.IsHalfBlock;c.Actuated=t.IsActuated;
+            if(p.selectedItem<0||p.selectedItem>9||!SupportedTool(c.Item))
+            {Reject(Failure.InvalidTool,$"AI 当前栏 {p.selectedItem+1}：{(c.Item.IsAir?"空栏":c.Item.Name)}×{c.Item.stack}，镐力 {c.Pick}。请选真实纯镐；缺少镐可 /vph item-fixture，再 /vph slot <铜镐栏号>。");return;}
             if(!Main.tileSolid[type]||Main.tileFrameImportant[type]||Main.tileAxe[type]||Main.tileHammer[type]
                 ||Main.tileCut[type]||TileID.Sets.Falling[type]||t.IsActuated)
-            {Reject(Failure.UnsupportedTarget,"G7 supports solid single-cell pick targets; furniture, containers, falling blocks and axe/hammer targets are refused.");return;}
-            c.TileType=type;c.FrameX=t.TileFrameX;c.FrameY=t.TileFrameY;c.Slope=(byte)t.Slope;c.Half=t.IsHalfBlock;c.Actuated=t.IsActuated;
+            {Reject(Failure.UnsupportedTarget,$"目标 ({x},{y}) 类型 {type} 不在当前普通单格镐挖范围内；家具、植物、下落块、斧锤目标或虚化方块会拒绝。");return;}
             if(!InRange(c)){Reject(Failure.OutOfRange,"Native item reach check refused the fixed target; no movement is attempted.");return;}
             // New explicit intent never inherits another action's partial progress.
-            p.hitTile.ClearThisTile(x,y);
+            ClearProgress(p,x,y);
             p.controlUseItem=false;p.releaseUseItem=true;
         }
     }
@@ -106,16 +109,33 @@ internal static class ActorMining
         var c=executing;if(!Allowed(p)||c.Destroyed||c.ExternalChange||!Same(c))return;
         if(p.toolTime!=0||p.itemAnimation<=0||!p.controlUseItem)return;
         if(!Healthy(p)||!InRange(c))return;
-        c.Strikes++;c.Damage=0;bool wall=false;
+        c.Strikes++;c.Damage=c.ProposedDamage=0;bool wall=false;
         try{striking=true;tool(p,c.Item,ref wall,c.X,c.Y);}
         finally{striking=false;}
-        // A single-cell executor must not follow native transformations.
+        // Only the explicitly observed native Grass -> Dirt transition below
+        // may keep the same atomic target. Everything else remains a failure.
         if(!c.Destroyed&&!Same(c))c.ExternalChange=true;
+    }
+    private static void ClearProgress(Player p,int x,int y)
+    {int id=p.hitTile.TryFinding(x,y,1);if(id>=0)p.hitTile.Clear(id);}
+    private static void Pick(On_Player.orig_PickTile orig,Player p,int x,int y,int power)
+    {
+        var c=executing;
+        if(!striking||c==null||!Allowed(p)||x!=c.X||y!=c.Y||power!=c.Pick){orig(p,x,y,power);return;}
+        if(picking)throw new InvalidOperationException("Reentrant native AI PickTile rejected.");
+        try{picking=true;orig(p,x,y,power);}finally{picking=false;}
+    }
+    private static bool TransformPrediction(On_Player.orig_DoesPickTargetTransformOnKill orig,Player p,HitTile hits,int damage,int x,int y,int power,int buffer,Tile tile)
+    {
+        bool result=orig(p,hits,damage,x,y,power,buffer,tile);var c=executing;
+        if(picking&&c!=null&&Allowed(p)&&ReferenceEquals(hits,p.hitTile)&&x==c.X&&y==c.Y&&power==c.Pick)
+            c.ProposedDamage=damage; // Native damage AFTER CanKillTile, before transform suppression.
+        return result;
     }
     private static int Damage(On_HitTile.orig_AddDamage orig,HitTile hits,int id,int damage,bool update)
     {
         int total=orig(hits,id,damage,update);var c=executing;
-        if(striking&&c!=null&&Allowed(c.Actor)&&ReferenceEquals(hits,c.Actor.hitTile)&&update)
+        if(picking&&c!=null&&Allowed(c.Actor)&&ReferenceEquals(hits,c.Actor.hitTile)&&update)
         {
             c.Damage=total;c.PeakDamage=Math.Max(c.PeakDamage,total);
             if(damage>0&&total<100)NetMessage.SendData(MessageID.SyncTilePicking,-1,-1,null,c.Actor.whoAmI,c.X,c.Y,Math.Min(damage,255));
@@ -125,10 +145,20 @@ internal static class ActorMining
     private static void Kill(On_WorldGen.orig_KillTile orig,int x,int y,bool fail,bool effectOnly,bool noItem)
     {
         var c=Current;bool watched=Running&&c.X==x&&c.Y==y;
-        bool own=watched&&ReferenceEquals(c,executing)&&striking&&Allowed(c.Actor)&&!c.ExternalChange&&Same(c)&&c.Damage>=100&&!fail&&!effectOnly;
+        bool nativePick=watched&&ReferenceEquals(c,executing)&&picking&&Allowed(c.Actor)&&!c.ExternalChange&&Same(c)&&c.ProposedDamage>0;
+        bool own=nativePick&&c.Damage>=100&&!fail&&!effectOnly;
+        bool grassHit=nativePick&&c.ExpectedType==TileID.Grass&&fail&&!effectOnly&&!noItem;
         // Also detects removal + replacement with the same type between updates.
         if(watched&&!own&&!fail&&!effectOnly)c.ExternalChange=true;
         orig(x,y,fail,effectOnly,noItem);
+        var tile=watched?Main.tile[x,y]:default;
+        if(grassHit&&!c.ExternalChange&&tile.HasTile&&tile.TileType==TileID.Dirt
+            &&(byte)tile.Slope==c.Slope&&tile.IsHalfBlock==c.Half&&tile.IsActuated==c.Actuated)
+        {
+            c.ExpectedType=TileID.Dirt;c.Transforms++;
+            NetMessage.SendTileSquare(-1,x,y,1); // Publish the real grass stripping, not completion.
+        }
+        else if(watched&&!own&&!Same(c))c.ExternalChange=true;
         if(own)
         {
             c.Destroyed=!Main.tile[x,y].HasTile;
@@ -180,14 +210,14 @@ internal static class ActorMining
                 if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0){End(c,ActionPhase.Completed,Failure.None);return;}
             }
             else if(!Same(c)){End(c,ActionPhase.Failed,Failure.TargetChanged);return;}
-            if(c.Strikes>strikes&&c.Damage==0){End(c,ActionPhase.Failed,Failure.NoPickPower,"Native pick damage was zero or protection refused mining.");return;}
+            if(c.Strikes>strikes&&c.ProposedDamage==0){End(c,ActionPhase.Failed,Failure.NoPickPower,$"原生挖掘规则拒绝：类型 {c.ExpectedType}，镐力 {c.Pick}，保护判定后的伤害为零；方块尚未破坏。");return;}
             if(c.Ticks==1&&p.itemAnimation==0){End(c,ActionPhase.Failed,Failure.NativeRefused,"Native CanUseItem/PreItemCheck did not start use.");return;}
             if(c.Ticks==1||c.Ticks%6==0)Sync(p);
         }
         catch(Exception e){End(c,ActionPhase.Failed,Failure.NativeException,(e.InnerException??e).Message);throw;}
         finally
         {
-            executing=null;striking=false;
+            executing=null;striking=picking=false;
             // Mining is a held native intent until destruction/cancellation.
             // Keep the same input for periodic and full snapshots this tick.
             if(Bound(c))p.controlUseItem=c.Phase==ActionPhase.Running&&(!c.Destroyed||c.Ticks==1&&c.AnimationPeak>0);
@@ -205,12 +235,13 @@ internal static class ActorMining
         {
             var p=c.Actor;p.controlUseItem=false;p.releaseUseItem=true;p.channel=false;
             if(phase!=ActionPhase.Completed)p.itemAnimation=p.itemTime=p.reuseDelay=p.toolTime=0;
-            p.hitTile.ClearThisTile(c.X,c.Y);Sync(p);
+            ClearProgress(p,c.X,c.Y);Sync(p);
         }
         Emit(c);
     }
     private static void Emit(Context c)
-    {try{ProbeSession.Log("mine-result",new{actionId=c.Id,world=c.World,generation=c.Generation,slot=c.Actor.whoAmI,phase=c.Phase.ToString(),reason=c.Reason.ToString(),c.Detail,c.X,c.Y,c.TileType,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.Destroyed});}catch{}}
+    {try{int observed=c.World==ProbeSession.WorldSession&&WorldGen.InWorld(c.X,c.Y)?Main.tile[c.X,c.Y].HasTile?Main.tile[c.X,c.Y].TileType:-1:-2;
+        ProbeSession.Log("mine-result",new{actionId=c.Id,world=c.World,generation=c.Generation,slot=c.Actor.whoAmI,phase=c.Phase.ToString(),reason=c.Reason.ToString(),c.Detail,c.X,c.Y,c.TileType,c.ExpectedType,observedType=observed,itemType=c.Type,pick=c.Pick,c.ProposedDamage,c.Transforms,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.Destroyed});}catch{}}
     internal static void Retire(Player p)
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
@@ -225,6 +256,6 @@ internal static class ActorMining
     {
         var c=Current;if(c==null)return "AI 尚无挖掘动作。";
         string tile=c.World==ProbeSession.WorldSession&&WorldGen.InWorld(c.X,c.Y)?$"{Main.tile[c.X,c.Y].HasTile}/{Main.tile[c.X,c.Y].TileType}":"unavailable";
-        return $"mine {c.Id}: {c.Phase}/{c.Reason}; ({c.X},{c.Y}) type={c.TileType}, tile(active/type)={tile}; swings={c.Swings}, strikes={c.Strikes}, peakDamage={c.PeakDamage}/100, destroyed={c.Destroyed}, ticks={c.Ticks}. {c.Detail}";
+        return $"挖掘 {c.Phase}/{c.Reason}：({c.X},{c.Y}) 原类型={c.TileType}，当前(active/type)={tile}；挥动={c.Swings}，镐击={c.Strikes}，进度峰值={c.PeakDamage}/100，草皮转化={c.Transforms}，已破坏={c.Destroyed}。{c.Detail}";
     }
 }

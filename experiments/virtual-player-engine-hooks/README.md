@@ -1,6 +1,6 @@
 # 无客户端原生 Player：当前单窗口集成入口
 
-当前包 **0.7.2**：在累计 G1–G7、拾取归属修复和 G2 并发回归基础上，补充可读状态、鼠标挖掘选框及首次使用输入同步修复。操作与本轮验证见 [0.7.2说明](../../docs/VIRTUAL_PLAYER_USABILITY.md)，0.7.1累计历史见 [集成报告](../../docs/VIRTUAL_PLAYER_SINGLE_WINDOW.md)。图形和远程多人复测不由离线结果代替。
+当前包 **0.7.3**：修复普通草皮→泥土的原生同格挖掘与失败诊断，见 [0.7.3说明](../../docs/VIRTUAL_PLAYER_GRASS_MINING_FIX.md)。可读状态、鼠标选框及首次使用同步的操作见 [0.7.2说明](../../docs/VIRTUAL_PLAYER_USABILITY.md)，0.7.1累计历史见 [集成报告](../../docs/VIRTUAL_PLAYER_SINGLE_WINDOW.md)。图形和远程多人复测不由离线结果代替。
 
 从仓库根目录依次运行（PowerShell 7）：
 

@@ -168,6 +168,6 @@ internal static class ActorItemUse
         var p=ProbeSession.Actor;if(p==null)return "AI 尚未载入。";
         var c=Current;
         string phase=c?.Phase switch {"running"=>"进行中","completed"=>"已完成","rejected"=>"原生规则拒绝","cancelled"=>"已停止","stale"=>"已失效","failed"=>"失败",_=>"空闲"};
-        return $"快捷栏 {p.selectedItem+1}：{p.HeldItem.Name}×{p.HeldItem.stack}；使用 {phase}，动画峰值 {c?.AnimationPeak??0}，时间峰值 {c?.TimePeak??0}，当前 {p.itemAnimation}/{p.itemTime}。";
+        return $"快捷栏 {p.selectedItem+1}：{(p.HeldItem.IsAir?"空栏":p.HeldItem.Name)}×{p.HeldItem.stack}；使用 {phase}，动画峰值 {c?.AnimationPeak??0}，时间峰值 {c?.TimePeak??0}，当前 {p.itemAnimation}/{p.itemTime}。";
     }
 }

@@ -17,6 +17,8 @@ public static class MiningPatches
         MethodDefinition Method(string name)=>player.Methods.Single(m=>m.Name==name);
         var tool=Method("ItemCheck_UseMiningTools_ActuallyUseMiningTool");var pick=Method("PickTile");
         var range=Method("IsTargetTileInItemRange");var outer=Method("ItemCheck_UseMiningTools");
+        var transform=Method("DoesPickTargetTransformOnKill");
+        var kill=player.Module.Types.Single(t=>t.FullName=="Terraria.WorldGen").Methods.Single(m=>m.Name=="KillTile");
         Require(tool.Parameters.Count==4&&tool.Parameters[1].ParameterType.IsByReference&&tool.Body.ExceptionHandlers.Count==0
             &&Call(tool,0x0473,"PickTile")&&Call(tool,0x0493,"ApplyItemTime")&&Call(tool,0x049f,"ItemCheck_UseMiningTools_TryPoundingTile")
             &&Call(outer,0x0060,"IsTargetTileInItemRange")&&Call(outer,0x0152,tool.Name)
@@ -26,6 +28,13 @@ public static class MiningPatches
             &&Call(pick,0x02c3,"KillTile")&&Call(pick,0x031c,"KillTile")&&Call(pick,0x0361,"Prune")
             &&At(pick,0x0072)?.OpCode==OpCodes.Ldc_I4_S&&Convert.ToInt32(At(pick,0x0072).Operand)==100
             &&Call(pick,0x030a,"SendData")&&Call(pick,0x033b,"SendData")&&Call(pick,0x0353,"SendData"));
+        Require(transform.Parameters.Count==7&&transform.Body.ExceptionHandlers.Count==0
+            &&Call(transform,0x0005,"AddDamage")&&At(transform,0x0004)?.OpCode==OpCodes.Ldc_I4_0
+            &&At(transform,0x0019)?.OpCode==OpCodes.Ldc_I4_2&&At(transform,0x00d2)?.OpCode==OpCodes.Ldc_I4_1
+            &&At(kill,0x0623)?.OpCode==OpCodes.Ldarg_2&&At(kill,0x0650)?.OpCode==OpCodes.Ldc_I4_2
+            &&At(kill,0x0651)?.Operand is Instruction grass&&grass==At(kill,0x0698)
+            &&At(kill,0x069f)?.OpCode==OpCodes.Ldc_I4_0&&At(kill,0x06a0)?.OpCode==OpCodes.Stind_I2
+            &&Call(kill,0x0730,"SquareTileFrame"));
         Require(range.Body.ExceptionHandlers.Count==0&&range.Body.Instructions.Count==77
             &&range.Body.Instructions.Count(i=>i.Operand is FieldReference r&&r.Name=="tileTargetX")==2
             &&range.Body.Instructions.Count(i=>i.Operand is FieldReference r&&r.Name=="tileTargetY")==2);

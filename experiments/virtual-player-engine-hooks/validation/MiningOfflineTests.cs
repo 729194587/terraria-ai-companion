@@ -30,6 +30,15 @@ public static class MiningOfflineTests
             try{MiningPatches.Validate(p);}catch(InvalidOperationException){refused=true;}
             Check(refused&&before==string.Join("\n",m.Body.Instructions),"unknown mining structure refused without mutation "+pair);
         }
+        foreach(var pair in new[]{("Terraria.Player","DoesPickTargetTransformOnKill",0x0005),
+            ("Terraria.Player","DoesPickTargetTransformOnKill",0x0019),("Terraria.WorldGen","KillTile",0x069f)})
+        {
+            using var a=AssemblyDefinition.ReadAssembly(dll);var p=a.MainModule.Types.Single(t=>t.FullName=="Terraria.Player");
+            var m=a.MainModule.Types.Single(t=>t.FullName==pair.Item1).Methods.Single(m=>m.Name==pair.Item2);
+            var i=m.Body.Instructions.Single(i=>i.Offset==pair.Item3);i.OpCode=OpCodes.Nop;i.Operand=null;
+            bool refused=false;try{MiningPatches.Validate(p);}catch(InvalidOperationException){refused=true;}
+            Check(refused,"unknown grass transformation structure refused "+pair);
+        }
         var runtime=AssemblyLoadContext.Default.LoadFromAssemblyPath(dll);var player=runtime.GetType("Terraria.Player");
         using(var dmd=new DynamicMethodDefinition(player.GetMethod("IsTargetTileInItemRange",BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic)))
         {
