@@ -423,7 +423,7 @@ public static class EngineHookOfflineTests
         using var reader = new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)) == "TMOD", "actual build has TMOD header");
         string version = reader.ReadString(); reader.ReadBytes(276); reader.ReadInt32();
-        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.6.0", "isolated survival package identity");
+        Check(reader.ReadString() == "VirtualPlayerEngineProbe" && reader.ReadString() == "0.6.1", "isolated survival package identity");
         int count = reader.ReadInt32(), offset = 0, dllOffset = -1, size = 0, packed = 0;
         for (int i = 0; i < count; i++)
         {
@@ -458,8 +458,8 @@ public static class EngineHookOfflineTests
             && (f.DeclaringType.FullName == "Terraria.RemoteClient" || f.FullName == "System.Int32 Terraria.Main::myPlayer"
                 || f.FullName == "System.Boolean Terraria.Netplay::IsListening" || f.FullName == "Terraria.Net.Sockets.ISocket Terraria.Netplay::TcpListener")),
             "no connection state, native listener state or Main.myPlayer writes");
-        Check(ins.Count(i => i.OpCode == OpCodes.Stfld && i.Operand is FieldReference f && f.Name == "active"
-            && i.Previous.OpCode == OpCodes.Ldc_I4_1) == 1, "active=true has exactly one initialization site, no repair loop");
+        Check(methods.Where(m=>m.DeclaringType.Name!="PickupOwnershipSelfTest").SelectMany(m=>m.Body.Instructions).Count(i => i.OpCode == OpCodes.Stfld && i.Operand is FieldReference f && f.Name == "active"
+            && i.Previous.OpCode == OpCodes.Ldc_I4_1) == 1, "production active=true has exactly one initialization site; isolated native test fixture is excluded");
         Check(!ins.Any(i => i.Operand is MethodReference m
             && m.DeclaringType.FullName == "Terraria.Player" && m.Name is "Update" or "Teleport")
             && methods.Where(m=>m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.FullName=="Terraria.Player"&&r.Name=="Spawn"))

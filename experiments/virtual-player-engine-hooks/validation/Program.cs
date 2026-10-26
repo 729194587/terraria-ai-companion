@@ -27,6 +27,7 @@ public static class Program
         {
             EngineHookOfflineTests.ReadNativeDefaults(args[0]);
             ItemUseOfflineTests.Run(args[0]);
+            PickupOwnershipOfflineTests.Run(args[0]);
             if(!string.IsNullOrEmpty(args[2]))EngineHookOfflineTests.AuditPackage(args[2]);
             return;
         }
