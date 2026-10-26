@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath = 'D:/steam/steamapps/common/tModLoader', [switch]$Fresh)
+﻿param([string]$TModLoaderPath = 'D:/steam/steamapps/common/tModLoader', [switch]$Fresh)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'probe-paths.ps1')
 $paths=Get-ProbePaths
@@ -68,7 +68,8 @@ Push-Location $TModLoaderPath
 try { & (Join-Path $TModLoaderPath 'start-tModLoader.bat') -tmlsavedirectory $PSScriptRoot -modpath (Join-Path $PSScriptRoot 'Mods') }
 finally { Pop-Location }
 '@
-Set-Content -LiteralPath (Join-Path $profile 'start-host-play.ps1') -Value $launcher.Replace('__HASH__', $packageHash).Replace('__TML__', $TModLoaderPath.Replace("'", "''"))
+# Emit a BOM for Windows PowerShell 5.1, including non-ASCII installation paths.
+[IO.File]::WriteAllText((Join-Path $profile 'start-host-play.ps1'), $launcher.Replace('__HASH__', $packageHash).Replace('__TML__', $TModLoaderPath.Replace("'", "''")), [Text.UTF8Encoding]::new($true))
 Set-Content -LiteralPath (Join-Path $profile 'BUILD.txt') -Value @(('VirtualPlayerEngineProbe '+$paths.Version+' (Single-window integration)'), ('SHA256=' + $packageHash),
     'See VIRTUAL_PLAYER_SINGLE_WINDOW.md for actual offline/native validation results. CURRENT HOST AND PLAY NOT RUN; REMOTE MULTIPLAYER NOT RUN.',
     'Run start-host-play.ps1 manually; reuse the existing test character/world; Multiplayer > Host & Play.',
