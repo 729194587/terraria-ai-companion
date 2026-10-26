@@ -17,9 +17,12 @@ internal static class MiningSelfTest
     private static bool ran;
     internal static bool DenyTile;
     private static int hitPackets,tilePackets,dropPackets;
+    private static bool watchFirstPress;
+    private static readonly List<bool> firstPressControls=new();
     private static void Packets(On_NetMessage.orig_SendData orig,int msg,int remote,int ignore,NetworkText text,int number,float x,float y,float extra,int n5,int n6,int n7)
     {
         orig(msg,remote,ignore,text,number,x,y,extra,n5,n6,n7);
+        if(watchFirstPress&&msg==MessageID.PlayerControls&&number==ProbeSession.Actor?.whoAmI)firstPressControls.Add(ProbeSession.Actor.controlUseItem);
         if(msg==MessageID.SyncTilePicking&&number==ProbeSession.Actor?.whoAmI)hitPackets++;
         if(msg==MessageID.TileSquare)tilePackets++;
         if(msg==MessageID.SyncItem)dropPackets++;
@@ -83,9 +86,21 @@ internal static class MiningSelfTest
                 try{CharacterStore.Save(null);}catch(InvalidOperationException){save=true;}
                 Check(walk&&use&&slot&&save,"Mine did not exclude walk/use/selection/save.");
                 bool progress=false,earlyCompletion=false;
+                int firstTickControls=0;
                 for(int i=0;ActorMining.Running&&i<610;i++)
                 {
+                    if(i==0)
+                    {
+                        typeof(NetworkStateSync).GetField("controlTick",BindingFlags.Static|BindingFlags.NonPublic).SetValue(null,unchecked(Main.GameUpdateCount-6UL));
+                        typeof(NetworkStateSync).GetField("fullTick",BindingFlags.Static|BindingFlags.NonPublic).SetValue(null,unchecked(Main.GameUpdateCount-300UL));
+                        watchFirstPress=true;firstPressControls.Clear();
+                    }
                     Frame();var a=ActorMining.Current;
+                    if(i==0)
+                    {
+                        NetworkStateSync.Tick(p);NetworkStateSync.Full(p);watchFirstPress=false;
+                        Check(firstPressControls.Count>=3&&firstPressControls.All(v=>v),"Mining first press was overwritten by periodic/full controls.");firstTickControls=firstPressControls.Count;
+                    }
                     if(a.PeakDamage>0&&a.PeakDamage<100&&Main.tile[x,y].HasTile){progress=true;earlyCompletion|=a.Phase==ActionPhase.Completed;}
                 }
                 var c=ActorMining.Current;
@@ -98,7 +113,7 @@ internal static class MiningSelfTest
                 Check(bag.SequenceEqual(p.inventory.Select(i=>i.stack)),"Mining automatically collected or changed inventory.");
                 Check(Main.item.Count(i=>i.active&&i.type==ItemID.StoneBlock)>drops,"No real world stone drop was created.");
                 Check(hitPackets>0&&tilePackets>0&&dropPackets>0,"Native progress/tile/drop publication was not observed.");
-                return new{actionId=c.Id,c.X,c.Y,c.TileType,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.AnimationPeak,c.Destroyed,progressBeforeDestruction=progress,worldDrop=true,hitPackets,tilePackets,dropPackets};
+                return new{actionId=c.Id,c.X,c.Y,c.TileType,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.AnimationPeak,c.Destroyed,progressBeforeDestruction=progress,worldDrop=true,hitPackets,tilePackets,dropPackets,firstTickControls};
             }
             evidence.Add(Mine(TileID.Stone));
             Target(TileID.Stone);DenyTile=true;try{Start();Frame();}finally{DenyTile=false;}
@@ -127,7 +142,7 @@ internal static class MiningSelfTest
                 cadence="explicit real ItemCheckWrapped in native survival scope, before world frames; not a realtime cadence test"}));
         }
         catch(Exception e){File.WriteAllText(report,JsonSerializer.Serialize(new{result="failed",checks,evidence,error=e.ToString()}));VirtualPlayerEngineProbe.Instance?.Logger.Error("G7 diagnostic failed",e);}
-        finally{On_NetMessage.SendData-=Packets;if(!failure)Netplay.Disconnect=true;}
+        finally{watchFirstPress=false;firstPressControls.Clear();On_NetMessage.SendData-=Packets;if(!failure)Netplay.Disconnect=true;}
     }
 }
 

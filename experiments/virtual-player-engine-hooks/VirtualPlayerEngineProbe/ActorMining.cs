@@ -185,7 +185,13 @@ internal static class ActorMining
             if(c.Ticks==1||c.Ticks%6==0)Sync(p);
         }
         catch(Exception e){End(c,ActionPhase.Failed,Failure.NativeException,(e.InnerException??e).Message);throw;}
-        finally{executing=null;striking=false;if(Bound(c))p.controlUseItem=false;}
+        finally
+        {
+            executing=null;striking=false;
+            // Mining is a held native intent until destruction/cancellation.
+            // Keep the same input for periodic and full snapshots this tick.
+            if(Bound(c))p.controlUseItem=c.Phase==ActionPhase.Running&&(!c.Destroyed||c.Ticks==1&&c.AnimationPeak>0);
+        }
     }
     private static void Sync(Player p)
     {

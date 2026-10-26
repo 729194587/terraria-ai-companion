@@ -22,6 +22,21 @@ internal static class ProbeSession
     private static bool creating, finishing;
     internal static string WorldSession = "none";
     internal static string Phase = "not armed";
+    internal static string StatusText()
+    {
+        var p=Actor;
+        string health=Quarantined?"已隔离，动作停止":VirtualPlayerEngineProbe.Fault!=null?"故障，动作停止":p==null?"尚未加载 AI":p.dead?"AI 已死亡，等待原生复活":"AI 在线";
+        string text=$"[AI 状态] {health}；角色档案 {CharacterStore.DisplayId}";
+        if(p!=null)
+        {
+            text+=$"\n槽位 {p.whoAmI}；生命 {p.statLife}/{p.statLifeMax2}；位置 Tile ({(int)Math.Floor(p.position.X/16)},{(int)Math.Floor(p.position.Y/16)})";
+            text+="\n"+ActorItemUse.Summary();
+            text+="\n"+ActorControl.Summary();
+            text+="\n"+ActorMining.Summary();
+        }
+        if(VirtualPlayerEngineProbe.Fault!=null)text+="\n故障："+VirtualPlayerEngineProbe.Fault;
+        return text;
+    }
     internal static int Pending;
     internal static volatile bool Quarantined;
     internal static StartupReservation Reservation => VirtualPlayerEngineProbe.Reservation;
@@ -329,10 +344,11 @@ internal static class ProbeSession
 
 public sealed class ProbeSystem : ModSystem
 {
-    public override void OnWorldLoad() => ProbeSession.WorldSession = Guid.NewGuid().ToString("N");
+    public override void OnWorldLoad(){ProbeTargeting.Reset();ProbeSession.WorldSession = Guid.NewGuid().ToString("N");}
     public override void OnWorldUnload()
     {
         ProbeSession.Finish("OnWorldUnload");
+        ProbeTargeting.Reset();
         ProbeSession.WorldSession = "none";
     }
     public override void PostUpdatePlayers()
@@ -369,6 +385,8 @@ public sealed class ProbePlayer : ModPlayer
     internal string PersistentMarker = "";
     public override void PreUpdate() => PreUpdates++;
     public override void PostUpdate() => PostUpdates++;
+    public override bool PreItemCheck(){ProbeTargeting.Capture(Player);return true;}
+    public override void PostItemCheck()=>ProbeTargeting.Observe(Player);
     public override void PostUpdateRunSpeeds() => ActorControl.BeforeMovement(Player);
     public override void SaveData(Terraria.ModLoader.IO.TagCompound tag) => tag["g31Marker"] = PersistentMarker;
     public override void LoadData(Terraria.ModLoader.IO.TagCompound tag) => PersistentMarker = tag.GetString("g31Marker");
@@ -446,7 +464,12 @@ public sealed class ProbeCommand : ModCommand
                     NativeSurvival.Debug(commandedActor,session,commandedGeneration,action=="test-death");
                     caller.Reply(NativeSurvival.Summary());return;
                 }
-                if (action == "status") ProbeSession.Log("status");
+                if (action == "status")
+                {
+                    string status=ProbeSession.StatusText();
+                    ProbeSession.Log("status",new{reply=status});
+                    caller.Reply(status,Color.LightCyan);return;
+                }
                 else if (action == "allocator") ProbeSession.Allocator();
                 else if (action == "spawn") ProbeSession.Spawn();
                 else if (action == "save") CharacterStore.Save(copy.Length == 2 ? copy[1] : null);
@@ -488,6 +511,7 @@ public sealed class ClientProbeCommand : ModCommand
             || args.Length != 1 || !int.TryParse(args[0], out int id) || id < 0 || id >= Main.maxPlayers)
         { caller.Reply(Usage + " (active multiplayer client required)"); return; }
         var p = Main.player[id];
+        ProbeTargeting.Watch(p);
         caller.Reply($"客户端 slot={id}, active={p.active}, name={p.name}, pos=({p.position.X:F1},{p.position.Y:F1}), " +
             $"helmet={p.armor[0].type}, selected={p.selectedItem}。");
         Mod.Logger.Info(JsonSerializer.Serialize(new { probe = "VirtualPlayerEngineProbe", eventName = "client-slot-snapshot",

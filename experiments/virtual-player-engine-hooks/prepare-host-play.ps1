@@ -15,6 +15,16 @@ if ($Fresh) {
     if (Test-Path -LiteralPath $profile) { throw 'Fresh profile already exists; retry to choose a new timestamp.' }
 }
 $deployedPackage = Join-Path $profile 'Mods/VirtualPlayerEngineProbe.tmod'
+if(Test-Path -LiteralPath $deployedPackage) {
+    # Process enumeration may not see another desktop session. Check the actual
+    # package lock before copying saves/backing up or attempting an update.
+    try {
+        $packageLock=[IO.File]::Open($deployedPackage,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+        $packageLock.Dispose()
+    } catch {
+        throw '测试包仍被游戏或服务器占用。请保存并完全退出 tModLoader 及其服务器，再重新运行准备脚本；未更新模组或启动入口。'
+    }
+}
 if (Test-Path -LiteralPath $profile) {
     if (!(Test-Path -LiteralPath $deployedPackage) -or (Get-FileHash -LiteralPath $deployedPackage -Algorithm SHA256).Hash -ne $packageHash) {
         $backup = Join-Path $paths.Backups (Get-Date -Format 'yyyyMMdd-HHmmss-fff')

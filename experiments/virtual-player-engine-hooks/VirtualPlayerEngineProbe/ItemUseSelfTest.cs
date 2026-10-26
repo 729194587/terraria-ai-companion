@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using Terraria;
 using Terraria.ID;
+using Terraria.Localization;
 using Terraria.ModLoader;
 
 namespace VirtualPlayerEngineProbe;
@@ -14,6 +16,13 @@ internal static class ItemUseSelfTest
 {
     private static bool ran;
     internal static bool Deny,Throw;
+    private static Player controlActor;
+    private static readonly List<bool> controls=new();
+    private static void ObserveControls(On_NetMessage.orig_SendData orig,int msg,int remote,int ignore,NetworkText text,int number,float a,float b,float c,int d,int e,int f)
+    {
+        orig(msg,remote,ignore,text,number,a,b,c,d,e,f);
+        if(msg==MessageID.PlayerControls&&controlActor!=null&&number==controlActor.whoAmI)controls.Add(controlActor.controlUseItem);
+    }
     private static void Check(bool ok,string message){if(!ok)throw new InvalidOperationException(message);}
     internal static void RunIfRequested()
     {
@@ -22,6 +31,7 @@ internal static class ItemUseSelfTest
         ran=true;string report=Path.Combine(Main.SavePath,"item-use-native-result.json");
         try
         {
+            On_NetMessage.SendData+=ObserveControls;
             Main.gameMenu=false;ProbeSession.Spawn();var p=ProbeSession.Actor;
             var wrapped=typeof(Player).GetMethod("ItemCheckWrapped",BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic);
             void Frame()=>NativeSurvival.Run(p,()=>wrapped.Invoke(p,new object[]{p.whoAmI}));
@@ -51,13 +61,24 @@ internal static class ItemUseSelfTest
                 ActorItemUse.Start(p,world,gen);
                 bool concurrent=false;try{ActorControl.Start(p,gen,world);}catch(InvalidOperationException){concurrent=true;}
                 Check(concurrent,"Walking was allowed during item action.");
-                for(int i=0;ActorItemUse.Running&&i<190;i++)Frame();
+                // Reproduce the live first-use collision: force both periodic
+                // controls and full snapshot due on the actual first press tick.
+                typeof(NetworkStateSync).GetField("controlTick",BindingFlags.Static|BindingFlags.NonPublic).SetValue(null,unchecked(Main.GameUpdateCount-6UL));
+                typeof(NetworkStateSync).GetField("fullTick",BindingFlags.Static|BindingFlags.NonPublic).SetValue(null,unchecked(Main.GameUpdateCount-300UL));
+                controlActor=p;controls.Clear();Frame();
+                Check(p.controlUseItem,"First press was released before end-of-world-tick publication.");
+                NetworkStateSync.Tick(p);NetworkStateSync.Full(p);
+                Check(controls.Count>=3&&controls.All(v=>v),"Periodic/full snapshot overwrote the first native press with a release.");
+                int firstTickControls=controls.Count;controlActor=null;
+                Check(ProbeSession.StatusText().Contains($"槽位 {p.whoAmI}")&&ProbeSession.StatusText().Contains("进行中"),"Readable status omitted actor or running item action.");
+                for(int i=1;ActorItemUse.Running&&i<190;i++)
+                {Frame();if(i==1)Check(!p.controlUseItem,"Single-use press was repeated on the next native item update.");}
                 var c=ActorItemUse.Current;
                 Check(c.Phase=="completed"&&c.Starts==1&&c.AnimationPeak>0&&p.itemAnimation==0&&p.itemTime==0&&!p.controlUseItem,
                     $"Native cycle failed for {type}: {c.Phase}/{c.Reason}, peaks={c.AnimationPeak}/{c.TimePeak}, starts={c.Starts}");
                 Check(type==ItemID.Apple?p.inventory[slot].stack==before-1:p.inventory[slot].stack==before,"Wrong native consumption.");
                 if(type==ItemID.Apple)Check(p.HasBuff(BuffID.WellFed),"Native food buff was skipped.");
-                return new {type,c.Ticks,c.Starts,c.AnimationPeak,c.TimePeak,c.ToolPeak,c.UsesPeak,stackBefore=before,stackAfter=p.inventory[slot].stack};
+                return new {type,c.Ticks,c.Starts,c.AnimationPeak,c.TimePeak,c.ToolPeak,c.UsesPeak,stackBefore=before,stackAfter=p.inventory[slot].stack,firstTickControls,firstPressPreserved=true};
             }
             var sword=Exercise(0,ItemID.WoodenSword);var pick=Exercise(1,ItemID.CopperPickaxe);var apple=Exercise(2,ItemID.Apple);
             // Last item must exercise the native zero-stack cleanup without touching a human mouse.
@@ -75,6 +96,7 @@ internal static class ItemUseSelfTest
             Check(!p.controlUseItem&&p.itemAnimation==0&&p.itemTime==0&&!ActorItemUse.Running,"Explicit stop did not release native use.");
             ActorItemUse.Start(p,world,gen);Frame();NativeSurvival.Debug(p,world,gen,true);
             Check(p.dead&&!ActorItemUse.Running&&!p.controlUseItem&&p.itemAnimation==0,"Death did not cancel use immediately.");
+            Check(ProbeSession.StatusText().Contains("AI 已死亡"),"Readable status did not report native death.");
             Check(Main.myPlayer==local&&Main.blockMouse==mouse&&Player.tileTargetX==tx&&Player.tileTargetY==ty
                 &&ReferenceEquals(human,Main.player[0])&&humanItems.Select((i,n)=>i.type==human.inventory[n].type&&i.stack==human.inventory[n].stack).All(v=>v),"Human/global state changed.");
             ProbeSession.Finish("G6 selftest complete",true);
@@ -87,7 +109,7 @@ internal static class ItemUseSelfTest
             File.WriteAllText(report,JsonSerializer.Serialize(new{result="failed",error=e.ToString()}));
             VirtualPlayerEngineProbe.Instance?.Logger.Error("G6 native selftest failed",e);
         }
-        finally{if(!failure)Netplay.Disconnect=true;}
+        finally{On_NetMessage.SendData-=ObserveControls;controlActor=null;controls.Clear();if(!failure)Netplay.Disconnect=true;}
     }
 }
 

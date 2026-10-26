@@ -1,6 +1,6 @@
 # 无客户端原生 Player：当前单窗口集成入口
 
-当前包 **0.7.1**：G1–G7 + PR #18 拾取归属修复 + 恢复的 G2 死锁并发回归。完整范围、实际结果与历史来源见 [集成报告](../../docs/VIRTUAL_PLAYER_SINGLE_WINDOW.md)。这是实验包；图形和远程多人复测不由离线结果代替。
+当前包 **0.7.2**：在累计 G1–G7、拾取归属修复和 G2 并发回归基础上，补充可读状态、鼠标挖掘选框及首次使用输入同步修复。操作与本轮验证见 [0.7.2说明](../../docs/VIRTUAL_PLAYER_USABILITY.md)，0.7.1累计历史见 [集成报告](../../docs/VIRTUAL_PLAYER_SINGLE_WINDOW.md)。图形和远程多人复测不由离线结果代替。
 
 从仓库根目录依次运行（PowerShell 7）：
 
@@ -22,3 +22,5 @@ pwsh -File experiments/virtual-player-engine-hooks/prepare-host-play.ps1
 准备脚本不启动图形游戏，首次复制完整 G7 测试角色/地图/AI 档案到新目录，后续保留存档并在换包前备份。旧 G1–G7、拾取修复 profile 和历史报告均保留；`prepare-mining-host-play.ps1` 是当前准备入口的兼容别名。
 
 以后手动启动上述 `.local` 入口，经原生 Host & Play 进入。`/vph load`（无档案则 spawn）、`/vph status`、`/vpc <AI slot>` 检查可见性；`walk/stop`、`use/use-stop`、`mine <tileX> <tileY>/mine-status/mine-stop` 分别检查动作。拾取复测要观察真人对原先归 AI 的怪物掉落物是否能正常拾取。未实际执行的图形项目继续记为未测试。
+
+挖掘无需手算坐标：`/vptarget` 开启选框，关闭聊天后指向目标，打开聊天自动冻结，再 `/vpmine` 提交该格。更新测试包前必须完全退出游戏和服务器，准备脚本会拒绝仍被锁定的包。

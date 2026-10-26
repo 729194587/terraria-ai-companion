@@ -131,7 +131,15 @@ internal static class ActorItemUse
             }
         }
         catch{Retire(p);throw;}
-        finally{executing=null;if(Binding(c))p.controlUseItem=false;}
+        finally
+        {
+            executing=null;
+            // Publish the actual first press through the rest of this world tick.
+            // PostUpdatePlayers/full sync must not overwrite it with a release
+            // before a client has had any chance to observe the press. The next
+            // natural ItemCheck supplies false; errors/stops always release now.
+            if(Binding(c))p.controlUseItem=c.Phase=="running"&&c.Ticks==1&&c.AnimationPeak>0;
+        }
     }
     private static void Emit(object detail)
     {try{ProbeSession.Log("item-use-result",detail);}catch{ /* Diagnostics must not interrupt native item transitions. */ }}
