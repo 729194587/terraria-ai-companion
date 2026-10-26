@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
+using System.Linq;
 
 namespace CompanionBridge.ServerIpc;
 
@@ -19,7 +20,8 @@ internal sealed class AiReadOnlyProtocol
     internal void Clear() { leases.Clear(); actor = null; actorId = null; actions?.Clear(); }
     internal void Forget(Guid connection) { leases.Remove(connection); actions?.Forget(connection); }
 
-    internal string Handle(Guid connection, string line, Func<Identity> capture, CancellationToken disconnected = default)
+    internal string Handle(Guid connection, string line, Func<Identity> capture, CancellationToken disconnected = default,
+        Func<Identity,string,JsonElement,object> query = null)
     {
         string id = null;
         object Reply(bool ok, object data = null, Binding binding = null, string error = null) => new { v = 1, id, ok, binding, data, error };
@@ -34,9 +36,13 @@ internal sealed class AiReadOnlyProtocol
             if (string.IsNullOrWhiteSpace(id) || id.Length > 64 || root.GetProperty("v").GetInt32() != 1) throw new FormatException();
             string op = root.GetProperty("op").GetString();
             bool execution = op is "start" or "action" or "cancel";
-            if (op is not ("bind" or "state") && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+            bool reading = op == "query" && query != null;
+            if (op is not ("bind" or "state") && !reading && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             foreach (string field in names)
-                if (field is "actionId" && !execution || field is "operation" or "arguments" or "expiresAtUnixMs" && op != "start") throw new FormatException();
+                if (field == "actionId" && !execution || field is "operation" or "arguments" && op != "start" && !reading
+                    || field == "expiresAtUnixMs" && op != "start") throw new FormatException();
+            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory"))
+                return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             if (op == "bind" && root.TryGetProperty("binding", out _)) throw new FormatException();
             // Reject malformed bindings before invoking the engine adapter.
             Binding requested = null;
@@ -69,11 +75,17 @@ internal sealed class AiReadOnlyProtocol
                 if (!ReferenceEquals(actor, current.Actor)) { actor = current.Actor; actorId = Guid.NewGuid().ToString("N"); }
                 var binding = new Binding(actorId, current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
-                return JsonSerializer.Serialize(Reply(true, data: actions == null ? null : new { capabilities = AiAtomicActions.Capabilities }, binding: binding));
+                return JsonSerializer.Serialize(Reply(true, data: actions == null ? null : new { capabilities = query == null ? AiAtomicActions.Capabilities : AiAtomicActions.Capabilities.Append("server_ai_reads_v1").ToArray() }, binding: binding));
             }
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)
                 return JsonSerializer.Serialize(Reply(false, error: "stale_binding"));
+            if (reading)
+            {
+                try { return JsonSerializer.Serialize(Reply(true, query(current, root.GetProperty("operation").GetString(), root.GetProperty("arguments")), lease.Binding)); }
+                catch (FormatException) { return JsonSerializer.Serialize(Reply(false, error: "invalid_request")); }
+                catch { return JsonSerializer.Serialize(Reply(false, error: "engine_unavailable")); }
+            }
             if (execution)
             {
                 var reply = actions.Handle(connection, op, root, current, lease.Binding, disconnected);

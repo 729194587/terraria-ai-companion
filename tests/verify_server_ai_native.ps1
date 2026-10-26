@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[string]$PythonExecutable)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[string]$PythonExecutable)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'server_ai_native_evidence.ps1')
 $repo=Split-Path $PSScriptRoot -Parent
@@ -72,6 +72,26 @@ try {
         if(!$atomicResult.lastAction.completed -or $atomicResult.lastAction.endEvidence.selectedSlot -ne 9 `
             -or !$atomicResult.lastAction.endEvidence.selectionVerified -or !$after.ok -or $after.data.selectedSlot -ne 9){throw 'Native selection completion evidence disagrees with actual Player selected slot'}
     }
+    $readResult=$null
+    $combinedResult=$null
+    if($Reads){
+        $null=& $PythonExecutable (Join-Path $repo 'scripts/server_ai_verify.py') --port $IpcPort --key 2 --output "$profile/lua-combined-result.json"
+        if($LASTEXITCODE -ne 0){throw 'Combined Lua player/inventory/selection verification failed'}
+        $combinedResult=Get-Content -LiteralPath "$profile/lua-combined-result.json" -Raw|ConvertFrom-Json
+        if($combinedResult.actions -ne 1 -or $combinedResult.value.before.selectedSlot -ne 9 -or $combinedResult.value.after.selectedSlot -ne 1 `
+            -or !$combinedResult.value.selection.completed){throw 'Combined Lua sequence did not prove selection from key 0 to key 2'}
+        $null=& $PythonExecutable (Join-Path $repo 'scripts/server_ai_verify.py') --port $IpcPort --output "$profile/lua-read-result.json"
+        if($LASTEXITCODE -ne 0){throw 'Existing Lua worker did not complete native player/inventory reads'}
+        $readResult=Get-Content -LiteralPath "$profile/lua-read-result.json" -Raw|ConvertFrom-Json
+        $rawQuery=Request @{v=1;id='native-player-query';op='query';binding=$bound.binding;operation='get_player_state';arguments=@{}}
+        $rawState=Request @{v=1;id='native-state-after-reads';op='state';binding=$bound.binding}
+        if(!$rawQuery.ok -or !$rawState.ok -or $readResult.actions -ne 0 -or $readResult.value.fullInventorySlots -ne 59 `
+            -or $rawQuery.data.data.player.life -ne $rawState.data.life -or $rawQuery.data.data.player.position.x -ne $rawState.data.position.x `
+            -or $rawQuery.data.data.player.position.y -ne $rawState.data.position.y `
+            -or $readResult.value.after.selectedSlot -ne $rawState.data.selectedSlot){throw 'Lua/native query evidence disagrees with the raw bound Player state'}
+        $readMismatch=Request @{v=1;id='native-read-binding-mismatch';op='query';binding=$mismatchedBinding;operation='inspect_inventory';arguments=@{}}
+        if($readMismatch.ok -or $readMismatch.error -ne 'stale_binding'){throw 'Mismatched read binding was not rejected'}
+    }
     $client.Dispose();$client=$null
     [IO.File]::WriteAllText("$profile/g81-test-stop",'The isolated harness requests native main-thread shutdown after read-only TCP assertions.')
     if(!$process.WaitForExit(20000)){throw 'Native graceful unload timed out'}
@@ -85,11 +105,13 @@ try {
     $report=@{result='passed';mode='isolated real native dedicated server; no graphical Host & Play';binding=$bound.binding;state=$state.data;pythonClient='passed';bindingMismatchError=$bindingMismatch.error;bindingMismatchTest='request generation is current generation + 1; no native lifecycle change';nativeGenerationLifecycle='NOT RUN';actionError=$action.error;exitCode=$process.ExitCode;processId=$process.Id;startedUtc=$startedUtc.ToString('O');exitedUtc=$exitedUtc.ToString('O');logScope='process ID + bound world session + process lifetime';spawn=$lifecycle.spawn;teardown=$lifecycle.teardown;packageSHA256=(Get-FileHash -LiteralPath $package).Hash}
     if($Atomic){
         $nativeSelection=@($events|Where-Object eventName -eq 'atomic-select')
-        if(!$nativeSelection.Count -or $nativeSelection[-1].detail.selectedSlot -ne 9){throw 'This process has no G6 native selection log evidence'}
+        $firstSelection=@($nativeSelection|Where-Object {$_.detail.beforeSlot -eq 0 -and $_.detail.selectedSlot -eq 9})
+        if(!$firstSelection.Count){throw 'This process has no G6 native selection log evidence'}
         $report.atomicSelection=$atomicResult
-        $report.nativeSelection=$nativeSelection[-1]
+        $report.nativeSelection=$firstSelection[0]
         $report.afterSelection=$after.data
     }
+    if($Reads){$report.luaReads=$readResult;$report.luaCombined=$combinedResult;$report.rawPlayerQuery=$rawQuery;$report.stateAfterReads=$rawState.data;$report.readBindingMismatchError=$readMismatch.error;$report.nativeSelections=$nativeSelection}
     $report|ConvertTo-Json -Depth 12|Set-Content -LiteralPath "$profile/result.json"
     Write-Output "Native AI IPC passed: $profile/result.json"
 } finally {

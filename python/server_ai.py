@@ -27,6 +27,9 @@ class ServerAiBridge:
             self.hello = {"capabilities": (bound.get("data") or {}).get("capabilities", [])}
             if "server_ai_atomic_v1" not in self.hello["capabilities"]:
                 raise BridgeError("Server AI execution capability unavailable")
+            self.supported_atomic_operations = type(self).supported_atomic_operations
+            if "server_ai_reads_v1" in self.hello["capabilities"]:
+                self.supported_atomic_operations |= frozenset(("get_player_state", "inspect_inventory"))
         except BaseException:
             self.close()
             raise
@@ -69,6 +72,23 @@ class ServerAiBridge:
         if getattr(self, "_lua_owner", None) is not command_owner.get():
             raise BridgeError("Bridge session is owned by a Lua run")
         with self._lock:
+            if cmd == "query_atomic":
+                operation = parameters.get("operation")
+                if operation not in ("get_player_state", "inspect_inventory") or operation not in self.supported_atomic_operations:
+                    raise BridgeError("Query unsupported by server AI backend", status="unsupported_operation")
+                reply = self._request("query", operation=operation, arguments=parameters.get("arguments", {}))
+                data = reply.get("data")
+                if not isinstance(data, dict):
+                    self.close()
+                    raise BridgeError("Missing AI query envelope")
+                if data.get("available") is True and (data.get("worldSessionId") != self.binding["world"]
+                        or data.get("actorGeneration") != self.binding["generation"]
+                        or data.get("actorSlot") != self.binding["slot"]
+                        or type(data.get("gameUpdate")) is not int or data["gameUpdate"] < 0
+                        or not isinstance(data.get("data"), dict)):
+                    self.close()
+                    raise BridgeError("AI query evidence identity/shape mismatch")
+                return {"status": "atomic_query", "data": {**data, "binding": dict(self.binding)}}
             if cmd == "get_movement":
                 if self._action_id is None:
                     self._request("state")

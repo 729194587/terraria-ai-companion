@@ -85,7 +85,7 @@ public sealed class ServerAiSystem : ModSystem
                 try { ProbeSession.Spawn(); }
                 catch (Exception e) { EngineRuntime.SignalFault("G8.1 initial actor creation failed: " + e.Message); Mod.Logger.Error("AI creation stopped.", e); }
             }
-            server.Tick(Capture, Select);
+            server.Tick(Capture, Select, ServerAiQueries.Read);
         }
     }
     private static AiReadOnlyProtocol.Identity Capture()

@@ -253,6 +253,17 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
         return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
+    if name == 'get_player_state' and 'server_ai_reads_v1' in bridge.hello.get('capabilities', []):
+        reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
+        envelope = reply.get('data')
+        if not isinstance(envelope, dict):
+            raise BridgeError('Missing server AI player query data')
+        if envelope.get('available') is not True:
+            return {'valid': False, **envelope}
+        data = envelope.get('data')
+        if not isinstance(data, dict) or not isinstance(data.get('player'), dict) or not isinstance(data.get('motion'), dict):
+            raise BridgeError('Missing server AI player/motion projection')
+        return {'valid': True, **{key: value for key, value in envelope.items() if key != 'data'}, **data}
     if name in ('get_player_state', 'observe_terrain'):
         reply = await asyncio.to_thread(bridge.get_terrain)
         if name == 'observe_terrain':
@@ -271,6 +282,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if (name in ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item')
             or name == 'inspect_inventory' and arguments.get('mode') == 'slots'):
         required_capability = 'inventory_operations_v1'
+    if name == 'inspect_inventory' and 'server_ai_reads_v1' in bridge.hello.get('capabilities', []):
+        required_capability = 'server_ai_reads_v1'
     if required_capability and required_capability not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected(f'Requires {required_capability}; no action started')
     if name in ('mine_wall', 'place_wall', 'hammer_tile', 'interact_tile') and 'server_confirmed_interactions_v1' not in bridge.hello.get('capabilities', []):

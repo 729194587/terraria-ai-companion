@@ -80,11 +80,12 @@ internal static class AtomicOperations
         return new { available = true, worldSessionId = ObservationReader.WorldSessionId, gameUpdate = Main.GameUpdateCount, data };
     }
 
-    internal static object CompactItem(Item item, int slot) => new { slot, hotbarKey = HotbarSlots.KeyForInventorySlot(slot),
+    internal static object CompactItem(Item item, int slot) => CompactItem(item, slot, AtomicInventory.Token);
+    internal static object CompactItem(Item item, int slot, Func<Item,int,string> token) => new { slot, hotbarKey = HotbarSlots.KeyForInventorySlot(slot),
         typeId = item.type, contentKey = item.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(item.type),
         name = item.Name, stack = item.IsAir ? 0 : item.stack,
         empty = item.IsAir, prefix = item.IsAir ? 0 : (int)item.prefix, maxStack = item.IsAir ? 0 : item.maxStack,
-        favorited = !item.IsAir && item.favorited, inventoryToken = AtomicInventory.Token(item,slot),
+        favorited = !item.IsAir && item.favorited, inventoryToken = token(item,slot),
         use = new { item.pick, item.axe, item.hammer, item.createTile, item.createWall } };
 
     // Project only this tool's response; the shared full snapshot stays unchanged.
@@ -107,9 +108,13 @@ internal static class AtomicOperations
     }
 
     private static object Inventory(Player p, System.Text.Json.JsonElement args)
+        => ReadInventory(p, args, AtomicInventory.Token, () => ObservationReader.ReadPlayer(p));
+
+    // Shared read-only projection. The caller supplies its own identity/token scope.
+    internal static object ReadInventory(Player p, System.Text.Json.JsonElement args, Func<Item,int,string> token, Func<object> snapshot)
     {
         string mode = args.TryGetProperty("mode", out var value) ? value.GetString() : "selected";
-        if (mode == "full") return FullInventory(ObservationReader.ReadPlayer(p));
+        if (mode == "full") return FullInventory(snapshot());
         if (mode == "item")
         {
             string wanted = args.GetProperty("item").GetString();
@@ -129,9 +134,9 @@ internal static class AtomicOperations
         }
         var indices = mode == "slots" ? args.GetProperty("slots").EnumerateArray().Select(s=>s.GetInt32())
             : mode == "hotbar" ? Enumerable.Range(0, Math.Min(10, p.inventory.Length)) : new[] { p.selectedItem };
-        if (indices.Any(i=>i>=p.inventory.Length)) return new {status="inventory_slot_out_of_range",inventory=Array.Empty<object>()};
+        if (indices.Any(i=>i<0 || i>=p.inventory.Length)) return new {status="inventory_slot_out_of_range",inventory=Array.Empty<object>()};
         return new { status = "ok", selectedSlot = p.selectedItem, selectedHotbarKey = HotbarSlots.KeyForInventorySlot(p.selectedItem),
-            inventory = indices.Select(i => CompactItem(p.inventory[i], i)).ToArray() };
+            inventory = indices.Select(i => CompactItem(p.inventory[i], i, token)).ToArray() };
     }
 
     internal static void Before(Player p, ControlRequest request)

@@ -39,4 +39,6 @@ $launcher=$launcher.Replace('__TML__',$TModLoaderPath.Replace("'","''")).Replace
 [IO.File]::WriteAllText("$profile/start-host-play.ps1",$launcher,[Text.UTF8Encoding]::new($true))
 Write-Output "Prepared only; graphical Host & Play NOT RUN: $profile/start-host-play.ps1"
 Write-Output "After manually selecting Multiplayer > Host & Play, run: python scripts/ai_player_state.py --port $AiPort"
-Write-Output "Explicit Lua selection test (existing Lua dependencies required): python scripts/server_ai_select.py --port $AiPort --key 2"
+Write-Output "Explicit Lua selection: & .local/lua-venv/Scripts/python.exe scripts/server_ai_select.py --port $AiPort --key 2"
+Write-Output "Lua state/inventory reads (read-only by default): & .local/lua-venv/Scripts/python.exe scripts/server_ai_verify.py --port $AiPort"
+Write-Output "Both G8.2 stages in one Lua run: & .local/lua-venv/Scripts/python.exe scripts/server_ai_verify.py --port $AiPort --key 2"

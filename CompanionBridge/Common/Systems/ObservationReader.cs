@@ -121,8 +121,8 @@ internal static class ObservationReader
                 biomeScope = "local player's vanilla flags, not per-tile viewport biome or all mod biomes"
             };
 
-    internal static object ReadPlayer(Player p) => new {
-        id = p.whoAmI, source = "local_player", positionWorldPixels = new StateVector(p.position.X, p.position.Y),
+    internal static object ReadPlayer(Player p, string source = "local_player") => new {
+        id = p.whoAmI, source, positionWorldPixels = new StateVector(p.position.X, p.position.Y),
         boundsWorldPixels = Bounds(p), velocityPixelsPerTick = new StateVector(p.velocity.X, p.velocity.Y),
         life = p.statLife, lifeMax = p.statLifeMax2, mana = p.statMana, manaMax = p.statManaMax2,
         p.name, p.statDefense, p.breath, p.breathMax, p.immune, p.immuneTime,

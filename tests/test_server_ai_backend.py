@@ -29,6 +29,29 @@ class Host(socketserver.ThreadingTCPServer):
         self.action = None
         self.polls = 0
         self.release = threading.Event()
+        self.reads = True
+
+    def query(self, operation, args):
+        player = dict(inWorld=True, id=254, source='server_ai_player', position=dict(x=100, y=200),
+                      velocity=dict(x=0, y=0), life=73, lifeMax=100, mana=20, manaMax=20,
+                      selectedSlot=self.selected, selectedHotbarKey=(self.selected+1) % 10)
+        if operation == 'get_player_state':
+            data = dict(player=player, motion=dict(grounded=False, supported=True, playerWidth=20, playerHeight=42))
+        else:
+            def item(slot):
+                return dict(slot=slot, hotbarKey=(slot+1) % 10 if slot < 10 else None, empty=slot != 9,
+                            typeId=3509 if slot == 9 else 0, stack=1 if slot == 9 else 0,
+                            name='fixture pick' if slot == 9 else '', use=dict(pick=35 if slot == 9 else 0), inventoryToken=None)
+            mode = args.get('mode', 'selected')
+            indices = args.get('slots', [self.selected]) if mode == 'slots' else range(10) if mode == 'hotbar' else range(59) if mode == 'full' else [self.selected]
+            data = dict(status='ok', selectedSlot=self.selected, selectedHotbarKey=(self.selected+1) % 10,
+                        inventory=[item(slot) for slot in indices], inventoryTokenStatus='unsupported_server_ai_inventory_mutation')
+            if mode == 'item':
+                data = dict(status='ok', count=1, slots=[dict(slot=9, stack=1)])
+            elif mode == 'full':
+                data.update(equipment=[], customState='unknown; fixture custom data not read')
+        return dict(available=True, worldSessionId=self.binding['world'], actorGeneration=self.binding['generation'],
+                    actorSlot=self.binding['slot'], gameUpdate=33, data=data)
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -42,8 +65,16 @@ class Handler(socketserver.StreamRequestHandler):
             data = None
             if op == 'bind':
                 data = dict(capabilities=['server_ai_atomic_v1', 'atomic_operations_v1', 'hotbar_keys_v1'])
+                if h.reads:
+                    data['capabilities'].append('server_ai_reads_v1')
             elif r['binding'] != h.binding:
                 error = 'stale_binding'
+            elif op == 'query':
+                data = h.query(r['operation'], r['arguments'])
+                if h.mode == 'bad_query_identity':
+                    data['actorGeneration'] += 1
+                elif h.mode == 'unavailable_query':
+                    data = dict(available=False, reason='fixture_state_unknown')
             elif op == 'start':
                 if h.mode == 'drop_start':
                     return
@@ -112,10 +143,80 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, result['actions'])
 
     async def test_unsupported_operations_reject_before_start(self):
-        for name, arguments in [('mine_tile', dict(x=1, y=1)), ('get_player_state', {}), ('inspect_inventory', {})]:
+        for name, arguments in [('mine_tile', dict(x=1, y=1)), ('observe_terrain', {}), ('get_player_status', {})]:
             with self.assertRaises(atomic.PreDispatchRejected):
                 await atomic.dispatch(self.bridge, name, arguments)
         self.assertFalse(any(r['op'] == 'start' for r in self.host.sent))
+
+    async def test_read_state_preserves_player_motion_interface_and_native_metadata(self):
+        result = await atomic.dispatch(self.bridge, 'get_player_state', {})
+        self.assertTrue(result['valid'], result)
+        self.assertEqual(73, result['player']['life'])
+        self.assertEqual(dict(x=100, y=200), result['player']['position'])
+        self.assertEqual(20, result['motion']['playerWidth'])
+        self.assertEqual(self.bridge.binding, result['binding'])
+        self.assertFalse(any(r['op'] == 'start' for r in self.host.sent))
+
+    async def test_all_inventory_modes_use_existing_query_dispatch(self):
+        for args in ({}, dict(mode='hotbar'), dict(mode='slots', slots=[58, 9, 0]), dict(mode='full'), dict(mode='item', item='Terraria/CopperPickaxe')):
+            result = await atomic.dispatch(self.bridge, 'inspect_inventory', args)
+            self.assertTrue(result['valid'], result)
+            self.assertEqual('ok', result['data']['status'])
+        result = await atomic.dispatch(self.bridge, 'inspect_inventory', dict(mode='slots', slots=[58, 9, 0]))
+        self.assertEqual([58, 9, 0], [i['slot'] for i in result['data']['inventory']])
+        self.assertIsNone(result['data']['inventory'][1]['inventoryToken'])
+        self.assertFalse(any(r['op'] == 'start' for r in self.host.sent))
+
+    async def test_lua_reads_before_and_after_existing_selection(self):
+        source = """
+        local before=api('get_player_state',{})
+        local bag=api('inspect_inventory',{mode='hotbar'})
+        local action=api('select_hotbar_slot',{slot=0})
+        assert(action.completed)
+        local selected=api('inspect_inventory',{mode='selected'})
+        local after=api('get_player_state',{})
+        return {before=before.player.selectedSlot, after=after.player.selectedSlot,
+                key=selected.data.selectedHotbarKey, pick=selected.data.inventory[1].use.pick}
+        """
+        result = await LuaRuntime(self.bridge, evidence_root=self.directory.name).execute(source, limits=Limits(seconds=8))
+        self.assertEqual('completed', result['status'], result)
+        self.assertEqual(dict(before=0, after=9, key=0, pick=35), result['value'])
+        self.assertEqual(1, result['actions'])
+
+    async def test_committed_acceptance_lua_is_read_only_with_zero_action_budget(self):
+        source = 'local testKey=nil\n' + (Path(__file__).resolve().parents[1] / 'scripts/lua/server_ai_reads.lua').read_text(encoding='utf-8')
+        result = await LuaRuntime(self.bridge, evidence_root=self.directory.name).execute(source, limits=Limits(seconds=8, actions=0))
+        self.assertEqual('completed', result['status'], result)
+        self.assertEqual(0, result['actions'])
+        self.assertEqual(59, result['value']['fullInventorySlots'])
+        self.assertEqual(1, len(result['value']['inventoryAtFullQuery']))
+        self.assertEqual(1, result['value']['occupiedInventorySlots'])
+        self.assertFalse(any(r['op'] == 'start' for r in self.host.sent))
+
+    async def test_read_identity_mismatch_fails_without_fallback(self):
+        self.host.mode = 'bad_query_identity'
+        with self.assertRaises(BridgeError):
+            await atomic.dispatch(self.bridge, 'get_player_state', {})
+        self.assertTrue(self.bridge._closed)
+        self.assertFalse(any(r['op'] == 'start' for r in self.host.sent))
+
+    async def test_unavailable_read_does_not_invent_player_or_inventory(self):
+        self.host.mode = 'unavailable_query'
+        for name in ('get_player_state', 'inspect_inventory'):
+            result = await atomic.dispatch(self.bridge, name, {})
+            self.assertFalse(result['valid'])
+            self.assertNotIn('player', result)
+            self.assertNotIn('data', result)
+
+    async def test_previous_server_without_read_capability_rejects_before_rpc(self):
+        self.bridge.close()
+        self.host.reads = False
+        self.bridge = ServerAiBridge(self.host.server_address[1])
+        self.host.sent.clear()
+        for name in ('get_player_state', 'inspect_inventory'):
+            with self.assertRaises(atomic.PreDispatchRejected):
+                await atomic.dispatch(self.bridge, name, {})
+        self.assertEqual([], self.host.sent)
 
     async def test_missing_selection_evidence_preserves_unknown(self):
         self.host.mode = 'bad_evidence'

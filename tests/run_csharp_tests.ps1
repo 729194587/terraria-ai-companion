@@ -1,6 +1,6 @@
 param([switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
     [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly, [switch]$AuthorityNetworkOnly,
-    [switch]$InventoryOnly, [switch]$BridgeOnly)
+    [switch]$InventoryOnly, [switch]$BridgeOnly, [switch]$ServerReadsOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
@@ -20,6 +20,7 @@ $sources = @(
     (Join-Path $PSScriptRoot 'AtomicExtensionsOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'AtomicFoundationsOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'InventoryOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'ServerAiSharedReadTests.cs'),
     (Join-Path $PSScriptRoot 'LocalInputOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicOperations.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicInventory.cs'),
@@ -55,6 +56,7 @@ if ($AuthorityNetworkOnly) {
     return
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
+if ($ServerReadsOnly) { [ServerAiSharedReadTests]::Run(); [AtomicExtensionsOfflineTests]::Run(); return }
 if ($BridgeOnly) { [BridgeOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); [LocalInputOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); return }
 if ($InventoryOnly) { [InventoryOfflineTests]::Run(); return }
 if ($LandingProtocolHost) { [LandingNavigationOfflineTests]::RunProtocolHost(); return }
