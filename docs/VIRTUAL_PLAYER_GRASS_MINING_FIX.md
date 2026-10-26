@@ -34,13 +34,21 @@
 - 修改后 **37项原生挖掘检查通过**：石块行为保留；两次连续草皮测试均31次更新、1次挥动、2次镐击、进度105/100、一次草皮→泥土，最终真实破坏并生成 DirtBlock 世界掉落。中间泥土仍存在时保持 Running。
 - 外部草皮剥除/替换拒绝、旧目标进度不继承、其他坐标缓存不被清除，以及已有距离/工具/保护/停止/死亡/代次等检查通过。
 - 原生 PickTile 内部 CanKillTile 钩子异常注入验证输入释放、作用域退出和 quarantine；只终止脚本创建的隔离进程，不记为正常恢复。
-- `git diff --check`通过。图形挖掘、选框对应、客户端接收和自然实时帧节奏仍待用户复测，不以原生API诊断替代。
+- `git diff --check`通过。普通草皮目标的最终移除已按下节完成真实单窗口确认；选框像素对齐、完整挥镐动画、掉落目视/拾取及远程多人没有据此转记为通过。
 
 包：`.local/virtual-player-single-window-build/Mods/VirtualPlayerEngineProbe.tmod`，SHA256 `AC2094DED9E94B52507EA8810A3A0A45DB91E0AF6A8E83396E92FA924B885B70`。证据 `.local/probe-073-offline-checks.txt`、`.local/probe-073-native-mining.txt`；正常原生profile为 `.local/mining-native-validation-9862a589f7684a38aa4b33e579610ef2/`。
 
-## 更新与复测
+## 真实单窗口复测
 
-当前运行中的0.7.2仍锁定旧包，准备脚本已安全拒绝更新。保存并完全退出游戏及服务器后，在仓库根目录执行：
+2026-10-26，用户先确认“挖掘其他方块都成功了”，随后明确确认“直接成功，挖掉了草皮泥土”。独立测试profile已为0.7.3，部署包SHA256与上方一致。
+
+服务器日志对应两次成功：19:56:30.182 的目标 `(2111,210)` 和19:56:41.364 的目标 `(2111,209)` 均为草皮2，预期原生后续类型0，最终 `observedType=-1`、`Completed`、`Destroyed=true`；铜镐35镐力，31次更新、1次挥动、2次镐击，进度105/100，一次原生草皮→泥土。用户的画面确认与服务器真实移除证据一致。19:56:13.918 另有一次同目标超距拒绝，没有开始挥镐，原生距离约束保留。
+
+据此记录：**本轮已测试的其他方块，以及普通草皮连同泥土最终挖除的真实单窗口流程通过**。不扩大为所有方块、每项动画/选框视觉细节、世界掉落实际拾取或远程多人均已通过。未运行新的自动测试，此次仅补充用户实测与现有日志。日志快照 `.local/live-grass-success-20261026-1956/` 不提交。
+
+## 更新与复测入口
+
+当前测试profile已部署0.7.3。以后更新前先保存并完全退出游戏及服务器，在仓库根目录执行：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File experiments/virtual-player-engine-hooks/prepare-host-play.ps1
