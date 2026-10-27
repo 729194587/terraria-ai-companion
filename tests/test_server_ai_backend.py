@@ -30,6 +30,7 @@ class Host(socketserver.ThreadingTCPServer):
         self.polls = 0
         self.release = threading.Event()
         self.reads = True
+        self.perception = False
         self.actions = False
         self.chat = False
         self.published = []
@@ -73,6 +74,8 @@ class Handler(socketserver.StreamRequestHandler):
                 data = dict(capabilities=['server_ai_atomic_v1', 'atomic_operations_v1', 'hotbar_keys_v1'])
                 if h.reads:
                     data['capabilities'].append('server_ai_reads_v1')
+                if h.perception:
+                    data['capabilities'].append('server_ai_perception_v1')
                 if h.actions:
                     data['capabilities'].append('server_ai_actions_v1')
                 if h.chat:
@@ -151,6 +154,62 @@ class Handler(socketserver.StreamRequestHandler):
 
 
 class BackendTests(unittest.IsolatedAsyncioTestCase):
+    def enable_perception(self):
+        self.bridge.close()
+        self.host.perception = True
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+        original = self.host.query
+        def query(operation, args):
+            result = original(operation, args)
+            result.update(observedAtUnixMs=1793070000123, clock='server_utc_at_projection')
+            if operation in ('observe_terrain','scan_tiles','scan_entities','inspect_tile','resolve_content'):
+                result['data'] = dict(sample=operation, complete=False, unknownCount=2, truncated=True)
+            return result
+        self.host.query = query
+
+    async def test_perception_lua_routes_all_five_reads_without_actions(self):
+        self.enable_perception()
+        source = """
+            local terrain=api('observe_terrain',{})
+            local tiles=api('scan_tiles',{minX=1,minY=2,maxX=4,maxY=5,tileTypes={0}})
+            local entities=api('scan_entities',{category='item',radius=100,maxResults=1})
+            local tile=api('inspect_tile',{x=1,y=2})
+            local content=api('resolve_content',{kind='tile',query='Terraria/Dirt'})
+            assert(terrain.valid and content.valid and tile.valid and entities.valid)
+            assert(not tiles.data.complete and tiles.data.unknownCount==2 and tiles.data.truncated)
+            return {time=tiles.observedAtUnixMs,tick=tiles.gameUpdate,binding=tiles.binding}
+        """
+        result = await LuaRuntime(self.bridge,evidence_root=self.directory.name).execute(source,limits=Limits(seconds=8,actions=0))
+        self.assertEqual('completed',result['status'],result)
+        self.assertEqual(0,result['actions'])
+        self.assertEqual(self.bridge.binding,result['value']['binding'])
+        self.assertEqual(1793070000123,result['value']['time'])
+        self.assertEqual(5,len([r for r in self.host.sent if r['op']=='query']))
+        self.assertFalse(any(r['op']=='start' for r in self.host.sent))
+
+    async def test_perception_missing_timestamp_closes_connection(self):
+        self.enable_perception()
+        original=self.host.query
+        def query(operation,args):
+            result=original(operation,args);result.pop('observedAtUnixMs');return result
+        self.host.query=query
+        with self.assertRaises(BridgeError):
+            await atomic.dispatch(self.bridge,'observe_terrain',{})
+        self.assertTrue(self.bridge._closed)
+
+    async def test_perception_contract_is_capability_gated(self):
+        from lua_agent import server_contract
+        self.assertNotIn('scan_tiles',server_contract(self.bridge)[0])
+        self.enable_perception()
+        instructions,_=server_contract(self.bridge)
+        for name in ('observe_terrain','scan_tiles','scan_entities','inspect_tile','resolve_content'):
+            self.assertIn(name,instructions)
+        self.assertNotIn('没有地形/实体观察能力',instructions)
+        self.assertNotIn('客户端已知NPC',instructions)
+        with self.assertRaises(BridgeError):
+            self.bridge.command('start_atomic',operation='scan_tiles')
+        self.assertFalse(any(r['op']=='start' for r in self.host.sent))
+
     async def test_reply_fence_passes_say_waiting_on_same_tcp_connection(self):
         self.host.chat=True
         self.bridge.hello['capabilities'].append('server_ai_chat_v2')

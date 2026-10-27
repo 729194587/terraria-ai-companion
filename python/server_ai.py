@@ -12,6 +12,9 @@ from concurrent.futures import Future, TimeoutError as FutureTimeout
 from control import BridgeError, command_owner
 
 
+PERCEPTION_OPERATIONS = frozenset(("observe_terrain", "scan_tiles", "scan_entities", "inspect_tile", "resolve_content"))
+
+
 class ServerAiBridge:
     supported_atomic_operations = frozenset(("select_hotbar_slot", "stop_action", "wait"))
     def __init__(self, port=18779, timeout=5):
@@ -40,6 +43,8 @@ class ServerAiBridge:
             self.supported_atomic_operations = type(self).supported_atomic_operations
             if "server_ai_reads_v1" in self.hello["capabilities"]:
                 self.supported_atomic_operations |= frozenset(("get_player_state", "inspect_inventory"))
+            if "server_ai_perception_v1" in self.hello["capabilities"]:
+                self.supported_atomic_operations |= PERCEPTION_OPERATIONS
             if "server_ai_actions_v1" in self.hello["capabilities"]:
                 self.supported_atomic_operations |= frozenset(("navigate_to_x", "use_item", "mine_tile"))
         except BaseException:
@@ -142,7 +147,7 @@ class ServerAiBridge:
                     raise
             if cmd == "query_atomic":
                 operation = parameters.get("operation")
-                if operation not in ("get_player_state", "inspect_inventory") or operation not in self.supported_atomic_operations:
+                if operation not in {"get_player_state", "inspect_inventory"} | PERCEPTION_OPERATIONS or operation not in self.supported_atomic_operations:
                     raise BridgeError("Query unsupported by server AI backend", status="unsupported_operation")
                 reply = self._request("query", operation=operation, arguments=parameters.get("arguments", {}))
                 data = reply.get("data")
@@ -156,6 +161,11 @@ class ServerAiBridge:
                         or not isinstance(data.get("data"), dict)):
                     self.close()
                     raise BridgeError("AI query evidence identity/shape mismatch")
+                if operation in PERCEPTION_OPERATIONS and data.get("available") is True and (
+                        type(data.get("observedAtUnixMs")) is not int or data["observedAtUnixMs"] <= 0
+                        or data.get("clock") != "server_utc_at_projection"):
+                    self.close()
+                    raise BridgeError("Missing server AI observation time")
                 return {"status": "atomic_query", "data": {**data, "binding": dict(self.binding)}}
             if cmd == "get_movement":
                 if self._action_id is None:
@@ -164,7 +174,7 @@ class ServerAiBridge:
                 return self._movement(self._request("action", actionId=self._action_id)["data"]["action"])
             if cmd == "start_atomic":
                 operation = parameters.get("operation")
-                if operation not in self.supported_atomic_operations - {"wait", "stop_action", "get_player_state", "inspect_inventory"}:
+                if operation not in self.supported_atomic_operations - ({"wait", "stop_action", "get_player_state", "inspect_inventory"} | PERCEPTION_OPERATIONS):
                     raise BridgeError("Operation unsupported by server AI backend", status="unsupported_operation")
                 if parameters.get("expectedGeneration") != self.binding["generation"]:
                     raise BridgeError("AI generation changed", status="stale_binding")

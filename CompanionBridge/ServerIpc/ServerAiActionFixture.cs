@@ -47,6 +47,13 @@ internal static class ServerAiActionFixture
                     x=left+8;y=floor-2;
                     for(int tx=x;tx<=x+1;tx++){var tile=Main.tile[tx,y];tile.HasTile=true;tile.TileType=TileID.Stone;}
                     var cancelTile=Main.tile[x,y-1];cancelTile.HasTile=true;cancelTile.TileType=TileID.Stone;
+                    if(Program.LaunchParameters.ContainsKey("-companionperceptiontest"))
+                    {
+                        // Explicit extra flag inside the existing copied-world fixture only.
+                        int npc=NPC.NewNPC(p.GetSource_Misc("G85PerceptionFixture"),left*16+240,floor*16-48,NPCID.BlueSlime);
+                        Main.npc[npc].velocity=Vector2.Zero;
+                        Item.NewItem(p.GetSource_Misc("G85PerceptionFixture"),left*16+240,floor*16-32,16,16,ItemID.StoneBlock,3);
+                    }
                     initialized=true;NetworkStateSync.Full(p);
                     File.WriteAllText(Path.Combine(Main.SavePath,"action-fixture.json"),JsonSerializer.Serialize(new{targetX=p.position.X+64,mineX=x,mineY=y,
                         initialLife=p.statLife,initialAppleStack=2,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));

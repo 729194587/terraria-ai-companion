@@ -1,7 +1,7 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$SeedProfile,[int]$AiPort=18779)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$SeedProfile,[int]$AiPort=18779,[string]$PackagePath)
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
-$package=Join-Path $repo '.local/companion-g82-build/Mods/CompanionBridge.tmod'
+$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{Join-Path $repo '.local/companion-g82-build/Mods/CompanionBridge.tmod'}
 if(!(Test-Path -LiteralPath $package)){throw 'Run scripts/build-companion.ps1 first.'}
 if($AiPort -lt 1024 -or $AiPort -gt 65535 -or $AiPort -eq 18777 -or $AiPort -eq 7777){throw 'Choose a distinct AI IPC port.'}
 # Always create a new profile; older experiments and formal saves stay intact.

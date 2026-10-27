@@ -27,7 +27,7 @@ internal static class AtomicParameters
         {
             switch (op)
             {
-                case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
+                case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
                 case "resolve_content":
                     if (keys.Except(new[] { "kind", "query", "mode", "maxResults" }).Any()
                         || !keys.Contains("kind") || !keys.Contains("query")) throw new FormatException("Invalid resolver parameters.");

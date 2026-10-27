@@ -78,6 +78,7 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.directory=tempfile.TemporaryDirectory()
         self.aihost=AiHost();self.aihost.actions=True
         self.aihost.chat=True
+        self.aihost.perception=self._testMethodName == "test_model_can_observe_through_existing_agent_lua"
         self.chathost=ChatHost()
         self.threads=[]
         for host in (self.aihost,self.chathost):
@@ -128,6 +129,37 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result['actionSuccess']);self.assertEqual('released',result['actionState'])
         self.assertNotIn('movementLoop',result)
         self.assertEqual(180,result['value']['after']['x'])
+    async def test_model_can_observe_through_existing_agent_lua(self):
+        from server_ai import PERCEPTION_OPERATIONS
+        original=self.aihost.query
+        def query(operation,args):
+            result=original(operation,args)
+            if operation in PERCEPTION_OPERATIONS:
+                result.update(observedAtUnixMs=1793070000123,clock='server_utc_at_projection')
+                result['data']=dict(operation=operation,complete=True)
+            return result
+        self.aihost.query=query
+        self.answers=[self.program("""
+            local a=api('observe_terrain',{})
+            local b=api('resolve_content',{kind='tile',query='Terraria/Dirt'})
+            local c=api('scan_tiles',{minX=1,minY=1,maxX=2,maxY=2,tileTypes={0}})
+            local d=api('inspect_tile',{x=1,y=1})
+            local e=api('scan_entities',{category='all',radius=100})
+            assert(a.valid and b.valid and c.valid and d.valid and e.valid)
+            return {observedAtUnixMs=a.observedAtUnixMs,slot=a.actorSlot}
+        """),dict(role='assistant',content='已读取当前服务器AI附近世界。')]
+        await self.receive('perception','观察你周围');await self.agent.task
+        self.assertEqual(2,len(self.requests))
+        prompt=self.requests[0]['messages'][0]['content']
+        for name in PERCEPTION_OPERATIONS:self.assertIn(name,prompt)
+        queried={r['operation'] for r in self.aihost.sent if r['op']=='query'}
+        self.assertTrue(PERCEPTION_OPERATIONS <= queried)
+        self.assertFalse(any(r['op']=='start' for r in self.aihost.sent))
+        result=json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role']=='tool'))
+        self.assertTrue(result['programCompleted'])
+        self.assertEqual(254,result['value']['slot'])
+        self.assertEqual(1793070000123,result['value']['observedAtUnixMs'])
+
     async def test_ordinary_chat_remote_prefix_self_echo_and_game_messages_cannot_start_or_cancel(self):
         for e in (dict(type='chat_message',eventId='ordinary',text='hello',isSelf=False),
                   dict(type='chat_message',eventId='remote',text='!ai move',isSelf=False,source='local_ai_command'),

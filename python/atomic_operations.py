@@ -277,6 +277,12 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
         return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
+    if name in {'observe_terrain', 'scan_tiles', 'scan_entities', 'inspect_tile', 'resolve_content'} and 'server_ai_perception_v1' in bridge.hello.get('capabilities', []):
+        reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
+        envelope = reply.get('data')
+        if not isinstance(envelope, dict):
+            raise BridgeError('Missing server AI perception envelope')
+        return {'valid': envelope.get('available') is True, **envelope}
     if name == 'get_player_state' and 'server_ai_reads_v1' in bridge.hello.get('capabilities', []):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
