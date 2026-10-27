@@ -6,6 +6,9 @@ using System.Linq;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.IO;
+using Terraria.ID;
+using Terraria.ModLoader;
+using Terraria.GameContent.Creative;
 
 namespace VirtualPlayerEngineProbe;
 
@@ -22,6 +25,30 @@ internal static class CharacterStore
         if (p == null) CurrentId = null; // Explicit new actor must not overwrite the last loaded profile by default.
         return p;
     }
+    internal static Player CreateNewCandidate() => CharacterIo.Run(null, () =>
+    {
+        // The pinned Player constructor initializes ModPlayers and base stats, but
+        // NOT starting inventory. Mirror UICharacterCreation's non-Journey path
+        // without constructing its graphical UI or changing Main.LocalPlayer.
+        // Run once, before assigning the reservation's slot/position/identity.
+        var p = new Player { difficulty = 0, name = "G31_NoClient_Probe" };
+        int[] types = { ItemID.CopperShortsword, ItemID.CopperPickaxe, ItemID.CopperAxe };
+        for (int i = 0; i < types.Length; i++)
+        {
+            p.inventory[i].SetDefaults(types[i]);
+            p.inventory[i].Prefix(-1);
+        }
+        p.savedPerPlayerFieldsThatArentInThePlayerClass = new Player.SavedPlayerDataWithAnnoyingRules();
+        CreativePowerManager.Instance.ResetDataForNewPlayer(p);
+        var items = PlayerLoader.GetStartingItems(p, p.inventory.Where(i => !i.IsAir).Select(i => i.Clone()), false);
+        PlayerLoader.SetStartInventory(p, items);
+        if (Main.player.Any(existing => ReferenceEquals(existing, p)) || p.difficulty != 0
+            || p.name != "G31_NoClient_Probe" || p.width != 20 || p.height != 42
+            || p.dead || p.statLife <= 0 || p.statLifeMax <= 0
+            || types.Where((type, i) => p.inventory[i].type != type || p.inventory[i].stack != 1).Any())
+            throw new InvalidOperationException("New character initialization violated the pinned engine contract.");
+        return p;
+    });
     internal static void AssertMayRetire(Player p)
     {
         if (p != null && ReferenceEquals(p, failedSave))

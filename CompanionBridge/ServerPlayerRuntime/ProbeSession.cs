@@ -137,12 +137,9 @@ internal static class ProbeSession
                 if (!clear) throw new InvalidOperationException("No clear test spawn position; no actor allocated.");
                 // Constructors/ModPlayer initialization can throw or reenter. Keep the
                 // candidate private, then revalidate the original lease and placeholder.
-                // This probe only allocates an engine Player. Future character
-                // creation must restore an existing profile first, otherwise use
-                // vanilla new-character rules, independently of synchronization.
-                var candidate = CharacterStore.AcquireCandidate() ?? new Player { whoAmI = view.Slot, name = "G31_NoClient_Probe", width = 20, height = 42,
-                    statLife = 100, statLifeMax = 100, statLifeMax2 = 100,
-                    position = new Vector2(x, y), SpawnX = -1, SpawnY = -1 };
+                // Loaded profiles retain their inventory; only a genuinely new
+                // character receives vanilla starting items.
+                var candidate = CharacterStore.AcquireCandidate() ?? CharacterStore.CreateNewCandidate();
                 candidate.whoAmI = view.Slot;
                 candidate.position = new Vector2(x, y);
                 candidate.velocity = Vector2.Zero;

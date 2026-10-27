@@ -41,9 +41,49 @@ internal static class CharacterSelfTest
         try
         {
             var args = Environment.GetCommandLineArgs();
+            bool starterTest = args.Contains("-r1startertest");
             int resume = Array.IndexOf(args, "-g31loadid");
             if (resume >= 0) CharacterStore.Load(args[resume + 1]);
-            else { ProbeSession.Spawn(); Seed(); }
+            else
+            {
+                ProbeSession.Spawn();
+                if (starterTest)
+                {
+                    var p = ProbeSession.Actor;
+                    int[] expected = { ItemID.CopperShortsword, ItemID.CopperPickaxe, ItemID.CopperAxe };
+                    if (expected.Where((type, i) => p.inventory[i].type != type || p.inventory[i].stack != 1).Any()
+                        || p.inventory.Count(i => !i.IsAir) != 3 || p.difficulty != 0
+                        || p.name != "G31_NoClient_Probe" || p.whoAmI != ProbeSession.Reservation.Snapshot.Slot
+                        || !p.active || p.dead || p.statLife != 100 || p.statLifeMax != 100
+                        || p.SpawnX != -1 || p.SpawnY != -1)
+                        throw new IOException("New vanilla character defaults/starter hotbar differ.");
+                    string original = CharacterIo.State(p);
+                    ProbeSession.Spawn();
+                    if (!ReferenceEquals(p, ProbeSession.Actor) || original != CharacterIo.State(p))
+                        throw new IOException("Repeated initial spawn changed the character.");
+                    long generation = ProbeSession.ActorGeneration;
+                    NativeSurvival.Debug(p, ProbeSession.WorldSession, generation, kill: true);
+                    int timer = p.respawnTimer;
+                    if (!p.dead || timer <= 0) throw new IOException("Native starter death did not run.");
+                    var updateDead = typeof(Player).GetMethod("UpdateDead",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                    for (int tick = 0; tick < timer; tick++)
+                        NativeSurvival.Update((player, index) => updateDead.Invoke(player, null), p, p.whoAmI);
+                    if (p.dead || !ReferenceEquals(p, ProbeSession.Actor) || ProbeSession.ActorGeneration != generation + 1
+                        || expected.Where((type, i) => p.inventory[i].type != type || p.inventory[i].stack != 1).Any()
+                        || p.inventory.Count(i => !i.IsAir) != 3)
+                        throw new IOException("Native timed respawn lost or duplicated starter equipment.");
+                    // Persist deliberate inventory changes: loading must not repair
+                    // an empty starter slot or hand out another tool.
+                    p.inventory[2].TurnToAir();
+                }
+                else Seed();
+            }
+            if (starterTest && (!ProbeSession.Actor.inventory[2].IsAir
+                || ProbeSession.Actor.inventory[0].type != ItemID.CopperShortsword
+                || ProbeSession.Actor.inventory[1].type != ItemID.CopperPickaxe
+                || ProbeSession.Actor.inventory.Count(i => !i.IsAir) != 2))
+                throw new IOException("Restored starter inventory was re-granted or lost.");
             var before = CharacterIo.State(ProbeSession.Actor);
             var scopedFile = new Terraria.IO.PlayerFileData("scope-test", false) { Player = ProbeSession.Actor };
             var alias = new Terraria.IO.PlayerFileData("scope-test", false) { Player = ProbeSession.Actor };
@@ -65,6 +105,10 @@ internal static class CharacterSelfTest
                 CharacterStore.Load(id);
                 if (ReferenceEquals(old, ProbeSession.Actor) || CharacterIo.State(ProbeSession.Actor) != before)
                     throw new IOException("Published round-trip did not preserve character data.");
+                var restored = ProbeSession.Actor;
+                ProbeSession.Spawn();
+                if (!ReferenceEquals(restored, ProbeSession.Actor) || CharacterIo.State(restored) != before)
+                    throw new IOException("Repeated restored spawn changed character data.");
                 CharacterStore.Save(id);
             }
             ProbeDebugAppearance.Toggle(ProbeSession.Actor);
@@ -89,6 +133,7 @@ internal static class CharacterSelfTest
             ProbeSession.Finish("selftest complete", keepReservation: true);
             File.WriteAllText(report, JsonSerializer.Serialize(new { result = "native-persistence-selftest-passed",
                 id, roundTrips = 2, restoredFromPriorProcess = resume >= 0, corruptLoadRejected = badLoadRejected,
+                starterInventory = starterTest, repeatedSpawnPreserved = true, nativeStarterRespawn = starterTest && resume < 0,
                 saveFailureRetained = retained, exitRequests = CharacterIo.ExitRequests,
                 hostAndPlay = "not executed", remoteMultiplayer = "not executed" }));
         }

@@ -1,5 +1,5 @@
 displayName = CompanionBridge
 author = Terraria AI Companion
-version = 0.1.49
+version = 0.1.50
 side = Both
 buildIgnore = *.csproj, *.user, obj/*, bin/*, .vs/*
