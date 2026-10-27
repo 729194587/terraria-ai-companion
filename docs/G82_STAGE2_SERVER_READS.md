@@ -85,7 +85,8 @@ query 不创建 actionId，不发送 start_atomic，不消耗动作预算；同�
 
 ## 实际验证（2026-10-27）
 
-没有运行全量测试，没有启动图形游戏，没有覆盖或删除旧 profile。
+开发阶段没有运行全量测试或启动图形游戏，没有覆盖或删除旧 profile。
+下表区分开发阶段的自动化/隔离验证与随后由用户手动完成的 Host & Play 验收。
 
 | 验证 | 实际结果 |
 | --- | --- |
@@ -97,15 +98,48 @@ query 不创建 actionId，不发送 start_atomic，不消耗动作预算；同�
 | Python 后端 | 最终 18 项通过，含现有真实 Lua Worker、零动作预算读脚本、读—选栏—读、五模式、旧能力拒绝、未知不补值与身份检查 |
 | 既有 Python 定向回归 | atomic_operations、inventory_operations、atomic_extensions、atomic_result_contract 共 43 项通过 |
 | 真人 C# 路径 | BridgeOnly 与 InventoryOnly 均通过；原 TCP/输入/死亡及真人 token/背包动作的存储替身回归 |
-| 真实原生服务器 | 第一阶段按键 0 将索引 0→9；同一组合 Lua 读取后按键 2 将 9→1，再读回；只读 Lua 8 次查询、0 动作，五模式均完成；原始绑定 state 与 query 的位置/生命/选栏匹配；错 binding 拒绝；本次进程正常退出并清理 Actor/预留槽位 |
-| 本阶段 Host & Play / 远程多人 | **未执行** |
+| 隔离原生服务器（开发阶段） | 第一阶段按键 0 将索引 0→9；同一组合 Lua 读取后按键 2 将 9→1，再读回；只读 Lua 8 次查询、0 动作，五模式均完成；原始绑定 state 与 query 的位置/生命/选栏匹配；错 binding 拒绝；本次进程正常退出并清理 Actor/预留槽位 |
+| 真实 Host & Play（用户实机，后补） | 只读状态/背包、键 2→索引 1、键 0→索引 9、读取真实木头×1、键 1 选中该木头并读回，均 completed；只读 0 动作，选栏 1 动作/released，failure=null；详见下节本地完整回执 |
+| 持续旧连接的绑定拒绝、动作中死亡重生、远程多人 | **仍未验证**；不以替身/隔离错 binding 检查或既往 G8.1 自然死亡重生替代 |
 
 最终原生证据见 [G82_STAGE2_NATIVE_EVIDENCE.json](G82_STAGE2_NATIVE_EVIDENCE.json)。
 原始结果、Lua 回执、stdout/stderr 和按本次进程/世界/起止时间筛选的日志保存在该文件
 列出的独立 .local profile，Lua 证据仍由既有模块写入 .local/g82-lua-evidence。
-空服原生 gameUpdate=0，证明实际 Player/背包字段和主线程执行链，不能当作真人在线帧
-更新或图形显示验收。新临时 AI 背包为空；真实非空工具/前缀/Mod 物品未现场验证，
-非空属性和计数目前有存储替身测试，明天需实机核对。
+该次隔离空服原生 gameUpdate=0，证明实际 Player/背包字段和主线程执行链，不能当作
+Host & Play 或图形显示验收。该隔离测试的新临时 AI 背包为空；下节另行补录真实
+Host & Play 的非空木头读取。真实工具的非零镐力、非零前缀和 Mod 物品仍未现场验证。
+
+### 2026-10-27 补录：Phase 1 + Phase 2 Host & Play 实机
+
+用户手动启动 Host & Play 并执行验收命令，提供终端输出；本次补录同时核对以下
+5 份本地完整 Lua 回执，不重新运行游戏或功能测试。五次 status 均为 completed、
+failure 均为 null、生命均为 100、fullInventorySlots 均为 59。身份始终一致：
+
+- Actor：`e4344f0e59f34eaf93347511cb2bd711`
+- 世界会话：`b54e876a646a46c880505e0fe64fd739`
+- 槽位：254；角色代次：1
+
+| 实机步骤 | 查询/动作与结束状态 | 实际读回 |
+| --- | --- | --- |
+| A：只读空背包 | 8 次查询、0 动作、idle | 索引 0 / 快捷键 1，非空槽 0；gameUpdate=1865 |
+| B：`--key 2` | 9 次调用、1 动作、released；completed/known，selectionVerified=true | 索引 0→1，快捷键 2；读回 gameUpdate=3026，结束证据 tick=3021 |
+| C：`--key 0` | 9 次调用、1 动作、released；completed/known，selectionVerified=true | 索引 1→9，快捷键 0；读回 gameUpdate=3782，结束证据 tick=3778 |
+| D：原生拾取后只读 | 8 次查询、0 动作、idle | 非空槽 1；索引 0 / 快捷键 1 为 Terraria/Wood（typeId=9）×1、prefix=0；选中索引仍为 9；gameUpdate=10540 |
+| E：`--key 1` 选中木头 | 9 次调用、1 动作、released；completed/known，selectionVerified=true | 索引 9→0，快捷键 1；selected 读回 Terraria/Wood×1，数量未消耗；gameUpdate=13536，结束证据 tick=13531 |
+
+完整回执位于仓库根目录 `.local/`（本地证据保留，不纳入 Git）：
+
+- A：`g82-read-acceptance-0664c5c458d54df791c2e4dbfddaca86.json`
+- B：`g82-read-acceptance-41e268c07bdb48c48be22e53171d11b5.json`
+- C：`g82-read-acceptance-1a27ed2af0234a469eaf683b5889d383.json`
+- D：`g82-read-acceptance-3c319246af1d4ed4abcc2e49b0af358f.json`
+- E：`g82-read-acceptance-4e95d13da9a44fdd8baacf9d8e499fd8.json`
+
+这组证据证明真实 Host & Play 中“状态/背包读取→选栏→再读回”的基础链路，
+涵盖空栏与原生拾取的非空木头；与上面的隔离空服测试分开记录。没有执行木头放置或
+其他物品使用，也没有据此新增真人 TCP/输入隔离或所有图形显示行为的验收结论。
+脚本每次新建连接并 bind，因此**不能**视为持续旧连接携带旧 binding 的拒绝测试。
+**持续旧连接的绑定拒绝、动作中死亡重生及远程多人仍未验证**。PR 保持 Draft，不合并。
 
 测试曾发现固定验收 Lua 使用了沙箱未开放的 table.insert：非空背包替身暴露该分支，
 空背包原生跑不到。已改为普通数组赋值，未放宽沙箱；最终替身与原生脚本均重新通过。
@@ -124,7 +158,7 @@ pwsh -NoProfile -File tests/verify_server_ai_atomic_native.ps1 -Reads
 git diff --check
 ```
 
-## 明天一起验收第一、第二阶段
+## 复现实机验收第一、第二阶段
 
 正常退出旧游戏/服务器后，在仓库目录构建并创建新的测试 profile：
 
