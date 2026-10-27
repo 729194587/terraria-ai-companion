@@ -30,6 +30,7 @@ class Host(socketserver.ThreadingTCPServer):
         self.polls = 0
         self.release = threading.Event()
         self.reads = True
+        self.actions = False
 
     def query(self, operation, args):
         player = dict(inWorld=True, id=254, source='server_ai_player', position=dict(x=100, y=200),
@@ -67,6 +68,8 @@ class Handler(socketserver.StreamRequestHandler):
                 data = dict(capabilities=['server_ai_atomic_v1', 'atomic_operations_v1', 'hotbar_keys_v1'])
                 if h.reads:
                     data['capabilities'].append('server_ai_reads_v1')
+                if h.actions:
+                    data['capabilities'].append('server_ai_actions_v1')
             elif r['binding'] != h.binding:
                 error = 'stale_binding'
             elif op == 'query':
@@ -81,8 +84,8 @@ class Handler(socketserver.StreamRequestHandler):
                 if h.mode == 'stall_start':
                     h.release.wait(3)
                     return
-                key = r['arguments']['slot']
-                h.action = dict(actionId=r['actionId'], operation='select_hotbar_slot', session='connection-1',
+                key = r['arguments'].get('slot', 1)
+                h.action = dict(actionId=r['actionId'], operation=r['operation'], session='connection-1',
                                 generation=1, worldSessionId='world-1', actorId='actor-1', actorSlot=254,
                                 status='running', reason='accepted', executionState='accepted', durationMs=300,
                                 evidence=dict(targetSlot=(key + 9) % 10, selectionApplied=False),
@@ -96,7 +99,7 @@ class Handler(socketserver.StreamRequestHandler):
                 h.polls += 1
                 if op == 'cancel' or h.mode != 'pending' and h.polls >= 2:
                     a = h.action
-                    h.selected = a['evidence']['targetSlot']
+                    h.selected = a['evidence'].get('targetSlot', h.selected)
                     a.update(status='cancelled' if op == 'cancel' else 'completed', reason='fixture_end',
                              executionState='terminal', endEvidenceStatus='known',
                              endEvidence=dict(worldSessionId='world-1', gameUpdate=33,
@@ -106,6 +109,19 @@ class Handler(socketserver.StreamRequestHandler):
                     a['evidence']['selectionApplied'] = True
                     if h.mode == 'bad_evidence':
                         a['endEvidence']['selectionVerified'] = False
+                    if a['operation'] != 'select_hotbar_slot':
+                        a['evidence'] = dict(arrived=True, cycleVerified=True, destroyedByActor=True,
+                                             targetAbsent=True, targetChanged=False, effectStatus='unconfirmed')
+                        a['endEvidence'].update(phase='ServerAI_game_thread_inputs_released', inputsAcquired=True,
+                                                inputsReleased=True, effectVerified=True, operation=a['operation'])
+                        if h.mode == 'no_release':
+                            a['endEvidence']['inputsReleased'] = False
+                        if h.mode == 'no_effect':
+                            a['endEvidence']['effectVerified'] = False
+                        if h.mode == 'replaced_target':
+                            a['evidence']['targetChanged'] = True
+                        if h.mode == 'wrong_operation':
+                            a['endEvidence']['operation'] = 'select_hotbar_slot'
                 data = dict(action=copy.deepcopy(h.action))
             reply = dict(v=1, id=r['id'], ok=error is None, binding=h.binding, data=data, error=error)
             self.wfile.write((json.dumps(reply) + '\n').encode())
@@ -126,6 +142,45 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.host.server_close()
         self.thread.join()
         self.directory.cleanup()
+
+    def enable_native_actions(self):
+        self.bridge.close()
+        self.host.actions = True
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+
+    async def test_existing_lua_worker_runs_navigation_use_mining_in_sequence(self):
+        self.enable_native_actions()
+        runtime = LuaRuntime(self.bridge, evidence_root=self.directory.name)
+        result = await runtime.execute("""
+            local move = api('navigate_to_x', {targetX=164})
+            assert(move.valid and move.completed)
+            local use = api('use_item', {})
+            assert(use.valid and use.completed and use.evidence.effectStatus == 'unconfirmed')
+            local mine = api('mine_tile', {x=10,y=20})
+            assert(mine.valid and mine.completed)
+            return mine
+        """, limits=Limits(seconds=10, actions=3))
+        self.assertEqual('completed', result['status'], result)
+        self.assertEqual('released', result['actionState'])
+        self.assertEqual(3, result['actions'])
+        self.assertEqual(['navigate_to_x', 'use_item', 'mine_tile'],
+                         [r['operation'] for r in self.host.sent if r['op'] == 'start'])
+
+    async def test_native_completion_requires_release_effect_and_matching_operation(self):
+        for mode in ('no_release', 'no_effect', 'replaced_target', 'wrong_operation'):
+            with self.subTest(mode=mode):
+                self.enable_native_actions()
+                self.host.mode = mode
+                result = await atomic.dispatch(self.bridge, 'mine_tile', {'x': 10, 'y': 20})
+                self.assertEqual('unknown', result['status'], result)
+                self.assertFalse(result['completed'])
+
+    async def test_native_action_identity_change_never_retries(self):
+        self.enable_native_actions()
+        self.host.mode = 'change_on_poll'
+        result = await atomic.dispatch(self.bridge, 'navigate_to_x', {'targetX': 164})
+        self.assertEqual('unknown', result['status'], result)
+        self.assertEqual(1, sum(r['op'] == 'start' for r in self.host.sent))
 
     async def test_existing_dispatch_verifies_key_zero_terminal_evidence(self):
         result = await atomic.dispatch(self.bridge, 'select_hotbar_slot', {'slot': 0})

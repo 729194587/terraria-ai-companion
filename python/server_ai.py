@@ -30,6 +30,8 @@ class ServerAiBridge:
             self.supported_atomic_operations = type(self).supported_atomic_operations
             if "server_ai_reads_v1" in self.hello["capabilities"]:
                 self.supported_atomic_operations |= frozenset(("get_player_state", "inspect_inventory"))
+            if "server_ai_actions_v1" in self.hello["capabilities"]:
+                self.supported_atomic_operations |= frozenset(("navigate_to_x", "use_item", "mine_tile"))
         except BaseException:
             self.close()
             raise
@@ -95,12 +97,13 @@ class ServerAiBridge:
                     return self._movement(None)
                 return self._movement(self._request("action", actionId=self._action_id)["data"]["action"])
             if cmd == "start_atomic":
-                if parameters.get("operation") != "select_hotbar_slot":
+                operation = parameters.get("operation")
+                if operation not in self.supported_atomic_operations - {"wait", "stop_action", "get_player_state", "inspect_inventory"}:
                     raise BridgeError("Operation unsupported by server AI backend", status="unsupported_operation")
                 if parameters.get("expectedGeneration") != self.binding["generation"]:
                     raise BridgeError("AI generation changed", status="stale_binding")
                 action_id = uuid.uuid4().hex
-                action = self._request("start", actionId=action_id, operation="select_hotbar_slot",
+                action = self._request("start", actionId=action_id, operation=operation,
                                        arguments=parameters.get("arguments", {}),
                                        expiresAtUnixMs=int(time.time() * 1000) + 1800)["data"]["action"]
                 self._action_id = action_id

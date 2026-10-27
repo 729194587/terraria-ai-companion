@@ -75,7 +75,7 @@ internal sealed class AiReadOnlyProtocol
                 if (!ReferenceEquals(actor, current.Actor)) { actor = current.Actor; actorId = Guid.NewGuid().ToString("N"); }
                 var binding = new Binding(actorId, current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
-                return JsonSerializer.Serialize(Reply(true, data: actions == null ? null : new { capabilities = query == null ? AiAtomicActions.Capabilities : AiAtomicActions.Capabilities.Append("server_ai_reads_v1").ToArray() }, binding: binding));
+                return JsonSerializer.Serialize(Reply(true, data: actions == null ? null : new { capabilities = query == null ? actions.Capabilities : actions.Capabilities.Append("server_ai_reads_v1").ToArray() }, binding: binding));
             }
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)

@@ -80,7 +80,7 @@ internal static class ActorMining
         lock(ProbeSession.Reservation.Gate)
         {
             ActorItemUse.Capture(p,world,generation);
-            if(Running||ActorItemUse.Running||ActorControl.Current?.Phase==ActionPhase.Running
+            if(Running||ActorItemUse.Running||ActorControl.Running
                 ||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
                 throw new InvalidOperationException("Busy: stop walking/item use/mining before starting another action.");
             var c=new Context{Actor=p,World=world,Generation=generation,X=x,Y=y,Slot=p.selectedItem,Item=p.HeldItem};Current=c;

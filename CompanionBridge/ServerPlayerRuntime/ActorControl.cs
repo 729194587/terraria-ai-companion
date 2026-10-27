@@ -7,6 +7,16 @@ namespace VirtualPlayerEngineProbe;
 
 internal static class ActorControl
 {
+    internal interface IMovementDriver
+    {
+        bool Running { get; }
+        bool Matches(Player p);
+        void BeforeMovement(Player p);
+        void Update(On_Player.orig_Update orig, Player p, int slot);
+        void Retire(Player p);
+    }
+    internal static IMovementDriver Driver;
+    internal static bool Running => Current?.Phase == ActionPhase.Running || Driver?.Running == true;
     internal static ActorAction<Player> Current;
     private static ActorAction<Player> executing;
     private static bool injected;
@@ -24,7 +34,7 @@ internal static class ActorControl
             && Netplay.Clients != null && view.Slot < Netplay.Clients.Length
             && VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[view.Slot]);
     }
-    private static void Healthy(Player p)
+    internal static void Healthy(Player p)
     {
         NetworkStateSync.Require(p);
         if (Main.gameMenu || Netplay.Disconnect || p.dead || p.ghost || p.mount.Active || p.frozen || p.stoned || p.webbed
@@ -59,7 +69,7 @@ internal static class ActorControl
             Captured(expected, generation, world);
             Healthy(expected);
             if(ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Wait for item use/mining to finish, or stop it.");
-            if (Current?.Phase == ActionPhase.Running) throw new InvalidOperationException("An action is already running.");
+            if (Running) throw new InvalidOperationException("An action is already running.");
             if (Math.Abs(expected.velocity.X) > 0.01f) throw new InvalidOperationException("Wait until the actor is horizontally stationary.");
             Current = new ActorAction<Player>(expected, world, generation, expected.position.X);
             Emit("control-start", new { world, generation, slot = expected.whoAmI, x = expected.position.X,
@@ -83,6 +93,7 @@ internal static class ActorControl
     internal static void Retire(Player expected)
     {
         ProbeSession.Reservation.AssertOwner(EngineProgram.IsMainThread);
+        Driver?.Retire(expected);
         if (Current == null || !ReferenceEquals(Current.Actor, expected)) return;
         if (!Owned(Current)) { Invalidate(Current); return; }
         Current.Stop(ActionPhase.Cancelled, "actor retired"); Release(Current, true); Current = null;
@@ -106,6 +117,7 @@ internal static class ActorControl
     // HorizontalMovement. SetControls is local-player-only and is NOT used.
     internal static void BeforeMovement(Player p)
     {
+        if (Driver?.Running == true && Driver.Matches(p)) { Driver.BeforeMovement(p); return; }
         var context = executing;
         if (context == null || !ReferenceEquals(context.Actor, p)) return;
         ProbeSession.Reservation.AssertOwner(EngineProgram.IsMainThread);
@@ -117,6 +129,7 @@ internal static class ActorControl
 
     internal static void Update(On_Player.orig_Update orig, Player p, int slot)
     {
+        if (Driver?.Running == true && Driver.Matches(p)) { Driver.Update(orig, p, slot); return; }
         var context = Current;
         if (context == null || context.Phase != ActionPhase.Running || !ReferenceEquals(context.Actor, p))
         { orig(p, slot); return; } // All human calls, including their exceptions, remain native.

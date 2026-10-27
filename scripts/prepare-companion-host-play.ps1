@@ -42,3 +42,4 @@ Write-Output "After manually selecting Multiplayer > Host & Play, run: python sc
 Write-Output "Explicit Lua selection: & .local/lua-venv/Scripts/python.exe scripts/server_ai_select.py --port $AiPort --key 2"
 Write-Output "Lua state/inventory reads (read-only by default): & .local/lua-venv/Scripts/python.exe scripts/server_ai_verify.py --port $AiPort"
 Write-Output "Both G8.2 stages in one Lua run: & .local/lua-venv/Scripts/python.exe scripts/server_ai_verify.py --port $AiPort --key 2"
+Write-Output "Explicit Lua movement/use/mining: scripts/server_ai_actions.py --help; see docs/SERVER_AI_ACTIONS.md. No test terrain/items are created by this profile."

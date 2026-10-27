@@ -180,6 +180,7 @@ async def terminal(bridge, action, generation):
     end = action.get('endEvidence')
     server_ai_end = (isinstance(end, dict)
                      and 'server_ai_atomic_v1' in bridge.hello.get('capabilities', [])
+                     and action.get('operation') == 'select_hotbar_slot'
                      and end.get('phase') == 'ServerAI_game_thread_no_input'
                      and end.get('inputsAcquired') is False
                      and isinstance(action.get('actorId'), str) and bool(action['actorId'])
@@ -190,6 +191,29 @@ async def terminal(bridge, action, generation):
                           or end.get('selectionVerified') is True
                           and action.get('evidence', {}).get('selectionApplied') is True
                           and end.get('selectedSlot') == action.get('evidence', {}).get('targetSlot')))
+    native_evidence = action.get('evidence') or {}
+    native_evidence = native_evidence if isinstance(native_evidence, dict) else {}
+    native_verified = {
+        'navigate_to_x': native_evidence.get('arrived') is True,
+        'use_item': native_evidence.get('cycleVerified') is True,
+        'mine_tile': (native_evidence.get('destroyedByActor') is True
+                      and native_evidence.get('targetAbsent') is True
+                      and native_evidence.get('targetChanged') is False),
+    }.get(action.get('operation'), False)
+    native_end = (isinstance(end, dict)
+                  and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
+                  and action.get('operation') in ('navigate_to_x', 'use_item', 'mine_tile')
+                  and end.get('phase') == 'ServerAI_game_thread_inputs_released'
+                  and end.get('operation') == action.get('operation')
+                  and end.get('inputsReleased') is True
+                  and type(end.get('inputsAcquired')) is bool
+                  and isinstance(action.get('actorId'), str) and bool(action['actorId'])
+                  and end.get('actorId') == action['actorId']
+                  and end.get('actorGeneration') == action.get('generation')
+                  and end.get('actorSlot') == action.get('actorSlot')
+                  and (action.get('status') != 'completed'
+                       or end.get('effectVerified') is True and native_verified))
+    server_ai_end = server_ai_end or native_end
     valid_phase = server_ai_end if 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []) else (
         isinstance(end, dict) and end.get('phase') in ('PostUpdateRunSpeeds_before_bridge_input', 'UpdateDead_after_revoke'))
     if (action.get('endEvidenceStatus') != 'known' or not isinstance(end, dict)

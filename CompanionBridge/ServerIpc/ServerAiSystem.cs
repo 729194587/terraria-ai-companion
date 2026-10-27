@@ -44,7 +44,7 @@ public sealed class ServerAiSystem : ModSystem
     // it never calls Player.Update or changes HasClients.
     private static void IdleTick()
     {
-        if (!Netplay.HasClients) current?.Pump();
+        if (!Netplay.HasClients) { current?.Pump(); ServerAiActionFixture.Tick(); }
         // Isolated native harness only; no shutdown operation exists on IPC.
         if (Program.LaunchParameters.ContainsKey("-companionaiipctest") && Program.IsMainThread
             && System.IO.File.Exists(System.IO.Path.Combine(Main.SavePath, "g81-test-stop")))
@@ -65,10 +65,10 @@ public sealed class ServerAiSystem : ModSystem
             Program.LaunchParameters.TryGetValue("-companionbridgeport", out var humanArg);
             Program.LaunchParameters.TryGetValue("-companionaiport", out var aiArg);
             int port = AiReadOnlyServer.ParsePort(aiArg ?? Environment.GetEnvironmentVariable("COMPANION_AI_PORT"), TcpControlServer.ParseLaunchPort(humanArg));
-            server = new(port, new AiAtomicActions());
+            server = new(port, new AiAtomicActions(new ServerAiNativeActions()));
             server.Start();
             spawnPending = true;
-            Mod.Logger.Info($"G8.2 AI IPC listening on 127.0.0.1:{port}; select_hotbar_slot enabled; awaiting server reservation.");
+            Mod.Logger.Info($"AI IPC listening on 127.0.0.1:{port}; selection/navigation/use/mining enabled; awaiting server reservation.");
         }
         catch (Exception e) { server?.Dispose(); server = null; Mod.Logger.Error("AI IPC unavailable; human paths remain available.", e); }
     }
@@ -116,7 +116,7 @@ public sealed class ServerAiSystem : ModSystem
         ActorItemUse.Select(p, expected.World, expected.Generation, slot);
         ProbeSession.Log("atomic-select", new { beforeSlot = before, selectedSlot = p.selectedItem, expected.Generation, expected.World });
     }
-    private void Stop() { spawnPending = false; server?.Dispose(); server = null; }
+    private void Stop() { spawnPending = false; server?.Dispose(); server = null; ServerAiActionFixture.Reset(); }
     public override void OnWorldUnload() => Stop();
     public override void Unload() { Stop(); if (ReferenceEquals(current, this)) current = null; }
 }

@@ -2,13 +2,27 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
+using System.Linq;
 
 namespace CompanionBridge.ServerIpc;
 
 // A bounded server execution adapter, not a scheduler. No Terraria access here.
 internal sealed class AiAtomicActions
 {
-    internal static readonly string[] Capabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
+    private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
+    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Append("server_ai_actions_v1").ToArray();
+    internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true);
+    internal interface IExecutor
+    {
+        string Validate(string operation, JsonElement arguments);
+        object Start(AiReadOnlyProtocol.Identity identity, string operation, JsonElement arguments, string actionId);
+        NativeResult Poll(AiReadOnlyProtocol.Identity identity, object handle);
+        NativeResult Cancel(AiReadOnlyProtocol.Identity identity, object handle);
+        void Shutdown();
+    }
+    private readonly IExecutor executor;
+    private readonly Func<long> clock;
+    internal AiAtomicActions(IExecutor executor = null, Func<long> clock = null) { this.executor = executor; this.clock = clock ?? (() => Environment.TickCount64); }
     internal sealed record Reply(object Data = null, string Error = null);
     private sealed class Entry
     {
@@ -20,20 +34,25 @@ internal sealed class AiAtomicActions
         internal bool Cancel, Applied, Attempted;
         internal CancellationToken Disconnected;
         internal object End;
+        internal string Operation;
+        internal JsonElement Arguments;
+        internal int Duration;
+        internal object Handle;
+        internal NativeResult Result;
     }
     private readonly Dictionary<string, Entry> entries = new(StringComparer.Ordinal);
     private Entry active;
     private long sequence;
-    internal void Clear() { entries.Clear(); active = null; }
+    internal void Clear() { executor?.Shutdown(); entries.Clear(); active = null; }
     internal void Forget(Guid connection) { if (active?.Owner == connection) active.Cancel = true; }
     private static bool Matches(Entry e, AiReadOnlyProtocol.Identity current) => current != null
         && ReferenceEquals(e.Actor, current.Actor) && e.World == current.World && e.Generation == current.Generation && e.Slot == current.Slot;
     private static object Snapshot(Entry e) => new {
-        actionId = e.Id, operation = "select_hotbar_slot", session = e.Owner.ToString("N"), generation = e.Generation,
-        worldSessionId = e.World, actorId = e.ActorId, actorSlot = e.Slot, durationMs = 2000,
+        actionId = e.Id, operation = e.Operation, session = e.Owner.ToString("N"), generation = e.Generation,
+        worldSessionId = e.World, actorId = e.ActorId, actorSlot = e.Slot, durationMs = e.Duration,
         status = e.Status, executionState = e.Phase, reason = e.Reason,
-        evidence = new { requestedHotbarKey = e.Key, targetSlot = e.Target, beforeSlot = e.Before,
-            mutationAttempted = e.Attempted, selectionApplied = e.Applied },
+        evidence = e.Operation == "select_hotbar_slot" ? (object)new { requestedHotbarKey = e.Key, targetSlot = e.Target, beforeSlot = e.Before,
+            mutationAttempted = e.Attempted, selectionApplied = e.Applied } : e.Result?.Evidence,
         endEvidenceStatus = e.Phase == "terminal" ? e.End == null ? "unknown" : "known" : "not_ended", endEvidence = e.End
     };
     internal Reply Handle(Guid owner, string op, JsonElement root, AiReadOnlyProtocol.Identity current,
@@ -44,25 +63,38 @@ internal sealed class AiAtomicActions
         if (op != "start")
         {
             if (!entries.TryGetValue(id, out var known) || known.Owner != owner) return new(Error: "unknown_action");
-            if (op == "cancel" && known.Status == "running") End(known, "cancelled", "cancelled_no_inputs_acquired", current, true);
+            if (op == "cancel" && known.Status == "running") Stop(known, "cancelled", "explicit_cancel", current);
             return new(new { action = Snapshot(known) });
         }
         if (entries.ContainsKey(id)) return new(Error: "duplicate_action");
         if (entries.Count >= 1024) return new(Error: "action_registry_full");
         if (active != null) return new(Error: "action_busy");
         if (!current.CanAct) return new(Error: "actor_not_alive");
-        if (root.GetProperty("operation").GetString() != "select_hotbar_slot") return new(Error: "unsupported_operation");
+        string operation = root.GetProperty("operation").GetString();
+        bool selecting = operation == "select_hotbar_slot";
+        if (!selecting && (executor == null || operation is not ("navigate_to_x" or "use_item" or "mine_tile"))) return new(Error: "unsupported_operation");
         var arguments = root.GetProperty("arguments");
-        int count = 0;
-        foreach (var field in arguments.EnumerateObject()) { if (field.Name != "slot" || ++count > 1) return new(Error: "invalid_arguments"); }
-        int key = arguments.GetProperty("slot").GetInt32();
-        if (key < 0 || key > 9) return new(Error: "invalid_arguments");
+        int key = 0;
+        if (selecting)
+        {
+            int count = 0;
+            foreach (var field in arguments.EnumerateObject()) { if (field.Name != "slot" || ++count > 1) return new(Error: "invalid_arguments"); }
+            key = arguments.GetProperty("slot").GetInt32();
+            if (key < 0 || key > 9) return new(Error: "invalid_arguments");
+        }
+        else
+        {
+            string invalid = executor.Validate(operation, arguments);
+            if (invalid != null) return new(Error: invalid);
+        }
         long remaining = root.GetProperty("expiresAtUnixMs").GetInt64() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (remaining <= 0) return new(Error: "request_expired");
         if (remaining > 2000) return new(Error: "invalid_deadline");
+        int duration = operation switch { "navigate_to_x" => 30000, "use_item" => 3000, "mine_tile" => 10000, _ => 2000 };
         active = new Entry { Owner = owner, Id = id, World = current.World, Actor = current.Actor, ActorId = binding.actor,
             Generation = current.Generation, Slot = current.Slot, Before = current.SelectedSlot,
-            Key = key, Target = HotbarSlots.ToInventorySlot(key), Deadline = Environment.TickCount64 + remaining, Disconnected = disconnected };
+            Operation = operation, Arguments = arguments.Clone(), Duration = duration,
+            Key = key, Target = HotbarSlots.ToInventorySlot(key), Deadline = clock() + (selecting ? remaining : duration), Disconnected = disconnected };
         entries.Add(id, active);
         return new(new { action = Snapshot(active) });
     }
@@ -73,7 +105,22 @@ internal sealed class AiAtomicActions
             worldSessionId = e.World, actorId = e.ActorId, actorGeneration = e.Generation, actorSlot = e.Slot,
             inputsAcquired = false, selectedSlot = current.SelectedSlot, selectedHotbarKey = HotbarSlots.KeyForInventorySlot(current.SelectedSlot),
             selectionVerified = e.Applied && current.SelectedSlot == e.Target, observationSequence = sequence };
+        if (known && e.Operation != "select_hotbar_slot") e.End = new { phase = "ServerAI_game_thread_inputs_released", gameUpdate = current.GameUpdate,
+            worldSessionId = e.World, actorId = e.ActorId, actorGeneration = e.Generation, actorSlot = e.Slot,
+            inputsAcquired = e.Handle != null && e.Result?.InputsAcquired != false, inputsReleased = e.Handle == null || e.Result?.InputsReleased == true,
+            effectVerified = e.Result?.EffectVerified == true, operation = e.Operation, observationSequence = sequence };
         if (ReferenceEquals(active, e)) active = null;
+    }
+    private void Stop(Entry e, string status, string reason, AiReadOnlyProtocol.Identity current)
+    {
+        if (e.Handle != null)
+        {
+            try { e.Result = executor.Cancel(current, e.Handle); }
+            catch { End(e, "unknown", "native_cleanup_unconfirmed", current, false); return; }
+            if (!e.Result.InputsReleased) { End(e, "unknown", "native_inputs_not_released", current, false); return; }
+            if (status == "cancelled" && current.CanAct && e.Result.Status == "completed" && e.Result.EffectVerified) status = "completed";
+        }
+        End(e, status, reason, current, true);
     }
     internal void Tick(Func<AiReadOnlyProtocol.Identity> capture, Action<AiReadOnlyProtocol.Identity, int> select)
     {
@@ -82,10 +129,27 @@ internal sealed class AiAtomicActions
         AiReadOnlyProtocol.Identity current;
         try { current = capture(); } catch { current = null; }
         if (!Matches(e, current)) { End(e, "unknown", "actor_binding_changed", current, false); return; }
-        if (!current.CanAct) { End(e, "cancelled", "actor_not_alive_no_inputs_acquired", current, true); return; }
-        if (e.Cancel || e.Disconnected.IsCancellationRequested) { End(e, "cancelled", "cancelled_no_inputs_acquired", current, true); return; }
-        if (Environment.TickCount64 >= e.Deadline) { End(e, "timeout", "execution_deadline", current, true); return; }
-        if (e.Phase == "accepted") { e.Phase = "running"; e.Reason = "awaiting_native_selection"; return; }
+        if (!current.CanAct) { Stop(e, "cancelled", "actor_not_alive", current); return; }
+        if (e.Cancel || e.Disconnected.IsCancellationRequested) { Stop(e, "cancelled", "connection_cancelled", current); return; }
+        if (clock() >= e.Deadline) { Stop(e, "timeout", "execution_deadline", current); return; }
+        if (e.Phase == "accepted") { e.Phase = "running"; e.Reason = "awaiting_native_execution"; return; }
+        if (e.Operation != "select_hotbar_slot")
+        {
+            try
+            {
+                if (e.Handle == null) { e.Attempted = true; e.Handle = executor.Start(current, e.Operation, e.Arguments, e.Id); return; }
+                e.Result = executor.Poll(current, e.Handle);
+                if (e.Result.Status == "running") return;
+                bool verified = e.Result.Status != "completed" || e.Result.EffectVerified;
+                End(e, verified && e.Result.InputsReleased ? e.Result.Status : "unknown", e.Result.Reason, current, e.Result.InputsReleased);
+            }
+            catch
+            {
+                if (e.Handle == null) End(e, "unknown", "native_start_unconfirmed", current, false);
+                else Stop(e, "unknown", "native_action_unconfirmed", current);
+            }
+            return;
+        }
         if (!e.Applied)
         {
             // One indivisible native selection; never retry an ambiguous mutation/send failure.

@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[string]$PythonExecutable)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[string]$PythonExecutable)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'server_ai_native_evidence.ps1')
 $repo=Split-Path $PSScriptRoot -Parent
@@ -16,6 +16,7 @@ $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
 [IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')
+if($Actions){[IO.File]::WriteAllText("$profile/isolated-action-fixture",'Explicit test fixture in this copied world only.')}
 $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dotnet.exe'))
 $info.WorkingDirectory=$TModLoaderPath
 $info.UseShellExecute=$false
@@ -24,6 +25,7 @@ $info.RedirectStandardInput=$true
 $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
+if($Actions){$info.ArgumentList.Add('-companionactionstest')}
 $process=[Diagnostics.Process]::Start($info)
 $startedUtc=$process.StartTime.ToUniversalTime()
 $stdout=$process.StandardOutput.ReadToEndAsync()
@@ -92,13 +94,72 @@ try {
         $readMismatch=Request @{v=1;id='native-read-binding-mismatch';op='query';binding=$mismatchedBinding;operation='inspect_inventory';arguments=@{}}
         if($readMismatch.ok -or $readMismatch.error -ne 'stale_binding'){throw 'Mismatched read binding was not rejected'}
     }
+    $actionResult=$null;$worldEvidence=$null
+    if($Actions){
+        $fixturePath=Join-Path $profile 'action-fixture.json'
+        $fixtureDeadline=[DateTime]::UtcNow.AddSeconds(10)
+        while(!(Test-Path -LiteralPath $fixturePath) -and [DateTime]::UtcNow -lt $fixtureDeadline){Start-Sleep -Milliseconds 100}
+        $fixture=Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json
+        function Start-NativeAction($operation,$arguments){
+            $id=[guid]::NewGuid().ToString('N')
+            $reply=Request @{v=1;id='native-action-start';op='start';binding=$bound.binding;actionId=$id;operation=$operation;arguments=$arguments;expiresAtUnixMs=([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+1500)}
+            if(!$reply.ok){throw ($reply|ConvertTo-Json -Compress -Depth 8)}
+            $id
+        }
+        function Cancel-RunningNativeAction($operation,$arguments){
+            $id=Start-NativeAction $operation $arguments
+            $until=[DateTime]::UtcNow.AddSeconds(3)
+            do {
+                Start-Sleep -Milliseconds 20
+                $poll=Request @{v=1;id='native-action-poll';op='action';binding=$bound.binding;actionId=$id}
+                if(!$poll.ok -or $poll.data.action.status -ne 'running'){throw "Native $operation ended before cancellation test"}
+                $e=$poll.data.action.evidence
+            } while((!$e -or !($e.updates -gt 0 -or $e.Ticks -gt 0)) -and [DateTime]::UtcNow -lt $until)
+            if(!$e -or !($e.updates -gt 0 -or $e.Ticks -gt 0)){throw 'Native action never entered actual player updates'}
+            $cancel=Request @{v=1;id='native-action-cancel';op='cancel';binding=$bound.binding;actionId=$id}
+            if(!$cancel.ok -or $cancel.data.action.status -ne 'cancelled' -or !$cancel.data.action.endEvidence.inputsReleased){throw 'Native cancellation has no confirmed input release'}
+            $cancel.data.action
+        }
+        $nativeCancellations=@{}
+        $nativeCancellations.navigation=Cancel-RunningNativeAction 'navigate_to_x' @{targetX=($fixture.targetX+32)}
+        $null=& $PythonExecutable (Join-Path $repo 'scripts/server_ai_actions.py') --port $IpcPort --target-x $fixture.targetX --use-key 1 --consume-key 3 --pick-key 2 --mine-x $fixture.mineX --mine-y $fixture.mineY --output "$profile/lua-actions-result.json"
+        if($LASTEXITCODE -ne 0){throw "Lua native actions failed: $profile/lua-actions-result.json"}
+        $actionResult=Get-Content -LiteralPath "$profile/lua-actions-result.json" -Raw|ConvertFrom-Json
+        [IO.File]::WriteAllText("$profile/g83-test-snapshot",'Capture actual bound actor, tiles, drops after Lua actions.')
+        $snapshotDeadline=[DateTime]::UtcNow.AddSeconds(10)
+        while(!(Test-Path -LiteralPath "$profile/action-world-evidence.json") -and [DateTime]::UtcNow -lt $snapshotDeadline){Start-Sleep -Milliseconds 100}
+        $worldEvidence=Get-Content -LiteralPath "$profile/action-world-evidence.json" -Raw|ConvertFrom-Json
+        if($actionResult.actions -ne 7 -or $actionResult.actionState -ne 'released' -or !$worldEvidence.targetAbsent -or !$worldEvidence.neighborPresent `
+            -or !$worldEvidence.controlsReleased -or $worldEvidence.appleStack -ne 1 `
+            -or !$worldEvidence.observedDrop.items.Count -or $worldEvidence.gameUpdate -le 0 -or $worldEvidence.networkControls -le 0){throw 'Lua receipts disagree with actual native movement/use/consumption/mining/drop/release observations'}
+        $nativeCancellations.use=Cancel-RunningNativeAction 'use_item' @{}
+        if($nativeCancellations.use.evidence.cycleVerified){throw 'Cancelled animation must not claim a naturally completed native cycle'}
+        $nativeCancellations.mining=Cancel-RunningNativeAction 'mine_tile' @{x=$fixture.mineX;y=($fixture.mineY-1)}
+        # Re-observe the real world after cancelling partially progressed mining.
+        Remove-Item -LiteralPath "$profile/action-world-evidence.json"
+        [IO.File]::WriteAllText("$profile/g83-test-snapshot",'Capture cancellation evidence.')
+        $snapshotDeadline=[DateTime]::UtcNow.AddSeconds(10)
+        while(!(Test-Path -LiteralPath "$profile/action-world-evidence.json") -and [DateTime]::UtcNow -lt $snapshotDeadline){Start-Sleep -Milliseconds 100}
+        $worldAfterCancel=Get-Content -LiteralPath "$profile/action-world-evidence.json" -Raw|ConvertFrom-Json
+        if(!$worldAfterCancel.controlsReleased -or !$worldAfterCancel.neighborPresent -or !$worldAfterCancel.cancellationTargetPresent){throw 'Native cancel left held inputs or destroyed the sentinel/cancellation target'}
+        $emptyId=Start-NativeAction 'mine_tile' @{x=$fixture.mineX;y=$fixture.mineY}
+        $until=[DateTime]::UtcNow.AddSeconds(3)
+        do {
+            Start-Sleep -Milliseconds 20
+            $empty=Request @{v=1;id='native-empty-target';op='action';binding=$bound.binding;actionId=$emptyId}
+        } while($empty.ok -and $empty.data.action.status -eq 'running' -and [DateTime]::UtcNow -lt $until)
+        if(!$empty.ok -or $empty.data.action.status -ne 'failed' -or !$empty.data.action.endEvidence.inputsReleased){throw 'Empty tile was not a confirmed native refusal'}
+    }
     $client.Dispose();$client=$null
     [IO.File]::WriteAllText("$profile/g81-test-stop",'The isolated harness requests native main-thread shutdown after read-only TCP assertions.')
     if(!$process.WaitForExit(20000)){throw 'Native graceful unload timed out'}
     if($process.ExitCode -ne 0){throw "Native server exited $($process.ExitCode)"}
     $exitedUtc=$process.ExitTime.ToUniversalTime()
-    $nativeLog=Join-Path $TModLoaderPath 'tModLoader-Logs/server.log'
-    $events=@(Get-ServerAiRunEvents -Lines (Get-Content -LiteralPath $nativeLog) -ProcessId $process.Id -WorldSession $bound.binding.world -StartedUtc $startedUtc -ExitedUtc $exitedUtc)
+    # A concurrently running user server owns server.log; native tML chooses
+    # server2.log etc. Filter every candidate strictly by this process/world/time.
+    $events=@(Get-ChildItem -LiteralPath (Join-Path $TModLoaderPath 'tModLoader-Logs') -Filter 'server*.log' | ForEach-Object {
+        Get-ServerAiRunEvents -Lines (Get-Content -LiteralPath $_.FullName) -ProcessId $process.Id -WorldSession $bound.binding.world -StartedUtc $startedUtc -ExitedUtc $exitedUtc
+    })
     # Persist only this process/world/time window, never search a shared log as evidence.
     $events|ForEach-Object {$_|ConvertTo-Json -Compress -Depth 12}|Set-Content -LiteralPath "$profile/server.log"
     $lifecycle=Assert-ServerAiRunTeardown -Events $events
@@ -112,6 +173,9 @@ try {
         $report.afterSelection=$after.data
     }
     if($Reads){$report.luaReads=$readResult;$report.luaCombined=$combinedResult;$report.rawPlayerQuery=$rawQuery;$report.stateAfterReads=$rawState.data;$report.readBindingMismatchError=$readMismatch.error;$report.nativeSelections=$nativeSelection}
+    if($Actions){$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
+        $report.nativeCancellations=$nativeCancellations;$report.worldAfterCancel=$worldAfterCancel;$report.emptyTileRefusal=$empty.data.action;
+        $report.actionFrameMode='Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.'}
     $report|ConvertTo-Json -Depth 12|Set-Content -LiteralPath "$profile/result.json"
     Write-Output "Native AI IPC passed: $profile/result.json"
 } finally {

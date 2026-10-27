@@ -1,0 +1,95 @@
+using System;
+using Terraria;
+using CompanionBridge.Common.Systems;
+using CompanionBridge.Motion;
+using VirtualPlayerEngineProbe;
+
+namespace CompanionBridge.ServerIpc;
+
+// G4's natural Update/PostUpdateRunSpeeds boundary, with the original planner.
+internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
+{
+    internal sealed class Run
+    {
+        internal AiReadOnlyProtocol.Identity Identity;
+        internal float Target, StartX;
+        internal int Session, Generation, Updates;
+        internal string Status="running", Reason="navigation_accepted";
+        internal ulong? Tick;
+        internal NavigationSnapshot Snapshot;
+    }
+    private readonly NativeNavigation navigation = new();
+    private int session;
+    private bool executing, injected;
+    internal Run Current;
+    public bool Running => Current?.Status=="running";
+    public bool Matches(Player p) => Current!=null && ReferenceEquals(Current.Identity.Actor,p);
+    internal Run Start(AiReadOnlyProtocol.Identity identity,float target)
+    {
+        var p=(Player)identity.Actor;
+        ServerAiNativeActions.Require(identity);
+        ActorControl.Healthy(p);
+        if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Actor busy.");
+        navigation.Cancel();
+        Current=new Run{Identity=identity,Target=target,StartX=p.position.X,Session=checked(++session),Generation=checked((int)identity.Generation)};
+        return Current;
+    }
+    public void BeforeMovement(Player p)
+    {
+        if(!executing||!Matches(p)||!NativeSurvival.Owns(p))throw new InvalidOperationException("No owned navigation update scope.");
+        ServerAiNativeActions.Require(Current.Identity);
+        var input=navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,Current.Target);
+        p.controlLeft=input.Direction<0;p.controlRight=input.Direction>0;p.controlJump=input.Jump;
+        p.controlDown=p.controlUp=p.controlUseItem=p.controlUseTile=false;
+        injected=true;
+    }
+    private bool Release(bool brake=false)
+    {
+        if(Current==null||!ServerAiNativeActions.Owned(Current.Identity))return false;
+        var p=(Player)Current.Identity.Actor;
+        p.controlLeft=p.controlRight=p.controlJump=p.controlDown=p.controlUp=p.controlUseItem=p.controlUseTile=false;
+        if(brake)p.velocity.X=0; // Same explicit-stop convention as G4; never move position or vertical velocity.
+        return true;
+    }
+    internal void Stop(string status,string reason)
+    {
+        if(Current==null)return;
+        Current.Status=status;Current.Reason=reason;Current.Snapshot=navigation.Snapshot;
+        navigation.Cancel();Release(true);
+    }
+    public void Retire(Player p){if(Matches(p)&&Running)Stop("cancelled","actor_retired");}
+    public void Update(On_Player.orig_Update orig,Player p,int slot)
+    {
+        var run=Current;
+        if(!Running||!Matches(p)){orig(p,slot);return;}
+        ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
+        lock(ProbeSession.Reservation.Gate)
+        {
+            if(!ServerAiNativeActions.Owned(run.Identity)){Stop("unknown","navigation_binding_changed");orig(p,slot);return;}
+            try
+            {
+                if(executing||slot!=p.whoAmI||run.Tick.HasValue&&Main.GameUpdateCount<=run.Tick.Value)
+                    throw new InvalidOperationException("Duplicate/reentrant navigation update.");
+                ActorControl.Healthy(p);run.Tick=Main.GameUpdateCount;run.Updates++;
+                executing=true;injected=false;
+                orig(p,slot); // One original natural update, never a manual Player.Update.
+                if(!ServerAiNativeActions.Owned(run.Identity)){Stop("unknown","navigation_binding_changed");return;}
+                if(!Running)return; // Native death/retirement may have stopped the driver.
+                if(!injected)throw new InvalidOperationException("Audited G4 movement boundary not reached.");
+                navigation.After(p);run.Snapshot=navigation.Snapshot;
+                if(run.Snapshot.Status=="failed")Stop("failed",run.Snapshot.Reason);
+                else if(run.Snapshot.Status=="arrived")
+                {
+                    var terrain=TerrainReader.Read(p);
+                    bool arrived=terrain.Grounded&&Math.Abs(p.velocity.X)<=0.1f&&Math.Abs(p.velocity.Y)<=0.1f
+                        &&(run.Target>=run.StartX?1:-1)*(run.Target-p.position.X)<=12;
+                    Stop(arrived?"completed":"unknown",arrived?"native_navigation_arrival_verified":"arrival_not_settled");
+                }
+                else if(run.Updates>=1800)Stop("timeout","navigation_frame_budget");
+                if(Running)NetworkStateSync.Tick(p);else NetworkStateSync.Full(p);
+            }
+            catch(Exception e){Stop("failed",e.Message);}
+            finally{Release();executing=injected=false;}
+        }
+    }
+}

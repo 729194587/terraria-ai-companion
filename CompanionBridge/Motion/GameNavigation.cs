@@ -8,25 +8,25 @@ using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Motion;
 
-internal static class GameNavigation
+internal sealed class NativeNavigation
 {
-    internal static LocalMotionController Controller { get; } = new();
-    internal static NavigationTask Task { get; } = new();
-    private static readonly NavigationDiagnostics Diagnostics = new(line =>
+    internal LocalMotionController Controller { get; } = new();
+    internal NavigationTask Task { get; } = new();
+    private readonly NavigationDiagnostics Diagnostics = new(line =>
         ModContent.GetInstance<CompanionBridge>().Logger.Info(line));
-    internal static NavigationSnapshot Snapshot => _navigation ? Task.Snapshot : Controller.Snapshot;
-    private static bool _navigation;
-    private static int _session, _generation;
-    private static NativeMotionWorld _world;
-    private static int _life;
-    private static bool _paired;
+    internal NavigationSnapshot Snapshot => _navigation ? Task.Snapshot : Controller.Snapshot;
+    private bool _navigation;
+    private int _session, _generation;
+    private NativeMotionWorld _world;
+    private int _life;
+    private bool _paired;
 
-    private static PhysicsState State(Player p) => new(p.position.X, p.position.Y,
+    private PhysicsState State(Player p) => new(p.position.X, p.position.Y,
         p.velocity.X, p.velocity.Y, TerrainReader.Read(p).Grounded, p.jump, p.releaseJump);
 
-    internal static bool Ordinary(Player p) => OrdinaryRejection(p) == null;
+    internal bool Ordinary(Player p) => OrdinaryRejection(p) == null;
 
-    private static string OrdinaryRejection(Player p)
+    private string OrdinaryRejection(Player p)
     {
         var ph = Parameters(p);
         List<string> reasons = null;
@@ -68,10 +68,10 @@ internal static class GameNavigation
         return reasons == null ? null : string.Join("; ", reasons);
     }
 
-    private static PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
+    private PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
         p.accRunSpeed, p.runSlowdown, p.gravity, p.maxFallSpeed, Player.jumpSpeed, Player.jumpHeight);
 
-    internal static PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
+    internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
         LandingRegion region = null)
     {
         _paired = false;
@@ -107,7 +107,7 @@ internal static class GameNavigation
         return input;
     }
 
-    internal static void After(Player p)
+    internal void After(Player p)
     {
         if (!_paired) return;
         _paired = false;
@@ -116,17 +116,31 @@ internal static class GameNavigation
         else Controller.After(State(p), _world);
     }
 
-    private static PhysicsInput Fail(string reason)
+    private PhysicsInput Fail(string reason)
     {
         var input = _navigation ? Task.Fail(reason) : Controller.Fail(reason);
         if (_navigation) Diagnostics.Observe(Task.Snapshot);
         return input;
     }
 
-    internal static void Cancel()
+    internal void Cancel()
     {
         _paired = false; _world = null; _session = _generation = 0;
         Task.Cancel(); Diagnostics.Observe(Task.Snapshot); _navigation = false;
         Controller.Cancel();
     }
+}
+
+// Existing human callers retain their process-local instance and API.
+internal static class GameNavigation
+{
+    private static readonly NativeNavigation instance = new();
+    internal static LocalMotionController Controller => instance.Controller;
+    internal static NavigationTask Task => instance.Task;
+    internal static NavigationSnapshot Snapshot => instance.Snapshot;
+    internal static bool Ordinary(Player p) => instance.Ordinary(p);
+    internal static PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null, LandingRegion region = null)
+        => instance.Before(p, session, direction, generation, targetX, region);
+    internal static void After(Player p) => instance.After(p);
+    internal static void Cancel() => instance.Cancel();
 }

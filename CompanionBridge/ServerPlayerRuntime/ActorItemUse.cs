@@ -34,7 +34,7 @@ internal static class ActorItemUse
     }
     private static void Idle(Player p)
     {
-        if(Running||ActorMining.Running||ActorControl.Current?.Phase==ActionPhase.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
+        if(Running||ActorMining.Running||ActorControl.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
             throw new InvalidOperationException("Wait for walking/item animation/cooldown to finish, or /vph use-stop.");
     }
     internal static bool Supported(int type)=>type==ItemID.WoodenSword||type==ItemID.CopperPickaxe||type==ItemID.Apple;

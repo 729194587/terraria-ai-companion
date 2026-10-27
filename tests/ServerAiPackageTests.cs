@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.43","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.44","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -38,6 +38,21 @@ public static class ServerAiPackageTests
         Check(!adapter.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.Operand is MethodReference r&&r.Name=="get_LocalPlayer"),"server adapter has no LocalPlayer fallback");
         Check(Calls(pump,"get_IsMainThread")&&Calls(pump,"get_Gate")&&Calls(pump,"Tick"),"simulation pump enforces thread then Gate before dispatch");
         var select=adapter.Methods.Single(m=>m.Name=="Select");
+        var actions=Type("ServerAiNativeActions");
+        var nativeInstructions=types.Where(t=>t.Name is "ServerAiNativeActions" or "ServerAiNavigation").SelectMany(t=>t.Methods)
+            .Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).ToArray();
+        Check(!nativeInstructions.Any(i=>i.Operand is MethodReference r&&r.Name is "get_LocalPlayer" or "PickTile" or "KillTile")
+            &&!nativeInstructions.Any(i=>i.OpCode==OpCodes.Stsfld&&i.Operand is FieldReference f&&f.DeclaringType.FullName=="Terraria.Main"),"native adapter never spoofs global identity or directly mines/kills tiles");
+        var nativeStart=actions.Methods.Single(m=>m.Name=="Start");
+        Check(nativeStart.Body.Instructions.Count(i=>i.Operand is MethodReference r&&r.Name=="Start"&&r.DeclaringType.Name is "ServerAiNavigation" or "ActorMining" or "ActorItemUse")==3,"native actions delegate once to G4 navigation boundary/G6/G7");
+        Check(Type("ServerAiNavigation").Fields.Any(f=>f.FieldType.Name=="NativeNavigation")
+            &&Type("GameNavigation").Fields.Any(f=>f.FieldType.Name=="NativeNavigation"),"human and AI use separate instances of the original navigation implementation");
+        Check(Calls(Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Update"),"Invoke")
+            &&Calls(Type("ActorControl").Methods.Single(m=>m.Name=="BeforeMovement"),"BeforeMovement"),"AI navigation wraps the original natural Update and G4 pre-movement boundary");
+        var fixture=Type("ServerAiActionFixture");var enabled=fixture.Methods.Single(m=>m.Name=="get_Enabled");
+        Check(enabled.Body.Instructions.Count(i=>i.Operand is MethodReference r&&r.Name=="ContainsKey")==2&&Calls(enabled,"Exists"),"diagnostic native frames require both test flags and isolated-world marker");
+        Check(!fixture.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.Operand is MethodReference r&&r.DeclaringType.FullName=="Terraria.Player"&&r.Name=="Update")
+            &&!fixture.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.OpCode==OpCodes.Stsfld&&i.Operand is FieldReference f&&f.Name=="HasClients"),"diagnostic frames never manually update Player or pretend a real client exists");
         Check(Calls(select,"AssertOwner")&&select.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.Name=="ActorItemUse"&&r.Name=="Select"),"server atomic selection delegates to G6 after owner assertion");
         Check(!select.Body.Instructions.Any(i=>i.OpCode==OpCodes.Stfld&&i.Operand is FieldReference r&&r.DeclaringType.FullName=="Terraria.Player"),"adapter does not reimplement native selection or mutate Player fields");
         var reads=Type("ServerAiQueries");var read=reads.Methods.Single(m=>m.Name=="Read");

@@ -9,8 +9,10 @@ if($PackagePath){
     $references+=@($cecil)
     $sources+=@(Join-Path $repo 'tests/ServerAiPackageTests.cs')
 }
+$sources+=@(Join-Path $repo 'tests/ServerAiNativeActionOfflineTests.cs')
 Add-Type -Path $sources -ReferencedAssemblies $references
 [ServerAiIpcOfflineTests]::Run()
 [ServerAiAtomicOfflineTests]::Run()
 [ServerAiReadProtocolTests]::Run()
+[ServerAiNativeActionOfflineTests]::Run()
 if($PackagePath){[ServerAiPackageTests]::Run((Resolve-Path -LiteralPath $PackagePath).Path)}
