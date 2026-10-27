@@ -123,8 +123,9 @@ profile 不开启此入口；没有真人连接时，生产动作只会等待原
 
 ## Host & Play 手动验收
 
-以下是待用户执行的步骤，不是已通过的图形测试。先退出旧测试实例，再建立新的隔离
-profile；不要覆盖旧 profile 或正式存档：
+以下为可复现步骤；2026-10-27 已由用户完成三项基础实机验收，证据范围见下节。
+其余扩展场景仍待测试。先退出旧测试实例，再建立新的隔离 profile；不要覆盖旧
+profile 或正式存档：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-companion.ps1
@@ -143,8 +144,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-companion-ho
 3. 用 `--use-key <木剑实际快捷键>` 观察单次 AI 挥剑、动画结束，真人不挥剑；检查
    cycleVerified 和 released。具体命中、伤害未在本轮证明。
 4. 坐标是世界 Tile 格，1 格=16 像素，原点左上、Y 向下。AI 身体中心所在格约为
-   `floor((position.x+10)/16), floor((position.y+21)/16)`。在其右侧 2–3 格、身体高度
-   放一块测试泥土/石块，准确指定该格；不要指定脚下支撑。以
+   `floor((position.x+10)/16), floor((position.y+21)/16)`。这只是身体中心参考格，
+   **不是画面中某块方块的自动定位结果**；脚边方块可能比该格低一行。先确认附近
+   实际测试泥土/石块的占用格，不要指定脚下支撑。以
    `--pick-key <铜镐实际快捷键> --mine-x <tileX> --mine-y <tileY>` 执行，观察
    目标真正消失、邻块不挖，结果 destroyedByActor/targetAbsent 为 true。
    原生距离可能比 80 像素更严格，不可达会拒绝，不会自行走近。
@@ -152,7 +154,42 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-companion-ho
    或切断自己的 AI IPC 连接，检查停止后没有残留移动/使用输入。完整原生自动化已
    检查三类取消，图形显示/包到达仍需人工观察。
 
-仍未真实 Host & Play 验证：本轮全部新增动作的客户端显示、真人并行控制、左右移动
-与跳障碍、不同地形/工具/保护目标、持续旧连接跨角色代次/世界切换拒绝、动作中死亡
-重生、远程多人、断线及晚加入的客户端效果。旧阶段 Host & Play 读/选栏结果只说明
-旧能力，不能作为本轮动作的图形验证。PR 保持 Draft，不合并。
+## 2026-10-27 Host & Play 实机补录
+
+本次由用户手动启动 `.local/companion-g82-host-20261027-111108-230/start-host-play.ps1`，
+进入图形 Host & Play 并执行现有 Python/Lua 验收入口。包为 `0.1.44`，SHA256
+`071EDEAA49F35FDF88EEFB7649C2F0B77F7BB97328AAF9203F948A2C75A00E26`。
+用户在会话中逐项报告成功，并在最终确认指定石块消失、南瓜和支撑地面保留。
+这是**用户操作和视觉确认 + 实际动作回执复核**，不是代理自动操作图形客户端的测试。
+与前节隔离原生服务器证据分别保存：[Host & Play 证据](evidence/SERVER_AI_ACTIONS_HOST_PLAY.json)。
+
+三个成功程序绑定相同 AI：actor `2635ed5b6f4b4a1cba3e90dfc2e95f2e`、world
+`1d1984b9c6214927aa89da9644729da5`、generation `1`、slot `254`。
+它们是独立 CLI 连接，不构成持续旧连接跨生命周期测试。
+
+| 实机项目 | 本地回执及用户确认 |
+| --- | --- |
+| 向右导航 | `--target-x 33728`；x `33680 → 33730.395`、y `3318`，44 次原生更新，最终速度 `(0,0)`，arrived=true；用户确认成功 |
+| 木剑单次使用 | AI 原生拾取后木剑位于内部 slot 1 / 快捷键 2；`--use-key 2`，选栏与使用共 2 项动作，Starts=1、AnimationPeak=20、Ticks=21、cycleVerified=true；用户确认成功。命中/伤害仍 unconfirmed |
+| 铜镐挖指定石块 | 铜镐内部 slot 2 / 快捷键 3、镐力 35；`--pick-key 3 --mine-x 2111 --mine-y 209`，选栏与挖掘共 2 项动作。46 次更新、2 次挥动、3 次镐击、PeakDamage=105；nativeDestroyed/targetAbsent/destroyedByActor=true、targetChanged=false；用户确认石块消失、南瓜和支撑地面保留 |
+
+三份成功结果均为 status=completed、failure=null、actionState=released，原生动作
+endEvidenceStatus=known、inputsReleased=true。AI 生命保持 100；各动作结束的
+gameUpdate 分别为 13120、32608、68843。没有把接受回执、挥动或进度单独计为成功。
+
+同时记录两次实机拒绝，以免只保留成功结果：
+
+- 初次站位只有 4px 有效脚底支撑，低于既有 8px 门槛；导航在起点 `(33680,3318)`
+  拒绝，arrived=false、输入释放。用户补齐完整地面后再次导航成功，未放宽安全阈值。
+- `(2111,208)` 为空格，返回 InvalidTarget 并释放输入。后续只读检查确认画面中石块
+  在 `(2111,209)`；修正目标后挖掘成功。外层 script_error 来自验收 Lua 的 assert，
+  对应动作本身为明确 failed，不是未知执行结果。南瓜本身未作为挖掘目标验证。
+
+本次没有单独验证图形中的掉落生成/拾取、苹果使用、动作中取消/超时/断开、左移、
+原生跳障碍、不同地形/工具/保护目标、真人持续并行操作、持续旧连接跨真实角色代次/
+世界切换拒绝、动作中死亡重生、远程多人和晚加入同步；这些仍为**未验证**。
+隔离原生测试中的掉落、取消、退出/角色清理/reservation 释放也不能据此升级为
+Host & Play 通过。旧阶段读/选栏实机结果与本次三项动作结果分开记录。
+
+本次补录只更新文档与保存的证据，没有修改功能实现、重新启动游戏或重跑测试。
+PR #23 保持 Draft，不合并。
