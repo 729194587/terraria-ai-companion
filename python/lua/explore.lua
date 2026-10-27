@@ -1,6 +1,13 @@
 -- Trusted, inspectable Lua composition. Every game read/action uses the original api callback.
 local cell_at = ...
 local used = false
+-- Pre-move center-distance envelope, not a realtime enemy avoidance guarantee.
+-- Keep the old 96px standoff; allow 128px of relative motion/snapshot ageing,
+-- plus the original navigator's 12px arrival tolerance. Fast/large enemies can exceed this heuristic.
+local THREAT_STANDOFF = 96
+local THREAT_MOTION_MARGIN = 128
+local ARRIVAL_MARGIN = 12
+local THREAT_MARGIN = THREAT_STANDOFF + THREAT_MOTION_MARGIN + ARRIVAL_MARGIN
 local function abs(x) if x < 0 then return -x end return x end
 local function min(a,b) if a < b then return a end return b end
 local function max(a,b) if a > b then return a end return b end
@@ -109,9 +116,27 @@ return function(options)
         if player.dead or player.life <= 0 then return finish('actor_unavailable') end
         if not t.grounded or not t.supported then return finish('unsupported_motion_state') end
         if report.distancePixels >= maxDistance then return finish('distance_limit') end
-        local threat = api('scan_entities', {category='npc',npcFilter='hostile_creature',radius=96,maxResults=1})
+        local allowance=min(stride,maxDistance-report.distancePixels-ARRIVAL_MARGIN)
+        if allowance < 32 then return finish('distance_limit') end
+        -- One radial scan covers either direction and every shorter candidate in this iteration.
+        -- Results are nearest-first before truncation, so the first hostile bounds all others.
+        local scanRadius=allowance+THREAT_MARGIN
+        local threat = api('scan_entities', {category='npc',npcFilter='hostile_creature',radius=scanRadius,maxResults=1})
         if not same(threat) then return finish('entity_observation_unavailable') end
-        if threat.data.matchedCount > 0 then return finish('nearby_hostile') end
+        local nearest=nil
+        if threat.data.matchedCount > 0 then
+            local first=threat.data.items[1]
+            if not first or type(first.distancePixels) ~= 'number' or first.distancePixels < 0
+                or first.distancePixels > scanRadius then return finish('entity_observation_unavailable') end
+            nearest=first.distancePixels
+        end
+        report.lastThreatCheck={phase='pre_move_snapshot',radiusPixels=scanRadius,
+            marginPixels=THREAT_MARGIN,requestedStepPixels=allowance,
+            nearestDistancePixels=nearest or json.null,gameUpdate=threat.gameUpdate,
+            observedAtUnixMs=threat.observedAtUnixMs}
+        if nearest then allowance=min(allowance,nearest-THREAT_MARGIN) end
+        report.lastThreatCheck.permittedStepPixels=max(0,allowance)
+        if allowance < 32 then return finish('nearby_hostile') end
         if treeType then
             local b = view.data.bounds
             local found = api('scan_tiles', {minX=max(0,b.minX),minY=max(0,b.minY),maxX=b.maxX,maxY=b.maxY,
@@ -130,8 +155,6 @@ return function(options)
                 countUnit='tile cells, not trees'}
         end
         local target, rejected = nil, nil
-        local allowance=min(stride,maxDistance-report.distancePixels-12) -- reserve existing native arrival tolerance
-        if allowance < 32 then return finish('distance_limit') end
         for attempt=1,2 do
             for offset=0,2 do
                 local distance=allowance-offset*32

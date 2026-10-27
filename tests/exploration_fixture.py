@@ -12,6 +12,7 @@ class ExplorationHost(AiHost):
         self.life = 100
         self.terrain_mode = 'flat'
         self.frozen = self.damage = self.threat = False
+        self.entities = []
         self.applied = set()
         self.tick = 1
 
@@ -56,7 +57,13 @@ class ExplorationHost(AiHost):
         elif operation == 'resolve_content':
             base['data'] = dict(status='ok', candidates=[dict(typeId=5,contentKey='Terraria/Trees')])
         elif operation == 'scan_entities':
-            base['data'] = dict(matchedCount=1 if self.threat else 0, items=[])
+            entities=self.entities + ([dict(distancePixels=64,classification='hostile_creature')] if self.threat else [])
+            matches=sorted((e for e in entities if e['distancePixels'] <= args['radius']
+                and (args.get('npcFilter','all') == 'all' or e['classification'] == args['npcFilter'])),
+                key=lambda e:e['distancePixels'])
+            limit=args.get('maxResults',128)
+            base['data'] = dict(matchedCount=len(matches),items=matches[:limit],returnedCount=min(limit,len(matches)),
+                               complete=True,truncated=len(matches)>limit,radiusPixels=args['radius'])
         elif operation == 'scan_tiles':
             base['data'] = dict(items=[dict(x=args['minX']+4,y=198,typeId=5,contentKey='Terraria/Trees')],
                 matchedCount=1,returnedCount=1,truncated=False,unknownCount=0,complete=True,

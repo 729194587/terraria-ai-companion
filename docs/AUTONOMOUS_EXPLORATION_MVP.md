@@ -72,7 +72,7 @@ Ctrl+C 仍走原 Agent 关闭与动作清理。
 ## 循环、记忆和调整
 
 初次读取实际AI状态和地形，绑定本轮世界/角色代次/槽位，并解析普通树类型。
-每段移动前扫描96像素内保守分类的敌对NPC，扫描局部普通树格作为有限地标。
+每段移动前扫描与本段允许步幅关联的保守分类敌对NPC包络，扫描局部普通树格作为有限地标。
 地标按(x,y)去重，最多32格，保留类型、实际采样更新号和UTC毫秒。
 **树木格数不是树的棵数**；扫描返回截断和未知覆盖，不根据注册表或空结果猜测世界。
 
@@ -148,12 +148,41 @@ landmarks和reason。它仍是Lua报告，不能代替原子的endEvidence，也
 伤害/敌怪、API/动作/时间预算、动作超时、取消、unknown不重试、模型契约门控和helper源码固定。
 测试中的地形与运动是合成状态，不是原生物理。
 
+### 移动前威胁包络修复（基于847c942）
+
+旧版固定96像素半径确实不能覆盖128像素目标可能经过的区域。现在每段先算有效步幅：
+`a=min(stepPixels,maxDistance-distancePixels-12)`；不足最短32像素时直接停止，避免无用扫描。
+一次敌对NPC扫描使用半径 `a+236`，其中236=原96像素保守间距+128像素相对运动/快照老化余量
+再加原导航12像素到达容差。默认128像素步幅对应364像素半径，64像素步幅对应300。
+这是围绕当前AI中心的距离包络，覆盖拟水平移动及身体/运动余量；不是完整轨迹碰撞或敌人行为预测。
+
+复用原ScanEntities“按距离排序后截断”的保证，仍仅请求最近1个hostile_creature。
+若最近敌对NPC距离为d，进一步限制本段步幅为 `min(a,d-236)`：例如d=300时最多走64像素。
+不足32则nearby_hostile停止；否则用原有地形/访问记忆过滤重新选择该上限内的候选。
+允许的目标不会向上取整。使用全向半径而非前方扇区，因此自动换向和更短候选复用同一快照，
+没有额外扫描；身后/隔墙敌人也可能导致保守缩短或停止。缺少最近敌人距离时拒绝开始移动。
+
+**这只是移动前检查。** 每段仍只有一次NPC扫描，不在native导航执行过程中轮询NPC。
+动作结束后的生命/位置/下一段NPC检查是下一动作的决策边界，不是当前动作的实时避险或伤害中断。
+128像素运动余量是MVP保守启发值，未按所有NPC速度/大小或最坏导航耗时校准；高速/大型敌人、
+新生成/突入实体、投射物、分类为unknown的Mod NPC及过期快照仍可能造成伤害。
+原有导航/动作生命周期/取消/记忆/停止规则不变。
+
+`lua_exploration_report.lastThreatCheck`记录pre_move_snapshot、半径、余量、拟步幅、允许步幅、
+最近距离和观察时间。每个正常段仍是5次API；连续三段仍18次总调用、3次NPC扫描。
+不因换向、距离缩短或maxResults=1截断再次扫描；扩大半径可能增加匹配/排序工作，返回实体上限仍为1。
+该修复新增8项真实Lua/loopback TCP测试，覆盖原96像素盲区、96/128/236/268/364边界及小数边界、
+64/96/128步幅和剩余行程、最近敌人/友方过滤、换向复用、缺失距离拒绝及无重复扫描。
+本次新增8项测试和原18项探索/Agent回归通过；后续增加的提前行程停止调用数断言也单独验证。
+原生JSON证据属于847c942的原MVP，不作为本次威胁包络的实机验收；本次未运行全量测试、
+未重建Mod、未重新启动原生服务器或图形游戏。需要重启Agent加载新helper。
+
 既有Lua Runtime/坐标/可观测性/服务器Agent四模块65项通过。新增探索用例共18个：
 首次循环15项中14项通过，动作超时测试因过短总时限/混淆原子超时与程序超时失败；
 调整为检查原子supervisor超时和known释放后，最终受影响范围5项通过，包含2项完整Agent聊天测试
 及新增helper源码固定用例。其余新增用例保留通过；未运行全量测试，也未反复重跑整组回归。
 
-最终原生进程、实际路程及helper源码SHA256保存在JSON证据中：一次程序18次API、3次导航，
+847c942原生进程、实际路程及helper源码SHA256保存在JSON证据中：一次程序18次API、3次导航，
 仅2次HTTP模型替身请求，最终速度(0,0)，退出码0。较早原生样例把3×64目标等同192像素
 实际路程，因原导航到达容差提前触发行程停止；现在按实际路程扣预算并预留12像素，
 最终使用256像素预算验证三段。没有为通过测试放宽生产动作、取消或unknown规则。
@@ -165,6 +194,7 @@ landmarks和reason。它仍是Lua报告，不能代替原子的endEvidence，也
 
 ```powershell
 $env:PYTHONPATH="$pwd/python;$pwd/tests"
+& .local/lua-venv/Scripts/python.exe -m unittest test_exploration_threats -q
 & .local/lua-venv/Scripts/python.exe -m unittest test_autonomous_exploration test_exploration_agent.ExplorationAgentTests -q
 & .local/lua-venv/Scripts/python.exe -m unittest test_lua_runtime test_lua_coordinates test_lua_observability test_server_ai_agent -q
 pwsh -NoProfile -File tests/verify_server_ai_native.ps1 -Port 27891 -IpcPort 27892 -PackagePath .local/companion-g85-build/Mods/CompanionBridge.tmod -Atomic -Reads -Actions -Agent -Exploration
@@ -173,5 +203,5 @@ pwsh -NoProfile -File tests/verify_server_ai_native.ps1 -Port 27891 -IpcPort 278
 未覆盖：跨任务地图/长期后台探索、多层洞穴与通道图、复杂坡/平台/液体/Mod地形，
 保证越过任意简单障碍、战斗/逃跑策略、工具获取/砍树/挖掘/拾取，远程多人/晚加入，
 实机死亡重生和持续旧连接跨世界/对象替换、所有GUI取消/断线时序。
-96像素敌对NPC检查是保守分类快照，不是完整威胁预测；伤害检查在动作边界，
+敌对NPC包络检查是保守分类快照，不是完整威胁预测；伤害检查在动作边界，
 不承诺原生移动过程不会受伤。具体物理与角色安全继续受原导航支持范围约束。

@@ -96,7 +96,7 @@ def exploration_report(value):
     """Bounded Lua self-report for diagnostics; never upgrades task/action evidence."""
     if not isinstance(value,dict) or value.get('kind')!='exploration_report':
         return
-    summary=_fields(value,('kind','status','reason','distancePixels','reversals','noNovelSteps','start','finish','visited','identity','lastTileCoverage','actionStatus','actionReason'))
+    summary=_fields(value,('kind','status','reason','distancePixels','reversals','noNovelSteps','start','finish','visited','identity','lastTileCoverage','lastThreatCheck','actionStatus','actionReason'))
     for collection,limit,fields in (
         ('steps',8,('step','direction','targetX','fromX','toX','movedPixels','newHorizontalPixels','gameUpdate')),
         ('decisions',8,('step','direction','targetX','basis')),
