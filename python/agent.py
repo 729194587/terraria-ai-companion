@@ -327,7 +327,7 @@ class Agent:
         self.bridge, self.llm = bridge, llm
         self.chat_bridge = bridge if chat_bridge is None else chat_bridge
         self.server_ai = chat_bridge is not None
-        if self.server_ai and not {'server_ai_atomic_v1','server_ai_reads_v1','server_ai_actions_v1','server_ai_chat_v1'}.issubset(
+        if self.server_ai and not {'server_ai_atomic_v1','server_ai_reads_v1','server_ai_actions_v1','server_ai_chat_v2'}.issubset(
                 getattr(bridge,'hello',{}).get('capabilities',[])):
             raise BridgeError('Server AI Agent requires the explicit native AI backend; human fallback is forbidden')
         if self.server_ai and local_input:
@@ -338,6 +338,7 @@ class Agent:
         self.lua_store = lua_store if lua_store is not None else lua_agent.ProgramStore()
         self._lua_task = None
         self._active_turn_id = None
+        self._reply_cancel = threading.Event()
         self.max_model_calls, self.max_tool_calls = max_model_calls, max_tool_calls
         if type(max_movement_ms) is not int or not 0 <= max_movement_ms <= 6000:
             raise ValueError('max_movement_ms must be an integer in 0..6000')
@@ -380,7 +381,11 @@ class Agent:
         self._start_turn(event)
 
     def _invalidate_turn(self):
+        self._reply_cancel.set()
         self.generation += 1
+        self._reply_cancel = threading.Event()
+        if self.server_ai:
+            self.bridge.invalidate_replies(self.generation)
         if self.task and not self.task.done():
             tracing.trace.emit("agent_cancel_requested", generation=self.generation - 1,
                                reason="new_input", replacement_generation=self.generation)
@@ -473,6 +478,8 @@ class Agent:
         diagnostics.emit('agent_start', maxModelTools=self.max_tool_calls, maxLuaCalls=self.lua_limits.calls,
                          maxActionAttempts=self.lua_limits.actions, maxLuaSeconds=self.lua_limits.seconds)
         try:
+            if self.server_ai:
+                await asyncio.to_thread(self.bridge.advance_reply_turn, generation)
             await self._wait_lua_cleanup()
             if generation != self.generation:
                 outcome = 'superseded'
@@ -755,7 +762,7 @@ class Agent:
                     tracing.trace.emit("agent_result_discarded", reason="newer_generation_before_send",
                                        current_generation=self.generation)
                     return
-                text = await self._send_reply(text, chat_id)
+                text = await self._send_reply(text, chat_id, generation)
                 if generation == self.generation:
                     print(f"{'Terminal reply' if self.local_input else 'Chat sent'}: generation={generation}", file=sys.stderr, flush=True)
                     messages.append({"role": "assistant", "content": text})
@@ -779,7 +786,7 @@ class Agent:
                 text = "本轮预算已用尽，未确认任务完成。"
             if generation == self.generation:
                 try:
-                    text = await self._send_reply(text,chat_id)
+                    text = await self._send_reply(text,chat_id,generation)
                     if generation == self.generation:
                         self.history.append({"role":"assistant","content":text})
                 except (BridgeError,OSError):
@@ -798,12 +805,12 @@ class Agent:
                 if movement_loop.active:
                     movement_loop.finish("failed", "agent_error_after_movement_request")
                     try:
-                        await self._send_reply(movement_loop.final_text(),chat_id)
+                        await self._send_reply(movement_loop.final_text(),chat_id,generation)
                     except (BridgeError,OSError):
                         tracing.trace.emit("movement_failure_reply_failed")
                 elif self.server_ai:
                     try:
-                        await self._send_reply('AI 未完成任务：' + str(error)[:250], chat_id)
+                        await self._send_reply('AI 未完成任务：' + str(error)[:250], chat_id,generation)
                     except (BridgeError, OSError):
                         tracing.trace.emit('server_ai_failure_reply_failed')
             else:
@@ -843,7 +850,11 @@ class Agent:
             evidence.current.reset(evidence_token)
             tracing.context.reset(token)
 
-    async def _send_reply(self, text, chat_id):
+    async def _send_reply(self, text, chat_id, generation=None):
+        generation = self.generation if generation is None else generation
+        cancelled = self._reply_cancel
+        def current():
+            return not cancelled.is_set() and generation == self.generation and chat_id == self._active_turn_id
         if self.server_ai:
             text = '[AI] ' + ' '.join(text.replace('\0','').split())
             if len(text.encode('utf-16-le')) > 800:
@@ -858,17 +869,25 @@ class Agent:
             return text
         tracing.trace.emit("send_chat_start", text=text, chatId=chat_id)
         if self.server_ai:
-            reply=await asyncio.to_thread(self.chat_bridge.command,'authorize_ai_reply',text=text,chatId=chat_id)
-            if reply.get('status')!='authorized' or chat_id!=self._active_turn_id:
+            if not current():
+                raise BridgeError('AI reply superseded',status='superseded')
+            reply=await asyncio.to_thread(self.chat_bridge.command,'authorize_ai_reply',text=text,chatId=chat_id,replyTurn=generation)
+            if (reply.get('status')!='authorized' or not current()
+                    or reply.get('data')!={'chatId':chat_id,'replyTurn':generation}):
                 raise BridgeError('AI reply superseded before native publication',status='superseded')
-            reply=await asyncio.to_thread(self.bridge.command,'say',text=text)
+            reply=await asyncio.to_thread(self.bridge.command,'say',text=text,replyTurn=generation,is_current=current)
         else:
             reply = await asyncio.to_thread(self.chat_bridge.command, 'send_chat', text=text, chatId=chat_id)
         tracing.trace.emit("send_chat_result", reply=reply)
         return text
 
     async def close(self):
-        self.generation += 1
+        self._invalidate_turn()
+        if self.server_ai and not self.bridge._closed:
+            try:
+                await asyncio.to_thread(self.bridge.advance_reply_turn,self.generation)
+            except BridgeError:
+                pass
         tasks = list(self._tasks)
         for task in tasks:
             task.cancel()
@@ -959,11 +978,11 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
         if server_ai:
             if local_input:
                 raise ValueError('--server-ai cannot be combined with --local-input')
-            if not {'local_ai_chat_v1','ai_reply_authorization_v1'}.issubset(bridge.hello.get('capabilities', [])):
-                raise BridgeError('Server AI chat requires native-author reply support; rebuild/reload both client and server (0.1.46+)')
+            if not {'local_ai_chat_v1','ai_reply_authorization_v2'}.issubset(bridge.hello.get('capabilities', [])):
+                raise BridgeError('Server AI chat requires native-author reply support; rebuild/reload both client and server (0.1.47+)')
             from server_ai import ServerAiBridge
             execution = await asyncio.to_thread(ServerAiBridge, port=ai_port, timeout=timeout)
-            if not {'server_ai_reads_v1','server_ai_actions_v1','server_ai_chat_v1'}.issubset(execution.hello.get('capabilities', [])):
+            if not {'server_ai_reads_v1','server_ai_actions_v1','server_ai_chat_v2'}.issubset(execution.hello.get('capabilities', [])):
                 raise BridgeError('Current server AI reads/actions capabilities unavailable; no fallback to human control')
             agent = Agent(execution, llm, chat_bridge=bridge)
         else:

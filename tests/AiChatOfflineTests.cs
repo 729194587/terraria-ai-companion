@@ -46,16 +46,25 @@ public static class AiChatOfflineTests
         var legacy=state.Enqueue(session,new(5,"send_chat",Text:"legacy",ChatId:remote.RootElement.GetProperty("eventId").GetString()),0);
         state.Update(true,0,new(true,new(100,200),new(0,0),100,100),sendChat:_=>sends++);
         Check(legacy.Result.Status=="sent","legacy other-player chat path remains independent");
-        var auth=state.Enqueue(session,new(6,"authorize_ai_reply",Text:"AI text",ChatId:newer),0);
+        var auth=state.Enqueue(session,new(6,"authorize_ai_reply",Text:"AI text",ChatId:newer,ReplyTurn:42),0);
         state.ObserveAiChat(newer);
         state.Update(true,0,new(true,new(100,200),new(0,0),100,100),sendChat:_=>throw new Exception("authorization must not speak as the human"));
         Check(auth.Result.Status=="authorized"&&!state.IsMoving,"reply authorization does not send chat or acquire human input");
+        var authorization=JsonSerializer.SerializeToElement(auth.Result.Data);
+        Check(authorization.GetProperty("chatId").GetString()==newer&&authorization.GetProperty("replyTurn").GetInt64()==42,"authorization echoes immutable chat and reply turn");
         state.ObserveAiChat("next");
         var staleAuth=state.Enqueue(session,new(7,"authorize_ai_reply",Text:"stale",ChatId:newer),0);
         state.Update(true,0,new(true,new(100,200),new(0,0),100,100));
         Check(staleAuth.Result.Status=="superseded","new command refuses old reply authorization");
         var parsed=ControlState.Parse("{\"v\":1,\"id\":7,\"cmd\":\"send_ai_chat\",\"text\":\"reply\",\"chatId\":\"id\"}");
         Check(parsed.Cmd=="send_ai_chat"&&parsed.Text=="reply","AI reply uses existing bounded text parser");
+        foreach(string turn in new[]{"",",\"replyTurn\":0",",\"replyTurn\":-1",",\"replyTurn\":1.5"})
+        {
+            bool rejected=false;
+            try{ControlState.Parse("{\"v\":1,\"id\":8,\"cmd\":\"authorize_ai_reply\",\"text\":\"reply\",\"chatId\":\"id\""+turn+"}");}
+            catch(FormatException){rejected=true;}
+            Check(rejected,"authorization rejects missing/invalid reply turn");
+        }
         Console.WriteLine($"AI chat offline: {checks} checks; real loopback, no graphical game.");
     }
 }

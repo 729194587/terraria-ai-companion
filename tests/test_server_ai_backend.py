@@ -33,6 +33,7 @@ class Host(socketserver.ThreadingTCPServer):
         self.actions = False
         self.chat = False
         self.published = []
+        self.say_queued = threading.Event()
 
     def query(self, operation, args):
         player = dict(inWorld=True, id=254, source='server_ai_player', position=dict(x=100, y=200),
@@ -60,6 +61,8 @@ class Host(socketserver.ThreadingTCPServer):
 class Handler(socketserver.StreamRequestHandler):
     def handle(self):
         h = self.server
+        reply_turn = 0
+        queued_say = None
         while line := self.rfile.readline():
             r = json.loads(line)
             h.sent.append(r)
@@ -73,10 +76,20 @@ class Handler(socketserver.StreamRequestHandler):
                 if h.actions:
                     data['capabilities'].append('server_ai_actions_v1')
                 if h.chat:
-                    data['capabilities'].append('server_ai_chat_v1')
+                    data['capabilities'].append('server_ai_chat_v2')
             elif r['binding'] != h.binding:
                 error = 'stale_binding'
+            elif op == 'reply_turn' and h.chat:
+                reply_turn=max(reply_turn,r['replyTurn'])
+                data=dict(replyTurn=reply_turn)
+                if queued_say is not None:
+                    self.wfile.write((json.dumps(dict(v=1,id=queued_say['id'],ok=False,error='superseded'))+'\n').encode())
+                    queued_say=None
+            elif op == 'say' and r.get('replyTurn') != reply_turn:
+                error='superseded'
             elif op == 'say' and h.chat:
+                if h.mode=='queue_say':
+                    queued_say=r;h.say_queued.set();continue
                 h.published.append(r)
                 if h.mode == 'drop_say':
                     return
@@ -138,6 +151,42 @@ class Handler(socketserver.StreamRequestHandler):
 
 
 class BackendTests(unittest.IsolatedAsyncioTestCase):
+    async def test_reply_fence_passes_say_waiting_on_same_tcp_connection(self):
+        self.host.chat=True
+        self.bridge.hello['capabilities'].append('server_ai_chat_v2')
+        self.bridge.invalidate_replies(1)
+        await asyncio.to_thread(self.bridge.advance_reply_turn,1)
+        self.host.mode='queue_say'
+        old=asyncio.create_task(asyncio.to_thread(self.bridge.command,'say',text='old',replyTurn=1))
+        self.assertTrue(await asyncio.to_thread(self.host.say_queued.wait,2))
+        self.bridge.invalidate_replies(2)
+        await asyncio.wait_for(asyncio.to_thread(self.bridge.advance_reply_turn,2),2)
+        with self.assertRaises(BridgeError) as error:await old
+        self.assertEqual('superseded',error.exception.status)
+        self.assertFalse(self.bridge._closed)
+        self.assertEqual([],self.host.published)
+        self.host.mode='complete'
+        await asyncio.to_thread(self.bridge.command,'say',text='new',replyTurn=2)
+        self.assertEqual(['new'],[r['text'] for r in self.host.published])
+        self.assertEqual(1,sum(r['op']=='bind' for r in self.host.sent))
+
+    async def test_old_worker_waiting_for_execution_lock_rechecks_before_send(self):
+        self.host.chat=True;self.bridge.hello['capabilities'].append('server_ai_chat_v2')
+        self.bridge.invalidate_replies(1);await asyncio.to_thread(self.bridge.advance_reply_turn,1)
+        entered=threading.Event()
+        def worker():
+            entered.set()
+            return self.bridge.command('say',text='old',replyTurn=1)
+        with self.bridge._lock:
+            old=asyncio.create_task(asyncio.to_thread(worker))
+            self.assertTrue(await asyncio.to_thread(entered.wait,2))
+            self.bridge.invalidate_replies(2)
+            await asyncio.to_thread(self.bridge.advance_reply_turn,2)
+        with self.assertRaises(BridgeError) as error:await old
+        self.assertEqual('superseded',error.exception.status)
+        self.assertFalse(any(r['op']=='say' for r in self.host.sent))
+        self.assertFalse(self.bridge._closed)
+
     def setUp(self):
         self.host = Host()
         self.thread = threading.Thread(target=self.host.serve_forever, daemon=True)

@@ -7,11 +7,14 @@ import asyncio
 import json
 from pathlib import Path
 import sys
+import time
+import uuid
 
 import httpx
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'python'))
+from control import BridgeError
 from agent import Agent
 from llm import LLMClient
 from lua_agent import ProgramStore
@@ -21,11 +24,11 @@ from lua_runtime import Limits
 
 class ChatSink:
     """Client authorization substitute; native server publishes the actual reply."""
-    hello={'capabilities':['local_ai_chat_v1','chat_events','send_chat','ai_reply_authorization_v1']}
+    hello={'capabilities':['local_ai_chat_v1','chat_events','send_chat','ai_reply_authorization_v2']}
     def __init__(self):self.sent=[]
     def command(self,cmd,**args):
         assert cmd=='authorize_ai_reply' and args['chatId']=='isolated-local-ai-task'
-        self.sent.append(dict(cmd=cmd,**args));return dict(ok=True,status='authorized')
+        self.sent.append(dict(cmd=cmd,**args));return dict(ok=True,status='authorized',data=dict(chatId=args['chatId'],replyTurn=args['replyTurn']))
 
 
 async def verify(args):
@@ -68,10 +71,19 @@ return {action=action,after=after.player.position}"""
             and 36<=p['position']['x']-start['position']['x']<=64
             and p['velocity']==dict(x=0,y=0) and after['binding']==before['binding']
             and all(r['toolNames']==['execute_lua'] for r in requests))
+        bridge.invalidate_replies(2)
+        await asyncio.to_thread(bridge.advance_reply_turn,2)
+        stale_rejected=False
+        try:
+            await asyncio.to_thread(bridge._request,'say',text='stale reply must never publish',replyTurn=1,
+                messageId=uuid.uuid4().hex,expiresAtUnixMs=int(time.time()*1000)+1800)
+        except BridgeError as error:
+            stale_rejected=error.status=='superseded'
+        passed=passed and stale_rejected
         report=dict(result='passed' if passed else 'failed',mode='isolated real native AI + existing Agent/Lua + native author broadcast; synthetic local chat input/client authorization; NO graphical Host & Play',
             modelMode='configured external model' if args.live_model else 'scripted HTTP model response via existing LLMClient',
             modelCalls=len(requests),requests=requests,binding=bridge.binding,before=start,after=p,programs=programs,luaReceipts=receipts,
-            chatAuthorizations=chat.sent,publishedReplies=bridge.reply_receipts)
+            chatAuthorizations=chat.sent,publishedReplies=bridge.reply_receipts,staleReplyRejected=stale_rejected)
         args.output.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         print(json.dumps(dict(result=report['result'],modelMode=report['modelMode'],modelCalls=len(requests),output=str(args.output))))
         return 0 if passed else 1

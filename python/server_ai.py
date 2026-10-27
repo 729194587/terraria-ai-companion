@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 import uuid
+from concurrent.futures import Future, TimeoutError as FutureTimeout
 
 from control import BridgeError, command_owner
 
@@ -19,9 +20,17 @@ class ServerAiBridge:
         self._closed = False
         self._action_id = None
         self._request_id = 0
+        self._wire_lock = threading.Lock()
+        self._pending_lock = threading.Lock()
+        self._pending = {}
+        self._reply_turn_lock = threading.Lock()
+        self._reply_turn = 0
         self.reply_receipts = []
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
         self.reader = self.sock.makefile("rb")
+        self.sock.settimeout(None)
+        self._receiver = threading.Thread(target=self._receive,daemon=True,name='server-ai-receive')
+        self._receiver.start()
         try:
             bound = self._request("bind")
             self.binding = bound["binding"]
@@ -37,28 +46,44 @@ class ServerAiBridge:
             self.close()
             raise
 
-    def _request(self, op, **values):
-        if self._closed:
-            raise BridgeError("Server AI connection closed; action outcome may be unknown")
-        self._request_id += 1
-        request_id = str(self._request_id)
-        request = {"v": 1, "id": request_id, "op": op, **values}
-        if op != "bind":
-            request["binding"] = self.binding
-        wire = (json.dumps(request, ensure_ascii=False) + "\n").encode("utf-8")
-        if len(wire) > 4097:
-            raise BridgeError("AI request exceeds 4096 bytes")
+    def _receive(self):
         try:
-            self.sock.sendall(wire)
-            line = self.reader.readline(1_048_577)
-            if len(line) > 1_048_576 or not line.endswith(b"\n"):
-                raise BridgeError("Missing/truncated server AI response; outcome unknown")
-            reply = json.loads(line)
-            if reply.get("v") != 1 or reply.get("id") != request_id:
-                raise BridgeError("Server AI response identity mismatch")
-        except (OSError, ValueError, BridgeError) as error:
+            while not self._closed:
+                line=self.reader.readline(1_048_577)
+                if len(line)>1_048_576 or not line.endswith(b'\n'):
+                    raise BridgeError('Missing/truncated server AI response; outcome unknown')
+                reply=json.loads(line)
+                if not isinstance(reply,dict) or reply.get('v')!=1:
+                    raise BridgeError('Server AI response identity mismatch')
+                with self._pending_lock:
+                    pending=self._pending.pop(reply.get('id'),None)
+                if pending is None:raise BridgeError('Server AI response identity mismatch')
+                pending.set_result(reply)
+        except (OSError,ValueError,BridgeError) as error:
             self.close()
-            raise BridgeError(str(error)) from error
+        finally:
+            self.reader.close()
+
+    def _request(self, op, _guard=None, **values):
+        # Only the write is serialized. A reply-turn fence must be able to pass
+        # a say that is already awaiting its game-thread response on this socket.
+        with self._wire_lock:
+            if _guard is not None and not _guard():
+                raise BridgeError('AI reply superseded before send',status='superseded')
+            if self._closed:raise BridgeError('Server AI connection closed; action outcome may be unknown')
+            self._request_id+=1;request_id=str(self._request_id)
+            request={'v':1,'id':request_id,'op':op,**values}
+            if op!='bind':request['binding']=self.binding
+            wire=(json.dumps(request,ensure_ascii=False)+'\n').encode('utf-8')
+            if len(wire)>4097:raise BridgeError('AI request exceeds 4096 bytes')
+            pending=Future()
+            with self._pending_lock:self._pending[request_id]=pending
+            try:self.sock.sendall(wire)
+            except OSError as error:
+                self.close();raise BridgeError(str(error)) from error
+        try:reply=pending.result(timeout=self.timeout)
+        except FutureTimeout as error:
+            self.close();raise BridgeError('Server AI request timeout; outcome unknown') from error
         if not reply.get("ok"):
             if self._action_id is not None and reply.get("error") in ("stale_binding", "identity_unavailable", "engine_unavailable", "unknown_action"):
                 self.close()
@@ -69,6 +94,20 @@ class ServerAiBridge:
             raise BridgeError("Server AI binding changed; outcome unknown")
         return reply
 
+    def invalidate_replies(self, turn):
+        with self._reply_turn_lock:
+            self._reply_turn=max(self._reply_turn,turn)
+
+    def reply_is_current(self, turn):
+        with self._reply_turn_lock:return not self._closed and turn==self._reply_turn
+
+    def advance_reply_turn(self, turn):
+        """Host control metadata, not a Lua operation; bypass execution ownership/lock."""
+        reply=self._request('reply_turn',replyTurn=turn,_guard=lambda:self.reply_is_current(turn))
+        if (reply.get('data') or {}).get('replyTurn')!=turn:
+            self.close();raise BridgeError('Reply turn acknowledgement mismatch')
+        return reply['data']
+
     def command(self, cmd, **parameters):
         if getattr(self, "_lua_poisoned", False):
             raise BridgeError("Lua action state unresolved; reconnect required")
@@ -76,15 +115,18 @@ class ServerAiBridge:
             raise BridgeError("Bridge session is owned by a Lua run")
         with self._lock:
             if cmd == 'say':
-                if 'server_ai_chat_v1' not in self.hello['capabilities']:
+                if 'server_ai_chat_v2' not in self.hello['capabilities']:
                     raise BridgeError('Native AI chat author unavailable',status='unsupported_operation')
                 text = parameters.get('text')
+                turn=parameters.get('replyTurn');guard=parameters.get('is_current',lambda:True)
+                def current():return self.reply_is_current(turn) and guard()
+                if not current():raise BridgeError('AI reply superseded',status='superseded')
                 if (not isinstance(text,str) or not text.strip() or len(text.encode('utf-16-le'))>800
                         or any(c in text for c in '\r\n\0')):
                     raise BridgeError('Invalid AI reply text',status='invalid_arguments')
                 try:
-                    reply=self._request('say',text=text,messageId=uuid.uuid4().hex,
-                        expiresAtUnixMs=int(time.time()*1000)+1800)
+                    reply=self._request('say',text=text,messageId=uuid.uuid4().hex,replyTurn=turn,
+                        expiresAtUnixMs=int(time.time()*1000)+1800,_guard=current)
                     data=reply.get('data') or {}
                     if (data.get('status')!='published' or data.get('authorSlot')!=self.binding['slot']
                             or data.get('worldSessionId')!=self.binding['world']
@@ -94,7 +136,8 @@ class ServerAiBridge:
                     self.reply_receipts.append(dict(data,text=text,binding=dict(self.binding)))
                     self.reply_receipts[:]=self.reply_receipts[-32:]
                     return data
-                except BaseException:
+                except BaseException as error:
+                    if isinstance(error,BridgeError) and error.status=='superseded':raise
                     self.close()  # No retry or human fallback after an ambiguous broadcast.
                     raise
             if cmd == "query_atomic":
@@ -153,15 +196,14 @@ class ServerAiBridge:
 
     def close(self):
         self._closed = True
+        with self._pending_lock:
+            pending=list(self._pending.values());self._pending.clear()
+        for future in pending:
+            if not future.done():future.set_exception(BridgeError('Server AI connection closed; outcome unknown'))
         try:
             self.sock.shutdown(socket.SHUT_RDWR)
         except OSError:
             pass
         self.sock.close()
-        # A blocked request owns the reader; shutdown unblocks it. Avoid waiting
-        # for its lock during existing Lua cancellation/unknown cleanup.
-        if self._lock.acquire(blocking=False):
-            try:
-                self.reader.close()
-            finally:
-                self._lock.release()
+        # The receiver owns and closes the reader; shutdown unblocks it without
+        # waiting for the execution lock or joining the current receiver thread.

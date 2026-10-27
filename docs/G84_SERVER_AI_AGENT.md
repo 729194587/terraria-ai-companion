@@ -1,13 +1,13 @@
 # G8.4：游戏聊天 → 现有 Agent/Lua → 服务器 AI
 
-基线 PR #23 `c0ddfea`；独立分支 `codex/server-ai-chat-agent`，当前包版本 `0.1.46`。
+基线 PR #23 `c0ddfea`；独立分支 `codex/server-ai-chat-agent`，当前包版本 `0.1.47`。
 不修改已有 PR、main、G1–G7 执行实现或旧 profile，不合并。
 
 ## 使用方式
 
 先退出旧测试游戏和旧 Python Agent，更新包，并建立新的隔离 Host & Play profile。
 `0.1.44` 没有本次聊天入口；`0.1.45` 会借本地玩家发送回复。此处需同时更新图形
-客户端、服务器和 Python 到 `0.1.46`，旧能力组合明确拒绝，不回退真人发言。
+客户端、服务器和 Python 到 `0.1.47`，旧能力组合明确拒绝，不回退真人发言。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-companion.ps1
@@ -180,8 +180,8 @@ git diff --check
 - 文本限 400 UTF-16 字符、单行；请求有效期最多 2 秒，messageId 去重，最多 1024 条。
   广播前先记不确定结果，部分失败和丢回执不得重发；Python 关闭不确定的连接，不退回
   真人发送。断开、旧世界、旧代次、对象替换等拒绝发布。
-- 旧 send_ai_chat 保留兼容旧调用，但新版 Agent 不再使用它。授权是客户端提交边界；
-  已经授权并进入网络发送的消息不能撤回，后续新轮不意味着撤销已提交广播。
+- 旧 send_ai_chat 保留兼容旧调用，但新版 Agent 不再使用它。此版仅在授权后检查
+  Python 当前轮，仍存在旧回复排队后遇到新指令的竞态；下节 0.1.47 增加最终发布栅栏。
 
 修复定向验证：Python Agent/后端 32 个测试通过（包括两项新增的旧回复拒绝、丢回执
 不重发/不真人回退）；C# 客户端聊天 20 项、服务器原生聊天协议检查及正式包 36 项 IL
@@ -228,3 +228,55 @@ Python 的轮次 generation=1/2 不代表角色已发生生命周期变化。
 本次仅补录文档与证据，复核现有日志、包哈希、动作/发布元数据及JSON一致性；没有
 修改功能实现、重启游戏、调用模型、重跑构建或全量测试。PR #24 保持 Open / Draft，
 不合并。
+
+## 0.1.47：新指令与旧回复发布的竞态修复
+
+根因：取消 `asyncio.to_thread` 的等待不会停止工作线程；客户端 `authorize_ai_reply`
+返回后，旧 `say` 仍可能等待 Python 执行锁、写锁或服务器游戏线程。仅在 await 返回后
+检查当前 chatId，不能阻止已经排队的旧回复广播。
+
+- `_send_reply` 携带不可变 Agent generation 和取消 Event。新指令立即撤销旧 token；
+  授权前后、取得执行锁后、取得写锁后分别检查；失败/预算回复也携带原轮次。
+- 客户端 `ai_reply_authorization_v2` 要求正整数 `replyTurn`，仅检查当前 AI chatId，
+  回传 `{chatId,replyTurn}`，不发送真人聊天。Python 必须核对这两个值。
+- 服务器 `server_ai_chat_v2` 新增连接内单调递增的 `reply_turn` 元数据请求；仍要求
+  原 binding，对真实 Actor 引用/世界/角色代次/Slot 二次检查后才 ACK。新轮模型调用前
+  等待 ACK；Agent 关闭也撤销旧轮。`replyTurn` 与角色 generation 是不同概念。
+- AI TCP 读取线程在将新轮请求排入游戏队列前更新连接内栅栏，只操作协议元数据；
+  断线立即撤销。`say` 必须携带相同轮次，最终 `AiReplyFence.Publish` 在与轮次更新
+  共用的锁中调用原生广播。因此新轮元数据已到服务器、但新轮游戏线程 ACK 尚未处理时，
+  已在队列里的旧 `say` 也不能广播。无 Terraria 状态在线程间读取或修改。
+- ServerAiBridge 改为单连接按请求 ID 分派回包，仅序列化 socket 写入；轮次控制绕过
+  Lua 执行所有权/执行锁，可以越过等待旧 `say` 回包的线程，不增加第三条 TCP 通道。
+  原执行命令仍持有原锁与 Lua 所有权。真实 AI 作者、Gate/生命周期、期限、messageId
+  去重、广播前未知标记及丢回执关闭连接/不重试/不回退真人均保留。
+
+**精确边界**：服务器收到新轮元数据并取得栅栏锁是服务端撤销的线性化点；它与进入原生
+广播互斥。已经进入广播的消息不能追回。游戏输入、Python 收到事件、服务器收到栅栏
+是跨进程事件，通知传输途中不能承诺撤回已开始的广播；客户端授权或 say 排队本身
+不再视为不可撤销的发布。无 ACK 的新轮不得开始模型任务或声称绑定已生效。
+
+定向验证（未运行全量）：
+
+- Python `test_server_ai_agent test_server_ai_backend test_agent test_lua_agent` 共70项通过；
+  随后单独新增的授权错配用例通过，共71个不同用例。覆盖授权迟到、取消后工作线程继续、
+  等待执行锁、同一 TCP 上旧 say 等待回包时新轮越过、真实 Lua 与原真人 Agent 回归。
+- `run_csharp_tests.ps1 -BridgeOnly` 通过，客户端聊天25项及原真人 Bridge/生命周期组；
+  `run_server_ai_ipc_tests.ps1` 通过：IPC45、动作40、读取15、原生适配替身28、聊天30项。
+  新增真实 loopback 确定性排队测试：先排 say1、再排 turn2、最后才泵游戏线程，原生
+  回调次数为0；say2随后只发布1次，回调始终在游戏线程。
+- 正式包构建0错误/0警告；正式包39项 IL检查通过，包含 TCP/栅栏零Terraria访问、最终
+  Publish 栅栏、真实 whoAmI 广播与无身份伪装。`git diff --check` 通过。
+- PowerShell 7 隔离原生服务器通过，复制世界/独立端口27871/27872。实际 Agent/Lua
+  读取位置、移动并释放、原生作者254广播一次；advance到轮次2后，直接发送轮次1的
+  say得到 superseded。正常退出0、角色清理/reservation释放通过；日志限定本次PID、
+  世界和进程时间。[本轮证据](evidence/G84_REPLY_TURN_FENCE.json)。
+  这里使用模型 HTTP 替身与客户端授权替身；不冒充真实模型或图形验收。原生旧轮拒绝是
+  顺序验证，并发时序由离线真实 TCP 测试控制。原生脚本需 pwsh/PowerShell 7，Windows
+  PowerShell 5首次尝试因缺少 ProcessStartInfo.ArgumentList 在启动前失败，未计作通过。
+
+必须同时重建/重载客户端、服务器和 Python 为0.1.47（v2能力）；不兼容组合拒绝。
+启动入口和双端口不变。真实 Host & Play 尚未重测本补丁：建议安全平地连续发送两个
+`!ai`，让第二条在第一条回复前取代它，确认仅最新回复显示 AI 名称/气泡。该人工操作
+不能稳定卡住毫秒级竞态，确定性证据来自上述并发测试。此前0.1.46实机记录保留为历史，
+不标记0.1.47实机通过；远程多人、持续旧连接跨真实生命周期及动作中死亡重生仍未验证。

@@ -76,6 +76,7 @@ internal sealed class AiReadOnlyServer : IDisposable
             {
                 if (buffer[0] != 10) { if (line.Length >= 4096) break; line.WriteByte(buffer[0]); continue; }
                 string text = utf8.GetString(line.ToArray()); line.SetLength(0);
+                protocol.ObserveReplyTurn(connection,text); // Metadata fence before queued game-thread work.
                 if (Interlocked.Increment(ref queued) > 64) { Interlocked.Decrement(ref queued); break; }
                 var reply = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
                 jobs.Enqueue(new(connection, text, token, Environment.TickCount64 + 4000, reply));
@@ -85,6 +86,7 @@ internal sealed class AiReadOnlyServer : IDisposable
         catch (Exception e) when (e is IOException or SocketException or OperationCanceledException or ObjectDisposedException or DecoderFallbackException) { }
         finally
         {
+            protocol.RevokeReplies(connection);
             cancellation.Cancel(); client.Dispose(); replies.Writer.TryComplete();
             try { await writer.ConfigureAwait(false); } catch (Exception e) when (e is IOException or SocketException or OperationCanceledException or ObjectDisposedException or TimeoutException) { }
             closed.Enqueue(connection); Interlocked.Decrement(ref clients);

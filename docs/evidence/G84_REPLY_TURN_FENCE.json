@@ -1,0 +1,69 @@
+{
+  "result": "passed",
+  "scope": "Isolated copied world, real native AI/Agent/Lua/native author. Scripted model and synthetic client authorization; no graphical Host & Play. Native stale-turn refusal is sequential; queued concurrent races are deterministic offline real-TCP tests.",
+  "packageVersion": "0.1.47",
+  "packageSHA256": "7555F69D0A070CDA2474D19334D675DD57CFD25FF0135761ACD4866EA6902745",
+  "sourceProfile": ".local/companion-g82-native-b074c166ef714accb71ac230692e5ccb",
+  "sourceReportSHA256": "f4705110b121758562669cff0798d739ca01386f3a2c4b8e67fd931f1d7b1929",
+  "agentReportSHA256": "df6bb3abca774e78e53a095f7b9f5a603532ea6d02e005a5b46dd72363867b5f",
+  "processId": 21588,
+  "startedUtc": "2026-10-27T06:26:15.4573269Z",
+  "exitedUtc": "2026-10-27T06:26:53.0462239Z",
+  "exitCode": 0,
+  "logScope": "process ID + bound world session + process lifetime",
+  "binding": {
+    "actor": "4a1ff43c122c45158cd9c00329a838ba",
+    "world": "8b336c064ceb43efbc16be9dd116eed4",
+    "generation": 1,
+    "slot": 254
+  },
+  "modelMode": "scripted HTTP model response via existing LLMClient",
+  "modelCalls": 2,
+  "beforePosition": {
+    "x": 33616,
+    "y": 3462
+  },
+  "afterPosition": {
+    "x": 33666.395,
+    "y": 3462
+  },
+  "afterVelocity": {
+    "x": 0,
+    "y": 0
+  },
+  "chatAuthorizations": [
+    {
+      "cmd": "authorize_ai_reply",
+      "text": "[AI] 已依据服务器AI的实际结束证据向右移动并停稳。",
+      "chatId": "isolated-local-ai-task",
+      "replyTurn": 1
+    }
+  ],
+  "publishedReplies": [
+    {
+      "status": "published",
+      "authorSlot": 254,
+      "worldSessionId": "8b336c064ceb43efbc16be9dd116eed4",
+      "actorGeneration": 1,
+      "gameUpdate": 538,
+      "text": "[AI] 已依据服务器AI的实际结束证据向右移动并停稳。",
+      "binding": {
+        "actor": "4a1ff43c122c45158cd9c00329a838ba",
+        "world": "8b336c064ceb43efbc16be9dd116eed4",
+        "generation": 1,
+        "slot": 254
+      }
+    }
+  ],
+  "staleReplyRejected": true,
+  "teardown": {
+    "actorSlot": -1,
+    "actor": null,
+    "detail": {
+      "reason": "OnWorldUnload",
+      "same": true,
+      "occupied": false
+    },
+    "utc": "2026-10-27T06:26:53.0302117Z"
+  }
+}

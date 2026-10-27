@@ -46,12 +46,12 @@ class AiHost(Host):
 class ChatHandler(socketserver.StreamRequestHandler):
     def handle(self):
         h=self.server
-        self.write(dict(v=1,type='hello',capabilities=['chat_events','send_chat','local_ai_chat_v1','ai_reply_authorization_v1']))
+        self.write(dict(v=1,type='hello',capabilities=['chat_events','send_chat','local_ai_chat_v1','ai_reply_authorization_v2']))
         h.handler=self;h.ready.set()
         while line:=self.rfile.readline():
             r=json.loads(line);h.sent.append(r)
             ok=r['cmd']=='authorize_ai_reply' and r['chatId']==h.latest
-            self.write(dict(v=1,type='reply',id=r['id'],ok=ok,status='authorized' if ok else 'superseded'))
+            self.write(dict(v=1,type='reply',id=r['id'],ok=ok,status='authorized' if ok else 'superseded',data=dict(chatId=r['chatId'],replyTurn=r['replyTurn'])))
     def write(self,value):
         with self.server.write_lock:
             self.wfile.write((json.dumps(value)+'\n').encode());self.wfile.flush()
@@ -202,6 +202,66 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.ai._closed)
         self.assertEqual(1,len(self.aihost.published))
         self.assertTrue(all(r['cmd']=='authorize_ai_reply' for r in self.chathost.sent))
+
+    async def test_new_turn_rejects_authorization_that_returns_late(self):
+        from control import BridgeError
+        entered=threading.Event();release=threading.Event()
+        original=self.chat.command
+        def delayed(*args,**kwargs):
+            value=original(*args,**kwargs);entered.set()
+            if not release.wait(2):raise AssertionError('authorization release timeout')
+            return value
+        self.agent._invalidate_turn();self.agent._active_turn_id='old';self.chathost.latest='old'
+        await asyncio.to_thread(self.ai.advance_reply_turn,1)
+        with patch.object(self.chat,'command',side_effect=delayed):
+            old=asyncio.create_task(self.agent._send_reply('old','old',1))
+            try:
+                self.assertTrue(await asyncio.to_thread(entered.wait,2))
+                self.agent._invalidate_turn();self.agent._active_turn_id='new'
+                await asyncio.to_thread(self.ai.advance_reply_turn,2)
+            finally:release.set()
+            with self.assertRaises(BridgeError):await old
+        self.assertEqual([],self.aihost.published)
+        self.assertFalse(any(r['op']=='say' for r in self.aihost.sent))
+
+    async def test_cancelled_to_thread_cannot_publish_after_new_turn(self):
+        entered=threading.Event();release=threading.Event();finished=threading.Event()
+        original=self.ai.command
+        def delayed(*args,**kwargs):
+            if args[0]=='say':
+                entered.set()
+                if not release.wait(2):raise AssertionError('worker release timeout')
+                try:return original(*args,**kwargs)
+                finally:finished.set()
+            return original(*args,**kwargs)
+        self.agent._invalidate_turn();self.agent._active_turn_id='old';self.chathost.latest='old'
+        await asyncio.to_thread(self.ai.advance_reply_turn,1)
+        with patch.object(self.ai,'command',side_effect=delayed):
+            old=asyncio.create_task(self.agent._send_reply('old','old',1))
+            try:
+                self.assertTrue(await asyncio.to_thread(entered.wait,2))
+                old.cancel()
+                with self.assertRaises(asyncio.CancelledError):await old
+                self.agent._invalidate_turn();self.agent._active_turn_id='new'
+                await asyncio.to_thread(self.ai.advance_reply_turn,2)
+            finally:release.set()
+            self.assertTrue(await asyncio.to_thread(finished.wait,2))
+        self.assertEqual([],self.aihost.published)
+        self.assertFalse(any(r['op']=='say' for r in self.aihost.sent))
+        self.chathost.latest='new'
+        await self.agent._send_reply('new','new',2)
+        self.assertEqual(['[AI] new'],[r['text'] for r in self.aihost.published])
+
+    async def test_authorization_for_wrong_turn_cannot_authorize_publication(self):
+        from control import BridgeError
+        self.agent._invalidate_turn();self.agent._active_turn_id='current';self.chathost.latest='current'
+        await asyncio.to_thread(self.ai.advance_reply_turn,1)
+        original=self.chat.command
+        def wrong_turn(*args,**kwargs):
+            reply=original(*args,**kwargs);reply['data']['replyTurn']+=1;return reply
+        with patch.object(self.chat,'command',side_effect=wrong_turn):
+            with self.assertRaises(BridgeError):await self.agent._send_reply('reply','current',1)
+        self.assertEqual([],self.aihost.published)
 
     async def test_superseded_reply_never_reaches_native_author(self):
         from control import BridgeError

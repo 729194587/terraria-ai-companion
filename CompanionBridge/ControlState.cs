@@ -10,7 +10,7 @@ namespace CompanionBridge;
 
 internal sealed record ControlRequest(int Id, string Cmd, int Direction = 1, bool Jump = false,
     int? ExpectedGeneration = null, float? TargetX = null, string Text = null, string ChatId = null,
-    int? DurationMs = null, int? ActionId = null, string Operation = null, JsonElement Arguments = default, LandingRegion TargetRegion = null);
+    int? DurationMs = null, int? ActionId = null, string Operation = null, JsonElement Arguments = default, LandingRegion TargetRegion = null, long? ReplyTurn = null);
 internal sealed record ControlInput(int Direction, bool Jump, bool OverrideJump, bool Predictive = false, float? TargetX = null, ControlRequest Atomic = null, LandingRegion TargetRegion = null);
 internal sealed record StateVector(float X, float Y);
 internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateVector Velocity,
@@ -215,7 +215,8 @@ internal sealed class ControlState
                         try { sendChat(request.Text); }
                         catch (Exception) { chatStatus = "chat_send_failed"; }
                     }
-                    pending.Completion.TrySetResult(Reply(request.Id, chatStatus is "sent" or "authorized", chatStatus));
+                    pending.Completion.TrySetResult(Reply(request.Id, chatStatus is "sent" or "authorized", chatStatus) with
+                        { Data = chatStatus == "authorized" ? new { chatId=request.ChatId, replyTurn=request.ReplyTurn } : null });
                     continue;
                 }
                 if (request.Cmd == "get_navigation" && pending.Session == _session)
@@ -496,6 +497,13 @@ internal sealed class ControlState
                 || string.IsNullOrWhiteSpace(chatId = c.GetString()) || chatId.Length > 100)
                 throw new FormatException("send_chat requires single-line text (1..400 chars) and chatId.");
         }
+        long? replyTurn = null;
+        if (cmd.GetString() == "authorize_ai_reply")
+        {
+            if (!root.TryGetProperty("replyTurn", out var turn) || !turn.TryGetInt64(out long value) || value <= 0)
+                throw new FormatException("authorize_ai_reply requires positive replyTurn.");
+            replyTurn = value;
+        }
         int? durationMs = null, actionId = null;
         if (cmd.GetString() == "move_for")
         {
@@ -541,6 +549,6 @@ internal sealed class ControlState
                     throw new FormatException("Invalid atomic chatId.");
             }
         }
-        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId, durationMs, actionId, operation, arguments, targetRegion);
+        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId, durationMs, actionId, operation, arguments, targetRegion, replyTurn);
     }
 }

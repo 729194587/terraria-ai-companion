@@ -18,9 +18,12 @@ internal sealed class AiReadOnlyProtocol
     private readonly AiAtomicActions actions;
     private sealed record Speech(string Text, object Data, string Error);
     private readonly Dictionary<(Guid,string),Speech> speech = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid,AiReplyFence> replyFences=new();
+    internal void ObserveReplyTurn(Guid connection,string line)=>replyFences.GetOrAdd(connection,_=>new()).Observe(line);
+    internal void RevokeReplies(Guid connection){if(replyFences.TryGetValue(connection,out var f))f.Revoke();}
     internal AiReadOnlyProtocol(AiAtomicActions actions = null) { this.actions = actions; }
-    internal void Clear() { leases.Clear(); speech.Clear(); actor = null; actorId = null; actions?.Clear(); }
-    internal void Forget(Guid connection) { leases.Remove(connection); foreach(var key in speech.Keys.Where(k=>k.Item1==connection).ToArray())speech.Remove(key); actions?.Forget(connection); }
+    internal void Clear() { foreach(var f in replyFences.Values)f.Revoke();replyFences.Clear();leases.Clear(); speech.Clear(); actor = null; actorId = null; actions?.Clear(); }
+    internal void Forget(Guid connection) { RevokeReplies(connection);replyFences.TryRemove(connection,out _);leases.Remove(connection); foreach(var key in speech.Keys.Where(k=>k.Item1==connection).ToArray())speech.Remove(key); actions?.Forget(connection); }
 
     internal string Handle(Guid connection, string line, Func<Identity> capture, CancellationToken disconnected = default,
         Func<Identity,string,JsonElement,object> query = null, Func<Identity,string,object> say = null)
@@ -33,18 +36,21 @@ internal sealed class AiReadOnlyProtocol
             var root = doc.RootElement;
             var names = new HashSet<string>(StringComparer.Ordinal);
             foreach (var p in root.EnumerateObject())
-                if (!names.Add(p.Name) || p.Name is not ("v" or "id" or "op" or "binding" or "actionId" or "operation" or "arguments" or "expiresAtUnixMs" or "text" or "messageId")) throw new FormatException();
+                if (!names.Add(p.Name) || p.Name is not ("v" or "id" or "op" or "binding" or "actionId" or "operation" or "arguments" or "expiresAtUnixMs" or "text" or "messageId" or "replyTurn")) throw new FormatException();
             id = root.GetProperty("id").GetString();
             if (string.IsNullOrWhiteSpace(id) || id.Length > 64 || root.GetProperty("v").GetInt32() != 1) throw new FormatException();
             string op = root.GetProperty("op").GetString();
             bool execution = op is "start" or "action" or "cancel";
             bool reading = op == "query" && query != null;
             bool speaking = op=="say" && say!=null;
-            if (op is not ("bind" or "state") && !reading && !speaking && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+            bool turning=op=="reply_turn"&&say!=null;
+            if (op is not ("bind" or "state") && !reading && !speaking && !turning && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             foreach (string field in names)
                 if (field == "actionId" && !execution || field is "operation" or "arguments" && op != "start" && !reading
                     || field == "expiresAtUnixMs" && op is not ("start" or "say")
-                    || field is "text" or "messageId" && !speaking) throw new FormatException();
+                    || field is "text" or "messageId" && !speaking || field=="replyTurn"&&!speaking&&!turning) throw new FormatException();
+            long replyTurn=0;
+            if(speaking||turning){replyTurn=root.GetProperty("replyTurn").GetInt64();if(replyTurn<=0)throw new FormatException();}
             string messageId=null,text=null;
             if(speaking)
             {
@@ -88,25 +94,29 @@ internal sealed class AiReadOnlyProtocol
                 leases.Add(connection, new(current, binding));
                 var capabilities=actions?.Capabilities.ToList();
                 if(query!=null)capabilities?.Add("server_ai_reads_v1");
-                if(say!=null)capabilities?.Add("server_ai_chat_v1");
+                if(say!=null)capabilities?.Add("server_ai_chat_v2");
                 return JsonSerializer.Serialize(Reply(true, data: capabilities==null?null:new { capabilities }, binding: binding));
             }
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)
                 return JsonSerializer.Serialize(Reply(false, error: "stale_binding"));
+            var replyFence=replyFences.GetOrAdd(connection,_=>new());
+            if(turning)
+                return JsonSerializer.Serialize(replyFence.Advance(replyTurn)?Reply(true,new{replyTurn},lease.Binding):Reply(false,error:"superseded"));
             if(speaking)
             {
                 if(disconnected.IsCancellationRequested)return JsonSerializer.Serialize(Reply(false,error:"connection_cancelled"));
-                var key=(connection,messageId);
-                if(speech.TryGetValue(key,out var cached))return JsonSerializer.Serialize(cached.Text==text
-                    ?Reply(cached.Error==null,cached.Data,lease.Binding,cached.Error):Reply(false,error:"duplicate_message"));
                 long remaining=root.GetProperty("expiresAtUnixMs").GetInt64()-DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 if(remaining<=0||remaining>2000)return JsonSerializer.Serialize(Reply(false,error:remaining<=0?"request_expired":"invalid_deadline"));
-                if(speech.Count>=1024)return JsonSerializer.Serialize(Reply(false,error:"reply_registry_full"));
-                // Fence before native publication: partial broadcast failures may not be retried.
-                speech[key]=new(text,null,"reply_outcome_unknown");
-                try{speech[key]=new(text,say(current,text),null);}catch{}
-                var result=speech[key];
+                var key=(connection,messageId);Speech result=null;
+                if(!replyFence.Publish(replyTurn,()=>{
+                    if(speech.TryGetValue(key,out var cached)){result=cached.Text==text?cached:new(text,null,"duplicate_message");return;}
+                    if(speech.Count>=1024){result=new(text,null,"reply_registry_full");return;}
+                    // Fence uncertainty before entering the broadcaster; never retry.
+                    speech[key]=new(text,null,"reply_outcome_unknown");
+                    try{speech[key]=new(text,say(current,text),null);}catch{}
+                    result=speech[key];
+                }))return JsonSerializer.Serialize(Reply(false,error:"superseded"));
                 return JsonSerializer.Serialize(Reply(result.Error==null,result.Data,lease.Binding,result.Error));
             }
             if (reading)

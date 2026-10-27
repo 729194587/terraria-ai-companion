@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.46","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.47","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -33,6 +33,10 @@ public static class ServerAiPackageTests
         Check(Type("VirtualPlayerEngineProbe").BaseType.FullName=="System.Object","promoted runtime hosted by formal Mod");
         var wire=types.Where(t=>t.FullName.StartsWith("CompanionBridge.ServerIpc.AiReadOnlyServer")).SelectMany(t=>t.Methods).Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).ToArray();
         Check(!wire.Any(i=>i.Operand is MemberReference r&&r.DeclaringType?.Namespace.StartsWith("Terraria")==true),"all TCP worker/state-machine IL contains zero Terraria access");
+        var fence=Type("AiReplyFence");
+        Check(fence.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).All(i=>i.Operand is not MemberReference r||r.DeclaringType?.Namespace.StartsWith("Terraria")!=true),"reply-turn worker fence contains zero Terraria access");
+        Check(Calls(Type("AiReadOnlyProtocol").Methods.Single(m=>m.Name=="Handle"),"Publish"),"game-thread say passes final atomic reply-turn publication fence");
+        Check(Calls(fence.Methods.Single(m=>m.Name=="Advance"),"Enter")&&Calls(fence.Methods.Single(m=>m.Name=="Publish"),"Enter"),"turn replacement and native publication use monitor critical sections");
         var adapter=Type("ServerAiSystem");var capture=adapter.Methods.Single(m=>m.Name=="Capture");var pump=adapter.Methods.Single(m=>m.Name=="Pump");
         Check(Calls(capture,"Require")&&Calls(capture,"AssertOwner"),"native snapshot reuses audited binding guard on owner thread");
         Check(!adapter.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.Operand is MethodReference r&&r.Name=="get_LocalPlayer"),"server adapter has no LocalPlayer fallback");
