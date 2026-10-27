@@ -24,7 +24,7 @@ from lua_runtime import Limits
 
 class ChatSink:
     """Client authorization substitute; native server publishes the actual reply."""
-    hello={'capabilities':['local_ai_chat_v1','chat_events','send_chat','ai_reply_authorization_v2']}
+    hello={'capabilities':['local_ai_chat_v1','local_ai_chat_v2','chat_events','send_chat','ai_reply_authorization_v2']}
     def __init__(self):self.sent=[]
     def command(self,cmd,**args):
         assert cmd=='authorize_ai_reply' and args['chatId']=='isolated-local-ai-task'

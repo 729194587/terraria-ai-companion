@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.Chat;
+using Terraria.Chat.Commands;
 using Terraria.ID;
 using Terraria.Localization;
 using Terraria.ModLoader;
@@ -36,9 +37,10 @@ public sealed class ChatBridgeSystem : ModSystem
 
     private static void Submit(On_ChatHelper.orig_SendChatMessageFromClient orig, ChatMessage message)
     {
-        // Own replies are suppressed, even if their text begins with !ai.
+        // Capture only ordinary outgoing speech; commands, consumed messages and own replies are excluded.
         GameMessageCapture.Run(() => orig(message), () => {
-            if(InWorld&&Main.netMode==NetmodeID.MultiplayerClient)
+            if(InWorld&&Main.netMode==NetmodeID.MultiplayerClient&&!message.IsConsumed
+                &&message.CommandId.Equals(ChatCommandId.FromType<SayChatCommand>()))
                 CompanionBridge.Server?.PublishLocalAiCommand(Main.myPlayer,Main.LocalPlayer.name,message.Text);
         });
     }

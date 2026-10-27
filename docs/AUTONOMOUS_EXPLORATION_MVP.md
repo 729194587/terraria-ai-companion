@@ -1,11 +1,13 @@
 # 单窗口 Host & Play 自主探索 MVP
 
-沿用 PR #25 的 G8.5 开发线。客户端/服务器继续使用 CompanionBridge **0.1.48**，
-本轮只更新 Python、Lua、入口与验证，不需要重建 Mod。main、PR #24 不变，PR 保持 Draft。
+沿用 PR #25 的 G8.5 开发线。当前客户端/服务器使用 CompanionBridge **0.1.49**，
+支持本地普通聊天直接进入Agent，`!ai`仍兼容。旧0.1.48需要保存退出、换新包并重启。
+本机 `.local/start-client.ps1` 已指向用已保存测试存档生成的新profile，旧profile保留。
+main、PR #24 不变，PR 保持 Draft。
 
 ## 启动与玩家入口
 
-已有 G8.5 游戏可继续运行。先 Ctrl+C 停止旧 Agent，等待输入清理后，在项目根目录运行：
+已经加载0.1.49时可继续运行游戏。先 Ctrl+C 停止旧 Agent，等待输入清理后，在项目根目录运行：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-server-ai-agent.ps1
@@ -28,10 +30,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .local/start-client.ps1
 在**本地玩家自己的游戏聊天**中输入：
 
 ```text
-!ai 开始探索附近，遇到危险就停下
-!ai 向右探索附近，最多走4段，不要挖掘或使用物品
-!ai 向左探索附近，最多走6段
-!ai 停止
+开始探索附近，遇到危险就停下
+向右探索附近，最多走4段，不要挖掘或使用物品
+向左探索附近，最多走6段
+停止
 ```
 
 一个探索指令授权本轮连续观察与移动，模型调用一次 `execute_lua`，例如：
@@ -42,13 +44,14 @@ return explore({direction='auto', maxSteps=6})
 
 中间各段由同一 Lua 程序自行完成，不等用户逐段下指令，也不需要逐段调用模型。
 有界探索停止后回复实际结果并等待新指令，不在后台永久运行。
-普通观察/移动指令不代表探索授权。新 `!ai` 指令会取消旧轮；`!ai 停止`不启动新的探索。
+普通观察/移动指令不代表探索授权。新本地普通聊天会取消旧轮；`停止`不启动新的探索。普通问候只对话，不代表移动授权。
+旧`!ai`前缀仍可用；其他玩家、系统消息、AI回显不成为新任务。斜杠/非Say游戏命令不进入Agent。
 Ctrl+C 仍走原 Agent 关闭与动作清理。
 
 ## 执行方式与复用
 
 ```text
-本地 !ai 探索指令 → 原 Agent / LLMClient → execute_lua
+本地普通探索聊天 → 原 Agent / LLMClient → execute_lua
   → 原 LuaRuntime / Worker → explore(options) 纯 Lua 组合函数
   → 原 get_player_state / observe_terrain / resolve_content / scan_tiles / scan_entities
   → 选择局部目标 → 原 navigate_to_x → 核验 known 结束回执 → 读实际状态和地形
@@ -134,7 +137,7 @@ landmarks和reason。它仍是Lua报告，不能代替原子的endEvidence，也
    不能把合成地形测试当作图形跳障碍已通过。
 3. **调整策略**：右侧近处有高墙/缺口，左侧安全，发送“开始探索附近”。预期发动作前缩短目标或换向；
    发现两侧不适合就停止。不会挖墙、跳入未知区或在失败后反复撞墙。
-4. **取消**：探索途中发 `!ai 停止`，确认旧轮停止、不再发后续段，无旧回复插入；
+4. **取消**：探索途中发 `停止`，确认旧轮停止、不再发后续段，无旧回复插入；
    或Ctrl+C停止Agent并等待清理，再检查AI停止输入。保留实际位移，不宣称回滚已走距离。
 5. **预算与风险**：发“向右探索8段”，应在段数/行程/时间/危险中的最早条件结束。
    阻挡、怪物接近、生命下降等场景核对停止原因；不要用危险存档验证死亡风险。

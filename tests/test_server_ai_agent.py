@@ -46,7 +46,7 @@ class AiHost(Host):
 class ChatHandler(socketserver.StreamRequestHandler):
     def handle(self):
         h=self.server
-        self.write(dict(v=1,type='hello',capabilities=['chat_events','send_chat','local_ai_chat_v1','ai_reply_authorization_v2']))
+        self.write(dict(v=1,type='hello',capabilities=['chat_events','send_chat','local_ai_chat_v1','local_ai_chat_v2','ai_reply_authorization_v2']))
         h.handler=self;h.ready.set()
         while line:=self.rfile.readline():
             r=json.loads(line);h.sent.append(r)
@@ -105,6 +105,31 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
     async def receive(self,id='task-1',text='向右移动80像素'):
         self.chathost.emit(id,text)
         self.agent.receive(await asyncio.wait_for(self.events.get(),2))
+    async def test_cli_refuses_old_prefix_only_client_before_connecting_ai(self):
+        from unittest.mock import AsyncMock
+        from control import BridgeError
+        from agent import run
+        with patch('agent.LLMClient') as llm, patch('agent.Bridge') as chat, patch('server_ai.ServerAiBridge') as execution:
+            llm.return_value.close=AsyncMock()
+            chat.return_value.hello={'capabilities':['chat_events','send_chat','local_ai_chat_v1','ai_reply_authorization_v2']}
+            with self.assertRaisesRegex(BridgeError,'0.1.49'):
+                await run(18777,2,server_ai=True)
+            execution.assert_not_called()
+            chat.return_value.close.assert_called_once()
+            llm.return_value.close.assert_awaited_once()
+
+    async def test_normal_local_greeting_reaches_model_without_game_actions(self):
+        self.answers=[dict(role='assistant',content='你好，我在这里。')]
+        await self.receive('greeting','你好')
+        await self.agent.task
+        self.assertEqual(1,len(self.requests))
+        users=[json.loads(m['content']) for m in self.requests[0]['messages'] if m['role']=='user']
+        self.assertTrue(any(m.get('text')=='你好' for m in users))
+        self.assertFalse(any(r['op']=='start' for r in self.aihost.sent))
+        self.assertEqual(1,len(self.ai.reply_receipts))
+        self.assertEqual(254,self.ai.reply_receipts[0]['authorSlot'])
+        self.assertIn('无需!ai前缀',self.requests[0]['messages'][0]['content'])
+
     async def test_chat_http_model_lua_bound_execution_and_chat_reply(self):
         self.answers=[self.program("""
             local before=api('get_player_state',{})

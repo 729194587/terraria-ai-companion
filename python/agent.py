@@ -331,7 +331,7 @@ class Agent:
                 getattr(bridge,'hello',{}).get('capabilities',[])):
             raise BridgeError('Server AI Agent requires the explicit native AI backend; human fallback is forbidden')
         if self.server_ai and local_input:
-            raise ValueError('Server AI requires the explicit in-game !ai chat entry')
+            raise ValueError('Server AI requires the local in-game chat entry')
         self.local_input = local_input
         lua_limits.validate()
         self.lua_limits = lua_limits
@@ -978,8 +978,8 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
         if server_ai:
             if local_input:
                 raise ValueError('--server-ai cannot be combined with --local-input')
-            if not {'local_ai_chat_v1','ai_reply_authorization_v2'}.issubset(bridge.hello.get('capabilities', [])):
-                raise BridgeError('Server AI chat requires native-author reply support; rebuild/reload both client and server (0.1.47+)')
+            if not {'local_ai_chat_v2','ai_reply_authorization_v2'}.issubset(bridge.hello.get('capabilities', [])):
+                raise BridgeError('Ordinary local AI chat requires CompanionBridge 0.1.49+ (local_ai_chat_v2); save and restart the client/server with the new package')
             from server_ai import ServerAiBridge
             execution = await asyncio.to_thread(ServerAiBridge, port=ai_port, timeout=timeout)
             if not {'server_ai_reads_v1','server_ai_actions_v1','server_ai_chat_v2'}.issubset(execution.hello.get('capabilities', [])):
@@ -993,7 +993,7 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
             print('Agent ready; enter one instruction per line. New input cancels the previous turn. /quit or Ctrl+C exits.', flush=True)
             await terminal_loop(agent, bridge, events)
             return
-        print("Agent ready; local game chat !ai <task> controls the server AI. Ctrl+C cancels and closes both channels."
+        print("Agent ready; type normally in local game chat to talk to the server AI (!ai remains optional). Ctrl+C cancels and closes both channels."
               if server_ai else "Agent ready; other players' chat triggers replies. Ctrl+C closes the session.", flush=True)
         while True:
             # This timeout checks connection health only; chat itself is pushed immediately.
@@ -1020,7 +1020,7 @@ def main():
     parser.add_argument("--port", type=int, default=18777)
     parser.add_argument("--timeout", type=float, default=2)
     parser.add_argument("--local-input", action="store_true", help="Read human instructions from stdin; replies go to terminal (Mod 0.1.36+)")
-    parser.add_argument('--server-ai', action='store_true', help='Local !ai game chat -> existing Agent/Lua -> separate server AI execution backend')
+    parser.add_argument('--server-ai', action='store_true', help='Local game chat -> existing Agent/Lua -> separate server AI execution backend')
     parser.add_argument('--ai-port', type=int, default=18779, help='Server AI IPC port; --port remains the graphical chat Bridge')
     parser.add_argument("--log-file", type=str, help="Local bounded JSONL runtime log; default .local/diagnostics/agent-runtime-*.jsonl")
     args = parser.parse_args()

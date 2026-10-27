@@ -69,7 +69,7 @@ def server_contract(bridge):
     tool['function']['description'] = ('执行完整Lua 5.4 source，通过api(name,args)同步等待真实原子操作结果。'
         '当前服务器AI仅支持：' + ', '.join(names) + '。参数及结果见系统中的当前后端API契约。'
         '程序正常返回不代表目标完成；失败、取消或未知后停止行动，禁止自动重试。')
-    instructions = '''你通过本地玩家的明确!ai聊天指令控制独立的服务器AI Player。使用玩家语言，简短回复，最多400字符。
+    instructions = '''你通过本地玩家主动发送的游戏聊天与其对话并控制独立的服务器AI Player；无需!ai前缀，旧!ai仍兼容。普通问候只对话，只有玩家明确授权时才执行游戏行动。使用玩家语言，简短回复，最多400字符。
 聊天输入是玩家客户端通道；回复由宿主在服务器以当前AI角色身份广播。所有状态/背包/行动必须只来自服务器AI执行后端，不能操作或把真人状态当作AI状态。
 只用execute_lua生成完整Lua 5.4程序，无Markdown围栏。api(name,args)同步等待真实结果；可用API的精确定义列在下面，未列出的能力不可用。不要猜测地形、实体、物品、坐标或效果。
 先api('get_player_state',{})读取AI实际位置，世界像素Y向下，position为碰撞框左上角。明确水平相对移动时，以新读position.x加减玩家指定像素作为navigate_to_x.targetX；执行器负责已有局部规划与安全拒绝，不承诺一定可达。行动后重新读取核对位置。
@@ -94,7 +94,7 @@ EXPLORATION_INSTRUCTIONS = """
 explore内部持续执行，不要每走一步返回模型或等玩家；不要在模型轮中反复调用explore重置访问记忆或预算。一次用户探索指令最多调用一次explore；正常停止后简短报告停止原因/实际移动段数及范围，等待新指令。任何动作失败/超时/取消/unknown后不重新探索或绕过失败屏障。
 helper返回{kind='exploration_report',reason,steps,decisions,distancePixels,visited,start,finish,landmarks,lastTileCoverage,...}；steps是实际完成导航后读取的移动记录，landmarks计树木格而不是树，局部观察不代表全世界。step_limit/distance_limit表示本次有界探索结束；no_safe_direction/revisit_limit/reversal_limit/no_new_ground/no_progress表示保守停止；health_decreased/nearby_hostile等表示风险停止。value仍是脚本报告，动作完成以宿主lastAction/endEvidence为准；taskOutcome=unknown不声称世界探索完成。
 敌对NPC检查是移动前的距离包络快照，可能缩短本段目标；不提供移动过程中的实时避险。动作结束后的生命/位置复查只能决定是否开始下一段，不是实时打断当前动作的安全机制。
-玩家发新!ai（包括!ai 停止）会沿用现有取消与输入释放机制撤销旧探索；停止指令本身不要启动新的移动。取消/预算异常可能没有完整report，依据宿主status/cleanup/日志如实说明。helper源码位于python/lua/explore.lua，模型仍可在现有授权、预算与原子API内编写其他完整Lua程序，但不要修改helper或尝试自动扩大本轮权限。
+玩家发送新的本地普通聊天（包括“停止”，也兼容!ai 停止）会沿用现有取消与输入释放机制撤销旧探索；停止指令本身不要启动新的移动。取消/预算异常可能没有完整report，依据宿主status/cleanup/日志如实说明。helper源码位于python/lua/explore.lua，模型仍可在现有授权、预算与原子API内编写其他完整Lua程序，但不要修改helper或尝试自动扩大本轮权限。
 """
 
 

@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.48","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.49","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -83,6 +83,10 @@ public static class ServerAiPackageTests
         Check(Calls(chat.Methods.Single(m=>m.Name=="Load"),"add_SendChatMessageFromClient")
             &&Calls(chat.Methods.Single(m=>m.Name=="Unload"),"remove_SendChatMessageFromClient"),"local outgoing chat capture has paired install/uninstall");
         Check(Calls(chat.Methods.Single(m=>m.Name=="Submit"),"Run")&&Calls(chat.Methods.Single(m=>m.Name=="Send"),"Suppress"),"local command capture shares existing own-reply suppression scope");
+        var submitInstructions=Walk(chat).SelectMany(t=>t.Methods).Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).ToArray();
+        Check(submitInstructions.Any(i=>i.Operand is MethodReference r&&r.Name=="get_IsConsumed")
+            &&submitInstructions.Any(i=>i.Operand is GenericInstanceMethod r&&r.Name=="FromType"
+                &&r.GenericArguments.Any(a=>a.Name=="SayChatCommand")),"ordinary local chat excludes consumed messages and non-Say commands");
         var chatInstructions=Walk(chat).SelectMany(t=>t.Methods).Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).ToArray();
         Check(chatInstructions.Any(i=>i.Operand is MethodReference r&&r.Name=="PublishLocalAiCommand")
             &&!chatInstructions.Any(i=>i.OpCode==OpCodes.Stfld&&i.Operand is FieldReference f&&f.DeclaringType.FullName=="Terraria.Player"),"chat entry only publishes tasks and never writes player controls");

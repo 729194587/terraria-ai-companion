@@ -11,18 +11,21 @@ public static class AiChatOfflineTests
     private static void Check(bool ok,string message){if(!ok)throw new Exception(message);checks++;}
     public static void Run()
     {
-        foreach(string text in new[]{"hello","!ai","!ai ","!air move","prefix !ai move","!AI move","!ai x\ny","!ai x\0y",new string('x',2100)})
-            Check(!AiChatInput.TryParse(text,out _),"ordinary/invalid chat must not become an AI command");
-        Check(AiChatInput.TryParse("!ai 向右移动80像素",out var task)&&task=="向右移动80像素","exact local prefix strips only the entry prefix");
+        foreach(string text in new[]{null,"","  ","!ai","!ai ","/help","  /help","x\ny","x\0y",new string('x',2001)})
+            Check(!AiChatInput.TryParse(text,out _),"empty/commands/invalid chat must not become an AI task");
+        foreach(string text in new[]{"hello","你好","!air move","prefix !ai move","!AI move"})
+            Check(AiChatInput.TryParse(text,out var plain)&&plain==text,"ordinary local speech is preserved without a required prefix");
+        Check(AiChatInput.TryParse("  你好  ",out var trimmed)&&trimmed=="你好","trim only surrounding whitespace");
+        Check(AiChatInput.TryParse("!ai 向右移动80像素",out var task)&&task=="向右移动80像素","legacy exact prefix remains optional and strips only the entry prefix");
+        Check(AiChatInput.TryParse(new string('x',2000),out _)&&AiChatInput.TryParse("!ai "+new string('x',2000),out _),"plain and prefixed tasks retain the 2000-character limit");
         int sends=0,captures=0;
         GameMessageCapture.Suppress(()=>GameMessageCapture.Run(()=>sends++,()=>captures++));
         Check(sends==1&&captures==0,"AI replies remain visible but cannot enter outgoing command capture");
         var state=new ControlState();using var server=new TcpControlServer(state,0);server.Start();
         using var client=new TcpClient("127.0.0.1",server.Port);client.ReceiveTimeout=2000;
         using var reader=new StreamReader(client.GetStream(),Encoding.UTF8,false,1024,true);
-        Check(reader.ReadLine().Contains("local_ai_chat_v1"),"local AI chat capability advertised");
-        server.PublishLocalAiCommand(0,"local","hello");
-        server.PublishLocalAiCommand(0,"local","!ai 向右移动80像素");
+        Check(reader.ReadLine().Contains("local_ai_chat_v2"),"ordinary local AI chat capability advertised");
+        server.PublishLocalAiCommand(0,"local","向右移动80像素");
         using var first=JsonDocument.Parse(reader.ReadLine());var e=first.RootElement;
         string id=e.GetProperty("eventId").GetString();
         Check(e.GetProperty("source").GetString()=="local_ai_command"&&e.GetProperty("isSelf").GetBoolean()
@@ -33,12 +36,12 @@ public static class AiChatOfflineTests
         var reply=state.Enqueue(session,new(1,"send_ai_chat",Text:"[AI] 完成",ChatId:id),0);
         state.Update(true,0,new(true,new(100,200),new(0,0),100,100),sendChat:_=>sends++);
         Check(reply.Result.Status=="sent"&&sends==2&&!state.IsMoving,"ordinary chat does not supersede AI reply or acquire human input");
-        server.PublishLocalAiCommand(0,"local","!ai 停止");using var second=JsonDocument.Parse(reader.ReadLine());
+        server.PublishLocalAiCommand(0,"local","停止");using var second=JsonDocument.Parse(reader.ReadLine());
         string newer=second.RootElement.GetProperty("eventId").GetString();
         var old=state.Enqueue(session,new(2,"send_ai_chat",Text:"stale",ChatId:id),0);
         var fresh=state.Enqueue(session,new(3,"send_ai_chat",Text:"new",ChatId:newer),0);
         state.Update(true,0,new(true,new(100,200),new(0,0),100,100),sendChat:_=>sends++);
-        Check(old.Result.Status=="superseded"&&fresh.Result.Status=="sent"&&sends==3,"new explicit command rejects old replies");
+        Check(old.Result.Status=="superseded"&&fresh.Result.Status=="sent"&&sends==3,"new unprefixed local message rejects old replies");
         state.Update(false,0,PlayerSnapshot.NotInWorld);
         var afterWorld=state.Enqueue(session,new(4,"send_ai_chat",Text:"stale world",ChatId:newer),0);
         state.Update(true,0,new(true,new(100,200),new(0,0),100,100),sendChat:_=>sends++);
@@ -65,6 +68,10 @@ public static class AiChatOfflineTests
             catch(FormatException){rejected=true;}
             Check(rejected,"authorization rejects missing/invalid reply turn");
         }
+        server.PublishLocalAiCommand(0,"local","/help");
+        server.PublishLocalAiCommand(0,"local","!ai 查询状态");
+        using var compatible=JsonDocument.Parse(reader.ReadLine());
+        Check(compatible.RootElement.GetProperty("text").GetString()=="查询状态","slash commands do not emit tasks; legacy prefixed tasks remain compatible over TCP");
         Console.WriteLine($"AI chat offline: {checks} checks; real loopback, no graphical game.");
     }
 }
