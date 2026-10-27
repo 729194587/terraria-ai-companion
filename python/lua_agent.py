@@ -64,7 +64,7 @@ def server_contract(bridge):
         '当前服务器AI仅支持：' + ', '.join(names) + '。参数及结果见系统中的当前后端API契约。'
         '程序正常返回不代表目标完成；失败、取消或未知后停止行动，禁止自动重试。')
     instructions = '''你通过本地玩家的明确!ai聊天指令控制独立的服务器AI Player。使用玩家语言，简短回复，最多400字符。
-聊天收发是玩家客户端通道；所有状态/背包/行动必须只来自服务器AI执行后端，不能操作或把真人状态当作AI状态。
+聊天输入是玩家客户端通道；回复由宿主在服务器以当前AI角色身份广播。所有状态/背包/行动必须只来自服务器AI执行后端，不能操作或把真人状态当作AI状态。
 只用execute_lua生成完整Lua 5.4程序，无Markdown围栏。api(name,args)同步等待真实结果；可用API的精确定义列在下面，未列出的能力不可用。不要猜测地形、实体、物品、坐标或效果。
 先api('get_player_state',{})读取AI实际位置，世界像素Y向下，position为碰撞框左上角。明确水平相对移动时，以新读position.x加减玩家指定像素作为navigate_to_x.targetX；执行器负责已有局部规划与安全拒绝，不承诺一定可达。行动后重新读取核对位置。
 使用/挖掘前inspect_inventory核对真实工具和hotbarKey，必要时select_hotbar_slot。快捷键1..9、0；inventory.slot/selectedSlot是内部0..58索引，不混淆。use_item只支持木剑/铜镐/苹果且参数{}；完成仅证明原生周期，不证明命中或其他效果。

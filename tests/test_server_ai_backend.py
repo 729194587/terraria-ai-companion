@@ -31,6 +31,8 @@ class Host(socketserver.ThreadingTCPServer):
         self.release = threading.Event()
         self.reads = True
         self.actions = False
+        self.chat = False
+        self.published = []
 
     def query(self, operation, args):
         player = dict(inWorld=True, id=254, source='server_ai_player', position=dict(x=100, y=200),
@@ -70,8 +72,16 @@ class Handler(socketserver.StreamRequestHandler):
                     data['capabilities'].append('server_ai_reads_v1')
                 if h.actions:
                     data['capabilities'].append('server_ai_actions_v1')
+                if h.chat:
+                    data['capabilities'].append('server_ai_chat_v1')
             elif r['binding'] != h.binding:
                 error = 'stale_binding'
+            elif op == 'say' and h.chat:
+                h.published.append(r)
+                if h.mode == 'drop_say':
+                    return
+                data=dict(status='published',authorSlot=h.binding['slot'],worldSessionId=h.binding['world'],
+                          actorGeneration=h.binding['generation'],gameUpdate=33)
             elif op == 'query':
                 data = h.query(r['operation'], r['arguments'])
                 if h.mode == 'bad_query_identity':

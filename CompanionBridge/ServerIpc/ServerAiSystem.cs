@@ -3,6 +3,9 @@ using System.Linq;
 using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
+using Terraria.Chat;
+using Terraria.Localization;
+using Microsoft.Xna.Framework;
 using VirtualPlayerEngineProbe;
 using EngineRuntime = VirtualPlayerEngineProbe.VirtualPlayerEngineProbe;
 
@@ -85,7 +88,7 @@ public sealed class ServerAiSystem : ModSystem
                 try { ProbeSession.Spawn(); }
                 catch (Exception e) { EngineRuntime.SignalFault("G8.1 initial actor creation failed: " + e.Message); Mod.Logger.Error("AI creation stopped.", e); }
             }
-            server.Tick(Capture, Select, ServerAiQueries.Read);
+            server.Tick(Capture, Select, ServerAiQueries.Read, Say);
         }
     }
     private static AiReadOnlyProtocol.Identity Capture()
@@ -115,6 +118,18 @@ public sealed class ServerAiSystem : ModSystem
         int before = p.selectedItem;
         ActorItemUse.Select(p, expected.World, expected.Generation, slot);
         ProbeSession.Log("atomic-select", new { beforeSlot = before, selectedSlot = p.selectedItem, expected.Generation, expected.World });
+    }
+    private static object Say(AiReadOnlyProtocol.Identity expected,string text)
+    {
+        ServerAiNativeActions.Require(expected);
+        var p=(Player)expected.Actor;
+        if(!p.active||expected.Slot<0||expected.Slot>=255)throw new InvalidOperationException("AI chat author unavailable.");
+        // Native NetText serialization carries this author to the name tag and
+        // the actual Player.chatOverhead on clients. No client/player spoofing.
+        ChatHelper.BroadcastChatMessageAs((byte)p.whoAmI,NetworkText.FromLiteral(text),Color.White);
+        ServerAiNativeActions.Require(expected);
+        ProbeSession.Log("ai-chat",new{authorSlot=p.whoAmI,expected.World,expected.Generation,text});
+        return new{status="published",authorSlot=p.whoAmI,worldSessionId=expected.World,actorGeneration=expected.Generation,gameUpdate=Main.GameUpdateCount};
     }
     private void Stop() { spawnPending = false; server?.Dispose(); server = null; ServerAiActionFixture.Reset(); }
     public override void OnWorldUnload() => Stop();

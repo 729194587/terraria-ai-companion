@@ -91,7 +91,8 @@ internal sealed class AiReadOnlyServer : IDisposable
         }
     }
     internal void Tick(Func<AiReadOnlyProtocol.Identity> capture, Action<AiReadOnlyProtocol.Identity, int> select = null,
-        Func<AiReadOnlyProtocol.Identity,string,JsonElement,object> query = null)
+        Func<AiReadOnlyProtocol.Identity,string,JsonElement,object> query = null,
+        Func<AiReadOnlyProtocol.Identity,string,object> say = null)
     {
         AssertOwner();
         while (closed.TryDequeue(out var connection)) protocol.Forget(connection);
@@ -102,7 +103,7 @@ internal sealed class AiReadOnlyServer : IDisposable
             Interlocked.Decrement(ref queued);
             if (job.Token.IsCancellationRequested || stop.IsCancellationRequested || Environment.TickCount64 >= job.Deadline)
             { job.Reply.TrySetCanceled(); continue; }
-            try { job.Reply.TrySetResult(protocol.Handle(job.Connection, job.Line, capture, job.Token, query)); }
+            try { job.Reply.TrySetResult(protocol.Handle(job.Connection, job.Line, capture, job.Token, query, say)); }
             catch { job.Reply.TrySetResult("{\"v\":1,\"ok\":false,\"error\":\"engine_unavailable\"}"); }
         }
     }

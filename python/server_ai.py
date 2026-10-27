@@ -19,6 +19,7 @@ class ServerAiBridge:
         self._closed = False
         self._action_id = None
         self._request_id = 0
+        self.reply_receipts = []
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
         self.reader = self.sock.makefile("rb")
         try:
@@ -74,6 +75,28 @@ class ServerAiBridge:
         if getattr(self, "_lua_owner", None) is not command_owner.get():
             raise BridgeError("Bridge session is owned by a Lua run")
         with self._lock:
+            if cmd == 'say':
+                if 'server_ai_chat_v1' not in self.hello['capabilities']:
+                    raise BridgeError('Native AI chat author unavailable',status='unsupported_operation')
+                text = parameters.get('text')
+                if (not isinstance(text,str) or not text.strip() or len(text.encode('utf-16-le'))>800
+                        or any(c in text for c in '\r\n\0')):
+                    raise BridgeError('Invalid AI reply text',status='invalid_arguments')
+                try:
+                    reply=self._request('say',text=text,messageId=uuid.uuid4().hex,
+                        expiresAtUnixMs=int(time.time()*1000)+1800)
+                    data=reply.get('data') or {}
+                    if (data.get('status')!='published' or data.get('authorSlot')!=self.binding['slot']
+                            or data.get('worldSessionId')!=self.binding['world']
+                            or data.get('actorGeneration')!=self.binding['generation']
+                            or type(data.get('gameUpdate')) is not int):
+                        raise BridgeError('Native chat publication evidence mismatch')
+                    self.reply_receipts.append(dict(data,text=text,binding=dict(self.binding)))
+                    self.reply_receipts[:]=self.reply_receipts[-32:]
+                    return data
+                except BaseException:
+                    self.close()  # No retry or human fallback after an ambiguous broadcast.
+                    raise
             if cmd == "query_atomic":
                 operation = parameters.get("operation")
                 if operation not in ("get_player_state", "inspect_inventory") or operation not in self.supported_atomic_operations:

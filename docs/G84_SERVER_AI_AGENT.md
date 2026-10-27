@@ -1,12 +1,13 @@
 # G8.4：游戏聊天 → 现有 Agent/Lua → 服务器 AI
 
-基线 PR #23 `c0ddfea`；独立分支 `codex/server-ai-chat-agent`，包版本 `0.1.45`。
+基线 PR #23 `c0ddfea`；独立分支 `codex/server-ai-chat-agent`，当前包版本 `0.1.46`。
 不修改已有 PR、main、G1–G7 执行实现或旧 profile，不合并。
 
 ## 使用方式
 
 先退出旧测试游戏和旧 Python Agent，更新包，并建立新的隔离 Host & Play profile。
-`0.1.44` 的图形客户端没有本次聊天入口，仅更新服务器或 Python 不够。
+`0.1.44` 没有本次聊天入口；`0.1.45` 会借本地玩家发送回复。此处需同时更新图形
+客户端、服务器和 Python 到 `0.1.46`，旧能力组合明确拒绝，不回退真人发言。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-companion.ps1
@@ -39,8 +40,9 @@ AI 初始未必有工具，正式模式不会发测试工具；可在测试世�
 普通聊天、其他玩家的 `!ai`、系统消息和 AI 回复不触发新任务。新本地 `!ai` 指令会
 取消旧轮并等待现有 Lua 清理；例如 `!ai 停止` 会先撤销旧轮，再由 Agent 处理该指令。
 Ctrl+C 退出时等待既有动作清理并关闭两个连接。未知执行/绑定失效不自动重连或重试，
-检查日志与现场后明确重启。回复通过本地玩家聊天连接发出并标注 `[AI]`，不伪装成
-保留槽位的原生网络客户端，也不声称 AI 自己建立了客户端连接。
+检查日志与现场后明确重启。回复先经本地聊天 Bridge 检查当前指令身份，再经已绑定
+的服务器 AI IPC 在游戏线程以真实 AI 槽位广播，作者、名称标签和头顶气泡属于该 AI。
+仍可保留 `[AI]` 文本标记，但不借真人发送，不伪造客户端或 Main.myPlayer。
 
 ## 复用与通道边界
 
@@ -51,7 +53,8 @@ Ctrl+C 退出时等待既有动作清理并关闭两个连接。未知执行/绑
  -> 原 Agent Loop / LLMClient -> execute_lua
  -> 原 LuaRuntime / Worker / atomic_operations
  -> ServerAiBridge :18779 -> 原游戏线程队列 / G4/G6/G7 -> 独立 AI Player
- -> 实际结束证据 -> 原 Agent Loop -> send_ai_chat -> 原 ChatBridgeSystem.Send
+ -> 实际结束证据 -> 原 Agent Loop -> 客户端 authorize_ai_reply（不发言）
+ -> 已绑定 AI IPC say -> 原生 BroadcastChatMessageAs(AI槽位,...)
 ```
 
 - `ChatBridgeSystem` 保留原显示/其他玩家聊天入口，增加本地原生发送捕获；先调用
@@ -61,11 +64,12 @@ Ctrl+C 退出时等待既有动作清理并关闭两个连接。未知执行/绑
 - 新能力 `local_ai_chat_v1`。事件仍是 chat_message，但带
   `source=local_ai_command,isSelf=true`。Python Bridge 仅额外放行这种本地事件，
   新 Agent 模式再次校验来源并去重；旧 Agent 仍忽略 isSelf 消息。
-- `ControlState` 增加独立的最新 AI chatId，`send_ai_chat` 沿用原有有界文本、队列和
-  游戏线程 Send，检查当前聊天连接和最新 AI 指令；普通聊天不会覆盖 AI 回复 ID。
+- `ControlState` 保留独立的最新 AI chatId，`authorize_ai_reply` 沿用原有有界文本、
+  队列和游戏线程校验，但不发送聊天。检查当前连接和最新 AI 指令；普通聊天不覆盖 AI 回复 ID。
   新指令拒绝旧回复，离开世界清空 AI 回复 ID，重连重新初始化。没有获取真人控制输入。
 - `Agent` 只增加可选 chat_bridge；现有 self.bridge 在此模式下始终是 ServerAiBridge。
-  状态、runtimeInventory、Lua、取消全部走 AI 后端；聊天回复只走 chat_bridge。
+  状态、runtimeInventory、Lua、取消全部走 AI 后端；回复授权走 chat_bridge，原生作者
+  发布走 AI 后端。没有把真人状态当作 AI 状态。
   原 `run`/CLI 增加显式模式和端口参数；不带 `--server-ai` 时保留原真人/其他玩家聊天
   和 `--local-input` 行为，不兼容的参数/客户端能力明确拒绝，不回退操纵真人。
 - 仍使用原 LLMClient、Agent Loop、ProgramStore、Lua Worker、分发器、共享预算、
@@ -141,7 +145,7 @@ git diff --check
 
 ## 待用户执行的 Host & Play 验收
 
-1. 使用新包 0.1.45 启动上文新 profile，确认 server_ai_verify 读取 AI；启动
+1. 使用新包 0.1.46 启动上文新 profile，确认 server_ai_verify 读取 AI；启动
    `python/agent.py --server-ai` 并看到 ready。
 2. 在本地游戏聊天发 `!ai 查询你的位置和生命`，核对回复来自 AI 后端，而非真人位置。
    发普通聊天、其他玩家发 `!ai`、观察 `[AI]` 回复，确认均不产生额外模型任务。
@@ -152,7 +156,34 @@ git diff --check
 5. 较长动作中发送新的 `!ai` 指令或 Ctrl+C，确认旧轮停止、无旧回复和残留输入；
    分别测试聊天断开、AI 断开、服务错误，不能变成真人动作或自动重连。
 
-本次**未执行新的图形客户端聊天框 → 模型 → AI → 图形聊天回复全链路**。PR #23
-已有的移动/挥剑/挖掘实机结果不替代本次 Agent/聊天验收。持续旧连接跨真实世界/
+0.1.45 用户已反馈聊天任务链路测试成功，但指出回复显示本地玩家作者；它不构成
+0.1.46 修复后 AI 作者/名称/气泡显示通过。PR #23 已有的移动/挥剑/挖掘实机结果也
+不替代本次作者验收。持续旧连接跨真实世界/
 角色代次变化、动作中死亡重生、远程多人、晚加入、多实例配对及全面真人并行控制
 仍未验证。PR 保持 Draft，不合并。
+
+## 0.1.46：修正回复的真实作者
+
+本机原生 IL 确认 `BroadcastChatMessageAs(byte,NetworkText,Color,int)` 将作者字节交给
+`NetTextModule.SerializeServerMessage`。客户端 `DisplayMessage` 用该槽位访问
+`Main.player[author].name` 和 `chatOverhead`。因此仅加 `[AI]` 前缀不能改变真人作者。
+
+新发布路径不增加游戏原子操作：
+
+- 客户端能力 `ai_reply_authorization_v1`，校验最新 AI chatId 后返回 authorized，不
+  调用原真人 Send；Python 再核对当前轮，随后在 AI 连接发 say。
+- 服务器能力 `server_ai_chat_v1`，say 复用现有游戏线程队列、Gate、连接 lease，
+  对象引用/世界/代次/槽位二次检查；作者由当前真实 AI 的 whoAmI 决定，不能由请求指定。
+- 文本限 400 UTF-16 字符、单行；请求有效期最多 2 秒，messageId 去重，最多 1024 条。
+  广播前先记不确定结果，部分失败和丢回执不得重发；Python 关闭不确定的连接，不退回
+  真人发送。断开、旧世界、旧代次、对象替换等拒绝发布。
+- 旧 send_ai_chat 保留兼容旧调用，但新版 Agent 不再使用它。授权是客户端提交边界；
+  已经授权并进入网络发送的消息不能撤回，后续新轮不意味着撤销已提交广播。
+
+修复定向验证：Python Agent/后端 32 个测试通过（包括两项新增的旧回复拒绝、丢回执
+不重发/不真人回退）；C# 客户端聊天 20 项、服务器原生聊天协议检查及正式包 36 项 IL
+检查通过，原真人组与原 IPC/动作/读取组保留通过。构建 0 error / 0 warning，未跑全量。
+复制世界中实际调用原生 AI 作者广播，核对 authorSlot=254、绑定元数据、输入释放和
+退出清理；输入与客户端授权仍是测试替身，真实客户端名称/头顶气泡需用户重启新版
+验证。新证据见 [原生作者证据](evidence/G84_NATIVE_CHAT_AUTHOR.json)。前节 0.1.45 的
+真实模型记录保留为历史证据，不冒充已使用修复后的广播路径。

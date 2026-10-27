@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.45","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.46","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -38,6 +38,11 @@ public static class ServerAiPackageTests
         Check(!adapter.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.Operand is MethodReference r&&r.Name=="get_LocalPlayer"),"server adapter has no LocalPlayer fallback");
         Check(Calls(pump,"get_IsMainThread")&&Calls(pump,"get_Gate")&&Calls(pump,"Tick"),"simulation pump enforces thread then Gate before dispatch");
         var select=adapter.Methods.Single(m=>m.Name=="Select");
+        var say=adapter.Methods.Single(m=>m.Name=="Say");
+        Check(Calls(say,"Require")&&Calls(say,"BroadcastChatMessageAs")
+            &&say.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.DeclaringType.FullName is "Terraria.Player" or "Terraria.Entity"&&f.Name=="whoAmI"),"native reply checks AI ownership and broadcasts with the actual actor slot as author");
+        Check(!say.Body.Instructions.Any(i=>i.OpCode==OpCodes.Stsfld||i.OpCode==OpCodes.Stfld)
+            &&!Calls(say,"SendChatMessageFromClient"),"AI reply neither mutates identity nor uses a fake human client send");
         var actions=Type("ServerAiNativeActions");
         var nativeInstructions=types.Where(t=>t.Name is "ServerAiNativeActions" or "ServerAiNavigation").SelectMany(t=>t.Methods)
             .Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).ToArray();

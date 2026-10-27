@@ -46,12 +46,12 @@ class AiHost(Host):
 class ChatHandler(socketserver.StreamRequestHandler):
     def handle(self):
         h=self.server
-        self.write(dict(v=1,type='hello',capabilities=['chat_events','send_chat','local_ai_chat_v1']))
+        self.write(dict(v=1,type='hello',capabilities=['chat_events','send_chat','local_ai_chat_v1','ai_reply_authorization_v1']))
         h.handler=self;h.ready.set()
         while line:=self.rfile.readline():
             r=json.loads(line);h.sent.append(r)
-            ok=r['cmd']=='send_ai_chat' and r['chatId']==h.latest
-            self.write(dict(v=1,type='reply',id=r['id'],ok=ok,status='sent' if ok else 'superseded'))
+            ok=r['cmd']=='authorize_ai_reply' and r['chatId']==h.latest
+            self.write(dict(v=1,type='reply',id=r['id'],ok=ok,status='authorized' if ok else 'superseded'))
     def write(self,value):
         with self.server.write_lock:
             self.wfile.write((json.dumps(value)+'\n').encode());self.wfile.flush()
@@ -77,6 +77,7 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.stderr=patch('sys.stderr',new_callable=io.StringIO);self.stderr.start()
         self.directory=tempfile.TemporaryDirectory()
         self.aihost=AiHost();self.aihost.actions=True
+        self.aihost.chat=True
         self.chathost=ChatHost()
         self.threads=[]
         for host in (self.aihost,self.chathost):
@@ -118,7 +119,8 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         start=next(r for r in self.aihost.sent if r['op']=='start')
         self.assertEqual('navigate_to_x',start['operation']);self.assertEqual(180,start['arguments']['targetX'])
         self.assertEqual(self.ai.binding,start['binding'])
-        self.assertEqual(['send_ai_chat'],[r['cmd'] for r in self.chathost.sent])
+        self.assertEqual(['authorize_ai_reply'],[r['cmd'] for r in self.chathost.sent])
+        self.assertEqual(254,self.ai.reply_receipts[-1]['authorSlot'])
         self.assertTrue(self.chathost.sent[0]['text'].startswith('[AI] '))
         runtime=json.loads(self.requests[0]['messages'][-1]['content'])
         self.assertEqual('available',runtime['runtimeInventory']['status'])
@@ -163,7 +165,7 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.answers=[dict(role='assistant',content=None,tool_calls=[dict(id='bad',type='function',function=dict(name='get_state',arguments='{}'))]),dict(role='assistant',content='该工具未执行。')]
         await self.receive();await self.agent.task
         self.assertFalse(any(r['op']=='start' for r in self.aihost.sent))
-        self.assertEqual(['send_ai_chat'],[r['cmd'] for r in self.chathost.sent])
+        self.assertEqual(['authorize_ai_reply'],[r['cmd'] for r in self.chathost.sent])
     async def test_backend_contract_contains_only_negotiated_apis(self):
         prompt,tools=server_contract(self.ai)
         definitions=json.loads(prompt.split('当前后端API契约：\n')[1])
@@ -192,6 +194,21 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         sent=self.chathost.sent[-1]['text']
         self.assertTrue(sent.startswith('[AI] '));self.assertLessEqual(len(sent.encode('utf-16-le')),800)
         self.assertEqual(sent,self.agent.history[-1]['content'])
+
+    async def test_ambiguous_publication_never_retries_or_falls_back_to_human_chat(self):
+        self.aihost.mode='drop_say'
+        self.answers=[dict(role='assistant',content='测试回复')]
+        await self.receive();await self.agent.task
+        self.assertTrue(self.ai._closed)
+        self.assertEqual(1,len(self.aihost.published))
+        self.assertTrue(all(r['cmd']=='authorize_ai_reply' for r in self.chathost.sent))
+
+    async def test_superseded_reply_never_reaches_native_author(self):
+        from control import BridgeError
+        self.chathost.latest='newer'
+        with self.assertRaises(BridgeError):
+            await self.agent._send_reply('旧回复','old')
+        self.assertEqual([],self.aihost.published)
 
 
 if __name__=='__main__':unittest.main()

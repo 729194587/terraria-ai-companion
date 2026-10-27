@@ -57,7 +57,7 @@ internal sealed class ControlState
     private ControlMode _mode;
     private bool _wasCanControl;
     private bool _controlBlocked;
-    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "send_chat" or "send_ai_chat" or "get_movement" or "cancel_move" or "query_atomic";
+    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "send_chat" or "send_ai_chat" or "authorize_ai_reply" or "get_movement" or "cancel_move" or "query_atomic";
     private string _latestChatId;
     private string _latestAiChatId;
     internal void ObserveChat(string id) { lock (_gate) _latestChatId = id; }
@@ -204,17 +204,18 @@ internal sealed class ControlState
                         { Observation = observation, ControlGeneration = _generation });
                     continue;
                 }
-                if (request.Cmd is "send_chat" or "send_ai_chat")
+                if (request.Cmd is "send_chat" or "send_ai_chat" or "authorize_ai_reply")
                 {
                     string chatStatus = pending.Session != _session ? "disconnected"
-                        : snapshot?.InWorld != true || sendChat == null ? "not_ready"
-                        : string.IsNullOrEmpty(request.ChatId) || request.ChatId != (request.Cmd=="send_ai_chat"?_latestAiChatId:_latestChatId) ? "superseded" : "sent";
+                        : snapshot?.InWorld != true || request.Cmd!="authorize_ai_reply" && sendChat == null ? "not_ready"
+                        : string.IsNullOrEmpty(request.ChatId) || request.ChatId != (request.Cmd is "send_ai_chat" or "authorize_ai_reply"?_latestAiChatId:_latestChatId) ? "superseded" : "sent";
+                    if (chatStatus == "sent" && request.Cmd=="authorize_ai_reply")chatStatus="authorized";
                     if (chatStatus == "sent")
                     {
                         try { sendChat(request.Text); }
                         catch (Exception) { chatStatus = "chat_send_failed"; }
                     }
-                    pending.Completion.TrySetResult(Reply(request.Id, chatStatus == "sent", chatStatus));
+                    pending.Completion.TrySetResult(Reply(request.Id, chatStatus is "sent" or "authorized", chatStatus));
                     continue;
                 }
                 if (request.Cmd == "get_navigation" && pending.Session == _session)
@@ -446,7 +447,7 @@ internal sealed class ControlState
             || !root.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String
             || cmd.GetString() is not ("move_right" or "stop" or "get_state" or "get_terrain" or "input"
                 or "terrain_step" or "get_navigation" or "navigate" or "send_chat" or "get_observation"
-                or "move_for" or "renew_move" or "cancel_move" or "get_movement" or "start_atomic" or "query_atomic" or "begin_local_turn" or "send_ai_chat"))
+                or "move_for" or "renew_move" or "cancel_move" or "get_movement" or "start_atomic" or "query_atomic" or "begin_local_turn" or "send_ai_chat" or "authorize_ai_reply"))
             throw new FormatException("Expected v=1, positive id and a supported cmd.");
         if (cmd.GetString() == "begin_local_turn")
         {
@@ -486,7 +487,7 @@ internal sealed class ControlState
             expectedGeneration = expected;
         }
         string text = null, chatId = null;
-        if (cmd.GetString() is "send_chat" or "send_ai_chat")
+        if (cmd.GetString() is "send_chat" or "send_ai_chat" or "authorize_ai_reply")
         {
             if (!root.TryGetProperty("text", out var t) || t.ValueKind != JsonValueKind.String
                 || string.IsNullOrWhiteSpace(text = t.GetString()) || text.Length > 400

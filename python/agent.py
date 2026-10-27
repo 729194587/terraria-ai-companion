@@ -327,7 +327,7 @@ class Agent:
         self.bridge, self.llm = bridge, llm
         self.chat_bridge = bridge if chat_bridge is None else chat_bridge
         self.server_ai = chat_bridge is not None
-        if self.server_ai and not {'server_ai_atomic_v1','server_ai_reads_v1','server_ai_actions_v1'}.issubset(
+        if self.server_ai and not {'server_ai_atomic_v1','server_ai_reads_v1','server_ai_actions_v1','server_ai_chat_v1'}.issubset(
                 getattr(bridge,'hello',{}).get('capabilities',[])):
             raise BridgeError('Server AI Agent requires the explicit native AI backend; human fallback is forbidden')
         if self.server_ai and local_input:
@@ -857,7 +857,13 @@ class Agent:
             diagnostics.emit('terminal_reply', chatId=chat_id)
             return text
         tracing.trace.emit("send_chat_start", text=text, chatId=chat_id)
-        reply = await asyncio.to_thread(self.chat_bridge.command, "send_ai_chat" if self.server_ai else "send_chat", text=text, chatId=chat_id)
+        if self.server_ai:
+            reply=await asyncio.to_thread(self.chat_bridge.command,'authorize_ai_reply',text=text,chatId=chat_id)
+            if reply.get('status')!='authorized' or chat_id!=self._active_turn_id:
+                raise BridgeError('AI reply superseded before native publication',status='superseded')
+            reply=await asyncio.to_thread(self.bridge.command,'say',text=text)
+        else:
+            reply = await asyncio.to_thread(self.chat_bridge.command, 'send_chat', text=text, chatId=chat_id)
         tracing.trace.emit("send_chat_result", reply=reply)
         return text
 
@@ -953,11 +959,11 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
         if server_ai:
             if local_input:
                 raise ValueError('--server-ai cannot be combined with --local-input')
-            if 'local_ai_chat_v1' not in bridge.hello.get('capabilities', []):
-                raise BridgeError('Server AI chat requires local_ai_chat_v1; rebuild/reload the graphical client Mod')
+            if not {'local_ai_chat_v1','ai_reply_authorization_v1'}.issubset(bridge.hello.get('capabilities', [])):
+                raise BridgeError('Server AI chat requires native-author reply support; rebuild/reload both client and server (0.1.46+)')
             from server_ai import ServerAiBridge
             execution = await asyncio.to_thread(ServerAiBridge, port=ai_port, timeout=timeout)
-            if not {'server_ai_reads_v1','server_ai_actions_v1'}.issubset(execution.hello.get('capabilities', [])):
+            if not {'server_ai_reads_v1','server_ai_actions_v1','server_ai_chat_v1'}.issubset(execution.hello.get('capabilities', [])):
                 raise BridgeError('Current server AI reads/actions capabilities unavailable; no fallback to human control')
             agent = Agent(execution, llm, chat_bridge=bridge)
         else:

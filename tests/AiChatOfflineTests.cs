@@ -46,6 +46,14 @@ public static class AiChatOfflineTests
         var legacy=state.Enqueue(session,new(5,"send_chat",Text:"legacy",ChatId:remote.RootElement.GetProperty("eventId").GetString()),0);
         state.Update(true,0,new(true,new(100,200),new(0,0),100,100),sendChat:_=>sends++);
         Check(legacy.Result.Status=="sent","legacy other-player chat path remains independent");
+        var auth=state.Enqueue(session,new(6,"authorize_ai_reply",Text:"AI text",ChatId:newer),0);
+        state.ObserveAiChat(newer);
+        state.Update(true,0,new(true,new(100,200),new(0,0),100,100),sendChat:_=>throw new Exception("authorization must not speak as the human"));
+        Check(auth.Result.Status=="authorized"&&!state.IsMoving,"reply authorization does not send chat or acquire human input");
+        state.ObserveAiChat("next");
+        var staleAuth=state.Enqueue(session,new(7,"authorize_ai_reply",Text:"stale",ChatId:newer),0);
+        state.Update(true,0,new(true,new(100,200),new(0,0),100,100));
+        Check(staleAuth.Result.Status=="superseded","new command refuses old reply authorization");
         var parsed=ControlState.Parse("{\"v\":1,\"id\":7,\"cmd\":\"send_ai_chat\",\"text\":\"reply\",\"chatId\":\"id\"}");
         Check(parsed.Cmd=="send_ai_chat"&&parsed.Text=="reply","AI reply uses existing bounded text parser");
         Console.WriteLine($"AI chat offline: {checks} checks; real loopback, no graphical game.");

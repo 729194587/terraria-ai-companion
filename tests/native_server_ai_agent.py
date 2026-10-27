@@ -20,12 +20,12 @@ from lua_runtime import Limits
 
 
 class ChatSink:
-    """No game client connection: records what would be sent through the chat bridge."""
-    hello={'capabilities':['local_ai_chat_v1','chat_events','send_chat']}
+    """Client authorization substitute; native server publishes the actual reply."""
+    hello={'capabilities':['local_ai_chat_v1','chat_events','send_chat','ai_reply_authorization_v1']}
     def __init__(self):self.sent=[]
     def command(self,cmd,**args):
-        assert cmd=='send_ai_chat' and args['chatId']=='isolated-local-ai-task'
-        self.sent.append(dict(cmd=cmd,**args));return dict(ok=True,status='sent')
+        assert cmd=='authorize_ai_reply' and args['chatId']=='isolated-local-ai-task'
+        self.sent.append(dict(cmd=cmd,**args));return dict(ok=True,status='authorized')
 
 
 async def verify(args):
@@ -63,12 +63,15 @@ return {action=action,after=after.player.position}"""
         completed=[r for r in receipts if r.get('actionSuccess') is True and r.get('actionState')=='released'
                    and (r.get('lastAction') or {}).get('operation')=='navigate_to_x']
         p=after['data']['player'];start=before['data']['player']
-        passed=(bool(programs) and bool(completed) and bool(chat.sent) and 36<=p['position']['x']-start['position']['x']<=64
+        passed=(bool(programs) and bool(completed) and bool(chat.sent) and bool(bridge.reply_receipts)
+            and bridge.reply_receipts[-1]['authorSlot']==bridge.binding['slot']
+            and 36<=p['position']['x']-start['position']['x']<=64
             and p['velocity']==dict(x=0,y=0) and after['binding']==before['binding']
             and all(r['toolNames']==['execute_lua'] for r in requests))
-        report=dict(result='passed' if passed else 'failed',mode='isolated real native AI + existing Agent/Lua; synthetic local chat event and chat reply sink; NO graphical Host & Play',
+        report=dict(result='passed' if passed else 'failed',mode='isolated real native AI + existing Agent/Lua + native author broadcast; synthetic local chat input/client authorization; NO graphical Host & Play',
             modelMode='configured external model' if args.live_model else 'scripted HTTP model response via existing LLMClient',
-            modelCalls=len(requests),requests=requests,binding=bridge.binding,before=start,after=p,programs=programs,luaReceipts=receipts,chatReplies=chat.sent)
+            modelCalls=len(requests),requests=requests,binding=bridge.binding,before=start,after=p,programs=programs,luaReceipts=receipts,
+            chatAuthorizations=chat.sent,publishedReplies=bridge.reply_receipts)
         args.output.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         print(json.dumps(dict(result=report['result'],modelMode=report['modelMode'],modelCalls=len(requests),output=str(args.output))))
         return 0 if passed else 1

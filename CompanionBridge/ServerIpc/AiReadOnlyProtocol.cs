@@ -16,12 +16,14 @@ internal sealed class AiReadOnlyProtocol
     private object actor;
     private string actorId;
     private readonly AiAtomicActions actions;
+    private sealed record Speech(string Text, object Data, string Error);
+    private readonly Dictionary<(Guid,string),Speech> speech = new();
     internal AiReadOnlyProtocol(AiAtomicActions actions = null) { this.actions = actions; }
-    internal void Clear() { leases.Clear(); actor = null; actorId = null; actions?.Clear(); }
-    internal void Forget(Guid connection) { leases.Remove(connection); actions?.Forget(connection); }
+    internal void Clear() { leases.Clear(); speech.Clear(); actor = null; actorId = null; actions?.Clear(); }
+    internal void Forget(Guid connection) { leases.Remove(connection); foreach(var key in speech.Keys.Where(k=>k.Item1==connection).ToArray())speech.Remove(key); actions?.Forget(connection); }
 
     internal string Handle(Guid connection, string line, Func<Identity> capture, CancellationToken disconnected = default,
-        Func<Identity,string,JsonElement,object> query = null)
+        Func<Identity,string,JsonElement,object> query = null, Func<Identity,string,object> say = null)
     {
         string id = null;
         object Reply(bool ok, object data = null, Binding binding = null, string error = null) => new { v = 1, id, ok, binding, data, error };
@@ -31,16 +33,25 @@ internal sealed class AiReadOnlyProtocol
             var root = doc.RootElement;
             var names = new HashSet<string>(StringComparer.Ordinal);
             foreach (var p in root.EnumerateObject())
-                if (!names.Add(p.Name) || p.Name is not ("v" or "id" or "op" or "binding" or "actionId" or "operation" or "arguments" or "expiresAtUnixMs")) throw new FormatException();
+                if (!names.Add(p.Name) || p.Name is not ("v" or "id" or "op" or "binding" or "actionId" or "operation" or "arguments" or "expiresAtUnixMs" or "text" or "messageId")) throw new FormatException();
             id = root.GetProperty("id").GetString();
             if (string.IsNullOrWhiteSpace(id) || id.Length > 64 || root.GetProperty("v").GetInt32() != 1) throw new FormatException();
             string op = root.GetProperty("op").GetString();
             bool execution = op is "start" or "action" or "cancel";
             bool reading = op == "query" && query != null;
-            if (op is not ("bind" or "state") && !reading && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+            bool speaking = op=="say" && say!=null;
+            if (op is not ("bind" or "state") && !reading && !speaking && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             foreach (string field in names)
                 if (field == "actionId" && !execution || field is "operation" or "arguments" && op != "start" && !reading
-                    || field == "expiresAtUnixMs" && op != "start") throw new FormatException();
+                    || field == "expiresAtUnixMs" && op is not ("start" or "say")
+                    || field is "text" or "messageId" && !speaking) throw new FormatException();
+            string messageId=null,text=null;
+            if(speaking)
+            {
+                messageId=root.GetProperty("messageId").GetString();text=root.GetProperty("text").GetString();
+                if(!Guid.TryParseExact(messageId,"N",out _)||string.IsNullOrWhiteSpace(text)||text.Length>400
+                    ||text.IndexOfAny(new[]{'\r','\n','\0'})>=0)throw new FormatException();
+            }
             if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory"))
                 return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             if (op == "bind" && root.TryGetProperty("binding", out _)) throw new FormatException();
@@ -75,11 +86,29 @@ internal sealed class AiReadOnlyProtocol
                 if (!ReferenceEquals(actor, current.Actor)) { actor = current.Actor; actorId = Guid.NewGuid().ToString("N"); }
                 var binding = new Binding(actorId, current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
-                return JsonSerializer.Serialize(Reply(true, data: actions == null ? null : new { capabilities = query == null ? actions.Capabilities : actions.Capabilities.Append("server_ai_reads_v1").ToArray() }, binding: binding));
+                var capabilities=actions?.Capabilities.ToList();
+                if(query!=null)capabilities?.Add("server_ai_reads_v1");
+                if(say!=null)capabilities?.Add("server_ai_chat_v1");
+                return JsonSerializer.Serialize(Reply(true, data: capabilities==null?null:new { capabilities }, binding: binding));
             }
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)
                 return JsonSerializer.Serialize(Reply(false, error: "stale_binding"));
+            if(speaking)
+            {
+                if(disconnected.IsCancellationRequested)return JsonSerializer.Serialize(Reply(false,error:"connection_cancelled"));
+                var key=(connection,messageId);
+                if(speech.TryGetValue(key,out var cached))return JsonSerializer.Serialize(cached.Text==text
+                    ?Reply(cached.Error==null,cached.Data,lease.Binding,cached.Error):Reply(false,error:"duplicate_message"));
+                long remaining=root.GetProperty("expiresAtUnixMs").GetInt64()-DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                if(remaining<=0||remaining>2000)return JsonSerializer.Serialize(Reply(false,error:remaining<=0?"request_expired":"invalid_deadline"));
+                if(speech.Count>=1024)return JsonSerializer.Serialize(Reply(false,error:"reply_registry_full"));
+                // Fence before native publication: partial broadcast failures may not be retried.
+                speech[key]=new(text,null,"reply_outcome_unknown");
+                try{speech[key]=new(text,say(current,text),null);}catch{}
+                var result=speech[key];
+                return JsonSerializer.Serialize(Reply(result.Error==null,result.Data,lease.Binding,result.Error));
+            }
             if (reading)
             {
                 try { return JsonSerializer.Serialize(Reply(true, query(current, root.GetProperty("operation").GetString(), root.GetProperty("arguments")), lease.Binding)); }
