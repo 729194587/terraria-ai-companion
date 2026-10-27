@@ -1,0 +1,627 @@
+{
+  "date": "2026-10-27",
+  "scope": "Real graphical Host & Play operated by user; visual confirmation from conversation, runtime/native logs inspected read-only by assistant. No automated GUI test.",
+  "packageVersion": "0.1.46",
+  "implementationCommit": "a204ef36c49b3c8f28374b8a210cdcc5ea252b91",
+  "packageSHA256": "2942AB3ACDD169A898B7BEC0FF429634DE1281E2DE1B6AD62F9F3260EC7EC079",
+  "profile": ".local/companion-g82-host-20261027-135050-952",
+  "runtimeSource": ".local/diagnostics/agent-runtime-20261027-135511-525063.jsonl",
+  "runtimeSHA256": "c194102b7773dbff73fef35416911e0dc403af4f67b732282897ad93f8f35cc2",
+  "runtimeSessionId": "ac52fe74642043a0be0b261141b47ef3",
+  "sessionStart": "2026-10-27T05:55:11.526143+00:00",
+  "lastAgentEnd": "2026-10-27T05:56:20.758624+00:00",
+  "binding": {
+    "actor": "e4497d679ef44b2f8502652711017331",
+    "world": "1cae24b86eb54f75962a3de38e6f30aa",
+    "generation": 1,
+    "slot": 254
+  },
+  "userVisualConfirmation": {
+    "source": "Explicit user confirmations in this task after restarting 0.1.46",
+    "quotes": [
+      "成功。",
+      "测试完成，移动和状态应该都差不多了。"
+    ],
+    "confirmed": [
+      "Basic AI state query",
+      "Basic AI movement and settled result",
+      "Reply displayed with AI actor name and overhead bubble rather than local human author"
+    ]
+  },
+  "cases": [
+    {
+      "case": "state_query",
+      "agentGeneration": 1,
+      "chatEventId": "608164505a9443599c3aafa4a1b05dd6:1",
+      "taskId": "01bf6350192142a48e40d83388e7deff",
+      "observations": [
+        {
+          "timestamp": "2026-10-27T05:55:22.579928+00:00",
+          "available": true,
+          "worldSessionId": "1cae24b86eb54f75962a3de38e6f30aa",
+          "gameUpdate": 1931,
+          "player": {
+            "position": {
+              "x": 33680,
+              "y": 3318
+            },
+            "positionWorldPixels": {
+              "x": 33680,
+              "y": 3318
+            },
+            "boundsWorldPixels": {
+              "x": 33680,
+              "y": 3318,
+              "width": 20,
+              "height": 42
+            },
+            "velocity": {
+              "x": 0,
+              "y": 0
+            },
+            "velocityPixelsPerTick": {
+              "x": 0,
+              "y": 0
+            },
+            "life": 100,
+            "lifeMax": 100,
+            "mana": 20,
+            "manaMax": 20,
+            "dead": false,
+            "ghost": false,
+            "selectedSlot": 0,
+            "selectedHotbarKey": 1,
+            "movement": {
+              "gravDir": 1,
+              "sloping": false,
+              "stairFall": false,
+              "wet": false,
+              "lavaWet": false,
+              "honeyWet": false,
+              "shimmerWet": false,
+              "pulley": false,
+              "grapCount": 0,
+              "jump": 0,
+              "controlDown": false,
+              "controlJump": false,
+              "frozen": false,
+              "webbed": false,
+              "stoned": false,
+              "runAcceleration": 0.08,
+              "maxRunSpeed": 3,
+              "gravity": 0.4,
+              "maxFallSpeed": 10.01,
+              "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred"
+            }
+          },
+          "motion": {
+            "grounded": true,
+            "supported": true,
+            "playerWidth": 20,
+            "playerHeight": 42,
+            "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety"
+          }
+        }
+      ],
+      "luaPrograms": [
+        {
+          "timestamp": "2026-10-27T05:55:22.601907+00:00",
+          "sourceSha256": "0b89e0216a8146a1532f4d8d76d20de6e5b11a7d348ec1eaf0d4685f214be4b8",
+          "runId": "a5f76df4bbd34946acb50c8246b05b3a",
+          "status": "completed",
+          "calls": 1,
+          "actionState": "idle"
+        }
+      ],
+      "preActionFailures": [],
+      "agentEnd": {
+        "timestamp": "2026-10-27T05:55:23.782997+00:00",
+        "outcome": "completed",
+        "task_outcome": "unknown",
+        "action_outcome": null,
+        "action_reason": null,
+        "modelToolCalls": 1,
+        "luaApiCalls": 1,
+        "actionAttempts": 0
+      },
+      "navigationReceipt": null
+    },
+    {
+      "case": "relative_right_movement",
+      "agentGeneration": 2,
+      "chatEventId": "608164505a9443599c3aafa4a1b05dd6:3",
+      "taskId": "10173063e4a84b3b9d1b711fad370255",
+      "observations": [
+        {
+          "timestamp": "2026-10-27T05:56:15.142974+00:00",
+          "available": true,
+          "worldSessionId": "1cae24b86eb54f75962a3de38e6f30aa",
+          "gameUpdate": 5079,
+          "player": {
+            "position": {
+              "x": 33680,
+              "y": 3318
+            },
+            "positionWorldPixels": {
+              "x": 33680,
+              "y": 3318
+            },
+            "boundsWorldPixels": {
+              "x": 33680,
+              "y": 3318,
+              "width": 20,
+              "height": 42
+            },
+            "velocity": {
+              "x": 0,
+              "y": 0
+            },
+            "velocityPixelsPerTick": {
+              "x": 0,
+              "y": 0
+            },
+            "life": 100,
+            "lifeMax": 100,
+            "mana": 20,
+            "manaMax": 20,
+            "dead": false,
+            "ghost": false,
+            "selectedSlot": 0,
+            "selectedHotbarKey": 1,
+            "movement": {
+              "gravDir": 1,
+              "sloping": false,
+              "stairFall": false,
+              "wet": false,
+              "lavaWet": false,
+              "honeyWet": false,
+              "shimmerWet": false,
+              "pulley": false,
+              "grapCount": 0,
+              "jump": 0,
+              "controlDown": false,
+              "controlJump": false,
+              "frozen": false,
+              "webbed": false,
+              "stoned": false,
+              "runAcceleration": 0.08,
+              "maxRunSpeed": 3,
+              "gravity": 0.4,
+              "maxFallSpeed": 10.01,
+              "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred"
+            }
+          },
+          "motion": {
+            "grounded": true,
+            "supported": true,
+            "playerWidth": 20,
+            "playerHeight": 42,
+            "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T05:56:16.608684+00:00",
+          "available": true,
+          "worldSessionId": "1cae24b86eb54f75962a3de38e6f30aa",
+          "gameUpdate": 5167,
+          "player": {
+            "position": {
+              "x": 33680,
+              "y": 3318
+            },
+            "positionWorldPixels": {
+              "x": 33680,
+              "y": 3318
+            },
+            "boundsWorldPixels": {
+              "x": 33680,
+              "y": 3318,
+              "width": 20,
+              "height": 42
+            },
+            "velocity": {
+              "x": 0,
+              "y": 0
+            },
+            "velocityPixelsPerTick": {
+              "x": 0,
+              "y": 0
+            },
+            "life": 100,
+            "lifeMax": 100,
+            "mana": 20,
+            "manaMax": 20,
+            "dead": false,
+            "ghost": false,
+            "selectedSlot": 0,
+            "selectedHotbarKey": 1,
+            "movement": {
+              "gravDir": 1,
+              "sloping": false,
+              "stairFall": false,
+              "wet": false,
+              "lavaWet": false,
+              "honeyWet": false,
+              "shimmerWet": false,
+              "pulley": false,
+              "grapCount": 0,
+              "jump": 0,
+              "controlDown": false,
+              "controlJump": false,
+              "frozen": false,
+              "webbed": false,
+              "stoned": false,
+              "runAcceleration": 0.08,
+              "maxRunSpeed": 3,
+              "gravity": 0.4,
+              "maxFallSpeed": 10.01,
+              "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred"
+            }
+          },
+          "motion": {
+            "grounded": true,
+            "supported": true,
+            "playerWidth": 20,
+            "playerHeight": 42,
+            "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T05:56:18.375354+00:00",
+          "available": true,
+          "worldSessionId": "1cae24b86eb54f75962a3de38e6f30aa",
+          "gameUpdate": 5273,
+          "player": {
+            "position": {
+              "x": 33680,
+              "y": 3318
+            },
+            "positionWorldPixels": {
+              "x": 33680,
+              "y": 3318
+            },
+            "boundsWorldPixels": {
+              "x": 33680,
+              "y": 3318,
+              "width": 20,
+              "height": 42
+            },
+            "velocity": {
+              "x": 0,
+              "y": 0
+            },
+            "velocityPixelsPerTick": {
+              "x": 0,
+              "y": 0
+            },
+            "life": 100,
+            "lifeMax": 100,
+            "mana": 20,
+            "manaMax": 20,
+            "dead": false,
+            "ghost": false,
+            "selectedSlot": 0,
+            "selectedHotbarKey": 1,
+            "movement": {
+              "gravDir": 1,
+              "sloping": false,
+              "stairFall": false,
+              "wet": false,
+              "lavaWet": false,
+              "honeyWet": false,
+              "shimmerWet": false,
+              "pulley": false,
+              "grapCount": 0,
+              "jump": 0,
+              "controlDown": false,
+              "controlJump": false,
+              "frozen": false,
+              "webbed": false,
+              "stoned": false,
+              "runAcceleration": 0.08,
+              "maxRunSpeed": 3,
+              "gravity": 0.4,
+              "maxFallSpeed": 10.01,
+              "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred"
+            }
+          },
+          "motion": {
+            "grounded": true,
+            "supported": true,
+            "playerWidth": 20,
+            "playerHeight": 42,
+            "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T05:56:19.447264+00:00",
+          "available": true,
+          "worldSessionId": "1cae24b86eb54f75962a3de38e6f30aa",
+          "gameUpdate": 5337,
+          "player": {
+            "position": {
+              "x": 33752.59,
+              "y": 3302
+            },
+            "positionWorldPixels": {
+              "x": 33752.59,
+              "y": 3302
+            },
+            "boundsWorldPixels": {
+              "x": 33752.59,
+              "y": 3302,
+              "width": 20,
+              "height": 42
+            },
+            "velocity": {
+              "x": 0,
+              "y": 0
+            },
+            "velocityPixelsPerTick": {
+              "x": 0,
+              "y": 0
+            },
+            "life": 100,
+            "lifeMax": 100,
+            "mana": 20,
+            "manaMax": 20,
+            "dead": false,
+            "ghost": false,
+            "selectedSlot": 0,
+            "selectedHotbarKey": 1,
+            "movement": {
+              "gravDir": 1,
+              "sloping": false,
+              "stairFall": false,
+              "wet": false,
+              "lavaWet": false,
+              "honeyWet": false,
+              "shimmerWet": false,
+              "pulley": false,
+              "grapCount": 0,
+              "jump": 0,
+              "controlDown": false,
+              "controlJump": false,
+              "frozen": false,
+              "webbed": false,
+              "stoned": false,
+              "runAcceleration": 0.08,
+              "maxRunSpeed": 3,
+              "gravity": 0.4,
+              "maxFallSpeed": 10.01,
+              "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred"
+            }
+          },
+          "motion": {
+            "grounded": true,
+            "supported": true,
+            "playerWidth": 20,
+            "playerHeight": 42,
+            "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety"
+          }
+        }
+      ],
+      "luaPrograms": [
+        {
+          "timestamp": "2026-10-27T05:56:15.165289+00:00",
+          "sourceSha256": "c81b58343838497f6fc6db15aba51e22388ef26a99e629a1a51edcbe235afede",
+          "runId": "bf0d24c48b7742758e8f9f8a10cc0f4a",
+          "status": "script_error",
+          "calls": 1,
+          "actionState": "idle"
+        },
+        {
+          "timestamp": "2026-10-27T05:56:16.630482+00:00",
+          "sourceSha256": "0b89e0216a8146a1532f4d8d76d20de6e5b11a7d348ec1eaf0d4685f214be4b8",
+          "runId": "a4313127b16f43b487f0ff00d59b2a9e",
+          "status": "completed",
+          "calls": 1,
+          "actionState": "idle"
+        },
+        {
+          "timestamp": "2026-10-27T05:56:19.467250+00:00",
+          "sourceSha256": "8e4848cc0112802f70466a324977d8eb1cf73f83ac19adb76f38611c20f3057b",
+          "runId": "a9b52f85ba084e5d83f4860270c28270",
+          "status": "completed",
+          "calls": 3,
+          "actionState": "released"
+        }
+      ],
+      "preActionFailures": [
+        {
+          "type": "lua_end",
+          "timestamp": "2026-10-27T05:56:15.159429+00:00",
+          "session_id": "ac52fe74642043a0be0b261141b47ef3",
+          "sequence": 28,
+          "generation": 2,
+          "chat_event_id": "608164505a9443599c3aafa4a1b05dd6:3",
+          "task_id": "10173063e4a84b3b9d1b711fad370255",
+          "tool_call_id": "call_00_ln2QydR7VkVradP4xhdG0025",
+          "lua_run_id": "bf0d24c48b7742758e8f9f8a10cc0f4a",
+          "source_sha256": "c81b58343838497f6fc6db15aba51e22388ef26a99e629a1a51edcbe235afede",
+          "status": "script_error",
+          "calls": 1,
+          "actions": 0,
+          "actionState": "idle",
+          "lastAction": null,
+          "cleanup": null,
+          "failure": {
+            "kind": "script_error",
+            "message": "[string \"companion.lua\"]:3: attempt to index a nil value (field 'position')\nstack traceback:\n\t[string \"companion.lua\"]:3: in main chunk\n\t(...tail calls...)",
+            "call": null,
+            "line": 3,
+            "retryAllowed": false,
+            "actionState": "idle"
+          },
+          "runtimeLogHealth": {
+            "enabled": true,
+            "writeErrors": 0,
+            "recordsDropped": 0
+          },
+          "traceHealth": {
+            "enabled": false,
+            "writeErrors": 0,
+            "recordsDropped": 0
+          },
+          "elapsed_ms": 594.0000000118744
+        }
+      ],
+      "agentEnd": {
+        "timestamp": "2026-10-27T05:56:20.758624+00:00",
+        "outcome": "completed",
+        "task_outcome": "unknown",
+        "action_outcome": "completed",
+        "action_reason": "native_navigation_arrival_verified",
+        "modelToolCalls": 3,
+        "luaApiCalls": 5,
+        "actionAttempts": 1
+      },
+      "navigationReceipt": {
+        "valid": true,
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "operation": "navigate_to_x",
+        "actionId": "48202986ec144ebb9cd289c6534b9fdc",
+        "session": "2d0e7f3d486e4e5a8d4b38ce30943b27",
+        "actionGeneration": 1,
+        "controlGeneration": 1,
+        "endEvidenceStatus": "known",
+        "endEvidence": {
+          "phase": "ServerAI_game_thread_inputs_released",
+          "gameUpdate": 5331,
+          "worldSessionId": "1cae24b86eb54f75962a3de38e6f30aa",
+          "actorId": "e4497d679ef44b2f8502652711017331",
+          "actorGeneration": 1,
+          "actorSlot": 254,
+          "inputsAcquired": true,
+          "inputsReleased": true,
+          "effectVerified": true,
+          "operation": "navigate_to_x",
+          "observationSequence": 5333
+        },
+        "evidence": {
+          "targetX": 33760,
+          "startX": 33680,
+          "x": 33752.59,
+          "y": 3302,
+          "vx": 0,
+          "vy": 0,
+          "updates": 53,
+          "navigation": {
+            "Session": 1,
+            "Status": "arrived",
+            "Action": "walk",
+            "Reason": "horizontal goal crossed on safe settled ground",
+            "Frame": 22,
+            "HoldFrames": 0,
+            "PredictedLanding": {
+              "X": 33752.59,
+              "Y": 3302
+            },
+            "ActualLanding": {
+              "X": 33752.59,
+              "Y": 3302
+            },
+            "MaxError": 0,
+            "ExpectedPosition": {
+              "X": 33752.59,
+              "Y": 3302
+            },
+            "ObservedPosition": {
+              "X": 33752.59,
+              "Y": 3302
+            },
+            "ExpectedVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "ObservedVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "Generation": 1,
+            "TargetX": 33760,
+            "CompletedActions": 3,
+            "CompletedJumps": 0,
+            "Expansions": 1,
+            "PlannedActions": 1,
+            "PlanMilliseconds": 1.1509,
+            "LastLanding": {
+              "ActionNumber": 3,
+              "Jump": false,
+              "Predicted": {
+                "X": 33752.59,
+                "Y": 3302
+              },
+              "Actual": {
+                "X": 33752.59,
+                "Y": 3302
+              },
+              "MaxError": 0,
+              "PredictedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ActualVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Settled": true
+            },
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "PlanNumber": 3,
+            "TargetRegion": null
+          },
+          "arrived": true,
+          "effectStatus": "native_navigation_observed"
+        }
+      }
+    }
+  ],
+  "nativePublications": [
+    {
+      "sourceLog": "server.log",
+      "sourceLineSHA256": "791435379478146117f3082e2bcca84828276fe0f8d3c09e6303629473585720",
+      "utc": "2026-10-27T05:55:23.7722468Z",
+      "processId": 14024,
+      "worldSessionId": "1cae24b86eb54f75962a3de38e6f30aa",
+      "actorSlot": 254,
+      "authorSlot": 254,
+      "actorGeneration": 1,
+      "gameUpdate": 2003,
+      "programIsMainThread": true,
+      "sameActorReference": true
+    },
+    {
+      "sourceLog": "server.log",
+      "sourceLineSHA256": "2e6cceae548f5627cc97c6dc9e8f25c04342d643c46b14a0a7d61e0e0fcf3d4d",
+      "utc": "2026-10-27T05:56:20.7537474Z",
+      "processId": 14024,
+      "worldSessionId": "1cae24b86eb54f75962a3de38e6f30aa",
+      "actorSlot": 254,
+      "authorSlot": 254,
+      "actorGeneration": 1,
+      "gameUpdate": 5416,
+      "programIsMainThread": true,
+      "sameActorReference": true
+    }
+  ],
+  "interpretation": {
+    "agentGeneration": "1/2 are Python turns, not native actor generations; actorGeneration stayed 1",
+    "movement": "Horizontal target 33760, observed 33752.59: delta 72.59 pixels, within existing 12-pixel horizontal arrival rule, not exact 80-pixel displacement; y 3318 to 3302, zero completed jumps",
+    "taskOutcome": "Stored agent task_outcome remains unknown; user acceptance is separate and does not rewrite the generic evidence contract",
+    "chat": "Two intended Agent turns and two native AI-author publications in this logged window; not a comprehensive ordinary-chat/remote-prefix/echo flood test"
+  },
+  "notValidated": [
+    "Item use/mining through the complete Agent/model chat path",
+    "In-flight cancellation/timeout/disconnect in Host & Play",
+    "Death/respawn during action",
+    "Persistent old connection across actual actor/world/generation lifecycle changes",
+    "Native obstacle jumps, leftward/terrain/tool matrix",
+    "Remote multiplayer/late join",
+    "Multiple instance pairing and comprehensive simultaneous human control",
+    "Graphical drops/pickup",
+    "Host & Play shutdown/reservation release"
+  ]
+}
