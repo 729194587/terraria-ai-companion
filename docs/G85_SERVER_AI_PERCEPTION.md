@@ -125,3 +125,43 @@ git diff --check
 尚未验证：G8.5图形Host & Play、真实外部模型自主生成观察程序、远程真人实体同场、
 持续旧连接跨真实死亡/重生/世界重载/角色对象替换、Mod内容及完整坡/液体/线/致动矩阵。
 协议替身证明旧绑定拒绝，不能替代上述原生生命周期验收。保持Draft，不合并。
+
+## 实机反馈修复：浮点位置到Tile坐标
+
+2026-10-27北京时间16:14:07–16:14:25，用户询问“周围有树吗”。实际记录中resolve_content
+成功解析出 `Terraria/Trees` / ID5；随后7次程序提交包含math.floor不存在、整数值浮点坐标被拒绝、
+遍历状态打印触发log_limit等错误，没有成功发出Tile扫描。本轮0次游戏动作、8次模型请求，
+输入66487 token（缓存命中56448）、输出923；不能据此判定附近没有树。
+输入来源：`.local/diagnostics/agent-runtime-20261027-161148-335970.jsonl`，generation=3。
+
+修复保留原子操作职责和4096格面积上限：
+
+- `atomic_operations.validate`返回新副本，递归把整数Schema字段的有限整数值float转int，
+  兼容Lua对浮点位置执行 `//16` 后仍返回float的行为；不修改调用方原对象、不静默取整，
+  不转换number Schema字段。Lua宿主和直接分发器使用验证返回值，游戏端收到真正JSON整数。
+- Lua沙箱提供仅两项 `math.floor`、`math.tointeger`，用于常见坐标转换；其余math、
+  随机数、系统/文件/网络及动态加载权限保持不开放。每份程序环境仍独立。
+- 参数错误明确标出API/字段/数组索引、数值与范围；扫描面积错误显示宽×高和实际面积，
+  并提示使用observe_terrain bounds或分块。原失败范围121×51=6171仍被拒绝。
+- 模型契约说明整数值float可用、闭区间面积计算、局部bounds优先和少量log；
+  新增 [普通树只读示例](../examples/lua/nearby_trees.lua)，先观察局部bounds再解析和扫描。
+  该示例不声称涵盖棕榈树/宝石树等全部树种，也不声称局部范围之外没有树。
+
+修复仅涉及Python/Lua，无Mod或游戏端协议变更，继续使用0.1.48包。
+停止旧Agent（Ctrl+C等待清理）后重新运行 `.local/start-agent.ps1` 即加载修复；
+无需重启客户端。新真实模型/图形验收仍需再次执行，不把模拟测试当作实机修复通过。
+
+定向验证：六个相关模块共100项，首次99项通过，1项发现新增扫描指导未按旧后端能力门控；
+修正为仅支持相关API时注入。随后受影响的坐标/Agent/契约及新增普通树示例共22项通过。
+共101个不同用例通过对应验证，未运行全量测试。包含真实Lua Worker、真实loopback TCP，
+确认整数值float在服务器socket上成为JSON整数；原沙箱隔离、预算/取消/失败屏障测试保留通过。
+首次新增超限测试误认为Runtime不做启动状态查询，已修正为只断言扫描和动作未发送。
+受限沙箱内的首轮Worker测试无输出等待，终止后改用允许子进程通信的定向执行完成。
+本次未重建Mod、未操作正在运行的游戏、未调用外部模型；未重跑原生隔离服务器。
+
+```powershell
+$env:PYTHONPATH="$pwd/python;$pwd/tests"
+& .local/lua-venv/Scripts/python.exe -m unittest test_lua_coordinates test_lua_runtime test_atomic_operations test_atomic_extensions test_server_ai_backend test_server_ai_agent -q
+# 最终受影响范围回归
+& .local/lua-venv/Scripts/python.exe -m unittest test_lua_coordinates test_server_ai_agent test_server_ai_backend.BackendTests.test_perception_contract_is_capability_gated test_server_ai_backend.BackendTests.test_shipped_nearby_tree_program_uses_local_bounds_and_zero_actions -q
+```

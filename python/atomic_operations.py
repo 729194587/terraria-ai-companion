@@ -95,33 +95,39 @@ BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
 
 
 def validate(name, arguments):
-    def check(value, schema):
+    """Return a validated copy, losslessly normalizing integer-valued JSON numbers."""
+    def check(value, schema, path):
         kind = schema['type']
         if kind == 'object':
             if not isinstance(value, dict) or set(value) - schema['properties'].keys() or not set(schema.get('required', [])) <= value.keys():
-                raise ValueError('Unexpected or missing atomic parameters')
-            for key, item in value.items():
-                check(item, schema['properties'][key])
-        elif kind == 'array':
+                raise ValueError(f'{path}: unexpected or missing atomic parameters')
+            return {key: check(item, schema['properties'][key], f'{path}.{key}') for key, item in value.items()}
+        if kind == 'array':
             if not isinstance(value, list) or not schema.get('minItems', 0) <= len(value) <= schema.get('maxItems', math.inf):
-                raise ValueError('Invalid array length')
-            for entry in value:
-                check(entry, schema['items'])
-            if schema.get('uniqueItems') and len(set(value)) != len(value):
-                raise ValueError('Duplicate array items')
-        elif kind in ('number', 'integer'):
-            if type(value) not in ((int,) if kind == 'integer' else (int, float)) or not math.isfinite(value) or not schema.get('minimum', -math.inf) <= value <= schema.get('maximum', math.inf):
-                raise ValueError('Invalid finite coordinate, radius or slot')
-        elif kind == 'string':
+                raise ValueError(f'{path}: invalid array length')
+            normalized = [check(entry, schema['items'], f'{path}[{i}]') for i, entry in enumerate(value, 1)]
+            if schema.get('uniqueItems') and len(set(normalized)) != len(normalized):
+                raise ValueError(f'{path}: duplicate array items')
+            return normalized
+        if kind in ('number', 'integer'):
+            low, high = schema.get('minimum', -math.inf), schema.get('maximum', math.inf)
+            numeric = type(value) is int or type(value) is float and math.isfinite(value)
+            integral = kind != 'integer' or type(value) is int or type(value) is float and value.is_integer()
+            if not numeric or not integral or not low <= value <= high:
+                shown = repr(value)[:80] if type(value) in (int, float, bool) else type(value).__name__
+                raise ValueError(f'{path}: expected finite {kind} in [{low}, {high}], got {shown}; fractional values are not rounded')
+            return int(value) if kind == 'integer' else value
+        if kind == 'string':
             if not isinstance(value, str) or not schema.get('minLength', 0) <= len(value) <= schema.get('maxLength', math.inf) or 'enum' in schema and value not in schema['enum'] or 'pattern' in schema and re.fullmatch(schema['pattern'], value) is None:
-                raise ValueError('Invalid category or entity reference')
+                raise ValueError(f'{path}: invalid string, category or entity reference')
+        return value
     if name not in SCHEMAS:
         raise ValueError('Unsupported atomic operation')
-    check(arguments, SCHEMAS[name])
+    arguments = check(arguments, SCHEMAS[name], name)
     if name == 'scan_tiles':
         width, height = arguments['maxX'] - arguments['minX'] + 1, arguments['maxY'] - arguments['minY'] + 1
         if width <= 0 or height <= 0 or width * height > 4096:
-            raise ValueError('Scan requires ordered bounds and area <=4096 tiles')
+            raise ValueError(f'scan_tiles.bounds: inclusive area {width} x {height} = {width * height}; require ordered bounds and area <=4096 tiles. Use observe_terrain bounds (45 x 29) or split into bounded scans')
     if name == 'inspect_inventory' and (('item' in arguments) != (arguments.get('mode') == 'item')):
         raise ValueError('item is required only for mode=item')
     if name == 'inspect_inventory' and (('slots' in arguments) != (arguments.get('mode') == 'slots')):
@@ -135,6 +141,8 @@ def validate(name, arguments):
             raise ValueError('npcFilter requires category=npc')
     if name == 'navigate_to_landing_region' and arguments['minPlayerLeftX'] > arguments['maxPlayerLeftX']:
         raise ValueError('Landing X bounds must be ordered')
+
+    return arguments
 
 
 async def command(bridge, cmd, **args):
@@ -261,7 +269,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     def track(**fields):
         if lifecycle is not None:
             lifecycle.update(copy.deepcopy(fields))
-    validate(name, arguments)
+    arguments = validate(name, arguments)
     supported = getattr(bridge, 'supported_atomic_operations', None)
     if supported is not None and name not in supported:
         raise PreDispatchRejected(f'{name} is unsupported by this backend; no action started')

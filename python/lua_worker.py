@@ -70,6 +70,7 @@ BOOTSTRAP = '''
     local function run(source, callback, progress, budget)
         local env = {type=type, tonumber=tonumber, tostring=tostring,
                      pairs=pairs, ipairs=ipairs, next=next, assert=assert, error=error}
+        env.math = {floor=math.floor, tointeger=math.tointeger}
         env.json = {null=null, array=function(t) return mark(t or {}, "array") end,
                               object=function(t) return mark(t or {}, "object") end}
         env.api = function(name, args) return callback(name, args or {}, current_line) end

@@ -1,5 +1,10 @@
 # Lua 编排第一阶段
 
+G8.5 后续修复：Lua额外提供受限的 `math.floor`、`math.tointeger`，不开放其他math函数。
+原子参数验证返回规范化副本：整数Schema接受无小数的有限浮点值（如2113.0），发送游戏端前
+转为JSON整数；小数、布尔、非有限数和超限值仍拒绝，number字段保留原精度。
+详见 [G8.5实机坐标修复](G85_SERVER_AI_PERCEPTION.md#实机反馈修复浮点位置到tile坐标)。
+
 0.1.40增加源码行号、受限log、任务证据包与独立动作预算，当前行为见 [可观测性与预算](LUA_OBSERVABILITY.md)。
 
 第二阶段已接入 Agent/LLM，使用方法与新增宿主策略见 [Lua Agent](LUA_AGENT.md)。下文保留第一阶段设计与验证记录。

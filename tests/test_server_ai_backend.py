@@ -187,6 +187,46 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(5,len([r for r in self.host.sent if r['op']=='query']))
         self.assertFalse(any(r['op']=='start' for r in self.host.sent))
 
+    async def test_lua_float_tile_coordinates_are_json_integers_on_server_socket(self):
+        self.enable_perception()
+        source = """
+            local s=api('get_player_state',{})
+            local cx=(s.player.position.x+0.25)//16
+            local cy=math.floor((s.player.position.y+0.5)/16)
+            return api('scan_tiles',{minX=cx-1,minY=cy-1,maxX=cx+1,maxY=cy+1,
+                tileTypes={5.0},maxResults=20.0})
+        """
+        result=await LuaRuntime(self.bridge,evidence_root=self.directory.name).execute(source,limits=Limits(seconds=8,actions=0))
+        self.assertEqual('completed',result['status'],result)
+        query=next(r for r in self.host.sent if r['op']=='query' and r['operation']=='scan_tiles')
+        for field in ('minX','minY','maxX','maxY','maxResults'):
+            self.assertIs(type(query['arguments'][field]),int)
+        self.assertIs(type(query['arguments']['tileTypes'][0]),int)
+        self.assertFalse(any(r['op']=='start' for r in self.host.sent))
+
+    async def test_shipped_nearby_tree_program_uses_local_bounds_and_zero_actions(self):
+        self.enable_perception()
+        original=self.host.query
+        def query(operation,args):
+            result=original(operation,args)
+            if operation=='observe_terrain':
+                result['data']=dict(bounds=dict(minX=2090,minY=190,maxX=2134,maxY=218))
+            elif operation=='resolve_content':
+                result['data']=dict(status='ok',candidates=[dict(typeId=5,contentKey='Terraria/Trees')])
+            elif operation=='scan_tiles':
+                result['data']=dict(items=[dict(x=2100,y=200,typeId=5)],matchedCount=1,returnedCount=1,
+                                    complete=True,truncated=False,unknownCount=0)
+            return result
+        self.host.query=query
+        source=(Path(__file__).resolve().parents[1]/'examples/lua/nearby_trees.lua').read_text(encoding='utf-8')
+        result=await LuaRuntime(self.bridge,evidence_root=self.directory.name).execute(source,limits=Limits(seconds=8,actions=0))
+        self.assertEqual('completed',result['status'],result)
+        self.assertEqual(1,result['value']['trees']['data']['matchedCount'])
+        scan=next(r for r in self.host.sent if r['op']=='query' and r['operation']=='scan_tiles')
+        self.assertEqual(dict(minX=2090,minY=190,maxX=2134,maxY=218,tileTypes=[5],maxResults=16),scan['arguments'])
+        self.assertEqual(3,result['calls'])
+        self.assertEqual(0,result['actions'])
+
     async def test_perception_missing_timestamp_closes_connection(self):
         self.enable_perception()
         original=self.host.query

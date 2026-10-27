@@ -142,7 +142,10 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.answers=[self.program("""
             local a=api('observe_terrain',{})
             local b=api('resolve_content',{kind='tile',query='Terraria/Dirt'})
-            local c=api('scan_tiles',{minX=1,minY=1,maxX=2,maxY=2,tileTypes={0}})
+            local s=api('get_player_state',{})
+            local cx=(s.player.position.x+0.25)//16
+            local cy=math.floor(s.player.position.y/16)
+            local c=api('scan_tiles',{minX=cx-1,minY=cy-1,maxX=cx+1,maxY=cy+1,tileTypes={0.0}})
             local d=api('inspect_tile',{x=1,y=1})
             local e=api('scan_entities',{category='all',radius=100})
             assert(a.valid and b.valid and c.valid and d.valid and e.valid)
