@@ -52,6 +52,8 @@ internal static class MiningSelfTest
             p.inventory[0].SetDefaults(ItemID.CopperPickaxe);p.selectedItem=0;
             var human=Main.player[0];var humanItems=human.inventory.Select(i=>(i.type,i.stack)).ToArray();
             int local=Main.myPlayer,tx=Player.tileTargetX,ty=Player.tileTargetY;bool mouse=Main.blockMouse;
+            void CheckIsolation()=>Check(Main.myPlayer==local&&Main.blockMouse==mouse&&Player.tileTargetX==tx&&Player.tileTargetY==ty
+                &&ReferenceEquals(human,Main.player[0])&&humanItems.SequenceEqual(human.inventory.Select(i=>(i.type,i.stack))),"Human/global state changed during explicit item frames.");
             Target(TileID.Stone);
             void Start()=>ActorMining.Start(p,world,generation,x,y);
             if(failure)
@@ -161,12 +163,17 @@ internal static class MiningSelfTest
             Target(TileID.Stone);Start();Frame();var replacement=pick.Clone();p.inventory[0]=replacement;Frame();
             Check(ActorMining.Current.Reason==ActorMining.Failure.ItemChanged&&ReferenceEquals(p.inventory[0],replacement),"Replacement tool was used or overwritten.");p.inventory[0]=pick;
             Start();ActorMining.Current.Ticks=600;Frame();Check(ActorMining.Current.Phase==ActionPhase.TimedOut&&!p.controlUseItem,"Deadline did not stop.");
+            evidence.Add(TreeMiningSelfTest.Run(p,world,generation,x,y,Frame,CheckIsolation));
+            ActorItemUse.Select(p,world,generation,0);Target(TileID.Stone);
             Start();ActorMining.Current.Generation--;int animation=p.itemAnimation;Frame();
             Check(ActorMining.Current.Reason==ActorMining.Failure.BindingChanged&&p.itemAnimation==animation&&!ProbeSession.Quarantined,"Old incarnation wrote the Player.");
             Start();Frame();NativeSurvival.Debug(p,world,generation,true);
             Check(p.dead&&ActorMining.Current.Phase==ActionPhase.Cancelled&&!p.controlUseItem&&p.itemAnimation==0,"Death did not release mining before KillMe.");
-            Check(Main.myPlayer==local&&Main.blockMouse==mouse&&Player.tileTargetX==tx&&Player.tileTargetY==ty
-                &&ReferenceEquals(human,Main.player[0])&&humanItems.SequenceEqual(human.inventory.Select(i=>(i.type,i.stack))),"Human/global state changed.");
+            // The pickup test above deliberately drives full Main.Update frames,
+            // which evolve the native cursor. Item-only isolation was checked
+            // before that boundary; identity and human inventory remain protected.
+            Check(Main.myPlayer==local&&ReferenceEquals(human,Main.player[0])
+                &&humanItems.SequenceEqual(human.inventory.Select(i=>(i.type,i.stack))),"Human identity/inventory changed during native world frames.");
             ProbeSession.Finish("G7 selftest complete",true);
             File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",checks,evidence,hostAndPlay="not executed",remoteMultiplayer="not executed",
                 cadence="explicit real ItemCheckWrapped in native survival scope, before world frames; not a realtime cadence test"}));

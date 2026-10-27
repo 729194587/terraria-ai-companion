@@ -17,7 +17,7 @@ internal static class ActorMining
     {
         internal readonly Guid Id=Guid.NewGuid();
         internal Player Actor;internal Item Item;internal string World;internal long Generation;
-        internal int Slot,Type,Prefix,Pick, X,Y,TileType,ExpectedType,FrameX,FrameY,Ticks,Swings,Strikes,Damage,PeakDamage,AnimationPeak,ProposedDamage,Transforms;
+        internal int Slot,Type,Prefix,Pick,Axe, X,Y,TileType,ExpectedType,FrameX,FrameY,Ticks,Swings,Strikes,Damage,PeakDamage,AnimationPeak,ProposedDamage,Transforms;
         internal byte Slope;internal bool Half,Actuated,Destroyed,ExternalChange;
         internal ActionPhase Phase=ActionPhase.Running;internal Failure Reason;internal string Detail="";
     }
@@ -57,7 +57,7 @@ internal static class ActorMining
         &&Netplay.Clients!=null&&v.Slot<Netplay.Clients.Length
         &&VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[v.Slot]);
     private static bool Held(Context c)=>c.Actor.selectedItem==c.Slot&&ReferenceEquals(c.Actor.inventory[c.Slot],c.Item)
-        &&!c.Item.IsAir&&c.Item.type==c.Type&&c.Item.prefix==c.Prefix&&c.Item.pick==c.Pick&&SupportedTool(c.Item);
+        &&!c.Item.IsAir&&c.Item.type==c.Type&&c.Item.prefix==c.Prefix&&c.Item.pick==c.Pick&&c.Item.axe==c.Axe&&SupportedTool(c.Item);
     private static Context RangeTarget()=>Program.IsMainThread&&Bound(rangeContext)?rangeContext:throw new InvalidOperationException("No bound G7 reach scope.");
     public static int RangeX()=>RangeTarget().X;
     public static int RangeY()=>RangeTarget().Y;
@@ -66,11 +66,14 @@ internal static class ActorMining
         if(rangeContext!=null)throw new InvalidOperationException("Reentrant G7 reach check.");
         try{rangeContext=c;return inRange(c.Actor,c.Item);}finally{rangeContext=null;}
     }
-    private static bool SupportedTool(Item i)=>!i.IsAir&&i.pick>0&&i.axe==0&&i.hammer==0&&!i.channel&&i.shoot<=0;
+    private static bool SupportedTool(Item i)=>!i.IsAir&&i.hammer==0&&!i.channel&&i.shoot<=0
+        &&(i.pick>0&&i.axe==0||i.type==ItemID.CopperAxe&&i.axe>0&&i.pick==0);
+    private static bool TreeTarget(int type)=>Main.tileAxe[type]&&TileID.Sets.IsATreeTrunk[type];
     private static bool Same(Context c)
     {
         var t=Main.tile[c.X,c.Y];return t.HasTile&&t.TileType==c.ExpectedType
-            &&(byte)t.Slope==c.Slope&&t.IsHalfBlock==c.Half&&t.IsActuated==c.Actuated;
+            &&(byte)t.Slope==c.Slope&&t.IsHalfBlock==c.Half&&t.IsActuated==c.Actuated
+            &&(c.Axe==0||t.TileFrameX==c.FrameX&&t.TileFrameY==c.FrameY);
     }
     private static bool Healthy(Player p)=>!p.dead&&!p.ghost&&!p.CCed&&!p.noItems&&!p.noBuilding&&!p.frozen&&!p.stoned&&!p.mount.Active
         &&!Main.gameMenu&&!Netplay.Disconnect&&float.IsFinite(p.position.X)&&float.IsFinite(p.position.Y);
@@ -86,15 +89,16 @@ internal static class ActorMining
             var c=new Context{Actor=p,World=world,Generation=generation,X=x,Y=y,Slot=p.selectedItem,Item=p.HeldItem};Current=c;
             void Reject(Failure reason,string detail){c.Phase=ActionPhase.Failed;c.Reason=reason;c.Detail=detail;Emit(c);}
             if(!Healthy(p)){Reject(Failure.ActorUnavailable,"Actor cannot mine in its current state.");return;}
-            c.Type=c.Item.type;c.Prefix=c.Item.prefix;c.Pick=c.Item.pick;
+            c.Type=c.Item.type;c.Prefix=c.Item.prefix;c.Pick=c.Item.pick;c.Axe=c.Item.axe;
             if(!WorldGen.InWorld(x,y,2)||!Main.tile[x,y].HasTile){Reject(Failure.InvalidTarget,"Target must be an occupied in-world tile.");return;}
             var t=Main.tile[x,y];int type=t.TileType;
             c.TileType=c.ExpectedType=type;c.FrameX=t.TileFrameX;c.FrameY=t.TileFrameY;c.Slope=(byte)t.Slope;c.Half=t.IsHalfBlock;c.Actuated=t.IsActuated;
             if(p.selectedItem<0||p.selectedItem>9||!SupportedTool(c.Item))
-            {Reject(Failure.InvalidTool,$"AI 当前栏 {p.selectedItem+1}：{(c.Item.IsAir?"空栏":c.Item.Name)}×{c.Item.stack}，镐力 {c.Pick}。请选真实纯镐；缺少镐可 /vph item-fixture，再 /vph slot <铜镐栏号>。");return;}
-            if(!Main.tileSolid[type]||Main.tileFrameImportant[type]||Main.tileAxe[type]||Main.tileHammer[type]
-                ||Main.tileCut[type]||TileID.Sets.Falling[type]||t.IsActuated)
-            {Reject(Failure.UnsupportedTarget,$"目标 ({x},{y}) 类型 {type} 不在当前普通单格镐挖范围内；家具、植物、下落块、斧锤目标或虚化方块会拒绝。");return;}
+            {Reject(Failure.InvalidTool,$"AI 当前栏 {p.selectedItem+1}：{(c.Item.IsAir?"空栏":c.Item.Name)}×{c.Item.stack}，镐力 {c.Pick}，斧力 {c.Axe}。请选择纯镐挖普通方块，或铜斧砍树干。");return;}
+            bool targetSupported=c.Axe>0?TreeTarget(type):Main.tileSolid[type]&&!Main.tileFrameImportant[type]
+                &&!Main.tileAxe[type]&&!Main.tileHammer[type]&&!Main.tileCut[type]&&!TileID.Sets.Falling[type];
+            if(!targetSupported||t.IsActuated)
+            {Reject(Failure.UnsupportedTarget,$"目标 ({x},{y}) 类型 {type} 不符合当前工具范围：纯镐仅普通单格方块，铜斧仅原版斧类树干；家具和虚化目标会拒绝。");return;}
             if(!InRange(c)){Reject(Failure.OutOfRange,"Native item reach check refused the fixed target; no movement is attempted.");return;}
             // New explicit intent never inherits another action's partial progress.
             ClearProgress(p,x,y);
@@ -135,8 +139,11 @@ internal static class ActorMining
     private static int Damage(On_HitTile.orig_AddDamage orig,HitTile hits,int id,int damage,bool update)
     {
         int total=orig(hits,id,damage,update);var c=executing;
-        if(picking&&c!=null&&Allowed(c.Actor)&&ReferenceEquals(hits,c.Actor.hitTile)&&update)
+        if((picking||striking&&c?.Axe>0)&&c!=null&&Allowed(c.Actor)&&ReferenceEquals(hits,c.Actor.hitTile)&&update)
         {
+            // Axe damage is computed in ActuallyUseMiningTool AFTER CanKillTile;
+            // unlike picks it never passes through PickTile/transform prediction.
+            if(c.Axe>0)c.ProposedDamage=damage;
             c.Damage=total;c.PeakDamage=Math.Max(c.PeakDamage,total);
             if(damage>0&&total<100)NetMessage.SendData(MessageID.SyncTilePicking,-1,-1,null,c.Actor.whoAmI,c.X,c.Y,Math.Min(damage,255));
         }
@@ -145,7 +152,7 @@ internal static class ActorMining
     private static void Kill(On_WorldGen.orig_KillTile orig,int x,int y,bool fail,bool effectOnly,bool noItem)
     {
         var c=Current;bool watched=Running&&c.X==x&&c.Y==y;
-        bool nativePick=watched&&ReferenceEquals(c,executing)&&picking&&Allowed(c.Actor)&&!c.ExternalChange&&Same(c)&&c.ProposedDamage>0;
+        bool nativePick=watched&&ReferenceEquals(c,executing)&&(picking||striking&&c.Axe>0)&&Allowed(c.Actor)&&!c.ExternalChange&&Same(c)&&c.ProposedDamage>0;
         bool own=nativePick&&c.Damage>=100&&!fail&&!effectOnly;
         bool grassHit=nativePick&&c.ExpectedType==TileID.Grass&&fail&&!effectOnly&&!noItem;
         // Also detects removal + replacement with the same type between updates.
@@ -210,7 +217,7 @@ internal static class ActorMining
                 if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0){End(c,ActionPhase.Completed,Failure.None);return;}
             }
             else if(!Same(c)){End(c,ActionPhase.Failed,Failure.TargetChanged);return;}
-            if(c.Strikes>strikes&&c.ProposedDamage==0){End(c,ActionPhase.Failed,Failure.NoPickPower,$"原生挖掘规则拒绝：类型 {c.ExpectedType}，镐力 {c.Pick}，保护判定后的伤害为零；方块尚未破坏。");return;}
+            if(c.Strikes>strikes&&c.ProposedDamage==0){End(c,ActionPhase.Failed,Failure.NoPickPower,$"原生工具规则拒绝：类型 {c.ExpectedType}，镐力 {c.Pick}，斧力 {c.Axe}，保护判定后的伤害为零；目标尚未破坏。");return;}
             if(c.Ticks==1&&p.itemAnimation==0){End(c,ActionPhase.Failed,Failure.NativeRefused,"Native CanUseItem/PreItemCheck did not start use.");return;}
             if(c.Ticks==1||c.Ticks%6==0)Sync(p);
         }
@@ -241,7 +248,7 @@ internal static class ActorMining
     }
     private static void Emit(Context c)
     {try{int observed=c.World==ProbeSession.WorldSession&&WorldGen.InWorld(c.X,c.Y)?Main.tile[c.X,c.Y].HasTile?Main.tile[c.X,c.Y].TileType:-1:-2;
-        ProbeSession.Log("mine-result",new{actionId=c.Id,world=c.World,generation=c.Generation,slot=c.Actor.whoAmI,phase=c.Phase.ToString(),reason=c.Reason.ToString(),c.Detail,c.X,c.Y,c.TileType,c.ExpectedType,observedType=observed,itemType=c.Type,pick=c.Pick,c.ProposedDamage,c.Transforms,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.Destroyed});}catch{}}
+        ProbeSession.Log("mine-result",new{actionId=c.Id,world=c.World,generation=c.Generation,slot=c.Actor.whoAmI,phase=c.Phase.ToString(),reason=c.Reason.ToString(),c.Detail,c.X,c.Y,c.TileType,c.ExpectedType,observedType=observed,itemType=c.Type,pick=c.Pick,axe=c.Axe,c.ProposedDamage,c.Transforms,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.Destroyed});}catch{}}
     internal static void Retire(Player p)
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
@@ -256,6 +263,6 @@ internal static class ActorMining
     {
         var c=Current;if(c==null)return "AI 尚无挖掘动作。";
         string tile=c.World==ProbeSession.WorldSession&&WorldGen.InWorld(c.X,c.Y)?$"{Main.tile[c.X,c.Y].HasTile}/{Main.tile[c.X,c.Y].TileType}":"unavailable";
-        return $"挖掘 {c.Phase}/{c.Reason}：({c.X},{c.Y}) 原类型={c.TileType}，当前(active/type)={tile}；挥动={c.Swings}，镐击={c.Strikes}，进度峰值={c.PeakDamage}/100，草皮转化={c.Transforms}，已破坏={c.Destroyed}。{c.Detail}";
+        return $"挖掘 {c.Phase}/{c.Reason}：({c.X},{c.Y}) 原类型={c.TileType}，当前(active/type)={tile}；挥动={c.Swings}，工具击={c.Strikes}，进度峰值={c.PeakDamage}/100，草皮转化={c.Transforms}，已破坏={c.Destroyed}。{c.Detail}";
     }
 }

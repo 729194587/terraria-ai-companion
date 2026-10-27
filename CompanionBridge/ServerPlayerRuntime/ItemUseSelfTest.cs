@@ -38,7 +38,10 @@ internal static class ItemUseSelfTest
             var human=Main.player[0];var humanItems=human.inventory.Select(i=>i.Clone()).ToArray();
             int local=Main.myPlayer,tx=Player.tileTargetX,ty=Player.tileTargetY;bool mouse=Main.blockMouse;
             string world=ProbeSession.WorldSession;long gen=ProbeSession.ActorGeneration;
+            // Explicit diagnostic inventory, independent of normal starter gear.
+            for(int i=0;i<10;i++)p.inventory[i].TurnToAir();
             ActorItemUse.Fixture(p,world,gen);
+            p.inventory[3].SetDefaults(ItemID.CopperAxe);
             if(failure)
             {
                 ActorItemUse.Select(p,world,gen,0);ActorItemUse.Start(p,world,gen);Throw=true;
@@ -80,12 +83,18 @@ internal static class ItemUseSelfTest
                 if(type==ItemID.Apple)Check(p.HasBuff(BuffID.WellFed),"Native food buff was skipped.");
                 return new {type,c.Ticks,c.Starts,c.AnimationPeak,c.TimePeak,c.ToolPeak,c.UsesPeak,stackBefore=before,stackAfter=p.inventory[slot].stack,firstTickControls,firstPressPreserved=true};
             }
-            var sword=Exercise(0,ItemID.WoodenSword);var pick=Exercise(1,ItemID.CopperPickaxe);var apple=Exercise(2,ItemID.Apple);
+            var sword=Exercise(0,ItemID.WoodenSword);var pick=Exercise(1,ItemID.CopperPickaxe);var axe=Exercise(3,ItemID.CopperAxe);var apple=Exercise(2,ItemID.Apple);
             // Last item must exercise the native zero-stack cleanup without touching a human mouse.
             p.inventory[2].stack=1;var lastApple=Exercise(2,ItemID.Apple);
             Check(p.inventory[2].IsAir,"Native final consumable cleanup failed.");
-            ActorItemUse.Select(p,world,gen,0);Deny=true;ActorItemUse.Start(p,world,gen);Frame();Deny=false;
-            Check(ActorItemUse.Current.Phase=="rejected"&&p.itemAnimation==0,"Native CanUseItem denial bypassed.");
+            ActorItemUse.Select(p,world,gen,3);Deny=true;ActorItemUse.Start(p,world,gen);Frame();Deny=false;
+            Check(ActorItemUse.Current.Phase=="rejected"&&ActorItemUse.Current.Starts==0&&p.itemAnimation==0
+                &&!p.controlUseItem&&p.releaseUseItem,"Native copper axe CanUseItem denial bypassed or input retained.");
+            ActorItemUse.Start(p,world,gen);Frame();ActorItemUse.Current.Ticks=180;Frame();
+            Check(ActorItemUse.Current.Phase=="failed"&&!p.controlUseItem&&p.releaseUseItem&&p.itemAnimation==0,"Copper axe timeout did not release input.");
+            ActorItemUse.Start(p,world,gen);Frame();ActorItemUse.Stop(p,world,gen);
+            Check(ActorItemUse.Current.Phase=="cancelled"&&!p.controlUseItem&&p.releaseUseItem&&p.itemAnimation==0,"Copper axe cancel did not release input.");
+            ActorItemUse.Select(p,world,gen,0);
             ActorItemUse.Start(p,world,gen);ActorItemUse.Current.Generation--;
             int animation=p.itemAnimation;Frame();
             Check(ActorItemUse.Current.Phase=="stale"&&!ProbeSession.Quarantined&&p.itemAnimation==animation,"Stale action mutated a new generation.");
@@ -100,7 +109,7 @@ internal static class ItemUseSelfTest
             Check(Main.myPlayer==local&&Main.blockMouse==mouse&&Player.tileTargetX==tx&&Player.tileTargetY==ty
                 &&ReferenceEquals(human,Main.player[0])&&humanItems.Select((i,n)=>i.type==human.inventory[n].type&&i.stack==human.inventory[n].stack).All(v=>v),"Human/global state changed.");
             ProbeSession.Finish("G6 selftest complete",true);
-            File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",sword,pick,apple,lastApple,explicitStop=true,deathStops=true,
+            File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",sword,pick,axe,apple,lastApple,explicitStop=true,deathStops=true,axeTimeout=true,axeCancel=true,
                 humanUnchanged=true,nativeCanUseDenial=true,staleGeneration=true,itemReplacement=true,
                 hostAndPlay="not executed",remoteMultiplayer="not executed",mining="air animation only; no tile target"}));
         }

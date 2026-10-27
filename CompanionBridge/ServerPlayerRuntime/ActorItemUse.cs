@@ -37,7 +37,7 @@ internal static class ActorItemUse
         if(Running||ActorMining.Running||ActorControl.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
             throw new InvalidOperationException("Wait for walking/item animation/cooldown to finish, or /vph use-stop.");
     }
-    internal static bool Supported(int type)=>type==ItemID.WoodenSword||type==ItemID.CopperPickaxe||type==ItemID.Apple;
+    internal static bool Supported(int type)=>type==ItemID.WoodenSword||type==ItemID.CopperPickaxe||type==ItemID.CopperAxe||type==ItemID.Apple;
     internal static void Select(Player p,string world,long generation,int slot)
     {lock(ProbeSession.Reservation.Gate){SelectCore(p,world,generation,slot);}}
     private static void SelectCore(Player p,string world,long generation,int slot)
@@ -65,7 +65,7 @@ internal static class ActorItemUse
     {
         Capture(p,world,generation);Idle(p);
         if(p.selectedItem<0||p.selectedItem>9||!Supported(p.HeldItem.type)||p.HeldItem.IsAir)
-            throw new InvalidOperationException("G6 supports only a wooden sword, copper pickaxe or apple in hotbar 1–10.");
+            throw new InvalidOperationException("G6 supports only a wooden sword, copper pickaxe, copper axe or apple in hotbar 1–10.");
         if(p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)throw new InvalidOperationException("AI cannot use an item in this state.");
         Current=new Context{Actor=p,World=world,Generation=generation,Slot=p.selectedItem,Item=p.HeldItem,Type=p.HeldItem.type,InitialStack=p.HeldItem.stack};
         // Release an old input; the next natural ItemCheck supplies one press.

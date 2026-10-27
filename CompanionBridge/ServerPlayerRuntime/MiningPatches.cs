@@ -28,6 +28,13 @@ public static class MiningPatches
             &&Call(pick,0x02c3,"KillTile")&&Call(pick,0x031c,"KillTile")&&Call(pick,0x0361,"Prune")
             &&At(pick,0x0072)?.OpCode==OpCodes.Ldc_I4_S&&Convert.ToInt32(At(pick,0x0072).Operand)==100
             &&Call(pick,0x030a,"SendData")&&Call(pick,0x033b,"SendData")&&Call(pick,0x0353,"SendData"));
+        // The same explicit-coordinate native tool entry owns the axe branch.
+        // Keep protection, accumulated damage and native tree destruction intact.
+        Require(At(tool,0x01f4)?.Operand is FieldReference axe&&axe.Name=="tileAxe"
+            &&Call(tool,0x028a,"CanKillTile")&&Call(tool,0x02e9,"AddDamage")
+            &&At(tool,0x02ee)?.OpCode==OpCodes.Ldc_I4_S&&Convert.ToInt32(At(tool,0x02ee).Operand)==100
+            &&Call(tool,0x03ba,"IsBottomOfTreeTrunkNoRoots")&&Call(tool,0x03c7,"KillTile")
+            &&Call(tool,0x040f,"KillTile")&&Call(tool,0x043d,"Prune")&&Call(tool,0x0453,"ApplyItemTime"));
         Require(transform.Parameters.Count==7&&transform.Body.ExceptionHandlers.Count==0
             &&Call(transform,0x0005,"AddDamage")&&At(transform,0x0004)?.OpCode==OpCodes.Ldc_I4_0
             &&At(transform,0x0019)?.OpCode==OpCodes.Ldc_I4_2&&At(transform,0x00d2)?.OpCode==OpCodes.Ldc_I4_1

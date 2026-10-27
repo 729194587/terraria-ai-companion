@@ -22,7 +22,11 @@ public static class MiningOfflineTests
         {MiningPatches.Validate(a.MainModule.Types.Single(t=>t.FullName=="Terraria.Player"));Check(true,"actual pinned mining/range IL validated");}
         foreach(var pair in new[]{("PickTile",0x0032),("PickTile",0x003a),("PickTile",0x005b),("PickTile",0x006d),("PickTile",0x02c3),
             ("PickTile",0x0072),("PickTile",0x030a),("PickTile",0x0353),("ItemCheck_UseMiningTools",0x0060),
-            ("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x0473),("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x0493),("IsTargetTileInItemRange",0x0020)})
+            ("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x0473),("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x0493),("IsTargetTileInItemRange",0x0020),
+            ("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x01f4),("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x028a),
+            ("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x02e9),("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x02ee),
+            ("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x03ba),("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x03c7),
+            ("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x040f),("ItemCheck_UseMiningTools_ActuallyUseMiningTool",0x0453)})
         {
             using var a=AssemblyDefinition.ReadAssembly(dll);var p=a.MainModule.Types.Single(t=>t.FullName=="Terraria.Player");
             var m=p.Methods.Single(m=>m.Name==pair.Item1);var i=m.Body.Instructions.Single(i=>i.Offset==pair.Item2);i.OpCode=OpCodes.Nop;i.Operand=null;

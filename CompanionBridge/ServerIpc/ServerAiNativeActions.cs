@@ -92,7 +92,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             string status=c.Phase switch{"completed"=>"completed","running"=>"running","cancelled"=>"cancelled","stale"=>"unknown",_=>"failed"};
             bool cycle=c.Phase=="completed"&&c.Starts==1&&c.AnimationPeak>0&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0;
             return new(status,c.Reason,new{itemType=c.Type,c.Ticks,c.Starts,c.AnimationPeak,c.TimePeak,c.ToolPeak,c.UsesPeak,
-                c.InitialStack,stack=p.inventory[c.Slot].stack,consumptionObserved=c.Consumed,cycleVerified=cycle,effectStatus="unconfirmed"},
+                c.InitialStack,stack=p.inventory[c.Slot].stack,consumptionObserved=c.Consumed,cycleVerified=cycle,effectStatus=c.AnimationPeak>0?"unconfirmed":"not_started"},
                 Released(p)&&p.itemAnimation==0&&p.itemTime==0,status=="completed"&&cycle,InputsAcquired:c.Ticks>0);
         }
         if(!ReferenceEquals(ActorMining.Current,h.Context))return new("unknown","native_context_changed",null,false);
@@ -100,8 +100,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         bool destroyed=mine.Destroyed&&!mine.ExternalChange&&WorldGen.InWorld(mine.X,mine.Y)&&!Main.tile[mine.X,mine.Y].HasTile;
         string phase=mine.Phase switch{ActionPhase.Running=>"running",ActionPhase.Completed=>"completed",ActionPhase.Cancelled=>"cancelled",ActionPhase.TimedOut=>"timeout",ActionPhase.Stale=>"unknown",_=>"failed"};
         return new(phase,mine.Reason+": "+mine.Detail,new{nativeActionId=mine.Id,mine.X,mine.Y,mine.TileType,mine.ExpectedType,mine.Ticks,
-            mine.Swings,mine.Strikes,mine.PeakDamage,mine.Transforms,nativeDestroyed=mine.Destroyed,targetAbsent=destroyed,
-            targetChanged=mine.ExternalChange,destroyedByActor=destroyed,effectStatus=destroyed?"native_tile_destroyed":"not_confirmed"},
+            mine.Swings,mine.Strikes,mine.PeakDamage,mine.Transforms,toolKind=mine.Axe>0?"axe":"pickaxe",pick=mine.Pick,axe=mine.Axe,nativeDestroyed=mine.Destroyed,targetAbsent=destroyed,
+            targetChanged=mine.ExternalChange,destroyedByActor=destroyed,effectStatus=destroyed?"native_tile_destroyed":mine.Ticks==0?"not_started":"not_confirmed"},
             Released(p)&&p.itemAnimation==0&&p.itemTime==0,phase=="completed"&&destroyed,InputsAcquired:mine.Ticks>0);
     }
     public Result Cancel(AiReadOnlyProtocol.Identity identity,object value)
