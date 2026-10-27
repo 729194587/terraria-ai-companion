@@ -1,5 +1,8 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[string]$PythonExecutable)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[string]$PythonExecutable)
 $ErrorActionPreference='Stop'
+if($Port -eq $IpcPort){throw 'Native game and AI IPC test ports must be distinct.'}
+$occupied=@([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object {$_.Port -in @($Port,$IpcPort)})
+if($occupied.Count){throw 'Native test port already occupied; refusing to connect to an unrelated process.'}
 . (Join-Path $PSScriptRoot 'server_ai_native_evidence.ps1')
 $repo=Split-Path $PSScriptRoot -Parent
 if(!$WorldPath){$WorldPath=Join-Path $repo '.local/virtual-player-control-host/Worlds/test.wld'}
@@ -100,6 +103,13 @@ try {
         $fixtureDeadline=[DateTime]::UtcNow.AddSeconds(10)
         while(!(Test-Path -LiteralPath $fixturePath) -and [DateTime]::UtcNow -lt $fixtureDeadline){Start-Sleep -Milliseconds 100}
         $fixture=Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json
+        if($Agent){
+            $agentArgs=@((Join-Path $repo 'tests/native_server_ai_agent.py'),'--port',"$IpcPort",'--output',"$profile/agent-native-result.json")
+            if($LiveModel){$agentArgs+='--live-model'}
+            & $PythonExecutable @agentArgs
+            if($LASTEXITCODE -ne 0){throw "Existing Agent/model/Lua/native AI validation failed: $profile/agent-native-result.json"}
+            $agentResult=Get-Content -LiteralPath "$profile/agent-native-result.json" -Raw|ConvertFrom-Json
+        }
         function Start-NativeAction($operation,$arguments){
             $id=[guid]::NewGuid().ToString('N')
             $reply=Request @{v=1;id='native-action-start';op='start';binding=$bound.binding;actionId=$id;operation=$operation;arguments=$arguments;expiresAtUnixMs=([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+1500)}
@@ -173,6 +183,7 @@ try {
         $report.afterSelection=$after.data
     }
     if($Reads){$report.luaReads=$readResult;$report.luaCombined=$combinedResult;$report.rawPlayerQuery=$rawQuery;$report.stateAfterReads=$rawState.data;$report.readBindingMismatchError=$readMismatch.error;$report.nativeSelections=$nativeSelection}
+    if($Agent){$report.agent=$agentResult}
     if($Actions){$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
         $report.nativeCancellations=$nativeCancellations;$report.worldAfterCancel=$worldAfterCancel;$report.emptyTileRefusal=$empty.data.action;
         $report.actionFrameMode='Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.'}

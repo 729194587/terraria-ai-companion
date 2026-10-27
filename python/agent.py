@@ -184,7 +184,8 @@ def inventory_summary(result):
 async def read_runtime_inventory(bridge):
     try:
         capabilities = getattr(bridge, "hello", {}).get("capabilities", [])
-        if not {"atomic_operations_v1", "atomic_extensions_v1"}.issubset(capabilities):
+        if ('atomic_operations_v1' not in capabilities or not
+                {'atomic_extensions_v1', 'server_ai_reads_v1'}.intersection(capabilities)):
             raise ValueError("inventory_capability_unavailable")
         result = await atomic_operations.dispatch(bridge, "inspect_inventory", {"mode": "full"})
         return inventory_summary(result)
@@ -322,8 +323,15 @@ def entity_result(reply):
 
 class Agent:
     def __init__(self, bridge, llm, max_model_calls=8, max_tool_calls=7, max_movement_ms=6000, *,
-                 local_input=False, lua_limits=LuaLimits(), lua_store=None):
+                 local_input=False, lua_limits=LuaLimits(), lua_store=None, chat_bridge=None):
         self.bridge, self.llm = bridge, llm
+        self.chat_bridge = bridge if chat_bridge is None else chat_bridge
+        self.server_ai = chat_bridge is not None
+        if self.server_ai and not {'server_ai_atomic_v1','server_ai_reads_v1','server_ai_actions_v1'}.issubset(
+                getattr(bridge,'hello',{}).get('capabilities',[])):
+            raise BridgeError('Server AI Agent requires the explicit native AI backend; human fallback is forbidden')
+        if self.server_ai and local_input:
+            raise ValueError('Server AI requires the explicit in-game !ai chat entry')
         self.local_input = local_input
         lua_limits.validate()
         self.lua_limits = lua_limits
@@ -335,6 +343,9 @@ class Agent:
             raise ValueError('max_movement_ms must be an integer in 0..6000')
         self.max_movement_ms = max_movement_ms
         self.history = [{"role": "system", "content": SYSTEM}]
+        self.tools = TOOLS
+        if self.server_ai:
+            self.history[0]['content'], self.tools = lua_agent.server_contract(bridge)
         if local_input:
             self.history[0]['content'] += ('\n当前为本地终端测试模式：真人从终端输入指令，回复显示在终端。'
                 '你控制的仍是实际游戏中的本地角色；所有工具、观察、安全和失败停止规则保持有效。')
@@ -349,6 +360,9 @@ class Agent:
         self.last_movement_result = None
 
     def receive(self, event):
+        if self.server_ai and not (event.get('type') == 'chat_message'
+                and event.get('source') == 'local_ai_command' and event.get('isSelf') is True):
+            return
         if event.get("type") == "game_message":
             if any(old["eventId"] == event["eventId"] for old in self._game_events):
                 return
@@ -360,7 +374,7 @@ class Agent:
                                buffered=len(self._game_events), evicted=self._game_events_evicted,
                                server_dropped=self._game_events_dropped)
             return  # Passive memory: no model call, cancellation, chatId or history mutation.
-        if self.local_input or event.get("isSelf") is not False or event["eventId"] in self._seen:
+        if self.local_input or (not self.server_ai and event.get("isSelf") is not False) or event["eventId"] in self._seen:
             return
         self._seen.add(event["eventId"])
         self._start_turn(event)
@@ -497,7 +511,7 @@ class Agent:
                 costs.request(request)
                 model_started = time.monotonic()
                 try:
-                    message = await self.llm.complete(request, TOOLS)
+                    message = await self.llm.complete(request, self.tools)
                 finally:
                     costs.model_elapsed_ms += (time.monotonic() - model_started) * 1000
                 if generation != self.generation:
@@ -529,6 +543,8 @@ class Agent:
                             function = call["function"]
                             name = function.get("name")
                             arguments = json.loads(function.get("arguments", ""))
+                            if self.server_ai and name != lua_agent.TOOL_NAME:
+                                raise ValueError('Server AI model tools allow execute_lua only; no fallback execution')
                             if len(calls) > 1:
                                 result = {"valid": False, "error": "one_tool_per_model_decision_required; entire batch not executed"}
                             elif name == lua_agent.TOOL_NAME:
@@ -690,7 +706,7 @@ class Agent:
                             raise
                         finally:
                             tracing.context.reset(tool_token)
-                        if len(calls) == 1:
+                        if len(calls) == 1 and not self.server_ai:
                             result["movementLoop"] = movement_loop.snapshot()
                             result["movementLoop"].update(remainingToolCalls=tool_limit-used,
                                                           remainingModelCalls=self.max_model_calls-model_index-1)
@@ -723,7 +739,8 @@ class Agent:
                 elif lua_failure is not None:
                     text = 'Lua 程序未完成：' + str(lua_failure.get('error') or lua_failure.get('reason') or lua_failure['status'])
                 elif unconfirmed_item_effect:
-                    text = "物品原生使用周期已完成；实际效果（包括雀杖是否成功召唤）未确认。"
+                    text = ("物品原生使用周期已完成；命中或其他实际效果未确认。" if self.server_ai else
+                            "物品原生使用周期已完成；实际效果（包括雀杖是否成功召唤）未确认。")
                 elif movement_loop.active and last_atomic_action is None:
                     if used >= self.max_tool_calls and movement_loop.terminal is None:
                         movement_loop.finish("budget_exhausted", "tool_call_limit")
@@ -738,7 +755,7 @@ class Agent:
                     tracing.trace.emit("agent_result_discarded", reason="newer_generation_before_send",
                                        current_generation=self.generation)
                     return
-                await self._send_reply(text, chat_id)
+                text = await self._send_reply(text, chat_id)
                 if generation == self.generation:
                     print(f"{'Terminal reply' if self.local_input else 'Chat sent'}: generation={generation}", file=sys.stderr, flush=True)
                     messages.append({"role": "assistant", "content": text})
@@ -762,7 +779,7 @@ class Agent:
                 text = "本轮预算已用尽，未确认任务完成。"
             if generation == self.generation:
                 try:
-                    await self._send_reply(text,chat_id)
+                    text = await self._send_reply(text,chat_id)
                     if generation == self.generation:
                         self.history.append({"role":"assistant","content":text})
                 except (BridgeError,OSError):
@@ -784,6 +801,11 @@ class Agent:
                         await self._send_reply(movement_loop.final_text(),chat_id)
                     except (BridgeError,OSError):
                         tracing.trace.emit("movement_failure_reply_failed")
+                elif self.server_ai:
+                    try:
+                        await self._send_reply('AI 未完成任务：' + str(error)[:250], chat_id)
+                    except (BridgeError, OSError):
+                        tracing.trace.emit('server_ai_failure_reply_failed')
             else:
                 outcome = "superseded"
                 tracing.trace.emit("agent_result_discarded", reason="newer_generation_after_error",
@@ -822,6 +844,10 @@ class Agent:
             tracing.context.reset(token)
 
     async def _send_reply(self, text, chat_id):
+        if self.server_ai:
+            text = '[AI] ' + ' '.join(text.replace('\0','').split())
+            if len(text.encode('utf-16-le')) > 800:
+                text = text.encode('utf-16-le')[:794].decode('utf-16-le',errors='ignore')+'...'
         tracing.trace.emit("reply_prepared", text=text)
         if self.local_input:
             if chat_id != self._active_turn_id:
@@ -829,10 +855,11 @@ class Agent:
             print(f"Agent: {text}", flush=True)
             tracing.trace.emit('terminal_reply', text=text, chatId=chat_id)
             diagnostics.emit('terminal_reply', chatId=chat_id)
-            return
+            return text
         tracing.trace.emit("send_chat_start", text=text, chatId=chat_id)
-        reply = await asyncio.to_thread(self.bridge.command, "send_chat", text=text, chatId=chat_id)
+        reply = await asyncio.to_thread(self.chat_bridge.command, "send_ai_chat" if self.server_ai else "send_chat", text=text, chatId=chat_id)
         tracing.trace.emit("send_chat_result", reply=reply)
+        return text
 
     async def close(self):
         self.generation += 1
@@ -909,10 +936,11 @@ async def terminal_loop(agent, bridge, events, stream=None):
         stopped.set()
 
 
-async def run(port, timeout, local_input=False):
+async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=18779):
     llm = LLMClient()
     bridge = None
     agent = None
+    execution = None
     try:
         loop = asyncio.get_running_loop()
         events = asyncio.Queue()
@@ -922,14 +950,26 @@ async def run(port, timeout, local_input=False):
             raise BridgeError('Local input requires local_terminal_input_v1; load Mod 0.1.36+')
         if not local_input and not {"chat_events", "send_chat"}.issubset(bridge.hello.get("capabilities", [])):
             raise BridgeError("Chat requires CompanionBridge 0.1.17+; loaded client lacks chat capabilities")
-        agent = Agent(bridge, llm, local_input=local_input)
+        if server_ai:
+            if local_input:
+                raise ValueError('--server-ai cannot be combined with --local-input')
+            if 'local_ai_chat_v1' not in bridge.hello.get('capabilities', []):
+                raise BridgeError('Server AI chat requires local_ai_chat_v1; rebuild/reload the graphical client Mod')
+            from server_ai import ServerAiBridge
+            execution = await asyncio.to_thread(ServerAiBridge, port=ai_port, timeout=timeout)
+            if not {'server_ai_reads_v1','server_ai_actions_v1'}.issubset(execution.hello.get('capabilities', [])):
+                raise BridgeError('Current server AI reads/actions capabilities unavailable; no fallback to human control')
+            agent = Agent(execution, llm, chat_bridge=bridge)
+        else:
+            agent = Agent(bridge, llm, local_input=local_input)
         if tracing.trace.enabled:
             print(f"Local trace (contains chat/context): {tracing.trace.path}", file=sys.stderr, flush=True)
         if local_input:
             print('Agent ready; enter one instruction per line. New input cancels the previous turn. /quit or Ctrl+C exits.', flush=True)
             await terminal_loop(agent, bridge, events)
             return
-        print("Agent ready; other players' chat triggers replies. Ctrl+C closes the session.", flush=True)
+        print("Agent ready; local game chat !ai <task> controls the server AI. Ctrl+C cancels and closes both channels."
+              if server_ai else "Agent ready; other players' chat triggers replies. Ctrl+C closes the session.", flush=True)
         while True:
             # This timeout checks connection health only; chat itself is pushed immediately.
             try:
@@ -938,9 +978,13 @@ async def run(port, timeout, local_input=False):
             except asyncio.TimeoutError:
                 if bridge._failure:
                     raise bridge._failure
+                if execution is not None and execution._closed and (agent.task is None or agent.task.done()):
+                    raise BridgeError('Server AI connection closed; restart explicitly after checking identity/outcome')
     finally:
         if agent:
             await agent.close()
+        if execution:
+            execution.close()
         if bridge:
             bridge.close()
         await llm.close()
@@ -951,16 +995,20 @@ def main():
     parser.add_argument("--port", type=int, default=18777)
     parser.add_argument("--timeout", type=float, default=2)
     parser.add_argument("--local-input", action="store_true", help="Read human instructions from stdin; replies go to terminal (Mod 0.1.36+)")
+    parser.add_argument('--server-ai', action='store_true', help='Local !ai game chat -> existing Agent/Lua -> separate server AI execution backend')
+    parser.add_argument('--ai-port', type=int, default=18779, help='Server AI IPC port; --port remains the graphical chat Bridge')
     parser.add_argument("--log-file", type=str, help="Local bounded JSONL runtime log; default .local/diagnostics/agent-runtime-*.jsonl")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535 or not 0 < args.timeout < float("inf"):
         parser.error("port must be 1..65535 and timeout finite/positive")
+    if args.server_ai and (args.local_input or not 1 <= args.ai_port <= 65535 or args.ai_port == args.port):
+        parser.error('--server-ai requires a distinct valid --ai-port and cannot use --local-input')
     log_path = diagnostics.configure(args.log_file)
     if log_path:
         print(f"Runtime log: {log_path}", file=sys.stderr, flush=True)
-    diagnostics.emit("session_start", port=args.port, timeout=args.timeout, inputMode='terminal' if args.local_input else 'game_chat')
+    diagnostics.emit("session_start", port=args.port, timeout=args.timeout, inputMode='server_ai_chat' if args.server_ai else 'terminal' if args.local_input else 'game_chat')
     try:
-        asyncio.run(run(args.port, args.timeout, local_input=args.local_input))
+        asyncio.run(run(args.port, args.timeout, local_input=args.local_input, server_ai=args.server_ai, ai_port=args.ai_port))
     except KeyboardInterrupt:
         return 130
     except (LLMError, BridgeError, OSError) as error:

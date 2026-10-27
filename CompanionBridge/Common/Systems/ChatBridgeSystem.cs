@@ -13,6 +13,7 @@ public sealed class ChatBridgeSystem : ModSystem
     {
         if (Main.dedServ) return;
         On_ChatHelper.DisplayMessage += Receive;
+        On_ChatHelper.SendChatMessageFromClient += Submit;
         On_Main.NewText_string_byte_byte_byte += ReceiveLocal;
         On_Main.NewTextMultiline += ReceiveMultiline;
         On_ChatHelper.ShowCachedMessages += ReplayCached;
@@ -32,6 +33,15 @@ public sealed class ChatBridgeSystem : ModSystem
     private static bool InWorld => !Main.dedServ && !Main.gameMenu && Main.LocalPlayer.active
         && Main.netMode is NetmodeID.SinglePlayer or NetmodeID.MultiplayerClient
         && !(Main.netMode == NetmodeID.MultiplayerClient && Netplay.Disconnect);
+
+    private static void Submit(On_ChatHelper.orig_SendChatMessageFromClient orig, ChatMessage message)
+    {
+        // Own replies are suppressed, even if their text begins with !ai.
+        GameMessageCapture.Run(() => orig(message), () => {
+            if(InWorld&&Main.netMode==NetmodeID.MultiplayerClient)
+                CompanionBridge.Server?.PublishLocalAiCommand(Main.myPlayer,Main.LocalPlayer.name,message.Text);
+        });
+    }
 
     private static void PublishSystem(string text, string source)
     {
@@ -61,6 +71,7 @@ public sealed class ChatBridgeSystem : ModSystem
     {
         if (Main.dedServ) return;
         On_ChatHelper.DisplayMessage -= Receive;
+        On_ChatHelper.SendChatMessageFromClient -= Submit;
         On_Main.NewText_string_byte_byte_byte -= ReceiveLocal;
         On_Main.NewTextMultiline -= ReceiveMultiline;
         On_ChatHelper.ShowCachedMessages -= ReplayCached;

@@ -5,6 +5,8 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
 $sources = @(
+    (Join-Path $repo 'CompanionBridge/AiChatInput.cs'),
+    (Join-Path $PSScriptRoot 'AiChatOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/AtomicParameters.cs'),
     (Join-Path $repo 'CompanionBridge/AtomicAuthority.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/NativeAuthorityWorld.cs'),
@@ -57,7 +59,7 @@ if ($AuthorityNetworkOnly) {
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
 if ($ServerReadsOnly) { [ServerAiSharedReadTests]::Run(); [AtomicExtensionsOfflineTests]::Run(); return }
-if ($BridgeOnly) { [BridgeOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); [LocalInputOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); return }
+if ($BridgeOnly) { [AiChatOfflineTests]::Run(); [BridgeOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); [LocalInputOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); return }
 if ($InventoryOnly) { [InventoryOfflineTests]::Run(); return }
 if ($LandingProtocolHost) { [LandingNavigationOfflineTests]::RunProtocolHost(); return }
 if ($LandingOnly) { [LandingNavigationOfflineTests]::Run(); return }
