@@ -11,7 +11,7 @@ internal sealed class AiAtomicActions
 {
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
     internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Append("server_ai_actions_v1").ToArray();
-    internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true);
+    internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
     {
         string Validate(string operation, JsonElement arguments);
@@ -39,6 +39,7 @@ internal sealed class AiAtomicActions
         internal int Duration;
         internal object Handle;
         internal NativeResult Result;
+        internal string ReasonDetail;
     }
     private readonly Dictionary<string, Entry> entries = new(StringComparer.Ordinal);
     private Entry active;
@@ -50,7 +51,7 @@ internal sealed class AiAtomicActions
     private static object Snapshot(Entry e) => new {
         actionId = e.Id, operation = e.Operation, session = e.Owner.ToString("N"), generation = e.Generation,
         worldSessionId = e.World, actorId = e.ActorId, actorSlot = e.Slot, durationMs = e.Duration,
-        status = e.Status, executionState = e.Phase, reason = e.Reason,
+        status = e.Status, executionState = e.Phase, reason = e.Reason, reasonDetail = e.ReasonDetail,
         evidence = e.Operation == "select_hotbar_slot" ? (object)new { requestedHotbarKey = e.Key, targetSlot = e.Target, beforeSlot = e.Before,
             mutationAttempted = e.Attempted, selectionApplied = e.Applied } : e.Result?.Evidence,
         endEvidenceStatus = e.Phase == "terminal" ? e.End == null ? "unknown" : "known" : "not_ended", endEvidence = e.End
@@ -101,6 +102,9 @@ internal sealed class AiAtomicActions
     private void End(Entry e, string status, string reason, AiReadOnlyProtocol.Identity current, bool known)
     {
         e.Status = status; e.Reason = reason; e.Phase = "terminal";
+        e.ReasonDetail = e.Result?.ReasonDetail;
+        if(status=="unknown"&&e.Result!=null&&e.Result.Reason!=reason)
+            e.ReasonDetail=string.IsNullOrWhiteSpace(e.ReasonDetail)?e.Result.Reason:e.Result.Reason+": "+e.ReasonDetail;
         if (known) e.End = new { phase = "ServerAI_game_thread_no_input", gameUpdate = current.GameUpdate,
             worldSessionId = e.World, actorId = e.ActorId, actorGeneration = e.Generation, actorSlot = e.Slot,
             inputsAcquired = false, selectedSlot = current.SelectedSlot, selectedHotbarKey = HotbarSlots.KeyForInventorySlot(current.SelectedSlot),
@@ -118,7 +122,8 @@ internal sealed class AiAtomicActions
             try { e.Result = executor.Cancel(current, e.Handle); }
             catch { End(e, "unknown", "native_cleanup_unconfirmed", current, false); return; }
             if (!e.Result.InputsReleased) { End(e, "unknown", "native_inputs_not_released", current, false); return; }
-            if (status == "cancelled" && current.CanAct && e.Result.Status == "completed" && e.Result.EffectVerified) status = "completed";
+            if (status == "cancelled" && current.CanAct && e.Result.Status == "completed" && e.Result.EffectVerified)
+            { status = "completed"; reason = e.Result.Reason; }
         }
         End(e, status, reason, current, true);
     }
@@ -141,7 +146,9 @@ internal sealed class AiAtomicActions
                 e.Result = executor.Poll(current, e.Handle);
                 if (e.Result.Status == "running") return;
                 bool verified = e.Result.Status != "completed" || e.Result.EffectVerified;
-                End(e, verified && e.Result.InputsReleased ? e.Result.Status : "unknown", e.Result.Reason, current, e.Result.InputsReleased);
+                string reason = !e.Result.InputsReleased ? "native_inputs_not_released"
+                    : !verified ? "native_effect_unconfirmed" : e.Result.Reason;
+                End(e, verified && e.Result.InputsReleased ? e.Result.Status : "unknown", reason, current, e.Result.InputsReleased);
             }
             catch
             {

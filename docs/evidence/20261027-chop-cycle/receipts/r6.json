@@ -1,0 +1,245 @@
+{
+ "status": "completed",
+ "actions": 0,
+ "actionState": "idle",
+ "lastAction": null,
+ "logs": [],
+ "value": {
+  "items": [
+   {
+    "key": "Terraria/CopperShortsword",
+    "slot": 0,
+    "name": "铜短剑",
+    "stack": 1
+   },
+   {
+    "key": "Terraria/CopperPickaxe",
+    "slot": 1,
+    "name": "铜镐",
+    "stack": 1
+   },
+   {
+    "key": "Terraria/CopperAxe",
+    "slot": 2,
+    "name": "铜斧",
+    "stack": 1
+   }
+  ],
+  "buffs": 0,
+  "equipmentSlots": 20,
+  "emptySlots": 56,
+  "sampleEmpty": {
+   "empty": true,
+   "slot": 3
+  },
+  "inventoryKeys": [
+   "life",
+   "mount",
+   "immuneTime",
+   "equipmentScope",
+   "movement",
+   "miscEquipment",
+   "source",
+   "name",
+   "customState",
+   "buffs",
+   "dyes",
+   "id",
+   "ghost",
+   "hotbarInventorySlots",
+   "dead",
+   "inventoryTokenStatus",
+   "velocityPixelsPerTick",
+   "scope",
+   "buffScope",
+   "breath",
+   "equipment",
+   "lifeMax",
+   "miscDyes",
+   "breathMax",
+   "mana",
+   "boundsWorldPixels",
+   "statDefense",
+   "positionWorldPixels",
+   "direction",
+   "hotbarKeyBindings",
+   "immune",
+   "inventory",
+   "hotbarNumbering",
+   "selectedSlot",
+   "selectedHotbarKey",
+   "manaMax"
+  ],
+  "treeCount": 39,
+  "trees": [
+   {
+    "distancePixels": 44.687805,
+    "typeId": 5,
+    "y": 210,
+    "x": 2103,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 48.79549,
+    "typeId": 5,
+    "y": 206,
+    "x": 2103,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 50.08992,
+    "typeId": 5,
+    "y": 208,
+    "x": 2102,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 51.662365,
+    "typeId": 5,
+    "y": 209,
+    "x": 2102,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 53.488316,
+    "typeId": 5,
+    "y": 207,
+    "x": 2102,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 57.801384,
+    "typeId": 5,
+    "y": 210,
+    "x": 2102,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 61.03278,
+    "typeId": 5,
+    "y": 206,
+    "x": 2102,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 66.068146,
+    "typeId": 5,
+    "y": 208,
+    "x": 2101,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 71.42129,
+    "typeId": 5,
+    "y": 205,
+    "x": 2102,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 83.60024,
+    "typeId": 5,
+    "y": 204,
+    "x": 2102,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 96.89685,
+    "typeId": 5,
+    "y": 203,
+    "x": 2102,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 98.045906,
+    "typeId": 5,
+    "y": 208,
+    "x": 2099,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 102.20078,
+    "typeId": 5,
+    "y": 210,
+    "x": 2099,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 104.062485,
+    "typeId": 5,
+    "y": 206,
+    "x": 2099,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 106.04244,
+    "typeId": 5,
+    "y": 203,
+    "x": 2101,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 110.909874,
+    "typeId": 5,
+    "y": 202,
+    "x": 2102,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 114.03947,
+    "typeId": 5,
+    "y": 208,
+    "x": 2098,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 114.73883,
+    "typeId": 5,
+    "y": 209,
+    "x": 2098,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 115.57249,
+    "typeId": 5,
+    "y": 207,
+    "x": 2098,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 117.630775,
+    "typeId": 5,
+    "y": 210,
+    "x": 2098,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 119.25183,
+    "typeId": 5,
+    "y": 206,
+    "x": 2098,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 124.88795,
+    "typeId": 5,
+    "y": 205,
+    "x": 2098,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 125.39936,
+    "typeId": 5,
+    "y": 201,
+    "x": 2102,
+    "contentKey": "Terraria/Trees"
+   },
+   {
+    "distancePixels": 130.0346,
+    "typeId": 5,
+    "y": 208,
+    "x": 2097,
+    "contentKey": "Terraria/Trees"
+   }
+  ]
+ }
+}

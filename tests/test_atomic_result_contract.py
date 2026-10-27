@@ -18,6 +18,23 @@ from test_agent import Model, event, final, tool
 from test_atomic_operations import Game
 
 
+class ReasonProjectionTests(unittest.TestCase):
+    def test_reason_and_diagnostic_detail_survive_python_and_json_projection(self):
+        for status, reason, detail in (
+            ('completed', 'native_tile_destroyed', None),
+            ('failed', 'native_tool_damage_refused', '保护判定后的伤害为零：目标 (12,34)。'),
+            ('cancelled', 'explicit_stop', None),
+            ('unknown', 'native_effect_unconfirmed', '观察仍不足'),
+        ):
+            with self.subTest(status=status):
+                receipt = atomic.result(dict(status=status, reason=reason, reasonDetail=detail, actionId='id'), 1)
+                restored = json.loads(json.dumps(receipt, ensure_ascii=False))
+                self.assertEqual(reason, restored['reason'])
+                self.assertEqual(detail, restored['reasonDetail'])
+                self.assertEqual(status == 'completed', restored['completed'])
+                self.assertEqual(status == 'cancelled', restored['cancelled'])
+
+
 class StopContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_terminal_transition_between_poll_and_renew_requires_same_identity_and_release(self):
         for mode in ('completed', 'failed', 'missing_release', 'new_owner', 'still_running'):

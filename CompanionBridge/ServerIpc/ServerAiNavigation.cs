@@ -15,6 +15,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal float Target, StartX;
         internal int Session, Generation, Updates;
         internal string Status="running", Reason="navigation_accepted";
+        internal string ReasonDetail;
         internal ulong? Tick;
         internal NavigationSnapshot Snapshot;
     }
@@ -77,7 +78,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 if(!Running)return; // Native death/retirement may have stopped the driver.
                 if(!injected)throw new InvalidOperationException("Audited G4 movement boundary not reached.");
                 navigation.After(p);run.Snapshot=navigation.Snapshot;
-                if(run.Snapshot.Status=="failed")Stop("failed",run.Snapshot.Reason);
+                if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.Reason;Stop("failed","native_navigation_failed");}
                 else if(run.Snapshot.Status=="arrived")
                 {
                     var terrain=TerrainReader.Read(p);
@@ -88,7 +89,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 else if(run.Updates>=1800)Stop("timeout","navigation_frame_budget");
                 if(Running)NetworkStateSync.Tick(p);else NetworkStateSync.Full(p);
             }
-            catch(Exception e){Stop("failed",e.Message);}
+            catch(Exception e){run.ReasonDetail=e.Message;Stop("failed","native_navigation_exception");}
             finally{Release();executing=injected=false;}
         }
     }

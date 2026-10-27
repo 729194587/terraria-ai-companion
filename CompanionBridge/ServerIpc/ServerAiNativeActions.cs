@@ -83,7 +83,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(!ReferenceEquals(navigation.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ServerAiNavigation.Run)h.Context;
             return new(c.Status,c.Reason,new{targetX=c.Target,startX=c.StartX,x=p.position.X,y=p.position.Y,vx=p.velocity.X,vy=p.velocity.Y,
-                updates=c.Updates,navigation=c.Snapshot,arrived=c.Status=="completed",effectStatus="native_navigation_observed"},Released(p),c.Status=="completed",InputsAcquired:c.Updates>0);
+                updates=c.Updates,navigation=c.Snapshot,arrived=c.Status=="completed",effectStatus="native_navigation_observed"},Released(p),c.Status=="completed",InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);
         }
         if(h.Operation=="use_item")
         {
@@ -99,10 +99,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var mine=(ActorMining.Context)h.Context;
         bool destroyed=mine.Destroyed&&!mine.ExternalChange&&WorldGen.InWorld(mine.X,mine.Y)&&!Main.tile[mine.X,mine.Y].HasTile;
         string phase=mine.Phase switch{ActionPhase.Running=>"running",ActionPhase.Completed=>"completed",ActionPhase.Cancelled=>"cancelled",ActionPhase.TimedOut=>"timeout",ActionPhase.Stale=>"unknown",_=>"failed"};
-        return new(phase,mine.Reason+": "+mine.Detail,new{nativeActionId=mine.Id,mine.X,mine.Y,mine.TileType,mine.ExpectedType,mine.Ticks,
+        return new(phase,AiActionReasons.Mining(phase,mine.Reason.ToString()),new{nativeActionId=mine.Id,mine.X,mine.Y,mine.TileType,mine.ExpectedType,mine.Ticks,
             mine.Swings,mine.Strikes,mine.PeakDamage,mine.Transforms,toolKind=mine.Axe>0?"axe":"pickaxe",pick=mine.Pick,axe=mine.Axe,nativeDestroyed=mine.Destroyed,targetAbsent=destroyed,
             targetChanged=mine.ExternalChange,destroyedByActor=destroyed,effectStatus=destroyed?"native_tile_destroyed":mine.Ticks==0?"not_started":"not_confirmed"},
-            Released(p)&&p.itemAnimation==0&&p.itemTime==0,phase=="completed"&&destroyed,InputsAcquired:mine.Ticks>0);
+            Released(p)&&p.itemAnimation==0&&p.itemTime==0,phase=="completed"&&destroyed,InputsAcquired:mine.Ticks>0,ReasonDetail:string.IsNullOrWhiteSpace(mine.Detail)?null:mine.Detail);
     }
     public Result Cancel(AiReadOnlyProtocol.Identity identity,object value)
     {

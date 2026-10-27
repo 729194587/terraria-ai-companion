@@ -58,9 +58,29 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File experiments/virtual-play
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File experiments/virtual-player-engine-hooks/verify-native-mining.ps1 -PackagePath .local/companion-g85-build/Mods/CompanionBridge.tmod -ModName CompanionBridge -Port 27883
 ```
 
-## Host & Play 待执行验收
+## 补录：0.1.51 Host & Play 基础采集实机通过
 
-本轮 **0.1.51 图形 Host & Play 尚未执行**。上面的 0.1.50 实机成功是用户提供的 R1/镐挖基线，不能计入铜斧通过。现有启动 profile 仍使用原已部署包；新构建位于 `.local/companion-g85-build/Mods/CompanionBridge.tmod`，需退出游戏后部署并校验启动脚本 hash，或用现有 prepare 脚本创建新 profile。不要直接覆盖正在运行的包。
+用户提供 `runs/20261027-chop-cycle/` 的 2026-10-27 实机记录，现逐字节归档于
+[原始证据目录](evidence/20261027-chop-cycle/verdict.md)，16 个文件的路径、长度及 SHA-256 见
+[manifest](evidence/20261027-chop-cycle/manifest.json)。源目录保留，历史回执中的 `None: ` 未重写。
+这是 Host & Play 实机，区别于上文无真人客户端的隔离原生测试。
+
+| 已通过行为 | 对应原始回执 |
+|---|---|
+| 新角色铜短剑、铜镐、铜斧各一件，槽 0/1/2 | [r6](evidence/20261027-chop-cycle/receipts/r6.json) |
+| 铜斧 mine_tile(2103,210)，274 ticks、9 swings、13 strikes、进度104，指定树格变空 | [r8](evidence/20261027-chop-cycle/receipts/r8.json) |
+| 世界中观察到 Terraria/Wood ×2，距 AI 约66像素 | [r9](evidence/20261027-chop-cycle/receipts/r9.json) |
+| 导航目标 x=33668，实际到 x=33675.117，背包新增 Wood ×2，近处掉落列表清空 | [r10](evidence/20261027-chop-cycle/receipts/r10.json) |
+| 铜斧 use_item 单次原生周期完成，Starts=1、AnimationPeak=29、cycleVerified=true；effectStatus 仍为 unconfirmed | [r11](evidence/20261027-chop-cycle/receipts/r11.json) |
+| 铜镐挖地面 (2106,210)：Grass→Dirt→空，31 ticks、2 strikes，背包新增 DirtBlock ×1 | [r12](evidence/20261027-chop-cycle/receipts/r12.json) |
+
+首次原生距离检查拒绝，Ticks/Swings/Strikes=0；显式导航靠近后再次发起才成功（[r7](evidence/20261027-chop-cycle/receipts/r7.json)、r8）。不把此记录概括为“任意80像素内必可达”。
+Wood ×2 入包由库存增量直接确认，附近掉落清空是辅助证据；没有独立拾取动作回执。
+这证明基础的分段导航、砍树、靠近拾取和工具使用闭环；不是自主寻找/规划/连续采集完整任务、整片树林清理或复杂环境验收。
+
+## 新版回执原因修复与后续验收
+
+**0.1.51 基础采集已由上节实机证据确认；0.1.52 的原因码修复尚未进行图形验收**，见 [回执原因说明](ACTION_RECEIPT_REASONS.md)。新构建位于 `.local/companion-g85-build/Mods/CompanionBridge.tmod`；当前启动 profile 未随本次构建自动替换。需退出游戏后部署并校验启动脚本 hash，或用现有 prepare 脚本创建新 profile。不要直接覆盖正在运行的包。下列步骤保留作新版重验入口。
 
 1. 启动 0.1.51，进入 Host & Play，核对真实 AI 铜斧所在槽（新角色通常为游戏键 3）。停止 Agent 自动动作，下面脚本直接使用现有 Lua Runtime，不调用模型。
 2. 在树外先执行空挥，观察一次原生动画和自然结束，查看结果 `Starts=1 / cycleVerified=true / inputsReleased`。不得把这次动画算作砍树。

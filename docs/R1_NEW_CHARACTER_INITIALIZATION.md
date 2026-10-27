@@ -1,6 +1,7 @@
 # R1：服务器 AI 新角色初始化
 
 正式包版本：CompanionBridge 0.1.50。
+后续 0.1.51 Host & Play 已确认新角色铜短剑、铜镐、铜斧各一件，见 [实机 r6 回执](evidence/20261027-chop-cycle/receipts/r6.json)；该结果不替代所有存档/重生边界验收。
 
 ## 修复边界
 

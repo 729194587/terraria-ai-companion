@@ -11,6 +11,7 @@ if($PackagePath){
 }
 $sources+=@(Join-Path $repo 'tests/ServerAiNativeActionOfflineTests.cs')
 $sources+=@(Join-Path $repo 'tests/ServerAiChatProtocolTests.cs')
+$sources+=@(Join-Path $repo 'CompanionBridge/ServerIpc/AiActionReasons.cs')
 Add-Type -Path $sources -ReferencedAssemblies $references
 [ServerAiIpcOfflineTests]::Run()
 [ServerAiAtomicOfflineTests]::Run()

@@ -74,7 +74,8 @@ internal static class TreeMiningSelfTest
         int drops=Main.item.Where(i=>i.active&&i.type==ItemID.Wood).Sum(i=>i.stack)-dropsBefore;
         Check(c.Phase==ActionPhase.Completed&&c.Axe>0&&c.Swings>0&&c.Strikes>1&&c.PeakDamage>=100
             &&c.Destroyed&&!c.ExternalChange&&!Main.tile[x,y].HasTile&&Released(),"native tree strike did not complete: "+ActorMining.Summary());
-        Check(result.Status=="completed"&&result.EffectVerified&&result.InputsReleased,"API did not confirm native target destruction/release");
+        Check(result.Status=="completed"&&result.Reason=="native_tile_destroyed"&&result.ReasonDetail==null
+            &&result.EffectVerified&&result.InputsReleased,"API did not confirm native target destruction/release/reason");
         Check(remaining==0&&drops>0,"tree did not fully fall or no real wood drops were observed");
         Check(p.inventory.Where(i=>i.type==ItemID.Wood).Sum(i=>i.stack)==woodBefore,"target destruction was conflated with collection");
         verifyIsolation(); // Explicit ItemCheck frames must not touch human cursor/globals.

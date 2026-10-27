@@ -10,12 +10,12 @@ public static class ServerAiNativeActionOfflineTests
     private sealed class Executor : AiAtomicActions.IExecutor
     {
         internal int Starts,Cancels,Shutdowns;
-        internal bool ThrowStart, ThrowCancel;
+        internal bool ThrowStart, ThrowCancel, CompleteOnCancel;
         internal AiAtomicActions.NativeResult Result=new("running","native_pending",null,false);
         public string Validate(string op,JsonElement args)=>args.TryGetProperty("bad",out _)?"invalid_arguments":null;
         public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string actionId){Starts++;if(ThrowStart)throw new Exception("partial native start");return new object();}
         public AiAtomicActions.NativeResult Poll(AiReadOnlyProtocol.Identity id,object handle)=>Result;
-        public AiAtomicActions.NativeResult Cancel(AiReadOnlyProtocol.Identity id,object handle){Cancels++;if(ThrowCancel)throw new Exception("native cleanup uncertain");return Result with{Status="cancelled",InputsReleased=true};}
+        public AiAtomicActions.NativeResult Cancel(AiReadOnlyProtocol.Identity id,object handle){Cancels++;if(ThrowCancel)throw new Exception("native cleanup uncertain");return Result with{Status=CompleteOnCancel?"completed":"cancelled",InputsReleased=true};}
         public void Shutdown(){Shutdowns++;}
     }
     private sealed class Fixture
@@ -40,6 +40,36 @@ public static class ServerAiNativeActionOfflineTests
     }
     public static void Run()
     {
+        Check(AiActionReasons.Mining("completed","None")=="native_tile_destroyed","mining success translates outcome rather than failure enum");
+        foreach(var pair in new[]{("InvalidTarget","invalid_target"),("InvalidTool","invalid_tool"),("TargetChanged","target_changed"),
+            ("NativeRefused","native_use_refused"),("NoPickPower","native_tool_damage_refused"),("NativeException","native_mining_exception"),
+            ("ExplicitStop","explicit_stop"),("Deadline","native_mining_deadline")})
+            Check(AiActionReasons.Mining("failed",pair.Item1)==pair.Item2,"native reason code mapping "+pair.Item1);
+        Check(AiActionReasons.Mining("failed","None")=="native_mining_unconfirmed"
+            &&AiActionReasons.Mining("unknown","None")=="native_mining_state_unknown","absence of failure code cannot imply success");
+        foreach(var result in new[]{
+            new AiAtomicActions.NativeResult("completed","native_tile_destroyed",null,true,true),
+            new AiAtomicActions.NativeResult("failed","native_tool_damage_refused",null,true,ReasonDetail:"保护判定后的伤害为零：目标 (12,34)。"),
+            new AiAtomicActions.NativeResult("cancelled","explicit_stop",null,true),
+            new AiAtomicActions.NativeResult("unknown","native_context_changed",null,false)})
+        {
+            var f=new Fixture();string id=f.Start();f.Native.Result=result;f.Tick();var a=f.Action(id);
+            Check(a.GetProperty("status").GetString()==result.Status
+                &&a.GetProperty("reason").GetString()==(result.InputsReleased?result.Reason:"native_inputs_not_released")
+                &&a.GetProperty("reasonDetail").GetString()==(result.InputsReleased?result.ReasonDetail:result.Reason),"JSON preserves stable reason and diagnostic detail for "+result.Status);
+        }
+        {
+            var f=new Fixture();string id=f.Start();f.Native.Result=new("completed","native_tile_destroyed",null,true,false);f.Tick();
+            Check(f.Action(id).GetProperty("status").GetString()=="unknown"&&f.Action(id).GetProperty("reason").GetString()=="native_effect_unconfirmed"
+                &&f.Action(id).GetProperty("reasonDetail").GetString()=="native_tile_destroyed",
+                "unverified completion cannot retain a success reason");
+        }
+        {
+            var f=new Fixture();string id=f.Start();f.Native.CompleteOnCancel=true;
+            f.Native.Result=new("completed","native_tile_destroyed",null,true,true);f.Send("cancel",id);
+            Check(f.Action(id).GetProperty("status").GetString()=="completed"&&f.Action(id).GetProperty("reason").GetString()=="native_tile_destroyed",
+                "verified completion winning cancellation race retains success reason");
+        }
         foreach(string op in new[]{"navigate_to_x","use_item","mine_tile"})
         {
             var f=new Fixture();string id=f.Start(op);

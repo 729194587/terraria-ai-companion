@@ -2,6 +2,7 @@
 
 当前增量：PR #25 / CompanionBridge **0.1.51** 增加铜斧空挥及原生树干砍伐。
 实现、分层证据和实机步骤见 [R2/R3 验证说明](R2_R3_COPPER_AXE.md)；下方历史验证不代表本轮图形验收。
+已补录 0.1.51 的 Host & Play 基础采集通过记录；**0.1.52** 将成功/失败原因码与诊断详情分离，见 [回执原因说明](ACTION_RECEIPT_REASONS.md)。
 
 基线：PR #22 `899417b`；独立分支 `codex/server-ai-actions`，正式包 `0.1.44`。
 本次在既有 G8.2 读接口和动作执行适配上扩展，不引入另一套 Lua Runtime、

@@ -12,7 +12,7 @@ internal static class ActorItemUse
     {
         internal Player Actor;internal Item Item;internal string World;internal long Generation;
         internal int Slot,Type,InitialStack,Ticks,AnimationPeak,TimePeak,ToolPeak,UsesPeak,Starts;
-        internal string Phase="running",Reason="";internal bool Consumed;
+        internal string Phase="running",Reason="native_item_pending";internal bool Consumed;
     }
     internal static Context Current;
     private static Context executing;
@@ -98,15 +98,15 @@ internal static class ActorItemUse
         if(!Running||!ReferenceEquals(c.Actor,p))return;
         if(!Binding(c))
         {
-            c.Phase="stale";c.Reason="world/generation/ownership changed; no writes";
+            c.Phase="stale";c.Reason="actor_binding_changed";
             if(c.World==ProbeSession.WorldSession&&c.Generation==ProbeSession.ActorGeneration)ProbeSession.Quarantine("G6 ownership changed; no item/input writes.");
             return;
         }
         bool nativeEmpty=c.Consumed&&c.Item.IsAir;
         if(p.dead||p.ghost||p.CCed||p.noItems){Retire(p);return;}
         if(p.selectedItem!=c.Slot||!ReferenceEquals(p.inventory[c.Slot],c.Item)||c.Item.type!=c.Type&&!nativeEmpty)
-        {Retire(p);c.Phase="cancelled";c.Reason="selected item/object changed";return;}
-        if(++c.Ticks>180){Retire(p);c.Phase="failed";c.Reason="native item timeout";return;}
+        {Retire(p);c.Phase="cancelled";c.Reason="selected_item_changed";return;}
+        if(++c.Ticks>180){Retire(p);c.Phase="failed";c.Reason="native_item_timeout";return;}
         try
         {
             executing=c;p.controlUseItem=c.Ticks==1;
@@ -121,9 +121,9 @@ internal static class ActorItemUse
             c.ToolPeak=Math.Max(c.ToolPeak,p.toolTime);c.UsesPeak=Math.Max(c.UsesPeak,p.ItemUsesThisAnimation);
             if(p.itemAnimation>before)c.Starts++;
             if(c.Ticks==1&&c.AnimationPeak>0||c.Ticks>1&&(p.itemAnimation==0||c.Ticks%6==0))Sync(p);
-            if(c.Ticks==1&&c.AnimationPeak==0){c.Phase="rejected";c.Reason="native CanUse/start refused";}
+            if(c.Ticks==1&&c.AnimationPeak==0){c.Phase="rejected";c.Reason="native_use_refused";}
             else if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0)
-            {c.Phase="completed";c.Reason="native animation/time drained";}
+            {c.Phase="completed";c.Reason="native_item_cycle_verified";}
             if(c.Phase!="running")
             {
                 p.controlUseItem=false;p.releaseUseItem=true;Sync(p);NetworkStateSync.Full(p);
@@ -153,8 +153,8 @@ internal static class ActorItemUse
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
         var c=Current;if(c==null||!ReferenceEquals(c.Actor,p)||c.Phase!="running")return;
-        if(!Binding(c)){c.Phase="stale";return;} // Unknown object/slot never receives a write.
-        c.Phase="cancelled";c.Reason="explicit stop/death/retirement";
+        if(!Binding(c)){c.Phase="stale";c.Reason="actor_binding_changed";return;} // Unknown object/slot never receives a write.
+        c.Phase="cancelled";c.Reason="actor_retired";
         p.controlUseItem=false;p.releaseUseItem=true;p.channel=false;
         // Cancellation only. Completed actions drain these counters in native code.
         p.itemAnimation=p.itemTime=p.reuseDelay=p.toolTime=0;
@@ -162,7 +162,7 @@ internal static class ActorItemUse
     internal static void Stop(Player p,string world,long generation)
     {lock(ProbeSession.Reservation.Gate){StopCore(p,world,generation);}}
     private static void StopCore(Player p,string world,long generation)
-    {Capture(p,world,generation);Retire(p);Sync(p);NetworkStateSync.Full(p);}
+    {Capture(p,world,generation);bool running=Running;Retire(p);if(running)Current.Reason="explicit_stop";Sync(p);NetworkStateSync.Full(p);}
     internal static string Summary()
     {
         var p=ProbeSession.Actor;if(p==null)return "AI 尚未载入。";

@@ -150,7 +150,7 @@ async def command(bridge, cmd, **args):
 
 
 def result(action, generation):
-    return {'valid': True, 'status': action['status'], 'reason': action['reason'],
+    return {'valid': True, 'status': action['status'], 'reason': action['reason'], 'reasonDetail': action.get('reasonDetail'),
             'operation': action.get('operation'), 'actionId': action['actionId'],
             'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'),
             'evidence': action.get('evidence'), 'endEvidence': action.get('endEvidence'),

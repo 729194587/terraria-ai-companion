@@ -77,7 +77,7 @@ internal static class ItemUseSelfTest
                 for(int i=1;ActorItemUse.Running&&i<190;i++)
                 {Frame();if(i==1)Check(!p.controlUseItem,"Single-use press was repeated on the next native item update.");}
                 var c=ActorItemUse.Current;
-                Check(c.Phase=="completed"&&c.Starts==1&&c.AnimationPeak>0&&p.itemAnimation==0&&p.itemTime==0&&!p.controlUseItem,
+                Check(c.Phase=="completed"&&c.Reason=="native_item_cycle_verified"&&c.Starts==1&&c.AnimationPeak>0&&p.itemAnimation==0&&p.itemTime==0&&!p.controlUseItem,
                     $"Native cycle failed for {type}: {c.Phase}/{c.Reason}, peaks={c.AnimationPeak}/{c.TimePeak}, starts={c.Starts}");
                 Check(type==ItemID.Apple?p.inventory[slot].stack==before-1:p.inventory[slot].stack==before,"Wrong native consumption.");
                 if(type==ItemID.Apple)Check(p.HasBuff(BuffID.WellFed),"Native food buff was skipped.");
