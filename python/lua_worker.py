@@ -5,6 +5,7 @@ No Bridge or game handles enter this process. Only bounded JSON crosses the pipe
 import json
 import math
 import re
+from pathlib import Path
 
 SOURCE_BYTES = 16_384
 REQUEST_BYTES = 16_384
@@ -12,6 +13,7 @@ VALUE_BYTES = 262_144
 FRAME_BYTES = VALUE_BYTES + 1024
 MAX_NODES = 20_000
 MAX_DEPTH = 24
+EXPLORATION_SOURCE = (Path(__file__).parent / "lua" / "explore.lua").read_text(encoding="utf-8")
 
 
 class ValueLimit(ValueError):
@@ -67,7 +69,7 @@ BOOTSTRAP = '''
     local current_line = 0
     local function mark(t, kind) tags[t] = kind; return t end
     local function kind(t) return tags[t] end
-    local function run(source, callback, progress, budget)
+    local function run(source, callback, progress, budget, exploration_source)
         local env = {type=type, tonumber=tonumber, tostring=tostring,
                      pairs=pairs, ipairs=ipairs, next=next, assert=assert, error=error}
         env.math = {floor=math.floor, tointeger=math.tointeger}
@@ -75,6 +77,8 @@ BOOTSTRAP = '''
                               object=function(t) return mark(t or {}, "object") end}
         env.api = function(name, args) return callback(name, args or {}, current_line) end
         env.log = function(message) return progress(message, current_line) end
+        local helper = assert(load(exploration_source, "exploration.lua", "t", env))
+        env.explore = helper(string.sub)
         local f, err = load(source, "companion.lua", "t", env)
         if not f then error(err, 0) end
         local used = 0
@@ -93,7 +97,7 @@ BOOTSTRAP = '''
 '''
 
 
-def worker(connection, source, limits):
+def worker(connection, source, limits, helper_source=None):
     from lupa import lua54 as module
     def deny(*args):
         raise AttributeError('Python access denied')
@@ -168,7 +172,7 @@ def worker(connection, source, limits):
         connection.send_bytes(encode({'type': 'log', 'id': logs, 'line': line, 'message': message}, REQUEST_BYTES))
 
     try:
-        value = plain(run(source, call, progress, limits.instructions), VALUE_BYTES)
+        value = plain(run(source, call, progress, limits.instructions, EXPLORATION_SOURCE if helper_source is None else helper_source), VALUE_BYTES)
         out = {'type': 'done', 'status': 'completed', 'value': value}
     except ValueLimit as exc:
         out = {'type': 'done', 'status': str(exc)}

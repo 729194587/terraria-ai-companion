@@ -76,9 +76,9 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.stderr=patch('sys.stderr',new_callable=io.StringIO);self.stderr.start()
         self.directory=tempfile.TemporaryDirectory()
-        self.aihost=AiHost();self.aihost.actions=True
+        self.aihost=getattr(self, "host_type", AiHost)();self.aihost.actions=True
         self.aihost.chat=True
-        self.aihost.perception=self._testMethodName == "test_model_can_observe_through_existing_agent_lua"
+        self.aihost.perception=self.aihost.perception or self._testMethodName == "test_model_can_observe_through_existing_agent_lua"
         self.chathost=ChatHost()
         self.threads=[]
         for host in (self.aihost,self.chathost):

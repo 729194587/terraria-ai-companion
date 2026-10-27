@@ -48,7 +48,7 @@ def observation_summary(name, result):
 
 def _observation_summary(name, result):
     """Keep decision inputs and coverage, not complete grids/inventory or custom data."""
-    summary=_fields(result, ('available','worldSessionId','gameUpdate','controlGeneration','reason'))
+    summary=_fields(result, ('available','worldSessionId','gameUpdate','controlGeneration','reason','actorGeneration','actorSlot','observedAtUnixMs','clock'))
     data=result.get('data')
     if isinstance(data,dict):
         summary.update(_fields(data, ('status','matchedCount','returnedCount','truncated','unknownCount','complete',
@@ -77,7 +77,7 @@ def _observation_summary(name, result):
                              for e in entities.get('items',[])[:8]]
         summary['entitiesOmittedFromLog']=max(0,len(entities.get('items',[]))-8)
     elif name in ('get_player_state','get_player_status','observe_terrain'):
-        player=result.get('player',result.get('state',data)) or {}
+        player=(data.get('state') if name=='observe_terrain' and isinstance(data,dict) else None) or result.get('player',result.get('state',data)) or {}
         summary['player']=_fields(player,('position','positionWorldPixels','boundsWorldPixels','velocity','velocityPixelsPerTick',
             'life','lifeMax','mana','manaMax','dead','ghost','selectedSlot','selectedHotbarKey','movement','inventorySummary'))
         if isinstance(player.get('selectedItem'),dict):
@@ -85,9 +85,26 @@ def _observation_summary(name, result):
             summary['player']['selectedItem']=_fields(item,('slot','typeId','contentKey','name','stack','prefix','hotbarKey'))
             summary['player']['selectedItem']['use']=_fields(item.get('use'),('pick','axe','hammer','damage','createTile','createWall','consumable'))
         summary['motion']=result.get('motion') or _fields(result.get('terrain'),('grounded','supported','playerWidth','playerHeight'))
+        if name=='observe_terrain' and isinstance(data,dict):
+            summary['motion']=_fields(data.get('terrain'),('grounded','supported','playerWidth','playerHeight','originX','originY'))
     elif name=='get_world_state' and isinstance(data,dict):
         summary.update(_fields(data,('environment','depth','depthLayer','progression')))
     return summary
+
+
+def exploration_report(value):
+    """Bounded Lua self-report for diagnostics; never upgrades task/action evidence."""
+    if not isinstance(value,dict) or value.get('kind')!='exploration_report':
+        return
+    summary=_fields(value,('kind','status','reason','distancePixels','reversals','noNovelSteps','start','finish','visited','identity','lastTileCoverage','actionStatus','actionReason'))
+    for collection,limit,fields in (
+        ('steps',8,('step','direction','targetX','fromX','toX','movedPixels','newHorizontalPixels','gameUpdate')),
+        ('decisions',8,('step','direction','targetX','basis')),
+        ('landmarks',32,('x','y','typeId','contentKey','gameUpdate','observedAtUnixMs'))):
+        items=value.get(collection)
+        if isinstance(items,list):
+            summary[collection]=[_fields(item,fields) for item in items[:limit]]
+    emit('lua_exploration_report', authority='script_self_report; correlate lua_api_result/endEvidence', report=summary)
 
 
 def tool_result(name, arguments, result, *, recovery=False):

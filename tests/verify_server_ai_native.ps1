@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[string]$PythonExecutable)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable)
 $ErrorActionPreference='Stop'
 if($Port -eq $IpcPort){throw 'Native game and AI IPC test ports must be distinct.'}
 $occupied=@([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object {$_.Port -in @($Port,$IpcPort)})
@@ -112,6 +112,7 @@ try {
         if($Agent){
             $agentArgs=@((Join-Path $repo 'tests/native_server_ai_agent.py'),'--port',"$IpcPort",'--output',"$profile/agent-native-result.json")
             if($LiveModel){$agentArgs+='--live-model'}
+            if($Exploration){$agentArgs+='--exploration'}
             & $PythonExecutable @agentArgs
             if($LASTEXITCODE -ne 0){throw "Existing Agent/model/Lua/native AI validation failed: $profile/agent-native-result.json"}
             $agentResult=Get-Content -LiteralPath "$profile/agent-native-result.json" -Raw|ConvertFrom-Json

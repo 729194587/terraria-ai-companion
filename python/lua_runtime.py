@@ -16,7 +16,7 @@ import evidence
 import atomic_operations as atomic
 from control import Bridge, BridgeError, command_owner
 from lua_worker import (worker, encode, decode, ValueLimit, SOURCE_BYTES,
-                        REQUEST_BYTES, VALUE_BYTES, FRAME_BYTES)
+                        REQUEST_BYTES, VALUE_BYTES, FRAME_BYTES, EXPLORATION_SOURCE)
 
 
 @dataclass(frozen=True)
@@ -104,6 +104,7 @@ class LuaRuntime:
             bundle = evidence.Bundle(self.evidence_root,metadata={'chat_event_id':chat_id,'lua_run_id':out['runId']})
         evidence_token = evidence.current.set(bundle)
         digest = bundle.source(source)
+        helper_digest = bundle.source(EXPLORATION_SOURCE)
         token = tracing.context.set({**tracing.context.get(), 'task_id': bundle.id,
                                     'lua_run_id': out['runId'], 'source_sha256': digest})
         call_token, call_open, call_meta, failure_call = None, False, {}, None
@@ -127,7 +128,7 @@ class LuaRuntime:
             out['trace'].append({key:row[key] for key in ('id','operation','line','status','valid','reason','elapsed_ms','error') if key in row})
             emit('lua_api_result' if result is not None else 'lua_api_error', **row)
             call_open = False
-        emit('lua_start', source_sha256=digest, source_bytes=len(source.encode()), limits=vars(limits), chat_id=chat_id)
+        emit('lua_start', exploration_helper_sha256=helper_digest, source_sha256=digest, source_bytes=len(source.encode()), limits=vars(limits), chat_id=chat_id)
 
         async def watch(task):
             while True:
@@ -197,7 +198,7 @@ class LuaRuntime:
                 return out
             context = mp.get_context('spawn')
             connection, child = context.Pipe(duplex=True)
-            process = context.Process(target=worker, args=(child, source, limits), daemon=True)
+            process = context.Process(target=worker, args=(child, source, limits, EXPLORATION_SOURCE), daemon=True)
             try:
                 process.start()
             finally:
@@ -350,6 +351,8 @@ class LuaRuntime:
             self.last_result = out
             if call_token is not None:
                 tracing.context.reset(call_token)
+            if out['status']=='completed':
+                diagnostics.exploration_report(out.get('value'))
             tracing.trace.emit('lua_end', **out)
             diagnostics.emit('lua_end', status=out['status'], calls=out['calls'], actions=out['actions'],
                  actionState=out['actionState'], lastAction=out['lastAction'], cleanup=out['cleanup'],

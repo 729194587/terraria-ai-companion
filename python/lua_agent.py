@@ -58,6 +58,8 @@ def server_contract(bridge):
             f['description'] = '用当前真实镐挖指定Tile；80像素保守检查加原生距离/镐力/保护规则，实际由本AI破坏才完成；不自动选工具/移动/挖邻块。'
         elif f['name'] == 'scan_entities':
             f['description'] = '服务器AI中心世界像素半径内的真实活跃NPC、掉落物、其他玩家；排除AI自身，先筛选排序再截断，无视线保证。entityRef绑定世界/AI代次/NPC实例，仅为观察标识。'
+        elif f['name'] == 'scan_tiles':
+            f['description'] += ' matchedCount/returnedCount/items按Tile格计数；一棵树占多格，不能把树木格数说成树的棵数。'
         elif f['name'] == 'observe_terrain':
             f['description'] = '读取服务器AI周围45×29碰撞格及同次AI状态；data.terrain含originX/originY/rows，data.state含centerWorldPixels；附bounds/legend/覆盖，非摄像机或材质图。'
         elif f['name'] == 'inspect_inventory':
@@ -81,7 +83,18 @@ Lua数组1起始；JSON null用json.null，空数组用json.array()，对象标�
 '''
     if {'observe_terrain', 'resolve_content', 'scan_tiles'} <= supported:
         instructions += '找附近Tile优先observe_terrain取得data.bounds，再resolve_content确认类型，然后scan_tiles使用该bounds（45×29=1305格）。世界像素转Tile可用math.floor(px/16)；整数参数接受2113或2113.0，不接受2113.5，不会静默取整。scan_tiles面积为(maxX-minX+1)*(maxY-minY+1)，必须<=4096；不要直接用左右60、上下共50格等超限范围。更大范围需有界分块，每次读取仍消耗预算；查询附近目标先用局部范围。只记录少量必要log，不遍历整个状态打印。\n'
+    if {'get_player_state', 'observe_terrain', 'scan_entities', 'scan_tiles', 'resolve_content', 'navigate_to_x'} <= supported:
+        instructions += EXPLORATION_INSTRUCTIONS
     return instructions + '\n当前后端API契约：\n' + json.dumps(definitions, ensure_ascii=False), [tool]
+
+
+EXPLORATION_INSTRUCTIONS = """
+自主探索MVP：当玩家明确要求开始/持续探索附近、向某方向探索时，优先一次execute_lua提交 return explore({direction='auto',maxSteps=6})。向左/右探索分别direction='left'/'right'；不要把普通观察、移动、聊天当探索授权。explore是随Runtime提供且可阅读的Lua组合函数，不是新游戏原子API，不要写api('explore',...)。
+参数仅direction=auto/left/right，maxSteps=1..8（默认6），stepPixels=64..128（默认128），maxDistance=64..1024（默认768）；不要求玩家提供逐步目标。循环自行观察、扫描、选择局部方向/缩短步长、调用原导航、核验结束证据/实际位移，并记录本次已走范围、重复访问、方向切换和有限树木格地标。默认仍受64次API/8次动作/60秒整轮预算约束，不是无限后台任务。
+explore内部持续执行，不要每走一步返回模型或等玩家；不要在模型轮中反复调用explore重置访问记忆或预算。一次用户探索指令最多调用一次explore；正常停止后简短报告停止原因/实际移动段数及范围，等待新指令。任何动作失败/超时/取消/unknown后不重新探索或绕过失败屏障。
+helper返回{kind='exploration_report',reason,steps,decisions,distancePixels,visited,start,finish,landmarks,lastTileCoverage,...}；steps是实际完成导航后读取的移动记录，landmarks计树木格而不是树，局部观察不代表全世界。step_limit/distance_limit表示本次有界探索结束；no_safe_direction/revisit_limit/reversal_limit/no_new_ground/no_progress表示保守停止；health_decreased/nearby_hostile等表示风险停止。value仍是脚本报告，动作完成以宿主lastAction/endEvidence为准；taskOutcome=unknown不声称世界探索完成。
+玩家发新!ai（包括!ai 停止）会沿用现有取消与输入释放机制撤销旧探索；停止指令本身不要启动新的移动。取消/预算异常可能没有完整report，依据宿主status/cleanup/日志如实说明。helper源码位于python/lua/explore.lua，模型仍可在现有授权、预算与原子API内编写其他完整Lua程序，但不要修改helper或尝试自动扩大本轮权限。
+"""
 
 
 def validate_arguments(arguments):
