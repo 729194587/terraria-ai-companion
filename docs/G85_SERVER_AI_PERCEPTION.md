@@ -1,5 +1,7 @@
 # G8.5：服务器 AI 世界观察
 
+后续 L1 语义聚合见 [局部语义世界感知](L1_SEMANTIC_WORLD.md)：复用本页五项 API，通过 `sense_world` 返回树干片段、矿脉和掉落物目标，保留覆盖与身份边界。
+
 同一PR开发线后续增加了[单窗口自主探索MVP](AUTONOMOUS_EXPLORATION_MVP.md)：
 一次聊天指令通过原Agent/Lua连续观察、导航、核验和有界停止。
 当前普通聊天默认入口需要0.1.49并重启客户端，见[无需前缀的对话与启动方式](PLAIN_LOCAL_CHAT.md)。

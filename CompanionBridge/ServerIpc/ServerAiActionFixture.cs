@@ -55,6 +55,21 @@ internal static class ServerAiActionFixture
                         Item.NewItem(p.GetSource_Misc("G85PerceptionFixture"),left*16+240,floor*16-32,16,16,ItemID.StoneBlock,3);
                     }
                     if(Program.LaunchParameters.ContainsKey("-companionlandingtest"))ServerAiLandingFixture.Run(p);
+                    if(Program.LaunchParameters.ContainsKey("-companionsemantictest"))
+                    {
+                        // Only this explicitly marked copied-world diagnostic may create fixtures.
+                        int treeX=left-4;
+                        for(int tx=treeX-3;tx<=treeX+3;tx++)for(int ty=floor-38;ty<=floor;ty++)
+                        {
+                            var tile=Main.tile[tx,ty];tile.ClearEverything();
+                            if(ty==floor){tile.HasTile=true;tile.TileType=TileID.Grass;}
+                        }
+                        if(!WorldGen.GrowTree(treeX,floor))throw new InvalidOperationException("Semantic native tree failed to grow");
+                        p.inventory[3].SetDefaults(ItemID.CopperAxe);
+                        for(int tx=left-10;tx<=left-9;tx++)
+                        {var tile=Main.tile[tx,floor+1];tile.HasTile=true;tile.TileType=TileID.Copper;}
+                        var diagonal=Main.tile[left-8,floor+2];diagonal.HasTile=true;diagonal.TileType=TileID.Copper;
+                    }
                     initialized=true;NetworkStateSync.Full(p);
                     File.WriteAllText(Path.Combine(Main.SavePath,"action-fixture.json"),JsonSerializer.Serialize(new{targetX=p.position.X+64,mineX=x,mineY=y,
                         initialLife=p.statLife,initialAppleStack=2,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));

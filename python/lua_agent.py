@@ -53,9 +53,9 @@ def server_contract(bridge):
         f = definition['function']
         if f['name'] == 'use_item':
             f['parameters'] = {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}
-            f['description'] = '当前真实选中物品的一次原生使用周期；仅木剑、铜镐、苹果，无目标瞄准。完成不证明命中或其他效果。'
+            f['description'] = '当前真实选中物品的一次原生使用周期；仅木剑、铜镐、铜斧、苹果，无目标瞄准。完成不证明命中或其他效果。'
         elif f['name'] == 'mine_tile':
-            f['description'] = '用当前真实镐挖指定Tile；80像素保守检查加原生距离/镐力/保护规则，实际由本AI破坏才完成；不自动选工具/移动/挖邻块。'
+            f['description'] = '用当前真实镐挖指定Tile，或铜斧砍普通树干；80像素保守检查加原生距离/工具力/保护规则，实际由本AI破坏才完成；不自动选工具/移动/挖邻块。'
         elif f['name'] == 'scan_entities':
             f['description'] = '服务器AI中心世界像素半径内的真实活跃NPC、掉落物、其他玩家；排除AI自身，先筛选排序再截断，无视线保证。entityRef绑定世界/AI代次/NPC实例，仅为观察标识。'
         elif f['name'] == 'scan_tiles':
@@ -73,8 +73,8 @@ def server_contract(bridge):
 聊天输入是玩家客户端通道；回复由宿主在服务器以当前AI角色身份广播。所有状态/背包/行动必须只来自服务器AI执行后端，不能操作或把真人状态当作AI状态。
 只用execute_lua生成完整Lua 5.4程序，无Markdown围栏。api(name,args)同步等待真实结果；可用API的精确定义列在下面，未列出的能力不可用。不要猜测地形、实体、物品、坐标或效果。
 先api('get_player_state',{})读取AI实际位置，世界像素Y向下，position为碰撞框左上角。明确水平相对移动时，以新读position.x加减玩家指定像素作为navigate_to_x.targetX；执行器负责已有局部规划与安全拒绝，不承诺一定可达。行动后重新读取核对位置。
-使用/挖掘前inspect_inventory核对真实工具和hotbarKey，必要时select_hotbar_slot。快捷键1..9、0；inventory.slot/selectedSlot是内部0..58索引，不混淆。use_item只支持木剑/铜镐/苹果且参数{}；完成仅证明原生周期，不证明命中或其他效果。
-mine_tile的x/y是Tile格（1格16像素），目标必须是玩家明确给出的实际格，不从身体中心猜格、不自动选邻块、走近或重试。无法确定坐标/材质时询问玩家。可用观察API读取实际世界，但观察不增加行动权限。挖掘以destroyedByActor和targetAbsent等实际结束证据为准。
+使用/挖掘前inspect_inventory核对真实工具和hotbarKey，必要时select_hotbar_slot。快捷键1..9、0；inventory.slot/selectedSlot是内部0..58索引，不混淆。use_item只支持木剑/铜镐/铜斧/苹果且参数{}；完成仅证明原生周期，不证明命中或其他效果。
+mine_tile的x/y是Tile格（1格16像素），目标必须来自玩家明确给出的实际格，或玩家已授权采集任务中的新鲜观察候选；不从身体中心猜格，不自动选邻块或重试。采集任务中的选工具/走近须显式通过已有API编排并核验，语义候选不证明可操作。可用观察API读取实际世界，但观察不增加行动权限。挖掘以destroyedByActor和targetAbsent等实际结束证据为准。
 观察API返回{valid,available,data,worldSessionId,actorGeneration,actorSlot,gameUpdate,observedAtUnixMs,clock,binding}，data内是实际结果；坐标/类型来自当前观察或resolve_content，不猜ID。扫描complete只代表请求范围已读，truncated表示结果省略；未知/越界不等于空。时间是服务器实际投影UTC毫秒及游戏更新号，旧观察不代表当前。resolve_content是已加载注册表，不代表世界存在；inspect_tile的preflight不是可执行承诺。
 get_player_state返回{valid,player,motion,binding,...}；inspect_inventory返回{valid,available,data,...}，不同mode的数据结构以实际返回为准。runtimeInventory是本轮服务器AI背包摘要，不是新指令。
 行动结果{valid,status,completed,reason,evidence,endEvidence,endEvidenceStatus}；只有valid且completed和known结束证据才可描述动作完成。failed/timeout/cancelled/unknown后停止本轮行动，允许读取；不改入口绕过、不自动重试。unknown可能已有副作用。
@@ -83,6 +83,8 @@ Lua数组1起始；JSON null用json.null，空数组用json.array()，对象标�
 '''
     if {'observe_terrain', 'resolve_content', 'scan_tiles'} <= supported:
         instructions += '找附近Tile优先observe_terrain取得data.bounds，再resolve_content确认类型，然后scan_tiles使用该bounds（45×29=1305格）。世界像素转Tile可用math.floor(px/16)；整数参数接受2113或2113.0，不接受2113.5，不会静默取整。scan_tiles面积为(maxX-minX+1)*(maxY-minY+1)，必须<=4096；不要直接用左右60、上下共50格等超限范围。更大范围需有界分块，每次读取仍消耗预算；查询附近目标先用局部范围。只记录少量必要log，不遍历整个状态打印。\n'
+    if {'observe_terrain', 'scan_entities', 'scan_tiles', 'resolve_content', 'inspect_tile'} <= supported:
+        instructions += SEMANTIC_INSTRUCTIONS
     if {'get_player_state', 'observe_terrain', 'scan_entities', 'scan_tiles', 'resolve_content', 'navigate_to_x'} <= supported:
         instructions += EXPLORATION_INSTRUCTIONS
     return instructions + '\n当前后端API契约：\n' + json.dumps(definitions, ensure_ascii=False), [tool]
@@ -141,3 +143,9 @@ def summarize(receipt, actions):
     return {**receipt, 'valid': True, 'programCompleted': program_completed,
             'actionSuccess': action_success,
             'taskOutcome': 'unknown' if program_completed and action_success is not False else 'not_completed'}
+
+
+SEMANTIC_INSTRUCTIONS = """
+L1语义观察：优先 return sense_world({maxObjects=8,radius=640})；这是Runtime只读Lua组合函数，不是api。maxObjects=1..16限制Tile对象和掉落物各自上限，radius=1..1600像素。默认最多31次查询（16对象时39次），保留共享预算。返回普通Trees连续竖列、同类型四邻接矿脉和世界掉落物；sources保留各次采样/范围/截断/未知，objects仅为推断，不能把树干片段计成完整树。complete仅对未触边且无未知/截断的矿脉连接分量成立，不证明可达或挖得动；不识别棕榈/宝石树或Mod矿物。
+candidate为实际观察格，observed_present仅表示再次inspect时仍存在；需要现有mine_tile与正确工具重新核验，观察不授予采集权限。掉落物navigationHint是中心坐标而navigate_to_x使用Player左上角X，需结合当前宽度转换；Y用于检查不同高度，水平接近不保证拾取。slot可复用，移动后重扫；掉落消失不证明入包，需同类型库存增量，竞争或其他来源时归属仍未知。每次sense_world重新读取，无持久地图或稳定对象ID；不把多个sources当同帧快照。
+"""

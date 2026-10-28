@@ -16,6 +16,9 @@ MAX_DEPTH = 24
 EXPLORATION_SOURCE = (Path(__file__).parent / "lua" / "explore.lua").read_text(encoding="utf-8")
 
 
+SEMANTIC_SOURCE = (Path(__file__).parent / "lua" / "semantic.lua").read_text(encoding="utf-8")
+
+
 class ValueLimit(ValueError):
     pass
 
@@ -69,7 +72,7 @@ BOOTSTRAP = '''
     local current_line = 0
     local function mark(t, kind) tags[t] = kind; return t end
     local function kind(t) return tags[t] end
-    local function run(source, callback, progress, budget, exploration_source)
+    local function run(source, callback, progress, budget, exploration_source, semantic_source)
         local env = {type=type, tonumber=tonumber, tostring=tostring,
                      pairs=pairs, ipairs=ipairs, next=next, assert=assert, error=error}
         env.math = {floor=math.floor, tointeger=math.tointeger}
@@ -79,6 +82,7 @@ BOOTSTRAP = '''
         env.log = function(message) return progress(message, current_line) end
         local helper = assert(load(exploration_source, "exploration.lua", "t", env))
         env.explore = helper(string.sub)
+        env.sense_world = assert(load(semantic_source, "semantic.lua", "t", env))()
         local f, err = load(source, "companion.lua", "t", env)
         if not f then error(err, 0) end
         local used = 0
@@ -172,7 +176,7 @@ def worker(connection, source, limits, helper_source=None):
         connection.send_bytes(encode({'type': 'log', 'id': logs, 'line': line, 'message': message}, REQUEST_BYTES))
 
     try:
-        value = plain(run(source, call, progress, limits.instructions, EXPLORATION_SOURCE if helper_source is None else helper_source), VALUE_BYTES)
+        value = plain(run(source, call, progress, limits.instructions, EXPLORATION_SOURCE if helper_source is None else helper_source, SEMANTIC_SOURCE), VALUE_BYTES)
         out = {'type': 'done', 'status': 'completed', 'value': value}
     except ValueLimit as exc:
         out = {'type': 'done', 'status': str(exc)}
