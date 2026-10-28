@@ -17,7 +17,7 @@ public static class ServerAiReadProtocolTests
         Check(bound.GetProperty("data").GetProperty("capabilities").ToString().Contains("server_ai_reads_v1"),"read capability is advertised only with an installed query adapter");
         object Request(string operation="get_player_state",object b=null)=>new{v=1,id="q",op="query",binding=b??(object)binding,operation,arguments=new{}};
         Check(Handle(Request()).GetProperty("data").GetProperty("gameUpdate").GetInt32()==42,"query result carries actual capture tick");
-        foreach(string operation in new[]{"observe_terrain","scan_tiles","scan_entities","inspect_tile","resolve_content"})
+        foreach(string operation in new[]{"observe_terrain","scan_tiles","scan_entities","inspect_tile","resolve_content","observe_scene"})
             Check(Handle(Request(operation)).GetProperty("ok").GetBoolean(),operation+" reaches bound read adapter");
         int before=captures,projected=queries;
         Check(Handle(Request(),Guid.NewGuid()).GetProperty("error").GetString()=="not_bound"&&captures==before&&queries==projected,"unbound query cannot read Player or project data");
@@ -28,7 +28,7 @@ public static class ServerAiReadProtocolTests
         foreach(string change in new[]{"actor","world","generation","slot"})
         {
             current=change switch{"actor"=>original with{Actor=new object()},"world"=>original with{World="new"},"generation"=>original with{Generation=2},_=>original with{Slot=253}};
-            foreach(string operation in new[]{"get_player_state","observe_terrain","scan_tiles","scan_entities","inspect_tile","resolve_content"})
+            foreach(string operation in new[]{"get_player_state","observe_terrain","scan_tiles","scan_entities","inspect_tile","resolve_content","observe_scene"})
                 Check(Handle(Request(operation)).GetProperty("error").GetString()=="stale_binding"&&queries==projected,"current "+change+" change refuses "+operation+" projection");
         }
         current=original;

@@ -31,6 +31,7 @@ class Host(socketserver.ThreadingTCPServer):
         self.release = threading.Event()
         self.reads = True
         self.perception = False
+        self.scene = False
         self.actions = False
         self.placement = False
         self.placement_override = {}
@@ -78,6 +79,8 @@ class Handler(socketserver.StreamRequestHandler):
                 data = dict(capabilities=['server_ai_atomic_v1', 'atomic_operations_v1', 'hotbar_keys_v1'])
                 if h.reads:
                     data['capabilities'].append('server_ai_reads_v1')
+                if h.scene:
+                    data['capabilities'].append('server_ai_scene_v1')
                 if h.perception:
                     data['capabilities'].append('server_ai_perception_v1')
                 if h.actions:

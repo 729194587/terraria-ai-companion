@@ -8,6 +8,8 @@
 
 ## 后续开发方向
 
+**0.1.59** 独立 Server AI 的 `observe_scene` 提供可直读的局部二维场景、对象与危险来源，`landingRegions.items[].target` 可直接传给 `navigate_to_landing_region`，`placementCandidates.items[].target` 可供原生放置尝试。Agent 自主选择目标、生成程序和核验结果；候选不保证可达或原生放置成功，失败/unknown不自动重试。旧按需查询保留。定向比较减少了查询和坐标加工，但地图内容更多；真实DeepSeek对比待验收，见[接口、实测与限制](LOCAL_SEMANTIC_SCENE.md)。
+
 探索方向、目标选择、是否继续或改变计划，主要由LLM Agent根据玩家目标与实际观察自行生成Lua决定；原生导航器将Agent选定的目标转换为实际移动。
 `explore()`只是可选参考脚本，不是核心自主探索系统。本轮修复后收尾，不再以扩建预写探索决策或追求其固定通过率作为主线。
 后续优先完善通用观察、导航能力与执行反馈，让Agent能用现有原子能力编排、核验和调整计划；保留失败/unknown屏障。

@@ -58,7 +58,7 @@ internal sealed class AiReadOnlyProtocol
                 if(!Guid.TryParseExact(messageId,"N",out _)||string.IsNullOrWhiteSpace(text)||text.Length>400
                     ||text.IndexOfAny(new[]{'\r','\n','\0'})>=0)throw new FormatException();
             }
-            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content"))
+            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene"))
                 return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             if (op == "bind" && root.TryGetProperty("binding", out _)) throw new FormatException();
             // Reject malformed bindings before invoking the engine adapter.
@@ -93,7 +93,7 @@ internal sealed class AiReadOnlyProtocol
                 var binding = new Binding(actorId, current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
                 var capabilities=actions?.Capabilities.ToList();
-                if(query!=null){capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");}
+                if(query!=null){capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");}
                 if(say!=null)capabilities?.Add("server_ai_chat_v2");
                 return JsonSerializer.Serialize(Reply(true, data: capabilities==null?null:new { capabilities }, binding: binding));
             }

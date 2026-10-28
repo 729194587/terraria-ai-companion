@@ -1,5 +1,6 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene)
 $ErrorActionPreference='Stop'
+if($Scene){$Perception=$true;if(!$Actions){throw 'Scene verification requires isolated Actions fixture.'}}
 if($LandingRegions){$Terrain=$true}
 if($Placement -and !$Actions){throw 'Placement validation requires isolated Actions fixture.'}
 if($Terrain -and !$Actions){throw 'Terrain validation requires isolated Actions fixture.'}
@@ -33,6 +34,7 @@ $info.RedirectStandardInput=$true
 $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
+if($Scene){$info.ArgumentList.Add("-companionscenetest")}
 if($Placement){$info.ArgumentList.Add("-companionplacementtest")}
 if($Perception){$info.ArgumentList.Add("-companionperceptiontest")}
 if($Semantic){$info.ArgumentList.Add("-companionsemantictest")}
@@ -119,6 +121,10 @@ try {
             $perceptionResult=Get-Content -LiteralPath "$profile/lua-perception-result.json" -Raw|ConvertFrom-Json
             if(!@($perceptionResult.value.npcs.data.items | Where-Object slot -eq $fixture.perceptionNpcSlot).Count){throw 'Perception did not observe the controlled fixture NPC'}
         }
+        if($Scene){
+            & $PythonExecutable (Join-Path $repo 'tests/native_scene.py') --port $IpcPort --profile $profile --phase perception
+            if($LASTEXITCODE -ne 0){throw "Scene perception verification failed: $profile/scene-perception.json"}
+        }
         # The live NPC used by perception must not leak contact damage/knockback
         # into the following non-combat action checks (including the semantic chain).
         [IO.File]::WriteAllText("$profile/action-fixture-no-combat",'End NPC perception phase; isolate subsequent action checks.')
@@ -159,6 +165,11 @@ try {
             if(!$cancel.ok -or $cancel.data.action.status -ne 'cancelled' -or !$cancel.data.action.endEvidence.inputsReleased){throw 'Native cancellation has no confirmed input release'}
             $cancel.data.action
         }
+        if($Scene){
+            & $PythonExecutable (Join-Path $repo 'tests/native_scene.py') --port $IpcPort --profile $profile --phase actions
+            if($LASTEXITCODE -ne 0){throw "Scene action verification failed: $profile/scene-actions.json"}
+        }
+        if(!$Scene){
         $nativeCancellations=@{}
         $nativeCancellations.navigation=Cancel-RunningNativeAction 'navigate_to_x' @{targetX=($fixture.targetX+32)}
         if($LandingRegions){
@@ -196,6 +207,7 @@ try {
             $empty=Request @{v=1;id='native-empty-target';op='action';binding=$bound.binding;actionId=$emptyId}
         } while($empty.ok -and $empty.data.action.status -eq 'running' -and [DateTime]::UtcNow -lt $until)
         if(!$empty.ok -or $empty.data.action.status -ne 'failed' -or !$empty.data.action.endEvidence.inputsReleased){throw 'Empty tile was not a confirmed native refusal'}
+        }
     }
     if($Placement){
         & $PythonExecutable (Join-Path $repo 'tests/native_server_ai_placement.py') --port $IpcPort --profile $profile
@@ -235,10 +247,12 @@ try {
     if($Reads){$report.luaReads=$readResult;$report.luaCombined=$combinedResult;$report.rawPlayerQuery=$rawQuery;$report.stateAfterReads=$rawState.data;$report.readBindingMismatchError=$readMismatch.error;$report.nativeSelections=$nativeSelection}
     if($Perception){$report.perception=$perceptionResult}
     if($Agent){$report.agent=$agentResult}
+    if($Scene){$report.scene=Get-Content -LiteralPath "$profile/scene-actions.json" -Raw|ConvertFrom-Json}
     if($Placement){$report.placement=Get-Content -LiteralPath "$profile/placement-lua-result.json" -Raw|ConvertFrom-Json}
     if($Semantic){$report.semantic=$semanticResult}
     if($Terrain){$report.terrain=Get-Content -LiteralPath "$profile/terrain-result.json" -Raw|ConvertFrom-Json}
-    if($Actions){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
+    if($Scene){$report.combatIsolation=$combatIsolation;$report.actionFixture=$fixture;$report.actionFrameMode='isolated whole native Main.Update frames, scene candidates; no old action fixture state reuse'}
+    if($Actions -and !$Scene){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
         $report.nativeCancellations=$nativeCancellations;$report.worldAfterCancel=$worldAfterCancel;$report.emptyTileRefusal=$empty.data.action;
         $report.actionFrameMode='Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.'}
     if($Landing){

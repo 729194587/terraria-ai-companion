@@ -25,12 +25,13 @@ internal static class ServerAiQueries
     private static JsonElement Snapshot(Player p) => JsonSerializer.SerializeToElement(ObservationReader.ReadPlayer(p, "server_ai_player"), Json);
     internal static object Read(AiReadOnlyProtocol.Identity expected, string operation, JsonElement arguments)
     {
-        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content")) throw new FormatException("Unsupported server AI query.");
+        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene")) throw new FormatException("Unsupported server AI query.");
         AtomicParameters.Validate(operation, arguments, true);
         Require(expected);
         var p = (Player)expected.Actor;
         object data;
-        if (operation == "get_player_state")
+        if (operation == "observe_scene") data=ServerSceneReader.Read(p,expected,arguments);
+        else if (operation == "get_player_state")
         {
             var snapshot = Snapshot(p);
             var player = snapshot.EnumerateObject().Where(field => field.Name is not ("inventory" or "equipment" or "dyes" or "miscEquipment" or "miscDyes" or "buffs"))

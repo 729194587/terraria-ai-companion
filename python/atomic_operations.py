@@ -29,7 +29,9 @@ INVENTORY_SLOT = {"type": "integer", "minimum": 0, "maximum": 49}
 INVENTORY_TOKEN = {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"}
 INVENTORY_GUARDS = {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN,
                     "destinationToken": INVENTORY_TOKEN}
-TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地面支撑及运动模型支持状态。"),
+TOOLS = [tool("observe_scene", "服务器AI局部45×29二维侧视语义图：几何/对象/危险来源、可直接用于导航的landingRegions.items[].target和place_tile候选。单次游戏线程采样；候选不保证可达/放置成功，树组件不是整树计数；检查coverage与各集合truncated。",
+    {key:{"type":"integer","minimum":1,"maximum":64 if key=="maxHazards" else 24 if key=="maxRegions" else 32}
+     for key in ("maxObjects","maxRegions","maxPlacements","maxHazards")}),tool("get_player_state", "读取真实玩家位置/速度/生命和地面支撑及运动模型支持状态。"),
     tool("get_player_status", "紧凑玩家状态：生命/魔力、运动和液体、所选完整物品、非空装备及活跃Buff；背包仅槽位摘要。不是完整背包，Mod自定义状态未知。"),
     tool("resolve_content", "按内容键或名称解析当前已加载的item/tile/wall ID。item支持本地化名称；tile/wall名称仅内容符号（如Terraria/Dirt），不是本地化地图名称。默认精确匹配，search为包含搜索；歧义必须选择候选，不猜ID。",
          {"kind": {"type": "string", "enum": ["item", "tile", "wall"]},
@@ -88,7 +90,7 @@ TOOLS = [tool("get_player_state", "读取真实玩家位置/速度/生命和地�
     tool("stop_action", "取消当前Agent动作并等待游戏线程输入释放证据，不抢占手动控制。")]
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'get_player_status', 'resolve_content', 'observe_exploration'}
+READS |= {'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -297,6 +299,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         if lifecycle is not None:
             lifecycle.update(copy.deepcopy(fields))
     arguments = validate(name, arguments)
+    if name == 'observe_scene' and 'server_ai_scene_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_scene_v1; no scene query started')
     supported = getattr(bridge, 'supported_atomic_operations', None)
     if supported is not None and name not in supported:
         raise PreDispatchRejected(f'{name} is unsupported by this backend; no action started')
@@ -312,7 +316,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
         return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
-    if name in {'observe_terrain', 'scan_tiles', 'scan_entities', 'inspect_tile', 'resolve_content'} and 'server_ai_perception_v1' in bridge.hello.get('capabilities', []):
+    if name in {'observe_scene', 'observe_terrain', 'scan_tiles', 'scan_entities', 'inspect_tile', 'resolve_content'} and 'server_ai_perception_v1' in bridge.hello.get('capabilities', []):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):

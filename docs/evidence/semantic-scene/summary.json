@@ -1,0 +1,119 @@
+{
+  "packageVersion": "0.1.59",
+  "packageSHA256": "e891e55d2dea175a4d65e3f502c6dc713244201cd08d3aac6e9ab18585bbc178",
+  "benchmark": {
+    "kind": "fixed deterministic read-only recipes; NOT real model efficiency or optimal old strategy",
+    "objects": {
+      "oldApiCalls": 12,
+      "newApiCalls": 1
+    },
+    "hazardSources": {
+      "oldApiCalls": 5,
+      "newApiCalls": 1,
+      "oldCoordinateProjections": 8
+    },
+    "placement": {
+      "oldApiCalls": 4,
+      "newApiCalls": 1
+    },
+    "landing": {
+      "oldApiCalls": 1,
+      "newApiCalls": 1,
+      "oldHostCoordinateArithmetic": 28,
+      "newCallerCoordinateArithmetic": 0
+    },
+    "bytes": {
+      "newScene": 16664,
+      "oldObjectReport": 6421
+    },
+    "sceneElapsedMilliseconds": 25.5499,
+    "sameSnapshotForNew": true,
+    "scope": "old recipes are separate samples; same constructed static terrain, NPC pose isolated; new single query serves all four tasks"
+  },
+  "natural": [
+    {
+      "case": "scene-p0-r",
+      "completed": true,
+      "stop": "one_action_budget",
+      "initialFeetY": 3744,
+      "target": {
+        "surfaceY": 3760,
+        "minPlayerLeftX": 33680,
+        "maxPlayerLeftX": 33752
+      },
+      "calls": 3
+    },
+    {
+      "case": "scene-p0-l",
+      "completed": false,
+      "stop": "no_observed_directional_region_at_different_height",
+      "initialFeetY": 3744,
+      "target": null,
+      "calls": 1
+    },
+    {
+      "case": "scene-p32-r",
+      "completed": true,
+      "stop": "one_action_budget",
+      "initialFeetY": 3760,
+      "target": {
+        "maxPlayerLeftX": 34328,
+        "surfaceY": 3744,
+        "minPlayerLeftX": 34292
+      },
+      "calls": 3
+    },
+    {
+      "case": "scene-p32-l",
+      "completed": true,
+      "stop": "one_action_budget",
+      "initialFeetY": 3760,
+      "target": {
+        "maxPlayerLeftX": 34060,
+        "minPlayerLeftX": 33904,
+        "surfaceY": 3792
+      },
+      "calls": 3
+    },
+    {
+      "case": "scene-m32-r",
+      "completed": false,
+      "stop": "no_observed_directional_region_at_different_height",
+      "initialFeetY": 3728,
+      "target": null,
+      "calls": 1
+    },
+    {
+      "case": "scene-m32-l",
+      "completed": false,
+      "stop": "no_observed_directional_region_at_different_height",
+      "initialFeetY": 3728,
+      "target": null,
+      "calls": 1
+    }
+  ],
+  "naturalSceneQueryMilliseconds": [
+    26.3353,
+    14.691,
+    8.027,
+    5.6535,
+    9.0579,
+    4.4346
+  ],
+  "validation": {
+    "pythonScene": 7,
+    "pythonBackend": 28,
+    "sceneGeometryAssertions": 1696,
+    "ipcChecks": 45,
+    "atomicChecks": 40,
+    "readProtocolChecks": 51,
+    "nativeAdapterChecks": 57,
+    "chatChecks": 30,
+    "packageILChecks": 62
+  },
+  "limitations": [
+    "No full suite, LLM calls, deployment or graphical Host & Play",
+    "Fixed recipes are not an optimal old agent or model token comparison",
+    "3 completed natural actions, 3 no-candidate results; no global reachability claim"
+  ]
+}

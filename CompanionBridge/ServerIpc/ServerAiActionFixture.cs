@@ -83,6 +83,7 @@ internal static class ServerAiActionFixture
                         {var tile=Main.tile[tx,floor+1];tile.HasTile=true;tile.TileType=TileID.Copper;}
                         var diagonal=Main.tile[left-8,floor+2];diagonal.HasTile=true;diagonal.TileType=TileID.Copper;
                     }
+                    if(Program.LaunchParameters.ContainsKey("-companionscenetest"))ServerSceneFixture.Prepare(p,left,floor);
                     initialized=true;NetworkStateSync.Full(p);
                     File.WriteAllText(Path.Combine(Main.SavePath,"action-fixture.json"),JsonSerializer.Serialize(new{targetX=p.position.X+64,mineX=x,mineY=y,
                         initialLife=p.statLife,initialAppleStack=2,perceptionNpcSlot=perceptionNpc?.whoAmI,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));
