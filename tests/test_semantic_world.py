@@ -10,7 +10,7 @@ from lua_worker import BOOTSTRAP, EXPLORATION_SOURCE, SEMANTIC_SOURCE
 class SemanticTests(unittest.TestCase):
     def setUp(self):
         self.tiles=[]; self.overrides={}; self.changed=False; self.mismatch=None; self.calls=[]
-        self.drops=[]
+        self.drops=[]; self.arguments=[]
     def tile(self,x,y,t=7):
         self.tiles.append(dict(x=x,y=y,typeId=t,contentKey='Terraria/Trees' if t==5 else 'Terraria/Copper',distancePixels=x+y))
     def run_helper(self, options='{}'):
@@ -26,13 +26,13 @@ class SemanticTests(unittest.TestCase):
                 return {k:plain(x) for k,x in v.items()}
             return v
         def api(name,args,line):
-            a=plain(args); self.calls.append(name)
+            a=plain(args); self.calls.append(name); self.arguments.append((name,a))
             b=dict(minX=0,minY=0,maxX=20,maxY=20)
             if name=='observe_terrain': d=dict(bounds=b,complete=True)
             elif name=='resolve_content':
-                t={'Terraria/Trees':5,'Terraria/Copper':7}.get(a['query'])
+                t={'Terraria/Trees':5,'Terraria/Copper':7,'Terraria/Tin':8}.get(a['query'])
                 d=dict(status='ok' if t else 'not_found',truncated=False,candidates=[dict(typeId=t)] if t else [])
-            elif name=='scan_tiles': d=dict(items=copy.deepcopy(self.tiles),bounds=b,complete=True,truncated=False,unknownCount=0,**{}) | self.overrides
+            elif name=='scan_tiles': d=dict(items=copy.deepcopy([t for t in self.tiles if t['typeId'] in a['tileTypes'].values()]),bounds=b,complete=True,truncated=False,unknownCount=0,**{}) | self.overrides
             elif name=='inspect_tile':
                 t=next(t for t in self.tiles if t['x']==a['x'] and t['y']==a['y'])
                 d=dict(cell=dict(knowledge='read',hasTile=not self.changed,tileType=t['typeId']),preflight=dict(withinConservativeReach=False))
@@ -107,8 +107,31 @@ class SemanticTests(unittest.TestCase):
         self.assertIn('sense_world',server_contract(SimpleNamespace(supported_atomic_operations=names))[0])
         for missing in names:
             self.assertNotIn('sense_world',server_contract(SimpleNamespace(supported_atomic_operations=names-{missing}))[0])
+    def test_tree_only_cost_and_excluded_categories(self):
+        self.tile(2,2,5); self.tile(4,2,7)
+        r=self.run_helper('{trees=true,ores=false,drops=false}')
+        self.assertEqual(['observe_terrain','resolve_content','scan_tiles','inspect_tile'],self.calls)
+        self.assertEqual(['tree_trunk'],[o['kind'] for o in r['objects']])
+        self.assertEqual([],r['drops']); self.assertFalse(r['requested']['ores'])
+
+    def test_selected_ore_names_only_resolve_requested_content(self):
+        self.tile(2,2,7); self.tile(4,2,5)
+        r=self.run_helper("{trees=false,oreNames={'Copper','Iron'},drops=false}")
+        self.assertEqual(['Terraria/Copper','Terraria/Iron'],[a['query'] for n,a in self.arguments if n=='resolve_content'])
+        self.assertEqual(['ore_vein'],[o['kind'] for o in r['objects']])
+        self.assertEqual(['Terraria/Iron'],r['unresolvedContent'])
+        self.assertEqual(5,len(self.calls))
+
+    def test_drops_only_uses_two_reads_and_forwards_filter_before_cap(self):
+        r=self.run_helper('{trees=false,ores=false,dropTypes={9},maxObjects=1,radius=80}')
+        self.assertEqual(['observe_terrain','scan_entities'],self.calls)
+        self.assertEqual({1:9},self.arguments[-1][1]['typeIds'])
+        self.assertEqual(1,self.arguments[-1][1]['maxResults'])
+        self.assertEqual([],r['objects']); self.assertEqual([],r['unresolvedContent'])
+        self.assertFalse(r['requested']['trees'])
+
     def test_invalid_options_fail_before_reads(self):
-        for options in ('{maxObjects=17}','{radius=0}','{foo=1}'):
+        for options in ('{maxObjects=17}','{radius=0}','{foo=1}','{trees=1}',"{oreNames={'Copper','Copper'}}","{oreNames={'ModOre'}}",'{oreNames={}}','{ores=false,oreNames={}}','{dropTypes={1,1}}','{dropTypes={1.5}}','{dropTypes={65536}}','{drops=false,dropTypes={1}}',"{oreNames={[1]='Copper',[3]='Iron'}}"):
             with self.assertRaises(Exception): self.run_helper(options)
         self.assertEqual([],self.calls)
 

@@ -492,12 +492,36 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('idle', r['actionState'])
         self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
 
+    async def test_pure_computation_lists_and_local_state(self):
+        r, _, _ = await self.run_lua("""
+            local candidates={{id='far',x=9,y=12},{id='near',x=3,y=4}}
+            for _,t in ipairs(candidates) do t.distance=math.sqrt(t.x^2+t.y^2) end
+            table.sort(candidates,function(a,b) return a.distance < b.distance end)
+            local visited={}; visited[candidates[1].id]=true
+            local names={}; table.insert(names,table.remove(candidates,1).id)
+            table.insert(names,candidates[1].id)
+            local packed=table.pack(table.unpack(names))
+            return {order=table.concat(names,','),visited=visited,n=packed.n,
+                numbers={math.abs(-3),math.min(4,2),math.max(4,2),math.ceil(1.2),math.floor(1.8)}}
+        """)
+        self.assertEqual('completed',r['status'],r)
+        self.assertEqual(dict(order='near,far',visited={'near':True},n=2,numbers=[3,2,4,2,1]),r['value'])
+
+    async def test_library_callbacks_cannot_escape_instruction_or_memory_budgets(self):
+        for source,limits,expected in (
+            ('table.sort({3,2,1},function(a,b) while true do end end)',Limits(instructions=1000),'instruction_limit'),
+            ('local t={}; for i=1,100000 do table.insert(t,{i,i}) end',Limits(memory=100000),'memory_limit'),
+            ('local t={}; for i=1,100 do table.insert(t,0) end; return table.concat(t)',Limits(), 'completed')):
+            r,_,_=await self.run_lua(source,limits=limits)
+            self.assertEqual(expected,r['status'],r)
+
     async def test_permissions_and_text_only_loader(self):
         r, _, _ = await self.run_lua('''
             return {type(os),type(io),type(package),type(require),type(debug),type(python),
-                    type(load),type(dofile),type(pcall),type(coroutine),type(getmetatable)}
+                    type(load),type(dofile),type(pcall),type(coroutine),type(getmetatable),
+                    type(math.random),type(math.randomseed),type(table.__globals__),type(string)}
         ''')
-        self.assertEqual(['nil'] * 11, r['value'])
+        self.assertEqual(['nil'] * 15, r['value'])
         for source in ("return ('x').rep", 'return api.__globals__', '\x1bLua', 'not valid lua'):
             r, _, _ = await self.run_lua(source)
             self.assertEqual('script_error', r['status'])

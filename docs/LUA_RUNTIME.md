@@ -1,6 +1,14 @@
 # Lua 编排第一阶段
 
-G8.5 后续修复：Lua额外提供受限的 `math.floor`、`math.tointeger`，不开放其他math函数。
+2026-10-28 自主编排：Lua 纯计算白名单为 `math.abs/min/max/sqrt/ceil/floor/tointeger/huge/pi`
+和 `table.insert/remove/sort/concat/pack/unpack`，用于距离、排序、列表和局部有限状态。
+仅复制这些 Lua 函数到每次新建环境，不开放 random、元表、加载器、pcall、协程、文件、网络、系统或 Python 对象。
+局部 table 生命周期为一次程序；不能借此跨程序恢复失败动作。sort 比较函数仍受指令 hook，列表分配受内存限制，
+C 库调用仍受父进程墙钟截止与 Worker 终止约束；API/动作预算不变。
+`math.huge` 仅可作内部比较哨兵，非有限数不能返回/传API；`table.pack` 含 n 字段，仅作内部临时表，
+返回数组前应构造连续列表，不能返回混合键或稀疏表。无新增固定游戏任务函数。
+
+G8.5 坐标修复：
 原子参数验证返回规范化副本：整数Schema接受无小数的有限浮点值（如2113.0），发送游戏端前
 转为JSON整数；小数、布尔、非有限数和超限值仍拒绝，number字段保留原精度。
 详见 [G8.5实机坐标修复](G85_SERVER_AI_PERCEPTION.md#实机反馈修复浮点位置到tile坐标)。

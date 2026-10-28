@@ -6,6 +6,42 @@
 本阶段直接在现有 Chat Completions Agent 中注册 `execute_lua`，不新增模型客户端、游戏协议或 Mod 版本。
 第一阶段的 Worker、Schema、dispatcher、结束证据与未知状态保护继续生效，见 [运行时说明](LUA_RUNTIME.md)。
 
+## 自主生成能力（2026-10-28）
+
+客户端和服务器模型指令都要求按玩家目标与真实观察自行生成完整 Lua：局部函数、距离排序、有限循环与已访问表，
+在一次 execute_lua 内动态选目标、观察、导航、执行和核验，并为后续核验预留预算。
+`explore()` 继续提供可选辅助/参考实现，不再默认要求调用。没有新增 harvest_wood、mine_ore、build_house 等任务函数。
+`sense_world()` 的类别与矿种/掉落类型筛选见 [语义观察](L1_SEMANTIC_WORLD.md)，纯计算白名单见 [沙箱](LUA_RUNTIME.md)。
+失败/超时/取消后的行动屏障、unknown 后的连接隔离和整轮共享预算保持原契约；此次不开放自动重试。
+
+离线回归 `tests/test_autonomous_lua.py` 经现有 Agent、HTTP 模型替身、真实 Worker/dispatcher、loopback ServerAiBridge，
+运行内联的模型生成风格程序，动态选择矿格、重观察、导航、选择观察到的工具、挖掘并检查 Tile/库存。
+程序不调用预写采集流程；同一程序用不同观察选出不同目标。它验证运行链支持这种编排，**不证明真实模型能稳定生成该程序**。
+合成动作/库存不证明原生物理或拾取；宿主 taskOutcome 仍不会因脚本自报或动作完成升级为目标成功。
+
+### 本轮验证结果
+
+63 个不同定向离线用例已通过：Runtime 33、语义观察15、自主编排7、模型契约/归档4、探索Agent兼容2、探索能力门禁1、连续探索兼容1；未运行全量测试。
+首轮自主失败测试错误地把“缺少效果证据”当作明确失败，实际按契约进入 unknown；改用明确 failed 回执后通过。
+新提示词断言也促使客户端指令显式补齐“不自动重试”。Windows沙箱首次阻塞在 asyncio 本机 socket 初始化，允许 localhost/Worker 后通过。
+
+隔离原生使用现有 0.1.55 包：语义探针28次API/2次动作通过，只解析 Trees/Copper 和刷新 Trees，
+验证原生砍树、按类别重读、掉落typeIds筛选及 math/table 计算。首次调用上限误写25导致外层拒绝，修正为28并保留原始结果。
+组合运行后续旧动作组的挖掘返回 out_of_range（known释放），原因未确认，不把整组记为通过；
+另一个新复制世界独立运行原读取/感知/导航/物品/挖掘/取消/进程清理全部通过。
+[原始证据与SHA-256清单](evidence/autonomous-lua/manifest.json)保存成功阶段及失败回执，未改写原始数据。
+这不是图形 Host & Play 或真实LLM自主采集验收；无C#变更、未重新构建、未部署现用profile。
+
+复现离线定向用例（允许localhost和spawn Worker的环境）：
+
+```powershell
+$env:PYTHONPATH="$pwd/tests;$pwd/python"
+& .local/lua-venv/Scripts/python.exe -B -m unittest test_lua_runtime test_semantic_world test_autonomous_lua test_lua_agent.StoreTests test_exploration_agent test_autonomous_exploration.ExplorationTests.test_contract_only_advertises_explore_when_backend_supports_reads_and_actions test_autonomous_exploration.ExplorationTests.test_continuous_flat_three_segments_and_bound_evidence -v
+```
+
+原生命令为 `tests/verify_server_ai_native.ps1 -Atomic -Reads -Actions -Perception -Semantic -PackagePath .local/l2-build/Mods/CompanionBridge.tmod -Port 27931 -IpcPort 27932`；
+独立旧动作回归去掉 `-Semantic`。均新建隔离profile，先核对端口及脚本副作用。
+
 ## 使用
 
 安装 `python/requirements.txt`，沿用现有 `.env` 的模型配置和已部署的 0.1.37 游戏端。

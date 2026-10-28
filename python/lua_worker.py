@@ -75,7 +75,12 @@ BOOTSTRAP = '''
     local function run(source, callback, progress, budget, exploration_source, semantic_source)
         local env = {type=type, tonumber=tonumber, tostring=tostring,
                      pairs=pairs, ipairs=ipairs, next=next, assert=assert, error=error}
-        env.math = {floor=math.floor, tointeger=math.tointeger}
+        -- Explicit pure Lua allowlist; no random state, loaders or host objects.
+        env.math = {abs=math.abs, min=math.min, max=math.max, sqrt=math.sqrt,
+                    ceil=math.ceil, floor=math.floor, tointeger=math.tointeger,
+                    huge=math.huge, pi=math.pi}
+        env.table = {insert=table.insert, remove=table.remove, sort=table.sort,
+                     concat=table.concat, pack=table.pack, unpack=table.unpack}
         env.json = {null=null, array=function(t) return mark(t or {}, "array") end,
                               object=function(t) return mark(t or {}, "object") end}
         env.api = function(name, args) return callback(name, args or {}, current_line) end

@@ -1,0 +1,1179 @@
+{
+  "runId": "7bda146c009a427194a400c604d7dd62",
+  "status": "completed",
+  "calls": 28,
+  "value": {
+    "selected": {
+      "operation": "select_hotbar_slot",
+      "status": "completed",
+      "endEvidence": {
+        "observationSequence": 2929,
+        "actorGeneration": 1,
+        "worldSessionId": "6fb3ae8bf5c54ca0bf804546b789bd20",
+        "actorSlot": 254,
+        "selectedSlot": 3,
+        "gameUpdate": 1463,
+        "actorId": "1b562cdf0eba44ab87b8d807f1b8382e",
+        "phase": "ServerAI_game_thread_no_input",
+        "selectionVerified": true,
+        "inputsAcquired": false,
+        "selectedHotbarKey": 4
+      },
+      "actionGeneration": 1,
+      "cancelled": false,
+      "completed": true,
+      "session": "76ff3e82a50a41debeaaa50d006075db",
+      "reasonDetail": null,
+      "evidence": {
+        "mutationAttempted": true,
+        "requestedHotbarKey": 4,
+        "selectionApplied": true,
+        "beforeSlot": 1,
+        "targetSlot": 3
+      },
+      "controlGeneration": 1,
+      "endEvidenceStatus": "known",
+      "targetRegion": null,
+      "reason": "native_selection_verified_next_pump",
+      "valid": true,
+      "actionId": "a4a28b27d6c740b79cd67ea167db4b47"
+    },
+    "ranks": [
+      {
+        "slot": 0,
+        "distance": 296.39154
+      }
+    ],
+    "after": {
+      "sources": [
+        {
+          "operation": "observe_terrain",
+          "unknownCount": 0,
+          "gameUpdate": 1746,
+          "complete": true,
+          "observedAtUnixMs": 1793176416565,
+          "bounds": {
+            "maxY": 230,
+            "minY": 202,
+            "minX": 2074,
+            "maxX": 2118
+          },
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "truncated": false,
+          "operation": "scan_tiles",
+          "matchedCount": 28,
+          "unknownCount": 0,
+          "returnedCount": 28,
+          "gameUpdate": 1748,
+          "complete": true,
+          "observedAtUnixMs": 1793176416594,
+          "bounds": {
+            "maxY": 230,
+            "minY": 202,
+            "minX": 2074,
+            "maxX": 2118
+          },
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1749,
+          "observedAtUnixMs": 1793176416616,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1751,
+          "observedAtUnixMs": 1793176416651,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1752,
+          "observedAtUnixMs": 1793176416667,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1753,
+          "observedAtUnixMs": 1793176416682,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1755,
+          "observedAtUnixMs": 1793176416717,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1757,
+          "observedAtUnixMs": 1793176416746,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1759,
+          "observedAtUnixMs": 1793176416779,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1761,
+          "observedAtUnixMs": 1793176416811,
+          "clock": "server_utc_at_projection"
+        }
+      ],
+      "unresolvedContent": [],
+      "requested": {
+        "trees": true,
+        "ores": false,
+        "oreNames": [],
+        "drops": false
+      },
+      "scope": "local observations; no line-of-sight, reachability or pickup guarantee; no persistent object IDs",
+      "kind": "semantic_world",
+      "identity": {
+        "binding": {
+          "actor": "1b562cdf0eba44ab87b8d807f1b8382e",
+          "generation": 1,
+          "world": "6fb3ae8bf5c54ca0bf804546b789bd20",
+          "slot": 254
+        },
+        "actorGeneration": 1,
+        "worldSessionId": "6fb3ae8bf5c54ca0bf804546b789bd20",
+        "actorSlot": 254
+      },
+      "objects": [
+        {
+          "boundaryTouched": true,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 3,
+            "x": 2102,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 204
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 204,
+            "minY": 202,
+            "minX": 2102,
+            "maxX": 2102
+          },
+          "observedTileCount": 3,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": true,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 4,
+            "x": 2090,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 204
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 204,
+            "minY": 202,
+            "minX": 2090,
+            "maxX": 2090
+          },
+          "observedTileCount": 3,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": false,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 5,
+            "x": 2089,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 204
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 204,
+            "minY": 204,
+            "minX": 2089,
+            "maxX": 2089
+          },
+          "observedTileCount": 1,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": false,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 6,
+            "x": 2101,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 203
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 203,
+            "minY": 203,
+            "minX": 2101,
+            "maxX": 2101
+          },
+          "observedTileCount": 1,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": true,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 7,
+            "x": 2091,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 202
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 202,
+            "minY": 202,
+            "minX": 2091,
+            "maxX": 2091
+          },
+          "observedTileCount": 1,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": true,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 8,
+            "x": 2086,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 204
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 204,
+            "minY": 202,
+            "minX": 2086,
+            "maxX": 2086
+          },
+          "observedTileCount": 3,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": true,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 9,
+            "x": 2107,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 204
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 204,
+            "minY": 202,
+            "minX": 2107,
+            "maxX": 2107
+          },
+          "observedTileCount": 3,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": false,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 10,
+            "x": 2085,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 204
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 204,
+            "minY": 204,
+            "minX": 2085,
+            "maxX": 2085
+          },
+          "observedTileCount": 1,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        }
+      ],
+      "omittedObjects": 7,
+      "drops": []
+    },
+    "drops": {
+      "sources": [
+        {
+          "operation": "observe_terrain",
+          "unknownCount": 0,
+          "gameUpdate": 1762,
+          "complete": true,
+          "observedAtUnixMs": 1793176416834,
+          "bounds": {
+            "maxY": 230,
+            "minY": 202,
+            "minX": 2074,
+            "maxX": 2118
+          },
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "truncated": false,
+          "operation": "scan_entities",
+          "matchedCount": 1,
+          "returnedCount": 1,
+          "gameUpdate": 1763,
+          "complete": true,
+          "observedAtUnixMs": 1793176416851,
+          "clock": "server_utc_at_projection",
+          "radiusPixels": 640,
+          "originWorldPixels": {
+            "x": 33545.2,
+            "y": 3483
+          }
+        }
+      ],
+      "unresolvedContent": [],
+      "requested": {
+        "trees": false,
+        "dropTypes": [
+          3
+        ],
+        "ores": false,
+        "oreNames": [],
+        "drops": true
+      },
+      "scope": "local observations; no line-of-sight, reachability or pickup guarantee; no persistent object IDs",
+      "kind": "semantic_world",
+      "identity": {
+        "binding": {
+          "actor": "1b562cdf0eba44ab87b8d807f1b8382e",
+          "generation": 1,
+          "world": "6fb3ae8bf5c54ca0bf804546b789bd20",
+          "slot": 254
+        },
+        "actorGeneration": 1,
+        "worldSessionId": "6fb3ae8bf5c54ca0bf804546b789bd20",
+        "actorSlot": 254
+      },
+      "objects": [],
+      "omittedObjects": 0,
+      "drops": [
+        {
+          "velocityPixelsPerTick": {
+            "x": 0,
+            "y": 0
+          },
+          "observationSlot": 0,
+          "contentKey": "Terraria/StoneBlock",
+          "reachable": "unknown",
+          "typeId": 3,
+          "centerWorldPixels": {
+            "x": 33841.21,
+            "y": 3498
+          },
+          "navigationHint": {
+            "targetCenterY": 3498,
+            "targetCenterX": 33841.21
+          },
+          "source": 2,
+          "identity": "sample only; slot can be reused",
+          "verification": "re-scan; inventory item count delta required; disappearance does not prove pickup",
+          "distancePixels": 296.39154,
+          "stack": 3
+        }
+      ]
+    },
+    "mined": {
+      "operation": "mine_tile",
+      "status": "completed",
+      "endEvidence": {
+        "effectVerified": true,
+        "observationSequence": 3491,
+        "actorGeneration": 1,
+        "inputsReleased": true,
+        "actorSlot": 254,
+        "gameUpdate": 1744,
+        "actorId": "1b562cdf0eba44ab87b8d807f1b8382e",
+        "phase": "ServerAI_game_thread_inputs_released",
+        "operation": "mine_tile",
+        "inputsAcquired": true,
+        "worldSessionId": "6fb3ae8bf5c54ca0bf804546b789bd20"
+      },
+      "actionGeneration": 1,
+      "cancelled": false,
+      "completed": true,
+      "session": "76ff3e82a50a41debeaaa50d006075db",
+      "reasonDetail": null,
+      "evidence": {
+        "Ticks": 274,
+        "targetAbsent": true,
+        "nativeActionId": "9ed9a881-1f6a-4f72-b609-98a179e6ada8",
+        "nativeDestroyed": true,
+        "Transforms": 0,
+        "ExpectedType": 5,
+        "targetChanged": false,
+        "pick": 0,
+        "toolKind": "axe",
+        "Strikes": 13,
+        "effectStatus": "native_tile_destroyed",
+        "destroyedByActor": true,
+        "axe": 7,
+        "PeakDamage": 104,
+        "X": 2097,
+        "TileType": 5,
+        "Swings": 9,
+        "Y": 218
+      },
+      "controlGeneration": 1,
+      "endEvidenceStatus": "known",
+      "targetRegion": null,
+      "reason": "native_tile_destroyed",
+      "valid": true,
+      "actionId": "20571767435e4f2ebd362056d7c9b044"
+    },
+    "before": {
+      "sources": [
+        {
+          "operation": "observe_terrain",
+          "unknownCount": 0,
+          "gameUpdate": 1443,
+          "complete": true,
+          "observedAtUnixMs": 1793176411508,
+          "bounds": {
+            "maxY": 230,
+            "minY": 202,
+            "minX": 2079,
+            "maxX": 2123
+          },
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "truncated": false,
+          "operation": "scan_tiles",
+          "matchedCount": 44,
+          "unknownCount": 0,
+          "returnedCount": 44,
+          "gameUpdate": 1447,
+          "complete": true,
+          "observedAtUnixMs": 1793176411580,
+          "bounds": {
+            "maxY": 230,
+            "minY": 202,
+            "minX": 2079,
+            "maxX": 2123
+          },
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1450,
+          "observedAtUnixMs": 1793176411630,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1452,
+          "observedAtUnixMs": 1793176411661,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1453,
+          "observedAtUnixMs": 1793176411676,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1454,
+          "observedAtUnixMs": 1793176411693,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1455,
+          "observedAtUnixMs": 1793176411708,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1456,
+          "observedAtUnixMs": 1793176411727,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1457,
+          "observedAtUnixMs": 1793176411752,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "operation": "inspect_tile",
+          "gameUpdate": 1458,
+          "observedAtUnixMs": 1793176411768,
+          "clock": "server_utc_at_projection"
+        },
+        {
+          "truncated": false,
+          "operation": "scan_entities",
+          "matchedCount": 1,
+          "returnedCount": 1,
+          "gameUpdate": 1460,
+          "complete": true,
+          "observedAtUnixMs": 1793176411793,
+          "clock": "server_utc_at_projection",
+          "radiusPixels": 640,
+          "originWorldPixels": {
+            "x": 33626,
+            "y": 3483
+          }
+        }
+      ],
+      "unresolvedContent": [],
+      "requested": {
+        "trees": true,
+        "ores": true,
+        "oreNames": [
+          "Copper"
+        ],
+        "drops": true
+      },
+      "scope": "local observations; no line-of-sight, reachability or pickup guarantee; no persistent object IDs",
+      "kind": "semantic_world",
+      "identity": {
+        "binding": {
+          "actor": "1b562cdf0eba44ab87b8d807f1b8382e",
+          "generation": 1,
+          "world": "6fb3ae8bf5c54ca0bf804546b789bd20",
+          "slot": 254
+        },
+        "actorGeneration": 1,
+        "worldSessionId": "6fb3ae8bf5c54ca0bf804546b789bd20",
+        "actorSlot": 254
+      },
+      "objects": [
+        {
+          "boundaryTouched": false,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 3,
+            "x": 2098,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": true,
+            "y": 218
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 218,
+            "minY": 218,
+            "minX": 2098,
+            "maxX": 2098
+          },
+          "observedTileCount": 1,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": false,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 4,
+            "x": 2097,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": true,
+            "y": 218
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 218,
+            "minY": 208,
+            "minX": 2097,
+            "maxX": 2097
+          },
+          "observedTileCount": 11,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": false,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 5,
+            "x": 2098,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 211
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 211,
+            "minY": 211,
+            "minX": 2098,
+            "maxX": 2098
+          },
+          "observedTileCount": 1,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": false,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 6,
+            "x": 2096,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 211
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 211,
+            "minY": 211,
+            "minX": 2096,
+            "maxX": 2096
+          },
+          "observedTileCount": 1,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": false,
+          "tiles": [
+            [
+              2093,
+              221
+            ]
+          ],
+          "contentKey": "Terraria/Copper",
+          "ownership": "observed_connectivity",
+          "typeId": 7,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 7,
+            "x": 2093,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 221
+          },
+          "complete": true,
+          "kind": "ore_vein",
+          "bounds": {
+            "maxY": 221,
+            "minY": 221,
+            "minX": 2093,
+            "maxX": 2093
+          },
+          "observedTileCount": 1,
+          "inference": "same-type four-neighbour component",
+          "source": 2
+        },
+        {
+          "boundaryTouched": false,
+          "tiles": [
+            [
+              2092,
+              220
+            ],
+            [
+              2091,
+              220
+            ]
+          ],
+          "contentKey": "Terraria/Copper",
+          "ownership": "observed_connectivity",
+          "typeId": 7,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 8,
+            "x": 2092,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 220
+          },
+          "complete": true,
+          "kind": "ore_vein",
+          "bounds": {
+            "maxY": 220,
+            "minY": 220,
+            "minX": 2091,
+            "maxX": 2092
+          },
+          "observedTileCount": 2,
+          "inference": "same-type four-neighbour component",
+          "source": 2
+        },
+        {
+          "boundaryTouched": true,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 9,
+            "x": 2102,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 204
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 204,
+            "minY": 202,
+            "minX": 2102,
+            "maxX": 2102
+          },
+          "observedTileCount": 3,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        },
+        {
+          "boundaryTouched": false,
+          "contentKey": "Terraria/Trees",
+          "ownership": "ambiguous_lateral_tiles",
+          "typeId": 5,
+          "candidate": {
+            "action": "mine_tile",
+            "status": "observed_present",
+            "source": 10,
+            "x": 2101,
+            "actionable": "unknown; select suitable tool and re-inspect before action",
+            "withinConservativeReach": false,
+            "y": 203
+          },
+          "complete": false,
+          "kind": "tree_trunk",
+          "bounds": {
+            "maxY": 203,
+            "minY": 203,
+            "minX": 2101,
+            "maxX": 2101
+          },
+          "observedTileCount": 1,
+          "inference": "vertical contiguous Trees column; lateral ownership unresolved",
+          "source": 2
+        }
+      ],
+      "omittedObjects": 12,
+      "drops": [
+        {
+          "velocityPixelsPerTick": {
+            "x": 0,
+            "y": 0
+          },
+          "observationSlot": 0,
+          "contentKey": "Terraria/StoneBlock",
+          "reachable": "unknown",
+          "typeId": 3,
+          "centerWorldPixels": {
+            "x": 33841.21,
+            "y": 3498
+          },
+          "navigationHint": {
+            "targetCenterY": 3498,
+            "targetCenterX": 33841.21
+          },
+          "source": 11,
+          "identity": "sample only; slot can be reused",
+          "verification": "re-scan; inventory item count delta required; disappearance does not prove pickup",
+          "distancePixels": 215.73305,
+          "stack": 3
+        }
+      ]
+    }
+  },
+  "actions": 2,
+  "logs": [],
+  "actionState": "released",
+  "lastAction": {
+    "valid": true,
+    "status": "completed",
+    "reason": "native_tile_destroyed",
+    "reasonDetail": null,
+    "operation": "mine_tile",
+    "actionId": "20571767435e4f2ebd362056d7c9b044",
+    "session": "76ff3e82a50a41debeaaa50d006075db",
+    "actionGeneration": 1,
+    "targetRegion": null,
+    "evidence": {
+      "nativeActionId": "9ed9a881-1f6a-4f72-b609-98a179e6ada8",
+      "X": 2097,
+      "Y": 218,
+      "TileType": 5,
+      "ExpectedType": 5,
+      "Ticks": 274,
+      "Swings": 9,
+      "Strikes": 13,
+      "PeakDamage": 104,
+      "Transforms": 0,
+      "toolKind": "axe",
+      "pick": 0,
+      "axe": 7,
+      "nativeDestroyed": true,
+      "targetAbsent": true,
+      "targetChanged": false,
+      "destroyedByActor": true,
+      "effectStatus": "native_tile_destroyed"
+    },
+    "endEvidence": {
+      "phase": "ServerAI_game_thread_inputs_released",
+      "gameUpdate": 1744,
+      "worldSessionId": "6fb3ae8bf5c54ca0bf804546b789bd20",
+      "actorId": "1b562cdf0eba44ab87b8d807f1b8382e",
+      "actorGeneration": 1,
+      "actorSlot": 254,
+      "inputsAcquired": true,
+      "inputsReleased": true,
+      "effectVerified": true,
+      "operation": "mine_tile",
+      "observationSequence": 3491
+    },
+    "endEvidenceStatus": "known",
+    "controlGeneration": 1,
+    "completed": true,
+    "cancelled": false
+  },
+  "cleanup": null,
+  "trace": [
+    {
+      "id": 1,
+      "operation": "observe_terrain",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 16.00000000325963
+    },
+    {
+      "id": 2,
+      "operation": "resolve_content",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 0.0
+    },
+    {
+      "id": 3,
+      "operation": "resolve_content",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 15.000000013969839
+    },
+    {
+      "id": 4,
+      "operation": "scan_tiles",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 0.0
+    },
+    {
+      "id": 5,
+      "operation": "inspect_tile",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 0.0
+    },
+    {
+      "id": 6,
+      "operation": "inspect_tile",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 16.00000000325963
+    },
+    {
+      "id": 7,
+      "operation": "inspect_tile",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 0.0
+    },
+    {
+      "id": 8,
+      "operation": "inspect_tile",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 0.0
+    },
+    {
+      "id": 9,
+      "operation": "inspect_tile",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 0.0
+    },
+    {
+      "id": 10,
+      "operation": "inspect_tile",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 16.00000000325963
+    },
+    {
+      "id": 11,
+      "operation": "inspect_tile",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 15.000000013969839
+    },
+    {
+      "id": 12,
+      "operation": "inspect_tile",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 0.0
+    },
+    {
+      "id": 13,
+      "operation": "scan_entities",
+      "line": 2,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 15.000000013969839
+    },
+    {
+      "id": 14,
+      "operation": "select_hotbar_slot",
+      "line": 16,
+      "status": "completed",
+      "valid": true,
+      "reason": "native_selection_verified_next_pump",
+      "elapsed_ms": 125.0
+    },
+    {
+      "id": 15,
+      "operation": "mine_tile",
+      "line": 18,
+      "status": "completed",
+      "valid": true,
+      "reason": "native_tile_destroyed",
+      "elapsed_ms": 4608.99999999674
+    },
+    {
+      "id": 16,
+      "operation": "observe_terrain",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 16.00000000325963
+    },
+    {
+      "id": 17,
+      "operation": "resolve_content",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 14.999999955762178
+    },
+    {
+      "id": 18,
+      "operation": "scan_tiles",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 0.0
+    },
+    {
+      "id": 19,
+      "operation": "inspect_tile",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 15.000000013969839
+    },
+    {
+      "id": 20,
+      "operation": "inspect_tile",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 32.00000000651926
+    },
+    {
+      "id": 21,
+      "operation": "inspect_tile",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 15.000000013969839
+    },
+    {
+      "id": 22,
+      "operation": "inspect_tile",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 16.00000000325963
+    },
+    {
+      "id": 23,
+      "operation": "inspect_tile",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 30.999999959021807
+    },
+    {
+      "id": 24,
+      "operation": "inspect_tile",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 31.000000017229468
+    },
+    {
+      "id": 25,
+      "operation": "inspect_tile",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 16.00000000325963
+    },
+    {
+      "id": 26,
+      "operation": "inspect_tile",
+      "line": 20,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 16.00000000325963
+    },
+    {
+      "id": 27,
+      "operation": "observe_terrain",
+      "line": 21,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 0.0
+    },
+    {
+      "id": 28,
+      "operation": "scan_entities",
+      "line": 21,
+      "status": null,
+      "valid": true,
+      "reason": null,
+      "elapsed_ms": 16.00000000325963
+    }
+  ],
+  "evidence": {
+    "taskId": "9fdf2381afcf4675a1fbbb7a1e09a2c4",
+    "path": "D:\\Agent Project\\terraria-ai-companion\\.local\\semantic-evidence\\9fdf2381afcf4675a1fbbb7a1e09a2c4",
+    "available": true,
+    "eventsDropped": 0,
+    "writeErrors": 0
+  }
+}

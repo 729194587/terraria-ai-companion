@@ -1,5 +1,7 @@
 # 单窗口 Host & Play 自主探索 MVP
 
+2026-10-28：`explore()` 保留为可选辅助和参考实现；当前模型优先按玩家目标与实际观察自行生成完整有界Lua，不强制调用本helper。新能力与验证见 [Lua Agent](LUA_AGENT.md)。下文描述既有探索helper及其历史验收。
+
 沿用 PR #25 的 G8.5 开发线。当前客户端/服务器使用 CompanionBridge **0.1.49**，
 支持本地普通聊天直接进入Agent，`!ai`仍兼容。旧0.1.48需要保存退出、换新包并重启。
 本机 `.local/start-client.ps1` 已指向用已保存测试存档生成的新profile，旧profile保留。

@@ -12,6 +12,26 @@ return sense_world({maxObjects=8, radius=640})
 
 流程：一次地形范围读取 → 精确解析 Trees 和 19 种原版矿物注册表键 → 一次最多 256 格的类型扫描 → 聚合 → 对最多 maxObjects 个候选重新 inspect → 一次掉落物扫描。解析失败保留 `unresolvedContent`，不猜数字 ID，也不把注册表内容当附近存在。矿物范围从 Copper/Tin 至 Chlorophyte，不含宝石、化石、Mod 矿物。
 
+## 按需筛选（2026-10-28）
+
+优先按目标关闭无关类别，避免每次解析 20 个内容键。保留无参数总览兼容。
+
+```lua
+local trees = sense_world({trees=true, ores=false, drops=false, maxObjects=4})
+local copper = sense_world({trees=false, oreNames={'Copper'}, drops=false})
+local drops = sense_world({trees=false, ores=false, drops=true, radius=320})
+```
+
+`trees/ores/drops` 为布尔值，默认 true。`oreNames` 是非空、连续、唯一的短名称列表，最多19项，
+仅支持上述原版矿物（如 Copper、Iron），不含 `Terraria/` 前缀；ores=false 时不可传。
+`dropTypes` 是从当前观察/注册表取得的物品ID列表（1..32个唯一整数，0..65535），仅 drops=true 时可传；
+转交原 scan_entities.typeIds，在排序/截断之前过滤，无需重新解析所有物品。省略表示所有掉落。
+参数在读取前校验；不引入跨次注册表缓存。`requested` 明确记录查询类别与筛选；关闭类别的空数组表示未查询，不能解释成不存在。
+
+只找树最多 `3+maxObjects` 次调用；只找 K 种矿物最多 `2+K+maxObjects` 次；只找掉落固定2次（范围/身份观察与实体扫描）。
+类别混合按实际内容键数累加，scan_tiles与inspect只执行一次组合流程；候选不足时更少。
+每次仍读取真实范围、身份和时间，sources 保留原有未知、截断与时效字段；radius仍只作用于掉落。
+
 ## 事实、推断与覆盖
 
 - `identity` 保留 world、generation、slot 和完整 binding；任何后续读取身份变化立即终止，不能发布混合身份目标。无自动重连或重放。

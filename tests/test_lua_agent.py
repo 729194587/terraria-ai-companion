@@ -73,6 +73,20 @@ class StoreTests(unittest.TestCase):
             self.assertTrue(record['redacted'])
             self.assertNotIn(secret, Path(record['path']).read_text(encoding='utf-8'))
 
+    def test_generated_program_policy_and_pure_computation_contract(self):
+        from types import SimpleNamespace
+        from lua_agent import server_contract
+        prompt=server_contract(SimpleNamespace(supported_atomic_operations=set(atomic.SCHEMAS)))[0]
+        for text in (SYSTEM,prompt):
+            self.assertIn('自行生成',text)
+            self.assertIn('sqrt',text)
+            self.assertIn('sort',text)
+            self.assertIn('不自动重试',text)
+        self.assertIn('不是默认或必经方案',prompt)
+        self.assertNotIn('优先一次execute_lua提交 return explore',prompt)
+        self.assertIn('oreNames',prompt)
+        self.assertIn('dropTypes',prompt)
+
     def test_model_contract_uses_existing_atomic_schemas(self):
         self.assertIn(TOOL, TOOLS)
         description = TOOL['function']['description']

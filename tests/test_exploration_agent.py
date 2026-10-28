@@ -22,7 +22,7 @@ class ExplorationAgentTests(unittest.IsolatedAsyncioTestCase):
         await self.receive('explore-1','开始探索附近世界')
         await self.agent.task
         self.assertEqual(2,len(self.requests))
-        self.assertIn('return explore(',self.requests[0]['messages'][0]['content'])
+        self.assertIn('不是默认或必经方案',self.requests[0]['messages'][0]['content'])
         result=json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role']=='tool'))
         self.assertTrue(result['programCompleted'],result)
         self.assertEqual('step_limit',result['value']['reason'])

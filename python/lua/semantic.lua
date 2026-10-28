@@ -1,7 +1,37 @@
 -- L1 read-only composition. No persistent map or cross-sample entity identity.
 return function(options)
     options = options or {}
-    for k in pairs(options) do assert(k == 'maxObjects' or k == 'radius', 'sense_world: unknown option') end
+    for k in pairs(options) do
+        assert(k == 'maxObjects' or k == 'radius' or k == 'trees' or k == 'ores'
+            or k == 'drops' or k == 'oreNames' or k == 'dropTypes', 'sense_world: unknown option')
+    end
+    for _,k in ipairs({'trees','ores','drops'}) do
+        assert(options[k] == nil or type(options[k]) == 'boolean', 'sense_world: category must be boolean')
+    end
+    local trees, ores, drops = options.trees ~= false, options.ores ~= false, options.drops ~= false
+    local allOres = {'Copper','Tin','Iron','Lead','Silver','Tungsten','Gold','Platinum',
+        'Demonite','Crimtane','Meteorite','Hellstone','Cobalt','Palladium','Mythril','Orichalcum','Adamantite','Titanium','Chlorophyte'}
+    local known = {}; for _,name in ipairs(allOres) do known[name]=true end
+    local function list(value, maximum, valid)
+        assert(type(value) == 'table' and #value >= 1 and #value <= maximum, 'sense_world: invalid filter list')
+        local seen, count = {}, 0
+        for k,v in pairs(value) do
+            assert(type(k) == 'number' and math.tointeger(k) and k >= 1 and k <= #value
+                and valid(v) and not seen[v], 'sense_world: invalid or duplicate filter')
+            seen[v]=true; count=count+1
+        end
+        assert(count == #value, 'sense_world: sparse filter')
+        return value
+    end
+    local oreNames = allOres
+    if options.oreNames ~= nil then
+        assert(ores, 'sense_world: oreNames requires ores')
+        oreNames=list(options.oreNames,19,function(v) return type(v) == 'string' and known[v] == true end)
+    end
+    if options.dropTypes ~= nil then
+        assert(drops, 'sense_world: dropTypes requires drops')
+        list(options.dropTypes,32,function(v) return type(v) == 'number' and math.tointeger(v) and v >= 0 and v <= 65535 end)
+    end
     local cap = options.maxObjects or 8
     local radius = options.radius or 640
     assert(math.tointeger(cap) and cap >= 1 and cap <= 16, 'sense_world: maxObjects 1..16')
@@ -10,7 +40,8 @@ return function(options)
     assert(view.valid and view.worldSessionId and view.actorGeneration and view.actorSlot, 'sense_world: server identity required')
     local report = {kind='semantic_world', identity={worldSessionId=view.worldSessionId,
         actorGeneration=view.actorGeneration, actorSlot=view.actorSlot, binding=view.binding}, sources=json.array(),
-        objects=json.array(), unresolvedContent=json.array(), omittedObjects=0,
+        requested={trees=trees,ores=ores,drops=drops,oreNames=ores and oreNames or json.array(),dropTypes=options.dropTypes},
+        drops=json.array(), objects=json.array(), unresolvedContent=json.array(), omittedObjects=0,
         scope='local observations; no line-of-sight, reachability or pickup guarantee; no persistent object IDs'}
     local function read(name,args)
         local r = api(name,args)
@@ -33,8 +64,10 @@ return function(options)
     end
     source(view,'observe_terrain')
     local types, treeType = {}, nil
-    for _,name in ipairs({'Trees','Copper','Tin','Iron','Lead','Silver','Tungsten','Gold','Platinum',
-        'Demonite','Crimtane','Meteorite','Hellstone','Cobalt','Palladium','Mythril','Orichalcum','Adamantite','Titanium','Chlorophyte'}) do
+    local names={}
+    if trees then names[#names+1]='Trees' end
+    if ores then for _,name in ipairs(oreNames) do names[#names+1]=name end end
+    for _,name in ipairs(names) do
         local r=read('resolve_content',{kind='tile',query='Terraria/'..name})
         local d=r.data
         if d.status == 'ok' and not d.truncated and #d.candidates == 1 then
@@ -102,16 +135,18 @@ return function(options)
             end
         end
     end
-    local drops=read('scan_entities',{category='item',radius=radius,maxResults=cap})
-    local sample=source(drops,'scan_entities')
-    report.drops=json.array()
-    for _,e in ipairs(drops.data.items) do
-        report.drops[#report.drops+1]={source=sample, observationSlot=e.slot, typeId=e.typeId,
-            contentKey=e.details.contentKey, stack=e.details.stack, centerWorldPixels=e.centerWorldPixels,
-            velocityPixelsPerTick=e.velocityPixelsPerTick, distancePixels=e.distancePixels,
-            navigationHint={targetCenterX=e.centerWorldPixels.x, targetCenterY=e.centerWorldPixels.y},
-            verification='re-scan; inventory item count delta required; disappearance does not prove pickup',
-            identity='sample only; slot can be reused', reachable='unknown'}
+    if drops then
+        local drops=read('scan_entities',{category='item',radius=radius,maxResults=cap,typeIds=options.dropTypes})
+        local sample=source(drops,'scan_entities')
+        report.drops=json.array()
+        for _,e in ipairs(drops.data.items) do
+            report.drops[#report.drops+1]={source=sample, observationSlot=e.slot, typeId=e.typeId,
+                contentKey=e.details.contentKey, stack=e.details.stack, centerWorldPixels=e.centerWorldPixels,
+                velocityPixelsPerTick=e.velocityPixelsPerTick, distancePixels=e.distancePixels,
+                navigationHint={targetCenterX=e.centerWorldPixels.x, targetCenterY=e.centerWorldPixels.y},
+                verification='re-scan; inventory item count delta required; disappearance does not prove pickup',
+                identity='sample only; slot can be reused', reachable='unknown'}
+        end
     end
     return report
 end

@@ -126,7 +126,7 @@ class Handler(socketserver.StreamRequestHandler):
                 if op == 'cancel' or h.mode != 'pending' and h.polls >= 2:
                     a = h.action
                     h.selected = a['evidence'].get('targetSlot', h.selected)
-                    a.update(status='cancelled' if op == 'cancel' else 'completed', reason='fixture_end',
+                    a.update(status='cancelled' if op == 'cancel' else 'failed' if h.mode == 'failed' else 'completed', reason='fixture_end',
                              executionState='terminal', endEvidenceStatus='known',
                              endEvidence=dict(worldSessionId='world-1', gameUpdate=33,
                                               phase='ServerAI_game_thread_no_input', inputsAcquired=False,

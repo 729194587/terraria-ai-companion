@@ -176,9 +176,9 @@ class ExplorationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_contract_only_advertises_explore_when_backend_supports_reads_and_actions(self):
         prompt,_=server_contract(self.bridge)
-        self.assertIn('return explore(',prompt)
+        self.assertIn('可选探索辅助/参考实现',prompt)
         self.bridge.supported_atomic_operations -= {'observe_terrain'}
-        self.assertNotIn('return explore(',server_contract(self.bridge)[0])
+        self.assertNotIn('可选探索辅助/参考实现',server_contract(self.bridge)[0])
 
     async def test_worker_uses_the_same_pinned_helper_source_as_evidence(self):
         source="return function() return {marker='pinned helper'} end"

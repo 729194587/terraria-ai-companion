@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-28",
+  "scope": "isolated dedicated server copied worlds; no graphical or external model acceptance",
+  "packageVersion": "0.1.55",
+  "packageSHA256": "39cb9a782b83280ab48fceea669b197c61301c08a6b4ab13e1f354639c151f81",
+  "semantic": {
+    "status": "passed phase",
+    "calls": 28,
+    "actions": 2,
+    "resolveContentCalls": 3,
+    "programCompleted": true,
+    "taskOutcome": "not inferred",
+    "checks": [
+      "tree and Copper-only content resolution",
+      "separate copper components",
+      "native tree destruction and input release",
+      "fresh tree-only rescan",
+      "drops-only type filter",
+      "pure math.sqrt/table.insert/table.sort"
+    ]
+  },
+  "combined": {
+    "status": "failed after semantic phase",
+    "reason": "later existing mining returned out_of_range with known input release; root cause not established; no automatic retry",
+    "profile": "bf826005d065492ebbf0afbb8b921caa"
+  },
+  "firstAttempt": {
+    "status": "harness rejected",
+    "reason": "Lua and both actions completed, but caller incorrectly capped queries at 25 instead of 28; assertion corrected; original preserved"
+  },
+  "independentActions": {
+    "status": "passed",
+    "profile": "8a8d9b4529ec42b2b8586ce5aa82e629",
+    "checks": [
+      "selection",
+      "reads",
+      "perception",
+      "navigation",
+      "item cycles",
+      "mining",
+      "cancel",
+      "input release",
+      "graceful unload and scoped lifecycle"
+    ]
+  },
+  "files": [
+    {
+      "path": "semantic-result.json",
+      "source": ".local\\companion-g82-native-bf826005d065492ebbf0afbb8b921caa\\lua-semantic-result.json",
+      "bytes": 33922,
+      "sha256": "f3244d83d01f407e0e229a3b125293dae2df98d8b7baca50de56bc57e6baebfe"
+    },
+    {
+      "path": "combined-actions-failure.json",
+      "source": ".local\\companion-g82-native-bf826005d065492ebbf0afbb8b921caa\\lua-actions-result.json",
+      "bytes": 4195,
+      "sha256": "e23df2b29ff6b4fc60d079bb0a86c95ac3cd154b21100c839a0fa9dfd243d576"
+    },
+    {
+      "path": "first-attempt-semantic.json",
+      "source": ".local\\companion-g82-native-4f80d27f50ce4846b263d3cd5d09964a\\lua-semantic-result.json",
+      "bytes": 33833,
+      "sha256": "6167e53625c9c7f0a694c7070917bbd488a21ae0e22ee3ac3446e03b104ba6c7"
+    },
+    {
+      "path": "independent-actions-result.json",
+      "source": ".local\\companion-g82-native-8a8d9b4529ec42b2b8586ce5aa82e629\\result.json",
+      "bytes": 115259,
+      "sha256": "99bf0b9ae0211b9d9c51a08ce29fc32b2212158828c1790d9af526c07e7aaf12"
+    },
+    {
+      "path": "semantic-bundle/events.jsonl",
+      "source": ".local\\semantic-evidence\\b8afe6024f3f4c01b17f81e1d49ef704\\events.jsonl",
+      "bytes": 39598,
+      "sha256": "52289b198941362dcf6a4cda3a0137d7fd5e312fcfe57cdcf2435329369dddb4"
+    },
+    {
+      "path": "semantic-bundle/manifest.json",
+      "source": ".local\\semantic-evidence\\b8afe6024f3f4c01b17f81e1d49ef704\\manifest.json",
+      "bytes": 1080,
+      "sha256": "b23bf8d8db59c32cd69af3583e70a48536fb4677cc8fb2cd1a258d85ea70a281"
+    },
+    {
+      "path": "semantic-bundle/source-6598b51e518439abef211172b6cca2f5c41a587d97199ca487c6542f3a540118.lua",
+      "source": ".local\\semantic-evidence\\b8afe6024f3f4c01b17f81e1d49ef704\\source-6598b51e518439abef211172b6cca2f5c41a587d97199ca487c6542f3a540118.lua",
+      "bytes": 1861,
+      "sha256": "7d8813b98d2b33791cdd83846f88a0cfb973a6e64575b3d9c9bb1d347659d282"
+    },
+    {
+      "path": "semantic-bundle/source-9915b3c279f419705fda87d65de74d7f72790f3834228653d93ecfdc916e788c.lua",
+      "source": ".local\\semantic-evidence\\b8afe6024f3f4c01b17f81e1d49ef704\\source-9915b3c279f419705fda87d65de74d7f72790f3834228653d93ecfdc916e788c.lua",
+      "bytes": 12776,
+      "sha256": "f728352f5cac65018f6e15c04345123449903a970acfbedc6563d514c33e49fb"
+    },
+    {
+      "path": "semantic-bundle/source-d860334dfe21a682c9873342a64dae6a52dca6db5152a4797f87a6d99c1503d0.lua",
+      "source": ".local\\semantic-evidence\\b8afe6024f3f4c01b17f81e1d49ef704\\source-d860334dfe21a682c9873342a64dae6a52dca6db5152a4797f87a6d99c1503d0.lua",
+      "bytes": 9671,
+      "sha256": "a09f09cb0c619dc2de9e5d9ae8773c79ca82863f2905a2deaca5cc045d44d323"
+    }
+  ]
+}
