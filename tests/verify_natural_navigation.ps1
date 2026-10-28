@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64))
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$LandingRegions)
 $ErrorActionPreference='Stop'
 if($Port -eq $IpcPort){throw 'Native game and AI IPC test ports must be distinct.'}
 $occupied=@([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object {$_.Port -in @($Port,$IpcPort)})
@@ -77,7 +77,8 @@ try {
     }
     Copy-Item -LiteralPath $loadedWorld -Destination "$profile/source.wld"
     $initialWorldHash=(Get-FileHash -LiteralPath "$profile/source.wld").Hash
-    $probeArgs=@((Join-Path $repo 'tests/native_natural_navigation.py'),'--port',"$IpcPort",'--profile',$profile,'--offsets')+@($Offsets|ForEach-Object {"$_"})
+    $probeScript=if($LandingRegions){'tests/native_natural_landing.py'}else{'tests/native_natural_navigation.py'}
+    $probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile,'--offsets')+@($Offsets|ForEach-Object {"$_"})
     if($HelperSource){$probeArgs+=@('--helper-source',(Resolve-Path -LiteralPath $HelperSource).Path)}
     & $PythonExecutable @probeArgs
     if($LASTEXITCODE -ne 0){throw 'Natural deterministic Lua probe failed'}

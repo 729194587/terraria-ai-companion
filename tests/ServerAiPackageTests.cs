@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.53","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.57","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -69,7 +69,14 @@ public static class ServerAiPackageTests
         Check(!nativeInstructions.Any(i=>i.Operand is MethodReference r&&r.Name is "get_LocalPlayer" or "PickTile" or "KillTile")
             &&!nativeInstructions.Any(i=>i.OpCode==OpCodes.Stsfld&&i.Operand is FieldReference f&&f.DeclaringType.FullName=="Terraria.Main"),"native adapter never spoofs global identity or directly mines/kills tiles");
         var nativeStart=actions.Methods.Single(m=>m.Name=="Start");
-        Check(nativeStart.Body.Instructions.Count(i=>i.Operand is MethodReference r&&r.Name=="Start"&&r.DeclaringType.Name is "ServerAiNavigation" or "ActorMining" or "ActorItemUse")==3,"native actions delegate once to G4 navigation boundary/G6/G7");
+        Check(nativeStart.Body.Instructions.Count(i=>i.Operand is MethodReference r&&r.Name=="Start"&&r.DeclaringType.Name is "ServerAiNavigation" or "ActorMining" or "ActorItemUse")==4,"both navigation goals delegate to G4 boundary; use/mining retain G6/G7");
+        Check(Calls(nativeStart,"ReadLandingRegion")
+            &&Type("ServerAiNavigation").Methods.Single(m=>m.Name=="BeforeMovement").Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="Region"),
+            "validated immutable landing region reaches the existing native planner boundary");
+        Check(Calls(Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Update"),"Arrived")
+            &&Calls(actions.Methods.Single(m=>m.Name=="Poll"),"Arrived"),"native arrival and final effect both verify the actual two-dimensional region");
+        Check(!miningIL.Any(i=>i.Operand is MethodReference r&&r.Name=="add_GrabItems"),
+            "sustained mining preserves ordinary native passive pickup");
         Check(Type("ServerAiNavigation").Fields.Any(f=>f.FieldType.Name=="NativeNavigation")
             &&Type("GameNavigation").Fields.Any(f=>f.FieldType.Name=="NativeNavigation"),"human and AI use separate instances of the original navigation implementation");
         Check(Calls(Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Update"),"Invoke")

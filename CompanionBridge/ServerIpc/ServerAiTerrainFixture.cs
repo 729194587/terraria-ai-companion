@@ -53,7 +53,7 @@ internal static class ServerAiTerrainFixture
         string scene=doc.RootElement.GetProperty("scene").GetString();
         int direction=doc.RootElement.GetProperty("direction").GetInt32();
         if(direction!=1&&direction!=-1)throw new ArgumentException("Invalid terrain direction");
-        if(scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall"))
+        if(scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall" or "platform_up" or "platform_down" or "high_platform"))
             throw new ArgumentException("Unknown terrain scene");
         caseName=scene+"-"+direction;frames.Clear();recording=false;
         int left=Main.spawnTileX, floor=Main.spawnTileY+8;
@@ -61,6 +61,8 @@ internal static class ServerAiTerrainFixture
         {
             int q=direction*(tx-left), surface=floor;
             int slope=0;
+            bool platformScene=scene is "platform_up" or "platform_down" or "high_platform";
+            if(platformScene)surface=floor+8;
             if(scene=="step_up"&&q>=4)surface--;
             if(scene=="step_down"&&q>=4)surface++;
             if(scene=="slope_up"&&q>=4)
@@ -72,8 +74,15 @@ internal static class ServerAiTerrainFixture
             if(scene=="high_wall"&&q>=4&&q<=6)surface-=12;
             var tile=Main.tile[tx,ty];tile.ClearEverything();
             if(ty>=surface){tile.HasTile=true;tile.TileType=TileID.Dirt;if(ty==surface)tile.Slope=(SlopeType)slope;}
+            if(platformScene)
+            {
+                int top=scene=="platform_down"?floor-4:floor;
+                int target=scene=="platform_down"?floor:scene=="high_platform"?floor-12:floor-4;
+                if(q<=3&&ty==top||q>=6&&ty==target)
+                {tile.HasTile=true;tile.TileType=TileID.Platforms;}
+            }
         }
-        p.position=new(left*16-2,floor*16-p.height);p.velocity=Vector2.Zero;
+        p.position=new(left*16-2,(floor-(scene=="platform_down"?4:0))*16-p.height);p.velocity=Vector2.Zero;
         p.controlLeft=p.controlRight=p.controlJump=p.controlDown=p.controlUp=false;
         p.jump=0;p.releaseJump=true;p.fallStart=floor;p.statLife=p.statLifeMax2;
         // Each scene starts with the audited basic profile, independent of the earlier apple test.

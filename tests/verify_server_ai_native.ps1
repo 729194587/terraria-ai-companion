@@ -1,5 +1,6 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions)
 $ErrorActionPreference='Stop'
+if($LandingRegions){$Terrain=$true}
 if($Terrain -and !$Actions){throw 'Terrain validation requires isolated Actions fixture.'}
 if($Semantic -and (!$Actions -or !$Perception)){throw 'Semantic validation requires isolated Actions and Perception fixtures.'}
 if($Landing -and !$Actions){throw 'Landing cleanup validation requires the isolated Actions fixture.'}
@@ -158,6 +159,14 @@ try {
         }
         $nativeCancellations=@{}
         $nativeCancellations.navigation=Cancel-RunningNativeAction 'navigate_to_x' @{targetX=($fixture.targetX+32)}
+        if($LandingRegions){
+            $regionState=Request @{v=1;id='region-preflight-state';op='query';binding=$bound.binding;operation='get_player_state';arguments=@{}}
+            $regionFeet=$regionState.data.data.player.position.y+42
+            $regionInvalid=Request @{v=1;id='region-invalid';op='start';binding=$bound.binding;actionId=([guid]::NewGuid().ToString('N'));operation='navigate_to_landing_region';arguments=@{minPlayerLeftX=20;maxPlayerLeftX=10;surfaceY=$regionFeet};expiresAtUnixMs=([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+1500)}
+            if($regionInvalid.ok -or $regionInvalid.error -ne 'invalid_arguments'){throw 'Native landing preflight accepted reversed bounds'}
+            $nativeCancellations.landingRegion=Cancel-RunningNativeAction 'navigate_to_landing_region' @{minPlayerLeftX=($fixture.targetX+32.003);maxPlayerLeftX=($fixture.targetX+64.007);surfaceY=$regionFeet}
+            if(!$nativeCancellations.landingRegion.targetRegion -or $nativeCancellations.landingRegion.evidence.arrived){throw 'Cancelled region lost its target or falsely arrived'}
+        }
         $null=& $PythonExecutable (Join-Path $repo 'scripts/server_ai_actions.py') --port $IpcPort --target-x $fixture.targetX --use-key 1 --consume-key 3 --pick-key 2 --mine-x $fixture.mineX --mine-y $fixture.mineY --output "$profile/lua-actions-result.json"
         if($LASTEXITCODE -ne 0){throw "Lua native actions failed: $profile/lua-actions-result.json"}
         $actionResult=Get-Content -LiteralPath "$profile/lua-actions-result.json" -Raw|ConvertFrom-Json
@@ -187,7 +196,8 @@ try {
         if(!$empty.ok -or $empty.data.action.status -ne 'failed' -or !$empty.data.action.endEvidence.inputsReleased){throw 'Empty tile was not a confirmed native refusal'}
     }
     if($Terrain){
-        & $PythonExecutable (Join-Path $repo 'scripts/server_ai_terrain.py') --port $IpcPort --profile $profile
+        $terrainScript=if($LandingRegions){'tests/native_landing_regions.py'}else{'scripts/server_ai_terrain.py'}
+        & $PythonExecutable (Join-Path $repo $terrainScript) --port $IpcPort --profile $profile
         if($LASTEXITCODE -ne 0){throw "Native terrain matrix failed: $profile/terrain-result.json"}
     }
     $client.Dispose();$client=$null

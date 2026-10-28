@@ -47,6 +47,8 @@ class ServerAiBridge:
                 self.supported_atomic_operations |= PERCEPTION_OPERATIONS
             if "server_ai_actions_v1" in self.hello["capabilities"]:
                 self.supported_atomic_operations |= frozenset(("navigate_to_x", "use_item", "mine_tile"))
+                if "landing_region_navigation_v1" in self.hello["capabilities"]:
+                    self.supported_atomic_operations |= frozenset(("navigate_to_landing_region",))
         except BaseException:
             self.close()
             raise

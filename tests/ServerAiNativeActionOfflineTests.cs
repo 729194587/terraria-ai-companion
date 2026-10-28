@@ -36,7 +36,8 @@ public static class ServerAiNativeActionOfflineTests
         }
         internal void Tick()=>Actions.Tick(()=>Current,(_,_)=>throw new Exception("long actions may not use selection adapter"));
         internal JsonElement Action(string id)=>Send("action",id).GetProperty("data").GetProperty("action");
-        internal string Start(string operation="mine_tile",CancellationToken token=default){string id=Guid.NewGuid().ToString("N");Send("start",id,operation,token);Tick();Tick();return id;}
+        internal string Start(string operation="mine_tile",CancellationToken token=default){string id=Guid.NewGuid().ToString("N");Send("start",id,operation,token,
+            operation=="navigate_to_landing_region"?new{minPlayerLeftX=100,maxPlayerLeftX=140,surfaceY=200}:null);Tick();Tick();return id;}
     }
     public static void Run()
     {
@@ -70,7 +71,21 @@ public static class ServerAiNativeActionOfflineTests
             Check(f.Action(id).GetProperty("status").GetString()=="completed"&&f.Action(id).GetProperty("reason").GetString()=="native_tile_destroyed",
                 "verified completion winning cancellation race retains success reason");
         }
-        foreach(string op in new[]{"navigate_to_x","use_item","mine_tile"})
+        {
+            var f=new Fixture();string id=Guid.NewGuid().ToString("N");
+            var goal=new{minPlayerLeftX=100,maxPlayerLeftX=140,surfaceY=200};
+            var a=f.Send("start",id,"navigate_to_landing_region",args:goal).GetProperty("data").GetProperty("action");
+            Check(a.GetProperty("durationMs").GetInt32()==30000&&a.GetProperty("targetRegion").GetRawText()==JsonSerializer.Serialize(goal),
+                "landing region receipt fixes exact target and 30-second deadline before native start");
+            Check(Array.IndexOf(f.Actions.Capabilities,"landing_region_navigation_v1")>=0,
+                "landing region capability is advertised with native executor");
+            f.Actions.Clear();
+            var precise=f.Send("start",Guid.NewGuid().ToString("N"),"navigate_to_landing_region",
+                args:new{minPlayerLeftX=33333.3333,maxPlayerLeftX=33340.1234,surfaceY=200.1234}).GetProperty("data").GetProperty("action");
+            Check(precise.GetProperty("targetRegion").GetProperty("minPlayerLeftX").GetDouble()==
+                JsonSerializer.SerializeToElement((float)33333.3333).GetDouble(),"receipt canonicalizes coordinates to the native float region before execution");
+        }
+        foreach(string op in new[]{"navigate_to_x","navigate_to_landing_region","use_item","mine_tile"})
         {
             var f=new Fixture();string id=f.Start(op);
             Check(f.Native.Starts==1&&f.Action(id).GetProperty("status").GetString()=="running","accepted/running precede "+op+" native completion");

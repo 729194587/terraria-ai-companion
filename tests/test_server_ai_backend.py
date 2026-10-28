@@ -32,6 +32,8 @@ class Host(socketserver.ThreadingTCPServer):
         self.reads = True
         self.perception = False
         self.actions = False
+        self.landing = False
+        self.landing_override = {}
         self.chat = False
         self.published = []
         self.say_queued = threading.Event()
@@ -78,6 +80,8 @@ class Handler(socketserver.StreamRequestHandler):
                     data['capabilities'].append('server_ai_perception_v1')
                 if h.actions:
                     data['capabilities'].append('server_ai_actions_v1')
+                if h.landing:
+                    data['capabilities'].append('landing_region_navigation_v1')
                 if h.chat:
                     data['capabilities'].append('server_ai_chat_v2')
             elif r['binding'] != h.binding:
@@ -116,6 +120,8 @@ class Handler(socketserver.StreamRequestHandler):
                                 status='running', reason='accepted', executionState='accepted', durationMs=300,
                                 evidence=dict(targetSlot=(key + 9) % 10, selectionApplied=False),
                                 endEvidenceStatus='not_ended', endEvidence=None)
+                if r['operation'] == 'navigate_to_landing_region':
+                    h.action['targetRegion'] = copy.deepcopy(r['arguments'])
                 data = dict(action=copy.deepcopy(h.action))
             elif op in ('action', 'cancel'):
                 if h.mode == 'change_on_poll':
@@ -140,6 +146,13 @@ class Handler(socketserver.StreamRequestHandler):
                                              targetAbsent=True, targetChanged=False, effectStatus='unconfirmed')
                         a['endEvidence'].update(phase='ServerAI_game_thread_inputs_released', inputsAcquired=True,
                                                 inputsReleased=True, effectVerified=True, operation=a['operation'])
+                        if a['operation'] == 'navigate_to_landing_region':
+                            g = a['targetRegion']
+                            a['evidence'].update(targetRegion=copy.deepcopy(g), x=g['minPlayerLeftX'],
+                                y=g['surfaceY']-42, vx=0, vy=0, grounded=True, safeSupport=True, settled=True)
+                            a['evidence'].update(h.landing_override)
+                        if h.mode == 'changed_region':
+                            a['targetRegion'] = {**a['targetRegion'], 'surfaceY': 1600}
                         if h.mode == 'no_release':
                             a['endEvidence']['inputsReleased'] = False
                         if h.mode == 'no_effect':

@@ -163,15 +163,32 @@ def same_action(expected, current):
         ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'actorId', 'actorSlot'))
 
 
-def verify_landing_start(action, arguments):
+def verify_landing_start(action, arguments, *, server_ai=False):
     region = action.get('targetRegion')
     if (not isinstance(region, dict) or set(region) != set(arguments)
             or any(type(region[key]) not in (int, float) or not math.isfinite(region[key])
                    or not math.isclose(region[key], arguments[key], rel_tol=1e-7, abs_tol=0.001) for key in arguments)
-            or type(action.get('session')) is not int or action['session'] <= 0
+            or (not isinstance(action.get('session'), str) or not action['session']
+                if server_ai else type(action.get('session')) is not int or action['session'] <= 0)
             or type(action.get('generation')) is not int or action['generation'] < 0
             or not isinstance(action.get('worldSessionId'), str) or not action['worldSessionId']):
         raise BridgeError('Landing target/identity missing or different in start receipt')
+
+
+def verified_server_landing(action, evidence):
+    if action.get('operation') != 'navigate_to_landing_region':
+        return False
+    region = action.get('targetRegion')
+    if (not isinstance(region, dict) or set(region) != {'minPlayerLeftX', 'maxPlayerLeftX', 'surfaceY'}
+            or evidence.get('targetRegion') != region
+            or any(evidence.get(key) is not True for key in ('arrived', 'grounded', 'safeSupport', 'settled'))):
+        return False
+    values = [region[key] for key in ('minPlayerLeftX', 'maxPlayerLeftX', 'surfaceY')]
+    values += [evidence.get('x'), evidence.get('y'), evidence.get('vx'), evidence.get('vy')]
+    if any(type(v) not in (int, float) or not math.isfinite(v) for v in values):
+        return False
+    low, high, surface, x, y, vx, vy = values
+    return low <= x <= high and abs(y + 42 - surface) <= 0.5 and abs(vx) <= 0.1 and abs(vy) <= 0.1
 
 
 async def terminal(bridge, action, generation):
@@ -203,6 +220,7 @@ async def terminal(bridge, action, generation):
     native_evidence = native_evidence if isinstance(native_evidence, dict) else {}
     native_verified = {
         'navigate_to_x': native_evidence.get('arrived') is True,
+        'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
         'mine_tile': (native_evidence.get('destroyedByActor') is True
                       and native_evidence.get('targetAbsent') is True
@@ -210,7 +228,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('navigate_to_x', 'use_item', 'mine_tile')
+                  and action.get('operation') in ('navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile')
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -351,7 +369,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         landing_identity = None
         if name == 'navigate_to_landing_region':
             landing_invalid = True
-            verify_landing_start(action, arguments)
+            verify_landing_start(action, arguments, server_ai='server_ai_atomic_v1' in bridge.hello.get('capabilities', []))
             landing_invalid = False
             landing_identity = dict(action)
         action_id = action['actionId']
@@ -385,6 +403,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                     # use the normal release-evidence verifier; never retry it.
                     reply = await command(bridge, 'get_movement')
                     current = reply['movement']['action']
+                    if landing_identity is not None and not same_action(landing_identity, current):
+                        landing_invalid = True
                     if (not same_action(action, current)
                             or current.get('status') not in ('completed', 'failed', 'timeout', 'cancelled')):
                         raise

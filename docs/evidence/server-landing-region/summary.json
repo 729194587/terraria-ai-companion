@@ -1,0 +1,3536 @@
+{
+  "packageVersion": "0.1.57",
+  "matrix": {
+    "scenarios": 20,
+    "passed": 20,
+    "completed": 18,
+    "cases": [
+      {
+        "scene": "flat",
+        "direction": 1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "5a5d563e11624a5c9f8c3e3be5a08a23",
+          "session": "6369eebf81cb4f9981acc1aad57b00a8",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3504
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33712,
+              "maxPlayerLeftX": 33780,
+              "surfaceY": 3504
+            },
+            "startX": 33614,
+            "x": 33723.754,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "updates": 65,
+            "navigation": {
+              "Session": 4,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 40,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33723.754,
+                "Y": 3462
+              },
+              "ActualLanding": {
+                "X": 33723.754,
+                "Y": 3462
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33723.754,
+                "Y": 3462
+              },
+              "ObservedPosition": {
+                "X": 33723.754,
+                "Y": 3462
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33712,
+              "CompletedActions": 2,
+              "CompletedJumps": 0,
+              "Expansions": 6,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 25.0546,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33723.754,
+                  "Y": 3462
+                },
+                "Actual": {
+                  "X": 33723.754,
+                  "Y": 3462
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": true,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33712,
+                "MaxPlayerLeftX": 33780,
+                "SurfaceY": 3504
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 2160,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 2160,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 4323
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "flat",
+        "direction": -1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "534e8b049c234663a6c563358fd34b98",
+          "session": "e8add55471c84f4ea4c09d63e9d67bb5",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33524,
+            "surfaceY": 3504
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33440,
+              "maxPlayerLeftX": 33524,
+              "surfaceY": 3504
+            },
+            "startX": 33614,
+            "x": 33520.69,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "updates": 60,
+            "navigation": {
+              "Session": 5,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 23,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33520.69,
+                "Y": 3462
+              },
+              "ActualLanding": {
+                "X": 33520.69,
+                "Y": 3462
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33520.69,
+                "Y": 3462
+              },
+              "ObservedPosition": {
+                "X": 33520.69,
+                "Y": 3462
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33440,
+              "CompletedActions": 4,
+              "CompletedJumps": 0,
+              "Expansions": 1,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 5.4742,
+              "LastLanding": {
+                "ActionNumber": 4,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33520.69,
+                  "Y": 3462
+                },
+                "Actual": {
+                  "X": 33520.69,
+                  "Y": 3462
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 4,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33440,
+                "MaxPlayerLeftX": 33524,
+                "SurfaceY": 3504
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 2344,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 2344,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 4691
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "step_up",
+        "direction": 1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "a82aee39cf974711af866040e83b005c",
+          "session": "8334430418dd4818b8f8af4ca3fdac8f",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3488
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33712,
+              "maxPlayerLeftX": 33780,
+              "surfaceY": 3488
+            },
+            "startX": 33614,
+            "x": 33723.754,
+            "y": 3446,
+            "vx": 0,
+            "vy": 0,
+            "updates": 65,
+            "navigation": {
+              "Session": 6,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 40,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33723.754,
+                "Y": 3446
+              },
+              "ActualLanding": {
+                "X": 33723.754,
+                "Y": 3446
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33723.754,
+                "Y": 3446
+              },
+              "ObservedPosition": {
+                "X": 33723.754,
+                "Y": 3446
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33712,
+              "CompletedActions": 2,
+              "CompletedJumps": 0,
+              "Expansions": 4,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 21.9559,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33723.754,
+                  "Y": 3446
+                },
+                "Actual": {
+                  "X": 33723.754,
+                  "Y": 3446
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33712,
+                "MaxPlayerLeftX": 33780,
+                "SurfaceY": 3488
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 2554,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 2554,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 5111
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "step_up",
+        "direction": -1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "e1523c620f3c4350ada7398fde277350",
+          "session": "dfc56bc850854260a3695ac58376f12d",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33524,
+            "surfaceY": 3488
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33440,
+              "maxPlayerLeftX": 33524,
+              "surfaceY": 3488
+            },
+            "startX": 33614,
+            "x": 33504.246,
+            "y": 3446,
+            "vx": 0,
+            "vy": 0,
+            "updates": 65,
+            "navigation": {
+              "Session": 7,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 40,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33504.246,
+                "Y": 3446
+              },
+              "ActualLanding": {
+                "X": 33504.246,
+                "Y": 3446
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33504.246,
+                "Y": 3446
+              },
+              "ObservedPosition": {
+                "X": 33504.246,
+                "Y": 3446
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33440,
+              "CompletedActions": 2,
+              "CompletedJumps": 0,
+              "Expansions": 4,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 20.7221,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33504.246,
+                  "Y": 3446
+                },
+                "Actual": {
+                  "X": 33504.246,
+                  "Y": 3446
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33440,
+                "MaxPlayerLeftX": 33524,
+                "SurfaceY": 3488
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 2741,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 2741,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 5485
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "step_down",
+        "direction": 1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "ef83c35667c949e99890c5ee05772bf1",
+          "session": "efa14b8f89bd4ab4b3bfedf169f96156",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3520
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33712,
+              "maxPlayerLeftX": 33780,
+              "surfaceY": 3520
+            },
+            "startX": 33614,
+            "x": 33723.754,
+            "y": 3478,
+            "vx": 0,
+            "vy": 0,
+            "updates": 65,
+            "navigation": {
+              "Session": 8,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 40,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33723.754,
+                "Y": 3478
+              },
+              "ActualLanding": {
+                "X": 33723.754,
+                "Y": 3478
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33723.754,
+                "Y": 3478
+              },
+              "ObservedPosition": {
+                "X": 33723.754,
+                "Y": 3478
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33712,
+              "CompletedActions": 2,
+              "CompletedJumps": 0,
+              "Expansions": 7,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 22.0431,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33723.754,
+                  "Y": 3478
+                },
+                "Actual": {
+                  "X": 33723.754,
+                  "Y": 3478
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33712,
+                "MaxPlayerLeftX": 33780,
+                "SurfaceY": 3520
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 2902,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 2902,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 5807
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "step_down",
+        "direction": -1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "9a59661c5f404928a78ee3ab2e7b5370",
+          "session": "04f021620be94b9c8a6445e8ae2e6984",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33524,
+            "surfaceY": 3520
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33440,
+              "maxPlayerLeftX": 33524,
+              "surfaceY": 3520
+            },
+            "startX": 33614,
+            "x": 33520.69,
+            "y": 3478,
+            "vx": 0,
+            "vy": 0,
+            "updates": 60,
+            "navigation": {
+              "Session": 9,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 23,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33520.69,
+                "Y": 3478
+              },
+              "ActualLanding": {
+                "X": 33520.69,
+                "Y": 3478
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33520.69,
+                "Y": 3478
+              },
+              "ObservedPosition": {
+                "X": 33520.69,
+                "Y": 3478
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33440,
+              "CompletedActions": 4,
+              "CompletedJumps": 0,
+              "Expansions": 1,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 6.8085,
+              "LastLanding": {
+                "ActionNumber": 4,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33520.69,
+                  "Y": 3478
+                },
+                "Actual": {
+                  "X": 33520.69,
+                  "Y": 3478
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 4,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33440,
+                "MaxPlayerLeftX": 33524,
+                "SurfaceY": 3520
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 3049,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 3049,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 6101
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "slope_up",
+        "direction": 1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "135e68f1a79a4ff39b410c23c16e4b40",
+          "session": "3afc23dca0ff41eb8522fca1b8fdfbb8",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33744,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3440
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33744,
+              "maxPlayerLeftX": 33780,
+              "surfaceY": 3440
+            },
+            "startX": 33614,
+            "x": 33757.027,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "updates": 77,
+            "navigation": {
+              "Session": 10,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 22,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33757.027,
+                "Y": 3398
+              },
+              "ActualLanding": {
+                "X": 33757.027,
+                "Y": 3398
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33757.027,
+                "Y": 3398
+              },
+              "ObservedPosition": {
+                "X": 33757.027,
+                "Y": 3398
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33744,
+              "CompletedActions": 4,
+              "CompletedJumps": 0,
+              "Expansions": 1,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 4.1872,
+              "LastLanding": {
+                "ActionNumber": 4,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33757.027,
+                  "Y": 3398
+                },
+                "Actual": {
+                  "X": 33757.027,
+                  "Y": 3398
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 4,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33744,
+                "MaxPlayerLeftX": 33780,
+                "SurfaceY": 3440
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 3217,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 3217,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 6437
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "slope_up",
+        "direction": -1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "51bf157c57134293ac10555a97ab2901",
+          "session": "f56104817e5d423a9cad4eb98ca8ab5b",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33476,
+            "surfaceY": 3440
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33440,
+              "maxPlayerLeftX": 33476,
+              "surfaceY": 3440
+            },
+            "startX": 33614,
+            "x": 33470.973,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "updates": 77,
+            "navigation": {
+              "Session": 11,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 22,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33470.973,
+                "Y": 3398
+              },
+              "ActualLanding": {
+                "X": 33470.973,
+                "Y": 3398
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33470.973,
+                "Y": 3398
+              },
+              "ObservedPosition": {
+                "X": 33470.973,
+                "Y": 3398
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33440,
+              "CompletedActions": 4,
+              "CompletedJumps": 0,
+              "Expansions": 1,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 4.2982,
+              "LastLanding": {
+                "ActionNumber": 4,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33470.973,
+                  "Y": 3398
+                },
+                "Actual": {
+                  "X": 33470.973,
+                  "Y": 3398
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 4,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33440,
+                "MaxPlayerLeftX": 33476,
+                "SurfaceY": 3440
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 3374,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 3374,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 6751
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "slope_down",
+        "direction": 1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "5f69cd974ff1457598566ccff97f10e2",
+          "session": "2db8ddf7755a41f995435f9eb8e7dc32",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33744,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3568
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33744,
+              "maxPlayerLeftX": 33780,
+              "surfaceY": 3568
+            },
+            "startX": 33614,
+            "x": 33761.508,
+            "y": 3526,
+            "vx": 0,
+            "vy": 0,
+            "updates": 79,
+            "navigation": {
+              "Session": 12,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 42,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33761.508,
+                "Y": 3526
+              },
+              "ActualLanding": {
+                "X": 33761.508,
+                "Y": 3526
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33761.508,
+                "Y": 3526
+              },
+              "ObservedPosition": {
+                "X": 33761.508,
+                "Y": 3526
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33744,
+              "CompletedActions": 4,
+              "CompletedJumps": 0,
+              "Expansions": 1,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 4.3077,
+              "LastLanding": {
+                "ActionNumber": 4,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33761.508,
+                  "Y": 3526
+                },
+                "Actual": {
+                  "X": 33761.508,
+                  "Y": 3526
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 4,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33744,
+                "MaxPlayerLeftX": 33780,
+                "SurfaceY": 3568
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 3527,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 3527,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 7057
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "slope_down",
+        "direction": -1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "439085d6960048438ff01165d44c2064",
+          "session": "633ee08730ec4ae9aa1d38530d0b70a0",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33476,
+            "surfaceY": 3568
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33440,
+              "maxPlayerLeftX": 33476,
+              "surfaceY": 3568
+            },
+            "startX": 33614,
+            "x": 33466.492,
+            "y": 3526,
+            "vx": 0,
+            "vy": 0,
+            "updates": 79,
+            "navigation": {
+              "Session": 13,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 42,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33466.492,
+                "Y": 3526
+              },
+              "ActualLanding": {
+                "X": 33466.492,
+                "Y": 3526
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33466.492,
+                "Y": 3526
+              },
+              "ObservedPosition": {
+                "X": 33466.492,
+                "Y": 3526
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33440,
+              "CompletedActions": 4,
+              "CompletedJumps": 0,
+              "Expansions": 1,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 3.6791,
+              "LastLanding": {
+                "ActionNumber": 4,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33466.492,
+                  "Y": 3526
+                },
+                "Actual": {
+                  "X": 33466.492,
+                  "Y": 3526
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 4,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33440,
+                "MaxPlayerLeftX": 33476,
+                "SurfaceY": 3568
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 3686,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 3686,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 7375
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "short_gap",
+        "direction": 1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "7c25ee68298b4b9baaeae3bdc1fa30ef",
+          "session": "a0ecabdc958e423780585aa14ecac481",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33728,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3504
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33728,
+              "maxPlayerLeftX": 33780,
+              "surfaceY": 3504
+            },
+            "startX": 33614,
+            "x": 33729.04,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "updates": 67,
+            "navigation": {
+              "Session": 14,
+              "Status": "arrived",
+              "Action": "jump",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 66,
+              "HoldFrames": 15,
+              "PredictedLanding": {
+                "X": 33729.04,
+                "Y": 3462
+              },
+              "ActualLanding": {
+                "X": 33729.04,
+                "Y": 3462
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33729.04,
+                "Y": 3462
+              },
+              "ObservedPosition": {
+                "X": 33729.04,
+                "Y": 3462
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33728,
+              "CompletedActions": 1,
+              "CompletedJumps": 1,
+              "Expansions": 17,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 25.0471,
+              "LastLanding": {
+                "ActionNumber": 1,
+                "Jump": true,
+                "Predicted": {
+                  "X": 33729.04,
+                  "Y": 3462
+                },
+                "Actual": {
+                  "X": 33729.04,
+                  "Y": 3462
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": true,
+              "PlanNumber": 1,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33728,
+                "MaxPlayerLeftX": 33780,
+                "SurfaceY": 3504
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 3826,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 3826,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 7655
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "short_gap",
+        "direction": -1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "e686229cff5a4c758fdccdde8275b690",
+          "session": "e318be7f51f142718da541e58087481f",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33492,
+            "surfaceY": 3504
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33440,
+              "maxPlayerLeftX": 33492,
+              "surfaceY": 3504
+            },
+            "startX": 33614,
+            "x": 33479.13,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "updates": 74,
+            "navigation": {
+              "Session": 15,
+              "Status": "arrived",
+              "Action": "jump",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 49,
+              "HoldFrames": 4,
+              "PredictedLanding": {
+                "X": 33479.13,
+                "Y": 3462
+              },
+              "ActualLanding": {
+                "X": 33479.13,
+                "Y": 3462
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33479.13,
+                "Y": 3462
+              },
+              "ObservedPosition": {
+                "X": 33479.13,
+                "Y": 3462
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33440,
+              "CompletedActions": 2,
+              "CompletedJumps": 1,
+              "Expansions": 9,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 25.0385,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": true,
+                "Predicted": {
+                  "X": 33479.13,
+                  "Y": 3462
+                },
+                "Actual": {
+                  "X": 33479.13,
+                  "Y": 3462
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": true,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33440,
+                "MaxPlayerLeftX": 33492,
+                "SurfaceY": 3504
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 3984,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 3984,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 7971
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "low_obstacle",
+        "direction": 1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "8d937951a78444359965e7af5889ebef",
+          "session": "3129e1ba96e945f1983af8cfa6455ae2",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3504
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33712,
+              "maxPlayerLeftX": 33780,
+              "surfaceY": 3504
+            },
+            "startX": 33614,
+            "x": 33760.156,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "updates": 77,
+            "navigation": {
+              "Session": 16,
+              "Status": "arrived",
+              "Action": "jump",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 52,
+              "HoldFrames": 6,
+              "PredictedLanding": {
+                "X": 33760.156,
+                "Y": 3462
+              },
+              "ActualLanding": {
+                "X": 33760.156,
+                "Y": 3462
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33760.156,
+                "Y": 3462
+              },
+              "ObservedPosition": {
+                "X": 33760.156,
+                "Y": 3462
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33712,
+              "CompletedActions": 2,
+              "CompletedJumps": 1,
+              "Expansions": 14,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 25.0632,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": true,
+                "Predicted": {
+                  "X": 33760.156,
+                  "Y": 3462
+                },
+                "Actual": {
+                  "X": 33760.156,
+                  "Y": 3462
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": true,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33712,
+                "MaxPlayerLeftX": 33780,
+                "SurfaceY": 3504
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 4138,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 4138,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 8279
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "low_obstacle",
+        "direction": -1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "12042200f41748a0a97eb882e4790244",
+          "session": "1b91854c3e7549e0ac8f72c0b3327c9b",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33508,
+            "surfaceY": 3504
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33440,
+              "maxPlayerLeftX": 33508,
+              "surfaceY": 3504
+            },
+            "startX": 33614,
+            "x": 33467.844,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "updates": 77,
+            "navigation": {
+              "Session": 17,
+              "Status": "arrived",
+              "Action": "jump",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 52,
+              "HoldFrames": 6,
+              "PredictedLanding": {
+                "X": 33467.844,
+                "Y": 3462
+              },
+              "ActualLanding": {
+                "X": 33467.844,
+                "Y": 3462
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33467.844,
+                "Y": 3462
+              },
+              "ObservedPosition": {
+                "X": 33467.844,
+                "Y": 3462
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33440,
+              "CompletedActions": 2,
+              "CompletedJumps": 1,
+              "Expansions": 12,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 25.0293,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": true,
+                "Predicted": {
+                  "X": 33467.844,
+                  "Y": 3462
+                },
+                "Actual": {
+                  "X": 33467.844,
+                  "Y": 3462
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": true,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33440,
+                "MaxPlayerLeftX": 33508,
+                "SurfaceY": 3504
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 4294,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 4294,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 8591
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "platform_up",
+        "direction": 1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "49d28fa55c344bebb6df60c013f61680",
+          "session": "7a8c7f3e8f4c49f0835414e03b503b69",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3440
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33712,
+              "maxPlayerLeftX": 33780,
+              "surfaceY": 3440
+            },
+            "startX": 33614,
+            "x": 33737.43,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "updates": 70,
+            "navigation": {
+              "Session": 18,
+              "Status": "arrived",
+              "Action": "jump",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 45,
+              "HoldFrames": 10,
+              "PredictedLanding": {
+                "X": 33737.43,
+                "Y": 3398
+              },
+              "ActualLanding": {
+                "X": 33737.43,
+                "Y": 3398
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33737.43,
+                "Y": 3398
+              },
+              "ObservedPosition": {
+                "X": 33737.43,
+                "Y": 3398
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33712,
+              "CompletedActions": 2,
+              "CompletedJumps": 1,
+              "Expansions": 12,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 25.0369,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": true,
+                "Predicted": {
+                  "X": 33737.43,
+                  "Y": 3398
+                },
+                "Actual": {
+                  "X": 33737.43,
+                  "Y": 3398
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": true,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33712,
+                "MaxPlayerLeftX": 33780,
+                "SurfaceY": 3440
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 4443,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 4443,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 8889
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "platform_up",
+        "direction": -1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "d88c2f3cf104473fab0ff5c60d4535ba",
+          "session": "b618cb52c47d4f4c965762527d8fd443",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33508,
+            "surfaceY": 3440
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33440,
+              "maxPlayerLeftX": 33508,
+              "surfaceY": 3440
+            },
+            "startX": 33614,
+            "x": 33490.57,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "updates": 70,
+            "navigation": {
+              "Session": 19,
+              "Status": "arrived",
+              "Action": "jump",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 45,
+              "HoldFrames": 10,
+              "PredictedLanding": {
+                "X": 33490.57,
+                "Y": 3398
+              },
+              "ActualLanding": {
+                "X": 33490.57,
+                "Y": 3398
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33490.57,
+                "Y": 3398
+              },
+              "ObservedPosition": {
+                "X": 33490.57,
+                "Y": 3398
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33440,
+              "CompletedActions": 2,
+              "CompletedJumps": 1,
+              "Expansions": 8,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 25.0783,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": true,
+                "Predicted": {
+                  "X": 33490.57,
+                  "Y": 3398
+                },
+                "Actual": {
+                  "X": 33490.57,
+                  "Y": 3398
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": true,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33440,
+                "MaxPlayerLeftX": 33508,
+                "SurfaceY": 3440
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 4601,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 4601,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 9205
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "platform_down",
+        "direction": 1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "dd61d3d1f7594c1d9b258d21d0a4418e",
+          "session": "dfe0313cadb04a1a9c10d9690ce42d14",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3504
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33712,
+              "maxPlayerLeftX": 33780,
+              "surfaceY": 3504
+            },
+            "startX": 33614,
+            "x": 33738.02,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "updates": 71,
+            "navigation": {
+              "Session": 20,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 46,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33738.02,
+                "Y": 3462
+              },
+              "ActualLanding": {
+                "X": 33738.02,
+                "Y": 3462
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33738.02,
+                "Y": 3462
+              },
+              "ObservedPosition": {
+                "X": 33738.02,
+                "Y": 3462
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33712,
+              "CompletedActions": 2,
+              "CompletedJumps": 0,
+              "Expansions": 6,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 14.2099,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33738.02,
+                  "Y": 3462
+                },
+                "Actual": {
+                  "X": 33738.02,
+                  "Y": 3462
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33712,
+                "MaxPlayerLeftX": 33780,
+                "SurfaceY": 3504
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 4758,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 4758,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 9519
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "platform_down",
+        "direction": -1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "completed",
+          "reason": "native_navigation_arrival_verified",
+          "reasonDetail": null,
+          "operation": "navigate_to_landing_region",
+          "actionId": "6bf6ce87b82342689d1374728b73e627",
+          "session": "6c6689bbe71649b48fb7d6792e1c83b0",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33508,
+            "surfaceY": 3504
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33440,
+              "maxPlayerLeftX": 33508,
+              "surfaceY": 3504
+            },
+            "startX": 33614,
+            "x": 33489.98,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "updates": 71,
+            "navigation": {
+              "Session": 21,
+              "Status": "arrived",
+              "Action": "walk",
+              "Reason": "landing region verified on safe settled ground",
+              "Frame": 46,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33489.98,
+                "Y": 3462
+              },
+              "ActualLanding": {
+                "X": 33489.98,
+                "Y": 3462
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33489.98,
+                "Y": 3462
+              },
+              "ObservedPosition": {
+                "X": 33489.98,
+                "Y": 3462
+              },
+              "ExpectedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33440,
+              "CompletedActions": 2,
+              "CompletedJumps": 0,
+              "Expansions": 6,
+              "PlannedActions": 1,
+              "PlanMilliseconds": 9.0788,
+              "LastLanding": {
+                "ActionNumber": 2,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33489.98,
+                  "Y": 3462
+                },
+                "Actual": {
+                  "X": 33489.98,
+                  "Y": 3462
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "Settled": true
+              },
+              "ReachedGoal": true,
+              "TimeBudgetReached": false,
+              "PlanNumber": 2,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33440,
+                "MaxPlayerLeftX": 33508,
+                "SurfaceY": 3504
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": true,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 0,
+              "Y": 0
+            },
+            "observedGameUpdate": 4917,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 4917,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": true,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 9837
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": true,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "high_platform",
+        "direction": 1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "failed",
+          "reason": "native_navigation_failed",
+          "reasonDetail": "no safe local route: search time budget reached; jump descent exceeds 64px limit (34 candidates); no safe landing/progress (18 candidates); no stable landing within prediction limit (3 candidates)",
+          "operation": "navigate_to_landing_region",
+          "actionId": "596f6acc0bd8430bb12e277edcaf4279",
+          "session": "e0bf0096145647d688724d5bdc1622a6",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3312
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33712,
+              "maxPlayerLeftX": 33780,
+              "surfaceY": 3312
+            },
+            "startX": 33614,
+            "x": 33658.918,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "updates": 103,
+            "navigation": {
+              "Session": 22,
+              "Status": "failed",
+              "Action": "plan",
+              "Reason": "no safe local route: search time budget reached; jump descent exceeds 64px limit (34 candidates); no safe landing/progress (18 candidates); no stable landing within prediction limit (3 candidates)",
+              "Frame": 6,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33656.918,
+                "Y": 3462
+              },
+              "ActualLanding": {
+                "X": 33656.918,
+                "Y": 3462
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33656.918,
+                "Y": 3462
+              },
+              "ObservedPosition": {
+                "X": 33656.918,
+                "Y": 3462
+              },
+              "ExpectedVelocity": {
+                "X": 2.1999998,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": 2.1999998,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33712,
+              "CompletedActions": 6,
+              "CompletedJumps": 1,
+              "Expansions": 7,
+              "PlannedActions": 0,
+              "PlanMilliseconds": 31.2275,
+              "LastLanding": {
+                "ActionNumber": 6,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33656.918,
+                  "Y": 3462
+                },
+                "Actual": {
+                  "X": 33656.918,
+                  "Y": 3462
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": 2.1999998,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": 2.1999998,
+                  "Y": 0
+                },
+                "Settled": false
+              },
+              "ReachedGoal": false,
+              "TimeBudgetReached": true,
+              "PlanNumber": 7,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33712,
+                "MaxPlayerLeftX": 33780,
+                "SurfaceY": 3312
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": false,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": 1.9999998,
+              "Y": 0
+            },
+            "observedGameUpdate": 5102,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 5102,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": false,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 10207
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": false,
+          "cancelled": false
+        }
+      },
+      {
+        "scene": "high_platform",
+        "direction": -1,
+        "passed": true,
+        "action": {
+          "valid": true,
+          "status": "failed",
+          "reason": "native_navigation_failed",
+          "reasonDetail": "no safe local route: search time budget reached; jump descent exceeds 64px limit (46 candidates); no safe landing/progress (27 candidates); outside route span (8 candidates)",
+          "operation": "navigate_to_landing_region",
+          "actionId": "315f601c9e7140f6be41c44a681e7e18",
+          "session": "925647459427454c9513a445bf4fc6e5",
+          "actionGeneration": 1,
+          "targetRegion": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33508,
+            "surfaceY": 3312
+          },
+          "evidence": {
+            "targetX": null,
+            "targetRegion": {
+              "minPlayerLeftX": 33440,
+              "maxPlayerLeftX": 33508,
+              "surfaceY": 3312
+            },
+            "startX": 33614,
+            "x": 33569.082,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "updates": 103,
+            "navigation": {
+              "Session": 23,
+              "Status": "failed",
+              "Action": "plan",
+              "Reason": "no safe local route: search time budget reached; jump descent exceeds 64px limit (46 candidates); no safe landing/progress (27 candidates); outside route span (8 candidates)",
+              "Frame": 6,
+              "HoldFrames": 0,
+              "PredictedLanding": {
+                "X": 33571.082,
+                "Y": 3462
+              },
+              "ActualLanding": {
+                "X": 33571.082,
+                "Y": 3462
+              },
+              "MaxError": 0,
+              "ExpectedPosition": {
+                "X": 33571.082,
+                "Y": 3462
+              },
+              "ObservedPosition": {
+                "X": 33571.082,
+                "Y": 3462
+              },
+              "ExpectedVelocity": {
+                "X": -2.1999998,
+                "Y": 0
+              },
+              "ObservedVelocity": {
+                "X": -2.1999998,
+                "Y": 0
+              },
+              "Generation": 1,
+              "TargetX": 33440,
+              "CompletedActions": 6,
+              "CompletedJumps": 1,
+              "Expansions": 10,
+              "PlannedActions": 0,
+              "PlanMilliseconds": 25.1248,
+              "LastLanding": {
+                "ActionNumber": 6,
+                "Jump": false,
+                "Predicted": {
+                  "X": 33571.082,
+                  "Y": 3462
+                },
+                "Actual": {
+                  "X": 33571.082,
+                  "Y": 3462
+                },
+                "MaxError": 0,
+                "PredictedVelocity": {
+                  "X": -2.1999998,
+                  "Y": 0
+                },
+                "ActualVelocity": {
+                  "X": -2.1999998,
+                  "Y": 0
+                },
+                "Settled": false
+              },
+              "ReachedGoal": false,
+              "TimeBudgetReached": true,
+              "PlanNumber": 7,
+              "TargetRegion": {
+                "MinPlayerLeftX": 33440,
+                "MaxPlayerLeftX": 33508,
+                "SurfaceY": 3312
+              },
+              "LandingConfirmationFrames": 0,
+              "ObservedGrounded": null,
+              "SafeSupport": null
+            },
+            "arrived": false,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "velocityBeforeRelease": {
+              "X": -1.9999998,
+              "Y": 0
+            },
+            "observedGameUpdate": 5290,
+            "effectStatus": "native_navigation_observed"
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 5290,
+            "worldSessionId": "9c06f8a630e943d5935c44d87c91c84b",
+            "actorId": "d216992be117498bb42e81f2b6b3ec73",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "effectVerified": false,
+            "operation": "navigate_to_landing_region",
+            "observationSequence": 10583
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": false,
+          "cancelled": false
+        }
+      }
+    ]
+  },
+  "natural": {
+    "scenarios": 6,
+    "legs": 6,
+    "cases": [
+      {
+        "case": "region-p0-r",
+        "stop": "two_leg_budget",
+        "legs": [
+          {
+            "beforeFeetY": 3744,
+            "action": {
+              "valid": true,
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "reasonDetail": null,
+              "operation": "navigate_to_landing_region",
+              "actionId": "8b5737a9d0e64f2899cf60cc1c76c8b6",
+              "session": "df1a184160e94bf0982ae7836c5f6bc8",
+              "actionGeneration": 1,
+              "targetRegion": {
+                "minPlayerLeftX": 33728,
+                "maxPlayerLeftX": 33732,
+                "surfaceY": 3760
+              },
+              "evidence": {
+                "targetX": null,
+                "targetRegion": {
+                  "minPlayerLeftX": 33728,
+                  "maxPlayerLeftX": 33732,
+                  "surfaceY": 3760
+                },
+                "startX": 33632,
+                "x": 33729.395,
+                "y": 3718,
+                "vx": 0,
+                "vy": 0,
+                "updates": 61,
+                "navigation": {
+                  "Session": 1,
+                  "Status": "arrived",
+                  "Action": "walk",
+                  "Reason": "landing region verified on safe settled ground",
+                  "Frame": 22,
+                  "HoldFrames": 0,
+                  "PredictedLanding": {
+                    "X": 33729.395,
+                    "Y": 3718
+                  },
+                  "ActualLanding": {
+                    "X": 33729.395,
+                    "Y": 3718
+                  },
+                  "MaxError": 0,
+                  "ExpectedPosition": {
+                    "X": 33729.395,
+                    "Y": 3718
+                  },
+                  "ObservedPosition": {
+                    "X": 33729.395,
+                    "Y": 3718
+                  },
+                  "ExpectedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "ObservedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "Generation": 1,
+                  "TargetX": 33728,
+                  "CompletedActions": 2,
+                  "CompletedJumps": 1,
+                  "Expansions": 1,
+                  "PlannedActions": 1,
+                  "PlanMilliseconds": 10.4248,
+                  "LastLanding": {
+                    "ActionNumber": 2,
+                    "Jump": false,
+                    "Predicted": {
+                      "X": 33729.395,
+                      "Y": 3718
+                    },
+                    "Actual": {
+                      "X": 33729.395,
+                      "Y": 3718
+                    },
+                    "MaxError": 0,
+                    "PredictedVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "ActualVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "Settled": true
+                  },
+                  "ReachedGoal": true,
+                  "TimeBudgetReached": false,
+                  "PlanNumber": 2,
+                  "TargetRegion": {
+                    "MinPlayerLeftX": 33728,
+                    "MaxPlayerLeftX": 33732,
+                    "SurfaceY": 3760
+                  },
+                  "LandingConfirmationFrames": 0,
+                  "ObservedGrounded": null,
+                  "SafeSupport": null
+                },
+                "arrived": true,
+                "grounded": true,
+                "safeSupport": true,
+                "settled": true,
+                "velocityBeforeRelease": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "observedGameUpdate": 400,
+                "effectStatus": "native_navigation_observed"
+              },
+              "endEvidence": {
+                "phase": "ServerAI_game_thread_inputs_released",
+                "gameUpdate": 400,
+                "worldSessionId": "87ceb34deeef4d2d9f4d12fab17dd6be",
+                "actorId": "54b60b109bf54f8ea5652558393337f2",
+                "actorGeneration": 1,
+                "actorSlot": 254,
+                "inputsAcquired": true,
+                "inputsReleased": true,
+                "effectVerified": true,
+                "operation": "navigate_to_landing_region",
+                "observationSequence": 803
+              },
+              "endEvidenceStatus": "known",
+              "controlGeneration": 1,
+              "completed": true,
+              "cancelled": false
+            }
+          },
+          {
+            "beforeFeetY": 3760,
+            "action": {
+              "valid": true,
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "reasonDetail": null,
+              "operation": "navigate_to_landing_region",
+              "actionId": "e1da13a151b44b6b92d194eef077c343",
+              "session": "df1a184160e94bf0982ae7836c5f6bc8",
+              "actionGeneration": 1,
+              "targetRegion": {
+                "minPlayerLeftX": 33824,
+                "maxPlayerLeftX": 33860,
+                "surfaceY": 3776
+              },
+              "evidence": {
+                "targetX": null,
+                "targetRegion": {
+                  "minPlayerLeftX": 33824,
+                  "maxPlayerLeftX": 33860,
+                  "surfaceY": 3776
+                },
+                "startX": 33729.395,
+                "x": 33839.15,
+                "y": 3734,
+                "vx": 0,
+                "vy": 0,
+                "updates": 65,
+                "navigation": {
+                  "Session": 2,
+                  "Status": "arrived",
+                  "Action": "walk",
+                  "Reason": "landing region verified on safe settled ground",
+                  "Frame": 40,
+                  "HoldFrames": 0,
+                  "PredictedLanding": {
+                    "X": 33839.15,
+                    "Y": 3734
+                  },
+                  "ActualLanding": {
+                    "X": 33839.15,
+                    "Y": 3734
+                  },
+                  "MaxError": 0,
+                  "ExpectedPosition": {
+                    "X": 33839.15,
+                    "Y": 3734
+                  },
+                  "ObservedPosition": {
+                    "X": 33839.15,
+                    "Y": 3734
+                  },
+                  "ExpectedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "ObservedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "Generation": 1,
+                  "TargetX": 33824,
+                  "CompletedActions": 2,
+                  "CompletedJumps": 0,
+                  "Expansions": 8,
+                  "PlannedActions": 1,
+                  "PlanMilliseconds": 24.1515,
+                  "LastLanding": {
+                    "ActionNumber": 2,
+                    "Jump": false,
+                    "Predicted": {
+                      "X": 33839.15,
+                      "Y": 3734
+                    },
+                    "Actual": {
+                      "X": 33839.15,
+                      "Y": 3734
+                    },
+                    "MaxError": 0,
+                    "PredictedVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "ActualVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "Settled": true
+                  },
+                  "ReachedGoal": true,
+                  "TimeBudgetReached": false,
+                  "PlanNumber": 2,
+                  "TargetRegion": {
+                    "MinPlayerLeftX": 33824,
+                    "MaxPlayerLeftX": 33860,
+                    "SurfaceY": 3776
+                  },
+                  "LandingConfirmationFrames": 0,
+                  "ObservedGrounded": null,
+                  "SafeSupport": null
+                },
+                "arrived": true,
+                "grounded": true,
+                "safeSupport": true,
+                "settled": true,
+                "velocityBeforeRelease": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "observedGameUpdate": 591,
+                "effectStatus": "native_navigation_observed"
+              },
+              "endEvidence": {
+                "phase": "ServerAI_game_thread_inputs_released",
+                "gameUpdate": 591,
+                "worldSessionId": "87ceb34deeef4d2d9f4d12fab17dd6be",
+                "actorId": "54b60b109bf54f8ea5652558393337f2",
+                "actorGeneration": 1,
+                "actorSlot": 254,
+                "inputsAcquired": true,
+                "inputsReleased": true,
+                "effectVerified": true,
+                "operation": "navigate_to_landing_region",
+                "observationSequence": 1185
+              },
+              "endEvidenceStatus": "known",
+              "controlGeneration": 1,
+              "completed": true,
+              "cancelled": false
+            }
+          }
+        ]
+      },
+      {
+        "case": "region-p0-l",
+        "stop": "no_observed_flat_region_at_different_height",
+        "legs": []
+      },
+      {
+        "case": "region-p32-r",
+        "stop": "two_leg_budget",
+        "legs": [
+          {
+            "beforeFeetY": 3760,
+            "action": {
+              "valid": true,
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "reasonDetail": null,
+              "operation": "navigate_to_landing_region",
+              "actionId": "96b9b4d676f543e28c62b77650183f45",
+              "session": "3909dd8a819d454ea253e20acf3e9784",
+              "actionGeneration": 1,
+              "targetRegion": {
+                "minPlayerLeftX": 34304,
+                "maxPlayerLeftX": 34308,
+                "surfaceY": 3744
+              },
+              "evidence": {
+                "targetX": null,
+                "targetRegion": {
+                  "minPlayerLeftX": 34304,
+                  "maxPlayerLeftX": 34308,
+                  "surfaceY": 3744
+                },
+                "startX": 34144,
+                "x": 34307.746,
+                "y": 3702,
+                "vx": 0,
+                "vy": 0,
+                "updates": 84,
+                "navigation": {
+                  "Session": 3,
+                  "Status": "arrived",
+                  "Action": "walk",
+                  "Reason": "landing region verified on safe settled ground",
+                  "Frame": 41,
+                  "HoldFrames": 0,
+                  "PredictedLanding": {
+                    "X": 34307.746,
+                    "Y": 3702
+                  },
+                  "ActualLanding": {
+                    "X": 34307.746,
+                    "Y": 3702
+                  },
+                  "MaxError": 0,
+                  "ExpectedPosition": {
+                    "X": 34307.746,
+                    "Y": 3702
+                  },
+                  "ObservedPosition": {
+                    "X": 34307.746,
+                    "Y": 3702
+                  },
+                  "ExpectedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "ObservedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "Generation": 1,
+                  "TargetX": 34304,
+                  "CompletedActions": 5,
+                  "CompletedJumps": 0,
+                  "Expansions": 5,
+                  "PlannedActions": 1,
+                  "PlanMilliseconds": 25.9096,
+                  "LastLanding": {
+                    "ActionNumber": 5,
+                    "Jump": false,
+                    "Predicted": {
+                      "X": 34307.746,
+                      "Y": 3702
+                    },
+                    "Actual": {
+                      "X": 34307.746,
+                      "Y": 3702
+                    },
+                    "MaxError": 0,
+                    "PredictedVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "ActualVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "Settled": true
+                  },
+                  "ReachedGoal": true,
+                  "TimeBudgetReached": true,
+                  "PlanNumber": 5,
+                  "TargetRegion": {
+                    "MinPlayerLeftX": 34304,
+                    "MaxPlayerLeftX": 34308,
+                    "SurfaceY": 3744
+                  },
+                  "LandingConfirmationFrames": 0,
+                  "ObservedGrounded": null,
+                  "SafeSupport": null
+                },
+                "arrived": true,
+                "grounded": true,
+                "safeSupport": true,
+                "settled": true,
+                "velocityBeforeRelease": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "observedGameUpdate": 859,
+                "effectStatus": "native_navigation_observed"
+              },
+              "endEvidence": {
+                "phase": "ServerAI_game_thread_inputs_released",
+                "gameUpdate": 859,
+                "worldSessionId": "87ceb34deeef4d2d9f4d12fab17dd6be",
+                "actorId": "54b60b109bf54f8ea5652558393337f2",
+                "actorGeneration": 1,
+                "actorSlot": 254,
+                "inputsAcquired": true,
+                "inputsReleased": true,
+                "effectVerified": true,
+                "operation": "navigate_to_landing_region",
+                "observationSequence": 1721
+              },
+              "endEvidenceStatus": "known",
+              "controlGeneration": 1,
+              "completed": true,
+              "cancelled": false
+            }
+          },
+          {
+            "beforeFeetY": 3744,
+            "action": {
+              "valid": true,
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "reasonDetail": null,
+              "operation": "navigate_to_landing_region",
+              "actionId": "89416aef18954f418549eaad24712ca8",
+              "session": "3909dd8a819d454ea253e20acf3e9784",
+              "actionGeneration": 1,
+              "targetRegion": {
+                "minPlayerLeftX": 34432,
+                "maxPlayerLeftX": 34484,
+                "surfaceY": 3728
+              },
+              "evidence": {
+                "targetX": null,
+                "targetRegion": {
+                  "minPlayerLeftX": 34432,
+                  "maxPlayerLeftX": 34484,
+                  "surfaceY": 3728
+                },
+                "startX": 34307.746,
+                "x": 34437.168,
+                "y": 3686,
+                "vx": 0,
+                "vy": 0,
+                "updates": 74,
+                "navigation": {
+                  "Session": 4,
+                  "Status": "arrived",
+                  "Action": "walk",
+                  "Reason": "landing region verified on safe settled ground",
+                  "Frame": 41,
+                  "HoldFrames": 0,
+                  "PredictedLanding": {
+                    "X": 34437.168,
+                    "Y": 3686
+                  },
+                  "ActualLanding": {
+                    "X": 34437.168,
+                    "Y": 3686
+                  },
+                  "MaxError": 0,
+                  "ExpectedPosition": {
+                    "X": 34437.168,
+                    "Y": 3686
+                  },
+                  "ObservedPosition": {
+                    "X": 34437.168,
+                    "Y": 3686
+                  },
+                  "ExpectedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "ObservedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "Generation": 1,
+                  "TargetX": 34432,
+                  "CompletedActions": 3,
+                  "CompletedJumps": 0,
+                  "Expansions": 4,
+                  "PlannedActions": 1,
+                  "PlanMilliseconds": 25.111,
+                  "LastLanding": {
+                    "ActionNumber": 3,
+                    "Jump": false,
+                    "Predicted": {
+                      "X": 34437.168,
+                      "Y": 3686
+                    },
+                    "Actual": {
+                      "X": 34437.168,
+                      "Y": 3686
+                    },
+                    "MaxError": 0,
+                    "PredictedVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "ActualVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "Settled": true
+                  },
+                  "ReachedGoal": true,
+                  "TimeBudgetReached": true,
+                  "PlanNumber": 3,
+                  "TargetRegion": {
+                    "MinPlayerLeftX": 34432,
+                    "MaxPlayerLeftX": 34484,
+                    "SurfaceY": 3728
+                  },
+                  "LandingConfirmationFrames": 0,
+                  "ObservedGrounded": null,
+                  "SafeSupport": null
+                },
+                "arrived": true,
+                "grounded": true,
+                "safeSupport": true,
+                "settled": true,
+                "velocityBeforeRelease": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "observedGameUpdate": 1054,
+                "effectStatus": "native_navigation_observed"
+              },
+              "endEvidence": {
+                "phase": "ServerAI_game_thread_inputs_released",
+                "gameUpdate": 1054,
+                "worldSessionId": "87ceb34deeef4d2d9f4d12fab17dd6be",
+                "actorId": "54b60b109bf54f8ea5652558393337f2",
+                "actorGeneration": 1,
+                "actorSlot": 254,
+                "inputsAcquired": true,
+                "inputsReleased": true,
+                "effectVerified": true,
+                "operation": "navigate_to_landing_region",
+                "observationSequence": 2111
+              },
+              "endEvidenceStatus": "known",
+              "controlGeneration": 1,
+              "completed": true,
+              "cancelled": false
+            }
+          }
+        ]
+      },
+      {
+        "case": "region-p32-l",
+        "stop": "no_observed_flat_region_at_different_height",
+        "legs": [
+          {
+            "beforeFeetY": 3760,
+            "action": {
+              "valid": true,
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "reasonDetail": null,
+              "operation": "navigate_to_landing_region",
+              "actionId": "43de0318a6174587a9dde9c41791ca1d",
+              "session": "472054a38c164959acfced7e1d1423e4",
+              "actionGeneration": 1,
+              "targetRegion": {
+                "minPlayerLeftX": 33968,
+                "maxPlayerLeftX": 34052,
+                "surfaceY": 3792
+              },
+              "evidence": {
+                "targetX": null,
+                "targetRegion": {
+                  "minPlayerLeftX": 33968,
+                  "maxPlayerLeftX": 34052,
+                  "surfaceY": 3792
+                },
+                "startX": 34144,
+                "x": 34046.863,
+                "y": 3750,
+                "vx": 0,
+                "vy": 0,
+                "updates": 63,
+                "navigation": {
+                  "Session": 5,
+                  "Status": "arrived",
+                  "Action": "walk",
+                  "Reason": "landing region verified on safe settled ground",
+                  "Frame": 23,
+                  "HoldFrames": 0,
+                  "PredictedLanding": {
+                    "X": 34046.863,
+                    "Y": 3750
+                  },
+                  "ActualLanding": {
+                    "X": 34046.863,
+                    "Y": 3750
+                  },
+                  "MaxError": 0,
+                  "ExpectedPosition": {
+                    "X": 34046.863,
+                    "Y": 3750
+                  },
+                  "ObservedPosition": {
+                    "X": 34046.863,
+                    "Y": 3750
+                  },
+                  "ExpectedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "ObservedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "Generation": 1,
+                  "TargetX": 33968,
+                  "CompletedActions": 4,
+                  "CompletedJumps": 0,
+                  "Expansions": 1,
+                  "PlannedActions": 1,
+                  "PlanMilliseconds": 4.9389,
+                  "LastLanding": {
+                    "ActionNumber": 4,
+                    "Jump": false,
+                    "Predicted": {
+                      "X": 34046.863,
+                      "Y": 3750
+                    },
+                    "Actual": {
+                      "X": 34046.863,
+                      "Y": 3750
+                    },
+                    "MaxError": 0,
+                    "PredictedVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "ActualVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "Settled": true
+                  },
+                  "ReachedGoal": true,
+                  "TimeBudgetReached": false,
+                  "PlanNumber": 4,
+                  "TargetRegion": {
+                    "MinPlayerLeftX": 33968,
+                    "MaxPlayerLeftX": 34052,
+                    "SurfaceY": 3792
+                  },
+                  "LandingConfirmationFrames": 0,
+                  "ObservedGrounded": null,
+                  "SafeSupport": null
+                },
+                "arrived": true,
+                "grounded": true,
+                "safeSupport": true,
+                "settled": true,
+                "velocityBeforeRelease": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "observedGameUpdate": 1262,
+                "effectStatus": "native_navigation_observed"
+              },
+              "endEvidence": {
+                "phase": "ServerAI_game_thread_inputs_released",
+                "gameUpdate": 1262,
+                "worldSessionId": "87ceb34deeef4d2d9f4d12fab17dd6be",
+                "actorId": "54b60b109bf54f8ea5652558393337f2",
+                "actorGeneration": 1,
+                "actorSlot": 254,
+                "inputsAcquired": true,
+                "inputsReleased": true,
+                "effectVerified": true,
+                "operation": "navigate_to_landing_region",
+                "observationSequence": 2527
+              },
+              "endEvidenceStatus": "known",
+              "controlGeneration": 1,
+              "completed": true,
+              "cancelled": false
+            }
+          }
+        ]
+      },
+      {
+        "case": "region-m32-r",
+        "stop": "no_observed_flat_region_at_different_height",
+        "legs": [
+          {
+            "beforeFeetY": 3728,
+            "action": {
+              "valid": true,
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "reasonDetail": null,
+              "operation": "navigate_to_landing_region",
+              "actionId": "af82fdfacf67439daaee73845110a153",
+              "session": "2a9758907d904f9eb287b85bb1b404d1",
+              "actionGeneration": 1,
+              "targetRegion": {
+                "minPlayerLeftX": 33216,
+                "maxPlayerLeftX": 33300,
+                "surfaceY": 3744
+              },
+              "evidence": {
+                "targetX": null,
+                "targetRegion": {
+                  "minPlayerLeftX": 33216,
+                  "maxPlayerLeftX": 33300,
+                  "surfaceY": 3744
+                },
+                "startX": 33120,
+                "x": 33229.754,
+                "y": 3702,
+                "vx": 0,
+                "vy": 0,
+                "updates": 65,
+                "navigation": {
+                  "Session": 6,
+                  "Status": "arrived",
+                  "Action": "walk",
+                  "Reason": "landing region verified on safe settled ground",
+                  "Frame": 40,
+                  "HoldFrames": 0,
+                  "PredictedLanding": {
+                    "X": 33229.754,
+                    "Y": 3702
+                  },
+                  "ActualLanding": {
+                    "X": 33229.754,
+                    "Y": 3702
+                  },
+                  "MaxError": 0,
+                  "ExpectedPosition": {
+                    "X": 33229.754,
+                    "Y": 3702
+                  },
+                  "ObservedPosition": {
+                    "X": 33229.754,
+                    "Y": 3702
+                  },
+                  "ExpectedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "ObservedVelocity": {
+                    "X": 0,
+                    "Y": 0
+                  },
+                  "Generation": 1,
+                  "TargetX": 33216,
+                  "CompletedActions": 2,
+                  "CompletedJumps": 0,
+                  "Expansions": 4,
+                  "PlannedActions": 1,
+                  "PlanMilliseconds": 18.7035,
+                  "LastLanding": {
+                    "ActionNumber": 2,
+                    "Jump": false,
+                    "Predicted": {
+                      "X": 33229.754,
+                      "Y": 3702
+                    },
+                    "Actual": {
+                      "X": 33229.754,
+                      "Y": 3702
+                    },
+                    "MaxError": 0,
+                    "PredictedVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "ActualVelocity": {
+                      "X": 0,
+                      "Y": 0
+                    },
+                    "Settled": true
+                  },
+                  "ReachedGoal": true,
+                  "TimeBudgetReached": false,
+                  "PlanNumber": 2,
+                  "TargetRegion": {
+                    "MinPlayerLeftX": 33216,
+                    "MaxPlayerLeftX": 33300,
+                    "SurfaceY": 3744
+                  },
+                  "LandingConfirmationFrames": 0,
+                  "ObservedGrounded": null,
+                  "SafeSupport": null
+                },
+                "arrived": true,
+                "grounded": true,
+                "safeSupport": true,
+                "settled": true,
+                "velocityBeforeRelease": {
+                  "X": 0,
+                  "Y": 0
+                },
+                "observedGameUpdate": 1444,
+                "effectStatus": "native_navigation_observed"
+              },
+              "endEvidence": {
+                "phase": "ServerAI_game_thread_inputs_released",
+                "gameUpdate": 1444,
+                "worldSessionId": "87ceb34deeef4d2d9f4d12fab17dd6be",
+                "actorId": "54b60b109bf54f8ea5652558393337f2",
+                "actorGeneration": 1,
+                "actorSlot": 254,
+                "inputsAcquired": true,
+                "inputsReleased": true,
+                "effectVerified": true,
+                "operation": "navigate_to_landing_region",
+                "observationSequence": 2891
+              },
+              "endEvidenceStatus": "known",
+              "controlGeneration": 1,
+              "completed": true,
+              "cancelled": false
+            }
+          }
+        ]
+      },
+      {
+        "case": "region-m32-l",
+        "stop": "no_observed_flat_region_at_different_height",
+        "legs": []
+      }
+    ]
+  },
+  "offline": {
+    "pythonNewLanding": 5,
+    "pythonExistingBackend": 28,
+    "pythonClientLanding": 6,
+    "csharpIpc": 45,
+    "csharpAtomic": 40,
+    "csharpRead": 45,
+    "csharpNativeAdapter": 51,
+    "csharpChat": 30,
+    "formalPackageIL": 56,
+    "clientLanding": "passed; synthetic game world"
+  },
+  "graphicalHostAndPlay": "pending combined acceptance with native mining pickup",
+  "liveLLM": "not run"
+}

@@ -20,6 +20,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     {
         internal AiReadOnlyProtocol.Identity Identity;
         internal float Target, StartX;
+        internal LandingRegion Region;
         internal int Session, Generation, Updates;
         internal string Status="running", Reason="navigation_accepted";
         internal string ReasonDetail;
@@ -36,20 +37,24 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     public bool Running => Current?.Status=="running";
     public bool Matches(Player p) => Current!=null && ReferenceEquals(Current.Identity.Actor,p);
     internal Run Start(AiReadOnlyProtocol.Identity identity,float target)
+        =>Start(identity,target,null);
+    internal Run Start(AiReadOnlyProtocol.Identity identity,LandingRegion region)
+        =>Start(identity,region.MinPlayerLeftX,region);
+    private Run Start(AiReadOnlyProtocol.Identity identity,float target,LandingRegion region)
     {
         var p=(Player)identity.Actor;
         ServerAiNativeActions.Require(identity);
         ActorControl.Healthy(p);
         if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Actor busy.");
         navigation.Cancel();
-        Current=new Run{Identity=identity,Target=target,StartX=p.position.X,Session=checked(++session),Generation=checked((int)identity.Generation)};
+        Current=new Run{Identity=identity,Target=target,Region=region,StartX=p.position.X,Session=checked(++session),Generation=checked((int)identity.Generation)};
         return Current;
     }
     public void BeforeMovement(Player p)
     {
         if(!executing||!Matches(p)||!NativeSurvival.Owns(p))throw new InvalidOperationException("No owned navigation update scope.");
         ServerAiNativeActions.Require(Current.Identity);
-        var input=navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,Current.Target);
+        var input=navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,Current.Region==null?Current.Target:null,Current.Region);
         p.controlLeft=input.Direction<0;p.controlRight=input.Direction>0;p.controlJump=input.Jump;
         p.controlDown=p.controlUp=p.controlUseItem=p.controlUseTile=false;
         injected=true;
@@ -110,7 +115,10 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 else if(run.Snapshot.Status=="arrived")
                 {
                     var terrain=TerrainReader.Read(p);
-                    bool arrived=terrain.Grounded&&Math.Abs(p.velocity.X)<=0.1f&&Math.Abs(p.velocity.Y)<=0.1f
+                    var observed=Observe(p);
+                    bool arrived=run.Region!=null
+                        ? run.Region.Arrived(observed.State,new NativeMotionWorld(observed.State))
+                        : terrain.Grounded&&Math.Abs(p.velocity.X)<=0.1f&&Math.Abs(p.velocity.Y)<=0.1f
                         &&(run.Target>=run.StartX?1:-1)*(run.Target-p.position.X)<=12;
                     Stop(arrived?"completed":"unknown",arrived?"native_navigation_arrival_verified":"arrival_not_settled");
                 }

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
+using CompanionBridge.Motion;
 using VirtualPlayerEngineProbe;
 using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
 
@@ -14,6 +15,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     private sealed record Handle(AiReadOnlyProtocol.Identity Identity,string Operation,object Context,Result Rejection=null);
     private readonly ServerAiNavigation navigation = new();
     private Handle active;
+    private static bool IsNavigation(string op)=>op is "navigate_to_x" or "navigate_to_landing_region";
     internal ServerAiNativeActions(){ActorControl.Driver=navigation;}
     internal static bool Owned(AiReadOnlyProtocol.Identity expected)
     {
@@ -50,6 +52,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         {
             object context;
             if(operation=="navigate_to_x")context=navigation.Start(identity,args.GetProperty("targetX").GetSingle());
+            else if(operation=="navigate_to_landing_region")context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args));
             else if(operation=="use_item")
             {
                 if(p.selectedItem<0||p.selectedItem>9||p.HeldItem.IsAir||!ActorItemUse.Supported(p.HeldItem.type))return Reject("unsupported_selected_item");
@@ -78,16 +81,17 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
         var p=(Player)h.Identity.Actor;
-        if(h.Operation=="navigate_to_x")
+        if(IsNavigation(h.Operation))
         {
             if(!ReferenceEquals(navigation.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ServerAiNavigation.Run)h.Context;
             var physical=c.FinalObservation??ServerAiNavigation.Observe(p);
-            return new(c.Status,c.Reason,new{targetX=c.Target,startX=c.StartX,x=physical.State.Px,y=physical.State.Py,vx=physical.State.Vx,vy=physical.State.Vy,
+            return new(c.Status,c.Reason,new{targetX=c.Region==null?(float?)c.Target:null,targetRegion=c.Region==null?null:new{minPlayerLeftX=c.Region.MinPlayerLeftX,maxPlayerLeftX=c.Region.MaxPlayerLeftX,surfaceY=c.Region.SurfaceY},startX=c.StartX,x=physical.State.Px,y=physical.State.Py,vx=physical.State.Vx,vy=physical.State.Vy,
                 updates=c.Updates,navigation=c.Snapshot,arrived=c.Status=="completed",grounded=physical.State.Grounded,
                 safeSupport=physical.SafeSupport,settled=physical.Settled,velocityBeforeRelease=c.VelocityBeforeRelease,
                 observedGameUpdate=c.FinalObservation!=null?c.FinalObservationTick:Main.GameUpdateCount,
-                effectStatus="native_navigation_observed"},Released(p),c.Status=="completed"&&physical.Settled,InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);
+                effectStatus="native_navigation_observed"},Released(p),c.Status=="completed"&&physical.Settled
+                    &&(c.Region==null||c.Region.Arrived(physical.State,new NativeMotionWorld(physical.State))),InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);
         }
         if(h.Operation=="use_item")
         {
@@ -114,7 +118,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var observed=Poll(h.Identity,h);
         if(observed.Status!="running")return observed;
         var p=(Player)h.Identity.Actor;
-        if(h.Operation=="navigate_to_x")navigation.Stop("cancelled","explicit_stop");
+        if(IsNavigation(h.Operation))navigation.Stop("cancelled","explicit_stop");
         else if(h.Operation=="use_item")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
         else ActorMining.Retire(p);
         return Poll(h.Identity,h);
