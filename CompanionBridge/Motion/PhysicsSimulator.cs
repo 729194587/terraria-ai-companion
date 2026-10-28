@@ -43,6 +43,8 @@ internal sealed class UnsafeMotionException : Exception
 
 internal static class PhysicsSimulator
 {
+    internal static bool SupportedCheckpoint(PhysicsState s,IMotionWorld world)=>s.Grounded
+        &&Math.Abs(s.Vy)<=0.1f&&s.ReleaseJump&&s.JumpFramesLeft==0&&world.SafeLanding(s);
     internal const int PlayerW = 20, PlayerH = 42, MaxFrames = 90, WalkFrames = 12;
 
     // TerraBlind's dry step, adapted to the installed 1.4.4.9 IL. Collision is
@@ -173,7 +175,7 @@ internal static class PhysicsSimulator
                 }
             }
             bool doneMoving = hold > 0 ? airborne && next.Grounded && f >= hold : f >= walkFrames;
-            stable = doneMoving && next.Grounded && Math.Abs(next.Vx) < 0.01f ? stable + 1 : 0;
+            stable = doneMoving && SupportedCheckpoint(next,world) && Math.Abs(next.Vx) < 0.01f ? stable + 1 : 0;
             s = next;
             if (stable >= 2)
             {
@@ -183,7 +185,7 @@ internal static class PhysicsSimulator
                 if (hold == 0 && !brakingOnly)
                 {
                     execute = walkFrames;
-                    while (!frames[execute - 1].State.Grounded && execute < frames.Count) execute++;
+                    while (!SupportedCheckpoint(frames[execute - 1].State,world) && execute < frames.Count) execute++;
                 }
                 return new(safe, safe ? "safe landing and braking" : "no safe landing/progress",
                     frames, s, execute, hold > 0);

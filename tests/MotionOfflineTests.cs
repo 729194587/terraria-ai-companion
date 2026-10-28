@@ -1013,6 +1013,10 @@ public static class MotionOfflineTests
         Check(controller.Snapshot.Status == "landed", "Partial contact must not prematurely exhaust two-frame landing handoff");
         Check(raw.Frames.Take(raw.ExecuteFrames).All(f => f.Input.Direction == 1),
             "Forward input remains held through partial contact and full landing");
+        var walk=PhysicsSimulator.Predict(new(1600,1557.7f,2.8f,0,true),1,0,ph,world,walkFrames:1);
+        Check(walk.Safe&&walk.Frames[0].State.Grounded&&walk.Frames[0].State.Vy>0.1f
+            &&walk.ExecuteFrames>1&&PhysicsSimulator.SupportedCheckpoint(walk.Frames[walk.ExecuteFrames-1].State,world),
+            "Walking handoff skips clipped contact with residual downward velocity despite zero prediction error");
         Console.WriteLine("PASS: clipped downward contact before true grounding, two-frame landing handoff and uninterrupted input");
     }
 

@@ -459,8 +459,8 @@ internal static class AtomicOperations
         {
             var nav = GameNavigation.Snapshot;
             if (nav.Generation == action.Generation && nav.Session == action.Session && nav.TargetRegion == action.TargetRegion
-                && nav.Status is "arrived" or "failed")
-                CompanionBridge.Controls.FinishAtomic(action.ActionId, nav.Status == "arrived" ? "completed" : "failed", nav.Reason, nav);
+                && nav.Status is "arrived" or "failed" or "unknown")
+                CompanionBridge.Controls.FinishAtomic(action.ActionId, nav.Status == "arrived" ? "completed" : nav.Status, nav.Reason, nav);
             return;
         }
         if (action.ActionId == _action) _used |= p.itemAnimation > 0 || p.itemTime > 0;

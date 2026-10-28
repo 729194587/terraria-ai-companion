@@ -14,7 +14,8 @@ internal sealed record NavigationSnapshot(int Session, string Status, string Act
     float? TargetX = null, int CompletedActions = 0, int CompletedJumps = 0,
     int Expansions = 0, int PlannedActions = 0, double PlanMilliseconds = 0,
     LandingFeedback LastLanding = null, bool? ReachedGoal = null, bool? TimeBudgetReached = null,
-    int PlanNumber = 0, LandingRegion TargetRegion = null);
+    int PlanNumber = 0, LandingRegion TargetRegion = null, int LandingConfirmationFrames = 0,
+    bool? ObservedGrounded = null, bool? SafeSupport = null);
 
 // One rolling walk or one jump; no graph, digging, placement, or autonomous retries.
 // Candidate simulation and landing feedback follow TerraBlind JumpExecutor's pattern.
@@ -27,10 +28,12 @@ internal sealed class LocalMotionController
     internal NavigationSnapshot Snapshot { get; private set; } = new(0, "idle", "none", "not started", 0, 0, null, null, 0);
     internal bool Terminal => Snapshot.Status is "failed" or "landed";
     internal bool NeedsPlan => _plan == null;
+    internal bool NeedsLandingConfirmation { get; private set; }
 
     internal void LoadPlan(Prediction plan)
     {
         _plan = plan;
+        NeedsLandingConfirmation=false;
         _frame = 0; _badFrames = 0; _supportedLandingFrames = 0; _maxError = 0; _airborne = false;
         _hold = plan.Frames.FindAll(f => f.Input.Jump).Count;
         Snapshot = Snapshot with { Status = "running" };
@@ -45,6 +48,7 @@ internal sealed class LocalMotionController
     internal void Cancel()
     {
         _plan = null;
+        NeedsLandingConfirmation=false;
         _session = 0;
         Snapshot = new(0, "idle", "none", "control released", 0, 0, null, null, 0);
     }
@@ -125,13 +129,15 @@ internal sealed class LocalMotionController
                     && Math.Abs(actual.Vy) <= 0.1f
                     && (!movingLanding || _supportedLandingFrames >= 2)
                     && Math.Abs(actual.Px - _plan.Landing.Px) <= 8 && Math.Abs(actual.Py - _plan.Landing.Py) <= 4;
+                NeedsLandingConfirmation=!landed&&(!actual.Grounded||!safeSupport||Math.Abs(actual.Vy)>0.1f
+                    ||movingLanding&&_supportedLandingFrames<2);
                 Snapshot = new(_session, landed ? "landed" : "failed", "jump",
                     landed ? movingLanding ? "moving landing verified within prediction tolerance"
                         : "landed and settled within prediction tolerance"
                         : $"jump landing mismatch: airborne={_airborne}, grounded={actual.Grounded}, support={safeSupport}, "
                             + $"supportFrames={_supportedLandingFrames}, releaseJump={actual.ReleaseJump}, jumpCounter={actual.JumpFramesLeft}, "
                             + $"vxError={Math.Abs(actual.Vx - (movingLanding ? _plan.Landing.Vx : 0)):F3}, vy={actual.Vy:F3}",
-                    _frame, _hold, new(_plan.Landing.Px, _plan.Landing.Py), new(actual.Px, actual.Py), _maxError,
+                    _frame, _hold, new(_plan.Landing.Px, _plan.Landing.Py), !NeedsLandingConfirmation ? new(actual.Px, actual.Py) : null, _maxError,
                     Snapshot.ExpectedPosition, Snapshot.ObservedPosition, Snapshot.ExpectedVelocity, Snapshot.ObservedVelocity, _generation);
             }
             else _plan = null; // Next update replans a moving walk prefix.

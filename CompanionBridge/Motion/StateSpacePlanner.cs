@@ -118,7 +118,7 @@ internal static class StateSpacePlanner
                         // The final approach or an unsafe handoff executes the tail.
                         bool settle = (region != null ? region.Contains(edge.Landing)
                                 : sign * (targetX - edge.Landing.Px) <= 12)
-                            || !world.SafeLanding(edge.Frames[edge.ExecuteFrames - 1].State);
+                            || !PhysicsSimulator.SupportedCheckpoint(edge.Frames[edge.ExecuteFrames - 1].State,world);
                         int execute = settle ? edge.Frames.Count : edge.ExecuteFrames;
                         edge = edge with { ExecuteFrames = execute, Landing = edge.Frames[execute - 1].State,
                             Reason = settle ? edge.Reason : edge.Jump

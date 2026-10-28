@@ -54,6 +54,7 @@ internal static class ServerAiActionFixture
                         Main.npc[npc].velocity=Vector2.Zero;
                         Item.NewItem(p.GetSource_Misc("G85PerceptionFixture"),left*16+240,floor*16-32,16,16,ItemID.StoneBlock,3);
                     }
+                    if(Program.LaunchParameters.ContainsKey("-companionlandingtest"))ServerAiLandingFixture.Run(p);
                     initialized=true;NetworkStateSync.Full(p);
                     File.WriteAllText(Path.Combine(Main.SavePath,"action-fixture.json"),JsonSerializer.Serialize(new{targetX=p.position.X+64,mineX=x,mineY=y,
                         initialLife=p.statLife,initialAppleStack=2,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));

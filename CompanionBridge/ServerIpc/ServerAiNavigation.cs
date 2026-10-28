@@ -9,6 +9,13 @@ namespace CompanionBridge.ServerIpc;
 // G4's natural Update/PostUpdateRunSpeeds boundary, with the original planner.
 internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
 {
+    internal sealed record LandingObservation(PhysicsState State,bool SafeSupport,bool Settled);
+    internal static LandingObservation Observe(Player p)
+    {
+        var s=new PhysicsState(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,TerrainReader.Read(p).Grounded,p.jump,p.releaseJump);
+        bool safe=new NativeMotionWorld(s).SafeLanding(s);
+        return new(s,safe,s.Grounded&&safe&&Math.Abs(s.Vy)<=0.1f&&Math.Abs(s.Vx)<=0.1f&&s.ReleaseJump&&s.JumpFramesLeft==0);
+    }
     internal sealed class Run
     {
         internal AiReadOnlyProtocol.Identity Identity;
@@ -18,6 +25,9 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal string ReasonDetail;
         internal ulong? Tick;
         internal NavigationSnapshot Snapshot;
+        internal LandingObservation FinalObservation;
+        internal StateVector VelocityBeforeRelease;
+        internal ulong FinalObservationTick;
     }
     private readonly NativeNavigation navigation = new();
     private int session;
@@ -55,8 +65,25 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     internal void Stop(string status,string reason)
     {
         if(Current==null)return;
+        if(ServerAiNativeActions.Owned(Current.Identity))
+        {
+            var p=(Player)Current.Identity.Actor;
+            Current.VelocityBeforeRelease=new(p.velocity.X,p.velocity.Y);
+            try
+            {
+                var observed=Observe(p);
+                if(status=="failed"&&(!observed.State.Grounded||!observed.SafeSupport||Math.Abs(observed.State.Vy)>0.1f))
+                {Current.ReasonDetail=(Current.ReasonDetail??reason)+"; landing not confirmed";status="unknown";reason="native_navigation_landing_unconfirmed";}
+            }
+            catch(Exception e){Current.ReasonDetail=e.Message;status="unknown";reason="navigation_state_unavailable";}
+        }
         Current.Status=status;Current.Reason=reason;Current.Snapshot=navigation.Snapshot;
         navigation.Cancel();Release(true);
+        if(ServerAiNativeActions.Owned(Current.Identity))
+        {
+            try{Current.FinalObservation=Observe((Player)Current.Identity.Actor);Current.FinalObservationTick=Main.GameUpdateCount;}
+            catch(Exception e){Current.Status="unknown";Current.Reason="navigation_state_unavailable";Current.ReasonDetail=e.Message;}
+        }
     }
     public void Retire(Player p){if(Matches(p)&&Running)Stop("cancelled","actor_retired");}
     public void Update(On_Player.orig_Update orig,Player p,int slot)
@@ -78,7 +105,8 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 if(!Running)return; // Native death/retirement may have stopped the driver.
                 if(!injected)throw new InvalidOperationException("Audited G4 movement boundary not reached.");
                 navigation.After(p);run.Snapshot=navigation.Snapshot;
-                if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.Reason;Stop("failed","native_navigation_failed");}
+                if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown","native_navigation_landing_unconfirmed");}
+                else if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.Reason;Stop("failed","native_navigation_failed");}
                 else if(run.Snapshot.Status=="arrived")
                 {
                     var terrain=TerrainReader.Read(p);

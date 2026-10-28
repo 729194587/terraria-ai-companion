@@ -13,13 +13,17 @@ internal sealed class NavigationTask
     private int _stalled;
     private Route _route;
     private bool _executing;
+    internal const int LandingConfirmationLimit=60;
+    private bool _confirming;
+    private int _confirmationFrames,_settledFrames;
     private LandingFeedback _lastLanding;
     internal NavigationSnapshot Snapshot { get; private set; } = new(0, "idle", "none", "not started", 0, 0, null, null, 0);
-    internal bool Terminal => Snapshot.Status is "failed" or "arrived";
+    internal bool Terminal => Snapshot.Status is "failed" or "arrived" or "unknown";
 
     internal void Cancel()
     {
         _executor.Cancel(); _session = 0; _executing = false; _lastLanding = null; _route = null;
+        _confirming=false;_confirmationFrames=_settledFrames=0;
         Snapshot = new(0, "idle", "none", "control released", 0, 0, null, null, 0);
     }
 
@@ -62,6 +66,7 @@ internal sealed class NavigationTask
     {
         BeginCore(session, generation, targetX, region, state);
         if (Terminal) return default;
+        if (_confirming) return default; // Observe natural braking/fall, never replay or replan in air.
         if (region != null && !ph.IsBasic) return Fail("unsupported landing-region physics");
         if (!_executing)
         {
@@ -98,17 +103,29 @@ internal sealed class NavigationTask
     internal void After(PhysicsState state, IMotionWorld world)
     {
         if (!_executing || Terminal) return;
+        if(_confirming){ConfirmLanding(state,world);return;}
         _executor.After(state, world);
         Publish();
-        if (Snapshot.Status == "failed") { _executing = false; return; }
+        if (Snapshot.Status == "failed")
+        {
+            if(_executor.NeedsLandingConfirmation){BeginConfirmation(state,world);return;}
+            _executing = false; return;
+        }
         if (_executor.Snapshot.Status == "landed" || _executor.NeedsPlan)
         {
             // Moving walks/jumps validate their predicted checkpoint velocity;
             // final approaches have a zero-velocity endpoint in the same check.
             var landing = _route.Actions[0].Landing;
+            if(!PhysicsSimulator.SupportedCheckpoint(state,world))
+            {
+                BeginConfirmation(state,world);return;
+            }
             if (!state.Grounded || !world.SafeLanding(state) || Math.Abs(state.Vx - landing.Vx) > 0.1f
                 || Math.Abs(state.Vy - landing.Vy) > 0.1f || Math.Abs(state.Px - landing.Px) > 8 || Math.Abs(state.Py - landing.Py) > 4)
-            { Fail("navigation edge landing mismatch"); return; }
+            {
+                Snapshot=Snapshot with{ActualLanding=new(state.Px,state.Py),ObservedGrounded=state.Grounded,SafeSupport=true};
+                Fail("navigation edge landing mismatch"); return;
+            }
             _actions++;
             if (_route.Actions[0].Jump) _jumps++;
             _lastLanding = new(_actions, _route.Actions[0].Jump, new(landing.Px, landing.Py),
@@ -124,6 +141,50 @@ internal sealed class NavigationTask
                 LastLanding = _lastLanding };
             if (_stalled >= 4 || _actions >= 256) Fail("navigation progress/action budget exhausted");
         }
+    }
+
+    private void BeginConfirmation(PhysicsState state,IMotionWorld world)
+    {
+        _confirming=true;_confirmationFrames=_settledFrames=0;
+        Snapshot=Snapshot with{Status="confirming_landing",Reason="awaiting_safe_landing",ActualLanding=null};
+        ConfirmLanding(state,world);
+    }
+
+    private void ConfirmLanding(PhysicsState state,IMotionWorld world)
+    {
+        _confirmationFrames++;
+        bool support=world.SafeLanding(state);
+        Snapshot=Snapshot with{Status="confirming_landing",Reason="awaiting_safe_landing",
+            ObservedPosition=new(state.Px,state.Py),ObservedVelocity=new(state.Vx,state.Vy),
+            ObservedGrounded=state.Grounded,SafeSupport=support,LandingConfirmationFrames=_confirmationFrames};
+        bool settled=PhysicsSimulator.SupportedCheckpoint(state,world)&&Math.Abs(state.Vx)<=0.1f;
+        _settledFrames=settled?_settledFrames+1:0;
+        if(_settledFrames>=2)
+        {
+            var predicted=_route.Actions[0].Landing;
+            Snapshot=Snapshot with{ActualLanding=new(state.Px,state.Py)};
+            _confirming=false;_executing=false;
+            // Never silently adopt a different landing or restart a failed edge.
+            if(Math.Abs(state.Px-predicted.Px)>8||Math.Abs(state.Py-predicted.Py)>4)
+            {Fail("confirmed landing differs from predicted checkpoint");return;}
+            _actions++;if(_route.Actions[0].Jump)_jumps++;
+            _lastLanding=new(_actions,_route.Actions[0].Jump,new(predicted.Px,predicted.Py),new(state.Px,state.Py),
+                _executor.Snapshot.MaxError,new(predicted.Vx,predicted.Vy),new(state.Vx,state.Vy),true);
+            float forward=Progress(state);_stalled=forward>=_furthest+4?0:_stalled+1;_furthest=Math.Max(_furthest,forward);
+            Snapshot=Snapshot with{Status="running",Reason="safe landing confirmed; replan from observed state",
+                CompletedActions=_actions,CompletedJumps=_jumps,LastLanding=_lastLanding};
+            if(_stalled>=4||_actions>=256)Fail("navigation progress/action budget exhausted");
+            return;
+        }
+        if(!world.SafeSweep(state,state,out string danger))
+        {Unconfirmed("landing observation unsafe: "+danger);return;}
+        if(_confirmationFrames>=LandingConfirmationLimit)Unconfirmed("landing_confirmation_deadline");
+    }
+
+    private void Unconfirmed(string reason)
+    {
+        Snapshot=Snapshot with{Status="unknown",Reason=reason,ActualLanding=null};
+        _confirming=false;_executing=false;
     }
 
     // Only called at initialization and after the executor verifies actual support,

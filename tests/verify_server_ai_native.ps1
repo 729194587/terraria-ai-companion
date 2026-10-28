@@ -1,5 +1,6 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing)
 $ErrorActionPreference='Stop'
+if($Landing -and !$Actions){throw 'Landing cleanup validation requires the isolated Actions fixture.'}
 if($Port -eq $IpcPort){throw 'Native game and AI IPC test ports must be distinct.'}
 $occupied=@([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object {$_.Port -in @($Port,$IpcPort)})
 if($occupied.Count){throw 'Native test port already occupied; refusing to connect to an unrelated process.'}
@@ -30,6 +31,7 @@ $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
 if($Perception){$info.ArgumentList.Add("-companionperceptiontest")}
 if($Actions){$info.ArgumentList.Add('-companionactionstest')}
+if($Landing){$info.ArgumentList.Add('-companionlandingtest')}
 $process=[Diagnostics.Process]::Start($info)
 $startedUtc=$process.StartTime.ToUniversalTime()
 $stdout=$process.StandardOutput.ReadToEndAsync()
@@ -195,6 +197,10 @@ try {
     if($Actions){$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
         $report.nativeCancellations=$nativeCancellations;$report.worldAfterCancel=$worldAfterCancel;$report.emptyTileRefusal=$empty.data.action;
         $report.actionFrameMode='Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.'}
+    if($Landing){
+        $report.landingCleanup=Get-Content -LiteralPath "$profile/landing-cleanup-evidence.json" -Raw|ConvertFrom-Json
+        if($report.landingCleanup.result -ne 'passed'){throw 'Native landing cleanup validation failed'}
+    }
     $report|ConvertTo-Json -Depth 12|Set-Content -LiteralPath "$profile/result.json"
     Write-Output "Native AI IPC passed: $profile/result.json"
 } finally {

@@ -82,8 +82,12 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         {
             if(!ReferenceEquals(navigation.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ServerAiNavigation.Run)h.Context;
-            return new(c.Status,c.Reason,new{targetX=c.Target,startX=c.StartX,x=p.position.X,y=p.position.Y,vx=p.velocity.X,vy=p.velocity.Y,
-                updates=c.Updates,navigation=c.Snapshot,arrived=c.Status=="completed",effectStatus="native_navigation_observed"},Released(p),c.Status=="completed",InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);
+            var physical=c.FinalObservation??ServerAiNavigation.Observe(p);
+            return new(c.Status,c.Reason,new{targetX=c.Target,startX=c.StartX,x=physical.State.Px,y=physical.State.Py,vx=physical.State.Vx,vy=physical.State.Vy,
+                updates=c.Updates,navigation=c.Snapshot,arrived=c.Status=="completed",grounded=physical.State.Grounded,
+                safeSupport=physical.SafeSupport,settled=physical.Settled,velocityBeforeRelease=c.VelocityBeforeRelease,
+                observedGameUpdate=c.FinalObservation!=null?c.FinalObservationTick:Main.GameUpdateCount,
+                effectStatus="native_navigation_observed"},Released(p),c.Status=="completed"&&physical.Settled,InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);
         }
         if(h.Operation=="use_item")
         {

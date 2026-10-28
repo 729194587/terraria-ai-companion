@@ -20,7 +20,7 @@ internal sealed class NavigationDiagnostics
             && current.TargetRegion == _previous.TargetRegion;
         if (current.PlanNumber > 0 && (!sameTask || current.PlanNumber != _previous.PlanNumber))
             Write("navigation_plan", current);
-        if (current.Status is "arrived" or "failed"
+        if (current.Status is "arrived" or "failed" or "unknown" or "confirming_landing"
             && (!sameTask || current.Status != _previous.Status))
             Write("navigation_state", current);
         if (current.Status == "idle" && _previous?.Session > 0)
