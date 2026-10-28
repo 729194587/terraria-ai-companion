@@ -112,7 +112,7 @@ internal static class MiningSelfTest
                 Check(Main.tile[x+1,y].HasTile&&Main.tile[x+1,y].TileType==TileID.Stone&&Main.tile[x-1,y].HasTile,
                     $"Neighbor tile or grass was mined/cut: stone={Main.tile[x+1,y].HasTile}, grass={Main.tile[x-1,y].HasTile}.");
                 Check(!p.controlUseItem&&p.itemAnimation==0&&p.itemTime==0,"Completion left inputs/timers active.");
-                Check(bag.SequenceEqual(p.inventory.Select(i=>i.stack)),"Mining automatically collected or changed inventory.");
+                Check(bag.SequenceEqual(p.inventory.Select(i=>i.stack)),"Item-only frames unexpectedly changed inventory without Player.Update/GrabItems.");
                 Check(Main.item.Count(i=>i.active&&i.type==ItemID.StoneBlock)>drops,"No real world stone drop was created.");
                 Check(hitPackets>0&&tilePackets>0&&dropPackets>0,"Native progress/tile/drop publication was not observed.");
                 return new{actionId=c.Id,c.X,c.Y,c.TileType,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.AnimationPeak,c.Destroyed,progressBeforeDestruction=progress,worldDrop=true,hitPackets,tilePackets,dropPackets,firstTickControls};

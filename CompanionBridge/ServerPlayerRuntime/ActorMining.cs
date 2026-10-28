@@ -28,9 +28,8 @@ internal static class ActorMining
     internal static Context Current;
     private static Context executing;
     private static bool striking,picking;
-    private static ulong? suppressPickupTick;
     internal static bool Running=>Current?.Phase==ActionPhase.Running;
-    internal static void Reset(){Current=executing=rangeContext=null;striking=picking=false;suppressPickupTick=null;}
+    internal static void Reset(){Current=executing=rangeContext=null;striking=picking=false;}
     internal static void Install(Action<Action,Action> install)
     {
         using(var a=AssemblyDefinition.ReadAssembly(typeof(Player).Assembly.Location))
@@ -48,7 +47,8 @@ internal static class ActorMining
         install(()=>On_Player.DoesPickTargetTransformOnKill+=TransformPrediction,()=>On_Player.DoesPickTargetTransformOnKill-=TransformPrediction);
         install(()=>On_WorldGen.KillTile+=Kill,()=>On_WorldGen.KillTile-=Kill);
         install(()=>On_WorldGen.PlaceTile+=Place,()=>On_WorldGen.PlaceTile-=Place);
-        install(()=>On_Player.GrabItems+=Grab,()=>On_Player.GrabItems-=Grab);
+        // Passive GrabItems remains on NativeSurvival's ordinary Player.Update path.
+        // Inventory gains never substitute for this action's target-destruction evidence.
     }
     private static bool Bound(Context c)=>c!=null&&ReferenceEquals(c.Actor,ProbeSession.Actor)
         &&c.World==ProbeSession.WorldSession&&c.Generation==ProbeSession.ActorGeneration
@@ -178,11 +178,6 @@ internal static class ActorMining
         if(Running&&Current.X==x&&Current.Y==y)Current.ExternalChange=true;
         return orig(x,y,type,mute,forced,plr,style);
     }
-    private static void Grab(On_Player.orig_GrabItems orig,Player p,int whoAmI)
-    {
-        if(NativeSurvival.Owns(p)&&(Running||suppressPickupTick==Main.GameUpdateCount))return;
-        orig(p,whoAmI);
-    }
     internal static void Update(Player p)
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
@@ -193,7 +188,6 @@ internal static class ActorMining
             if(c.World==ProbeSession.WorldSession&&c.Generation==ProbeSession.ActorGeneration)ProbeSession.Quarantine(c.Detail);
             return;
         }
-        suppressPickupTick=Main.GameUpdateCount;
         try
         {
             if(!Healthy(p)){End(c,ActionPhase.Cancelled,Failure.ActorUnavailable);return;}

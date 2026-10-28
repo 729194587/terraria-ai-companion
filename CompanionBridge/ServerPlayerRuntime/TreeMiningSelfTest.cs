@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
+using Terraria.DataStructures;
 using CompanionBridge.ServerIpc;
 
 namespace VirtualPlayerEngineProbe;
@@ -67,8 +68,30 @@ internal static class TreeMiningSelfTest
         var original=Main.tile[x,y].TileType;Start(x,y);frame();Main.tile[x,y].TileType=TileID.Stone;frame();
         Check(ActorMining.Current.Reason==ActorMining.Failure.TargetChanged&&!ActorMining.Current.Destroyed&&Released(),"replaced tree falsely completed");
         Main.tile[x,y].TileType=original;
+        verifyIsolation(); // Item-only checks end before native world frames evolve the cursor.
+        // Real Player.Update must retain passive pickup while holding a mining intent.
+        // Only fixture setup moves the actor/creates a drop; no corrections during mining.
+        foreach(var npc in Main.npc)npc.active=false;
+        p.position=new Vector2(x*16-10,(y+1)*16-p.height);p.velocity=Vector2.Zero;
+        var held=p.HeldItem;
+        int nearby=Item.NewItem(new EntitySource_Misc("mining-pickup-selftest"),p.Hitbox,ItemID.Wood,7);
+        Main.item[nearby].playerIndexTheItemIsReservedFor=p.whoAmI;
+        Main.item[nearby].noGrabDelay=0;
+        var update=typeof(Main).GetMethod("Update",BindingFlags.Instance|BindingFlags.NonPublic,null,new[]{typeof(GameTime)},null);
+        void WorldFrame()=>update.Invoke(Main.instance,new object[]{new GameTime()});
+        int Wood()=>p.inventory.Where(i=>i.type==ItemID.Wood).Sum(i=>i.stack);
+        int cursorX=Player.tileTargetX,cursorY=Player.tileTargetY;bool mouse=Main.blockMouse;
         var handle=Start(x,y);
-        for(int tick=0;ActorMining.Running&&tick<610;tick++)frame();
+        for(int tick=0;tick<10&&Wood()==woodBefore&&ActorMining.Running;tick++)WorldFrame();
+        var pickup=ActorMining.Current;
+        Check(Wood()==woodBefore+7&&Main.item[nearby].IsAir,
+            "nearby wood was not picked up exactly once during sustained native mining: "+ActorMining.Summary());
+        Check(ActorMining.Running&&!pickup.Destroyed&&Main.tile[x,y].HasTile&&pickup.Strikes>0
+            &&pickup.PeakDamage<100&&ReferenceEquals(p.HeldItem,held)&&p.selectedItem==2,
+            "pickup changed held tool, ended mining early, or was observed only after destruction");
+        var pickupEvidence=new{pickup.Ticks,pickup.Strikes,pickup.PeakDamage,woodCollected=Wood()-woodBefore,
+            targetPresent=Main.tile[x,y].HasTile,running=ActorMining.Running,heldToolUnchanged=ReferenceEquals(p.HeldItem,held)};
+        for(int tick=0;ActorMining.Running&&tick<610;tick++)WorldFrame();
         var c=ActorMining.Current;var result=executor.Poll(identity,handle);
         int remaining=tree.Count(t=>Main.tile[t.x,t.y].HasTile&&Main.tile[t.x,t.y].TileType==TileID.Trees);
         int drops=Main.item.Where(i=>i.active&&i.type==ItemID.Wood).Sum(i=>i.stack)-dropsBefore;
@@ -76,25 +99,20 @@ internal static class TreeMiningSelfTest
             &&c.Destroyed&&!c.ExternalChange&&!Main.tile[x,y].HasTile&&Released(),"native tree strike did not complete: "+ActorMining.Summary());
         Check(result.Status=="completed"&&result.Reason=="native_tile_destroyed"&&result.ReasonDetail==null
             &&result.EffectVerified&&result.InputsReleased,"API did not confirm native target destruction/release/reason");
-        Check(remaining==0&&drops>0,"tree did not fully fall or no real wood drops were observed");
-        Check(p.inventory.Where(i=>i.type==ItemID.Wood).Sum(i=>i.stack)==woodBefore,"target destruction was conflated with collection");
-        verifyIsolation(); // Explicit ItemCheck frames must not touch human cursor/globals.
+        int woodAtCompletion=Wood()-woodBefore;
+        Check(remaining==0&&drops+woodAtCompletion>7,"tree did not fully fall or no real wood drops were observed");
+        Check(ReferenceEquals(p.HeldItem,held)&&p.selectedItem==2,"native pickup replaced the mining tool");
 
-        // Separate pickup observation after the action. Full native world frames
-        // drive item delay, falling, attraction and Player.GrabItems naturally.
-        var update=typeof(Main).GetMethod("Update",BindingFlags.Instance|BindingFlags.NonPublic,null,new[]{typeof(GameTime)},null);
-        int cursorX=Player.tileTargetX,cursorY=Player.tileTargetY;bool mouse=Main.blockMouse;
-        p.position=new Vector2(x*16-10,(y+1)*16-p.height);p.velocity=Vector2.Zero;
-        for(int tick=0;tick<300&&p.inventory.Where(i=>i.type==ItemID.Wood).Sum(i=>i.stack)==woodBefore;tick++)
-            update.Invoke(Main.instance,new object[]{new GameTime()});
-        int collected=p.inventory.Where(i=>i.type==ItemID.Wood).Sum(i=>i.stack)-woodBefore;
-        Check(collected>0,"no actual wood pickup into AI inventory after native world frames");
+        // Continue without moving: native delay/attraction may leave some tree drops pending.
+        for(int tick=0;tick<300&&Wood()-woodBefore<=7;tick++)WorldFrame();
+        int collected=Wood()-woodBefore;
+        Check(collected>7,"no actual tree wood pickup into AI inventory after native world frames");
         executor.Shutdown();
         return new{itemType=c.Type,axe=c.Axe,c.Ticks,c.Swings,c.Strikes,c.AnimationPeak,c.PeakDamage,
             targetDestroyed=c.Destroyed,treeTilesBefore=tree.Length,treeTilesRemaining=remaining,worldWoodDropped=drops,
-            woodInBagAtDestruction=0,woodActuallyCollected=collected,apiResult=result,
+            woodInBagAtCompletion=woodAtCompletion,woodActuallyCollected=collected,pickupDuringMining=pickupEvidence,apiResult=result,
             fullWorldFrameCursor=new{beforeX=cursorX,beforeY=cursorY,afterX=Player.tileTargetX,afterY=Player.tileTargetY,beforeMouse=mouse,afterMouse=Main.blockMouse},
             nativeProtection=true,nativeCanUseRefusal=true,cancelReleased=true,timeoutReleased=true,targetReplacementRejected=true,
-            mode="isolated native APIs + post-action full native world frames; no graphical client"};
+            mode="isolated native APIs + sustained mining in full native world frames; no graphical client"};
     }
 }
