@@ -20,5 +20,6 @@ public static class ServerAiToolPatchTests
         Console.WriteLine("Offline tool patch checks; CLR "+Environment.Version+"; no world/model/client.");
         ItemUseOfflineTests.Run(engine);
         MiningOfflineTests.Run(engine);
+        PlacementPatchOfflineTests.Run(engine);
     }
 }

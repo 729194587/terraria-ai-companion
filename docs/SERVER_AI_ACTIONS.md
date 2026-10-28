@@ -1,6 +1,7 @@
 # Lua 的服务器 AI 移动、使用与目标格工具操作
 
-当前增量：PR #25 / CompanionBridge **0.1.51** 增加铜斧空挥及原生树干砍伐。
+当前增量：PR #25 / CompanionBridge **0.1.58** 接通基础 `place_tile`，见[原生放置与验证](SERVER_AI_PLACEMENT.md)。
+历史增量：**0.1.51** 增加铜斧空挥及原生树干砍伐。
 实现、分层证据和实机步骤见 [R2/R3 验证说明](R2_R3_COPPER_AXE.md)；下方历史验证不代表本轮图形验收。
 已补录 0.1.51 的 Host & Play 基础采集通过记录；**0.1.52** 将成功/失败原因码与诊断详情分离，见 [回执原因说明](ACTION_RECEIPT_REASONS.md)。
 **0.1.53** 收紧导航移动交接点并增加有界落地确认；未确认以unknown返回，详见 [东向导航修复](NAVIGATION_LANDING_CONFIRMATION.md)。输入释放与角色停稳分别报告。
@@ -17,6 +18,7 @@ Schema、调度器、Agent Prompt 或真人控制入口。历史报告和实验 
 | `navigate_to_landing_region {minPlayerLeftX=...,maxPlayerLeftX=...,surfaceY=...}` | **0.1.57**：玩家左边缘 X 闭区间及脚底表面 Y，均为世界像素；复用同一二维规划器与原生移动链。实际进入区域、安全平面支撑并停稳后完成；30 秒上限，见[二维落脚](SERVER_AI_LANDING_REGION.md) |
 | `use_item {}` | 当前真实选中物品完成一次 G6 原生使用周期；白名单 WoodenSword、CopperPickaxe、CopperAxe、Apple。必须单次启动、观察到原生动画并自然耗尽计时；3 秒上限。完成不证明命中，`effectStatus=unconfirmed`；原生未启动为 failed / `not_started` |
 | `mine_tile {x=...,y=...}` | 固定 Tile 坐标，当前纯镐挖普通方块，或铜斧砍原生斧类树干；保留 80 像素保守检查和 G7 原生距离/工具/保护规则。本 AI 原生工具链必须破坏指定目标、无外部替换且目标仍为空；10 秒上限。树的连带倒下和掉落由原版处理 |
+| `place_tile {x=...,y=...}` | **0.1.58**：用当前选中的泥土块、石块或木材向空 Tile 发起一次原生放置；保留 80px 与原生范围/邻接/保护规则。目标由本 AI 原生放成、同次 ItemCheck 消耗 1 件、计时结束并释放后完成；10 秒上限。未确认消耗的原生放置为 unknown，不回滚或重试 |
 
 `select_hotbar_slot`、`get_player_state`、`inspect_inventory`、`wait`、`stop_action`
 沿用。游戏快捷键 1–9、0 对应内部栏位 0–9。工具操作不自动选工具、移动或
@@ -24,7 +26,7 @@ Schema、调度器、Agent Prompt 或真人控制入口。历史报告和实验 
 早期 G7 的拾取抑制，挖掘期间继续原生被动拾取；`native_tile_destroyed` 不代表木材已进入背包。
 
 明确未接入：按 Down 直接穿平台、定向 `use_item.target`、其他物品类型、
-攻击、放置、墙/锤击、背包修改、额外感知工具。未知操作在协议/后端白名单处拒绝；
+攻击、其他放置类型（家具/平台/墙等）、墙/锤击、背包修改、额外感知工具。未知操作在协议/后端白名单处拒绝；
 有 target 的使用请求明确返回 `targeted_use_not_supported`，不会忽略目标后执行。
 导航继续拒绝现有模型不支持的装备、Buff、移动配置和地形；吃食物后可能因此拒绝导航。
 
@@ -62,6 +64,7 @@ BotNativeBehaviorCompatibility 控制与挖掘机制。实际执行使用本仓�
 仍是 loopback `18779`、协议 v1。新增窄能力 `server_ai_actions_v1`，仅安装原生
 执行适配器时发布；旧服务不宣称支持。Python 看到该能力才开放原三个操作；二维落脚
 还必须同时具备 `landing_region_navigation_v1`，旧后端不会因 Schema 已存在而开放新动作。
+基础放置还必须具备 `server_ai_place_tile_v1`；`use_item` 的旧物品白名单没有因此扩充。
 
 ```json
 {"v":1,"id":"start-1","op":"start","binding":{"actor":"...","world":"...","generation":1,"slot":254},"actionId":"32位小写UUID十六进制","operation":"mine_tile","arguments":{"x":2109,"y":217},"expiresAtUnixMs":0}

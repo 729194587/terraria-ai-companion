@@ -13,6 +13,7 @@ internal static class ActorItemUse
         internal Player Actor;internal Item Item;internal string World;internal long Generation;
         internal int Slot,Type,InitialStack,Ticks,AnimationPeak,TimePeak,ToolPeak,UsesPeak,Starts;
         internal string Phase="running",Reason="native_item_pending";internal bool Consumed;
+        internal ActorPlacement.Context Placement;
     }
     internal static Context Current;
     private static Context executing;
@@ -61,26 +62,31 @@ internal static class ActorItemUse
     }
     internal static void Start(Player p,string world,long generation)
     {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation);}}
-    private static void StartCore(Player p,string world,long generation)
+    internal static void StartPlacement(Player p,string world,long generation,int x,int y)
+    {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,x,y);}}
+    private static void StartCore(Player p,string world,long generation,int? x=null,int? y=null)
     {
         Capture(p,world,generation);Idle(p);
-        if(p.selectedItem<0||p.selectedItem>9||!Supported(p.HeldItem.type)||p.HeldItem.IsAir)
+        var placement=x.HasValue?ActorPlacement.Create(p,x.Value,y.Value):null;
+        if(p.selectedItem<0||p.selectedItem>9||(placement==null?!Supported(p.HeldItem.type):!ActorPlacement.Supported(p.HeldItem))||p.HeldItem.IsAir)
             throw new InvalidOperationException("G6 supports only a wooden sword, copper pickaxe, copper axe or apple in hotbar 1–10.");
         if(p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)throw new InvalidOperationException("AI cannot use an item in this state.");
-        Current=new Context{Actor=p,World=world,Generation=generation,Slot=p.selectedItem,Item=p.HeldItem,Type=p.HeldItem.type,InitialStack=p.HeldItem.stack};
+        Current=new Context{Actor=p,World=world,Generation=generation,Slot=p.selectedItem,Item=p.HeldItem,Type=p.HeldItem.type,InitialStack=p.HeldItem.stack,Placement=placement};
         // Release an old input; the next natural ItemCheck supplies one press.
         p.controlUseItem=false;p.releaseUseItem=true;
     }
     public static bool Allowed(Player p)=>ActorMining.Allowed(p)||(executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
-        &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&Supported(executing.Type));
-    public static bool SkipCursor(Player p){if(ActorMining.Allowed(p))ActorMining.Strike(p);return Allowed(p);}
+        &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&(executing.Placement!=null?ActorPlacement.Supported(executing.Item)||executing.Placement.Placed&&executing.Item.IsAir:Supported(executing.Type)));
+    internal static bool Placing(Player p)=>executing?.Placement!=null&&Allowed(p);
+    public static bool SkipMelee(Player p)=>ActorMining.Allowed(p)||ActorPlacement.Allowed(p);
+    public static bool SkipCursor(Player p){if(ActorMining.Allowed(p))ActorMining.Strike(p);else if(ActorPlacement.Allowed(p))ActorPlacement.Dispatch(p);return Allowed(p);}
     internal static void Install(Action<Action,Action> install)
     {
         var predicate=typeof(ActorItemUse).GetMethod(nameof(Allowed));
         ILContext.Manipulator inner=il=>ItemUsePatches.Patch(il.Method,"inner",il.Module.ImportReference(predicate));
         ILContext.Manipulator melee=il=>ItemUsePatches.Patch(il.Method,"melee",il.Module.ImportReference(predicate),
             il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipCursor))),
-            il.Module.ImportReference(typeof(ActorMining).GetMethod(nameof(ActorMining.Allowed))));
+            il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipMelee))));
         install(()=>IL_Player.ItemCheck_Inner+=inner,()=>IL_Player.ItemCheck_Inner-=inner);
         install(()=>IL_Player.ItemCheck_OwnerOnlyCode+=melee,()=>IL_Player.ItemCheck_OwnerOnlyCode-=melee);
         install(()=>On_Player.ItemCheckWrapped+=Update,()=>On_Player.ItemCheckWrapped-=Update);
@@ -102,16 +108,19 @@ internal static class ActorItemUse
             if(c.World==ProbeSession.WorldSession&&c.Generation==ProbeSession.ActorGeneration)ProbeSession.Quarantine("G6 ownership changed; no item/input writes.");
             return;
         }
+        if(c.Placement!=null&&ActorPlacement.Validate(c) is {} invalid)
+        {Retire(p);c.Phase="failed";c.Reason=invalid;return;}
         bool nativeEmpty=c.Consumed&&c.Item.IsAir;
         if(p.dead||p.ghost||p.CCed||p.noItems){Retire(p);return;}
         if(p.selectedItem!=c.Slot||!ReferenceEquals(p.inventory[c.Slot],c.Item)||c.Item.type!=c.Type&&!nativeEmpty)
         {Retire(p);c.Phase="cancelled";c.Reason="selected_item_changed";return;}
-        if(++c.Ticks>180){Retire(p);c.Phase="failed";c.Reason="native_item_timeout";return;}
+        if(++c.Ticks>(c.Placement!=null?600:180)){Retire(p);c.Phase=c.Placement!=null?"timeout":"failed";c.Reason=c.Placement!=null?"native_placement_deadline":"native_item_timeout";return;}
         try
         {
             executing=c;p.controlUseItem=c.Ticks==1;
-            int before=p.itemAnimation;
+            int before=p.itemAnimation,beforeStack=c.Item.stack;
             p.ItemCheck(); // Exactly once at the native Update call site, with normal tML hooks.
+            if(c.Placement!=null)ActorPlacement.AfterCheck(c,beforeStack);
             if(!Binding(c)||!NativeSurvival.Owns(p)||p.selectedItem!=c.Slot)throw new InvalidOperationException("AI binding changed during ItemCheck.");
             if(c.Phase!="running"||p.dead)return;
             if(c.Type==ItemID.Apple&&c.Item.stack<c.InitialStack)c.Consumed=true;
@@ -123,7 +132,7 @@ internal static class ActorItemUse
             if(c.Ticks==1&&c.AnimationPeak>0||c.Ticks>1&&(p.itemAnimation==0||c.Ticks%6==0))Sync(p);
             if(c.Ticks==1&&c.AnimationPeak==0){c.Phase="rejected";c.Reason="native_use_refused";}
             else if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0)
-            {c.Phase="completed";c.Reason="native_item_cycle_verified";}
+            {if(c.Placement!=null)ActorPlacement.Complete(c);else {c.Phase="completed";c.Reason="native_item_cycle_verified";}}
             if(c.Phase!="running")
             {
                 p.controlUseItem=false;p.releaseUseItem=true;Sync(p);NetworkStateSync.Full(p);

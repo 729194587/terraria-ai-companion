@@ -32,6 +32,8 @@ class Host(socketserver.ThreadingTCPServer):
         self.reads = True
         self.perception = False
         self.actions = False
+        self.placement = False
+        self.placement_override = {}
         self.landing = False
         self.landing_override = {}
         self.chat = False
@@ -48,7 +50,7 @@ class Host(socketserver.ThreadingTCPServer):
             def item(slot):
                 return dict(slot=slot, hotbarKey=(slot+1) % 10 if slot < 10 else None, empty=slot != 9,
                             typeId=3509 if slot == 9 else 0, stack=1 if slot == 9 else 0,
-                            name='fixture pick' if slot == 9 else '', use=dict(pick=35 if slot == 9 else 0), inventoryToken=None)
+                            name='fixture pick' if slot == 9 else '', use=dict(pick=35 if slot == 9 and not self.placement else 0, createTile=30 if slot==9 and self.placement else -1), inventoryToken=None)
             mode = args.get('mode', 'selected')
             indices = args.get('slots', [self.selected]) if mode == 'slots' else range(10) if mode == 'hotbar' else range(59) if mode == 'full' else [self.selected]
             data = dict(status='ok', selectedSlot=self.selected, selectedHotbarKey=(self.selected+1) % 10,
@@ -80,6 +82,8 @@ class Handler(socketserver.StreamRequestHandler):
                     data['capabilities'].append('server_ai_perception_v1')
                 if h.actions:
                     data['capabilities'].append('server_ai_actions_v1')
+                if h.placement:
+                    data['capabilities'].append('server_ai_place_tile_v1')
                 if h.landing:
                     data['capabilities'].append('landing_region_navigation_v1')
                 if h.chat:
@@ -120,6 +124,8 @@ class Handler(socketserver.StreamRequestHandler):
                                 status='running', reason='accepted', executionState='accepted', durationMs=300,
                                 evidence=dict(targetSlot=(key + 9) % 10, selectionApplied=False),
                                 endEvidenceStatus='not_ended', endEvidence=None)
+                if r['operation'] == 'place_tile':
+                    h.action['targetTile'] = copy.deepcopy(r['arguments'])
                 if r['operation'] == 'navigate_to_landing_region':
                     h.action['targetRegion'] = copy.deepcopy(r['arguments'])
                 data = dict(action=copy.deepcopy(h.action))
@@ -146,6 +152,11 @@ class Handler(socketserver.StreamRequestHandler):
                                              targetAbsent=True, targetChanged=False, effectStatus='unconfirmed')
                         a['endEvidence'].update(phase='ServerAI_game_thread_inputs_released', inputsAcquired=True,
                                                 inputsReleased=True, effectVerified=True, operation=a['operation'])
+                        if a['operation'] == 'place_tile':
+                            a['evidence'].update(placedByActor=True,targetPresent=True,targetChanged=False,consumedCount=1,**a['targetTile'])
+                            a['evidence'].update(h.placement_override)
+                        if h.mode == 'changed_tile':
+                            a['targetTile'] = {**a['targetTile'], 'x': 11}
                         if a['operation'] == 'navigate_to_landing_region':
                             g = a['targetRegion']
                             a['evidence'].update(targetRegion=copy.deepcopy(g), x=g['minPlayerLeftX'],

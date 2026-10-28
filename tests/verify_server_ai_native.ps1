@@ -1,6 +1,7 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement)
 $ErrorActionPreference='Stop'
 if($LandingRegions){$Terrain=$true}
+if($Placement -and !$Actions){throw 'Placement validation requires isolated Actions fixture.'}
 if($Terrain -and !$Actions){throw 'Terrain validation requires isolated Actions fixture.'}
 if($Semantic -and (!$Actions -or !$Perception)){throw 'Semantic validation requires isolated Actions and Perception fixtures.'}
 if($Landing -and !$Actions){throw 'Landing cleanup validation requires the isolated Actions fixture.'}
@@ -32,6 +33,7 @@ $info.RedirectStandardInput=$true
 $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
+if($Placement){$info.ArgumentList.Add("-companionplacementtest")}
 if($Perception){$info.ArgumentList.Add("-companionperceptiontest")}
 if($Semantic){$info.ArgumentList.Add("-companionsemantictest")}
 if($Terrain){$info.ArgumentList.Add("-companionterraintest")}
@@ -195,6 +197,10 @@ try {
         } while($empty.ok -and $empty.data.action.status -eq 'running' -and [DateTime]::UtcNow -lt $until)
         if(!$empty.ok -or $empty.data.action.status -ne 'failed' -or !$empty.data.action.endEvidence.inputsReleased){throw 'Empty tile was not a confirmed native refusal'}
     }
+    if($Placement){
+        & $PythonExecutable (Join-Path $repo 'tests/native_server_ai_placement.py') --port $IpcPort --profile $profile
+        if($LASTEXITCODE -ne 0){throw "Native placement Lua verification failed: $profile/placement-lua-result.json"}
+    }
     if($Terrain){
         $terrainScript=if($LandingRegions){'tests/native_landing_regions.py'}else{'scripts/server_ai_terrain.py'}
         & $PythonExecutable (Join-Path $repo $terrainScript) --port $IpcPort --profile $profile
@@ -229,6 +235,7 @@ try {
     if($Reads){$report.luaReads=$readResult;$report.luaCombined=$combinedResult;$report.rawPlayerQuery=$rawQuery;$report.stateAfterReads=$rawState.data;$report.readBindingMismatchError=$readMismatch.error;$report.nativeSelections=$nativeSelection}
     if($Perception){$report.perception=$perceptionResult}
     if($Agent){$report.agent=$agentResult}
+    if($Placement){$report.placement=Get-Content -LiteralPath "$profile/placement-lua-result.json" -Raw|ConvertFrom-Json}
     if($Semantic){$report.semantic=$semanticResult}
     if($Terrain){$report.terrain=Get-Content -LiteralPath "$profile/terrain-result.json" -Raw|ConvertFrom-Json}
     if($Actions){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;

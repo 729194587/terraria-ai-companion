@@ -90,6 +90,7 @@ public sealed class VirtualPlayerEngineProbe
         NativeSurvival.Install(Install);
         NativeItemOwnership.Install(Install);
         ActorMining.Install(Install);
+        ActorPlacement.Install(Install);
         ActorItemUse.Install(Install);
         Install(() => On_Player.Update += NativeSurvival.Update, () => On_Player.Update -= NativeSurvival.Update);
         Ready = allocatorPatched && cleanupPatched && syncPatched && savePatched;
@@ -226,7 +227,7 @@ public sealed class VirtualPlayerEngineProbe
             legacyIsListening = Netplay.IsListening, tcpListenerExists, listenerEntries = entries });
         try { orig(); }
         catch { ProbeSession.Finish("StartServer exception"); throw; }
-        if (armed) { ProbeSession.CheckInitialSlot(); CharacterSelfTest.Update();SurvivalSelfTest.RunIfRequested();ItemUseSelfTest.RunIfRequested();MiningSelfTest.RunIfRequested();PickupOwnershipSelfTest.RunIfRequested(); }
+        if (armed) { ProbeSession.CheckInitialSlot(); CharacterSelfTest.Update();SurvivalSelfTest.RunIfRequested();ItemUseSelfTest.RunIfRequested();MiningSelfTest.RunIfRequested();PlacementSelfTest.RunIfRequested();PickupOwnershipSelfTest.RunIfRequested(); }
     }
     private bool Listen(On_Netplay.orig_StartListening orig)
     {

@@ -14,7 +14,7 @@ try{
         if($resource.Name.StartsWith('net80.')){[IO.File]::WriteAllBytes((Join-Path $refsPath ($resource.Name.Substring(6)+'.dll')),$resource.GetResourceData())}
     }
 }finally{$refPack.Dispose()}
-$sources=@('CompanionBridge/ServerPlayerRuntime/ItemUsePatches.cs','CompanionBridge/ServerPlayerRuntime/MiningPatches.cs',
+$sources=@('CompanionBridge/ServerPlayerRuntime/ItemUsePatches.cs','CompanionBridge/ServerPlayerRuntime/MiningPatches.cs','CompanionBridge/ServerPlayerRuntime/PlacementPatches.cs','tests/PlacementPatchOfflineTests.cs',
     'experiments/virtual-player-engine-hooks/validation/ItemUseOfflineTests.cs',
     'experiments/virtual-player-engine-hooks/validation/MiningOfflineTests.cs','tests/ServerAiToolPatchTests.cs')
 $references=@(Get-ChildItem -LiteralPath $refsPath -Filter '*.dll' | Select-Object -ExpandProperty FullName)+@($cecil,$utils,$detour)

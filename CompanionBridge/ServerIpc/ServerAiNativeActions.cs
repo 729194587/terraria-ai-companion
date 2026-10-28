@@ -53,6 +53,12 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             object context;
             if(operation=="navigate_to_x")context=navigation.Start(identity,args.GetProperty("targetX").GetSingle());
             else if(operation=="navigate_to_landing_region")context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args));
+            else if(operation=="place_tile")
+            {
+                int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
+                string error=ActorPlacement.Preflight(p,x,y);if(error!=null)return Reject(error);
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y);context=ActorItemUse.Current;
+            }
             else if(operation=="use_item")
             {
                 if(p.selectedItem<0||p.selectedItem>9||p.HeldItem.IsAir||!ActorItemUse.Supported(p.HeldItem.type))return Reject("unsupported_selected_item");
@@ -93,6 +99,18 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 effectStatus="native_navigation_observed"},Released(p),c.Status=="completed"&&physical.Settled
                     &&(c.Region==null||c.Region.Arrived(physical.State,new NativeMotionWorld(physical.State))),InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);
         }
+        if(h.Operation=="place_tile")
+        {
+            if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
+            var c=(ActorItemUse.Context)h.Context;var tile=c.Placement;
+            bool present=Main.tile[tile.X,tile.Y].HasTile&&Main.tile[tile.X,tile.Y].TileType==tile.TileType;
+            bool verified=c.Phase=="completed"&&tile.Placed&&!tile.ExternalChange&&present&&tile.ConsumedCount==1;
+            return new(c.Phase=="rejected"?"failed":c.Phase=="stale"?"unknown":c.Phase,c.Reason,
+                new{x=tile.X,y=tile.Y,typeId=tile.TileType,itemType=c.Type,c.InitialStack,remainingStack=p.inventory[c.Slot].stack,
+                    c.Ticks,c.Starts,c.AnimationPeak,tile.Attempts,consumedCount=tile.ConsumedCount,placedByActor=tile.Placed,
+                    targetPresent=present,targetChanged=tile.ExternalChange,effectStatus=verified?"native_tile_placed":"not_confirmed"},
+                Released(p)&&p.itemAnimation==0&&p.itemTime==0,verified,InputsAcquired:c.Ticks>0);
+        }
         if(h.Operation=="use_item")
         {
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
@@ -119,7 +137,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         if(observed.Status!="running")return observed;
         var p=(Player)h.Identity.Actor;
         if(IsNavigation(h.Operation))navigation.Stop("cancelled","explicit_stop");
-        else if(h.Operation=="use_item")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
+        else if(h.Operation is "use_item" or "place_tile")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
         else ActorMining.Retire(p);
         return Poll(h.Identity,h);
     }

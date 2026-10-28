@@ -85,7 +85,13 @@ public static class ServerAiNativeActionOfflineTests
             Check(precise.GetProperty("targetRegion").GetProperty("minPlayerLeftX").GetDouble()==
                 JsonSerializer.SerializeToElement((float)33333.3333).GetDouble(),"receipt canonicalizes coordinates to the native float region before execution");
         }
-        foreach(string op in new[]{"navigate_to_x","navigate_to_landing_region","use_item","mine_tile"})
+        {
+            var f=new Fixture();string id=f.Start("place_tile");var a=f.Action(id);
+            Check(a.GetProperty("targetTile").GetProperty("x").GetInt32()==100&&a.GetProperty("durationMs").GetInt32()==10000,
+                "placement receipt fixes tile coordinates and ten-second deadline");
+            Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_place_tile_v1")>=0,"placement capability is explicit");
+        }
+        foreach(string op in new[]{"navigate_to_x","navigate_to_landing_region","use_item","mine_tile","place_tile"})
         {
             var f=new Fixture();string id=f.Start(op);
             Check(f.Native.Starts==1&&f.Action(id).GetProperty("status").GetString()=="running","accepted/running precede "+op+" native completion");

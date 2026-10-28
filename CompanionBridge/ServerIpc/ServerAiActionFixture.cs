@@ -60,6 +60,13 @@ internal static class ServerAiActionFixture
                         perceptionNpc=Main.npc[npc];perceptionPosition=perceptionNpc.position;
                         Item.NewItem(p.GetSource_Misc("G85PerceptionFixture"),left*16+240,floor*16-32,16,16,ItemID.StoneBlock,3);
                     }
+                    if(Program.LaunchParameters.ContainsKey("-companionplacementtest"))
+                    {
+                        // Diagnostic materials only; normal AI inventories are never seeded.
+                        p.inventory[4].SetDefaults(ItemID.Wood);p.inventory[4].stack=4;
+                        p.inventory[5].SetDefaults(ItemID.StoneBlock);p.inventory[5].stack=4;
+                        p.inventory[6].SetDefaults(ItemID.DirtBlock);p.inventory[6].stack=4;
+                    }
                     if(Program.LaunchParameters.ContainsKey("-companionlandingtest"))ServerAiLandingFixture.Run(p);
                     if(Program.LaunchParameters.ContainsKey("-companionsemantictest"))
                     {

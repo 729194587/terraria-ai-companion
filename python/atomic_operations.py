@@ -152,7 +152,7 @@ async def command(bridge, cmd, **args):
 def result(action, generation):
     return {'valid': True, 'status': action['status'], 'reason': action['reason'], 'reasonDetail': action.get('reasonDetail'),
             'operation': action.get('operation'), 'actionId': action['actionId'],
-            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'),
+            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'),
             'evidence': action.get('evidence'), 'endEvidence': action.get('endEvidence'),
             'endEvidenceStatus': action.get('endEvidenceStatus'), 'controlGeneration': generation,
             'completed': action['status'] == 'completed', 'cancelled': action['status'] == 'cancelled'}
@@ -160,7 +160,7 @@ def result(action, generation):
 
 def same_action(expected, current):
     return isinstance(current, dict) and all(current.get(key) == expected.get(key) for key in
-        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'actorId', 'actorSlot'))
+        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'actorId', 'actorSlot'))
 
 
 def verify_landing_start(action, arguments, *, server_ai=False):
@@ -222,13 +222,22 @@ async def terminal(bridge, action, generation):
         'navigate_to_x': native_evidence.get('arrived') is True,
         'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
+        'place_tile': (isinstance(action.get('targetTile'), dict)
+                       and set(action['targetTile']) == {'x', 'y'}
+                       and all(type(action['targetTile'][key]) is int and type(native_evidence.get(key)) is int for key in ('x', 'y'))
+                       and native_evidence.get('x') == action['targetTile'].get('x')
+                       and native_evidence.get('y') == action['targetTile'].get('y')
+                       and native_evidence.get('placedByActor') is True
+                       and native_evidence.get('targetPresent') is True
+                       and native_evidence.get('targetChanged') is False
+                       and type(native_evidence.get('consumedCount')) is int and native_evidence['consumedCount'] == 1),
         'mine_tile': (native_evidence.get('destroyedByActor') is True
                       and native_evidence.get('targetAbsent') is True
                       and native_evidence.get('targetChanged') is False),
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile')
+                  and action.get('operation') in ('navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile')
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -354,6 +363,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         return await stop(bridge)
     start_task, action = None, None
     landing_invalid = False
+    placement_invalid = False
+    placement_identity = None
     try:
         initial = await command(bridge, 'get_movement')
         params = {'operation': name, 'arguments': arguments, 'expectedGeneration': initial['movement']['generation']}
@@ -372,6 +383,13 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             verify_landing_start(action, arguments, server_ai='server_ai_atomic_v1' in bridge.hello.get('capabilities', []))
             landing_invalid = False
             landing_identity = dict(action)
+        if name == 'place_tile' and 'server_ai_place_tile_v1' in bridge.hello.get('capabilities', []):
+            placement_invalid = True
+            if (action.get('targetTile') != arguments
+                    or any(type(value) is not int for value in action['targetTile'].values())):
+                raise BridgeError('Placement target missing or different in start receipt')
+            placement_invalid = False
+            placement_identity = dict(action)
         action_id = action['actionId']
         deadline = asyncio.get_running_loop().time() + action['durationMs'] / 1000 + 1
         while action['status'] == 'running':
@@ -403,6 +421,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                     # use the normal release-evidence verifier; never retry it.
                     reply = await command(bridge, 'get_movement')
                     current = reply['movement']['action']
+                    if placement_identity is not None and not same_action(placement_identity, current):
+                        placement_invalid = True
                     if landing_identity is not None and not same_action(landing_identity, current):
                         landing_invalid = True
                     if (not same_action(action, current)
@@ -428,7 +448,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         if action is not None:
             try:
                 stopped = await stop(bridge, action['actionId'], action)
-                if landing_invalid:
+                if landing_invalid or placement_invalid:
                     return {**stopped, 'valid': False, 'status': 'unknown', 'completed': False, 'reason': str(error)}
                 return {**stopped, 'supervisorError': str(error)}
             except (BridgeError, OSError, KeyError, ValueError):
