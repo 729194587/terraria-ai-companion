@@ -77,7 +77,9 @@ internal static class ServerAiActionFixture
             }
             // Same virtual native method invoked by DedServ_PostModLoad (IL_0dcb).
             // Does not call Player.Update, spoof identity, or change Netplay.HasClients.
+            lock(ProbeSession.Reservation.Gate)ServerAiTerrainFixture.Tick(ProbeSession.Actor);
             update.Invoke(Main.instance,new object[]{new GameTime()});
+            lock(ProbeSession.Reservation.Gate)ServerAiTerrainFixture.Observe(ProbeSession.Actor);
             var current=ActorMining.Current;
             object[] Drops()=>Main.item.Where(i=>i.active&&i.type==ItemID.StoneBlock&&Vector2.Distance(i.Center,new(x*16+8,y*16+8))<160)
                 .Select(i=>(object)new{type=i.type,i.stack,x=i.position.X,y=i.position.Y}).ToArray();

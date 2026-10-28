@@ -1,5 +1,7 @@
 # TerraBlind 连续导航集成原型（0.1.16）
 
+当前0.1.55的能力审查、探索层接通和32场隔离原生地形矩阵见 [L2二维地形通过](L2_TERRAIN_TRAVERSAL.md)。下文保留历史实现与验证记录。
+
 ## 0.1.27：多人玩家更新隔离（2026-10-21 修复，2026-10-22 已部署 B，待游戏复测）
 
 本次实测报告目标 X=34094.1，运行采样中 frame 始终为 1、completedActions 始终为 0，但实际 X 持续变化，最后以 `replan requires safe foot support and body clearance` 失败。`CompanionPlayer.PostUpdateRunSpeeds` 对远程玩家同样执行；远程玩家不满足 CanControl，原分支会调用全局 `GameNavigation.Cancel`，清空本地任务及 Before/After 配对。现在入口先排除非本地玩家；本地玩家的取消、死亡、手动输入和租约处理保持原样。

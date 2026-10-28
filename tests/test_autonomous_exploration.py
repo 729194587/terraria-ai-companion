@@ -58,6 +58,23 @@ class ExplorationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('step_limit', r['value']['reason'], r)
         self.assertEqual(2, len(self.starts()))  # Synthetic kinematics; native jump is a separate check.
 
+    async def test_l2_candidates_delegate_slopes_short_gap_and_half_step(self):
+        for mode in ('slope_up','slope_down','short_gap','half_step'):
+            self.host.x=1600; self.host.terrain_mode=mode
+            before=len(self.starts())
+            r=await self.run_loop('{direction="right",maxSteps=1}')
+            self.assertEqual('step_limit',r['value']['reason'],(mode,r))
+            self.assertEqual(before+1,len(self.starts()))
+            self.assertIn('native_plan_required',r['value']['decisions'][0]['basis'])
+            self.assertIn('toY',r['value']['steps'][0])
+
+    async def test_l2_wide_gap_and_missing_target_support_never_dispatch(self):
+        for mode in ('wide_gap','gap_at_target'):
+            self.host.x=1600; self.host.terrain_mode=mode
+            r=await self.run_loop('{direction="right",maxSteps=1,stepPixels=64}')
+            self.assertEqual('no_safe_direction',r['value']['reason'],(mode,r))
+        self.assertEqual([],self.starts())
+
     async def test_auto_reverses_before_action_at_wall(self):
         self.host.terrain_mode = 'right_wall'
         r = await self.run_loop('{maxSteps=2}')

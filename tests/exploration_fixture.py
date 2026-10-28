@@ -33,6 +33,15 @@ class ExplorationHost(AiHost):
             left = math.floor((self.x+10)/16)-22
             top = math.floor((self.y+42)/16)-17
             def cell(tx, ty):
+                if self.terrain_mode in ('short_gap','wide_gap','gap_at_target'):
+                    end={'short_gap':105,'wide_gap':107,'gap_at_target':109}[self.terrain_mode]
+                    if 103 <= tx <= end: return '.'
+                if self.terrain_mode in ('slope_up','slope_down','half_step') and tx>=103:
+                    if self.terrain_mode=='half_step':
+                        return 'h' if ty==199 else '#' if ty>=200 else '.'
+                    up=self.terrain_mode=='slope_up'
+                    surface=200-min(tx-102,4) if up else 200+min(tx-103,4)
+                    return ('2' if up else '1') if ty==surface and tx<107 else '#' if ty>=surface else '.'
                 if self.terrain_mode == 'both_walls' and (tx in (99, 102)) and ty < 200:
                     return '#'
                 if self.terrain_mode == 'corridor' and tx in (98,110) and ty < 200:

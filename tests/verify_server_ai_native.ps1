@@ -1,5 +1,6 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain)
 $ErrorActionPreference='Stop'
+if($Terrain -and !$Actions){throw 'Terrain validation requires isolated Actions fixture.'}
 if($Semantic -and (!$Actions -or !$Perception)){throw 'Semantic validation requires isolated Actions and Perception fixtures.'}
 if($Landing -and !$Actions){throw 'Landing cleanup validation requires the isolated Actions fixture.'}
 if($Port -eq $IpcPort){throw 'Native game and AI IPC test ports must be distinct.'}
@@ -32,6 +33,7 @@ $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
 if($Perception){$info.ArgumentList.Add("-companionperceptiontest")}
 if($Semantic){$info.ArgumentList.Add("-companionsemantictest")}
+if($Terrain){$info.ArgumentList.Add("-companionterraintest")}
 if($Actions){$info.ArgumentList.Add('-companionactionstest')}
 if($Landing){$info.ArgumentList.Add('-companionlandingtest')}
 $process=[Diagnostics.Process]::Start($info)
@@ -176,6 +178,10 @@ try {
         } while($empty.ok -and $empty.data.action.status -eq 'running' -and [DateTime]::UtcNow -lt $until)
         if(!$empty.ok -or $empty.data.action.status -ne 'failed' -or !$empty.data.action.endEvidence.inputsReleased){throw 'Empty tile was not a confirmed native refusal'}
     }
+    if($Terrain){
+        & $PythonExecutable (Join-Path $repo 'scripts/server_ai_terrain.py') --port $IpcPort --profile $profile
+        if($LASTEXITCODE -ne 0){throw "Native terrain matrix failed: $profile/terrain-result.json"}
+    }
     $client.Dispose();$client=$null
     [IO.File]::WriteAllText("$profile/g81-test-stop",'The isolated harness requests native main-thread shutdown after read-only TCP assertions.')
     if(!$process.WaitForExit(20000)){throw 'Native graceful unload timed out'}
@@ -202,6 +208,7 @@ try {
     if($Perception){$report.perception=$perceptionResult}
     if($Agent){$report.agent=$agentResult}
     if($Semantic){$report.semantic=$semanticResult}
+    if($Terrain){$report.terrain=Get-Content -LiteralPath "$profile/terrain-result.json" -Raw|ConvertFrom-Json}
     if($Actions){$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
         $report.nativeCancellations=$nativeCancellations;$report.worldAfterCancel=$worldAfterCancel;$report.emptyTileRefusal=$empty.data.action;
         $report.actionFrameMode='Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.'}

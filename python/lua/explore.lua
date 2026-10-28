@@ -72,7 +72,8 @@ return function(options)
     end
 
     -- Conservative direction filter only. The original native navigator still plans and validates each move.
-    -- Full/one-way flat supports, at most two tiles up/down; gaps, slopes, hazards and unknown cells reject.
+    -- Bounded 2D candidates: ordinary floor slopes/half blocks, low steps and <=3-tile gaps.
+    -- This is not a route proof: native physics must validate the complete motion/braking tail.
     local function candidate(sign, distance)
         local t = view.data.terrain
         local function cell(tx,ty)
@@ -91,23 +92,40 @@ return function(options)
         local first = math.floor(p.player.position.x/16)
         local last = math.floor((target+t.playerWidth-0.01)/16)
         if sign < 0 then first = math.floor(target/16); last = math.floor((p.player.position.x+t.playerWidth-0.01)/16) end
+        local gap, previousSurface = 0, nil
         for tx=first,last do
-            for ty=feet-6,feet+2 do
+            for ty=feet-10,feet+5 do
                 local c=cell(tx,ty)
                 if c == '?' or c == '!' then return nil, 'unknown_or_hazard' end
             end
-            local supported = false
-            for ty=feet-2,feet+2 do
+            local surface = nil
+            for ty=feet-4,feet+4 do
                 local c=cell(tx,ty)
-                if c == '#' or c == '=' then
+                if c == '#' or c == '=' or c == 'h' or c == '1' or c == '2' then
                     if cell(tx,ty-1)=='.' and cell(tx,ty-2)=='.' and cell(tx,ty-3)=='.' then
-                        supported = true
+                        surface = ty
                         break
                     end
                 end
             end
-            if not supported then return nil, 'gap_tall_obstacle_or_unsupported_shape' end
+            if surface then
+                if previousSurface and abs(surface-previousSurface)>2 then
+                    return nil, 'excessive_surface_change'
+                end
+                previousSurface=surface
+                gap=0
+            else
+                -- A missing surface is only a gap if the body/jump corridor is empty.
+                -- Never reinterpret a tall wall, ceiling slope or unsupported shape as a hole.
+                for ty=feet-4,feet+4 do
+                    if cell(tx,ty)~='.' then return nil, 'tall_obstacle_or_unsupported_shape' end
+                end
+                gap=gap+1
+                if gap>3 or not previousSurface then return nil, 'gap_without_near_landing' end
+            end
         end
+        -- A target over a hole is not a candidate, even when its width is small.
+        if gap>0 then return nil, 'gap_without_near_landing' end
         return target, 'local_candidate'
     end
 
@@ -168,9 +186,9 @@ return function(options)
             direction=-direction; report.reversals=report.reversals+1
         end
         report.decisions[#report.decisions+1]={step=step,direction=direction,targetX=target or json.null,
-            basis=target and 'observed_local_corridor' or rejected}
+            basis=target and 'observed_bounded_2d_candidate_native_plan_required' or rejected}
         if not target then return finish(rejected == 'revisit_limit' and rejected or 'no_safe_direction') end
-        local beforeX, beforeLife = player.position.x, player.life
+        local beforeX, beforeY, beforeLife = player.position.x, player.position.y, player.life
         log('explore step='..tostring(step)..' direction='..tostring(direction)..' targetX='..tostring(target))
         local action=api('navigate_to_x',{targetX=target})
         if not action.valid or not action.completed or action.endEvidenceStatus ~= 'known' then
@@ -190,7 +208,7 @@ return function(options)
         for bucket=math.floor(min(beforeX,afterX)/64),math.floor(max(beforeX,afterX)/64) do
             visits[bucket]=(visits[bucket] or 0)+1
         end
-        report.steps[#report.steps+1]={step=step,direction=direction,targetX=target,fromX=beforeX,toX=afterX,
+        report.steps[#report.steps+1]={step=step,direction=direction,targetX=target,fromX=beforeX,toX=afterX,fromY=beforeY,toY=p.player.position.y,
             movedPixels=moved,newHorizontalPixels=novel,gameUpdate=p.gameUpdate}
         log('explore progress='..tostring(moved)..' novel='..tostring(novel))
         if p.player.life < beforeLife or p.player.dead then return finish('health_decreased') end

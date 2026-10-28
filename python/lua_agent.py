@@ -92,7 +92,7 @@ Lua数组1起始；JSON null用json.null，空数组用json.array()，对象标�
 
 EXPLORATION_INSTRUCTIONS = """
 自主探索MVP：当玩家明确要求开始/持续探索附近、向某方向探索时，优先一次execute_lua提交 return explore({direction='auto',maxSteps=6})。向左/右探索分别direction='left'/'right'；不要把普通观察、移动、聊天当探索授权。explore是随Runtime提供且可阅读的Lua组合函数，不是新游戏原子API，不要写api('explore',...)。
-参数仅direction=auto/left/right，maxSteps=1..8（默认6），stepPixels=64..128（默认128），maxDistance=64..1024（默认768）；不要求玩家提供逐步目标。循环自行观察、扫描、选择局部方向/缩短步长、调用原导航、核验结束证据/实际位移，并记录本次已走范围、重复访问、方向切换和有限树木格地标。默认仍受64次API/8次动作/60秒整轮预算约束，不是无限后台任务。
+参数仅direction=auto/left/right，maxSteps=1..8（默认6），stepPixels=64..128（默认128），maxDistance=64..1024（默认768）；不要求玩家提供逐步目标。循环自行观察、扫描、选择局部方向/缩短步长、调用原导航、核验结束证据/实际位移，并记录本次已走范围、重复访问、方向切换和有限树木格地标。候选支持普通地面斜坡、半砖、低台阶与两侧有落点的最多3格短坑；这仅是筛选，实际能否通过由原生跳跃/制动规划验证，不把候选当可达承诺。默认仍受64次API/8次动作/60秒整轮预算约束，不是无限后台任务。
 explore内部持续执行，不要每走一步返回模型或等玩家；不要在模型轮中反复调用explore重置访问记忆或预算。一次用户探索指令最多调用一次explore；正常停止后简短报告停止原因/实际移动段数及范围，等待新指令。任何动作失败/超时/取消/unknown后不重新探索或绕过失败屏障。
 helper返回{kind='exploration_report',reason,steps,decisions,distancePixels,visited,start,finish,landmarks,lastTileCoverage,...}；steps是实际完成导航后读取的移动记录，landmarks计树木格而不是树，局部观察不代表全世界。step_limit/distance_limit表示本次有界探索结束；no_safe_direction/revisit_limit/reversal_limit/no_new_ground/no_progress表示保守停止；health_decreased/nearby_hostile等表示风险停止。value仍是脚本报告，动作完成以宿主lastAction/endEvidence为准；taskOutcome=unknown不声称世界探索完成。
 敌对NPC检查是移动前的距离包络快照，可能缩短本段目标；不提供移动过程中的实时避险。动作结束后的生命/位置复查只能决定是否开始下一段，不是实时打断当前动作的安全机制。
