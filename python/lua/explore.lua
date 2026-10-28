@@ -93,13 +93,18 @@ return function(options)
         local last = math.floor((target+t.playerWidth-0.01)/16)
         if sign < 0 then first = math.floor(target/16); last = math.floor((p.player.position.x+t.playerWidth-0.01)/16) end
         local gap, previousSurface = 0, nil
-        for tx=first,last do
-            for ty=feet-10,feet+5 do
+        -- Follow surfaces in travel order. Each column uses the last observed
+        -- support height; a whole segment need not remain at its starting altitude.
+        local beginX, endX = first, last
+        if sign < 0 then beginX, endX = last, first end
+        for tx=beginX,endX,sign do
+            local reference = previousSurface or feet
+            for ty=reference-10,reference+5 do
                 local c=cell(tx,ty)
                 if c == '?' or c == '!' then return nil, 'unknown_or_hazard' end
             end
             local surface = nil
-            for ty=feet-4,feet+4 do
+            for ty=reference-4,reference+4 do
                 local c=cell(tx,ty)
                 if c == '#' or c == '=' or c == 'h' or c == '1' or c == '2' then
                     if cell(tx,ty-1)=='.' and cell(tx,ty-2)=='.' and cell(tx,ty-3)=='.' then
@@ -117,7 +122,7 @@ return function(options)
             else
                 -- A missing surface is only a gap if the body/jump corridor is empty.
                 -- Never reinterpret a tall wall, ceiling slope or unsupported shape as a hole.
-                for ty=feet-4,feet+4 do
+                for ty=reference-4,reference+4 do
                     if cell(tx,ty)~='.' then return nil, 'tall_obstacle_or_unsupported_shape' end
                 end
                 gap=gap+1
@@ -173,11 +178,14 @@ return function(options)
                 countUnit='tile cells, not trees'}
         end
         local target, rejected = nil, nil
+        local candidates=json.array()
         for attempt=1,2 do
             for offset=0,2 do
                 local distance=allowance-offset*32
                 if distance >= 32 then
                     target,rejected=candidate(direction,distance)
+                    candidates[#candidates+1]={direction=direction,distancePixels=distance,
+                        targetX=target or json.null,reason=rejected}
                     if target then break end
                 end
             end
@@ -186,7 +194,7 @@ return function(options)
             direction=-direction; report.reversals=report.reversals+1
         end
         report.decisions[#report.decisions+1]={step=step,direction=direction,targetX=target or json.null,
-            basis=target and 'observed_bounded_2d_candidate_native_plan_required' or rejected}
+            basis=target and 'observed_bounded_2d_candidate_native_plan_required' or rejected,candidates=candidates}
         if not target then return finish(rejected == 'revisit_limit' and rejected or 'no_safe_direction') end
         local beforeX, beforeY, beforeLife = player.position.x, player.position.y, player.life
         log('explore step='..tostring(step)..' direction='..tostring(direction)..' targetX='..tostring(target))

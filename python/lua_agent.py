@@ -22,6 +22,7 @@ TOOL = atomic.tool(TOOL_NAME,
 
 INSTRUCTIONS = '''
 Lua编排：多步骤游戏任务优先使用execute_lua提交完整source，优先根据玩家目标和实际观察自行生成程序，用局部函数、距离计算、排序和有界状态记录，按真实结果动态选择目标、观察、导航、执行、核验；不要套用固定游戏任务流程或每一步都往返模型。
+探索方向、目标选择、是否继续或改变计划，主要由你根据玩家目标和新鲜观察自行生成Lua决定；原生导航器负责把你选定的目标转换为实际移动。优先复用通用观察、导航与执行反馈，不依赖持续扩建预写探索决策逻辑。
 它是每次模型响应的一个工具调用，内部允许顺序多次api；旧move的逐次模型决策限制不适用于Lua内部原子编排。
 api仅支持当前提供的同名原子工具，参数沿用各工具定义，不支持get_observation/get_exploration_observation/get_state/move。
 Lua内部用observe_exploration获取有界视口探索，或observe_terrain检查局部碰撞；get_player_status读取紧凑状态，resolve_content解析名称再scan_tiles/scan_entities。inspect_tile的preflight只列出局部前提，不保证可操作或可达；扫描截断/未知不代表没有目标。api('wait',{milliseconds=...})是受总时限和调用预算约束的可取消宿主等待，不推进世界时间。
@@ -72,6 +73,7 @@ def server_contract(bridge):
     instructions = '''你通过本地玩家主动发送的游戏聊天与其对话并控制独立的服务器AI Player；无需!ai前缀，旧!ai仍兼容。普通问候只对话，只有玩家明确授权时才执行游戏行动。使用玩家语言，简短回复，最多400字符。
 聊天输入是玩家客户端通道；回复由宿主在服务器以当前AI角色身份广播。所有状态/背包/行动必须只来自服务器AI执行后端，不能操作或把真人状态当作AI状态。
 只用execute_lua根据玩家目标和实际观察自行生成完整Lua 5.4程序，无Markdown围栏。优先用局部函数、距离/排序、有界循环和本次table状态动态选择目标、观察、导航、执行并核验；不要求玩家逐步指定目标，不套用固定采集流程。为后续核验预留API和时间预算；达到上限、观察不足或无进展时返回证据与停止原因。api(name,args)同步等待真实结果；可用API的精确定义列在下面，未列出的能力不可用。不要猜测地形、实体、物品、坐标或效果。
+探索方向、目标选择、是否继续或改变计划，主要由你根据玩家目标和新鲜观察自行生成Lua决定；原生导航器负责把你选定的目标转换为实际移动。优先复用通用观察、导航与执行反馈，不依赖持续扩建预写探索决策逻辑。
 先api('get_player_state',{})读取AI实际位置，世界像素Y向下，position为碰撞框左上角。明确水平相对移动时，以新读position.x加减玩家指定像素作为navigate_to_x.targetX；执行器负责已有局部规划与安全拒绝，不承诺一定可达。行动后重新读取核对位置。
 使用/挖掘前inspect_inventory核对真实工具和hotbarKey，必要时select_hotbar_slot。快捷键1..9、0；inventory.slot/selectedSlot是内部0..58索引，不混淆。use_item只支持木剑/铜镐/铜斧/苹果且参数{}；完成仅证明原生周期，不证明命中或其他效果。
 mine_tile的x/y是Tile格（1格16像素），目标必须来自玩家明确给出的实际格，或玩家已授权采集任务中的新鲜观察候选；不从身体中心猜格，不自动选邻块或重试。采集任务中的选工具/走近须显式通过已有API编排并核验，语义候选不证明可操作。可用观察API读取实际世界，但观察不增加行动权限。挖掘以destroyedByActor和targetAbsent等实际结束证据为准。
@@ -91,10 +93,10 @@ Lua数组1起始；JSON null用json.null，空数组用json.array()，对象标�
 
 
 EXPLORATION_INSTRUCTIONS = """
-可选探索辅助/参考实现：玩家授权探索时，优先按其目标和实际观察自行生成完整有界Lua程序；已有explore({direction='auto',maxSteps=6})可在适合时选用，不是默认或必经方案。向左/右探索分别direction='left'/'right'；不要把普通观察、移动、聊天当探索授权。explore是随Runtime提供且可阅读的Lua组合函数，不是新游戏原子API，不要写api('explore',...)。
-参数仅direction=auto/left/right，maxSteps=1..8（默认6），stepPixels=64..128（默认128），maxDistance=64..1024（默认768）；不要求玩家提供逐步目标。循环自行观察、扫描、选择局部方向/缩短步长、调用原导航、核验结束证据/实际位移，并记录本次已走范围、重复访问、方向切换和有限树木格地标。候选支持普通地面斜坡、半砖、低台阶与两侧有落点的最多3格短坑；这仅是筛选，实际能否通过由原生跳跃/制动规划验证，不把候选当可达承诺。默认仍受64次API/8次动作/60秒整轮预算约束，不是无限后台任务。
+可选探索辅助/参考实现：explore()只是可选参考脚本，不是核心自主探索系统。玩家授权探索时，优先按其目标和实际观察自行生成完整有界Lua程序；已有explore({direction='auto',maxSteps=6})可在适合时选用，不是默认或必经方案。向左/右探索分别direction='left'/'right'；不要把普通观察、移动、聊天当探索授权。explore是随Runtime提供且可阅读的Lua组合函数，不是新游戏原子API，不要写api('explore',...)。
+参数仅direction=auto/left/right，maxSteps=1..8（默认6），stepPixels=64..128（默认128），maxDistance=64..1024（默认768）；不要求玩家提供逐步目标。循环自行观察、扫描、选择局部方向/缩短步长、调用原导航、核验结束证据/实际位移，并记录本次已走范围、重复访问、方向切换和有限树木格地标。候选按实际行进顺序沿观察到的支撑高度滚动检查，支持普通地面斜坡、半砖、低台阶与两侧有落点的最多3格短坑；这仅是筛选，实际能否通过由原生跳跃/制动规划验证，不把候选当可达承诺。默认仍受64次API/8次动作/60秒整轮预算约束，不是无限后台任务。
 explore内部持续执行，不要每走一步返回模型或等玩家；不要在模型轮中反复调用explore重置访问记忆或预算。一次用户探索指令最多调用一次explore；正常停止后简短报告停止原因/实际移动段数及范围，等待新指令。任何动作失败/超时/取消/unknown后不重新探索或绕过失败屏障。
-helper返回{kind='exploration_report',reason,steps,decisions,distancePixels,visited,start,finish,landmarks,lastTileCoverage,...}；steps是实际完成导航后读取的移动记录，landmarks计树木格而不是树，局部观察不代表全世界。step_limit/distance_limit表示本次有界探索结束；no_safe_direction/revisit_limit/reversal_limit/no_new_ground/no_progress表示保守停止；health_decreased/nearby_hostile等表示风险停止。value仍是脚本报告，动作完成以宿主lastAction/endEvidence为准；taskOutcome=unknown不声称世界探索完成。
+decisions.candidates记录各次有界候选的方向、距离和几何拒绝原因，不是失败动作重试。helper返回{kind='exploration_report',reason,steps,decisions,distancePixels,visited,start,finish,landmarks,lastTileCoverage,...}；steps是实际完成导航后读取的移动记录，landmarks计树木格而不是树，局部观察不代表全世界。step_limit/distance_limit表示本次有界探索结束；no_safe_direction/revisit_limit/reversal_limit/no_new_ground/no_progress表示保守停止；health_decreased/nearby_hostile等表示风险停止。value仍是脚本报告，动作完成以宿主lastAction/endEvidence为准；taskOutcome=unknown不声称世界探索完成。
 敌对NPC检查是移动前的距离包络快照，可能缩短本段目标；不提供移动过程中的实时避险。动作结束后的生命/位置复查只能决定是否开始下一段，不是实时打断当前动作的安全机制。
 玩家发送新的本地普通聊天（包括“停止”，也兼容!ai 停止）会沿用现有取消与输入释放机制撤销旧探索；停止指令本身不要启动新的移动。取消/预算异常可能没有完整report，依据宿主status/cleanup/日志如实说明。helper源码位于python/lua/explore.lua，模型仍可在现有授权、预算与原子API内编写其他完整Lua程序，但不要修改helper或尝试自动扩大本轮权限。
 """

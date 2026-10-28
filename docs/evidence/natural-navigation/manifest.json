@@ -1,0 +1,2377 @@
+{
+  "date": "2026-10-28",
+  "baseCommit": "22e1926451bf4b216f48d3e76fdfbb63e6e394aa",
+  "archive": {
+    "path": "raw-runs.zip",
+    "bytes": 4152055,
+    "sha256": "82a992b3a295e6af2d3ed9eb2591df6c75eb2dc7207b2c279b28e2e5f7100a6a",
+    "format": "ZIP deflate, lossless raw file bytes; source world included"
+  },
+  "summary": {
+    "path": "summary.json",
+    "sha256": "298161fe89bc4506dee097a2af8cc88addec06eea149805fd2a00f1812d37bf2"
+  },
+  "packageVersion": "0.1.55",
+  "finalPackageSHA256": "d30d7a3af51f9607d0278d6089982d4a6e173f8586de9cd705ae05ae45bd54cc",
+  "engineDLLSHA256": "fcc6a9624b12191be4a15d714a3675440911feb8c1d374642ab1fd686f0da0a5",
+  "validation": {
+    "offline": "31 distinct targeted tests passed: 28 exploration/threat/snapshot + 2 report accounting + 1 model instruction contract; no full test suite",
+    "native": "matched baseline 32 + fixed 32 deterministic program cases on same package/world; intentional safe stops; NOT 32 successful routes",
+    "build": "0 errors/0 warnings",
+    "graphicalHostAndPlay": "PENDING",
+    "realLLM": "PENDING / not called",
+    "paidModels": "NOT USED",
+    "deployment": "NOT DONE",
+    "caution": "fixed Lua/world inputs; planner search time budget and native simulation can vary trajectories/stops; not bit-identical real-time execution"
+  },
+  "sourceSHA256": {
+    "python/lua/explore.lua": "bbc0931cac0ec35fda3cdb5f8355431f75eb22d33d3247aa6ca7ddb3f5b5def0",
+    "CompanionBridge/ServerIpc/ServerAiNaturalFixture.cs": "92c8e344faef88bdf75ef13222ffde47f2252c650da34a858e40e4c8300370f2",
+    "CompanionBridge/ServerIpc/ServerAiSystem.cs": "f5480ba17b089d66c706681c5dcf8b1a4ba051ddd7ebf7b91ac1162786b8f8e2",
+    "tests/native_natural_navigation.py": "09cd03a8b537e2f8c81f8f8a01eb7642c71aa3759c5bad0f8b09dc56f2268b1c",
+    "tests/verify_natural_navigation.ps1": "5582c7e5bfbb49622936abc9351329eef7e6837e11860d75588b736bd87741cb",
+    "tests/test_natural_exploration.py": "8876b5dd89d6d836816a05c0974481a36bca205e79a0f30622a6666f42557a1f",
+    "tests/fixtures/natural-navigation-left-descent.json": "b90d262b8e33ab31cd9cf4f6d702d0b896884c03478bf3ec62abf4ca46ebe454",
+    "tests/fixtures/natural-navigation-grass-descent.json": "7f4eed01ae1296b25de49e6eba1bd706dbfba3939fc48d2a464b53efc0e50db9",
+    "python/lua_agent.py": "45a88bf00e96754c051b0f90548ef7ba8c5f7768365fd8f49372682bbdeba148"
+  },
+  "fixtures": {
+    "noTileWrites": true,
+    "noConstructedMatrix": true,
+    "npcCombatExcluded": true,
+    "actorInitialization": "diagnostic scene start only; no per-segment Player position/velocity correction",
+    "unknown": "stop whole run; do not reset/reconnect after unknown"
+  },
+  "files": [
+    {
+      "path": "world/source.wld",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\source.wld",
+      "bytes": 3039542,
+      "sha256": "9f4665e8c6989bc5a523349e1bd4a303895814152170ff6cf9ebc7e862a54482"
+    },
+    {
+      "path": "world/generation-stdout.log",
+      "source": ".local\\natural-native-65c6458452b04acdaa5adfe054d9cef1\\stdout.log",
+      "bytes": 776419,
+      "sha256": "1756c5c2377df90800fa614e2aa08b3c8dfa05108275a2d825712007f45898b7"
+    },
+    {
+      "path": "helpers/baseline-explore.lua",
+      "source": ".local\\natural-baseline\\explore.lua",
+      "bytes": 12776,
+      "sha256": "f728352f5cac65018f6e15c04345123449903a970acfbedc6563d514c33e49fb"
+    },
+    {
+      "path": "helpers/fixed-explore.lua",
+      "source": "python\\lua\\explore.lua",
+      "bytes": 13356,
+      "sha256": "f0a72bceb107fa1092953a15f0443b6d0dbab7280cc7cd24247b0ccef73618cb"
+    },
+    {
+      "path": "baseline-near/result.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\result.json",
+      "bytes": 1322614,
+      "sha256": "985ce1f7500dd25b07ac13fe8d33cb6604d861b575141a9e286f2cbe1e29d102"
+    },
+    {
+      "path": "baseline-near/natural-results.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-results.json",
+      "bytes": 1254801,
+      "sha256": "ebdca94a1be41b8b0c5f9a0b2a984b54c4a2aaf1439ae28f7f094c444335da23"
+    },
+    {
+      "path": "baseline-near/server.log",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\server.log",
+      "bytes": 320970,
+      "sha256": "61a67e8b7e32c639cc86a7fc2a9be6259c9491641fd3ba797aee0eba6bc043bd"
+    },
+    {
+      "path": "baseline-near/natural-calls-om32-l-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-om32-l-direct.json",
+      "bytes": 72516,
+      "sha256": "32037fb4500e0ac764d8c24269b1746e88e0b6c4f0f90a5d2f75c54a12b85c99"
+    },
+    {
+      "path": "baseline-near/natural-calls-om32-l-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-om32-l-explore.json",
+      "bytes": 107690,
+      "sha256": "9915427df15797f5e471cf67606958e57e6da42d64aab05fbc8c5ffa7e0ed3c3"
+    },
+    {
+      "path": "baseline-near/natural-calls-om32-r-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-om32-r-direct.json",
+      "bytes": 72506,
+      "sha256": "c1cb2223bae7a2da8a48a77177af421c47b481faeff62ad1ca740a4bda63f434"
+    },
+    {
+      "path": "baseline-near/natural-calls-om32-r-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-om32-r-explore.json",
+      "bytes": 107694,
+      "sha256": "ec5c42fd8b978fe799a906a60e2bff20313398e09821a1ca4597f9603713f02a"
+    },
+    {
+      "path": "baseline-near/natural-calls-om64-l-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-om64-l-direct.json",
+      "bytes": 72596,
+      "sha256": "14b871861f88e9a1b7deab8a9f2bf889ee7b070e03d985139c927efcff3f260c"
+    },
+    {
+      "path": "baseline-near/natural-calls-om64-l-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-om64-l-explore.json",
+      "bytes": 107768,
+      "sha256": "78848584463b46290bae29ae229c9f5888c31d81c3ba1dceddcaffddc2180be4"
+    },
+    {
+      "path": "baseline-near/natural-calls-om64-r-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-om64-r-direct.json",
+      "bytes": 72449,
+      "sha256": "e4ab9847220fb694be6b6591a37803793cd4df19392ed15da9b99e633f64a1d2"
+    },
+    {
+      "path": "baseline-near/natural-calls-om64-r-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-om64-r-explore.json",
+      "bytes": 107639,
+      "sha256": "fd31d79ac2f94561e8d3639e4f88d1bb79205ad40e5ead417aa81e25f3ec73ce"
+    },
+    {
+      "path": "baseline-near/natural-calls-op0-l-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op0-l-direct.json",
+      "bytes": 72521,
+      "sha256": "2beaf3df3965bf1994f6e9af27a39910f1fc20c0c1ca92a9bfd52e01498f0b2c"
+    },
+    {
+      "path": "baseline-near/natural-calls-op0-l-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op0-l-explore.json",
+      "bytes": 107708,
+      "sha256": "e26fde1a36883eecab6b0488216f12dfbc59fbb48340cf486485875fabb46051"
+    },
+    {
+      "path": "baseline-near/natural-calls-op0-r-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op0-r-direct.json",
+      "bytes": 72482,
+      "sha256": "a8c0e1618ad10cf11d6a45b1543a38f637fde21db3fd2cbe9bb800e2daacf980"
+    },
+    {
+      "path": "baseline-near/natural-calls-op0-r-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op0-r-explore.json",
+      "bytes": 107592,
+      "sha256": "8a832e383f1569d900f614b109e2b072130507adfd451f1226b1bc534d23a971"
+    },
+    {
+      "path": "baseline-near/natural-calls-op32-l-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op32-l-direct.json",
+      "bytes": 72582,
+      "sha256": "16295fa7e62e01bf1f8cbca5ec1f57bbfa84ab4dfeda531a2c033990a5400ffc"
+    },
+    {
+      "path": "baseline-near/natural-calls-op32-l-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op32-l-explore.json",
+      "bytes": 107706,
+      "sha256": "fdf85ef0c738473fd92f6d2126bd69ed0bab572c3ab257ade3c7792a3e960215"
+    },
+    {
+      "path": "baseline-near/natural-calls-op32-r-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op32-r-direct.json",
+      "bytes": 72626,
+      "sha256": "3982f4793c42a4a53ab0001b4cbf6afe992aae2c85fee2141f26817e9c79606e"
+    },
+    {
+      "path": "baseline-near/natural-calls-op32-r-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op32-r-explore.json",
+      "bytes": 107822,
+      "sha256": "14c75329e9247602b202559d886dd0bbc17e1151ec43bc18b1b08c71f2889971"
+    },
+    {
+      "path": "baseline-near/natural-calls-op64-l-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op64-l-direct.json",
+      "bytes": 27032,
+      "sha256": "9f81f5c6e7db6ff24ac244f24c7b767278539385f3195d73d229d24ebc3b2db5"
+    },
+    {
+      "path": "baseline-near/natural-calls-op64-l-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op64-l-explore.json",
+      "bytes": 34511,
+      "sha256": "b21eef4a51dbc9481c522931a27fcab2e86c9837cd61f405ed78970c680c7a50"
+    },
+    {
+      "path": "baseline-near/natural-calls-op64-r-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op64-r-direct.json",
+      "bytes": 15643,
+      "sha256": "1fdf144f40c96ffee0b03ad51b7a0d1c9f2b9ec9d0e6db7407c0f23b32ba2216"
+    },
+    {
+      "path": "baseline-near/natural-calls-op64-r-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-calls-op64-r-explore.json",
+      "bytes": 20101,
+      "sha256": "ea28a42186c87b11bc7e2785854478cb21aa1f0bfe577d59011bc381c73fbb91"
+    },
+    {
+      "path": "baseline-near/natural-motion-om32-l-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-om32-l-direct.json",
+      "bytes": 163194,
+      "sha256": "d706111ad1bee126243ea3d9a4874ac702a29fa98103d96e1b090e7e77ac2bbf"
+    },
+    {
+      "path": "baseline-near/natural-motion-om32-l-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-om32-l-explore.json",
+      "bytes": 171659,
+      "sha256": "8b7cfaf01a9b5ac34193485255dc0f68a3809b6481bf6d15a01413df1dc08cb2"
+    },
+    {
+      "path": "baseline-near/natural-motion-om32-r-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-om32-r-direct.json",
+      "bytes": 153607,
+      "sha256": "abf77a037847091ea162ce66f539cbfc892c122ca640f10f851e832661ff10f8"
+    },
+    {
+      "path": "baseline-near/natural-motion-om32-r-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-om32-r-explore.json",
+      "bytes": 158589,
+      "sha256": "a7ebc8990ea9c63b756ff03c473c9206bee4432d484fbb2c0e4db8431b9a9833"
+    },
+    {
+      "path": "baseline-near/natural-motion-om64-l-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-om64-l-direct.json",
+      "bytes": 169238,
+      "sha256": "ff767e5408f01fbe4dabb772923c3b7cce11fcb61e5f04c9a03f6ef55fce4e7d"
+    },
+    {
+      "path": "baseline-near/natural-motion-om64-l-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-om64-l-explore.json",
+      "bytes": 167489,
+      "sha256": "2b093c4395c94228716f1da43cafcba14a379d27875ab60e56b613a382111a12"
+    },
+    {
+      "path": "baseline-near/natural-motion-om64-r-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-om64-r-direct.json",
+      "bytes": 159009,
+      "sha256": "8b014d8bc75a3ddaea589d8e58780d8f53a37058d548db6ad340ac4723fd6e95"
+    },
+    {
+      "path": "baseline-near/natural-motion-om64-r-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-om64-r-explore.json",
+      "bytes": 164879,
+      "sha256": "bf5d3f74b489bf3fad1c59adcd1aab12a3e223dd3a7dc6e81c947ee5b4f29afd"
+    },
+    {
+      "path": "baseline-near/natural-motion-op0-l-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op0-l-direct.json",
+      "bytes": 151019,
+      "sha256": "629880a9a931e6445557c778192a1c2a46d7d735066871c30ec2838ad79ed5d6"
+    },
+    {
+      "path": "baseline-near/natural-motion-op0-l-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op0-l-explore.json",
+      "bytes": 154048,
+      "sha256": "b5636b0deb06a9cc8e80cdb8fb2b36fd29a84b5ebe05190ffa0d257ce19311d1"
+    },
+    {
+      "path": "baseline-near/natural-motion-op0-r-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op0-r-direct.json",
+      "bytes": 155477,
+      "sha256": "472779a4fbb7fe821fcef87b485b504a096811617a57f50a92a00ed6ea21ddbe"
+    },
+    {
+      "path": "baseline-near/natural-motion-op0-r-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op0-r-explore.json",
+      "bytes": 166516,
+      "sha256": "0e2ee6237694354d432a527abe4813f19086afc3068382333ea01f26e89a1c95"
+    },
+    {
+      "path": "baseline-near/natural-motion-op32-l-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op32-l-direct.json",
+      "bytes": 152022,
+      "sha256": "d5d1abbeda9c1137657de144e83aab7bc9da2256a0a561ee53c51c82911fd765"
+    },
+    {
+      "path": "baseline-near/natural-motion-op32-l-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op32-l-explore.json",
+      "bytes": 161790,
+      "sha256": "6124e8ee0b6432ed44f7d5ec373db5c2b44a8dd8cf4de769ba71b21527050c75"
+    },
+    {
+      "path": "baseline-near/natural-motion-op32-r-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op32-r-direct.json",
+      "bytes": 156919,
+      "sha256": "b98a43526a0dcac9e09dee939ba7a3680fb5dda90474c4537508532f6565fe31"
+    },
+    {
+      "path": "baseline-near/natural-motion-op32-r-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op32-r-explore.json",
+      "bytes": 175211,
+      "sha256": "387f938eac6c423b59e1859c001a7ee1af3fa907904d7cf38aa8936231db80eb"
+    },
+    {
+      "path": "baseline-near/natural-motion-op64-l-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op64-l-direct.json",
+      "bytes": 58430,
+      "sha256": "658c5a967e13073fc2eae6b3994d5cd7bb3de596faad05e409771d60f556a2dd"
+    },
+    {
+      "path": "baseline-near/natural-motion-op64-l-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op64-l-explore.json",
+      "bytes": 47171,
+      "sha256": "9fed0da37b324326cb585c380e770b941494456e425b875a1d51f7e4bc11c547"
+    },
+    {
+      "path": "baseline-near/natural-motion-op64-r-direct.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op64-r-direct.json",
+      "bytes": 29531,
+      "sha256": "a75ae5cbf25300392ee81c4348832ee5dfaa26d27bf06c9da0ed8833b5f41880"
+    },
+    {
+      "path": "baseline-near/natural-motion-op64-r-explore.json",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-motion-op64-r-explore.json",
+      "bytes": 22305,
+      "sha256": "c7a9738d48c031761ac40f5e9484ed286b3d866ebcc842ad5479b2164e569404"
+    },
+    {
+      "path": "baseline-survey/result.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\result.json",
+      "bytes": 478527,
+      "sha256": "94418efe5ad5f6f11a24d7a51e6895335cef772ceccba8558411cd6609849d75"
+    },
+    {
+      "path": "baseline-survey/natural-results.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-results.json",
+      "bytes": 452312,
+      "sha256": "df280d7f6209a991fa8f5e1f86f9e04d5e5e1a69ccf53df0e91509145061413d"
+    },
+    {
+      "path": "baseline-survey/server.log",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\server.log",
+      "bytes": 109159,
+      "sha256": "db7f49603e93563ed77bb28e197f116cd08991bcbb22d85b5e4a0db5508012d8"
+    },
+    {
+      "path": "baseline-survey/natural-catalog.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-catalog.json",
+      "bytes": 52825,
+      "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+    },
+    {
+      "path": "baseline-survey/natural-calls-om128-l-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-om128-l-direct.json",
+      "bytes": 72517,
+      "sha256": "e3a3f0f2c66c242ba4300663929dfd3419db461e41d55ca87abad57f694f280e"
+    },
+    {
+      "path": "baseline-survey/natural-calls-om128-l-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-om128-l-explore.json",
+      "bytes": 104720,
+      "sha256": "cac004bf031479697827f8823c73f5dcf26f3d7c7a6b3df1f870151d0c2ae9b0"
+    },
+    {
+      "path": "baseline-survey/natural-calls-om128-r-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-om128-r-direct.json",
+      "bytes": 72520,
+      "sha256": "195d1161a76640606cc6214fbcb176b334ff5a310c66bd99b5910a1b812dbd2b"
+    },
+    {
+      "path": "baseline-survey/natural-calls-om128-r-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-om128-r-explore.json",
+      "bytes": 106933,
+      "sha256": "e81b0966baf4a4fcda12e0682785fd8301c93d829f9216f202c244ae2f5231ab"
+    },
+    {
+      "path": "baseline-survey/natural-calls-om256-l-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-om256-l-direct.json",
+      "bytes": 15579,
+      "sha256": "fe17ee38f070288948326d26abcb5a2573907b92a75d5c7d5841176ae6e6787a"
+    },
+    {
+      "path": "baseline-survey/natural-calls-om256-l-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-om256-l-explore.json",
+      "bytes": 20101,
+      "sha256": "554c29283a30f59cff6f240bf00cc8b484d8eda597161216326e4725f9ad1dd3"
+    },
+    {
+      "path": "baseline-survey/natural-calls-om256-r-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-om256-r-direct.json",
+      "bytes": 14682,
+      "sha256": "25cf0852d1f5efccbeaf2f7ec7ac53c28bec9a514ce04a707237246aa6b3337b"
+    },
+    {
+      "path": "baseline-survey/natural-calls-om256-r-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-om256-r-explore.json",
+      "bytes": 20101,
+      "sha256": "38194782bd29d4963721f772d4d9288d13ee84235e7db45875897516878b7c65"
+    },
+    {
+      "path": "baseline-survey/natural-calls-op128-l-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-op128-l-direct.json",
+      "bytes": 14780,
+      "sha256": "6c8308f54132edf58204cca2b4340534058d0f0a54bd4f61020dbd6ed1021540"
+    },
+    {
+      "path": "baseline-survey/natural-calls-op128-l-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-op128-l-explore.json",
+      "bytes": 23695,
+      "sha256": "546439a01b9484f1f7431b45559a25c6467a3613f43f7c81190e223a53ab7d1d"
+    },
+    {
+      "path": "baseline-survey/natural-calls-op128-r-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-op128-r-direct.json",
+      "bytes": 14779,
+      "sha256": "1d64d1f4f9390204414310788e5bc16e1b3c04cfd44636149004642d9c394173"
+    },
+    {
+      "path": "baseline-survey/natural-calls-op128-r-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-calls-op128-r-explore.json",
+      "bytes": 23693,
+      "sha256": "cf70d85647fefbe76b2806d656003ce6a4a0fdd5fa45a5c19ac255acb21558c9"
+    },
+    {
+      "path": "baseline-survey/natural-motion-om128-l-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-om128-l-direct.json",
+      "bytes": 152522,
+      "sha256": "cd61271c33e57fa9d3e56ee95093646192f6efb5c50d6e740d7585d916954792"
+    },
+    {
+      "path": "baseline-survey/natural-motion-om128-l-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-om128-l-explore.json",
+      "bytes": 158327,
+      "sha256": "ebf716176bf7dd7abb49ab37b16e8edcaf2f2b7ec0694492bc152b712891d1cf"
+    },
+    {
+      "path": "baseline-survey/natural-motion-om128-r-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-om128-r-direct.json",
+      "bytes": 162495,
+      "sha256": "26c1cf4919b65f683d6cbb340bf751f21e359a0f0e531e9bf46db61f6c6df478"
+    },
+    {
+      "path": "baseline-survey/natural-motion-om128-r-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-om128-r-explore.json",
+      "bytes": 165997,
+      "sha256": "8ffc9460be61b0d92ece5efa51241ccd013adbee34c20a3708d9487b6bee82a4"
+    },
+    {
+      "path": "baseline-survey/natural-motion-om256-l-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-om256-l-direct.json",
+      "bytes": 24571,
+      "sha256": "32f246d0f112d8838446c51dd88cfb11a316afe0c10bc1a5c7ba47f86d6c2127"
+    },
+    {
+      "path": "baseline-survey/natural-motion-om256-l-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-om256-l-explore.json",
+      "bytes": 14763,
+      "sha256": "d249e974553e361b1225e51372c4d86e6de2cae34a2139314f586a9059cf042c"
+    },
+    {
+      "path": "baseline-survey/natural-motion-om256-r-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-om256-r-direct.json",
+      "bytes": 16699,
+      "sha256": "675b186be85554b7ada57cfc19423a91dd5317f13db33d601d1d74846ea04ccc"
+    },
+    {
+      "path": "baseline-survey/natural-motion-om256-r-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-om256-r-explore.json",
+      "bytes": 13795,
+      "sha256": "532c55a14be4bbc60abda3f419a4856691cc30cdcba6b07c839437db3eb4797d"
+    },
+    {
+      "path": "baseline-survey/natural-motion-op128-l-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-op128-l-direct.json",
+      "bytes": 19763,
+      "sha256": "5801ad9429241f68993f13562eddcd91103b17881d9b147f30a8785bd4ab6d88"
+    },
+    {
+      "path": "baseline-survey/natural-motion-op128-l-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-op128-l-explore.json",
+      "bytes": 20968,
+      "sha256": "b8109301899e3a201a1a0806f91294df43d2c93245b47ed28bcb4ea2a834c771"
+    },
+    {
+      "path": "baseline-survey/natural-motion-op128-r-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-op128-r-direct.json",
+      "bytes": 26752,
+      "sha256": "b8b8d16de8e09ebd1de6f8a76528e69c0a65bb0f02992048c209110b959365bb"
+    },
+    {
+      "path": "baseline-survey/natural-motion-op128-r-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-op128-r-explore.json",
+      "bytes": 26752,
+      "sha256": "aa6b484e809e35667e328e5a2fdd77d9b811bad2891e7aaae0bac77e079dfba2"
+    },
+    {
+      "path": "baseline-survey/natural-motion-op256-l-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-op256-l-direct.json",
+      "bytes": 1709,
+      "sha256": "45a9a515fbfcbde0baa3b86adac54a67a5c7783d010edfea1b92c6a1f7c12940"
+    },
+    {
+      "path": "baseline-survey/natural-motion-op256-l-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-op256-l-explore.json",
+      "bytes": 1709,
+      "sha256": "572aee0ef387b504ea1c6c1195ad4d9f102f2421ca08b9f0c548ce5021ff4593"
+    },
+    {
+      "path": "baseline-survey/natural-motion-op256-r-direct.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-op256-r-direct.json",
+      "bytes": 1953,
+      "sha256": "573b9d3dd8f92139c7168ecb8b41b83469782c9ad3dff394b42f3a699aee3abe"
+    },
+    {
+      "path": "baseline-survey/natural-motion-op256-r-explore.json",
+      "source": ".local\\natural-native-f978781ef38b499ea8c21096dff48b8f\\natural-motion-op256-r-explore.json",
+      "bytes": 1465,
+      "sha256": "0a34119d13490eaad8eff67454f95117d7163373258a3fa0606d2acc443732c2"
+    },
+    {
+      "path": "baseline-desert/result.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\result.json",
+      "bytes": 263699,
+      "sha256": "e0d9ff312118d4662406bc9f4641cf7a4c58faa000184c0750c41c3e43298e93"
+    },
+    {
+      "path": "baseline-desert/natural-results.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-results.json",
+      "bytes": 247870,
+      "sha256": "58d3033dfdf32248f23799890d7577985ccabca3dac503e36cccece10815d3ce"
+    },
+    {
+      "path": "baseline-desert/server.log",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\server.log",
+      "bytes": 54856,
+      "sha256": "20ffba760476947e157c6557f0766e57ccfe614ac1cf58a50a0e071672645858"
+    },
+    {
+      "path": "baseline-desert/natural-catalog.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-catalog.json",
+      "bytes": 52825,
+      "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+    },
+    {
+      "path": "baseline-desert/natural-calls-op347-l-direct.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-calls-op347-l-direct.json",
+      "bytes": 15379,
+      "sha256": "643110fc70efe208fe7337b87a84ee734abbd3cb9ee26ed440e845a9c8f3cb44"
+    },
+    {
+      "path": "baseline-desert/natural-calls-op347-l-explore.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-calls-op347-l-explore.json",
+      "bytes": 20090,
+      "sha256": "ad414322f58d000c7aa4a9c44247ff6c4706e93af6b221205e6a28c5d7ddc834"
+    },
+    {
+      "path": "baseline-desert/natural-calls-op347-r-direct.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-calls-op347-r-direct.json",
+      "bytes": 26815,
+      "sha256": "7adb4a45f0c64c25865bef089c730f8f5b9ee1c90cfebe313502f58ba7b76863"
+    },
+    {
+      "path": "baseline-desert/natural-calls-op347-r-explore.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-calls-op347-r-explore.json",
+      "bytes": 34414,
+      "sha256": "74fcded6096685ca9dc2376fd5c515c1d32f87d73864a41a4d08f7d3ce1852f8"
+    },
+    {
+      "path": "baseline-desert/natural-calls-op359-l-direct.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-calls-op359-l-direct.json",
+      "bytes": 27159,
+      "sha256": "5536b447a33127ce34a1dc3e8db90da449e187b117f2040830eeef6004a93c3a"
+    },
+    {
+      "path": "baseline-desert/natural-calls-op359-l-explore.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-calls-op359-l-explore.json",
+      "bytes": 34435,
+      "sha256": "ad5cdddb0641466bb6197581cb13c7aebd4cbfde484ee3e284f3cfb4f77a006f"
+    },
+    {
+      "path": "baseline-desert/natural-calls-op359-r-direct.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-calls-op359-r-direct.json",
+      "bytes": 38558,
+      "sha256": "3a7f61e6adfb17f18c9ef1fa09f0df0dc590c316a559e36ed2cf6af48ee28409"
+    },
+    {
+      "path": "baseline-desert/natural-calls-op359-r-explore.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-calls-op359-r-explore.json",
+      "bytes": 34419,
+      "sha256": "f58da1f084add2b5c31854ab047c01cfaead763dd73ac8faa69c33298692762c"
+    },
+    {
+      "path": "baseline-desert/natural-motion-op347-l-direct.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-motion-op347-l-direct.json",
+      "bytes": 38515,
+      "sha256": "ca2d95f973f845f82cca353f7b6f3d3755a0c23af91f7555b1355b33683e1d24"
+    },
+    {
+      "path": "baseline-desert/natural-motion-op347-l-explore.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-motion-op347-l-explore.json",
+      "bytes": 12292,
+      "sha256": "d62fd3814afef4be54c25561db22e413bcf5daec5f39fd1e83925dd3e02f10c0"
+    },
+    {
+      "path": "baseline-desert/natural-motion-op347-r-direct.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-motion-op347-r-direct.json",
+      "bytes": 98336,
+      "sha256": "7bebf59e2e1686edead28a2fe9d780c844e6c49a43cfb0f0f9300a049fce00d2"
+    },
+    {
+      "path": "baseline-desert/natural-motion-op347-r-explore.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-motion-op347-r-explore.json",
+      "bytes": 45948,
+      "sha256": "fdad5608789b15b4f0b544f9ae1b4984ad36d1ec3d2476112fdcff2e4a705b33"
+    },
+    {
+      "path": "baseline-desert/natural-motion-op359-l-direct.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-motion-op359-l-direct.json",
+      "bytes": 60675,
+      "sha256": "18dd11ee82065ad8d589acc646dfb5efa523c1a4f2d78c146368c972ae726185"
+    },
+    {
+      "path": "baseline-desert/natural-motion-op359-l-explore.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-motion-op359-l-explore.json",
+      "bytes": 43951,
+      "sha256": "78881804e01f984cf0c02e76ede1a002a57aecef8d123e3b4b702e812288d010"
+    },
+    {
+      "path": "baseline-desert/natural-motion-op359-r-direct.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-motion-op359-r-direct.json",
+      "bytes": 105786,
+      "sha256": "9ec4a080bbc45055e970c0c61bf7e6377a625a8186fc17d29e725183797956f5"
+    },
+    {
+      "path": "baseline-desert/natural-motion-op359-r-explore.json",
+      "source": ".local\\natural-native-9f5313d372fe43ee92774bb72832821e\\natural-motion-op359-r-explore.json",
+      "bytes": 33231,
+      "sha256": "57ba0403f1665112aa8210e1a3b32bb18ce9e8c670f40c03bb18717bc9eba0e5"
+    },
+    {
+      "path": "baseline-desert-probes/result.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\result.json",
+      "bytes": 327060,
+      "sha256": "08cc48d5b4ce843df1c4f9694aac71689b56f31e817a696fbaf777cdc99a35a6"
+    },
+    {
+      "path": "baseline-desert-probes/natural-results.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-results.json",
+      "bytes": 308475,
+      "sha256": "e0602e125e3b797f754b1488e52786bfa6f28b0292b370f5ebe88dceee41261a"
+    },
+    {
+      "path": "baseline-desert-probes/server.log",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\server.log",
+      "bytes": 54012,
+      "sha256": "2a43b15e791d1766b89fa891ab44f01d6fd7eb88a33fe91124c0031de6613326"
+    },
+    {
+      "path": "baseline-desert-probes/natural-catalog.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-catalog.json",
+      "bytes": 52825,
+      "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+    },
+    {
+      "path": "baseline-desert-probes/natural-calls-om256-l-direct.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-calls-om256-l-direct.json",
+      "bytes": 15580,
+      "sha256": "c7b48909dcdbf5ac33f43a9d86ac6fd1dd7d20851e2fb1672fb1a3b564de4b99"
+    },
+    {
+      "path": "baseline-desert-probes/natural-calls-om256-l-explore.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-calls-om256-l-explore.json",
+      "bytes": 35678,
+      "sha256": "9ea4d07cc7f0d39c06635530da6f631c3efcf6ba69ce3c7188b2ef906ac7f9aa"
+    },
+    {
+      "path": "baseline-desert-probes/natural-calls-om256-r-direct.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-calls-om256-r-direct.json",
+      "bytes": 14682,
+      "sha256": "ed0b3c5cba886e9792df459e7111433954b86e927e2c47474df1555a250f64c3"
+    },
+    {
+      "path": "baseline-desert-probes/natural-calls-om256-r-explore.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-calls-om256-r-explore.json",
+      "bytes": 34780,
+      "sha256": "296cc0d8f8db30f5cda0df65bff2bd2f01c49d5cc02207977a0cc88312f5312d"
+    },
+    {
+      "path": "baseline-desert-probes/natural-calls-op359-l-direct.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-calls-op359-l-direct.json",
+      "bytes": 27133,
+      "sha256": "bfe749d01eb672fadf003bde2d2f6e3d46f4dae4ddfb124f2e45e5f1a603b0e9"
+    },
+    {
+      "path": "baseline-desert-probes/natural-calls-op359-l-explore.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-calls-op359-l-explore.json",
+      "bytes": 49758,
+      "sha256": "4fbbcf2604e2880beba811c53c4dbb5737ba6e770b1bcc71e9bda48f0a3a6561"
+    },
+    {
+      "path": "baseline-desert-probes/natural-calls-op359-r-direct.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-calls-op359-r-direct.json",
+      "bytes": 38545,
+      "sha256": "9bb053540a59015f08da9ca714218c89f181efbbbf247d92f4ffcb4d8911b046"
+    },
+    {
+      "path": "baseline-desert-probes/natural-calls-op359-r-explore.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-calls-op359-r-explore.json",
+      "bytes": 49199,
+      "sha256": "3a47d9a58b2dbed9d5d6c74b29cf0b13ebc6405b9e9de01ed13052770519aced"
+    },
+    {
+      "path": "baseline-desert-probes/natural-motion-om256-l-direct.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-motion-om256-l-direct.json",
+      "bytes": 22853,
+      "sha256": "27eb27463dfc042fac3c54a4d2dd218bee1f6260263a6af19d3ac6a6a94f6c0d"
+    },
+    {
+      "path": "baseline-desert-probes/natural-motion-om256-l-explore.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-motion-om256-l-explore.json",
+      "bytes": 28419,
+      "sha256": "279bb6b9e7717388ca2d3260bee7dc0fff6f37e17b08ef024d79ff6e83d89dbf"
+    },
+    {
+      "path": "baseline-desert-probes/natural-motion-om256-r-direct.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-motion-om256-r-direct.json",
+      "bytes": 18877,
+      "sha256": "956a54e3c943f843fbee650a65dc0cbf7557842c8dc9188b3c2ffa194a1955f1"
+    },
+    {
+      "path": "baseline-desert-probes/natural-motion-om256-r-explore.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-motion-om256-r-explore.json",
+      "bytes": 17667,
+      "sha256": "d7b4542a14ae5529952110053aff39dcf11b8ed68eec32bc0090172f94fedfa8"
+    },
+    {
+      "path": "baseline-desert-probes/natural-motion-op359-l-direct.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-motion-op359-l-direct.json",
+      "bytes": 63095,
+      "sha256": "97a4109eeb561201f532294371238a5b934e4200fda8c9fd6ec2da0b6b9a02cd"
+    },
+    {
+      "path": "baseline-desert-probes/natural-motion-op359-l-explore.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-motion-op359-l-explore.json",
+      "bytes": 100908,
+      "sha256": "06fcad02a3e058f7fe78f95fe30a7d33bd9d04f6960e61144b926feb47a58e6b"
+    },
+    {
+      "path": "baseline-desert-probes/natural-motion-op359-r-direct.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-motion-op359-r-direct.json",
+      "bytes": 105444,
+      "sha256": "9d0851e3ef3ad66b8798dd41a163cb482dcb5379cfeeebdb6bceb176903e60f9"
+    },
+    {
+      "path": "baseline-desert-probes/natural-motion-op359-r-explore.json",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-motion-op359-r-explore.json",
+      "bytes": 36917,
+      "sha256": "ea9332e6744eee93ffb609729369ecdf97f412f0cf573e8de79b65c55ea2cbd7"
+    },
+    {
+      "path": "baseline-grass/result.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\result.json",
+      "bytes": 265653,
+      "sha256": "51705761caa3720a16deb7f7bbc86b4eaacc5bd412462a89c14734244813cb2d"
+    },
+    {
+      "path": "baseline-grass/natural-results.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-results.json",
+      "bytes": 249804,
+      "sha256": "041916b4132f9d19126eb20de5b135cdbaf5d2059c969934d1563c5d3b5033c0"
+    },
+    {
+      "path": "baseline-grass/server.log",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\server.log",
+      "bytes": 55004,
+      "sha256": "6aa61e0dd10917f249014a0d78b91a8652cdaf350127c9b859dfe93701920ed7"
+    },
+    {
+      "path": "baseline-grass/natural-catalog.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-catalog.json",
+      "bytes": 52825,
+      "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+    },
+    {
+      "path": "baseline-grass/natural-calls-om231-l-direct.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-calls-om231-l-direct.json",
+      "bytes": 38276,
+      "sha256": "db0671d9ad19b9198bb4bbbf0e7d33e73404b7315c9c44829958fb7593bcc2ba"
+    },
+    {
+      "path": "baseline-grass/natural-calls-om231-l-explore.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-calls-om231-l-explore.json",
+      "bytes": 51375,
+      "sha256": "3b29976c43f13223e6c57ef7451947479801b0631e4cdf4c13aff945eeeacbde"
+    },
+    {
+      "path": "baseline-grass/natural-calls-om231-r-direct.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-calls-om231-r-direct.json",
+      "bytes": 72472,
+      "sha256": "f4eb15be5285da38fec7bda458c71ff0cd510f2bbc77f397c310b76cbc01527b"
+    },
+    {
+      "path": "baseline-grass/natural-calls-om231-r-explore.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-calls-om231-r-explore.json",
+      "bytes": 36101,
+      "sha256": "6dbe5aebbba9ac63c7f0e5ad39c41b4a95d28fec63d978711b39dc9350351727"
+    },
+    {
+      "path": "baseline-grass/natural-motion-om231-l-direct.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-motion-om231-l-direct.json",
+      "bytes": 106378,
+      "sha256": "09e8c4607aa725a71045e51d43dedaa5d89328b905315f19247b1abff1e21859"
+    },
+    {
+      "path": "baseline-grass/natural-motion-om231-l-explore.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-motion-om231-l-explore.json",
+      "bytes": 95452,
+      "sha256": "584573b22d2649bfe1c16279a011779e24418a58c179eadd8af27a554b972cb1"
+    },
+    {
+      "path": "baseline-grass/natural-motion-om231-r-direct.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-motion-om231-r-direct.json",
+      "bytes": 154678,
+      "sha256": "fb1e9d5038c765471e6197739fc12f4e857987709c434ad3a9a815f077b226e2"
+    },
+    {
+      "path": "baseline-grass/natural-motion-om231-r-explore.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-motion-om231-r-explore.json",
+      "bytes": 43361,
+      "sha256": "6a0c5ad58aa48c89cbf402a6cd1632a48226851b1e7269a3ebce3a23bcf5bfaa"
+    },
+    {
+      "path": "baseline-grass/natural-motion-om243-l-direct.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-motion-om243-l-direct.json",
+      "bytes": 1221,
+      "sha256": "e1c10999bfa537dd0185338f6a36bd898c78a5e37aa55956919e9ad38ed60fb0"
+    },
+    {
+      "path": "baseline-grass/natural-motion-om243-l-explore.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-motion-om243-l-explore.json",
+      "bytes": 1709,
+      "sha256": "015ee672fc0226b2eb84eaccab7c01804081e164df3a404eb8e6bd72d0b1f307"
+    },
+    {
+      "path": "baseline-grass/natural-motion-om243-r-direct.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-motion-om243-r-direct.json",
+      "bytes": 3173,
+      "sha256": "c6e42d1f96f4346b8044e759416e59a63c6b458c7e9bad73c0166df7dc8b8f0c"
+    },
+    {
+      "path": "baseline-grass/natural-motion-om243-r-explore.json",
+      "source": ".local\\natural-native-8861163b36054f04b5ea3cd4d7423838\\natural-motion-om243-r-explore.json",
+      "bytes": 977,
+      "sha256": "688f80c642d9c71b72822b4ce77fe1796d0a3811adc50ef0429d09eb5309b411"
+    },
+    {
+      "path": "fixed-focus/result.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\result.json",
+      "bytes": 462089,
+      "sha256": "7c766bc2586b8ff4ad116aab8a76e4c5cf68193d7f1dd4f7cc32d9c23a7cd002"
+    },
+    {
+      "path": "fixed-focus/natural-results.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-results.json",
+      "bytes": 437026,
+      "sha256": "a6d5f60ff1c0a12c3bc89a94c116e3e56f32f460325114120e711dd833336d65"
+    },
+    {
+      "path": "fixed-focus/server.log",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\server.log",
+      "bytes": 89534,
+      "sha256": "4ff60226137d4f34111c0494c65cd698d53a23aa81ea3e0aa3cca56646d7d667"
+    },
+    {
+      "path": "fixed-focus/natural-catalog.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-catalog.json",
+      "bytes": 52825,
+      "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+    },
+    {
+      "path": "fixed-focus/natural-calls-om231-l-direct.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-calls-om231-l-direct.json",
+      "bytes": 38275,
+      "sha256": "2433bd9cf4f091f128a2b02145917ed190dc842ebb04d11f8576c0ad522a598a"
+    },
+    {
+      "path": "fixed-focus/natural-calls-om231-l-explore.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-calls-om231-l-explore.json",
+      "bytes": 65858,
+      "sha256": "e14a7086f42e656b64d97bc62645399c925b878ccedba88afe5a243c5e2d69bb"
+    },
+    {
+      "path": "fixed-focus/natural-calls-om231-r-direct.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-calls-om231-r-direct.json",
+      "bytes": 72472,
+      "sha256": "3260eaabc1d90ceebce4338fd8fef3a1737c0c424c4f3626447f25528fd37617"
+    },
+    {
+      "path": "fixed-focus/natural-calls-om231-r-explore.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-calls-om231-r-explore.json",
+      "bytes": 36100,
+      "sha256": "964bf1cf2a31d74bfdf3a034389fb617aae2452344dd8ff3d1e38b3649fac872"
+    },
+    {
+      "path": "fixed-focus/natural-calls-op359-l-direct.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-calls-op359-l-direct.json",
+      "bytes": 27159,
+      "sha256": "f96b90f7694ca90383e7ecce424d5c4bd43dca858cbdbaf4d6916ee7a7bf885e"
+    },
+    {
+      "path": "fixed-focus/natural-calls-op359-l-explore.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-calls-op359-l-explore.json",
+      "bytes": 63559,
+      "sha256": "3e69fb1f32c9b0bcfea191c85647f6fa1538978b44f6c175d9083716addbd6e6"
+    },
+    {
+      "path": "fixed-focus/natural-calls-op359-r-direct.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-calls-op359-r-direct.json",
+      "bytes": 38562,
+      "sha256": "258fa09504eb284128006b65870d1e21e4fab923aea3ecd31d30ef8113fe7c4f"
+    },
+    {
+      "path": "fixed-focus/natural-calls-op359-r-explore.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-calls-op359-r-explore.json",
+      "bytes": 50050,
+      "sha256": "f852812cb9605f6e3d391ae1d5a7d31073c5f17cea8eaf7011a323500015bea7"
+    },
+    {
+      "path": "fixed-focus/natural-motion-om231-l-direct.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-motion-om231-l-direct.json",
+      "bytes": 114956,
+      "sha256": "bf323e92746717b3b18fa2b09b311d5d20119f8578b463ef4f15db8797b8611d"
+    },
+    {
+      "path": "fixed-focus/natural-motion-om231-l-explore.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-motion-om231-l-explore.json",
+      "bytes": 83910,
+      "sha256": "5daeae55e4f6f0d47cf7499f2430eeeb85b57a302943c4f70485d0d068d68835"
+    },
+    {
+      "path": "fixed-focus/natural-motion-om231-r-direct.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-motion-om231-r-direct.json",
+      "bytes": 176611,
+      "sha256": "626f27867129c61680295831b0383a43ea8327673e6dcd4cf663a08f159b8b55"
+    },
+    {
+      "path": "fixed-focus/natural-motion-om231-r-explore.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-motion-om231-r-explore.json",
+      "bytes": 49868,
+      "sha256": "4b2d45abbe64cbc2f44bf0c310b1dd5e84f7b262333ef8e0277c6eb17187ee8f"
+    },
+    {
+      "path": "fixed-focus/natural-motion-op359-l-direct.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-motion-op359-l-direct.json",
+      "bytes": 66559,
+      "sha256": "4ff2743f83d9673c352040af89db34c0d460c4af36121768f5a284dbfb6c5595"
+    },
+    {
+      "path": "fixed-focus/natural-motion-op359-l-explore.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-motion-op359-l-explore.json",
+      "bytes": 74917,
+      "sha256": "8e079616c9322865f04307a65583329a8cda52c48adceb4aeaddab2612e6b10c"
+    },
+    {
+      "path": "fixed-focus/natural-motion-op359-r-direct.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-motion-op359-r-direct.json",
+      "bytes": 107949,
+      "sha256": "78c849edbb80b158a195aee965078644ea6c2b46ef7f49791ddfec94fa26a63a"
+    },
+    {
+      "path": "fixed-focus/natural-motion-op359-r-explore.json",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-motion-op359-r-explore.json",
+      "bytes": 60324,
+      "sha256": "3b026025d0c83157d34fc3db601d51d831e0c6c346014ae9861e3315269f01f0"
+    },
+    {
+      "path": "baseline-descent/result.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\result.json",
+      "bytes": 297386,
+      "sha256": "ed2645584e1da4b198255a61644e348df1671d34430677a5aef5a681d8467600"
+    },
+    {
+      "path": "baseline-descent/natural-results.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-results.json",
+      "bytes": 279821,
+      "sha256": "e7b3d523cc76973ff884d3f2d4ff17555390a6af64d1b62929539d3431513954"
+    },
+    {
+      "path": "baseline-descent/server.log",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\server.log",
+      "bytes": 69277,
+      "sha256": "6c56609463beaace5932951d0932e02824c9c471b3d3b9e4c7c0bb02011097ce"
+    },
+    {
+      "path": "baseline-descent/natural-catalog.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-catalog.json",
+      "bytes": 52825,
+      "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+    },
+    {
+      "path": "baseline-descent/natural-calls-om214-l-direct.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-calls-om214-l-direct.json",
+      "bytes": 61216,
+      "sha256": "9ef52baa6e26d7b45429993c534e72618b40c659c72b93bf0437617881d89f91"
+    },
+    {
+      "path": "baseline-descent/natural-calls-om214-l-explore.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-calls-om214-l-explore.json",
+      "bytes": 51249,
+      "sha256": "24bf6765fde1b36977c26803639ee28d935382ad407e5e777817aaf7b3d97ddc"
+    },
+    {
+      "path": "baseline-descent/natural-calls-om214-r-direct.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-calls-om214-r-direct.json",
+      "bytes": 72557,
+      "sha256": "26162cf23e1515da381584debc9b89a4c90022e5f052164450288cc8b225741c"
+    },
+    {
+      "path": "baseline-descent/natural-calls-om214-r-explore.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-calls-om214-r-explore.json",
+      "bytes": 107798,
+      "sha256": "bdd4a23319c9263bf5efdeb79170192c826ad1799a6c5121bb82cec351904b4d"
+    },
+    {
+      "path": "baseline-descent/natural-motion-om214-l-direct.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-motion-om214-l-direct.json",
+      "bytes": 153570,
+      "sha256": "91dc1e9f2e8918b3853fc6e6a43891ed031663cb10a6a2700e0f5bae9d62ee94"
+    },
+    {
+      "path": "baseline-descent/natural-motion-om214-l-explore.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-motion-om214-l-explore.json",
+      "bytes": 61942,
+      "sha256": "a41d7a01b014153031de9efbc7bd622718fa87ef1e17fc5de73362594346d8c7"
+    },
+    {
+      "path": "baseline-descent/natural-motion-om214-r-direct.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-motion-om214-r-direct.json",
+      "bytes": 148399,
+      "sha256": "33a0a8ce1db0a20631d1b118686ac37251a70af01a5aae04d1df36d8fc3cdd76"
+    },
+    {
+      "path": "baseline-descent/natural-motion-om214-r-explore.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-motion-om214-r-explore.json",
+      "bytes": 160462,
+      "sha256": "d4a165d28b852e67921e212bb4803f493cf9da7bd705a53afe231a0d862622a4"
+    },
+    {
+      "path": "baseline-descent/natural-motion-om264-l-direct.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-motion-om264-l-direct.json",
+      "bytes": 1465,
+      "sha256": "8f624cbf090b2de19c303e03640ed37bd751d1da98747cb384795da06e9fb03c"
+    },
+    {
+      "path": "baseline-descent/natural-motion-om264-l-explore.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-motion-om264-l-explore.json",
+      "bytes": 977,
+      "sha256": "26a0ca9d0845d3ad8321dbe6e90ce128d18c8071c2696e3a546fb429e00fc479"
+    },
+    {
+      "path": "baseline-descent/natural-motion-om264-r-direct.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-motion-om264-r-direct.json",
+      "bytes": 1221,
+      "sha256": "f307501278aa5313b1fdace410365c97c02913e08ae89a1b4b62c3ef61313de6"
+    },
+    {
+      "path": "baseline-descent/natural-motion-om264-r-explore.json",
+      "source": ".local\\natural-native-d25761f4c8b1471db3196aec62e52ed2\\natural-motion-om264-r-explore.json",
+      "bytes": 1465,
+      "sha256": "9d81efb844f36923080c297ad3f2c99be5163e905f3f7975ad6f91f281d8eb70"
+    },
+    {
+      "path": "baseline-start-limits/result.json",
+      "source": ".local\\natural-native-11cf6f606b0c4d5abf4db5e8f1e0c9f0\\result.json",
+      "bytes": 7083,
+      "sha256": "cc690b45af78b6bc24cd41a7b51f4928af3559090fa4abe0a4bc0224dd8749f6"
+    },
+    {
+      "path": "baseline-start-limits/natural-results.json",
+      "source": ".local\\natural-native-11cf6f606b0c4d5abf4db5e8f1e0c9f0\\natural-results.json",
+      "bytes": 3554,
+      "sha256": "599ac28dfadfd9d4948eb6307655d8a8270db86f957da2622b71a79c5a4fa35f"
+    },
+    {
+      "path": "baseline-start-limits/server.log",
+      "source": ".local\\natural-native-11cf6f606b0c4d5abf4db5e8f1e0c9f0\\server.log",
+      "bytes": 9480,
+      "sha256": "34fe26a2d183b17c3dcd844f274cdcf763c1326753cdae7de4aab626bbf3bd8d"
+    },
+    {
+      "path": "baseline-start-limits/natural-catalog.json",
+      "source": ".local\\natural-native-11cf6f606b0c4d5abf4db5e8f1e0c9f0\\natural-catalog.json",
+      "bytes": 52825,
+      "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+    },
+    {
+      "path": "baseline-start-limits/natural-motion-om225-l-direct.json",
+      "source": ".local\\natural-native-11cf6f606b0c4d5abf4db5e8f1e0c9f0\\natural-motion-om225-l-direct.json",
+      "bytes": 973,
+      "sha256": "b751d0d3e70e67f704654768b4f7f96260bf2b74a328b46ede266bb393651b53"
+    },
+    {
+      "path": "baseline-start-limits/natural-motion-om225-l-explore.json",
+      "source": ".local\\natural-native-11cf6f606b0c4d5abf4db5e8f1e0c9f0\\natural-motion-om225-l-explore.json",
+      "bytes": 1216,
+      "sha256": "741dface96816f0f08c846c716b1d0e2d35b9c2f8d9e4a4eaeea1da1d6fc34bb"
+    },
+    {
+      "path": "baseline-start-limits/natural-motion-om225-r-direct.json",
+      "source": ".local\\natural-native-11cf6f606b0c4d5abf4db5e8f1e0c9f0\\natural-motion-om225-r-direct.json",
+      "bytes": 730,
+      "sha256": "971a3c79761460bff4e1eef1aa25d9340ebb46913b5d633b5bc4e810bb3fb939"
+    },
+    {
+      "path": "baseline-start-limits/natural-motion-om225-r-explore.json",
+      "source": ".local\\natural-native-11cf6f606b0c4d5abf4db5e8f1e0c9f0\\natural-motion-om225-r-explore.json",
+      "bytes": 1702,
+      "sha256": "52870aa7927d4a9937354d206cb38fcb1cac4d81c9b6948987ec55cfea416e27"
+    },
+    {
+      "path": "fixed-final/result.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\result.json",
+      "bytes": 2101116,
+      "sha256": "a349c456eca64d249a3ba4473d2f3521298c0fcff3652d8283323b9379cdefc7"
+    },
+    {
+      "path": "fixed-final/natural-results.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-results.json",
+      "bytes": 1996016,
+      "sha256": "b4500bcffcfca68a7fdd4bd24dd32c93b9c7dd5870f4f5d4e8ad298a6f5d5e0e"
+    },
+    {
+      "path": "fixed-final/server.log",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\server.log",
+      "bytes": 447906,
+      "sha256": "d4ac059560eb56c0156799539ac4a08798b6ff2e61188494a468e7ba796c33cd"
+    },
+    {
+      "path": "fixed-final/natural-catalog.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-catalog.json",
+      "bytes": 52825,
+      "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+    },
+    {
+      "path": "fixed-final/natural-calls-om214-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om214-l-direct.json",
+      "bytes": 61249,
+      "sha256": "ab2837fd9b0e6a2b5cc9d8d007c6c52216edcd65b5faa61f092e4dfa7892c652"
+    },
+    {
+      "path": "fixed-final/natural-calls-om214-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om214-l-explore.json",
+      "bytes": 51372,
+      "sha256": "ce20e4fe37e1bc9d90369d220a782f2f479589abfcbbb4075fade9834ccbeda4"
+    },
+    {
+      "path": "fixed-final/natural-calls-om214-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om214-r-direct.json",
+      "bytes": 72609,
+      "sha256": "16d7c4644db4cf402280eb5f6ae231b029c8d32921dd042044b4597b6d8c18cd"
+    },
+    {
+      "path": "fixed-final/natural-calls-om214-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om214-r-explore.json",
+      "bytes": 107784,
+      "sha256": "66e7f1472d7bf83532125bba8d5f57f29f73f89866ceb045c0b200797c04e53c"
+    },
+    {
+      "path": "fixed-final/natural-calls-om231-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om231-l-direct.json",
+      "bytes": 37725,
+      "sha256": "4a462537c5e60e963a0e1f40f52de6c64855d358d6f36376b636a67eb75ebe9f"
+    },
+    {
+      "path": "fixed-final/natural-calls-om231-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om231-l-explore.json",
+      "bytes": 65890,
+      "sha256": "80412192dbc48ed295d0355097ef8c106bf8da875b3c7b0ccde0de7e376ec229"
+    },
+    {
+      "path": "fixed-final/natural-calls-om231-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om231-r-direct.json",
+      "bytes": 72540,
+      "sha256": "e10c02d412485efcf36a8624b5ae1ebfae57845b31bbaebd307dd3c16e5ad4c6"
+    },
+    {
+      "path": "fixed-final/natural-calls-om231-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om231-r-explore.json",
+      "bytes": 36129,
+      "sha256": "46032fa158810d63ef2d63071722b1867297a51e54ff580f7f261604208aa747"
+    },
+    {
+      "path": "fixed-final/natural-calls-om32-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om32-l-direct.json",
+      "bytes": 72526,
+      "sha256": "9c92ba0e6a44975e43e01385b07e5f486d6c7cb6161b18f67cde92807c097ede"
+    },
+    {
+      "path": "fixed-final/natural-calls-om32-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om32-l-explore.json",
+      "bytes": 107692,
+      "sha256": "c959f8c4fff0f7fe81de05d3425c3e2709bf0101f3b4148182b4af86ef871364"
+    },
+    {
+      "path": "fixed-final/natural-calls-om32-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om32-r-direct.json",
+      "bytes": 72506,
+      "sha256": "32a0ad387ef5c5ab05a0b8441fc3c6c956cf6faba5cf483fcee5d69db15da3d3"
+    },
+    {
+      "path": "fixed-final/natural-calls-om32-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om32-r-explore.json",
+      "bytes": 107689,
+      "sha256": "67bac0a0ac3303199cde4d3b981819854f559af01845d7c0263e6f394daa2a12"
+    },
+    {
+      "path": "fixed-final/natural-calls-om64-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om64-l-direct.json",
+      "bytes": 72578,
+      "sha256": "89bdc5ef789bb37ce2389b51994e31420e9b520374bd4df234ad0dd013d791b7"
+    },
+    {
+      "path": "fixed-final/natural-calls-om64-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om64-l-explore.json",
+      "bytes": 107766,
+      "sha256": "a309d63e14f6ded05bd30b1185a6cf84a0a35f6d4744411cd0db281480b5504d"
+    },
+    {
+      "path": "fixed-final/natural-calls-om64-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om64-r-direct.json",
+      "bytes": 72449,
+      "sha256": "f74bcf0163e05ceb7244c21021b529ed578df58dba06422b8f525c4f0d7e8945"
+    },
+    {
+      "path": "fixed-final/natural-calls-om64-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-om64-r-explore.json",
+      "bytes": 107638,
+      "sha256": "09aef08403a3a77819bd770d2b4f286f930aea7ffbbaa0a7dcf812573f80a820"
+    },
+    {
+      "path": "fixed-final/natural-calls-op0-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op0-l-direct.json",
+      "bytes": 72522,
+      "sha256": "13233f8396056be77c4b8e48ae15d8a9cffa3e4407d999b2edcb045700b72a7d"
+    },
+    {
+      "path": "fixed-final/natural-calls-op0-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op0-l-explore.json",
+      "bytes": 107710,
+      "sha256": "ccbcf6446b3eb99e18f187749937b1b9ce807b8125b48626956697a19f0844a2"
+    },
+    {
+      "path": "fixed-final/natural-calls-op0-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op0-r-direct.json",
+      "bytes": 72456,
+      "sha256": "6523567009e4993fe89de16e77955a2b8be4b2610c778c5896ac5912688e792f"
+    },
+    {
+      "path": "fixed-final/natural-calls-op0-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op0-r-explore.json",
+      "bytes": 107587,
+      "sha256": "a95c6ebc1202fbf9532fc0f431c2dbfb7a2fa0052e160d262f0615c9b3c68d91"
+    },
+    {
+      "path": "fixed-final/natural-calls-op32-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op32-l-direct.json",
+      "bytes": 72581,
+      "sha256": "c1767c81e61c9433698dbb09e5c32e8ad7fe49ec4354374f6d021d541603fb92"
+    },
+    {
+      "path": "fixed-final/natural-calls-op32-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op32-l-explore.json",
+      "bytes": 107770,
+      "sha256": "6073dde5c974405a33ab477da34cb11fc2022b8458661e08ef66304e676c52e8"
+    },
+    {
+      "path": "fixed-final/natural-calls-op32-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op32-r-direct.json",
+      "bytes": 72625,
+      "sha256": "1317c2a8dad4cc29c10593bc094f4bf5fa7aab060d67436e01901a4026ca8f0e"
+    },
+    {
+      "path": "fixed-final/natural-calls-op32-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op32-r-explore.json",
+      "bytes": 107820,
+      "sha256": "20e71477fab998973b9d360dadc5b95391adec62b95d68cfe529e68e22061dbb"
+    },
+    {
+      "path": "fixed-final/natural-calls-op359-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op359-l-direct.json",
+      "bytes": 27172,
+      "sha256": "476edbcf16d851d9d8fb0080b02ee665be2f33c9853cd0c16320eacd815aa0e6"
+    },
+    {
+      "path": "fixed-final/natural-calls-op359-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op359-l-explore.json",
+      "bytes": 63590,
+      "sha256": "83617fbecf3c57048f9e3ec6499ebfc03d5e8d0b1153dee52642e97e109f3a9f"
+    },
+    {
+      "path": "fixed-final/natural-calls-op359-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op359-r-direct.json",
+      "bytes": 15695,
+      "sha256": "316ab2ef5187bc7e2652715fe3d3573b7a40a2498318a74df6f1c5c35732676a"
+    },
+    {
+      "path": "fixed-final/natural-calls-op359-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op359-r-explore.json",
+      "bytes": 50075,
+      "sha256": "c1b9fc859c28ea930fc5365ab8bd1b887632653ec7cfdacbd00ec25ab4a7fd16"
+    },
+    {
+      "path": "fixed-final/natural-calls-op64-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op64-l-direct.json",
+      "bytes": 27032,
+      "sha256": "d8ecd1cd3d5560b38755845b7bd9493136a25fc3be8da2cc2784b7f86da7972b"
+    },
+    {
+      "path": "fixed-final/natural-calls-op64-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op64-l-explore.json",
+      "bytes": 50093,
+      "sha256": "caa9a077073aa914bb44a8a1073698679a3977829cba1757af416d9399968fa9"
+    },
+    {
+      "path": "fixed-final/natural-calls-op64-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op64-r-direct.json",
+      "bytes": 15640,
+      "sha256": "2b1ffe8823bf34b610f07753acd34998f38bf8bea6dd4ce12998fbb664985949"
+    },
+    {
+      "path": "fixed-final/natural-calls-op64-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-calls-op64-r-explore.json",
+      "bytes": 35740,
+      "sha256": "c98d7970006fbbe73a651ee24845648de9c7c38dbb6f3f3972f54f6720a8f664"
+    },
+    {
+      "path": "fixed-final/natural-motion-om214-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om214-l-direct.json",
+      "bytes": 161186,
+      "sha256": "83c09ab7923bf8db6bc1d2714d146aef5ebb2cc9f93775291a14f250f925e22f"
+    },
+    {
+      "path": "fixed-final/natural-motion-om214-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om214-l-explore.json",
+      "bytes": 65540,
+      "sha256": "593bd3c5f81b2ae9c5de77046bcc3fdedc12722c0953968eac8c0107b26c20bd"
+    },
+    {
+      "path": "fixed-final/natural-motion-om214-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om214-r-direct.json",
+      "bytes": 151231,
+      "sha256": "6b0989696b7b77e6b50a97d8cccca8c7f92268377c32993dcea8e665d84543d9"
+    },
+    {
+      "path": "fixed-final/natural-motion-om214-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om214-r-explore.json",
+      "bytes": 155505,
+      "sha256": "aa2c7b50d759dff69c03435dd94dac82b0279a35318abb5d24b3d293f96298c6"
+    },
+    {
+      "path": "fixed-final/natural-motion-om231-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om231-l-direct.json",
+      "bytes": 68110,
+      "sha256": "2c11701c6e9fa8ec6b9fe02cf85ac1ba27006556b0c6f09d2433dc13f97e62b9"
+    },
+    {
+      "path": "fixed-final/natural-motion-om231-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om231-l-explore.json",
+      "bytes": 71708,
+      "sha256": "40939462e9a4d8800b9eaad79a9e5f7069be46351af98f3c7819e2ecd3a82bf9"
+    },
+    {
+      "path": "fixed-final/natural-motion-om231-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om231-r-direct.json",
+      "bytes": 153518,
+      "sha256": "d8d441853860685bf1d52d05a4ef8adc326b09b261a58e15368ccf007f64820d"
+    },
+    {
+      "path": "fixed-final/natural-motion-om231-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om231-r-explore.json",
+      "bytes": 37076,
+      "sha256": "59914ec99824104bdd2bd1bb8493aa29a9ecdaf1cc12b2c82a19a4d9b21ba32a"
+    },
+    {
+      "path": "fixed-final/natural-motion-om32-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om32-l-direct.json",
+      "bytes": 151540,
+      "sha256": "f780e1f022afebdb0d7249ea26d1e2df37bc53f474c370dddbde2157b638d1d4"
+    },
+    {
+      "path": "fixed-final/natural-motion-om32-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om32-l-explore.json",
+      "bytes": 159868,
+      "sha256": "90a442fca66f8c014885c62ad3fa7c30f692e9b50f46337dcf246d494231e9dc"
+    },
+    {
+      "path": "fixed-final/natural-motion-om32-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om32-r-direct.json",
+      "bytes": 150606,
+      "sha256": "845cb6f687349ea53358c3ef109a331ca14622cc5adc7e67fc9e4c72fe4257ed"
+    },
+    {
+      "path": "fixed-final/natural-motion-om32-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om32-r-explore.json",
+      "bytes": 153497,
+      "sha256": "e6ace839466be0aeb82ea4a855b15be4008b49db5ad786cfac78d15aa62d3d71"
+    },
+    {
+      "path": "fixed-final/natural-motion-om64-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om64-l-direct.json",
+      "bytes": 163535,
+      "sha256": "8eb901adef7eec95c93a10f90de670b6f8830692a30cee27814ba29ae868f372"
+    },
+    {
+      "path": "fixed-final/natural-motion-om64-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om64-l-explore.json",
+      "bytes": 157252,
+      "sha256": "bbac4b3a0146923c9f696f5ac009f85c315ad9d11fbdd6e48f3818980380980d"
+    },
+    {
+      "path": "fixed-final/natural-motion-om64-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om64-r-direct.json",
+      "bytes": 155125,
+      "sha256": "f732e198acb94aa53a25c0c1985efd221fc2803d676da70583c368f9e4aac0cc"
+    },
+    {
+      "path": "fixed-final/natural-motion-om64-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-om64-r-explore.json",
+      "bytes": 160593,
+      "sha256": "4a6d730f37bae170cdbafea238f5054433a50e2cbcd3239d08b469a2835b680b"
+    },
+    {
+      "path": "fixed-final/natural-motion-op0-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op0-l-direct.json",
+      "bytes": 147077,
+      "sha256": "f7f85e4a2f8b5f47150edaf25340fa7d574a18d7ad4487d9058d218e56170521"
+    },
+    {
+      "path": "fixed-final/natural-motion-op0-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op0-l-explore.json",
+      "bytes": 154975,
+      "sha256": "9173197d4041ffcce8b31e0f231d2f6b428091889da8fb553fb46ca267cbf73b"
+    },
+    {
+      "path": "fixed-final/natural-motion-op0-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op0-r-direct.json",
+      "bytes": 151657,
+      "sha256": "5388836647d53d25795b9f178afcbca72f64f207ead6f539cf1eb6ac6e0fe71c"
+    },
+    {
+      "path": "fixed-final/natural-motion-op0-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op0-r-explore.json",
+      "bytes": 159570,
+      "sha256": "be4e8a14cfb4b10a316b84046dd0a2125f8cc2d409b527d5033904e5c7baabdd"
+    },
+    {
+      "path": "fixed-final/natural-motion-op32-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op32-l-direct.json",
+      "bytes": 152016,
+      "sha256": "afa0821f414b76b81c8d3907d7df08df07e96d67b0cbc640cc9e85727be72263"
+    },
+    {
+      "path": "fixed-final/natural-motion-op32-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op32-l-explore.json",
+      "bytes": 154397,
+      "sha256": "b8962593fc589a203a3626012906032e0fc166960f791dd48458b911aa826d7b"
+    },
+    {
+      "path": "fixed-final/natural-motion-op32-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op32-r-direct.json",
+      "bytes": 154123,
+      "sha256": "0730275a0b8915b4206e9140103eb89f1c7de8bef85e3018c6fd16ea7d326b19"
+    },
+    {
+      "path": "fixed-final/natural-motion-op32-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op32-r-explore.json",
+      "bytes": 163110,
+      "sha256": "b5ae34bdd4f6fcee960f2346cea7ebe28894cc45e90e2fd70168f327e0539ce4"
+    },
+    {
+      "path": "fixed-final/natural-motion-op359-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op359-l-direct.json",
+      "bytes": 64074,
+      "sha256": "9f9948c9687dcb89f7678ca5146c8942d792520b8f1afbf180c4be9a13790f36"
+    },
+    {
+      "path": "fixed-final/natural-motion-op359-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op359-l-explore.json",
+      "bytes": 73793,
+      "sha256": "d1a3d64a65a3262de160fd98905762513d2833bc619d963e8dc288c7d663025f"
+    },
+    {
+      "path": "fixed-final/natural-motion-op359-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op359-r-direct.json",
+      "bytes": 52981,
+      "sha256": "d363d1f58deaf2781040b0dbed90fb684dbaaf71e134aa187d186287ccd15f8f"
+    },
+    {
+      "path": "fixed-final/natural-motion-op359-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op359-r-explore.json",
+      "bytes": 56936,
+      "sha256": "d386bcebaf545fe507c18f71b082d3742f62f2bcaeec5f0f48823e78879a2fe8"
+    },
+    {
+      "path": "fixed-final/natural-motion-op64-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op64-l-direct.json",
+      "bytes": 52572,
+      "sha256": "b2ef6bb0f7c722d38e315d7d2c8ed7a9a9fdf213c15247952aee7d6d299f0a4f"
+    },
+    {
+      "path": "fixed-final/natural-motion-op64-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op64-l-explore.json",
+      "bytes": 53665,
+      "sha256": "395840d1de5a049cc07e1e98d0830f909df819398a284adc74e07ba8388a4113"
+    },
+    {
+      "path": "fixed-final/natural-motion-op64-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op64-r-direct.json",
+      "bytes": 23587,
+      "sha256": "94abc79d1942cefd6301a436570b5cf630078ebc00d2b4504821d9c7071aa03e"
+    },
+    {
+      "path": "fixed-final/natural-motion-op64-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-motion-op64-r-explore.json",
+      "bytes": 24957,
+      "sha256": "39099e33ed43c75cb465f68a44783b30bd0273cd065b72d668f401b00074b8a5"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om214-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om214-l-direct.json",
+      "bytes": 77147,
+      "sha256": "759f14112c7b347b57413154a031f447b5122f0825af7e6dce7560e885d55f23"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om214-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om214-l-explore.json",
+      "bytes": 35293,
+      "sha256": "07df99edd002dde2babeac764c7768b5578530b06b55e750317306eaac5c4bc4"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om214-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om214-r-direct.json",
+      "bytes": 90855,
+      "sha256": "8b65f948d1ec7a92d968b9af63e0ad751b4a77a1a1ba4bb20f57eec53f4afce5"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om214-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om214-r-explore.json",
+      "bytes": 29006,
+      "sha256": "b80003813c59a782d4b5ceee4e2bb12e817d7aff46446f0fb3177e92ba35b7b0"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om231-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om231-l-direct.json",
+      "bytes": 48165,
+      "sha256": "0b8f2ff12a31b5594c052fd316514887be60405c05e6c8e3b90ac5d7c88f0702"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om231-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om231-l-explore.json",
+      "bytes": 35452,
+      "sha256": "39f5c78db2398d15a5236c37d6ae0bf0b1623fb727f5e2ec06cf4bf15eec5f7f"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om231-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om231-r-direct.json",
+      "bytes": 90770,
+      "sha256": "5db262f75dde0312e5d87fa22443ad0a5321dffad30fad460f73a6854fbc2538"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om231-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om231-r-explore.json",
+      "bytes": 32325,
+      "sha256": "e72b652972398d2bf1a33187aceba464a096c317d4962522f4f04a4d464e5d07"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om32-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om32-l-direct.json",
+      "bytes": 90781,
+      "sha256": "184e78ca58303ae7fbbf78aeafee7496794add952799b8e3712aa31955df9b5d"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om32-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om32-l-explore.json",
+      "bytes": 30605,
+      "sha256": "e91ef0ef01997758452bc93bad9c197f0e89869c8a5817817e48bd88e5b38ff3"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om32-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om32-r-direct.json",
+      "bytes": 90774,
+      "sha256": "98d53dc07f2b6dadc47286059a40e8fdf060070cdc9600088fa114549d5075b9"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om32-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om32-r-explore.json",
+      "bytes": 30499,
+      "sha256": "6aa83b000683feb6550d767f722090d273a403dba5ddda11b778959adfbd9342"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om64-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om64-l-direct.json",
+      "bytes": 90839,
+      "sha256": "4000126fca6428b19d06bd1f576ed838d1309a101fb47adef2b075c81baa3f4b"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om64-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om64-l-explore.json",
+      "bytes": 30386,
+      "sha256": "43ed4b068c329fe8d8cf11c6d4ecde12014b8b5be98d5e0b525f421202dcf7a8"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om64-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om64-r-direct.json",
+      "bytes": 90710,
+      "sha256": "aa8ac82a4dfdd84ba0dc19d2338e2c5d1863f7cc915d6d26aca742c83ddde517"
+    },
+    {
+      "path": "fixed-final/natural-receipt-om64-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-om64-r-explore.json",
+      "bytes": 30470,
+      "sha256": "c65b654b047ff574586cfc0d63765952c66d4d2b9f55228d23605a85a21a4879"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op0-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op0-l-direct.json",
+      "bytes": 90772,
+      "sha256": "ee98ab6ce25766d5601dc16b5392d1ba0a7916ed655c87975eed3fac59b7b4d7"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op0-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op0-l-explore.json",
+      "bytes": 30524,
+      "sha256": "0ff7f9bc4a1ac65658f598d13f474d4f4e874baf00e9192613df8950aadecf40"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op0-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op0-r-direct.json",
+      "bytes": 90660,
+      "sha256": "7b4086aa98ff0de9831e40ba85cfa62828027785e1d724e13aaa765607141f23"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op0-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op0-r-explore.json",
+      "bytes": 29819,
+      "sha256": "096e33ea2b189fb9f520ef809829f5bf4d18d61c22610afa4b15795464341a62"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op32-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op32-l-direct.json",
+      "bytes": 90809,
+      "sha256": "b1ea15cf0da328702b946aabc577f77a01342a2a6e411019990a8b8b063c3227"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op32-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op32-l-explore.json",
+      "bytes": 30558,
+      "sha256": "52ca9c1f8e77e97ce1cb7297d709779c4954a7c0201ac45b66979c58d5a8b715"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op32-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op32-r-direct.json",
+      "bytes": 90863,
+      "sha256": "d690aafc9d702ed897feefcc3bac6f78c744efe6f53d9139370f34fbff63d947"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op32-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op32-r-explore.json",
+      "bytes": 30093,
+      "sha256": "0b32e57317e96218b39162cf8cf58e864b28546f2a9a75b49464fbd4d22c4e72"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op359-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op359-l-direct.json",
+      "bytes": 36326,
+      "sha256": "52a5ce3cf7f00f83830fef0fd6290c523efd031329adc9b4f5f90127966b4723"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op359-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op359-l-explore.json",
+      "bytes": 34764,
+      "sha256": "4b65812d112b11125cc9c67494e366c353e755e0b3c21a947d53760368e420e7"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op359-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op359-r-direct.json",
+      "bytes": 22444,
+      "sha256": "22f2aea4671304f087333c55f4c03b903acd27833e20ae95fe34046055876b7e"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op359-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op359-r-explore.json",
+      "bytes": 34522,
+      "sha256": "1dfce25807b475ba07458ea3421c2607999856ec7dc1ae1e00e77a35febfd696"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op64-l-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op64-l-direct.json",
+      "bytes": 35936,
+      "sha256": "c00b1d3c51b2e72fe443201e750d0a753ad2c0f51869e4f64b3eaee0cf80516f"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op64-l-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op64-l-explore.json",
+      "bytes": 34057,
+      "sha256": "23dae6bf21597c55fcb1c3fa02428a7f6bfa2ef5fb277cf9bda769466bb0908c"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op64-r-direct.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op64-r-direct.json",
+      "bytes": 22335,
+      "sha256": "ab45059ec07b21302dec5a01c2e7ecca99f6eed95d14fb6c11cd64ece597f781"
+    },
+    {
+      "path": "fixed-final/natural-receipt-op64-r-explore.json",
+      "source": ".local\\natural-native-15ee9d6959ad4b34aca99f39f0defc97\\natural-receipt-op64-r-explore.json",
+      "bytes": 32148,
+      "sha256": "1ada506c740a584341f428ea2256216ab546c102ab2912ac420c9159372258a1"
+    },
+    {
+      "path": "baseline-final/result.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\result.json",
+      "bytes": 2074801,
+      "sha256": "3f91597a4eb3a75ef96f9a4870ac3085b2bfdb84a89997573f707d69d0b4b5aa"
+    },
+    {
+      "path": "baseline-final/natural-results.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-results.json",
+      "bytes": 1971136,
+      "sha256": "fc09c3f0aa224dd5aafc956cd65249c3e8d7523979e28f5f18f2147292a05e18"
+    },
+    {
+      "path": "baseline-final/server.log",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\server.log",
+      "bytes": 465813,
+      "sha256": "ef389967bb74e065522e7ead08f27a0bcd43a7c5755293d49932808723ce4e2f"
+    },
+    {
+      "path": "baseline-final/natural-catalog.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-catalog.json",
+      "bytes": 52825,
+      "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+    },
+    {
+      "path": "baseline-final/natural-calls-om214-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om214-l-direct.json",
+      "bytes": 60677,
+      "sha256": "fd112f9fdfbb997e856fe53160ca1ff1dc906180b1c75745270d40c1d4a95e15"
+    },
+    {
+      "path": "baseline-final/natural-calls-om214-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om214-l-explore.json",
+      "bytes": 51271,
+      "sha256": "6d7bcd28f70bd7a84820295210c00e9f3e597a93c5ed4985fef0f0d95735c0b6"
+    },
+    {
+      "path": "baseline-final/natural-calls-om214-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om214-r-direct.json",
+      "bytes": 72579,
+      "sha256": "e27f814421e76bba4be4aca8b585168a5eaa42f9711d14f41c54ff4b0042be3a"
+    },
+    {
+      "path": "baseline-final/natural-calls-om214-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om214-r-explore.json",
+      "bytes": 107696,
+      "sha256": "a8851ecf9eab06db2f83f4305a8946a1d134a3e6ae03ea1f67e3f71eeaf9f98b"
+    },
+    {
+      "path": "baseline-final/natural-calls-om231-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om231-l-direct.json",
+      "bytes": 38293,
+      "sha256": "aa05ae002fbe8ff7caf79e1b863fb8036e8166abfa2d2322707dff97480478b3"
+    },
+    {
+      "path": "baseline-final/natural-calls-om231-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om231-l-explore.json",
+      "bytes": 51398,
+      "sha256": "852a4cf31b02e0870d58f5cbc573eac3772f8a0866743217c905ee85019e0b78"
+    },
+    {
+      "path": "baseline-final/natural-calls-om231-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om231-r-direct.json",
+      "bytes": 72539,
+      "sha256": "40cd09e7599019111020d0ee893f6e7d8f5c1971ec1e541d48cc7d88aa335a27"
+    },
+    {
+      "path": "baseline-final/natural-calls-om231-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om231-r-explore.json",
+      "bytes": 36135,
+      "sha256": "c68ae8065f589243a911d407fead5f262694311f70ae0bbd9947975fd685401b"
+    },
+    {
+      "path": "baseline-final/natural-calls-om32-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om32-l-direct.json",
+      "bytes": 72526,
+      "sha256": "fd58aee4e54a9a9ff78d746cadefe208b85e25c86de42319e551433842edb068"
+    },
+    {
+      "path": "baseline-final/natural-calls-om32-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om32-l-explore.json",
+      "bytes": 107704,
+      "sha256": "fcfcdbffcd8474dfe7b86ea441d6a5b50093e2ee7f51e02bd0a205594a8e7ee8"
+    },
+    {
+      "path": "baseline-final/natural-calls-om32-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om32-r-direct.json",
+      "bytes": 72497,
+      "sha256": "bc46cd99b8540516fe6e6fdd2b615d159b85d8af30ddc07a94dd1570551c1e77"
+    },
+    {
+      "path": "baseline-final/natural-calls-om32-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om32-r-explore.json",
+      "bytes": 107688,
+      "sha256": "33fc12668e12ce87eac0e167654d6bb86c62947d5b08d50e854f41605a3c955b"
+    },
+    {
+      "path": "baseline-final/natural-calls-om64-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om64-l-direct.json",
+      "bytes": 72595,
+      "sha256": "ae8e84273affbb708ee23faa8f8d517cb7d216e71cf6d3c48c093c38524ea8fb"
+    },
+    {
+      "path": "baseline-final/natural-calls-om64-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om64-l-explore.json",
+      "bytes": 107769,
+      "sha256": "3b211491d6e7ab047d4ca4b9ddfc106bcc51434694acdabba40916a76babad1b"
+    },
+    {
+      "path": "baseline-final/natural-calls-om64-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om64-r-direct.json",
+      "bytes": 72450,
+      "sha256": "abc49e44ebe0221d2e5778a48a821d8bceed87901d5f03881dfceadf8b6b3055"
+    },
+    {
+      "path": "baseline-final/natural-calls-om64-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-om64-r-explore.json",
+      "bytes": 107639,
+      "sha256": "cbe22e040294cd9781bc073e9ec3fb9ac0b68089ff4104f91929e4a858fe72fc"
+    },
+    {
+      "path": "baseline-final/natural-calls-op0-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op0-l-direct.json",
+      "bytes": 72521,
+      "sha256": "9ddeee273db06fabbf856c8068118a3055c9b84502d720edda644123f7061df2"
+    },
+    {
+      "path": "baseline-final/natural-calls-op0-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op0-l-explore.json",
+      "bytes": 107708,
+      "sha256": "5be3a383a81960cba8b01f2a171ee17fca569ef3fbd2df06a12ea51ee03da114"
+    },
+    {
+      "path": "baseline-final/natural-calls-op0-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op0-r-direct.json",
+      "bytes": 72454,
+      "sha256": "76c06805b3b1ca66c6b7d39cdb2d9e1498e673461a510f8249f6af739e73556b"
+    },
+    {
+      "path": "baseline-final/natural-calls-op0-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op0-r-explore.json",
+      "bytes": 107588,
+      "sha256": "32a7654887e6d06f89efcf6350450c7494419575e88c205c7d4ff7a7c232eebf"
+    },
+    {
+      "path": "baseline-final/natural-calls-op32-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op32-l-direct.json",
+      "bytes": 72580,
+      "sha256": "3694b4a59ce2cc0d6432df119a85e90db4600a1c022774107ece91b1ecdc74fc"
+    },
+    {
+      "path": "baseline-final/natural-calls-op32-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op32-l-explore.json",
+      "bytes": 107707,
+      "sha256": "80a110f74c429527b3ae9810ab3e2413935ab3f5f30a01c9e843a426ae619c31"
+    },
+    {
+      "path": "baseline-final/natural-calls-op32-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op32-r-direct.json",
+      "bytes": 72626,
+      "sha256": "0dd8786642e07b288b37c1bc390f952efc448be9147e79c0ce8a37285b71d43c"
+    },
+    {
+      "path": "baseline-final/natural-calls-op32-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op32-r-explore.json",
+      "bytes": 107738,
+      "sha256": "8cce63578b4096c70a8949658ef819fccf4e16817706e40e601a6393451fa2bd"
+    },
+    {
+      "path": "baseline-final/natural-calls-op359-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op359-l-direct.json",
+      "bytes": 27172,
+      "sha256": "a5df3fbfdbc0440a335f9f8e7ad7d39fa1f66e4aa816d7cdff87b544ac541894"
+    },
+    {
+      "path": "baseline-final/natural-calls-op359-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op359-l-explore.json",
+      "bytes": 63590,
+      "sha256": "dea0600cb2351eac29a0d22ddf4d24d30cd5f1d9d32dd14134d0623b36e4dfbc"
+    },
+    {
+      "path": "baseline-final/natural-calls-op359-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op359-r-direct.json",
+      "bytes": 15711,
+      "sha256": "06c78e897f5acecf5fc8d3af923ce95e9c1dd9480a8b7ecece158e7402c8f1ab"
+    },
+    {
+      "path": "baseline-final/natural-calls-op359-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op359-r-explore.json",
+      "bytes": 49246,
+      "sha256": "a47595c6933251031c8de91db6a0d811cbdd2648a54234055269b80a63f10c0d"
+    },
+    {
+      "path": "baseline-final/natural-calls-op64-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op64-l-direct.json",
+      "bytes": 27032,
+      "sha256": "6a284ece30b5dd47dbeda476a722af39777487210467904fa5b7134a4e61dc80"
+    },
+    {
+      "path": "baseline-final/natural-calls-op64-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op64-l-explore.json",
+      "bytes": 50092,
+      "sha256": "fa4d159b25a99d0d05cd1759c22c25df378c42290b9c14bcbb40fbd3ea91651c"
+    },
+    {
+      "path": "baseline-final/natural-calls-op64-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op64-r-direct.json",
+      "bytes": 15640,
+      "sha256": "dc2938b9f6643b070363a715dabe683e3c0f0a037cf64fe75f41558bb05d2499"
+    },
+    {
+      "path": "baseline-final/natural-calls-op64-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-calls-op64-r-explore.json",
+      "bytes": 35741,
+      "sha256": "08df09aefa386fde825d0c40b6b134ba98bd670d6f76767242497a07420cb4cd"
+    },
+    {
+      "path": "baseline-final/natural-motion-om214-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om214-l-direct.json",
+      "bytes": 141267,
+      "sha256": "ceb1e5bea38755a252de9070e636d0ab57a3532faf9c15c49f08281fc98a0769"
+    },
+    {
+      "path": "baseline-final/natural-motion-om214-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om214-l-explore.json",
+      "bytes": 92432,
+      "sha256": "cbf4e81702985bb24ecaabd69daf999678358576f273c6e304bb8ad20226588f"
+    },
+    {
+      "path": "baseline-final/natural-motion-om214-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om214-r-direct.json",
+      "bytes": 188977,
+      "sha256": "aabf810f072042c504dd152bc8ef6d12958338773227179d5a58f5a919d93319"
+    },
+    {
+      "path": "baseline-final/natural-motion-om214-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om214-r-explore.json",
+      "bytes": 178614,
+      "sha256": "5df1cbcf0b601ebc4018181baba24e2cb19dff5c2bf13eb65e0a63db3e145015"
+    },
+    {
+      "path": "baseline-final/natural-motion-om231-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om231-l-direct.json",
+      "bytes": 110617,
+      "sha256": "ca36716242c5bf8e178922f7cbf02d6990ef968dc2152558b3eba1ba7dd6cb2d"
+    },
+    {
+      "path": "baseline-final/natural-motion-om231-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om231-l-explore.json",
+      "bytes": 102033,
+      "sha256": "d598d36224bd45f99bb915493361f5ae241f683773dc52dab6e5e1ec1f1e302a"
+    },
+    {
+      "path": "baseline-final/natural-motion-om231-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om231-r-direct.json",
+      "bytes": 159263,
+      "sha256": "2524660a6630cf6612abcb07b2f673fd01985af3a6bdaf4ec9e75873ee497bb6"
+    },
+    {
+      "path": "baseline-final/natural-motion-om231-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om231-r-explore.json",
+      "bytes": 45365,
+      "sha256": "164c2d997e3fd32fcbc9fac80fd6386072c6811800a92d8070ca3b2998e73fcd"
+    },
+    {
+      "path": "baseline-final/natural-motion-om32-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om32-l-direct.json",
+      "bytes": 150392,
+      "sha256": "12c2a554cd174f50051ddee463500e4a8cb5cadbc908c892ab37ab52695850d1"
+    },
+    {
+      "path": "baseline-final/natural-motion-om32-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om32-l-explore.json",
+      "bytes": 152858,
+      "sha256": "6ec374444b197f3d1528e8f035fe62abd40f1dc3012768b48b1387f398b7a253"
+    },
+    {
+      "path": "baseline-final/natural-motion-om32-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om32-r-direct.json",
+      "bytes": 150520,
+      "sha256": "2799a836c1350aa892b942c3232e77013bd1f68f2477518d350c90f3ee6b6fd1"
+    },
+    {
+      "path": "baseline-final/natural-motion-om32-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om32-r-explore.json",
+      "bytes": 155319,
+      "sha256": "9390c034d5e8217b50681e593b2d4da385706df11f9b4a00e905269c60658c05"
+    },
+    {
+      "path": "baseline-final/natural-motion-om64-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om64-l-direct.json",
+      "bytes": 204814,
+      "sha256": "6b530e06093459cc4e4a453c821bbb960d28adee6c9bbe5e911d7154163accbe"
+    },
+    {
+      "path": "baseline-final/natural-motion-om64-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om64-l-explore.json",
+      "bytes": 176312,
+      "sha256": "5ed09fc29bf1ee8ac99116bf2990c862707143a7334422e32c86578a6d04f3ef"
+    },
+    {
+      "path": "baseline-final/natural-motion-om64-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om64-r-direct.json",
+      "bytes": 155282,
+      "sha256": "d01767c2b948ce16bb68719efa7153fd643e001f6fa34b38c0bbd5eb66e1893c"
+    },
+    {
+      "path": "baseline-final/natural-motion-om64-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-om64-r-explore.json",
+      "bytes": 160288,
+      "sha256": "755a821d09e1d89a439289485f301c62e5fdc97197825ff8c9a6e07477511fe0"
+    },
+    {
+      "path": "baseline-final/natural-motion-op0-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op0-l-direct.json",
+      "bytes": 145692,
+      "sha256": "544dd75a55bd163440e35507413d1c5eb1808dd7ef9fe31bac9730d7010dc3f5"
+    },
+    {
+      "path": "baseline-final/natural-motion-op0-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op0-l-explore.json",
+      "bytes": 152217,
+      "sha256": "7ace11617e1d36cdf7ed89a19216d367ddd30c69af027b7149590b92656560b6"
+    },
+    {
+      "path": "baseline-final/natural-motion-op0-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op0-r-direct.json",
+      "bytes": 152959,
+      "sha256": "904118c11c80e1c89b2c7bd3af24d14907cba22d3cb9f132a40177f67a9212ef"
+    },
+    {
+      "path": "baseline-final/natural-motion-op0-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op0-r-explore.json",
+      "bytes": 160862,
+      "sha256": "74ebe87c3b8f58039282ab978a6b4898237fb4bc57b6e538da2627c28276d279"
+    },
+    {
+      "path": "baseline-final/natural-motion-op32-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op32-l-direct.json",
+      "bytes": 152232,
+      "sha256": "4b6d03bd5afb19d156e7894f68cbe8082758bc370df91b0ecca3d0ee9a732fc9"
+    },
+    {
+      "path": "baseline-final/natural-motion-op32-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op32-l-explore.json",
+      "bytes": 155797,
+      "sha256": "a43bc3cf34389a21a9e192780ac51cf74881a5ecf889bd0e43232ce999323194"
+    },
+    {
+      "path": "baseline-final/natural-motion-op32-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op32-r-direct.json",
+      "bytes": 153089,
+      "sha256": "1742902c5e64f4b951db279f3ed156abdcae687380ef2c328be3bdba343e5628"
+    },
+    {
+      "path": "baseline-final/natural-motion-op32-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op32-r-explore.json",
+      "bytes": 158221,
+      "sha256": "c716f8509b0aeb7e391fd439f36d1df29c84fbc5466baa32dd63f29bf5bb6db3"
+    },
+    {
+      "path": "baseline-final/natural-motion-op359-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op359-l-direct.json",
+      "bytes": 67098,
+      "sha256": "b86611ed5be4e5da795079033a24e451f4ce0e5c860bf865fa821763aed14468"
+    },
+    {
+      "path": "baseline-final/natural-motion-op359-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op359-l-explore.json",
+      "bytes": 75863,
+      "sha256": "3f5152de790516cea9b62bed6f86bd2ad988464437b8bc1c9271ad7ef9d94341"
+    },
+    {
+      "path": "baseline-final/natural-motion-op359-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op359-r-direct.json",
+      "bytes": 60394,
+      "sha256": "a17a333a1121974362ab1caa703946a9097caa2ee2d109ffe90a1d45b6841856"
+    },
+    {
+      "path": "baseline-final/natural-motion-op359-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op359-r-explore.json",
+      "bytes": 76433,
+      "sha256": "81aeda05f09b9985e3272bad31aee30197093b028bcc0e1f2563a230df5ac745"
+    },
+    {
+      "path": "baseline-final/natural-motion-op64-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op64-l-direct.json",
+      "bytes": 52869,
+      "sha256": "582684c737f9fc53ddc5fd1459f62c419c40aecd432f41813ea279f5e73e1596"
+    },
+    {
+      "path": "baseline-final/natural-motion-op64-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op64-l-explore.json",
+      "bytes": 51726,
+      "sha256": "a4861098e6f2d077f4e26f17882bd19e90d8b90c75380548dc7cf88eaf9d8298"
+    },
+    {
+      "path": "baseline-final/natural-motion-op64-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op64-r-direct.json",
+      "bytes": 23505,
+      "sha256": "b0416857f52f5510d53f8e07d034d523241992292c71e3ff2e7a88492c70ce40"
+    },
+    {
+      "path": "baseline-final/natural-motion-op64-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-motion-op64-r-explore.json",
+      "bytes": 25605,
+      "sha256": "1654193d28c7ba0e60e6dd4e16c973d1474e11a746cf2d64a08389a17df51c5e"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om214-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om214-l-direct.json",
+      "bytes": 75866,
+      "sha256": "93321c6af661bd0459554764e539e44e2cd315baa4c16ce23b12d64b2e11727d"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om214-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om214-l-explore.json",
+      "bytes": 34379,
+      "sha256": "6d01fac6670ffc22acef421ae8d20bd58b006970cb71589115af7bfd3ee2a5a5"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om214-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om214-r-direct.json",
+      "bytes": 90853,
+      "sha256": "7113dd1d2c7c1b61d6c0c587c1b93358c2756073e9b6634b92546f2401091e75"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om214-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om214-r-explore.json",
+      "bytes": 27944,
+      "sha256": "1aba10ea65ba1fef83e9678ceb0700488ac1d5521c392bc3def711330b2b60ca"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om231-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om231-l-direct.json",
+      "bytes": 49472,
+      "sha256": "5082ef3329e6aa90107bd151dbbf976923752963d1ed692aab01faabfce64ae0"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om231-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om231-l-explore.json",
+      "bytes": 33862,
+      "sha256": "36972c751219bb98bba7c823e2fcce09c7c9a787cd0fa08fde9482dc624c8718"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om231-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om231-r-direct.json",
+      "bytes": 90792,
+      "sha256": "8fb86a87f8956d3b33f27658b4d007944bb318b0c3fad7bd2f01052cab3041e2"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om231-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om231-r-explore.json",
+      "bytes": 31738,
+      "sha256": "15596fa6caef11cab0bda10d1f58091f106b2967406816c1175791a277f06e95"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om32-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om32-l-direct.json",
+      "bytes": 90786,
+      "sha256": "127a5304f9678908017afb904f3f4bb17006753205a9abdd787ccae3ad481e35"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om32-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om32-l-explore.json",
+      "bytes": 29128,
+      "sha256": "8112b71c48d83002acd987f25227ee29c26b3370d286b23fdfbbb602520281a1"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om32-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om32-r-direct.json",
+      "bytes": 90709,
+      "sha256": "d4e701a7e3196c282e783dc9090405c0ede38fc5c5e044acf1bd400e9861bfeb"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om32-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om32-r-explore.json",
+      "bytes": 29189,
+      "sha256": "13b32bb88686d4e28bd732647d519e76b7222afd93729ad3b1a4c23b9284eb54"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om64-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om64-l-direct.json",
+      "bytes": 90871,
+      "sha256": "5176389172262c1d09be7553a2848391a6e50a53b98f2b3f48dc0a0e5173677f"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om64-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om64-l-explore.json",
+      "bytes": 29022,
+      "sha256": "6a55e47285366875b8e05760cdbc1d5c745150f747743405b3ad9fff86ec7986"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om64-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om64-r-direct.json",
+      "bytes": 90683,
+      "sha256": "5c73c814498ec8e45bc8eee5b4ffe6ef6dbf02d7b1a89cffc2c04f8fd6888f48"
+    },
+    {
+      "path": "baseline-final/natural-receipt-om64-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-om64-r-explore.json",
+      "bytes": 29163,
+      "sha256": "f631e1bb965400ff3189c212b9e46c2f83aec5c344a9602e1aa3126969caf8ec"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op0-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op0-l-direct.json",
+      "bytes": 90751,
+      "sha256": "6dd5ba4d8d9c0e290cc1a196c9281ebb1f92201f1596304cb25cd338c26f4195"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op0-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op0-l-explore.json",
+      "bytes": 29262,
+      "sha256": "84a60db654c584325c46e62cbb8f86e9039f7d92a55c633b5bbc01aeec637885"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op0-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op0-r-direct.json",
+      "bytes": 90644,
+      "sha256": "05df2fccaf4ec861d6dc431ec831da12b78c69c74f9f0e7f53cb51ac6cd51d26"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op0-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op0-r-explore.json",
+      "bytes": 28477,
+      "sha256": "a26a240723fe5393f940ac2c607176f4aeaa4017efa24934c1f1f1b15e3d3302"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op32-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op32-l-direct.json",
+      "bytes": 90851,
+      "sha256": "8b90f1d62ae791658e99d4b28644f116d3e7f10d7e29f4de071a9a3244d83614"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op32-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op32-l-explore.json",
+      "bytes": 29149,
+      "sha256": "4a69b107f5dc3a74398ee42787ce8a1162d8aaa61df552597630e937634d095d"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op32-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op32-r-direct.json",
+      "bytes": 90852,
+      "sha256": "0e8d5eb132e6e8199127454619afeeb1a73517659536e7e087f9823f25c02152"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op32-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op32-r-explore.json",
+      "bytes": 28795,
+      "sha256": "6adf679334accd7ff8968f44ca610586e408e971eca3f5e6c5859fbb6cadcee7"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op359-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op359-l-direct.json",
+      "bytes": 36329,
+      "sha256": "b5fab03ed2cd3095758d22cbd4d766beabbad84f49fa6f25713d5834125a7936"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op359-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op359-l-explore.json",
+      "bytes": 33456,
+      "sha256": "a7ae0d3b2595af9de4497d78a88f884851087cf39d7ff564c50fe6005a16a936"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op359-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op359-r-direct.json",
+      "bytes": 22475,
+      "sha256": "3dc44e53cb91400ef37027e4012aad8b4195db32c2c219fdb76f9dbdfeea73f7"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op359-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op359-r-explore.json",
+      "bytes": 31732,
+      "sha256": "bcca669dca761faee18964fd55773ea684d703b1dd985942c99acb3d8ba20771"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op64-l-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op64-l-direct.json",
+      "bytes": 35990,
+      "sha256": "a2b7b54cbcf15012440d26f822fb5de719cd867b7f3fc37b6c655d9e9b969a34"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op64-l-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op64-l-explore.json",
+      "bytes": 33233,
+      "sha256": "a33ee779856aff243bf9933121a51dedec35715c1259dda4b5cf4fcb38943666"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op64-r-direct.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op64-r-direct.json",
+      "bytes": 22321,
+      "sha256": "359ff8e16779decc4c3bb0cf011460fb1f356de4bf0a5471ab7d5fb22d66522b"
+    },
+    {
+      "path": "baseline-final/natural-receipt-op64-r-explore.json",
+      "source": ".local\\natural-native-b56b356a09614cdda676b63ea73bec2f\\natural-receipt-op64-r-explore.json",
+      "bytes": 31512,
+      "sha256": "1cf8567c654c6c66d5c12a03c90078a535e1b544c5961d91c516df70e5424097"
+    },
+    {
+      "path": "lua-sources/source-1fc2d598c99bf5e0aed526ff6db6d0cf1adcd8e37a65b9674f1a821bd813311c.lua",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-lua\\0086c07a41694b289d56734c3abb5548\\source-1fc2d598c99bf5e0aed526ff6db6d0cf1adcd8e37a65b9674f1a821bd813311c.lua",
+      "bytes": 193,
+      "sha256": "1fc2d598c99bf5e0aed526ff6db6d0cf1adcd8e37a65b9674f1a821bd813311c"
+    },
+    {
+      "path": "lua-sources/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-lua\\0086c07a41694b289d56734c3abb5548\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "bytes": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "lua-sources/source-9915b3c279f419705fda87d65de74d7f72790f3834228653d93ecfdc916e788c.lua",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-lua\\0086c07a41694b289d56734c3abb5548\\source-9915b3c279f419705fda87d65de74d7f72790f3834228653d93ecfdc916e788c.lua",
+      "bytes": 12776,
+      "sha256": "f728352f5cac65018f6e15c04345123449903a970acfbedc6563d514c33e49fb"
+    },
+    {
+      "path": "lua-sources/source-90d202ca1bb426173b031c6e2b8c1f9a21c98feeeacd67c147b96ec1378f9eb3.lua",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-lua\\02f5de8f3aa54c2b9766187eade5bbd4\\source-90d202ca1bb426173b031c6e2b8c1f9a21c98feeeacd67c147b96ec1378f9eb3.lua",
+      "bytes": 607,
+      "sha256": "b53c64ddc9be7a1260076629b2eaaf4e1342bc3d3df2c7c01ac2ac228750b59b"
+    },
+    {
+      "path": "lua-sources/source-6d258e6fc7ff916755cd99a0b95d52c4be08fcea911e2ffed3431c8680f12972.lua",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-lua\\202d81a60125499cb5983bd78be58cc4\\source-6d258e6fc7ff916755cd99a0b95d52c4be08fcea911e2ffed3431c8680f12972.lua",
+      "bytes": 192,
+      "sha256": "6d258e6fc7ff916755cd99a0b95d52c4be08fcea911e2ffed3431c8680f12972"
+    },
+    {
+      "path": "lua-sources/source-c7e43f0f509d2958a840c6548a464428554d5e9183feed0354a1f9cb0fa994e5.lua",
+      "source": ".local\\natural-native-d869b933c4454e2c9fde29d120267315\\natural-lua\\42347c1252a64d69b4566056dfd54051\\source-c7e43f0f509d2958a840c6548a464428554d5e9183feed0354a1f9cb0fa994e5.lua",
+      "bytes": 608,
+      "sha256": "5065a6e61ac6b8f8f1c1e0156a059c463d8eeddca6415d6b350effa75a2c5282"
+    },
+    {
+      "path": "lua-sources/source-a66d9f571779095d66638b1ec6657932fd68e79ac9c2ab6e06bde2108625a01d.lua",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-lua\\1e0805480902449eb7422e5245dce47e\\source-a66d9f571779095d66638b1ec6657932fd68e79ac9c2ab6e06bde2108625a01d.lua",
+      "bytes": 483,
+      "sha256": "a66d9f571779095d66638b1ec6657932fd68e79ac9c2ab6e06bde2108625a01d"
+    },
+    {
+      "path": "lua-sources/source-66bd7df713d3a036e07269c4147fad69bfc31a2f2ed5f6cfbed9ab274c4a2cd3.lua",
+      "source": ".local\\natural-native-cee1c9dafcc94767853905dfa9817341\\natural-lua\\498e237f1b254e84805ef593f5b884f7\\source-66bd7df713d3a036e07269c4147fad69bfc31a2f2ed5f6cfbed9ab274c4a2cd3.lua",
+      "bytes": 483,
+      "sha256": "66bd7df713d3a036e07269c4147fad69bfc31a2f2ed5f6cfbed9ab274c4a2cd3"
+    },
+    {
+      "path": "lua-sources/source-bbc0931cac0ec35fda3cdb5f8355431f75eb22d33d3247aa6ca7ddb3f5b5def0.lua",
+      "source": ".local\\natural-native-a52bd38c73364dda997499169bda8510\\natural-lua\\129533cfbf6e41b2b10ae10763151d2a\\source-bbc0931cac0ec35fda3cdb5f8355431f75eb22d33d3247aa6ca7ddb3f5b5def0.lua",
+      "bytes": 13356,
+      "sha256": "f0a72bceb107fa1092953a15f0443b6d0dbab7280cc7cd24247b0ccef73618cb"
+    }
+  ],
+  "sourceSHA256Encoding": "UTF-8 source text with LF line endings; evidence archive hashes below are exact raw bytes",
+  "direction": "explore is optional reference only; LLM Agent chooses directions/targets/continuation via generated Lua; native navigator executes selected targets; prioritize generic observations/navigation/feedback"
+}

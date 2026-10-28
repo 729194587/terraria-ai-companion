@@ -1,0 +1,821 @@
+{
+  "provenance": {
+    "seed": "20261028",
+    "sourceCase": "op359-l-explore",
+    "sourceProfile": "natural-native-cee1c9dafcc94767853905dfa9817341",
+    "originalStop": "no_safe_direction",
+    "originalDecision": {
+      "basis": "gap_without_near_landing",
+      "direction": -1,
+      "targetX": null,
+      "step": 2
+    },
+    "sourceCallsSHA256": "4fbbcf2604e2880beba811c53c4dbb5737ba6e770b1bcc71e9bda48f0a3a6561"
+  },
+  "player": {
+    "available": true,
+    "binding": {
+      "slot": 254,
+      "generation": 1,
+      "actor": "2005ff5f7ae74570b492dbb147b06ebc",
+      "world": "a85eb6ca204849b1a8736b0b929fe94b"
+    },
+    "motion": {
+      "playerHeight": 42,
+      "playerWidth": 20,
+      "grounded": true,
+      "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety",
+      "supported": true
+    },
+    "clock": "server_utc_at_projection",
+    "source": "server_ai_player",
+    "actorSlot": 254,
+    "worldSessionId": "a85eb6ca204849b1a8736b0b929fe94b",
+    "observedAtUnixMs": 1793182062965,
+    "gameUpdate": 838,
+    "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+    "actorGeneration": 1,
+    "valid": true,
+    "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+    "player": {
+      "immune": false,
+      "hotbarInventorySlots": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "statDefense": {
+        "negative": 0,
+        "positive": 0
+      },
+      "source": "server_ai_player",
+      "life": 100,
+      "positionWorldPixels": {
+        "y": 3814,
+        "x": 39322.598
+      },
+      "breath": 200,
+      "breathMax": 200,
+      "velocity": {
+        "y": 0,
+        "x": 0
+      },
+      "immuneTime": 0,
+      "position": {
+        "y": 3814,
+        "x": 39322.598
+      },
+      "active": true,
+      "name": "G31_NoClient_Probe",
+      "inWorld": true,
+      "dead": false,
+      "direction": -1,
+      "movement": {
+        "stairFall": false,
+        "frozen": false,
+        "wet": false,
+        "gravDir": 1,
+        "stoned": false,
+        "grapCount": 0,
+        "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred",
+        "lavaWet": false,
+        "controlDown": false,
+        "webbed": false,
+        "pulley": false,
+        "jump": 0,
+        "controlJump": false,
+        "maxFallSpeed": 10.01,
+        "sloping": false,
+        "runAcceleration": 0.08,
+        "gravity": 0.4,
+        "shimmerWet": false,
+        "maxRunSpeed": 3,
+        "honeyWet": false
+      },
+      "mount": {
+        "typeId": null,
+        "active": false
+      },
+      "ghost": false,
+      "equipmentScope": "vanilla player arrays, including vanilla social slots; mod accessory slots not included",
+      "hotbarNumbering": "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
+      "mana": 20,
+      "selectedSlot": 0,
+      "hotbarKeyBindings": [
+        {
+          "key": 1,
+          "inventorySlot": 0
+        },
+        {
+          "key": 2,
+          "inventorySlot": 1
+        },
+        {
+          "key": 3,
+          "inventorySlot": 2
+        },
+        {
+          "key": 4,
+          "inventorySlot": 3
+        },
+        {
+          "key": 5,
+          "inventorySlot": 4
+        },
+        {
+          "key": 6,
+          "inventorySlot": 5
+        },
+        {
+          "key": 7,
+          "inventorySlot": 6
+        },
+        {
+          "key": 8,
+          "inventorySlot": 7
+        },
+        {
+          "key": 9,
+          "inventorySlot": 8
+        },
+        {
+          "key": 0,
+          "inventorySlot": 9
+        }
+      ],
+      "selectedHotbarKey": 1,
+      "boundsWorldPixels": {
+        "height": 42,
+        "width": 20,
+        "y": 3814,
+        "x": 39322.598
+      },
+      "id": 254,
+      "manaMax": 20,
+      "lifeMax": 100,
+      "velocityPixelsPerTick": {
+        "y": 0,
+        "x": 0
+      }
+    }
+  },
+  "terrain": {
+    "available": true,
+    "binding": {
+      "slot": 254,
+      "generation": 1,
+      "actor": "2005ff5f7ae74570b492dbb147b06ebc",
+      "world": "a85eb6ca204849b1a8736b0b929fe94b"
+    },
+    "data": {
+      "complete": true,
+      "scannedCount": 1305,
+      "scope": "45x29 collision categories, not tile types or visibility; unknown Mod collision hooks; no path guarantee",
+      "legend": ". clear/nonblocking/actuated; # solid; h halfblock; 1..4 slopes; = platform; a/b platform slopes; ! liquid or hazard; ? unknown collision or world boundary",
+      "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+      "state": {
+        "dead": false,
+        "centerWorldPixels": {
+          "y": 3835,
+          "x": 39332.598
+        },
+        "id": 254,
+        "direction": -1,
+        "positionWorldPixels": {
+          "y": 3814,
+          "x": 39322.598
+        },
+        "velocityPixelsPerTick": {
+          "y": 0,
+          "x": 0
+        }
+      },
+      "source": "server_ai_player",
+      "unknownCount": 0,
+      "terrain": {
+        "tileSize": 16,
+        "supported": true,
+        "originY": 224,
+        "originX": 2436,
+        "playerHeight": 42,
+        "grounded": true,
+        "playerWidth": 20,
+        "rows": [
+          ".............................................",
+          ".............................................",
+          ".............................................",
+          ".............................................",
+          ".............................................",
+          ".............................................",
+          ".............................................",
+          ".............................................",
+          ".............................................",
+          ".............................................",
+          ".............................................",
+          ".............................................",
+          "...............................!!............",
+          "...............................!!.........2##",
+          ".........................#......!......2#####",
+          "........................###.....!....2#######",
+          ".......................#####....!..2#########",
+          "......................########1.!.2##########",
+          ".....................########################",
+          "....................#########################",
+          "...................##########################",
+          "............!.....###########################",
+          ".....!......!.hh.############################",
+          "....!!!....2#################################",
+          "....!!!...2##################################",
+          "....!!!..2###################################",
+          ".....!..2####################################",
+          ".....!.2#####################################",
+          "h...2########################################"
+        ]
+      },
+      "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+      "bounds": {
+        "maxY": 252,
+        "maxX": 2480,
+        "minX": 2436,
+        "minY": 224
+      },
+      "coordinates": "Tile cells; 16 world pixels per tile; +X right,+Y down; rows[y][x] relative to origin"
+    },
+    "clock": "server_utc_at_projection",
+    "actorSlot": 254,
+    "worldSessionId": "a85eb6ca204849b1a8736b0b929fe94b",
+    "observedAtUnixMs": 1793182062979,
+    "gameUpdate": 839,
+    "actorGeneration": 1,
+    "valid": true
+  },
+  "queries": {
+    "resolve_content": {
+      "valid": true,
+      "available": true,
+      "worldSessionId": "a85eb6ca204849b1a8736b0b929fe94b",
+      "gameUpdate": 732,
+      "actorGeneration": 1,
+      "actorSlot": 254,
+      "observedAtUnixMs": 1793182061155,
+      "clock": "server_utc_at_projection",
+      "data": {
+        "status": "ok",
+        "kind": "tile",
+        "mode": "exact",
+        "matchedCount": 1,
+        "returnedCount": 1,
+        "truncated": false,
+        "candidates": [
+          {
+            "typeId": 5,
+            "contentKey": "Terraria/Trees",
+            "name": "Trees",
+            "nameSource": "content_symbol",
+            "creates": null
+          }
+        ],
+        "scope": "Loaded content registry, not presence in world or inventory; numeric IDs valid only for this loaded content set",
+        "source": "server_ai_player",
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation"
+      },
+      "binding": {
+        "actor": "2005ff5f7ae74570b492dbb147b06ebc",
+        "world": "a85eb6ca204849b1a8736b0b929fe94b",
+        "generation": 1,
+        "slot": 254
+      }
+    },
+    "scan_entities": {
+      "valid": true,
+      "available": true,
+      "worldSessionId": "a85eb6ca204849b1a8736b0b929fe94b",
+      "gameUpdate": 834,
+      "actorGeneration": 1,
+      "actorSlot": 254,
+      "observedAtUnixMs": 1793182062903,
+      "clock": "server_utc_at_projection",
+      "data": {
+        "items": [],
+        "matchedCount": 0,
+        "returnedCount": 0,
+        "truncated": false,
+        "radiusPixels": 364,
+        "sort": "distance_from_player_center_then_kind_slot; filters before truncation",
+        "complete": true,
+        "status": "not_found",
+        "originWorldPixels": {
+          "x": 39332.598,
+          "y": 3835
+        },
+        "scope": "Server active entities within radius; no line-of-sight test; hostility is inference, not current threat",
+        "source": "server_ai_player",
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation"
+      },
+      "binding": {
+        "actor": "2005ff5f7ae74570b492dbb147b06ebc",
+        "world": "a85eb6ca204849b1a8736b0b929fe94b",
+        "generation": 1,
+        "slot": 254
+      }
+    },
+    "scan_tiles": {
+      "valid": true,
+      "available": true,
+      "worldSessionId": "a85eb6ca204849b1a8736b0b929fe94b",
+      "gameUpdate": 835,
+      "actorGeneration": 1,
+      "actorSlot": 254,
+      "observedAtUnixMs": 1793182062920,
+      "clock": "server_utc_at_projection",
+      "data": {
+        "items": [],
+        "matchedCount": 0,
+        "returnedCount": 0,
+        "truncated": false,
+        "unknownCount": 0,
+        "complete": true,
+        "status": "not_found",
+        "bounds": {
+          "minX": 2436,
+          "minY": 224,
+          "maxX": 2480,
+          "maxY": 252
+        },
+        "scannedCount": 1305,
+        "sort": "distance_from_player_center_then_y_x; nearest before truncation",
+        "coordinates": "tile cells; inclusive bounds; 16 pixels per cell; +X right,+Y down",
+        "source": "server_ai_player",
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation"
+      },
+      "binding": {
+        "actor": "2005ff5f7ae74570b492dbb147b06ebc",
+        "world": "a85eb6ca204849b1a8736b0b929fe94b",
+        "generation": 1,
+        "slot": 254
+      }
+    }
+  },
+  "nativeControl": {
+    "before": {
+      "available": true,
+      "binding": {
+        "slot": 254,
+        "generation": 1,
+        "actor": "2005ff5f7ae74570b492dbb147b06ebc",
+        "world": "a85eb6ca204849b1a8736b0b929fe94b"
+      },
+      "motion": {
+        "playerHeight": 42,
+        "playerWidth": 20,
+        "grounded": true,
+        "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety",
+        "supported": true
+      },
+      "clock": "server_utc_at_projection",
+      "source": "server_ai_player",
+      "actorSlot": 254,
+      "worldSessionId": "a85eb6ca204849b1a8736b0b929fe94b",
+      "observedAtUnixMs": 1793182062965,
+      "gameUpdate": 838,
+      "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+      "actorGeneration": 1,
+      "valid": true,
+      "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+      "player": {
+        "immune": false,
+        "hotbarInventorySlots": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "statDefense": {
+          "negative": 0,
+          "positive": 0
+        },
+        "source": "server_ai_player",
+        "life": 100,
+        "positionWorldPixels": {
+          "y": 3814,
+          "x": 39322.598
+        },
+        "breath": 200,
+        "breathMax": 200,
+        "velocity": {
+          "y": 0,
+          "x": 0
+        },
+        "immuneTime": 0,
+        "position": {
+          "y": 3814,
+          "x": 39322.598
+        },
+        "active": true,
+        "name": "G31_NoClient_Probe",
+        "inWorld": true,
+        "dead": false,
+        "direction": -1,
+        "movement": {
+          "stairFall": false,
+          "frozen": false,
+          "wet": false,
+          "gravDir": 1,
+          "stoned": false,
+          "grapCount": 0,
+          "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred",
+          "lavaWet": false,
+          "controlDown": false,
+          "webbed": false,
+          "pulley": false,
+          "jump": 0,
+          "controlJump": false,
+          "maxFallSpeed": 10.01,
+          "sloping": false,
+          "runAcceleration": 0.08,
+          "gravity": 0.4,
+          "shimmerWet": false,
+          "maxRunSpeed": 3,
+          "honeyWet": false
+        },
+        "mount": {
+          "typeId": null,
+          "active": false
+        },
+        "ghost": false,
+        "equipmentScope": "vanilla player arrays, including vanilla social slots; mod accessory slots not included",
+        "hotbarNumbering": "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
+        "mana": 20,
+        "selectedSlot": 0,
+        "hotbarKeyBindings": [
+          {
+            "key": 1,
+            "inventorySlot": 0
+          },
+          {
+            "key": 2,
+            "inventorySlot": 1
+          },
+          {
+            "key": 3,
+            "inventorySlot": 2
+          },
+          {
+            "key": 4,
+            "inventorySlot": 3
+          },
+          {
+            "key": 5,
+            "inventorySlot": 4
+          },
+          {
+            "key": 6,
+            "inventorySlot": 5
+          },
+          {
+            "key": 7,
+            "inventorySlot": 6
+          },
+          {
+            "key": 8,
+            "inventorySlot": 7
+          },
+          {
+            "key": 9,
+            "inventorySlot": 8
+          },
+          {
+            "key": 0,
+            "inventorySlot": 9
+          }
+        ],
+        "selectedHotbarKey": 1,
+        "boundsWorldPixels": {
+          "height": 42,
+          "width": 20,
+          "y": 3814,
+          "x": 39322.598
+        },
+        "id": 254,
+        "manaMax": 20,
+        "lifeMax": 100,
+        "velocityPixelsPerTick": {
+          "y": 0,
+          "x": 0
+        }
+      }
+    },
+    "after": {
+      "available": true,
+      "binding": {
+        "slot": 254,
+        "generation": 1,
+        "actor": "2005ff5f7ae74570b492dbb147b06ebc",
+        "world": "a85eb6ca204849b1a8736b0b929fe94b"
+      },
+      "data": {
+        "complete": true,
+        "scannedCount": 1305,
+        "scope": "45x29 collision categories, not tile types or visibility; unknown Mod collision hooks; no path guarantee",
+        "legend": ". clear/nonblocking/actuated; # solid; h halfblock; 1..4 slopes; = platform; a/b platform slopes; ! liquid or hazard; ? unknown collision or world boundary",
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+        "state": {
+          "dead": false,
+          "centerWorldPixels": {
+            "y": 3923,
+            "x": 39204.37
+          },
+          "id": 254,
+          "direction": -1,
+          "positionWorldPixels": {
+            "y": 3902,
+            "x": 39194.37
+          },
+          "velocityPixelsPerTick": {
+            "y": 0,
+            "x": 0
+          }
+        },
+        "source": "server_ai_player",
+        "unknownCount": 0,
+        "terrain": {
+          "tileSize": 16,
+          "supported": true,
+          "originY": 229,
+          "originX": 2428,
+          "playerHeight": 42,
+          "grounded": true,
+          "playerWidth": 20,
+          "rows": [
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".......................................!!....",
+            ".......................................!!....",
+            ".................................#......!....",
+            "................................###.....!....",
+            "...............................#####....!..2#",
+            "..............................########1.!.2##",
+            ".............................################",
+            "............................#################",
+            "...........................##################",
+            "....................!.....###################",
+            ".............!......!.hh.####################",
+            "............!!!....2#########################",
+            "............!!!...2##########################",
+            "............!!!..2###########################",
+            "1............!..2############################",
+            "#1...........!.2#############################",
+            "##1....hh...2################################",
+            "###1.2#############.....#####################",
+            "###################......####################",
+            "###################.......###################",
+            "###################........##################",
+            "###################.........#################"
+          ]
+        },
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "bounds": {
+          "maxY": 257,
+          "maxX": 2472,
+          "minX": 2428,
+          "minY": 229
+        },
+        "coordinates": "Tile cells; 16 world pixels per tile; +X right,+Y down; rows[y][x] relative to origin"
+      },
+      "clock": "server_utc_at_projection",
+      "actorSlot": 254,
+      "worldSessionId": "a85eb6ca204849b1a8736b0b929fe94b",
+      "observedAtUnixMs": 1793182065977,
+      "gameUpdate": 1019,
+      "actorGeneration": 1,
+      "valid": true
+    },
+    "action": {
+      "actionId": "b92f39be580b4d9da37bca6cef7e78ad",
+      "session": "89ab8a62247642798f44437b1cda7f89",
+      "evidence": {
+        "updates": 174,
+        "y": 3902,
+        "x": 39194.37,
+        "effectStatus": "native_navigation_observed",
+        "grounded": true,
+        "targetX": 39194.598,
+        "observedGameUpdate": 1016,
+        "velocityBeforeRelease": {
+          "Y": 0,
+          "X": 0
+        },
+        "settled": true,
+        "startX": 39322.598,
+        "safeSupport": true,
+        "arrived": true,
+        "vx": 0,
+        "vy": 0,
+        "navigation": {
+          "Frame": 55,
+          "PlanMilliseconds": 22.6363,
+          "ActualLanding": {
+            "Y": 3902,
+            "X": 39194.37
+          },
+          "SafeSupport": null,
+          "ExpectedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "CompletedActions": 4,
+          "ObservedGrounded": null,
+          "PredictedLanding": {
+            "Y": 3902,
+            "X": 39194.37
+          },
+          "Status": "arrived",
+          "LandingConfirmationFrames": 0,
+          "PlanNumber": 4,
+          "ObservedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "ReachedGoal": true,
+          "Session": 7,
+          "Action": "jump",
+          "TimeBudgetReached": false,
+          "HoldFrames": 4,
+          "LastLanding": {
+            "MaxError": 0,
+            "Jump": true,
+            "ActionNumber": 4,
+            "Settled": true,
+            "ActualVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "PredictedVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "Actual": {
+              "Y": 3902,
+              "X": 39194.37
+            },
+            "Predicted": {
+              "Y": 3902,
+              "X": 39194.37
+            }
+          },
+          "Expansions": 5,
+          "PlannedActions": 1,
+          "CompletedJumps": 3,
+          "MaxError": 0,
+          "Generation": 1,
+          "ExpectedPosition": {
+            "Y": 3902,
+            "X": 39194.37
+          },
+          "ObservedPosition": {
+            "Y": 3902,
+            "X": 39194.37
+          },
+          "Reason": "horizontal goal crossed on safe settled ground",
+          "TargetRegion": null,
+          "TargetX": 39194.598
+        }
+      },
+      "reasonDetail": null,
+      "completed": true,
+      "cancelled": false,
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_inputs_released",
+        "inputsAcquired": true,
+        "worldSessionId": "a85eb6ca204849b1a8736b0b929fe94b",
+        "operation": "navigate_to_x",
+        "actorId": "2005ff5f7ae74570b492dbb147b06ebc",
+        "inputsReleased": true,
+        "gameUpdate": 1016,
+        "actorGeneration": 1,
+        "effectVerified": true,
+        "actorSlot": 254,
+        "observationSequence": 2035
+      },
+      "operation": "navigate_to_x",
+      "actionGeneration": 1,
+      "reason": "native_navigation_arrival_verified",
+      "endEvidenceStatus": "known",
+      "status": "completed",
+      "valid": true,
+      "targetRegion": null,
+      "controlGeneration": 1
+    },
+    "terrain": {
+      "available": true,
+      "binding": {
+        "slot": 254,
+        "generation": 1,
+        "actor": "2005ff5f7ae74570b492dbb147b06ebc",
+        "world": "a85eb6ca204849b1a8736b0b929fe94b"
+      },
+      "data": {
+        "complete": true,
+        "scannedCount": 1305,
+        "scope": "45x29 collision categories, not tile types or visibility; unknown Mod collision hooks; no path guarantee",
+        "legend": ". clear/nonblocking/actuated; # solid; h halfblock; 1..4 slopes; = platform; a/b platform slopes; ! liquid or hazard; ? unknown collision or world boundary",
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+        "state": {
+          "dead": false,
+          "centerWorldPixels": {
+            "y": 3835,
+            "x": 39332.598
+          },
+          "id": 254,
+          "direction": -1,
+          "positionWorldPixels": {
+            "y": 3814,
+            "x": 39322.598
+          },
+          "velocityPixelsPerTick": {
+            "y": 0,
+            "x": 0
+          }
+        },
+        "source": "server_ai_player",
+        "unknownCount": 0,
+        "terrain": {
+          "tileSize": 16,
+          "supported": true,
+          "originY": 224,
+          "originX": 2436,
+          "playerHeight": 42,
+          "grounded": true,
+          "playerWidth": 20,
+          "rows": [
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            ".............................................",
+            "...............................!!............",
+            "...............................!!.........2##",
+            ".........................#......!......2#####",
+            "........................###.....!....2#######",
+            ".......................#####....!..2#########",
+            "......................########1.!.2##########",
+            ".....................########################",
+            "....................#########################",
+            "...................##########################",
+            "............!.....###########################",
+            ".....!......!.hh.############################",
+            "....!!!....2#################################",
+            "....!!!...2##################################",
+            "....!!!..2###################################",
+            ".....!..2####################################",
+            ".....!.2#####################################",
+            "h...2########################################"
+          ]
+        },
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "bounds": {
+          "maxY": 252,
+          "maxX": 2480,
+          "minX": 2436,
+          "minY": 224
+        },
+        "coordinates": "Tile cells; 16 world pixels per tile; +X right,+Y down; rows[y][x] relative to origin"
+      },
+      "clock": "server_utc_at_projection",
+      "actorSlot": 254,
+      "worldSessionId": "a85eb6ca204849b1a8736b0b929fe94b",
+      "observedAtUnixMs": 1793182062979,
+      "gameUpdate": 839,
+      "actorGeneration": 1,
+      "valid": true
+    }
+  }
+}

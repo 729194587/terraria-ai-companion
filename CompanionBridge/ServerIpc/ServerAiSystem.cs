@@ -47,7 +47,7 @@ public sealed class ServerAiSystem : ModSystem
     // it never calls Player.Update or changes HasClients.
     private static void IdleTick()
     {
-        if (!Netplay.HasClients) { current?.Pump(); ServerAiActionFixture.Tick(); }
+        if (!Netplay.HasClients) { current?.Pump(); ServerAiActionFixture.Tick(); ServerAiNaturalFixture.Tick(); }
         // Isolated native harness only; no shutdown operation exists on IPC.
         if (Program.LaunchParameters.ContainsKey("-companionaiipctest") && Program.IsMainThread
             && System.IO.File.Exists(System.IO.Path.Combine(Main.SavePath, "g81-test-stop")))
@@ -131,7 +131,7 @@ public sealed class ServerAiSystem : ModSystem
         ProbeSession.Log("ai-chat",new{authorSlot=p.whoAmI,expected.World,expected.Generation,text});
         return new{status="published",authorSlot=p.whoAmI,worldSessionId=expected.World,actorGeneration=expected.Generation,gameUpdate=Main.GameUpdateCount};
     }
-    private void Stop() { spawnPending = false; server?.Dispose(); server = null; ServerAiActionFixture.Reset(); }
+    private void Stop() { spawnPending = false; server?.Dispose(); server = null; ServerAiActionFixture.Reset(); ServerAiNaturalFixture.Reset(); }
     public override void OnWorldUnload() => Stop();
     public override void Unload() { Stop(); if (ReferenceEquals(current, this)) current = null; }
 }
