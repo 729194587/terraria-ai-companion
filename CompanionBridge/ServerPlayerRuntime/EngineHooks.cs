@@ -92,6 +92,7 @@ public sealed class VirtualPlayerEngineProbe
         ActorMining.Install(Install);
         ActorPlacement.Install(Install);
         ActorItemUse.Install(Install);
+        ActorCrafting.Initialize();
         Install(() => On_Player.Update += NativeSurvival.Update, () => On_Player.Update -= NativeSurvival.Update);
         Ready = allocatorPatched && cleanupPatched && syncPatched && savePatched;
         if (!Ready) throw new InvalidOperationException("Incomplete IL hook installation.");

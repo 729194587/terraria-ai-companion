@@ -8,6 +8,8 @@
 
 ## 后续开发方向
 
+**0.1.60** 独立Server AI新增原生 `query_recipes/craft_recipe`：查询加载配方、真实材料/附近制作站与已支持条件，再按返回的recipeId/token执行指定次数。执行器不选择制作目标或串联资源任务；保留部分完成、取消和unknown证据，不自动重试。原生采集→拾取→查询→合成串联已自动验证，真实DeepSeek待验收，见[原生合成接口与边界](SERVER_AI_CRAFTING.md)。
+
 **0.1.59** 独立 Server AI 的 `observe_scene` 提供可直读的局部二维场景、对象与危险来源，`landingRegions.items[].target` 可直接传给 `navigate_to_landing_region`，`placementCandidates.items[].target` 可供原生放置尝试。Agent 自主选择目标、生成程序和核验结果；候选不保证可达或原生放置成功，失败/unknown不自动重试。旧按需查询保留。定向比较减少了查询和坐标加工，但地图内容更多；真实DeepSeek对比待验收，见[接口、实测与限制](LOCAL_SEMANTIC_SCENE.md)。
 
 探索方向、目标选择、是否继续或改变计划，主要由LLM Agent根据玩家目标与实际观察自行生成Lua决定；原生导航器将Agent选定的目标转换为实际移动。

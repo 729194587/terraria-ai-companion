@@ -32,6 +32,8 @@ class Host(socketserver.ThreadingTCPServer):
         self.reads = True
         self.perception = False
         self.scene = False
+        self.crafting = False
+        self.crafting_override = {}
         self.actions = False
         self.placement = False
         self.placement_override = {}
@@ -79,6 +81,8 @@ class Handler(socketserver.StreamRequestHandler):
                 data = dict(capabilities=['server_ai_atomic_v1', 'atomic_operations_v1', 'hotbar_keys_v1'])
                 if h.reads:
                     data['capabilities'].append('server_ai_reads_v1')
+                if h.crafting:
+                    data['capabilities'].append('server_ai_crafting_v1')
                 if h.scene:
                     data['capabilities'].append('server_ai_scene_v1')
                 if h.perception:
@@ -127,6 +131,8 @@ class Handler(socketserver.StreamRequestHandler):
                                 status='running', reason='accepted', executionState='accepted', durationMs=300,
                                 evidence=dict(targetSlot=(key + 9) % 10, selectionApplied=False),
                                 endEvidenceStatus='not_ended', endEvidence=None)
+                if r['operation'] == 'craft_recipe':
+                    h.action['targetRecipe'] = copy.deepcopy(r['arguments'])
                 if r['operation'] == 'place_tile':
                     h.action['targetTile'] = copy.deepcopy(r['arguments'])
                 if r['operation'] == 'navigate_to_landing_region':
@@ -155,6 +161,11 @@ class Handler(socketserver.StreamRequestHandler):
                                              targetAbsent=True, targetChanged=False, effectStatus='unconfirmed')
                         a['endEvidence'].update(phase='ServerAI_game_thread_inputs_released', inputsAcquired=True,
                                                 inputsReleased=True, effectVerified=True, operation=a['operation'])
+                        if a['operation'] == 'craft_recipe':
+                            g=a['targetRecipe']
+                            a['evidence'].update(recipeId=g['recipeId'],recipeToken=g['recipeToken'],requestedCrafts=g['crafts'],completedCrafts=g['crafts'],producedCount=g['crafts'],outputTypeId=36,outputCountPerCraft=1,inventoryVerified=True,mutationAttempted=True,batches=[{'consumed': [{'typeId':9,'count':10}]}]*g['crafts'])
+                            a['evidence'].update(h.crafting_override)
+                            if h.mode == 'changed_recipe':a['targetRecipe']={**g,'recipeId':999}
                         if a['operation'] == 'place_tile':
                             a['evidence'].update(placedByActor=True,targetPresent=True,targetChanged=False,consumedCount=1,**a['targetTile'])
                             a['evidence'].update(h.placement_override)

@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.59","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.60","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -133,6 +133,9 @@ public static class ServerAiPackageTests
         var sceneIL=Walk(scene).SelectMany(t=>t.Methods).Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).ToArray();
         Check(!sceneIL.Any(i=>i.Operand is MethodReference r&&r.Name is "PlaceTile" or "KillTile" or "set_HasTile" or "get_LocalPlayer" or "Move"),"scene observer never mutates terrain, simulates movement or falls back to human");
         Check(sceneIL.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.Name=="NativeMotionWorld"&&r.Name=="SafeFlatLanding"),"scene landing candidates reuse native navigation flat landing checks");
+        var craftingIL=Walk(Type("ActorCrafting")).SelectMany(t=>t.Methods).Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).ToArray();
+        Check(!craftingIL.Any(i=>i.OpCode==OpCodes.Stsfld&&i.Operand is FieldReference f&&f.DeclaringType.Name=="Main"&&f.Name is "myPlayer" or "mouseItem"),"crafting never impersonates global player or mouse inventory");
+        Check(craftingIL.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.Name=="Player"&&r.Name=="GetItem")&&craftingIL.Any(i=>i.Operand is MethodReference r&&r.Name=="CollectedEnoughItemsToCraftRecipeNew"),"crafting reuses native material availability and inventory receipt");
         Console.WriteLine($"AI formal package: {checks} IL checks passed; no graphical game launched.");
     }
 }

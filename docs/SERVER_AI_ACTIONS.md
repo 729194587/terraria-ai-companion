@@ -1,6 +1,8 @@
 # Lua 的服务器 AI 移动、使用与目标格工具操作
 
-当前增量：PR #25 / CompanionBridge **0.1.58** 接通基础 `place_tile`，见[原生放置与验证](SERVER_AI_PLACEMENT.md)。
+当前增量：PR #25 / CompanionBridge **0.1.60** 新增原生配方查询与合成，见[合成接口、材料/站点/环境边界及实测](SERVER_AI_CRAFTING.md)。
+
+前序增量：**0.1.58** 接通基础 `place_tile`，见[原生放置与验证](SERVER_AI_PLACEMENT.md)。
 历史增量：**0.1.51** 增加铜斧空挥及原生树干砍伐。
 实现、分层证据和实机步骤见 [R2/R3 验证说明](R2_R3_COPPER_AXE.md)；下方历史验证不代表本轮图形验收。
 已补录 0.1.51 的 Host & Play 基础采集通过记录；**0.1.52** 将成功/失败原因码与诊断详情分离，见 [回执原因说明](ACTION_RECEIPT_REASONS.md)。

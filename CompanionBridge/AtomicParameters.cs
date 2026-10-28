@@ -32,6 +32,13 @@ internal static class AtomicParameters
                     if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards"}).Any())throw new FormatException("Unexpected scene parameter.");
                     foreach(string key in keys)Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
                     break;
+                case "query_recipes":
+                    if(keys.Except(new[]{"resultType","availableOnly","limit","offset"}).Any())throw new FormatException("Unexpected recipe parameter.");
+                    if(keys.Contains("resultType"))Integer("resultType",1,int.MaxValue);
+                    if(keys.Contains("limit"))Integer("limit",1,24);
+                    if(keys.Contains("offset"))Integer("offset",0,100000);
+                    if(keys.Contains("availableOnly")&&args.GetProperty("availableOnly").ValueKind is not (JsonValueKind.True or JsonValueKind.False))throw new FormatException("Invalid availableOnly.");
+                    break;
                 case "resolve_content":
                     if (keys.Except(new[] { "kind", "query", "mode", "maxResults" }).Any()
                         || !keys.Contains("kind") || !keys.Contains("query")) throw new FormatException("Invalid resolver parameters.");
@@ -121,6 +128,11 @@ internal static class AtomicParameters
                     throw new FormatException("Landing X bounds must be ordered.");
                 break;
             case "navigate_to_x": Fields("targetX"); Number(args.GetProperty("targetX"), 0, 1000000); break;
+            case "craft_recipe":
+                Fields("recipeId","recipeToken","crafts");Integer("recipeId",0,100000);Integer("crafts",1,20);
+                var recipeToken=args.GetProperty("recipeToken");
+                if(recipeToken.ValueKind!=JsonValueKind.String||recipeToken.GetString().Length!=64||recipeToken.GetString().Any(c=>!(c is >= '0' and <= '9' or >= 'a' and <= 'f')))throw new FormatException("Invalid recipe token.");
+                break;
             case "drop_through_platform": Fields(); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
             case "mine_tile": case "place_tile": case "interact_tile": case "mine_wall": case "place_wall": case "hammer_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;

@@ -51,7 +51,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         try
         {
             object context;
-            if(operation=="navigate_to_x")context=navigation.Start(identity,args.GetProperty("targetX").GetSingle());
+            if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
+            else if(operation=="navigate_to_x")context=navigation.Start(identity,args.GetProperty("targetX").GetSingle());
             else if(operation=="navigate_to_landing_region")context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args));
             else if(operation=="place_tile")
             {
@@ -87,6 +88,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
         var p=(Player)h.Identity.Actor;
+        if(h.Operation=="craft_recipe")
+        {
+            var c=(ActorCrafting.Context)h.Context;ActorCrafting.Step(c);
+            return new(c.Status,c.Reason,ActorCrafting.Evidence(c),Released(p),c.Status=="completed",InputsAcquired:false);
+        }
         if(IsNavigation(h.Operation))
         {
             if(!ReferenceEquals(navigation.Current,h.Context))return new("unknown","native_context_changed",null,false);
@@ -133,6 +139,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public Result Cancel(AiReadOnlyProtocol.Identity identity,object value)
     {
         var h=(Handle)value;Require(h.Identity);
+        if(h.Rejection!=null)return h.Rejection;
+        if(h.Operation=="craft_recipe")
+        {
+            var c=(ActorCrafting.Context)h.Context;
+            if(c.Status=="running"){c.Status="cancelled";c.Reason="explicit_stop";}
+            return new(c.Status,c.Reason,ActorCrafting.Evidence(c),Released((Player)h.Identity.Actor),c.Status=="completed",InputsAcquired:false);
+        }
         var observed=Poll(h.Identity,h);
         if(observed.Status!="running")return observed;
         var p=(Player)h.Identity.Actor;

@@ -29,7 +29,10 @@ INVENTORY_SLOT = {"type": "integer", "minimum": 0, "maximum": 49}
 INVENTORY_TOKEN = {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"}
 INVENTORY_GUARDS = {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN,
                     "destinationToken": INVENTORY_TOKEN}
-TOOLS = [tool("observe_scene", "服务器AI局部45×29二维侧视语义图：几何/对象/危险来源、可直接用于导航的landingRegions.items[].target和place_tile候选。单次游戏线程采样；候选不保证可达/放置成功，树组件不是整树计数；检查coverage与各集合truncated。",
+TOOLS = [tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
+    {"resultType":{"type":"integer","minimum":1},"availableOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":24},"offset":{"type":"integer","minimum":0,"maximum":100000}}),
+    tool("craft_recipe", "按新鲜query_recipes的recipeId/recipeToken原生合成，crafts是配方执行次数1..20，不是产物件数；每次重查材料/制作站/空间。可能部分完成，不回滚或失败后自动重试。",
+    {"recipeId":{"type":"integer","minimum":0,"maximum":100000},"recipeToken":INVENTORY_TOKEN,"crafts":{"type":"integer","minimum":1,"maximum":20}},["recipeId","recipeToken","crafts"]),tool("observe_scene", "服务器AI局部45×29二维侧视语义图：几何/对象/危险来源、可直接用于导航的landingRegions.items[].target和place_tile候选。单次游戏线程采样；候选不保证可达/放置成功，树组件不是整树计数；检查coverage与各集合truncated。",
     {key:{"type":"integer","minimum":1,"maximum":64 if key=="maxHazards" else 24 if key=="maxRegions" else 32}
      for key in ("maxObjects","maxRegions","maxPlacements","maxHazards")}),tool("get_player_state", "读取真实玩家位置/速度/生命和地面支撑及运动模型支持状态。"),
     tool("get_player_status", "紧凑玩家状态：生命/魔力、运动和液体、所选完整物品、非空装备及活跃Buff；背包仅槽位摘要。不是完整背包，Mod自定义状态未知。"),
@@ -90,7 +93,7 @@ TOOLS = [tool("observe_scene", "服务器AI局部45×29二维侧视语义图：�
     tool("stop_action", "取消当前Agent动作并等待游戏线程输入释放证据，不抢占手动控制。")]
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration'}
+READS |= {'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -119,6 +122,8 @@ def validate(name, arguments):
                 shown = repr(value)[:80] if type(value) in (int, float, bool) else type(value).__name__
                 raise ValueError(f'{path}: expected finite {kind} in [{low}, {high}], got {shown}; fractional values are not rounded')
             return int(value) if kind == 'integer' else value
+        if kind == 'boolean' and type(value) is not bool:
+            raise ValueError(f'{path}: expected boolean')
         if kind == 'string':
             if not isinstance(value, str) or not schema.get('minLength', 0) <= len(value) <= schema.get('maxLength', math.inf) or 'enum' in schema and value not in schema['enum'] or 'pattern' in schema and re.fullmatch(schema['pattern'], value) is None:
                 raise ValueError(f'{path}: invalid string, category or entity reference')
@@ -154,15 +159,31 @@ async def command(bridge, cmd, **args):
 def result(action, generation):
     return {'valid': True, 'status': action['status'], 'reason': action['reason'], 'reasonDetail': action.get('reasonDetail'),
             'operation': action.get('operation'), 'actionId': action['actionId'],
-            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'),
+            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'), 'targetRecipe': action.get('targetRecipe'),
             'evidence': action.get('evidence'), 'endEvidence': action.get('endEvidence'),
             'endEvidenceStatus': action.get('endEvidenceStatus'), 'controlGeneration': generation,
             'completed': action['status'] == 'completed', 'cancelled': action['status'] == 'cancelled'}
 
 
+def verified_server_craft(action, evidence):
+    goal = action.get('targetRecipe')
+    return (isinstance(goal, dict) and set(goal) == {'recipeId', 'recipeToken', 'crafts'}
+            and type(goal['recipeId']) is int and type(goal['crafts']) is int and 1 <= goal['crafts'] <= 20
+            and type(evidence.get('recipeId')) is int and type(evidence.get('requestedCrafts')) is int
+            and evidence.get('recipeId') == goal['recipeId'] and evidence.get('recipeToken') == goal['recipeToken']
+            and type(evidence.get('completedCrafts')) is int and evidence['completedCrafts'] == goal['crafts']
+            and evidence.get('requestedCrafts') == goal['crafts'] and evidence.get('inventoryVerified') is True
+            and type(evidence.get('producedCount')) is int and evidence['producedCount'] > 0
+            and type(evidence.get('outputTypeId')) is int and evidence['outputTypeId'] > 0
+            and type(evidence.get('outputCountPerCraft')) is int and evidence['outputCountPerCraft'] > 0
+            and evidence['producedCount'] == goal['crafts'] * evidence['outputCountPerCraft']
+            and evidence.get('mutationAttempted') is True
+            and isinstance(evidence.get('batches'), list) and len(evidence['batches']) == goal['crafts'])
+
+
 def same_action(expected, current):
     return isinstance(current, dict) and all(current.get(key) == expected.get(key) for key in
-        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'actorId', 'actorSlot'))
+        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'actorId', 'actorSlot'))
 
 
 def verify_landing_start(action, arguments, *, server_ai=False):
@@ -224,6 +245,7 @@ async def terminal(bridge, action, generation):
         'navigate_to_x': native_evidence.get('arrived') is True,
         'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
+        'craft_recipe': verified_server_craft(action, native_evidence),
         'place_tile': (isinstance(action.get('targetTile'), dict)
                        and set(action['targetTile']) == {'x', 'y'}
                        and all(type(action['targetTile'][key]) is int and type(native_evidence.get(key)) is int for key in ('x', 'y'))
@@ -239,7 +261,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile')
+                  and action.get('operation') in ('navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'craft_recipe')
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -299,6 +321,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         if lifecycle is not None:
             lifecycle.update(copy.deepcopy(fields))
     arguments = validate(name, arguments)
+    if name in {'query_recipes','craft_recipe'} and 'server_ai_crafting_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_crafting_v1; no crafting RPC started')
     if name == 'observe_scene' and 'server_ai_scene_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_scene_v1; no scene query started')
     supported = getattr(bridge, 'supported_atomic_operations', None)
@@ -316,7 +340,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
         return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
-    if name in {'observe_scene', 'observe_terrain', 'scan_tiles', 'scan_entities', 'inspect_tile', 'resolve_content'} and 'server_ai_perception_v1' in bridge.hello.get('capabilities', []):
+    if name in {'query_recipes', 'observe_scene', 'observe_terrain', 'scan_tiles', 'scan_entities', 'inspect_tile', 'resolve_content'} and 'server_ai_perception_v1' in bridge.hello.get('capabilities', []):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):
@@ -387,6 +411,12 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             verify_landing_start(action, arguments, server_ai='server_ai_atomic_v1' in bridge.hello.get('capabilities', []))
             landing_invalid = False
             landing_identity = dict(action)
+        if name == 'craft_recipe':
+            placement_invalid = True
+            if action.get('targetRecipe') != arguments:
+                raise BridgeError('Craft target missing or different in start receipt')
+            placement_invalid = False
+            placement_identity = dict(action)
         if name == 'place_tile' and 'server_ai_place_tile_v1' in bridge.hello.get('capabilities', []):
             placement_invalid = True
             if (action.get('targetTile') != arguments

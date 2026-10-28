@@ -37,7 +37,7 @@ public static class ServerAiNativeActionOfflineTests
         internal void Tick()=>Actions.Tick(()=>Current,(_,_)=>throw new Exception("long actions may not use selection adapter"));
         internal JsonElement Action(string id)=>Send("action",id).GetProperty("data").GetProperty("action");
         internal string Start(string operation="mine_tile",CancellationToken token=default){string id=Guid.NewGuid().ToString("N");Send("start",id,operation,token,
-            operation=="navigate_to_landing_region"?new{minPlayerLeftX=100,maxPlayerLeftX=140,surfaceY=200}:null);Tick();Tick();return id;}
+            operation=="navigate_to_landing_region"?(object)new{minPlayerLeftX=100,maxPlayerLeftX=140,surfaceY=200}:operation=="craft_recipe"?new{recipeId=12,recipeToken=new string('a',64),crafts=3}:null);Tick();Tick();return id;}
     }
     public static void Run()
     {
@@ -91,7 +91,12 @@ public static class ServerAiNativeActionOfflineTests
                 "placement receipt fixes tile coordinates and ten-second deadline");
             Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_place_tile_v1")>=0,"placement capability is explicit");
         }
-        foreach(string op in new[]{"navigate_to_x","navigate_to_landing_region","use_item","mine_tile","place_tile"})
+        {
+            var f=new Fixture();string id=f.Start("craft_recipe");var a=f.Action(id);
+            Check(a.GetProperty("targetRecipe").GetProperty("recipeId").GetInt32()==12&&a.GetProperty("targetRecipe").GetProperty("crafts").GetInt32()==3,"craft receipt fixes recipe identity and execution count");
+            Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_crafting_v1")>=0,"craft capability is explicit");
+        }
+        foreach(string op in new[]{"navigate_to_x","navigate_to_landing_region","use_item","mine_tile","place_tile","craft_recipe"})
         {
             var f=new Fixture();string id=f.Start(op);
             Check(f.Native.Starts==1&&f.Action(id).GetProperty("status").GetString()=="running","accepted/running precede "+op+" native completion");

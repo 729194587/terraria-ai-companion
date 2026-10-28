@@ -21,5 +21,6 @@ public static class ServerAiToolPatchTests
         ItemUseOfflineTests.Run(engine);
         MiningOfflineTests.Run(engine);
         PlacementPatchOfflineTests.Run(engine);
+        CraftingPatchOfflineTests.Run(engine);
     }
 }

@@ -52,8 +52,11 @@ class Game:
 
 class ValidationTests(unittest.TestCase):
     def test_schema_dispatch_and_tool_names(self):
-        self.assertEqual(27, len(atomic.TOOLS))
-        self.assertTrue(set(atomic.SCHEMAS) <= {t['function']['name'] for t in TOOLS})
+        self.assertEqual(30, len(atomic.TOOLS))
+        server_only={'observe_scene','query_recipes','craft_recipe'}
+        client_names={t['function']['name'] for t in TOOLS}
+        self.assertTrue(set(atomic.SCHEMAS)-server_only <= client_names)
+        self.assertTrue(server_only.isdisjoint(client_names))
         for name, args in [('mine_tile', {'x': 1.5, 'y': 2}), ('place_tile', {'x': True, 'y': 2}),
                            ('select_hotbar_slot', {'slot': 10}), ('navigate_to_x', {'targetX': float('nan')}),
                            ('attack_entity', {'entityRef': 1}), ('scan_entities', {'category': 'bad', 'radius': 10}),
