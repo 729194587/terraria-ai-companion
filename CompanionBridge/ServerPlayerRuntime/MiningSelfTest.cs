@@ -118,6 +118,49 @@ internal static class MiningSelfTest
                 return new{actionId=c.Id,c.X,c.Y,c.TileType,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.AnimationPeak,c.Destroyed,progressBeforeDestruction=progress,worldDrop=true,hitPackets,tilePackets,dropPackets,firstTickControls};
             }
             evidence.Add(Mine(TileID.Stone));
+            // e2d6c35 chained fixture: an NPC hit moved the actor across the
+            // native right-edge reach boundary after exactly one 35-damage strike.
+            // Replay the recorded relative positions, not NPC AI/RNG or fake damage.
+            {
+                var savedPosition=p.position;var savedVelocity=p.velocity;
+                try
+                {
+                    Check(p.width==20&&p.height==42&&Player.tileRangeX==5&&Player.tileRangeY==4
+                        &&pick.tileBoost==-1&&pick.pick==35,"Unexpected basic copper-pick reach profile.");
+                    object Reach()=>new{x=p.position.X,y=p.position.Y,vx=p.velocity.X,vy=p.velocity.Y,
+                        targetX=x,targetY=y,centerDistance=Microsoft.Xna.Framework.Vector2.Distance(p.Center,new(x*16+8,y*16+8)),
+                        nativeRightTile=(p.position.X+p.width)/16+Player.tileRangeX+pick.tileBoost-1,
+                        Player.tileRangeX,Player.tileRangeY,pick.tileBoost,pick.pick,p.selectedItem};
+                    Target(TileID.Stone);
+                    p.position=new(x*16+8-67.57f,y*16+8-21.1f);p.velocity=new(-4.4f,-3.1f);
+                    var startReach=Reach();Start();Frame();
+                    Check(ActorMining.Current.Ticks==1&&ActorMining.Current.Strikes==1&&ActorMining.Current.PeakDamage==35
+                        &&ActorMining.Running&&Main.tile[x,y].HasTile,"Recorded in-range start did not produce one partial native strike.");
+                    // Diagnostic state injection at the next recorded check; not a movement/action path.
+                    p.position=new(x*16+8-76.07f,y*16+8-26.1f);p.velocity=new(-4.2f,-2.3f);
+                    var failedReach=Reach();
+                    Check(Microsoft.Xna.Framework.Vector2.Distance(p.Center,new(x*16+8,y*16+8))<80,
+                        "Regression must remain inside conservative center radius.");
+                    Frame();var lost=ActorMining.Current;
+                    Check(lost.Phase==ActionPhase.Failed&&lost.Reason==ActorMining.Failure.OutOfRange
+                        &&lost.Ticks==1&&lost.Strikes==1&&lost.PeakDamage==35&&!lost.Destroyed&&Main.tile[x,y].HasTile
+                        &&!p.controlUseItem&&!p.channel&&p.itemAnimation==0&&p.itemTime==0,
+                        "Leaving native reach after partial progress must fail and release, never complete/retry.");
+                    // A separate explicit diagnostic case at the settled recorded position.
+                    Target(TileID.Stone);p.position=new(x*16+8-63.17f,y*16+8-18);p.velocity=Microsoft.Xna.Framework.Vector2.Zero;
+                    var stationaryReach=Reach();Start();
+                    for(int i=0;ActorMining.Running&&i<610;i++)Frame();
+                    var stationary=ActorMining.Current;
+                    Check(stationary.Phase==ActionPhase.Completed&&stationary.Destroyed&&!Main.tile[x,y].HasTile
+                        &&stationary.Strikes==3&&stationary.PeakDamage==105&&!p.controlUseItem,
+                        "Same target/tool at stationary in-range position must still complete natively.");
+                    evidence.Add(new{caseName="chained-knockback-native-reach",mode="recorded relative post-hurt state injection; real ItemCheckWrapped and native range",
+                        startReach,failedReach,stationaryReach,failed=new{lost.Ticks,lost.Strikes,lost.PeakDamage,reason=lost.Reason.ToString(),lost.Destroyed},
+                        stationary=new{stationary.Ticks,stationary.Strikes,stationary.PeakDamage,stationary.Destroyed}});
+                }
+                finally{p.position=savedPosition;p.velocity=savedVelocity;}
+            }
+
             // Surface grass is a solid block, distinct from cuttable plants.
             // Reproduce the live failure with a real copper pick and native API.
             for(int round=0;round<2;round++)

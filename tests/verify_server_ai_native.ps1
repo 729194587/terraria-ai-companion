@@ -114,7 +114,15 @@ try {
             & $PythonExecutable (Join-Path $repo 'scripts/server_ai_perception.py') --port $IpcPort --output "$profile/lua-perception-result.json"
             if($LASTEXITCODE -ne 0){throw 'Native Lua perception verification failed'}
             $perceptionResult=Get-Content -LiteralPath "$profile/lua-perception-result.json" -Raw|ConvertFrom-Json
+            if(!@($perceptionResult.value.npcs.data.items | Where-Object slot -eq $fixture.perceptionNpcSlot).Count){throw 'Perception did not observe the controlled fixture NPC'}
         }
+        # The live NPC used by perception must not leak contact damage/knockback
+        # into the following non-combat action checks (including the semantic chain).
+        [IO.File]::WriteAllText("$profile/action-fixture-no-combat",'End NPC perception phase; isolate subsequent action checks.')
+        $isolationDeadline=[DateTime]::UtcNow.AddSeconds(10)
+        while(!(Test-Path -LiteralPath "$profile/action-fixture-no-combat.json") -and [DateTime]::UtcNow -lt $isolationDeadline){Start-Sleep -Milliseconds 100}
+        $combatIsolation=Get-Content -LiteralPath "$profile/action-fixture-no-combat.json" -Raw|ConvertFrom-Json
+        if($combatIsolation.world -ne $bound.binding.world -or $combatIsolation.generation -ne $bound.binding.generation -or $combatIsolation.slot -ne $bound.binding.slot){throw 'Combat isolation acknowledgement has stale binding'}
         if($Semantic){
             & $PythonExecutable (Join-Path $repo 'scripts/server_ai_semantic.py') --port $IpcPort --output "$profile/lua-semantic-result.json"
             if($LASTEXITCODE -ne 0){throw 'Native semantic verification failed'}
@@ -194,6 +202,10 @@ try {
     })
     # Persist only this process/world/time window, never search a shared log as evidence.
     $events|ForEach-Object {$_|ConvertTo-Json -Compress -Depth 12}|Set-Content -LiteralPath "$profile/server.log"
+    if($Actions){
+        $lateHurts=@($events | Where-Object {$_.eventName -eq 'native-hurt' })
+        if($lateHurts.Count){throw 'NPC combat leaked into non-combat fixture; retain raw server.log'}
+    }
     $lifecycle=Assert-ServerAiRunTeardown -Events $events
     $report=@{result='passed';mode='isolated real native dedicated server; no graphical Host & Play';binding=$bound.binding;state=$state.data;pythonClient='passed';bindingMismatchError=$bindingMismatch.error;bindingMismatchTest='request generation is current generation + 1; no native lifecycle change';nativeGenerationLifecycle='NOT RUN';actionError=$action.error;exitCode=$process.ExitCode;processId=$process.Id;startedUtc=$startedUtc.ToString('O');exitedUtc=$exitedUtc.ToString('O');logScope='process ID + bound world session + process lifetime';spawn=$lifecycle.spawn;teardown=$lifecycle.teardown;packageSHA256=(Get-FileHash -LiteralPath $package).Hash}
     if($Atomic){
@@ -209,7 +221,7 @@ try {
     if($Agent){$report.agent=$agentResult}
     if($Semantic){$report.semantic=$semanticResult}
     if($Terrain){$report.terrain=Get-Content -LiteralPath "$profile/terrain-result.json" -Raw|ConvertFrom-Json}
-    if($Actions){$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
+    if($Actions){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
         $report.nativeCancellations=$nativeCancellations;$report.worldAfterCancel=$worldAfterCancel;$report.emptyTileRefusal=$empty.data.action;
         $report.actionFrameMode='Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.'}
     if($Landing){

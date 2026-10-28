@@ -14,9 +14,11 @@ namespace CompanionBridge.ServerIpc;
 // Drives whole native Game.Update frames because no-client servers otherwise pause.
 internal static class ServerAiActionFixture
 {
-    private static bool initialized, failed;
+    private static bool initialized, failed, combatIsolated;
     private static int x, y;
     private static object observedDrop;
+    private static NPC perceptionNpc;
+    private static Vector2 perceptionPosition;
     private static readonly MethodInfo update = typeof(Main).GetMethod("Update", BindingFlags.Instance | BindingFlags.NonPublic,
         null, new[]{typeof(GameTime)}, null);
     internal static bool Enabled => Program.LaunchParameters.ContainsKey("-companionactionstest")
@@ -52,6 +54,10 @@ internal static class ServerAiActionFixture
                         // Explicit extra flag inside the existing copied-world fixture only.
                         int npc=NPC.NewNPC(p.GetSource_Misc("G85PerceptionFixture"),left*16+240,floor*16-48,NPCID.BlueSlime);
                         Main.npc[npc].velocity=Vector2.Zero;
+                        // Presence/classification fixture, not a combat scenario. Keep
+                        // native type/damage, but prevent AI/RNG from attacking during reads.
+                        Main.npc[npc].aiStyle=-1;Main.npc[npc].noGravity=true;
+                        perceptionNpc=Main.npc[npc];perceptionPosition=perceptionNpc.position;
                         Item.NewItem(p.GetSource_Misc("G85PerceptionFixture"),left*16+240,floor*16-32,16,16,ItemID.StoneBlock,3);
                     }
                     if(Program.LaunchParameters.ContainsKey("-companionlandingtest"))ServerAiLandingFixture.Run(p);
@@ -72,7 +78,42 @@ internal static class ServerAiActionFixture
                     }
                     initialized=true;NetworkStateSync.Full(p);
                     File.WriteAllText(Path.Combine(Main.SavePath,"action-fixture.json"),JsonSerializer.Serialize(new{targetX=p.position.X+64,mineX=x,mineY=y,
-                        initialLife=p.statLife,initialAppleStack=2,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));
+                        initialLife=p.statLife,initialAppleStack=2,perceptionNpcSlot=perceptionNpc?.whoAmI,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));
+                }
+            }
+            // The copied-world perception fixture tests NPC presence, not AI/combat.
+            // Keep only that NPC in its explicit static pose during reads; exclude
+            // ambient NPCs. After the read phase, retire it too. Never rewrite Player
+            // position/velocity, grant immunity, or interfere with native reach checks.
+            lock(ProbeSession.Reservation.Gate)
+            {
+                string isolation=Path.Combine(Main.SavePath,"action-fixture-no-combat");
+                bool isolate=combatIsolated||File.Exists(isolation);
+                var p=ProbeSession.Actor;NetworkStateSync.Require(p);
+                if(isolate&&!combatIsolated&&(ActorControl.Running||ActorItemUse.Running||ActorMining.Running))
+                    throw new InvalidOperationException("Cannot isolate combat during an active action");
+                var removed=Main.npc.Where(n=>n.active&&!n.townNPC&&(isolate||!ReferenceEquals(n,perceptionNpc)))
+                    .Select(n=>new{slot=n.whoAmI,n.type,n.damage,n.aiStyle,n.noGravity,x=n.position.X,y=n.position.Y}).ToArray();
+                foreach(var npc in Main.npc)if(npc.active&&!npc.townNPC)
+                {
+                    if(isolate||!ReferenceEquals(npc,perceptionNpc))npc.active=false;
+                    else
+                    {
+                        if(npc.type!=NPCID.BlueSlime)throw new InvalidOperationException("Perception NPC fixture replaced");
+                        npc.position=perceptionPosition;npc.velocity=Vector2.Zero;npc.aiStyle=-1;npc.noGravity=true;
+                    }
+                }
+                if(removed.Length>0)ProbeSession.Log("action-fixture-npc-removed",new{isolate,removed});
+                if(isolate&&!combatIsolated)
+                {
+                    combatIsolated=true;
+                    var state=new{world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,
+                        gameUpdate=Main.GameUpdateCount,removed,x=p.position.X,y=p.position.Y,vx=p.velocity.X,vy=p.velocity.Y,
+                        p.statLife,selectedSlot=p.selectedItem,itemType=p.HeldItem.type,pick=p.HeldItem.pick,
+                        tileBoost=p.HeldItem.tileBoost,Player.tileRangeX,Player.tileRangeY,
+                        buffs=p.buffType.Where(t=>t!=0).ToArray()};
+                    ProbeSession.Log("action-fixture-combat-isolated",state);
+                    File.WriteAllText(isolation+".json",JsonSerializer.Serialize(state));
                 }
             }
             // Same virtual native method invoked by DedServ_PostModLoad (IL_0dcb).
@@ -110,5 +151,5 @@ internal static class ServerAiActionFixture
             ProbeSession.Quarantine("Isolated action fixture failed: "+e.Message);
         }
     }
-    internal static void Reset(){initialized=failed=false;observedDrop=null;}
+    internal static void Reset(){initialized=failed=combatIsolated=false;observedDrop=null;perceptionNpc=null;perceptionPosition=default;}
 }
