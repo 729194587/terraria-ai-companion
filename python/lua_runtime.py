@@ -285,7 +285,7 @@ class LuaRuntime:
                     continue
                 if message.get('type') == 'done':
                     if message.get('status') not in ('completed', 'script_error', 'instruction_limit',
-                            'memory_limit', 'value_limit', 'bad_argument', 'protocol_error', 'worker_error', 'log_limit'):
+                            'memory_limit', 'value_limit', 'serialization_error', 'bad_argument', 'protocol_error', 'worker_error', 'log_limit'):
                         raise Interrupted('protocol_error')
                     out.update(status=message['status'], value=message.get('value'))
                     if 'error' in message:

@@ -470,11 +470,11 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
             ("api('inspect_inventory'); api('inspect_inventory')", Limits(calls=1), 'call_limit'),
             ('while true do end', Limits(instructions=1000), 'instruction_limit'),
             ('local s="12345678"; for i=1,30 do s=s..s end; return s', Limits(memory=100_000), 'memory_limit'),
-            ('local t={}; t.self=t; return t', Limits(), 'value_limit'),
-            ('return {[1]=1,[3]=3}', Limits(), 'value_limit'),
-            ('return {x=1,[1]=2}', Limits(), 'value_limit'),
-            ('return 0/0', Limits(), 'value_limit'),
-            ('return function() end', Limits(), 'value_limit')):
+            ('local t={}; t.self=t; return t', Limits(), 'serialization_error'),
+            ('return {[1]=1,[3]=3}', Limits(), 'serialization_error'),
+            ('return {x=1,[1]=2}', Limits(), 'completed'),
+            ('return 0/0', Limits(), 'serialization_error'),
+            ('return function() end', Limits(), 'serialization_error')):
             r, _, _ = await self.run_lua(source, limits=limits)
             self.assertEqual(expected, r['status'], source[:40])
 

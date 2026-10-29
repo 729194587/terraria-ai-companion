@@ -23,6 +23,14 @@ class ValueLimit(ValueError):
     pass
 
 
+class SerializationError(ValueError):
+    """Unsupported Lua structure, distinct from exhausted JSON resource bounds."""
+    pass
+
+
+TABLE_ENCODING_KEY = '$luaTable'
+
+
 def encode(value, maximum=FRAME_BYTES):
     """Validate before serializing; reject rather than truncate evidence or arrays."""
     nodes = 0
@@ -125,36 +133,59 @@ def worker(connection, source, limits, helper_source=None):
             return table
         return value
 
-    def plain(value, maximum):
+    same_table = lua.eval('rawequal')  # Private identity check; not a sandbox permission.
+
+    def plain(value, maximum, *, return_value=False):
         nodes = 0
-        def visit(v, depth):
+        active = []
+        def visit(v, depth, path):
             nonlocal nodes
             nodes += 1
             if nodes > MAX_NODES or depth > MAX_DEPTH:
                 raise ValueLimit('value_limit')
-            if module.lua_type(v) != 'table':
+            lua_type = module.lua_type(v)
+            if lua_type != 'table':
+                if type(v) is float and not math.isfinite(v):
+                    raise SerializationError(path+': non-finite number is not JSON')
                 if v is None or type(v) in (bool, int, float, str):
                     return v
-                raise ValueLimit('value_limit')
+                raise SerializationError(path+': unsupported value type '+(lua_type or type(v).__name__))
             tag = kind(v)
             if tag == 'null':
                 return None
-            objects, arrays = {}, {}
-            for key, item in v.items():
-                if type(key) is str and len(key.encode('utf-8')) <= 256:
-                    objects[key] = visit(item, depth + 1)
-                elif type(key) is int and 1 <= key <= MAX_NODES:
-                    arrays[key] = visit(item, depth + 1)
-                else:
-                    raise ValueLimit('value_limit')
-            if objects and arrays or tag == 'array' and objects or tag == 'object' and arrays:
-                raise ValueLimit('value_limit')
-            if arrays or tag == 'array':
-                if len(arrays) != max(arrays, default=0):
-                    raise ValueLimit('value_limit')
-                return [arrays[i] for i in range(1, len(arrays) + 1)]
-            return objects
-        out = visit(value, 0)
+            if any(same_table(v, parent) for parent in active):
+                raise SerializationError(path+': cyclic table reference')
+            active.append(v)
+            try:
+                objects, arrays = {}, {}
+                for key, item in v.items():
+                    if type(key) is str:
+                        if len(key.encode('utf-8')) > 256:
+                            raise ValueLimit('value_limit')
+                        objects[key] = visit(item, depth+1, (path+'['+repr(key[:48])+']')[:200])
+                    elif type(key) is int and key >= 1:
+                        arrays[key] = visit(item, depth+1, (path+'['+str(key)+']')[:200])
+                    else:
+                        raise SerializationError(path+': unsupported table key; use strings or contiguous positive integer keys starting at 1')
+                if arrays and len(arrays) != max(arrays):
+                    raise SerializationError(path+': sparse integer keys; use contiguous 1..n and json.null for explicit nulls')
+                if tag == 'array' and objects or tag == 'object' and arrays:
+                    raise SerializationError(path+': json.array/json.object tag conflicts with table keys')
+                if objects and arrays:
+                    if not return_value:
+                        raise SerializationError(path+': mixed API argument is not plain JSON; API parameters require pure objects/arrays')
+                    return {TABLE_ENCODING_KEY: {'version': 1, 'kind': 'mixed',
+                            'array': [arrays[i] for i in range(1,len(arrays)+1)], 'fields': objects}}
+                if arrays or tag == 'array':
+                    return [arrays[i] for i in range(1,len(arrays)+1)]
+                if return_value and TABLE_ENCODING_KEY in objects:
+                    # Escape literal objects containing the reserved key. No user
+                    # object can impersonate a codec envelope, even when nested.
+                    return {TABLE_ENCODING_KEY: {'version': 1, 'kind': 'object', 'fields': objects}}
+                return objects
+            finally:
+                active.pop()
+        out = visit(value, 0, 'return' if return_value else 'arguments')
         encode(out, maximum)
         return out
 
@@ -182,8 +213,12 @@ def worker(connection, source, limits, helper_source=None):
         connection.send_bytes(encode({'type': 'log', 'id': logs, 'line': line, 'message': message}, REQUEST_BYTES))
 
     try:
-        value = plain(run(source, call, progress, limits.instructions, EXPLORATION_SOURCE if helper_source is None else helper_source, SEMANTIC_SOURCE), VALUE_BYTES)
+        value = plain(run(source, call, progress, limits.instructions, EXPLORATION_SOURCE if helper_source is None else helper_source, SEMANTIC_SOURCE), VALUE_BYTES, return_value=True)
         out = {'type': 'done', 'status': 'completed', 'value': value}
+    except SerializationError as exc:
+        out = {'type': 'done', 'status': 'serialization_error', 'error': str(exc)[:512]}
+    except UnicodeError:
+        out = {'type': 'done', 'status': 'serialization_error', 'error': 'invalid UTF-8 string cannot be represented as JSON'}
     except ValueLimit as exc:
         out = {'type': 'done', 'status': str(exc)}
     except module.LuaMemoryError:
