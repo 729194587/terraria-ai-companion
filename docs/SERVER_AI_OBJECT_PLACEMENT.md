@@ -62,6 +62,8 @@ Python 的 place_object 监督截止也保留取消返回的 unknown，触发既
 
 可选 `layers` 的省略、配套字段和计算依赖见 [场景按需数据层](SERVER_AI_SCENE_LAYERS.md)。
 只需工作台候选时可请求 `{layers={'objectPlacementCandidates'}}`；未传 layers 仍返回原完整观察。
+schemaVersion=2 将逐项 validation 提升至候选集合，保留全部放置诊断和材料/锚点说明，见
+[固定说明精简](SERVER_AI_SCENE_COMPACTION.md)。
 
 增加独立 `objectPlacementCandidates`，沿用 `maxPlacements` 上限和每集合的 matched/returned/
 truncated/omitted 字段；保留原 `placementCandidates`。每项包含可直接传入新动作的 `target`、

@@ -71,7 +71,7 @@ internal static class ServerSceneReader
         void EntityObject(Entity e,string kind,int? type,string key,object detail,char glyph)
         {
             int cx=(int)Math.Floor((e.position.X+e.width/2f)/16),cy=(int)Math.Floor((e.position.Y+e.height/2f)/16);
-            if(layers.Has("objects"))objects.Add(new("e"+(++entitiesScanned),kind,type,key,new(cx,cy,1,1),1,false,"current entity bounds intersect local map; slot is not persistent identity",
+            if(layers.Has("objects"))objects.Add(new("e"+(++entitiesScanned),kind,type,key,new(cx,cy,1,1),1,false,
                 new{boundsWorldPixels=new WorldRect(e.position.X,e.position.Y,e.width,e.height),velocity=new StateVector(e.velocity.X,e.velocity.Y),detail}));
             if(layers.Has("map"))entityMarkers.Add((Math.Clamp(cx-ox,0,44),Math.Clamp(cy-oy,0,28),glyph));
         }
@@ -95,20 +95,15 @@ internal static class ServerSceneReader
         int actorX=Math.Clamp((int)(p.Center.X/16)-ox,0,44),actorY=Math.Clamp((int)(p.Center.Y/16)-oy,0,28);
         var geometry=new Lazy<string[]>(()=>SceneGeometry.GeometryRows(cells));
         var response=new Dictionary<string,object>{
-            ["schemaVersion"]=1,["sceneId"]=sceneId,["gameUpdate"]=tick,
+            ["schemaVersion"]=2,["sceneId"]=sceneId,["gameUpdate"]=tick,
             ["bounds"]=new{minX=ox,minY=oy,maxX=ox+44,maxY=oy+28},["tileSize"]=16,
             ["actor"]=new{slot=p.whoAmI,boundsWorldPixels=actor,feetY=p.Bottom.Y,velocity=new StateVector(p.velocity.X,p.velocity.Y),p.dead,
                 navigationProfileSupported=GameNavigation.Ordinary(p),mapTile=new{x=ox+actorX,y=oy+actorY}},
-            ["coverage"]=new{scannedTiles=1305,unknownCells=unknown,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0,
-                objectScope="vanilla trunks, 19 ore types, chests/dressers, doors/workbenches and intersecting active entities; other objects not classified",
-                treeIdentity="connected observed cells may split one tree or merge adjacent trees; NOT biological tree count; tree complete is always false",
-                candidateScope="geometric only; no route, native placement permission or global completeness guarantee; placement rule is conservative solid cardinal attachment, dry empty cell, player exclusion and 80px"},
+            ["coverage"]=new{scannedTiles=1305,unknownCells=unknown,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0},
             ["limits"]="observation-scoped IDs; no visibility/lighting, contents, persistent map or custom Mod hook interpretation; truncation is per collection, never empty=absent",
             ["includedLayers"]=layers.Included};
-        layers.Add(response,"map",()=>new{rows=SceneGeometry.MapRows(cells,geometry.Value,actorX,actorY,entityMarkers),originX=ox,originY=oy,
-                legend="side view: .=nonblocking #=solid h=halfblock 1..4=slopes ==flat platform a/b=sloped platform; T=trunk component O=ore C=chest D=door W=workbench $=drop N=NPC P=player *=hostile projectile @=AI; ~=water L=lava H=honey S=shimmer !=touch/NPC hazard B=boulder M=unsupported motion surface ?=unknown",
-                priority="unknown collision > tile hazards > actor/entity/object > geometry; overlapping facts remain in geometry/objects/hazards; edge entity markers may be clamped"});
-        layers.Add(response,"geometry",()=>new{rows=geometry.Value,originX=ox,originY=oy,legend="same shapes as navigation, liquids/hazards separated; A=actuated nonblocking; a/b=sloped platforms",meaning="nonblocking is not walkable; walls behind tiles do not block"});
+        layers.Add(response,"map",()=>new{rows=SceneGeometry.MapRows(cells,geometry.Value,actorX,actorY,entityMarkers),originX=ox,originY=oy});
+        layers.Add(response,"geometry",()=>new{rows=geometry.Value,originX=ox,originY=oy});
         layers.Add(response,"objects",()=>
         {
             float Distance(SceneObject o)=>Math.Abs((o.ObservedBounds.X+o.ObservedBounds.Width/2f)*16-p.Center.X)+Math.Abs((o.ObservedBounds.Y+o.ObservedBounds.Height/2f)*16-p.Center.Y);
@@ -119,19 +114,18 @@ internal static class ServerSceneReader
         layers.Add(response,"hazards",()=>
         {
             var tileHazards=SceneGeometry.Hazards(cells,ox,oy).OrderBy(h=>Math.Max(0,Math.Max(h.MinX*16-p.Center.X,p.Center.X-(h.MaxX+1)*16))+Math.Abs(h.Y*16+8-p.Center.Y)).ThenBy(h=>h.Y).ThenBy(h=>h.MinX);
-            return new{tiles=SceneGeometry.Limit(tileHazards,hazardCap),entities=SceneGeometry.Limit(dynamicHazards.OrderBy(h=>h.Distance).Select(h=>h.Value),hazardCap),
-                meaning="liquid facts, contact damage flags and movement exclusions are distinct; glyph is highest-priority source, structured sources may overlap"};
+            return new{tiles=SceneGeometry.Limit(tileHazards,hazardCap),entities=SceneGeometry.Limit(dynamicHazards.OrderBy(h=>h.Distance).Select(h=>h.Value),hazardCap)};
         });
         layers.Add(response,"landingRegions",()=>
         {
             var world=new NativeMotionWorld(new(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,TerrainReader.Read(p).Grounded));
             var landings=p.width==20&&p.height==42?SceneGeometry.Landings(cells,ox,oy,p.position.X,p.Bottom.Y,world.SafeFlatLanding):Array.Empty<SceneLanding>();
-            return SceneGeometry.Limit(landings,landingCap);
+            return SceneGeometry.LimitLandings(landings,landingCap);
         });
         layers.Add(response,"placementCandidates",()=>
         {
             response["placementMaterial"]=new{itemType=p.HeldItem.type,p.HeldItem.stack,p.HeldItem.createTile,hotbarKey=HotbarSlots.KeyForInventorySlot(p.selectedItem),supported=ActorPlacement.Supported(p.HeldItem)};
-            return SceneGeometry.Limit(SceneGeometry.Placements(cells,ox,oy,actor,bodies),placementCap);
+            return SceneGeometry.LimitPlacements(SceneGeometry.Placements(cells,ox,oy,actor,bodies),placementCap);
         });
         layers.Add(response,"objectPlacementCandidates",()=>
         {

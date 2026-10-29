@@ -1,5 +1,9 @@
 # observe_scene 按需数据层
 
+当前 schemaVersion=2 的固定说明精简、候选 validation 迁移及最新字节数见
+[场景说明精简](SERVER_AI_SCENE_COMPACTION.md)。本页旧字段及测量描述记录 cff5ae7 的 schemaVersion=1；
+layers 白名单、includedLayers、配套字段和省略语义在新版保持不变。
+
 基于 61bf2d7；仅增加可选 `layers` 参数和 `data.includedLayers`。没有新 IPC 操作，
 API/动作预算、原生动作、Lua 失败屏障、unknown 隔离和输入释放均不变。
 

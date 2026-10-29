@@ -68,7 +68,7 @@ public static class SceneGeometryTests
         placementGrid[8,13]=new(new("read"),'?');
         Check(!SceneGeometry.Placements(placementGrid,0,0,actor,new[]{actor}).Any(s=>At(s,8,13)),"navigation-unknown empty cell cannot become a placement candidate");
         Check(!SceneGeometry.Placements(Grid(),0,0,actor,new[]{actor,new WorldRect(128,208,16,16)}).Any(s=>At(s,8,13)),"other observed player also excludes candidate");
-        Check(sites.All(s=>s.Validation.Contains("native rules not evaluated")),"candidate does not promise native permission");
+        Check(SceneGeometry.LimitPlacements(sites,12).Validation.Contains("native rules not evaluated"),"collection validation does not promise native permission");
         SceneObjectPlacement[] Benches(SceneCell[,] g,WorldRect[] bodies=null)=>SceneGeometry.ObjectPlacements(g,0,0,actor,bodies??new[]{actor},2,1,0,0,0,2);
         bool BenchAt(SceneObjectPlacement b,int x)=>JsonSerializer.SerializeToElement(b.Target).GetProperty("x").GetInt32()==x&&b.Footprint.Y==13;
         var benches=Benches(Grid());
@@ -87,11 +87,40 @@ public static class SceneGeometryTests
             Check(!Benches(g).Any(b=>BenchAt(b,7)),"second footprint/support cell rejects "+reason);
         }
         Check(!Benches(Grid(),new[]{actor,new WorldRect(128,208,16,16)}).Any(b=>BenchAt(b,7)),"second workbench cell excludes other player");
-        Check(benches.All(b=>b.DistancePixels<=80&&b.Validation.Contains("native rules not evaluated")),"bench candidates are conservative geometric observations");
+        Check(benches.All(b=>b.DistancePixels<=80)&&SceneGeometry.LimitObjectPlacements(benches,12,null).Validation.Contains("native rules not evaluated"),"bench candidates retain geometric collection-level validation");
         Check(SceneGeometry.Limit(benches,0).Truncated,"object placement truncation remains explicit");
         Check(SceneGeometry.Limit(objects,1) is {Truncated:true,ReturnedCount:1} limited&&limited.OmittedCount==objects.Length-1,"collection truncation cannot masquerade as absence");
         ObjectPlacementDiagnostics();
+        MapIsNotAnInvertibleGeometryEncoding();
         Console.WriteLine($"Scene geometry: {checks} checks, shared support/region rules; synthetic grid, not native/LLM acceptance.");
+    }
+    private static void MapIsNotAnInvertibleGeometryEncoding()
+    {
+        var shapes=new[]{'.','#','h','1','2','3','4','=','a','b','A'};
+        foreach(string overlay in new[]{"projectile","liquid"})
+        {
+            var geometries=new System.Collections.Generic.HashSet<char>();
+            var maps=new System.Collections.Generic.HashSet<char>();
+            foreach(char shape in shapes)
+            {
+                bool platform=shape is '=' or 'a' or 'b';
+                int slope=shape is >= '1' and <= '4'?shape-'0':shape=='a'?1:shape=='b'?2:0;
+                var facts=new TileCell("read",shape!='.',shape=='.'?null:1,Solid:!platform&&shape!='.',
+                    SolidTop:platform,HalfBlock:shape=='h',Slope:slope,Actuated:shape=='A',
+                    LiquidAmount:overlay=="liquid"?100:0);
+                var grid=new SceneCell[3,3];for(int y=0;y<3;y++)for(int x=0;x<3;x++)grid[x,y]=Cell('.');
+                grid[1,1]=new(facts,shape,Sources:overlay=="liquid"?new[]{"water"}:Array.Empty<string>());
+                var geometry=SceneGeometry.GeometryRows(grid);
+                var map=SceneGeometry.MapRows(grid,geometry,0,0,overlay=="projectile"?new[]{(1,1,'*')}:Array.Empty<(int,int,char)>());
+                Check(geometry[1][1]==shape,"geometry preserves supported shape: "+shape);
+                geometries.Add(geometry[1][1]);maps.Add(map[1][1]);
+            }
+            Check(geometries.Count==11&&maps.Count==1,"same overlaid map symbol hides eleven different geometries; rows cannot be recovered: "+overlay);
+        }
+        var unknown=new SceneCell[1,1];unknown[0,0]=new(new("out_of_world"),'?',Sources:new[]{"lava"});
+        Check(SceneGeometry.MapRows(unknown,SceneGeometry.GeometryRows(unknown),0,0,new[]{(0,0,'*')})[0]=="?","world-boundary unknown still overrides hazards, actor and projectile");
+        var obj=new SceneCell[2,1];obj[0,0]=new(new("read",true,18),'.',"workbench");obj[1,0]=Cell('.');
+        Check(SceneGeometry.MapRows(obj,SceneGeometry.GeometryRows(obj),1,0,Array.Empty<(int,int,char)>())[0]=="W@","object and actor markers retain independent nonblocking geometry");
     }
     private static void ObjectPlacementDiagnostics()
     {

@@ -1,0 +1,10 @@
+{
+  "fixtureOnly": true,
+  "equalRows": 21,
+  "totalRows": 29,
+  "equalCells": 1290,
+  "totalCells": 1305,
+  "mapRowRuns": 10,
+  "geometryRowRuns": 5,
+  "decision": "keep both row arrays: entity/liquid overlays are non-injective; retain direct row coordinates, no RLE decoder"
+}

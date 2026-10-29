@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 using CompanionBridge.Motion;
 
 namespace CompanionBridge;
@@ -8,20 +9,23 @@ namespace CompanionBridge;
 // Detached local facts. No Terraria access, path search or action selection.
 internal sealed record SceneCell(TileCell Facts,char Navigation,string Kind=null,string ContentKey=null,int? AnchorX=null,int? AnchorY=null,string[] Sources=null);
 internal sealed record SceneObject(string Id,string Kind,int? TypeId,string ContentKey,TileBounds ObservedBounds,
-    int ObservedTileCount,bool Complete,string Grouping,object Details=null);
-internal sealed record SceneLanding(string Id,LandingRegion Target,float FeetDeltaY,string Validation="shared_navigation_support; integer-pixel interval; reachability not evaluated");
-internal sealed record ScenePlacement(string Id,object Target,object SolidNeighbor,string Validation="empty, dry, known, player-clear, <=80px and solid cardinal neighbour; native rules not evaluated");
+    int ObservedTileCount,bool Complete,object Details=null);
+internal sealed record SceneLanding(string Id,LandingRegion Target,float FeetDeltaY);
+internal sealed record ScenePlacement(string Id,object Target,object SolidNeighbor);
 internal sealed record SceneObjectPlacement(string Id,object Target,TileBounds Footprint,TileBounds Support,float DistancePixels,
-    string ContentKey="Terraria/WorkBench",int Style=0,string Validation="known dry empty full footprint, known dry flat solid support, player-clear, anchor <=80px; native rules not evaluated");
+    string ContentKey="Terraria/WorkBench",int Style=0);
 internal sealed record SceneHazard(string Id,string[] Sources,int MinX,int MaxX,int Y,int MinLiquidAmount,int MaxLiquidAmount,int? TileType,string ContentKey,int TouchDamage);
 internal sealed record SceneList<T>(T[] Items,int MatchedCount,int ReturnedCount,bool Truncated,int OmittedCount);
+internal sealed record SceneCandidateList<T>(T[] Items,int MatchedCount,int ReturnedCount,bool Truncated,int OmittedCount,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string Validation);
 internal sealed record SceneObjectPlacementExample(object Target,TileBounds Footprint,TileBounds Support,object Detail);
 internal sealed record SceneObjectPlacementDiagnostics(int AnchorCount,int InBoundsAnchorCount,int CheckedCount,int RejectedCount,
     int UnknownCount,int NotCheckedCount,bool CoveredScopeComplete,Dictionary<string,int> RejectedByReason,
     Dictionary<string,int> NotCheckedByReason,Dictionary<string,SceneObjectPlacementExample> FirstExamples,
     string Classification="mutually exclusive first failure after full footprint/support knowledge; observed top-left anchors only");
 internal sealed record SceneObjectPlacementList(SceneObjectPlacement[] Items,int MatchedCount,int ReturnedCount,bool Truncated,
-    int OmittedCount,SceneObjectPlacementDiagnostics Diagnostics);
+    int OmittedCount,SceneObjectPlacementDiagnostics Diagnostics,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string Validation);
 
 internal static class SceneGeometry
 {
@@ -45,6 +49,16 @@ internal static class SceneGeometry
     internal static SceneList<T> Limit<T>(IEnumerable<T> items,int cap)
     {
         var all=items.ToArray();return new(all.Take(cap).ToArray(),all.Length,Math.Min(cap,all.Length),all.Length>cap,Math.Max(0,all.Length-cap));
+    }
+    internal static SceneCandidateList<SceneLanding> LimitLandings(IEnumerable<SceneLanding> items,int cap)
+    {
+        var list=Limit(items,cap);return new(list.Items,list.MatchedCount,list.ReturnedCount,list.Truncated,list.OmittedCount,
+            list.MatchedCount>0?"shared_navigation_support; integer-pixel interval; reachability not evaluated":null);
+    }
+    internal static SceneCandidateList<ScenePlacement> LimitPlacements(IEnumerable<ScenePlacement> items,int cap)
+    {
+        var list=Limit(items,cap);return new(list.Items,list.MatchedCount,list.ReturnedCount,list.Truncated,list.OmittedCount,
+            list.MatchedCount>0?"empty, dry, known, player-clear, <=80px and solid cardinal neighbour; native rules not evaluated":null);
     }
     internal static char Geometry(SceneCell cell)
     {
@@ -94,18 +108,18 @@ internal static class SceneGeometry
                 var key=(c.Kind,c.Facts.TileType??-1,c.AnchorX??x+ox,c.AnchorY??y+oy);
                 if(!anchors.TryGetValue(key,out var list))anchors[key]=list=new();list.Add((x,y));continue;
             }
-            Add(c,group,complete,c.Kind=="tree_component"?"connected observed trunk cells; NOT a whole-tree identity/count":"same-type four-neighbour observed component");
+            Add(c,group,complete);
         }
         foreach(var pair in anchors)
-            Add(cells[pair.Value[0].Item1,pair.Value[0].Item2],pair.Value,false,"registered tile anchor; full footprint/contents not verified");
+            Add(cells[pair.Value[0].Item1,pair.Value[0].Item2],pair.Value,false);
         return output.ToArray();
-        void Add(SceneCell c,List<(int x,int y)> group,bool complete,string grouping)
+        void Add(SceneCell c,List<(int x,int y)> group,bool complete)
         {
             int minX=group.Min(p=>p.x),maxX=group.Max(p=>p.x),minY=group.Min(p=>p.y),maxY=group.Max(p=>p.y);
             var bottom=group.OrderByDescending(p=>p.y).ThenBy(p=>p.x).First();
             output.Add(new("o"+(output.Count+1),c.Kind,c.Facts.TileType,c.ContentKey,new(minX+ox,minY+oy,maxX-minX+1,maxY-minY+1),
-                group.Count,complete,grouping,new{anchorTile=new{x=c.AnchorX??minX+ox,y=c.AnchorY??minY+oy},
-                    observedTargetTile=new{x=bottom.x+ox,y=bottom.y+oy},identity="observation scoped; re-inspect before action"}));
+                group.Count,complete,new{anchorTile=new{x=c.AnchorX??minX+ox,y=c.AnchorY??minY+oy},
+                    observedTargetTile=new{x=bottom.x+ox,y=bottom.y+oy}}));
         }
     }
     internal static SceneLanding[] Landings(SceneCell[,] cells,int ox,int oy,float actorX,float feetY,Func<PhysicsState,bool> nativeSafe=null)
@@ -154,7 +168,8 @@ internal static class SceneGeometry
     internal static SceneObjectPlacementList LimitObjectPlacements(SceneObjectPlacement[] items,int cap,SceneObjectPlacementDiagnostics diagnostics)
     {
         var limited=Limit(items,cap);
-        return new(limited.Items,limited.MatchedCount,limited.ReturnedCount,limited.Truncated,limited.OmittedCount,diagnostics);
+        return new(limited.Items,limited.MatchedCount,limited.ReturnedCount,limited.Truncated,limited.OmittedCount,diagnostics,
+            limited.MatchedCount>0?"known dry empty full footprint, known dry flat solid support, player-clear, anchor <=80px; native rules not evaluated":null);
     }
     internal static SceneObjectPlacement[] ObjectPlacements(SceneCell[,] cells,int ox,int oy,WorldRect actor,IReadOnlyList<WorldRect> players,
         int width,int height,int originX,int originY,int supportStart,int supportCount,out SceneObjectPlacementDiagnostics diagnostics)
