@@ -12,7 +12,7 @@ TOOL_NAME = 'execute_lua'
 TOOL = atomic.tool(TOOL_NAME,
     '执行完整 Lua 5.4 程序来编排多步骤任务；仅 source 字段，不要 Markdown 代码围栏。'
     'api(name,args) 同步等待现有同名原子工具的真实结果，参数严格使用其工具定义。'
-    '可调用的 API：' + ', '.join(name for name in atomic.SCHEMAS if name not in {'observe_scene', 'query_recipes', 'craft_recipe'}) + '。'
+    '可调用的 API：' + ', '.join(name for name in atomic.SCHEMAS if name not in {'observe_scene', 'query_recipes', 'craft_recipe', 'place_object'}) + '。'
     '数组从1开始，JSON null使用json.null；空数组用json.array()。'
     '支持type/tonumber/tostring/pairs/ipairs/next/assert/error与api/json/log，以及受限math/table纯计算函数；无os/io/require/pcall。'
     '返回有界纯数据。程序completed仅说明正常返回，动作与效果必须检查真实回执。'
@@ -95,6 +95,8 @@ Lua数组1起始；JSON null用json.null，空数组用json.array()，对象标�
 objects.items用观察作用域ID、kind、observedBounds、contentKey关联图中T/O/C/D/W/$等位置。tree_component只是相连树干格组件，可能一树多片或相邻树合并，complete永远false，不能把matchedCount当整棵树数；矿脉只在观察边界内四邻接同类型聚合，家具完整占地/箱内物品未验证。objectCounts.observed即使详情被截断仍表明分类存在；查不到已返回对象不等于附近没有。
 所有坐标/候选来自本次gameUpdate/sceneId，移动或世界变化后重观察；无持久地图、视线或光照保证。coverage.geometryComplete仅表示这1305格的几何已知；每个集合各自有matchedCount/returnedCount/truncated/omittedCount，几何完整不表示语义对象穷尽。不输出遍历全部格子的日志，不以候选或脚本返回值宣称行动成功。地图不替你选择探索路线或建筑方案；失败/取消/超时/unknown屏障不变。
 '''
+    if 'place_object' in supported:
+        instructions += '工作台place_object({x=TileX,y=TileY})只支持当前选中原版Work Bench默认样式；x/y是TileObjectData锚点，当前为左上格。可从observe_scene.objectPlacementCandidates.items取target；footprint为完整占地、support为下方支撑，仍只是几何候选。核对objectPlacementMaterial和真实快捷栏物品；原生事件、完整占地、消耗1件及输入释放共同核验。unknown停止变更且不重试；放成后重新query_recipes读取实际制作站邻接，不能从旧查询推定。\n'
     if 'place_tile' in supported:
         instructions += '''建造可用place_tile({x=TileX,y=TileY})，坐标是实际Tile格，不是世界像素。先按地形/inspect_tile确认目标为空且有合理原生附着，再inspect_inventory核对当前物品的typeId、use.createTile和stack，必要时按hotbarKey选泥土、石块或木材；材料和目标由你按玩家授权任务观察选择，不依赖预写建造脚本。不能猜内容ID、修改背包或以反复放置试探规则。放置只尝试一次原生使用；动画不证明成功。确认targetTile、placedByActor、targetPresent、targetChanged=false、consumedCount=1及known结束证据，再重新观察世界。取消可能已有实际方块/消耗；原生放成但消耗未证实保持unknown，不回滚、不自动重试。\n'''
     if 'navigate_to_landing_region' in supported:

@@ -69,6 +69,26 @@ public static class SceneGeometryTests
         Check(!SceneGeometry.Placements(placementGrid,0,0,actor,new[]{actor}).Any(s=>At(s,8,13)),"navigation-unknown empty cell cannot become a placement candidate");
         Check(!SceneGeometry.Placements(Grid(),0,0,actor,new[]{actor,new WorldRect(128,208,16,16)}).Any(s=>At(s,8,13)),"other observed player also excludes candidate");
         Check(sites.All(s=>s.Validation.Contains("native rules not evaluated")),"candidate does not promise native permission");
+        SceneObjectPlacement[] Benches(SceneCell[,] g,WorldRect[] bodies=null)=>SceneGeometry.ObjectPlacements(g,0,0,actor,bodies??new[]{actor},2,1,0,0,0,2);
+        bool BenchAt(SceneObjectPlacement b,int x)=>JsonSerializer.SerializeToElement(b.Target).GetProperty("x").GetInt32()==x&&b.Footprint.Y==13;
+        var benches=Benches(Grid());
+        Check(benches.Any(b=>BenchAt(b,7))&&!benches.Any(b=>BenchAt(b,8)),"whole bench excludes actor, anchor and footprint are distinct from ordinary tile sites");
+        var bench=benches.First(b=>BenchAt(b,7));
+        Check(bench.Footprint==new TileBounds(7,13,2,1)&&bench.Support==new TileBounds(7,14,2,1)&&bench.DistancePixels<=80,"full workbench footprint/support retained");
+        foreach(string reason in new[]{"blocked","liquid","unknown","support","slope","supportLiquid"})
+        {
+            var g=Grid();
+            if(reason=="blocked")g[8,13]=Cell('#');
+            if(reason=="liquid")g[8,13]=new(new("read",LiquidAmount:1),'.');
+            if(reason=="unknown")g[8,13]=new(new("unloaded"),'?');
+            if(reason=="support")g[8,14]=Cell('.');
+            if(reason=="slope")g[8,14]=Cell('1');
+            if(reason=="supportLiquid")g[8,14]=new(new("read",true,1,Solid:true,LiquidAmount:1),'#');
+            Check(!Benches(g).Any(b=>BenchAt(b,7)),"second footprint/support cell rejects "+reason);
+        }
+        Check(!Benches(Grid(),new[]{actor,new WorldRect(128,208,16,16)}).Any(b=>BenchAt(b,7)),"second workbench cell excludes other player");
+        Check(benches.All(b=>b.DistancePixels<=80&&b.Validation.Contains("native rules not evaluated")),"bench candidates are conservative geometric observations");
+        Check(SceneGeometry.Limit(benches,0).Truncated,"object placement truncation remains explicit");
         Check(SceneGeometry.Limit(objects,1) is {Truncated:true,ReturnedCount:1} limited&&limited.OmittedCount==objects.Length-1,"collection truncation cannot masquerade as absence");
         Console.WriteLine($"Scene geometry: {checks} checks, shared support/region rules; synthetic grid, not native/LLM acceptance.");
     }

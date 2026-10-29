@@ -1,0 +1,429 @@
+{
+  "date": "2026-10-29",
+  "version": "0.1.61",
+  "branch": "codex/g85-server-ai-perception",
+  "packageSha256": "be825586776a8f9a812d6f00c6c9be97f0744576268088b78fb054edd91906b5",
+  "engineSha256": "fcc6a9624b12191be4a15d714a3675440911feb8c1d374642ab1fd686f0da0a5",
+  "validation": {
+    "offline": "Python backend file: 29 tests, 28 initial passes and one existing short-timeout test passed alone; new Lua test plus crafting/scene files: 16 passes (one repeated workbench test), total 44 distinct Python cases. Final workbench capability/evidence case passed after strict footprint types added. Scene geometry 1707 assertions; IPC/atomic/reads/native-adapter/chat 45/40/57/68/30; package 66 IL checks; item-use/mining/placement/crafting IL 19/30/119/11. No full suite.",
+    "isolatedNative": "Final package: workbench matrix 35 checks; pre-placement exception 2 checks; post-placement/pre-consumption exception 2 checks. Earlier package: ordinary place_tile 24 checks, and IPC/Lua reads/navigation/item/mining/cancel/cleanup regression. See per-run hashes; do not assume identical packages.",
+    "hostAndPlay": "Not run",
+    "realModel": "Not called",
+    "existingProfiles": "Not deployed"
+  },
+  "findings": [
+    {
+      "kind": "observation",
+      "text": "Loaded vanilla bench definition is 2x1, Origin(0,0), coordinate width/padding 16/2, heights[18], AnchorBottom SolidTile|SolidWithTop|SolidSide count2, CustomPlace true."
+    },
+    {
+      "kind": "experiment result",
+      "text": "Owned TileObject.Place event, full frameX0/18/frameY0, inventory minus1 and release verified. Registered station recipe selected dynamically; actual native adjacency false->true and craft verified. NPC/real online player concurrency not validated."
+    },
+    {
+      "kind": "verified experience",
+      "text": "Native placement reframes plain solid support. Texture frames alone are not a physical support mutation; continue checking physical facts and KillTile events. Bench frames still strictly verified."
+    },
+    {
+      "kind": "observation",
+      "text": "Disconnected client slots can be reset by Netplay while a collider fixture is active. Final test uses saved/restored non-network sentinel as a geometry surrogate; no claim of real multiplayer validation."
+    },
+    {
+      "kind": "limitation",
+      "text": "Earlier failures and sandbox startup failure preserved unedited. Scenario state injection is diagnostic only. Final object matrix calls bound native adapter on game thread; offline real Lua Worker/loopback tests exercise object dispatch and unknown barrier; separate old-actions native run exercises IPC/Lua with actual native world."
+    }
+  ],
+  "runs": [
+    {
+      "case": "final-workbench-matrix",
+      "profile": "placement-native-validation-2dc12df921504c60b4b82475cacae535",
+      "result": "passed",
+      "checks": 35,
+      "packageSha256": "be825586776a8f9a812d6f00c6c9be97f0744576268088b78fb054edd91906b5",
+      "finalPackage": true
+    },
+    {
+      "case": "final-before-exception",
+      "profile": "placement-native-validation-92939277e49e4c44867b928896519134",
+      "result": "passed",
+      "checks": 2,
+      "packageSha256": "be825586776a8f9a812d6f00c6c9be97f0744576268088b78fb054edd91906b5",
+      "finalPackage": true
+    },
+    {
+      "case": "final-after-exception",
+      "profile": "placement-native-validation-3f88857554754acf89024ce27abde81c",
+      "result": "passed",
+      "checks": 2,
+      "packageSha256": "be825586776a8f9a812d6f00c6c9be97f0744576268088b78fb054edd91906b5",
+      "finalPackage": true
+    },
+    {
+      "case": "ordinary-place-tile-regression",
+      "profile": "placement-native-validation-c57734cf47a14987ae8ca8249161ae46",
+      "result": "passed",
+      "checks": 24,
+      "packageSha256": "8baefdd3a393ec36330f530da284829e3ce673cf36a1e36ed691ccff220f016e",
+      "finalPackage": false
+    },
+    {
+      "case": "earlier-full-matrix",
+      "profile": "placement-native-validation-ba7f616e44904e76b413e7155d84406c",
+      "result": "passed",
+      "checks": 35,
+      "packageSha256": "17dae4b41d06d814002557124f2607fcd9abc43f62c19b86cb6e5770d1b3e971",
+      "finalPackage": false
+    },
+    {
+      "case": "earlier-support-frame-failure",
+      "profile": "placement-native-validation-57e3c0de281f414783ab0b84be0695d0",
+      "result": "failed",
+      "checks": 1,
+      "packageSha256": "137d1c510b276f330ff112b064a65845ab8948718b734f2884fdc8997ba51c1b",
+      "finalPackage": false
+    },
+    {
+      "case": "earlier-serialization-fixture-failure",
+      "profile": "placement-native-validation-c1b300a20886463bafb7a9669332884b",
+      "result": "failed",
+      "checks": 2,
+      "packageSha256": "1e1e84ffd648752784f8fc61a3edfd8a15dc4d2954121f546150a4ecebc9ecd9",
+      "finalPackage": false
+    },
+    {
+      "case": "earlier-disconnected-player-fixture-failure",
+      "profile": "placement-native-validation-678c46c342d4401cb64d08d8ff0993cf",
+      "result": "failed",
+      "checks": 19,
+      "packageSha256": "8baefdd3a393ec36330f530da284829e3ce673cf36a1e36ed691ccff220f016e",
+      "finalPackage": false
+    },
+    {
+      "case": "earlier-player-fixture-race",
+      "profile": "placement-native-validation-dfb898a3603d440ab63a66a441d83e76",
+      "result": "failed",
+      "checks": 19,
+      "packageSha256": "da2f25010e2104148c6ea6e7275895965f25c37e6ab2d8a305039cfa4179e3be",
+      "finalPackage": false
+    },
+    {
+      "case": "earlier-native-success-before-fixture-stabilization",
+      "profile": "placement-native-validation-54002ae434af47a4994750e815c20fda",
+      "result": "passed",
+      "checks": 32,
+      "packageSha256": "647e62618e49334b3153582cdf6269a52d5229e88b4d051291b750bc038cf4ad",
+      "finalPackage": false
+    },
+    {
+      "case": "startup-sandbox-log-denial",
+      "profile": "placement-native-validation-01a3d6103e494d07a3fd5e3ccbe8f598",
+      "result": "see raw output",
+      "checks": null,
+      "packageSha256": "137d1c510b276f330ff112b064a65845ab8948718b734f2884fdc8997ba51c1b",
+      "finalPackage": false
+    },
+    {
+      "case": "old-actions-ipc-lua-regression",
+      "profile": "companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4",
+      "result": "see raw output",
+      "checks": null,
+      "packageSha256": "da2f25010e2104148c6ea6e7275895965f25c37e6ab2d8a305039cfa4179e3be",
+      "finalPackage": false
+    }
+  ],
+  "archive": {
+    "path": "raw.zip",
+    "sha256": "fd1e13f203813654626c383c6038e2ea2bfa3e7f9ed296392dfd54422f971323",
+    "fileCount": 48
+  },
+  "files": [
+    {
+      "source": ".local/placement-native-validation-2dc12df921504c60b4b82475cacae535/placement-native-result.json",
+      "entry": "final-workbench-matrix/placement-native-result.json",
+      "bytes": 13551,
+      "sha256": "d4f4e2adbb529efef2ff1f6fd60b90688704abddb72ef480f470dfa91f637c7d"
+    },
+    {
+      "source": ".local/placement-native-validation-2dc12df921504c60b4b82475cacae535/stdout.log",
+      "entry": "final-workbench-matrix/stdout.log",
+      "bytes": 4326,
+      "sha256": "a04616add661f0f41bb0144f8a1097a0236521241916753725d91bca4a0e0ddb"
+    },
+    {
+      "source": ".local/placement-native-validation-2dc12df921504c60b4b82475cacae535/stderr.log",
+      "entry": "final-workbench-matrix/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/placement-native-validation-92939277e49e4c44867b928896519134/placement-native-result.json",
+      "entry": "final-before-exception/placement-native-result.json",
+      "bytes": 971,
+      "sha256": "65abdd89d1b7947698a601ccea0760c3926d6becbb4790b3d35da5b7ef970ae6"
+    },
+    {
+      "source": ".local/placement-native-validation-92939277e49e4c44867b928896519134/stdout.log",
+      "entry": "final-before-exception/stdout.log",
+      "bytes": 4327,
+      "sha256": "29f079b7c614885ba477907d1bee16c2de1a6fbddcf21cf822bb5319ad609d90"
+    },
+    {
+      "source": ".local/placement-native-validation-92939277e49e4c44867b928896519134/stderr.log",
+      "entry": "final-before-exception/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/placement-native-validation-3f88857554754acf89024ce27abde81c/placement-native-result.json",
+      "entry": "final-after-exception/placement-native-result.json",
+      "bytes": 969,
+      "sha256": "cce077c4f160bbe70f9de0bd8b9d515b127f69342f78f3bb0944b643e6b2c550"
+    },
+    {
+      "source": ".local/placement-native-validation-3f88857554754acf89024ce27abde81c/stdout.log",
+      "entry": "final-after-exception/stdout.log",
+      "bytes": 4341,
+      "sha256": "a22e00e2b639a28a47304508dea44aa1471579947f0a9737eeac2a03ea4ac537"
+    },
+    {
+      "source": ".local/placement-native-validation-3f88857554754acf89024ce27abde81c/stderr.log",
+      "entry": "final-after-exception/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/placement-native-validation-c57734cf47a14987ae8ca8249161ae46/placement-native-result.json",
+      "entry": "ordinary-place-tile-regression/placement-native-result.json",
+      "bytes": 6318,
+      "sha256": "04ff584fe57c0ddd02bb5f26f7a5ba28ad2dc284eae6e6b5f20f14aa11cc65ec"
+    },
+    {
+      "source": ".local/placement-native-validation-c57734cf47a14987ae8ca8249161ae46/stdout.log",
+      "entry": "ordinary-place-tile-regression/stdout.log",
+      "bytes": 4172,
+      "sha256": "add83da25ae123e1a4e9ab21fbaaa35d48a2e4cb2fbda73c66b5b226c31a9887"
+    },
+    {
+      "source": ".local/placement-native-validation-c57734cf47a14987ae8ca8249161ae46/stderr.log",
+      "entry": "ordinary-place-tile-regression/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/placement-native-validation-ba7f616e44904e76b413e7155d84406c/placement-native-result.json",
+      "entry": "earlier-full-matrix/placement-native-result.json",
+      "bytes": 13551,
+      "sha256": "3343c27c04ea01799cd103f4450ad55dae3fffc0c6d744bd2b38c686cbb54ac4"
+    },
+    {
+      "source": ".local/placement-native-validation-ba7f616e44904e76b413e7155d84406c/stdout.log",
+      "entry": "earlier-full-matrix/stdout.log",
+      "bytes": 4397,
+      "sha256": "b3ed0c5a29b05f14319e79984924df91e1913399355ffbc9e4f36f2423bc7c0e"
+    },
+    {
+      "source": ".local/placement-native-validation-ba7f616e44904e76b413e7155d84406c/stderr.log",
+      "entry": "earlier-full-matrix/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/placement-native-validation-57e3c0de281f414783ab0b84be0695d0/placement-native-result.json",
+      "entry": "earlier-support-frame-failure/placement-native-result.json",
+      "bytes": 1017,
+      "sha256": "b01eead10af4e5c759d387821befbcb08f494222c484a7ff2582084cd9ace584"
+    },
+    {
+      "source": ".local/placement-native-validation-57e3c0de281f414783ab0b84be0695d0/stdout.log",
+      "entry": "earlier-support-frame-failure/stdout.log",
+      "bytes": 4242,
+      "sha256": "39d6a237aa97b79848fc486d3514238e1ef917eff960bb0ca72338107ff8c03c"
+    },
+    {
+      "source": ".local/placement-native-validation-57e3c0de281f414783ab0b84be0695d0/stderr.log",
+      "entry": "earlier-support-frame-failure/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/placement-native-validation-c1b300a20886463bafb7a9669332884b/placement-native-result.json",
+      "entry": "earlier-serialization-fixture-failure/placement-native-result.json",
+      "bytes": 1136,
+      "sha256": "da473c32b63756ca2eee3819471a05fd9a3ca1c912e72bfe985abbc8c18487c0"
+    },
+    {
+      "source": ".local/placement-native-validation-c1b300a20886463bafb7a9669332884b/stdout.log",
+      "entry": "earlier-serialization-fixture-failure/stdout.log",
+      "bytes": 4332,
+      "sha256": "483bbc599a3a33b1d1f9ec54897d325a4c5f387297507a8b9649018680c05688"
+    },
+    {
+      "source": ".local/placement-native-validation-c1b300a20886463bafb7a9669332884b/stderr.log",
+      "entry": "earlier-serialization-fixture-failure/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/placement-native-validation-678c46c342d4401cb64d08d8ff0993cf/placement-native-result.json",
+      "entry": "earlier-disconnected-player-fixture-failure/placement-native-result.json",
+      "bytes": 8515,
+      "sha256": "aca8be5be6c95bb1e187535bfda707d7e8c68a5e84055976992d6db2db71d9d1"
+    },
+    {
+      "source": ".local/placement-native-validation-678c46c342d4401cb64d08d8ff0993cf/stdout.log",
+      "entry": "earlier-disconnected-player-fixture-failure/stdout.log",
+      "bytes": 4313,
+      "sha256": "c253a5a217700b0c83fce382c94f822d7ccd7599c78ab6ae994a269aea1e41e0"
+    },
+    {
+      "source": ".local/placement-native-validation-678c46c342d4401cb64d08d8ff0993cf/stderr.log",
+      "entry": "earlier-disconnected-player-fixture-failure/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/placement-native-validation-dfb898a3603d440ab63a66a441d83e76/placement-native-result.json",
+      "entry": "earlier-player-fixture-race/placement-native-result.json",
+      "bytes": 8515,
+      "sha256": "8168bc50b973c172d383aa07a536ed103e138856d06ed9a499967acc48350f0b"
+    },
+    {
+      "source": ".local/placement-native-validation-dfb898a3603d440ab63a66a441d83e76/stdout.log",
+      "entry": "earlier-player-fixture-race/stdout.log",
+      "bytes": 4294,
+      "sha256": "4f10530948690dd67cfcf6b726cc80235b05175fd87f0d346b6266b0cb8ae5aa"
+    },
+    {
+      "source": ".local/placement-native-validation-dfb898a3603d440ab63a66a441d83e76/stderr.log",
+      "entry": "earlier-player-fixture-race/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/placement-native-validation-54002ae434af47a4994750e815c20fda/placement-native-result.json",
+      "entry": "earlier-native-success-before-fixture-stabilization/placement-native-result.json",
+      "bytes": 12237,
+      "sha256": "0b2913bc6d5e027ae038d14a2c315b24905c194e661e44afd73ced897b5f4860"
+    },
+    {
+      "source": ".local/placement-native-validation-54002ae434af47a4994750e815c20fda/stdout.log",
+      "entry": "earlier-native-success-before-fixture-stabilization/stdout.log",
+      "bytes": 4318,
+      "sha256": "94365eb9d4895549583ab0ef91583af85cbf9869750061bb43d68e58aca16a51"
+    },
+    {
+      "source": ".local/placement-native-validation-54002ae434af47a4994750e815c20fda/stderr.log",
+      "entry": "earlier-native-success-before-fixture-stabilization/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/placement-native-validation-01a3d6103e494d07a3fd5e3ccbe8f598/stdout.log",
+      "entry": "startup-sandbox-log-denial/stdout.log",
+      "bytes": 1905,
+      "sha256": "77cd3aedcf107b5657547f5728b1342e2e930d4935962a808169e26822df78cc"
+    },
+    {
+      "source": ".local/placement-native-validation-01a3d6103e494d07a3fd5e3ccbe8f598/stderr.log",
+      "entry": "startup-sandbox-log-denial/stderr.log",
+      "bytes": 1692,
+      "sha256": "24f1b935f5be3135c9f3e335cfdb4925986ff386d96ec72afd111c1b2a9fe08c"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/action-fixture-no-combat.json",
+      "entry": "old-actions-ipc-lua-regression/action-fixture-no-combat.json",
+      "bytes": 326,
+      "sha256": "0522188522be933ee22d3dfe44f33126637aea18f373e8364c5eaf33cd0eb01c"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/action-fixture.json",
+      "entry": "old-actions-ipc-lua-regression/action-fixture.json",
+      "bytes": 184,
+      "sha256": "e13e302e7319f48e8e6c87893aeec707ec5a0901b561a912f6fe51e4bcb1c519"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/action-world-evidence.json",
+      "entry": "old-actions-ipc-lua-regression/action-world-evidence.json",
+      "bytes": 489,
+      "sha256": "354950103ae24727cf88658f90b395c54ac135febb6f40f11789dbcb5ee45a3a"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/lua-actions-result.json",
+      "entry": "old-actions-ipc-lua-regression/lua-actions-result.json",
+      "bytes": 9653,
+      "sha256": "7cdb0df505bb5a0cbcbbaf031e52eb2f4df79b8cd8729660c95c3eba9b10c762"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/lua-combined-result.json",
+      "entry": "old-actions-ipc-lua-regression/lua-combined-result.json",
+      "bytes": 14644,
+      "sha256": "b0472549331a1fb02a9d36dcbaccb564b6f4643e8b234c43488158751c43ebed"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/lua-perception-result.json",
+      "entry": "old-actions-ipc-lua-regression/lua-perception-result.json",
+      "bytes": 20618,
+      "sha256": "9e1753ee7eeb503c6765a0e14ac2e3d46a9bbe41bbe9c372d607823e1ed63ab4"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/lua-read-result.json",
+      "entry": "old-actions-ipc-lua-regression/lua-read-result.json",
+      "bytes": 12094,
+      "sha256": "780ea4aa145aee086c2fc04910cd504746a60a4dd1337707bf881516a4669630"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/lua-select-result.json",
+      "entry": "old-actions-ipc-lua-regression/lua-select-result.json",
+      "bytes": 2934,
+      "sha256": "a9dace8b52b010ee1eb85fddf947254e983692ecbb13717d1e04321a6a3a7c32"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/result.json",
+      "entry": "old-actions-ipc-lua-regression/result.json",
+      "bytes": 116528,
+      "sha256": "723f63035107ceebd5dba47b37e7566a98d6d675c8d38ccd1d99af2a234c0804"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/server.log",
+      "entry": "old-actions-ipc-lua-regression/server.log",
+      "bytes": 60271,
+      "sha256": "93dcfb8788f9523f1f92e4ed367d1f45e281a2a258ecdd9f2ceffc66222b38eb"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/stderr.log",
+      "entry": "old-actions-ipc-lua-regression/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/companion-g82-native-fcd24ea44b6c4773a0ecd8d631ca19b4/stdout.log",
+      "entry": "old-actions-ipc-lua-regression/stdout.log",
+      "bytes": 4188,
+      "sha256": "168b4b888a83fa8559afe5815af87befbe97cee85f1028fbf0a690bf77207ebc"
+    },
+    {
+      "source": ".local/object-placement-il.txt",
+      "entry": "research-and-launch/object-placement-il.txt",
+      "bytes": 166264,
+      "sha256": "ac6393cd85e2008910c4561e3703bbfbb8513b07f430c637df1c4993599bd732"
+    },
+    {
+      "source": ".local/object-final-native.log",
+      "entry": "research-and-launch/object-final-native.log",
+      "bytes": 13688,
+      "sha256": "93947432f7c9b43bdbbc4c5df8b70a18b1c9ca939868dbf39c1ac46a2b41d903"
+    },
+    {
+      "source": ".local/object-final-exception.log",
+      "entry": "research-and-launch/object-final-exception.log",
+      "bytes": 1234,
+      "sha256": "1d7e0aae703a71ee228356c3aa4f944990ce1c000f65a28791195a112034d24f"
+    },
+    {
+      "source": ".local/object-final-after-exception.log",
+      "entry": "research-and-launch/object-final-after-exception.log",
+      "bytes": 1232,
+      "sha256": "bc6131a99525a50cc0404bc04b884c78b8defcd6c7bace87634bf613fd221a93"
+    }
+  ]
+}

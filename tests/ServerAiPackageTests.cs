@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.60","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.61","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -72,6 +72,9 @@ public static class ServerAiPackageTests
         var placementIL=placement.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).ToArray();
         Check(!placementIL.Any(i=>i.Operand is MethodReference r&&r.Name is "set_HasTile" or "PlaceTile" or "ConsumeItem"),
             "placement observes native effect/consumption without directly setting Tile or consuming items");
+        var objectPlacement=Type("ActorObjectPlacement");
+        Check(!objectPlacement.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.Operand is MethodReference r&&r.Name is "set_HasTile" or "PlaceObject" or "PlaceTile" or "ConsumeItem"),"object executor only observes native placement, no Tile/inventory mutation");
+        Check(Calls(objectPlacement.Methods.Single(m=>m.Name=="Definition"),"GetTileData")&&Calls(objectPlacement.Methods.Single(m=>m.Name=="Present"),"get_TileFrameX"),"object whitelist reads native definition and verifies every frame");
         Check(Calls(Type("ActorItemUse").Methods.Single(m=>m.Name=="Update"),"AfterCheck")
             &&Calls(Type("ActorItemUse").Methods.Single(m=>m.Name=="SkipCursor"),"Dispatch"),"placement uses original ItemCheck owner stage and observes its consumption");
         Check(Calls(placement.Methods.Single(m=>m.Name=="Coordinate"),"get_IsMainThread")

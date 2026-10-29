@@ -62,13 +62,13 @@ internal static class ActorItemUse
     }
     internal static void Start(Player p,string world,long generation)
     {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation);}}
-    internal static void StartPlacement(Player p,string world,long generation,int x,int y)
-    {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,x,y);}}
-    private static void StartCore(Player p,string world,long generation,int? x=null,int? y=null)
+    internal static void StartPlacement(Player p,string world,long generation,int x,int y,bool objectPlacement=false)
+    {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,x,y,objectPlacement);}}
+    private static void StartCore(Player p,string world,long generation,int? x=null,int? y=null,bool objectPlacement=false)
     {
         Capture(p,world,generation);Idle(p);
-        var placement=x.HasValue?ActorPlacement.Create(p,x.Value,y.Value):null;
-        if(p.selectedItem<0||p.selectedItem>9||(placement==null?!Supported(p.HeldItem.type):!ActorPlacement.Supported(p.HeldItem))||p.HeldItem.IsAir)
+        var placement=x.HasValue?ActorPlacement.Create(p,x.Value,y.Value,objectPlacement):null;
+        if(p.selectedItem<0||p.selectedItem>9||(placement==null?!Supported(p.HeldItem.type):!ActorPlacement.SupportedFor(placement,p.HeldItem))||p.HeldItem.IsAir)
             throw new InvalidOperationException("G6 supports only a wooden sword, copper pickaxe, copper axe or apple in hotbar 1–10.");
         if(p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)throw new InvalidOperationException("AI cannot use an item in this state.");
         Current=new Context{Actor=p,World=world,Generation=generation,Slot=p.selectedItem,Item=p.HeldItem,Type=p.HeldItem.type,InitialStack=p.HeldItem.stack,Placement=placement};
@@ -76,7 +76,7 @@ internal static class ActorItemUse
         p.controlUseItem=false;p.releaseUseItem=true;
     }
     public static bool Allowed(Player p)=>ActorMining.Allowed(p)||(executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
-        &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&(executing.Placement!=null?ActorPlacement.Supported(executing.Item)||executing.Placement.Placed&&executing.Item.IsAir:Supported(executing.Type)));
+        &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&(executing.Placement!=null?ActorPlacement.SupportedFor(executing.Placement,executing.Item)||executing.Placement.Placed&&executing.Item.IsAir:Supported(executing.Type)));
     internal static bool Placing(Player p)=>executing?.Placement!=null&&Allowed(p);
     public static bool SkipMelee(Player p)=>ActorMining.Allowed(p)||ActorPlacement.Allowed(p);
     public static bool SkipCursor(Player p){if(ActorMining.Allowed(p))ActorMining.Strike(p);else if(ActorPlacement.Allowed(p))ActorPlacement.Dispatch(p);return Allowed(p);}
@@ -109,7 +109,7 @@ internal static class ActorItemUse
             return;
         }
         if(c.Placement!=null&&ActorPlacement.Validate(c) is {} invalid)
-        {Retire(p);c.Phase="failed";c.Reason=invalid;return;}
+        {Retire(p);c.Phase=c.Placement.Object&&(c.Placement.Placed||c.Placement.ConsumedCount!=0||c.Placement.UncertainNativeEffect)?"unknown":"failed";c.Reason=invalid;return;}
         bool nativeEmpty=c.Consumed&&c.Item.IsAir;
         if(p.dead||p.ghost||p.CCed||p.noItems){Retire(p);return;}
         if(p.selectedItem!=c.Slot||!ReferenceEquals(p.inventory[c.Slot],c.Item)||c.Item.type!=c.Type&&!nativeEmpty)

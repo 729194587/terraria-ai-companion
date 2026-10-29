@@ -22,6 +22,7 @@ internal static class PlacementSelfTest
     {
         if(ran||!Environment.GetCommandLineArgs().Contains("-placementselftest"))return;
         ran=true;bool failure=Environment.GetCommandLineArgs().Contains("-placementfailureselftest");
+        if(Environment.GetCommandLineArgs().Contains("-objectplacementselftest")){ObjectPlacementSelfTest.Run(failure);return;}
         int checks=0;var evidence=new List<object>();
         string report=Path.Combine(Main.SavePath,"placement-native-result.json");
         void Check(bool ok,string why){if(!ok)throw new InvalidOperationException(why);checks++;}
@@ -133,5 +134,10 @@ public sealed class PlacementDiagnosticTile : GlobalTile
 }
 public sealed class PlacementDiagnosticItem : GlobalItem
 {
-    public override bool ConsumeItem(Item item,Player player)=>!PlacementSelfTest.DenyConsumption;
+    public override bool ConsumeItem(Item item,Player player)
+    {
+        if(Environment.GetCommandLineArgs().Contains("-objectplacementafterexception")&&ActorItemUse.Current?.Placement?.Placed==true)
+            throw new InvalidOperationException("Intentional native exception after object placement, before consumption");
+        return !PlacementSelfTest.DenyConsumption;
+    }
 }

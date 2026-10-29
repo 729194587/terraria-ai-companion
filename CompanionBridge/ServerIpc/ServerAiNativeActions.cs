@@ -54,11 +54,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
             else if(operation=="navigate_to_x")context=navigation.Start(identity,args.GetProperty("targetX").GetSingle());
             else if(operation=="navigate_to_landing_region")context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args));
-            else if(operation=="place_tile")
+            else if(operation is "place_tile" or "place_object")
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
-                string error=ActorPlacement.Preflight(p,x,y);if(error!=null)return Reject(error);
-                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y);context=ActorItemUse.Current;
+                string error=ActorPlacement.Preflight(p,x,y,operation=="place_object");if(error!=null)return Reject(error);
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,operation=="place_object");context=ActorItemUse.Current;
             }
             else if(operation=="use_item")
             {
@@ -105,16 +105,18 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 effectStatus="native_navigation_observed"},Released(p),c.Status=="completed"&&physical.Settled
                     &&(c.Region==null||c.Region.Arrived(physical.State,new NativeMotionWorld(physical.State))),InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);
         }
-        if(h.Operation=="place_tile")
+        if(h.Operation is "place_tile" or "place_object")
         {
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ActorItemUse.Context)h.Context;var tile=c.Placement;
-            bool present=Main.tile[tile.X,tile.Y].HasTile&&Main.tile[tile.X,tile.Y].TileType==tile.TileType;
-            bool verified=c.Phase=="completed"&&tile.Placed&&!tile.ExternalChange&&present&&tile.ConsumedCount==1;
+            bool present=tile.Object?ActorObjectPlacement.Present(tile):Main.tile[tile.X,tile.Y].HasTile&&Main.tile[tile.X,tile.Y].TileType==tile.TileType;
+            bool verified=c.Phase=="completed"&&tile.Placed&&!tile.ExternalChange&&present&&tile.ConsumedCount==1
+                &&(!tile.Object||tile.NativeEvents==1&&ActorObjectPlacement.Validate(c)==null);
             return new(c.Phase=="rejected"?"failed":c.Phase=="stale"?"unknown":c.Phase,c.Reason,
                 new{x=tile.X,y=tile.Y,typeId=tile.TileType,itemType=c.Type,c.InitialStack,remainingStack=p.inventory[c.Slot].stack,
-                    c.Ticks,c.Starts,c.AnimationPeak,tile.Attempts,consumedCount=tile.ConsumedCount,placedByActor=tile.Placed,
-                    targetPresent=present,targetChanged=tile.ExternalChange,effectStatus=verified?"native_tile_placed":"not_confirmed"},
+                    c.Ticks,c.Starts,c.AnimationPeak,tile.Attempts,nativePlacementEvents=tile.NativeEvents,uncertainNativeEffect=tile.UncertainNativeEffect,consumedCount=tile.ConsumedCount,placedByActor=tile.Placed,
+                    objectPlacement=tile.Object,footprint=tile.Object?ActorObjectPlacement.Bounds(tile):null,fullFootprintVerified=tile.Object&&present,style=tile.Style,
+                    targetPresent=present,targetChanged=tile.ExternalChange,effectStatus=verified?(tile.Object?"native_object_placed":"native_tile_placed"):"not_confirmed"},
                 Released(p)&&p.itemAnimation==0&&p.itemTime==0,verified,InputsAcquired:c.Ticks>0);
         }
         if(h.Operation=="use_item")
@@ -150,7 +152,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         if(observed.Status!="running")return observed;
         var p=(Player)h.Identity.Actor;
         if(IsNavigation(h.Operation))navigation.Stop("cancelled","explicit_stop");
-        else if(h.Operation is "use_item" or "place_tile")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
+        else if(h.Operation is "use_item" or "place_tile" or "place_object")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
         else ActorMining.Retire(p);
         return Poll(h.Identity,h);
     }

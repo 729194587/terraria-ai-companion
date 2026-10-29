@@ -11,6 +11,8 @@ internal sealed record SceneObject(string Id,string Kind,int? TypeId,string Cont
     int ObservedTileCount,bool Complete,string Grouping,object Details=null);
 internal sealed record SceneLanding(string Id,LandingRegion Target,float FeetDeltaY,string Validation="shared_navigation_support; integer-pixel interval; reachability not evaluated");
 internal sealed record ScenePlacement(string Id,object Target,object SolidNeighbor,string Validation="empty, dry, known, player-clear, <=80px and solid cardinal neighbour; native rules not evaluated");
+internal sealed record SceneObjectPlacement(string Id,object Target,TileBounds Footprint,TileBounds Support,float DistancePixels,
+    string ContentKey="Terraria/WorkBench",int Style=0,string Validation="known dry empty full footprint, known dry flat solid support, player-clear, anchor <=80px; native rules not evaluated");
 internal sealed record SceneHazard(string Id,string[] Sources,int MinX,int MaxX,int Y,int MinLiquidAmount,int MaxLiquidAmount,int? TileType,string ContentKey,int TouchDamage);
 internal sealed record SceneList<T>(T[] Items,int MatchedCount,int ReturnedCount,bool Truncated,int OmittedCount);
 
@@ -120,6 +122,27 @@ internal static class SceneGeometry
             }
         }
         return output.OrderBy(p=>p.Item1).Select(p=>p.Item2).ToArray();
+    }
+    internal static SceneObjectPlacement[] ObjectPlacements(SceneCell[,] cells,int ox,int oy,WorldRect actor,IReadOnlyList<WorldRect> players,
+        int width,int height,int originX,int originY,int supportStart,int supportCount)
+    {
+        var output=new List<SceneObjectPlacement>();int w=cells.GetLength(0),h=cells.GetLength(1);
+        if(width<=0||height<=0||supportStart<0||supportCount<=0||supportStart+supportCount>width)return output.ToArray();
+        for(int y=0;y+height<h;y++)for(int x=0;x+width<=w;x++)
+        {
+            bool clear=true;
+            for(int dx=0;dx<width;dx++)for(int dy=0;dy<height;dy++)
+            {var c=cells[x+dx,y+dy];if(Geometry(c)=='?'||c.Facts.HasTile||c.Facts.LiquidAmount>0)clear=false;}
+            for(int dx=supportStart;dx<supportStart+supportCount;dx++)
+            {var c=cells[x+dx,y+height];if(Geometry(c)!='#'||c.Navigation!='#'||c.Facts.LiquidAmount>0)clear=false;}
+            if(!clear)continue;
+            int tx=x+ox+originX,ty=y+oy+originY;
+            float ax=tx*16+8-(actor.X+actor.Width/2),ay=ty*16+8-(actor.Y+actor.Height/2);
+            float distance=MathF.Sqrt(ax*ax+ay*ay);if(distance>80)continue;
+            if(players.Any(p=>(x+ox)*16<p.X+p.Width&&(x+ox+width)*16>p.X&&(y+oy)*16<p.Y+p.Height&&(y+oy+height)*16>p.Y))continue;
+            output.Add(new("b"+(output.Count+1),new{x=tx,y=ty},new(x+ox,y+oy,width,height),new(x+ox+supportStart,y+oy+height,supportCount,1),distance));
+        }
+        return output.OrderBy(c=>c.DistancePixels).ToArray();
     }
     internal static SceneHazard[] Hazards(SceneCell[,] cells,int ox,int oy)
     {

@@ -6,7 +6,7 @@ using Mono.Cecil.Cil;
 
 namespace VirtualPlayerEngineProbe;
 
-// Exact pinned Player placement graph for ordinary, non-object tiles. Original
+// Exact pinned Player placement graph for ordinary tiles and the vanilla Work Bench. Original
 // native rules remain intact. Only coordinate reads gain a checked Player scope.
 public static class PlacementPatches
 {
@@ -35,9 +35,9 @@ public static class PlacementPatches
             &&m.HasBody&&m.Body.ExceptionHandlers.Count==(name=="PlaceThing_Tiles_PlaceIt_StaffOfRegrowthCheck"?2:0)&&m.Body.Instructions.Count(Target)==count
             &&m.Body.Instructions.Where(Target).All(i=>i.OpCode==OpCodes.Ldsfld),m.FullName);
         bool Call(int offset,string name)=>m.Body.Instructions.Any(i=>i.Offset==offset&&i.Operand is MethodReference r&&r.Name==name);
-        if(name=="PlaceThing_Tiles")Require(Call(0x02ca,"CanPlace")&&Call(0x034b,"PlaceThing_Tiles_PlaceIt")
+        if(name=="PlaceThing_Tiles")Require(Call(0x02ca,"CanPlace")&&Call(0x030a,"CanPlace")&&Call(0x0315,"PlaceThing_Tiles_BlockPlacementIfOverPlayers")&&Call(0x034b,"PlaceThing_Tiles_PlaceIt")
             &&Call(0x033a,"PlaceThing_Tiles_BlockPlacementForAssortedThings"),m.FullName+" dispatch anchors");
-        if(name=="PlaceThing_Tiles_PlaceIt")Require(Call(0x00e8,"PlaceTile")&&Call(0x0114,"ApplyItemTime")&&Call(0x0231,"PlaceInWorld"),m.FullName+" placement anchors");
+        if(name=="PlaceThing_Tiles_PlaceIt")Require(Call(0x006e,"Place")&&Call(0x00e8,"PlaceTile")&&Call(0x0114,"ApplyItemTime")&&Call(0x0231,"PlaceInWorld"),m.FullName+" placement anchors");
     }
     public static void Patch(MethodDefinition m,MethodReference getX,MethodReference getY)
     {

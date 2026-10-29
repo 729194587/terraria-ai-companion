@@ -55,6 +55,8 @@ class ServerAiBridge:
                 self.supported_atomic_operations |= frozenset(("navigate_to_x", "use_item", "mine_tile"))
                 if "server_ai_crafting_v1" in self.hello["capabilities"]:
                     self.supported_atomic_operations |= frozenset(("craft_recipe",))
+                if "server_ai_place_object_workbench_v1" in self.hello["capabilities"]:
+                    self.supported_atomic_operations |= frozenset(("place_object",))
                 if "server_ai_place_tile_v1" in self.hello["capabilities"]:
                     self.supported_atomic_operations |= frozenset(("place_tile",))
                 if "landing_region_navigation_v1" in self.hello["capabilities"]:

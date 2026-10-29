@@ -1,6 +1,7 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27837,[switch]$Failure,
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27837,[switch]$Failure,[switch]$Object,[switch]$AfterPlacementException,
     [string]$PackagePath,[ValidateSet('VirtualPlayerEngineProbe','CompanionBridge')][string]$ModName='CompanionBridge')
 $ErrorActionPreference='Stop'
+if($AfterPlacementException -and (!$Object -or !$Failure)){throw 'AfterPlacementException requires Object and Failure.'}
 $repo=Split-Path $PSScriptRoot -Parent
 if(!$WorldPath){$WorldPath=Join-Path $repo '.local/virtual-player-control-host/Worlds/test.wld'}
 $WorldPath=(Resolve-Path -LiteralPath $WorldPath).Path
@@ -16,6 +17,8 @@ Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value ('["'+$ModName+'"]'
 $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",
     '-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-placementselftest')
 if($Failure){$arguments+='-placementfailureselftest'}
+if($Object){$arguments+='-objectplacementselftest'}
+if($AfterPlacementException){$arguments+='-objectplacementafterexception'}
 if($ModName -eq 'CompanionBridge'){
     $ipcPort=$Port+1
     if(@(Get-NetTCPConnection -LocalPort $ipcPort -State Listen -ErrorAction SilentlyContinue).Count){throw 'Diagnostic IPC port is in use.'}

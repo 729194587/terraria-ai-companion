@@ -10,12 +10,12 @@ public static class ServerAiNativeActionOfflineTests
     private sealed class Executor : AiAtomicActions.IExecutor
     {
         internal int Starts,Cancels,Shutdowns;
-        internal bool ThrowStart, ThrowCancel, CompleteOnCancel;
+        internal bool ThrowStart, ThrowCancel, CompleteOnCancel, UnknownOnCancel;
         internal AiAtomicActions.NativeResult Result=new("running","native_pending",null,false);
         public string Validate(string op,JsonElement args)=>args.TryGetProperty("bad",out _)?"invalid_arguments":null;
         public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string actionId){Starts++;if(ThrowStart)throw new Exception("partial native start");return new object();}
         public AiAtomicActions.NativeResult Poll(AiReadOnlyProtocol.Identity id,object handle)=>Result;
-        public AiAtomicActions.NativeResult Cancel(AiReadOnlyProtocol.Identity id,object handle){Cancels++;if(ThrowCancel)throw new Exception("native cleanup uncertain");return Result with{Status=CompleteOnCancel?"completed":"cancelled",InputsReleased=true};}
+        public AiAtomicActions.NativeResult Cancel(AiReadOnlyProtocol.Identity id,object handle){Cancels++;if(ThrowCancel)throw new Exception("native cleanup uncertain");return Result with{Status=UnknownOnCancel?"unknown":CompleteOnCancel?"completed":"cancelled",InputsReleased=true};}
         public void Shutdown(){Shutdowns++;}
     }
     private sealed class Fixture
@@ -86,17 +86,17 @@ public static class ServerAiNativeActionOfflineTests
                 JsonSerializer.SerializeToElement((float)33333.3333).GetDouble(),"receipt canonicalizes coordinates to the native float region before execution");
         }
         {
-            var f=new Fixture();string id=f.Start("place_tile");var a=f.Action(id);
+            var f=new Fixture();string id=f.Start("place_object");var a=f.Action(id);
             Check(a.GetProperty("targetTile").GetProperty("x").GetInt32()==100&&a.GetProperty("durationMs").GetInt32()==10000,
                 "placement receipt fixes tile coordinates and ten-second deadline");
-            Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_place_tile_v1")>=0,"placement capability is explicit");
+            Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_place_object_workbench_v1")>=0,"placement capability is explicit");
         }
         {
             var f=new Fixture();string id=f.Start("craft_recipe");var a=f.Action(id);
             Check(a.GetProperty("targetRecipe").GetProperty("recipeId").GetInt32()==12&&a.GetProperty("targetRecipe").GetProperty("crafts").GetInt32()==3,"craft receipt fixes recipe identity and execution count");
             Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_crafting_v1")>=0,"craft capability is explicit");
         }
-        foreach(string op in new[]{"navigate_to_x","navigate_to_landing_region","use_item","mine_tile","place_tile","craft_recipe"})
+        foreach(string op in new[]{"navigate_to_x","navigate_to_landing_region","use_item","mine_tile","place_tile","place_object","craft_recipe"})
         {
             var f=new Fixture();string id=f.Start(op);
             Check(f.Native.Starts==1&&f.Action(id).GetProperty("status").GetString()=="running","accepted/running precede "+op+" native completion");
@@ -106,6 +106,12 @@ public static class ServerAiNativeActionOfflineTests
             Check(a.GetProperty("status").GetString()=="completed"&&end.GetProperty("inputsReleased").GetBoolean()
                 &&end.GetProperty("operation").GetString()==op&&end.GetProperty("actorGeneration").GetInt32()==1,"verified "+op+" has bound game-thread release evidence");
             Check(f.Send("start",id,op).GetProperty("error").GetString()=="duplicate_action","long action duplicate ID rejected");
+        }
+        {
+            var f=new Fixture();string id=f.Start("place_object");f.Native.UnknownOnCancel=true;
+            f.Native.Result=new("unknown","object_target_changed",new{placedByActor=true},true);
+            f.Send("cancel",id);
+            Check(f.Action(id).GetProperty("status").GetString()=="unknown","object cancellation preserves uncertain side effects");
         }
         foreach(bool released in new[]{true,false})
         {

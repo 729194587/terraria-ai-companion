@@ -35,6 +35,7 @@ class Host(socketserver.ThreadingTCPServer):
         self.crafting = False
         self.crafting_override = {}
         self.actions = False
+        self.object_placement = False
         self.placement = False
         self.placement_override = {}
         self.landing = False
@@ -89,6 +90,8 @@ class Handler(socketserver.StreamRequestHandler):
                     data['capabilities'].append('server_ai_perception_v1')
                 if h.actions:
                     data['capabilities'].append('server_ai_actions_v1')
+                if h.object_placement:
+                    data['capabilities'].append('server_ai_place_object_workbench_v1')
                 if h.placement:
                     data['capabilities'].append('server_ai_place_tile_v1')
                 if h.landing:
@@ -133,7 +136,7 @@ class Handler(socketserver.StreamRequestHandler):
                                 endEvidenceStatus='not_ended', endEvidence=None)
                 if r['operation'] == 'craft_recipe':
                     h.action['targetRecipe'] = copy.deepcopy(r['arguments'])
-                if r['operation'] == 'place_tile':
+                if r['operation'] in ('place_tile', 'place_object'):
                     h.action['targetTile'] = copy.deepcopy(r['arguments'])
                 if r['operation'] == 'navigate_to_landing_region':
                     h.action['targetRegion'] = copy.deepcopy(r['arguments'])
@@ -166,8 +169,10 @@ class Handler(socketserver.StreamRequestHandler):
                             a['evidence'].update(recipeId=g['recipeId'],recipeToken=g['recipeToken'],requestedCrafts=g['crafts'],completedCrafts=g['crafts'],producedCount=g['crafts'],outputTypeId=36,outputCountPerCraft=1,inventoryVerified=True,mutationAttempted=True,batches=[{'consumed': [{'typeId':9,'count':10}]}]*g['crafts'])
                             a['evidence'].update(h.crafting_override)
                             if h.mode == 'changed_recipe':a['targetRecipe']={**g,'recipeId':999}
-                        if a['operation'] == 'place_tile':
+                        if a['operation'] in ('place_tile', 'place_object'):
                             a['evidence'].update(placedByActor=True,targetPresent=True,targetChanged=False,consumedCount=1,**a['targetTile'])
+                            if a['operation'] == 'place_object':
+                                a['evidence'].update(objectPlacement=True,fullFootprintVerified=True,nativePlacementEvents=1,uncertainNativeEffect=False,typeId=18,itemType=36,style=0,footprint=dict(**a['targetTile'],width=2,height=1))
                             a['evidence'].update(h.placement_override)
                         if h.mode == 'changed_tile':
                             a['targetTile'] = {**a['targetTile'], 'x': 11}
@@ -417,6 +422,44 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([58, 9, 0], [i['slot'] for i in result['data']['inventory']])
         self.assertIsNone(result['data']['inventory'][1]['inventoryToken'])
         self.assertFalse(any(r['op'] == 'start' for r in self.host.sent))
+
+    async def test_workbench_capability_and_full_receipt_required(self):
+        import agent, lua_agent
+        self.assertNotIn('place_object', self.bridge.supported_atomic_operations)
+        self.assertNotIn('place_object', [t['function']['name'] for t in agent.TOOLS])
+        self.assertNotIn('place_object', lua_agent.TOOL['function']['description'])
+        with self.assertRaises(atomic.PreDispatchRejected):
+            await atomic.dispatch(self.bridge, 'place_object', {'x': 10, 'y': 20})
+        self.bridge.close()
+        self.host.actions = self.host.object_placement = True
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+        self.assertIn('place_object', self.bridge.supported_atomic_operations)
+        self.assertNotIn('place_tile', self.bridge.supported_atomic_operations)
+        for override in ({}, {'nativePlacementEvents': 0}, {'uncertainNativeEffect': True}, {'fullFootprintVerified': False}, {'typeId': 19}, {'itemType': 34},
+                         {'style': 1}, {'footprint': {'x': 10, 'y': 20, 'width': 2, 'height': True}}, {'footprint': {'x': 10, 'y': 20, 'width': 1, 'height': 1}},
+                         {'consumedCount': 0}, {'placedByActor': False}, {'targetChanged': True}):
+            self.host.polls = 0
+            self.host.placement_override = override
+            result = await atomic.dispatch(self.bridge, 'place_object', {'x': 10, 'y': 20})
+            self.assertEqual('unknown' if override else 'completed', result['status'], result)
+        self.host.placement_override = {}
+        self.host.mode = 'no_release'
+        self.host.polls = 0
+        result = await atomic.dispatch(self.bridge, 'place_object', {'x': 10, 'y': 20})
+        self.assertEqual('unknown', result['status'])
+
+    async def test_workbench_lua_uses_existing_dispatch_and_unknown_barrier(self):
+        self.bridge.close()
+        self.host.actions = self.host.object_placement = True
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+        runtime = LuaRuntime(self.bridge, evidence_root=self.directory.name)
+        result = await runtime.execute("local r=api('place_object',{x=10,y=20}); assert(r.completed); return r.evidence.footprint", limits=Limits(seconds=8))
+        self.assertEqual('completed', result['status'], result)
+        self.host.polls = 0
+        self.host.placement_override = {'consumedCount': 0}
+        result = await runtime.execute("api('place_object',{x=10,y=20}); api('place_object',{x=12,y=20})", limits=Limits(seconds=8))
+        self.assertNotEqual('completed', result['status'], result)
+        self.assertEqual(2, sum(r['op'] == 'start' for r in self.host.sent))
 
     async def test_lua_reads_before_and_after_existing_selection(self):
         source = """

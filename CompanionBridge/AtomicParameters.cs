@@ -135,6 +135,7 @@ internal static class AtomicParameters
                 break;
             case "drop_through_platform": Fields(); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
+            case "place_object": goto case "place_tile";
             case "mine_tile": case "place_tile": case "interact_tile": case "mine_wall": case "place_wall": case "hammer_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
             case "attack_entity": Fields("entityRef"); if (args.GetProperty("entityRef").ValueKind != JsonValueKind.String || args.GetProperty("entityRef").GetString().Length is < 1 or > 150) throw new FormatException("Invalid entityRef."); break;
             case "use_item":
