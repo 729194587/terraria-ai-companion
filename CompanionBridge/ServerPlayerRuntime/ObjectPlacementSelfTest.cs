@@ -56,6 +56,7 @@ internal static class ObjectPlacementSelfTest
                 Start();PlacementSelfTest.Throw=!afterException;bool threw=false;
                 try{Frame();}catch{threw=true;}finally{PlacementSelfTest.Throw=false;}
                 Check(threw&&ProbeSession.Quarantined&&Released()&&!ActorItemUse.Running
+                    &&ActorItemUse.Current.Phase=="unknown"
                     &&Main.tile[x,y].HasTile==afterException&&Main.tile[x+1,y].HasTile==afterException&&p.inventory[4].stack==5
                     &&ProbeSession.Reservation.IsReserved(p.whoAmI),"native exception did not release/quarantine or preserve partial effects");
                 evidence.Add(new{afterException,placed=ActorItemUse.Current.Placement.Placed,stack=p.inventory[4].stack,ProbeSession.Quarantined,
@@ -122,9 +123,9 @@ internal static class ObjectPlacementSelfTest
             Check(stale&&!Main.tile[x,y].HasTile,"old identity accepted");
             Setup();var pending=Start();Check(Refused().Reason=="actor_busy","overlapping action accepted");executor.Cancel(id,pending);Check(Released(),"pre-input cancellation failed");
             Setup();pending=Start();blocked=Main.tile[x+1,y];blocked.HasTile=true;blocked.TileType=TileID.Stone;Frame();
-            Check(executor.Poll(id,pending).Status=="failed"&&p.inventory[4].stack==5&&Released(),"changed footprint adopted");
+            Check(executor.Poll(id,pending).Status=="unknown"&&p.inventory[4].stack==5&&Released(),"changed footprint adopted");
             Setup();pending=Start();Main.tile[x+1,floor].ClearEverything();Frame();
-            Check(executor.Poll(id,pending).Status=="failed"&&p.inventory[4].stack==5&&Released(),"changed support was used");
+            Check(executor.Poll(id,pending).Status=="unknown"&&p.inventory[4].stack==5&&Released(),"changed support was used");
             Setup();pending=Start();p.inventory[4]=p.inventory[4].Clone();Frame();
             Check(executor.Poll(id,pending).Status=="cancelled"&&p.inventory[4].stack==5&&Released(),"changed item object was used");
             Setup();pending=Start();Frame();WorldGen.KillTile(x+1,y);Frame();var changed=executor.Poll(id,pending);evidence.Add(changed);
@@ -132,6 +133,48 @@ internal static class ObjectPlacementSelfTest
             Check(executor.Cancel(id,pending).Status=="unknown","cancel erased uncertain object outcome");
             Setup();pending=Start();Frame();var cancel=executor.Cancel(id,pending);evidence.Add(cancel);
             Check(cancel.Status=="cancelled"&&Released()&&ActorObjectPlacement.Present(ActorItemUse.Current.Placement)&&p.inventory[4].stack==4,"cancel rolled back side effects or held input");
+            // No additional Frame() between the mutation/first use and Cancel:
+            // this is the window where a cached running phase hid uncertainty.
+            Setup();pending=Start();PlacementSelfTest.DenyConsumption=true;
+            try{Frame();}finally{PlacementSelfTest.DenyConsumption=false;}
+            int cancelTick=ActorItemUse.Current.Ticks;var immediate=executor.Cancel(id,pending);evidence.Add(new{caseId="immediate_unconfirmed_consumption",immediate});
+            Check(immediate.Status=="unknown"&&immediate.InputsReleased&&!immediate.EffectVerified&&Released()
+                &&ActorItemUse.Current.Ticks==cancelTick&&ActorObjectPlacement.Present(ActorItemUse.Current.Placement)&&p.inventory[4].stack==5,
+                "immediate cancellation hid unconfirmed consumption or advanced native execution");
+            ActorItemUse.Retire(p);ActorItemUse.Stop(p,id.World,id.Generation);
+            Check(executor.Cancel(id,pending).Status=="unknown"&&Released(),"repeated Retire/Stop downgraded unknown");
+            foreach(bool support in new[]{false,true})
+            {
+                Setup();pending=Start();Frame();cancelTick=ActorItemUse.Current.Ticks;
+                // Raw fixture mutation deliberately bypasses KillTile, ensuring
+                // cancellation rereads the complete footprint/support itself.
+                Main.tile[x+1,support?floor:y].ClearEverything();
+                immediate=executor.Cancel(id,pending);evidence.Add(new{caseId=support?"immediate_changed_support":"immediate_changed_footprint",immediate});
+                Check(immediate.Status=="unknown"&&immediate.InputsReleased&&!immediate.EffectVerified&&Released()
+                    &&ActorItemUse.Current.Ticks==cancelTick&&p.inventory[4].stack==4,"immediate cancellation adopted changed footprint/support");
+            }
+            foreach(bool cancelDirectly in new[]{false,true})
+            {
+                Setup();pending=Start();PlacementSelfTest.DenyConsumption=true;
+                try{Frame();}finally{PlacementSelfTest.DenyConsumption=false;}
+                p.noItems=true;
+                try{if(cancelDirectly)immediate=executor.Cancel(id,pending);else {Frame();immediate=executor.Poll(id,pending);}}
+                finally{p.noItems=false;}
+                evidence.Add(new{caseId=cancelDirectly?"disabled_immediate_cancel":"disabled_update",immediate});
+                Check(immediate.Status=="unknown"&&immediate.InputsReleased&&Released()&&p.inventory[4].stack==5,"actor state cleanup downgraded uncertain placement");
+            }
+            Setup();pending=Start();PlacementSelfTest.DenyConsumption=true;
+            try{Frame();}finally{PlacementSelfTest.DenyConsumption=false;}
+            p.dead=true;
+            try{immediate=executor.Cancel(id,pending);}finally{p.dead=false;}
+            evidence.Add(new{caseId="dead_immediate_cancel",immediate});
+            Check(immediate.Status=="unknown"&&immediate.InputsReleased&&Released()&&p.inventory[4].stack==5,"dead actor cancellation lost unknown or input release");
+            Setup();pending=Start();Frame();p.inventory[4]=p.inventory[4].Clone();Frame();
+            Check(executor.Poll(id,pending).Status=="unknown"&&Released(),"selected item cleanup downgraded uncertain inventory identity");
+            Setup();pending=Start();PlacementSelfTest.DenyConsumption=true;
+            try{Frame();}finally{PlacementSelfTest.DenyConsumption=false;}
+            ActorItemUse.Current.Ticks=600;Frame();
+            Check(executor.Poll(id,pending).Status=="unknown"&&Released(),"deadline overwrote uncertain consumption");
             Setup();pending=Start();Frame();ActorItemUse.Current.Ticks=600;Frame();var timeout=executor.Poll(id,pending);evidence.Add(timeout);
             Check(timeout.Status=="timeout"&&Released()&&p.inventory[4].stack==4,"timeout lost release or rolled back");
             Setup();PlacementSelfTest.DenyTile=true;AiAtomicActions.NativeResult denied;

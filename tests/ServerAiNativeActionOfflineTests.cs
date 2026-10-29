@@ -10,12 +10,12 @@ public static class ServerAiNativeActionOfflineTests
     private sealed class Executor : AiAtomicActions.IExecutor
     {
         internal int Starts,Cancels,Shutdowns;
-        internal bool ThrowStart, ThrowCancel, CompleteOnCancel, UnknownOnCancel;
+        internal bool ThrowStart, ThrowCancel, CompleteOnCancel, UnknownOnCancel, KeepInputHeld;
         internal AiAtomicActions.NativeResult Result=new("running","native_pending",null,false);
         public string Validate(string op,JsonElement args)=>args.TryGetProperty("bad",out _)?"invalid_arguments":null;
         public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string actionId){Starts++;if(ThrowStart)throw new Exception("partial native start");return new object();}
         public AiAtomicActions.NativeResult Poll(AiReadOnlyProtocol.Identity id,object handle)=>Result;
-        public AiAtomicActions.NativeResult Cancel(AiReadOnlyProtocol.Identity id,object handle){Cancels++;if(ThrowCancel)throw new Exception("native cleanup uncertain");return Result with{Status=UnknownOnCancel?"unknown":CompleteOnCancel?"completed":"cancelled",InputsReleased=true};}
+        public AiAtomicActions.NativeResult Cancel(AiReadOnlyProtocol.Identity id,object handle){Cancels++;if(ThrowCancel)throw new Exception("native cleanup uncertain");return Result with{Status=UnknownOnCancel?"unknown":CompleteOnCancel?"completed":"cancelled",InputsReleased=!KeepInputHeld};}
         public void Shutdown(){Shutdowns++;}
     }
     private sealed class Fixture
@@ -107,11 +107,22 @@ public static class ServerAiNativeActionOfflineTests
                 &&end.GetProperty("operation").GetString()==op&&end.GetProperty("actorGeneration").GetInt32()==1,"verified "+op+" has bound game-thread release evidence");
             Check(f.Send("start",id,op).GetProperty("error").GetString()=="duplicate_action","long action duplicate ID rejected");
         }
+        foreach(string cause in new[]{"cancel","death","timeout","disconnect","forget"})foreach(bool released in new[]{true,false})
         {
-            var f=new Fixture();string id=f.Start("place_object");f.Native.UnknownOnCancel=true;
-            f.Native.Result=new("unknown","object_target_changed",new{placedByActor=true},true);
-            f.Send("cancel",id);
-            Check(f.Action(id).GetProperty("status").GetString()=="unknown","object cancellation preserves uncertain side effects");
+            var f=new Fixture();using var disconnect=new CancellationTokenSource();string id=f.Start("place_object",token:disconnect.Token);
+            f.Native.UnknownOnCancel=true;f.Native.KeepInputHeld=!released;
+            f.Native.Result=new("unknown","object_target_changed",new{placedByActor=true},released);
+            if(cause=="cancel")f.Send("cancel",id);
+            if(cause=="death")f.Current=f.Current with{CanAct=false};
+            if(cause=="timeout")f.Time=10001;
+            if(cause=="disconnect")disconnect.Cancel();
+            if(cause=="forget")f.Actions.Forget(f.Owner);
+            f.Tick();var action=f.Action(id);
+            Check(action.GetProperty("status").GetString()=="unknown","object "+cause+" preserves uncertain side effects");
+            Check(action.GetProperty("endEvidenceStatus").GetString()==(released?"known":"unknown")
+                &&(!released||action.GetProperty("endEvidence").GetProperty("inputsReleased").GetBoolean()),"object "+cause+" reports actual input release");
+            f.Send("cancel",id);f.Tick();
+            Check(f.Native.Starts==1&&f.Native.Cancels==1,"object "+cause+" never replays start or cleanup after unknown");
         }
         foreach(bool released in new[]{true,false})
         {

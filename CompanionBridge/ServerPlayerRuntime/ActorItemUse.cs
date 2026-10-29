@@ -109,12 +109,12 @@ internal static class ActorItemUse
             return;
         }
         if(c.Placement!=null&&ActorPlacement.Validate(c) is {} invalid)
-        {Retire(p);c.Phase=c.Placement.Object&&(c.Placement.Placed||c.Placement.ConsumedCount!=0||c.Placement.UncertainNativeEffect)?"unknown":"failed";c.Reason=invalid;return;}
+        {Retire(p);if(c.Placement.Object&&c.Phase=="unknown")return;c.Phase=c.Placement.Object&&(c.Placement.Placed||c.Placement.ConsumedCount!=0||c.Placement.UncertainNativeEffect)?"unknown":"failed";c.Reason=invalid;return;}
         bool nativeEmpty=c.Consumed&&c.Item.IsAir;
         if(p.dead||p.ghost||p.CCed||p.noItems){Retire(p);return;}
         if(p.selectedItem!=c.Slot||!ReferenceEquals(p.inventory[c.Slot],c.Item)||c.Item.type!=c.Type&&!nativeEmpty)
-        {Retire(p);c.Phase="cancelled";c.Reason="selected_item_changed";return;}
-        if(++c.Ticks>(c.Placement!=null?600:180)){Retire(p);c.Phase=c.Placement!=null?"timeout":"failed";c.Reason=c.Placement!=null?"native_placement_deadline":"native_item_timeout";return;}
+        {Retire(p);if(c.Placement?.Object==true&&c.Phase=="unknown")return;c.Phase="cancelled";c.Reason="selected_item_changed";return;}
+        if(++c.Ticks>(c.Placement!=null?600:180)){Retire(p);if(c.Placement?.Object==true&&c.Phase=="unknown")return;c.Phase=c.Placement!=null?"timeout":"failed";c.Reason=c.Placement!=null?"native_placement_deadline":"native_item_timeout";return;}
         try
         {
             executing=c;p.controlUseItem=c.Ticks==1;
@@ -139,7 +139,12 @@ internal static class ActorItemUse
                 Emit(new {c.Phase,c.Reason,c.Type,c.Ticks,c.Starts,c.AnimationPeak,c.TimePeak,c.ToolPeak,c.UsesPeak,c.InitialStack,stack=p.inventory[c.Slot].stack});
             }
         }
-        catch{Retire(p);throw;}
+        catch
+        {
+            if(c.Placement?.Object==true)
+            {c.Placement.UncertainNativeEffect=true;c.Phase="unknown";c.Reason="native_object_effect_unconfirmed";}
+            Retire(p);throw;
+        }
         finally
         {
             executing=null;
@@ -161,9 +166,20 @@ internal static class ActorItemUse
     internal static void Retire(Player p)
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
-        var c=Current;if(c==null||!ReferenceEquals(c.Actor,p)||c.Phase!="running")return;
+        var c=Current;if(c==null||!ReferenceEquals(c.Actor,p)
+            ||c.Phase!="running"&&!(c.Placement?.Object==true&&c.Phase=="unknown"))return;
         if(!Binding(c)){c.Phase="stale";c.Reason="actor_binding_changed";return;} // Unknown object/slot never receives a write.
-        c.Phase="cancelled";c.Reason="actor_retired";
+        if(c.Placement?.Object==true)
+        {
+            // Assessment failure must never prevent release of owned inputs or
+            // turn an uncertain native effect into an ordinary cancellation.
+            string uncertainty;
+            try{uncertainty=ActorObjectPlacement.CancellationUncertainty(c);}
+            catch{c.Placement.UncertainNativeEffect=true;uncertainty="object_cancellation_check_unconfirmed";}
+            if(c.Phase!="unknown")
+            {c.Phase=uncertainty==null?"cancelled":"unknown";c.Reason=uncertainty??"actor_retired";}
+        }
+        else {c.Phase="cancelled";c.Reason="actor_retired";}
         p.controlUseItem=false;p.releaseUseItem=true;p.channel=false;
         // Cancellation only. Completed actions drain these counters in native code.
         p.itemAnimation=p.itemTime=p.reuseDelay=p.toolTime=0;
@@ -171,7 +187,31 @@ internal static class ActorItemUse
     internal static void Stop(Player p,string world,long generation)
     {lock(ProbeSession.Reservation.Gate){StopCore(p,world,generation);}}
     private static void StopCore(Player p,string world,long generation)
-    {Capture(p,world,generation);bool running=Running;Retire(p);if(running)Current.Reason="explicit_stop";Sync(p);NetworkStateSync.Full(p);}
+    {
+        if(Current?.Placement?.Object==true&&ReferenceEquals(Current.Actor,p))
+        {
+            ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
+            if(world!=Current.World||generation!=Current.Generation||!Binding(Current))throw new InvalidOperationException("Object cancellation binding changed.");
+            NetworkStateSync.Require(p,true); // An owned dead/disabled actor still needs input release.
+            if(Current.Phase=="completed")
+            {
+                string uncertainty;
+                try{uncertainty=ActorObjectPlacement.CancellationUncertainty(Current);}
+                catch{uncertainty="object_cancellation_check_unconfirmed";}
+                if(uncertainty!=null){Current.Phase="unknown";Current.Reason=uncertainty;}
+            }
+            Retire(p);
+            if(Current.Phase=="cancelled")Current.Reason="explicit_stop";
+            try{if(!p.dead&&!p.ghost){Sync(p);NetworkStateSync.Full(p);}}
+            catch
+            {
+                Current.Placement.UncertainNativeEffect=true;Current.Phase="unknown";Current.Reason="object_cleanup_unconfirmed";
+                Retire(p);throw;
+            }
+            return;
+        }
+        Capture(p,world,generation);bool running=Running;Retire(p);if(running)Current.Reason="explicit_stop";Sync(p);NetworkStateSync.Full(p);
+    }
     internal static string Summary()
     {
         var p=ProbeSession.Actor;if(p==null)return "AI 尚未载入。";

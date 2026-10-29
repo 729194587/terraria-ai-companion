@@ -1,0 +1,169 @@
+{
+  "date": "2026-10-29",
+  "scope": "place_object cancellation and terminal semantics only; place_tile contract retained",
+  "version": "0.1.61",
+  "packageSha256": "79396ee80594a77cb6f35158667792ee80e15097ea8f5cf836a0b81ff3b90071",
+  "validation": {
+    "isolatedNative": "Same package: workbench 44 checks including immediate cancellation without an intervening ItemCheck, disabled/dead actor cleanup, changed inventory identity, timeout and repeated Retire/Stop; exceptions before/after placement 2+2; existing place_tile 24.",
+    "offline": "4 Python targeted tests passed: explicit cancellation unknown+known release, Lua deadline cancellation unknown+poison/no retry, existing workbench unknown barrier, existing selection cancellation. Native-adapter fixture 97 assertions including cancel/death/timeout/disconnect/forget with and without actual release; IPC/atomic/reads/chat and 66 package IL checks passed before final diagnostic-only dead-actor assertion was added.",
+    "receiptVerification": "Archive generator also asserts each immediate cancellation receipt is unknown with InputsReleased=true and EffectVerified=false; normal cancellation receipt retains placedByActor/targetPresent=true,targetChanged=false,consumedCount=1,remainingStack=4 and known release.",
+    "hostAndPlay": "Not run",
+    "fullSuite": "Not run",
+    "realModel": "Not called"
+  },
+  "findings": [
+    {
+      "kind": "observed defect",
+      "text": "Running Poll did not validate cancellation-time state; Retire overwrote phase with cancelled. Python supervisor also converted unknown-with-known-release to timeout."
+    },
+    {
+      "kind": "verified fix",
+      "text": "Game-thread cancellation checks run before timer cleanup, unknown is sticky through Retire/Stop/state/exception paths, fresh input release is read after cleanup. Original Player placement remains unchanged."
+    }
+  ],
+  "runs": [
+    {
+      "case": "workbench",
+      "profile": "placement-native-validation-77230beb7dbe404597d5c41486d39fb4",
+      "result": "passed",
+      "checks": 44,
+      "packageSha256": "79396ee80594a77cb6f35158667792ee80e15097ea8f5cf836a0b81ff3b90071"
+    },
+    {
+      "case": "native-exception",
+      "profile": "placement-native-validation-b3e9ce545a4145b4a1e34e64e61c0703",
+      "result": "passed",
+      "checks": 2,
+      "packageSha256": "79396ee80594a77cb6f35158667792ee80e15097ea8f5cf836a0b81ff3b90071"
+    },
+    {
+      "case": "after-placement-exception",
+      "profile": "placement-native-validation-7b5fc152c7a54efe8ea03f197f5d8d2b",
+      "result": "passed",
+      "checks": 2,
+      "packageSha256": "79396ee80594a77cb6f35158667792ee80e15097ea8f5cf836a0b81ff3b90071"
+    },
+    {
+      "case": "place-tile",
+      "profile": "placement-native-validation-8a1e4338df504446b6cbe8559e158eea",
+      "result": "passed",
+      "checks": 24,
+      "packageSha256": "79396ee80594a77cb6f35158667792ee80e15097ea8f5cf836a0b81ff3b90071"
+    }
+  ],
+  "archive": {
+    "path": "raw.zip",
+    "sha256": "1c6a1383b07035724afec72cade4b9475c0edf737cf1d1a6d7324a3bba1d7f5a",
+    "fileCount": 18
+  },
+  "files": [
+    {
+      "source": ".local/placement-native-validation-77230beb7dbe404597d5c41486d39fb4/placement-native-result.json",
+      "entry": "workbench/placement-native-result.json",
+      "bytes": 18070,
+      "sha256": "58cbf54411f4ebf7c9a60b97a6a893aed0624511d63a8c20a02ddd8536e61192"
+    },
+    {
+      "source": ".local/placement-native-validation-77230beb7dbe404597d5c41486d39fb4/stdout.log",
+      "entry": "workbench/stdout.log",
+      "bytes": 4397,
+      "sha256": "e4083dd04a0d1c4479f9534692d33c37389ffcf47317fbab821b3eccad104fc6"
+    },
+    {
+      "source": ".local/placement-native-validation-77230beb7dbe404597d5c41486d39fb4/stderr.log",
+      "entry": "workbench/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/object-cancel-final-native.log",
+      "entry": "workbench/launcher.log",
+      "bytes": 18207,
+      "sha256": "5ac9d81cbdd55fd8dc61b1ccbc801076aaf11e5a350112f33497b4bb02b3c740"
+    },
+    {
+      "source": ".local/placement-native-validation-b3e9ce545a4145b4a1e34e64e61c0703/placement-native-result.json",
+      "entry": "native-exception/placement-native-result.json",
+      "bytes": 971,
+      "sha256": "65abdd89d1b7947698a601ccea0760c3926d6becbb4790b3d35da5b7ef970ae6"
+    },
+    {
+      "source": ".local/placement-native-validation-b3e9ce545a4145b4a1e34e64e61c0703/stdout.log",
+      "entry": "native-exception/stdout.log",
+      "bytes": 4327,
+      "sha256": "6fb53853dc4e8f483e2adac523022cef6bbc9b0143a0672a7b85d630abc13cc7"
+    },
+    {
+      "source": ".local/placement-native-validation-b3e9ce545a4145b4a1e34e64e61c0703/stderr.log",
+      "entry": "native-exception/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/object-cancel-final-exception.log",
+      "entry": "native-exception/launcher.log",
+      "bytes": 1234,
+      "sha256": "456932b6674e08f123031d5976eacebb92448293a8f5fc8995884347ae044a86"
+    },
+    {
+      "source": ".local/placement-native-validation-7b5fc152c7a54efe8ea03f197f5d8d2b/placement-native-result.json",
+      "entry": "after-placement-exception/placement-native-result.json",
+      "bytes": 969,
+      "sha256": "cce077c4f160bbe70f9de0bd8b9d515b127f69342f78f3bb0944b643e6b2c550"
+    },
+    {
+      "source": ".local/placement-native-validation-7b5fc152c7a54efe8ea03f197f5d8d2b/stdout.log",
+      "entry": "after-placement-exception/stdout.log",
+      "bytes": 4360,
+      "sha256": "68f0bad8b0190016b575af806b7e9eedb1a037919d9cd998cce956768ea5a71c"
+    },
+    {
+      "source": ".local/placement-native-validation-7b5fc152c7a54efe8ea03f197f5d8d2b/stderr.log",
+      "entry": "after-placement-exception/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/object-cancel-final-after-exception.log",
+      "entry": "after-placement-exception/launcher.log",
+      "bytes": 1232,
+      "sha256": "e1d275d0373ebc9a6db0d0a5e362f3aae53bc08f16cf609d5bb85d3a261a3417"
+    },
+    {
+      "source": ".local/placement-native-validation-8a1e4338df504446b6cbe8559e158eea/placement-native-result.json",
+      "entry": "place-tile/placement-native-result.json",
+      "bytes": 6318,
+      "sha256": "04ff584fe57c0ddd02bb5f26f7a5ba28ad2dc284eae6e6b5f20f14aa11cc65ec"
+    },
+    {
+      "source": ".local/placement-native-validation-8a1e4338df504446b6cbe8559e158eea/stdout.log",
+      "entry": "place-tile/stdout.log",
+      "bytes": 4171,
+      "sha256": "51a2567ec1ca92032d3aa17e748bf66e7d357f067be8bf1d9722666c3cc36e86"
+    },
+    {
+      "source": ".local/placement-native-validation-8a1e4338df504446b6cbe8559e158eea/stderr.log",
+      "entry": "place-tile/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": ".local/object-cancel-final-place-tile.log",
+      "entry": "place-tile/launcher.log",
+      "bytes": 6455,
+      "sha256": "604b22dd2e53df3c04c38960bec08531666efcc81690918d82b798354fddb66f"
+    },
+    {
+      "source": ".local/object-cancel-ipc.log",
+      "entry": "offline/object-cancel-ipc.log",
+      "bytes": 21496,
+      "sha256": "9f27048e6ba585c075ea8cb53d15d2ddf1ccae3f5ed83b5c8a4657eaa10ea861"
+    },
+    {
+      "source": ".local/object-cancel-adapter.log",
+      "entry": "offline/object-cancel-adapter.log",
+      "bytes": 8121,
+      "sha256": "ad49040495a95f85af10b5e3a964cc7c97701ea5be06a7673085fb1ad10107dd"
+    }
+  ]
+}

@@ -98,4 +98,19 @@ internal static class ActorObjectPlacement
         if(use.Actor.gravDir!=1||use.Actor.noBuilding||use.Actor.frozen||use.Actor.stoned)return "unsupported_placement_state";
         return null;
     }
+    // Called on the owning game thread before cancellation clears native timers.
+    // A successful placement event without its matching observed consumption is
+    // still uncertain, even before the next ItemCheck has a chance to validate it.
+    internal static string CancellationUncertainty(ActorItemUse.Context use)
+    {
+        var c=use.Placement;
+        if(c.UncertainNativeEffect)return "native_object_effect_unconfirmed";
+        string invalid=Validate(use);if(invalid!=null)return invalid;
+        if(c.NativeEvents==0&&!c.Placed&&c.ConsumedCount==0)return null;
+        if(c.NativeEvents!=1||!c.Placed||!Present(c))return "native_object_effect_unconfirmed";
+        if(c.ConsumedCount!=1)return "native_placement_consumption_unconfirmed";
+        if(!ReferenceEquals(use.Actor.inventory[use.Slot],use.Item)
+            &&!(use.Item.IsAir&&use.Actor.inventory[use.Slot].IsAir&&use.InitialStack==1))return "placement_item_changed";
+        return null;
+    }
 }

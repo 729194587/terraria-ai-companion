@@ -147,7 +147,7 @@ class Handler(socketserver.StreamRequestHandler):
                     self.wfile.write((json.dumps(dict(v=1, id=r['id'], ok=False, error='stale_binding'))+'\n').encode())
                     continue
                 h.polls += 1
-                if op == 'cancel' or h.mode != 'pending' and h.polls >= 2:
+                if op == 'cancel' or h.mode not in ('pending', 'cancel_unknown') and h.polls >= 2:
                     a = h.action
                     h.selected = a['evidence'].get('targetSlot', h.selected)
                     a.update(status='cancelled' if op == 'cancel' else 'failed' if h.mode == 'failed' else 'completed', reason='fixture_end',
@@ -156,6 +156,8 @@ class Handler(socketserver.StreamRequestHandler):
                                               phase='ServerAI_game_thread_no_input', inputsAcquired=False,
                                               actorId='actor-1', actorGeneration=1, actorSlot=254,
                                               selectedSlot=h.selected, selectionVerified=True))
+                    if op == 'cancel' and h.mode == 'cancel_unknown':
+                        a.update(status='unknown', reason='native_placement_consumption_unconfirmed')
                     a['evidence']['selectionApplied'] = True
                     if h.mode == 'bad_evidence':
                         a['endEvidence']['selectionVerified'] = False
@@ -174,6 +176,9 @@ class Handler(socketserver.StreamRequestHandler):
                             if a['operation'] == 'place_object':
                                 a['evidence'].update(objectPlacement=True,fullFootprintVerified=True,nativePlacementEvents=1,uncertainNativeEffect=False,typeId=18,itemType=36,style=0,footprint=dict(**a['targetTile'],width=2,height=1))
                             a['evidence'].update(h.placement_override)
+                            if op == 'cancel' and h.mode == 'cancel_unknown':
+                                a['evidence']['consumedCount'] = 0
+                                a['endEvidence']['effectVerified'] = False
                         if h.mode == 'changed_tile':
                             a['targetTile'] = {**a['targetTile'], 'x': 11}
                         if a['operation'] == 'navigate_to_landing_region':
@@ -460,6 +465,41 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         result = await runtime.execute("api('place_object',{x=10,y=20}); api('place_object',{x=12,y=20})", limits=Limits(seconds=8))
         self.assertNotEqual('completed', result['status'], result)
         self.assertEqual(2, sum(r['op'] == 'start' for r in self.host.sent))
+
+    async def test_workbench_explicit_cancel_preserves_unknown_release(self):
+        self.bridge.close()
+        self.host.actions = self.host.object_placement = True
+        self.host.mode = 'cancel_unknown'
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+        lifecycle = {}
+        task = asyncio.create_task(atomic.dispatch(self.bridge, 'place_object', {'x': 10, 'y': 20}, lifecycle=lifecycle))
+        while self.host.action is None:
+            await asyncio.sleep(.01)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        cleanup = lifecycle['cleanup']
+        self.assertEqual('unknown', cleanup['status'], cleanup)
+        self.assertTrue(cleanup['valid'])
+        self.assertTrue(cleanup['endEvidence']['inputsReleased'])
+        self.assertEqual(0, cleanup['evidence']['consumedCount'])
+        self.assertEqual(1, sum(r['op'] == 'start' for r in self.host.sent))
+
+    async def test_workbench_deadline_cancel_unknown_poisoned_lua_without_retry(self):
+        self.bridge.close()
+        self.host.actions = self.host.object_placement = True
+        self.host.mode = 'cancel_unknown'
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+        runtime = LuaRuntime(self.bridge, evidence_root=self.directory.name)
+        source = "api('place_object',{x=10,y=20}); api('place_object',{x=12,y=20})"
+        result = await runtime.execute(source, limits=Limits(seconds=8))
+        self.assertEqual('unknown', result['actionState'], result)
+        self.assertTrue(self.bridge._lua_poisoned)
+        self.assertEqual('unknown', result['lastAction']['status'], result)
+        blocked = await runtime.execute(source, limits=Limits(seconds=8))
+        self.assertEqual('blocked', blocked['status'])
+        self.assertEqual(1, sum(r['op'] == 'start' for r in self.host.sent))
+        self.assertEqual(1, sum(r['op'] == 'cancel' for r in self.host.sent))
 
     async def test_lua_reads_before_and_after_existing_selection(self):
         source = """

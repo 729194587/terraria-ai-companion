@@ -458,7 +458,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         while action['status'] == 'running':
             if asyncio.get_running_loop().time() >= deadline:
                 stopped = await stop(bridge, action_id, action)
-                return {**stopped, 'status': 'timeout' if stopped['valid'] else 'unknown', 'completed': False,
+                return {**stopped, 'status': 'unknown' if name == 'place_object' and stopped.get('status') == 'unknown'
+                        else 'timeout' if stopped['valid'] else 'unknown', 'completed': False,
                         'cleanupReason': stopped['reason'], 'reason': 'supervisor_deadline'}
             await asyncio.sleep(0.1)
             reply = await command(bridge, 'get_movement')

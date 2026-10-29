@@ -112,12 +112,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             bool present=tile.Object?ActorObjectPlacement.Present(tile):Main.tile[tile.X,tile.Y].HasTile&&Main.tile[tile.X,tile.Y].TileType==tile.TileType;
             bool verified=c.Phase=="completed"&&tile.Placed&&!tile.ExternalChange&&present&&tile.ConsumedCount==1
                 &&(!tile.Object||tile.NativeEvents==1&&ActorObjectPlacement.Validate(c)==null);
-            return new(c.Phase=="rejected"?"failed":c.Phase=="stale"?"unknown":c.Phase,c.Reason,
+            string placementPhase=c.Phase=="rejected"?"failed":c.Phase=="stale"||tile.Object&&c.Phase=="completed"&&!verified?"unknown":c.Phase;
+            return new(placementPhase,tile.Object&&c.Phase=="completed"&&!verified?"native_object_terminal_unconfirmed":c.Reason,
                 new{x=tile.X,y=tile.Y,typeId=tile.TileType,itemType=c.Type,c.InitialStack,remainingStack=p.inventory[c.Slot].stack,
                     c.Ticks,c.Starts,c.AnimationPeak,tile.Attempts,nativePlacementEvents=tile.NativeEvents,uncertainNativeEffect=tile.UncertainNativeEffect,consumedCount=tile.ConsumedCount,placedByActor=tile.Placed,
                     objectPlacement=tile.Object,footprint=tile.Object?ActorObjectPlacement.Bounds(tile):null,fullFootprintVerified=tile.Object&&present,style=tile.Style,
                     targetPresent=present,targetChanged=tile.ExternalChange,effectStatus=verified?(tile.Object?"native_object_placed":"native_tile_placed"):"not_confirmed"},
-                Released(p)&&p.itemAnimation==0&&p.itemTime==0,verified,InputsAcquired:c.Ticks>0);
+                Released(p)&&p.itemAnimation==0&&p.itemTime==0&&(!tile.Object||p.releaseUseItem&&p.reuseDelay==0),verified,InputsAcquired:c.Ticks>0);
         }
         if(h.Operation=="use_item")
         {
@@ -147,6 +148,12 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             var c=(ActorCrafting.Context)h.Context;
             if(c.Status=="running"){c.Status="cancelled";c.Reason="explicit_stop";}
             return new(c.Status,c.Reason,ActorCrafting.Evidence(c),Released((Player)h.Identity.Actor),c.Status=="completed",InputsAcquired:false);
+        }
+        if(h.Operation=="place_object")
+        {
+            if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
+            ActorItemUse.Stop((Player)h.Identity.Actor,h.Identity.World,h.Identity.Generation);
+            return Poll(h.Identity,h);
         }
         var observed=Poll(h.Identity,h);
         if(observed.Status!="running")return observed;
