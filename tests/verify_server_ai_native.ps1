@@ -1,8 +1,9 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$VerticalNavigation)
 $ErrorActionPreference='Stop'
 if($Crafting -and !$Actions){throw 'Crafting verification requires isolated Actions fixture.'}
 if($Scene){$Perception=$true;if(!$Actions){throw 'Scene verification requires isolated Actions fixture.'}}
 if($LandingRegions){$Terrain=$true}
+if($VerticalNavigation){$Terrain=$true}
 if($Placement -and !$Actions){throw 'Placement validation requires isolated Actions fixture.'}
 if($Terrain -and !$Actions){throw 'Terrain validation requires isolated Actions fixture.'}
 if($Semantic -and (!$Actions -or !$Perception)){throw 'Semantic validation requires isolated Actions and Perception fixtures.'}
@@ -220,9 +221,14 @@ try {
         if($LASTEXITCODE -ne 0){throw "Native placement Lua verification failed: $profile/placement-lua-result.json"}
     }
     if($Terrain){
-        $terrainScript=if($LandingRegions){'tests/native_landing_regions.py'}else{'scripts/server_ai_terrain.py'}
-        & $PythonExecutable (Join-Path $repo $terrainScript) --port $IpcPort --profile $profile
-        if($LASTEXITCODE -ne 0){throw "Native terrain matrix failed: $profile/terrain-result.json"}
+        $terrainScripts=@()
+        if($LandingRegions){$terrainScripts+='tests/native_landing_regions.py'}
+        if($VerticalNavigation){$terrainScripts+='tests/native_vertical_navigation.py'}
+        if(!$terrainScripts.Count){$terrainScripts+='scripts/server_ai_terrain.py'}
+        foreach($terrainScript in $terrainScripts){
+            & $PythonExecutable (Join-Path $repo $terrainScript) --port $IpcPort --profile $profile
+            if($LASTEXITCODE -ne 0){throw "Native terrain matrix failed: $profile"}
+        }
     }
     $client.Dispose();$client=$null
     [IO.File]::WriteAllText("$profile/g81-test-stop",'The isolated harness requests native main-thread shutdown after read-only TCP assertions.')
@@ -256,7 +262,8 @@ try {
     if($Scene){$report.scene=Get-Content -LiteralPath "$profile/scene-actions.json" -Raw|ConvertFrom-Json}
     if($Placement){$report.placement=Get-Content -LiteralPath "$profile/placement-lua-result.json" -Raw|ConvertFrom-Json}
     if($Semantic){$report.semantic=$semanticResult}
-    if($Terrain){$report.terrain=Get-Content -LiteralPath "$profile/terrain-result.json" -Raw|ConvertFrom-Json}
+    if($Terrain){$matrixFile=if($VerticalNavigation){'vertical-result.json'}else{'terrain-result.json'};$report.terrain=Get-Content -LiteralPath "$profile/$matrixFile" -Raw|ConvertFrom-Json}
+    if($VerticalNavigation -and $LandingRegions){$report.landingRegions=Get-Content -LiteralPath "$profile/terrain-result.json" -Raw|ConvertFrom-Json}
     if($Scene){$report.combatIsolation=$combatIsolation;$report.actionFixture=$fixture;$report.actionFrameMode='isolated whole native Main.Update frames, scene candidates; no old action fixture state reuse'}
     if($Crafting){$report.crafting=Get-Content -LiteralPath "$profile/crafting-results.json" -Raw|ConvertFrom-Json;$report.combatIsolation=$combatIsolation}
     if($Actions -and !$Scene -and !$Crafting){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;

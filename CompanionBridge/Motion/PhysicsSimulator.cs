@@ -209,7 +209,13 @@ internal static class PhysicsSimulator
             s = next;
             if (stable >= 2)
             {
-                bool safe = (brakingOnly || direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4))
+                // A neutral jump can ascend through a one-way platform without
+                // horizontal travel. Require a different supported height; a
+                // hop returning to the same floor must not create search cycles.
+                bool progress = direction == 0 && hold > 0
+                    ? start.Py - s.Py >= 4
+                    : direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4);
+                bool safe = (brakingOnly || progress)
                     && world.SafeLanding(s);
                 int execute = movingLandingFrames > 0 ? movingLandingFrames : frames.Count;
                 if (hold == 0 && !brakingOnly)

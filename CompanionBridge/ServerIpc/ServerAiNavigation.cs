@@ -57,6 +57,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         var input=navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,Current.Region==null?Current.Target:null,Current.Region);
         p.controlLeft=input.Direction<0;p.controlRight=input.Direction>0;p.controlJump=input.Jump;
         p.controlDown=p.controlUp=p.controlUseItem=p.controlUseTile=false;
+        ServerAiTerrainFixture.RecordInput(p);
         injected=true;
     }
     private bool Release(bool brake=false)

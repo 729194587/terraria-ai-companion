@@ -101,11 +101,17 @@ internal static class StateSpacePlanner
             if (Reached(cur))
             { best = cur; reachedGoal = true; break; }
             expansions++;
-            foreach (int dir in new[] { sign, -sign })
+            // Region goals also need an in-place ascent, e.g. a platform above
+            // the player in a narrow shaft. Horizontal crossing keeps its existing
+            // candidates; all variants use the same sweep, drop and braking proof.
+            bool neutralAscent = region != null && cur.Px >= region.MinPlayerLeftX && cur.Px <= region.MaxPlayerLeftX
+                && cur.Py + PhysicsSimulator.PlayerH - region.SurfaceY >= 4;
+            foreach (int dir in neutralAscent ? new[] { 0, sign, -sign } : new[] { sign, -sign })
             {
                 // BuildHoldOptions from upstream: walk then 2-frame hold increments.
                 for (int option = 0; option <= (ph.JumpHeight + 1) / 2; option++)
                 {
+                    if (dir == 0 && option == 0) continue;
                     if (watch.Elapsed.TotalMilliseconds >= budgetMs) { timedOut = true; break; }
                     int hold = Math.Min(option * 2, ph.JumpHeight);
                     foreach (int stride in hold == 0 ? new[] { 24, 6 } : new[] { 24 })

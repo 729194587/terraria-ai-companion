@@ -1,0 +1,3332 @@
+{
+  "baseCommit": "2c70ec8b278e210b651c06b8803cb4bbb6d970c5",
+  "packageVersion": "0.1.63",
+  "nativeScenarios": [
+    {
+      "matrix": "terrain-result.json",
+      "scene": "flat",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33723.754,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 65
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 7,
+            "PlanMilliseconds": 12.5528,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 65,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 11,
+          "PlanMilliseconds": 25.0535
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 7,
+          "PlanMilliseconds": 12.5528
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "flat",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33524,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33520.69,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 60
+          },
+          "finalPlan": {
+            "PlanNumber": 4,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 3.8548,
+            "PlannedActions": 1,
+            "CompletedActions": 4,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 60,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 18,
+          "PlanMilliseconds": 23.3322
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 5,
+          "PlanMilliseconds": 16.999
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 2,
+          "PlanMilliseconds": 5.2585
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 3.8548
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "step_up",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3488
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33723.754,
+            "y": 3446,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 65
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 4,
+            "PlanMilliseconds": 12.6616,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 65,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.0307
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 4,
+          "PlanMilliseconds": 12.6616
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "step_up",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33524,
+            "surfaceY": 3488
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33504.246,
+            "y": 3446,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 65
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 4,
+            "PlanMilliseconds": 14.7891,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 65,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.0585
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 4,
+          "PlanMilliseconds": 14.7891
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "step_down",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3520
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33723.754,
+            "y": 3478,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 65
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 7,
+            "PlanMilliseconds": 15.3849,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 65,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 16,
+          "PlanMilliseconds": 25.011
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 7,
+          "PlanMilliseconds": 15.3849
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "step_down",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33524,
+            "surfaceY": 3520
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33520.69,
+            "y": 3478,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 60
+          },
+          "finalPlan": {
+            "PlanNumber": 4,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 5.0857,
+            "PlannedActions": 1,
+            "CompletedActions": 4,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 60,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 18,
+          "PlanMilliseconds": 25.0826
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 5,
+          "PlanMilliseconds": 17.0161
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 2,
+          "PlanMilliseconds": 9.5222
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 5.0857
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "slope_up",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33744,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3440
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33748.746,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 74
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 6,
+            "PlanMilliseconds": 10.437,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 74,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 15,
+          "PlanMilliseconds": 25.0897
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 6,
+          "PlanMilliseconds": 10.437
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "slope_up",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33476,
+            "surfaceY": 3440
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33470.973,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 77
+          },
+          "finalPlan": {
+            "PlanNumber": 4,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 4.3392,
+            "PlannedActions": 1,
+            "CompletedActions": 4,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 77,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 17,
+          "PlanMilliseconds": 25.0671
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.0544
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 3,
+          "PlanMilliseconds": 9.1212
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 4.3392
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "slope_down",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33744,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3568
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33761.508,
+            "y": 3526,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 79
+          },
+          "finalPlan": {
+            "PlanNumber": 4,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 1.5556,
+            "PlannedActions": 1,
+            "CompletedActions": 4,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 79,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.03
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 10,
+          "PlanMilliseconds": 17.0858
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 3,
+          "PlanMilliseconds": 5.7378
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 1.5556
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "slope_down",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33476,
+            "surfaceY": 3568
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33466.492,
+            "y": 3526,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 79
+          },
+          "finalPlan": {
+            "PlanNumber": 4,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 5.2033,
+            "PlannedActions": 1,
+            "CompletedActions": 4,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 79,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 11,
+          "PlanMilliseconds": 25.0949
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 10,
+          "PlanMilliseconds": 20.7872
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 3,
+          "PlanMilliseconds": 11.3587
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 5.2033
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "short_gap",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33728,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33729.04,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 67
+          },
+          "finalPlan": {
+            "PlanNumber": 1,
+            "ReachedGoal": true,
+            "TimeBudgetReached": true,
+            "Expansions": 14,
+            "PlanMilliseconds": 25.0653,
+            "PlannedActions": 1,
+            "CompletedActions": 1,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 67,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.0653
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "short_gap",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33492,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33479.13,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 74
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 17,
+            "PlanMilliseconds": 24.274,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 74,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 6,
+          "PlanMilliseconds": 25.0859
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 17,
+          "PlanMilliseconds": 24.274
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "low_obstacle",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33760.156,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 77
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": true,
+            "Expansions": 14,
+            "PlanMilliseconds": 25.0799,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 77,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 20,
+          "PlanMilliseconds": 25.0128
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.0799
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "low_obstacle",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33508,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33467.844,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 77
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": true,
+            "Expansions": 20,
+            "PlanMilliseconds": 25.0128,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 77,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 6,
+          "PlanMilliseconds": 25.3438
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 20,
+          "PlanMilliseconds": 25.0128
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "platform_up",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3440
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33737.43,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 70
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 13,
+            "PlanMilliseconds": 23.463,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 70,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 9,
+          "PlanMilliseconds": 25.0254
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 13,
+          "PlanMilliseconds": 23.463
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "platform_up",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33508,
+            "surfaceY": 3440
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33490.57,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 70
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 12,
+            "PlanMilliseconds": 22.724,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 70,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.0518
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 12,
+          "PlanMilliseconds": 22.724
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "platform_down",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33738.02,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 71
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 6,
+            "PlanMilliseconds": 12.5469,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 71,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 17,
+          "PlanMilliseconds": 25.0786
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 6,
+          "PlanMilliseconds": 12.5469
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "platform_down",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33508,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33489.98,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 71
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 6,
+            "PlanMilliseconds": 16.6082,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 71,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.0649
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 6,
+          "PlanMilliseconds": 16.6082
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "high_platform",
+      "direction": 1,
+      "expected": false,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33780,
+            "surfaceY": 3312
+          },
+          "status": "failed",
+          "reason": "no safe local route: search time budget reached; jump descent exceeds 64px limit (59 candidates); no safe landing/progress (49 candidates); outside route span (16 candidates)",
+          "actual": {
+            "x": 33658.918,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 103
+          },
+          "finalPlan": {
+            "PlanNumber": 7,
+            "ReachedGoal": false,
+            "TimeBudgetReached": true,
+            "Expansions": 16,
+            "PlanMilliseconds": 28.6054,
+            "PlannedActions": 0,
+            "CompletedActions": 6,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 103,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 16,
+          "PlanMilliseconds": 25.0821
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 15,
+          "PlanMilliseconds": 25.0295
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.0563
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 12,
+          "PlanMilliseconds": 25.1147
+        },
+        {
+          "PlanNumber": 5,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.01
+        },
+        {
+          "PlanNumber": 6,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 12,
+          "PlanMilliseconds": 25.0354
+        },
+        {
+          "PlanNumber": 7,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 16,
+          "PlanMilliseconds": 28.6054
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "terrain-result.json",
+      "scene": "high_platform",
+      "direction": -1,
+      "expected": false,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33508,
+            "surfaceY": 3312
+          },
+          "status": "failed",
+          "reason": "no safe local route: search time budget reached; jump descent exceeds 64px limit (56 candidates); no safe landing/progress (34 candidates); outside route span (14 candidates)",
+          "actual": {
+            "x": 33569.082,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 103
+          },
+          "finalPlan": {
+            "PlanNumber": 7,
+            "ReachedGoal": false,
+            "TimeBudgetReached": true,
+            "Expansions": 13,
+            "PlanMilliseconds": 25.2056,
+            "PlannedActions": 0,
+            "CompletedActions": 6,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 103,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.2232
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 15,
+          "PlanMilliseconds": 25.0365
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 18,
+          "PlanMilliseconds": 25.0041
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 15,
+          "PlanMilliseconds": 25.0456
+        },
+        {
+          "PlanNumber": 5,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 15,
+          "PlanMilliseconds": 25.0464
+        },
+        {
+          "PlanNumber": 6,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.0201
+        },
+        {
+          "PlanNumber": 7,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.2056
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/terrain-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "obstacle_one",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33728,
+            "maxPlayerLeftX": 33788,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33740.355,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 71
+          },
+          "finalPlan": {
+            "PlanNumber": 3,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 2.4603,
+            "PlannedActions": 1,
+            "CompletedActions": 3,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 71,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.0139
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 6,
+          "PlanMilliseconds": 13.5816
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 2.4603
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "obstacle_one",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33500,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33487.645,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 71
+          },
+          "finalPlan": {
+            "PlanNumber": 3,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 2.7884,
+            "PlannedActions": 1,
+            "CompletedActions": 3,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 72,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.9228
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 6,
+          "PlanMilliseconds": 18.9083
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 2.7884
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "solid_up_three",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33728,
+            "maxPlayerLeftX": 33788,
+            "surfaceY": 3456
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33732.68,
+            "y": 3414,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 76
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": true,
+            "Expansions": 13,
+            "PlanMilliseconds": 25.0417,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 76,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 12,
+          "PlanMilliseconds": 25.0111
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.0417
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "solid_up_three",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33500,
+            "surfaceY": 3456
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33495.32,
+            "y": 3414,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 76
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": true,
+            "Expansions": 18,
+            "PlanMilliseconds": 25.1103,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 76,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.0443
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 18,
+          "PlanMilliseconds": 25.1103
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "solid_up_five",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33728,
+            "maxPlayerLeftX": 33788,
+            "surfaceY": 3424
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33732.844,
+            "y": 3382,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 109
+          },
+          "finalPlan": {
+            "PlanNumber": 4,
+            "ReachedGoal": true,
+            "TimeBudgetReached": true,
+            "Expansions": 13,
+            "PlanMilliseconds": 25.0249,
+            "PlannedActions": 1,
+            "CompletedActions": 4,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 109,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 18,
+          "PlanMilliseconds": 25.0269
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 16,
+          "PlanMilliseconds": 25.1687
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.0368
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.0249
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "solid_up_five",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33500,
+            "surfaceY": 3424
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33491.016,
+            "y": 3382,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 96
+          },
+          "finalPlan": {
+            "PlanNumber": 3,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 1.2062,
+            "PlannedActions": 1,
+            "CompletedActions": 3,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 96,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 7,
+          "PlanMilliseconds": 25.0584
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 2,
+          "PlanMilliseconds": 2.0164
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 1.2062
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "shaft_up",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33620,
+            "maxPlayerLeftX": 33624,
+            "surfaceY": 3440
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33622,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 30
+          },
+          "finalPlan": {
+            "PlanNumber": 1,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 1.5112,
+            "PlannedActions": 1,
+            "CompletedActions": 1,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 30,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 1.5112
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "shaft_up",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33604,
+            "maxPlayerLeftX": 33608,
+            "surfaceY": 3440
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33606,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 30
+          },
+          "finalPlan": {
+            "PlanNumber": 1,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 1.0563,
+            "PlannedActions": 1,
+            "CompletedActions": 1,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 30,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 1.0563
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "shaft_ceiling",
+      "direction": 1,
+      "expected": false,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33620,
+            "maxPlayerLeftX": 33624,
+            "surfaceY": 3440
+          },
+          "status": "failed",
+          "reason": "no safe local route: no safe landing/progress (26 candidates); walking blocked (2 candidates)",
+          "actual": {
+            "x": 33622,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 1
+          },
+          "finalPlan": {
+            "PlanNumber": 1,
+            "ReachedGoal": false,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 3.72,
+            "PlannedActions": 0,
+            "CompletedActions": 0,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 1,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 3.72
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "shaft_ceiling",
+      "direction": -1,
+      "expected": false,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33604,
+            "maxPlayerLeftX": 33608,
+            "surfaceY": 3440
+          },
+          "status": "failed",
+          "reason": "no safe local route: no safe landing/progress (26 candidates); walking blocked (2 candidates)",
+          "actual": {
+            "x": 33606,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 1
+          },
+          "finalPlan": {
+            "PlanNumber": 1,
+            "ReachedGoal": false,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 3.5533,
+            "PlannedActions": 0,
+            "CompletedActions": 0,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 1,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 3.5533
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "alternating",
+      "direction": 1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33788,
+            "surfaceY": 3440
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33737.43,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 70
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": true,
+            "Expansions": 12,
+            "PlanMilliseconds": 25.0277,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        },
+        {
+          "goal": {
+            "minPlayerLeftX": 33840,
+            "maxPlayerLeftX": 33916,
+            "surfaceY": 3472
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33846.516,
+            "y": 3430,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 66
+          },
+          "finalPlan": {
+            "PlanNumber": 4,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 4.1445,
+            "PlannedActions": 1,
+            "CompletedActions": 4,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        },
+        {
+          "goal": {
+            "minPlayerLeftX": 33712,
+            "maxPlayerLeftX": 33788,
+            "surfaceY": 3440
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33785.523,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 49
+          },
+          "finalPlan": {
+            "PlanNumber": 1,
+            "ReachedGoal": true,
+            "TimeBudgetReached": true,
+            "Expansions": 17,
+            "PlanMilliseconds": 25.8507,
+            "PlannedActions": 1,
+            "CompletedActions": 1,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        },
+        {
+          "goal": {
+            "minPlayerLeftX": 33584,
+            "maxPlayerLeftX": 33644,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33641.305,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 79
+          },
+          "finalPlan": {
+            "PlanNumber": 3,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 2,
+            "PlanMilliseconds": 6.9587,
+            "PlannedActions": 1,
+            "CompletedActions": 3,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 264,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 8,
+          "PlanMilliseconds": 25.0723
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 12,
+          "PlanMilliseconds": 25.0277
+        },
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 11,
+          "PlanMilliseconds": 25.0939
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 6,
+          "PlanMilliseconds": 12.7411
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 2,
+          "PlanMilliseconds": 4.7775
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 4.1445
+        },
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 17,
+          "PlanMilliseconds": 25.8507
+        },
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 18,
+          "PlanMilliseconds": 25.046
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 8,
+          "PlanMilliseconds": 10.3423
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 2,
+          "PlanMilliseconds": 6.9587
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "alternating",
+      "direction": -1,
+      "expected": true,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33516,
+            "surfaceY": 3440
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33490.57,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 70
+          },
+          "finalPlan": {
+            "PlanNumber": 2,
+            "ReachedGoal": true,
+            "TimeBudgetReached": true,
+            "Expansions": 10,
+            "PlanMilliseconds": 25.0573,
+            "PlannedActions": 1,
+            "CompletedActions": 2,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        },
+        {
+          "goal": {
+            "minPlayerLeftX": 33312,
+            "maxPlayerLeftX": 33388,
+            "surfaceY": 3472
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33381.484,
+            "y": 3430,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 66
+          },
+          "finalPlan": {
+            "PlanNumber": 4,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 1,
+            "PlanMilliseconds": 7.6357,
+            "PlannedActions": 1,
+            "CompletedActions": 4,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        },
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33516,
+            "surfaceY": 3440
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33442.477,
+            "y": 3398,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 49
+          },
+          "finalPlan": {
+            "PlanNumber": 1,
+            "ReachedGoal": true,
+            "TimeBudgetReached": true,
+            "Expansions": 14,
+            "PlanMilliseconds": 25.0283,
+            "PlannedActions": 1,
+            "CompletedActions": 1,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        },
+        {
+          "goal": {
+            "minPlayerLeftX": 33584,
+            "maxPlayerLeftX": 33644,
+            "surfaceY": 3504
+          },
+          "status": "completed",
+          "reason": null,
+          "actual": {
+            "x": 33586.695,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 79
+          },
+          "finalPlan": {
+            "PlanNumber": 3,
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "Expansions": 2,
+            "PlanMilliseconds": 9.0268,
+            "PlannedActions": 1,
+            "CompletedActions": 3,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 264,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 20,
+          "PlanMilliseconds": 25.0608
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 10,
+          "PlanMilliseconds": 25.0573
+        },
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.2808
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 6,
+          "PlanMilliseconds": 7.7163
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 2,
+          "PlanMilliseconds": 8.0993
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 1,
+          "PlanMilliseconds": 7.6357
+        },
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.0283
+        },
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": true,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.0183
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 8,
+          "PlanMilliseconds": 9.6746
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "Expansions": 2,
+          "PlanMilliseconds": 9.0268
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "no_landing",
+      "direction": 1,
+      "expected": false,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33728,
+            "maxPlayerLeftX": 33788,
+            "surfaceY": 3440
+          },
+          "status": "failed",
+          "reason": "no safe local route: search time budget reached; no safe landing/progress (75 candidates); outside route span (55 candidates); walking blocked (3 candidates)",
+          "actual": {
+            "x": 33740.91,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 61
+          },
+          "finalPlan": {
+            "PlanNumber": 5,
+            "ReachedGoal": false,
+            "TimeBudgetReached": true,
+            "Expansions": 12,
+            "PlanMilliseconds": 25.0358,
+            "PlannedActions": 0,
+            "CompletedActions": 4,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 61,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 10,
+          "PlanMilliseconds": 25.4151
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 20,
+          "PlanMilliseconds": 25.0302
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 18,
+          "PlanMilliseconds": 26.0918
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 11,
+          "PlanMilliseconds": 25.0157
+        },
+        {
+          "PlanNumber": 5,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 12,
+          "PlanMilliseconds": 25.0358
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "no_landing",
+      "direction": -1,
+      "expected": false,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33500,
+            "surfaceY": 3440
+          },
+          "status": "failed",
+          "reason": "no safe local route: search time budget reached; no safe landing/progress (79 candidates); outside route span (55 candidates); walking blocked (4 candidates)",
+          "actual": {
+            "x": 33487.09,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 61
+          },
+          "finalPlan": {
+            "PlanNumber": 5,
+            "ReachedGoal": false,
+            "TimeBudgetReached": true,
+            "Expansions": 12,
+            "PlanMilliseconds": 25.3068,
+            "PlannedActions": 0,
+            "CompletedActions": 4,
+            "CompletedJumps": 0
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 61,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 15,
+          "PlanMilliseconds": 25.0464
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.0314
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 9,
+          "PlanMilliseconds": 25.0372
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 14,
+          "PlanMilliseconds": 25.038
+        },
+        {
+          "PlanNumber": 5,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 12,
+          "PlanMilliseconds": 25.3068
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "descent_five",
+      "direction": 1,
+      "expected": false,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33728,
+            "maxPlayerLeftX": 33788,
+            "surfaceY": 3504
+          },
+          "status": "failed",
+          "reason": "no safe local route: search time budget reached; no safe landing/progress (81 candidates); jump descent exceeds 64px limit (67 candidates); outside route span (52 candidates)",
+          "actual": {
+            "x": 33658.918,
+            "y": 3382,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 103
+          },
+          "finalPlan": {
+            "PlanNumber": 7,
+            "ReachedGoal": false,
+            "TimeBudgetReached": true,
+            "Expansions": 23,
+            "PlanMilliseconds": 25.0475,
+            "PlannedActions": 0,
+            "CompletedActions": 6,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 103,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 17,
+          "PlanMilliseconds": 25.0576
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 21,
+          "PlanMilliseconds": 25.0506
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 18,
+          "PlanMilliseconds": 25.1472
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 15,
+          "PlanMilliseconds": 25.0098
+        },
+        {
+          "PlanNumber": 5,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 15,
+          "PlanMilliseconds": 25.0119
+        },
+        {
+          "PlanNumber": 6,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 17,
+          "PlanMilliseconds": 25.0412
+        },
+        {
+          "PlanNumber": 7,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 23,
+          "PlanMilliseconds": 25.0475
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "descent_five",
+      "direction": -1,
+      "expected": false,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33500,
+            "surfaceY": 3504
+          },
+          "status": "failed",
+          "reason": "no safe local route: search time budget reached; jump descent exceeds 64px limit (67 candidates); no safe landing/progress (61 candidates); outside route span (27 candidates)",
+          "actual": {
+            "x": 33569.082,
+            "y": 3382,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 103
+          },
+          "finalPlan": {
+            "PlanNumber": 7,
+            "ReachedGoal": false,
+            "TimeBudgetReached": true,
+            "Expansions": 19,
+            "PlanMilliseconds": 25.0785,
+            "PlannedActions": 0,
+            "CompletedActions": 6,
+            "CompletedJumps": 1
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 103,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 18,
+          "PlanMilliseconds": 25.0642
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 12,
+          "PlanMilliseconds": 25.0185
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 12,
+          "PlanMilliseconds": 25.0553
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 13,
+          "PlanMilliseconds": 25.0433
+        },
+        {
+          "PlanNumber": 5,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 17,
+          "PlanMilliseconds": 25.0067
+        },
+        {
+          "PlanNumber": 6,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 20,
+          "PlanMilliseconds": 25.027
+        },
+        {
+          "PlanNumber": 7,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 19,
+          "PlanMilliseconds": 25.0785
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "hazard_target",
+      "direction": 1,
+      "expected": false,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33728,
+            "maxPlayerLeftX": 33788,
+            "surfaceY": 3504
+          },
+          "status": "failed",
+          "reason": "no safe local route: search time budget reached; no safe landing/progress (29 candidates); unknown/hazard terrain at (2107,218) (16 candidates); outside route span (11 candidates)",
+          "actual": {
+            "x": 33674.875,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 112
+          },
+          "finalPlan": {
+            "PlanNumber": 6,
+            "ReachedGoal": false,
+            "TimeBudgetReached": true,
+            "Expansions": 8,
+            "PlanMilliseconds": 25.0486,
+            "PlannedActions": 0,
+            "CompletedActions": 5,
+            "CompletedJumps": 2
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 113,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 10,
+          "PlanMilliseconds": 25.018
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 9,
+          "PlanMilliseconds": 25.0068
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 12,
+          "PlanMilliseconds": 25.0323
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 17,
+          "PlanMilliseconds": 25.0682
+        },
+        {
+          "PlanNumber": 5,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 12,
+          "PlanMilliseconds": 25.0616
+        },
+        {
+          "PlanNumber": 6,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 8,
+          "PlanMilliseconds": 25.0486
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    },
+    {
+      "matrix": "vertical-result.json",
+      "scene": "hazard_target",
+      "direction": -1,
+      "expected": false,
+      "actions": [
+        {
+          "goal": {
+            "minPlayerLeftX": 33440,
+            "maxPlayerLeftX": 33500,
+            "surfaceY": 3504
+          },
+          "status": "failed",
+          "reason": "no safe local route: search time budget reached; no safe landing/progress (57 candidates); outside route span (52 candidates); unknown/hazard terrain at (2095,218) (15 candidates)",
+          "actual": {
+            "x": 33553.125,
+            "y": 3462,
+            "vx": 0,
+            "vy": 0,
+            "grounded": true,
+            "safeSupport": true,
+            "settled": true,
+            "updates": 112
+          },
+          "finalPlan": {
+            "PlanNumber": 6,
+            "ReachedGoal": false,
+            "TimeBudgetReached": true,
+            "Expansions": 15,
+            "PlanMilliseconds": 25.0402,
+            "PlannedActions": 0,
+            "CompletedActions": 5,
+            "CompletedJumps": 2
+          },
+          "endEvidenceStatus": "known",
+          "inputsReleased": true
+        }
+      ],
+      "traceFrames": 112,
+      "observedPlans": [
+        {
+          "PlanNumber": 1,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 8,
+          "PlanMilliseconds": 25.0521
+        },
+        {
+          "PlanNumber": 2,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 10,
+          "PlanMilliseconds": 25.0104
+        },
+        {
+          "PlanNumber": 3,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 15,
+          "PlanMilliseconds": 25.0565
+        },
+        {
+          "PlanNumber": 4,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 5,
+          "PlanMilliseconds": 25.1428
+        },
+        {
+          "PlanNumber": 5,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 11,
+          "PlanMilliseconds": 25.0659
+        },
+        {
+          "PlanNumber": 6,
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "Expansions": 15,
+          "PlanMilliseconds": 25.0402
+        }
+      ],
+      "maxError": 0,
+      "evidence": "raw-runs.zip!final/vertical-result.json"
+    }
+  ],
+  "offlineScenarios": [
+    {
+      "scene": "obstacle-1",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1744,
+        "MaxPlayerLeftX": 1776,
+        "SurfaceY": 1600
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 2
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 79,
+      "CompletedJumps": 1,
+      "CompletedActions": 2,
+      "x": 1756.4401,
+      "y": 1558
+    },
+    {
+      "scene": "obstacle-2",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1744,
+        "MaxPlayerLeftX": 1776,
+        "SurfaceY": 1600
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 2
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 78,
+      "CompletedJumps": 1,
+      "CompletedActions": 2,
+      "x": 1754.2802,
+      "y": 1558
+    },
+    {
+      "scene": "solid-up-3",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1664,
+        "MaxPlayerLeftX": 1744,
+        "SurfaceY": 1552
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 20,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 1
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 49,
+      "CompletedJumps": 1,
+      "CompletedActions": 1,
+      "x": 1666.9999,
+      "y": 1510
+    },
+    {
+      "scene": "solid-up-5",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1664,
+        "MaxPlayerLeftX": 1744,
+        "SurfaceY": 1520
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 19,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 1
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 49,
+      "CompletedJumps": 1,
+      "CompletedActions": 1,
+      "x": 1666.9999,
+      "y": 1478
+    },
+    {
+      "scene": "platform-up-64",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1696,
+        "MaxPlayerLeftX": 1792,
+        "SurfaceY": 1536
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 2
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 70,
+      "CompletedJumps": 1,
+      "CompletedActions": 2,
+      "x": 1729.4401,
+      "y": 1494
+    },
+    {
+      "scene": "descent-64",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1696,
+        "MaxPlayerLeftX": 1760,
+        "SurfaceY": 1600
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 22,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 2
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 66,
+      "CompletedJumps": 0,
+      "CompletedActions": 2,
+      "x": 1716.8198,
+      "y": 1558
+    },
+    {
+      "scene": "alternating-heights",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1696,
+        "MaxPlayerLeftX": 1744,
+        "SurfaceY": 1536
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 2
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 70,
+      "CompletedJumps": 1,
+      "CompletedActions": 2,
+      "x": 1729.4401,
+      "y": 1494
+    },
+    {
+      "scene": "alternating-heights",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1840,
+        "MaxPlayerLeftX": 1872,
+        "SurfaceY": 1568
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 1
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 67,
+      "CompletedJumps": 1,
+      "CompletedActions": 1,
+      "x": 1844.48,
+      "y": 1526
+    },
+    {
+      "scene": "alternating-heights",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1696,
+        "MaxPlayerLeftX": 1744,
+        "SurfaceY": 1536
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 1
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 63,
+      "CompletedJumps": 1,
+      "CompletedActions": 1,
+      "x": 1742.2998,
+      "y": 1494
+    },
+    {
+      "scene": "alternating-heights",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1600,
+        "MaxPlayerLeftX": 1632,
+        "SurfaceY": 1600
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 12,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 4
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 68,
+      "CompletedJumps": 0,
+      "CompletedActions": 4,
+      "x": 1630.7397,
+      "y": 1558
+    },
+    {
+      "scene": "same-x-shaft-up",
+      "expected": true,
+      "goal": {
+        "MinPlayerLeftX": 1604,
+        "MaxPlayerLeftX": 1608,
+        "SurfaceY": 1536
+      },
+      "plan": {
+        "ReachedGoal": true,
+        "Expansions": 1,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 1
+      },
+      "status": "arrived",
+      "Reason": "landing region verified on safe settled ground",
+      "frames": 29,
+      "CompletedJumps": 1,
+      "CompletedActions": 1,
+      "x": 1606,
+      "y": 1494
+    },
+    {
+      "scene": "shaft-low-ceiling",
+      "expected": false,
+      "goal": {
+        "MinPlayerLeftX": 1604,
+        "MaxPlayerLeftX": 1608,
+        "SurfaceY": 1536
+      },
+      "plan": {
+        "ReachedGoal": false,
+        "Expansions": 1,
+        "TimeBudgetReached": false,
+        "FailureReason": "no safe landing/progress (26 candidates); walking blocked (2 candidates)",
+        "actions": 0
+      },
+      "status": "failed",
+      "Reason": "no safe local route: no safe landing/progress (26 candidates); walking blocked (2 candidates)",
+      "frames": 1,
+      "CompletedJumps": 0,
+      "CompletedActions": 0,
+      "x": 1606,
+      "y": 1558
+    },
+    {
+      "scene": "beyond-jump-height",
+      "expected": false,
+      "goal": {
+        "MinPlayerLeftX": 1696,
+        "MaxPlayerLeftX": 1792,
+        "SurfaceY": 1408
+      },
+      "plan": {
+        "ReachedGoal": false,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 2
+      },
+      "status": "failed",
+      "Reason": "no safe local route: search time budget reached; no safe landing/progress (205 candidates); outside route span (159 candidates); walking blocked (9 candidates)",
+      "frames": 55,
+      "CompletedJumps": 0,
+      "CompletedActions": 3,
+      "x": 1715.2,
+      "y": 1558
+    },
+    {
+      "scene": "no-target-support",
+      "expected": false,
+      "goal": {
+        "MinPlayerLeftX": 1664,
+        "MaxPlayerLeftX": 1744,
+        "SurfaceY": 1536
+      },
+      "plan": {
+        "ReachedGoal": false,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 3
+      },
+      "status": "failed",
+      "Reason": "no safe local route: search time budget reached; no safe landing/progress (115 candidates); outside route span (92 candidates); walking blocked (7 candidates)",
+      "frames": 43,
+      "CompletedJumps": 0,
+      "CompletedActions": 4,
+      "x": 1680,
+      "y": 1558
+    },
+    {
+      "scene": "descent-80-rejected",
+      "expected": false,
+      "goal": {
+        "MinPlayerLeftX": 1696,
+        "MaxPlayerLeftX": 1760,
+        "SurfaceY": 1600
+      },
+      "plan": {
+        "ReachedGoal": false,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 1
+      },
+      "status": "failed",
+      "Reason": "no safe local route: search time budget reached; no safe landing/progress (81 candidates); outside route span (62 candidates); jump descent exceeds 64px limit (49 candidates)",
+      "frames": 25,
+      "CompletedJumps": 0,
+      "CompletedActions": 1,
+      "x": 1631.72,
+      "y": 1478
+    },
+    {
+      "scene": "target-!",
+      "expected": false,
+      "goal": {
+        "MinPlayerLeftX": 1696,
+        "MaxPlayerLeftX": 1744,
+        "SurfaceY": 1536
+      },
+      "plan": {
+        "ReachedGoal": false,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 1
+      },
+      "status": "failed",
+      "Reason": "no safe local route: search time budget reached; no safe landing/progress (97 candidates); outside route span (77 candidates); unknown/hazard (65 candidates)",
+      "frames": 25,
+      "CompletedJumps": 0,
+      "CompletedActions": 1,
+      "x": 1631.72,
+      "y": 1558
+    },
+    {
+      "scene": "target-?",
+      "expected": false,
+      "goal": {
+        "MinPlayerLeftX": 1696,
+        "MaxPlayerLeftX": 1744,
+        "SurfaceY": 1536
+      },
+      "plan": {
+        "ReachedGoal": false,
+        "Expansions": 32,
+        "TimeBudgetReached": false,
+        "FailureReason": null,
+        "actions": 1
+      },
+      "status": "failed",
+      "Reason": "no safe local route: search time budget reached; no safe landing/progress (83 candidates); unknown/hazard (65 candidates); outside route span (58 candidates)",
+      "frames": 25,
+      "CompletedJumps": 0,
+      "CompletedActions": 1,
+      "x": 1631.72,
+      "y": 1558
+    }
+  ],
+  "nativeCounts": {
+    "scenarios": 38,
+    "actions": 44,
+    "completed": 34,
+    "failed": 10
+  },
+  "baselineShaft": {
+    "entry": "baseline/vertical-lua/07cf785bcc3241b49c5156cbc954c5e2/events.jsonl",
+    "line": 5,
+    "action": {
+      "valid": true,
+      "status": "failed",
+      "reason": "native_navigation_failed",
+      "reasonDetail": "no safe local route: no safe landing/progress (18 candidates); walking blocked (2 candidates)",
+      "operation": "navigate_to_landing_region",
+      "actionId": "4fb7ef7ab3984ed59e94e1f2662cfca2",
+      "session": "b9f4b1ac5eec492b9b4359434abb7740",
+      "actionGeneration": 1,
+      "targetRegion": {
+        "minPlayerLeftX": 33620,
+        "maxPlayerLeftX": 33624,
+        "surfaceY": 3440
+      },
+      "targetTile": null,
+      "targetRecipe": null,
+      "evidence": {
+        "targetX": null,
+        "targetRegion": {
+          "minPlayerLeftX": 33620,
+          "maxPlayerLeftX": 33624,
+          "surfaceY": 3440
+        },
+        "startX": 33622,
+        "x": 33622,
+        "y": 3462,
+        "vx": 0,
+        "vy": 0,
+        "updates": 1,
+        "navigation": {
+          "Session": 9,
+          "Status": "failed",
+          "Action": "plan",
+          "Reason": "no safe local route: no safe landing/progress (18 candidates); walking blocked (2 candidates)",
+          "Frame": 0,
+          "HoldFrames": 0,
+          "PredictedLanding": null,
+          "ActualLanding": null,
+          "MaxError": 0,
+          "ExpectedPosition": null,
+          "ObservedPosition": null,
+          "ExpectedVelocity": null,
+          "ObservedVelocity": null,
+          "Generation": 1,
+          "TargetX": 33620,
+          "CompletedActions": 0,
+          "CompletedJumps": 0,
+          "Expansions": 1,
+          "PlannedActions": 0,
+          "PlanMilliseconds": 12.5953,
+          "LastLanding": null,
+          "ReachedGoal": false,
+          "TimeBudgetReached": false,
+          "PlanNumber": 1,
+          "TargetRegion": {
+            "MinPlayerLeftX": 33620,
+            "MaxPlayerLeftX": 33624,
+            "SurfaceY": 3440
+          },
+          "LandingConfirmationFrames": 0,
+          "ObservedGrounded": null,
+          "SafeSupport": null,
+          "BlockingTiles": [
+            {
+              "X": 2103,
+              "Y": 216,
+              "ContentKey": "Terraria/Dirt",
+              "Basis": "rejected_root_forward_walk_contact"
+            },
+            {
+              "X": 2103,
+              "Y": 217,
+              "ContentKey": "Terraria/Dirt",
+              "Basis": "rejected_root_forward_walk_contact"
+            },
+            {
+              "X": 2103,
+              "Y": 218,
+              "ContentKey": "Terraria/Dirt",
+              "Basis": "rejected_root_forward_walk_contact"
+            }
+          ]
+        },
+        "arrived": false,
+        "grounded": true,
+        "safeSupport": true,
+        "settled": true,
+        "velocityBeforeRelease": {
+          "X": 0,
+          "Y": 0
+        },
+        "observedGameUpdate": 1780,
+        "effectStatus": "native_navigation_observed"
+      },
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_inputs_released",
+        "gameUpdate": 1780,
+        "worldSessionId": "c87e64d2a7354e2da0ad2866c1b27272",
+        "actorId": "7b5bee8194a245a0a344ba65da9080cf",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "effectVerified": false,
+        "operation": "navigate_to_landing_region",
+        "observationSequence": 3563
+      },
+      "endEvidenceStatus": "known",
+      "controlGeneration": 1,
+      "completed": false,
+      "cancelled": false,
+      "continuationAllowed": false
+    }
+  }
+}

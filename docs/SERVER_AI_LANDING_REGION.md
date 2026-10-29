@@ -31,6 +31,22 @@ return {action=action, after=api('get_player_state',{})}
 
 ## 实际地形支持与边界
 
+### 0.1.63：同 X 垂直跳台补齐
+
+**实验结果**：既有左右跳跃、完整方块上台、平台绕边下降与连续升降均可复用。新增矩阵复现了一个候选缺口：32px 宽竖井内，上方 64px 的水平单向平台具有安全落点，但原规划器仅枚举左右输入，预测器又要求跳跃横移至少 24px。原生首帧返回 `no safe landing/progress`，1 次扩展、未耗尽时间预算；不是选错目标、预算不足或运动预测偏差。
+
+现在仅当区域目标高于当前脚底且当前左边缘已在目标 X 区间时，枚举 `direction=0` 的原地上跳。预测器以至少 4px 的**已支撑上升**作为这种候选的进展；返回原高度的原地跳仍拒绝。完整逐帧碰撞、危险/未知、64px 下降上限、支撑和制动尾段检查保留。横向目标候选、NavigationTask 的有界重规划/停滞限制、落地确认、unknown、租约及输入释放契约不变；没有增加 jump 原子操作或失败重试。
+
+完整逐场目标、规划结果、原生实际落点、终态/释放、失败归因及原始字节哈希见[垂直导航证据](evidence/vertical-navigation/analysis.md)。复现新增离线矩阵与合并原生矩阵：
+
+```powershell
+pwsh -NoProfile -File tests/run_csharp_tests.ps1 -VerticalOnly
+pwsh -NoProfile -File scripts/build-companion.ps1 -OutputPath .local/vertical-final-build
+pwsh -NoProfile -File tests/verify_server_ai_native.ps1 -Atomic -Reads -Actions -LandingRegions -VerticalNavigation -PackagePath .local/vertical-final-build/Mods/CompanionBridge.tmod -Port 27911 -IpcPort 27912
+```
+
+以下表格和后文的 0.1.57 包哈希/验证数字保留为历史记录；0.1.63 的结论以新证据为准。
+
 | 范围 | 本轮证据与限制 |
 | --- | --- |
 | 实心完整顶面 | 平地、上/下 1 格台阶，两方向都到达区域并安全停稳 |

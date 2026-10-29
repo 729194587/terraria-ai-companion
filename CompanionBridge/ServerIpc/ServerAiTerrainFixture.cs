@@ -17,25 +17,45 @@ internal static class ServerAiTerrainFixture
     private static object pending;
     private static readonly System.Collections.Generic.List<object> frames=new();
     private static bool recording;
+    private static ServerAiNavigation.Run lastRun;
+    private static ulong? inputTick;
+    private static bool inputLeft,inputRight,inputJump;
     private static string caseName;
+    internal static void RecordInput(Player p)
+    {
+        if(!Program.LaunchParameters.ContainsKey("-companionterraintest"))return;
+        inputTick=Main.GameUpdateCount;
+        inputLeft=p.controlLeft;inputRight=p.controlRight;inputJump=p.controlJump;
+    }
     internal static void Observe(Player p)
     {
         if(!Program.LaunchParameters.ContainsKey("-companionterraintest")||caseName==null)return;
         bool running=ActorControl.Driver?.Running==true;
-        if(!running&&!recording)return;
+        var run=(ActorControl.Driver as ServerAiNavigation)?.Current;
+        // A plan can fail in its first update. Still save that real terminal
+        // observation even if no earlier frame saw Running=true.
+        if(run==null||!running&&!recording&&ReferenceEquals(run,lastRun))return;
+        lastRun=run;
         NetworkStateSync.Require(p);
         var o=ServerAiNavigation.Observe(p);
-        var nav=(ActorControl.Driver as ServerAiNavigation)?.Current?.Snapshot;
+        var nav=run.Snapshot;
         frames.Add(new{tick=Main.GameUpdateCount,x=p.position.X,y=p.position.Y,vx=p.velocity.X,vy=p.velocity.Y,
             o.State.Grounded,o.SafeSupport,o.Settled,left=p.controlLeft,right=p.controlRight,jump=p.controlJump,
+            injectedInput=inputTick.HasValue?new{tick=inputTick,left=inputLeft,right=inputRight,jump=inputJump}:null,
             expectedPosition=nav?.ExpectedPosition,expectedVelocity=nav?.ExpectedVelocity,
-            action=nav?.Action,frame=nav?.Frame,status=nav?.Status,maxError=nav?.MaxError});
+            action=nav?.Action,frame=nav?.Frame,status=nav?.Status,maxError=nav?.MaxError,
+            reason=nav?.Reason,nav?.PlanNumber,nav?.Expansions,nav?.PlanMilliseconds,nav?.ReachedGoal,nav?.TimeBudgetReached,
+            nav?.CompletedActions,nav?.CompletedJumps});
         recording=running;
         if(!running)File.WriteAllText(Path.Combine(Main.SavePath,"terrain-motion-"+caseName+".json"),JsonSerializer.Serialize(frames));
     }
     internal static void Tick(Player p)
     {
         if(!Program.LaunchParameters.ContainsKey("-companionterraintest"))return;
+        // Tick -> native Main.Update -> Observe is one synchronous fixture frame.
+        // Main.Update increments GameUpdateCount after the movement boundary, so
+        // retain the actual sample tick rather than requiring the post-update tick.
+        inputTick=null;
         // Terrain-only diagnostic: exclude NPC combat/knockback from these motion scenes.
         // Production navigation keeps its life-loss and velocity guards.
         foreach(var npc in Main.npc)if(npc.active&&!npc.townNPC)npc.active=false;
@@ -53,9 +73,12 @@ internal static class ServerAiTerrainFixture
         string scene=doc.RootElement.GetProperty("scene").GetString();
         int direction=doc.RootElement.GetProperty("direction").GetInt32();
         if(direction!=1&&direction!=-1)throw new ArgumentException("Invalid terrain direction");
-        if(scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall" or "platform_up" or "platform_down" or "high_platform"))
+        if(scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall" or "platform_up" or "platform_down" or "high_platform"
+            or "obstacle_one" or "solid_up_three" or "solid_up_five" or "shaft_up" or "shaft_ceiling" or "alternating" or "no_landing" or "descent_five" or "hazard_target"))
             throw new ArgumentException("Unknown terrain scene");
         caseName=scene+"-"+direction;frames.Clear();recording=false;
+        inputTick=null;
+        lastRun=(ActorControl.Driver as ServerAiNavigation)?.Current;
         int left=Main.spawnTileX, floor=Main.spawnTileY+8;
         for(int tx=left-36;tx<=left+36;tx++)for(int ty=floor-24;ty<=floor+18;ty++)
         {
@@ -71,6 +94,9 @@ internal static class ServerAiTerrainFixture
             {surface+=Math.Min(q-4,4);if(q<8)slope=direction==1?1:2;}
             if(scene=="short_gap"&&q>=4&&q<=6||scene=="wide_gap"&&q>=4&&q<=20)surface+=10;
             if(scene=="low_obstacle"&&q>=4&&q<=5)surface-=2;
+            if(scene=="obstacle_one"&&q>=4&&q<=5)surface--;
+            if(scene=="solid_up_three"&&q>=4)surface-=3;
+            if(scene=="solid_up_five"&&q>=4)surface-=5;
             if(scene=="high_wall"&&q>=4&&q<=6)surface-=12;
             var tile=Main.tile[tx,ty];tile.ClearEverything();
             if(ty>=surface){tile.HasTile=true;tile.TileType=TileID.Dirt;if(ty==surface)tile.Slope=(SlopeType)slope;}
@@ -81,8 +107,21 @@ internal static class ServerAiTerrainFixture
                 if(q<=3&&ty==top||q>=6&&ty==target)
                 {tile.HasTile=true;tile.TileType=TileID.Platforms;}
             }
+            if(scene is "shaft_up" or "shaft_ceiling")
+            {
+                if(q is -1 or 2||scene=="shaft_ceiling"&&ty==floor-7)
+                {tile.HasTile=true;tile.TileType=TileID.Dirt;}
+                else if(q is 0 or 1&&ty==floor-4)
+                {tile.HasTile=true;tile.TileType=TileID.Platforms;}
+            }
+            if(scene=="alternating"&&(q is >=6 and <=11&&ty==floor-4||q is >=14 and <=19&&ty==floor-2)
+                ||scene=="descent_five"&&q<=3&&ty==floor-5)
+            {tile.HasTile=true;tile.TileType=TileID.Platforms;}
+            if(scene=="hazard_target"&&q>=6&&ty==floor-1)
+            {tile.LiquidType=LiquidID.Lava;tile.LiquidAmount=255;}
         }
-        p.position=new(left*16-2,(floor-(scene=="platform_down"?4:0))*16-p.height);p.velocity=Vector2.Zero;
+        p.position=new(left*16+(scene is "shaft_up" or "shaft_ceiling"?(direction==1?6:-10):-2),
+            (floor-(scene=="platform_down"?4:scene=="descent_five"?5:0))*16-p.height);p.velocity=Vector2.Zero;
         p.controlLeft=p.controlRight=p.controlJump=p.controlDown=p.controlUp=false;
         p.jump=0;p.releaseJump=true;p.fallStart=floor;p.statLife=p.statLifeMax2;
         // Each scene starts with the audited basic profile, independent of the earlier apple test.
