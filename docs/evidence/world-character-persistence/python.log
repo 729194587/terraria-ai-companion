@@ -1,0 +1,10 @@
+test_read_identity_mismatch_fails_without_fallback (test_server_ai_backend.BackendTests.test_read_identity_mismatch_fails_without_fallback) ... ok
+test_missing_selection_evidence_preserves_unknown (test_server_ai_backend.BackendTests.test_missing_selection_evidence_preserves_unknown) ... ok
+test_server_unknown_evidence_poisoning_uses_existing_lua_runtime (test_server_ai_backend.BackendTests.test_server_unknown_evidence_poisoning_uses_existing_lua_runtime) ... Executing <Task pending name='Task-13' coro=<BackendTests.test_server_unknown_evidence_poisoning_uses_existing_lua_runtime() running at D:\Agent Project\terraria-ai-companion\tests\test_server_ai_backend.py:587> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:428> cb=[_run_until_complete_cb() at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:181] created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:100> took 0.312 seconds
+ok
+test_workbench_explicit_cancel_preserves_unknown_release (test_server_ai_backend.BackendTests.test_workbench_explicit_cancel_preserves_unknown_release) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 3.305s
+
+OK

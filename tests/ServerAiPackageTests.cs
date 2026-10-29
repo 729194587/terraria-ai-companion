@@ -25,6 +25,17 @@ public static class ServerAiPackageTests
         var types=assembly.MainModule.Types.SelectMany(Walk).ToArray();
         TypeDefinition Type(string name)=>types.Single(t=>t.Name==name);
         bool Calls(MethodDefinition m,string name)=>m.HasBody&&m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.Name==name);
+        var finish=Type("ProbeSession").Methods.Single(m=>m.Name=="Finish");
+        int CallIndex(string type,string name)=>finish.Body.Instructions.ToList().FindIndex(i=>i.Operand is MethodReference r&&r.DeclaringType.Name==type&&r.Name==name);
+        Check(CallIndex("WorldCharacterPersistence","BeforeRetire")>CallIndex("ActorControl","Retire")
+            &&CallIndex("WorldCharacterPersistence","BeforeRetire")>CallIndex("ActorItemUse","Retire")
+            &&CallIndex("WorldCharacterPersistence","BeforeRetire")>CallIndex("ActorMining","Retire")
+            &&CallIndex("WorldCharacterPersistence","BeforeRetire")<CallIndex("NetworkStateSync","Leave"),"world save follows native action/input retirement and precedes actor departure");
+        Check(Calls(Type("ServerAiSystem").Methods.Single(m=>m.Name=="Pump"),"Start")
+            &&Type("ServerAiSystem").Methods.Single(m=>m.Name=="Capture").Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.Name=="WorldCharacterPersistence"&&r.Name=="get_Ready"),"IPC actor identity requires a restored and committed world profile");
+        Check(types.Where(t=>t.FullName.StartsWith(Type("CharacterStore").FullName)).SelectMany(t=>t.Methods).Any(m=>Calls(m,"SavePlayer"))
+            &&Calls(Type("CharacterStore").Methods.Single(m=>m.Name=="SaveCore"),"Run")
+            &&Calls(Type("CharacterStore").Methods.Single(m=>m.Name=="SaveCore"),"Read"),"world and legacy saves share native SavePlayer and native read-back validation");
         Check(Calls(Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop"),"Observe")
             &&Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="native_navigation_landing_unconfirmed"),"native airborne failure cleanup reports unconfirmed landing");
         Check(Calls(Type("StateSpacePlanner").Methods.Single(m=>m.Name=="PlanCore"),"SupportedCheckpoint"),"planner requires real supported checkpoints beyond collision contact");

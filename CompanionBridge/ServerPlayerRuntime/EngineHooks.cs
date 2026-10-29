@@ -52,6 +52,7 @@ public sealed class VirtualPlayerEngineProbe
             NetworkStateSync.Reset();
             ProbeAnnouncements.ResetNotices();
             CharacterStore.Reset();
+            WorldCharacterPersistence.Reset();
             NativeSurvival.Reset();
             if (Main.dedServ) InstallServerHooks();
             else

@@ -79,15 +79,11 @@ public sealed class CharacterFiles
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
             throw new IOException("Character storage cannot read a reparse-point file.");
     }
-    public static string Hash(string path) { CheckFile(path); return Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))); }
+    public static string Hash(string path) { CheckFile(path); using var stream=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(stream)); }
     public void Commit(string id, string plrPath, string stateHash)
     {
+        var manifest=Manifest(id,plrPath,stateHash);
         var directory = DirectoryFor(id);
-        CheckPath(Path.GetDirectoryName(plrPath));
-        var generation = Path.GetFileName(Path.GetDirectoryName(plrPath)); ValidateId(generation);
-        if (Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(plrPath))) != directory
-            || Path.GetFileName(plrPath) != "character.plr") throw new IOException("Unexpected staged character path.");
-        var manifest = new CharacterManifest(generation, Hash(plrPath), Hash(Path.ChangeExtension(plrPath, ".tplr")), stateHash);
         var temp = Path.Combine(directory, "current-" + NewId() + ".tmp");
         using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
@@ -96,12 +92,26 @@ public sealed class CharacterFiles
         }
         File.Move(temp, Path.Combine(directory, "current.json"), true);
     }
+    public CharacterManifest Manifest(string id,string plrPath,string stateHash)
+    {
+        var directory=DirectoryFor(id);
+        CheckPath(Path.GetDirectoryName(plrPath));
+        var generation = Path.GetFileName(Path.GetDirectoryName(plrPath)); ValidateId(generation);
+        if (Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(plrPath))) != directory
+            || Path.GetFileName(plrPath) != "character.plr") throw new IOException("Unexpected staged character path.");
+        return new(generation,Hash(plrPath),Hash(Path.ChangeExtension(plrPath,".tplr")),stateHash);
+    }
     public (string Path, CharacterManifest Manifest) Open(string id)
     {
         var directory = DirectoryFor(id);
         var pointer = Path.Combine(directory, "current.json"); CheckFile(pointer);
         var manifest = JsonSerializer.Deserialize<CharacterManifest>(File.ReadAllText(pointer))
             ?? throw new IOException("Missing character manifest.");
+        return Open(id,manifest);
+    }
+    public (string Path,CharacterManifest Manifest) Open(string id,CharacterManifest manifest)
+    {
+        var directory=DirectoryFor(id);
         var generation = Path.Combine(directory, ValidateId(manifest.Generation)); CheckPath(generation);
         var path = Path.Combine(generation, "character.plr");
         if (Hash(path) != manifest.PlrHash || Hash(Path.ChangeExtension(path, ".tplr")) != manifest.TplrHash)

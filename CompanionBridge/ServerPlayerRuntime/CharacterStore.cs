@@ -69,13 +69,17 @@ internal static class CharacterStore
     }
 
     internal static string Save(string requestedId = null, bool injectFailure = false)
+        =>SaveCore(requestedId,injectFailure,false,null);
+    internal static void SaveWorld(string id,Action<string,string,int> commit)
+        =>SaveCore(id,false,true,commit);
+    private static string SaveCore(string requestedId,bool injectFailure,bool persistentOnly,Action<string,string,int> commit)
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
         lock (ProbeSession.Reservation.Gate)
         {
             var p = ProbeSession.Actor ?? throw new InvalidOperationException("Spawn/load a Player first.");
-            NetworkStateSync.Require(p);
-            if(p.dead)throw new InvalidOperationException("Wait for native respawn before saving the character.");
+            NetworkStateSync.Require(p,inactiveAllowed:persistentOnly);
+            if(p.dead&&!persistentOnly)throw new InvalidOperationException("Wait for native respawn before saving the character.");
             if (ActorItemUse.Running||ActorMining.Running) throw new InvalidOperationException("Wait for item use to finish before saving, or /vph use-stop.");
             failedSave = p;
             if (ProbeDebugAppearance.IsApplied(p)) throw new InvalidOperationException("Restore debug-style before saving character data.");
@@ -83,7 +87,8 @@ internal static class CharacterStore
             try
             {
                 var files = Files; var path = files.Begin(id);
-                var before = CharacterIo.State(p);
+                if(persistentOnly&&(p.selectedItem<0||p.selectedItem>9))throw new IOException("Unsupported persistent hotbar selection.");
+                var before = CharacterIo.State(p,persistentOnly);
                 if (injectFailure) Directory.CreateDirectory(path); // Private uncommitted generation only.
                 var data = new PlayerFileData(path, false) {
                     Player = p, Metadata = FileMetadata.FromCurrentSettings(FileType.Player)
@@ -93,14 +98,32 @@ internal static class CharacterStore
                 if (SaveErrors.GetValue(p) is not Dictionary<string, string> errors || errors.Count != 0)
                     throw new IOException("Native ModPlayer save reported errors or unavailable diagnostics.");
                 var restored = CharacterIo.Read(path);
-                if (CharacterIo.State(p) != before || CharacterIo.State(restored) != before)
+                if (CharacterIo.State(p,persistentOnly) != before || CharacterIo.State(restored,persistentOnly) != before)
                     throw new IOException("Native character read-back differs; live Player and previous generation retained.");
-                files.Commit(id, path, before);
+                if(commit==null)files.Commit(id,path,before);else commit(path,before,p.selectedItem);
                 failedSave = null; CurrentId = id;
                 ProbeSession.Log("character-saved", new { id, path, state = before, paired = true });
                 return id;
             }
             catch { failedSave = p; throw; }
+        }
+    }
+
+    internal static void LoadWorld(WorldCharacterFiles files,WorldCharacterManifest manifest)
+    {
+        ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
+        lock(ProbeSession.Reservation.Gate)
+        {
+            if(ProbeSession.Actor!=null)throw new InvalidOperationException("World restore requires an unpublished actor.");
+            ProbeSession.CheckInitialSlot();
+            var p=CharacterIo.Read(files.Open(manifest));
+            if(p.difficulty==2||CharacterIo.State(p,true)!=manifest.Native.StateHash
+                ||p.GetModPlayer<ProbePlayer>().PersistentMarker!="world-ai:"+files.CharacterId)
+                throw new IOException("World character native state/identity failed validation.");
+            p.selectedItem=manifest.SelectedItem;
+            prepared=p;
+            try{ProbeSession.Spawn();if(!ReferenceEquals(ProbeSession.Actor,p))throw new IOException("World character was not published.");CurrentId=files.CharacterId;}
+            finally{prepared=null;}
         }
     }
 

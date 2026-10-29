@@ -219,6 +219,7 @@ internal static class ProbeSession
             }
             ActorMining.Retire(owned);ActorItemUse.Retire(owned);
             ActorControl.Retire(owned);
+            WorldCharacterPersistence.BeforeRetire(owned);
             finishing = true;
             try
             {
@@ -261,6 +262,7 @@ internal static class ProbeSession
                         Main.player[slot] = previous;
                     }
                     Actor = null;
+                    WorldCharacterPersistence.AfterRetire(owned);
                     connectedHook = false;
                     ProbeDebugAppearance.Clear();
                     Phase = keepReservation ? "reserved; no actor" : "released; fresh server process required to re-arm";
@@ -341,12 +343,19 @@ internal static class ProbeSession
 
 public sealed class ProbeSystem : ModSystem
 {
-    public override void OnWorldLoad(){ProbeTargeting.Reset();ProbeSession.WorldSession = Guid.NewGuid().ToString("N");}
+    private Guid? loadedWorld;
+    public override void OnWorldLoad()
+    {
+        Guid world=Main.ActiveWorldFileData?.UniqueId??Guid.Empty;
+        if(loadedWorld.HasValue){if(loadedWorld==world)return;throw new InvalidOperationException("World changed without unloading the previous lifecycle.");}
+        loadedWorld=world;ProbeTargeting.Reset();ProbeSession.WorldSession=Guid.NewGuid().ToString("N");
+    }
     public override void OnWorldUnload()
     {
         ProbeSession.Finish("OnWorldUnload");
         ProbeTargeting.Reset();
         ProbeSession.WorldSession = "none";
+        loadedWorld=null;
     }
     public override void PostUpdatePlayers()
     {

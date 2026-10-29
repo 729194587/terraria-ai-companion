@@ -63,6 +63,7 @@ public sealed class ServerAiSystem : ModSystem
     {
         if (!Program.IsMainThread) throw new InvalidOperationException("AI IPC startup requires the simulation thread.");
         if (!Main.dedServ || runtime == null || !EngineRuntime.Ready || EngineRuntime.Fault != null) return;
+        if(server!=null)return;
         try
         {
             Program.LaunchParameters.TryGetValue("-companionbridgeport", out var humanArg);
@@ -85,16 +86,17 @@ public sealed class ServerAiSystem : ModSystem
             if (spawnPending && EngineRuntime.Reservation.Snapshot != null)
             {
                 spawnPending = false; // One attempt; never adopt replacements or automatically re-arm.
-                try { ProbeSession.Spawn(); }
-                catch (Exception e) { EngineRuntime.SignalFault("G8.1 initial actor creation failed: " + e.Message); Mod.Logger.Error("AI creation stopped.", e); }
+                try { WorldCharacterPersistence.Start(); }
+                catch (Exception e) { EngineRuntime.SignalFault("G8.1 initial actor creation failed: " + e.Message); Mod.Logger.Error("AI creation stopped.", e);WorldCharacterSelfTest.StartFailed(e); }
             }
+            WorldCharacterSelfTest.Tick();
             server.Tick(Capture, Select, ServerAiQueries.Read, Say);
         }
     }
     private static AiReadOnlyProtocol.Identity Capture()
     {
         if (!Main.dedServ || Main.netMode != NetmodeID.Server || Netplay.Disconnect || Main.gameMenu
-            || ProbeSession.WorldSession == "none" || !EngineRuntime.Ready || EngineRuntime.Fault != null || ProbeSession.Quarantined)
+            || ProbeSession.WorldSession == "none" || !EngineRuntime.Ready || EngineRuntime.Fault != null || ProbeSession.Quarantined||!WorldCharacterPersistence.Ready)
             return null;
         EngineRuntime.Reservation.AssertOwner(Program.IsMainThread);
         var p = ProbeSession.Actor;
