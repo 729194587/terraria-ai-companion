@@ -121,7 +121,9 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(1, sum(q['op'] == 'start' for q in self.host.sent), r)
                 self.assertNotIn('unsafe continuation', r.get('error', ''))
                 if r['actionState'] != 'unknown':
-                    self.assertTrue(r['value']['blocked'], r)
+                    self.assertIsNone(r['value'], r)
+                    self.assertNotEqual('completed',r['status'])
+                    self.assertEqual('known',r['lastAction']['endEvidenceStatus'])
                 self.host.sent.clear()
 
     async def test_string_allowlist_parses_full_scene_and_metatable_stays_removed(self):

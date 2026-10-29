@@ -19,8 +19,13 @@ end
 return result
 ```
 
-动作 API 的 failed/timeout/cancelled 等已知终态仍是结构化结果，pcall 可以返回 true；
-这只说明函数返回，不证明动作成功。continuationAllowed 完全沿用宿主证据，既有动作失败屏障不变。
+基于 b2f255c 的修正：动作未 completed 且宿主未授予 `continuationAllowed=true` 时，
+父进程在收到真实回执后终止当前程序，不把失败结果交回 Worker。pcall（包括嵌套）不返回，
+后续日志、查询、计算和动作均不执行；脚本 value=null、programCompleted=false，
+真实终态、结束/效果证据保留在宿主 lastAction、trace 与 on_result。已知 failed/timeout/cancelled
+沿用该程序终态，unknown 仍为 action_unknown 并执行原隔离，不降级为普通失败。
+只有原有宿主证据明确授权的安全预检拒绝可返回 Lua 并继续，pcall 此时可返回 true 与拒绝回执；
+这不证明动作完成。continuationAllowed 判定、失败屏障、身份与预算不变，Lua 自报不能授权。
 只读原生拒绝回执也按原接口返回，不转成可捕获异常。通信、协议、宿主异常及不确定状态不纳入恢复。
 
 指令 hook 调用私有宿主终止回调，设置当前 Worker 无法清除的终止标记；受控 pcall 不会将其当作
@@ -30,6 +35,20 @@ unknown、取消、墙钟、API/动作预算继续由父进程监督并终止 Wo
 元表或其他标准库；输入释放、隔离、返回值编码、lastObservation 和游戏能力不变。
 私有封装保留多返回值时仍受既有节点上限约束；恢复不会获得额外的内存或返回值额度。
 
+本次动作失败语义修正（基于 b2f255c）：真实 Lua Worker 的 15 项 pcall 测试和 84 项相关回归
+全部通过，包含无 pcall/嵌套 pcall 后的日志与查询均不执行、真实终态与释放证据保留、安全预检
+续行、预算、unknown/取消/超时、Agent 跨程序屏障和失败合成。没有 Worker 泄漏。
+在 `tests/` 执行：
+
+```powershell
+../.local/lua-venv/Scripts/python.exe -B -m unittest test_lua_pcall -v
+../.local/lua-venv/Scripts/python.exe -B -m unittest test_lua_runtime test_lua_recovery test_lua_agent test_server_ai_crafting test_atomic_operations test_lua_arguments -v
+```
+
+原始输出为 `.local/pcall-action-terminal-tests.log`、`.local/pcall-action-terminal-regressions.log`。
+本次未部署；未运行真实模型、原生 Terraria/Host & Play 或无关全量测试。
+
+以下为 b2f255c 初始实现的历史验证，其动作失败续行语义已被以上修正替代。
 2026-10-29 定向验证（基于 32ceba2；lupa 2.6 / Lua 5.4）：新增 `test_lua_pcall` 的
 15 个方法分批通过，覆盖嵌套/多返回值、本地只读拒绝、真实终态与安全预检续行、unknown、
 事件/任务取消、墙钟、指令 hook（含 sort 回调）、内存、日志/调用/动作预算、错误协议帧和进程回收。
@@ -79,7 +98,7 @@ API 参数仍为普通 JSON schema，沙箱权限与动作安全语义不变。
 运行时异常保留真实失败状态与 `value=null`。整段 Lua 先编译，语法错误不会执行其前面的 API；
 没有成功只读调用的程序不会伪造 `lastObservation`。unknown 后的连接隔离和输入释放契约不变。
 
-动作默认非 completed 即停止后续变更。唯一续行例外是宿主按真实终态设置的
+动作默认非 completed 即终止当前 Lua 程序。唯一续行例外是宿主按真实终态设置的
 `continuationAllowed=true`：必须 failed，`mutationAttempted=false`、`effectStatus=not_started`，
 绑定动作身份匹配，输入从未取得且已确认释放，结束证据 known，且没有消费/原生事件或不确定副作用。
 不按 reason 字符串判断，不接受 Lua 自报；允许程序选择不同参数/候选，宿主不自动重试。
@@ -196,11 +215,12 @@ CLI 退出码 0 同样只表示程序正常返回且动作状态可知。
 - 每个动作复用 start_atomic、expectedGeneration、chatId、100ms 轮询/renew、原有绝对期限与
   750ms 游戏租约；轮询验证 actionId/session/generation/world/operation/targetRegion 一致。
   不把启动 ACK 当完成，不以杀死 Worker 作为游戏停止证据。
-- 已确认释放的 failed/timeout/cancelled 原样返回 Lua，可据其分支并继续感知；本段程序之后的
-  行动请求返回 blocked，不自动恢复。未知参数/API 终止程序，不发起对应动作。
+- 已确认释放的 failed/timeout/cancelled 保留在宿主真实回执中并终止当前程序；只有
+  continuationAllowed=true 的安全预检拒绝返回 Lua。不自动恢复，pcall 不能吞掉终止。
+  已被失败屏障阻止的行动请求同样终止当前程序。未知参数/API 终止程序，不发起对应动作。
 - 本地能力检查的确定拒绝使用 `PreDispatchRejected`（仍是直接调用方可捕获的 BridgeError）。
-  Lua 收到 `valid=false,status=failed,completed=false,dispatchState=not_dispatched`，
-  可继续只读感知，但本段程序的后续行动仍被失败屏障阻止。没有启动动作时保持
+  宿主保留 `valid=false,status=failed,completed=false,dispatchState=not_dispatched`，
+  缺少原有安全续行证据时终止当前程序。没有启动动作时保持
   `actionState=idle`；此前已有已确认释放的动作时保留 `released`，不为拒绝伪造结束证据。
   仅专用拒绝类型且生命周期没有派发/动作/不确定标记时才走此路径，不能凭回执文字
   或 `start_task is None` 判断安全。动作派发器的启动前查询超时/通信故障、派发后回执不明及真实终态

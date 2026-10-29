@@ -71,17 +71,28 @@ class ControlledPcall(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(1,result['calls'])
                 self.assertFalse(any(c in ('start_atomic','query_atomic') for c,_ in game.sent))
 
-    async def test_action_failure_is_a_result_and_barrier_remains(self):
+    async def test_action_failure_terminates_before_pcall_can_resume(self):
         for status in ('failed','timeout','cancelled'):
             with self.subTest(status=status):
                 result,game,_=await self.run_lua('''
-                    local ok,r=pcall(function() return api('use_item') end)
-                    assert(ok and not r.completed and not r.continuationAllowed)
-                    local second,b=pcall(function() return api('use_item') end)
-                    return {ok=ok,status=r.status,blocked=second and b.blocked}
+                    api('inspect_inventory')
+                    pcall(function()
+                        pcall(function() return api('use_item') end)
+                        log('inner escaped')
+                    end)
+                    log('outer escaped')
+                    api('inspect_inventory'); api('use_item'); return true
                 ''',RuntimeGame(status))
-                self.assertEqual(dict(ok=True,status=status,blocked=True),result['value'],result)
+                self.assertEqual(status,result['status'],result)
+                self.assertIsNone(result['value']); self.assertEqual([],result['logs'])
+                self.assertEqual((2,1),(result['calls'],result['actions']))
                 self.assertEqual(status,result['lastAction']['status'])
+                self.assertFalse(result['lastAction']['continuationAllowed'])
+                self.assertEqual('known',result['lastAction']['endEvidenceStatus'])
+                self.assertEqual('released',result['actionState'])
+                self.assertEqual('use_item',result['failure']['call']['operation'])
+                self.assertEqual('inspect_inventory',result['lastObservation']['operation'])
+                self.assertEqual(1,sum(c=='query_atomic' for c,_ in game.sent))
                 self.assertEqual(1,sum(c=='start_atomic' for c,_ in game.sent))
 
     async def test_unknown_action_cannot_resume_or_replay(self):
@@ -219,12 +230,20 @@ class ServerPcall(unittest.IsolatedAsyncioTestCase):
             result=await LuaRuntime(self.bridge,evidence_root=self.directory.name).execute('''
                 local ok,a=pcall(function() return api('place_object',{x=10,y=20}) end)
                 assert(ok and a.status=='failed')
+                log('safe continuation')
                 local second,b=pcall(function() return api('place_object',{x=12,y=20}) end)
                 return {allowed=a.continuationAllowed,completed=second and b.completed,blocked=b.blocked or false}
             ''',limits=Limits(seconds=8,actions=2))
-            self.assertEqual('completed',result['status'],result)
-            self.assertEqual(not unsafe,result['value']['allowed'])
-            self.assertEqual(unsafe,result['value']['blocked'])
+            self.assertEqual('failed' if unsafe else 'completed',result['status'],result)
+            if unsafe:
+                self.assertIsNone(result['value']); self.assertEqual([],result['logs'])
+                self.assertFalse(result['lastAction']['continuationAllowed'])
+                self.assertTrue(result['lastAction']['evidence']['mutationAttempted'])
+                self.assertEqual('known',result['lastAction']['endEvidenceStatus'])
+            else:
+                self.assertTrue(result['value']['allowed'])
+                self.assertTrue(result['value']['completed'])
+                self.assertEqual((2,2),(result['calls'],result['actions']))
             self.assertEqual(1 if unsafe else 2,sum(q['op']=='start' for q in self.host.sent))
             self.host.sent.clear()
             self.assertFalse(mp.active_children())

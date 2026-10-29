@@ -55,10 +55,12 @@ class CraftTests(unittest.IsolatedAsyncioTestCase):
         r=await atomic.dispatch(self.bridge,'craft_recipe',GOAL)
         self.assertEqual('unknown',r['status'],r)
 
-    async def test_failed_craft_allows_query_and_blocks_second_action(self):
+    async def test_failed_craft_terminates_before_query_or_second_action(self):
         self.enable();self.host.mode='failed'
         r=await LuaRuntime(self.bridge,evidence_root=self.directory.name).execute("local r=api('craft_recipe',{recipeId=3,recipeToken='"+'a'*64+"',crafts=2}); local q=api('query_recipes',{}); api('craft_recipe',{recipeId=3,recipeToken='"+'a'*64+"',crafts=1}); return q",limits=Limits(actions=2,seconds=8))
-        self.assertEqual(1,sum(q['op']=='start' for q in self.host.sent));self.assertTrue(any(q['op']=='query' for q in self.host.sent));self.assertEqual(1,r['actions'])
+        self.assertEqual(1,sum(q['op']=='start' for q in self.host.sent));self.assertFalse(any(q['op']=='query' for q in self.host.sent));self.assertEqual(1,r['actions'])
+        self.assertEqual('failed',r['status'],r);self.assertIsNone(r['value'])
+        self.assertEqual('known',r['lastAction']['endEvidenceStatus'])
 
     async def test_invalid_options_reject_before_rpc_and_contract_is_explicit(self):
         self.enable()

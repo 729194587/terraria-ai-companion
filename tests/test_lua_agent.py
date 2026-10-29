@@ -190,7 +190,8 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
                 return {success=true}
             '''), tool('use_item'), final('已完成'), game=RuntimeGame('failed'))
         result = lua_results(model)[0]
-        self.assertTrue(result['programCompleted'])
+        self.assertFalse(result['programCompleted'])
+        self.assertIsNone(result['value'])
         self.assertFalse(result['actionSuccess'])
         self.assertEqual('not_completed', result['taskOutcome'])
         self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
@@ -206,8 +207,9 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
             return {blocked=blocked,read=api('inspect_inventory')}
         '''), final('完成'), game=RuntimeGame('failed'))
         result = lua_results(model)[0]
-        self.assertEqual('blocked', result['value']['blocked']['status'])
-        self.assertTrue(result['value']['read']['valid'])
+        self.assertEqual('blocked',result['status'])
+        self.assertFalse(result['programCompleted'])
+        self.assertIsNone(result['value'])
         self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
 
     async def test_predispatch_rejection_preserves_agent_barrier_without_poison(self):
@@ -221,19 +223,19 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
             return {blocked=blocked, readable=api('inspect_inventory').valid}
         '''), final('完成'), game=game)
         receipts = lua_results(model)
-        first = next(r for r in receipts if r.get('value', {}).get('rejected'))
-        self.assertTrue(first['programCompleted'])
+        first=receipts[0]
+        self.assertFalse(first['programCompleted'])
         self.assertFalse(first['actionSuccess'])
-        self.assertEqual('idle', first['actionState'])
-        self.assertEqual('not_dispatched', first['value']['rejected']['dispatchState'])
-        self.assertEqual('failed', first['lastAction']['status'])
-        self.assertTrue(first['value']['readable'])
-        direct = json.loads(model.requests[2][-2]['content'])
+        self.assertIsNone(first['value'])
+        self.assertEqual('idle',first['actionState'])
+        self.assertEqual('not_dispatched',first['lastAction']['dispatchState'])
+        self.assertEqual('failed',first['lastAction']['status'])
+        direct=json.loads(model.requests[2][-2]['content'])
         self.assertTrue(direct['blocked'])
-        self.assertEqual(first['lastAction'], direct['previousFailure'])
-        following = next(r for r in receipts if r.get('value', {}).get('blocked'))
-        self.assertTrue(following['value']['blocked']['blocked'])
-        self.assertTrue(following['value']['readable'])
+        self.assertEqual(first['lastAction'],direct['previousFailure'])
+        following=receipts[-1]
+        self.assertEqual('blocked',following['status'])
+        self.assertIsNone(following['value'])
         self.assertFalse(any(c in ('start_atomic', 'cancel_move') for c, _ in game.sent))
         self.assertFalse(game.closed)
         self.assertFalse(getattr(game, '_lua_poisoned', False))

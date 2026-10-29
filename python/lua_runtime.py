@@ -379,6 +379,14 @@ class LuaRuntime:
                             out['actionState'] = 'released'
                         halted |= result.get('status') != 'completed' and not result['continuationAllowed']
                 call_end(result.get('status'), result=result)
+                if (name in atomic.ACTIONS and result.get('status') != 'completed'
+                        and result.get('continuationAllowed') is not True):
+                    # Keep the real receipt above, but never send this failure
+                    # back into Lua (including a protected call). The parent
+                    # terminates the worker before any following script code.
+                    out['status'] = result['status']
+                    failure_call = dict(call_meta)
+                    break
                 try:
                     encode(result, VALUE_BYTES)
                 except ValueLimit:
