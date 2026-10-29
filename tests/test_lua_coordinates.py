@@ -58,7 +58,7 @@ class LuaCoordinateTests(unittest.IsolatedAsyncioTestCase):
             local cx=(p.x+10)//16
             local cy=math.floor((p.y+20)/16)
             assert(math.tointeger(cx)==2114 and math.tointeger(1.5)==nil)
-            assert(math.floor(-1.5)==-2 and math.random==nil and math.huge==nil)
+            assert(math.floor(-1.5)==-2 and math.random==nil and type(math.huge)=='number')
             return api('scan_tiles',{minX=cx-22,minY=cy-14,maxX=cx+22,maxY=cy+14,
                 tileTypes={5.0},maxResults=20.0})
         """

@@ -1,5 +1,16 @@
 # Lua 编排第一阶段
 
+## 阶段一参数诊断（基于 0.1.62）
+
+API schema 拒绝仍使用程序终态 `bad_argument`，不冒充原生动作失败，也不会发起该 API 的游戏 RPC。
+共享校验器返回 `diagnostics`（最多 8 项）与 `diagnosticsTruncated`，每项包含字段 path、稳定问题 code、
+有界 message 和可确定的 expected/actual/allowed 等 schema 事实；不回显参数值。
+`error` 保留有界摘要，`failure.call` 保留原 API 名、调用编号和源码行。
+`scan_tiles` 必须提供整数 `minX/maxX/minY/maxY` 与整数 ID 数组 `tileTypes`；不是字符串数组。
+`resolve_content` 必须提供 `kind=item|tile|wall` 与字符串 `query`，`id` 并非该 API 的参数。
+缺失、未知、类型、枚举等问题尽可能一次报告；有多个问题时最多报告 8 项并标记截断。
+已有跨字段约束仍返回真实有界错误摘要，不猜测缺少 schema 的接口结构。
+
 ## 当前失败恢复契约（0.1.62）
 
 `lastObservation` 独立于脚本返回的 `value`：宿主保存本程序最后一次成功只读 API 的

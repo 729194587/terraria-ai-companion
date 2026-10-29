@@ -100,38 +100,82 @@ ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
 
 
+class ArgumentValidationError(ValueError):
+    """Bounded schema facts; never include caller values in diagnostics."""
+    def __init__(self, operation, issues, truncated=False):
+        self.operation = operation
+        self.diagnostics = issues
+        self.diagnostics_truncated = truncated
+        super().__init__('; '.join(issue['message'] for issue in issues)[:512])
+
+
 def validate(name, arguments):
-    """Return a validated copy, losslessly normalizing integer-valued JSON numbers."""
+    """Validate shared schemas and losslessly normalize integer-valued numbers."""
+    issues, truncated = [], False
+    def typename(value):
+        return {dict: 'object', list: 'array', str: 'string', bool: 'boolean',
+                int: 'integer', float: 'number', type(None): 'null'}.get(type(value), 'unsupported type')
+    def expected(schema):
+        kind = schema['type']
+        return 'array of ' + schema['items']['type'] + 's' if kind == 'array' else kind
+    def issue(path, code, message, **facts):
+        nonlocal truncated
+        if len(issues) >= 8:
+            truncated = True
+            return
+        issues.append(dict(path=path[:160], code=code, message=message[:240], **facts))
     def check(value, schema, path):
         kind = schema['type']
         if kind == 'object':
-            if not isinstance(value, dict) or set(value) - schema['properties'].keys() or not set(schema.get('required', [])) <= value.keys():
-                raise ValueError(f'{path}: unexpected or missing atomic parameters')
-            return {key: check(item, schema['properties'][key], f'{path}.{key}') for key, item in value.items()}
+            if type(value) is not dict:
+                issue(path, 'type_mismatch', f"field '{path}': expected object, got {typename(value)}", expected='object', actual=typename(value))
+                return value
+            properties = schema['properties']
+            for key in schema.get('required', []):
+                if key not in value:
+                    issue(path+'.'+key, 'missing_required', f"missing required field '{key}'", expected=expected(properties[key]))
+            for key, item in value.items():
+                if key not in properties:
+                    label=repr(key[:64]) if isinstance(key,str) else '<non-string key>'
+                    issue(path, 'unknown_field', f"unknown field {label}")
+            return {key: check(item, properties[key], path+'.'+key) for key,item in value.items() if key in properties}
         if kind == 'array':
-            if not isinstance(value, list) or not schema.get('minItems', 0) <= len(value) <= schema.get('maxItems', math.inf):
-                raise ValueError(f'{path}: invalid array length')
-            normalized = [check(entry, schema['items'], f'{path}[{i}]') for i, entry in enumerate(value, 1)]
-            if schema.get('uniqueItems') and len(set(normalized)) != len(normalized):
-                raise ValueError(f'{path}: duplicate array items')
+            if type(value) is not list:
+                issue(path, 'type_mismatch', f"field '{path}': expected {expected(schema)}, got {typename(value)}", expected=expected(schema), actual=typename(value))
+                return value
+            if not schema.get('minItems', 0) <= len(value) <= schema.get('maxItems', math.inf):
+                issue(path, 'array_length', f"field '{path}': invalid array length", minimum=schema.get('minItems',0), maximum=schema.get('maxItems'))
+                return value
+            errors_before = len(issues)
+            normalized = [check(entry, schema['items'], f'{path}[{i}]') for i,entry in enumerate(value,1)]
+            if schema.get('uniqueItems') and not truncated and len(issues) == errors_before and len(set(normalized)) != len(normalized):
+                issue(path, 'duplicate_items', f"field '{path}': duplicate array items")
             return normalized
         if kind in ('number', 'integer'):
             low, high = schema.get('minimum', -math.inf), schema.get('maximum', math.inf)
             numeric = type(value) is int or type(value) is float and math.isfinite(value)
             integral = kind != 'integer' or type(value) is int or type(value) is float and value.is_integer()
             if not numeric or not integral or not low <= value <= high:
-                shown = repr(value)[:80] if type(value) in (int, float, bool) else type(value).__name__
-                raise ValueError(f'{path}: expected finite {kind} in [{low}, {high}], got {shown}; fractional values are not rounded')
+                issue(path, 'invalid_number', f"{path}: expected finite {kind} in [{low}, {high}], got {typename(value)}; fractional values are not rounded", expected=kind, actual=typename(value))
+                return value
             return int(value) if kind == 'integer' else value
         if kind == 'boolean' and type(value) is not bool:
-            raise ValueError(f'{path}: expected boolean')
+            issue(path, 'type_mismatch', f"field '{path}': expected boolean, got {typename(value)}", expected='boolean', actual=typename(value))
         if kind == 'string':
-            if not isinstance(value, str) or not schema.get('minLength', 0) <= len(value) <= schema.get('maxLength', math.inf) or 'enum' in schema and value not in schema['enum'] or 'pattern' in schema and re.fullmatch(schema['pattern'], value) is None:
-                raise ValueError(f'{path}: invalid string, category or entity reference')
+            if type(value) is not str:
+                issue(path, 'type_mismatch', f"field '{path}': expected string, got {typename(value)}", expected='string', actual=typename(value))
+            elif not schema.get('minLength',0) <= len(value) <= schema.get('maxLength',math.inf):
+                issue(path, 'string_length', f"field '{path}': string length outside allowed bounds", minimum=schema.get('minLength',0), maximum=schema.get('maxLength'))
+            elif 'enum' in schema and value not in schema['enum']:
+                issue(path, 'unsupported_value', f"field '{path}': unsupported value", allowed=schema['enum'])
+            elif 'pattern' in schema and re.fullmatch(schema['pattern'],value) is None:
+                issue(path, 'invalid_pattern', f"field '{path}': string does not match required pattern")
         return value
-    if name not in SCHEMAS:
-        raise ValueError('Unsupported atomic operation')
+    if type(name) is not str or name not in SCHEMAS:
+        raise ArgumentValidationError(None, [dict(path='operation',code='unsupported_operation',message='Unsupported atomic operation')])
     arguments = check(arguments, SCHEMAS[name], name)
+    if issues:
+        raise ArgumentValidationError(name, issues, truncated)
     if name == 'scan_tiles':
         width, height = arguments['maxX'] - arguments['minX'] + 1, arguments['maxY'] - arguments['minY'] + 1
         if width <= 0 or height <= 0 or width * height > 4096:

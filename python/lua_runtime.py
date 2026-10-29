@@ -376,6 +376,10 @@ class LuaRuntime:
             out['status'] = str(exc)
         except ValueLimit:
             out['status'] = 'value_limit'
+        except atomic.ArgumentValidationError as exc:
+            out.update(status='bad_argument', error=str(exc)[:512],
+                       diagnostics=exc.diagnostics, diagnosticsTruncated=exc.diagnostics_truncated,
+                       argumentOperation=exc.operation)
         except ValueError as exc:
             out.update(status='bad_argument', error=str(exc)[:512])
         except (EOFError, OSError):

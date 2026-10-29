@@ -52,8 +52,8 @@ class Game:
 
 class ValidationTests(unittest.TestCase):
     def test_schema_dispatch_and_tool_names(self):
-        self.assertEqual(30, len(atomic.TOOLS))
-        server_only={'observe_scene','query_recipes','craft_recipe'}
+        self.assertEqual(31, len(atomic.TOOLS))
+        server_only={'observe_scene','query_recipes','craft_recipe','place_object'}
         client_names={t['function']['name'] for t in TOOLS}
         self.assertTrue(set(atomic.SCHEMAS)-server_only <= client_names)
         self.assertTrue(server_only.isdisjoint(client_names))
