@@ -154,6 +154,27 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result['actionSuccess']);self.assertEqual('released',result['actionState'])
         self.assertNotIn('movementLoop',result)
         self.assertEqual(180,result['value']['after']['x'])
+
+    async def test_only_host_verified_rejection_can_continue_across_programs(self):
+        for safe in (True, False):
+            with self.subTest(safe=safe):
+                await self.agent.close();self.ai.close()
+                self.aihost.object_placement=True;self.aihost.polls=0;self.aihost.sent.clear()
+                def reject(a):
+                    if a.get('targetTile',{}).get('x')==10:
+                        a.update(status='failed',reason='object_footprint_occupied',evidence=dict(operation='place_object',mutationAttempted=not safe,effectStatus='not_started'))
+                        a['endEvidence'].update(inputsAcquired=False,inputsReleased=True,effectVerified=False)
+                self.aihost.action_transform=reject
+                self.ai=ServerAiBridge(self.aihost.server_address[1],timeout=2)
+                self.agent=Agent(self.ai,self.llm,chat_bridge=self.chat,lua_store=ProgramStore(Path(self.directory.name)/'sources'))
+                second=self.program("return api('place_object',{x=12,y=20})")
+                second['tool_calls'][0]['id']='lua-2'
+                self.requests.clear()
+                self.answers=[self.program("return api('place_object',{x=10,y=20})"),second,dict(role='assistant',content='已根据回执停止或完成测试。')]
+                await self.receive(id='recovery-'+str(safe));await self.agent.task
+                starts=[r for r in self.aihost.sent if r['op']=='start']
+                self.assertEqual([10,12] if safe else [10],[r['arguments']['x'] for r in starts])
+
     async def test_model_can_observe_through_existing_agent_lua(self):
         from server_ai import PERCEPTION_OPERATIONS
         original=self.aihost.query

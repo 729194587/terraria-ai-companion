@@ -81,6 +81,7 @@ BOOTSTRAP = '''
                     huge=math.huge, pi=math.pi}
         env.table = {insert=table.insert, remove=table.remove, sort=table.sort,
                      concat=table.concat, pack=table.pack, unpack=table.unpack}
+        env.string = {sub=string.sub, len=string.len}
         env.json = {null=null, array=function(t) return mark(t or {}, "array") end,
                               object=function(t) return mark(t or {}, "object") end}
         env.api = function(name, args) return callback(name, args or {}, current_line) end

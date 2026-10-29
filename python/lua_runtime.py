@@ -61,6 +61,68 @@ def bounded_action(result):
                 'payloadOmitted': True}
 
 
+LAST_OBSERVATION_BYTES = 65_536
+
+
+def retained_observation(operation, call_id, run_id, result):
+    """Detached host evidence, separate from the program's return value."""
+    snapshot = {'operation': operation, 'callId': call_id, 'runId': run_id}
+    try:
+        checked = decode(encode(result, VALUE_BYTES))
+        data = checked.get('data')
+        data = data if isinstance(data, dict) else checked
+        for key in ('worldSessionId', 'actorGeneration', 'actorSlot', 'gameUpdate', 'observedAtUnixMs', 'clock'):
+            value = checked.get(key, data.get(key))
+            if type(value) in (int, float, bool) or type(value) is str and len(value) <= 512:
+                snapshot[key] = value
+        scene_id = data.get('sceneId')
+        if isinstance(scene_id, str) and len(scene_id) <= 512:
+            snapshot['sceneId'] = scene_id
+        snapshot.update(result=checked, payloadOmitted=False)
+        encode(snapshot, LAST_OBSERVATION_BYTES)
+    except ValueLimit:
+        snapshot.update(result=None, payloadOmitted=True, omissionReason='last_observation_limit')
+    return snapshot
+
+
+def safe_preflight_rejection(result, lifecycle):
+    """Only bound server evidence can authorize another mutation in this run."""
+    if (not isinstance(result, dict) or result.get('valid') is not True
+            or result.get('status') != 'failed' or result.get('supervisorError')
+            or lifecycle.get('uncertain') or result.get('endEvidenceStatus') != 'known'):
+        return False
+    proof, end, action = result.get('evidence'), result.get('endEvidence'), lifecycle.get('action')
+    if not all(isinstance(v, dict) for v in (proof, end, action)):
+        return False
+    if any(k in proof and proof[k] is not False
+           for k in ('uncertainNativeEffect', 'targetChanged', 'placedByActor', 'destroyedByActor')):
+        return False
+    if any(k in proof and (type(proof[k]) is not int or proof[k] != 0)
+           for k in ('consumedCount', 'nativePlacementEvents')):
+        return False
+    return (proof.get('mutationAttempted') is False and proof.get('effectStatus') == 'not_started'
+            and proof.get('operation') == result.get('operation')
+            and end.get('inputsAcquired') is False and end.get('inputsReleased') is True
+            and end.get('phase') == 'ServerAI_game_thread_inputs_released'
+            and end.get('effectVerified') is False and end.get('operation') == result.get('operation')
+            and type(end.get('gameUpdate')) is int and end['gameUpdate'] >= 0
+            and action.get('status') == 'failed' and action.get('operation') == result.get('operation')
+            and isinstance(result.get('actionId'), str) and bool(result['actionId'])
+            and result['actionId'] == action.get('actionId')
+            and isinstance(action.get('session'), str) and bool(action['session'])
+            and result.get('session') == action['session']
+            and isinstance(action.get('worldSessionId'), str) and bool(action['worldSessionId'])
+            and end.get('worldSessionId') == action['worldSessionId']
+            and isinstance(action.get('actorId'), str) and bool(action['actorId'])
+            and end.get('actorId') == action['actorId']
+            and type(action.get('generation')) is int and end.get('actorGeneration') == action['generation']
+            and type(action.get('actorSlot')) is int and type(end.get('actorSlot')) is int
+            and end.get('actorSlot') == action['actorSlot']
+            and type(end.get('actorGeneration')) is int
+            and result.get('actionGeneration') == action['generation']
+            and result.get('controlGeneration') == action['generation'])
+
+
 class LuaRuntime:
     """One exclusive run per Bridge. Unknown action state permanently fences it.
 
@@ -79,7 +141,7 @@ class LuaRuntime:
                       allow_actions=True, on_result=None):
         limits.validate()
         out = {'runId': uuid.uuid4().hex, 'status': 'unknown', 'calls': 0, 'value': None,
-               'actions': 0, 'logs': [], 'actionState': 'idle', 'lastAction': None, 'cleanup': None, 'trace': []}
+               'actions': 0, 'logs': [], 'actionState': 'idle', 'lastAction': None, 'lastObservation': None, 'cleanup': None, 'trace': []}
         if type(source) is not str or len(source) > SOURCE_BYTES or len(source.encode('utf-8')) > SOURCE_BYTES:
             return {**out, 'status': 'source_limit'}
         if getattr(self.bridge, '_lua_poisoned', False):
@@ -278,6 +340,12 @@ class LuaRuntime:
                                   'completed': False, 'reason': str(error),
                                   'dispatchState': 'not_dispatched' if rejected_before_dispatch else 'unconfirmed'}
                     active = None
+                    if (name in atomic.READS and result.get('valid') is True
+                            and result.get('available') is not False
+                            and result.get('status') not in ('failed', 'timeout', 'cancelled', 'unknown', 'unavailable')):
+                        out['lastObservation'] = retained_observation(name, sequence, out['runId'], result)
+                    if name in atomic.ACTIONS:
+                        result = {**result, 'continuationAllowed': safe_preflight_rejection(result, lifecycle)}
                     if on_result is not None:
                         on_result(name, args, result)
                     call_end(result.get('status'), result=result)
@@ -289,7 +357,7 @@ class LuaRuntime:
                             break
                         if not rejected_before_dispatch:
                             out['actionState'] = 'released'
-                        halted |= result.get('status') != 'completed'
+                        halted |= result.get('status') != 'completed' and not result['continuationAllowed']
                 call_end(result.get('status'), result=result)
                 try:
                     encode(result, VALUE_BYTES)

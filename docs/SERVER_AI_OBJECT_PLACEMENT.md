@@ -2,7 +2,7 @@
 
 ## 支持范围与接口
 
-CompanionBridge 0.1.61，独立 Server AI。握手同时提供 `server_ai_actions_v1` 与
+CompanionBridge 0.1.62，独立 Server AI。握手同时提供 `server_ai_actions_v1` 与
 `server_ai_place_object_workbench_v1` 才开放 `place_object({x,y})`。只允许当前快捷栏选中的
 原版 `ItemID.WorkBench`（36），`TileID.WorkBenches`（18），默认样式 0；不自动选栏、走近、重试。
 `place_tile` 仍只允许原有泥土、石块、木材单格方块。旧服务器和客户端不宣称支持新操作。
@@ -47,6 +47,13 @@ Python 再核验白名单、目标/占地、事件数、消费及身份/释放�
 本绑定的 Actor 也会释放输入。正常已放置且消费确认后的取消保留物体/消耗，不回滚、不算完成。
 Python 的 place_object 监督截止也保留取消返回的 unknown，触发既有 Lua 变更屏障且不重试。
 [取消回归原始证据](evidence/server-object-placement/cancellation/manifest.json) 独立记录本次包哈希与结果。
+
+0.1.62 的明确预检拒绝补齐 `reasonDetail`：占地阻挡给出实际格坐标和 Tile 类型，玩家冲突给出
+玩家与完整占地的像素碰撞框及 Tile 占地，距离拒绝给出实际锚点距离、80px 限制和锚点坐标。
+`reason` 保持稳定；仍是 `mutationAttempted=false` / `effectStatus=not_started`，不是原生放置已执行。
+仅宿主核验的 `continuationAllowed=true` 允许同一程序换候选，其他失败和 unknown 屏障不变。
+`placementCandidates` 专供单格 place_tile，工作台必须使用现有 `objectPlacementCandidates`；
+后者为空不能当作接口不存在或改用单格候选。原实机报告的更正见[逐候选分析](evidence/lua-recovery/analysis.md)。
 
 支撑快照比较类型、驱动、形状、液体等物理事实。普通实心支撑的贴图帧会被原生邻接重算，
 不能把正常重算当作外部替换；完整工作台自身的帧仍严格核验。原生移除事件同时监视两格占地和支撑。

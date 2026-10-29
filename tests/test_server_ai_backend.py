@@ -38,6 +38,7 @@ class Host(socketserver.ThreadingTCPServer):
         self.object_placement = False
         self.placement = False
         self.placement_override = {}
+        self.action_transform = None
         self.landing = False
         self.landing_override = {}
         self.chat = False
@@ -196,6 +197,8 @@ class Handler(socketserver.StreamRequestHandler):
                             a['evidence']['targetChanged'] = True
                         if h.mode == 'wrong_operation':
                             a['endEvidence']['operation'] = 'select_hotbar_slot'
+                if h.action_transform is not None and h.action['status'] != 'running':
+                    h.action_transform(h.action)
                 data = dict(action=copy.deepcopy(h.action))
             reply = dict(v=1, id=r['id'], ok=error is None, binding=h.binding, data=data, error=error)
             self.wfile.write((json.dumps(reply) + '\n').encode())

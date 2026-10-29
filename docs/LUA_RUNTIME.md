@@ -1,5 +1,32 @@
 # Lua 编排第一阶段
 
+## 当前失败恢复契约（0.1.62）
+
+`lastObservation` 独立于脚本返回的 `value`：宿主保存本程序最后一次成功只读 API 的
+`operation/callId/runId`、可用的 `gameUpdate/sceneId`、身份与采样时间，以及 `result` 原始只读回执。
+它经过现有 JSON 类型/深度/节点校验并与 Worker 数据分离，最多 64 KiB；超过上限时
+`payloadOmitted=true`、`result=null`、`omissionReason=last_observation_limit`。完整性、未知、截断
+保留在 `result` 内，不改写成完整观察。后续程序可使用模型从该回执提取的仍有效数据，
+不必仅因脚本异常重复查询；没有新增跨程序可写状态、隐式重放或观察 API。
+观察仍带原来的身份、范围和时效，移动/世界变化或时效不明时需重读，不能凭保存成功宣称仍然新鲜。
+运行时异常保留真实失败状态与 `value=null`。整段 Lua 先编译，语法错误不会执行其前面的 API；
+没有成功只读调用的程序不会伪造 `lastObservation`。unknown 后的连接隔离和输入释放契约不变。
+
+动作默认非 completed 即停止后续变更。唯一续行例外是宿主按真实终态设置的
+`continuationAllowed=true`：必须 failed，`mutationAttempted=false`、`effectStatus=not_started`，
+绑定动作身份匹配，输入从未取得且已确认释放，结束证据 known，且没有消费/原生事件或不确定副作用。
+不按 reason 字符串判断，不接受 Lua 自报；允许程序选择不同参数/候选，宿主不自动重试。
+所有尝试照常消耗原调用、动作及墙钟预算；Agent 整轮只沿用该宿主判定，不重置预算。
+已开始失败、取消、超时、断连、身份/释放未知及 unknown 继续保持硬屏障。
+
+纯字符串白名单仅新增 `string.sub` 和 `string.len`；用 `string.sub(row,start,end)`，
+`row:sub()` 仍不可用。未恢复字符串 metatable，也不开放其余 string 库、load/debug/os/io/网络或宿主对象。
+`observe_scene.data.geometry.originX/originY` 与 `map` 共用 Tile 原点；Lua 行列从 1 开始，
+Tile 坐标为 `(originX+column-1, originY+row-1)`，解析 45×29 网格不需要逐格 inspect。
+
+原实机问题的逐候选核对、限制及本轮定向验证见
+[原始证据与分析](evidence/lua-recovery/analysis.md)。以下保留历史阶段记录。
+
 2026-10-28 自主编排：Lua 纯计算白名单为 `math.abs/min/max/sqrt/ceil/floor/tointeger/huge/pi`
 和 `table.insert/remove/sort/concat/pack/unpack`，用于距离、排序、列表和局部有限状态。
 仅复制这些 Lua 函数到每次新建环境，不开放 random、元表、加载器、pcall、协程、文件、网络、系统或 Python 对象。

@@ -32,6 +32,26 @@ internal static class ActorObjectPlacement
         if(p.gravDir!=1||p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)return "unsupported_placement_state";
         return EmptyError(p,x,y,Definition());
     }
+    internal static string PreflightDetail(Player p,int x,int y,string reason)
+    {
+        var d=Definition();if(d==null)return null;
+        int left=x-d.OriginX,top=y-d.OriginY;
+        var footprint=new Rectangle(left*16,top*16,d.Width*16,d.Height*16);
+        if(reason=="out_of_conservative_80_pixel_reach")
+            return FormattableString.Invariant($"anchorTile=({x},{y}); distancePixels={Vector2.Distance(p.Center,new Vector2(x*16+8,y*16+8)):F3}; limitPixels=80; actorCenterPixels=({p.Center.X:F3},{p.Center.Y:F3})");
+        if(reason=="object_footprint_occupied")
+            for(int dx=0;dx<d.Width;dx++)for(int dy=0;dy<d.Height;dy++)
+            {
+                var t=Main.tile[left+dx,top+dy];
+                if(t.HasTile)return $"occupiedTile=({left+dx},{top+dy}); tileType={t.TileType}; footprintTiles=({left},{top},{d.Width},{d.Height}); anchorTile=({x},{y})";
+            }
+        if(reason=="object_player_collision")
+        {
+            var other=footprint.Intersects(p.Hitbox)?p:Main.player.FirstOrDefault(other=>other.active&&!other.dead&&!other.ghost&&footprint.Intersects(other.Hitbox));
+            if(other!=null)return $"playerSlot={other.whoAmI}; playerBoundsPixels={other.Hitbox}; footprintPixels={footprint}; footprintTiles=({left},{top},{d.Width},{d.Height}); anchorTile=({x},{y})";
+        }
+        return null;
+    }
     internal static string EmptyError(Player p,int x,int y,Shape d)
     {
         int left=x-d.OriginX,top=y-d.OriginY;

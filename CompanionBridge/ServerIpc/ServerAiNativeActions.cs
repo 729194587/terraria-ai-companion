@@ -43,8 +43,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public object Start(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId)
     {
         Require(identity);var p=(Player)identity.Actor;
-        Handle Reject(string reason)=>new(identity,operation,null,new("failed",reason,
-            new{operation,mutationAttempted=false,effectStatus="not_started"},true,InputsAcquired:false));
+        Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
+            new{operation,mutationAttempted=false,effectStatus="not_started"},true,InputsAcquired:false,ReasonDetail:detail));
         if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
             return Reject("actor_busy");
         if(p.dead||p.ghost||p.gravDir!=1||p.mount.Active)return Reject("unsupported_actor_state");
@@ -57,7 +57,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             else if(operation is "place_tile" or "place_object")
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
-                string error=ActorPlacement.Preflight(p,x,y,operation=="place_object");if(error!=null)return Reject(error);
+                string error=ActorPlacement.Preflight(p,x,y,operation=="place_object");
+                if(error!=null)return Reject(error,operation=="place_object"?ActorObjectPlacement.PreflightDetail(p,x,y,error):null);
                 ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,operation=="place_object");context=ActorItemUse.Current;
             }
             else if(operation=="use_item")

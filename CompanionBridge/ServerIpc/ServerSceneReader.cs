@@ -121,7 +121,7 @@ internal static class ServerSceneReader
             map=new{rows=map.Select(r=>new string(r)).ToArray(),originX=ox,originY=oy,
                 legend="side view: .=nonblocking #=solid h=halfblock 1..4=slopes ==flat platform a/b=sloped platform; T=trunk component O=ore C=chest D=door W=workbench $=drop N=NPC P=player *=hostile projectile @=AI; ~=water L=lava H=honey S=shimmer !=touch/NPC hazard B=boulder M=unsupported motion surface ?=unknown",
                 priority="unknown collision > tile hazards > actor/entity/object > geometry; overlapping facts remain in geometry/objects/hazards; edge entity markers may be clamped"},
-            geometry=new{rows=geometry,legend="same shapes as navigation, liquids/hazards separated; A=actuated nonblocking; a/b=sloped platforms",meaning="nonblocking is not walkable; walls behind tiles do not block"},
+            geometry=new{rows=geometry,originX=ox,originY=oy,legend="same shapes as navigation, liquids/hazards separated; A=actuated nonblocking; a/b=sloped platforms",meaning="nonblocking is not walkable; walls behind tiles do not block"},
             objects=objectResult,objectCounts=new{observed=objects.GroupBy(o=>o.Kind).ToDictionary(g=>g.Key,g=>g.Count()),returned=objectResult.Items.GroupBy(o=>o.Kind).ToDictionary(g=>g.Key,g=>g.Count())},
             hazards=new{tiles=SceneGeometry.Limit(tileHazards,hazardCap),entities=SceneGeometry.Limit(dynamicHazards.OrderBy(h=>h.Distance).Select(h=>h.Value),hazardCap),
                 meaning="liquid facts, contact damage flags and movement exclusions are distinct; glyph is highest-priority source, structured sources may overlap"},

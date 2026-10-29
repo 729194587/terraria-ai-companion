@@ -67,6 +67,8 @@ internal static class ObjectPlacementSelfTest
             var candidate=initialScene.GetProperty("objectPlacementCandidates").GetProperty("items").EnumerateArray().Single(e=>e.GetProperty("target").GetProperty("x").GetInt32()==x&&e.GetProperty("target").GetProperty("y").GetInt32()==y);
             evidence.Add(new{nativeCandidate=candidate.Clone(),coverage=initialScene.GetProperty("coverage").Clone()});
             Check(candidate.GetProperty("footprint").GetProperty("width").GetInt32()==d.Width&&candidate.GetProperty("support").GetProperty("width").GetInt32()==d.AnchorBottom.tileCount,"native scene omitted full candidate occupancy/support");
+            Check(initialScene.GetProperty("geometry").GetProperty("originX").GetInt32()==initialScene.GetProperty("map").GetProperty("originX").GetInt32()
+                &&initialScene.GetProperty("geometry").GetProperty("originY").GetInt32()==initialScene.GetProperty("map").GetProperty("originY").GetInt32(),"geometry and map origins differ");
             var placed=Finish(Start());var c=ActorItemUse.Current;
             evidence.Add(new{nativeFootprint=Enumerable.Range(0,d.Width).Select(dx=>{var t=Main.tile[x+dx,y];return new{x=x+dx,y,t.HasTile,t.TileType,t.TileFrameX,t.TileFrameY};}).ToArray()});
             Check(placed.Status=="completed"&&placed.EffectVerified&&placed.InputsReleased&&Released()
@@ -101,11 +103,20 @@ internal static class ObjectPlacementSelfTest
             {Setup(type);Check(Refused().Reason=="unsupported_selected_object_item","wrong item accepted: "+type);}
             Setup();p.HeldItem.placeStyle=1;Check(Refused().Reason=="unsupported_selected_object_item","non-default style accepted");
             Setup();var blocked=Main.tile[x+1,y];blocked.HasTile=true;blocked.TileType=TileID.Stone;
-            Check(Refused().Reason=="object_footprint_occupied","second footprint cell ignored");
+            var occupied=Refused();
+            Check(occupied.Reason=="object_footprint_occupied"&&occupied.ReasonDetail.Contains($"occupiedTile=({x+1},{y})")
+                &&occupied.ReasonDetail.Contains($"tileType={TileID.Stone}")&&!occupied.InputsAcquired
+                &&JsonSerializer.SerializeToElement(occupied.Evidence).GetProperty("mutationAttempted").GetBoolean()==false,"second footprint cell/diagnostic ignored");
             Setup();Main.tile[x+1,floor].ClearEverything();Check(Refused().Reason=="object_support_missing","second support ignored");
             Setup();Check(Refused(Main.maxTilesX-2,y).Reason=="invalid_target","full bounds ignored");
-            Check(Refused(x+20,y).Reason=="out_of_conservative_80_pixel_reach","distance ignored");
-            Setup();p.position=new(x*16,floor*16-p.height);Check(Refused().Reason=="object_player_collision","actor overlap accepted");
+            var distant=Refused(x+20,y);
+            Check(distant.Reason=="out_of_conservative_80_pixel_reach"&&distant.ReasonDetail.Contains($"anchorTile=({x+20},{y})")
+                &&distant.ReasonDetail.Contains(FormattableString.Invariant($"distancePixels={Vector2.Distance(p.Center,new Vector2((x+20)*16+8,y*16+8)):F3}"))
+                &&distant.ReasonDetail.Contains("limitPixels=80")&&!distant.InputsAcquired,"distance diagnostic ignored");
+            Setup();p.position=new(x*16,floor*16-p.height);var collision=Refused();
+            Check(collision.Reason=="object_player_collision"&&collision.ReasonDetail.Contains($"playerSlot={p.whoAmI}")
+                &&collision.ReasonDetail.Contains($"footprintTiles=({x},{y},2,1)")&&collision.ReasonDetail.Contains(p.Hitbox.ToString())
+                &&!collision.InputsAcquired,"actor overlap/diagnostic ignored");
             // No real client owns this collider. Netplay resets disconnected client
             // slots concurrently, so use the non-network sentinel only as a saved/
             // restored geometry surrogate; this does not validate live multiplayer.

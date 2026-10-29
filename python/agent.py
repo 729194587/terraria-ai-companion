@@ -576,7 +576,8 @@ class Agent:
                                         actions.append(reply)
                                         if not reply.get('blocked'):
                                             last_atomic_action = reply
-                                            if (reply.get('valid') is not True or reply.get('status') != 'completed'):
+                                            if ((reply.get('valid') is not True or reply.get('status') != 'completed')
+                                                    and reply.get('continuationAllowed') is not True):
                                                 atomic_halted = True
                                                 if first_atomic_failure is None:
                                                     first_atomic_failure = copy.deepcopy(reply)
