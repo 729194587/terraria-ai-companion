@@ -25,6 +25,23 @@ internal sealed record SceneObjectPlacementList(SceneObjectPlacement[] Items,int
 
 internal static class SceneGeometry
 {
+    internal static string[] GeometryRows(SceneCell[,] cells)=>Enumerable.Range(0,cells.GetLength(1))
+        .Select(y=>new string(Enumerable.Range(0,cells.GetLength(0)).Select(x=>Geometry(cells[x,y])).ToArray())).ToArray();
+    internal static string[] MapRows(SceneCell[,] cells,string[] geometry,int actorX,int actorY,IEnumerable<(int X,int Y,char Glyph)> markers)
+    {
+        int w=cells.GetLength(0),h=cells.GetLength(1);
+        var map=Enumerable.Range(0,h).Select(y=>Enumerable.Range(0,w)
+            .Select(x=>cells[x,y].Kind==null?geometry[y][x]:Glyph(cells[x,y].Kind)).ToArray()).ToArray();
+        foreach(var marker in markers)map[marker.Y][marker.X]=marker.Glyph;
+        map[actorY][actorX]='@';
+        for(int y=0;y<h;y++)for(int x=0;x<w;x++)
+        {
+            char danger=Danger(cells[x,y].Sources);
+            if(danger!='\0')map[y][x]=danger;
+            if(geometry[y][x]=='?')map[y][x]='?';
+        }
+        return map.Select(row=>new string(row)).ToArray();
+    }
     internal static SceneList<T> Limit<T>(IEnumerable<T> items,int cap)
     {
         var all=items.ToArray();return new(all.Take(cap).ToArray(),all.Length,Math.Min(cap,all.Length),all.Length>cap,Math.Max(0,all.Length-cap));

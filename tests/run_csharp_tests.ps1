@@ -8,6 +8,7 @@ $sources = @(
     (Join-Path $repo 'CompanionBridge/AiChatInput.cs'),
     (Join-Path $PSScriptRoot 'AiChatOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/AtomicParameters.cs'),
+    (Join-Path $repo 'CompanionBridge/SceneLayers.cs'),
     (Join-Path $repo 'CompanionBridge/AtomicAuthority.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/NativeAuthorityWorld.cs'),
     (Join-Path $PSScriptRoot 'AtomicAuthorityOfflineTests.cs'),

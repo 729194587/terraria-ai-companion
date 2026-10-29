@@ -29,8 +29,9 @@ internal static class AtomicParameters
             {
                 case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
                 case "observe_scene":
-                    if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards"}).Any())throw new FormatException("Unexpected scene parameter.");
-                    foreach(string key in keys)Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
+                    if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers"}).Any())throw new FormatException("Unexpected scene parameter.");
+                    foreach(string key in keys.Where(k=>k!="layers"))Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
+                    SceneLayers.Read(args);
                     break;
                 case "query_recipes":
                     if(keys.Except(new[]{"resultType","availableOnly","limit","offset"}).Any())throw new FormatException("Unexpected recipe parameter.");
