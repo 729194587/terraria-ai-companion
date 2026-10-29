@@ -28,6 +28,9 @@ public static class SceneReaderLayerTests
         var expected=original.DeepClone().AsObject();
         Check(expected["schemaVersion"].GetValue<int>()==1,"pinned source is pre-compaction schema 1");
         expected["schemaVersion"]=2;
+        var pixels=expected["actor"]["boundsWorldPixels"];
+        expected["actor"]["bodyTileBounds"]=JsonSerializer.SerializeToNode(BodyTileBounds.FromPixels(
+            pixels["x"].GetValue<double>(),pixels["y"].GetValue<double>(),pixels["width"].GetValue<double>(),pixels["height"].GetValue<double>()),Json);
         void Remove(JsonObject node,params string[] names)
         {foreach(string name in names){Check(node[name] is JsonValue value&&value.TryGetValue<string>(out _),"removed field is explanatory text: "+name);node.Remove(name);}}
         Remove(expected["coverage"].AsObject(),"objectScope","treeIdentity","candidateScope");
@@ -74,6 +77,8 @@ public static class SceneReaderLayerTests
         var before=Normalize(BaselineServerSceneReader.Read(actor,identity,Args()));
         var legacy=CompactContract(before);
         var full=Normalize(ServerSceneReader.Read(actor,identity,Args()));
+        Check(full["actor"]["bodyTileBounds"].ToJsonString()=="{\"minX\":22,\"minY\":17,\"maxX\":23,\"maxY\":19}","actual reader emits complete body tile bounds");
+        Check(full["actor"]["mapTile"]["y"].GetValue<int>()==18,"mapTile remains center rather than body top left");
         Check(JsonNode.DeepEquals(legacy,full),"default equals pinned cff5ae7 after only the declared text edits and schema version change");
         Check(JsonNode.DeepEquals(full,Normalize(ServerSceneReader.Read(actor,identity,Args(Names)))) ,"explicit all and default are identical snapshots");
         var cases=Names.Select(n=>new[]{n}).Concat(new[]{new[]{"geometry","landingRegions","hazards"},new[]{"objects","map"},new[]{"placementCandidates","objectPlacementCandidates"},Names}).ToArray();

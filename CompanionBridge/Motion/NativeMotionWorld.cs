@@ -3,6 +3,7 @@ using System;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
+using Terraria.ModLoader;
 using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Motion;
@@ -10,8 +11,11 @@ namespace CompanionBridge.Motion;
 internal sealed class NativeMotionWorld : IMotionWorld
 {
     private readonly int _left, _top;
-    internal NativeMotionWorld(PhysicsState start)
+    private readonly bool _captureContacts;
+    public NavigationBlockingTile[] LastHorizontalContact {get;private set;}
+    internal NativeMotionWorld(PhysicsState start,bool captureContacts=false)
     {
+        _captureContacts=captureContacts;
         _left = (int)Math.Floor((start.Px + 10) / 16) - 22;
         _top = (int)Math.Floor((start.Py + 42) / 16) - 17;
     }
@@ -51,6 +55,7 @@ internal sealed class NativeMotionWorld : IMotionWorld
 
     public PhysicsState Move(PhysicsState start, float vx, float vy, float gravity)
     {
+        LastHorizontalContact=null;
         // Native helpers inspect neighbouring tiles. Reject unloaded/custom tiles
         // there before calling them, not merely after accepting a trajectory.
         Check(start.Px - 32, start.Py - 32, start.Px + 52, start.Py + 74, false);
@@ -70,6 +75,16 @@ internal sealed class NativeMotionWorld : IMotionWorld
             if (vel.Y >= gravity)
                 Collision.StepUp(ref pos, ref vel, 20, 42, ref stepSpeed, ref gfxOffY);
             var clipped = Collision.TileCollision(pos, vel, 20, 42, false, false, 1);
+            if(_captureContacts)LastHorizontalContact=NavigationContact.Horizontal(pos.X,pos.Y,vel.X,clipped.X,(x,y)=>
+            {
+                // This face lies inside the neighbourhood already checked above.
+                // Unknown/out-of-window positions never yield content evidence.
+                if(x<_left||x>=_left+45||y<_top||y>=_top+29)return ('?',null);
+                char shape=TerrainReader.ReadCell(x,y);
+                if(shape!='#')return (shape,null);
+                int type=Main.tile[x,y].TileType;
+                return (shape,TileLoader.GetTile(type)?.FullName??"Terraria/"+TileID.Search.GetName(type));
+            });
             var slope = Collision.SlopeCollision(pos + clipped, clipped, 20, 42, gravity, false);
             bool grounded = vel.Y >= 0 && (slope.W == 0 || (vel.Y > 0 && Math.Abs(slope.W - vel.Y) > 0.01f));
             return new(slope.X, slope.Y, slope.Z, slope.W, grounded);

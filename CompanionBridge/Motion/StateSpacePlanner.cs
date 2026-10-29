@@ -11,7 +11,7 @@ namespace CompanionBridge.Motion;
 // ReachedGoal includes feasible incumbents at budget exhaustion, not a claim of
 // optimality. TimeBudgetReached records a checked deadline exit (not preemption).
 internal sealed record Route(List<Prediction> Actions, int Expansions, double Milliseconds, string FailureReason = null,
-    bool ReachedGoal = false, bool TimeBudgetReached = false);
+    bool ReachedGoal = false, bool TimeBudgetReached = false,NavigationBlockingTile[] BlockingTiles=null);
 
 internal static class StateSpacePlanner
 {
@@ -49,6 +49,7 @@ internal static class StateSpacePlanner
     {
         var watch = Stopwatch.StartNew();
         var rejected = new Dictionary<string, int>();
+        NavigationBlockingTile[] rootBlocks=null;
         void Reject(string reason) => rejected[reason] = rejected.GetValueOrDefault(reason) + 1;
         float goal = start.Px + Math.Clamp(targetX - start.Px, -128, 128);
         bool finalGoal = goal == targetX;
@@ -112,7 +113,11 @@ internal static class StateSpacePlanner
                         if (watch.Elapsed.TotalMilliseconds >= budgetMs) { timedOut = true; break; }
                         var edge = PhysicsSimulator.Predict(cur, dir, hold, ph, world,
                             walkFrames: stride, rollingJump: true, maxDropPixels: MaxDropPixels);
-                        if (!edge.Safe) { Reject(edge.Reason); continue; }
+                        if (!edge.Safe)
+                        {
+                            if(cur.Equals(start)&&dir==sign&&hold==0&&rootBlocks==null)rootBlocks=edge.BlockingTiles;
+                            Reject(edge.Reason); continue;
+                        }
                         // Predict still checks the complete braking/landing trajectory.
                         // Carry the observed prefix velocity into the next search node;
                         // The final approach or an unsafe handoff executes the tail.
@@ -172,6 +177,7 @@ internal static class StateSpacePlanner
             .Take(3).Select(p => $"{p.Key} ({p.Value} candidates)")) : null;
         if (actions.Count == 0 && string.IsNullOrEmpty(failure)) failure = "no forward grounded route within expansion/span budget";
         if (actions.Count == 0 && timedOut) failure = "search time budget reached; " + failure;
-        return new(actions, expansions, watch.Elapsed.TotalMilliseconds, failure, reachedGoal, timedOut);
+        return new(actions, expansions, watch.Elapsed.TotalMilliseconds, failure, reachedGoal, timedOut,
+            actions.Count==0&&!timedOut?rootBlocks:null);
     }
 }

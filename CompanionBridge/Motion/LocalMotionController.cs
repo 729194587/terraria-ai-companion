@@ -15,7 +15,9 @@ internal sealed record NavigationSnapshot(int Session, string Status, string Act
     int Expansions = 0, int PlannedActions = 0, double PlanMilliseconds = 0,
     LandingFeedback LastLanding = null, bool? ReachedGoal = null, bool? TimeBudgetReached = null,
     int PlanNumber = 0, LandingRegion TargetRegion = null, int LandingConfirmationFrames = 0,
-    bool? ObservedGrounded = null, bool? SafeSupport = null);
+    bool? ObservedGrounded = null, bool? SafeSupport = null,
+    [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    NavigationBlockingTile[] BlockingTiles=null);
 
 // One rolling walk or one jump; no graph, digging, placement, or autonomous retries.
 // Candidate simulation and landing feedback follow TerraBlind JumpExecutor's pattern.

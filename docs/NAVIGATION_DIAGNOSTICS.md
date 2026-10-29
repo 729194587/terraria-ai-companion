@@ -1,5 +1,56 @@
 # 导航规划诊断与真实游戏验收（0.1.28）
 
+## 后续：服务器 AI 阻挡证据（2026-10-30）
+
+在 `7d0fcf2` 基线上增加可选 `evidence.navigation.blockingTiles`，沿用原 native_navigation_failed
+回执、reasonDetail、结束证据和输入释放；客户端导航不启用接触采集。没有新增操作或扩大预算。
+示意（非实机采样）：
+
+```json
+{"reason":"native_navigation_failed","evidence":{"navigation":{"blockingTiles":[
+  {"x":2,"y":0,"contentKey":"Terraria/Stone","basis":"rejected_root_forward_walk_contact"}
+]}}}
+```
+
+证据只覆盖一个严格受限的情形：规划根节点向目标方向的步行候选被拒绝，原生 `StepUp/StepDown`
+之后的 `Collision.TileCollision` 实际裁剪了水平位移，预测下一步确实停止；接触面与 Tile 边界一致，
+接触面沿角色身体高度相交的格被读回为已知完整实心 `#`。仅在搜索没有返回任何可执行路线且未触发时间预算时附带。
+这是**被拒绝的前向步行试算**的接触，不是角色已经撞上它的事件，不证明所有跳跃/其他路线不可行。
+坐标和内容键在该规划游戏更新中读取，不在稍后的 Poll 扫描或替换内容。
+
+复用现有 native Move 的位置/请求位移/裁剪位移；只补读同一接触列最多四个 Tile，
+这些格在原有预测邻域内，不扫描周围实体、整片地形或目标方向走廊。
+已核对当前引擎 TileCollision 的水平裁剪表达式为 tileLeft-(positionX+width) 或 tileRight-positionX；
+垂直方向的 ±0.01 修正不用于推断水平阻挡。坐标对齐校验失败即不提供证据。
+空气、单向平台、未知、液体、危险、虚化、半砖和斜坡均不冒充这里的完整实心阻挡。
+
+无可靠证据时省略 blockingTiles，不能解释为没有阻挡。时间/扩展/支撑/生命变化/执行偏差等其他失败
+不通过附近实心格猜测原因；其他失败及取消清除旧证据。原有落地核验仍可能把失败升级为 unknown，
+诊断不会改变终态、continuationAllowed、预算、pcall 或重试规则。
+
+本轮定向验证命令（仓库根目录）：
+
+```powershell
+pwsh -NoProfile -File tests/run_csharp_tests.ps1 -NavigationOnly
+pwsh -NoProfile -File tests/run_csharp_tests.ps1 -SceneOnly
+pwsh -NoProfile -File tests/run_scene_layer_tests.ps1
+pwsh -NoProfile -File scripts/build-companion.ps1 -OutputPath .local/navigation-perception-build
+pwsh -NoProfile -File tests/run_server_ai_ipc_tests.ps1 -PackagePath .local/navigation-perception-build/Mods/CompanionBridge.tmod
+# 在 tests/ 运行：
+../.local/lua-venv/Scripts/python.exe -B -m unittest test_navigation_perception test_scene_layers test_server_ai_scene test_landing_navigation test_server_ai_backend.BackendTests.test_workbench_explicit_cancel_preserves_unknown_release test_server_ai_backend.BackendTests.test_missing_selection_evidence_preserves_unknown test_server_ai_backend.BackendTests.test_server_unknown_evidence_poisoning_uses_existing_lua_runtime -v
+../.local/lua-venv/Scripts/python.exe -B -m unittest test_server_ai_placement test_server_ai_crafting test_server_ai_backend.BackendTests.test_existing_lua_worker_runs_navigation_use_mining_in_sequence -v
+```
+
+结果：新增 44 项身体范围/接触证据/失效清理检查，既有导航和落地回归通过；
+场景几何 1932 项、实际 reader 分层/兼容检查 595 项通过；25 项 Python（真实隔离 Lua Worker、
+loopback 与模型替身）及另 13 项放置/合成/组合动作回归通过；IPC/包回归通过，含 71 项 IL 检查。
+构建 0 错误、0 警告，包 SHA-256：`00D4AD9DEDB01FD543831D118604C7B0043585DCA929979BECFE634FFC4F65CA`。
+不运行全量测试，不部署，不运行真实 DeepSeek、原生游戏执行或 Host & Play；
+碰撞替身与源码/IL 检查不能代替真实引擎场景验收。垂直接触、半砖/坡面、平台阻挡及所有路线失败的
+完整归因尚未覆盖；这些情形保持省略诊断，不放宽现有导航安全检查。
+
+## 历史：0.1.28 验证
+
 本轮基于 `5ad142f` 补齐观测链路，不修改规划算法、25ms/32节点预算或原有50ms保护。构建产物为 `.local/navigation-diagnostics-build/Mods/CompanionBridge.tmod`，版本 **0.1.28**。本轮未部署、未运行真实游戏。
 
 ## 诊断链路

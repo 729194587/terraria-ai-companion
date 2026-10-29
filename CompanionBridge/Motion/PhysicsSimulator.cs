@@ -24,10 +24,40 @@ internal readonly record struct PhysicsState(float Px, float Py, float Vx, float
 internal readonly record struct PhysicsInput(int Direction, bool Jump);
 internal readonly record struct PredictedFrame(PhysicsInput Input, PhysicsState State);
 internal sealed record Prediction(bool Safe, string Reason, List<PredictedFrame> Frames,
-    PhysicsState Landing, int ExecuteFrames, bool Jump);
+    PhysicsState Landing, int ExecuteFrames, bool Jump,
+    NavigationBlockingTile[] BlockingTiles = null);
+
+internal sealed record NavigationBlockingTile(int X,int Y,string ContentKey,
+    string Basis="rejected_root_forward_walk_contact");
+
+// A confirmed horizontal TileCollision clip against a full solid face only.
+// Native StepUp/Down has already run. Platforms, slopes, liquids, unknown cells
+// and mere nearby solids cannot produce this evidence. At most four cells.
+internal static class NavigationContact
+{
+    internal static NavigationBlockingTile[] Horizontal(float x,float y,float requestedX,float clippedX,
+        System.Func<int,int,(char Shape,string ContentKey)> read)
+    {
+        if(!float.IsFinite(x)||!float.IsFinite(y)||!float.IsFinite(requestedX)||!float.IsFinite(clippedX)
+            ||requestedX==0||System.Math.Abs(clippedX)>=System.Math.Abs(requestedX)
+            ||requestedX*clippedX<0)return null;
+        float face=x+clippedX+(requestedX>0?PhysicsSimulator.PlayerW:0);
+        int grid=(int)System.Math.Round(face/16);
+        if(System.Math.Abs(face-grid*16)>0.001f)return null;
+        int tx=requestedX>0?grid:grid-1;
+        var found=new List<NavigationBlockingTile>();
+        for(int ty=(int)System.Math.Floor(y/16);ty<(int)System.Math.Ceiling((y+PhysicsSimulator.PlayerH)/16)&&found.Count<4;ty++)
+        {
+            var cell=read(tx,ty);
+            if(cell.Shape=='#'&&!string.IsNullOrEmpty(cell.ContentKey))found.Add(new(tx,ty,cell.ContentKey));
+        }
+        return found.Count==0?null:found.ToArray();
+    }
+}
 
 internal interface IMotionWorld
 {
+    NavigationBlockingTile[] LastHorizontalContact => null;
     PhysicsState Move(PhysicsState start, float vx, float vy, float gravity);
     bool SafeSweep(PhysicsState start, PhysicsState end, out string reason);
     bool SafeLanding(PhysicsState state);
@@ -147,7 +177,7 @@ internal static class PhysicsSimulator
             }
             catch (UnsafeMotionException error) { return new(false, error.Message, frames, s, 0, hold > 0); }
             if (hold == 0 && Math.Abs(next.Px - s.Px) < 0.01f && Math.Abs(next.Vx) < 0.01f && f < walkFrames)
-                return new(false, "walking blocked", frames, next, 0, false);
+                return new(false, "walking blocked", frames, next, 0, false, world.LastHorizontalContact);
             airborne |= !next.Grounded;
             if (hold > 0 && next.Py - start.Py > maxDropPixels)
                 return new(false, $"jump descent exceeds {maxDropPixels:0}px limit", frames, next, 0, true);

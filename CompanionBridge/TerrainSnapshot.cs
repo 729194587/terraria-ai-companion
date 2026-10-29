@@ -1,5 +1,18 @@
 namespace CompanionBridge;
 
+// Tile indices touched by [left,right) x [top,bottom); maxima are inclusive.
+// No epsilon: a right/bottom edge exactly on a tile boundary excludes that tile.
+internal sealed record BodyTileBounds(int MinX,int MinY,int MaxX,int MaxY)
+{
+    internal static BodyTileBounds FromPixels(double left,double top,double width,double height)
+    {
+        if(!double.IsFinite(left)||!double.IsFinite(top)||!double.IsFinite(width)||!double.IsFinite(height)||width<=0||height<=0)
+            throw new System.ArgumentException("Finite positive body bounds required.");
+        return new((int)System.Math.Floor(left/16),(int)System.Math.Floor(top/16),
+            (int)System.Math.Ceiling((left+width)/16)-1,(int)System.Math.Ceiling((top+height)/16)-1);
+    }
+}
+
 // Compact collision categories, not tile IDs. No Terraria objects cross the thread boundary.
 internal sealed record TerrainSnapshot(int OriginX, int OriginY, int TileSize, string[] Rows,
     int PlayerWidth, int PlayerHeight, bool Grounded, bool Supported);

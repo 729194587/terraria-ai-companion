@@ -39,6 +39,8 @@ public static class ServerAiPackageTests
         Check(Calls(Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop"),"Observe")
             &&Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="native_navigation_landing_unconfirmed"),"native airborne failure cleanup reports unconfirmed landing");
         Check(Calls(Type("StateSpacePlanner").Methods.Single(m=>m.Name=="PlanCore"),"SupportedCheckpoint"),"planner requires real supported checkpoints beyond collision contact");
+        Check(Calls(Type("NativeMotionWorld").Methods.Single(m=>m.Name=="Move"),"Horizontal"),"navigation contacts use native clipped movement rather than nearby tile scan");
+        Check(Calls(Type("ServerSceneReader").Methods.Single(m=>m.Name=="Read"),"FromPixels"),"scene body tile bounds use host collision rectangle");
         Check(Calls(Type("ServerAiNativeActions").Methods.Single(m=>m.Name=="Poll"),"Mining")
             &&Type("AiActionReasons").Methods.Single(m=>m.Name=="Mining").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="native_tile_destroyed"),"mining receipt translates native failure enum to outcome reason");
         Check(Calls(Type("AiAtomicActions").Methods.Single(m=>m.Name=="End"),"get_ReasonDetail"),"terminal serialization retains native diagnostic detail separately");

@@ -50,6 +50,7 @@ $sources = @(
     (Join-Path $PSScriptRoot 'BridgeOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'MotionOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'NavigationLandingConfirmationTests.cs'),
+    (Join-Path $PSScriptRoot 'NavigationPerceptionTests.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Players/CompanionPlayer.cs'),
     (Join-Path $PSScriptRoot 'PlayerHookOfflineTests.cs')
 )
@@ -63,7 +64,7 @@ if ($AuthorityNetworkOnly) {
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
 if ($SceneOnly) { [SceneGeometryTests]::Run(); return }
-if ($NavigationOnly) { [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }
+if ($NavigationOnly) { [NavigationPerceptionTests]::Run(); [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }
 if ($ServerReadsOnly) { [ServerAiSharedReadTests]::Run(); [AtomicExtensionsOfflineTests]::Run(); return }
 if ($BridgeOnly) { [AiChatOfflineTests]::Run(); [BridgeOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); [LocalInputOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); return }
 if ($InventoryOnly) { [InventoryOfflineTests]::Run(); return }

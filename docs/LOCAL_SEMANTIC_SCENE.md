@@ -1,5 +1,32 @@
 # Server AI 二维语义场景（0.1.59）
 
+## 后续：身体占地（2026-10-30，包仍为 0.1.62）
+
+`actor` 保留既有字段，新增始终返回的 `bodyTileBounds={minX,minY,maxX,maxY}`，四个端点均包含。
+宿主使用实际 `position.X/Y,width,height` 碰撞边界，计算每轴 `[floor(left/16), ceil(right/16)-1]`；
+像素碰撞框是左/上包含、右/下不包含，不减任意 epsilon，也不裁剪至观察窗口或世界边界。
+例如像素 `(16,32,16,32)` 覆盖 Tile `x=1..1,y=2..3`，不会把右侧 x=2 或脚底下 y=4 算入。
+`actor.mapTile` 仍表示角色中心格；不是身体左上格，也不能用于推断完整占地。
+边界只描述几何范围，不表示这些 Tile 是空气、平台或安全区域；仍读取 `geometry`，未知仍为未知。
+
+```lua
+local s=api('observe_scene',{layers={'geometry','landingRegions'}})
+local b=s.data.actor.bodyTileBounds
+-- 范围必须落在本次 geometry.rows 内才可读取；mapTile 是中心格。
+local g=s.data.geometry
+local rowIndex=b.minY-g.originY+1
+local column=b.minX-g.originX+1
+if rowIndex>=1 and rowIndex<=29 and column>=1 and column<=45 then
+    return {body=b, topLeftGlyph=string.sub(g.rows[rowIndex],column,column)}
+end
+return {body=b, knowledge='outside_observation'}
+```
+
+这是 schemaVersion=2 的增量字段；按需层、原点、未知、截断和放置候选契约不变。
+导航失败接触证据的范围见 [导航诊断](NAVIGATION_DIAGNOSTICS.md#后续服务器-ai-阻挡证据2026-10-30)。
+
+## 原始二维场景说明
+
 `observe_scene` 在一次绑定 AI 的游戏线程查询中返回 45×29 侧视地图、对象、危险来源和行动候选。目标是省去调用方重建局部空间及落脚坐标的工作。它不选择探索方向、规划路线、设计建筑或执行动作。LLM 根据目标和观察生成 Lua，原导航器继续负责移动。
 
 当前实现与定向自动化已完成；**未部署现用 profile，图形 Host & Play 和真实 DeepSeek 新旧对比待验收**。旧感知接口继续可用，不将构造夹具、自然世界自动化或离线 Worker 当作真实模型验证。

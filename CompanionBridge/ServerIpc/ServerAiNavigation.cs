@@ -30,7 +30,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal StateVector VelocityBeforeRelease;
         internal ulong FinalObservationTick;
     }
-    private readonly NativeNavigation navigation = new();
+    private readonly NativeNavigation navigation = new(captureContacts:true);
     private int session;
     private bool executing, injected;
     internal Run Current;

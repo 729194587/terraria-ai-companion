@@ -20,6 +20,8 @@ internal sealed class NativeNavigation
     private NativeMotionWorld _world;
     private int _life;
     private bool _paired;
+    private readonly bool _captureContacts;
+    internal NativeNavigation(bool captureContacts=false)=>_captureContacts=captureContacts;
 
     private PhysicsState State(Player p) => new(p.position.X, p.position.Y,
         p.velocity.X, p.velocity.Y, TerrainReader.Read(p).Grounded, p.jump, p.releaseJump);
@@ -94,7 +96,7 @@ internal sealed class NativeNavigation
         if (p.statLife < _life) return Fail("life decreased");
         _life = p.statLife;
         var state = State(p);
-        _world = new NativeMotionWorld(state);
+        _world = new NativeMotionWorld(state,_captureContacts);
         long started = Stopwatch.GetTimestamp();
         var input = _navigation
             ? region != null ? Task.Before(session, generation, region, state, Parameters(p), _world)

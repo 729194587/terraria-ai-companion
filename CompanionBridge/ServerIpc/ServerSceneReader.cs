@@ -98,7 +98,8 @@ internal static class ServerSceneReader
             ["schemaVersion"]=2,["sceneId"]=sceneId,["gameUpdate"]=tick,
             ["bounds"]=new{minX=ox,minY=oy,maxX=ox+44,maxY=oy+28},["tileSize"]=16,
             ["actor"]=new{slot=p.whoAmI,boundsWorldPixels=actor,feetY=p.Bottom.Y,velocity=new StateVector(p.velocity.X,p.velocity.Y),p.dead,
-                navigationProfileSupported=GameNavigation.Ordinary(p),mapTile=new{x=ox+actorX,y=oy+actorY}},
+                navigationProfileSupported=GameNavigation.Ordinary(p),mapTile=new{x=ox+actorX,y=oy+actorY},
+                bodyTileBounds=BodyTileBounds.FromPixels(p.position.X,p.position.Y,p.width,p.height)},
             ["coverage"]=new{scannedTiles=1305,unknownCells=unknown,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0},
             ["limits"]="observation-scoped IDs; no visibility/lighting, contents, persistent map or custom Mod hook interpretation; truncation is per collection, never empty=absent",
             ["includedLayers"]=layers.Included};

@@ -27,9 +27,9 @@ internal sealed class NavigationTask
         Snapshot = new(0, "idle", "none", "control released", 0, 0, null, null, 0);
     }
 
-    internal PhysicsInput Fail(string reason)
+    internal PhysicsInput Fail(string reason,NavigationBlockingTile[] blockingTiles=null)
     {
-        Snapshot = Snapshot with { Status = "failed", Reason = reason };
+        Snapshot = Snapshot with { Status = "failed", Reason = reason,BlockingTiles=blockingTiles };
         _executing = false;
         return default;
     }
@@ -87,7 +87,10 @@ internal sealed class NavigationTask
             Snapshot = Snapshot with { Action = "plan", Expansions = _route.Expansions,
                 PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds,
                 PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached };
-            if (_route.Actions.Count == 0) return Fail("no safe local route: " + _route.FailureReason);
+            if (_route.Actions.Count == 0)
+            {
+                return Fail("no safe local route: " + _route.FailureReason,_route.BlockingTiles);
+            }
             var edge = _route.Actions[0];
             _executor.Cancel();
             _executor.Begin(session, edge.Frames[0].Input.Direction, generation);
