@@ -110,8 +110,8 @@ internal static class ServerSceneReader
         var landings=p.width==20&&p.height==42?SceneGeometry.Landings(cells,ox,oy,p.position.X,p.Bottom.Y,world.SafeFlatLanding):Array.Empty<SceneLanding>();
         var placements=SceneGeometry.Placements(cells,ox,oy,actor,bodies);
         var bench=ActorObjectPlacement.Definition();
-        var objectPlacements=bench==null?Array.Empty<SceneObjectPlacement>():SceneGeometry.ObjectPlacements(cells,ox,oy,actor,bodies,
-            bench.Width,bench.Height,bench.OriginX,bench.OriginY,bench.SupportStart,bench.SupportCount);
+        var objectPlacements=SceneGeometry.ObjectPlacements(cells,ox,oy,actor,bodies,
+            bench?.Width??0,bench?.Height??0,bench?.OriginX??0,bench?.OriginY??0,bench?.SupportStart??0,bench?.SupportCount??0,out var placementDiagnostics);
         float Distance(SceneObject o)=>Math.Abs((o.ObservedBounds.X+o.ObservedBounds.Width/2f)*16-p.Center.X)+Math.Abs((o.ObservedBounds.Y+o.ObservedBounds.Height/2f)*16-p.Center.Y);
         var objectResult=SceneGeometry.Limit(objects.OrderBy(Distance).ThenBy(o=>o.Id,StringComparer.Ordinal),objectCap);
         var tileHazards=SceneGeometry.Hazards(cells,ox,oy).OrderBy(h=>Math.Max(0,Math.Max(h.MinX*16-p.Center.X,p.Center.X-(h.MaxX+1)*16))+Math.Abs(h.Y*16+8-p.Center.Y)).ThenBy(h=>h.Y).ThenBy(h=>h.MinX);
@@ -126,7 +126,7 @@ internal static class ServerSceneReader
             hazards=new{tiles=SceneGeometry.Limit(tileHazards,hazardCap),entities=SceneGeometry.Limit(dynamicHazards.OrderBy(h=>h.Distance).Select(h=>h.Value),hazardCap),
                 meaning="liquid facts, contact damage flags and movement exclusions are distinct; glyph is highest-priority source, structured sources may overlap"},
             landingRegions=SceneGeometry.Limit(landings,landingCap),placementCandidates=SceneGeometry.Limit(placements,placementCap),
-            objectPlacementCandidates=SceneGeometry.Limit(objectPlacements,placementCap),
+            objectPlacementCandidates=SceneGeometry.LimitObjectPlacements(objectPlacements,placementCap,placementDiagnostics),
             objectPlacementMaterial=new{itemType=p.HeldItem.type,p.HeldItem.stack,supported=ActorObjectPlacement.Supported(p.HeldItem),
                 definitionSupported=bench!=null,anchorMeaning="TileObjectData origin in tile coordinates; default vanilla Work Bench only; complete dry footprint and support inside observed bounds; native placement not guaranteed"},
             placementMaterial=new{itemType=p.HeldItem.type,p.HeldItem.stack,p.HeldItem.createTile,hotbarKey=HotbarSlots.KeyForInventorySlot(p.selectedItem),supported=ActorPlacement.Supported(p.HeldItem)},

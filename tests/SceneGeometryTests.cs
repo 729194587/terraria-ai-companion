@@ -90,7 +90,89 @@ public static class SceneGeometryTests
         Check(benches.All(b=>b.DistancePixels<=80&&b.Validation.Contains("native rules not evaluated")),"bench candidates are conservative geometric observations");
         Check(SceneGeometry.Limit(benches,0).Truncated,"object placement truncation remains explicit");
         Check(SceneGeometry.Limit(objects,1) is {Truncated:true,ReturnedCount:1} limited&&limited.OmittedCount==objects.Length-1,"collection truncation cannot masquerade as absence");
+        ObjectPlacementDiagnostics();
         Console.WriteLine($"Scene geometry: {checks} checks, shared support/region rules; synthetic grid, not native/LLM acceptance.");
+    }
+    private static void ObjectPlacementDiagnostics()
+    {
+        SceneCell[,] Flat(int width=2)
+        {
+            var g=new SceneCell[width,2];
+            for(int x=0;x<width;x++){g[x,0]=Cell('.');g[x,1]=Cell('#');}return g;
+        }
+        SceneObjectPlacementList Inspect(SceneCell[,] g,WorldRect actor=null,WorldRect[] bodies=null,int cap=12,int ox=0,int oy=0,int width=2)
+        {
+            actor??=new WorldRect(ox*16,oy*16-32,16,16);
+            var all=SceneGeometry.ObjectPlacements(g,ox,oy,actor,bodies??new[]{actor},width,1,0,0,0,2,out var d);
+            var result=SceneGeometry.LimitObjectPlacements(all,cap,d);
+            Check(d.AnchorCount==d.InBoundsAnchorCount+d.NotCheckedCount,"anchor domain partitions covered and unexamined positions");
+            Check(d.InBoundsAnchorCount==d.CheckedCount+d.UnknownCount,"unknown anchors never count as fully checked");
+            Check(d.CheckedCount==d.RejectedCount+result.MatchedCount,"checked anchors partition accepted and rejected");
+            Check(d.RejectedByReason.Values.Sum()==d.RejectedCount,"first-failure categories are mutually exclusive");
+            Check(d.NotCheckedByReason.Values.Sum()==d.NotCheckedCount,"unexamined counts are independent of confirmed rejections");
+            Check(result.OmittedCount==result.MatchedCount-result.ReturnedCount&&result.Truncated==(result.OmittedCount>0),"omission only means accepted items beyond cap");
+            Check(d.FirstExamples.Count<=7,"examples are at most one per fixed reason, not per rejected anchor");
+            return result;
+        }
+        void Only(SceneObjectPlacementList r,string reason)
+        {
+            Check(r.MatchedCount==0&&r.Diagnostics.RejectedCount==1&&r.Diagnostics.CheckedCount==1,"single in-bounds anchor is confirmed rejected: "+reason);
+            Check(r.Diagnostics.RejectedByReason[reason]==1&&r.Diagnostics.CoveredScopeComplete,"all covered anchors fully checked: "+reason);
+            Check(!r.Truncated&&r.OmittedCount==0,"empty rejection list is not truncation: "+reason);
+        }
+        var collision=Inspect(Flat(),bodies:new[]{new WorldRect(16,0,16,16)});
+        Only(collision,"player_collision");
+        Check(collision.Diagnostics.FirstExamples["player_collision"].Footprint==new TileBounds(0,0,2,1),"collision uses whole object, including second cell");
+        var missing=Flat();missing[1,1]=Cell('.');Only(Inspect(missing),"missing_support");
+        var far=Inspect(Flat(),actor:new WorldRect(1000,-32,16,16));Only(far,"out_of_reach");
+        var distance=JsonSerializer.SerializeToElement(far.Diagnostics.FirstExamples["out_of_reach"].Detail);
+        Check(distance.GetProperty("distancePixels").GetSingle()>80&&distance.GetProperty("limitPixels").GetInt32()==80,"reach detail is the actual anchor distance and unchanged limit");
+        var occupied=Flat();occupied[1,0]=Cell('#');
+        var occupiedResult=Inspect(occupied,ox:100,oy:200);Only(occupiedResult,"footprint_occupied");
+        var blocked=occupiedResult.Diagnostics.FirstExamples["footprint_occupied"];
+        var detail=JsonSerializer.SerializeToElement(blocked.Detail);
+        Check(blocked.Footprint==new TileBounds(100,200,2,1)&&detail.GetProperty("x").GetInt32()==101&&detail.GetProperty("y").GetInt32()==200&&detail.GetProperty("tileType").GetInt32()==1,"occupied example reports actual world tile and type, including second cell");
+        foreach(bool support in new[]{false,true})
+        {
+            var wet=Flat();var original=wet[1,support?1:0];wet[1,support?1:0]=original with{Facts=original.Facts with{LiquidAmount=1}};
+            Only(Inspect(wet),"liquid_present");
+        }
+        foreach(var unknown in new[]{new SceneCell(new("unloaded"),'?'),new(new("out_of_world"),'?'),
+            new(new("read",CollisionKnowledge:"uninterpreted"),'.'),new(new("read"),'?')})
+        foreach(bool support in new[]{false,true})
+        {
+            var g=Flat();g[1,support?1:0]=unknown;
+            // A different known obstruction must not turn partial knowledge into a full rejection.
+            g[0,0]=Cell('#');var r=Inspect(g);
+            Check(r.Diagnostics.UnknownCount==1&&r.Diagnostics.CheckedCount==0&&r.Diagnostics.RejectedCount==0&&!r.Diagnostics.CoveredScopeComplete,"unknown/unloaded footprint or support is incomplete, not confirmed occupied/support failure");
+            Check(r.MatchedCount==0&&!r.Truncated&&r.OmittedCount==0&&r.Diagnostics.FirstExamples.ContainsKey("unknown"),"empty partial inspection retains unknown evidence without omission");
+        }
+        var shared=Flat(5);shared[2,0]=new(new("unloaded"),'?');var sharedResult=Inspect(shared);
+        Check(sharedResult.Diagnostics.UnknownCount==2&&sharedResult.MatchedCount==2,"one unknown tile affects two distinct overlapping anchors, each counted once");
+        var manyUnknown=Flat();manyUnknown[0,0]=manyUnknown[1,0]=manyUnknown[1,1]=new(new("unloaded"),'?');
+        Check(Inspect(manyUnknown).Diagnostics.UnknownCount==1,"several unknown footprint/support tiles still count as only one unknown anchor");
+        var overlap=Flat();overlap[0,0]=Cell('#');overlap[1,0]=new(new("read",LiquidAmount:1),'.');overlap[0,1]=Cell('.');
+        var multiple=Inspect(overlap,actor:new WorldRect(1000,-32,16,16),bodies:new[]{new WorldRect(0,0,32,16)});
+        Only(multiple,"footprint_occupied");
+        Check(multiple.Diagnostics.RejectedByReason.Where(p=>p.Key!="footprint_occupied").All(p=>p.Value==0),"one anchor violating several rules counts only first reason");
+        var mixed=Flat(11);mixed[1,0]=Cell('#');mixed[3,0]=new(new("read",LiquidAmount:1),'.');mixed[5,1]=Cell('.');
+        var mix=Inspect(mixed).Diagnostics;
+        Check(mix.RejectedCount==10&&mix.RejectedByReason["footprint_occupied"]==2&&mix.RejectedByReason["liquid_present"]==2&&mix.RejectedByReason["missing_support"]==2&&mix.RejectedByReason["out_of_reach"]==4,"mixed anchors have exact, disjoint rejection counts");
+        var normal=Inspect(Flat(5),cap:20);
+        Check(normal.Items.Length==4&&normal.Diagnostics.RejectedCount==0&&normal.Diagnostics.UnknownCount==0&&normal.Diagnostics.CoveredScopeComplete,"all four existing in-reach dry supported anchors survive unchanged");
+        Check(normal.Items.Select(p=>p.Footprint.X).SequenceEqual(new[]{0,1,2,3})&&normal.Items.All(p=>p.Footprint.Width==2&&p.Support.Width==2),"candidate order and full footprint/support are preserved");
+        var capped=SceneGeometry.LimitObjectPlacements(normal.Items,1,normal.Diagnostics);
+        Check(capped.MatchedCount==4&&capped.ReturnedCount==1&&capped.OmittedCount==3&&capped.Diagnostics==normal.Diagnostics,"list truncation does not alter screening statistics or matchedCount");
+        var zero=SceneGeometry.LimitObjectPlacements(normal.Items,0,normal.Diagnostics);
+        Check(zero.Items.Length==0&&zero.Truncated&&zero.MatchedCount==4&&zero.OmittedCount==4,"empty truncated list still declares accepted candidates");
+        Check(normal.Diagnostics.NotCheckedCount==6&&normal.Diagnostics.NotCheckedByReason["outside_observation"]==6,"map edge anchors with uncovered full footprint/support are not tested or rejected");
+        var small=new SceneCell[2,1];small[0,0]=small[1,0]=Cell('.');
+        var edges=Inspect(small);
+        Check(edges.Diagnostics.NotCheckedCount==2&&edges.Diagnostics.RejectedCount==0&&!edges.Diagnostics.CoveredScopeComplete,"no covered anchor means inspection incomplete, not no possible placement");
+        var unavailable=Inspect(Flat(),width:0);
+        Check(unavailable.Diagnostics.NotCheckedByReason["definition_unavailable"]==4&&unavailable.Diagnostics.CheckedCount==0&&!unavailable.Diagnostics.CoveredScopeComplete,"unavailable native definition never invents checked candidates");
+        var json=JsonSerializer.SerializeToElement(capped,new JsonSerializerOptions{PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
+        Check(json.GetProperty("matchedCount").GetInt32()==4&&json.GetProperty("diagnostics").GetProperty("rejectedCount").GetInt32()==0&&json.GetProperty("items").GetArrayLength()==1,"wire shape preserves collection fields and only adds diagnostics");
     }
     private sealed class MapWorld:IMotionWorld
     {

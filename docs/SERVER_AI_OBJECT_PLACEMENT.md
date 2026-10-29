@@ -69,6 +69,65 @@ truncated/omitted 字段；保留原 `placementCandidates`。每项包含可直�
 候选只提供几何预筛选，不保证原生权限、放置成功、路径或可达性。
 已放工作台的语义对象仍按注册锚点聚合，两格不计为两个家具。
 
+### 候选排除诊断（阶段二任务 1）
+
+只在 `objectPlacementCandidates` 增加 `diagnostics`；原 `items/matchedCount/returnedCount/truncated/omittedCount`
+保持原义。尤其 **matchedCount 仍是通过全部几何筛选、截断前的数量**，不是进入筛选的数量。
+普通 `placementCandidates`、地图、观察封装、实际放置动作与白名单不变，没有自动选位或重试。
+
+统计单位为本次观察网格内每个左上格对应的一个假设工作台锚点，不是 Tile 数或已放家具数。
+默认样式锚点就是占地左上格。完整占地及必要支撑均使用当前注册定义。
+
+| diagnostics 字段 | 口径 |
+| --- | --- |
+| `anchorCount` | 观察网格中所有左上格位置数；45×29 时为 1305 |
+| `inBoundsAnchorCount` | 定义可用且完整占地、支撑行均落在本次观察网格内的位置数 |
+| `checkedCount` | 上述范围内、完整占地和必要支撑全部已知的位置数；分类可在首个失败处结束 |
+| `rejectedCount` | checkedCount 中明确未通过几何筛选的数量 |
+| `unknownCount` | 完整范围在图内，但至少一格未加载、未读、碰撞未解释或导航未知；不计入 rejectedCount |
+| `notCheckedCount` | 完整范围超出本次观察或注册定义不可用，未检查的位置数；不计入 rejectedCount |
+| `coveredScopeComplete` | 图内可完整覆盖的位置非空、定义可用且 unknownCount=0；不表示观察边界外完整 |
+| `rejectedByReason` | 以下五类互斥的首个失败计数，包含零值类别 |
+| `notCheckedByReason` | `outside_observation` / `definition_unavailable` 互斥计数 |
+| `firstExamples` | 每类至多一例，合计最多七例；固定逐行、从左到右的首例，不代表最近位置 |
+
+计数满足：`anchorCount = inBoundsAnchorCount + notCheckedCount`；
+`inBoundsAnchorCount = checkedCount + unknownCount`；`checkedCount = matchedCount + rejectedCount`。
+`sum(rejectedByReason) = rejectedCount`；`sum(notCheckedByReason) = notCheckedCount`。
+`omittedCount = matchedCount - returnedCount` 仅为通过筛选后被列表上限省略的数量。
+
+先检查完整占地和支撑的知识：任一格未知就只计 unknown，即使别的已知格存在障碍。
+全部已知后按以下顺序仅计首个失败：`footprint_occupied`（任一占地格有 Tile）、
+`liquid_present`（占地或支撑有液体）、`missing_support`（缺少合格的平整普通实心支撑，
+包括坡、半砖、平台或不支持的导航表面）、`out_of_reach`（锚点距角色中心超过 80px）、
+`player_collision`（整个占地与角色或其他已观察玩家碰撞）。因此计数可相加，但不代表列出了每个位置的全部问题。
+
+示例含 Tile 坐标 `target/footprint/support`，以及实际阻挡格和已知类型/液体/知识、距离与 80px 上限，
+或相交玩家的世界像素碰撞框。unknown 示例保留实际知识状态。观察边缘示例仅给未完整覆盖的范围，
+不猜范围外的 Tile；定义不可用时没有可验证的占地示例。共享格可影响多个不同锚点，同一锚点始终只计一次。
+空列表且 `truncated=false` 只说明没有已返回位置；还需看 matchedCount、未知/未检查数量及覆盖口径，
+不能把未完整观察、被截断或局部无候选说成全局不可放置。
+旧后端缺少 diagnostics 表示没有提供诊断，不等于所有计数为零。
+
+本任务验证（2026-10-29，基于 4f273c2）：
+
+```powershell
+pwsh -NoProfile -File tests/run_csharp_tests.ps1 -SceneOnly
+pwsh -NoProfile -File tests/run_csharp_tests.ps1 -NavigationOnly
+pwsh -NoProfile -File scripts/build-companion.ps1 -OutputPath .local/object-candidate-diagnostics-build
+# 以下在 tests/ 中运行
+../.local/lua-venv/Scripts/python.exe -B -m unittest test_server_ai_scene test_server_ai_backend.BackendTests.test_workbench_capability_and_full_receipt_required test_server_ai_backend.BackendTests.test_workbench_lua_uses_existing_dispatch_and_unknown_barrier test_server_ai_backend.BackendTests.test_workbench_explicit_cancel_preserves_unknown_release test_server_ai_backend.BackendTests.test_workbench_deadline_cancel_unknown_poisoned_lua_without_retry -v
+```
+
+结果：场景几何 1906 项检查通过（含单格放置/工作台原候选回归）；导航三组 harness、
+26 条 PASS 记录通过；Python 12 项通过（实际隔离 Lua Worker/loopback 模拟后端）；
+完整 Mod 编译 0 错误、0 警告。校准了一项场景旧测试，使其遵循 4f273c2 已有的动作失败立即终止
+当前程序契约，再用独立只读程序验证场景查询；没有更改 pcall 或动作实现。
+原始输出在 `.local/object-candidate-diagnostics-scene-final.log`、`object-candidate-diagnostics-navigation.log`、
+`object-candidate-diagnostics-python.log`、`object-candidate-diagnostics-build.log`。
+未部署、未调用真实 DeepSeek，未执行原生 Terraria 场景/Host & Play 或无关全量测试。
+以下保留先前真实放置动作的历史复现入口，不代表本次执行过这些原生测试。
+
 ## 定向复现与证据
 
 不运行全量测试。构建只生成包，不部署现用 profile：

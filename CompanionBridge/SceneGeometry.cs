@@ -15,6 +15,13 @@ internal sealed record SceneObjectPlacement(string Id,object Target,TileBounds F
     string ContentKey="Terraria/WorkBench",int Style=0,string Validation="known dry empty full footprint, known dry flat solid support, player-clear, anchor <=80px; native rules not evaluated");
 internal sealed record SceneHazard(string Id,string[] Sources,int MinX,int MaxX,int Y,int MinLiquidAmount,int MaxLiquidAmount,int? TileType,string ContentKey,int TouchDamage);
 internal sealed record SceneList<T>(T[] Items,int MatchedCount,int ReturnedCount,bool Truncated,int OmittedCount);
+internal sealed record SceneObjectPlacementExample(object Target,TileBounds Footprint,TileBounds Support,object Detail);
+internal sealed record SceneObjectPlacementDiagnostics(int AnchorCount,int InBoundsAnchorCount,int CheckedCount,int RejectedCount,
+    int UnknownCount,int NotCheckedCount,bool CoveredScopeComplete,Dictionary<string,int> RejectedByReason,
+    Dictionary<string,int> NotCheckedByReason,Dictionary<string,SceneObjectPlacementExample> FirstExamples,
+    string Classification="mutually exclusive first failure after full footprint/support knowledge; observed top-left anchors only");
+internal sealed record SceneObjectPlacementList(SceneObjectPlacement[] Items,int MatchedCount,int ReturnedCount,bool Truncated,
+    int OmittedCount,SceneObjectPlacementDiagnostics Diagnostics);
 
 internal static class SceneGeometry
 {
@@ -125,23 +132,66 @@ internal static class SceneGeometry
     }
     internal static SceneObjectPlacement[] ObjectPlacements(SceneCell[,] cells,int ox,int oy,WorldRect actor,IReadOnlyList<WorldRect> players,
         int width,int height,int originX,int originY,int supportStart,int supportCount)
+        =>ObjectPlacements(cells,ox,oy,actor,players,width,height,originX,originY,supportStart,supportCount,out _);
+
+    internal static SceneObjectPlacementList LimitObjectPlacements(SceneObjectPlacement[] items,int cap,SceneObjectPlacementDiagnostics diagnostics)
+    {
+        var limited=Limit(items,cap);
+        return new(limited.Items,limited.MatchedCount,limited.ReturnedCount,limited.Truncated,limited.OmittedCount,diagnostics);
+    }
+    internal static SceneObjectPlacement[] ObjectPlacements(SceneCell[,] cells,int ox,int oy,WorldRect actor,IReadOnlyList<WorldRect> players,
+        int width,int height,int originX,int originY,int supportStart,int supportCount,out SceneObjectPlacementDiagnostics diagnostics)
     {
         var output=new List<SceneObjectPlacement>();int w=cells.GetLength(0),h=cells.GetLength(1);
-        if(width<=0||height<=0||supportStart<0||supportCount<=0||supportStart+supportCount>width)return output.ToArray();
-        for(int y=0;y+height<h;y++)for(int x=0;x+width<=w;x++)
+        var rejected=new Dictionary<string,int>{{"footprint_occupied",0},{"liquid_present",0},{"missing_support",0},{"out_of_reach",0},{"player_collision",0}};
+        var notChecked=new Dictionary<string,int>{{"outside_observation",0},{"definition_unavailable",0}};
+        var examples=new Dictionary<string,SceneObjectPlacementExample>();
+        int inBounds=0,checkedCount=0,unknown=0;
+        bool definition=width>0&&height>0&&supportStart>=0&&supportCount>0&&supportStart+supportCount<=width;
+        if(!definition)notChecked["definition_unavailable"]=w*h;
+        else for(int y=0;y<h;y++)for(int x=0;x<w;x++)
         {
-            bool clear=true;
-            for(int dx=0;dx<width;dx++)for(int dy=0;dy<height;dy++)
-            {var c=cells[x+dx,y+dy];if(Geometry(c)=='?'||c.Facts.HasTile||c.Facts.LiquidAmount>0)clear=false;}
-            for(int dx=supportStart;dx<supportStart+supportCount;dx++)
-            {var c=cells[x+dx,y+height];if(Geometry(c)!='#'||c.Navigation!='#'||c.Facts.LiquidAmount>0)clear=false;}
-            if(!clear)continue;
             int tx=x+ox+originX,ty=y+oy+originY;
+            var footprint=new TileBounds(x+ox,y+oy,width,height);
+            var support=new TileBounds(x+ox+supportStart,y+oy+height,supportCount,1);
+            void Example(string reason,object detail)
+            {if(!examples.ContainsKey(reason))examples[reason]=new(new{x=tx,y=ty},footprint,support,detail);}
+            void Reject(string reason,object detail){rejected[reason]++;Example(reason,detail);}
+            if(x+width>w||y+height>=h)
+            {notChecked["outside_observation"]++;Example("outside_observation",null);continue;}
+            inBounds++;
+            // Unknown takes precedence over all confirmed failures, even if a
+            // different, known cell would already reject this anchor.
+            object unknownCell=null,occupied=null,liquid=null,missingSupport=null;
+            object Fact(int cx,int cy,SceneCell c)=>new{x=cx+ox,y=cy+oy,tileType=c.Facts.TileType,
+                knowledge=c.Facts.Knowledge,collisionKnowledge=c.Facts.CollisionKnowledge,navigation=c.Navigation.ToString(),liquidAmount=c.Facts.LiquidAmount};
+            for(int dx=0;dx<width;dx++)for(int dy=0;dy<height;dy++)
+            {
+                var c=cells[x+dx,y+dy];
+                if(Geometry(c)=='?')unknownCell??=Fact(x+dx,y+dy,c);
+                if(c.Facts.HasTile)occupied??=Fact(x+dx,y+dy,c);
+                if(c.Facts.LiquidAmount>0)liquid??=Fact(x+dx,y+dy,c);
+            }
+            for(int dx=supportStart;dx<supportStart+supportCount;dx++)
+            {
+                var c=cells[x+dx,y+height];char shape=Geometry(c);
+                if(shape=='?')unknownCell??=Fact(x+dx,y+height,c);
+                if(shape!='#'||c.Navigation!='#')missingSupport??=Fact(x+dx,y+height,c);
+                if(c.Facts.LiquidAmount>0)liquid??=Fact(x+dx,y+height,c);
+            }
+            if(unknownCell!=null){unknown++;Example("unknown",unknownCell);continue;}
+            checkedCount++;
+            if(occupied!=null){Reject("footprint_occupied",occupied);continue;}
+            if(liquid!=null){Reject("liquid_present",liquid);continue;}
+            if(missingSupport!=null){Reject("missing_support",missingSupport);continue;}
             float ax=tx*16+8-(actor.X+actor.Width/2),ay=ty*16+8-(actor.Y+actor.Height/2);
-            float distance=MathF.Sqrt(ax*ax+ay*ay);if(distance>80)continue;
-            if(players.Any(p=>(x+ox)*16<p.X+p.Width&&(x+ox+width)*16>p.X&&(y+oy)*16<p.Y+p.Height&&(y+oy+height)*16>p.Y))continue;
-            output.Add(new("b"+(output.Count+1),new{x=tx,y=ty},new(x+ox,y+oy,width,height),new(x+ox+supportStart,y+oy+height,supportCount,1),distance));
+            float distance=MathF.Sqrt(ax*ax+ay*ay);
+            if(distance>80){Reject("out_of_reach",new{distancePixels=distance,limitPixels=80});continue;}
+            var collision=players.FirstOrDefault(p=>(x+ox)*16<p.X+p.Width&&(x+ox+width)*16>p.X&&(y+oy)*16<p.Y+p.Height&&(y+oy+height)*16>p.Y);
+            if(collision!=null){Reject("player_collision",new{playerBoundsWorldPixels=collision});continue;}
+            output.Add(new("b"+(output.Count+1),new{x=tx,y=ty},footprint,support,distance));
         }
+        diagnostics=new(w*h,inBounds,checkedCount,rejected.Values.Sum(),unknown,notChecked.Values.Sum(),definition&&inBounds>0&&unknown==0,rejected,notChecked,examples);
         return output.OrderBy(c=>c.DistancePixels).ToArray();
     }
     internal static SceneHazard[] Hazards(SceneCell[,] cells,int ox,int oy)
