@@ -1,4 +1,53 @@
-# Lua 编排第一阶段
+# Lua 编排 Runtime
+
+## 阶段二：受控 pcall
+
+`pcall(f, ...)` 经私有宿主回调调用 Lua 函数，未开放原生 pcall；成功返回 `true, ...`，
+保留多返回值和中间/尾部 nil。普通 Lua 运行时错误返回 `false, 有界错误字符串`（最多 512 字符）。
+只有 READS 白名单 API 在**分发前本地 schema/跨字段范围校验**拒绝时，返回
+`false, {status='bad_argument', error, argumentOperation, diagnostics?, diagnosticsTruncated?}`。
+可在同一程序内选择正确参数再查询；拒绝仍消耗调用预算，不产生游戏 RPC，不替换 lastObservation。
+未放在 pcall 内的 API 参数错误沿用原终态及诊断。未知 API 和动作参数错误不可恢复。
+
+```lua
+local ok, result = pcall(function()
+    return api('scan_tiles', {width=3}) -- 本地 schema 拒绝
+end)
+if not ok then
+    return {rejection=result, observed=api('inspect_inventory', {})}
+end
+return result
+```
+
+动作 API 的 failed/timeout/cancelled 等已知终态仍是结构化结果，pcall 可以返回 true；
+这只说明函数返回，不证明动作成功。continuationAllowed 完全沿用宿主证据，既有动作失败屏障不变。
+只读原生拒绝回执也按原接口返回，不转成可捕获异常。通信、协议、宿主异常及不确定状态不纳入恢复。
+
+指令 hook 调用私有宿主终止回调，设置当前 Worker 无法清除的终止标记；受控 pcall 不会将其当作
+普通 LuaError。Lua 内存错误按 LuaMemoryError 单独处理并强制退出；API/log 的宿主异常也不可恢复。
+unknown、取消、墙钟、API/动作预算继续由父进程监督并终止 Worker，脚本没有捕获入口。
+指令计数不重置；错误恢复、嵌套调用及私有封装执行均受原预算。未开放 xpcall、print、debug、
+元表或其他标准库；输入释放、隔离、返回值编码、lastObservation 和游戏能力不变。
+私有封装保留多返回值时仍受既有节点上限约束；恢复不会获得额外的内存或返回值额度。
+
+2026-10-29 定向验证（基于 32ceba2；lupa 2.6 / Lua 5.4）：新增 `test_lua_pcall` 的
+15 个方法分批通过，覆盖嵌套/多返回值、本地只读拒绝、真实终态与安全预检续行、unknown、
+事件/任务取消、墙钟、指令 hook（含 sort 回调）、内存、日志/调用/动作预算、错误协议帧和进程回收。
+另运行以下 105 项相关旧回归：
+
+```powershell
+# 在 tests/ 中运行；以下为最终源码的复现命令
+../.local/lua-venv/Scripts/python.exe -B -m unittest test_lua_pcall -v
+../.local/lua-venv/Scripts/python.exe -B -m unittest test_lua_runtime test_atomic_operations test_lua_arguments test_lua_tables test_lua_recovery test_lua_coordinates test_lua_observability test_lua_agent -v
+```
+
+旧回归初跑 104 通过、1 项已有断言过时：客户端工具说明不应列出服务器专属 API。
+只校准 `test_lua_agent.StoreTests.test_model_contract_uses_existing_atomic_schemas`，该方法单独重跑通过；
+没有为通过测试扩展能力，也没有重复运行其余已通过的测试。
+原始日志为 `.local/stage2-pcall-tests.log`、`stage2-pcall-edge-tests.log`、
+`stage2-pcall-protocol-tests.log`、`stage2-regressions.log` 和 `stage2-contract-regression.log`。
+这些是实际隔离 Lua Worker、模拟游戏/本地 HTTP 模型及 loopback 后端验证；未调用真实模型，
+未运行原生 Terraria 隔离场景、图形 Host & Play 或无关全量测试，未构建或部署新 Mod。
 
 ## 阶段一参数诊断（基于 0.1.62）
 
@@ -47,7 +96,7 @@ Tile 坐标为 `(originX+column-1, originY+row-1)`，解析 45×29 网格不需�
 
 2026-10-28 自主编排：Lua 纯计算白名单为 `math.abs/min/max/sqrt/ceil/floor/tointeger/huge/pi`
 和 `table.insert/remove/sort/concat/pack/unpack`，用于距离、排序、列表和局部有限状态。
-仅复制这些 Lua 函数到每次新建环境，不开放 random、元表、加载器、pcall、协程、文件、网络、系统或 Python 对象。
+仅复制这些 Lua 函数到每次新建环境，不开放 random、元表、加载器、原生 pcall、协程、文件、网络、系统或 Python 对象。
 局部 table 生命周期为一次程序；不能借此跨程序恢复失败动作。sort 比较函数仍受指令 hook，列表分配受内存限制，
 C 库调用仍受父进程墙钟截止与 Worker 终止约束；API/动作预算不变。
 `math.huge` 仅可作内部比较哨兵，非有限数不能返回/传API。`table.pack` 含 n 字段，
@@ -200,7 +249,7 @@ nil 返回表示 JSON null，nil table 字段仍遵守 Lua 自身的删除语义
 若动作回执自身超限，宿主保留标记 payloadOmitted 的末动作摘要；不会把裁剪数据交给 Lua。
 
 环境只开放 type/tonumber/tostring/pairs/ipairs/next/assert/error、api、json helpers和受限log。
-没有 io/os/package/require/load/debug/python、pcall/xpcall/coroutine、元表接口或 print；
+没有 io/os/package/require/load/debug/python、原生 pcall/xpcall/coroutine、元表接口或 print；
 移除字符串默认元表，Python eval/builtins/属性访问关闭。每次运行创建全新 VM，变量不跨程序保留。
 这提供语言权限和资源边界，**不是 OS 级敌对代码沙箱**：Worker 仍继承宿主系统权限，
 没有 Windows Job Object/低权限令牌、RSS/CPU 系统配额或原生 VM 漏洞防护。

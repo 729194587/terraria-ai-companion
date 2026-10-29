@@ -37,7 +37,7 @@ class LuaTableCodec(unittest.IsolatedAsyncioTestCase):
     async def test_private_identity_check_does_not_expand_sandbox(self):
         r = await self.run_value('return {type(rawequal),type(pcall),type(xpcall),type(print),type(debug),type(load)}')
         self.assertEqual('completed',r['status'],r)
-        self.assertEqual(['nil']*6,r['value'])
+        self.assertEqual(['nil','function','nil','nil','nil','nil'],r['value'])
 
     async def run_value(self, source):
         game = RuntimeGame()

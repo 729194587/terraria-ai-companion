@@ -28,6 +28,16 @@ class SerializationError(ValueError):
     pass
 
 
+class ForcedTermination(Exception):
+    """Private host termination; never turned into a recoverable Lua error."""
+    pass
+
+
+class LocalReadRejected(Exception):
+    def __init__(self, receipt):
+        self.receipt = receipt
+
+
 TABLE_ENCODING_KEY = '$luaTable'
 
 
@@ -80,7 +90,7 @@ BOOTSTRAP = '''
     local current_line = 0
     local function mark(t, kind) tags[t] = kind; return t end
     local function kind(t) return tags[t] end
-    local function run(source, callback, progress, budget, exploration_source, semantic_source)
+    local function run(source, callback, progress, protected, terminate, budget, exploration_source, semantic_source)
         local env = {type=type, tonumber=tonumber, tostring=tostring,
                      pairs=pairs, ipairs=ipairs, next=next, assert=assert, error=error}
         -- Explicit pure Lua allowlist; no random state, loaders or host objects.
@@ -94,6 +104,7 @@ BOOTSTRAP = '''
                               object=function(t) return mark(t or {}, "object") end}
         env.api = function(name, args) return callback(name, args or {}, current_line) end
         env.log = function(message) return progress(message, current_line) end
+        env.pcall = function(f, ...) return protected(f, ...) end
         local helper = assert(load(exploration_source, "exploration.lua", "t", env))
         env.explore = helper(string.sub)
         env.sense_world = assert(load(semantic_source, "semantic.lua", "t", env))()
@@ -106,7 +117,7 @@ BOOTSTRAP = '''
                 if info.source == "companion.lua" then current_line = info.currentline end
             else
                 used = used + 100
-                if used >= budget then error("instruction_limit", 0) end
+                if used >= budget then terminate("instruction_limit") end
             end
         end, "l", 100)
         return f()
@@ -120,7 +131,8 @@ def worker(connection, source, limits, helper_source=None):
     def deny(*args):
         raise AttributeError('Python access denied')
     lua = module.LuaRuntime(register_eval=False, register_builtins=False,
-                           attribute_handlers=(deny, deny), max_memory=limits.memory)
+                           attribute_handlers=(deny, deny), max_memory=limits.memory,
+                           unpack_returned_tuples=True)
     run, mark, kind, null, last_line = lua.execute(BOOTSTRAP)
 
     def to_lua(value):
@@ -134,6 +146,53 @@ def worker(connection, source, limits, helper_source=None):
         return value
 
     same_table = lua.eval('rawequal')  # Private identity check; not a sandbox permission.
+    invoke = lua.eval('function(f, ...) return table.pack(f(...)) end')
+    fatal_error, protected_depth = None, 0
+
+    def check_fatal():
+        if fatal_error is not None:
+            raise fatal_error
+
+    def terminate(status):
+        nonlocal fatal_error
+        fatal_error = ForcedTermination(status)
+        raise fatal_error
+
+    def guarded(callback):
+        def guarded_call(*args):
+            nonlocal fatal_error
+            check_fatal()
+            try:
+                return callback(*args)
+            except LocalReadRejected:
+                raise
+            except BaseException as exc:
+                fatal_error = exc
+                raise
+        return guarded_call
+
+    def protected(function, *args):
+        nonlocal protected_depth
+        check_fatal()
+        protected_depth += 1
+        try:
+            try:
+                values = invoke(function, *args)
+            except LocalReadRejected as exc:
+                check_fatal()
+                return False, to_lua(exc.receipt)
+            except module.LuaMemoryError:
+                terminate('memory_limit')
+            except module.LuaError as exc:
+                check_fatal()
+                return False, str(exc)[:512]
+            check_fatal()
+            count = values['n']
+            if count > MAX_NODES:
+                terminate('value_limit')
+            return (True, *(values[i] for i in range(1, count+1)))
+        finally:
+            protected_depth -= 1
 
     def plain(value, maximum, *, return_value=False):
         nodes = 0
@@ -196,9 +255,16 @@ def worker(connection, source, limits, helper_source=None):
             raise ValueLimit('bad_argument')
         sequence += 1
         connection.send_bytes(encode({'type': 'call', 'id': sequence, 'name': name,
-                                      'line': line, 'arguments': plain(arguments, REQUEST_BYTES)}, REQUEST_BYTES))
+                                      'line': line, 'protected': protected_depth > 0,
+                                      'arguments': plain(arguments, REQUEST_BYTES)}, REQUEST_BYTES))
         reply = decode(connection.recv_bytes(FRAME_BYTES))
-        if reply.get('type') != 'result' or reply.get('id') != sequence:
+        if reply.get('id') != sequence:
+            raise ValueLimit('protocol_error')
+        if reply.get('type') == 'local_read_rejected':
+            if protected_depth <= 0 or type(reply.get('value')) is not dict:
+                raise ValueLimit('protocol_error')
+            raise LocalReadRejected(reply['value'])
+        if reply.get('type') != 'result':
             raise ValueLimit('protocol_error')
         return to_lua(reply['value'])
 
@@ -213,8 +279,13 @@ def worker(connection, source, limits, helper_source=None):
         connection.send_bytes(encode({'type': 'log', 'id': logs, 'line': line, 'message': message}, REQUEST_BYTES))
 
     try:
-        value = plain(run(source, call, progress, limits.instructions, EXPLORATION_SOURCE if helper_source is None else helper_source, SEMANTIC_SOURCE), VALUE_BYTES, return_value=True)
+        returned = run(source, guarded(call), guarded(progress), protected, terminate, limits.instructions,
+                       EXPLORATION_SOURCE if helper_source is None else helper_source, SEMANTIC_SOURCE)
+        check_fatal()
+        value = plain(returned, VALUE_BYTES, return_value=True)
         out = {'type': 'done', 'status': 'completed', 'value': value}
+    except ForcedTermination as exc:
+        out = {'type': 'done', 'status': str(exc)}
     except SerializationError as exc:
         out = {'type': 'done', 'status': 'serialization_error', 'error': str(exc)[:512]}
     except UnicodeError:

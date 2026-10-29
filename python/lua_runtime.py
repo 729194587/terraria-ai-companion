@@ -311,7 +311,27 @@ class LuaRuntime:
                 out['calls'] += 1
                 if type(name) is not str:
                     raise Interrupted('bad_argument')
-                args = atomic.validate(name, args)
+                if type(message.get('protected', False)) is not bool:
+                    raise Interrupted('protocol_error')
+                try:
+                    args = atomic.validate(name, args)
+                except ValueError as exc:
+                    # Only this local schema/range check is recoverable. No
+                    # dispatch, network call or game action has begun here.
+                    if name not in atomic.READS or not message.get('protected', False):
+                        raise
+                    rejection = {'status': 'bad_argument', 'error': str(exc)[:512],
+                                 'argumentOperation': name}
+                    if isinstance(exc, atomic.ArgumentValidationError):
+                        rejection.update(diagnostics=exc.diagnostics,
+                                         diagnosticsTruncated=exc.diagnostics_truncated)
+                    call_end('bad_argument', error=rejection['error'])
+                    active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
+                        encode({'type': 'local_read_rejected', 'id': sequence, 'value': rejection})))
+                    active_role = 'send'
+                    await watch(active)
+                    active = None
+                    continue
                 if halted and name in atomic.BUDGETED_ACTIONS:
                     # No dispatch occurred: this is not an unknown game action.
                     # stop_action still dispatches and must prove release below.

@@ -90,9 +90,13 @@ class StoreTests(unittest.TestCase):
     def test_model_contract_uses_existing_atomic_schemas(self):
         self.assertIn(TOOL, TOOLS)
         description = TOOL['function']['description']
-        for name in atomic.SCHEMAS:
+        server_only = {'observe_scene', 'query_recipes', 'craft_recipe', 'place_object'}
+        for name in set(atomic.SCHEMAS) - server_only:
             self.assertIn(name, description)
+        for name in server_only:
+            self.assertNotIn(name, description)
         self.assertIn('json.null', SYSTEM)
+        self.assertIn('受控pcall', SYSTEM)
         for args in ({}, {'source': ''}, {'source': 'return 1', 'seconds': 300},
                      {'source': '中'*6000}, {'source': 1}):
             with self.assertRaises(ValueError):

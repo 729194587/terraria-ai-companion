@@ -521,7 +521,7 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
                     type(load),type(dofile),type(pcall),type(coroutine),type(getmetatable),
                     type(math.random),type(math.randomseed),type(table.__globals__),type(string.dump)}
         ''')
-        self.assertEqual(['nil'] * 15, r['value'])
+        self.assertEqual(['nil'] * 8 + ['function'] + ['nil'] * 6, r['value'])
         for source in ("return ('x').rep", 'return api.__globals__', '\x1bLua', 'not valid lua'):
             r, _, _ = await self.run_lua(source)
             self.assertEqual('script_error', r['status'])
