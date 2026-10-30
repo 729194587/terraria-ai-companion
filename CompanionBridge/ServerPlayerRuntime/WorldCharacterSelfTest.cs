@@ -32,6 +32,7 @@ internal static class WorldCharacterSelfTest
                 p.inventory[1].SetDefaults(ItemID.IronPickaxe);Check(p.inventory[1].Prefix(PrefixID.Light),"Native prefix rejected.");
                 p.armor[0].SetDefaults(ItemID.IronHelmet);p.dye[0].SetDefaults(ItemID.RedDye);
                 p.selectedItem=6;
+                AiMapRuntime.Map.Remember(1,1,3);
             }
             else
             {
@@ -40,6 +41,7 @@ internal static class WorldCharacterSelfTest
                     &&p.armor[0].type==ItemID.IronHelmet&&p.dye[0].type==ItemID.RedDye&&p.selectedItem==6
                     &&p.GetModPlayer<ProbePlayer>().PersistentMarker=="world-ai:"+WorldCharacterPersistence.ProfileId,
                     "Native world restore lost items/equipment/prefix/favorite/hotbar/identity.");
+                Check(AiMapRuntime.Map.Get(1,1)==3,"Map did not restore with native character generation.");
                 Check(!p.dead&&p.statLife>0,"Restored character retained transient death.");
             }
             if(Round==2)NativeSurvival.Debug(p,ProbeSession.WorldSession,ProbeSession.ActorGeneration,kill:true);

@@ -25,12 +25,13 @@ internal static class ServerAiQueries
     private static JsonElement Snapshot(Player p) => JsonSerializer.SerializeToElement(ObservationReader.ReadPlayer(p, "server_ai_player"), Json);
     internal static object Read(AiReadOnlyProtocol.Identity expected, string operation, JsonElement arguments)
     {
-        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes")) throw new FormatException("Unsupported server AI query.");
+        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map")) throw new FormatException("Unsupported server AI query.");
         AtomicParameters.Validate(operation, arguments, true);
         Require(expected);
         var p = (Player)expected.Actor;
         object data;
-        if (operation == "query_recipes") data=ActorCrafting.ReadRecipes(expected,arguments);
+        if(operation=="query_map") data=(AiMapRuntime.Map??throw new InvalidOperationException("Map unavailable")).Query(arguments,(int)(p.Center.X/16),(int)(p.Center.Y/16));
+        else if (operation == "query_recipes") data=ActorCrafting.ReadRecipes(expected,arguments);
         else if (operation == "observe_scene") data=ServerSceneReader.Read(p,expected,arguments);
         else if (operation == "get_player_state")
         {

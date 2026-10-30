@@ -90,6 +90,7 @@ public sealed class ServerAiSystem : ModSystem
                 catch (Exception e) { EngineRuntime.SignalFault("G8.1 initial actor creation failed: " + e.Message); Mod.Logger.Error("AI creation stopped.", e);WorldCharacterSelfTest.StartFailed(e); }
             }
             WorldCharacterSelfTest.Tick();
+            if(Capture()!=null)AiMapRuntime.Tick();
             server.Tick(Capture, Select, ServerAiQueries.Read, Say);
         }
     }

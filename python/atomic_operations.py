@@ -41,7 +41,8 @@ SCENE_TEXT_CONTRACT = (
     "箱柜/门/工作台按注册锚点分组，未验证完整家具占地或内容；动态实体按当前相交碰撞框观察，槽位/objects.id不是跨观察持久身份。"
     "所有候选仅为几何预筛选，不保证路径/可达或原生放置权限，行动后仍需真实回执和新鲜观察。"
 )
-TOOLS = [tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
+TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地下视野采用遮挡/近身/可见原版火把近似。",
+    {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
     {"resultType":{"type":"integer","minimum":1},"availableOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":24},"offset":{"type":"integer","minimum":0,"maximum":100000}}),
     tool("craft_recipe", "按新鲜query_recipes的recipeId/recipeToken原生合成，crafts是配方执行次数1..20，不是产物件数；每次重查材料/制作站/空间。可能部分完成，不回滚或失败后自动重试。",
     {"recipeId":{"type":"integer","minimum":0,"maximum":100000},"recipeToken":INVENTORY_TOKEN,"crafts":{"type":"integer","minimum":1,"maximum":20}},["recipeId","recipeToken","crafts"]),tool("observe_scene", "服务器AI局部45×29二维侧视语义图：几何/对象/危险来源、可直接用于导航的landingRegions.items[].target和相互独立的placementCandidates（单格place_tile）/objectPlacementCandidates（工作台place_object，含完整footprint/support）候选。geometry/map共用originX/originY，Lua用string.sub解析行。单次游戏线程采样；候选不保证可达/放置成功，树组件不是整树计数；检查coverage与各集合truncated。可选layers为非空、无重复的白名单数组，未传返回全部七层；data.includedLayers列出实际层，未请求字段省略。objects附带objectCounts，放置候选附带对应Material；身份、范围、角色、coverage和sample始终保留。objectPlacementCandidates.diagnostics区分已检查排除、unknownCount及notCheckedCount；matchedCount仍为通过筛选且截断前的数目。" + SCENE_TEXT_CONTRACT,
@@ -107,7 +108,7 @@ TOOLS = [tool("query_recipes", "查询当前加载原生配方及AI背包/附近
     tool("stop_action", "取消当前Agent动作并等待游戏线程输入释放证据，不抢占手动控制。")]
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration'}
+READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -189,6 +190,11 @@ def validate(name, arguments):
     arguments = check(arguments, SCHEMAS[name], name)
     if issues:
         raise ArgumentValidationError(name, issues, truncated)
+    if name == 'query_map':
+        if arguments.get('cellSize', 2) not in (1, 2, 4):
+            raise ValueError('query_map.cellSize must be 1, 2 or 4')
+        if arguments['mode'] == 'overview' and set(arguments) != {'mode'}:
+            raise ValueError('query_map overview accepts only mode')
     if name == 'scan_tiles':
         width, height = arguments['maxX'] - arguments['minX'] + 1, arguments['maxY'] - arguments['minY'] + 1
         if width <= 0 or height <= 0 or width * height > 4096:
@@ -425,7 +431,10 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
         return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
-    if name in {'query_recipes', 'observe_scene', 'observe_terrain', 'scan_tiles', 'scan_entities', 'inspect_tile', 'resolve_content'} and 'server_ai_perception_v1' in bridge.hello.get('capabilities', []):
+    if name == 'query_map':
+        if 'server_ai_map_v1' not in bridge.hello.get('capabilities', []):
+            raise PreDispatchRejected('AI map unavailable', status='unsupported_operation')
+    if name in {'query_map', 'query_recipes', 'observe_scene', 'observe_terrain', 'scan_tiles', 'scan_entities', 'inspect_tile', 'resolve_content'} and 'server_ai_perception_v1' in bridge.hello.get('capabilities', []):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):

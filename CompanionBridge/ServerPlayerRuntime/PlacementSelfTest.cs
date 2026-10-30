@@ -66,7 +66,20 @@ internal static class PlacementSelfTest
             }
             Material(stack:1);var last=Finish(Start());
             Check(last.EffectVerified&&p.inventory[4].IsAir&&Released(),"last native block did not complete after slot replacement");
-            foreach(int type in new[]{ItemID.WoodenSword,ItemID.WoodPlatform,ItemID.WorkBench,ItemID.SandBlock,ItemID.Torch})
+            AiMapRuntime.Map=new AiMap(Guid.NewGuid(),"native-fixture",Main.maxTilesX,Main.maxTilesY);
+            Material(ItemID.StoneBlock);var placedStone=Finish(Start());
+            Check(placedStone.EffectVerified&&AiMapRuntime.Map.Get(x,y)==2,"confirmed placement not remembered");
+            p.inventory[5].SetDefaults(ItemID.CopperPickaxe);ActorItemUse.Select(p,identity.World,identity.Generation,5);
+            var mining=executor.Start(identity,"mine_tile",JsonSerializer.SerializeToElement(new{x,y}),Guid.NewGuid().ToString("N"));
+            for(int frame=0;ActorMining.Running&&frame<2000;frame++)Frame();
+            var mined=executor.Poll(identity,mining);evidence.Add(mined);
+            Check(mined.EffectVerified&&AiMapRuntime.Map.Get(x,y)==1,"confirmed native mining not remembered: "+JsonSerializer.Serialize(mined));
+            Material(ItemID.Torch);var torch=Finish(Start());
+            Check(torch.Status=="completed"&&torch.EffectVerified&&Main.tile[x,y].TileType==TileID.Torches,"native torch placement failed: "+JsonSerializer.Serialize(torch));
+            Check(AiMapRuntime.Map.Get(x,y)==1,"confirmed torch Tile category not recorded");
+            AiMapNativeTest.Run(p,Check);
+            AiMapRuntime.Reset();
+            foreach(int type in new[]{ItemID.WoodenSword,ItemID.WoodPlatform,ItemID.WorkBench,ItemID.SandBlock})
             {
                 Material(type);var r=executor.Poll(identity,Start());
                 Check(r.Status=="failed"&&!r.InputsAcquired&&!Main.tile[x,y].HasTile,"unsupported item was accepted: "+type);

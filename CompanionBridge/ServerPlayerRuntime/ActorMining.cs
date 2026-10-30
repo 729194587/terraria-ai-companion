@@ -236,6 +236,7 @@ internal static class ActorMining
         {
             var p=c.Actor;p.controlUseItem=false;p.releaseUseItem=true;p.channel=false;
             if(phase!=ActionPhase.Completed)p.itemAnimation=p.itemTime=p.reuseDelay=p.toolTime=0;
+            if(phase==ActionPhase.Completed)AiMapRuntime.Remember(c.X,c.Y);
             ClearProgress(p,c.X,c.Y);Sync(p);
         }
         Emit(c);

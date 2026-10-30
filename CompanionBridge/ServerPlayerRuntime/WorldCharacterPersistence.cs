@@ -19,7 +19,7 @@ internal static class WorldCharacterPersistence
     internal static bool Ready=>!Enabled||session.Phase==WorldCharacterPhase.Ready&&World==session.World
         &&ProbeSession.WorldSession==session.Run&&ReferenceEquals(actor,ProbeSession.Actor);
     internal static void Reset()
-    {files?.Dispose();files=null;committed=null;actor=null;session=new();}
+    {AiMapRuntime.Reset();files?.Dispose();files=null;committed=null;actor=null;session=new();}
     private static Guid World=>Main.ActiveWorldFileData?.UniqueId??Guid.Empty;
     internal static void Start()
     {
@@ -42,6 +42,9 @@ internal static class WorldCharacterPersistence
                     ProbeSession.Actor.GetModPlayer<ProbePlayer>().PersistentMarker="world-ai:"+files.CharacterId;
                 }
                 actor=ProbeSession.Actor;
+                string mapPath=committed==null?null:files.OpenMap(committed);
+                AiMapRuntime.Map=mapPath==null?new AiMap(World,files.CharacterId,Main.maxTilesX,Main.maxTilesY):AiMap.Load(mapPath,World,files.CharacterId,Main.maxTilesX,Main.maxTilesY);
+                if(committed?.Version==1)ProbeSession.Log("ai-map-migration",new{from=1,knowledge="empty; legacy profile had no AI map"});
                 // Commit new identity before it can receive any IPC actions.
                 if(committed==null)Save();
                 ProbeSession.Log("world-character-ready",new{world=World,characterId=files.CharacterId,restored});
@@ -53,7 +56,12 @@ internal static class WorldCharacterPersistence
     {
         if(World!=session.World||ProbeSession.WorldSession!=session.Run||!ReferenceEquals(actor,ProbeSession.Actor))
             throw new IOException("World/actor changed before character save; no write permitted.");
-        CharacterStore.SaveWorld(files.CharacterId,(path,state,selected)=>committed=files.Commit(path,state,selected,committed));
+        CharacterStore.SaveWorld(files.CharacterId,(path,state,selected)=>
+        {
+            string mapPath=Path.Combine(Path.GetDirectoryName(path),"map.bin");
+            AiMapRuntime.Map.Save(mapPath);
+            committed=files.Commit(path,state,selected,committed,mapHash:CharacterFiles.Hash(mapPath));
+        });
         ProbeSession.Log("world-character-saved",new{world=World,characterId=files.CharacterId,committed.Native.Generation});
     }
     internal static void BeforeRetire(Player owned)

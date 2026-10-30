@@ -11,7 +11,7 @@ namespace VirtualPlayerEngineProbe;
 public sealed record WorldCharacterManifest(
     [property:JsonRequired] int Version,[property:JsonRequired] string WorldUid,
     [property:JsonRequired] string CharacterId,[property:JsonRequired] string EngineHash,
-    [property:JsonRequired] int SelectedItem,[property:JsonRequired] CharacterManifest Native);
+    [property:JsonRequired] int SelectedItem,[property:JsonRequired] CharacterManifest Native, string MapHash=null);
 
 // One world pointer commits native pair + hotbar together. Native generations
 // remain immutable; a missing/corrupt pointer in an existing profile is NOT new.
@@ -44,10 +44,11 @@ public sealed class WorldCharacterFiles : IDisposable
     private static bool Digest(string value)=>value?.Length==64&&value.All(c=>c is >= '0' and <= '9' or >= 'A' and <= 'F');
     private void Validate(WorldCharacterManifest data)
     {
-        if(data==null||data.Version!=1||data.WorldUid!=World.ToString("N")||data.CharacterId!=CharacterId
+        if(data==null||data.Version is not (1 or 2)||data.WorldUid!=World.ToString("N")||data.CharacterId!=CharacterId
             ||data.EngineHash!=engineHash||!Digest(data.EngineHash)||data.SelectedItem<0||data.SelectedItem>9||data.Native==null
             ||!Digest(data.Native.PlrHash)||!Digest(data.Native.TplrHash)||!Digest(data.Native.StateHash))
             throw new IOException("Unsupported, incomplete or wrong-world character manifest; no starter fallback.");
+        if(data.Version==2&&!Digest(data.MapHash))throw new IOException("Missing map fingerprint.");
         CharacterFiles.ValidateId(data.Native.Generation);
     }
     public WorldCharacterManifest Read()
@@ -69,22 +70,27 @@ public sealed class WorldCharacterFiles : IDisposable
                 &&element.EnumerateObject().All(p=>Unique(p.Value));
             if(!Unique(parsed.RootElement))throw new IOException("Duplicate world character manifest keys.");
             var data=JsonSerializer.Deserialize<WorldCharacterManifest>(bytes,Json);Validate(data);
-            files.Open(CharacterId,data.Native);return data;
+            files.Open(CharacterId,data.Native);ValidateMap(data);return data;
         }
         catch(JsonException e){throw new IOException("Invalid world character manifest; existing files retained.",e);}
     }
+    public string MapPath(WorldCharacterManifest data)=>Path.Combine(Path.GetDirectoryName(files.Open(CharacterId,data.Native).Path),"map.bin");
+    private void ValidateMap(WorldCharacterManifest data)
+    {if(data.Version==2&&CharacterFiles.Hash(MapPath(data))!=data.MapHash)throw new IOException("Map integrity check failed; no empty fallback.");}
+    public string OpenMap(WorldCharacterManifest data)
+    {Held();Validate(data);ValidateMap(data);return data.Version==1?null:MapPath(data);}
     private bool PointerExists()=>Directory.EnumerateFileSystemEntries(directory).Any(p=>Path.GetFileName(p)=="world.json");
     public string Open(WorldCharacterManifest data)
     {Held();Validate(data);return files.Open(CharacterId,data.Native).Path;}
-    public WorldCharacterManifest Commit(string nativePath,string stateHash,int selected,WorldCharacterManifest expected,Action beforePublish=null)
+    public WorldCharacterManifest Commit(string nativePath,string stateHash,int selected,WorldCharacterManifest expected,Action beforePublish=null,string mapHash=null)
     {
         Held();
         // Only a validated predecessor can be replaced; corruption or an
         // unexpected revision never gets overwritten by a later shutdown.
         var current=PointerExists()?Read():null;
         if(current!=expected)throw new IOException("World character pointer changed; refusing overwrite.");
-        var data=new WorldCharacterManifest(1,World.ToString("N"),CharacterId,engineHash,selected,files.Manifest(CharacterId,nativePath,stateHash));
-        Validate(data);files.Open(CharacterId,data.Native);
+        var data=new WorldCharacterManifest(mapHash==null?1:2,World.ToString("N"),CharacterId,engineHash,selected,files.Manifest(CharacterId,nativePath,stateHash),mapHash);
+        Validate(data);files.Open(CharacterId,data.Native);ValidateMap(data);
         foreach(string native in new[]{nativePath,Path.ChangeExtension(nativePath,".tplr")})
             using(var stream=new FileStream(native,FileMode.Open,FileAccess.ReadWrite,FileShare.Read))stream.Flush(true);
         string temp=Path.Combine(directory,"world-"+CharacterFiles.NewId()+".tmp");

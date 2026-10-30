@@ -32,6 +32,7 @@ class Host(socketserver.ThreadingTCPServer):
         self.reads = True
         self.perception = False
         self.scene = False
+        self.maps = False
         self.crafting = False
         self.crafting_override = {}
         self.actions = False
@@ -83,6 +84,8 @@ class Handler(socketserver.StreamRequestHandler):
                 data = dict(capabilities=['server_ai_atomic_v1', 'atomic_operations_v1', 'hotbar_keys_v1'])
                 if h.reads:
                     data['capabilities'].append('server_ai_reads_v1')
+                if h.maps:
+                    data['capabilities'].append('server_ai_map_v1')
                 if h.crafting:
                     data['capabilities'].append('server_ai_crafting_v1')
                 if h.scene:

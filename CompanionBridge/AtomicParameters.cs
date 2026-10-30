@@ -33,6 +33,16 @@ internal static class AtomicParameters
                     foreach(string key in keys.Where(k=>k!="layers"))Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
                     SceneLayers.Read(args);
                     break;
+                case "query_map":
+                    if(keys.Except(new[]{"mode","centerX","centerY","width","height","cellSize"}).Any()||!keys.Contains("mode"))throw new FormatException("Invalid map parameters.");
+                    string mapMode=args.GetProperty("mode").GetString();
+                    if(mapMode is not ("overview" or "region"))throw new FormatException("Invalid map mode.");
+                    if(mapMode=="overview"&&keys.Count!=1)throw new FormatException("Overview takes only mode.");
+                    foreach(string key in new[]{"centerX","centerY"})if(keys.Contains(key))Integer(key,0,100000);
+                    if(keys.Contains("width"))Integer("width",1,128);
+                    if(keys.Contains("height"))Integer("height",1,96);
+                    if(keys.Contains("cellSize")){Integer("cellSize",1,4);if(args.GetProperty("cellSize").GetInt32()==3)throw new FormatException("cellSize must be 1,2,4.");}
+                    break;
                 case "query_recipes":
                     if(keys.Except(new[]{"resultType","availableOnly","limit","offset"}).Any())throw new FormatException("Unexpected recipe parameter.");
                     if(keys.Contains("resultType"))Integer("resultType",1,int.MaxValue);

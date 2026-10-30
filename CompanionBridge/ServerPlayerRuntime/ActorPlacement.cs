@@ -25,9 +25,9 @@ internal static class ActorPlacement
     private static Action<Player> place;
     internal static bool Supported(Item i)=>!i.IsAir&&i.ModItem==null&&i.consumable&&!i.channel&&i.shoot<=0
         &&i.createWall<0&&i.tileWand<0&&i.placeStyle==0&&i.pick==0&&i.axe==0&&i.hammer==0
-        &&(i.type==ItemID.DirtBlock&&i.createTile==TileID.Dirt
+        &&(i.type==ItemID.Torch&&i.createTile==TileID.Torches||i.type==ItemID.DirtBlock&&i.createTile==TileID.Dirt
             ||i.type==ItemID.StoneBlock&&i.createTile==TileID.Stone||i.type==ItemID.Wood&&i.createTile==TileID.WoodBlock)
-        &&!Main.tileRope[i.createTile]&&TileObjectData.GetTileData(i.createTile,0)==null;
+        &&!Main.tileRope[i.createTile]&&(i.type==ItemID.Torch||TileObjectData.GetTileData(i.createTile,0)==null);
     internal static string Preflight(Player p,int x,int y,bool objectPlacement=false)
     {
         if(objectPlacement)return ActorObjectPlacement.Preflight(p,x,y);
@@ -130,7 +130,8 @@ internal static class ActorPlacement
     {
         var c=use.Placement;string invalid=Validate(use);
         if(invalid!=null){use.Phase=c.Object&&(c.Placed||c.ConsumedCount!=0||c.UncertainNativeEffect)?"unknown":"failed";use.Reason=invalid;}
-        else if(c.Placed&&c.ConsumedCount==1){use.Phase="completed";use.Reason=c.Object?"native_object_placed_and_consumed":"native_tile_placed_and_consumed";}
+        else if(c.Placed&&c.ConsumedCount==1){use.Phase="completed";use.Reason=c.Object?"native_object_placed_and_consumed":"native_tile_placed_and_consumed";
+            for(int y=c.Y;y<c.Y+(c.Object?c.Shape.Height:1);y++)for(int x=c.X;x<c.X+(c.Object?c.Shape.Width:1);x++)AiMapRuntime.Remember(x,y);}
         else {use.Phase=c.Placed||c.ConsumedCount!=0?"unknown":"failed";
             use.Reason=c.Placed?"native_placement_consumption_unconfirmed":"native_placement_refused";}
     }

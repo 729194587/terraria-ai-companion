@@ -61,7 +61,7 @@ def server_contract(bridge):
         elif f['name'] == 'mine_tile':
             f['description'] = '用当前真实镐挖指定Tile，或铜斧砍普通树干；80像素保守检查加原生距离/工具力/保护规则，实际由本AI破坏才完成；不自动选工具/移动/挖邻块。'
         elif f['name'] == 'place_tile':
-            f['description'] = '在真实Tile坐标的空格，用当前选中的泥土块、石块或木材进行一次原生放置；80像素保守检查加原生范围/邻接/保护规则。仅本AI放置目标且本次原生使用消耗1件材料、计时结束并释放后完成。不支持家具、平台、沙、ModItem、替换已有格、墙或自动选材/走近。'
+            f['description'] = '在真实Tile坐标的空格，用当前选中的泥土块、石块、木材或原版普通火把进行一次原生放置；80像素保守检查加原生范围/邻接/保护规则。仅本AI放置目标且本次原生使用消耗1件材料、计时结束并释放后完成。不支持家具、平台、沙、ModItem、替换已有格、墙或自动选材/走近。'
         elif f['name'] == 'scan_entities':
             f['description'] = '服务器AI中心世界像素半径内的真实活跃NPC、掉落物、其他玩家；排除AI自身，先筛选排序再截断，无视线保证。entityRef绑定世界/AI代次/NPC实例，仅为观察标识。'
         elif f['name'] == 'scan_tiles':
@@ -102,7 +102,7 @@ schemaVersion=2的固定图例和对象分组说明统一见当前observe_scene�
 不同高度落脚优先从data.landingRegions.items选择，直接api('navigate_to_landing_region',candidate.target)，不用重算玩家左边缘X区间/脚底surfaceY；1px采样使用共享支撑与原导航安全检查，仍只是几何候选，不是路径或可达承诺，先核对actor.navigationProfileSupported。普通单格方块只从data.placementCandidates.items选择target传place_tile；该集合只有单格solidNeighbor，不能传给place_object。工作台仅从独立data.objectPlacementCandidates.items选target，检查完整footprint/support；对象候选为空时不能拿单格候选充当工作台候选。只表示空干燥格、80px内、当前玩家不占用和已观察实心邻接，不保证原生权限或成功，核对placementMaterial和背包真实材料。
 工作台候选为空时先读objectPlacementCandidates.diagnostics：matchedCount仍是通过筛选且截断前的数量，rejectedCount仅计完整占地/支撑已知后的明确排除；rejectedByReason按首个失败互斥分类（占地、液体、支撑、距离、玩家碰撞），不是所有同时违反的条件。unknownCount不算已确认拒绝，notCheckedCount包含观察边缘未覆盖及定义不可用；coveredScopeComplete仅指完整占地/支撑落在观察范围内的锚点全部已知。旧后端缺少diagnostics不等于计数为零。检查firstExamples中的实际坐标/详情及truncated/omittedCount；候选为空不证明全局没有位置，不猜坐标或以单格候选代替。
 objects.items用观察作用域ID、kind、observedBounds、contentKey关联图中T/O/C/D/W/$等位置。tree_component只是相连树干格组件，可能一树多片或相邻树合并，complete永远false，不能把matchedCount当整棵树数；矿脉只在观察边界内四邻接同类型聚合，家具完整占地/箱内物品未验证。objectCounts.observed即使详情被截断仍表明分类存在；查不到已返回对象不等于附近没有。
-所有坐标/候选来自本次gameUpdate/sceneId，移动或世界变化后重观察；无持久地图、视线或光照保证。coverage.geometryComplete仅表示这1305格的几何已知；每个集合各自有matchedCount/returnedCount/truncated/omittedCount，几何完整不表示语义对象穷尽。不输出遍历全部格子的日志，不以候选或脚本返回值宣称行动成功。地图不替你选择探索路线或建筑方案；只有宿主continuationAllowed=true的明确未开始拒绝可换候选，其他失败/取消/超时/unknown屏障不变。
+所有observe_scene坐标/候选来自本次gameUpdate/sceneId，移动或世界变化后重观察；observe_scene本身不累积探索记忆，也无视线或光照保证。持久记忆另用query_map，不能当实时状态。coverage.geometryComplete仅表示这1305格的几何已知；每个集合各自有matchedCount/returnedCount/truncated/omittedCount，几何完整不表示语义对象穷尽。不输出遍历全部格子的日志，不以候选或脚本返回值宣称行动成功。地图不替你选择探索路线或建筑方案；只有宿主continuationAllowed=true的明确未开始拒绝可换候选，其他失败/取消/超时/unknown屏障不变。
 '''
     if 'place_object' in supported:
         instructions += '工作台place_object({x=TileX,y=TileY})只支持当前选中原版Work Bench默认样式；x/y是TileObjectData锚点，当前为左上格。可从observe_scene.objectPlacementCandidates.items取target；footprint为完整占地、support为下方支撑，仍只是几何候选。核对objectPlacementMaterial和真实快捷栏物品；原生事件、完整占地、消耗1件及输入释放共同核验。unknown停止变更且不重试；放成后重新query_recipes读取实际制作站邻接，不能从旧查询推定。\n'
