@@ -100,3 +100,28 @@ source-<sha256>.lua是脱敏源码副本；events.jsonl保存API、感知摘要�
 C#离线/协议回归通过，真实tModLoader构建0错误、0警告。
 本地日志为 `.local/lua-boundary-full-python.log`、`.local/lua-boundary-csharp.log`、
 `.local/lua-boundary-build.log`；构建产物在 `.local/lua-boundary-build`，均不提交仓库。
+
+
+## Server AI 跨层追踪补充（2026-10-30）
+
+检查结果：既有任务包已包含Lua源码、API顺序/行号/预算、原子终态与清理，完整Trace已包含模型HTTP body和API可见响应；但任务包只有观察摘要，ServerAiBridge缺少IPC请求/回执事件，原生导航缺少原子actionId关联与逐检查点事件。另确认navigation_search_timeout在上一轮只保留稳定码，遗漏Route.FailureReason中的候选拒绝详情。
+
+本轮复用现有机制：
+
+| 信息 | 获取与关联 |
+| --- | --- |
+| 模型实际提交上下文 | 开启完整Trace后，llm_request.body镜像到当前任务包；含messages、tools、runtimeInventory/runtimeLua和经过投影/省略的历史反馈，以实际HTTP提交版本为准，不能拿完整游戏状态冒充模型看到的观察 |
+| API可见模型输出 | llm_response及llm_return按model_request_id关联；tool_call_id继续关联Lua程序及源哈希 |
+| Lua/API | 既有task_id→tool_call_id→lua_run_id/source_sha256→lua_call_id/lua_line不变；源码、API开始/结果及失败屏障沿用原事件 |
+| Server AI IPC | 新增server_ai_ipc_request/reply/error；本地随机connection_id加request.id/request_id解决多连接请求ID重复；请求、accept/running/terminal回执及断连/超时可按Lua上下文对应。记录在请求线程，保留to_thread传播的任务上下文，不在无任务上下文的接收线程猜归属 |
+| 原生导航 | atomic-native-start.actionId与atomic-navigation.detail.actionId相同；detail另含world/generation/slot/session/gameUpdate。navigation_plan记录planStart、targetX/targetRegion、planNumber、Expansions/耗时/ReachedGoal/TimeBudgetReached及searchFailureReason；navigation_checkpoint记录已核验的预测/实际落点、速度、动作序号；navigation_state/cancel保留终止或清理原因，不逐帧打印 |
+| 超时候选诊断 | NavigationSnapshot.searchFailureReason保留Route.FailureReason；ServerAiNavigation超时终态reason仍为navigation_search_timeout，reasonDetail带真实搜索拒绝详情；非空部分路线照常执行，不把deadline当不可达 |
+| 失败后的真实行为 | 下一llm_request检查反馈确实进入模型请求，下一llm_return与Lua/IPС开始事件检查模型实际提交与宿主实际派发。reply_prepared/send_chat_start、say IPC和send_chat_result区分模型原文、宿主改写、发布尝试与发布确认；准备发送不证明玩家已看到 |
+
+完整模型/IPC payload仍需显式`TERRARIA_AGENT_TRACE=1`；未开启时，不向常开摘要或任务包新增原始对话/背包/网格，不承诺从默认日志恢复完整模型输入。新增emit_full只镜像已获完整Trace开关授权的数据到当前已有任务包，不另建日志体系。完整Trace仍为5MiB滚动文件，任务包仍为2MiB/单事件64KiB/64份源码，各自独立截断；超限标记补保留model_request_id/connection_id/request_id，需查看manifest的eventsDropped/writeErrors和Trace健康。若模型body超64KiB，任务包可能只剩标记，应结合未被轮转的完整Trace；不能把缺失记录解释为未调用。
+
+沿用注册凭据与敏感键脱敏，不记HTTP headers/.env，不记录或推断模型内部隐藏推理。源码redacted标记、哈希语义不变。镜像写失败被隔离；原生NavigationDiagnostics序列化/写入失败也仅增加内部WriteErrors，不改变导航输入、预算、路线、终态和后续执行。新增日志位于原定规划计时段之外；并非性能压力或磁盘故障下实时性保证。原生日志由tModLoader既有日志设施管理，没有扩大游戏世界/实体采样。
+
+验证：NavigationOnly定向组、IPC定向组通过；Python新追踪4项、test_trace.py 11项、test_lua_observability.py 14项通过；新包构建0错误0警告，隔离原生既有读取/选栏/导航/物品/挖掘/取消及进程清理通过，脚本核验10个导航事件与8个原生开始事件的actionId关联。首轮测试夹具曾把导入的TestCase也带入发现（20项中新增用例错误，其余通过），已改模块导入并仅运行当前4项；另修正断连测试误取前置state请求、以及把模型原文误当宿主实际发布文本的断言。没有运行全量测试，没有调用真实模型或部署现用profile。
+
+[可人工分析的示例与分层结论](evidence/server-ai-trace/analysis.md)分别保留：A，HTTP/执行器替身的完整失败任务与ZIP；B，真实规划器在碰撞替身上产生的超时详情；C，真实原生成功动作日志和回执。三组不能拼接成同一次实机任务。仍无法观察完整世界/所有Mod副作用、丢失的轮转或超限payload、客户端实际渲染/玩家是否阅读、模型内部推理；没有确定性世界回放，也未构造原生强制搜索超时或真实LLM自主失败场景。

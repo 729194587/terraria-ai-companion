@@ -860,15 +860,15 @@ class Agent:
             text = '[AI] ' + ' '.join(text.replace('\0','').split())
             if len(text.encode('utf-16-le')) > 800:
                 text = text.encode('utf-16-le')[:794].decode('utf-16-le',errors='ignore')+'...'
-        tracing.trace.emit("reply_prepared", text=text)
+        tracing.emit_full("reply_prepared", text=text)
         if self.local_input:
             if chat_id != self._active_turn_id:
                 raise BridgeError('Local reply superseded')
             print(f"Agent: {text}", flush=True)
-            tracing.trace.emit('terminal_reply', text=text, chatId=chat_id)
+            tracing.emit_full('terminal_reply', text=text, chatId=chat_id)
             diagnostics.emit('terminal_reply', chatId=chat_id)
             return text
-        tracing.trace.emit("send_chat_start", text=text, chatId=chat_id)
+        tracing.emit_full("send_chat_start", text=text, chatId=chat_id)
         if self.server_ai:
             if not current():
                 raise BridgeError('AI reply superseded',status='superseded')
@@ -879,7 +879,7 @@ class Agent:
             reply=await asyncio.to_thread(self.bridge.command,'say',text=text,replyTurn=generation,is_current=current)
         else:
             reply = await asyncio.to_thread(self.chat_bridge.command, 'send_chat', text=text, chatId=chat_id)
-        tracing.trace.emit("send_chat_result", reply=reply)
+        tracing.emit_full("send_chat_result", reply=reply)
         return text
 
     async def close(self):

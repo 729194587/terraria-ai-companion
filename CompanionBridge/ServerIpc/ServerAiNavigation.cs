@@ -23,31 +23,38 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal LandingRegion Region;
         internal int Session, Generation, Updates;
         internal string Status="running", Reason="navigation_accepted";
-        internal string ReasonDetail;
+        internal string ReasonDetail, ActionId;
         internal ulong? Tick;
         internal NavigationSnapshot Snapshot;
         internal LandingObservation FinalObservation;
         internal StateVector VelocityBeforeRelease;
         internal ulong FinalObservationTick;
     }
-    private readonly NativeNavigation navigation = new(captureContacts:true);
+    private readonly NativeNavigation navigation;
+    internal ServerAiNavigation()
+    {
+        navigation=new(captureContacts:true,diagnosticWriter:line=>
+            ProbeSession.Log("atomic-navigation",new{actionId=Current?.ActionId,world=Current?.Identity.World,
+                generation=Current?.Identity.Generation,slot=Current?.Identity.Slot,session=Current?.Session,
+                gameUpdate=Main.GameUpdateCount,navigationEvent=System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(line.Substring("Navigation ".Length))}));
+    }
     private int session;
     private bool executing, injected;
     internal Run Current;
     public bool Running => Current?.Status=="running";
     public bool Matches(Player p) => Current!=null && ReferenceEquals(Current.Identity.Actor,p);
-    internal Run Start(AiReadOnlyProtocol.Identity identity,float target)
-        =>Start(identity,target,null);
-    internal Run Start(AiReadOnlyProtocol.Identity identity,LandingRegion region)
-        =>Start(identity,region.MinPlayerLeftX,region);
-    private Run Start(AiReadOnlyProtocol.Identity identity,float target,LandingRegion region)
+    internal Run Start(AiReadOnlyProtocol.Identity identity,float target,string actionId=null)
+        =>Start(identity,target,null,actionId);
+    internal Run Start(AiReadOnlyProtocol.Identity identity,LandingRegion region,string actionId=null)
+        =>Start(identity,region.MinPlayerLeftX,region,actionId);
+    private Run Start(AiReadOnlyProtocol.Identity identity,float target,LandingRegion region,string actionId)
     {
         var p=(Player)identity.Actor;
         ServerAiNativeActions.Require(identity);
         ActorControl.Healthy(p);
         if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Actor busy.");
         navigation.Cancel();
-        Current=new Run{Identity=identity,Target=target,Region=region,StartX=p.position.X,Session=checked(++session),Generation=checked((int)identity.Generation)};
+        Current=new Run{Identity=identity,ActionId=actionId,Target=target,Region=region,StartX=p.position.X,Session=checked(++session),Generation=checked((int)identity.Generation)};
         return Current;
     }
     public void BeforeMovement(Player p)
@@ -112,7 +119,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 if(!injected)throw new InvalidOperationException("Audited G4 movement boundary not reached.");
                 navigation.After(p);run.Snapshot=navigation.Snapshot;
                 if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown","native_navigation_landing_unconfirmed");}
-                else if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.Reason;Stop("failed",AiActionReasons.Navigation(run.Snapshot.Reason));}
+                else if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.SearchFailureReason is {} detail && run.Snapshot.Reason=="navigation_search_timeout"?detail:run.Snapshot.Reason;Stop("failed",AiActionReasons.Navigation(run.Snapshot.Reason));}
                 else if(run.Snapshot.Status=="arrived")
                 {
                     var terrain=TerrainReader.Read(p);

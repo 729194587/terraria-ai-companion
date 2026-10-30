@@ -461,8 +461,8 @@ public static class MotionOfflineTests
             actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, world);
             task.After(actual, world); diagnostics.Observe(task.Snapshot);
         }
-        Check(task.Snapshot.Status == "arrived" && logs.Count == 2,
-            "Exactly one plan and one actual-arrival log; no per-frame spam");
+        Check(task.Snapshot.Status == "arrived" && logs.Count == 3,
+            "Exactly one plan, checkpoint and actual-arrival log; no per-frame spam");
         using (var json = Log(0))
         {
             var nav = json.RootElement.GetProperty("navigation");
@@ -478,14 +478,18 @@ public static class MotionOfflineTests
                 "Structured game log preserves exact planner data, identity and region geometry");
         }
         using (var json = Log(1))
+            Check(json.RootElement.GetProperty("event").GetString()=="navigation_checkpoint"
+                &&json.RootElement.GetProperty("navigation").GetProperty("lastLanding").GetProperty("actionNumber").GetInt32()==1,
+                "Verified checkpoint logs predicted/actual landing once");
+        using (var json = Log(2))
             Check(json.RootElement.GetProperty("event").GetString() == "navigation_state"
                 && json.RootElement.GetProperty("navigation").GetProperty("status").GetString() == "arrived",
                 "Predicted complete goal and observed arrival have separate log events");
         task.Cancel(); diagnostics.Observe(task.Snapshot); diagnostics.Observe(task.Snapshot);
-        Check(logs.Count == 3 && task.Snapshot.ReachedGoal == null && task.Snapshot.TimeBudgetReached == null
+        Check(logs.Count == 4 && task.Snapshot.ReachedGoal == null && task.Snapshot.TimeBudgetReached == null
             && task.Snapshot.PlanNumber == 0 && task.Snapshot.TargetRegion == null,
             "Cancellation clears stale DTO diagnostics and is logged only once");
-        using (var json = Log(2))
+        using (var json = Log(3))
             Check(json.RootElement.GetProperty("event").GetString() == "navigation_cancel"
                 && json.RootElement.GetProperty("navigation").GetProperty("generation").GetInt32() == 7,
                 "Cancellation log remains attributable to the old generation");
@@ -493,7 +497,7 @@ public static class MotionOfflineTests
         diagnostics.Observe(task.Snapshot);
         Check(task.Snapshot.Status == "arrived" && task.Snapshot.PlanNumber == 0 && task.Snapshot.ReachedGoal == null,
             "Already-at-goal new generation does not fabricate a search result");
-        using (var json = Log(3))
+        using (var json = Log(4))
             Check(json.RootElement.GetProperty("navigation").GetProperty("reachedGoal").ValueKind == JsonValueKind.Null,
                 "No planning is distinguishable from a false goal result in JSON");
 
@@ -516,6 +520,17 @@ public static class MotionOfflineTests
             Check(blocked ? task.Snapshot.Reason=="navigation_search_timeout"
                 : task.Snapshot.Status=="running"&&input!=default,
                 "Empty timed search reports timeout; executable partial route still runs");
+            Check(task.Snapshot.PlanStart==actual,"Plan start preserved even after executor projection");
+            if(blocked)
+            {
+                Check(!string.IsNullOrEmpty(task.Snapshot.SearchFailureReason)&&task.Snapshot.SearchFailureReason.Contains("candidates"),
+                    "Timeout retains actual planner candidate rejection detail alongside stable reason");
+                var sample=Environment.GetEnvironmentVariable("NAVIGATION_DIAGNOSTIC_SAMPLE");
+                if(!string.IsNullOrEmpty(sample))System.IO.File.WriteAllLines(sample,logs);
+            }
+            var failedLog=new NavigationDiagnostics(_=>throw new System.IO.IOException("fixture log failure"));
+            var unchanged=task.Snapshot;failedLog.Observe(unchanged);
+            Check(failedLog.WriteErrors>0&&task.Snapshot==unchanged,"Diagnostic write failure cannot change task result");
             if (!blocked)
             {
                 actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, delayed);

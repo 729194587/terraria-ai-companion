@@ -12,8 +12,7 @@ internal sealed class NativeNavigation
 {
     internal LocalMotionController Controller { get; } = new();
     internal NavigationTask Task { get; } = new();
-    private readonly NavigationDiagnostics Diagnostics = new(line =>
-        ModContent.GetInstance<CompanionBridge>().Logger.Info(line));
+    private readonly NavigationDiagnostics Diagnostics;
     internal NavigationSnapshot Snapshot => _navigation ? Task.Snapshot : Controller.Snapshot;
     private bool _navigation;
     private int _session, _generation;
@@ -21,7 +20,11 @@ internal sealed class NativeNavigation
     private int _life;
     private bool _paired;
     private readonly bool _captureContacts;
-    internal NativeNavigation(bool captureContacts=false)=>_captureContacts=captureContacts;
+    internal NativeNavigation(bool captureContacts=false,Action<string> diagnosticWriter=null)
+    {
+        _captureContacts=captureContacts;
+        Diagnostics=new(diagnosticWriter??(line=>ModContent.GetInstance<CompanionBridge>().Logger.Info(line)));
+    }
 
     private PhysicsState State(Player p) => new(p.position.X, p.position.Y,
         p.velocity.X, p.velocity.Y, TerrainReader.Read(p).Grounded, p.jump, p.releaseJump);

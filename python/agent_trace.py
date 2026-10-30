@@ -58,7 +58,7 @@ class Trace:
                     self.dropped_records += 1
                     record = {key: record[key] for key in ("timestamp", "session_id", "sequence",
                               "task_id", "generation", "chat_event_id", "tool_call_id", "model_request_id",
-                              "lua_run_id", "lua_call_id", "lua_line", "source_sha256") if key in record}
+                              "lua_run_id", "lua_call_id", "lua_line", "source_sha256", "connection_id", "request_id") if key in record}
                     raw = (json.dumps(self._redact({**record, "type": "trace_record_dropped",
                         "original_type": event_type, "reason": "event_exceeds_file_limit",
                         "bytes": len(raw)}), ensure_ascii=False) + "\n").encode("utf-8")
@@ -153,6 +153,18 @@ def terrain_diagnostic(reply):
     if terrain.get("tileSize") != 16:
         warnings.append("unexpected_tile_size")
     return result
+
+
+def emit_full(event_type, **data):
+    """Mirror opt-in payloads into the existing bounded task bundle, never runtime summaries."""
+    trace.emit(event_type, **data)
+    if trace.enabled:
+        try:
+            # Local import avoids the evidence -> tracing dependency at startup.
+            import evidence
+            evidence.record(event_type, **data)
+        except Exception:
+            trace.write_errors += 1
 
 
 trace = Trace()

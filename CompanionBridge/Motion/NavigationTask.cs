@@ -86,7 +86,7 @@ internal sealed class NavigationTask
             _plans++;
             Snapshot = Snapshot with { Action = "plan", Expansions = _route.Expansions,
                 PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds,
-                PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached };
+                PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached, PlanStart=state, SearchFailureReason=_route.FailureReason };
             if (_route.Actions.Count == 0)
             {
                 return Fail(_route.TimeBudgetReached ? "navigation_search_timeout" : "no safe local route: " + _route.FailureReason,_route.BlockingTiles);
@@ -207,6 +207,7 @@ internal sealed class NavigationTask
         TargetX = _targetX, CompletedActions = _actions, CompletedJumps = _jumps,
         Expansions = _route.Expansions, PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds,
         LastLanding = _lastLanding, PlanNumber = _plans, ReachedGoal = _route.ReachedGoal,
-        TimeBudgetReached = _route.TimeBudgetReached, TargetRegion = _region
+        TimeBudgetReached = _route.TimeBudgetReached, TargetRegion = _region,
+        PlanStart=Snapshot.PlanStart, SearchFailureReason=_route.FailureReason
     };
 }

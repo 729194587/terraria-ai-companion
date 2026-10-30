@@ -10,6 +10,7 @@ import uuid
 from concurrent.futures import Future, TimeoutError as FutureTimeout
 
 from control import BridgeError, command_owner
+import agent_trace as tracing
 
 
 MAP_READS = frozenset(("query_map",))
@@ -22,6 +23,7 @@ class ServerAiBridge:
     supported_atomic_operations = frozenset(("select_hotbar_slot", "stop_action", "wait"))
     def __init__(self, port=18779, timeout=5):
         self.timeout = timeout
+        self.trace_connection_id = uuid.uuid4().hex
         self._lock = threading.RLock()
         self._closed = False
         self._action_id = None
@@ -100,12 +102,19 @@ class ServerAiBridge:
             if len(wire)>4097:raise BridgeError('AI request exceeds 4096 bytes')
             pending=Future()
             with self._pending_lock:self._pending[request_id]=pending
+            tracing.emit_full('server_ai_ipc_request', connection_id=self.trace_connection_id, request=request)
             try:self.sock.sendall(wire)
             except OSError as error:
+                tracing.emit_full('server_ai_ipc_error', connection_id=self.trace_connection_id, request=request, category='network')
                 self.close();raise BridgeError(str(error)) from error
         try:reply=pending.result(timeout=self.timeout)
         except FutureTimeout as error:
+            tracing.emit_full('server_ai_ipc_error', connection_id=self.trace_connection_id, request=request, category='timeout')
             self.close();raise BridgeError('Server AI request timeout; outcome unknown') from error
+        except BridgeError:
+            tracing.emit_full('server_ai_ipc_error', connection_id=self.trace_connection_id, request=request, category='connection')
+            raise
+        tracing.emit_full('server_ai_ipc_reply', connection_id=self.trace_connection_id, request_id=request_id, reply=reply)
         if not reply.get("ok"):
             if self._action_id is not None and reply.get("error") in ("stale_binding", "identity_unavailable", "engine_unavailable", "unknown_action"):
                 self.close()
