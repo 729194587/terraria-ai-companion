@@ -89,7 +89,7 @@ internal sealed class NavigationTask
                 PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached };
             if (_route.Actions.Count == 0)
             {
-                return Fail("no safe local route: " + _route.FailureReason,_route.BlockingTiles);
+                return Fail(_route.TimeBudgetReached ? "navigation_search_timeout" : "no safe local route: " + _route.FailureReason,_route.BlockingTiles);
             }
             var edge = _route.Actions[0];
             _executor.Cancel();
@@ -142,8 +142,14 @@ internal sealed class NavigationTask
             Snapshot = Snapshot with { Status = "running", Reason = "edge checkpoint verified; replan from observed state",
                 ActualLanding = new(state.Px, state.Py), CompletedActions = _actions, CompletedJumps = _jumps,
                 LastLanding = _lastLanding };
-            if (_stalled >= 4 || _actions >= 256) Fail("navigation progress/action budget exhausted");
+            CheckBudgets();
         }
+    }
+
+    private void CheckBudgets()
+    {
+        if (_stalled >= 4) Fail("navigation_stalled");
+        else if (_actions >= 256) Fail("navigation_action_limit");
     }
 
     private void BeginConfirmation(PhysicsState state,IMotionWorld world)
@@ -176,7 +182,7 @@ internal sealed class NavigationTask
             float forward=Progress(state);_stalled=forward>=_furthest+4?0:_stalled+1;_furthest=Math.Max(_furthest,forward);
             Snapshot=Snapshot with{Status="running",Reason="safe landing confirmed; replan from observed state",
                 CompletedActions=_actions,CompletedJumps=_jumps,LastLanding=_lastLanding};
-            if(_stalled>=4||_actions>=256)Fail("navigation progress/action budget exhausted");
+            CheckBudgets();
             return;
         }
         if(!world.SafeSweep(state,state,out string danger))

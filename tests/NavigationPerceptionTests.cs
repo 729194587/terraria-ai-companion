@@ -66,7 +66,7 @@ public static class NavigationPerceptionTests
         var prediction=PhysicsSimulator.Predict(start,1,0,PhysicsParameters.Basic,world);
         Check(!prediction.Safe&&prediction.BlockingTiles?.Single().ContentKey=="Terraria/Stone","walking rejection retains clipped contact");
         var task=new NavigationTask();task.Before(1,1,160,start,PhysicsParameters.Basic,world);
-        Check(task.Snapshot.Status=="failed"&&task.Snapshot.BlockingTiles?.Single().X==2,"no-route failure retains root forward evidence");
+        Check(task.Snapshot.Status=="failed"&&task.Snapshot.Reason.StartsWith("no safe local route:")&&task.Snapshot.TimeBudgetReached==false&&task.Snapshot.BlockingTiles?.Single().X==2,"no-route failure retains root forward evidence");
         string wire=JsonSerializer.Serialize(task.Snapshot,new JsonSerializerOptions{PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
         Check(wire.Contains("\"blockingTiles\":[{\"x\":2,\"y\":0,\"contentKey\":\"Terraria/Stone\""),"wire coordinates/content key");
         task.Fail("different failure");Check(task.Snapshot.BlockingTiles==null,"unrelated failure clears witness");

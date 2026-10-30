@@ -4,6 +4,10 @@ namespace CompanionBridge.ServerIpc;
 // Success is an outcome, never the textual representation of Failure.None.
 internal static class AiActionReasons
 {
+    internal static string Navigation(string reason) => reason is
+        "navigation_stalled" or "navigation_action_limit" or "navigation_search_timeout"
+        ? reason : "native_navigation_failed";
+
     internal static string Mining(string status,string failure)=>status switch
     {
         "completed"=>"native_tile_destroyed",

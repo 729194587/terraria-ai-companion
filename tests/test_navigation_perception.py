@@ -16,6 +16,23 @@ class NavigationPerceptionTests(unittest.IsolatedAsyncioTestCase):
         self.host.actions = self.host.scene = self.host.perception = True
         self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
 
+    async def test_distinct_navigation_reasons_reach_python_and_lua(self):
+        self.enable()
+        for reason in ('navigation_stalled', 'navigation_action_limit', 'navigation_search_timeout'):
+            def failed(a):
+                a.update(status='failed', reason=reason, reasonDetail=reason)
+                a['endEvidence']['effectVerified'] = False
+                a['evidence'].update(arrived=False, navigation=dict(reason=reason,
+                    timeBudgetReached=reason == 'navigation_search_timeout'))
+            self.host.action_transform = failed
+            result = await atomic.dispatch(self.bridge, 'navigate_to_x', dict(targetX=200))
+            self.assertEqual(reason, result['reason'], result)
+            self.assertFalse(result['completed'])
+            result = await LuaRuntime(self.bridge, evidence_root=self.directory.name).execute(
+                "return api('navigate_to_x',{targetX=200})", limits=Limits(seconds=8))
+            self.assertEqual('failed', result['status'], result)
+            self.assertEqual(reason, result['lastAction']['reason'], result)
+
     async def test_failed_receipt_preserves_block_evidence_and_release(self):
         self.enable()
         blocks = [dict(x=2, y=0, contentKey='Terraria/Stone', basis='rejected_root_forward_walk_contact')]

@@ -19,6 +19,7 @@ internal static class ActorMining
         internal Player Actor;internal Item Item;internal string World;internal long Generation;
         internal int Slot,Type,Prefix,Pick,Axe, X,Y,TileType,ExpectedType,FrameX,FrameY,Ticks,Swings,Strikes,Damage,PeakDamage,AnimationPeak,ProposedDamage,Transforms;
         internal byte Slope;internal bool Half,Actuated,Destroyed,ExternalChange;
+        internal object InvalidTarget;
         internal ActionPhase Phase=ActionPhase.Running;internal Failure Reason;internal string Detail="";
     }
     private delegate void NativeTool(Player p,Item item,ref bool hitWall,int x,int y);
@@ -77,6 +78,13 @@ internal static class ActorMining
     }
     private static bool Healthy(Player p)=>!p.dead&&!p.ghost&&!p.CCed&&!p.noItems&&!p.noBuilding&&!p.frozen&&!p.stoned&&!p.mount.Active
         &&!Main.gameMenu&&!Netplay.Disconnect&&float.IsFinite(p.position.X)&&float.IsFinite(p.position.Y);
+    internal static object TargetDiagnostic(int x,int y)
+    {
+        bool inWorld=x>=0&&y>=0&&x<Main.maxTilesX&&y<Main.maxTilesY;
+        bool? hasTile=null;int? tileType=null;
+        if(inWorld){var target=Main.tile[x,y];hasTile=target.HasTile;tileType=target.TileType;}
+        return new{x,y,inWorld,hasTile,tileType,withinMiningBounds=WorldGen.InWorld(x,y,2)};
+    }
     internal static void Start(Player p,string world,long generation,int x,int y)
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
@@ -90,7 +98,13 @@ internal static class ActorMining
             void Reject(Failure reason,string detail){c.Phase=ActionPhase.Failed;c.Reason=reason;c.Detail=detail;Emit(c);}
             if(!Healthy(p)){Reject(Failure.ActorUnavailable,"Actor cannot mine in its current state.");return;}
             c.Type=c.Item.type;c.Prefix=c.Item.prefix;c.Pick=c.Item.pick;c.Axe=c.Item.axe;
-            if(!WorldGen.InWorld(x,y,2)||!Main.tile[x,y].HasTile){Reject(Failure.InvalidTarget,"Target must be an occupied in-world tile.");return;}
+            bool withinMiningBounds=WorldGen.InWorld(x,y,2);
+            if(!withinMiningBounds||!Main.tile[x,y].HasTile)
+            {
+                // Capture preflight facts once. Never index Tilemap outside physical bounds.
+                c.InvalidTarget=TargetDiagnostic(x,y);
+                Reject(Failure.InvalidTarget,System.Text.Json.JsonSerializer.Serialize(c.InvalidTarget));return;
+            }
             var t=Main.tile[x,y];int type=t.TileType;
             c.TileType=c.ExpectedType=type;c.FrameX=t.TileFrameX;c.FrameY=t.TileFrameY;c.Slope=(byte)t.Slope;c.Half=t.IsHalfBlock;c.Actuated=t.IsActuated;
             if(p.selectedItem<0||p.selectedItem>9||!SupportedTool(c.Item))

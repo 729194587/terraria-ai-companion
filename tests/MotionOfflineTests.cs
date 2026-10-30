@@ -338,7 +338,7 @@ public static class MotionOfflineTests
                 var input = bounded.Before(207, 1, region, s, ph, world);
                 s = PhysicsSimulator.Step(s, input, ph, world); bounded.After(s, world);
             }
-            Check(bounded.Snapshot.Status == "failed" && bounded.Snapshot.Reason.Contains("progress/action budget")
+            Check(bounded.Snapshot.Status == "failed" && bounded.Snapshot.Reason==(actionCap?"navigation_action_limit":"navigation_stalled")
                 && bounded.Snapshot.CompletedActions == (actionCap ? 256 : 1),
                 "Verified edge enforces action cap and four-checkpoint stall guard");
         }
@@ -513,6 +513,9 @@ public static class MotionOfflineTests
             using (var json = Log(0))
                 Check(json.RootElement.GetProperty("navigation").GetProperty("timeBudgetReached").GetBoolean(),
                     "Checked time budget is observable in game log serialization");
+            Check(blocked ? task.Snapshot.Reason=="navigation_search_timeout"
+                : task.Snapshot.Status=="running"&&input!=default,
+                "Empty timed search reports timeout; executable partial route still runs");
             if (!blocked)
             {
                 actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, delayed);

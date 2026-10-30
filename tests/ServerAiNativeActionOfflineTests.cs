@@ -41,6 +41,9 @@ public static class ServerAiNativeActionOfflineTests
     }
     public static void Run()
     {
+        foreach(string reason in new[]{"navigation_stalled","navigation_action_limit","navigation_search_timeout"})
+            Check(AiActionReasons.Navigation(reason)==reason,"navigation diagnostic survives protocol reason mapping: "+reason);
+        Check(AiActionReasons.Navigation("no safe local route: blocked")=="native_navigation_failed","ordinary no-route mapping remains compatible");
         Check(AiActionReasons.Mining("completed","None")=="native_tile_destroyed","mining success translates outcome rather than failure enum");
         foreach(var pair in new[]{("InvalidTarget","invalid_target"),("InvalidTool","invalid_tool"),("TargetChanged","target_changed"),
             ("NativeRefused","native_use_refused"),("NoPickPower","native_tool_damage_refused"),("NativeException","native_mining_exception"),

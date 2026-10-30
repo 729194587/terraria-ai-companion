@@ -70,6 +70,31 @@ internal static class MiningSelfTest
             ActorMining.Start(p,world,generation,-1,y);Check(ActorMining.Current.Reason==ActorMining.Failure.InvalidTarget,"World edge accepted.");
             Target(TileID.Stone);int distant=x+30;var far=Main.tile[distant,y];far.HasTile=true;far.TileType=TileID.Stone;
             ActorMining.Start(p,world,generation,distant,y);Check(ActorMining.Current.Reason==ActorMining.Failure.OutOfRange,"Out of range target accepted.");
+            Main.tile[x,y].ClearTile(); // Explicit empty target after the preceding occupied-target reach test.
+            var diagnosticIdentity=new CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity(p,world,generation,p.whoAmI,new{});
+            var diagnosticExecutor=new CompanionBridge.ServerIpc.ServerAiNativeActions();
+            foreach(var point in new[]{(x,y),(-1,y),(x,-1),(Main.maxTilesX,y),(x,Main.maxTilesY),(int.MinValue,y),(int.MaxValue,y),(0,0)})
+            {
+                int dx=point.Item1,dy=point.Item2;
+                bool inWorld=dx>=0&&dy>=0&&dx<Main.maxTilesX&&dy<Main.maxTilesY;
+                ActorMining.Start(p,world,generation,dx,dy);
+                var rejected=ActorMining.Current;
+                using var detail=JsonDocument.Parse(rejected.Detail);var d=detail.RootElement;
+                Check(rejected.Reason==ActorMining.Failure.InvalidTarget&&d.GetProperty("x").GetInt32()==dx
+                    &&d.GetProperty("y").GetInt32()==dy&&d.GetProperty("inWorld").GetBoolean()==inWorld,
+                    "invalid target retains coordinates and physical bounds");
+                Check(inWorld?d.GetProperty("hasTile").GetBoolean()==Main.tile[dx,dy].HasTile
+                    &&d.GetProperty("tileType").GetInt32()==Main.tile[dx,dy].TileType
+                    :d.GetProperty("hasTile").ValueKind==JsonValueKind.Null&&d.GetProperty("tileType").ValueKind==JsonValueKind.Null,
+                    "invalid target safely distinguishes empty/edge tile from out-of-world unknown");
+                var handle=diagnosticExecutor.Start(diagnosticIdentity,"mine_tile",JsonSerializer.SerializeToElement(new{x=dx,y=dy}),Guid.NewGuid().ToString("N"));
+                var wire=diagnosticExecutor.Poll(diagnosticIdentity,handle);
+                using var wireDetail=JsonDocument.Parse(wire.ReasonDetail);
+                Check(wire.Status=="failed"&&wire.Reason=="invalid_target"&&!wire.InputsAcquired
+                    &&wireDetail.RootElement.GetProperty("inWorld").GetBoolean()==inWorld,
+                    "native adapter retains invalid-target diagnostic without acquiring inputs");
+                evidence.Add(new{invalidTarget=d.Clone(),wire});
+            }
             Target(TileID.Sand);Start();Check(ActorMining.Current.Reason==ActorMining.Failure.UnsupportedTarget,"Falling tile accepted.");
             Target(TileID.Stone);var pick=p.HeldItem;p.inventory[0]=new Item(ItemID.WoodenSword);Start();
             Check(ActorMining.Current.Reason==ActorMining.Failure.InvalidTool,"Sword accepted as pickaxe.");p.inventory[0]=pick;

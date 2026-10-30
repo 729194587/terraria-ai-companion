@@ -1,0 +1,26 @@
+Navigation perception: 44 checks (collision doubles, not native execution).
+PASS landing confirmation: recorded matching position/velocity is not a verified landing
+PASS landing confirmation: unconfirmed landing releases intent without replan/replay
+PASS landing confirmation: one supported frame does not prove stable landing
+PASS landing confirmation: two safe settled observations verify checkpoint but not distant goal
+PASS landing confirmation: bounded unconfirmed descent/contact ends unknown; grounded flag=False
+PASS landing confirmation: unknown does not restart route
+PASS landing confirmation: bounded unconfirmed descent/contact ends unknown; grounded flag=True
+PASS landing confirmation: unknown does not restart route
+PASS landing confirmation: confirmed prediction deviation differs from unconfirmed landing
+PASS landing confirmation: grounded flag and zero velocity cannot replace safe foot support
+PASS landing confirmation: distinct budget reason at unchanged threshold; confirmation=False, stalled=False
+PASS landing confirmation: distinct budget reason at unchanged threshold; confirmation=False, stalled=True
+PASS landing confirmation: distinct budget reason at unchanged threshold; confirmation=True, stalled=False
+PASS landing confirmation: distinct budget reason at unchanged threshold; confirmation=True, stalled=True
+PASS landing confirmation: below both budget thresholds remains running
+PASS landing confirmation: simultaneous limits deterministically report stall first
+PASS landing confirmation: cancel discards pending confirmation
+PASS landing confirmation: normal supported moving checkpoint stays immediate
+PASS: complete landing incumbent survives bounded search; goal and time-budget diagnostics
+PASS: planning diagnostics through task, checkpoints, failure/cancel/generation, structured log and no-plan states
+ParentContainsErrorRecordException: D:\Agent Project\terraria-ai-companion\tests\run_csharp_tests.ps1:69
+Line |
+  69 |  … LandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [Playe …
+     |                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Exception calling "Run" with "0" argument(s): "Verified edge enforces action cap and four-checkpoint stall guard"

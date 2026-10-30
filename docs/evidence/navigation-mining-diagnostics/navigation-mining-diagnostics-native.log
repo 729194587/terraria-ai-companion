@@ -1,0 +1,6 @@
+Start-Process: D:\Agent Project\terraria-ai-companion\.local\verify-diagnostic-mining.ps1:27
+Line |
+  27 |      -WorkingDirectory $TModLoaderPath -WindowStyle Hidden -PassThru `
+     |                                        ~~~~~~~~~~~~
+     | Cannot bind parameter because parameter 'WindowStyle' is specified more than once. To provide multiple values to
+     | parameters that can accept multiple values, use the array syntax. For example, "-parameter value1,value2,value3".

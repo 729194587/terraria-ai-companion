@@ -13,7 +13,7 @@ public static class NavigationLandingConfirmationTests
         public bool SafeLanding(PhysicsState s)=>Support&&s.Grounded;
     }
     private static void Check(bool ok,string message){if(!ok)throw new Exception(message);Console.WriteLine("PASS landing confirmation: "+message);}
-    private static NavigationTask Replay(PhysicsState endpoint,World world)
+    private static NavigationTask Replay(PhysicsState endpoint,World world,int stalled=0,int actions=0)
     {
         var task=new NavigationTask();task.Begin(900,1,34475.117f,endpoint);
         var edge=new Prediction(true,"recorded walk prefix",new List<PredictedFrame>{new(new(1,false),endpoint)},endpoint,1,false);
@@ -21,6 +21,8 @@ public static class NavigationLandingConfirmationTests
         executor.Begin(900,1,1);executor.LoadPlan(edge);
         typeof(NavigationTask).GetField("_route",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(task,new Route(new(){edge},5,6.685));
         typeof(NavigationTask).GetField("_executing",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(task,true);
+        typeof(NavigationTask).GetField("_stalled",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(task,stalled);
+        typeof(NavigationTask).GetField("_actions",BindingFlags.Instance|BindingFlags.NonPublic).SetValue(task,actions);
         task.After(endpoint,world);return task;
     }
     public static void Run()
@@ -53,6 +55,22 @@ public static class NavigationLandingConfirmationTests
         for(int i=1;i<NavigationTask.LandingConfirmationLimit;i++)task.After(settled,world);
         Check(task.Snapshot.Status=="unknown"&&task.Snapshot.ObservedGrounded==true&&task.Snapshot.SafeSupport==false
             &&task.Snapshot.ActualLanding==null,"grounded flag and zero velocity cannot replace safe foot support");
+        foreach(bool confirmation in new[]{false,true})
+        foreach(bool stalled in new[]{false,true})
+        {
+            world=new World();
+            var endpoint=settled with{Vx=confirmation?2.8799992f:0,Vy=confirmation?0.33129883f:0,Grounded=!confirmation};
+            task=Replay(endpoint,world,stalled?3:0,stalled?0:255);
+            if(confirmation){task.After(settled,world);task.After(settled,world);}
+            Check(task.Terminal&&task.Snapshot.Status=="failed"&&task.Snapshot.CompletedActions==(stalled?1:256)
+                &&task.Snapshot.Reason==(stalled?"navigation_stalled":"navigation_action_limit"),
+                "distinct budget reason at unchanged threshold; confirmation="+confirmation+", stalled="+stalled);
+        }
+        world=new World();
+        task=Replay(settled,world,2,254);
+        Check(!task.Terminal&&task.Snapshot.CompletedActions==255,"below both budget thresholds remains running");
+        task=Replay(settled,world,3,255);
+        Check(task.Snapshot.Reason=="navigation_stalled","simultaneous limits deterministically report stall first");
         world=new World();
         task=Replay(observed,world);task.Cancel();task.After(settled,world);
         Check(task.Snapshot.Status=="idle"&&task.Snapshot.ActualLanding==null,"cancel discards pending confirmation");

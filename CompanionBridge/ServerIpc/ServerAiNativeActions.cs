@@ -69,7 +69,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             else
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
-                if(!WorldGen.InWorld(x,y,2))return Reject("invalid_target");
+                if(!WorldGen.InWorld(x,y,2))return Reject("invalid_target",JsonSerializer.Serialize(ActorMining.TargetDiagnostic(x,y)));
                 if(Vector2.Distance(p.Center,new Vector2(x*16+8,y*16+8))>80)return Reject("out_of_conservative_80_pixel_reach");
                 ActorMining.Start(p,identity.World,identity.Generation,x,y);context=ActorMining.Current;
             }
@@ -135,7 +135,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var mine=(ActorMining.Context)h.Context;
         bool destroyed=mine.Destroyed&&!mine.ExternalChange&&WorldGen.InWorld(mine.X,mine.Y)&&!Main.tile[mine.X,mine.Y].HasTile;
         string phase=mine.Phase switch{ActionPhase.Running=>"running",ActionPhase.Completed=>"completed",ActionPhase.Cancelled=>"cancelled",ActionPhase.TimedOut=>"timeout",ActionPhase.Stale=>"unknown",_=>"failed"};
-        return new(phase,AiActionReasons.Mining(phase,mine.Reason.ToString()),new{nativeActionId=mine.Id,mine.X,mine.Y,mine.TileType,mine.ExpectedType,mine.Ticks,
+        return new(phase,AiActionReasons.Mining(phase,mine.Reason.ToString()),new{nativeActionId=mine.Id,mine.X,mine.Y,TileType=mine.InvalidTarget==null?(int?)mine.TileType:null,mine.ExpectedType,mine.Ticks,invalidTarget=mine.InvalidTarget,
             mine.Swings,mine.Strikes,mine.PeakDamage,mine.Transforms,toolKind=mine.Axe>0?"axe":"pickaxe",pick=mine.Pick,axe=mine.Axe,nativeDestroyed=mine.Destroyed,targetAbsent=destroyed,
             targetChanged=mine.ExternalChange,destroyedByActor=destroyed,effectStatus=destroyed?"native_tile_destroyed":mine.Ticks==0?"not_started":"not_confirmed"},
             Released(p)&&p.itemAnimation==0&&p.itemTime==0,phase=="completed"&&destroyed,InputsAcquired:mine.Ticks>0,ReasonDetail:string.IsNullOrWhiteSpace(mine.Detail)?null:mine.Detail);

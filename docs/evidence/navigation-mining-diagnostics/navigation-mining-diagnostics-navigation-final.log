@@ -1,0 +1,33 @@
+Navigation perception: 44 checks (collision doubles, not native execution).
+PASS landing confirmation: recorded matching position/velocity is not a verified landing
+PASS landing confirmation: unconfirmed landing releases intent without replan/replay
+PASS landing confirmation: one supported frame does not prove stable landing
+PASS landing confirmation: two safe settled observations verify checkpoint but not distant goal
+PASS landing confirmation: bounded unconfirmed descent/contact ends unknown; grounded flag=False
+PASS landing confirmation: unknown does not restart route
+PASS landing confirmation: bounded unconfirmed descent/contact ends unknown; grounded flag=True
+PASS landing confirmation: unknown does not restart route
+PASS landing confirmation: confirmed prediction deviation differs from unconfirmed landing
+PASS landing confirmation: grounded flag and zero velocity cannot replace safe foot support
+PASS landing confirmation: distinct budget reason at unchanged threshold; confirmation=False, stalled=False
+PASS landing confirmation: distinct budget reason at unchanged threshold; confirmation=False, stalled=True
+PASS landing confirmation: distinct budget reason at unchanged threshold; confirmation=True, stalled=False
+PASS landing confirmation: distinct budget reason at unchanged threshold; confirmation=True, stalled=True
+PASS landing confirmation: below both budget thresholds remains running
+PASS landing confirmation: simultaneous limits deterministically report stall first
+PASS landing confirmation: cancel discards pending confirmation
+PASS landing confirmation: normal supported moving checkpoint stays immediate
+PASS: complete landing incumbent survives bounded search; goal and time-budget diagnostics
+PASS: planning diagnostics through task, checkpoints, failure/cancel/generation, structured log and no-plan states
+PASS: raised landing region planning/task execution, exact goal predicates, safety, unreachable/blocked routes, budgets and divergence (synthetic collisions)
+PASS: recorded real Tile19 platform landing arrives without replanning; wrong height, air, velocity, jump and insufficient support still rejected
+PASS: both recorded mining approaches settle inside reachable bands using production planner/executor and unchanged budget (synthetic collision)
+PASS: recorded near-goal moving root, safe full braking, bidirectional exact/crossed goals and genuine failure
+PASS: TerraBlind state-space route, continuous multi-obstacle navigation, arrival, cancellation, divergence and guarded lease
+PASS: bidirectional moving walk checkpoints, settled arrival, walkable shallow pit, cost-aware partial route and obstacle approach
+PASS: bidirectional consecutive moving jumps, continuous forward input, braking fallback, legacy settled jump and handoff mismatch rejection
+PASS: bidirectional obstacle-top departure, raised landing then another obstacle, bounded descent and rejection diagnostics
+PASS: actual reported obstacle-edge coordinates through shared native support logic; corner, air, collision, hazard and half-block rejection/acceptance
+PASS: clipped downward contact before true grounding, two-frame landing handoff and uninterrupted input
+PASS: adapted source physics, local candidates, single/sequential low-obstacle landing, divergence and safety (collision test double)
+PASS: actual player hook isolates remote updates; local obstacle task progresses; terminal, death and manual control preserved (offline stubs)
