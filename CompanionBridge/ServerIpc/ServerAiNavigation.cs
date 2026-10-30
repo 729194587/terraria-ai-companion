@@ -33,7 +33,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     private readonly NativeNavigation navigation;
     internal ServerAiNavigation()
     {
-        navigation=new(captureContacts:true,diagnosticWriter:line=>
+        navigation=new(captureContacts:true,enableSafeGroundWalk:true,diagnosticWriter:line=>
             ProbeSession.Log("atomic-navigation",new{actionId=Current?.ActionId,world=Current?.Identity.World,
                 generation=Current?.Identity.Generation,slot=Current?.Identity.Slot,session=Current?.Session,
                 gameUpdate=Main.GameUpdateCount,navigationEvent=System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(line.Substring("Navigation ".Length))}));

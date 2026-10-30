@@ -58,3 +58,10 @@ adapter. Existing `LocalMotionController` replays predicted inputs at the instal
 input hook and compares actual post-update states; upstream `ReplaySystem` and
 its hook timing / fake initial velocity are not imported. No PathPlanner,
 DragonLens, HTTP server, world modification, or LLM dependency is imported.
+
+
+Bridge-specific `Motion/SafeGroundWalk.cs` composes the adapted
+`PhysicsSimulator.Predict` walking prefix/braking proof and existing support
+checks into one Route before optional graph search. It changes neither the
+upstream-derived simulation nor the LocalMotionController verification rules.
+Numen/Terrabot were design references; their executors and source were not copied.

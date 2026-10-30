@@ -11,7 +11,7 @@ namespace CompanionBridge.Motion;
 // ReachedGoal includes feasible incumbents at budget exhaustion, not a claim of
 // optimality. TimeBudgetReached records a checked deadline exit (not preemption).
 internal sealed record Route(List<Prediction> Actions, int Expansions, double Milliseconds, string FailureReason = null,
-    bool ReachedGoal = false, bool TimeBudgetReached = false,NavigationBlockingTile[] BlockingTiles=null);
+    bool ReachedGoal = false, bool TimeBudgetReached = false,NavigationBlockingTile[] BlockingTiles=null,string Kind="state_space");
 
 internal static class StateSpacePlanner
 {

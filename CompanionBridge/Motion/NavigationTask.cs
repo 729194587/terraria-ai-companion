@@ -7,6 +7,9 @@ namespace CompanionBridge.Motion;
 internal sealed class NavigationTask
 {
     private readonly LocalMotionController _executor = new();
+    private readonly bool _enableSafeGroundWalk;
+    private int _searches,_fastWalks;
+    internal NavigationTask(bool enableSafeGroundWalk=false)=>_enableSafeGroundWalk=enableSafeGroundWalk;
     private int _session, _generation, _direction, _actions, _jumps, _plans;
     private float _targetX, _furthest;
     private LandingRegion _region;
@@ -47,7 +50,7 @@ internal sealed class NavigationTask
             Cancel(); _session = session; _generation = generation; _targetX = targetX;
             _region = region;
             _direction = targetX >= state.Px ? 1 : -1;
-            _actions = _jumps = _stalled = _plans = 0; _furthest = Progress(state);
+            _actions = _jumps = _stalled = _plans = _searches = _fastWalks = 0; _furthest = Progress(state);
             Snapshot = new(session, "running", "plan", "navigation started", 0, 0, null, null, 0,
                 Generation: generation, TargetX: targetX, TargetRegion: region);
         }
@@ -81,12 +84,18 @@ internal sealed class NavigationTask
             { Snapshot = Snapshot with { Status = "arrived", Reason = region != null
                 ? "landing region verified on safe settled ground" : "horizontal goal crossed on safe settled ground" }; return default; }
             if (!state.ReleaseJump || state.JumpFramesLeft != 0) return default;
-            _route = region != null ? StateSpacePlanner.Plan(state, region, ph, world)
-                : StateSpacePlanner.Plan(state, targetX, ph, world, goalDirection: _direction);
+            _route = _enableSafeGroundWalk&&region==null?SafeGroundWalk.TryPlan(state,targetX,_direction,ph,world):null;
+            if(_route==null)
+            {
+                _route = region != null ? StateSpacePlanner.Plan(state, region, ph, world)
+                    : StateSpacePlanner.Plan(state, targetX, ph, world, goalDirection: _direction);
+                _searches++;
+            }
+            else _fastWalks++;
             _plans++;
             Snapshot = Snapshot with { Action = "plan", Expansions = _route.Expansions,
                 PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds,
-                PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached, PlanStart=state, SearchFailureReason=_route.FailureReason };
+                PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached, PlanStart=state, SearchFailureReason=_route.FailureReason, PlanKind=_route.Kind, SearchNumber=_searches, FastWalkPlans=_fastWalks };
             if (_route.Actions.Count == 0)
             {
                 return Fail(_route.TimeBudgetReached ? "navigation_search_timeout" : "no safe local route: " + _route.FailureReason,_route.BlockingTiles);
@@ -208,6 +217,7 @@ internal sealed class NavigationTask
         Expansions = _route.Expansions, PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds,
         LastLanding = _lastLanding, PlanNumber = _plans, ReachedGoal = _route.ReachedGoal,
         TimeBudgetReached = _route.TimeBudgetReached, TargetRegion = _region,
-        PlanStart=Snapshot.PlanStart, SearchFailureReason=_route.FailureReason
+        PlanStart=Snapshot.PlanStart, SearchFailureReason=_route.FailureReason,
+        PlanKind=_route.Kind, SearchNumber=_searches, FastWalkPlans=_fastWalks
     };
 }

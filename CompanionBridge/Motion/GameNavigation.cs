@@ -11,7 +11,7 @@ namespace CompanionBridge.Motion;
 internal sealed class NativeNavigation
 {
     internal LocalMotionController Controller { get; } = new();
-    internal NavigationTask Task { get; } = new();
+    internal NavigationTask Task { get; }
     private readonly NavigationDiagnostics Diagnostics;
     internal NavigationSnapshot Snapshot => _navigation ? Task.Snapshot : Controller.Snapshot;
     private bool _navigation;
@@ -20,9 +20,10 @@ internal sealed class NativeNavigation
     private int _life;
     private bool _paired;
     private readonly bool _captureContacts;
-    internal NativeNavigation(bool captureContacts=false,Action<string> diagnosticWriter=null)
+    internal NativeNavigation(bool captureContacts=false,Action<string> diagnosticWriter=null,bool enableSafeGroundWalk=false)
     {
         _captureContacts=captureContacts;
+        Task=new(enableSafeGroundWalk);
         Diagnostics=new(diagnosticWriter??(line=>ModContent.GetInstance<CompanionBridge>().Logger.Info(line)));
     }
 

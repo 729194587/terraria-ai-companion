@@ -138,3 +138,18 @@ python python/navigate.py --direction right --tiles 40 --seconds 40 --output .lo
 仍有限制：仅水平穿越目标；局部搜索不保证全局可达或最短路径；复杂陷阱可能需要先远离目标而当前 partial/progress 规则会拒绝；不支持挖掘、放置、深落差、液体、特殊装备/Buff；失败停止而非复杂自动恢复。安全支撑至少要求 8px 列投影宽度，会拒绝仅有更小边角接触的站位。碰撞仍读当前 Tile，不能保证路径不会在之后被敌人或其他玩家改变。
 
 下一步优先在原场地复测 0.1.15：先从当前障碍顶部原站位发命令，确认支撑检查通过并下行继续；再从地面出发连续越过两处障碍，检查跑跳交接及最终停稳。如果再次停止，保留完整报告。`--seconds` 是运行上限，默认目标为 40 格；需更长路线时显式增大 `--tiles`。之后再考虑 XY 目标、上游距离场和受限脱困。
+
+
+## Server AI 水平安全短程行走（2026-10-30）
+
+仅ServerAiNavigation开启SafeGroundWalk，客户端及默认NavigationTask不启用；LandingRegion二维目标保持StateSpacePlanner路径。水平目标先尝试既有24/6帧行走预测，复用PhysicsSimulator的完整制动尾段，要求起点和每一预测帧均为原SupportedCheckpoint + SafeFlatLanding、保持原高度。无法确认则调用原StateSpacePlanner，原搜索/危险/支撑/64px下降阈值不变。
+
+快路只产生一条Prediction/Route，仍由LocalMotionController逐帧重算输入后果、对比实际位置/速度，NavigationTask核验检查点或进入落地确认；取消、输入释放、4次无进展、256动作和unknown仍由原链路处理。不是持续盲走，不缓存旧世界路线、不移动Player位置/速度或修改Tile。已出现地形变化时沿用现有检查与偏差容差处理，不保证能在环境变化前预知危险。
+
+新增NavigationSnapshot字段：planKind为safe_ground_walk或state_space；searchNumber累计完整StateSpacePlanner调用（包括其零扩展制动分支），fastWalkPlans累计短程计划。planNumber仍包含两类计划，不能把所有plan日志都算A*搜索。快路的expansions=0、timeBudgetReached=false表示没有搜索，不是“已搜索全世界”。reachedGoal只描述计划预测，实际到达仍独立验证。
+
+[成对对照、原生记录和未覆盖边界](evidence/safe-ground-walk/analysis.md)：双向平地512px完整规划器调用25→0，计划25→10，执行202帧和最终位置一致；五段128px完整规划器15→0，但计划仍15次、执行仍350帧。数据是正式物理/任务代码在离线碰撞替身上的5组配对，不是图形游戏FPS/耗时收益证明。没有flat证明时调用次数不降，复杂地形回退可能多付出两次有界预测；二维目标、绕路、深下降及窄支撑脱困不在本轮改善范围。
+
+162个定向断言、NavigationOnly/VerticalOnly/BridgeOnly、IPC及Python导航回执4项通过；同包隔离原生96px水平导航3次快路/0次完整规划器、3个核验检查点MaxError=0并到达，另验证取消及旧动作。Mod构建0错误0警告，未跑全量测试，未部署现用profile。未进行本轮图形Host & Play、真实模型自主行走、真人/敌怪干扰或复杂地形原生矩阵。
+
+参考Numen [61994fc Trip](https://github.com/Dwinovo/minecraft-numen/blob/61994fc00dd5f3fc963978362f156237f3801596/numen/common/src/main/java/com/dwinovo/numen/nav/Trip.java)的计划/执行分层，以及本机既有解压Terrabot BotFollowGround/BotFollowProgress的廉价地面检查与进展跟踪思路。原压缩包未定位；实际读取源码路径与SHA在证据references.json。本轮未复制这些源码/宽松接受分支或引入其按键与退避策略；预测和验证仍来自本仓库。[完整证据索引](evidence/safe-ground-walk/manifest.json)。
