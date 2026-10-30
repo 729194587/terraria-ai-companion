@@ -1,4 +1,4 @@
-param([switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
+param([switch]$MiningSupportOnly, [switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
     [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly, [switch]$AuthorityNetworkOnly,
     [switch]$InventoryOnly, [switch]$BridgeOnly, [switch]$ServerReadsOnly, [switch]$NavigationOnly,[switch]$SceneOnly,[switch]$VerticalOnly)
 $ErrorActionPreference = 'Stop'
@@ -42,6 +42,8 @@ $sources = @(
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationBuffPolicy.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MotionSupport.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/MiningSupportImpact.cs'),
+    (Join-Path $PSScriptRoot 'MiningSupportImpactTests.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/LocalMotionController.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/StateSpacePlanner.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationTask.cs'),
@@ -64,6 +66,7 @@ if ($AuthorityNetworkOnly) {
     return
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
+if ($MiningSupportOnly) { [MiningSupportImpactTests]::Run((Join-Path $PSScriptRoot 'fixtures/mining-support-play2.json')); return }
 if ($SceneOnly) { [SceneGeometryTests]::Run(); return }
 if ($VerticalOnly) { [VerticalNavigationTests]::Run(); return }
 if ($NavigationOnly) { [NavigationPerceptionTests]::Run(); [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }

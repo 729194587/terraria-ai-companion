@@ -48,6 +48,21 @@ internal static class PlacementSelfTest
                 for(int tick=0;ActorItemUse.Running&&tick<605;tick++)Frame();
                 var r=executor.Poll(identity,handle);evidence.Add(r);return r;
             }
+            var queryState=(p.position,p.velocity,p.controlUseItem,p.releaseUseItem,p.channel,p.itemAnimation,p.itemTime,p.selectedItem);
+            var impactEnvelope=JsonSerializer.SerializeToElement(ServerAiQueries.Read(identity,"inspect_tile",
+                JsonSerializer.SerializeToElement(new{x=x-3,y=floor})));
+            var impact=impactEnvelope.GetProperty("data").GetProperty("miningSupportImpact");
+            Check(impact.GetProperty("available").GetBoolean()
+                &&impact.GetProperty("current").GetProperty("supportPixels").GetSingle()==20
+                &&impact.GetProperty("afterRemoval").GetProperty("supportPixels").GetSingle()==4
+                &&impact.GetProperty("affectsCurrentStance").GetBoolean(),"server inspect_tile fixed-pose support projection failed");
+            Check(Main.tile[x-3,floor].HasTile&&queryState.Equals((p.position,p.velocity,p.controlUseItem,p.releaseUseItem,p.channel,p.itemAnimation,p.itemTime,p.selectedItem)),
+                "support query mutated Tile/Player/input state");
+            var unavailable=JsonSerializer.SerializeToElement(ServerAiQueries.Read(identity,"inspect_tile",
+                JsonSerializer.SerializeToElement(new{x=Main.maxTilesX,y=floor}))).GetProperty("data").GetProperty("miningSupportImpact");
+            Check(!unavailable.GetProperty("available").GetBoolean()&&unavailable.GetProperty("affectsCurrentStance").ValueKind==JsonValueKind.Null,
+                "out-of-world support query must remain unknown without Tile access");
+            evidence.Add(new{miningSupportImpact=impact.Clone(),unknownTarget=unavailable.Clone()});
             Material();
             if(failure)
             {

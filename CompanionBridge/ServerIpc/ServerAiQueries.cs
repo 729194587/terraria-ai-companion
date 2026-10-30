@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text.Json;
 using Terraria;
 using Terraria.ModLoader;
+using CompanionBridge.Motion;
 using CompanionBridge.Common.Systems;
 using VirtualPlayerEngineProbe;
 
@@ -79,6 +80,15 @@ internal static class ServerAiQueries
             data = AtomicOperations.ReadInventory(p, arguments, (_, _) => null, () => Snapshot(p));
         }
         var projected = JsonSerializer.SerializeToElement(data, Json).EnumerateObject().ToDictionary(field => field.Name, field => (object)field.Value);
+        if(operation=="inspect_tile")
+        {
+            var terrain=TerrainReader.Read(p);
+            var pose=new PhysicsState(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,terrain.Grounded,p.jump,p.releaseJump);
+            string unsupported=p.width!=20||p.height!=42?"unsupported_body_dimensions":p.gravDir!=1?"unsupported_gravity":
+                !terrain.Supported?"unsupported_player_profile":null;
+            projected["miningSupportImpact"]=JsonSerializer.SerializeToElement(MiningSupportImpact.Read(pose,
+                arguments.GetProperty("x").GetInt32(),arguments.GetProperty("y").GetInt32(),TerrainReader.ReadCell,unsupported),Json);
+        }
         projected["source"] = "server_ai_player";
         projected["customState"] = "unknown; custom Mod player/item/buff data and Mod accessory slots not read";
         projected["inventoryTokenStatus"] = "unsupported_server_ai_inventory_mutation";

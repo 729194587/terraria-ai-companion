@@ -52,8 +52,21 @@ internal static class MotionSupport
     internal static bool SafeLanding(PhysicsState state, Func<int, int, char> readCell)
         => LandingRejection(state, readCell) == null;
 
+    internal sealed record Assessment(float? SupportPixels, string Rejection);
+
     internal static string LandingRejection(PhysicsState state, Func<int, int, char> readCell)
+        => CheckLanding(state, readCell, out _);
+
+    internal static Assessment Assess(PhysicsState state, Func<int, int, char> readCell)
     {
+        string rejection=CheckLanding(state,readCell,out float? pixels);
+        return new(pixels,rejection);
+    }
+
+    // Navigation shares the scan without allocating an assessment for every candidate.
+    private static string CheckLanding(PhysicsState state, Func<int, int, char> readCell, out float? supportPixels)
+    {
+        supportPixels=null;
         if (!state.Grounded) return "not grounded";
         float left = state.Px, right = left + PhysicsSimulator.PlayerW;
         float bottom = state.Py + PhysicsSimulator.PlayerH;
@@ -80,6 +93,7 @@ internal static class MotionSupport
             // actual foot contact, not empty tiles under a padded bounding box.
             if (supported) supportedWidth += localRight - localLeft;
         }
+        supportPixels=supportedWidth;
         return supportedWidth >= MinimumSupportPixels ? null
             : $"insufficient foot support: {supportedWidth:F3}px < {MinimumSupportPixels}px";
     }

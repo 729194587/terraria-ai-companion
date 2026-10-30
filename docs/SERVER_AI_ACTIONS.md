@@ -206,3 +206,30 @@ Host & Play 通过。旧阶段读/选栏实机结果与本次三项动作结果�
 
 本次补录只更新文档与保存的证据，没有修改功能实现、重新启动游戏或重跑测试。
 PR #23 保持 Draft，不合并。
+
+
+## 只读采矿支撑影响评估 V1（2026-10-30）
+
+服务器 `inspect_tile({x,y})` 增加可选 `data.miningSupportImpact`；参数和原有查询/采矿协议不变。旧后端缺少此字段表示未提供评估，不等同于无风险。客户端查询不增加此字段。
+
+```lua
+local r=api('inspect_tile',{x=2197,y=231})
+local impact=r.data and r.data.miningSupportImpact
+-- 先检查impact存在及impact.available；current/afterRemoval可能为json.null。
+-- 不据此自动挖掘或假设能够下落/返回。
+return impact
+```
+
+字段契约：
+
+- `targetX/targetY`为Tile坐标；`pose`为采样时20×42普通重力身体的左上角px/py、速度vx/vy及原grounded/jump状态，单位世界像素，Y向下；绑定身份、gameUpdate、UTC仍在原查询信封中。
+- `current`和`afterRemoval`各含`supportPixels`及`rejection`，复用MotionSupport原有身体净空、坡/半砖/平台表面和支撑扫描；达到8px时rejection可为null，低于时保留原解释。无法完成支撑扫描时supportPixels为null，未读区域不当作空地。
+- `available=true`仅表示两边支撑数值均可评估，不是允许采矿或证明站位/导航安全。`affectsCurrentStance`比较原姿态的支撑宽度与该扫描拒绝信息，未知时null；`supportDeltaPixels=afterRemoval-current`，未知时null；`minimumSupportPixels=8`仅解释已有导航支撑阈值，不作为新的采矿门槛。
+- `reasons`解释无法判断的情况，如未知目标/邻格、液体或危险未建模、身体相交、非grounded、非20×42或不支持玩家profile/重力；即使available为true，current/afterRemoval.rejection仍可能指出已知的支撑不足。
+- `scope`明确只比较冻结当前姿态、grounded标志和邻格的单格移除反事实。每次查询重新采样，每个采样类别在本次比较中只读取一次；不是整个世界的原子快照，原inspect_tile与评估也是游戏线程内的先后读取。
+
+评估通过只读委托覆盖目标分类为非阻挡，不写Main.tile，不调用原生运动/挖掘，不推进世界。未知目标不被强行清空；含液体/危险时不会把它们随Tile一并删除。未模拟坠落、落点、连锁破坏/掉落块、其他Tile联动或返程路径，也不核验工具、距离与挖掘许可。背景墙、液体、邻格等实际状态不会被修改。
+
+本轮未改ActorMining、ServerAiNativeActions的执行/拒绝规则、Lua失败/unknown屏障或导航阈值。仍需由调用者显式选择动作并检查真实回执；评估只读0动作。v6证据表明两次移除在原姿态下都是16→0px，而4px来自下落后的另一姿态；2.562px是另一位置的独立拒绝，不能把它们当作本评估的落点预测。[历史核对、派生fixture和定向结果](evidence/mining-support-v1/analysis.md)。
+
+复现：`tests/run_csharp_tests.ps1 -MiningSupportOnly`、`-NavigationOnly`；Python仅`test_mining_support_projection.py`；原生只用隔离placement/mining脚本及本轮构建包。具体包SHA-256、原始日志见[证据manifest](evidence/mining-support-v1/manifest.json)。

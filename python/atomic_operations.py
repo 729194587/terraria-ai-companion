@@ -61,7 +61,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("wait", "可取消的宿主真实时间等待，milliseconds为1..10000。不会推进游戏时间、持有按键或确认游戏效果；受Lua总时限和工具次数预算约束。",
          {"milliseconds": {"type": "integer", "minimum": 1, "maximum": 10000}}, ["milliseconds"]),
     tool("observe_terrain", "复用get_terrain读取45×29局部碰撞及同次玩家状态；Tile为16像素。"),
-    tool("inspect_tile", "读取指定Tile类型、Frame、形状、液体、墙/线/颜色，附内容键及距离/工具等preflight局部前提（不保证可达或可执行）；越界或未加载显式未知。", TILE, ["x", "y"]),
+    tool("inspect_tile", "读取指定Tile类型、Frame、形状、液体、墙/线/颜色，附内容键及距离/工具等preflight局部前提（不保证可达或可执行）；服务器可附data.miningSupportImpact：只读比较当前姿态移除单格前后的支撑，检查available/reasons/current/afterRemoval/supportDeltaPixels；不预测下落落点、不保证返程或挖掘许可，缺字段表示未提供；越界或未加载显式未知。", TILE, ["x", "y"]),
     tool("scan_entities", "按世界像素半径扫描客户端已知NPC、掉落物、其他玩家；先按typeIds/npcFilter筛选，再按玩家中心距离排序截断；npcFilter须category=npc，typeIds须npc/item。NPC entityRef仅当前世界实例有效；截断不等于没有。",
          {"category": {"type": "string", "enum": ["all", "npc", "item", "player"]}, "radius": {"type": "number", "minimum": 1, "maximum": 1600},
           "typeIds": TYPE_IDS, "maxResults": {"type": "integer", "minimum": 1, "maximum": 128},
