@@ -59,7 +59,7 @@ def server_contract(bridge):
             f['parameters'] = {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}
             f['description'] = '当前真实选中物品的一次原生使用周期；仅木剑、铜镐、铜斧、苹果，无目标瞄准。完成不证明命中或其他效果。'
         elif f['name'] == 'mine_tile':
-            f['description'] = '用当前真实镐挖指定Tile，或铜斧砍普通树干；80像素保守检查加原生距离/工具力/保护规则，实际由本AI破坏才完成；不自动选工具/移动/挖邻块。'
+            f['description'] = '用当前真实镐挖普通方块或 SmallPiles（Tile 185）环境碎堆，或铜斧砍普通树干；其他非实心装饰不因此获准。放置前显式清理成功后重新观察占地；80像素保守检查加原生距离/工具力/保护规则，实际由本AI破坏才完成；不自动选工具/移动/挖邻块。'
         elif f['name'] == 'place_tile':
             f['description'] = '在真实Tile坐标的空格，用当前选中的泥土块、石块、木材或原版普通火把进行一次原生放置；80像素保守检查加原生范围/邻接/保护规则。仅本AI放置目标且本次原生使用消耗1件材料、计时结束并释放后完成。不支持家具、平台、沙、ModItem、替换已有格、墙或自动选材/走近。'
         elif f['name'] == 'scan_entities':
