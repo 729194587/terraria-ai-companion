@@ -116,22 +116,29 @@ public static class ServerAiNativeActionOfflineTests
                 &&end.GetProperty("operation").GetString()==op&&end.GetProperty("actorGeneration").GetInt32()==1,"verified "+op+" has bound game-thread release evidence");
             Check(f.Send("start",id,op).GetProperty("error").GetString()=="duplicate_action","long action duplicate ID rejected");
         }
+        foreach(string operation in new[]{"place_object","move_input"})
         foreach(string cause in new[]{"cancel","death","timeout","disconnect","forget"})foreach(bool released in new[]{true,false})
         {
-            var f=new Fixture();using var disconnect=new CancellationTokenSource();string id=f.Start("place_object",token:disconnect.Token);
+            var f=new Fixture();using var disconnect=new CancellationTokenSource();string id=f.Start(operation,token:disconnect.Token);
             f.Native.UnknownOnCancel=true;f.Native.KeepInputHeld=!released;
-            f.Native.Result=new("unknown","object_target_changed",new{placedByActor=true},released);
+            string nativeReason=operation=="place_object"?"object_target_changed":"direct_input_observation_unconfirmed";
+            f.Native.Result=new("unknown",nativeReason,operation=="place_object"?(object)new{placedByActor=true}:new{observation="unavailable"},
+                released,ReasonDetail:"State observation failed after cleanup.");
             if(cause=="cancel")f.Send("cancel",id);
             if(cause=="death")f.Current=f.Current with{CanAct=false};
-            if(cause=="timeout")f.Time=10001;
+            if(cause=="timeout")f.Time=30001;
             if(cause=="disconnect")disconnect.Cancel();
             if(cause=="forget")f.Actions.Forget(f.Owner);
             f.Tick();var action=f.Action(id);
-            Check(action.GetProperty("status").GetString()=="unknown","object "+cause+" preserves uncertain side effects");
+            Check(action.GetProperty("status").GetString()=="unknown",operation+" "+cause+" preserves uncertain side effects");
             Check(action.GetProperty("endEvidenceStatus").GetString()==(released?"known":"unknown")
-                &&(!released||action.GetProperty("endEvidence").GetProperty("inputsReleased").GetBoolean()),"object "+cause+" reports actual input release");
+                &&(released?action.GetProperty("endEvidence").GetProperty("inputsReleased").GetBoolean():action.GetProperty("endEvidence").ValueKind==JsonValueKind.Null),operation+" "+cause+" reports actual input release");
+            Check(action.GetProperty("reason").GetString()==(released?nativeReason:"native_inputs_not_released")
+                &&action.GetProperty("reasonDetail").GetString().Contains("State observation failed"),operation+" "+cause+" retains native diagnostic uncertainty");
+            Check(!released||!action.GetProperty("endEvidence").GetProperty("effectVerified").GetBoolean(),operation+" "+cause+" release does not verify effect");
+            Check(f.Send("start",id,operation).GetProperty("error").GetString()=="duplicate_action",operation+" "+cause+" cannot restart unknown action ID");
             f.Send("cancel",id);f.Tick();
-            Check(f.Native.Starts==1&&f.Native.Cancels==1,"object "+cause+" never replays start or cleanup after unknown");
+            Check(f.Native.Starts==1&&f.Native.Cancels==1,operation+" "+cause+" never replays start or cleanup after unknown");
         }
         foreach(bool released in new[]{true,false})
         {

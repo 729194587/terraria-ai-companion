@@ -133,7 +133,8 @@ internal sealed class AiAtomicActions
             try { e.Result = executor.Cancel(current, e.Handle); }
             catch { End(e, "unknown", "native_cleanup_unconfirmed", current, false); return; }
             if (!e.Result.InputsReleased) { End(e, "unknown", "native_inputs_not_released", current, false); return; }
-            if(e.Operation=="place_object"&&e.Result.Status=="unknown")
+            // Confirmed release does not resolve uncertain native observation/effect state.
+            if(e.Result.Status=="unknown")
             {End(e,"unknown",e.Result.Reason,current,true);return;}
             if (status == "cancelled" && current.CanAct && e.Result.Status == "completed" && e.Result.EffectVerified)
             { status = "completed"; reason = e.Result.Reason; }

@@ -166,7 +166,7 @@ class Handler(socketserver.StreamRequestHandler):
                                               actorId='actor-1', actorGeneration=1, actorSlot=254,
                                               selectedSlot=h.selected, selectionVerified=True))
                     if op == 'cancel' and h.mode == 'cancel_unknown':
-                        a.update(status='unknown', reason='native_placement_consumption_unconfirmed')
+                        a.update(status='unknown', reason='direct_input_observation_unconfirmed' if a['operation']=='move_input' else 'native_placement_consumption_unconfirmed')
                     a['evidence']['selectionApplied'] = True
                     if h.mode == 'bad_evidence':
                         a['endEvidence']['selectionVerified'] = False
@@ -178,6 +178,7 @@ class Handler(socketserver.StreamRequestHandler):
                         if a['operation'] == 'move_input':
                             g=a['requestedInputs']
                             a['evidence'].update(requestedInputs=copy.deepcopy(g),updatesRequested=g['maxUpdates'],updatesExecuted=g['maxUpdates'],inputReleased=True)
+                            if a['status']=='unknown':a['endEvidence']['effectVerified']=False
                         if a['operation'] == 'craft_recipe':
                             g=a['targetRecipe']
                             a['evidence'].update(recipeId=g['recipeId'],recipeToken=g['recipeToken'],requestedCrafts=g['crafts'],completedCrafts=g['crafts'],producedCount=g['crafts'],outputTypeId=36,outputCountPerCraft=1,inventoryVerified=True,mutationAttempted=True,batches=[{'consumed': [{'typeId':9,'count':10}]}]*g['crafts'])
@@ -511,6 +512,48 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         result = await runtime.execute("api('place_object',{x=10,y=20}); api('place_object',{x=12,y=20})", limits=Limits(seconds=8))
         self.assertNotEqual('completed', result['status'], result)
         self.assertEqual(2, sum(r['op'] == 'start' for r in self.host.sent))
+
+    async def test_direct_input_explicit_cancel_preserves_unknown_release(self):
+        self.bridge.close()
+        self.host.actions = self.host.direct_input = True
+        self.host.mode = 'cancel_unknown'
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+        lifecycle = {}
+        args = dict(horizontal='right', vertical='none', jumpHoldUpdates=0, maxUpdates=60)
+        task = asyncio.create_task(atomic.dispatch(self.bridge, 'move_input', args, lifecycle=lifecycle))
+        while self.host.action is None:
+            await asyncio.sleep(.01)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        cleanup = lifecycle['cleanup']
+        self.assertEqual('unknown', cleanup['status'], cleanup)
+        self.assertFalse(cleanup['completed'])
+        self.assertTrue(cleanup['valid'])
+        self.assertEqual('known', cleanup['endEvidenceStatus'])
+        self.assertTrue(cleanup['endEvidence']['inputsReleased'])
+        self.assertFalse(cleanup['endEvidence']['effectVerified'])
+        self.assertEqual(1, sum(r['op'] == 'start' for r in self.host.sent))
+
+    async def test_direct_input_deadline_unknown_poisoned_lua_without_retry(self):
+        self.bridge.close()
+        self.host.actions = self.host.direct_input = True
+        self.host.mode = 'cancel_unknown'
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+        runtime = LuaRuntime(self.bridge, evidence_root=self.directory.name)
+        source = 'api("move_input",{horizontal="right",vertical="none",jumpHoldUpdates=0,maxUpdates=60}); api("move_input",{horizontal="left",vertical="none",jumpHoldUpdates=0,maxUpdates=60})'
+        result = await runtime.execute(source, limits=Limits(seconds=8))
+        self.assertEqual('unknown', result['actionState'], result)
+        self.assertEqual('unknown', result['lastAction']['status'], result)
+        self.assertFalse(result['lastAction']['completed'])
+        self.assertFalse(result['lastAction']['continuationAllowed'])
+        self.assertEqual('known', result['lastAction']['endEvidenceStatus'])
+        self.assertTrue(result['lastAction']['endEvidence']['inputsReleased'])
+        self.assertTrue(self.bridge._lua_poisoned)
+        blocked = await runtime.execute(source, limits=Limits(seconds=8))
+        self.assertEqual('blocked', blocked['status'])
+        self.assertEqual(1, sum(r['op'] == 'start' for r in self.host.sent))
+        self.assertEqual(1, sum(r['op'] == 'cancel' for r in self.host.sent))
 
     async def test_workbench_explicit_cancel_preserves_unknown_release(self):
         self.bridge.close()
