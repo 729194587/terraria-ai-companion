@@ -7,7 +7,15 @@ using CompanionBridge.Motion;
 namespace CompanionBridge;
 
 // Detached local facts. No Terraria access, path search or action selection.
-internal sealed record SceneCell(TileCell Facts,char Navigation,string Kind=null,string ContentKey=null,int? AnchorX=null,int? AnchorY=null,string[] Sources=null);
+internal sealed record SceneCell(TileCell Facts,char Navigation,string Kind=null,string ContentKey=null,int? AnchorX=null,int? AnchorY=null,string[] Sources=null,
+    bool PlacementCuttable=false,bool BreakableWhenPlacing=false);
+// Pinned TileObject.CanPlace occupancy branch (checkStay=false), not solidity.
+// The native Place call alone clears allowed tiles; this rule never mutates them.
+internal static class WorkbenchFootprint
+{
+    internal static bool Blocks(bool hasTile,int type,bool cuttable,bool breakable)
+        =>hasTile&&!((cuttable&&type!=484&&type!=654)||breakable);
+}
 internal sealed record SceneObject(string Id,string Kind,int? TypeId,string ContentKey,TileBounds ObservedBounds,
     int ObservedTileCount,bool Complete,object Details=null);
 internal sealed record SceneLanding(string Id,LandingRegion Target,float FeetDeltaY);
@@ -175,7 +183,7 @@ internal static class SceneGeometry
     {
         var limited=Limit(items,cap);
         return new(limited.Items,limited.MatchedCount,limited.ReturnedCount,limited.Truncated,limited.OmittedCount,diagnostics,
-            limited.MatchedCount>0?"known dry empty full footprint, known dry flat solid support, player-clear, anchor <=80px; native rules not evaluated":null);
+            limited.MatchedCount>0?"known dry full footprint (empty or allowed by native occupancy flags), known dry flat solid support, player-clear, anchor <=80px; remaining native rules not evaluated":null);
     }
     internal static SceneObjectPlacement[] ObjectPlacements(SceneCell[,] cells,int ox,int oy,WorldRect actor,IReadOnlyList<WorldRect> players,
         int width,int height,int originX,int originY,int supportStart,int supportCount,out SceneObjectPlacementDiagnostics diagnostics)
@@ -207,7 +215,7 @@ internal static class SceneGeometry
             {
                 var c=cells[x+dx,y+dy];
                 if(Geometry(c)=='?')unknownCell??=Fact(x+dx,y+dy,c);
-                if(c.Facts.HasTile)occupied??=Fact(x+dx,y+dy,c);
+                if(WorkbenchFootprint.Blocks(c.Facts.HasTile,c.Facts.TileType??-1,c.PlacementCuttable,c.BreakableWhenPlacing))occupied??=Fact(x+dx,y+dy,c);
                 if(c.Facts.LiquidAmount>0)liquid??=Fact(x+dx,y+dy,c);
             }
             for(int dx=supportStart;dx<supportStart+supportCount;dx++)

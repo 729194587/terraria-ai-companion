@@ -59,7 +59,9 @@ internal static class ServerSceneReader
             char nav=TerrainReader.ReadCell(x+ox,y+oy);
             if(nav=='?')unknownNavigation++;
             if(sources.Contains("unsupported_motion_surface"))nav='!';
-            cells[x,y]=new(c,nav,kind,(layers.Has("objects")||layers.Has("hazards"))&&c.TileType is int material&&(kind!=null||sources.Count>0)?Key(material):null,ax,ay,sources.ToArray());
+            bool placementFacts=layers.Has("objectPlacementCandidates")&&c.TileType is int placementType&&placementType>=0&&placementType<TileID.Count;
+            cells[x,y]=new(c,nav,kind,(layers.Has("objects")||layers.Has("hazards"))&&c.TileType is int material&&(kind!=null||sources.Count>0)?Key(material):null,ax,ay,sources.ToArray(),
+                placementFacts&&Main.tileCut[c.TileType.Value],placementFacts&&TileID.Sets.BreakableWhenPlacing[c.TileType.Value]);
         }
         var actor=new WorldRect(p.position.X,p.position.Y,p.width,p.height);
         bool Intersects(Entity e)=>e.position.X<(ox+45)*16&&e.position.X+e.width>ox*16&&e.position.Y<(oy+29)*16&&e.position.Y+e.height>oy*16;

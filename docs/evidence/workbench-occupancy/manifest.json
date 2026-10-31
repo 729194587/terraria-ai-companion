@@ -1,0 +1,1023 @@
+{
+  "baseCommit": "0c1cbbed45fdafb3937d70f085b751400d1fef3d",
+  "version": "0.1.68",
+  "packageSha256": "e215ecb715bff66abfa31240b1bab3290baa8e3e2e318a344a7b3565f0e439b8",
+  "engineSha256": "fcc6a9624b12191be4a15d714a3675440911feb8c1d374642ab1fd686f0da0a5",
+  "source": "user 20261031-play3 raw place2/place3 receipts; local pinned native IL; isolated copied-world native diagnostic",
+  "native": {
+    "result": "passed",
+    "checks": 114,
+    "probes": [
+      {
+        "type": 73,
+        "offset": 0,
+        "native": true,
+        "preflight": null,
+        "candidate": true,
+        "cut": true,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 73,
+        "offset": 1,
+        "native": true,
+        "preflight": null,
+        "candidate": true,
+        "cut": true,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 73,
+        "offset": 2,
+        "native": true,
+        "preflight": null,
+        "candidate": true,
+        "cut": true,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 3,
+        "offset": 0,
+        "native": true,
+        "preflight": null,
+        "candidate": true,
+        "cut": true,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 3,
+        "offset": 1,
+        "native": true,
+        "preflight": null,
+        "candidate": true,
+        "cut": true,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 4,
+        "offset": 0,
+        "native": false,
+        "preflight": "object_footprint_occupied",
+        "candidate": false,
+        "cut": false,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 4,
+        "offset": 1,
+        "native": false,
+        "preflight": "object_footprint_occupied",
+        "candidate": false,
+        "cut": false,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 1,
+        "offset": 0,
+        "native": false,
+        "preflight": "object_footprint_occupied",
+        "candidate": false,
+        "cut": false,
+        "breakable": false,
+        "solid": true
+      },
+      {
+        "type": 1,
+        "offset": 1,
+        "native": false,
+        "preflight": "object_footprint_occupied",
+        "candidate": false,
+        "cut": false,
+        "breakable": false,
+        "solid": true
+      },
+      {
+        "type": 5,
+        "offset": 0,
+        "native": false,
+        "preflight": "object_footprint_occupied",
+        "candidate": false,
+        "cut": false,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 5,
+        "offset": 1,
+        "native": false,
+        "preflight": "object_footprint_occupied",
+        "candidate": false,
+        "cut": false,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 18,
+        "offset": 0,
+        "native": false,
+        "preflight": "object_footprint_occupied",
+        "candidate": false,
+        "cut": false,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 18,
+        "offset": 1,
+        "native": false,
+        "preflight": "object_footprint_occupied",
+        "candidate": false,
+        "cut": false,
+        "breakable": false,
+        "solid": false
+      },
+      {
+        "type": 185,
+        "offset": 0,
+        "native": true,
+        "preflight": null,
+        "candidate": true,
+        "cut": false,
+        "breakable": true,
+        "solid": false
+      },
+      {
+        "type": 185,
+        "offset": 1,
+        "native": true,
+        "preflight": null,
+        "candidate": true,
+        "cut": false,
+        "breakable": true,
+        "solid": false
+      }
+    ],
+    "outcomes": [
+      {
+        "type": 73,
+        "offset": 0,
+        "outcome": {
+          "Status": "completed",
+          "Reason": "native_object_placed_and_consumed",
+          "Evidence": {
+            "x": 2104,
+            "y": 218,
+            "typeId": 18,
+            "itemType": 36,
+            "InitialStack": 5,
+            "remainingStack": 4,
+            "Ticks": 15,
+            "Starts": 1,
+            "AnimationPeak": 14,
+            "Attempts": 1,
+            "nativePlacementEvents": 1,
+            "uncertainNativeEffect": false,
+            "consumedCount": 1,
+            "placedByActor": true,
+            "objectPlacement": true,
+            "footprint": {
+              "x": 2104,
+              "y": 218,
+              "width": 2,
+              "height": 1
+            },
+            "fullFootprintVerified": true,
+            "style": 0,
+            "targetPresent": true,
+            "targetChanged": false,
+            "effectStatus": "native_object_placed"
+          },
+          "InputsReleased": true,
+          "EffectVerified": true,
+          "InputsAcquired": true,
+          "ReasonDetail": null
+        },
+        "remainingStack": 4,
+        "nativeClearEvents": 1,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 18
+          }
+        ]
+      },
+      {
+        "type": 73,
+        "offset": 1,
+        "outcome": {
+          "Status": "completed",
+          "Reason": "native_object_placed_and_consumed",
+          "Evidence": {
+            "x": 2104,
+            "y": 218,
+            "typeId": 18,
+            "itemType": 36,
+            "InitialStack": 5,
+            "remainingStack": 4,
+            "Ticks": 15,
+            "Starts": 1,
+            "AnimationPeak": 14,
+            "Attempts": 1,
+            "nativePlacementEvents": 1,
+            "uncertainNativeEffect": false,
+            "consumedCount": 1,
+            "placedByActor": true,
+            "objectPlacement": true,
+            "footprint": {
+              "x": 2104,
+              "y": 218,
+              "width": 2,
+              "height": 1
+            },
+            "fullFootprintVerified": true,
+            "style": 0,
+            "targetPresent": true,
+            "targetChanged": false,
+            "effectStatus": "native_object_placed"
+          },
+          "InputsReleased": true,
+          "EffectVerified": true,
+          "InputsAcquired": true,
+          "ReasonDetail": null
+        },
+        "remainingStack": 4,
+        "nativeClearEvents": 1,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 18
+          }
+        ]
+      },
+      {
+        "type": 73,
+        "offset": 2,
+        "outcome": {
+          "Status": "completed",
+          "Reason": "native_object_placed_and_consumed",
+          "Evidence": {
+            "x": 2104,
+            "y": 218,
+            "typeId": 18,
+            "itemType": 36,
+            "InitialStack": 5,
+            "remainingStack": 4,
+            "Ticks": 15,
+            "Starts": 1,
+            "AnimationPeak": 14,
+            "Attempts": 1,
+            "nativePlacementEvents": 1,
+            "uncertainNativeEffect": false,
+            "consumedCount": 1,
+            "placedByActor": true,
+            "objectPlacement": true,
+            "footprint": {
+              "x": 2104,
+              "y": 218,
+              "width": 2,
+              "height": 1
+            },
+            "fullFootprintVerified": true,
+            "style": 0,
+            "targetPresent": true,
+            "targetChanged": false,
+            "effectStatus": "native_object_placed"
+          },
+          "InputsReleased": true,
+          "EffectVerified": true,
+          "InputsAcquired": true,
+          "ReasonDetail": null
+        },
+        "remainingStack": 4,
+        "nativeClearEvents": 2,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 18
+          }
+        ]
+      },
+      {
+        "type": 3,
+        "offset": 0,
+        "outcome": {
+          "Status": "completed",
+          "Reason": "native_object_placed_and_consumed",
+          "Evidence": {
+            "x": 2104,
+            "y": 218,
+            "typeId": 18,
+            "itemType": 36,
+            "InitialStack": 5,
+            "remainingStack": 4,
+            "Ticks": 15,
+            "Starts": 1,
+            "AnimationPeak": 14,
+            "Attempts": 1,
+            "nativePlacementEvents": 1,
+            "uncertainNativeEffect": false,
+            "consumedCount": 1,
+            "placedByActor": true,
+            "objectPlacement": true,
+            "footprint": {
+              "x": 2104,
+              "y": 218,
+              "width": 2,
+              "height": 1
+            },
+            "fullFootprintVerified": true,
+            "style": 0,
+            "targetPresent": true,
+            "targetChanged": false,
+            "effectStatus": "native_object_placed"
+          },
+          "InputsReleased": true,
+          "EffectVerified": true,
+          "InputsAcquired": true,
+          "ReasonDetail": null
+        },
+        "remainingStack": 4,
+        "nativeClearEvents": 1,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 18
+          }
+        ]
+      },
+      {
+        "type": 3,
+        "offset": 1,
+        "outcome": {
+          "Status": "completed",
+          "Reason": "native_object_placed_and_consumed",
+          "Evidence": {
+            "x": 2104,
+            "y": 218,
+            "typeId": 18,
+            "itemType": 36,
+            "InitialStack": 5,
+            "remainingStack": 4,
+            "Ticks": 15,
+            "Starts": 1,
+            "AnimationPeak": 14,
+            "Attempts": 1,
+            "nativePlacementEvents": 1,
+            "uncertainNativeEffect": false,
+            "consumedCount": 1,
+            "placedByActor": true,
+            "objectPlacement": true,
+            "footprint": {
+              "x": 2104,
+              "y": 218,
+              "width": 2,
+              "height": 1
+            },
+            "fullFootprintVerified": true,
+            "style": 0,
+            "targetPresent": true,
+            "targetChanged": false,
+            "effectStatus": "native_object_placed"
+          },
+          "InputsReleased": true,
+          "EffectVerified": true,
+          "InputsAcquired": true,
+          "ReasonDetail": null
+        },
+        "remainingStack": 4,
+        "nativeClearEvents": 1,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 18
+          }
+        ]
+      },
+      {
+        "type": 4,
+        "offset": 0,
+        "outcome": {
+          "Status": "failed",
+          "Reason": "object_footprint_occupied",
+          "Evidence": {
+            "operation": "place_object",
+            "mutationAttempted": false,
+            "effectStatus": "not_started"
+          },
+          "InputsReleased": true,
+          "EffectVerified": false,
+          "InputsAcquired": false,
+          "ReasonDetail": "occupiedTile=(2104,218); tileType=4; footprintTiles=(2104,218,2,1); anchorTile=(2104,218)"
+        },
+        "remainingStack": 5,
+        "nativeClearEvents": 0,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 4,
+            "hasTile": true,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 0,
+            "hasTile": false,
+            "frameX": 0
+          }
+        ]
+      },
+      {
+        "type": 4,
+        "offset": 1,
+        "outcome": {
+          "Status": "failed",
+          "Reason": "object_footprint_occupied",
+          "Evidence": {
+            "operation": "place_object",
+            "mutationAttempted": false,
+            "effectStatus": "not_started"
+          },
+          "InputsReleased": true,
+          "EffectVerified": false,
+          "InputsAcquired": false,
+          "ReasonDetail": "occupiedTile=(2105,218); tileType=4; footprintTiles=(2104,218,2,1); anchorTile=(2104,218)"
+        },
+        "remainingStack": 5,
+        "nativeClearEvents": 0,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 0,
+            "hasTile": false,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 4,
+            "hasTile": true,
+            "frameX": 0
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "offset": 0,
+        "outcome": {
+          "Status": "failed",
+          "Reason": "object_footprint_occupied",
+          "Evidence": {
+            "operation": "place_object",
+            "mutationAttempted": false,
+            "effectStatus": "not_started"
+          },
+          "InputsReleased": true,
+          "EffectVerified": false,
+          "InputsAcquired": false,
+          "ReasonDetail": "occupiedTile=(2104,218); tileType=1; footprintTiles=(2104,218,2,1); anchorTile=(2104,218)"
+        },
+        "remainingStack": 5,
+        "nativeClearEvents": 0,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 1,
+            "hasTile": true,
+            "frameX": 144
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 0,
+            "hasTile": false,
+            "frameX": 0
+          }
+        ]
+      },
+      {
+        "type": 1,
+        "offset": 1,
+        "outcome": {
+          "Status": "failed",
+          "Reason": "object_footprint_occupied",
+          "Evidence": {
+            "operation": "place_object",
+            "mutationAttempted": false,
+            "effectStatus": "not_started"
+          },
+          "InputsReleased": true,
+          "EffectVerified": false,
+          "InputsAcquired": false,
+          "ReasonDetail": "occupiedTile=(2105,218); tileType=1; footprintTiles=(2104,218,2,1); anchorTile=(2104,218)"
+        },
+        "remainingStack": 5,
+        "nativeClearEvents": 0,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 0,
+            "hasTile": false,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 1,
+            "hasTile": true,
+            "frameX": 108
+          }
+        ]
+      },
+      {
+        "type": 5,
+        "offset": 0,
+        "outcome": {
+          "Status": "failed",
+          "Reason": "object_footprint_occupied",
+          "Evidence": {
+            "operation": "place_object",
+            "mutationAttempted": false,
+            "effectStatus": "not_started"
+          },
+          "InputsReleased": true,
+          "EffectVerified": false,
+          "InputsAcquired": false,
+          "ReasonDetail": "occupiedTile=(2104,218); tileType=5; footprintTiles=(2104,218,2,1); anchorTile=(2104,218)"
+        },
+        "remainingStack": 5,
+        "nativeClearEvents": 0,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 5,
+            "hasTile": true,
+            "frameX": 88
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 5,
+            "hasTile": true,
+            "frameX": 22
+          }
+        ]
+      },
+      {
+        "type": 5,
+        "offset": 1,
+        "outcome": {
+          "Status": "failed",
+          "Reason": "object_footprint_occupied",
+          "Evidence": {
+            "operation": "place_object",
+            "mutationAttempted": false,
+            "effectStatus": "not_started"
+          },
+          "InputsReleased": true,
+          "EffectVerified": false,
+          "InputsAcquired": false,
+          "ReasonDetail": "occupiedTile=(2104,218); tileType=5; footprintTiles=(2104,218,2,1); anchorTile=(2104,218)"
+        },
+        "remainingStack": 5,
+        "nativeClearEvents": 0,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 5,
+            "hasTile": true,
+            "frameX": 44
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 5,
+            "hasTile": true,
+            "frameX": 66
+          }
+        ]
+      },
+      {
+        "type": 18,
+        "offset": 0,
+        "outcome": {
+          "Status": "failed",
+          "Reason": "object_footprint_occupied",
+          "Evidence": {
+            "operation": "place_object",
+            "mutationAttempted": false,
+            "effectStatus": "not_started"
+          },
+          "InputsReleased": true,
+          "EffectVerified": false,
+          "InputsAcquired": false,
+          "ReasonDetail": "occupiedTile=(2104,218); tileType=18; footprintTiles=(2104,218,2,1); anchorTile=(2104,218)"
+        },
+        "remainingStack": 5,
+        "nativeClearEvents": 0,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 18
+          }
+        ]
+      },
+      {
+        "type": 18,
+        "offset": 1,
+        "outcome": {
+          "Status": "failed",
+          "Reason": "object_footprint_occupied",
+          "Evidence": {
+            "operation": "place_object",
+            "mutationAttempted": false,
+            "effectStatus": "not_started"
+          },
+          "InputsReleased": true,
+          "EffectVerified": false,
+          "InputsAcquired": false,
+          "ReasonDetail": "occupiedTile=(2104,218); tileType=18; footprintTiles=(2104,218,2,1); anchorTile=(2104,218)"
+        },
+        "remainingStack": 5,
+        "nativeClearEvents": 0,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 18
+          }
+        ]
+      },
+      {
+        "type": 185,
+        "offset": 0,
+        "outcome": {
+          "Status": "completed",
+          "Reason": "native_object_placed_and_consumed",
+          "Evidence": {
+            "x": 2104,
+            "y": 218,
+            "typeId": 18,
+            "itemType": 36,
+            "InitialStack": 5,
+            "remainingStack": 4,
+            "Ticks": 15,
+            "Starts": 1,
+            "AnimationPeak": 14,
+            "Attempts": 1,
+            "nativePlacementEvents": 1,
+            "uncertainNativeEffect": false,
+            "consumedCount": 1,
+            "placedByActor": true,
+            "objectPlacement": true,
+            "footprint": {
+              "x": 2104,
+              "y": 218,
+              "width": 2,
+              "height": 1
+            },
+            "fullFootprintVerified": true,
+            "style": 0,
+            "targetPresent": true,
+            "targetChanged": false,
+            "effectStatus": "native_object_placed"
+          },
+          "InputsReleased": true,
+          "EffectVerified": true,
+          "InputsAcquired": true,
+          "ReasonDetail": null
+        },
+        "remainingStack": 4,
+        "nativeClearEvents": 1,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 18
+          }
+        ]
+      },
+      {
+        "type": 185,
+        "offset": 1,
+        "outcome": {
+          "Status": "completed",
+          "Reason": "native_object_placed_and_consumed",
+          "Evidence": {
+            "x": 2104,
+            "y": 218,
+            "typeId": 18,
+            "itemType": 36,
+            "InitialStack": 5,
+            "remainingStack": 4,
+            "Ticks": 15,
+            "Starts": 1,
+            "AnimationPeak": 14,
+            "Attempts": 1,
+            "nativePlacementEvents": 1,
+            "uncertainNativeEffect": false,
+            "consumedCount": 1,
+            "placedByActor": true,
+            "objectPlacement": true,
+            "footprint": {
+              "x": 2104,
+              "y": 218,
+              "width": 2,
+              "height": 1
+            },
+            "fullFootprintVerified": true,
+            "style": 0,
+            "targetPresent": true,
+            "targetChanged": false,
+            "effectStatus": "native_object_placed"
+          },
+          "InputsReleased": true,
+          "EffectVerified": true,
+          "InputsAcquired": true,
+          "ReasonDetail": null
+        },
+        "remainingStack": 4,
+        "nativeClearEvents": 1,
+        "footprint": [
+          {
+            "x": 2104,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 0
+          },
+          {
+            "x": 2105,
+            "y": 218,
+            "type": 18,
+            "hasTile": true,
+            "frameX": 18
+          }
+        ]
+      }
+    ],
+    "mode": "native ItemCheckWrapped/TileObject.CanPlace/TileObject.Place, no graphical clients or model requests; fixtures only initialize world/actor",
+    "profile": ".local\\placement-native-validation-c668da7aa66e4006be2e017d7e982fc8"
+  },
+  "offline": {
+    "sceneChecks": 2016,
+    "packageIlChecks": 76,
+    "placementIlChecks": 119,
+    "workbenchPythonPassed": 4,
+    "singleTilePythonPassed": 4,
+    "singleTilePythonFailed": 1,
+    "knownFailure": "Unchanged consumedCount=1 prompt literal assertion reproduced on clean HEAD Python snapshot; unrelated place_tile semantics were not changed.",
+    "preservedFailure": "First native matrix passed new occupancy probes but stopped at old SmallPiles must-block assertion; updated to native replacement cancellation semantics.",
+    "commandCorrection": "Initial Python workbench test command used one nonexistent method name; other three ran successfully, correct capability method subsequently passed."
+  },
+  "limitations": [
+    "graphical replay at original play3 sites",
+    "live multiplayer competition",
+    "Mod decorations",
+    "other furniture types",
+    "not deployed to active profile"
+  ],
+  "rawArchive": {
+    "path": "raw-evidence.zip",
+    "bytes": 614337,
+    "sha256": "e172395c7b7636702306bca43330bc6d112db0c08a91f85452be50b281c4c985"
+  },
+  "entries": [
+    {
+      "path": "first-native-failed/placement-native-result.json",
+      "bytes": 82674,
+      "sha256": "885824631dce9b1ed943ec508179a28b3a70e872e99dc856651633c51f54f99b"
+    },
+    {
+      "path": "first-native-failed/stdout.log",
+      "bytes": 4244,
+      "sha256": "2f973090f40087e987a82f6c5b47d36e8c495d6c432021e741740b5242648289"
+    },
+    {
+      "path": "first-native-failed/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "native-before-validation-text/placement-native-result.json",
+      "bytes": 143070,
+      "sha256": "f1aee2084b6502f4ba4d8ecaf2b66b280abc40253544ad37ca0094d4a0073880"
+    },
+    {
+      "path": "native-before-validation-text/stdout.log",
+      "bytes": 4456,
+      "sha256": "02f48ed15c2e105084c668ac1d7edf59cfeb556e290389161401816b3620c1b9"
+    },
+    {
+      "path": "native-before-validation-text/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "final-native/placement-native-result.json",
+      "bytes": 143901,
+      "sha256": "bb28ec552a56f25be77e6d26fce7ad569f809b941a61ff4de14396ce377f91fd"
+    },
+    {
+      "path": "final-native/stdout.log",
+      "bytes": 4481,
+      "sha256": "e844497ff25ec94aded99915a8c444488ed47681a5eb910c0bab7987d942123d"
+    },
+    {
+      "path": "final-native/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "engine-il/Player-PlaceThing_Tiles.il.txt",
+      "bytes": 10918,
+      "sha256": "4da025cab034c83efde30835f35499d8219533e191f325e0b213b288e2a1ae68"
+    },
+    {
+      "path": "engine-il/Player-PlaceThing_Tiles_PlaceIt.il.txt",
+      "bytes": 8715,
+      "sha256": "95145e83e7fd716721fe689a7b1f53732602276ec9ba46ba73e8af8d97326a8a"
+    },
+    {
+      "path": "engine-il/TileObject-CanPlace.il.txt",
+      "bytes": 74707,
+      "sha256": "4b837a48d4f6ef4b219dc05413447e05b3b31d0254c4e52988086c484fcee78d"
+    },
+    {
+      "path": "engine-il/TileObject-Place.il.txt",
+      "bytes": 18567,
+      "sha256": "9d59fdb05d3e5dd1338de3ee2e38fc0dd1ed9b1d304cfec4a99245f164274c5d"
+    },
+    {
+      "path": "offline/tool-tests.log",
+      "bytes": 3959,
+      "sha256": "a0df9b48c73ec9fd16a92e5afc8a2836d4941e4e5cdcc6a56b4f95aa9b05599e"
+    },
+    {
+      "path": "offline/scene-tests.log",
+      "bytes": 102,
+      "sha256": "38b00f3679f2fe29f25a7ff28c2d04fcbf980d322be43aeac79c8aec315454c2"
+    },
+    {
+      "path": "offline/ipc-final-tests.log",
+      "bytes": 35909,
+      "sha256": "bdd3144739323861887e111763d6390987dfa776ca0085b62fa55026bc0c3cb6"
+    },
+    {
+      "path": "offline/python-tests.log",
+      "bytes": 21088,
+      "sha256": "8f80689943d63d5e9c84418d7ee6aee395d70e1a7b8c04ee4d4b900432b9c1e4"
+    },
+    {
+      "path": "offline/workbench-python-tests.log",
+      "bytes": 3028,
+      "sha256": "f458ce4b9288437e29393c3a86eb57e31444d8ea76a721ccd48bb3cb3119ed9b"
+    },
+    {
+      "path": "offline/workbench-capability-test.log",
+      "bytes": 960,
+      "sha256": "ed5c1be3979e832bd250edb1cc95df32e6fb162dd65df75cdf9e673e7330f01f"
+    },
+    {
+      "path": "offline/baseline-python-test.log",
+      "bytes": 19371,
+      "sha256": "38177ce31525889b58fd570280f73e64d8a3e904676b9165e2e70cc303aed683"
+    },
+    {
+      "path": "user-play3/place2.json",
+      "bytes": 11455,
+      "sha256": "145a48537ac80e98c30a5a8b34a40be16adab5f8228ba0f953ee2468c9aa08e8"
+    },
+    {
+      "path": "user-play3/place3.json",
+      "bytes": 12275,
+      "sha256": "eec9b63c1a60c7f6d2880cf35f0de726676ea371ddf79c6a8d2b628e10e56bfd"
+    },
+    {
+      "path": "tested-source/CompanionBridge/SceneGeometry.cs",
+      "bytes": 17641,
+      "sha256": "23ba38fd995213997d228ac3f68ea7bed625c80f03f930d38138861b8e86099e"
+    },
+    {
+      "path": "tested-source/CompanionBridge/ServerPlayerRuntime/ActorObjectPlacement.cs",
+      "bytes": 8879,
+      "sha256": "058489b0c00d5a0a1720d7bd44d08490d07db7b60b3b23d5caee6fb90ca696ed"
+    },
+    {
+      "path": "tested-source/CompanionBridge/ServerPlayerRuntime/ActorPlacement.cs",
+      "bytes": 8606,
+      "sha256": "e09e3189a608fec65a2ce1cd15edf20c35d36e628f68e29d338d79551f3c8a69"
+    },
+    {
+      "path": "tested-source/CompanionBridge/ServerPlayerRuntime/ObjectPlacementSelfTest.cs",
+      "bytes": 28074,
+      "sha256": "da7e5e550f56a555c0c695ef1fc8a9bf59f0fde7898313726311ecadda2b494c"
+    },
+    {
+      "path": "tested-source/CompanionBridge/ServerIpc/ServerSceneReader.cs",
+      "bytes": 12833,
+      "sha256": "9bd0660eeacd9ecc874512f9e364b4678a2e3e39f1250f32854c3aed48c97cfc"
+    },
+    {
+      "path": "tested-source/tests/SceneGeometryTests.cs",
+      "bytes": 25058,
+      "sha256": "acfdf9d3b7d44b948635d6147dc7f98892fb72a87d52895fa1e17722da8484e5"
+    },
+    {
+      "path": "final-native/CompanionBridge.tmod",
+      "bytes": 521372,
+      "sha256": "e215ecb715bff66abfa31240b1bab3290baa8e3e2e318a344a7b3565f0e439b8"
+    }
+  ]
+}

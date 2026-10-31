@@ -63,6 +63,46 @@ internal static class ObjectPlacementSelfTest
                     reserved=ProbeSession.Reservation.IsReserved(p.whoAmI),inputsReleased=Released()});
                 File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",checks,evidence,processTerminationRequired=true,nativeObjectException=true}));return;
             }
+            // Probe the loaded native occupancy decision rather than assuming
+            // every non-solid decoration is removable (in particular torches).
+            foreach(int type in new[]{TileID.Plants2,TileID.Plants,TileID.Torches,TileID.Stone,TileID.Trees,TileID.WorkBenches,TileID.SmallPiles})
+            foreach(int offset in type==TileID.Plants2?new[]{0,1,2}:new[]{0,1})
+            {
+                Setup();
+                for(int dx=-2;dx<=3;dx++)Main.tile[x+dx,floor].TileType=TileID.Grass;
+                int target=x+(offset==2?0:offset);
+                if(type==TileID.Trees)
+                {
+                    for(int xx=target-2;xx<=target+2;xx++)for(int yy=floor-38;yy<floor;yy++)Main.tile[xx,yy].ClearEverything();
+                    Check(WorldGen.GrowTree(target,floor),"native tree occupancy fixture growth");
+                }
+                else if(type==TileID.WorkBenches)
+                {
+                    Check(TileObject.CanPlace(x,y,TileID.WorkBenches,0,1,out var data)&&TileObject.Place(data),"native existing bench fixture");
+                }
+                else WorldGen.PlaceTile(target,y,type,mute:true,forced:true);
+                if(offset==2)WorldGen.PlaceTile(x+1,y,type,mute:true,forced:true);
+                Check(Main.tile[target,y].HasTile&&Main.tile[target,y].TileType==type,"native occupancy fixture type "+type);
+                bool native=TileObject.CanPlace(x,y,TileID.WorkBenches,0,1,out _);
+                string preflight=ActorObjectPlacement.Preflight(p,x,y);
+                var observed=JsonSerializer.SerializeToElement(ServerSceneReader.Read(p,id,JsonSerializer.SerializeToElement(new{layers=new[]{"objectPlacementCandidates"},maxPlacements=32})),new JsonSerializerOptions{PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
+                bool candidateAvailable=observed.GetProperty("objectPlacementCandidates").GetProperty("items").EnumerateArray()
+                    .Any(e=>e.GetProperty("target").GetProperty("x").GetInt32()==x&&e.GetProperty("target").GetProperty("y").GetInt32()==y);
+                evidence.Add(new{occupancyProbe=new{type,offset,native,preflight,candidate=candidateAvailable,cut=Main.tileCut[type],breakable=TileID.Sets.BreakableWhenPlacing[type],solid=Main.tileSolid[type]},scene=observed});
+                Check(candidateAvailable==native&&(preflight==null)==native,"candidate/executor disagree with native occupancy type "+type+" offset "+offset);
+                if(type==TileID.Plants2)Check(native,"Plants2 must be replaceable by native bench placement");
+                var outcome=native?Finish(Start()):Refused();
+                evidence.Add(new{type,offset,outcome,remainingStack=p.inventory[4].stack,nativeClearEvents=native?ActorItemUse.Current.Placement.NativeClearEvents:0,
+                    footprint=Enumerable.Range(0,2).Select(dx=>new{x=x+dx,y,type=Main.tile[x+dx,y].TileType,hasTile=Main.tile[x+dx,y].HasTile,frameX=Main.tile[x+dx,y].TileFrameX}).ToArray()});
+                if(native)Check(outcome.Status=="completed"&&outcome.EffectVerified&&outcome.InputsReleased&&Released()
+                    &&ActorObjectPlacement.Present(ActorItemUse.Current.Placement)&&ActorItemUse.Current.Placement.ConsumedCount==1
+                    &&p.inventory[4].stack==4&&!ActorItemUse.Current.Placement.ExternalChange,"native replaceable footprint place/consume/release type "+type);
+                else Check(outcome.Status=="failed"&&outcome.Reason=="object_footprint_occupied"&&p.inventory[4].stack==5&&!ActorItemUse.Running,"native blocking footprint must remain refused type "+type);
+            }
+            // A clear outside the owned TileObject.Place scope is still external.
+            Setup();Main.tile[x,floor].TileType=TileID.Grass;WorldGen.PlaceTile(x,y,TileID.Plants2,mute:true,forced:true);
+            var changing=Start();WorldGen.KillTile(x,y);Frame();var external=executor.Poll(id,changing);evidence.Add(external);
+            Check(external.Status=="unknown"&&Released()&&p.inventory[4].stack==5,"external plant destruction must not be adopted as native placement");
             // Real native pick destruction followed by a fresh observation and normal placement.
             // Only fixture setup writes tiles; the action must use ItemCheck/PickTile/KillTile.
             foreach(int style in new[]{0,1})
@@ -72,8 +112,8 @@ internal static class ObjectPlacementSelfTest
                 Check(Main.tile[x,y].HasTile&&Main.tile[x,y].TileType==TileID.SmallPiles,"native SmallPiles fixture placement");
                 evidence.Add(new{decorationStyle=style,frameX=Main.tile[x,y].TileFrameX,frameY=Main.tile[x,y].TileFrameY,
                     solid=Main.tileSolid[TileID.SmallPiles],cut=Main.tileCut[TileID.SmallPiles],noFail=Main.tileNoFail[TileID.SmallPiles],canKill=WorldGen.CanKillTile(x,y)});
-                var decorationBlocked=Refused();
-                Check(decorationBlocked.Status=="failed"&&p.inventory[4].stack==5,"decoration must still block placement");
+                var decorationPlacement=Start();var decorationCancelled=executor.Cancel(id,decorationPlacement);evidence.Add(decorationCancelled);
+                Check(decorationCancelled.Status=="cancelled"&&Released()&&p.inventory[4].stack==5&&Main.tile[x,y].HasTile,"pre-input cancel of replaceable decoration must preserve tile");
                 p.inventory[3].SetDefaults(ItemID.CopperPickaxe);ActorItemUse.Select(p,id.World,id.Generation,3);
                 var cancelledMining=executor.Start(id,"mine_tile",JsonSerializer.SerializeToElement(new{x,y}),Guid.NewGuid().ToString("N"));
                 var stoppedMining=executor.Cancel(id,cancelledMining);evidence.Add(stoppedMining);

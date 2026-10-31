@@ -12,6 +12,8 @@ namespace VirtualPlayerEngineProbe;
 // placement call graph. These checks deliberately accept a subset of native sites.
 internal static class ActorObjectPlacement
 {
+    internal static bool Blocks(Tile t)=>CompanionBridge.WorkbenchFootprint.Blocks(t.HasTile,t.TileType,
+        t.TileType<TileID.Count&&Main.tileCut[t.TileType],t.TileType<TileID.Count&&TileID.Sets.BreakableWhenPlacing[t.TileType]);
     internal sealed record Shape(int Width,int Height,int OriginX,int OriginY,int SupportStart,int SupportCount,int Stride);
     internal static Shape Definition()
     {
@@ -43,7 +45,7 @@ internal static class ActorObjectPlacement
             for(int dx=0;dx<d.Width;dx++)for(int dy=0;dy<d.Height;dy++)
             {
                 var t=Main.tile[left+dx,top+dy];
-                if(t.HasTile)return $"occupiedTile=({left+dx},{top+dy}); tileType={t.TileType}; footprintTiles=({left},{top},{d.Width},{d.Height}); anchorTile=({x},{y})";
+                if(Blocks(t))return $"occupiedTile=({left+dx},{top+dy}); tileType={t.TileType}; footprintTiles=({left},{top},{d.Width},{d.Height}); anchorTile=({x},{y})";
             }
         if(reason=="object_player_collision")
         {
@@ -62,7 +64,7 @@ internal static class ActorObjectPlacement
         for(int dx=0;dx<d.Width;dx++)for(int dy=0;dy<d.Height;dy++)
         {
             var t=Main.tile[left+dx,top+dy];
-            if(t.HasTile)return "object_footprint_occupied";
+            if(Blocks(t))return "object_footprint_occupied";
             if(t.LiquidAmount>0)return "object_footprint_liquid";
         }
         for(int dx=d.SupportStart;dx<d.SupportStart+d.SupportCount;dx++)
@@ -96,13 +98,16 @@ internal static class ActorObjectPlacement
             &&EmptyError(ActorItemUse.Current.Actor,c.X,c.Y,c.Shape)==null;
         bool result;
         if(own)c.NativeEvents++;
+        if(own)c.NativeObjectPlacement=true;
         try{result=orig(data);}
         catch{if(own)c.UncertainNativeEffect=true;throw;}
+        finally{if(own)c.NativeObjectPlacement=false;}
         if(c?.Object==true)
         {
             if(own&&result&&Present(c)){c.Placed=true;NetMessage.SendTileSquare(-1,data.xCoord,data.yCoord,c.Shape.Width,c.Shape.Height);}
             else if(result||Present(c))c.ExternalChange=true;
             if(own&&(result!=Present(c)||!Present(c)&&EmptyError(ActorItemUse.Current.Actor,c.X,c.Y,c.Shape)!=null))c.UncertainNativeEffect=true;
+            if(own&&c.NativeClearEvents>0&&!c.Placed)c.UncertainNativeEffect=true;
         }
         return result;
     }

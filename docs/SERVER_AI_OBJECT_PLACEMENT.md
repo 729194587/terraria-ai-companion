@@ -1,8 +1,30 @@
 # 原版工作台多格放置 MVP
 
+## 0.1.68：原生可清除占地（2026-10-31）
+
+`20261031-play3/receipts/place2.json`、`place3.json` 记录多个站点被 `object_footprint_occupied` 拒绝，详情明确为 Tile 73（Plants2）。原 `EmptyError` 与场景候选都以 `HasTile` 判阻挡，将可原生清除植物误排除；不应以“非实心”作为反向的全放行规则。
+
+依据本机固定指纹 tModLoader 的 `TileObject.CanPlace(checkStay=false)` 占地分支，统一使用 `WorkbenchFootprint.Blocks`：有 Tile 且不符合 `(tileCut[type] && type != 484 && type != 654) || TileID.Sets.BreakableWhenPlacing[type]` 时阻挡。读取的是加载后的原版类型表，Mod 类型保持保守拒绝；实心与否不参与这个分支。原生类型例外按固定引擎保留，不扩展引擎版本。候选的内部 `SceneCell` 仅在请求工作台候选层时携带这两个原生事实，执行器用同一函数直接读取 Tile；不向模型追加逐格属性。未知、干燥、80px、完整两格、玩家排除及双格水平实心支撑要求不变。
+
+清除只发生于原生 `TileObject.Place`，没有预先 `KillTile`、直接改 Tile 或额外 mine_tile 策略。监听器仅在本动作身份/归属仍有效、当前确在拥有的原生物体放置调用内、目标属于工作台占地而非支撑、且符合相同可清除分类时，将原生 KillTile 归于本动作。其他时间的清除、真正阻挡物或支撑改动仍是外部变更。清除后未确认完整放置、原生异常、消费未确认等不确定性继续保持 unknown；全占地帧、恰好一件消费、输入释放和取消机制沿用原实现。
+
+隔离原生矩阵实际结果（复制世界、原生生长/放置夹具、真实 ItemCheckWrapped；非图形多人验收）：
+
+| 占地 | 原生 CanPlace | 候选/执行器 | 结果 |
+| --- | --- | --- | --- |
+| Plants2（73），左格/右格/两格 | 允许 | 候选存在，预检通过 | 工作台两格与帧完整，恰好消耗 1 件，确认释放 |
+| Plants（3），左/右格 | 允许 | 同上 | 同上 |
+| SmallPiles（185），左/右格 | 允许（BreakableWhenPlacing=true） | 同上 | 同上 |
+| Torches（4），左/右格 | 拒绝（两个原生标志均 false） | 无该候选、预检拒绝 | 未启动放置、零消费；未假设所有光源均可覆盖 |
+| 石块（1）、原生树干（5）、已有工作台（18） | 拒绝 | 同上 | 继续正确阻挡 |
+
+矩阵直接询问加载后原生 CanPlace，再比较候选和执行预检，并执行所有允许的站点；并非仅测试自行定义的 predicate。新断言还证明原生植物清除不会误标外部变更，动作外的植物清除仍终止为 unknown。既有取消、期限、死亡/禁用、部分破坏、消费歧义、制作站邻接和原生合成检查保留；总计 114 项通过。旧 SmallPiles“必须阻挡”测试已改为验证原生可覆盖站点的输入前取消保持原物体，原有独立挖掘测试仍保留。
+
+定向验证：SceneOnly 2,016 项、原生工具/放置 IL（放置 119 项）、IPC/原生适配器与正式包 76 项 IL 通过；4 项工作台 Python 回归通过。另跑普通单格放置文件 5 项中 4 项通过，1 项既有提示词断言要求字面 `consumedCount=1`，在未修改 HEAD 的独立副本同样失败，未改无关 place_tile 实现/测试来消除该失败。构建零错误/警告，未跑全量测试。首轮原生矩阵因旧 SmallPiles 断言停止，已保留原始失败与最终成功记录：[证据及哈希](evidence/workbench-occupancy/manifest.json)。未部署现用 profile；原 `play3` 位置的图形复测、真人竞争与 Mod 装饰物不在本轮实测范围。
+
 ## 支持范围与接口
 
-CompanionBridge 0.1.62，独立 Server AI。握手同时提供 `server_ai_actions_v1` 与
+CompanionBridge 0.1.68，独立 Server AI。握手同时提供 `server_ai_actions_v1` 与
 `server_ai_place_object_workbench_v1` 才开放 `place_object({x,y})`。只允许当前快捷栏选中的
 原版 `ItemID.WorkBench`（36），`TileID.WorkBenches`（18），默认样式 0；不自动选栏、走近、重试。
 `place_tile` 仍只允许原有泥土、石块、木材单格方块。旧服务器和客户端不宣称支持新操作。
@@ -12,7 +34,7 @@ CompanionBridge 0.1.62，独立 Server AI。握手同时提供 `server_ai_action
 下方支撑为 `(x,y+1)..(x+1,y+1)`。运行时读取注册定义并校验已验证形状、坐标帧尺寸、锚点和
 CustomPlace；定义不匹配即拒绝，不推广为任意家具 API。
 
-保守预检：完整占地及支撑在世界边界内，锚点中心距 AI 中心不超过 80px，占地空且无液体，
+保守预检：完整占地及支撑在世界边界内，锚点中心距 AI 中心不超过 80px，占地为空或符合原生可清除规则且无液体，
 完整占地排除 AI 与其他活跃存活非幽灵玩家，支撑是无液体、未驱动、无斜坡/半砖的实心非平台。
 原生支持的部分平台/斜面站点不在此 MVP 内。身份、世界、代次、对象、slot、动作互斥和快捷栏检查
 复用现有执行链。所有 Player/Tile 操作只在游戏线程进行。
@@ -68,7 +90,7 @@ schemaVersion=2 将逐项 validation 提升至候选集合，保留全部放置�
 增加独立 `objectPlacementCandidates`，沿用 `maxPlacements` 上限和每集合的 matched/returned/
 truncated/omitted 字段；保留原 `placementCandidates`。每项包含可直接传入新动作的 `target`、
 完整 `footprint`、`support`、锚点 `distancePixels`、物品内容键及默认样式。
-占地和支撑必须全部位于本次 45×29 观察范围、碰撞知识已知，且通过干燥/空格/支撑/玩家排除。
+占地和支撑必须全部位于本次 45×29 观察范围、碰撞知识已知，且通过干燥/原生占地分类/支撑/玩家排除。
 未知、范围边缘未覆盖、液体或过远位置不产生候选；没有候选不等于全局无可放位置。
 `objectPlacementMaterial` 说明所选物品与注册定义是否支持；世界范围/时间/未知数量沿用原观察封装。
 候选只提供几何预筛选，不保证原生权限、放置成功、路径或可达性。

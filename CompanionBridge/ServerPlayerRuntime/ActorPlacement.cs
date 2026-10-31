@@ -16,8 +16,8 @@ internal static class ActorPlacement
 {
     internal sealed class Context
     {
-        internal int X,Y,TileType,Prefix,Style,Attempts,ConsumedCount,NativeEvents;
-        internal bool Placed,ExternalChange,Object,UncertainNativeEffect;
+        internal int X,Y,TileType,Prefix,Style,Attempts,ConsumedCount,NativeEvents,NativeClearEvents;
+        internal bool Placed,ExternalChange,Object,UncertainNativeEffect,NativeObjectPlacement;
         internal ActorObjectPlacement.Shape Shape;
         internal string SupportSnapshot;
     }
@@ -104,8 +104,12 @@ internal static class ActorPlacement
     private static void Killed(On_WorldGen.orig_KillTile orig,int x,int y,bool fail,bool effectOnly,bool noItem)
     {
         var c=Watching(x,y);
-        if(c!=null&&!fail&&!effectOnly&&Main.tile[x,y].HasTile)c.ExternalChange=true;
+        bool occupied=c!=null&&Main.tile[x,y].HasTile;
+        bool ownClear=c?.Object==true&&c.NativeObjectPlacement&&Own(c)&&!c.Placed
+            &&y<c.Y-c.Shape.OriginY+c.Shape.Height&&!ActorObjectPlacement.Blocks(Main.tile[x,y]);
+        if(c!=null&&!fail&&!effectOnly&&occupied&&!ownClear)c.ExternalChange=true;
         orig(x,y,fail,effectOnly,noItem);
+        if(ownClear&&!fail&&!effectOnly&&occupied&&!Main.tile[x,y].HasTile)c.NativeClearEvents++;
     }
     internal static bool Own(Context c)=>ReferenceEquals(scope,ActorItemUse.Current?.Actor)&&scope!=null&&Allowed(scope)
         &&ReferenceEquals(c,ActorItemUse.Current.Placement);

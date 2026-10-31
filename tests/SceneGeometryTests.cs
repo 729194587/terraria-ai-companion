@@ -92,8 +92,32 @@ public static class SceneGeometryTests
         Check(SceneGeometry.Limit(objects,1) is {Truncated:true,ReturnedCount:1} limited&&limited.OmittedCount==objects.Length-1,"collection truncation cannot masquerade as absence");
         ObjectPlacementDiagnostics();
         LightObjects();
+        WorkbenchOccupancy();
         MapIsNotAnInvertibleGeometryEncoding();
         Console.WriteLine($"Scene geometry: {checks} checks, shared support/region rules; synthetic grid, not native/LLM acceptance.");
+    }
+    private static void WorkbenchOccupancy()
+    {
+        foreach(int type in new[]{1,3,4,5,18,73,185,484,654})
+        foreach(bool cut in new[]{false,true})foreach(bool breakable in new[]{false,true})
+        {
+            var g=Grid();
+            g[7,13]=new(new("read",true,type),'.',PlacementCuttable:cut,BreakableWhenPlacing:breakable);
+            var actor=new WorldRect(9*16,14*16-42,20,42);
+            bool allowed=SceneGeometry.ObjectPlacements(g,0,0,actor,new[]{actor},2,1,0,0,0,2)
+                .Any(b=>b.Footprint.X==7&&b.Footprint.Y==13);
+            bool expected=(cut&&type!=484&&type!=654)||breakable;
+            Check(allowed==expected&&WorkbenchFootprint.Blocks(true,type,cut,breakable)==!expected,"shared native cut/breakable occupancy rule: "+type);
+            Check(!WorkbenchFootprint.Blocks(false,type,cut,breakable),"inactive cell cannot block workbench occupancy");
+        }
+        var cells=Grid();var body=new WorldRect(9*16,14*16-42,20,42);
+        foreach(int dx in new[]{0,1})
+        {
+            cells[7+dx,13]=new(new("read",true,73),'.',PlacementCuttable:true);
+            Check(SceneGeometry.ObjectPlacements(cells,0,0,body,new[]{body},2,1,0,0,0,2).Any(b=>b.Footprint==new TileBounds(7,13,2,1)),"cuttable plants in either/both cells retain full candidate footprint");
+        }
+        cells[8,13]=cells[8,13] with{Navigation='?'};
+        Check(!SceneGeometry.ObjectPlacements(cells,0,0,body,new[]{body},2,1,0,0,0,2).Any(b=>b.Footprint.X==7),"unknown replacement cell still refuses candidate");
     }
     private static void LightObjects()
     {
