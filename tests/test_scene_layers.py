@@ -58,6 +58,8 @@ class LayerRuntime(unittest.IsolatedAsyncioTestCase):
         for term in ('includedLayers','objectCounts','placementMaterial','objectPlacementMaterial','未请求字段直接省略'):
             self.assertIn(term,instructions)
         self.assertIn(atomic.SCENE_TEXT_CONTRACT,instructions)
+        for term in ('t=火把光源物体','light_source','真实Tile坐标','先返回非光源','不保证点亮或照明','frameX/frameY/actuated'):
+            self.assertIn(term,instructions)
         for term in ('schemaVersion=2','validation提升到集合级','A=虚化Tile','a/b=斜平台','19种原版矿','图符不能恢复'):
             self.assertIn(term,instructions)
         self.assertEqual(['execute_lua'],[t['function']['name'] for t in tools])

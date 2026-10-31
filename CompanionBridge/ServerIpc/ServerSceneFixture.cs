@@ -37,7 +37,19 @@ internal static class ServerSceneFixture
         int chest=WorldGen.PlaceChest(left-11,floor-1);
         if(chest<0)throw new InvalidOperationException("Scene native chest fixture failed");
         p.inventory[4].SetDefaults(ItemID.Wood);p.inventory[4].stack=8;
+        var torches=new System.Collections.Generic.List<object>();
+        // Dense lights opt in separately so existing placement fixtures stay empty.
+        if(Program.LaunchParameters.ContainsKey("-companionscenelighttest"))for(int dx=-3;dx<=20;dx++)
+        {
+            int x=left+dx,y=floor-1;
+            if(Main.tile[x,y].HasTile)continue;
+            WorldGen.PlaceTile(x,y,TileID.Torches,mute:true);
+            if(!Main.tile[x,y].HasTile||Main.tile[x,y].TileType!=TileID.Torches)
+                throw new InvalidOperationException("Scene native torch fixture failed");
+            torches.Add(new{x,y});
+        }
         File.WriteAllText(Path.Combine(Main.SavePath,"scene-fixture.json"),JsonSerializer.Serialize(new{left,floor,chest,
+            torches,
             pools=new[]{new{x=left-17,y=floor+4,type="water"},new{x=left-14,y=floor+4,type="lava"},new{x=left-11,y=floor+4,type="honey"},new{x=left-8,y=floor+4,type="shimmer"}},
             mode="native grown tree/placed furniture in explicitly isolated constructed scene; not natural world proof"}));
     }

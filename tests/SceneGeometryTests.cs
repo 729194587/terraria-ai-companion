@@ -91,8 +91,37 @@ public static class SceneGeometryTests
         Check(SceneGeometry.Limit(benches,0).Truncated,"object placement truncation remains explicit");
         Check(SceneGeometry.Limit(objects,1) is {Truncated:true,ReturnedCount:1} limited&&limited.OmittedCount==objects.Length-1,"collection truncation cannot masquerade as absence");
         ObjectPlacementDiagnostics();
+        LightObjects();
         MapIsNotAnInvertibleGeometryEncoding();
         Console.WriteLine($"Scene geometry: {checks} checks, shared support/region rules; synthetic grid, not native/LLM acceptance.");
+    }
+    private static void LightObjects()
+    {
+        var cells=Grid();var before=SceneGeometry.GeometryRows(cells);
+        var landings=JsonSerializer.Serialize(SceneGeometry.Landings(cells,50,60,900,1184));
+        for(int x=0;x<20;x++)cells[x,13]=new(new("read",true,4,FrameX:x==0?66:0,FrameY:18,Actuated:x==1),'.',"light_source","Terraria/Torches");
+        // Actuated geometry is an existing independent fact; compare all others.
+        var rows=SceneGeometry.GeometryRows(cells);
+        Check(rows[13][1]=='A'&&Enumerable.Range(0,20).Where(x=>x!=1).All(x=>rows[13][x]==before[13][x]),"torch semantics retain independent collision/actuation geometry");
+        cells[1,13]=cells[1,13] with{Facts=cells[1,13].Facts with{Actuated=false}};
+        Check(SceneGeometry.GeometryRows(cells).SequenceEqual(before)&&JsonSerializer.Serialize(SceneGeometry.Landings(cells,50,60,900,1184))==landings,"nonblocking torch classification preserves multi-level landing geometry");
+        var lights=SceneGeometry.Objects(cells,50,60);
+        Check(lights.Length==20&&lights.All(o=>o.Complete&&o.ObservedTileCount==1&&o.ObservedBounds.Width==1&&o.ContentKey=="Terraria/Torches"),"adjacent torches remain individually located complete single-tile objects");
+        var first=JsonSerializer.SerializeToElement(lights[0].Details);
+        Check(first.GetProperty("anchorTile").GetProperty("x").GetInt32()==50&&first.GetProperty("anchorTile").GetProperty("y").GetInt32()==73&&first.GetProperty("frameX").GetInt32()==66&&first.GetProperty("frameY").GetInt32()==18,"real tile coordinates and raw disabled/style frames survive grouping");
+        var important=new[]{"drop","npc","ore_component","tree_component","chest","door","workbench","player"}
+            .Select((kind,i)=>new SceneObject("e"+i,kind,1,"Terraria/test",new(100,100,1,1),1,false)).ToArray();
+        var all=lights.Concat(important).ToArray();
+        var selected=SceneGeometry.LimitObjects(all,10,o=>o.Kind=="light_source"?o.ObservedBounds.X:1000);
+        Check(selected.Items.Take(8).Select(o=>o.Kind).OrderBy(k=>k).SequenceEqual(important.Select(o=>o.Kind).OrderBy(k=>k)),"nearby repeated lights cannot displace drops NPCs resources or other previously exposed objects");
+        Check(selected is{MatchedCount:28,ReturnedCount:10,Truncated:true,OmittedCount:18}&&selected.Items.Skip(8).Select(o=>o.ObservedBounds.X).SequenceEqual(new[]{50,51}),"lights remain distance ordered with exact collection counts");
+        Check(SceneGeometry.LimitObjects(all,1,_=>0).Items[0].Kind!="light_source","one-object cap preserves preexisting object priority");
+        var map=SceneGeometry.MapRows(cells,SceneGeometry.GeometryRows(cells),19,0,Array.Empty<(int,int,char)>());
+        Check(map[13].All(ch=>ch=='t'),"uncapped map exposes every torch independently of object list truncation");
+        cells[0,13]=cells[0,13] with{Sources=new[]{"lava"}};
+        cells[1,13]=cells[1,13] with{Navigation='?'};
+        map=SceneGeometry.MapRows(cells,SceneGeometry.GeometryRows(cells),19,0,Array.Empty<(int,int,char)>());
+        Check(map[13][0]=='L'&&map[13][1]=='?',"hazards and unknown retain precedence over torch map glyphs");
     }
     private static void MapIsNotAnInvertibleGeometryEncoding()
     {

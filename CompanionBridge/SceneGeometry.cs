@@ -50,6 +50,10 @@ internal static class SceneGeometry
     {
         var all=items.ToArray();return new(all.Take(cap).ToArray(),all.Length,Math.Min(cap,all.Length),all.Length>cap,Math.Max(0,all.Length-cap));
     }
+    // Decorative light density cannot displace any previously exposed kind.
+    // Preserve distance ordering within both tiers and count all observations.
+    internal static SceneList<SceneObject> LimitObjects(IEnumerable<SceneObject> items,int cap,Func<SceneObject,float> distance)
+        =>Limit(items.OrderBy(o=>o.Kind=="light_source"?1:0).ThenBy(distance).ThenBy(o=>o.Id,StringComparer.Ordinal),cap);
     internal static SceneCandidateList<SceneLanding> LimitLandings(IEnumerable<SceneLanding> items,int cap)
     {
         var list=Limit(items,cap);return new(list.Items,list.MatchedCount,list.ReturnedCount,list.Truncated,list.OmittedCount,
@@ -67,7 +71,7 @@ internal static class SceneGeometry
         if(c.HasTile&&c.Actuated)return 'A';
         return TerrainClassifier.Classify(true,c.HasTile,c.Actuated,c.Solid,c.SolidTop,c.FrameY,c.HalfBlock,c.Slope,false,false);
     }
-    internal static char Glyph(string kind)=>kind switch{"tree_component"=>'T',"ore_component"=>'O',"chest"=>'C',"door"=>'D',"workbench"=>'W',"drop"=>'$',"npc"=>'N',"player"=>'P',_=>'+'};
+    internal static char Glyph(string kind)=>kind switch{"tree_component"=>'T',"ore_component"=>'O',"chest"=>'C',"door"=>'D',"workbench"=>'W',"light_source"=>'t',"drop"=>'$',"npc"=>'N',"player"=>'P',_=>'+'};
     internal static char Danger(string[] sources)
     {
         if(sources==null||sources.Length==0)return '\0';
@@ -111,15 +115,17 @@ internal static class SceneGeometry
             Add(c,group,complete);
         }
         foreach(var pair in anchors)
-            Add(cells[pair.Value[0].Item1,pair.Value[0].Item2],pair.Value,false);
+            Add(cells[pair.Value[0].Item1,pair.Value[0].Item2],pair.Value,pair.Key.Item1=="light_source");
         return output.ToArray();
         void Add(SceneCell c,List<(int x,int y)> group,bool complete)
         {
             int minX=group.Min(p=>p.x),maxX=group.Max(p=>p.x),minY=group.Min(p=>p.y),maxY=group.Max(p=>p.y);
             var bottom=group.OrderByDescending(p=>p.y).ThenBy(p=>p.x).First();
             output.Add(new("o"+(output.Count+1),c.Kind,c.Facts.TileType,c.ContentKey,new(minX+ox,minY+oy,maxX-minX+1,maxY-minY+1),
-                group.Count,complete,new{anchorTile=new{x=c.AnchorX??minX+ox,y=c.AnchorY??minY+oy},
-                    observedTargetTile=new{x=bottom.x+ox,y=bottom.y+oy}}));
+                group.Count,complete,c.Kind=="light_source"
+                    ?new{anchorTile=new{x=minX+ox,y=minY+oy},frameX=c.Facts.FrameX,frameY=c.Facts.FrameY,actuated=c.Facts.Actuated}
+                    :(object)new{anchorTile=new{x=c.AnchorX??minX+ox,y=c.AnchorY??minY+oy},
+                        observedTargetTile=new{x=bottom.x+ox,y=bottom.y+oy}}));
         }
     }
     internal static SceneLanding[] Landings(SceneCell[,] cells,int ox,int oy,float actorX,float feetY,Func<PhysicsState,bool> nativeSafe=null)

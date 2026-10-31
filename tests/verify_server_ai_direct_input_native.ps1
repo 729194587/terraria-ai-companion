@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader', [string]$WorldPath='.local/virtual-player-control-host/Worlds/test.wld', [string]$PackagePath='.local/agent-build/Mods/CompanionBridge.tmod', [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py')
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader', [string]$WorldPath='.local/virtual-player-control-host/Worlds/test.wld', [string]$PackagePath='.local/agent-build/Mods/CompanionBridge.tmod', [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py', [switch]$Scene)
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
 if($Port -eq $IpcPort -or @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object {$_.Port -in @($Port,$IpcPort)}).Count){throw 'Test ports must be distinct and unused'}
@@ -15,7 +15,9 @@ Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod
 $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dotnet.exe'))
 $info.WorkingDirectory=$TModLoaderPath;$info.UseShellExecute=$false;$info.CreateNoWindow=$true
 $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
-foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest','-companionactionstest','-companiondirectinputtest')){$info.ArgumentList.Add($arg)}
+foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest','-companionactionstest')){$info.ArgumentList.Add($arg)}
+if($Scene){$info.ArgumentList.Add('-companionscenetest');$info.ArgumentList.Add('-companionperceptiontest');$info.ArgumentList.Add('-companionscenelighttest')}
+else{$info.ArgumentList.Add('-companiondirectinputtest')}
 $process=[Diagnostics.Process]::Start($info)
 $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
 try {

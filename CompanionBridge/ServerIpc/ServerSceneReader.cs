@@ -52,6 +52,7 @@ internal static class ServerSceneReader
                 else if(t is TileID.Containers or TileID.Containers2 or TileID.Dressers)kind="chest";
                 else if(t is TileID.OpenDoor or TileID.ClosedDoor)kind="door";
                 else if(t==TileID.WorkBenches)kind="workbench";
+                else if(t==TileID.Torches)kind="light_source";
                 if(layers.Has("objects")&&kind is ("chest" or "door" or "workbench"))
                 {var a=TileObjectData.TopLeft(x+ox,y+oy);ax=a.X;ay=a.Y;}
             }
@@ -108,7 +109,7 @@ internal static class ServerSceneReader
         layers.Add(response,"objects",()=>
         {
             float Distance(SceneObject o)=>Math.Abs((o.ObservedBounds.X+o.ObservedBounds.Width/2f)*16-p.Center.X)+Math.Abs((o.ObservedBounds.Y+o.ObservedBounds.Height/2f)*16-p.Center.Y);
-            var result=SceneGeometry.Limit(objects.OrderBy(Distance).ThenBy(o=>o.Id,StringComparer.Ordinal),objectCap);
+            var result=SceneGeometry.LimitObjects(objects,objectCap,Distance);
             response["objectCounts"]=new{observed=objects.GroupBy(o=>o.Kind).ToDictionary(g=>g.Key,g=>g.Count()),returned=result.Items.GroupBy(o=>o.Kind).ToDictionary(g=>g.Key,g=>g.Count())};
             return result;
         });
