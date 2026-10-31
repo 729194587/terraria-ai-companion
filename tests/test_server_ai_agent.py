@@ -249,11 +249,12 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(['authorize_ai_reply'],[r['cmd'] for r in self.chathost.sent])
     async def test_backend_contract_contains_only_negotiated_apis(self):
         prompt,tools=server_contract(self.ai)
-        definitions=json.loads(prompt.split('当前后端API契约：\n')[1])
+        definitions=json.loads(prompt.split('\nAPI Contract\n',1)[1].split('\nLua Runtime Reference\n',1)[0].split('\n',1)[1])
         self.assertEqual(set(self.ai.supported_atomic_operations),{t['function']['name'] for t in definitions})
         self.assertEqual({},next(t['function']['parameters']['properties'] for t in definitions if t['function']['name']=='use_item'))
         for unsupported in ('observe_exploration','get_observation','navigate_to_landing_region','attack_entity','transfer_inventory_item'):
-            self.assertNotIn(unsupported,prompt);self.assertNotIn(unsupported,tools[0]['function']['description'])
+            self.assertNotIn(unsupported,{t['function']['name'] for t in definitions})
+            self.assertNotIn(unsupported,tools[0]['function']['description'])
 
     async def test_model_failure_replies_on_chat_channel_without_actions(self):
         from unittest.mock import AsyncMock

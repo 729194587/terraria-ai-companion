@@ -113,6 +113,48 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("place_tile", "用选中消耗品在80像素内空格放单格方块，支持当前画面缩放，仍限正常重力；Tile类型与物品消耗共同核验；不支持多格家具或ModItem。10秒上限。", TILE, ["x", "y"]),
     tool("stop_action", "取消当前Agent动作并等待游戏线程输入释放证据，不抢占手动控制。")]
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
+
+# Model-only server projection. Execution validation and the shared TOOLS stay unchanged.
+SERVER_DESCRIPTIONS = {
+    'get_player_state': '读取绑定服务器AI的实际位置/速度/生命及motion；无参数。返回{valid,player,motion,binding,...}，player.position是碰撞框左上角世界像素，velocity为像素/游戏更新，Y向下；motion.grounded与supported独立，supported只是导航profile适用性，不保证支撑/路径安全。',
+    'inspect_inventory': '只读AI真实背包：默认selected，hotbar/item/full/slots模式，slots为0..58内部索引，item按名称/内容键查数量。返回{valid,available,data,...}，data内含inventory/数量及selectedSlot/selectedHotbarKey，实际结构随模式变化；hotbarKey是游戏键1..9,0。不提供可用于修改的inventoryToken；full含装备/Buff观察，不能换装或读取Mod自定义状态。',
+    'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。返回{valid,available,data,...}，data.terrain含originX/originY/rows，data.state含centerWorldPixels，另含bounds/legend/coverage。原点/格为Tile（16像素），不是摄像机或材质图；取具体Tile用已开放的精查接口。supported只是profile适用性。',
+    'use_item': '当前选中快捷栏物品完成一次原生使用周期；参数仅{}，先观察真实持用物品，必要时显式选栏。仅木剑、铜镐、铜斧、苹果，无target瞄准、实体锁定或其他物品适配；3秒上限。completed和cycleVerified只证明使用周期，effectStatus=unconfirmed，不证明命中或击杀。',
+    'mine_tile': '当前真实镐挖普通方块或SmallPiles（Tile185），或铜斧砍原生斧类树干。x/y为新鲜观察或玩家指定的实际Tile格；先检查工具，80像素保守距离叠加原生射程/工具力/保护规则。10秒上限，destroyedByActor且targetAbsent和绑定结束证据才完成；树木连带变化/掉落不证明入包。其他装饰不因此支持；不自动选工具、走近、挖邻格或重试。',
+    'place_tile': '在空Tile格x/y，以当前选中原版泥土块、石块、木材或普通火把进行一次原生放置。检查物品、占地和原生邻接；80像素保守检查加原生条件，10秒上限。仅本AI放置目标、消耗1件、计时结束及释放共同确认completed。不支持家具/平台/沙/ModItem/替换格/墙；不自动选材或走近，取消可能已有方块/消耗。',
+    'scan_entities': '以AI中心扫描世界像素半径radius（1..1600）内真实活跃NPC/掉落/其他玩家，排除AI自身；category与可选typeIds/npcFilter按Schema，先筛选再按距离排序截断。返回data.items及范围/计数/截断；entityRef绑定世界/AI代次/NPC实例，仅是观察标识，不保证视线、可达或可攻击。',
+}
+SERVER_DESCRIPTION_SUFFIXES = {
+    'query_recipes': '返回data.items中的output.count、supported/available、材料/站点/条件、hasOutputSpace和分页。仅普通原版配方/配方组、AI背包0..57、原生邻接站点、水/熔岩/蜂蜜/微光/昼夜六种条件；特殊回调/其他条件/Mod内容/箱子或虚空仓库不支持。resultType需从当前已知注册表取得，空页不证明全局无配方。',
+    'craft_recipe': '仅普通原版配方/配方组、AI背包0..57与已支持制作站/六类环境条件；特殊回调、其他条件、Mod内容、箱子/虚空仓库不支持。前置：新鲜配方token及supported/available、材料/站点/条件/保守空间检查；单次产量见output.count，每批重验。按completedCrafts/producedCount、batches、inventoryVerified核验；可能部分完成，不回滚。制作站是否邻接要重新查询，不能由放置动画推定。',
+    'move_input': '前置为绑定身份/控制权、无互斥动作、正常重力；坐骑/失能状态拒绝，空中/非零起速允许。30秒墙钟看门，不要求导航profile/安全支撑。evidence包含updatesExecuted、startPosition/endPosition/endVelocity（向量X/Y）、healthDelta、grounded/airborne、inputReleased、settled、noProgress；completed只证明输入时长结束，inputReleased不证明停稳或效果确定，观察/同步不确定时仍返回unknown。',
+    'navigate_to_x': '先读取当前位置再计算相对targetX；起步/路径仍需普通导航profile，飞行/坐骑/反重力等不支持。结束evidence含x/y/vx/vy、arrived/grounded/safeSupport/settled；不能把经过X、零预测误差或局部搜索失败当成已落地/全局不可达。',
+    'navigate_to_landing_region': '目标须来自新鲜观察，可将已观察候选target直接传入；不同高度仍受原局部预算、普通profile及64px下降限制。半砖/斜坡/斜平台不是目标落脚面；斜坡可作路径。导航不执行Down平台下穿。成功须targetRegion一致、arrived/grounded/safeSupport/settled=true及known释放；未确认落地保持unknown。',
+    'scan_tiles': '返回data.items及matchedCount/returnedCount/complete/truncated；按Tile格计数，一棵树有多格，不能当树的棵数。附近查询先取得观察bounds；世界像素转Tile用math.floor(px/16)，不猜内容ID。',
+    'inspect_tile': '返回data内的实际格和preflight；x/y为Tile坐标。只读前提不是原生执行许可；移除支撑比较不预测实际落点。',
+    'resolve_content': '返回data中的匹配候选/ID及歧义；内容注册表中存在不等于当前观察范围或世界内存在。',
+    'observe_scene': 'data.map/geometry为45×29行字符串，共用Tile原点originX/Y；tileX=originX+列索引-1，tileY=originY+行索引-1。按任务选layers，未请求字段直接省略，不表示空；旧响应缺includedLayers不证明支持筛选。对应placementMaterial/objectPlacementMaterial需核对真实材料。导航候选candidate.target、单格和工作台候选用途独立；单格placementCandidates不能传给place_object，工作台用objectPlacementCandidates.items。工作台diagnostics中rejectedCount仅计已知占地/支撑的首个互斥拒绝，unknownCount/notCheckedCount不算明确排除；coveredScopeComplete仅指完整占地/支撑在观察范围内的锚点全部已知，缺diagnostics不表示计数为0。集合各自检查coverage/complete/truncated；移动后重观察。',
+    'place_object': '须检查真实快捷栏材料及完整占地；场景工作台候选来自objectPlacementCandidates，不能用单格候选替代。completed须placedByActor/targetPresent、targetChanged=false、真实消耗1件及known释放；取消可能已有副作用，放成后重查制作站邻接。',
+    'select_hotbar_slot': '只改变AI当前快捷栏选择；输入slot是游戏显示键，不是inventory.slot内部索引。completed需下一游戏线程状态及绑定选择结束证据，不等于使用物品。',
+    'query_map': '返回data.rows/originX/Y/cellSize/exploredRatio等；持久地图是AI探索记忆，不是脚本变量存储，不替代当前观察或保证可达。',
+    'wait': '返回{valid,status,elapsedMilliseconds,clock}；占API次数但不占变更动作次数。',
+    'stop_action': '只取消当前拥有的AI动作；已释放输入仍可status=unknown，读取status与结束证据分别判断，不把释放当成功。',
+}
+
+
+def server_tools(supported):
+    """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
+    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported]
+    for definition in definitions:
+        f = definition['function']
+        name = f['name']
+        if name == 'use_item':
+            f['parameters'] = {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}
+        f['description'] = SERVER_DESCRIPTIONS.get(name, f['description'])
+        if name in SERVER_DESCRIPTION_SUFFIXES:
+            f['description'] += SERVER_DESCRIPTION_SUFFIXES[name]
+    return definitions
+
 READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
 READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration'}
 UTILITIES = {'wait'}

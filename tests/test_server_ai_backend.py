@@ -302,7 +302,9 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_perception_contract_is_capability_gated(self):
         from lua_agent import server_contract
-        self.assertNotIn('scan_tiles',server_contract(self.bridge)[0])
+        from server_ai_contract import exposed_operations
+        self.assertNotIn('scan_tiles', exposed_operations(self.bridge))
+        self.assertIn('Not exposed', server_contract(self.bridge)[0])
         self.enable_perception()
         instructions,_=server_contract(self.bridge)
         for name in ('observe_terrain','scan_tiles','scan_entities','inspect_tile','resolve_content'):

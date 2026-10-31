@@ -19,6 +19,35 @@ SCENE_OPERATIONS = frozenset(("observe_scene",))
 PERCEPTION_OPERATIONS = frozenset(("observe_terrain", "scan_tiles", "scan_entities", "inspect_tile", "resolve_content"))
 
 
+def operations_for_capabilities(capabilities):
+    """Pure projection of the bind handshake; also used by model contract generation."""
+    caps = set(capabilities)
+    if 'server_ai_atomic_v1' not in caps:
+        return frozenset()
+    operations = {'select_hotbar_slot', 'stop_action', 'wait'}
+    for capability, names in (
+        ('server_ai_reads_v1', {'get_player_state', 'inspect_inventory'}),
+        ('server_ai_perception_v1', PERCEPTION_OPERATIONS),
+        ('server_ai_map_v1', MAP_READS),
+        ('server_ai_crafting_v1', CRAFT_READS),
+        ('server_ai_scene_v1', SCENE_OPERATIONS),
+    ):
+        if capability in caps:
+            operations.update(names)
+    if 'server_ai_actions_v1' in caps:
+        operations.update(('navigate_to_x', 'use_item', 'mine_tile'))
+        for capability, operation in (
+            ('server_ai_direct_input_v1', 'move_input'),
+            ('server_ai_crafting_v1', 'craft_recipe'),
+            ('server_ai_place_object_workbench_v1', 'place_object'),
+            ('server_ai_place_tile_v1', 'place_tile'),
+            ('landing_region_navigation_v1', 'navigate_to_landing_region'),
+        ):
+            if capability in caps:
+                operations.add(operation)
+    return frozenset(operations)
+
+
 class ServerAiBridge:
     supported_atomic_operations = frozenset(("select_hotbar_slot", "stop_action", "wait"))
     def __init__(self, port=18779, timeout=5):
@@ -45,29 +74,7 @@ class ServerAiBridge:
             self.hello = {"capabilities": (bound.get("data") or {}).get("capabilities", [])}
             if "server_ai_atomic_v1" not in self.hello["capabilities"]:
                 raise BridgeError("Server AI execution capability unavailable")
-            self.supported_atomic_operations = type(self).supported_atomic_operations
-            if "server_ai_reads_v1" in self.hello["capabilities"]:
-                self.supported_atomic_operations |= frozenset(("get_player_state", "inspect_inventory"))
-            if "server_ai_perception_v1" in self.hello["capabilities"]:
-                self.supported_atomic_operations |= PERCEPTION_OPERATIONS
-            if "server_ai_map_v1" in self.hello["capabilities"]:
-                self.supported_atomic_operations |= MAP_READS
-            if "server_ai_crafting_v1" in self.hello["capabilities"]:
-                self.supported_atomic_operations |= CRAFT_READS
-            if "server_ai_scene_v1" in self.hello["capabilities"]:
-                self.supported_atomic_operations |= SCENE_OPERATIONS
-            if "server_ai_actions_v1" in self.hello["capabilities"]:
-                self.supported_atomic_operations |= frozenset(("navigate_to_x", "use_item", "mine_tile"))
-                if "server_ai_direct_input_v1" in self.hello["capabilities"]:
-                    self.supported_atomic_operations |= frozenset(("move_input",))
-                if "server_ai_crafting_v1" in self.hello["capabilities"]:
-                    self.supported_atomic_operations |= frozenset(("craft_recipe",))
-                if "server_ai_place_object_workbench_v1" in self.hello["capabilities"]:
-                    self.supported_atomic_operations |= frozenset(("place_object",))
-                if "server_ai_place_tile_v1" in self.hello["capabilities"]:
-                    self.supported_atomic_operations |= frozenset(("place_tile",))
-                if "landing_region_navigation_v1" in self.hello["capabilities"]:
-                    self.supported_atomic_operations |= frozenset(("navigate_to_landing_region",))
+            self.supported_atomic_operations = operations_for_capabilities(self.hello['capabilities'])
         except BaseException:
             self.close()
             raise

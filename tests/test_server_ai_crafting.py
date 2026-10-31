@@ -68,7 +68,7 @@ class CraftTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(args=args),self.assertRaises(ValueError):await atomic.dispatch(self.bridge,name,args)
         self.assertFalse(any(q['op'] in ('start','query') for q in self.host.sent))
         instructions,_=lua_agent.server_contract(self.bridge)
-        self.assertIn('crafts是执行配方次数',instructions);self.assertIn('不回滚',instructions)
+        self.assertIn('crafts是配方执行次数',instructions);self.assertIn('不回滚',instructions)
 
 
 if __name__=='__main__':unittest.main()

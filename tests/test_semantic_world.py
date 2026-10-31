@@ -104,9 +104,9 @@ class SemanticTests(unittest.TestCase):
         from types import SimpleNamespace
         from lua_agent import server_contract
         names={'observe_terrain','resolve_content','scan_tiles','scan_entities','inspect_tile'}
-        self.assertIn('sense_world',server_contract(SimpleNamespace(supported_atomic_operations=names))[0])
+        self.assertIn('sense_world(options)',server_contract(SimpleNamespace(supported_atomic_operations=names))[0])
         for missing in names:
-            self.assertNotIn('sense_world',server_contract(SimpleNamespace(supported_atomic_operations=names-{missing}))[0])
+            self.assertNotIn('sense_world(options)',server_contract(SimpleNamespace(supported_atomic_operations=names-{missing}))[0])
     def test_tree_only_cost_and_excluded_categories(self):
         self.tile(2,2,5); self.tile(4,2,7)
         r=self.run_helper('{trees=true,ores=false,drops=false}')
