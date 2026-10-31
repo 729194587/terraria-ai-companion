@@ -96,7 +96,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("select_hotbar_slot", "按游戏显示的快捷键选择：1..9为前九格，0为最右第十格。slot不是背包数组索引。核对实际选中按键。", {"slot": {"type": "integer", "minimum": 0, "maximum": 9}}, ["slot"]),
     tool("use_item", "用当前物品完成一次原生使用周期；target可选世界像素{x,y}。completed只证明使用周期，具体效果需感知核验。无target保留原生鼠标，不限制画面缩放；有target支持当前缩放，仍限正常重力及80像素。",
          {"target": {"type": "object", "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1000000}, "y": {"type": "number", "minimum": 0, "maximum": 1000000}}, "required": ["x", "y"], "additionalProperties": False}}),
-    tool("mine_tile", "以选中镐原生挖掘80像素内Tile，支持当前缩放，仍限正常重力；移除才成功，10秒上限。调用前inspect_inventory确认所选为镐，必要时先select_hotbar_slot。不在该原子操作内自动选工具/移动。", TILE, ["x", "y"]),
+    tool("mine_tile", "以选中镐原生挖掘80像素内Tile，支持当前缩放，仍限正常重力；移除才成功，10秒上限。Server AI 另允许纯镐清理 SmallPiles（Tile 185）环境碎堆；其他非实心装饰并不因此获准。放置前用 inspect_tile 核对占地，显式清理成功后重新观察再 place_object；不会自动清理。调用前inspect_inventory确认所选为镐，必要时先select_hotbar_slot。不在该原子操作内自动选工具/移动。", TILE, ["x", "y"]),
     tool("attack_entity", "以当前物品攻击scan_entities给出的NPC entityRef；80像素内，生命下降才成功，失活但无伤害证据失败，其他伤害来源可能存在。10秒上限。",
          {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
     tool("mine_wall", "选中纯锤原生挖背景墙；80像素内，前景必须为空；实际墙消失才成功。多人需同版本服务器确认；10秒上限，可取消。", TILE, ['x', 'y']),

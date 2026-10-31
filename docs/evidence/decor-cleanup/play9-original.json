@@ -1,0 +1,980 @@
+{
+ "status": "failed",
+ "actions": 2,
+ "actionState": "released",
+ "failure": {
+  "kind": "failed",
+  "message": "failed",
+  "call": {
+   "id": 6,
+   "operation": "mine_tile",
+   "line": 24
+  },
+  "line": 24,
+  "retryAllowed": false,
+  "actionState": "released"
+ },
+ "lastAction": {
+  "valid": true,
+  "status": "failed",
+  "reason": "unsupported_target",
+  "reasonDetail": "目标 (2207,216) 类型 185 不符合当前工具范围：纯镐仅普通单格方块，铜斧仅原版斧类树干；家具和虚化目标会拒绝。",
+  "operation": "mine_tile",
+  "actionId": "067cdcda30a144f79cffc61004725e58",
+  "session": "dcaad5d95dbb4e138706997690e9a453",
+  "actionGeneration": 2,
+  "targetRegion": null,
+  "targetTile": null,
+  "targetRecipe": null,
+  "evidence": {
+   "nativeActionId": "45ea8183-1fc2-43eb-a6d6-cd8bc55ee10a",
+   "X": 2207,
+   "Y": 216,
+   "TileType": 185,
+   "ExpectedType": 185,
+   "Ticks": 0,
+   "invalidTarget": null,
+   "Swings": 0,
+   "Strikes": 0,
+   "PeakDamage": 0,
+   "Transforms": 0,
+   "toolKind": "pickaxe",
+   "pick": 35,
+   "axe": 0,
+   "nativeDestroyed": false,
+   "targetAbsent": false,
+   "targetChanged": false,
+   "destroyedByActor": false,
+   "effectStatus": "not_started"
+  },
+  "endEvidence": {
+   "phase": "ServerAI_game_thread_inputs_released",
+   "gameUpdate": 87783,
+   "worldSessionId": "6a2d5613122447e7bc4f83cafcef2cfa",
+   "actorId": "994df45f5f424c5da29df387ba45c915",
+   "actorGeneration": 2,
+   "actorSlot": 254,
+   "inputsAcquired": false,
+   "inputsReleased": true,
+   "effectVerified": false,
+   "operation": "mine_tile",
+   "observationSequence": 87785
+  },
+  "endEvidenceStatus": "known",
+  "controlGeneration": 2,
+  "completed": false,
+  "cancelled": false,
+  "continuationAllowed": false
+ },
+ "logs": [],
+ "value": null,
+ "lastObservation": {
+  "operation": "inspect_inventory",
+  "callId": 4,
+  "runId": "5db7122cd4cd4875a62959a1c314974a",
+  "worldSessionId": "6a2d5613122447e7bc4f83cafcef2cfa",
+  "actorGeneration": 2,
+  "actorSlot": 254,
+  "gameUpdate": 87770,
+  "observedAtUnixMs": 1793345708799,
+  "clock": "server_utc_at_projection",
+  "result": {
+   "valid": true,
+   "available": true,
+   "worldSessionId": "6a2d5613122447e7bc4f83cafcef2cfa",
+   "gameUpdate": 87770,
+   "actorGeneration": 2,
+   "actorSlot": 254,
+   "observedAtUnixMs": 1793345708799,
+   "clock": "server_utc_at_projection",
+   "data": {
+    "id": 254,
+    "source": "server_ai_player",
+    "positionWorldPixels": {
+     "x": 35259.965,
+     "y": 3462
+    },
+    "boundsWorldPixels": {
+     "x": 35259.965,
+     "y": 3462,
+     "width": 20,
+     "height": 42
+    },
+    "velocityPixelsPerTick": {
+     "x": 0,
+     "y": 0
+    },
+    "life": 100,
+    "lifeMax": 100,
+    "mana": 20,
+    "manaMax": 20,
+    "name": "G31_NoClient_Probe",
+    "statDefense": {
+     "positive": 0,
+     "negative": 0
+    },
+    "breath": 200,
+    "breathMax": 200,
+    "immune": false,
+    "immuneTime": 0,
+    "direction": 1,
+    "dead": false,
+    "ghost": false,
+    "selectedSlot": 9,
+    "selectedHotbarKey": 0,
+    "hotbarNumbering": "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
+    "hotbarInventorySlots": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "hotbarKeyBindings": [
+     {
+      "key": 1,
+      "inventorySlot": 0
+     },
+     {
+      "key": 2,
+      "inventorySlot": 1
+     },
+     {
+      "key": 3,
+      "inventorySlot": 2
+     },
+     {
+      "key": 4,
+      "inventorySlot": 3
+     },
+     {
+      "key": 5,
+      "inventorySlot": 4
+     },
+     {
+      "key": 6,
+      "inventorySlot": 5
+     },
+     {
+      "key": 7,
+      "inventorySlot": 6
+     },
+     {
+      "key": 8,
+      "inventorySlot": 7
+     },
+     {
+      "key": 9,
+      "inventorySlot": 8
+     },
+     {
+      "key": 0,
+      "inventorySlot": 9
+     }
+    ],
+    "inventory": [
+     {
+      "slot": 0,
+      "hotbarKey": 1,
+      "empty": false,
+      "typeId": 3507,
+      "contentKey": "Terraria/CopperShortsword",
+      "name": "铜短剑",
+      "stack": 1,
+      "prefix": 40,
+      "favorited": false,
+      "use": {
+       "damage": 4,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": -1,
+       "createWall": -1,
+       "useStyle": 13,
+       "useTime": 13,
+       "useAnimation": 13,
+       "consumable": false,
+       "ammo": 0,
+       "shoot": 938
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 1,
+      "hotbarKey": 2,
+      "empty": false,
+      "typeId": 3509,
+      "contentKey": "Terraria/CopperPickaxe",
+      "name": "铜镐",
+      "stack": 1,
+      "prefix": 42,
+      "favorited": false,
+      "use": {
+       "damage": 4,
+       "pick": 35,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": -1,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 14,
+       "useAnimation": 20,
+       "consumable": false,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 2,
+      "hotbarKey": 3,
+      "empty": false,
+      "typeId": 3506,
+      "contentKey": "Terraria/CopperAxe",
+      "name": "铜斧",
+      "stack": 1,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": 3,
+       "pick": 0,
+       "axe": 7,
+       "hammer": 0,
+       "createTile": -1,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 21,
+       "useAnimation": 29,
+       "consumable": false,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 3,
+      "hotbarKey": 4,
+      "empty": false,
+      "typeId": 9,
+      "contentKey": "Terraria/Wood",
+      "name": "木材",
+      "stack": 48,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": 30,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 10,
+       "useAnimation": 14,
+       "consumable": true,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 4,
+      "hotbarKey": 5,
+      "empty": false,
+      "typeId": 27,
+      "contentKey": "Terraria/Acorn",
+      "name": "橡实",
+      "stack": 2,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": 20,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 10,
+       "useAnimation": 14,
+       "consumable": true,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 5,
+      "hotbarKey": 6,
+      "empty": false,
+      "typeId": 2,
+      "contentKey": "Terraria/DirtBlock",
+      "name": "土块",
+      "stack": 48,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": 0,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 10,
+       "useAnimation": 14,
+       "consumable": true,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 6,
+      "hotbarKey": 7,
+      "empty": false,
+      "typeId": 8,
+      "contentKey": "Terraria/Torch",
+      "name": "火把",
+      "stack": 176,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": 4,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 10,
+       "useAnimation": 14,
+       "consumable": true,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 7,
+      "hotbarKey": 8,
+      "empty": false,
+      "typeId": 282,
+      "contentKey": "Terraria/Glowstick",
+      "name": "荧光棒",
+      "stack": 9,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": -1,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 15,
+       "useAnimation": 15,
+       "consumable": true,
+       "ammo": 0,
+       "shoot": 50
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 8,
+      "hotbarKey": 9,
+      "empty": false,
+      "typeId": 3,
+      "contentKey": "Terraria/StoneBlock",
+      "name": "石块",
+      "stack": 3,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": 1,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 10,
+       "useAnimation": 14,
+       "consumable": true,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 9,
+      "hotbarKey": 0,
+      "empty": false,
+      "typeId": 36,
+      "contentKey": "Terraria/WorkBench",
+      "name": "工作台",
+      "stack": 1,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": 18,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 10,
+       "useAnimation": 14,
+       "consumable": true,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 10,
+      "empty": true
+     },
+     {
+      "slot": 11,
+      "empty": true
+     },
+     {
+      "slot": 12,
+      "empty": true
+     },
+     {
+      "slot": 13,
+      "empty": true
+     },
+     {
+      "slot": 14,
+      "empty": true
+     },
+     {
+      "slot": 15,
+      "empty": true
+     },
+     {
+      "slot": 16,
+      "empty": true
+     },
+     {
+      "slot": 17,
+      "empty": true
+     },
+     {
+      "slot": 18,
+      "empty": true
+     },
+     {
+      "slot": 19,
+      "empty": true
+     },
+     {
+      "slot": 20,
+      "empty": true
+     },
+     {
+      "slot": 21,
+      "empty": true
+     },
+     {
+      "slot": 22,
+      "empty": true
+     },
+     {
+      "slot": 23,
+      "empty": true
+     },
+     {
+      "slot": 24,
+      "empty": true
+     },
+     {
+      "slot": 25,
+      "empty": true
+     },
+     {
+      "slot": 26,
+      "empty": true
+     },
+     {
+      "slot": 27,
+      "empty": true
+     },
+     {
+      "slot": 28,
+      "empty": true
+     },
+     {
+      "slot": 29,
+      "empty": true
+     },
+     {
+      "slot": 30,
+      "empty": true
+     },
+     {
+      "slot": 31,
+      "empty": true
+     },
+     {
+      "slot": 32,
+      "empty": true
+     },
+     {
+      "slot": 33,
+      "empty": true
+     },
+     {
+      "slot": 34,
+      "empty": true
+     },
+     {
+      "slot": 35,
+      "empty": true
+     },
+     {
+      "slot": 36,
+      "empty": true
+     },
+     {
+      "slot": 37,
+      "empty": true
+     },
+     {
+      "slot": 38,
+      "empty": true
+     },
+     {
+      "slot": 39,
+      "empty": true
+     },
+     {
+      "slot": 40,
+      "empty": true
+     },
+     {
+      "slot": 41,
+      "empty": true
+     },
+     {
+      "slot": 42,
+      "empty": true
+     },
+     {
+      "slot": 43,
+      "empty": true
+     },
+     {
+      "slot": 44,
+      "empty": true
+     },
+     {
+      "slot": 45,
+      "empty": true
+     },
+     {
+      "slot": 46,
+      "hotbarKey": null,
+      "empty": false,
+      "typeId": 1774,
+      "contentKey": "Terraria/GoodieBag",
+      "name": "礼袋",
+      "stack": 1,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": -1,
+       "createWall": -1,
+       "useStyle": 0,
+       "useTime": 100,
+       "useAnimation": 100,
+       "consumable": false,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 47,
+      "hotbarKey": null,
+      "empty": false,
+      "typeId": 38,
+      "contentKey": "Terraria/Lens",
+      "name": "晶状体",
+      "stack": 1,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": -1,
+       "createWall": -1,
+       "useStyle": 0,
+       "useTime": 100,
+       "useAnimation": 100,
+       "consumable": false,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 48,
+      "hotbarKey": null,
+      "empty": false,
+      "typeId": 216,
+      "contentKey": "Terraria/Shackle",
+      "name": "脚镣",
+      "stack": 1,
+      "prefix": 65,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": -1,
+       "createWall": -1,
+       "useStyle": 0,
+       "useTime": 100,
+       "useAnimation": 100,
+       "consumable": false,
+       "ammo": 0,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 49,
+      "hotbarKey": null,
+      "empty": false,
+      "typeId": 23,
+      "contentKey": "Terraria/Gel",
+      "name": "凝胶",
+      "stack": 41,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": -1,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": -1,
+       "createWall": -1,
+       "useStyle": 0,
+       "useTime": 100,
+       "useAnimation": 100,
+       "consumable": true,
+       "ammo": 23,
+       "shoot": 0
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 50,
+      "empty": true
+     },
+     {
+      "slot": 51,
+      "empty": true
+     },
+     {
+      "slot": 52,
+      "hotbarKey": null,
+      "empty": false,
+      "typeId": 71,
+      "contentKey": "Terraria/CopperCoin",
+      "name": "铜币",
+      "stack": 90,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": 25,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": 330,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 10,
+       "useAnimation": 15,
+       "consumable": true,
+       "ammo": 71,
+       "shoot": 158
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 53,
+      "hotbarKey": null,
+      "empty": false,
+      "typeId": 72,
+      "contentKey": "Terraria/SilverCoin",
+      "name": "银币",
+      "stack": 35,
+      "prefix": 0,
+      "favorited": false,
+      "use": {
+       "damage": 50,
+       "pick": 0,
+       "axe": 0,
+       "hammer": 0,
+       "createTile": 331,
+       "createWall": -1,
+       "useStyle": 1,
+       "useTime": 10,
+       "useAnimation": 15,
+       "consumable": true,
+       "ammo": 71,
+       "shoot": 159
+      },
+      "customState": "not_applicable"
+     },
+     {
+      "slot": 54,
+      "empty": true
+     },
+     {
+      "slot": 55,
+      "empty": true
+     },
+     {
+      "slot": 56,
+      "empty": true
+     },
+     {
+      "slot": 57,
+      "empty": true
+     },
+     {
+      "slot": 58,
+      "empty": true
+     }
+    ],
+    "equipment": [
+     {
+      "slot": 0,
+      "empty": true
+     },
+     {
+      "slot": 1,
+      "empty": true
+     },
+     {
+      "slot": 2,
+      "empty": true
+     },
+     {
+      "slot": 3,
+      "empty": true
+     },
+     {
+      "slot": 4,
+      "empty": true
+     },
+     {
+      "slot": 5,
+      "empty": true
+     },
+     {
+      "slot": 6,
+      "empty": true
+     },
+     {
+      "slot": 7,
+      "empty": true
+     },
+     {
+      "slot": 8,
+      "empty": true
+     },
+     {
+      "slot": 9,
+      "empty": true
+     },
+     {
+      "slot": 10,
+      "empty": true
+     },
+     {
+      "slot": 11,
+      "empty": true
+     },
+     {
+      "slot": 12,
+      "empty": true
+     },
+     {
+      "slot": 13,
+      "empty": true
+     },
+     {
+      "slot": 14,
+      "empty": true
+     },
+     {
+      "slot": 15,
+      "empty": true
+     },
+     {
+      "slot": 16,
+      "empty": true
+     },
+     {
+      "slot": 17,
+      "empty": true
+     },
+     {
+      "slot": 18,
+      "empty": true
+     },
+     {
+      "slot": 19,
+      "empty": true
+     }
+    ],
+    "dyes": [
+     {
+      "slot": 0,
+      "empty": true
+     },
+     {
+      "slot": 1,
+      "empty": true
+     },
+     {
+      "slot": 2,
+      "empty": true
+     },
+     {
+      "slot": 3,
+      "empty": true
+     },
+     {
+      "slot": 4,
+      "empty": true
+     },
+     {
+      "slot": 5,
+      "empty": true
+     },
+     {
+      "slot": 6,
+      "empty": true
+     },
+     {
+      "slot": 7,
+      "empty": true
+     },
+     {
+      "slot": 8,
+      "empty": true
+     },
+     {
+      "slot": 9,
+      "empty": true
+     }
+    ],
+    "miscEquipment": [
+     {
+      "slot": 0,
+      "empty": true
+     },
+     {
+      "slot": 1,
+      "empty": true
+     },
+     {
+      "slot": 2,
+      "empty": true
+     },
+     {
+      "slot": 3,
+      "empty": true
+     },
+     {
+      "slot": 4,
+      "empty": true
+     }
+    ],
+    "miscDyes": [
+     {
+      "slot": 0,
+      "empty": true
+     },
+     {
+      "slot": 1,
+      "empty": true
+     },
+     {
+      "slot": 2,
+      "empty": true
+     },
+     {
+      "slot": 3,
+      "empty": true
+     },
+     {
+      "slot": 4,
+      "empty": true
+     }
+    ],
+    "equipmentScope": "vanilla player arrays, including vanilla social slots; mod accessory slots not included",
+    "buffs": [],
+    "mount": {
+     "active": false,
+     "typeId": null
+    },
+    "movement": {
+     "gravDir": 1,
+     "sloping": false,
+     "stairFall": false,
+     "wet": false,
+     "lavaWet": false,
+     "honeyWet": false,
+     "shimmerWet": false,
+     "pulley": false,
+     "grapCount": 0,
+     "jump": 0,
+     "controlDown": false,
+     "controlJump": false,
+     "frozen": false,
+     "webbed": false,
+     "stoned": false,
+     "runAcceleration": 0.08,
+     "maxRunSpeed": 3,
+     "gravity": 0.4,
+     "maxFallSpeed": 10.01,
+     "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred"
+    },
+    "buffScope": "Complete active buffs in player.buffType/buffTime; empty/inactive slots omitted; slot indices retained",
+    "scope": "All slots of player.inventory, armor, dye, miscEquips, miscDyes; includes vanilla social slots; excludes banks, chests, mouse item and Mod accessory slots",
+    "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+    "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation"
+   },
+   "binding": {
+    "actor": "994df45f5f424c5da29df387ba45c915",
+    "world": "6a2d5613122447e7bc4f83cafcef2cfa",
+    "generation": 2,
+    "slot": 254
+   }
+  },
+  "payloadOmitted": false
+ }
+}

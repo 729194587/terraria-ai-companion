@@ -19,7 +19,7 @@ Schema、调度器、Agent Prompt 或真人控制入口。历史报告和实验 
 | `navigate_to_x {targetX=...}` | 玩家左上角水平世界像素；复用原有滚动导航、局部规划、物理预测与限制。原生实际位置/速度、地面支撑及原导航 arrived 判定确认后结束；30 秒上限 |
 | `navigate_to_landing_region {minPlayerLeftX=...,maxPlayerLeftX=...,surfaceY=...}` | **0.1.57**：玩家左边缘 X 闭区间及脚底表面 Y，均为世界像素；复用同一二维规划器与原生移动链。实际进入区域、安全平面支撑并停稳后完成；30 秒上限，见[二维落脚](SERVER_AI_LANDING_REGION.md) |
 | `use_item {}` | 当前真实选中物品完成一次 G6 原生使用周期；白名单 WoodenSword、CopperPickaxe、CopperAxe、Apple。必须单次启动、观察到原生动画并自然耗尽计时；3 秒上限。完成不证明命中，`effectStatus=unconfirmed`；原生未启动为 failed / `not_started` |
-| `mine_tile {x=...,y=...}` | 固定 Tile 坐标，当前纯镐挖普通方块，或铜斧砍原生斧类树干；保留 80 像素保守检查和 G7 原生距离/工具/保护规则。本 AI 原生工具链必须破坏指定目标、无外部替换且目标仍为空；10 秒上限。树的连带倒下和掉落由原版处理 |
+| `mine_tile {x=...,y=...}` | 固定 Tile 坐标，当前纯镐挖普通方块或 SmallPiles（185）环境碎堆，或铜斧砍原生斧类树干；保留 80 像素保守检查和 G7 原生距离/工具/保护规则。本 AI 原生工具链必须破坏指定目标、无外部替换且目标仍为空；10 秒上限。树的连带倒下和掉落由原版处理 |
 | `place_tile {x=...,y=...}` | **0.1.58**：用当前选中的泥土块、石块或木材向空 Tile 发起一次原生放置；保留 80px 与原生范围/邻接/保护规则。目标由本 AI 原生放成、同次 ItemCheck 消耗 1 件、计时结束并释放后完成；10 秒上限。未确认消耗的原生放置为 unknown，不回滚或重试 |
 
 `select_hotbar_slot`、`get_player_state`、`inspect_inventory`、`wait`、`stop_action`

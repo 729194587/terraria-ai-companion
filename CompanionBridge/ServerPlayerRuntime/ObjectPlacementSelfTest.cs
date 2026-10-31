@@ -63,6 +63,47 @@ internal static class ObjectPlacementSelfTest
                     reserved=ProbeSession.Reservation.IsReserved(p.whoAmI),inputsReleased=Released()});
                 File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",checks,evidence,processTerminationRequired=true,nativeObjectException=true}));return;
             }
+            // Real native pick destruction followed by a fresh observation and normal placement.
+            // Only fixture setup writes tiles; the action must use ItemCheck/PickTile/KillTile.
+            foreach(int style in new[]{0,1})
+            {
+                Setup();
+                WorldGen.PlaceTile(x,y,TileID.SmallPiles,true,true,-1,style);
+                Check(Main.tile[x,y].HasTile&&Main.tile[x,y].TileType==TileID.SmallPiles,"native SmallPiles fixture placement");
+                evidence.Add(new{decorationStyle=style,frameX=Main.tile[x,y].TileFrameX,frameY=Main.tile[x,y].TileFrameY,
+                    solid=Main.tileSolid[TileID.SmallPiles],cut=Main.tileCut[TileID.SmallPiles],noFail=Main.tileNoFail[TileID.SmallPiles],canKill=WorldGen.CanKillTile(x,y)});
+                var decorationBlocked=Refused();
+                Check(decorationBlocked.Status=="failed"&&p.inventory[4].stack==5,"decoration must still block placement");
+                p.inventory[3].SetDefaults(ItemID.CopperPickaxe);ActorItemUse.Select(p,id.World,id.Generation,3);
+                var cancelledMining=executor.Start(id,"mine_tile",JsonSerializer.SerializeToElement(new{x,y}),Guid.NewGuid().ToString("N"));
+                var stoppedMining=executor.Cancel(id,cancelledMining);evidence.Add(stoppedMining);
+                Check(stoppedMining.Status=="cancelled"&&stoppedMining.InputsReleased&&!stoppedMining.EffectVerified
+                    &&Main.tile[x,y].HasTile&&Released(),"decoration pre-strike cancel changed target or retained input");
+                var mining=executor.Start(id,"mine_tile",JsonSerializer.SerializeToElement(new{x,y}),Guid.NewGuid().ToString("N"));
+                for(int i=0;ActorMining.Running&&i<605;i++)Frame();
+                var mined=executor.Poll(id,mining);evidence.Add(new{decorationStyle=style,mined});
+                Check(mined.Status=="completed"&&mined.EffectVerified&&mined.InputsReleased&&!Main.tile[x,y].HasTile
+                    &&ActorMining.Current.Destroyed&&ActorMining.Current.Strikes>0&&Released(),"native decoration destruction proof missing");
+                var observed=ServerSceneReader.Read(p,id,JsonSerializer.SerializeToElement(new{}));
+                evidence.Add(new{decorationStyle=style,afterMiningScene=observed});
+                Check(!Main.tile[x+1,y].HasTile,"remaining footprint still occupied");
+                ActorItemUse.Select(p,id.World,id.Generation,4);
+                var bench=Finish(Start());
+                Check(bench.Status=="completed"&&bench.EffectVerified&&bench.InputsReleased
+                    &&ActorObjectPlacement.Present(ActorItemUse.Current.Placement)
+                    &&ActorItemUse.Current.Placement.ConsumedCount==1&&p.inventory[4].stack==4,"clear then place bench/consume one");
+            }
+            Setup();
+            foreach(int protectedType in new[]{TileID.Containers,TileID.WorkBenches,TileID.Plants2,TileID.VineFlowers})
+            {
+                Setup();var protectedTile=Main.tile[x,y];protectedTile.HasTile=true;protectedTile.TileType=(ushort)protectedType;
+                p.inventory[3].SetDefaults(ItemID.CopperPickaxe);ActorItemUse.Select(p,id.World,id.Generation,3);
+                var decorationDenied=executor.Start(id,"mine_tile",JsonSerializer.SerializeToElement(new{x,y}),Guid.NewGuid().ToString("N"));
+                var rejected=executor.Poll(id,decorationDenied);evidence.Add(new{protectedType,rejected});
+                Check(rejected.Status=="failed"&&ActorMining.Current.Reason==ActorMining.Failure.UnsupportedTarget
+                    &&Main.tile[x,y].HasTile&&ActorMining.Current.Strikes==0,"protected/unverified decoration accepted");
+            }
+            Setup();
             var initialScene=JsonSerializer.SerializeToElement(ServerSceneReader.Read(p,id,JsonSerializer.SerializeToElement(new{})),new JsonSerializerOptions{PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
             var candidate=initialScene.GetProperty("objectPlacementCandidates").GetProperty("items").EnumerateArray().Single(e=>e.GetProperty("target").GetProperty("x").GetInt32()==x&&e.GetProperty("target").GetProperty("y").GetInt32()==y);
             evidence.Add(new{nativeCandidate=candidate.Clone(),coverage=initialScene.GetProperty("coverage").Clone()});

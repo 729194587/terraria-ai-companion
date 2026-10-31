@@ -70,11 +70,12 @@ internal static class ActorMining
     private static bool SupportedTool(Item i)=>!i.IsAir&&i.hammer==0&&!i.channel&&i.shoot<=0
         &&(i.pick>0&&i.axe==0||i.type==ItemID.CopperAxe&&i.axe>0&&i.pick==0);
     private static bool TreeTarget(int type)=>Main.tileAxe[type]&&TileID.Sets.IsATreeTrunk[type];
+    private static bool DecorationTarget(int type)=>type==TileID.SmallPiles;
     private static bool Same(Context c)
     {
         var t=Main.tile[c.X,c.Y];return t.HasTile&&t.TileType==c.ExpectedType
             &&(byte)t.Slope==c.Slope&&t.IsHalfBlock==c.Half&&t.IsActuated==c.Actuated
-            &&(c.Axe==0||t.TileFrameX==c.FrameX&&t.TileFrameY==c.FrameY);
+            &&(c.Axe==0&&!DecorationTarget(c.TileType)||t.TileFrameX==c.FrameX&&t.TileFrameY==c.FrameY);
     }
     private static bool Healthy(Player p)=>!p.dead&&!p.ghost&&!p.CCed&&!p.noItems&&!p.noBuilding&&!p.frozen&&!p.stoned&&!p.mount.Active
         &&!Main.gameMenu&&!Netplay.Disconnect&&float.IsFinite(p.position.X)&&float.IsFinite(p.position.Y);
@@ -109,10 +110,10 @@ internal static class ActorMining
             c.TileType=c.ExpectedType=type;c.FrameX=t.TileFrameX;c.FrameY=t.TileFrameY;c.Slope=(byte)t.Slope;c.Half=t.IsHalfBlock;c.Actuated=t.IsActuated;
             if(p.selectedItem<0||p.selectedItem>9||!SupportedTool(c.Item))
             {Reject(Failure.InvalidTool,$"AI 当前栏 {p.selectedItem+1}：{(c.Item.IsAir?"空栏":c.Item.Name)}×{c.Item.stack}，镐力 {c.Pick}，斧力 {c.Axe}。请选择纯镐挖普通方块，或铜斧砍树干。");return;}
-            bool targetSupported=c.Axe>0?TreeTarget(type):Main.tileSolid[type]&&!Main.tileFrameImportant[type]
+            bool targetSupported=c.Axe>0?TreeTarget(type):DecorationTarget(type)||Main.tileSolid[type]&&!Main.tileFrameImportant[type]
                 &&!Main.tileAxe[type]&&!Main.tileHammer[type]&&!Main.tileCut[type]&&!TileID.Sets.Falling[type];
             if(!targetSupported||t.IsActuated)
-            {Reject(Failure.UnsupportedTarget,$"目标 ({x},{y}) 类型 {type} 不符合当前工具范围：纯镐仅普通单格方块，铜斧仅原版斧类树干；家具和虚化目标会拒绝。");return;}
+            {Reject(Failure.UnsupportedTarget,$"目标 ({x},{y}) 类型 {type} 不符合当前工具范围：纯镐仅普通单格方块及 SmallPiles 环境碎堆，铜斧仅原版斧类树干；其他家具、装饰和虚化目标会拒绝。");return;}
             if(!InRange(c)){Reject(Failure.OutOfRange,"Native item reach check refused the fixed target; no movement is attempted.");return;}
             // New explicit intent never inherits another action's partial progress.
             ClearProgress(p,x,y);
