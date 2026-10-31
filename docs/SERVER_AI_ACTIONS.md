@@ -1,5 +1,7 @@
 # Lua 的服务器 AI 移动、使用与目标格工具操作
 
+**0.1.66**：已确认导航失败可由宿主许可在同一Lua程序内重新观察后尝试一次有界Direct Input；[设计、示例与证据](NAVIGATION_DIRECT_INPUT_FALLBACK.md)。unknown/取消/超时仍停止。
+
 ## M1.1-A Direct Input（0.1.65）
 
 ```lua

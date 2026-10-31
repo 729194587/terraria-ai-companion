@@ -109,9 +109,15 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(!ReferenceEquals(navigation.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ServerAiNavigation.Run)h.Context;
             var physical=c.FinalObservation??ServerAiNavigation.Observe(p);
+            bool released=Released(p);
+            string recoveryKind=AiActionReasons.NavigationRecoveryKind(c.Snapshot?.Reason);
+            bool recoverable=c.Status=="failed"&&c.FinalObservation!=null&&physical.Settled&&released&&!p.dead&&!p.ghost
+                &&recoveryKind!=null&&c.Reason==AiActionReasons.Navigation(c.Snapshot.Reason);
             return new(c.Status,c.Reason,new{targetX=c.Region==null?(float?)c.Target:null,targetRegion=c.Region==null?null:new{minPlayerLeftX=c.Region.MinPlayerLeftX,maxPlayerLeftX=c.Region.MaxPlayerLeftX,surfaceY=c.Region.SurfaceY},startX=c.StartX,x=physical.State.Px,y=physical.State.Py,vx=physical.State.Vx,vy=physical.State.Vy,
                 updates=c.Updates,navigation=c.Snapshot,arrived=c.Status=="completed",grounded=physical.State.Grounded,
                 safeSupport=physical.SafeSupport,settled=physical.Settled,velocityBeforeRelease=c.VelocityBeforeRelease,
+                inputReleased=released,alive=!p.dead&&!p.ghost,health=p.statLife,
+                recoverableFailure=recoverable,failureKind=recoverable?recoveryKind:null,
                 observedGameUpdate=c.FinalObservation!=null?c.FinalObservationTick:Main.GameUpdateCount,
                 effectStatus="native_navigation_observed"},Released(p),c.Status=="completed"&&physical.Settled
                     &&(c.Region==null||c.Region.Arrived(physical.State,new NativeMotionWorld(physical.State))),InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);

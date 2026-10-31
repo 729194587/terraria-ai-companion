@@ -14,6 +14,7 @@ import agent_trace as tracing
 import agent_diagnostics as diagnostics
 import evidence
 import atomic_operations as atomic
+import navigation_recovery
 from control import Bridge, BridgeError, command_owner
 from lua_worker import (worker, encode, decode, ValueLimit, SOURCE_BYTES,
                         REQUEST_BYTES, VALUE_BYTES, FRAME_BYTES, EXPLORATION_SOURCE, SEMANTIC_SOURCE)
@@ -159,6 +160,11 @@ class LuaRuntime:
         process, connection, active = None, None, None
         active_role = None
         lifecycle = {}
+        handoff = getattr(self.bridge, '_lua_navigation_handoff', None)
+        if handoff is not None and handoff.chat_id != chat_id:
+            self.bridge._lua_navigation_handoff = None
+            handoff = None  # A new user turn does not inherit a previous turn's fallback grant.
+        if handoff is not None: handoff.observed = False
         deadline = monotonic() + limits.seconds
         bundle = evidence.current.get()
         owns_bundle = bundle is None
@@ -332,6 +338,17 @@ class LuaRuntime:
                     await watch(active)
                     active = None
                     continue
+                fallback_attempt = False
+                if handoff is not None:
+                    if name in atomic.BUDGETED_ACTIONS:
+                        if name != 'move_input' or not handoff.observed:
+                            out.update(status='failed', error='navigation_handoff_requires_fresh_scene_then_move_input')
+                            break
+                        fallback_attempt = True
+                        self.bridge._lua_navigation_handoff = None
+                        handoff = None  # One attempt only; no automatic fallback or replay.
+                    else:
+                        handoff.observed = False  # Scene must immediately precede the next mutation.
                 if halted and name in atomic.BUDGETED_ACTIONS:
                     # No dispatch occurred: this is not an unknown game action.
                     # stop_action still dispatches and must prove release below.
@@ -364,8 +381,21 @@ class LuaRuntime:
                             and result.get('available') is not False
                             and result.get('status') not in ('failed', 'timeout', 'cancelled', 'unknown', 'unavailable')):
                         out['lastObservation'] = retained_observation(name, sequence, out['runId'], result)
+                    if handoff is not None and name in atomic.READS:
+                        if (result.get('valid') is not True or result.get('status') in ('unknown', 'timeout', 'cancelled')
+                                or name == 'observe_scene' and not handoff.observe_scene(result)):
+                            out.update(status='action_unknown', actionState='unknown', error='navigation_handoff_observation_unconfirmed')
+                            break
                     if name in atomic.ACTIONS:
-                        result = {**result, 'continuationAllowed': safe_preflight_rejection(result, lifecycle)}
+                        navigation_continuation = ({'observe_scene', 'move_input'} <= set(getattr(self.bridge, 'supported_atomic_operations', ()))
+                            and navigation_recovery.confirmed_failure(result, lifecycle) and not fallback_attempt)
+                        result = {**result, 'continuationAllowed': navigation_continuation or
+                                  (not fallback_attempt and safe_preflight_rejection(result, lifecycle))}
+                        if navigation_continuation:
+                            handoff = navigation_recovery.Handoff(result, lifecycle['action'], chat_id)
+                            self.bridge._lua_navigation_handoff = handoff
+                            result['continuationScope'] = 'observe_scene_then_move_input'
+
                     if on_result is not None:
                         on_result(name, args, result)
                     call_end(result.get('status'), result=result)

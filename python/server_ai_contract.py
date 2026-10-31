@@ -124,7 +124,7 @@ JSON：数组1起始，slot/x/y数据编号保持API约定；json.null用于比�
 每次程序默认指令上限{limits.instructions}、Lua内存{limits.memory}字节；API请求帧≤{REQUEST_BYTES}字节（含封套）、返回值≤{VALUE_BYTES}字节、深度≤{MAX_DEPTH}、节点≤{MAX_NODES}。整数为有符号64位范围，浮点须有限，字符串UTF-8；API整数可用2113.0，不接受2113.5，不静默取整。
 默认整轮共享{limits.calls}次内部API、{limits.actions}次变更尝试；整轮累计Lua执行时间上限为{limits.seconds:g}秒，包含Lua期间的API等待，不包含LLM推理及模型请求耗时；多份程序不重置，wait/查询占API数，stop_action不占变更次数。默认模型工具调用上限7（execute_lua占1），实际剩余预算以请求runtimeLua为准，不能切换入口绕过。
 log(message)最多32条、每条512 UTF-8字节，不占API次数；log/value是脚本自述，不是游戏证据。本程序局部table可记有限状态，无跨程序可写持久化；宿主lastObservation独立于value，保留身份/时效/result，payloadOmitted表示省略，移动或时效不明需重观察。
-受控pcall(f,...)返回true及成功返回值，普通Lua错误返回false及有界字符串；只读API本地参数拒绝可返回false与{{status='bad_argument',error,argumentOperation,diagnostics?}}。动作参数错、未completed动作及unknown、通信/协议、取消或资源终止不可由pcall捕获。唯一行动续行例外是宿主continuationAllowed=true证明failed、未开始和绑定known释放；只能选择不同参数，仍计原预算。不自动重试，不按reason字符串或Lua自报放行。
+受控pcall(f,...)返回true及成功返回值，普通Lua错误返回false及有界字符串；只读API本地参数拒绝可返回false与{{status='bad_argument',error,argumentOperation,diagnostics?}}。动作参数错、未获宿主续行许可的动作及unknown、通信/协议、取消或资源终止不可由pcall捕获。行动续行须由宿主continuationAllowed=true确认：明确未开始的预检拒绝可选择不同参数；已确认的导航失败仅获continuationScope=observe_scene_then_move_input，须重新observe_scene后才能尝试一次有界move_input，不能重试原导航或改为其他操作。结果仍是failed，后续须核验实际位移；读状态不确定或降级失败即停，仍计原预算。不自动重试，不按reason字符串或Lua自报放行。
 行动结果{{valid,status,completed,reason,evidence,endEvidence,endEvidenceStatus}}只有valid且completed及known结束证据才可称动作完成；输入释放成功不证明效果确定，unknown保持unknown并隔离连接/阻止后续变更，不重连重放。failed/timeout/cancelled默认终止程序，不回滚先前效果。
 程序completed只表示正常返回；核对programCompleted/actionSuccess/lastAction/taskOutcome，taskOutcome=unknown不声称目标完成。历史valueExpired/logsExpired不是当前观察。
 '''

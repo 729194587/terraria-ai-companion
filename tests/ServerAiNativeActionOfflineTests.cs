@@ -47,6 +47,10 @@ public static class ServerAiNativeActionOfflineTests
                 &&a.GetProperty("durationMs").GetInt32()==30000,"direct-input immutable request and watchdog budget");
             Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_direct_input_v1")>=0,"direct-input capability advertised");
         }
+        foreach(string reason in new[]{"navigation_stalled","no safe local route: blocked","unsupported navigation state: wet"})
+            Check(AiActionReasons.NavigationRecoveryKind(reason)!=null,"known native navigation refusal can be classified: "+reason);
+        foreach(string reason in new[]{"navigation_search_timeout","navigation_action_limit","native_navigation_exception","life decreased","navigation edge landing mismatch","local prediction exceeded 50ms budget"})
+            Check(AiActionReasons.NavigationRecoveryKind(reason)==null,"uncertain/budget native navigation stop is not recoverable: "+reason);
         foreach(string reason in new[]{"navigation_stalled","navigation_action_limit","navigation_search_timeout"})
             Check(AiActionReasons.Navigation(reason)==reason,"navigation diagnostic survives protocol reason mapping: "+reason);
         Check(AiActionReasons.Navigation("no safe local route: blocked")=="native_navigation_failed","ordinary no-route mapping remains compatible");

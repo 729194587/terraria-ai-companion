@@ -53,7 +53,7 @@ internal static class ServerAiDirectInputFixture
         string requestText;
         try{requestText=File.ReadAllText(request);File.Delete(request);}catch(IOException){return;}
         using var doc=JsonDocument.Parse(requestText);scene=doc.RootElement.GetProperty("scene").GetString();
-        if(scene is not ("flat" or "wall" or "platform" or "edge" or "air"))throw new ArgumentException("Unknown direct-input fixture scene.");
+        if(scene is not ("flat" or "wall" or "platform" or "edge" or "air" or "profile_refused"))throw new ArgumentException("Unknown direct-input fixture scene.");
         int left=Main.spawnTileX,floor=Main.spawnTileY+8;
         for(int tx=left-36;tx<=left+36;tx++)for(int ty=floor-24;ty<=floor+18;ty++)
         {
@@ -66,6 +66,7 @@ internal static class ServerAiDirectInputFixture
         }
         p.position=new(left*16,floor*16-p.height-(scene=="air"?300:0));p.velocity=new(0,0);
         p.jump=0;p.releaseJump=true;p.statLife=100;p.dead=false;
+        if(scene=="profile_refused")p.AddBuff(BuffID.WellFed,3600); // Diagnostic profile refusal; raw inputs still use native physics.
         p.controlLeft=p.controlRight=p.controlJump=p.controlDown=p.controlUp=false;
         frames.Clear();
         ready=new{scene,startX=p.position.X,startY=p.position.Y,floorY=floor*16};

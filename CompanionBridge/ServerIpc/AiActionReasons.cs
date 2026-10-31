@@ -8,6 +8,13 @@ internal static class AiActionReasons
         "navigation_stalled" or "navigation_action_limit" or "navigation_search_timeout"
         ? reason : "native_navigation_failed";
 
+    // Only deterministic planner/profile refusal and confirmed no-progress can hand off.
+    // Search/frame/action budgets, engine exceptions, health loss and prediction mismatch stay hard stops.
+    internal static string NavigationRecoveryKind(string reason) => reason == "navigation_stalled" ? "no_progress"
+        : reason?.StartsWith("no safe local route: ",System.StringComparison.Ordinal)==true ? "no_route"
+        : reason?.StartsWith("unsupported navigation state: ",System.StringComparison.Ordinal)==true ? "profile_refused"
+        : null;
+
     internal static string Mining(string status,string failure)=>status switch
     {
         "completed"=>"native_tile_destroyed",

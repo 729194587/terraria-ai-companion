@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader', [string]$WorldPath='.local/virtual-player-control-host/Worlds/test.wld', [string]$PackagePath='.local/agent-build/Mods/CompanionBridge.tmod', [int]$Port=27941, [int]$IpcPort=27942)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader', [string]$WorldPath='.local/virtual-player-control-host/Worlds/test.wld', [string]$PackagePath='.local/agent-build/Mods/CompanionBridge.tmod', [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py')
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
 if($Port -eq $IpcPort -or @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object {$_.Port -in @($Port,$IpcPort)}).Count){throw 'Test ports must be distinct and unused'}
@@ -19,7 +19,7 @@ foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld"
 $process=[Diagnostics.Process]::Start($info)
 $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
 try {
-    & "$repo/.local/lua-venv/Scripts/python.exe" -B "$PSScriptRoot/native_direct_input.py" --port $IpcPort --profile $profile
+    & "$repo/.local/lua-venv/Scripts/python.exe" -B (Join-Path $PSScriptRoot $TestScript) --port $IpcPort --profile $profile
     if($LASTEXITCODE -ne 0){throw "Direct input verification failed: $profile"}
     [IO.File]::WriteAllText("$profile/g81-test-stop",'Stop this isolated server')
     if(!$process.WaitForExit(20000) -or $process.ExitCode -ne 0){throw 'Isolated server did not unload cleanly'}

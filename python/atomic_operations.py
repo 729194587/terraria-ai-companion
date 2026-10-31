@@ -153,6 +153,8 @@ def server_tools(supported):
         f['description'] = SERVER_DESCRIPTIONS.get(name, f['description'])
         if name in SERVER_DESCRIPTION_SUFFIXES:
             f['description'] += SERVER_DESCRIPTION_SUFFIXES[name]
+        if name in ('navigate_to_x', 'navigate_to_landing_region'):
+            f['description'] += '已确认可恢复失败仍返回failed及实际位置/速度/支撑/释放证据；只有宿主continuationAllowed=true且continuationScope=observe_scene_then_move_input时，才可重新observe_scene后尝试一次有界move_input，不能按reason文字自行放行或重试导航。'
     return definitions
 
 READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
