@@ -67,7 +67,11 @@ class ManifestTests(unittest.TestCase):
             for c in manifest['categories']:
                 self.assertIn(' | '.join((c['category'], c['status'], ','.join(c['callableApis']) or '—', ','.join(c['notExposed']) or '—')), manifest_text)
                 self.assertFalse(set(c['notExposed']) & expected)
-                self.assertLessEqual(set(c.get('alternatives', ())), expected)
+                reads = set(c.get('relatedReadOnlyApis', ()))
+                actions = set(c.get('relatedActionApis', ()))
+                self.assertLessEqual(reads, expected & atomic.READS)
+                self.assertLessEqual(actions, expected - atomic.READS)
+                self.assertNotIn('alternatives', c)
                 if not c['callableApis']: self.assertEqual('Not exposed', c['status'])
             # Only examples for exposed APIs are supplied, even on partial backends.
             examples = reference.split('\n示例', 1)[1]
@@ -108,6 +112,35 @@ class ManifestTests(unittest.TestCase):
         before = server_contract(b)
         before[1][0]['function']['parameters']['properties']['source']['type']='number'
         self.assertEqual('string', server_contract(b)[1][0]['function']['parameters']['properties']['source']['type'])
+
+    def test_related_observation_is_not_an_operation_alternative(self):
+        for caps in (BASE, BASE | {'server_ai_reads_v1'}, BASE | set(OPTIONAL)):
+            with self.subTest(capabilities=caps):
+                b = bridge(caps)
+                manifest = capability_manifest(b)
+                rows = {c['category']: c for c in manifest['categories']}
+                inventory = rows['背包变更']
+                interaction = rows['世界交互']
+                if 'server_ai_reads_v1' in caps:
+                    self.assertEqual(['inspect_inventory'], inventory['relatedReadOnlyApis'])
+                    self.assertEqual(['select_hotbar_slot'], inventory['relatedActionApis'])
+                else:
+                    self.assertEqual([], inventory['relatedReadOnlyApis'])
+                if 'server_ai_perception_v1' in caps:
+                    self.assertIn('inspect_tile', interaction['relatedReadOnlyApis'])
+                self.assertEqual([], interaction['relatedActionApis'])
+                text, definitions, _ = contract_parts(server_contract(b)[0])
+                self.assertNotIn('替代（非等价）', text)
+                if 'server_ai_reads_v1' in caps:
+                    self.assertIn('相关只读能力（不能替代操作）：inspect_inventory', text)
+                self.assertEqual(set(exposed_operations(b)), {d['function']['name'] for d in definitions})
+
+    def test_runtime_time_reference_is_accumulated_lua_only(self):
+        text = runtime_reference(set())
+        for fact in ('整轮累计Lua执行时间上限为60秒', '包含Lua期间的API等待',
+                     '不包含LLM推理及模型请求耗时', '多份程序不重置'):
+            self.assertIn(fact, text)
+        self.assertNotIn('8次变更尝试、60秒', text)
 
     def test_helper_dependencies_and_runtime_limits(self):
         minimal = helper_reference(exposed_operations(bridge(BASE)))

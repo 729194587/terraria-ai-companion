@@ -62,7 +62,7 @@ def capability_manifest(bridge, supported=None):
         row = dict(category=name, status=level if exposed else 'Not exposed', callableApis=exposed,
                    notExposed=[op for op in operations if op not in supported])
         row['boundary'] = boundary if exposed or not operations else '当前后端不可调用此类别的API。'
-        alternatives = {
+        related = {
             '背包变更': ('inspect_inventory', 'select_hotbar_slot'),
             '世界感知': ('get_player_state', 'inspect_inventory'),
             '目标导航': ('move_input',),
@@ -70,9 +70,8 @@ def capability_manifest(bridge, supported=None):
             '世界交互': ('inspect_tile', 'observe_scene'),
         }.get(name, ())
         if row['notExposed']:
-            row['alternatives'] = [op for op in alternatives if op in supported]
-            if row['alternatives']:
-                row['alternativeScope'] = '仅提供这些观察/选择/输入能力，不等价于缺失操作。'
+            row['relatedReadOnlyApis'] = [op for op in related if op in supported and op in atomic.READS]
+            row['relatedActionApis'] = [op for op in related if op in supported and op not in atomic.READS]
         categories.append(row)
     return dict(schemaVersion=1, source='ServerAiBridge bind handshake + backend whitelist',
                 scope='当前连接/服务器AI；不是原生游戏全部功能或实机验收承诺',
@@ -85,12 +84,14 @@ def render_manifest(manifest):
     lines = [
         '来源：当前ServerAiBridge握手与后端白名单交集；仅绑定AI，不是完整游戏能力或实机验收保证。',
         'Supported=所列有界接口开放；Limited=部分能力开放，细则见API；Not exposed=当前后端不可调用。',
-        '类别 | 状态 | 可调用API | 当前不可调用API | 边界/替代',
+        '类别 | 状态 | 可调用API | 当前不可调用API | 边界/相关能力',
     ]
     for row in manifest['categories']:
         detail = row['boundary'] if row['callableApis'] or row['category']=='装备运动' else ''
-        if row.get('alternatives'):
-            detail += ' 替代（非等价）：'+','.join(row['alternatives'])+'。'
+        if row.get('relatedReadOnlyApis'):
+            detail += ' 相关只读能力（不能替代操作）：'+','.join(row['relatedReadOnlyApis'])+'。'
+        if row.get('relatedActionApis'):
+            detail += ' 相关有限操作（不等价）：'+','.join(row['relatedActionApis'])+'。'
         lines.append(' | '.join((row['category'], row['status'], ','.join(row['callableApis']) or '—',
                                 ','.join(row['notExposed']) or '—', detail)))
     return '\n'.join(lines)
@@ -121,7 +122,7 @@ api(name,args)仅调用API Contract所列名字，省略args等价{{}}；同步�
 JSON：数组1起始，slot/x/y数据编号保持API约定；json.null用于比较/保留null，nil会移除表项。空{{}}是对象，json.array()标记空数组，json.object()标记对象；json没有encode/decode。
 纯数组/对象直接编码；return {{10,20,30,summary="collected"}}编码为{{"$luaTable":{{"version":1,"kind":"mixed","array":[10,20,30],"fields":{{"summary":"collected"}}}}}}。含保留键$luaTable的纯对象以kind="object",fields封套转义，嵌套同规则；API参数仍须纯对象/数组，不接受混合表封套。循环/稀疏键/函数/非有限数为serialization_error，真实资源超限为value_limit。
 每次程序默认指令上限{limits.instructions}、Lua内存{limits.memory}字节；API请求帧≤{REQUEST_BYTES}字节（含封套）、返回值≤{VALUE_BYTES}字节、深度≤{MAX_DEPTH}、节点≤{MAX_NODES}。整数为有符号64位范围，浮点须有限，字符串UTF-8；API整数可用2113.0，不接受2113.5，不静默取整。
-默认整轮共享{limits.calls}次内部API、{limits.actions}次变更尝试、{limits.seconds:g}秒；多份程序不重置，wait/查询占API数，stop_action不占变更次数。默认模型工具调用上限7（execute_lua占1），实际剩余预算以请求runtimeLua为准，不能切换入口绕过。
+默认整轮共享{limits.calls}次内部API、{limits.actions}次变更尝试；整轮累计Lua执行时间上限为{limits.seconds:g}秒，包含Lua期间的API等待，不包含LLM推理及模型请求耗时；多份程序不重置，wait/查询占API数，stop_action不占变更次数。默认模型工具调用上限7（execute_lua占1），实际剩余预算以请求runtimeLua为准，不能切换入口绕过。
 log(message)最多32条、每条512 UTF-8字节，不占API次数；log/value是脚本自述，不是游戏证据。本程序局部table可记有限状态，无跨程序可写持久化；宿主lastObservation独立于value，保留身份/时效/result，payloadOmitted表示省略，移动或时效不明需重观察。
 受控pcall(f,...)返回true及成功返回值，普通Lua错误返回false及有界字符串；只读API本地参数拒绝可返回false与{{status='bad_argument',error,argumentOperation,diagnostics?}}。动作参数错、未completed动作及unknown、通信/协议、取消或资源终止不可由pcall捕获。唯一行动续行例外是宿主continuationAllowed=true证明failed、未开始和绑定known释放；只能选择不同参数，仍计原预算。不自动重试，不按reason字符串或Lua自报放行。
 行动结果{{valid,status,completed,reason,evidence,endEvidence,endEvidenceStatus}}只有valid且completed及known结束证据才可称动作完成；输入释放成功不证明效果确定，unknown保持unknown并隔离连接/阻止后续变更，不重连重放。failed/timeout/cancelled默认终止程序，不回滚先前效果。
