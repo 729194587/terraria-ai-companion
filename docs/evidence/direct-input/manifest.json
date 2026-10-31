@@ -1,0 +1,599 @@
+{
+  "date": "2026-10-31",
+  "version": "0.1.65",
+  "finalNative": "final-native/direct-input-results.json",
+  "legacyRegression": "legacy-regression/result.json",
+  "packages": [
+    {
+      "run": "final-native",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57",
+      "packageSHA256": "2747fd3ac331dc4607a412175b0618112d082bdf9e34c801eeff0b0d9326ea48"
+    },
+    {
+      "run": "legacy-regression",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-11a5f4bd31bf4d17addc2ae6a426bc45",
+      "packageSHA256": "2747fd3ac331dc4607a412175b0618112d082bdf9e34c801eeff0b0d9326ea48"
+    },
+    {
+      "run": "initial-null-evidence",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-ebd2914e716241038e54eedc7613d0bf",
+      "packageSHA256": "5e4966657c698551fc407e742287d91498d7580a4d0d2fccbae2eff1be45dbff"
+    },
+    {
+      "run": "fixture-file-sharing",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-9144d5b30e61422ea374f30a0bc30770",
+      "packageSHA256": "5e4966657c698551fc407e742287d91498d7580a4d0d2fccbae2eff1be45dbff"
+    },
+    {
+      "run": "earlier-loose-air-check",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-4918057ade854504a243f5fb82a9984a",
+      "packageSHA256": "00679f199c812150f400409bf24a7b4554d05c39ee6e907a2aad7c2724dfb13b"
+    },
+    {
+      "run": "strict-air-check-failure",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-8b0229fdce7846c09ae7c53f14ff2c73",
+      "packageSHA256": "2747fd3ac331dc4607a412175b0618112d082bdf9e34c801eeff0b0d9326ea48"
+    }
+  ],
+  "archiveSHA256": "467bd6e8b91e25365bd6338fadcb4442236b757d719a4c743d7fa9223d2c17e6",
+  "entries": [
+    {
+      "path": "final-native/action-fixture.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\action-fixture.json",
+      "size": 187,
+      "sha256": "19eee2bc9b68f3b4341b78f8d1bc0c6477eb07372d42e5976846c04edca2bbaa"
+    },
+    {
+      "path": "final-native/direct-input-frames.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\direct-input-frames.json",
+      "size": 2086,
+      "sha256": "ec5d977ceff89a3191baeff22f9a8be622582f4314a8765b28d7d00aa19bbace"
+    },
+    {
+      "path": "final-native/direct-input-ready.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\direct-input-ready.json",
+      "size": 59,
+      "sha256": "f030e6c115bec9c1ffc867efedd5c7af3160ffae2208d57d3d34a66b84fcd6a4"
+    },
+    {
+      "path": "final-native/direct-input-results.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\direct-input-results.json",
+      "size": 233629,
+      "sha256": "f4463c86c98f203009b6a31107f7399f35509b55fcfaa07cdb661c7f30eb2af3"
+    },
+    {
+      "path": "final-native/direct-input-terminal.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\direct-input-terminal.json",
+      "size": 731,
+      "sha256": "4fec083f9bbe60a0b4922e7ef445ba6d94e7c7459d4f62f80b5a6f0d1cbd4e5d"
+    },
+    {
+      "path": "final-native/lua/09d5da2253434e92b6a1ffc03e7dbebf/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\09d5da2253434e92b6a1ffc03e7dbebf\\events.jsonl",
+      "size": 5160,
+      "sha256": "fba909bb87b5abaabed2222600e5aa97cdd890eff0d79a21c10c9219f61ce3a9"
+    },
+    {
+      "path": "final-native/lua/09d5da2253434e92b6a1ffc03e7dbebf/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\09d5da2253434e92b6a1ffc03e7dbebf\\manifest.json",
+      "size": 893,
+      "sha256": "285e851298a09a0c3b358414b9a8dca82b003e98a36621826eaffaa6ffbde201"
+    },
+    {
+      "path": "final-native/lua/09d5da2253434e92b6a1ffc03e7dbebf/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\09d5da2253434e92b6a1ffc03e7dbebf\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/09d5da2253434e92b6a1ffc03e7dbebf/source-db7b847c0f789eadd2002fbdd769fee1d513c92e97a21e5a7a7fc6526b8d4fae.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\09d5da2253434e92b6a1ffc03e7dbebf\\source-db7b847c0f789eadd2002fbdd769fee1d513c92e97a21e5a7a7fc6526b8d4fae.lua",
+      "size": 94,
+      "sha256": "db7b847c0f789eadd2002fbdd769fee1d513c92e97a21e5a7a7fc6526b8d4fae"
+    },
+    {
+      "path": "final-native/lua/5f3b8aa8a2264b2b8f5e6a4def8d0a86/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\5f3b8aa8a2264b2b8f5e6a4def8d0a86\\events.jsonl",
+      "size": 5189,
+      "sha256": "5b0adf177865ad52897cc7be3dfb78002f194ec2fd1acd37dd224d17eda14e23"
+    },
+    {
+      "path": "final-native/lua/5f3b8aa8a2264b2b8f5e6a4def8d0a86/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\5f3b8aa8a2264b2b8f5e6a4def8d0a86\\manifest.json",
+      "size": 893,
+      "sha256": "509951a4fbfae2c1d6c18845c8669887f133526117ca964c3347e732f3bf8943"
+    },
+    {
+      "path": "final-native/lua/5f3b8aa8a2264b2b8f5e6a4def8d0a86/source-1fd22e364797f9da54b7f67071b950f1b48dd8408e58fe93ad2aeb7340c06654.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\5f3b8aa8a2264b2b8f5e6a4def8d0a86\\source-1fd22e364797f9da54b7f67071b950f1b48dd8408e58fe93ad2aeb7340c06654.lua",
+      "size": 93,
+      "sha256": "1fd22e364797f9da54b7f67071b950f1b48dd8408e58fe93ad2aeb7340c06654"
+    },
+    {
+      "path": "final-native/lua/5f3b8aa8a2264b2b8f5e6a4def8d0a86/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\5f3b8aa8a2264b2b8f5e6a4def8d0a86\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/7b96b2dc4fda4d2bb8517d4c9a7ecff1/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\7b96b2dc4fda4d2bb8517d4c9a7ecff1\\events.jsonl",
+      "size": 5181,
+      "sha256": "1687d870ffb4f20b9cf6382d28c96f863c6765d46ffd385248822cd458c19e05"
+    },
+    {
+      "path": "final-native/lua/7b96b2dc4fda4d2bb8517d4c9a7ecff1/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\7b96b2dc4fda4d2bb8517d4c9a7ecff1\\manifest.json",
+      "size": 893,
+      "sha256": "64b5107332a031976e49a59fe59c1a2f8ea6f4eb2d36833bf338ef27b3fb16bd"
+    },
+    {
+      "path": "final-native/lua/7b96b2dc4fda4d2bb8517d4c9a7ecff1/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\7b96b2dc4fda4d2bb8517d4c9a7ecff1\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/7b96b2dc4fda4d2bb8517d4c9a7ecff1/source-eb5d97037c492c473b48cf4739f486be71a36653bd9adde2eeda2890e70a4f7a.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\7b96b2dc4fda4d2bb8517d4c9a7ecff1\\source-eb5d97037c492c473b48cf4739f486be71a36653bd9adde2eeda2890e70a4f7a.lua",
+      "size": 93,
+      "sha256": "eb5d97037c492c473b48cf4739f486be71a36653bd9adde2eeda2890e70a4f7a"
+    },
+    {
+      "path": "final-native/lua/81dda587f957451e90c65dad24c71c6f/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\81dda587f957451e90c65dad24c71c6f\\events.jsonl",
+      "size": 5175,
+      "sha256": "1477cd1ac6b1c8194a64727f44c8677322424dfc5a7c60525f87cce38cc80b49"
+    },
+    {
+      "path": "final-native/lua/81dda587f957451e90c65dad24c71c6f/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\81dda587f957451e90c65dad24c71c6f\\manifest.json",
+      "size": 893,
+      "sha256": "0b85cd81148337a7aa5c7615310235fba5b3f6848c45d50d6bd8f4ca0cd2d145"
+    },
+    {
+      "path": "final-native/lua/81dda587f957451e90c65dad24c71c6f/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\81dda587f957451e90c65dad24c71c6f\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/81dda587f957451e90c65dad24c71c6f/source-ccb2363dd905fb05ba7d2581a23aae696db034629ee9b26c26bf5429fea32999.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\81dda587f957451e90c65dad24c71c6f\\source-ccb2363dd905fb05ba7d2581a23aae696db034629ee9b26c26bf5429fea32999.lua",
+      "size": 94,
+      "sha256": "ccb2363dd905fb05ba7d2581a23aae696db034629ee9b26c26bf5429fea32999"
+    },
+    {
+      "path": "final-native/lua/8fd6a3b80aa1408da408d3b5bc73ef6c/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\8fd6a3b80aa1408da408d3b5bc73ef6c\\events.jsonl",
+      "size": 5195,
+      "sha256": "3ba7aa2e9ed2d285641df60290e3fae0825e7a6dc5ef6a10092af6c93d11a8f7"
+    },
+    {
+      "path": "final-native/lua/8fd6a3b80aa1408da408d3b5bc73ef6c/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\8fd6a3b80aa1408da408d3b5bc73ef6c\\manifest.json",
+      "size": 893,
+      "sha256": "405888f59395925ee089b8e19b03128c6687e458c6a0a528fa322f750865eb46"
+    },
+    {
+      "path": "final-native/lua/8fd6a3b80aa1408da408d3b5bc73ef6c/source-27b22d27d095b34f83d977890ff35e9d9b94419f7e75525728a473470a40aed4.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\8fd6a3b80aa1408da408d3b5bc73ef6c\\source-27b22d27d095b34f83d977890ff35e9d9b94419f7e75525728a473470a40aed4.lua",
+      "size": 94,
+      "sha256": "27b22d27d095b34f83d977890ff35e9d9b94419f7e75525728a473470a40aed4"
+    },
+    {
+      "path": "final-native/lua/8fd6a3b80aa1408da408d3b5bc73ef6c/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\8fd6a3b80aa1408da408d3b5bc73ef6c\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/9729d5f38fb641bca358bc8802eae73a/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\9729d5f38fb641bca358bc8802eae73a\\events.jsonl",
+      "size": 7704,
+      "sha256": "0e05730f00d14832c00e4ca084b9df05e77e78a69fe112f0b7be03694132dc00"
+    },
+    {
+      "path": "final-native/lua/9729d5f38fb641bca358bc8802eae73a/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\9729d5f38fb641bca358bc8802eae73a\\manifest.json",
+      "size": 893,
+      "sha256": "4441916ef8b1b12923962a652ff17275ddbf38d41b7094f1600d33036a07a85f"
+    },
+    {
+      "path": "final-native/lua/9729d5f38fb641bca358bc8802eae73a/source-7d204cb1675ad7cd0144871aa3de4ba2cceb59528682c329face73c10abe9fd9.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\9729d5f38fb641bca358bc8802eae73a\\source-7d204cb1675ad7cd0144871aa3de4ba2cceb59528682c329face73c10abe9fd9.lua",
+      "size": 203,
+      "sha256": "7d204cb1675ad7cd0144871aa3de4ba2cceb59528682c329face73c10abe9fd9"
+    },
+    {
+      "path": "final-native/lua/9729d5f38fb641bca358bc8802eae73a/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\9729d5f38fb641bca358bc8802eae73a\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/a15a19bb30984f96ae3d47edab643bc5/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\a15a19bb30984f96ae3d47edab643bc5\\events.jsonl",
+      "size": 5186,
+      "sha256": "b0b61c5c9a80cebf0e5dc97c3762af857b571750f4239d468a1706a6039287cb"
+    },
+    {
+      "path": "final-native/lua/a15a19bb30984f96ae3d47edab643bc5/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\a15a19bb30984f96ae3d47edab643bc5\\manifest.json",
+      "size": 893,
+      "sha256": "41d803f105fdf205cf816c176b29ca841f09d884e3f47499ee3ec9f73cc0d6ef"
+    },
+    {
+      "path": "final-native/lua/a15a19bb30984f96ae3d47edab643bc5/source-037e7b373349dc10d4c338324ae6e82216a232f244668f46222f5579960b9cd8.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\a15a19bb30984f96ae3d47edab643bc5\\source-037e7b373349dc10d4c338324ae6e82216a232f244668f46222f5579960b9cd8.lua",
+      "size": 93,
+      "sha256": "037e7b373349dc10d4c338324ae6e82216a232f244668f46222f5579960b9cd8"
+    },
+    {
+      "path": "final-native/lua/a15a19bb30984f96ae3d47edab643bc5/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\a15a19bb30984f96ae3d47edab643bc5\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/cc826cb0256844869f075216bead2213/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\cc826cb0256844869f075216bead2213\\events.jsonl",
+      "size": 5175,
+      "sha256": "ad6c791403693a0987b0e7c5938415c5025da74722114e089b1cef7a5c1bf5ca"
+    },
+    {
+      "path": "final-native/lua/cc826cb0256844869f075216bead2213/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\cc826cb0256844869f075216bead2213\\manifest.json",
+      "size": 893,
+      "sha256": "0382aabfc5ab848bfc14906c665063d8447117b0be6ca3902584befdf7bb778c"
+    },
+    {
+      "path": "final-native/lua/cc826cb0256844869f075216bead2213/source-4a38b289df5a6f9bf38aee2493c7e72394ab67c635a0f6118873f1ae74be911f.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\cc826cb0256844869f075216bead2213\\source-4a38b289df5a6f9bf38aee2493c7e72394ab67c635a0f6118873f1ae74be911f.lua",
+      "size": 94,
+      "sha256": "4a38b289df5a6f9bf38aee2493c7e72394ab67c635a0f6118873f1ae74be911f"
+    },
+    {
+      "path": "final-native/lua/cc826cb0256844869f075216bead2213/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\cc826cb0256844869f075216bead2213\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/ccd2273584cf49d6b7a2b9b62542ab52/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\ccd2273584cf49d6b7a2b9b62542ab52\\events.jsonl",
+      "size": 5161,
+      "sha256": "75e1ead8d81d053381f6e879202de4935196ed675eb1fd98ff0655dab7719534"
+    },
+    {
+      "path": "final-native/lua/ccd2273584cf49d6b7a2b9b62542ab52/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\ccd2273584cf49d6b7a2b9b62542ab52\\manifest.json",
+      "size": 893,
+      "sha256": "3bf11a8e0b4ed2033b8501446fb39f9b95fc893f1fadb88722a68fbdbc128ad1"
+    },
+    {
+      "path": "final-native/lua/ccd2273584cf49d6b7a2b9b62542ab52/source-10a04db872ba2802a0817c399572b47e4ebc0169ed5c887bb73e00d953bc5eb5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\ccd2273584cf49d6b7a2b9b62542ab52\\source-10a04db872ba2802a0817c399572b47e4ebc0169ed5c887bb73e00d953bc5eb5.lua",
+      "size": 94,
+      "sha256": "10a04db872ba2802a0817c399572b47e4ebc0169ed5c887bb73e00d953bc5eb5"
+    },
+    {
+      "path": "final-native/lua/ccd2273584cf49d6b7a2b9b62542ab52/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\ccd2273584cf49d6b7a2b9b62542ab52\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/ce16eccf92dc46b28298f5919fd9da0c/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\ce16eccf92dc46b28298f5919fd9da0c\\events.jsonl",
+      "size": 5174,
+      "sha256": "5c67acba55aa8eec449be2bd6728431c04fa196ea9d017227c39b2bc5d6af7fc"
+    },
+    {
+      "path": "final-native/lua/ce16eccf92dc46b28298f5919fd9da0c/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\ce16eccf92dc46b28298f5919fd9da0c\\manifest.json",
+      "size": 893,
+      "sha256": "75ff6373202feccd5cf24d7ecf6f2c3c47a7360b935dccbffc2cc722eb7e99a3"
+    },
+    {
+      "path": "final-native/lua/ce16eccf92dc46b28298f5919fd9da0c/source-153bd4436718334540f8753cf2a955d8858c4e15d746fd3d8ab08f1d42070fc5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\ce16eccf92dc46b28298f5919fd9da0c\\source-153bd4436718334540f8753cf2a955d8858c4e15d746fd3d8ab08f1d42070fc5.lua",
+      "size": 93,
+      "sha256": "153bd4436718334540f8753cf2a955d8858c4e15d746fd3d8ab08f1d42070fc5"
+    },
+    {
+      "path": "final-native/lua/ce16eccf92dc46b28298f5919fd9da0c/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\ce16eccf92dc46b28298f5919fd9da0c\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/f0a10b7bf8ef499496eae6567e1ebe5a/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\f0a10b7bf8ef499496eae6567e1ebe5a\\events.jsonl",
+      "size": 5156,
+      "sha256": "230967417b0c289f4916ab53cbfcf1f44f575849593200100f78d9bbeddbb858"
+    },
+    {
+      "path": "final-native/lua/f0a10b7bf8ef499496eae6567e1ebe5a/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\f0a10b7bf8ef499496eae6567e1ebe5a\\manifest.json",
+      "size": 893,
+      "sha256": "370221bdbe5c681b6f5df95c8202d1992fe12d49e8f7a98d691310f0b3499429"
+    },
+    {
+      "path": "final-native/lua/f0a10b7bf8ef499496eae6567e1ebe5a/source-3a257b52aad25e9c4f4674c3050c8ecbf4941ed6b785b54bcad17517faf2ed28.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\f0a10b7bf8ef499496eae6567e1ebe5a\\source-3a257b52aad25e9c4f4674c3050c8ecbf4941ed6b785b54bcad17517faf2ed28.lua",
+      "size": 90,
+      "sha256": "3a257b52aad25e9c4f4674c3050c8ecbf4941ed6b785b54bcad17517faf2ed28"
+    },
+    {
+      "path": "final-native/lua/f0a10b7bf8ef499496eae6567e1ebe5a/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\f0a10b7bf8ef499496eae6567e1ebe5a\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/fc59c5559c7e478db667607fda88dd17/events.jsonl",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\fc59c5559c7e478db667607fda88dd17\\events.jsonl",
+      "size": 5207,
+      "sha256": "1cf9b53221ce17b3d65aa6dbdfee4d62a3f0800a890fa9a16a9fdd84a88b68b0"
+    },
+    {
+      "path": "final-native/lua/fc59c5559c7e478db667607fda88dd17/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\fc59c5559c7e478db667607fda88dd17\\manifest.json",
+      "size": 893,
+      "sha256": "6e8d132c92c63b8e70b70ab0996bdb8648412542232a50973518d3abf0222586"
+    },
+    {
+      "path": "final-native/lua/fc59c5559c7e478db667607fda88dd17/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\fc59c5559c7e478db667607fda88dd17\\source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "size": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "final-native/lua/fc59c5559c7e478db667607fda88dd17/source-b57f0eee9db8d6ccf6592eff660ee03fa3093fce14bdc5555207220382ae3dc3.lua",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\lua\\fc59c5559c7e478db667607fda88dd17\\source-b57f0eee9db8d6ccf6592eff660ee03fa3093fce14bdc5555207220382ae3dc3.lua",
+      "size": 94,
+      "sha256": "b57f0eee9db8d6ccf6592eff660ee03fa3093fce14bdc5555207220382ae3dc3"
+    },
+    {
+      "path": "final-native/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\manifest.json",
+      "size": 331,
+      "sha256": "72a303132e859141e287fc061b13f8902edc377b29da709eb38b0055455273a1"
+    },
+    {
+      "path": "final-native/stderr.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "final-native/stdout.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-d26f01ce8e844487894a7bae4222ec57\\stdout.log",
+      "size": 4867,
+      "sha256": "72edceb51c123d5dddd8771e3b7eece60c160f7ce0d870707f2c0ddf09febd24"
+    },
+    {
+      "path": "legacy-regression/action-fixture-no-combat.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-11a5f4bd31bf4d17addc2ae6a426bc45\\action-fixture-no-combat.json",
+      "size": 241,
+      "sha256": "22f7f1f0b361f951eda54c11d3385d88d6c4d0435f992e13e1cb3c6683768561"
+    },
+    {
+      "path": "legacy-regression/action-fixture.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-11a5f4bd31bf4d17addc2ae6a426bc45\\action-fixture.json",
+      "size": 187,
+      "sha256": "19eee2bc9b68f3b4341b78f8d1bc0c6477eb07372d42e5976846c04edca2bbaa"
+    },
+    {
+      "path": "legacy-regression/action-world-evidence.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-11a5f4bd31bf4d17addc2ae6a426bc45\\action-world-evidence.json",
+      "size": 401,
+      "sha256": "ad754ee9bf4ec4a49de5b9c8bd0ce0f866e8b3ddb69dac0d1d9c9181d85018f6"
+    },
+    {
+      "path": "legacy-regression/lua-actions-result.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-11a5f4bd31bf4d17addc2ae6a426bc45\\lua-actions-result.json",
+      "size": 14158,
+      "sha256": "8f27346829014ff69a1c8b9d180055a333ac6aaa9f2d32e523c512acef33575d"
+    },
+    {
+      "path": "legacy-regression/lua-select-result.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-11a5f4bd31bf4d17addc2ae6a426bc45\\lua-select-result.json",
+      "size": 3033,
+      "sha256": "f98bc063e07c72fe672f242acd7c05df6377e45194d2c799d9c6a877b2004ff8"
+    },
+    {
+      "path": "legacy-regression/result.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-11a5f4bd31bf4d17addc2ae6a426bc45\\result.json",
+      "size": 49565,
+      "sha256": "905d7b1b68874f627b30ba3bb336e769a24b7fa6c04aea91c753d812716211b3"
+    },
+    {
+      "path": "legacy-regression/server.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-11a5f4bd31bf4d17addc2ae6a426bc45\\server.log",
+      "size": 76583,
+      "sha256": "aafbe64581c161b26bd28e38de64c427e4a968d0a1ebfbf156e253f5b359f2a0"
+    },
+    {
+      "path": "legacy-regression/stderr.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-11a5f4bd31bf4d17addc2ae6a426bc45\\stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "legacy-regression/stdout.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-11a5f4bd31bf4d17addc2ae6a426bc45\\stdout.log",
+      "size": 4195,
+      "sha256": "7e27bdf8c0d4546f699495cc99b9ca8202530627fcae092a969e74580331bdbb"
+    },
+    {
+      "path": "initial-null-evidence/action-fixture.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-ebd2914e716241038e54eedc7613d0bf\\action-fixture.json",
+      "size": 187,
+      "sha256": "19eee2bc9b68f3b4341b78f8d1bc0c6477eb07372d42e5976846c04edca2bbaa"
+    },
+    {
+      "path": "initial-null-evidence/direct-input-frames.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-ebd2914e716241038e54eedc7613d0bf\\direct-input-frames.json",
+      "size": 388,
+      "sha256": "6192b5887b2a8ea9e3adab37e46a322cdbf63c39a73e0fd0e5e301632104fb57"
+    },
+    {
+      "path": "initial-null-evidence/direct-input-ready.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-ebd2914e716241038e54eedc7613d0bf\\direct-input-ready.json",
+      "size": 59,
+      "sha256": "f030e6c115bec9c1ffc867efedd5c7af3160ffae2208d57d3d34a66b84fcd6a4"
+    },
+    {
+      "path": "initial-null-evidence/direct-input-results.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-ebd2914e716241038e54eedc7613d0bf\\direct-input-results.json",
+      "size": 227120,
+      "sha256": "6c99bc210b75ebb5e6be26473ad03f3be32220438f08ff0bf77682b380ee2660"
+    },
+    {
+      "path": "initial-null-evidence/stderr.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-ebd2914e716241038e54eedc7613d0bf\\stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "initial-null-evidence/stdout.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-ebd2914e716241038e54eedc7613d0bf\\stdout.log",
+      "size": 4172,
+      "sha256": "20784afa3cc44c506b6b5c7e26d5a8aba26fc2c3cc52e9e9b04f051ec09883a6"
+    },
+    {
+      "path": "fixture-file-sharing/action-fixture-failure.txt",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-9144d5b30e61422ea374f30a0bc30770\\action-fixture-failure.txt",
+      "size": 1405,
+      "sha256": "abd0dfa43dd1af08c0d7ef9be3e76d65c0305a96e18c067306dada98c6400295"
+    },
+    {
+      "path": "fixture-file-sharing/action-fixture.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-9144d5b30e61422ea374f30a0bc30770\\action-fixture.json",
+      "size": 187,
+      "sha256": "19eee2bc9b68f3b4341b78f8d1bc0c6477eb07372d42e5976846c04edca2bbaa"
+    },
+    {
+      "path": "fixture-file-sharing/direct-input-frames.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-9144d5b30e61422ea374f30a0bc30770\\direct-input-frames.json",
+      "size": 3390,
+      "sha256": "32a5e95e83a589281219ea6fd87fdbf6bd966dd6d4c8db36f41a233f95d3db75"
+    },
+    {
+      "path": "fixture-file-sharing/direct-input-request.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-9144d5b30e61422ea374f30a0bc30770\\direct-input-request.json",
+      "size": 21,
+      "sha256": "c4ae756ae846e93faafcf9dc7390029b33438a81ef205390e19c9882b5ebcd9a"
+    },
+    {
+      "path": "fixture-file-sharing/direct-input-results.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-9144d5b30e61422ea374f30a0bc30770\\direct-input-results.json",
+      "size": 192556,
+      "sha256": "b0d237d511f32332b08beabd9c9041ef77ff9df2edc504c13e43177255b57318"
+    },
+    {
+      "path": "fixture-file-sharing/stderr.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-9144d5b30e61422ea374f30a0bc30770\\stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "fixture-file-sharing/stdout.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-9144d5b30e61422ea374f30a0bc30770\\stdout.log",
+      "size": 4412,
+      "sha256": "30769d9ad864db4926084f37d4190b17763c05abcc109fbcf71efda92b858620"
+    },
+    {
+      "path": "earlier-loose-air-check/action-fixture.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-4918057ade854504a243f5fb82a9984a\\action-fixture.json",
+      "size": 187,
+      "sha256": "19eee2bc9b68f3b4341b78f8d1bc0c6477eb07372d42e5976846c04edca2bbaa"
+    },
+    {
+      "path": "earlier-loose-air-check/direct-input-frames.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-4918057ade854504a243f5fb82a9984a\\direct-input-frames.json",
+      "size": 1945,
+      "sha256": "aa23949be12961a7f11aec9b2836f47527f05188ae6846ac308aae691500b66d"
+    },
+    {
+      "path": "earlier-loose-air-check/direct-input-ready.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-4918057ade854504a243f5fb82a9984a\\direct-input-ready.json",
+      "size": 59,
+      "sha256": "f030e6c115bec9c1ffc867efedd5c7af3160ffae2208d57d3d34a66b84fcd6a4"
+    },
+    {
+      "path": "earlier-loose-air-check/direct-input-results.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-4918057ade854504a243f5fb82a9984a\\direct-input-results.json",
+      "size": 235840,
+      "sha256": "9acc87f89cfbda82759b663e8b9ce1600d1d81d00f28a9fa7d0aee5d9e756d25"
+    },
+    {
+      "path": "earlier-loose-air-check/direct-input-terminal.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-4918057ade854504a243f5fb82a9984a\\direct-input-terminal.json",
+      "size": 731,
+      "sha256": "3feb59163e79c82fb8ad18222da4b464ca5b7040124d6d792483b667b319d630"
+    },
+    {
+      "path": "earlier-loose-air-check/manifest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-4918057ade854504a243f5fb82a9984a\\manifest.json",
+      "size": 331,
+      "sha256": "298d33dfed37c6392306150dedfda0a17c3d69be403e236594c3f1ea8bf3f50b"
+    },
+    {
+      "path": "earlier-loose-air-check/stderr.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-4918057ade854504a243f5fb82a9984a\\stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "earlier-loose-air-check/stdout.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-4918057ade854504a243f5fb82a9984a\\stdout.log",
+      "size": 4195,
+      "sha256": "58a161bab84bd7e54644647ab3721fa6a15c042f98d8b96e9d3145a93adcaddd"
+    },
+    {
+      "path": "strict-air-check-failure/action-fixture.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-8b0229fdce7846c09ae7c53f14ff2c73\\action-fixture.json",
+      "size": 187,
+      "sha256": "19eee2bc9b68f3b4341b78f8d1bc0c6477eb07372d42e5976846c04edca2bbaa"
+    },
+    {
+      "path": "strict-air-check-failure/direct-input-frames.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-8b0229fdce7846c09ae7c53f14ff2c73\\direct-input-frames.json",
+      "size": 4129,
+      "sha256": "934dfa020fdb53902aa22c94617808abaf482c646e8265e407c2c33d723a4e94"
+    },
+    {
+      "path": "strict-air-check-failure/direct-input-ready.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-8b0229fdce7846c09ae7c53f14ff2c73\\direct-input-ready.json",
+      "size": 58,
+      "sha256": "9c3830db997b4e43a0d7f0a07340ce86d3f9e14362c8aedee2e0c6d88c9c32b7"
+    },
+    {
+      "path": "strict-air-check-failure/direct-input-results.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-8b0229fdce7846c09ae7c53f14ff2c73\\direct-input-results.json",
+      "size": 85432,
+      "sha256": "4b5ad51960343a3690e1817df17b9a9b672deb971e5aa3ccb9e9d2a91993b7d3"
+    },
+    {
+      "path": "strict-air-check-failure/direct-input-terminal.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-8b0229fdce7846c09ae7c53f14ff2c73\\direct-input-terminal.json",
+      "size": 731,
+      "sha256": "d28a87e8ef25111161a98e41d7e4272577d35ee7a9b8bc2e61121b5137c22fb2"
+    },
+    {
+      "path": "strict-air-check-failure/stderr.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-8b0229fdce7846c09ae7c53f14ff2c73\\stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "strict-air-check-failure/stdout.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\direct-input-native-8b0229fdce7846c09ae7c53f14ff2c73\\stdout.log",
+      "size": 4902,
+      "sha256": "2bf841058c9a675bac0efa83ad59d1bafec3e7c0a6efa52fa0f0997106ef8294"
+    }
+  ]
+}

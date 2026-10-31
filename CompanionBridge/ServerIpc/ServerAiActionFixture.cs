@@ -89,6 +89,7 @@ internal static class ServerAiActionFixture
                         initialLife=p.statLife,initialAppleStack=2,perceptionNpcSlot=perceptionNpc?.whoAmI,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));
                 }
             }
+            lock(ProbeSession.Reservation.Gate)ServerAiDirectInputFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerCraftingFixture.Tick(ProbeSession.Actor,Main.spawnTileX,Main.spawnTileY+8);
             // The copied-world perception fixture tests NPC presence, not AI/combat.
             // Keep only that NPC in its explicit static pose during reads; exclude

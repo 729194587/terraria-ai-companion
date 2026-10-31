@@ -37,10 +37,16 @@ public static class ServerAiNativeActionOfflineTests
         internal void Tick()=>Actions.Tick(()=>Current,(_,_)=>throw new Exception("long actions may not use selection adapter"));
         internal JsonElement Action(string id)=>Send("action",id).GetProperty("data").GetProperty("action");
         internal string Start(string operation="mine_tile",CancellationToken token=default){string id=Guid.NewGuid().ToString("N");Send("start",id,operation,token,
-            operation=="navigate_to_landing_region"?(object)new{minPlayerLeftX=100,maxPlayerLeftX=140,surfaceY=200}:operation=="craft_recipe"?new{recipeId=12,recipeToken=new string('a',64),crafts=3}:null);Tick();Tick();return id;}
+            operation=="move_input"?(object)new{horizontal="right",vertical="none",jumpHoldUpdates=8,maxUpdates=60}:operation=="navigate_to_landing_region"?(object)new{minPlayerLeftX=100,maxPlayerLeftX=140,surfaceY=200}:operation=="craft_recipe"?new{recipeId=12,recipeToken=new string('a',64),crafts=3}:null);Tick();Tick();return id;}
     }
     public static void Run()
     {
+        {
+            var f=new Fixture();string id=f.Start("move_input");var a=f.Action(id);
+            Check(a.GetProperty("requestedInputs").GetProperty("maxUpdates").GetInt32()==60
+                &&a.GetProperty("durationMs").GetInt32()==30000,"direct-input immutable request and watchdog budget");
+            Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_direct_input_v1")>=0,"direct-input capability advertised");
+        }
         foreach(string reason in new[]{"navigation_stalled","navigation_action_limit","navigation_search_timeout"})
             Check(AiActionReasons.Navigation(reason)==reason,"navigation diagnostic survives protocol reason mapping: "+reason);
         Check(AiActionReasons.Navigation("no safe local route: blocked")=="native_navigation_failed","ordinary no-route mapping remains compatible");
@@ -99,7 +105,7 @@ public static class ServerAiNativeActionOfflineTests
             Check(a.GetProperty("targetRecipe").GetProperty("recipeId").GetInt32()==12&&a.GetProperty("targetRecipe").GetProperty("crafts").GetInt32()==3,"craft receipt fixes recipe identity and execution count");
             Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_crafting_v1")>=0,"craft capability is explicit");
         }
-        foreach(string op in new[]{"navigate_to_x","navigate_to_landing_region","use_item","mine_tile","place_tile","place_object","craft_recipe"})
+        foreach(string op in new[]{"move_input","navigate_to_x","navigate_to_landing_region","use_item","mine_tile","place_tile","place_object","craft_recipe"})
         {
             var f=new Fixture();string id=f.Start(op);
             Check(f.Native.Starts==1&&f.Action(id).GetProperty("status").GetString()=="running","accepted/running precede "+op+" native completion");
@@ -132,21 +138,23 @@ public static class ServerAiNativeActionOfflineTests
             var f=new Fixture();string id=f.Start();f.Native.Result=new("completed","no_effect",null,released,!released);f.Tick();
             Check(f.Action(id).GetProperty("status").GetString()=="unknown","animation/uncertain effect cannot prove completion");
         }
+        foreach(string operation in new[]{"mine_tile","move_input"})
         foreach(string cause in new[]{"cancel","disconnect","death","timeout","forget"})
         {
-            var f=new Fixture();using var disconnect=new CancellationTokenSource();string id=f.Start(token:disconnect.Token);
+            var f=new Fixture();using var disconnect=new CancellationTokenSource();string id=f.Start(operation,token:disconnect.Token);
             if(cause=="cancel")f.Send("cancel",id);
             if(cause=="disconnect")disconnect.Cancel();
             if(cause=="death")f.Current=f.Current with{CanAct=false};
-            if(cause=="timeout")f.Time=10001;
+            if(cause=="timeout")f.Time=30001;
             if(cause=="forget")f.Actions.Forget(f.Owner);
             f.Tick();var a=f.Action(id);
             Check(f.Native.Cancels==1&&a.GetProperty("endEvidence").GetProperty("inputsReleased").GetBoolean()
                 &&a.GetProperty("status").GetString()==(cause=="timeout"?"timeout":"cancelled"),cause+" retires exactly the acquired native handle");
         }
+        foreach(string operation in new[]{"mine_tile","move_input"})
         foreach(string cause in new[]{"object","world","generation","slot"})
         {
-            var f=new Fixture();string id=f.Start();f.Current=cause switch{
+            var f=new Fixture();string id=f.Start(operation);f.Current=cause switch{
                 "object"=>f.Current with{Actor=new object()},"world"=>f.Current with{World="new"},"generation"=>f.Current with{Generation=2},_=>f.Current with{Slot=253}};
             f.Tick();Check(f.Native.Cancels==0&&f.Send("action",id).GetProperty("error").GetString()=="stale_binding","changed "+cause+" never writes through stale handle");
         }

@@ -86,6 +86,12 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          {**INVENTORY_GUARDS, "hotbarKey": {"type": "integer", "minimum": 0, "maximum": 9}},
          ['sourceSlot', 'hotbarKey', 'sourceToken', 'destinationToken']),
     tool("get_world_state", "读取客户端昼夜、天气、事件、生物群系和深度。"),
+    tool("move_input", "仅服务器AI：持续注入原生A/D、W/S及Space；horizontal/vertical各自互斥，none为松开。maxUpdates是1..600次游戏更新，不是距离；jumpHoldUpdates为最初0..maxUpdates次按住跳跃。无需落地、支撑或路径预测，可空中转向/走下边缘；Down按原生平台下穿语义，Down+Jump可能先跳起再在下降时下穿。完成只表示输入时长结束，撞墙/下落/受伤是正常结果。取消只释放输入，保留惯性；不自动装备/飞行/恢复。",
+         {"horizontal":{"type":"string","enum":["none","left","right"]},
+          "vertical":{"type":"string","enum":["none","up","down"]},
+          "jumpHoldUpdates":{"type":"integer","minimum":0,"maximum":600},
+          "maxUpdates":{"type":"integer","minimum":1,"maximum":600}},
+         ["horizontal","vertical","jumpHoldUpdates","maxUpdates"]),
     tool("navigate_to_x", "复用连续导航至玩家左上角水平世界像素targetX；30秒上限，普通角色运动限制仍适用；arrived由游戏物理状态校验。失败时evidence.navigation.blockingTiles若存在，提供x/y/contentKey及basis，表示被拒绝的根节点前向步行试算中原生裁剪确认的完整实心接触，不证明全部路径被封死；缺失表示未可靠定位。",
          {"targetX": {"type": "number", "minimum": 0, "maximum": 1000000}}, ["targetX"]),
     tool("navigate_to_landing_region", "二维落脚导航：全部为世界像素，Y向下；minPlayerLeftX/maxPlayerLeftX是玩家碰撞框左边缘的闭区间，surfaceY是脚底目标水平表面高度（非玩家顶部）。原有普通角色限制；落点支持完整方块顶面和水平单向平台，不支持斜平台/半砖；30秒上限。仅实际进入X区间、脚底高度误差<=0.5px、安全着地且停稳后完成，不能只经过目标X。失败时evidence.navigation.blockingTiles若存在，提供x/y/contentKey及basis，仅表示被拒绝的根节点前向步行试算的已确认完整实心接触；缺失表示未可靠定位。",
@@ -210,6 +216,8 @@ def validate(name, arguments):
             raise ValueError('typeIds requires category=npc or item')
         if 'npcFilter' in arguments and arguments['category'] != 'npc':
             raise ValueError('npcFilter requires category=npc')
+    if name == 'move_input' and arguments['jumpHoldUpdates'] > arguments['maxUpdates']:
+        raise ValueError('jumpHoldUpdates must not exceed maxUpdates')
     if name == 'navigate_to_landing_region' and arguments['minPlayerLeftX'] > arguments['maxPlayerLeftX']:
         raise ValueError('Landing X bounds must be ordered')
 
@@ -262,7 +270,7 @@ def verified_server_craft(action, evidence):
 
 def same_action(expected, current):
     return isinstance(current, dict) and all(current.get(key) == expected.get(key) for key in
-        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'actorId', 'actorSlot'))
+        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'requestedInputs', 'actorId', 'actorSlot'))
 
 
 def verify_landing_start(action, arguments, *, server_ai=False):
@@ -321,6 +329,12 @@ async def terminal(bridge, action, generation):
     native_evidence = action.get('evidence') or {}
     native_evidence = native_evidence if isinstance(native_evidence, dict) else {}
     native_verified = {
+        'move_input': (native_evidence.get('requestedInputs') == action.get('requestedInputs')
+                       and isinstance(action.get('requestedInputs'), dict)
+                       and type(native_evidence.get('updatesExecuted')) is int
+                       and native_evidence['updatesExecuted'] == action['requestedInputs'].get('maxUpdates')
+                       and native_evidence.get('updatesRequested') == native_evidence['updatesExecuted']
+                       and native_evidence.get('inputReleased') is True),
         'navigate_to_x': native_evidence.get('arrived') is True,
         'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
@@ -350,7 +364,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe')
+                  and action.get('operation') in ('move_input', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe')
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -460,7 +474,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires atomic_operations_v1; loaded Mod does not support these operations')
     if name == 'navigate_to_landing_region' and 'landing_region_navigation_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires landing_region_navigation_v1; no two-dimensional action started')
-    required_capability = {'select_hotbar_slot': 'hotbar_keys_v1', 'drop_through_platform': 'platform_drop_v1'}.get(name)
+    required_capability = {'move_input': 'server_ai_direct_input_v1', 'select_hotbar_slot': 'hotbar_keys_v1', 'drop_through_platform': 'platform_drop_v1'}.get(name)
     if (name in ('get_player_status', 'resolve_content')
             or name == 'scan_entities' and set(arguments) - {'category', 'radius'}):
         required_capability = 'atomic_foundations_v1'
@@ -505,6 +519,12 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             verify_landing_start(action, arguments, server_ai='server_ai_atomic_v1' in bridge.hello.get('capabilities', []))
             landing_invalid = False
             landing_identity = dict(action)
+        if name == 'move_input':
+            placement_invalid = True
+            if action.get('requestedInputs') != arguments:
+                raise BridgeError('Direct inputs missing or different in start receipt')
+            placement_invalid = False
+            placement_identity = dict(action)
         if name == 'craft_recipe':
             placement_invalid = True
             if action.get('targetRecipe') != arguments:

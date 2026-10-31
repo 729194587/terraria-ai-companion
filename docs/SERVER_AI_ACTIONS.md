@@ -1,6 +1,50 @@
 # Lua 的服务器 AI 移动、使用与目标格工具操作
 
-当前增量：PR #25 / CompanionBridge **0.1.60** 新增原生配方查询与合成，见[合成接口、材料/站点/环境边界及实测](SERVER_AI_CRAFTING.md)。
+## M1.1-A Direct Input（0.1.65）
+
+```lua
+return api("move_input", {
+    horizontal="right", vertical="none",
+    jumpHoldUpdates=8, maxUpdates=60
+})
+```
+
+仅握手 `server_ai_actions_v1` + `server_ai_direct_input_v1` 的服务器后端开放。
+四个字段全部必填：horizontal 为 none/left/right（A/D），vertical 为 none/up/down（W/S）；
+maxUpdates 为 1..600 次自然 Player.Update，jumpHoldUpdates 为最初 0..maxUpdates 次 Space 输入。
+一次 Lua 动作对应一次 start，游戏线程持续输入；宿主仅轮询终态，不逐 Tick 发 IPC 或请求模型。
+Up/Down 是原生键语义，不是垂直位移命令。Down 允许水平平台下穿；Down+Jump 保留原生组合，
+可能先跳起、再在下降时下穿，不将其改写成传送或强制下落。没有自动寻路、落点保证或装备适配。
+
+`ServerAiDirectInput` 与 `ServerAiNavigation` 共享 `ActorControl.Driver` 的唯一槽位；
+只在动作互斥检查通过后切换。Start 验证身份/参数/控制权，不要求起步静止、grounded、
+导航 profile 或安全支撑。Tick 复用原 Player.Update / PostUpdateRunSpeeds 边界，
+每次明确设置完整方向及跳跃状态；Terraria 处理加速、跳跃、碰撞、重力和惯性。
+共享 TerrainReader.Grounded 只采样脚底接触，不作动作准入或整段轨迹预测。
+失能状态（冻结、石化、蛛网、舌头、微光、过场、坐/睡）、坐骑和反重力仍明确拒绝；
+在注入边界再检查一次，避免覆盖原生对失能控制的清除。空中、击退、普通受伤不因此拒绝。
+
+完成仅表示已执行指定更新数，reason=input_duration_elapsed；撞墙、无位移、自然掉落仍可 completed。
+回执保留 requestedInputs、updatesRequested/Executed、起止左上角世界像素、末速度、生命变化、
+grounded/airborne、inputReleased、settled、blockedHorizontalUpdates 和 noProgress。
+向量字段沿原 StateVector 序列化为 X/Y。noProgress 指整段两轴净位移均不足 0.5px，
+blockedHorizontalUpdates 指有水平输入而该更新 X 位移不足 0.01px；这些是观察，不证明墙体成因。
+accepted/firstInput/lastInput/observedGameUpdate 用于核对首次输入延迟、连续性和采样时序。
+逐更新输入轨迹仅由显式隔离测试开关记录，不塞进模型回执。
+
+结束、取消、退役与断连复用既有游戏线程身份/世界/代次/租约及清理路径。
+释放全部 AI 输入并同步原生状态，不写位置或速度，不重置原生 jump/releaseJump。
+inputReleased 与 settled 分开；死亡回执在原生 KillMe 后补采实际死亡状态。
+身份/控制权不能确认时不触碰旧 Player，保留 unknown；Lua 继续既有 unknown 隔离及不重连/不重放规则。
+30 秒墙钟看门由 AiAtomicActions 处理；游戏线程不推进时，Python 监督请求失败只能报告 unknown，不能声称已释放。
+
+定向原生复现：`pwsh -NoProfile -File tests/verify_server_ai_direct_input_native.ps1`。
+该脚本只在新 profile 和复制世界中启用双诊断旗标 + marker，使用真实 Lua Worker/IPC 与自然游戏更新，
+不部署现用 profile、不开图形客户端、不调用付费模型。结果及未覆盖项见[本轮证据记录](evidence/direct-input/analysis.md)。
+
+---
+
+历史增量：PR #25 / CompanionBridge **0.1.60** 新增原生配方查询与合成，见[合成接口、材料/站点/环境边界及实测](SERVER_AI_CRAFTING.md)。
 
 前序增量：**0.1.58** 接通基础 `place_tile`，见[原生放置与验证](SERVER_AI_PLACEMENT.md)。
 历史增量：**0.1.51** 增加铜斧空挥及原生树干砍伐。
@@ -27,7 +71,7 @@ Schema、调度器、Agent Prompt 或真人控制入口。历史报告和实验 
 派发拾取动作；普通镐挖不挖邻格，砍树允许原生整树连带变化。**0.1.56** 已移除
 早期 G7 的拾取抑制，挖掘期间继续原生被动拾取；`native_tile_destroyed` 不代表木材已进入背包。
 
-明确未接入：按 Down 直接穿平台、定向 `use_item.target`、其他物品类型、
+旧导航仍未接入 Down 穿平台；Direct Input 的 Down 语义见上文。其他未接入：定向 `use_item.target`、其他物品类型、
 攻击、其他放置类型（家具/平台/墙等）、墙/锤击、背包修改、额外感知工具。未知操作在协议/后端白名单处拒绝；
 有 target 的使用请求明确返回 `targeted_use_not_supported`，不会忽略目标后执行。
 导航继续拒绝现有模型不支持的装备、Buff、移动配置和地形；吃食物后可能因此拒绝导航。
@@ -46,7 +90,7 @@ Schema、调度器、Agent Prompt 或真人控制入口。历史报告和实验 
   自己的实例；服务器实例使用同一个原有算法，规划状态不跨角色共享。
 - `ActorControl` 只增加窄移动 driver，在原 G4 `Update` 和
   `PostUpdateRunSpeeds` 边界接入服务器导航。每个自然更新仅调用一次原 Update；
-  finally 释放输入，明确停止沿用 G4 的水平制动，不设置位置/垂直速度。
+  finally 释放输入；导航明确停止沿用 G4 的水平制动，Direct Input 保留自然惯性。两者均不设置位置/垂直速度。
 - G6/G7 主体、原生补丁和同步不重写；只将忙碌检查扩展到新导航 driver。
   没有直接调用 `WorldGen.KillTile`，没有修改 `Main.myPlayer/Main.LocalPlayer`。
 - 网络线程仍只交换有界文本和队列任务。绑定连接 lease 后，每次请求再次检查实际

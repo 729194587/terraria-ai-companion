@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.63","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.65","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -25,6 +25,12 @@ public static class ServerAiPackageTests
         var types=assembly.MainModule.Types.SelectMany(Walk).ToArray();
         TypeDefinition Type(string name)=>types.Single(t=>t.Name==name);
         bool Calls(MethodDefinition m,string name)=>m.HasBody&&m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.Name==name);
+        var direct=Type("ServerAiDirectInput");
+        Check(direct.Interfaces.Any(i=>i.InterfaceType.Name=="IMovementDriver"),"direct input uses the existing movement owner boundary");
+        Check(!direct.Methods.Where(m=>m.HasBody).Any(m=>Calls(m,"Predict")||Calls(m,"Plan")||Calls(m,"Healthy")),"direct input has no planner/profile/grounded start gate");
+        Check(!direct.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.OpCode==OpCodes.Stfld&&i.Operand is FieldReference f&&f.Name is "position" or "velocity"),"direct input never assigns native position or velocity");
+        Check(Calls(direct.Methods.Single(m=>m.Name=="Update"),"Invoke")&&Calls(direct.Methods.Single(m=>m.Name=="Update"),"Release"),"direct input calls original natural update and releases in cleanup");
+        Check(Calls(Type("ServerAiNativeActions").Methods.Single(m=>m.Name=="Start"),"Start")&&Type("AiAtomicActions").Methods.Any(m=>m.HasBody&&m.Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="move_input")),"direct input is in the packaged atomic protocol");
         var finish=Type("ProbeSession").Methods.Single(m=>m.Name=="Finish");
         int CallIndex(string type,string name)=>finish.Body.Instructions.ToList().FindIndex(i=>i.Operand is MethodReference r&&r.DeclaringType.Name==type&&r.Name==name);
         Check(CallIndex("WorldCharacterPersistence","BeforeRetire")>CallIndex("ActorControl","Retire")
@@ -143,7 +149,7 @@ public static class ServerAiPackageTests
         Check(new[]{"ScanTiles","ScanEntities","InspectTile","Resolve"}.All(name=>Calls(perceptionRead,name)),"server perception reuses four AtomicQueries projections");
         Check(Calls(perceptionRead,"Read")&&Calls(perceptionRead,"ToUnixTimeMilliseconds"),"server perception reads terrain and stamps actual UTC time");
         var perceptionIL=Walk(perception).SelectMany(t=>t.Methods).Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).ToArray();
-        Check(!perceptionIL.Any(i=>i.Operand is MethodReference r&&r.Name is "get_LocalPlayer" or "Query" or "CaptureCamera")
+        Check(!perceptionIL.Any(i=>i.Operand is MethodReference r&&(r.Name is "get_LocalPlayer" or "CaptureCamera" || r.Name=="Query"&&r.DeclaringType.Name=="AtomicQueries"))
             && !perceptionIL.Any(i=>i.Operand is FieldReference f&&f.Name is "myPlayer" or "screenPosition"),"perception adapter has no human query/camera/global-player path");
         var scene=Type("ServerSceneReader");
         var sceneIL=Walk(scene).SelectMany(t=>t.Methods).Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).ToArray();

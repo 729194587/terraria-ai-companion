@@ -132,6 +132,12 @@ internal static class AtomicParameters
                         || token.GetString().Any(c => !(c is >= '0' and <= '9' or >= 'a' and <= 'f'))) throw new FormatException("Invalid inventory token.");
                 }
                 break;
+            case "move_input":
+                Fields("horizontal", "vertical", "jumpHoldUpdates", "maxUpdates");
+                if(args.GetProperty("horizontal").GetString() is not ("none" or "left" or "right")
+                    ||args.GetProperty("vertical").GetString() is not ("none" or "up" or "down"))throw new FormatException("Invalid input direction.");
+                Integer("maxUpdates",1,600);Integer("jumpHoldUpdates",0,args.GetProperty("maxUpdates").GetInt32());
+                break;
             case "navigate_to_landing_region":
                 Fields("minPlayerLeftX", "maxPlayerLeftX", "surfaceY");
                 foreach (string key in keys) Number(args.GetProperty(key), 0, 1000000);

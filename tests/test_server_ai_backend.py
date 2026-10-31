@@ -35,6 +35,7 @@ class Host(socketserver.ThreadingTCPServer):
         self.maps = False
         self.crafting = False
         self.crafting_override = {}
+        self.direct_input = False
         self.actions = False
         self.object_placement = False
         self.placement = False
@@ -82,6 +83,8 @@ class Handler(socketserver.StreamRequestHandler):
             data = None
             if op == 'bind':
                 data = dict(capabilities=['server_ai_atomic_v1', 'atomic_operations_v1', 'hotbar_keys_v1'])
+                if h.direct_input:
+                    data['capabilities'].append('server_ai_direct_input_v1')
                 if h.reads:
                     data['capabilities'].append('server_ai_reads_v1')
                 if h.maps:
@@ -138,6 +141,8 @@ class Handler(socketserver.StreamRequestHandler):
                                 status='running', reason='accepted', executionState='accepted', durationMs=300,
                                 evidence=dict(targetSlot=(key + 9) % 10, selectionApplied=False),
                                 endEvidenceStatus='not_ended', endEvidence=None)
+                if r['operation'] == 'move_input':
+                    h.action['requestedInputs'] = copy.deepcopy(r['arguments'])
                 if r['operation'] == 'craft_recipe':
                     h.action['targetRecipe'] = copy.deepcopy(r['arguments'])
                 if r['operation'] in ('place_tile', 'place_object'):
@@ -170,6 +175,9 @@ class Handler(socketserver.StreamRequestHandler):
                                              targetAbsent=True, targetChanged=False, effectStatus='unconfirmed')
                         a['endEvidence'].update(phase='ServerAI_game_thread_inputs_released', inputsAcquired=True,
                                                 inputsReleased=True, effectVerified=True, operation=a['operation'])
+                        if a['operation'] == 'move_input':
+                            g=a['requestedInputs']
+                            a['evidence'].update(requestedInputs=copy.deepcopy(g),updatesRequested=g['maxUpdates'],updatesExecuted=g['maxUpdates'],inputReleased=True)
                         if a['operation'] == 'craft_recipe':
                             g=a['targetRecipe']
                             a['evidence'].update(recipeId=g['recipeId'],recipeToken=g['recipeToken'],requestedCrafts=g['crafts'],completedCrafts=g['crafts'],producedCount=g['crafts'],outputTypeId=36,outputCountPerCraft=1,inventoryVerified=True,mutationAttempted=True,batches=[{'consumed': [{'typeId':9,'count':10}]}]*g['crafts'])
@@ -359,6 +367,38 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.bridge.close()
         self.host.actions = True
         self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+
+    async def test_direct_input_lua_multi_update_and_receipt_guards(self):
+        self.host.actions = self.host.direct_input = True
+        self.bridge.close()
+        self.bridge = ServerAiBridge(self.host.server_address[1])
+        self.assertIn('move_input', self.bridge.supported_atomic_operations)
+        args = dict(horizontal='right', vertical='down', jumpHoldUpdates=8, maxUpdates=60)
+        r = await LuaRuntime(self.bridge).execute('return api("move_input", {horizontal="right",vertical="down",jumpHoldUpdates=8,maxUpdates=60})')
+        self.assertEqual('completed', r['status'], r)
+        self.assertEqual(1, len([r for r in self.host.sent if r['op'] == 'start']))
+        for mutate in (lambda a: a['evidence'].update(updatesExecuted=59),
+                       lambda a: a['evidence'].update(inputReleased=False),
+                       lambda a: a.update(requestedInputs={**args, 'maxUpdates': 59})):
+            self.host.polls = 0
+            self.host.action_transform = mutate
+            r = await atomic.dispatch(self.bridge, 'move_input', args)
+            self.assertFalse(r.get('completed', False))
+            self.assertEqual('unknown', r['status'])
+
+    async def test_direct_input_capability_and_duration_validation(self):
+        args = dict(horizontal='none', vertical='none', jumpHoldUpdates=8, maxUpdates=4)
+        with self.assertRaises(ValueError):
+            atomic.validate('move_input', args)
+        args['maxUpdates'] = 60
+        for change in ({'horizontal': 'both'}, {'vertical': 'left'}, {'maxUpdates': 0}, {'maxUpdates': 601},
+                       {'jumpHoldUpdates': True}, {'jumpHoldUpdates': -1}, {'extra': 1}):
+            with self.assertRaises(ValueError):
+                atomic.validate('move_input', {**args, **change})
+        before = len(self.host.sent)
+        with self.assertRaises(BridgeError):
+            await atomic.dispatch(self.bridge, 'move_input', args)
+        self.assertEqual(before, len(self.host.sent))
 
     async def test_existing_lua_worker_runs_navigation_use_mining_in_sequence(self):
         self.enable_native_actions()
