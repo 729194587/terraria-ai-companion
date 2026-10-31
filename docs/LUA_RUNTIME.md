@@ -1,5 +1,27 @@
 # Lua 编排 Runtime
 
+## Lua 失败后的部分动作结果（2026-10-31）
+
+模型可见的 `execute_lua` 回执新增 `actionResults`，由 `Agent.observe_lua` 收集的宿主动作结果经 `lua_agent.summarize` 投影。无需让失败的 Worker 继续运行或返回。`items` 按 `sequence` 排序，每项含 `phase`、`summaryOnly` 和真实 `result`；`phase=api` 为已回调的动作，`terminal` 为 Runtime 仅保留的终态，`cleanup` 为额外的清理观察，不表示重复执行同一动作。重复的 lastAction/cleanup 不重复计数。
+
+通常完整保留动作回执，包括操作/动作 ID、状态、失败原因、效果与输入释放证据。例如先选栏成功、后续使用失败时，历史分别保留 `completed` 与 `failed`；后者为 `unknown` 时也保持 unknown，即使 `endEvidenceStatus=known`、`inputsReleased=true`。释放证据只证明控制输入已释放，不证明动作效果已确定。
+
+`actionResults` 整体 JSON（`ensure_ascii=False`、默认分隔符）的 UTF-8 大小上限为 **32,768 字节**，包括列表与元数据；该额度独立于既有 value/lastAction/lastObservation 上限。先为最后终态和早期进度保留紧凑摘要，再利用余量保留完整回执。摘要只保留有界标识、真实状态/原因和可用的释放布尔证据；不补造成功或安全结论。`summaryOnly=true` 明确表示其他字段或字符串尾部已省略。
+
+- `totalCount`：投影前收到的结果数，包含必要的独立清理观察；不等于执行动作次数。
+- `returnedCount` / `omittedCount`：返回项数 / 整条未返回数，两者之和为 totalCount。
+- `summaryOnlyCount`：返回项中仅摘要的数量；完整回执数为 returnedCount 减去该数。
+- `statusCounts`：省略前各真实状态的数量，不是任务成功统计。
+- `truncated`：存在摘要或整条省略；`byteLimit`：历史的总大小上限。
+
+`value` 仍只在 Lua 正常返回时表示程序返回值；程序失败后不把部分结果放进 value。`programCompleted/actionSuccess/taskOutcome` 的计算、`lastObservation/lastAction`、失败停止、取消清理、输入释放、unknown 隔离及不自动重试均沿用现有机制。部分结果可见不授予续行权限。
+
+模型获得回执后可解释真实部分进度。正常模型最终回复中的解释不再被通用 Lua 失败文本覆盖；宿主仍在前面保留有界失败/unknown 提示，并沿用整条聊天长度上限。无模型回复或预算耗尽时仍使用原有确定性后备文本。
+
+定向证据：`tests/test_lua_partial_results.py` 使用真实 Worker/Dispatcher/Agent 与游戏、模型替身验证成功后 failed/unknown、跨程序动作屏障、解释保留、正常返回及纯 Lua 错误。另以大回执和 256 项历史验证精确字节上限、摘要/省略计数、真实释放证据和最终 unknown 保留。不调用真实模型或游戏；本轮无 Mod 代码变更。
+
+验证结果：新增部分结果 7 项、既有 Agent 21 项、Runtime 33 项、恢复/观察 6 项、服务端契约 8 项，共 75 个不同用例通过；精确暂存源码副本额外复验新增 7 项通过，排除已有未提交 Worker/探索改动的依赖。未运行全量测试；真实模型最终措辞和图形游戏任务待实测。
+
 ## 阶段二：受控 pcall
 
 `pcall(f, ...)` 经私有宿主回调调用 Lua 函数，未开放原生 pcall；成功返回 `true, ...`，

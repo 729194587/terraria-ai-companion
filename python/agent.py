@@ -743,9 +743,14 @@ class Agent:
                     raise LLMError("Missing final assistant text")
                 if first_atomic_failure is not None and atomic_halted:
                     root_failure = first_atomic_failure or last_atomic_action
-                    text = "行动未完成：" + str(root_failure.get("reason", root_failure.get("error", "unknown")))
+                    reason = str(root_failure.get("reason", root_failure.get("error", "unknown")))
+                    if lua_failure is not None:
+                        status = str(root_failure.get('status', 'unknown'))[:32]
+                        text = f"行动未完成（{status}）：{reason[:96]}。{text}"
+                    else:
+                        text = "行动未完成：" + reason
                 elif lua_failure is not None:
-                    text = 'Lua 程序未完成：' + str(lua_failure.get('error') or lua_failure.get('reason') or lua_failure['status'])
+                    text = 'Lua 程序未完成：' + str(lua_failure.get('error') or lua_failure.get('reason') or lua_failure['status'])[:96] + '。' + text
                 elif unconfirmed_item_effect:
                     text = ("物品原生使用周期已完成；命中或其他实际效果未确认。" if self.server_ai else
                             "物品原生使用周期已完成；实际效果（包括雀杖是否成功召唤）未确认。")
