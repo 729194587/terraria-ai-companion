@@ -10,7 +10,7 @@ namespace CompanionBridge.ServerIpc;
 internal sealed class AiAtomicActions
 {
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
-    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_crafting_v1"}).ToArray();
+    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_crafting_v1","server_ai_inventory_v1"}).ToArray();
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
     {
@@ -52,6 +52,7 @@ internal sealed class AiAtomicActions
         actionId = e.Id, operation = e.Operation, session = e.Owner.ToString("N"), generation = e.Generation,
         worldSessionId = e.World, actorId = e.ActorId, actorSlot = e.Slot, durationMs = e.Duration,
         targetTile = e.Operation is "place_tile" or "place_object" ? (JsonElement?)e.Arguments : null,
+        targetInventory = e.Operation is "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" ? (JsonElement?)e.Arguments : null,
         targetRecipe = e.Operation == "craft_recipe" ? (JsonElement?)e.Arguments : null,
         requestedInputs = e.Operation == "move_input" ? (JsonElement?)e.Arguments : null,
         targetRegion = e.Operation == "navigate_to_landing_region" ? (JsonElement?)e.Arguments : null,
@@ -77,7 +78,7 @@ internal sealed class AiAtomicActions
         if (!current.CanAct) return new(Error: "actor_not_alive");
         string operation = root.GetProperty("operation").GetString();
         bool selecting = operation == "select_hotbar_slot";
-        if (!selecting && (executor == null || operation is not ("move_input" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "craft_recipe"))) return new(Error: "unsupported_operation");
+        if (!selecting && (executor == null || operation is not ("move_input" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item"))) return new(Error: "unsupported_operation");
         var arguments = root.GetProperty("arguments");
         int key = 0;
         if (selecting)

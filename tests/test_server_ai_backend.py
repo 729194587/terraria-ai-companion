@@ -468,7 +468,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(r['op'] == 'start' for r in self.host.sent))
 
     async def test_all_inventory_modes_use_existing_query_dispatch(self):
-        for args in ({}, dict(mode='hotbar'), dict(mode='slots', slots=[58, 9, 0]), dict(mode='full'), dict(mode='item', item='Terraria/CopperPickaxe')):
+        for args in (dict(mode='selected'), dict(mode='hotbar'), dict(mode='slots', slots=[58, 9, 0]), dict(mode='full'), dict(mode='item', item='Terraria/CopperPickaxe')):
             result = await atomic.dispatch(self.bridge, 'inspect_inventory', args)
             self.assertTrue(result['valid'], result)
             self.assertEqual('ok', result['data']['status'])
@@ -628,7 +628,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
     async def test_unavailable_read_does_not_invent_player_or_inventory(self):
         self.host.mode = 'unavailable_query'
         for name in ('get_player_state', 'inspect_inventory'):
-            result = await atomic.dispatch(self.bridge, name, {})
+            result = await atomic.dispatch(self.bridge, name, {'mode': 'selected'} if name == 'inspect_inventory' else {})
             self.assertFalse(result['valid'])
             self.assertNotIn('player', result)
             self.assertNotIn('data', result)
@@ -640,7 +640,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.host.sent.clear()
         for name in ('get_player_state', 'inspect_inventory'):
             with self.assertRaises(atomic.PreDispatchRejected):
-                await atomic.dispatch(self.bridge, name, {})
+                await atomic.dispatch(self.bridge, name, {'mode': 'selected'} if name == 'inspect_inventory' else {})
         self.assertEqual([], self.host.sent)
 
     async def test_missing_selection_evidence_preserves_unknown(self):

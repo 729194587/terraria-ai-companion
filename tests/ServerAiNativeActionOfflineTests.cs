@@ -47,6 +47,28 @@ public static class ServerAiNativeActionOfflineTests
                 &&a.GetProperty("durationMs").GetInt32()==30000,"direct-input immutable request and watchdog budget");
             Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_direct_input_v1")>=0,"direct-input capability advertised");
         }
+        foreach(string op in new[]{"transfer_inventory_item","swap_inventory_slots","hold_inventory_item"})
+        {
+            var f=new Fixture();
+            string id=Guid.NewGuid().ToString("N");
+            var args=new{sourceSlot=10,destinationSlot=0,count=3,sourceToken=new string('a',64),destinationToken=new string('b',64)};
+            Check(f.Send("start",id,op,args:args).GetProperty("ok").GetBoolean(),"inventory lifecycle admission: "+op);
+            Check(f.Action(id).GetProperty("targetInventory").GetProperty("sourceSlot").GetInt32()==10,"immutable inventory request receipt");
+            f.Tick();f.Tick();f.Native.UnknownOnCancel=true;
+            var stopped=f.Send("cancel",id).GetProperty("data").GetProperty("action");
+            Check(stopped.GetProperty("status").GetString()=="unknown"&&f.Native.Starts==1&&f.Native.Cancels==1,"uncertain inventory cancel stays unknown, no replay");
+        }
+        {
+            var f=new Fixture();var disconnected=new CancellationTokenSource();string id=Guid.NewGuid().ToString("N");
+            f.Send("start",id,"transfer_inventory_item",token:disconnected.Token);f.Tick();f.Tick();
+            f.Native.UnknownOnCancel=true;disconnected.Cancel();f.Tick();
+            Check(f.Action(id).GetProperty("status").GetString()=="unknown"&&f.Native.Cancels==1,"disconnect after inventory start preserves unknown");
+        }
+        {
+            var f=new Fixture();var disconnected=new CancellationTokenSource();string id=Guid.NewGuid().ToString("N");
+            f.Send("start",id,"transfer_inventory_item",token:disconnected.Token);disconnected.Cancel();f.Tick();
+            Check(f.Action(id).GetProperty("status").GetString()=="cancelled"&&f.Native.Starts==0,"disconnect before execution makes no inventory call");
+        }
         foreach(string reason in new[]{"navigation_stalled","no safe local route: blocked","unsupported navigation state: wet"})
             Check(AiActionReasons.NavigationRecoveryKind(reason)!=null,"known native navigation refusal can be classified: "+reason);
         foreach(string reason in new[]{"navigation_search_timeout","navigation_action_limit","native_navigation_exception","life decreased","navigation edge landing mismatch","local prediction exceeded 50ms budget"})

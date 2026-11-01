@@ -77,7 +77,7 @@ internal static class ServerAiQueries
         else
         {
             // No human Controls/WorldSession/Main.myPlayer-based token may leak into this backend.
-            data = AtomicOperations.ReadInventory(p, arguments, (_, _) => null, () => Snapshot(p));
+            data = AtomicOperations.ReadInventory(p, arguments, (item, slot) => ActorInventory.Token(expected,item,slot), () => Snapshot(p));
         }
         var projected = JsonSerializer.SerializeToElement(data, Json).EnumerateObject().ToDictionary(field => field.Name, field => (object)field.Value);
         if(operation=="inspect_tile")
@@ -91,7 +91,7 @@ internal static class ServerAiQueries
         }
         projected["source"] = "server_ai_player";
         projected["customState"] = "unknown; custom Mod player/item/buff data and Mod accessory slots not read";
-        projected["inventoryTokenStatus"] = "unsupported_server_ai_inventory_mutation";
+        projected["inventoryTokenStatus"] = "server_ai_inventory_v1; use mode slots/selected/hotbar for fresh slot tokens; custom unsaved Mod state unknown";
         Require(expected); // Reject hooks/identity changes during projection before publishing the result.
         return new { available = true, worldSessionId = expected.World, gameUpdate = Main.GameUpdateCount,
             actorGeneration = expected.Generation, actorSlot = expected.Slot,

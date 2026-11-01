@@ -53,6 +53,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         {
             object context;
             if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
+            else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
             else if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
             else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId);ActorControl.Driver=navigation;}
             else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId);ActorControl.Driver=navigation;}
@@ -91,6 +92,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
         var p=(Player)h.Identity.Actor;
+        if(ActorInventory.IsOperation(h.Operation))
+        {
+            var c=(ActorInventory.Context)h.Context;ActorInventory.Step(c);
+            return new(c.Status,c.Reason,ActorInventory.Evidence(c),Released(p),c.Status=="completed",InputsAcquired:false);
+        }
         if(h.Operation=="craft_recipe")
         {
             var c=(ActorCrafting.Context)h.Context;ActorCrafting.Step(c);
@@ -162,6 +168,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if(ActorInventory.IsOperation(h.Operation))
+        {
+            var c=(ActorInventory.Context)h.Context;ActorInventory.Cancel(c);
+            return new(c.Status,c.Reason,ActorInventory.Evidence(c),Released((Player)h.Identity.Actor),c.Status=="completed",InputsAcquired:false);
+        }
         if(h.Operation=="craft_recipe")
         {
             var c=(ActorCrafting.Context)h.Context;

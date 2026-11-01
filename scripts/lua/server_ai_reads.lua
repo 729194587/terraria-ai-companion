@@ -2,7 +2,7 @@
 local before = api('get_player_state', {})
 assert(before.valid and before.player.inWorld)
 assert(before.player.source == 'server_ai_player')
-local selected = api('inspect_inventory', {})
+local selected = api('inspect_inventory', {mode='selected'})
 local hotbar = api('inspect_inventory', {mode='hotbar'})
 local slots = api('inspect_inventory', {mode='slots', slots={0,9,50,58}})
 local full = api('inspect_inventory', {mode='full'})
@@ -11,7 +11,7 @@ assert(selected.valid and hotbar.valid and slots.valid and full.valid and item.v
 assert(#hotbar.data.inventory == 10 and #full.data.inventory == 59)
 assert(slots.data.inventory[1].slot == 0 and slots.data.inventory[4].slot == 58)
 assert(selected.data.inventory[1].slot == before.player.selectedSlot)
-assert(selected.data.inventoryTokenStatus == 'unsupported_server_ai_inventory_mutation')
+assert(selected.data.inventoryTokenStatus == 'unsupported_server_ai_inventory_mutation' or #selected.data.inventory[1].inventoryToken == 64)
 local occupied = {}
 for _, entry in ipairs(full.data.inventory) do
     if entry.empty == false then occupied[#occupied + 1] = entry end

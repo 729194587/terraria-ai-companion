@@ -1,0 +1,16 @@
+test_action_receipts_and_guard_arguments_are_preserved (test_inventory_operations.InventoryRuntimeTests.test_action_receipts_and_guard_arguments_are_preserved) ... ok
+test_new_inventory_action_cancellation_uses_existing_cleanup (test_inventory_operations.InventoryRuntimeTests.test_new_inventory_action_cancellation_uses_existing_cleanup) ... Executing <Task pending name='Task-11' coro=<LuaRuntime.execute() running at D:\Agent Project\terraria-ai-companion\python\lua_runtime.py:302> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:428> created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\tasks.py:384> took 0.531 seconds
+Executing <Task finished name='Task-11' coro=<LuaRuntime.execute() done, defined at D:\Agent Project\terraria-ai-companion\python\lua_runtime.py:157> result={'actionState': 'released', 'actions': 1, 'calls': 1, 'cleanup': {'actionGeneration': 1, 'actionId': 3, 'cancelled': True, 'completed': False, ...}, ...} created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\tasks.py:384> took 0.516 seconds
+ok
+test_old_mod_is_rejected_before_start_or_query (test_inventory_operations.InventoryRuntimeTests.test_old_mod_is_rejected_before_start_or_query) ... ok
+test_slot_query_arguments_are_forwarded_without_action (test_inventory_operations.InventoryRuntimeTests.test_slot_query_arguments_are_forwarded_without_action) ... ok
+test_unknown_inventory_effect_fences_session (test_inventory_operations.InventoryRuntimeTests.test_unknown_inventory_effect_fences_session) ... Executing <Task pending name='Task-31' coro=<InventoryRuntimeTests.test_unknown_inventory_effect_fences_session() running at D:\Agent Project\terraria-ai-companion\tests\test_inventory_operations.py:112> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:428> cb=[_run_until_complete_cb() at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:181] created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:100> took 0.375 seconds
+Executing <Task finished name='Task-31' coro=<InventoryRuntimeTests.test_unknown_inventory_effect_fences_session() done, defined at D:\Agent Project\terraria-ai-companion\tests\test_inventory_operations.py:110> result=None created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:100> took 0.469 seconds
+ok
+test_all_mutations_are_registered_as_actions_with_strict_guards (test_inventory_operations.InventorySchemaTests.test_all_mutations_are_registered_as_actions_with_strict_guards) ... ok
+test_slots_query_is_bounded_and_only_valid_in_slots_mode (test_inventory_operations.InventorySchemaTests.test_slots_query_is_bounded_and_only_valid_in_slots_mode) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 7.891s
+
+OK

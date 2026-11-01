@@ -1,0 +1,124 @@
+{
+  "date": "2026-11-01",
+  "baseCommit": "004fdee73b46b4fc6894c1576df0d800cf69bf91",
+  "package": {
+    "version": "0.1.70",
+    "path": "D:\\Agent Project\\terraria-ai-companion\\.local\\inventory-build\\Mods\\CompanionBridge.tmod",
+    "sha256": "1fdfa14316b0f08acc3d441e4defd0aa66f1e1f4125344220d2782cd5f84bf8c"
+  },
+  "profile": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-7a85fc40c425493896c5958465db700f",
+  "mode": "isolated copied world, real dedicated Terraria Main.Update, no clients, no model; diagnostic inventory seeding and ModItem only under explicit test flags",
+  "commands": [
+    "pwsh -NoProfile -File scripts/build-companion.ps1 -OutputPath .local/inventory-build",
+    "pwsh -NoProfile -File tests/verify_server_ai_native.ps1 -PackagePath .local/inventory-build/Mods/CompanionBridge.tmod -Actions -Inventory -Atomic -Reads -Port 27861 -IpcPort 27862",
+    "pwsh -NoProfile -File tests/run_server_ai_ipc_tests.ps1 -PackagePath .local/inventory-build/Mods/CompanionBridge.tmod",
+    "pwsh -NoProfile -File tests/run_csharp_tests.ps1 -InventoryOnly",
+    ".local/lua-venv/Scripts/python.exe -B -m unittest discover -s tests -p test_server_ai_inventory.py -v",
+    ".local/lua-venv/Scripts/python.exe -B -m unittest discover -s tests -p test_server_ai_backend.py -v",
+    ".local/lua-venv/Scripts/python.exe -B -m unittest discover -s tests -p test_inventory_operations.py -v"
+  ],
+  "results": {
+    "nativeCases": 33,
+    "luaInventoryActions": 7,
+    "pythonTests": 49,
+    "csharpIpc": 45,
+    "csharpAtomic": 40,
+    "csharpReads": 63,
+    "csharpNativeAdapter": 226,
+    "csharpChat": 30,
+    "csharpPackageIL": 79,
+    "localInventory": "passed",
+    "build": "0 errors, 0 warnings",
+    "fullSuite": "NOT RUN",
+    "graphicalHostAndPlay": "NOT RUN",
+    "remoteClientSynchronization": "NOT RUN"
+  },
+  "initialFailure": "Old read acceptance script omitted required mode; failed at argument validation before inventory actions. Updated script/tests to explicit mode without relaxing production schema. Earlier network-restricted attempts failed to bind/list listeners; authorized localhost checks rerun outside sandbox.",
+  "limitations": [
+    "Unpersisted private ModItem/GlobalItem state is unknown. Native CanStack and stack/split hooks retain authority; arbitrary mods not universally validated.",
+    "No rollback/retry after unknown. SaveData/CanStack hooks count as mutationAttempted even if native transfer was not entered.",
+    "Native lifecycle disconnect cases inject CancellationToken cancellation and Forget into the production action lifecycle with the real executor; do not claim a deterministic TCP-disconnect-between-stack-and-confirmation timing test.",
+    "Server native full synchronization was invoked; no remote graphical client or late-join packet receipt tested.",
+    "No changes to local AtomicInventory, no existing user profile deployment, no paid model requests."
+  ],
+  "files": [
+    {
+      "file": "inventory-selftest.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-7a85fc40c425493896c5958465db700f\\inventory-selftest.json",
+      "sha256": "8e9d7592509c3fc35f6d4c254b900ec8b716159a5731fd6ad8d9a8ea1d63bd3b",
+      "bytes": 27731
+    },
+    {
+      "file": "inventory-results.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-7a85fc40c425493896c5958465db700f\\inventory-results.json",
+      "sha256": "ab168a113d4f7c847c79d387b89410f26365ebf6cc70a790718fbd70552a2aa8",
+      "bytes": 85253
+    },
+    {
+      "file": "result.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-7a85fc40c425493896c5958465db700f\\result.json",
+      "sha256": "b1cb2181a72895db26c1d5851f900d6c6ade683fb6f62aed365fa23db08d1226",
+      "bytes": 202278
+    },
+    {
+      "file": "server.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-7a85fc40c425493896c5958465db700f\\server.log",
+      "sha256": "bbf2314034df6fed76d69425bf8798bbc536d49509cb4f220688dad03a87e439",
+      "bytes": 125989
+    },
+    {
+      "file": "stdout.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-7a85fc40c425493896c5958465db700f\\stdout.log",
+      "sha256": "f25d8713c6aa33d70593ca6509f6a0e4ff67c3d884ee926165dc56f375a949bf",
+      "bytes": 4471
+    },
+    {
+      "file": "stderr.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-7a85fc40c425493896c5958465db700f\\stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "file": "inventory-python-new.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\inventory-python-new.log",
+      "sha256": "9418475b59876129a91e1f0ae5351f4164dfa3f7a17a43dd4be828c6e94a7eb2",
+      "bytes": 2821
+    },
+    {
+      "file": "inventory-python-backend.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\inventory-python-backend.log",
+      "sha256": "759f8510c682c340a6281343e7ce6ae0bf0a427551f8dd4fe61013cfea13884d",
+      "bytes": 17150
+    },
+    {
+      "file": "inventory-python-local.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\inventory-python-local.log",
+      "sha256": "309b93a1de904e29b3a2a090f617e37a2e4795730ec471aaab60dbb52a98d5a8",
+      "bytes": 3021
+    },
+    {
+      "file": "inventory-ipc-tests.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\inventory-ipc-tests.log",
+      "sha256": "d67d1f0a28b73063fa52feec9fc74dd6680dc404c4cbd384890ee56b6ff46526",
+      "bytes": 37015
+    },
+    {
+      "file": "inventory-local-tests.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\inventory-local-tests.log",
+      "sha256": "bf93424ce49dbe60c8fe91392b9cd1b9a1d0cc697ace747a884c6a5154021ac7",
+      "bytes": 272
+    },
+    {
+      "file": "inventory-build.log",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\inventory-build.log",
+      "sha256": "17534c8e6f2fd2460c361b44be13b0a98bc3c21f93afa0ad19baba3794e7dd6c",
+      "bytes": 174
+    },
+    {
+      "file": "initial-read-failure.json",
+      "source": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-7955e422240a4256a4343f64c6d58882\\lua-combined-result.json",
+      "sha256": "dac6c17e1d03a0d0fa7fa64c17de663a1abb03fd93690455c0ee70cb82601964",
+      "bytes": 5991
+    }
+  ]
+}

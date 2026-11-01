@@ -117,8 +117,11 @@ SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 
 # Model-only server projection. Execution validation and the shared TOOLS stay unchanged.
 SERVER_DESCRIPTIONS = {
+    'transfer_inventory_item': '服务器AI：仅0..49普通库存槽，新鲜两槽token；原生拆分/堆叠，CanStack检查Mod兼容性，容量不足不执行；核验数量及后续游戏更新。unknown可能已变更，不回滚、不自动重试。',
+    'swap_inventory_slots': '服务器AI：新鲜两槽token，交换0..49完整物品实例；不合并，后续游戏更新核验；unknown不回滚、不自动重试。',
+    'hold_inventory_item': '服务器AI：完整交换sourceSlot与hotbarKey(游戏键1..9,0)，目标物品回源槽，再选中；同槽只选择，不自动使用；核验两槽与后续更新。unknown不回滚、不自动重试。',
     'get_player_state': '读取绑定服务器AI的实际位置/速度/生命及motion；无参数。返回{valid,player,motion,binding,...}，player.position是碰撞框左上角世界像素，velocity为像素/游戏更新，Y向下；motion.grounded与supported独立，supported只是导航profile适用性，不保证支撑/路径安全。',
-    'inspect_inventory': '只读AI真实背包，必须显式mode；局部查询不代表完整背包。返回{valid,available,data,...}，data.inventoryScope/inspectedSlots标明实际检查范围，item匹配slots不等于搜索范围。hotbarKey是游戏键1..9,0；不提供可用于修改的inventoryToken。',
+    'inspect_inventory': '只读AI真实背包，必须显式mode；局部查询不代表完整背包。返回{valid,available,data,...}，data.inventoryScope/inspectedSlots标明实际检查范围，item匹配slots不等于搜索范围。hotbarKey是游戏键1..9,0；新版本server_ai_inventory_v1提供绑定World/Actor/Generation/槽位与物品状态的inventoryToken；操作前用slots/selected/hotbar读取两槽新鲜token。full/item不保证提供token，Mod未保存私有状态未知。',
     'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。返回{valid,available,data,...}，data.terrain含originX/originY/rows，data.state含centerWorldPixels，另含bounds/legend/coverage。原点/格为Tile（16像素），不是摄像机或材质图；取具体Tile用已开放的精查接口。supported只是profile适用性。',
     'use_item': '当前选中快捷栏物品完成一次原生使用周期；参数仅{}，先观察真实持用物品，必要时显式选栏。仅木剑、铜镐、铜斧、苹果，无target瞄准、实体锁定或其他物品适配；3秒上限。completed和cycleVerified只证明使用周期，effectStatus=unconfirmed，不证明命中或击杀。',
     'mine_tile': '当前真实镐挖普通方块或SmallPiles（Tile185），或铜斧砍原生斧类树干。x/y为新鲜观察或玩家指定的实际Tile格；先检查工具，80像素保守距离叠加原生射程/工具力/保护规则。10秒上限，destroyedByActor且targetAbsent和绑定结束证据才完成；树木连带变化/掉落不证明入包。其他装饰不因此支持；不自动选工具、走近、挖邻格或重试。',
@@ -276,7 +279,7 @@ async def command(bridge, cmd, **args):
 def result(action, generation):
     return {'valid': True, 'status': action['status'], 'reason': action['reason'], 'reasonDetail': action.get('reasonDetail'),
             'operation': action.get('operation'), 'actionId': action['actionId'],
-            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'), 'targetRecipe': action.get('targetRecipe'),
+            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'), 'targetRecipe': action.get('targetRecipe'), 'targetInventory': action.get('targetInventory'),
             'evidence': action.get('evidence'), 'endEvidence': action.get('endEvidence'),
             'endEvidenceStatus': action.get('endEvidenceStatus'), 'controlGeneration': generation,
             'completed': action['status'] == 'completed', 'cancelled': action['status'] == 'cancelled'}
@@ -297,6 +300,51 @@ def verified_server_object(action, evidence):
             and evidence.get('footprint') == dict(x=target.get('x'), y=target.get('y'), width=2, height=1))
 
 
+INVENTORY_OPERATIONS = frozenset(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
+
+
+def verified_server_inventory(action, evidence):
+    goal = action.get('targetInventory')
+    if not isinstance(goal, dict) or action.get('operation') not in INVENTORY_OPERATIONS:
+        return False
+    try:
+        validate(action['operation'], goal)
+    except (ValueError, TypeError, KeyError):
+        return False
+    before, after = evidence.get('before'), evidence.get('after')
+    if (not isinstance(before, dict) or not isinstance(after, dict)
+            or evidence.get('inventoryVerified') is not True or evidence.get('mutationAttempted') is not True
+            or type(evidence.get('mutationGameUpdate')) is not int
+            or type(evidence.get('confirmedAtGameUpdate')) is not int
+            or evidence['confirmedAtGameUpdate'] <= evidence['mutationGameUpdate']):
+        return False
+    destination = ((goal['hotbarKey'] - 1) % 10 if action['operation'] == 'hold_inventory_item' else goal['destinationSlot'])
+    for key, slot, token in (('source', goal['sourceSlot'], goal['sourceToken']), ('destination', destination, goal['destinationToken'])):
+        b, a = before.get(key), after.get(key)
+        if (not isinstance(b, dict) or not isinstance(a, dict) or b.get('slot') != slot or a.get('slot') != slot
+                or b.get('inventoryToken') != token or not isinstance(a.get('inventoryToken'), str) or len(a['inventoryToken']) != 64
+                or any(type(v.get(field)) is not int for v in (a, b) for field in ('typeId', 'stack', 'prefix', 'maxStack'))
+                or any(type(v.get('favorited')) is not bool for v in (a, b))):
+            return False
+    if evidence.get('sourceSlot') != goal['sourceSlot'] or evidence.get('destinationSlot') != destination:
+        return False
+    selected = destination if action['operation'] == 'hold_inventory_item' else before.get('selectedSlot')
+    if type(selected) is not int or after.get('selectedSlot') != selected or evidence.get('selectedSlot') != selected:
+        return False
+    s, d, a, b = before['source'], before['destination'], after['source'], after['destination']
+    fields = ('typeId', 'stack', 'prefix', 'maxStack', 'favorited')
+    if action['operation'] != 'transfer_inventory_item':
+        return all(a[k] == d[k] and b[k] == s[k] for k in fields)
+    count = goal['count']
+    def expected(item, stack, favorite):
+        return dict(zip(fields, (0, 0, 0, 0, False))) if stack == 0 else {**{k: item[k] for k in fields}, 'stack': stack, 'favorited': favorite}
+    return (0 < count <= s['stack'] <= s['maxStack'] and (d['typeId'] == 0 or s['typeId'] == d['typeId'] and s['prefix'] == d['prefix'])
+            and a['stack'] == s['stack'] - count and b['stack'] == d['stack'] + count <= b['maxStack']
+            and all(a[k] == expected(s, s['stack'] - count, s['favorited'] if d['typeId'] == 0 else False)[k] for k in fields)
+            and all(b[k] == expected(s if d['typeId'] == 0 else d, d['stack'] + count,
+                                    count == s['stack'] and s['favorited'] if d['typeId'] == 0 else d['favorited'] or s['favorited'])[k] for k in fields))
+
+
 def verified_server_craft(action, evidence):
     goal = action.get('targetRecipe')
     return (isinstance(goal, dict) and set(goal) == {'recipeId', 'recipeToken', 'crafts'}
@@ -315,7 +363,7 @@ def verified_server_craft(action, evidence):
 
 def same_action(expected, current):
     return isinstance(current, dict) and all(current.get(key) == expected.get(key) for key in
-        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'requestedInputs', 'actorId', 'actorSlot'))
+        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'requestedInputs', 'targetInventory', 'actorId', 'actorSlot'))
 
 
 def verify_landing_start(action, arguments, *, server_ai=False):
@@ -384,6 +432,7 @@ async def terminal(bridge, action, generation):
         'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
         'craft_recipe': verified_server_craft(action, native_evidence),
+        **{op: verified_server_inventory(action, native_evidence) for op in INVENTORY_OPERATIONS},
         'place_tile': (isinstance(action.get('targetTile'), dict)
                        and set(action['targetTile']) == {'x', 'y'}
                        and all(type(action['targetTile'][key]) is int and type(native_evidence.get(key)) is int for key in ('x', 'y'))
@@ -409,7 +458,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe')
+                  and action.get('operation') in ('move_input', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe', *INVENTORY_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -527,7 +576,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         required_capability = 'atomic_extensions_v1'
     if (name in ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item')
             or name == 'inspect_inventory' and arguments.get('mode') == 'slots'):
-        required_capability = 'inventory_operations_v1'
+        required_capability = ('server_ai_inventory_v1' if 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []) and name in INVENTORY_OPERATIONS else 'inventory_operations_v1')
     if name == 'inspect_inventory' and 'server_ai_reads_v1' in bridge.hello.get('capabilities', []):
         required_capability = 'server_ai_reads_v1'
     if required_capability and required_capability not in bridge.hello.get('capabilities', []):
@@ -568,6 +617,12 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             placement_invalid = True
             if action.get('requestedInputs') != arguments:
                 raise BridgeError('Direct inputs missing or different in start receipt')
+            placement_invalid = False
+            placement_identity = dict(action)
+        if name in INVENTORY_OPERATIONS and 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []):
+            placement_invalid = True
+            if action.get('targetInventory') != arguments:
+                raise BridgeError('Inventory target missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
         if name == 'craft_recipe':

@@ -90,6 +90,7 @@ internal static class ServerAiActionFixture
                 }
             }
             lock(ProbeSession.Reservation.Gate)ServerAiDirectInputFixture.Tick(ProbeSession.Actor);
+            lock(ProbeSession.Reservation.Gate)ServerInventoryFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerCraftingFixture.Tick(ProbeSession.Actor,Main.spawnTileX,Main.spawnTileY+8);
             // The copied-world perception fixture tests NPC presence, not AI/combat.
             // Keep only that NPC in its explicit static pose during reads; exclude
