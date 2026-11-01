@@ -23,6 +23,17 @@ async def verify(args):
     matrix = json.loads(ready.read_text())
     assert matrix['passed'], matrix
     rows = {row['kind']: row for row in matrix['rows']}
+    for case in ('baseline_missing', 'baseline_empty', 'baseline_partial'):
+        action = rows[case]['result']
+        assert action['Status'] == 'unknown' and not action['Evidence']['mutationAttempted'], action
+        for name in ('source', 'destination'):
+            slot = action['Evidence']['after'][name]
+            known = case == 'baseline_empty' or case == 'baseline_partial' and name == 'source'
+            assert slot['available'] == known, slot
+            if known:
+                assert slot['instanceChanged'] == (case == 'baseline_empty' and name == 'source'), slot
+            else:
+                assert slot['reason'] == 'baseline_not_established' and 'instanceChanged' not in slot, slot
     for case in ('save_throw', 'save_mutate', 'global_save_throw', 'global_save_mutate'):
         assert rows[case]['saveDataCalls'] == rows[case]['globalSaveDataCalls'] == 0, rows[case]
         assert rows[case]['result']['Status'] == 'completed', rows[case]

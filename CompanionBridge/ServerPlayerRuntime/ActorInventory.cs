@@ -29,6 +29,7 @@ internal static class ActorInventory
         internal string[] AfterTokens;
         internal object Before,After;
         internal Item SourceBefore,DestinationBefore;
+        internal bool SourceBaselineEstablished,DestinationBaselineEstablished;
     }
     internal static bool IsOperation(string op)=>op is "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item";
     internal static string Token(AiReadOnlyProtocol.Identity id,Item item,int slot)
@@ -92,7 +93,8 @@ internal static class ActorInventory
             if(transfer&&(count<=0||count>s.Stack||count>s.MaxStack||s.Stack>s.MaxStack)){Fail("inventory_source_count_insufficient_or_invalid");return;}
             if(transfer&&!destination.IsAir&&(s.Type!=d.Type||s.Prefix!=d.Prefix)){Fail("inventory_destination_not_compatible");return;}
             if(transfer&&!destination.IsAir&&(count>d.MaxStack-d.Stack||d.Stack>d.MaxStack)){Fail("inventory_destination_capacity_insufficient");return;}
-            c.SourceBefore=source;c.DestinationBefore=destination;
+            c.SourceBefore=source;c.SourceBaselineEstablished=true;
+            c.DestinationBefore=destination;c.DestinationBaselineEstablished=true;
             c.Before=Snapshot(c,p);int selected=p.selectedItem;
             if(transfer&&!destination.IsAir)
             {
@@ -134,10 +136,11 @@ internal static class ActorInventory
     }
     private static string Instance(Item item)=>item==null?null:identities.GetValue(item,_=>new Identity()).Value;
     // Exception evidence must remain independent of item properties/serialization/Mod hooks.
-    private static object BasicSlot(Player p,int slot,Item before)
+    private static object BasicSlot(Player p,int slot,Item before,bool baselineEstablished)
     {
+        if(!baselineEstablished)return new{slot,available=false,reason="baseline_not_established"};
         Item item=p.inventory!=null&&slot>=0&&slot<p.inventory.Length?p.inventory[slot]:null;
-        return new{slot,present=item!=null,typeId=item?.type,stack=item?.stack,prefix=item==null?(int?)null:item.prefix,
+        return new{slot,available=true,present=item!=null,typeId=item?.type,stack=item?.stack,prefix=item==null?(int?)null:item.prefix,
             maxStack=item?.maxStack,favorited=item?.favorited,instanceId=Instance(item),instanceChanged=!ReferenceEquals(item,before)};
     }
     private static object ExceptionSnapshot(Context c)
@@ -145,7 +148,7 @@ internal static class ActorInventory
         if(!ServerAiNativeActions.Owned(c.Identity))return new{available=false,reason="actor_binding_changed"};
         var p=(Player)c.Identity.Actor;
         return new{available=true,kind="basic_fields_only",gameUpdate=Main.GameUpdateCount,selectedSlot=p.selectedItem,
-            source=BasicSlot(p,c.Source,c.SourceBefore),destination=BasicSlot(p,c.Destination,c.DestinationBefore),customState="unknown"};
+            source=BasicSlot(p,c.Source,c.SourceBefore,c.SourceBaselineEstablished),destination=BasicSlot(p,c.Destination,c.DestinationBefore,c.DestinationBaselineEstablished),customState="unknown"};
     }
     private static void Unknown(Context c,Exception e)
     {

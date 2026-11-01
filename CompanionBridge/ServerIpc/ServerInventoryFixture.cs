@@ -14,7 +14,7 @@ namespace CompanionBridge.ServerIpc;
 // Explicit copied-world diagnostics, driven by real subsequent native updates.
 internal static class ServerInventoryFixture
 {
-    private static readonly string[] cases={"move","split","merge","swap","swap_empty","hold0","hold1","hold9","hold_same","stale_source","stale_destination","stale_world","stale_generation","stale_slot","stale_actor","mod_custom_state_untracked","capacity","prefix","busy","mod_split","mod_merge","mod_denied","permission_throw","stack_throw","split_throw","cancel_before","cancel_after","disconnect_before","disconnect_after","forget_after","save_throw","save_mutate","global_save_throw","global_save_mutate","stale_instance","interference"};
+    private static readonly string[] cases={"move","split","merge","swap","swap_empty","hold0","hold1","hold9","hold_same","stale_source","stale_destination","stale_world","stale_generation","stale_slot","stale_actor","mod_custom_state_untracked","capacity","prefix","busy","mod_split","mod_merge","mod_denied","permission_throw","stack_throw","split_throw","cancel_before","cancel_after","disconnect_before","disconnect_after","forget_after","save_throw","save_mutate","global_save_throw","global_save_mutate","stale_instance","baseline_missing","baseline_empty","baseline_partial","interference"};
     private static readonly List<object> rows=new();
     private static int index;
     private static Item[] saved;
@@ -78,6 +78,24 @@ internal static class ServerInventoryFixture
                 }
                 if(kind=="stale_instance")p.inventory[10]=new Item(ItemID.Wood,10);
                 if(kind.Contains("save_"))ReadOnlyQueries(p);
+                if(kind.StartsWith("baseline_"))
+                {
+                    // Internal malformed-argument injection only: force the Step catch before
+                    // its baseline assignments, without weakening public protocol validation.
+                    args.Remove("sourceToken");
+                    var c=ActorInventory.Begin(identity,op,JsonSerializer.SerializeToElement(args));
+                    if(kind=="baseline_empty")
+                    {
+                        p.inventory[10]=null;
+                        c.SourceBefore=p.inventory[10];c.SourceBaselineEstablished=true;
+                        c.DestinationBefore=p.inventory[0];c.DestinationBaselineEstablished=true;
+                        p.inventory[10]=source; // Known null baseline replaced by a real instance.
+                    }
+                    if(kind=="baseline_partial"){c.SourceBefore=source;c.SourceBaselineEstablished=true;}
+                    ActorInventory.Step(c);
+                    Record(new(c.Status,c.Reason,ActorInventory.Evidence(c),true,c.Status=="completed",InputsAcquired:false));
+                    return;
+                }
                 if(kind.StartsWith("disconnect_")||kind=="forget_after")
                 {
                     using var disconnected=new System.Threading.CancellationTokenSource();
@@ -119,12 +137,28 @@ internal static class ServerInventoryFixture
     private static void Record(AiAtomicActions.NativeResult result)
     {
         string expected=kind.StartsWith("stale")||kind is "capacity" or "prefix" or "busy" or "mod_denied"?"failed":
-            kind is "permission_throw" or "stack_throw" or "split_throw" or "cancel_after" or "disconnect_after" or "forget_after" or "interference"?"unknown":kind is "cancel_before" or "disconnect_before"?"cancelled":"completed";
+            kind is "permission_throw" or "stack_throw" or "split_throw" or "cancel_after" or "disconnect_after" or "forget_after" or "baseline_missing" or "baseline_empty" or "baseline_partial" or "interference"?"unknown":kind is "cancel_before" or "disconnect_before"?"cancelled":"completed";
         if(result.Status!=expected||!result.InputsReleased||result.EffectVerified!=(expected=="completed"))throw new InvalidOperationException(kind+": "+JsonSerializer.Serialize(result));
         var p=(Player)identity.Actor;
         if(kind.StartsWith("stale")&&result.Reason!="stale_inventory_snapshot")throw new InvalidOperationException("Stale token executed");
         if(kind=="swap"&&(!ReferenceEquals(p.inventory[0],source)||!ReferenceEquals(p.inventory[10],destination)))throw new InvalidOperationException("Swap lost item instance");
         if(kind=="cancel_before"&&source.stack!=10||kind=="cancel_after"&&(source.stack!=7||p.inventory[0].stack!=3))throw new InvalidOperationException("Cancellation replayed/rolled back");
+        if(kind.StartsWith("baseline_"))
+        {
+            var e=JsonSerializer.SerializeToElement(result.Evidence);var after=e.GetProperty("after");
+            if(e.GetProperty("mutationAttempted").GetBoolean()||e.GetProperty("inventoryVerified").GetBoolean()||source.stack!=10||!ReferenceEquals(source,p.inventory[10]))throw new InvalidOperationException("Early exception changed inventory or unknown semantics");
+            foreach(string name in new[]{"source","destination"})
+            {
+                var slot=after.GetProperty(name);
+                bool known=kind=="baseline_empty"||kind=="baseline_partial"&&name=="source";
+                if(slot.GetProperty("available").GetBoolean()!=known)throw new InvalidOperationException("Missing/empty baseline conflated");
+                if(!known)
+                {
+                    if(slot.GetProperty("reason").GetString()!="baseline_not_established"||slot.TryGetProperty("instanceChanged",out _))throw new InvalidOperationException("Missing baseline reported an instance change");
+                }
+                else if(slot.GetProperty("instanceChanged").GetBoolean()!=(kind=="baseline_empty"&&name=="source"))throw new InvalidOperationException("Known null/air baseline lost reference comparison");
+            }
+        }
         if(kind is "permission_throw" or "stack_throw" or "split_throw")
         {
             var evidence=JsonSerializer.SerializeToElement(result.Evidence);

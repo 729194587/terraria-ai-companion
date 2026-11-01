@@ -1,5 +1,13 @@
 # 背包原子能力第一批：CompanionBridge 0.1.39
 
+## 异常诊断的基线可用性：0.1.72（2026-11-01）
+
+`SourceBefore` / `DestinationBefore` 原本在 Token、参数和库存前置检查之后才赋值；之前的异常会把字段默认 null 当作“原槽位为空”，错误报告实例改变。现在分别记录 `SourceBaselineEstablished` / `DestinationBaselineEstablished`，在各引用赋值后置 true。`BasicSlot` 在对应标记为 false 时只返回 `{slot,available=false,reason='baseline_not_established'}`，不输出 `instanceChanged`；已建立的 null 基线或 air Item 基线仍返回 available=true，按引用比较判断是否改变。顶层 after.available 表示诊断可采集，各槽 availability 独立。
+
+新增三项定向诊断：内部缺 sourceToken 使 Step 在基线建立前抛异常、已建立 null/air 基线、仅建立源槽基线。测试使用隔离夹具的内部参数/状态注入，未放宽公网协议校验；断言没有变更物品或取得输入，仍为 unknown。库存执行、回滚和重试行为不变。
+
+**实验结果**：上述 3 项基线诊断、原有 36 项库存场景、7 次真实 Lua/IPC 动作和既有读取/选栏/导航/使用/挖掘/取消/进程清理通过。C# 定向 IPC/原子/读取/适配/聊天检查与 80 项正式包 IL 检查通过；构建 0 错误、0 警告。包 SHA-256 `a550d0495793752e066cc764e07cc9783ebb2ab9561787bbe2c7c3b695120049`；[命令与精选原始回执](evidence/INVENTORY_BASELINE_DIAGNOSTICS.json)。未运行全量测试、未部署现用 profile，未新增图形或远端客户端验收。
+
 ## Server AI Token 与异常证据修复：0.1.71（2026-11-01）
 
 **实现**：修复 `305b9fe` 中只读 Token 调用 `ItemIO.Save` 的问题。`ActorInventory.Token` 及基础异常快照均不调用 `ItemIO`、`TagIO`、`SaveData` 或网络序列化钩子。Token 保留 World、Generation、Actor 对象身份、Actor 槽位、库存槽位、非空 Item 实例、type/stack/prefix/maxStack/favorited；空槽仍按值识别。摘要增加 `core_only_v2` 域标识，旧算法的 Token 不会被接受。共享 Schema、`server_ai_inventory_v1` 握手和客户端本地 `AtomicInventory` 不变。
