@@ -69,7 +69,7 @@ class AtomicTests(unittest.IsolatedAsyncioTestCase):
         game = Game()
         self.assertEqual(100, (await atomic.dispatch(game, 'get_player_state', {}))['player']['life'])
         self.assertTrue((await atomic.dispatch(game, 'observe_terrain', {}))['terrain']['grounded'])
-        self.assertTrue((await atomic.dispatch(game, 'inspect_inventory', {}))['available'])
+        self.assertTrue((await atomic.dispatch(game, 'inspect_inventory', {'mode': 'selected'}))['available'])
         self.assertEqual(['query_atomic'], [c for c, _ in game.sent])
 
     async def test_ack_not_success_requires_terminal_evidence(self):

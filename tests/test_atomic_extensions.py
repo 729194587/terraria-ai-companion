@@ -67,7 +67,7 @@ class ExtensionDispatchTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_extension_capability_required(self):
         for name, args in [('scan_tiles', dict(minX=0, minY=0, maxX=1, maxY=1, tileTypes=[2])),
-                           ('inspect_inventory', {}), ('mine_wall', dict(x=1, y=1)),
+                           ('inspect_inventory', {'mode': 'selected'}), ('mine_wall', dict(x=1, y=1)),
                            ('place_wall', dict(x=1, y=1)), ('hammer_tile', dict(x=1, y=1)),
                            ('interact_tile', dict(x=1, y=1))]:
             game = Game()

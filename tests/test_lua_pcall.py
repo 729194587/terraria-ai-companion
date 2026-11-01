@@ -57,16 +57,16 @@ class ControlledPcall(unittest.IsolatedAsyncioTestCase):
             assert(not range and e.status=='bad_argument')
             local resolved,r=pcall(function() return api('resolve_content',{kind='tile',id=1}) end)
             assert(not resolved and r.diagnostics[1].code=='missing_required')
-            return api('inspect_inventory',{}).valid
+            return api('inspect_inventory',{mode='selected'}).valid
         ''')
         self.assertEqual(('completed',True,4,0),(result['status'],result['value'],result['calls'],result['actions']),result)
         self.assertEqual(['inspect_inventory'],[a['operation'] for c,a in game.sent if c=='query_atomic'])
         self.assertEqual('inspect_inventory',result['lastObservation']['operation'])
 
-    async def test_action_arguments_and_unknown_api_are_not_recoverable(self):
-        for api in ("api('use_item',{target={x=true,y=0}})","api('not_an_api',{})"):
+    async def test_unknown_api_is_not_recoverable(self):
+        for api in ("api('not_an_api',{})",):
             with self.subTest(api=api):
-                result,game,_=await self.run_lua('pcall(function() '+api+" end); return api('inspect_inventory')")
+                result,game,_=await self.run_lua('pcall(function() '+api+" end); return api('inspect_inventory',{mode='selected'})")
                 self.assertEqual('bad_argument',result['status'],result)
                 self.assertEqual(1,result['calls'])
                 self.assertFalse(any(c in ('start_atomic','query_atomic') for c,_ in game.sent))
@@ -75,13 +75,13 @@ class ControlledPcall(unittest.IsolatedAsyncioTestCase):
         for status in ('failed','timeout','cancelled'):
             with self.subTest(status=status):
                 result,game,_=await self.run_lua('''
-                    api('inspect_inventory')
+                    api('inspect_inventory',{mode='selected'})
                     pcall(function()
                         pcall(function() return api('use_item') end)
                         log('inner escaped')
                     end)
                     log('outer escaped')
-                    api('inspect_inventory'); api('use_item'); return true
+                    api('inspect_inventory',{mode='selected'}); api('use_item'); return true
                 ''',RuntimeGame(status))
                 self.assertEqual(status,result['status'],result)
                 self.assertIsNone(result['value']); self.assertEqual([],result['logs'])
@@ -140,7 +140,7 @@ class ControlledPcall(unittest.IsolatedAsyncioTestCase):
                     raise error
                 return original(cmd,**params)
             game.command=command
-            result,_,_=await self.run_lua("pcall(function() api('inspect_inventory') end); log('escaped'); return true",game)
+            result,_,_=await self.run_lua("pcall(function() api('inspect_inventory',{mode='selected'}) end); log('escaped'); return true",game)
             self.assertNotEqual('completed',result['status'],result)
             self.assertIsNone(result['value']); self.assertEqual([],result['logs'])
             self.assertEqual(1,result['calls'])
@@ -149,7 +149,7 @@ class ControlledPcall(unittest.IsolatedAsyncioTestCase):
         for reply in ({'type':'result','id':999,'value':{}}, {'type':'unexpected','id':1,'value':{}}):
             parent,child=mp.get_context('spawn').Pipe()
             process=mp.get_context('spawn').Process(target=worker,args=(child,
-                "pcall(function() api('inspect_inventory') end); log('escaped'); return true",Limits(seconds=8)),daemon=True)
+                "pcall(function() api('inspect_inventory',{mode='selected'}) end); log('escaped'); return true",Limits(seconds=8)),daemon=True)
             try:
                 process.start(); child.close()
                 self.assertTrue(await asyncio.to_thread(parent.poll,8))
@@ -170,7 +170,7 @@ class ControlledPcall(unittest.IsolatedAsyncioTestCase):
                 child.close(); parent.close()
 
     async def test_pcall_does_not_reset_call_or_action_budgets(self):
-        cases=(("pcall(function() api('scan_tiles',{}) end); pcall(function() api('inspect_inventory') end); log('escaped')",Limits(seconds=8,calls=1),'call_limit',0),
+        cases=(("pcall(function() api('scan_tiles',{}) end); pcall(function() api('inspect_inventory',{mode='selected'}) end); log('escaped')",Limits(seconds=8,calls=1),'call_limit',0),
                ("pcall(function() api('use_item') end); pcall(function() api('use_item') end); log('escaped')",Limits(seconds=8,actions=1),'action_limit',1))
         for source,limits,expected,starts in cases:
             result,game,_=await self.run_lua(source,limits=limits)
@@ -203,7 +203,7 @@ class ControlledPcall(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(1,sum(c=='start_atomic' for c,_ in game.sent))
 
     async def test_observation_survives_caught_then_uncaught_script_errors(self):
-        result,_,_=await self.run_lua("api('inspect_inventory'); pcall(function() error('caught') end); pcall(function() api('scan_tiles',{}) end); error('uncaught')")
+        result,_,_=await self.run_lua("api('inspect_inventory',{mode='selected'}); pcall(function() error('caught') end); pcall(function() api('scan_tiles',{}) end); error('uncaught')")
         self.assertEqual('script_error',result['status'],result)
         self.assertEqual('inspect_inventory',result['lastObservation']['operation'])
         self.assertIsNone(result['value'])

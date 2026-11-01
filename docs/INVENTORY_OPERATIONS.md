@@ -23,7 +23,7 @@
 三个新增动作目前只支持单人；多人返回 `inventory_requires_single_player`，不修改背包。
 旧 `select_hotbar_slot` 保留原来的单人/多人选择语义。
 
-默认selected及hotbar紧凑查询也补充上述元数据；item数量查询和full格式保持原有职责，
+显式selected及hotbar紧凑查询也补充上述元数据；0.1.69起mode必填，各模式用inventoryScope/inspectedSlots说明实际检查范围；item数量查询和full保持原有职责，
 需要动作token时按需查询slots。`get_player_status`的selectedItem不保证带token。
 
 ## Terraria规则与状态保护

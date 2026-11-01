@@ -63,7 +63,7 @@ internal static class AtomicParameters
                     break;
                 case "inspect_inventory":
                     if (keys.Except(new[] { "mode", "item", "slots" }).Any()) throw new FormatException("Unexpected inventory parameters.");
-                    string mode = args.TryGetProperty("mode", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : keys.Contains("mode") ? null : "selected";
+                    string mode = args.TryGetProperty("mode", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : null;
                     if (mode is not ("selected" or "hotbar" or "item" or "full" or "slots")) throw new FormatException("Invalid inventory mode.");
                     if (keys.Contains("item") != (mode == "item")) throw new FormatException("item required only in item mode.");
                     if (mode == "item" && (args.GetProperty("item").ValueKind != JsonValueKind.String || args.GetProperty("item").GetString().Length is < 1 or > 150)) throw new FormatException("Invalid item identifier.");

@@ -1,5 +1,28 @@
 # Lua 编排 Runtime
 
+## 0.1.69：P0 安全失败恢复与库存范围（2026-11-01）
+
+起点核对：本轮工作区 HEAD 为 `da0aae65c956884f5a7b0028e4bc03561c7b9380`；`build.txt`、部署回执均为 0.1.68，现用 profile 包磁盘 SHA-256 为 `e215ecb715bff66abfa31240b1bab3290baa8e3e2e318a344a7b3565f0e439b8`，与前轮原生证据一致。开始时已有 Python 探索/诊断改动未提交，保留且不纳入本次修复；未把包版本等同于所有 Python 源码已提交，未宣称运行时日志独立证实了包哈希。
+
+恢复始终由宿主在把结果发送给 Worker **之前**判断：真实 `failed`、有效且一致的 actionId/session/world/actor/generation/slot、同操作、known 游戏线程结束证据、明确已释放输入且 effectVerified=false。未知/缺失/空值/错误类型不作零值或 false。规则不依赖 reason 文本：
+
+| 情况 | 允许返回 Lua 的必要证据 |
+| --- | --- |
+| 本地 bad_argument | 已知 API 在分发前 schema/范围校验失败，且调用在受控 pcall 内；返回 false 和结构化错误/diagnostics，计 API 次数，无游戏 RPC；动作参数同样适用，未知 API 仍终止 |
+| 既有安全预检拒绝 | 原 mutationAttempted=false/effectStatus=not_started、未取得输入及全部绑定/释放条件保留 |
+| mine_tile | Ticks/Swings/Strikes/PeakDamage/Transforms 均为整数 0；targetUnchanged 明确 true，targetChanged/nativeDestroyed/targetAbsent/destroyedByActor 明确 false，effectStatus=not_started、inputsAcquired=false |
+| place_object | nativePlacementEvents/consumedCount 为整数 0；targetChanged/uncertainNativeEffect/placedByActor/targetPresent/fullFootprintVerified 明确 false，objectPlacement=true、effectStatus=not_confirmed；曾启动使用动画或取得输入不证明有游戏效果，但必须确认最终释放 |
+
+`mine_tile` 的 C# 回执额外按原挖掘匹配规则重新核对已捕获的目标类型/形状/驱动状态（斧类及装饰目标含原帧），用 targetUnchanged=true 独立确认未变化；未捕获或不匹配为 false，不把未捕获伪装成已发生变化。旧后端缺少此确认字段时继续阻断新的挖掘恢复，既有安全预检和导航降级仍保留。此变化只补充观察证据，不改变挖掘执行。输入释放不等于无游戏效果；任何非零挖掘效果、放置/消费/目标变化、unknown/timeout/cancelled、断连/协议/身份异常或释放不确定仍在当前调用处终止 Worker，按原规则清理及隔离。导航 `observe_scene → 一次 move_input` 的宿主授权保持独立，不被一般恢复覆盖。
+
+恢复不新建 Worker，原局部变量保留；不自动重试、不移动/选工具、不重置调用/动作/累计 Lua 时间预算。脚本可以依据失败结果读取实际状态并自行编排后续操作。`actionResults`、`lastAction`、`lastObservation` 和 actionSuccess/taskOutcome 语义保持：恢复后的程序正常返回，不会把曾失败的动作标为成功。
+
+库存契约同步改为必填 mode，见 [完整范围说明](ATOMIC_OPERATIONS.md#inspect_inventory)。遗漏在本地校验产生 bad_argument，可由受控 pcall 接收；C# 亦拒绝遗漏，无 selected 默认值。`inspectedSlots` 表示实际读取的 player.inventory 索引；`inventoryScope.arrays` 对 full 额外列出原版装备/社交栏、染料、misc 装备/染料、全部 Buff 槽。item 成功解析名称后搜索完整 player.inventory，返回匹配 slots 只是子集；歧义/未知名称在搜索前结束，实际检查槽为空。不查询银行/箱子/Main.mouseItem/Mod 自定义槽，不能把局部查询当作完整背包。
+
+验收入口：`tests/test_p0_recovery.py` 使用真实 Worker/Dispatcher/loopback 和游戏替身；C# `-ServerReadsOnly`、`-InventoryOnly` 验证真实共享读取实现及参数，IPC/正式包 IL 检查与 Mod 构建另记。未进行本轮图形实机、真实模型或原 0.1.67 场景重演；历史 play3 回执用于核对原始全零事实，不改写原始文件。
+
+实际验证：126 个不同 Python 定向用例最终通过（P0 新矩阵、pcall/Runtime、Agent、库存、既有恢复、导航降级、契约及部分结果）；pcall 与既有观察各一项首次触发用例自身截止，原记录保留，单独复验通过，未放宽预算。新增 P0 夹具首轮请求计数跨子用例累积，修正测试计数后矩阵通过；未因此放宽产品谓词。精确暂存源码副本额外 4 项关键用例通过，排除原有未提交探索改动的依赖。C# 共享读取 16 项及扩展/库存定向组、IPC/215 项适配器替身/76 项正式包 IL 通过，0.1.69 构建零错误/警告；未跑全量测试。原始日志与包/源码哈希见 [P0 验证清单](evidence/p0-recovery-inventory/manifest.json)。本轮未部署现用 profile。
+
 ## Lua 失败后的部分动作结果（2026-10-31）
 
 模型可见的 `execute_lua` 回执新增 `actionResults`，由 `Agent.observe_lua` 收集的宿主动作结果经 `lua_agent.summarize` 投影。无需让失败的 Worker 继续运行或返回。`items` 按 `sequence` 排序，每项含 `phase`、`summaryOnly` 和真实 `result`；`phase=api` 为已回调的动作，`terminal` 为 Runtime 仅保留的终态，`cleanup` 为额外的清理观察，不表示重复执行同一动作。重复的 lastAction/cleanup 不重复计数。
@@ -26,10 +49,10 @@
 
 `pcall(f, ...)` 经私有宿主回调调用 Lua 函数，未开放原生 pcall；成功返回 `true, ...`，
 保留多返回值和中间/尾部 nil。普通 Lua 运行时错误返回 `false, 有界错误字符串`（最多 512 字符）。
-只有 READS 白名单 API 在**分发前本地 schema/跨字段范围校验**拒绝时，返回
+所有已知 API 在**分发前本地 schema/跨字段范围校验**拒绝时，返回
 `false, {status='bad_argument', error, argumentOperation, diagnostics?, diagnosticsTruncated?}`。
 可在同一程序内选择正确参数再查询；拒绝仍消耗调用预算，不产生游戏 RPC，不替换 lastObservation。
-未放在 pcall 内的 API 参数错误沿用原终态及诊断。未知 API 和动作参数错误不可恢复。
+未放在 pcall 内的 API 参数错误沿用原终态及诊断。未知 API 不可恢复；已知动作 API 的本地参数错误可在受控 pcall 内返回，未分发任何动作。
 
 ```lua
 local ok, result = pcall(function()

@@ -101,9 +101,7 @@ def safe_preflight_rejection(result, lifecycle):
     if any(k in proof and (type(proof[k]) is not int or proof[k] != 0)
            for k in ('consumedCount', 'nativePlacementEvents')):
         return False
-    return (proof.get('mutationAttempted') is False and proof.get('effectStatus') == 'not_started'
-            and proof.get('operation') == result.get('operation')
-            and end.get('inputsAcquired') is False and end.get('inputsReleased') is True
+    bound = (end.get('inputsReleased') is True and type(end.get('inputsAcquired')) is bool
             and end.get('phase') == 'ServerAI_game_thread_inputs_released'
             and end.get('effectVerified') is False and end.get('operation') == result.get('operation')
             and type(end.get('gameUpdate')) is int and end['gameUpdate'] >= 0
@@ -122,6 +120,24 @@ def safe_preflight_rejection(result, lifecycle):
             and type(end.get('actorGeneration')) is int
             and result.get('actionGeneration') == action['generation']
             and result.get('controlGeneration') == action['generation'])
+    if not bound:
+        return False
+    preflight = (proof.get('mutationAttempted') is False and proof.get('effectStatus') == 'not_started'
+                 and proof.get('operation') == result.get('operation') and end['inputsAcquired'] is False)
+    if preflight:
+        return True
+    def zero(*keys):
+        return all(type(proof.get(k)) is int and proof[k] == 0 for k in keys)
+    if result.get('operation') == 'mine_tile':
+        return (zero('Ticks', 'Swings', 'Strikes', 'PeakDamage', 'Transforms')
+                and proof.get('targetUnchanged') is True
+                and all(proof.get(k) is False for k in ('targetChanged', 'destroyedByActor', 'nativeDestroyed', 'targetAbsent'))
+                and proof.get('effectStatus') == 'not_started' and end['inputsAcquired'] is False)
+    if result.get('operation') == 'place_object':
+        return (zero('nativePlacementEvents', 'consumedCount')
+                and all(proof.get(k) is False for k in ('targetChanged', 'uncertainNativeEffect', 'placedByActor', 'fullFootprintVerified', 'targetPresent'))
+                and proof.get('objectPlacement') is True and proof.get('effectStatus') == 'not_confirmed')
+    return False
 
 
 class LuaRuntime:
@@ -324,7 +340,7 @@ class LuaRuntime:
                 except ValueError as exc:
                     # Only this local schema/range check is recoverable. No
                     # dispatch, network call or game action has begun here.
-                    if name not in atomic.READS or not message.get('protected', False):
+                    if name not in atomic.SCHEMAS or not message.get('protected', False):
                         raise
                     rejection = {'status': 'bad_argument', 'error': str(exc)[:512],
                                  'argumentOperation': name}
@@ -333,7 +349,7 @@ class LuaRuntime:
                                          diagnosticsTruncated=exc.diagnostics_truncated)
                     call_end('bad_argument', error=rejection['error'])
                     active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
-                        encode({'type': 'local_read_rejected', 'id': sequence, 'value': rejection})))
+                        encode({'type': 'local_argument_rejected', 'id': sequence, 'value': rejection})))
                     active_role = 'send'
                     await watch(active)
                     active = None

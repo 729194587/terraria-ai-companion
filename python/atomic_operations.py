@@ -71,11 +71,11 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          {**{k: {"type": "integer", "minimum": 0, "maximum": 100000} for k in ('minX', 'minY', 'maxX', 'maxY')},
           "tileTypes": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535}, "minItems": 1, "maxItems": 32, "uniqueItems": True},
           "maxResults": {"type": "integer", "minimum": 1, "maximum": 256}}, ['minX', 'minY', 'maxX', 'maxY', 'tileTypes']),
-    tool("inspect_inventory", "默认仅选中物品；mode=slots配slots读取指定内部索引（0..58，最多16项），返回inventoryToken供背包动作防旧快照校验；快捷栏用hotbar；item按精确contentKey或本地名称查数量/槽位；full查全部背包/装备及活跃Buff。背包动作仅0..49普通物品槽，hotbarKey是游戏按键，Mod自定义状态未知。",
+    tool("inspect_inventory", "mode必填：selected仅当前选中槽；hotbar检查0..9；slots配slots检查指定内部索引（0..58，最多16项）；item按精确contentKey或本地名称搜索全部player.inventory槽（含快捷栏/钱币/弹药/58号槽），slots结果仅为匹配位置。full检查全部player.inventory、原版装备/社交栏、染料、misc装备/染料和全部Buff槽（仅返回活跃Buff）。均返回inventoryScope与inspectedSlots（实际检查的player.inventory内部索引，非匹配位置）；inventoryScope.arrays列出实际检查的各数组槽。full不独立读取银行/仓库、箱子、Main.mouseItem或Mod自定义槽位/状态；58号槽仅按player.inventory实际内容返回。局部模式不代表完整背包；hotbarKey为游戏按键。客户端inventoryToken仅供既有背包动作防旧快照校验。",
          {"mode": {"type": "string", "enum": ['selected', 'hotbar', 'item', 'full', 'slots']},
           "item": {"type": "string", "minLength": 1, "maxLength": 150},
           "slots": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 58},
-                    "minItems": 1, "maxItems": 16, "uniqueItems": True}}),
+                    "minItems": 1, "maxItems": 16, "uniqueItems": True}}, ["mode"]),
     tool("transfer_inventory_item", "单人：在0..49普通背包槽搬运指定count；空目标可拆分，兼容同类目标可堆叠，容量不足则整个请求不执行。sourceToken/destinationToken须取本轮inspect_inventory对应槽。经原生拆分/堆叠钩子，核对数量与下一更新状态；不碰鼠标、箱子、装备、钱币或弹药槽。失败/未知后停止。",
          {**INVENTORY_GUARDS, "destinationSlot": INVENTORY_SLOT,
           "count": {"type": "integer", "minimum": 1, "maximum": 9999}},
@@ -118,7 +118,7 @@ SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 # Model-only server projection. Execution validation and the shared TOOLS stay unchanged.
 SERVER_DESCRIPTIONS = {
     'get_player_state': '读取绑定服务器AI的实际位置/速度/生命及motion；无参数。返回{valid,player,motion,binding,...}，player.position是碰撞框左上角世界像素，velocity为像素/游戏更新，Y向下；motion.grounded与supported独立，supported只是导航profile适用性，不保证支撑/路径安全。',
-    'inspect_inventory': '只读AI真实背包：默认selected，hotbar/item/full/slots模式，slots为0..58内部索引，item按名称/内容键查数量。返回{valid,available,data,...}，data内含inventory/数量及selectedSlot/selectedHotbarKey，实际结构随模式变化；hotbarKey是游戏键1..9,0。不提供可用于修改的inventoryToken；full含装备/Buff观察，不能换装或读取Mod自定义状态。',
+    'inspect_inventory': '只读AI真实背包，必须显式mode；局部查询不代表完整背包。返回{valid,available,data,...}，data.inventoryScope/inspectedSlots标明实际检查范围，item匹配slots不等于搜索范围。hotbarKey是游戏键1..9,0；不提供可用于修改的inventoryToken。',
     'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。返回{valid,available,data,...}，data.terrain含originX/originY/rows，data.state含centerWorldPixels，另含bounds/legend/coverage。原点/格为Tile（16像素），不是摄像机或材质图；取具体Tile用已开放的精查接口。supported只是profile适用性。',
     'use_item': '当前选中快捷栏物品完成一次原生使用周期；参数仅{}，先观察真实持用物品，必要时显式选栏。仅木剑、铜镐、铜斧、苹果，无target瞄准、实体锁定或其他物品适配；3秒上限。completed和cycleVerified只证明使用周期，effectStatus=unconfirmed，不证明命中或击杀。',
     'mine_tile': '当前真实镐挖普通方块或SmallPiles（Tile185），或铜斧砍原生斧类树干。x/y为新鲜观察或玩家指定的实际Tile格；先检查工具，80像素保守距离叠加原生射程/工具力/保护规则。10秒上限，destroyedByActor且targetAbsent和绑定结束证据才完成；树木连带变化/掉落不证明入包。其他装饰不因此支持；不自动选工具、走近、挖邻格或重试。',

@@ -89,6 +89,10 @@ internal static class AtomicOperations
         use = new { item.pick, item.axe, item.hammer, item.createTile, item.createWall } };
 
     // Project only this tool's response; the shared full snapshot stays unchanged.
+    private static object InventoryScope(string mode,int[] slots,Dictionary<string,int[]> arrays=null)
+        =>new{mode,arrays=arrays??new Dictionary<string,int[]>{{"inventory",slots}},
+            slotNumbering="internal array indices; inspectedSlots is player.inventory, not matched result slots",
+            excluded=new[]{"banks","chests","mouse item","Mod custom slots/state"}};
     internal static object FullInventory(object snapshot)
     {
         var source = System.Text.Json.JsonSerializer.SerializeToElement(snapshot);
@@ -104,6 +108,12 @@ internal static class AtomicOperations
         result["buffScope"] = "Complete active buffs in player.buffType/buffTime; empty/inactive slots omitted; slot indices retained";
         result["scope"] = "All slots of player.inventory, armor, dye, miscEquips, miscDyes; includes vanilla social slots; excludes banks, chests, mouse item and Mod accessory slots";
         result["customState"] = "unknown; Mod custom player/item/buff state and Mod accessory slots not read";
+        var inspected=source.GetProperty("inventory").EnumerateArray().Select(i=>i.GetProperty("slot").GetInt32()).ToArray();
+        var arrays=new Dictionary<string,int[]>();
+        foreach(string name in new[]{"inventory","equipment","dyes","miscEquipment","miscDyes","buffs"})
+            arrays[name]=source.GetProperty(name).EnumerateArray().Select(i=>i.GetProperty("slot").GetInt32()).ToArray();
+        result["inspectedSlots"]=inspected;
+        result["inventoryScope"]=InventoryScope("full",inspected,arrays);
         return result;
     }
 
@@ -113,7 +123,8 @@ internal static class AtomicOperations
     // Shared read-only projection. The caller supplies its own identity/token scope.
     internal static object ReadInventory(Player p, System.Text.Json.JsonElement args, Func<Item,int,string> token, Func<object> snapshot)
     {
-        string mode = args.TryGetProperty("mode", out var value) ? value.GetString() : "selected";
+        AtomicParameters.Validate("inspect_inventory",args,true);
+        string mode = args.GetProperty("mode").GetString();
         if (mode == "full") return FullInventory(snapshot());
         if (mode == "item")
         {
@@ -123,20 +134,20 @@ internal static class AtomicOperations
                 || string.Equals(i.Name, wanted, StringComparison.OrdinalIgnoreCase))).ToArray();
             if (candidates.Length != 1) return new { status = candidates.Length == 0 ? "unknown_item" : "ambiguous_item",
                 candidates = candidates.Take(32).Select(i => new { typeId = i.type, contentKey = i.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(i.type), name = i.Name }).ToArray(),
-                truncated = candidates.Length > 32 };
+                truncated = candidates.Length > 32,inspectedSlots=Array.Empty<int>(),inventoryScope=InventoryScope(mode,Array.Empty<int>()) };
             int type = candidates[0].type;
             var slots = p.inventory.Select((i, slot) => (Item: i, Slot: slot)).Where(s => !s.Item.IsAir && s.Item.type == type).ToArray();
             return new { status = "ok", typeId = type,
                 contentKey = candidates[0].ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(type), name = candidates[0].Name,
-                count = slots.Sum(s => s.Item.stack),
+                count = slots.Sum(s => s.Item.stack),inspectedSlots=Enumerable.Range(0,p.inventory.Length).ToArray(),inventoryScope=InventoryScope(mode,Enumerable.Range(0,p.inventory.Length).ToArray()),
                 slots = slots.Select(s => new { slot = s.Slot, hotbarKey = HotbarSlots.KeyForInventorySlot(s.Slot), stack = s.Item.stack }).ToArray(),
                 scope = "player.inventory including hotbar, ammo, coins; excludes equipment, banks, chests, mouse item" };
         }
-        var indices = mode == "slots" ? args.GetProperty("slots").EnumerateArray().Select(s=>s.GetInt32())
-            : mode == "hotbar" ? Enumerable.Range(0, Math.Min(10, p.inventory.Length)) : new[] { p.selectedItem };
-        if (indices.Any(i=>i<0 || i>=p.inventory.Length)) return new {status="inventory_slot_out_of_range",inventory=Array.Empty<object>()};
+        var indices = (mode == "slots" ? args.GetProperty("slots").EnumerateArray().Select(s=>s.GetInt32())
+            : mode == "hotbar" ? Enumerable.Range(0, Math.Min(10, p.inventory.Length)) : new[] { p.selectedItem }).ToArray();
+        if (indices.Any(i=>i<0 || i>=p.inventory.Length)) return new {status="inventory_slot_out_of_range",inventory=Array.Empty<object>(),inspectedSlots=Array.Empty<int>(),inventoryScope=InventoryScope(mode,Array.Empty<int>())};
         return new { status = "ok", selectedSlot = p.selectedItem, selectedHotbarKey = HotbarSlots.KeyForInventorySlot(p.selectedItem),
-            inventory = indices.Select(i => CompactItem(p.inventory[i], i, token)).ToArray() };
+            inventory = indices.Select(i => CompactItem(p.inventory[i], i, token)).ToArray(),inspectedSlots=indices,inventoryScope=InventoryScope(mode,indices) };
     }
 
     internal static void Before(Player p, ControlRequest request)

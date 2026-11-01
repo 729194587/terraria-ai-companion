@@ -64,8 +64,8 @@ public static class AtomicExtensionsOfflineTests
         query=Query("inspect_inventory",new {mode="item",item="Stone"}).GetProperty("data");
         Check(query.GetProperty("count").GetInt32()==10 && query.GetProperty("slots").GetArrayLength()==2 && !query.TryGetProperty("inventory",out _),"Item count and slots are compact");
         Check(Query("inspect_inventory",new {mode="item",item="Terraria/Type2"}).GetProperty("data").GetProperty("count").GetInt32()==10,"Content key resolves independently of display name");
-        query=Query("inspect_inventory",new {}).GetProperty("data");
-        Check(query.GetProperty("inventory").GetArrayLength()==1 && query.GetProperty("selectedSlot").GetInt32()==0,"Default selected-only response");
+        query=Query("inspect_inventory",new {mode="selected"}).GetProperty("data");
+        Check(query.GetProperty("inventory").GetArrayLength()==1 && query.GetProperty("selectedSlot").GetInt32()==0,"Explicit selected-only response");
         Check(Query("inspect_inventory",new {mode="hotbar"}).GetProperty("data").GetProperty("inventory").GetArrayLength()==10,"Hotbar explicit");
         object Empty(int slot) => new { slot, empty=true, typeId=0, stack=0, name="", use=new {damage=0} };
         object Filled(int slot) => new { slot, empty=false, typeId=5000, contentKey="Fixture/ModPick",
@@ -83,6 +83,10 @@ public static class AtomicExtensionsOfflineTests
                 new {slot=3,typeId=3,timeTicks=20,contentKey="Terraria/Active"} } };
         var fullBefore=Json(ObservationReader.PlayerSnapshot);
         query=Query("inspect_inventory",new {mode="full"}).GetProperty("data");
+        Check(query.GetProperty("inspectedSlots").EnumerateArray().Select(v=>v.GetInt32()).SequenceEqual(new[]{0,1,9}),"full scope retains every supplied inventory slot including empty");
+        foreach(string name in new[]{"inventory","equipment","dyes","miscEquipment","miscDyes","buffs"})
+            Check(query.GetProperty("inventoryScope").GetProperty("arrays").GetProperty(name).EnumerateArray().Select(v=>v.GetInt32())
+                .SequenceEqual(fullBefore.GetProperty(name).EnumerateArray().Select(v=>v.GetProperty("slot").GetInt32())),"full reports exact inspected slots including inactive/empty: "+name);
         foreach(string name in new[] {"inventory","equipment","dyes","miscEquipment","miscDyes"})
         {
             var items=query.GetProperty(name);

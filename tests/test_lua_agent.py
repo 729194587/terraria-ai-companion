@@ -104,6 +104,15 @@ class StoreTests(unittest.TestCase):
 
 
 class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
+    async def test_inventory_missing_mode_returns_structured_bad_argument(self):
+        _, model, game = await self.run_agent(tool('inspect_inventory', '{}'), final('需要明确查询范围。'))
+        result = next(json.loads(m['content']) for m in model.requests[1] if m.get('role') == 'tool')
+        self.assertEqual('bad_argument', result['status'])
+        self.assertEqual('inspect_inventory', result['argumentOperation'])
+        self.assertTrue(result['diagnostics'])
+        self.assertFalse(any(c == 'query_atomic' and p.get('operation') == 'inspect_inventory'
+                             and not p.get('arguments') for c, p in game.sent))
+
     async def asyncSetUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.store = ProgramStore(Path(self.directory.name) / 'sources')
@@ -204,7 +213,7 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
     async def test_prior_direct_failure_cannot_be_bypassed_by_a_new_program(self):
         _, model, game = await self.run_agent(tool('use_item'), program('''
             local blocked=api('select_hotbar_slot',{slot=2})
-            return {blocked=blocked,read=api('inspect_inventory')}
+            return {blocked=blocked,read=api('inspect_inventory',{mode='selected'})}
         '''), final('完成'), game=RuntimeGame('failed'))
         result = lua_results(model)[0]
         self.assertEqual('blocked',result['status'])
@@ -217,10 +226,10 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         game.hello['capabilities'].remove('server_confirmed_interactions_v1')
         agent, model, _ = await self.run_agent(program('''
             local rejected = api('interact_tile', {x=5,y=5})
-            return {rejected=rejected, readable=api('inspect_inventory').valid}
+            return {rejected=rejected, readable=api('inspect_inventory',{mode='selected'}).valid}
         '''), tool('use_item'), program('''
             local blocked = api('use_item')
-            return {blocked=blocked, readable=api('inspect_inventory').valid}
+            return {blocked=blocked, readable=api('inspect_inventory',{mode='selected'}).valid}
         '''), final('完成'), game=game)
         receipts = lua_results(model)
         first=receipts[0]
@@ -256,7 +265,7 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_syntax_only_error_can_be_corrected_before_any_action(self):
         _, model, game = await self.run_agent(program('not valid lua'),
-            program("return api('inspect_inventory')"), final('读取完成'))
+            program("return api('inspect_inventory',{mode='selected'})"), final('读取完成'))
         self.assertEqual('script_error', lua_results(model)[0]['status'])
         self.assertEqual('读取完成', next(p['text'] for c, p in game.sent if c == 'send_chat'))
         self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
@@ -265,7 +274,7 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         records = []
         with patch('cost_metrics.emit', side_effect=lambda kind, **data: records.append((kind, data))):
             _, model, game = await self.run_agent(program('''
-                for i=1,10 do api('inspect_inventory') end
+                for i=1,10 do api('inspect_inventory',{mode='selected'}) end
                 api('use_item')
             '''), tool('use_item'), final('budget exhausted'), max_tool_calls=3, lua_limits=Limits(calls=2))
         result = lua_results(model)[0]
@@ -275,7 +284,7 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(4, next(data for kind, data in records if kind == 'chat_cost')['tool_calls'])
 
     async def test_one_model_tool_can_use_multiple_internal_api_calls(self):
-        _, model, game = await self.run_agent(program("for i=1,10 do api('inspect_inventory') end"), final('read'), max_tool_calls=1)
+        _, model, game = await self.run_agent(program("for i=1,10 do api('inspect_inventory',{mode='selected'}) end"), final('read'), max_tool_calls=1)
         self.assertEqual('completed', lua_results(model)[0]['status'])
         self.assertEqual(10,sum(c=='query_atomic' and p['operation']=='inspect_inventory' and p['arguments'].get('mode')!='full' for c,p in game.sent))
 
@@ -283,8 +292,8 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         for name, arguments in (('use_item', '{}'), ('move', '{"direction":"right","duration_ms":100}')):
             with self.subTest(tool=name):
                 _, model, game = await self.run_agent(
-                    program("api('inspect_inventory'); return api('inspect_inventory')"),
-                    tool(name, arguments), tool('inspect_inventory'), tool('stop_action'),
+                    program("api('inspect_inventory',{mode='selected'}); return api('inspect_inventory',{mode='selected'})"),
+                    tool(name, arguments), tool('inspect_inventory', '{"mode":"selected"}'), tool('stop_action'),
                     tool(name, arguments), final('stopped'), lua_limits=Limits(calls=2))
                 receipt = lua_results(model)[0]
                 self.assertEqual(('completed', 2), (receipt['status'], receipt['calls']))

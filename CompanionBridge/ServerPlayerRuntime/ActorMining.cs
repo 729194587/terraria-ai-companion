@@ -18,7 +18,7 @@ internal static class ActorMining
         internal readonly Guid Id=Guid.NewGuid();
         internal Player Actor;internal Item Item;internal string World;internal long Generation;
         internal int Slot,Type,Prefix,Pick,Axe, X,Y,TileType,ExpectedType,FrameX,FrameY,Ticks,Swings,Strikes,Damage,PeakDamage,AnimationPeak,ProposedDamage,Transforms;
-        internal byte Slope;internal bool Half,Actuated,Destroyed,ExternalChange;
+        internal byte Slope;internal bool Half,Actuated,Destroyed,ExternalChange,TargetCaptured;
         internal object InvalidTarget;
         internal ActionPhase Phase=ActionPhase.Running;internal Failure Reason;internal string Detail="";
     }
@@ -77,6 +77,7 @@ internal static class ActorMining
             &&(byte)t.Slope==c.Slope&&t.IsHalfBlock==c.Half&&t.IsActuated==c.Actuated
             &&(c.Axe==0&&!DecorationTarget(c.TileType)||t.TileFrameX==c.FrameX&&t.TileFrameY==c.FrameY);
     }
+    internal static bool TargetUnchanged(Context c)=>c.TargetCaptured&&WorldGen.InWorld(c.X,c.Y,2)&&Same(c);
     private static bool Healthy(Player p)=>!p.dead&&!p.ghost&&!p.CCed&&!p.noItems&&!p.noBuilding&&!p.frozen&&!p.stoned&&!p.mount.Active
         &&!Main.gameMenu&&!Netplay.Disconnect&&float.IsFinite(p.position.X)&&float.IsFinite(p.position.Y);
     internal static object TargetDiagnostic(int x,int y)
@@ -107,7 +108,7 @@ internal static class ActorMining
                 Reject(Failure.InvalidTarget,System.Text.Json.JsonSerializer.Serialize(c.InvalidTarget));return;
             }
             var t=Main.tile[x,y];int type=t.TileType;
-            c.TileType=c.ExpectedType=type;c.FrameX=t.TileFrameX;c.FrameY=t.TileFrameY;c.Slope=(byte)t.Slope;c.Half=t.IsHalfBlock;c.Actuated=t.IsActuated;
+            c.TileType=c.ExpectedType=type;c.FrameX=t.TileFrameX;c.FrameY=t.TileFrameY;c.Slope=(byte)t.Slope;c.Half=t.IsHalfBlock;c.Actuated=t.IsActuated;c.TargetCaptured=true;
             if(p.selectedItem<0||p.selectedItem>9||!SupportedTool(c.Item))
             {Reject(Failure.InvalidTool,$"AI 当前栏 {p.selectedItem+1}：{(c.Item.IsAir?"空栏":c.Item.Name)}×{c.Item.stack}，镐力 {c.Pick}，斧力 {c.Axe}。请选择纯镐挖普通方块，或铜斧砍树干。");return;}
             bool targetSupported=c.Axe>0?TreeTarget(type):DecorationTarget(type)||Main.tileSolid[type]&&!Main.tileFrameImportant[type]

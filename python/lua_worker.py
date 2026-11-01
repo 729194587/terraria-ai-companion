@@ -33,7 +33,7 @@ class ForcedTermination(Exception):
     pass
 
 
-class LocalReadRejected(Exception):
+class LocalArgumentRejected(Exception):
     def __init__(self, receipt):
         self.receipt = receipt
 
@@ -164,7 +164,7 @@ def worker(connection, source, limits, helper_source=None):
             check_fatal()
             try:
                 return callback(*args)
-            except LocalReadRejected:
+            except LocalArgumentRejected:
                 raise
             except BaseException as exc:
                 fatal_error = exc
@@ -178,7 +178,7 @@ def worker(connection, source, limits, helper_source=None):
         try:
             try:
                 values = invoke(function, *args)
-            except LocalReadRejected as exc:
+            except LocalArgumentRejected as exc:
                 check_fatal()
                 return False, to_lua(exc.receipt)
             except module.LuaMemoryError:
@@ -260,10 +260,10 @@ def worker(connection, source, limits, helper_source=None):
         reply = decode(connection.recv_bytes(FRAME_BYTES))
         if reply.get('id') != sequence:
             raise ValueLimit('protocol_error')
-        if reply.get('type') == 'local_read_rejected':
+        if reply.get('type') == 'local_argument_rejected':
             if protected_depth <= 0 or type(reply.get('value')) is not dict:
                 raise ValueLimit('protocol_error')
-            raise LocalReadRejected(reply['value'])
+            raise LocalArgumentRejected(reply['value'])
         if reply.get('type') != 'result':
             raise ValueLimit('protocol_error')
         return to_lua(reply['value'])

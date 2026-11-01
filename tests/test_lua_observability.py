@@ -108,7 +108,7 @@ class LuaObservationTests(unittest.IsolatedAsyncioTestCase):
         return [json.loads(line) for line in (Path(result['evidence']['path'])/'events.jsonl').read_text(encoding='utf-8').splitlines()]
 
     async def test_api_lines_tail_calls_progress_and_default_evidence(self):
-        source="local r=api('inspect_inventory')\nlog('observed')\nreturn api('inspect_inventory')"
+        source="local r=api('inspect_inventory',{mode='selected'})\nlog('observed')\nreturn api('inspect_inventory',{mode='selected'})"
         result=await self.run_lua(source)
         self.assertEqual('completed',result['status'],result)
         self.assertEqual((2,0),(result['calls'],result['actions']))
@@ -129,14 +129,14 @@ class LuaObservationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(c=='start_atomic' for c,_ in game.sent))
 
     async def test_script_error_does_not_blame_previously_completed_api(self):
-        result=await self.run_lua("api('inspect_inventory')\nerror('fixture')")
+        result=await self.run_lua("api('inspect_inventory',{mode='selected'})\nerror('fixture')")
         self.assertEqual('script_error',result['status'],result)
         self.assertEqual(2,result['failure']['line'])
         self.assertIsNone(result['failure']['call'])
 
     async def test_action_budget_independent_of_queries_and_unknown_is_recorded(self):
         game=RuntimeGame()
-        result=await self.run_lua("api('select_hotbar_slot',{slot=2}); api('inspect_inventory'); api('use_item')",
+        result=await self.run_lua("api('select_hotbar_slot',{slot=2}); api('inspect_inventory',{mode='selected'}); api('use_item')",
                                   game,limits=Limits(actions=1))
         self.assertEqual(('action_limit',3,1),(result['status'],result['calls'],result['actions']),result)
         self.assertEqual(1,sum(c=='start_atomic' for c,_ in game.sent))
@@ -156,7 +156,7 @@ class LuaObservationTests(unittest.IsolatedAsyncioTestCase):
     async def test_unwritable_artifacts_do_not_change_game_execution(self):
         blocked=self.root/'file'
         blocked.write_text('file',encoding='utf-8')
-        result=await LuaRuntime(RuntimeGame(),evidence_root=blocked).execute("return api('inspect_inventory')")
+        result=await LuaRuntime(RuntimeGame(),evidence_root=blocked).execute("return api('inspect_inventory',{mode='selected'})")
         self.assertEqual('completed',result['status'])
         self.assertFalse(result['evidence']['available'])
         self.assertGreater(result['evidence']['writeErrors'],0)
@@ -179,8 +179,8 @@ class LuaObservationTests(unittest.IsolatedAsyncioTestCase):
     async def test_agent_internal_api_budget_is_shared_across_programs(self):
         def program(source):
             return tool('execute_lua',json.dumps(dict(source=source)))
-        model=Model(program("api('inspect_inventory'); api('inspect_inventory')"),
-                    program("api('inspect_inventory'); api('inspect_inventory')"),final('limit'))
+        model=Model(program("api('inspect_inventory',{mode='selected'}); api('inspect_inventory',{mode='selected'})"),
+                    program("api('inspect_inventory',{mode='selected'}); api('inspect_inventory',{mode='selected'})"),final('limit'))
         game=RuntimeGame()
         agent=Agent(game,model,lua_limits=Limits(calls=3),lua_store=ProgramStore(self.root/'sources'))
         agent.receive(event(1));await agent.task

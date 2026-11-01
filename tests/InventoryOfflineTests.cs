@@ -77,7 +77,7 @@ public static class InventoryOfflineTests
             catch(Exception e) when(e is FormatException or InvalidOperationException) {rejected=true;}
             Check(rejected,"Strict inventory schema rejection: "+operation+args);
         }
-        foreach(string args in new[]{"{\"mode\":\"slots\"}","{\"slots\":[0]}","{\"mode\":\"slots\",\"slots\":[0,0]}",
+        foreach(string args in new[]{"{}","{\"mode\":\"slots\"}","{\"slots\":[0]}","{\"mode\":\"slots\",\"slots\":[0,0]}",
             "{\"mode\":\"slots\",\"slots\":[59]}","{\"mode\":\"slots\",\"slots\":[true]}","{\"mode\":\"slots\",\"slots\":[]}"})
             Invalid("inspect_inventory",args,true);
         string good=new string('a',64);
