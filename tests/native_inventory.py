@@ -22,6 +22,23 @@ async def verify(args):
         await asyncio.sleep(.05)
     matrix = json.loads(ready.read_text())
     assert matrix['passed'], matrix
+    rows = {row['kind']: row for row in matrix['rows']}
+    for case in ('save_throw', 'save_mutate', 'global_save_throw', 'global_save_mutate'):
+        assert rows[case]['saveDataCalls'] == rows[case]['globalSaveDataCalls'] == 0, rows[case]
+        assert rows[case]['result']['Status'] == 'completed', rows[case]
+    for case in ('permission_throw', 'stack_throw', 'split_throw'):
+        action = rows[case]['result']
+        assert action['Status'] == 'unknown' and not action['EffectVerified'], action
+        after = action['Evidence']['after']
+        assert after['available'] and after['kind'] == 'basic_fields_only', after
+        for slot in ('source', 'destination'):
+            assert all(key in after[slot] for key in ('typeId', 'stack', 'prefix', 'instanceId', 'instanceChanged')), after
+    assert rows['stack_throw']['result']['Evidence']['after']['source']['instanceChanged']
+    assert rows['mod_custom_state_untracked']['result']['Status'] == 'completed'
+    assert rows['stale_instance']['result']['Status'] == 'failed'
+    for case, row in rows.items():
+        if case.startswith('stale'):
+            assert not row['result']['Evidence']['mutationAttempted'], row
     bridge = ServerAiBridge(args.port)
     try:
         result = await LuaRuntime(bridge, evidence_root=profile/'inventory-lua').execute("""

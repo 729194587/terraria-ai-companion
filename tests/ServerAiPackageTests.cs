@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.70","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.71","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -162,7 +162,9 @@ public static class ServerAiPackageTests
         Check(new[]{"TransferWithLimit","StackItems","CanStack","Swap"}.All(name=>inventoryIL.Any(i=>i.Operand is MethodReference r&&r.Name==name)),"actor inventory uses native transfer/stack permission/swap");
         Check(!inventoryIL.Any(i=>i.Operand is MethodReference r&&r.Name is "get_LocalPlayer" or "FindRecipes")
             &&!inventoryIL.Any(i=>i.Operand is FieldReference f&&f.DeclaringType.Name=="Main"&&f.Name is "myPlayer" or "mouseItem"),"actor inventory never enters local UI or human path");
-        Check(inventoryIL.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.Name=="ItemIO"&&r.Name=="Save"),"inventory tokens include native saved Mod item state");
+        Check(!inventoryIL.Any(i=>i.Operand is MethodReference r&&(r.DeclaringType.Name is "ItemIO" or "TagIO"||r.Name is "SaveData" or "NetSend")),"inventory tokens and evidence never serialize items or invoke Mod save/network hooks");
+        var basic=Type("ActorInventory").Methods.Single(m=>m.Name=="BasicSlot");
+        Check(!basic.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.Namespace.StartsWith("Terraria")),"exception snapshot reads basic fields without Terraria or Mod method calls");
         Console.WriteLine($"AI formal package: {checks} IL checks passed; no graphical game launched.");
     }
 }

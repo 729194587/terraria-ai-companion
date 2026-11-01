@@ -91,7 +91,7 @@ internal static class ServerAiQueries
         }
         projected["source"] = "server_ai_player";
         projected["customState"] = "unknown; custom Mod player/item/buff data and Mod accessory slots not read";
-        projected["inventoryTokenStatus"] = "server_ai_inventory_v1; use mode slots/selected/hotbar for fresh slot tokens; custom unsaved Mod state unknown";
+        projected["inventoryTokenStatus"] = "server_ai_inventory_v1; use mode slots/selected/hotbar for fresh slot tokens; basic fields and instance identity only; all custom Mod state unknown; no save hooks";
         Require(expected); // Reject hooks/identity changes during projection before publishing the result.
         return new { available = true, worldSessionId = expected.World, gameUpdate = Main.GameUpdateCount,
             actorGeneration = expected.Generation, actorSlot = expected.Slot,

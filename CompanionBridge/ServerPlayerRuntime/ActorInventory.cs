@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -7,7 +6,6 @@ using System.Text;
 using System.Text.Json;
 using Terraria;
 using Terraria.ModLoader;
-using Terraria.ModLoader.IO;
 using CompanionBridge.ServerIpc;
 
 namespace VirtualPlayerEngineProbe;
@@ -30,19 +28,17 @@ internal static class ActorInventory
         internal ulong MutationTick,ConfirmedTick;
         internal string[] AfterTokens;
         internal object Before,After;
+        internal Item SourceBefore,DestinationBefore;
     }
     internal static bool IsOperation(string op)=>op is "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item";
     internal static string Token(AiReadOnlyProtocol.Identity id,Item item,int slot)
     {
         var c=Read(item);
-        // SaveData covers persisted ModItem/GlobalItem state as well as vanilla fields.
-        // Unsaved private Mod state remains unknowable; native CanStack decides compatibility.
-        using var stream=new MemoryStream();
-        if(!item.IsAir)TagIO.ToStream(ItemIO.Save(item),stream,false);
-        if(stream.Length>1048576)throw new InvalidOperationException("Inventory item state exceeds token budget");
+        // No serialization or Mod hooks: custom ModItem/GlobalItem state is unknown.
+        // Native CanStack/stack/split hooks remain authoritative at execution time.
         string instance=item.IsAir?"air":identities.GetValue(item,_=>new Identity()).Value;
         string binding=$"{id.World}|{id.Generation}|{id.Slot}|{identitiesForActor.GetValue(id.Actor,_=>new Identity()).Value}|{slot}|{instance}|{c}";
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(binding+"|"+Convert.ToHexString(stream.ToArray())))).ToLowerInvariant();
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("core_only_v2|"+binding))).ToLowerInvariant();
     }
     private static readonly ConditionalWeakTable<object,Identity> identitiesForActor=new();
     private static string[] Tokens(Context c,Player p)=>p.inventory.Select((i,s)=>Token(c.Identity,i,s)).ToArray();
@@ -50,7 +46,7 @@ internal static class ActorInventory
     {
         var v=Read(p.inventory[slot]);
         return new{slot,hotbarKey=CompanionBridge.HotbarSlots.KeyForInventorySlot(slot),typeId=v.Type,stack=v.Stack,prefix=v.Prefix,maxStack=v.MaxStack,favorited=v.Favorite,
-            inventoryToken=Token(c.Identity,p.inventory[slot],slot)};
+            instanceId=Instance(p.inventory[slot]),inventoryToken=Token(c.Identity,p.inventory[slot],slot)};
     }
     private static object Snapshot(Context c,Player p)=>new{source=Describe(c,p,c.Source),destination=Describe(c,p,c.Destination),selectedSlot=p.selectedItem};
     private static void Finish(Context c,string status,string reason){c.Status=status;c.Reason=reason;}
@@ -84,14 +80,7 @@ internal static class ActorInventory
         if(p.inventory.Any(i=>i==null)){Fail("invalid_inventory_slot_contents");return;}
         try
         {
-            // SaveData and permission hooks are arbitrary Mod code: exceptions are unknown,
-            // even before the native stack call. Never roll back or replay them.
-            c.MutationAttempted=true;
-            var referencesBefore=p.inventory.ToArray();var coreBefore=p.inventory.Select(Read).ToArray();int selectionBefore=p.selectedItem;
             string[] beforeTokens=Tokens(c,p);
-            if(!Tokens(c,p).SequenceEqual(beforeTokens)||!p.inventory.SequenceEqual(referencesBefore)||!p.inventory.Select(Read).SequenceEqual(coreBefore)
-                ||p.selectedItem!=selectionBefore||!ServerAiNativeActions.Owned(c.Identity))
-            {Finish(c,"unknown","inventory_changed_during_snapshot_hooks");return;}
             if(beforeTokens[c.Source]!=c.Arguments.GetProperty("sourceToken").GetString()||beforeTokens[c.Destination]!=c.Arguments.GetProperty("destinationToken").GetString())
             {Fail("stale_inventory_snapshot");return;}
             var source=p.inventory[c.Source];var destination=p.inventory[c.Destination];
@@ -103,17 +92,20 @@ internal static class ActorInventory
             if(transfer&&(count<=0||count>s.Stack||count>s.MaxStack||s.Stack>s.MaxStack)){Fail("inventory_source_count_insufficient_or_invalid");return;}
             if(transfer&&!destination.IsAir&&(s.Type!=d.Type||s.Prefix!=d.Prefix)){Fail("inventory_destination_not_compatible");return;}
             if(transfer&&!destination.IsAir&&(count>d.MaxStack-d.Stack||d.Stack>d.MaxStack)){Fail("inventory_destination_capacity_insufficient");return;}
+            c.SourceBefore=source;c.DestinationBefore=destination;
             c.Before=Snapshot(c,p);int selected=p.selectedItem;
             if(transfer&&!destination.IsAir)
             {
+                c.MutationAttempted=true; // Permission hooks can mutate before returning/throwing.
                 bool allowed=ItemLoader.CanStack(destination,source);
                 if(!Tokens(c,p).SequenceEqual(beforeTokens)||p.selectedItem!=selected||!ServerAiNativeActions.Owned(c.Identity))
                 {Finish(c,"unknown","inventory_changed_during_stack_permission_hook");return;}
                 if(!allowed){Fail("inventory_stacking_denied");return;}
             }
-            // Also reject changes made by SaveData while capturing tokens/evidence.
+            // Recheck binding and basic slot state after permission hooks.
             if(!Tokens(c,p).SequenceEqual(beforeTokens)||p.selectedItem!=selected||!ServerAiNativeActions.Owned(c.Identity))
             {Finish(c,"unknown","inventory_changed_before_native_mutation");return;}
+            c.MutationAttempted=true;
             int moved=count;
             if(transfer)
             {
@@ -140,8 +132,25 @@ internal static class ActorInventory
         }
         catch(Exception e){Unknown(c,e);}
     }
+    private static string Instance(Item item)=>item==null?null:identities.GetValue(item,_=>new Identity()).Value;
+    // Exception evidence must remain independent of item properties/serialization/Mod hooks.
+    private static object BasicSlot(Player p,int slot,Item before)
+    {
+        Item item=p.inventory!=null&&slot>=0&&slot<p.inventory.Length?p.inventory[slot]:null;
+        return new{slot,present=item!=null,typeId=item?.type,stack=item?.stack,prefix=item==null?(int?)null:item.prefix,
+            maxStack=item?.maxStack,favorited=item?.favorited,instanceId=Instance(item),instanceChanged=!ReferenceEquals(item,before)};
+    }
+    private static object ExceptionSnapshot(Context c)
+    {
+        if(!ServerAiNativeActions.Owned(c.Identity))return new{available=false,reason="actor_binding_changed"};
+        var p=(Player)c.Identity.Actor;
+        return new{available=true,kind="basic_fields_only",gameUpdate=Main.GameUpdateCount,selectedSlot=p.selectedItem,
+            source=BasicSlot(p,c.Source,c.SourceBefore),destination=BasicSlot(p,c.Destination,c.DestinationBefore),customState="unknown"};
+    }
     private static void Unknown(Context c,Exception e)
     {
+        // Best effort only: diagnostic failure must never replace the original unknown.
+        try{c.After=ExceptionSnapshot(c);}catch{c.After=new{available=false,reason="basic_snapshot_unavailable"};}
         c.Error=(e.GetType().FullName+": "+e.Message);c.Error=c.Error[..Math.Min(c.Error.Length,768)];
         Finish(c,"unknown","inventory_native_exception");
     }

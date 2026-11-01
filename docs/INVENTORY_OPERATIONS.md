@@ -1,5 +1,21 @@
 # 背包原子能力第一批：CompanionBridge 0.1.39
 
+## Server AI Token 与异常证据修复：0.1.71（2026-11-01）
+
+**实现**：修复 `305b9fe` 中只读 Token 调用 `ItemIO.Save` 的问题。`ActorInventory.Token` 及基础异常快照均不调用 `ItemIO`、`TagIO`、`SaveData` 或网络序列化钩子。Token 保留 World、Generation、Actor 对象身份、Actor 槽位、库存槽位、非空 Item 实例、type/stack/prefix/maxStack/favorited；空槽仍按值识别。摘要增加 `core_only_v2` 域标识，旧算法的 Token 不会被接受。共享 Schema、`server_ai_inventory_v1` 握手和客户端本地 `AtomicInventory` 不变。
+
+**能力边界**：全部 ModItem/GlobalItem 自定义状态（包括可保存状态）都不进入 Token；仅自定义状态改变时不能检测过期，不宣称完整物品相等。执行时仍调用原生 CanStack、StackItems、TransferWithLimit 及原有钩子。移除为防 SaveData 副作用而设置的重复序列化检查；`mutationAttempted` 现在在原生许可钩子或变更入口前置 true，旧基础快照拒绝不再标记已尝试变更。
+
+**异常证据**：CanStack、OnStack、SplitStack 或其他原生执行异常仍为 `unknown`。尽力填写 `after={available,kind='basic_fields_only',gameUpdate,selectedSlot,source,destination,customState='unknown'}`；两槽含原始 typeId/stack/prefix/maxStack/favorited、present、instanceId 和相对执行前引用的 instanceChanged。直接读字段，不调用 Item 属性/Mod 钩子，不把异常后的状态解释为成功或失败。绑定已失效时仅返回不可用原因，不读取替换 Actor；诊断自身失败也不覆盖原异常。保留不回滚、不自动重试及 Lua unknown 屏障。
+
+**实验结果**：最终 `0.1.71` 包 SHA-256 `242bba96417152d8981317e1b17c0f96fd3a28e9a99783af0282f8861e514fa8`，正式构建 0 错误、0 警告。服务器库存 Python 6 项、本地库存 Python 7 项通过；C# IPC 45 / 原子 40 / 读取 63 / 原生适配替身 226 / 聊天 30 项及正式包 80 项 IL 检查通过。未运行全量测试。
+
+**隔离原生**：36 个库存场景、7 次真实 Lua/IPC 库存动作及既有读取/选栏/导航/使用/挖掘/取消/进程清理通过。ModItem 与 GlobalItem 各自抛异常、修改状态的四种 SaveData 配置下，selected/hotbar/slots/full/item 及 get_player_state 查询的保存钩子调用均为零，物品状态保持不变。CanStack 修改目标数量/前缀后抛异常、OnStack 替换源实例后抛异常、SplitStack 修改源数量/前缀后抛异常均保留 unknown，并逐字段比对异常快照与真实槽位；实例替换标志也核对通过。移动、拆分、合并、交换、持用、旧绑定/旧基础字段及同值新实例 Token 拒绝通过；另有仅自定义状态改变仍接受 Token 的边界用例。
+
+原始结果、失败日志、命令和逐文件 SHA-256 见 [修复证据](evidence/server-ai-inventory-token-fix/manifest.json)。两次最初的原生尝试未进入测试：新增 GlobalItem 夹具缺少与 SaveData 配对的 LoadData，被 tModLoader 禁用；先前对世界加载慢的猜测不成立。补齐测试夹具后，同一脚本/原超时的最终重建包验收通过，原失败证据保留。没有部署现用 profile 或付费模型请求，未验证图形 Host & Play、远端客户端收包和任意第三方 Mod。
+
+下节 0.1.70 的实现描述和测试是历史记录：本节取代其中“保存状态进入 Token”“SaveData 开始即算变更尝试”等说明，原始证据不改写。
+
 ## Server AI 库存：0.1.70（2026-11-01）
 
 以下为独立服务器 AI Player 的实现和验证；后文 0.1.39/0.1.40 为客户端历史记录，不将单人限制套用于服务器路径。

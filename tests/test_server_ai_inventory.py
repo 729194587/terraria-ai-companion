@@ -86,13 +86,18 @@ class InventoryBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len([r for r in self.host.sent if r['op'] == 'start']))
 
     async def test_unknown_effect_fences_further_inventory_actions(self):
+        snapshot = dict(available=True, kind='basic_fields_only',
+                        source=dict(typeId=9, stack=8, prefix=3, instanceId='original-source', instanceChanged=False),
+                        destination=dict(typeId=0, stack=0, prefix=0, instanceId='original-air', instanceChanged=False))
         def unknown(action):
+            action['evidence']['after'] = copy.deepcopy(snapshot)
             action.update(status='unknown', reason='inventory_native_exception')
             action['endEvidence']['effectVerified'] = False
         self.enable('transfer_inventory_item', ARGS, unknown)
         call = "api('transfer_inventory_item', {sourceSlot=10,destinationSlot=0,count=3,sourceToken='"+TOKEN+"',destinationToken='"+TOKEN+"'})"
         result = await LuaRuntime(self.bridge).execute(call + '; ' + call, limits=Limits(actions=2))
         self.assertEqual('unknown', result['actionState'], result)
+        self.assertEqual(snapshot, result['lastAction']['evidence']['after'])
         self.assertEqual(1, len([r for r in self.host.sent if r['op'] == 'start']))
 
     async def test_swap_and_hold_receipts(self):
