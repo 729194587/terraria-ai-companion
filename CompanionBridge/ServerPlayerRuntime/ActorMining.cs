@@ -67,6 +67,24 @@ internal static class ActorMining
         if(rangeContext!=null)throw new InvalidOperationException("Reentrant G7 reach check.");
         try{rangeContext=c;return inRange(c.Actor,c.Item);}finally{rangeContext=null;}
     }
+    internal static bool SupportedPick(Item item)=>SupportedTool(item)&&item.pick>0&&item.axe==0;
+    private static readonly MethodInfo shallowCopy=typeof(object).GetMethod("MemberwiseClone",BindingFlags.Instance|BindingFlags.NonPublic);
+    internal static bool QueryReach(Player actor,string world,long generation,Item item,int x,int y,float px,float py)
+    {
+        ActorItemUse.Capture(actor,world,generation);
+        if(!float.IsFinite(px)||!float.IsFinite(py))return false;
+        // Detached, shallow field projection ONLY for the audited read-only native range
+        // method. Never installed in Main.player; never update/move the real Player.
+        var projection=(Player)shallowCopy.Invoke(actor,null);projection.position=new(px,py);
+        var c=new Context{Actor=actor,World=world,Generation=generation,Item=item,X=x,Y=y};
+        if(rangeContext!=null)throw new InvalidOperationException("Reentrant mining reach query");
+        try
+        {
+            rangeContext=c;
+            return Microsoft.Xna.Framework.Vector2.Distance(new(px+actor.width/2f,py+actor.height/2f),new(x*16+8,y*16+8))<=80&&inRange(projection,item);
+        }
+        finally{rangeContext=null;}
+    }
     private static bool SupportedTool(Item i)=>!i.IsAir&&i.hammer==0&&!i.channel&&i.shoot<=0
         &&(i.pick>0&&i.axe==0||i.type==ItemID.CopperAxe&&i.axe>0&&i.pick==0);
     private static bool TreeTarget(int type)=>Main.tileAxe[type]&&TileID.Sets.IsATreeTrunk[type];
@@ -78,7 +96,7 @@ internal static class ActorMining
             &&(c.Axe==0&&!DecorationTarget(c.TileType)||t.TileFrameX==c.FrameX&&t.TileFrameY==c.FrameY);
     }
     internal static bool TargetUnchanged(Context c)=>c.TargetCaptured&&WorldGen.InWorld(c.X,c.Y,2)&&Same(c);
-    private static bool Healthy(Player p)=>!p.dead&&!p.ghost&&!p.CCed&&!p.noItems&&!p.noBuilding&&!p.frozen&&!p.stoned&&!p.mount.Active
+    internal static bool Healthy(Player p)=>!p.dead&&!p.ghost&&!p.CCed&&!p.noItems&&!p.noBuilding&&!p.frozen&&!p.stoned&&!p.mount.Active
         &&!Main.gameMenu&&!Netplay.Disconnect&&float.IsFinite(p.position.X)&&float.IsFinite(p.position.Y);
     internal static object TargetDiagnostic(int x,int y)
     {
@@ -167,6 +185,7 @@ internal static class ActorMining
     }
     private static void Kill(On_WorldGen.orig_KillTile orig,int x,int y,bool fail,bool effectOnly,bool noItem)
     {
+        if(!fail&&!effectOnly)CompanionBridge.ServerIpc.SceneMineTargets.Changed(x,y);
         var c=Current;bool watched=Running&&c.X==x&&c.Y==y;
         bool nativePick=watched&&ReferenceEquals(c,executing)&&(picking||striking&&c.Axe>0)&&Allowed(c.Actor)&&!c.ExternalChange&&Same(c)&&c.ProposedDamage>0;
         bool own=nativePick&&c.Damage>=100&&!fail&&!effectOnly;
@@ -191,6 +210,7 @@ internal static class ActorMining
     }
     private static bool Place(On_WorldGen.orig_PlaceTile orig,int x,int y,int type,bool mute,bool forced,int plr,int style)
     {
+        CompanionBridge.ServerIpc.SceneMineTargets.Changed(x,y);
         if(Running&&Current.X==x&&Current.Y==y)Current.ExternalChange=true;
         return orig(x,y,type,mute,forced,plr,style);
     }

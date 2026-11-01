@@ -153,6 +153,20 @@ internal static class AtomicParameters
             case "drop_through_platform": Fields(); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
             case "place_object": goto case "place_tile";
+            case "mine_target":
+            {
+                if(!keys.Contains("target")){Fields("x","y");Integer("x",0,100000);Integer("y",0,100000);break;}
+                Fields("target");
+                var mineTarget=args.GetProperty("target");
+                string[] mineTargetKeys={"kind","x","y","typeId","worldSessionId","actorGeneration","actorSlot","observedGameUpdate","observedAtUnixMs","targetToken"};
+                if(mineTarget.ValueKind!=JsonValueKind.Object||!mineTarget.EnumerateObject().Select(f=>f.Name).OrderBy(k=>k).SequenceEqual(mineTargetKeys.OrderBy(k=>k)))throw new FormatException("Invalid observed mine target");
+                if(mineTarget.GetProperty("kind").GetString()!="tile"||mineTarget.GetProperty("worldSessionId").GetString().Length is <1 or >128
+                    ||!System.Text.RegularExpressions.Regex.IsMatch(mineTarget.GetProperty("targetToken").GetString(),"^[0-9a-f]{64}$"))throw new FormatException("Invalid target binding");
+                foreach(string key in new[]{"x","y","typeId","actorSlot","actorGeneration","observedGameUpdate","observedAtUnixMs"})
+                    if(!mineTarget.GetProperty(key).TryGetInt64(out long value)||value<0||value>9007199254740991L)throw new FormatException("Invalid target field");
+                if(mineTarget.GetProperty("x").GetInt64()>100000||mineTarget.GetProperty("y").GetInt64()>100000||mineTarget.GetProperty("typeId").GetInt64()>65535||mineTarget.GetProperty("actorSlot").GetInt64()>254)throw new FormatException("Invalid target range");
+                break;
+            }
             case "mine_tile": case "place_tile": case "interact_tile": case "mine_wall": case "place_wall": case "hammer_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
             case "attack_entity": Fields("entityRef"); if (args.GetProperty("entityRef").ValueKind != JsonValueKind.String || args.GetProperty("entityRef").GetString().Length is < 1 or > 150) throw new FormatException("Invalid entityRef."); break;
             case "use_item":

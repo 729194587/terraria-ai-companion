@@ -15,6 +15,14 @@ public static class SceneGeometryTests
     }
     public static void Run()
     {
+        {
+            var g=Grid();var group=new[]{(1,1),(1,2),(1,3),(2,3),(3,3)};
+            foreach(var c in group.Append((3,1)))g[c.Item1,c.Item2]=Cell('#') with{Kind="ore_component"};
+            var componentObjects=SceneGeometry.Objects(g,0,0,(x,y)=>new[]{x,y},56,24);
+            var target=(int[])componentObjects.Single(o=>o.ObservedTileCount==5).Target;
+            Check(group.Contains((target[0],target[1])),"structured target belongs to the component, never an island inside its bounding box");
+            Check(SceneGeometry.Objects(g,0,0).All(o=>o.Target==null),"existing pure scene callers retain optional target behavior");
+        }
         var grid=Grid();
         for(int x=5;x<12;x++)grid[x,9]=Cell('=');
         var regions=SceneGeometry.Landings(grid,100,200,1640,3424);

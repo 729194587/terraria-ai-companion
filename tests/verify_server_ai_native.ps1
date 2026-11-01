@@ -1,5 +1,6 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$VerticalNavigation)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$VerticalNavigation)
 $ErrorActionPreference='Stop'
+if($Tasks -and !$Actions){throw 'Task validation requires isolated Actions fixture.'}
 if($Inventory -and !$Actions){throw 'Inventory validation requires isolated Actions fixture.'}
 if($Crafting -and !$Actions){throw 'Crafting verification requires isolated Actions fixture.'}
 if($Scene){$Perception=$true;if(!$Actions){throw 'Scene verification requires isolated Actions fixture.'}}
@@ -37,6 +38,7 @@ $info.RedirectStandardInput=$true
 $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
+if($Tasks){$info.ArgumentList.Add("-companiontasktest")}
 if($Inventory){$info.ArgumentList.Add("-companioninventorytest")}
 if($Crafting){$info.ArgumentList.Add("-companioncrafttest")}
 if($Scene){$info.ArgumentList.Add("-companionscenetest")}
@@ -236,6 +238,10 @@ try {
             if($LASTEXITCODE -ne 0){throw "Native terrain matrix failed: $profile"}
         }
     }
+    if($Tasks){
+        & $PythonExecutable (Join-Path $repo 'tests/native_mine_target.py') --port $IpcPort --profile $profile
+        if($LASTEXITCODE -ne 0){throw "Mine target task verification failed: $profile/mine-target-results.json"}
+    }
     $client.Dispose();$client=$null
     [IO.File]::WriteAllText("$profile/g81-test-stop",'The isolated harness requests native main-thread shutdown after read-only TCP assertions.')
     if(!$process.WaitForExit(20000)){throw 'Native graceful unload timed out'}
@@ -271,6 +277,7 @@ try {
     if($Terrain){$matrixFile=if($VerticalNavigation){'vertical-result.json'}else{'terrain-result.json'};$report.terrain=Get-Content -LiteralPath "$profile/$matrixFile" -Raw|ConvertFrom-Json}
     if($VerticalNavigation -and $LandingRegions){$report.landingRegions=Get-Content -LiteralPath "$profile/terrain-result.json" -Raw|ConvertFrom-Json}
     if($Scene){$report.combatIsolation=$combatIsolation;$report.actionFixture=$fixture;$report.actionFrameMode='isolated whole native Main.Update frames, scene candidates; no old action fixture state reuse'}
+    if($Tasks){$report.tasks=Get-Content -LiteralPath "$profile/mine-target-results.json" -Raw|ConvertFrom-Json}
     if($Inventory){$report.inventory=Get-Content -LiteralPath "$profile/inventory-results.json" -Raw|ConvertFrom-Json}
     if($Crafting){$report.crafting=Get-Content -LiteralPath "$profile/crafting-results.json" -Raw|ConvertFrom-Json;$report.combatIsolation=$combatIsolation}
     if($Actions -and !$Scene -and !$Crafting){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
@@ -280,7 +287,7 @@ try {
         $report.landingCleanup=Get-Content -LiteralPath "$profile/landing-cleanup-evidence.json" -Raw|ConvertFrom-Json
         if($report.landingCleanup.result -ne 'passed'){throw 'Native landing cleanup validation failed'}
     }
-    $report|ConvertTo-Json -Depth 12|Set-Content -LiteralPath "$profile/result.json"
+    $report|ConvertTo-Json -Depth $(if($Tasks){32}else{12})|Set-Content -LiteralPath "$profile/result.json"
     Write-Output "Native AI IPC passed: $profile/result.json"
 } finally {
     if($client){$client.Dispose()}

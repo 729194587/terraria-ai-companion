@@ -42,7 +42,8 @@ public static class MiningPatches
             &&At(kill,0x0651)?.Operand is Instruction grass&&grass==At(kill,0x0698)
             &&At(kill,0x069f)?.OpCode==OpCodes.Ldc_I4_0&&At(kill,0x06a0)?.OpCode==OpCodes.Stind_I2
             &&Call(kill,0x0730,"SquareTileFrame"));
-        Require(range.Body.ExceptionHandlers.Count==0&&range.Body.Instructions.Count==77
+        Require(range.Body.Instructions.All(i=>i.OpCode!=OpCodes.Stfld&&i.OpCode!=OpCodes.Stsfld&&i.OpCode!=OpCodes.Call&&i.OpCode!=OpCodes.Callvirt)
+            &&range.Body.ExceptionHandlers.Count==0&&range.Body.Instructions.Count==77
             &&range.Body.Instructions.Count(i=>i.Operand is FieldReference r&&r.Name=="tileTargetX")==2
             &&range.Body.Instructions.Count(i=>i.Operand is FieldReference r&&r.Name=="tileTargetY")==2);
     }

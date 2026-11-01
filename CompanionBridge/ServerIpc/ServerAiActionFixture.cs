@@ -90,6 +90,7 @@ internal static class ServerAiActionFixture
                 }
             }
             lock(ProbeSession.Reservation.Gate)ServerAiDirectInputFixture.Tick(ProbeSession.Actor);
+            lock(ProbeSession.Reservation.Gate)ServerMineTaskFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerInventoryFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerCraftingFixture.Tick(ProbeSession.Actor,Main.spawnTileX,Main.spawnTileY+8);
             // The copied-world perception fixture tests NPC presence, not AI/combat.
@@ -130,6 +131,11 @@ internal static class ServerAiActionFixture
             // Same virtual native method invoked by DedServ_PostModLoad (IL_0dcb).
             // Does not call Player.Update, spoof identity, or change Netplay.HasClients.
             lock(ProbeSession.Reservation.Gate)ServerAiTerrainFixture.Tick(ProbeSession.Actor);
+            if(ServerMineTaskFixture.Enabled&&File.Exists(Path.Combine(Main.SavePath,"task-freeze-updates")))
+            {
+                File.WriteAllText(Path.Combine(Main.SavePath,"task-freeze-ready.json"),JsonSerializer.Serialize(new{gameUpdate=Main.GameUpdateCount}));
+                return;
+            }
             update.Invoke(Main.instance,new object[]{new GameTime()});
             lock(ProbeSession.Reservation.Gate)ServerAiTerrainFixture.Observe(ProbeSession.Actor);
             var current=ActorMining.Current;

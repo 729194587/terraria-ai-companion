@@ -131,7 +131,13 @@ public static class ServerAiNativeActionOfflineTests
             Check(a.GetProperty("targetRecipe").GetProperty("recipeId").GetInt32()==12&&a.GetProperty("targetRecipe").GetProperty("crafts").GetInt32()==3,"craft receipt fixes recipe identity and execution count");
             Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_crafting_v1")>=0,"craft capability is explicit");
         }
-        foreach(string op in new[]{"move_input","navigate_to_x","navigate_to_landing_region","use_item","mine_tile","place_tile","place_object","craft_recipe"})
+        {
+            var f=new Fixture();string id=f.Start("mine_target");var a=f.Action(id);
+            Check(a.GetProperty("durationMs").GetInt32()==55000&&a.GetProperty("targetTask").GetProperty("x").GetInt32()==100,"mine task has immutable target and bounded root deadline");
+            Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_tasks_v1")>=0,"task capability independent of atomic actions");
+            f.Time=55001;f.Tick();Check(f.Action(id).GetProperty("status").GetString()=="timeout"&&f.Native.Cancels==1,"root wall-clock deadline cancels native executor");
+        }
+        foreach(string op in new[]{"move_input","navigate_to_x","navigate_to_landing_region","use_item","mine_tile","place_tile","place_object","craft_recipe","mine_target"})
         {
             var f=new Fixture();string id=f.Start(op);
             Check(f.Native.Starts==1&&f.Action(id).GetProperty("status").GetString()=="running","accepted/running precede "+op+" native completion");
@@ -141,6 +147,19 @@ public static class ServerAiNativeActionOfflineTests
             Check(a.GetProperty("status").GetString()=="completed"&&end.GetProperty("inputsReleased").GetBoolean()
                 &&end.GetProperty("operation").GetString()==op&&end.GetProperty("actorGeneration").GetInt32()==1,"verified "+op+" has bound game-thread release evidence");
             Check(f.Send("start",id,op).GetProperty("error").GetString()=="duplicate_action","long action duplicate ID rejected");
+        }
+        foreach(string cause in new[]{"disconnect","death","cancel","timeout","forget"})
+        {
+            var f=new Fixture();using var disconnected=new CancellationTokenSource();string id=f.Start("mine_target",token:disconnected.Token);
+            f.Native.UnknownOnCancel=true;f.Native.Result=new("unknown","task_child_unconfirmed",null,true);
+            if(cause=="disconnect")disconnected.Cancel();if(cause=="death")f.Current=f.Current with{CanAct=false};
+            if(cause=="cancel")f.Send("cancel",id);if(cause=="timeout")f.Time=55001;if(cause=="forget")f.Actions.Forget(f.Owner);
+            f.Tick();var a=f.Action(id);
+            Check(a.GetProperty("status").GetString()=="unknown"&&f.Native.Cancels==1,"root task "+cause+" preserves uncertain child outcome");
+        }
+        {
+            var f=new Fixture();string id=f.Start("mine_target");f.Native.Result=new("failed","actor_busy",new{mutationAttempted=false},true,InputsAcquired:false);f.Tick();
+            Check(f.Action(id).GetProperty("task").GetProperty("status").GetString()=="failed","native admission refusal remains a structured task without requiring child evidence");
         }
         foreach(string operation in new[]{"place_object","move_input"})
         foreach(string cause in new[]{"cancel","death","timeout","disconnect","forget"})foreach(bool released in new[]{true,false})

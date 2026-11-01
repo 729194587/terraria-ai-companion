@@ -1,0 +1,1 @@
+local q=api('observe_scene',{layers={'objects'}}); for _,o in ipairs(q.data.objects.items) do if o.kind=='ore_component' and o.target then return api('mine_target',{target=o.target}) end end; error('no observed ore')

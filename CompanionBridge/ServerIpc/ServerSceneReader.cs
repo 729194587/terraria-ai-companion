@@ -17,6 +17,7 @@ namespace CompanionBridge.ServerIpc;
 internal static class ServerSceneReader
 {
     private static long sequence;
+    private sealed record MineCell(int X,int Y);
     private static readonly HashSet<int> Ores=new(){TileID.Copper,TileID.Tin,TileID.Iron,TileID.Lead,TileID.Silver,TileID.Tungsten,
         TileID.Gold,TileID.Platinum,TileID.Demonite,TileID.Crimtane,TileID.Meteorite,TileID.Hellstone,TileID.Cobalt,TileID.Palladium,
         TileID.Mythril,TileID.Orichalcum,TileID.Adamantite,TileID.Titanium,TileID.Chlorophyte};
@@ -67,7 +68,7 @@ internal static class ServerSceneReader
         bool Intersects(Entity e)=>e.position.X<(ox+45)*16&&e.position.X+e.width>ox*16&&e.position.Y<(oy+29)*16&&e.position.Y+e.height>oy*16;
         var bodies=layers.Has("placementCandidates")||layers.Has("objectPlacementCandidates")?Main.player.Where(other=>other.active&&!other.dead&&!other.ghost&&Intersects(other)).Select(other=>new WorldRect(other.position.X,other.position.Y,other.width,other.height)).ToList():new List<WorldRect>();
         if(!bodies.Contains(actor))bodies.Add(actor);
-        var objects=layers.Has("objects")?SceneGeometry.Objects(cells,ox,oy).ToList():new List<SceneObject>();
+        var objects=layers.Has("objects")?SceneGeometry.Objects(cells,ox,oy,(tx,ty)=>new MineCell(tx,ty),p.Center.X,p.Center.Y).ToList():new List<SceneObject>();
         var dynamicHazards=new List<(float Distance,object Value)>();
         float HazardDistance(Entity e)=>Math.Abs(e.Center.X-p.Center.X)+Math.Abs(e.Center.Y-p.Center.Y);int entitiesScanned=0;
         var entityMarkers=new List<(int,int,char)>();
@@ -112,6 +113,7 @@ internal static class ServerSceneReader
         {
             float Distance(SceneObject o)=>Math.Abs((o.ObservedBounds.X+o.ObservedBounds.Width/2f)*16-p.Center.X)+Math.Abs((o.ObservedBounds.Y+o.ObservedBounds.Height/2f)*16-p.Center.Y);
             var result=SceneGeometry.LimitObjects(objects,objectCap,Distance);
+            result=result with{Items=result.Items.Select(o=>o.Target is MineCell tile?o with{Target=SceneMineTargets.Observe(identity,tile.X,tile.Y)}:o).ToArray()};
             response["objectCounts"]=new{observed=objects.GroupBy(o=>o.Kind).ToDictionary(g=>g.Key,g=>g.Count()),returned=result.Items.GroupBy(o=>o.Kind).ToDictionary(g=>g.Key,g=>g.Count())};
             return result;
         });

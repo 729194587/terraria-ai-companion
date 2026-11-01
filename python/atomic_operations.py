@@ -23,6 +23,15 @@ def tool(name, description, properties=None, required=None):
 
 TILE = {"x": {"type": "integer", "minimum": 0, "maximum": 100000},
         "y": {"type": "integer", "minimum": 0, "maximum": 100000}}
+MINE_TARGET = {"type": "object", "properties": {
+    "kind": {"type": "string", "enum": ["tile"]}, **TILE,
+    "typeId": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "worldSessionId": {"type": "string", "minLength": 1, "maxLength": 128},
+    **{key: {"type": "integer", "minimum": 0, "maximum": 9007199254740991}
+       for key in ('actorGeneration', 'observedGameUpdate', 'observedAtUnixMs')},
+    "actorSlot": {"type": "integer", "minimum": 0, "maximum": 254},
+    "targetToken": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"}},
+    "required": ['kind','x','y','typeId','worldSessionId','actorGeneration','actorSlot','observedGameUpdate','observedAtUnixMs','targetToken'], "additionalProperties": False}
 TYPE_IDS = {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535},
             "minItems": 1, "maxItems": 32, "uniqueItems": True}
 INVENTORY_SLOT = {"type": "integer", "minimum": 0, "maximum": 49}
@@ -103,6 +112,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("select_hotbar_slot", "按游戏显示的快捷键选择：1..9为前九格，0为最右第十格。slot不是背包数组索引。核对实际选中按键。", {"slot": {"type": "integer", "minimum": 0, "maximum": 9}}, ["slot"]),
     tool("use_item", "用当前物品完成一次原生使用周期；target可选世界像素{x,y}。completed只证明使用周期，具体效果需感知核验。无target保留原生鼠标，不限制画面缩放；有target支持当前缩放，仍限正常重力及80像素。",
          {"target": {"type": "object", "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1000000}, "y": {"type": "number", "minimum": 0, "maximum": 1000000}}, "required": ["x", "y"], "additionalProperties": False}}),
+    tool("mine_target", "服务器复合任务：优先直接传 observe_scene 的矿物对象 target（{target=ore.target}），无需从地图计算或重建坐标；也可显式{x,y}绝对Tile位置，二者互斥。游戏侧核对观察World/Actor/Generation、30秒/600更新时效及目标未改变，选快捷栏纯镐，按原生挖掘交互范围寻找安全站位，导航后重验并挖指定一格。仅已观察普通原版矿物/局部导航窗口，无自动重试；unknown停止。回执evidence.task含taskId/taskName/phase/status/currentChild/progress/lastResult/reason及子动作效果/释放证据。完成不证明掉落入包。", {"target": MINE_TARGET, **TILE}),
     tool("mine_tile", "以选中镐原生挖掘80像素内Tile，支持当前缩放，仍限正常重力；移除才成功，10秒上限。Server AI 另允许纯镐清理 SmallPiles（Tile 185）环境碎堆；其他非实心装饰并不因此获准。放置前用 inspect_tile 核对占地，显式清理成功后重新观察再 place_object；不会自动清理。调用前inspect_inventory确认所选为镐，必要时先select_hotbar_slot。不在该原子操作内自动选工具/移动。", TILE, ["x", "y"]),
     tool("attack_entity", "以当前物品攻击scan_entities给出的NPC entityRef；80像素内，生命下降才成功，失活但无伤害证据失败，其他伤害来源可能存在。10秒上限。",
          {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
@@ -124,6 +134,7 @@ SERVER_DESCRIPTIONS = {
     'inspect_inventory': '只读AI真实背包，必须显式mode；局部查询不代表完整背包。返回{valid,available,data,...}，data.inventoryScope/inspectedSlots标明实际检查范围，item匹配slots不等于搜索范围。hotbarKey是游戏键1..9,0；新版本server_ai_inventory_v1提供绑定World/Actor/Generation/槽位、物品实例与基础字段的inventoryToken；操作前用slots/selected/hotbar读取两槽新鲜token。full/item不保证提供token，全部Mod自定义状态未知；token不调用保存钩子，不能识别仅自定义状态变化。',
     'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。返回{valid,available,data,...}，data.terrain含originX/originY/rows，data.state含centerWorldPixels，另含bounds/legend/coverage。原点/格为Tile（16像素），不是摄像机或材质图；取具体Tile用已开放的精查接口。supported只是profile适用性。',
     'use_item': '当前选中快捷栏物品完成一次原生使用周期；参数仅{}，先观察真实持用物品，必要时显式选栏。仅木剑、铜镐、铜斧、苹果，无target瞄准、实体锁定或其他物品适配；3秒上限。completed和cycleVerified只证明使用周期，effectStatus=unconfirmed，不证明命中或击杀。',
+    'mine_target': '仅server_ai_tasks_v1；直接使用矿物对象的target字段，不重构坐标；明确玩家指定位置才用x/y。30秒或600游戏更新内的观察可提交；任务只随真实更新推进，截止不因子任务冻结。当前仅选快捷栏纯镐、一次导航和一次挖掘，不自动恢复、不挖遮挡或整片矿脉；按evidence.task.lastResult/children验证。',
     'mine_tile': '当前真实镐挖普通方块或SmallPiles（Tile185），或铜斧砍原生斧类树干。x/y为新鲜观察或玩家指定的实际Tile格；先检查工具，80像素保守距离叠加原生射程/工具力/保护规则。10秒上限，destroyedByActor且targetAbsent和绑定结束证据才完成；树木连带变化/掉落不证明入包。其他装饰不因此支持；不自动选工具、走近、挖邻格或重试。',
     'place_tile': '在空Tile格x/y，以当前选中原版泥土块、石块、木材或普通火把进行一次原生放置。检查物品、占地和原生邻接；80像素保守检查加原生条件，10秒上限。仅本AI放置目标、消耗1件、计时结束及释放共同确认completed。不支持家具/平台/沙/ModItem/替换格/墙；不自动选材或走近，取消可能已有方块/消耗。',
     'scan_entities': '以AI中心扫描世界像素半径radius（1..1600）内真实活跃NPC/掉落/其他玩家，排除AI自身；category与可选typeIds/npcFilter按Schema，先筛选再按距离排序截断。返回data.items及范围/计数/截断；entityRef绑定世界/AI代次/NPC实例，仅是观察标识，不保证视线、可达或可攻击。',
@@ -244,6 +255,8 @@ def validate(name, arguments):
     arguments = check(arguments, SCHEMAS[name], name)
     if issues:
         raise ArgumentValidationError(name, issues, truncated)
+    if name == 'mine_target' and not (set(arguments) == {'target'} or set(arguments) == {'x', 'y'}):
+        raise ValueError('mine_target requires either target or absolute x/y')
     if name == 'query_map':
         if arguments.get('cellSize', 2) not in (1, 2, 4):
             raise ValueError('query_map.cellSize must be 1, 2 or 4')
@@ -279,8 +292,8 @@ async def command(bridge, cmd, **args):
 def result(action, generation):
     return {'valid': True, 'status': action['status'], 'reason': action['reason'], 'reasonDetail': action.get('reasonDetail'),
             'operation': action.get('operation'), 'actionId': action['actionId'],
-            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'), 'targetRecipe': action.get('targetRecipe'), 'targetInventory': action.get('targetInventory'),
-            'evidence': action.get('evidence'), 'endEvidence': action.get('endEvidence'),
+            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'), 'targetRecipe': action.get('targetRecipe'), 'targetInventory': action.get('targetInventory'), 'targetTask': action.get('targetTask'),
+            'task': action.get('task'), 'evidence': action.get('evidence'), 'endEvidence': action.get('endEvidence'),
             'endEvidenceStatus': action.get('endEvidenceStatus'), 'controlGeneration': generation,
             'completed': action['status'] == 'completed', 'cancelled': action['status'] == 'cancelled'}
 
@@ -345,6 +358,29 @@ def verified_server_inventory(action, evidence):
                                     count == s['stack'] and s['favorited'] if d['typeId'] == 0 else d['favorited'] or s['favorited'])[k] for k in fields))
 
 
+def verified_server_mine_task(action, evidence):
+    task = evidence.get('task')
+    if not isinstance(task, dict):
+        return False
+    last = task.get('lastResult') or {}
+    if not isinstance(last, dict):
+        return False
+    proof = last.get('evidence') or {}
+    goal = action.get('targetTask') or {}
+    goal = goal.get('target', goal) if isinstance(goal, dict) else {}
+    if not isinstance(proof, dict) or not isinstance(goal, dict):
+        return False
+    return (task.get('taskId') == action.get('actionId') and task.get('taskName') == 'mine_target'
+            and task.get('status') == 'completed' and task.get('phase') == 'terminal'
+            and task.get('worldSessionId') == action.get('worldSessionId')
+            and task.get('actorGeneration') == action.get('generation') and task.get('actorSlot') == action.get('actorSlot')
+            and last.get('status') == 'completed' and last.get('inputsReleased') is True and last.get('effectVerified') is True
+            and proof.get('destroyedByActor') is True and proof.get('targetAbsent') is True and proof.get('targetChanged') is False
+            and isinstance(action.get('targetTask'), dict)
+            and all(type(goal.get(k)) is int and proof.get(k.upper()) == goal[k] for k in ('x', 'y'))
+            and ('typeId' not in goal or proof.get('TileType') == goal['typeId']))
+
+
 def verified_server_craft(action, evidence):
     goal = action.get('targetRecipe')
     return (isinstance(goal, dict) and set(goal) == {'recipeId', 'recipeToken', 'crafts'}
@@ -363,7 +399,7 @@ def verified_server_craft(action, evidence):
 
 def same_action(expected, current):
     return isinstance(current, dict) and all(current.get(key) == expected.get(key) for key in
-        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'requestedInputs', 'targetInventory', 'actorId', 'actorSlot'))
+        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'requestedInputs', 'targetInventory', 'targetTask', 'actorId', 'actorSlot'))
 
 
 def verify_landing_start(action, arguments, *, server_ai=False):
@@ -432,6 +468,7 @@ async def terminal(bridge, action, generation):
         'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
         'craft_recipe': verified_server_craft(action, native_evidence),
+        'mine_target': verified_server_mine_task(action, native_evidence),
         **{op: verified_server_inventory(action, native_evidence) for op in INVENTORY_OPERATIONS},
         'place_tile': (isinstance(action.get('targetTile'), dict)
                        and set(action['targetTile']) == {'x', 'y'}
@@ -458,7 +495,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe', *INVENTORY_OPERATIONS)
+                  and action.get('operation') in ('move_input', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe', 'mine_target', *INVENTORY_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -518,6 +555,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         if lifecycle is not None:
             lifecycle.update(copy.deepcopy(fields))
     arguments = validate(name, arguments)
+    if name == 'mine_target' and 'server_ai_tasks_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_tasks_v1; no task submitted')
     if name in {'query_recipes','craft_recipe'} and 'server_ai_crafting_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_crafting_v1; no crafting RPC started')
     if name == 'place_object' and 'server_ai_place_object_workbench_v1' not in bridge.hello.get('capabilities', []):
@@ -623,6 +662,12 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             placement_invalid = True
             if action.get('targetInventory') != arguments:
                 raise BridgeError('Inventory target missing or different in start receipt')
+            placement_invalid = False
+            placement_identity = dict(action)
+        if name == 'mine_target':
+            placement_invalid = True
+            if action.get('targetTask') != arguments:
+                raise BridgeError('Mine task target missing or changed in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
         if name == 'craft_recipe':

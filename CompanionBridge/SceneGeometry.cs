@@ -17,7 +17,7 @@ internal static class WorkbenchFootprint
         =>hasTile&&!((cuttable&&type!=484&&type!=654)||breakable);
 }
 internal sealed record SceneObject(string Id,string Kind,int? TypeId,string ContentKey,TileBounds ObservedBounds,
-    int ObservedTileCount,bool Complete,object Details=null);
+    int ObservedTileCount,bool Complete,object Details=null,[property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] object Target=null);
 internal sealed record SceneLanding(string Id,LandingRegion Target,float FeetDeltaY);
 internal sealed record ScenePlacement(string Id,object Target,object SolidNeighbor);
 internal sealed record SceneObjectPlacement(string Id,object Target,TileBounds Footprint,TileBounds Support,float DistancePixels,
@@ -92,7 +92,7 @@ internal static class SceneGeometry
         if(sources.Contains("honey"))return 'H';
         return 'M';
     }
-    internal static SceneObject[] Objects(SceneCell[,] cells,int ox,int oy)
+    internal static SceneObject[] Objects(SceneCell[,] cells,int ox,int oy,Func<int,int,object> oreTarget=null,float actorX=0,float actorY=0)
     {
         int w=cells.GetLength(0),h=cells.GetLength(1);var seen=new HashSet<(int,int)>();var output=new List<SceneObject>();
         var anchors=new Dictionary<(string,int,int,int),List<(int,int)>>();
@@ -133,7 +133,13 @@ internal static class SceneGeometry
                 group.Count,complete,c.Kind=="light_source"
                     ?new{anchorTile=new{x=minX+ox,y=minY+oy},frameX=c.Facts.FrameX,frameY=c.Facts.FrameY,actuated=c.Facts.Actuated}
                     :(object)new{anchorTile=new{x=c.AnchorX??minX+ox,y=c.AnchorY??minY+oy},
-                        observedTargetTile=new{x=bottom.x+ox,y=bottom.y+oy}}));
+                        observedTargetTile=new{x=bottom.x+ox,y=bottom.y+oy}},
+                Target:c.Kind=="ore_component"&&oreTarget!=null?SelectTarget():null));
+            object SelectTarget()
+            {
+                var cell=group.OrderBy(p=>Math.Abs((p.x+ox)*16+8-actorX)+Math.Abs((p.y+oy)*16+8-actorY)).First();
+                return oreTarget(cell.x+ox,cell.y+oy);
+            }
         }
     }
     internal static SceneLanding[] Landings(SceneCell[,] cells,int ox,int oy,float actorX,float feetY,Func<PhysicsState,bool> nativeSafe=null)

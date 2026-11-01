@@ -41,7 +41,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         }
         catch{return "invalid_arguments";}
     }
-    public object Start(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId)
+    public object Start(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId)=>StartCore(identity,operation,args,actionId,false);
+    private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child)
     {
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
@@ -52,7 +53,14 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         try
         {
             object context;
-            if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
+            if(operation=="mine_target")
+            {
+                if(child)throw new InvalidOperationException("Nested root task denied");
+                var world=new NativeMineTargetWorld(identity,args);
+                context=new TaskSlot(new MineTargetTask(actionId,world,new ChildExecutor(this)),actionId,null,
+                    identity with{GameUpdate=Main.GameUpdateCount},2700);
+            }
+            else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
             else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
             else if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
             else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId);ActorControl.Driver=navigation;}
@@ -76,9 +84,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 if(Vector2.Distance(p.Center,new Vector2(x*16+8,y*16+8))>80)return Reject("out_of_conservative_80_pixel_reach");
                 ActorMining.Start(p,identity.World,identity.Generation,x,y);context=ActorMining.Current;
             }
-            active=new(identity,operation,context);
-            ProbeSession.Log("atomic-native-start",new{actionId,operation,identity.World,identity.Generation,identity.Slot});
-            return active;
+            var handle=new Handle(identity,operation,context);
+            if(!child)active=handle;
+            ProbeSession.Log(child?"task-native-start":"atomic-native-start",new{actionId,operation,identity.World,identity.Generation,identity.Slot});
+            return handle;
         }
         catch
         {
@@ -92,6 +101,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
         var p=(Player)h.Identity.Actor;
+        if(h.Operation=="mine_target")
+        {
+            var task=(TaskSlot)h.Context;var result=task.Tick(identity with{GameUpdate=Main.GameUpdateCount});
+            return TaskResult(task,result,h.Identity);
+        }
         if(ActorInventory.IsOperation(h.Operation))
         {
             var c=(ActorInventory.Context)h.Context;ActorInventory.Step(c);
@@ -168,6 +182,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if(h.Operation=="mine_target")return CancelWithReason(identity,value,"cancelled","explicit_stop");
         if(ActorInventory.IsOperation(h.Operation))
         {
             var c=(ActorInventory.Context)h.Context;ActorInventory.Cancel(c);
@@ -193,6 +208,50 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         else if(h.Operation is "use_item" or "place_tile" or "place_object")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
         else ActorMining.Retire(p);
         return Poll(h.Identity,h);
+    }
+    public Result CancelWithReason(AiReadOnlyProtocol.Identity identity,object value,string status,string reason)
+    {
+        var h=(Handle)value;Require(h.Identity);
+        if(h.Operation!="mine_target")return Cancel(identity,value);
+        if(h.Rejection!=null)return h.Rejection;
+        var task=(TaskSlot)h.Context;var result=task.Stop(identity with{GameUpdate=Main.GameUpdateCount},status,reason);
+        return TaskResult(task,result,h.Identity);
+    }
+    private static Result TaskResult(TaskSlot task,Result result,AiReadOnlyProtocol.Identity identity)
+    {
+        bool owned=Owned(identity),released=owned&&Released((Player)identity.Actor);
+        if(!owned){task.Task.Abandon();result=result with{Status="unknown",Reason="actor_binding_changed",InputsReleased=false,EffectVerified=false};}
+        else if(result.Status!="running"&&(!result.InputsReleased||!released))
+            result=result with{Status="unknown",Reason="task_inputs_not_released",InputsReleased=false,EffectVerified=false};
+        else result=result with{InputsReleased=result.InputsReleased&&released};
+        if(result.Status!="running")
+        {task.Record.Result=result;task.Record.Status=result.Status;task.Record.Phase="terminal";task.Record.Reason=result.Reason;}
+        return result with{Evidence=new{task=task.View()}};
+    }
+    public Result BindingLost(object value)
+    {
+        var h=(Handle)value;
+        if(h.Operation!="mine_target")return new("unknown","actor_binding_changed",null,false);
+        var task=(TaskSlot)h.Context;var result=task.Abandon();return result with{Evidence=new{task=task.View()}};
+    }
+    // Native contexts only: no AiAtomicActions.Handle/registry/IPC start per child.
+    private sealed class ChildExecutor : AiAtomicActions.IExecutor
+    {
+        private readonly ServerAiNativeActions owner;
+        internal ChildExecutor(ServerAiNativeActions owner){this.owner=owner;}
+        public string Validate(string op,JsonElement args)=>owner.Validate(op,args);
+        public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>owner.StartCore(id,op,args,taskId,true);
+        public Result Poll(AiReadOnlyProtocol.Identity id,object value)
+        {
+            var r=owner.Poll(id,value);
+            return r.Reason is "native_mining_exception" or "native_navigation_exception"?r with{Status="unknown",EffectVerified=false}:r;
+        }
+        public Result Cancel(AiReadOnlyProtocol.Identity id,object value)
+        {
+            var r=owner.Cancel(id,value);
+            return r.Reason is "native_mining_exception" or "native_navigation_exception"?r with{Status="unknown",EffectVerified=false}:r;
+        }
+        public void Shutdown(){}
     }
     public void Shutdown()
     {

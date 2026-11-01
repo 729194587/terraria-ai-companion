@@ -1,0 +1,1 @@
+return api('mine_target',{x=2111,y=217})

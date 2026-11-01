@@ -12,10 +12,12 @@ if($PackagePath){
 $sources+=@(Join-Path $repo 'tests/ServerAiNativeActionOfflineTests.cs')
 $sources+=@(Join-Path $repo 'tests/ServerAiChatProtocolTests.cs')
 $sources+=@(Join-Path $repo 'CompanionBridge/ServerIpc/AiActionReasons.cs')
+$sources+=@('CompanionBridge/ServerIpc/TaskRuntime.cs','CompanionBridge/ServerIpc/MineTargetTask.cs','tests/TaskRuntimeOfflineTests.cs') | ForEach-Object {Join-Path $repo $_}
 Add-Type -Path $sources -ReferencedAssemblies $references
 [ServerAiIpcOfflineTests]::Run()
 [ServerAiAtomicOfflineTests]::Run()
 [ServerAiReadProtocolTests]::Run()
 [ServerAiNativeActionOfflineTests]::Run()
+[TaskRuntimeOfflineTests]::Run()
 [ServerAiChatProtocolTests]::Run()
 if($PackagePath){[ServerAiPackageTests]::Run((Resolve-Path -LiteralPath $PackagePath).Path)}
