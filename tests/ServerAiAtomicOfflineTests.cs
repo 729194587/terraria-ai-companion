@@ -40,8 +40,11 @@ public static class ServerAiAtomicOfflineTests
             Check(f.Writes == 1300, "more than 1024 sequential actions execute exactly once");
             Check(f.Send("action", first).GetProperty("error").GetString() == "unknown_action", "evicted terminal identity queries explicitly unknown");
             Check(f.Action(last).GetProperty("status").GetString() == "completed", "recent terminal identity remains queryable");
-            Check(f.Send("start", last).GetProperty("error").GetString() == "duplicate_action", "retained duplicate never executes again");
+            var duplicate = f.Send("start", last);
+            Check(duplicate.GetProperty("error").GetString() == "duplicate_action" && duplicate.GetProperty("dispatchState").GetString() == "unknown", "retained completed duplicate refuses replay without claiming no effects");
             string live = Fixture.Id(); f.Send("start", live);
+            duplicate = f.Send("start", live);
+            Check(duplicate.GetProperty("error").GetString() == "duplicate_action" && duplicate.GetProperty("dispatchState").GetString() == "unknown", "running duplicate refuses replay with unknown admission history");
             Check(f.Send("start", Fixture.Id()).GetProperty("error").GetString() == "action_busy", "registry rotation never removes active entry");
             f.Actions.Forget(f.Owner);
             Check(f.Action(live).GetProperty("status").GetString() == "running", "Forget requests cancel without deleting active entry");

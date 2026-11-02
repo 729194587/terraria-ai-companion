@@ -25,7 +25,7 @@ internal sealed class AiAtomicActions
     private readonly IExecutor executor;
     private readonly Func<long> clock;
     internal AiAtomicActions(IExecutor executor = null, Func<long> clock = null) { this.executor = executor; this.clock = clock ?? (() => Environment.TickCount64); }
-    internal sealed record Reply(object Data = null, string Error = null);
+    internal sealed record Reply(object Data = null, string Error = null, string DispatchState = null);
     private sealed class Entry
     {
         internal Guid Owner;
@@ -95,7 +95,8 @@ internal sealed class AiAtomicActions
             if (op == "cancel" && known.Status == "running") Stop(known, "cancelled", "explicit_cancel", current);
             return new(new { action = Snapshot(known) });
         }
-        if (entries.ContainsKey(id)) return new(Error: "duplicate_action");
+        // A retained ID may already have effects. Reject replay without claiming no admission.
+        if (entries.ContainsKey(id)) return new(Error: "duplicate_action", DispatchState: "unknown");
         if (active != null) return new(Error: "action_busy");
         if (!current.CanAct) return new(Error: "actor_not_alive");
         string operation = root.GetProperty("operation").GetString();

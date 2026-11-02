@@ -24,7 +24,7 @@
 ## 关键决策与必要调整
 
 1. **复用能力映射，不新建注册系统。** Server AI 仍仅开放 `execute_lua`，最终 API 来自 handshake 投影、Bridge 白名单和已描述 API 的交集。扩展原能力组合测试，将库存与任务两个已实现的可选旗标纳入，共 4096 种组合。发现 Manifest 漏列已有 `mine_target`，以及库存旗标已打开时仍写“不可搬运”的文案；仅修正文档投影，不新增能力。
-2. **正面受理证据，不能猜 reason。** 只有实际 C# `Handle` 在创建 Entry 前返回的明确拒绝带 `dispatchState=not_admitted`，Python 再核对绑定才提升为确定拒绝。原子分发记录 `admitted`，失联或回执身份丢失保持 unknown。旧服务器没有标记时不根据 `action_busy` 等文字推断安全。`duplicate_action` 仅表示本次请求没有新受理，不否认原动作可能已经产生效果。
+2. **正面受理证据，不能猜 reason。** 只有实际 C# `Handle` 在创建 Entry 前返回的明确拒绝带 `dispatchState=not_admitted`，Python 再核对绑定才提升为确定拒绝。原子分发记录 `admitted`，失联或回执身份丢失保持 unknown。旧服务器没有标记时不根据 `action_busy` 等文字推断安全。架构审查修正：`duplicate_action` 单独返回 `dispatchState=unknown`，原动作可能已经产生效果；Python 即使收到旧服务器误标的 `not_admitted` 也不提升为确定失败。重复请求仍拒绝，不返回或覆盖原动作结果，不自动查询、重放或授予续行权限。
 3. **保留双重校验与实际 wire 规范化。** Python 的整数值浮点仍无损规范化成 JSON 整数；共享向量显式保存这类案例的 `wireArguments`，C# 独立验证真正发出的整数 JSON。分数、bool、越界值不会被取整。没有为了 C# `GetInt32` 而重写执行器或扩大后台任务体系。文本 maxLength 对齐 Unicode 标量，不让 UTF-16 代理对计为两个字符；没有改变世界/Actor 身份检查或引擎版本边界。
 4. **终态按事实，触发原因作元数据。** 原生 Cancel 返回可信 completed/failed/timeout/cancelled 时使用其结果；completed 还需 EffectVerified，所有可靠终态都需 InputsReleased。unknown、不释放或仍 running 均为 unknown。无 Handle 的受理阶段停止沿用原安全取消。`stopRequest` 独立记录请求 status/reason，不能覆盖真实失败/成功。源码核对还发现 Python 监督截止分支同样会强改 timeout，已同步保留实际 stop 终态，用 `supervisorStopRequest` 单独记录宿主超时原因；新增五种终态竞争回归。已有 Python operation-specific verifier 保持原门槛。
 5. **1024 个全局身份的计数窗口。** 只在新 GUID 已通过受理检查后，为其腾出空间，按结束顺序回收最旧终态。活动 Entry 从不进入回收队列，Forget 仅请求取消；保留窗口内重复 ID 拒绝，回收后查询 unknown_action。每次新请求使用新 GUID，不保证永久历史或跨进程恢复。
@@ -62,6 +62,8 @@ pwsh -NoProfile -File tests/run_server_ai_ipc_tests.ps1 -PackagePath .local/m2-b
 本地日志：`.local/m2-contract*.log`、`m2-backend.log`、`m2-lua.log`、`m2-result-baseline.log`、`m2-ipc-python.log`、`m2-ipc-package.log`、`m2-build-final.log`、`m2-staged.log`、`m2-staged-supervisor-final.log`。它们区分首次失败、基线、修正与复验，没有改写原始游戏证据。
 
 ## 未解决问题与验证限制
+
+架构审查后的重复 ID 修复定向验证：实际 C# TCP → Python Bridge/dispatcher 的 running/completed 两个阶段及原拒绝用例共 2 个方法通过，原动作启动计数始终为 1，已结算结果/效果证据保留；Python 旧误标记的 Lua unknown 屏障、普通明确拒绝和错误绑定共 3 项通过。C# IPC/原子/读取/原生/任务/聊天分别 45/48/68/287/48/30 项通过；隔离构建 `.local/m2-duplicate-build` 零错误、零警告，未部署。日志见 `.local/m2-duplicate-cross.log`、`m2-duplicate-backend.log`、`m2-duplicate-csharp.log`、`m2-duplicate-build.log`。未运行全量测试。
 
 - 上述 6 条 M1 旧结果断言仍未解决；超短 socket 测试在高并发/调试负载下存在时序敏感性，单独复测通过不代表永不抖动。
 - 新受理拒绝标记需要服务器加载新包；旧包仍保守 unknown，不自动升级、重连或重放。

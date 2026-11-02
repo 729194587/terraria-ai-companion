@@ -131,7 +131,7 @@ internal sealed class AiReadOnlyProtocol
             {
                 var reply = actions.Handle(connection, op, root, current, lease.Binding, disconnected);
                 return JsonSerializer.Serialize(Reply(reply.Error == null, reply.Data, lease.Binding, reply.Error,
-                    op == "start" ? reply.Error == null ? "admitted" : "not_admitted" : null));
+                    op == "start" ? reply.DispatchState ?? (reply.Error == null ? "admitted" : "not_admitted") : null));
             }
             return JsonSerializer.Serialize(Reply(true, current.State, lease.Binding));
         }

@@ -224,6 +224,17 @@ class Handler(socketserver.StreamRequestHandler):
 
 
 class BackendTests(unittest.IsolatedAsyncioTestCase):
+    async def test_legacy_duplicate_not_admitted_remains_unknown_and_blocks_lua(self):
+        self.host.mode='reject_start'
+        self.host.start_error='duplicate_action'
+        runtime=LuaRuntime(self.bridge,evidence_root=self.directory.name)
+        result=await runtime.execute("api('select_hotbar_slot',{slot=2});api('select_hotbar_slot',{slot=3})")
+        self.assertEqual('unknown',result['actionState'])
+        self.assertEqual('unknown',result['lastAction']['dispatchState'])
+        self.assertFalse(result['lastAction']['continuationAllowed'])
+        self.assertTrue(self.bridge._closed)
+        self.assertEqual(1,len([r for r in self.host.sent if r['op']=='start']))
+
     async def test_explicit_not_admitted_is_deterministic_and_never_replayed(self):
         self.host.mode = 'reject_start'
         for reason in ('action_busy','actor_not_alive','unsupported_operation','invalid_arguments','request_expired','invalid_deadline'):

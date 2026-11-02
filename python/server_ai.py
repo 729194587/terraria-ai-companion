@@ -132,7 +132,9 @@ class ServerAiBridge:
             self.close()
             raise BridgeError('Server AI binding changed; outcome unknown')
         if not reply.get("ok"):
-            if op == 'start' and reply.get('dispatchState') == 'not_admitted':
+            # Older peers incorrectly label duplicate IDs as not_admitted. The original
+            # action may have executed; this error never proves absence of effects.
+            if op == 'start' and reply.get('dispatchState') == 'not_admitted' and reply.get('error') != 'duplicate_action':
                 raise NotAdmittedError(reply.get('error', 'AI start rejected'), status=reply.get('error'))
             if self._action_id is not None and reply.get("error") in ("stale_binding", "identity_unavailable", "engine_unavailable", "unknown_action"):
                 self.close()
