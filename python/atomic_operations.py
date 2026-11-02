@@ -4,7 +4,7 @@ import copy
 import math
 import re
 from time import perf_counter
-from control import BridgeError
+from control import BridgeError, NotAdmittedError
 
 
 class PreDispatchRejected(BridgeError):
@@ -177,6 +177,22 @@ READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'r
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
+HOST_OPERATIONS = frozenset({'wait', 'observe_exploration', 'stop_action'})
+NATIVE_OPERATIONS = frozenset(SCHEMAS) - HOST_OPERATIONS
+
+
+def validate_backend(bridge, name, arguments):
+    """Backend narrowing supplements, and never replaces, shared validation."""
+    if 'server_ai_atomic_v1' in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        if name == 'use_item' and arguments:
+            raise PreDispatchRejected('targeted_use_not_supported', status='targeted_use_not_supported')
+
+
+def not_admitted_result(name, reason):
+    return {'valid': False, 'status': 'failed', 'completed': False, 'operation': name,
+            'reason': reason, 'dispatchState': 'not_admitted', 'actionId': None,
+            'inputsAcquired': False, 'inputsReleased': None, 'effectVerified': False,
+            'endEvidence': None, 'endEvidenceStatus': 'not_started'}
 
 
 class ArgumentValidationError(ValueError):
@@ -290,7 +306,12 @@ async def command(bridge, cmd, **args):
 
 
 def result(action, generation):
+    end = action.get('endEvidence') or {}
     return {'valid': True, 'status': action['status'], 'reason': action['reason'], 'reasonDetail': action.get('reasonDetail'),
+            'dispatchState': 'admitted', 'worldSessionId': action.get('worldSessionId'),
+            'actorId': action.get('actorId'), 'actorSlot': action.get('actorSlot'),
+            'inputsAcquired': end.get('inputsAcquired'), 'inputsReleased': end.get('inputsReleased'),
+            'effectVerified': end.get('effectVerified'), 'stopRequest': action.get('stopRequest'),
             'operation': action.get('operation'), 'actionId': action['actionId'],
             'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'), 'targetRecipe': action.get('targetRecipe'), 'targetInventory': action.get('targetInventory'), 'targetTask': action.get('targetTask'),
             'task': action.get('task'), 'evidence': action.get('evidence'), 'endEvidence': action.get('endEvidence'),
@@ -557,6 +578,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         if lifecycle is not None:
             lifecycle.update(copy.deepcopy(fields))
     arguments = validate(name, arguments)
+    validate_backend(bridge, name, arguments)
     if name == 'mine_target' and 'server_ai_tasks_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_tasks_v1; no task submitted')
     if name in {'query_recipes','craft_recipe'} and 'server_ai_crafting_v1' not in bridge.hello.get('capabilities', []):
@@ -687,13 +709,14 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             placement_invalid = False
             placement_identity = dict(action)
         action_id = action['actionId']
+        track(dispatchState='admitted')
         deadline = asyncio.get_running_loop().time() + action['durationMs'] / 1000 + 1
         while action['status'] == 'running':
             if asyncio.get_running_loop().time() >= deadline:
                 stopped = await stop(bridge, action_id, action)
-                return {**stopped, 'status': 'unknown' if stopped.get('status') == 'unknown'
-                        else 'timeout' if stopped['valid'] else 'unknown', 'completed': False,
-                        'cleanupReason': stopped['reason'], 'reason': 'supervisor_deadline'}
+                if stopped.get('valid') is not True:
+                    stopped = {**stopped, 'status': 'unknown', 'completed': False}
+                return {**stopped, 'supervisorStopRequest': {'status': 'timeout', 'reason': 'supervisor_deadline'}}
             await asyncio.sleep(0.1)
             reply = await command(bridge, 'get_movement')
             current = reply['movement']['action']
@@ -702,7 +725,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Landing action target/session/generation/world changed')
             if current is None or not same_action(action, current):
                 track(uncertain=True)
-                return {'valid': False, 'status': 'unknown', 'reason': 'action_ownership_changed'}
+                return {**result(action, None), 'valid': False, 'status': 'unknown', 'completed': False,
+                        'dispatchState': 'unknown', 'reason': 'action_ownership_changed'}
             action = current
             track(action=action)
             if action['status'] == 'running':
@@ -738,9 +762,14 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 track(cleanup=await stop(bridge, action['actionId'], action))
             elif start_task is not None:
                 track(uncertain=True)
+        except NotAdmittedError as error:
+            track(uncertain=False, dispatchState='not_admitted', cleanup=not_admitted_result(name,str(error)))
         except (BridgeError, OSError, KeyError, ValueError) as error:
             track(uncertain=True, cleanupError=str(error))
         raise
+    except NotAdmittedError as error:
+        track(uncertain=False, dispatchState='not_admitted')
+        return not_admitted_result(name,str(error))
     except (BridgeError, OSError, KeyError, ValueError) as error:
         if action is not None:
             try:
@@ -751,4 +780,6 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             except (BridgeError, OSError, KeyError, ValueError):
                 pass
         track(uncertain=bool(start_task is not None))
-        return {'valid': False, 'status': 'failed' if getattr(error, 'status', None) else 'unknown', 'completed': False, 'reason': str(error)}
+        known = result(action,None) if isinstance(action,dict) and {'status','reason','actionId'} <= action.keys() else {'operation':name}
+        return {**known, 'valid': False, 'status': 'unknown' if start_task is not None else 'failed' if getattr(error, 'status', None) else 'unknown',
+                'completed': False, 'reason': str(error), 'dispatchState': 'unknown'}

@@ -29,7 +29,7 @@ internal sealed class AiReadOnlyProtocol
         Func<Identity,string,JsonElement,object> query = null, Func<Identity,string,object> say = null)
     {
         string id = null;
-        object Reply(bool ok, object data = null, Binding binding = null, string error = null) => new { v = 1, id, ok, binding, data, error };
+        object Reply(bool ok, object data = null, Binding binding = null, string error = null, string dispatchState = null) => new { v = 1, id, ok, binding, data, error, dispatchState };
         try
         {
             using var doc = JsonDocument.Parse(line, new JsonDocumentOptions { MaxDepth = 8 });
@@ -121,14 +121,17 @@ internal sealed class AiReadOnlyProtocol
             }
             if (reading)
             {
-                try { return JsonSerializer.Serialize(Reply(true, query(current, root.GetProperty("operation").GetString(), root.GetProperty("arguments")), lease.Binding)); }
-                catch (FormatException) { return JsonSerializer.Serialize(Reply(false, error: "invalid_request")); }
+                var arguments = root.GetProperty("arguments");
+                if (arguments.ValueKind != JsonValueKind.Object) throw new FormatException();
+                try { return JsonSerializer.Serialize(Reply(true, query(current, root.GetProperty("operation").GetString(), arguments), lease.Binding)); }
+                catch (AtomicParameterException) { return JsonSerializer.Serialize(Reply(false, binding: lease.Binding, error: "invalid_request")); }
                 catch { return JsonSerializer.Serialize(Reply(false, error: "engine_unavailable")); }
             }
             if (execution)
             {
                 var reply = actions.Handle(connection, op, root, current, lease.Binding, disconnected);
-                return JsonSerializer.Serialize(Reply(reply.Error == null, reply.Data, lease.Binding, reply.Error));
+                return JsonSerializer.Serialize(Reply(reply.Error == null, reply.Data, lease.Binding, reply.Error,
+                    op == "start" ? reply.Error == null ? "admitted" : "not_admitted" : null));
             }
             return JsonSerializer.Serialize(Reply(true, current.State, lease.Binding));
         }

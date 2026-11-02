@@ -33,14 +33,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     private static bool Released(Player p)=>!p.controlLeft&&!p.controlRight&&!p.controlUp&&!p.controlDown
         &&!p.controlJump&&!p.controlUseItem&&!p.controlUseTile&&!p.channel;
     public string Validate(string operation,JsonElement args)
-    {
-        try
-        {
-            AtomicParameters.Validate(operation,args,false);
-            return operation=="use_item"&&args.TryGetProperty("target",out _) ? "targeted_use_not_supported" : null;
-        }
-        catch{return "invalid_arguments";}
-    }
+        => AtomicParameters.ValidateServerAction(operation, args);
     public object Start(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId)=>StartCore(identity,operation,args,actionId,false);
     private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child)
     {

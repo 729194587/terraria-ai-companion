@@ -237,7 +237,7 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(first['actionSuccess'])
         self.assertIsNone(first['value'])
         self.assertEqual('idle',first['actionState'])
-        self.assertEqual('not_dispatched',first['lastAction']['dispatchState'])
+        self.assertEqual('not_admitted',first['lastAction']['dispatchState'])
         self.assertEqual('failed',first['lastAction']['status'])
         direct=json.loads(model.requests[2][-2]['content'])
         self.assertTrue(direct['blocked'])

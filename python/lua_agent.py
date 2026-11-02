@@ -68,6 +68,15 @@ decisions.candidates记录各次有界候选的方向、距离和几何拒绝原
 """
 
 
+def client_tool(supported):
+    definition = copy.deepcopy(TOOL)
+    description = definition['function']['description']
+    start, tail = description.split('可调用的 API：', 1)
+    _, suffix = tail.split('。', 1)
+    definition['function']['description'] = start + '可调用的 API：' + ', '.join(sorted(set(supported) & atomic.SCHEMAS.keys())) + '。' + suffix
+    return definition
+
+
 def validate_arguments(arguments):
     if (not isinstance(arguments, dict) or set(arguments) != {'source'}
             or type(arguments['source']) is not str or not arguments['source'].strip()

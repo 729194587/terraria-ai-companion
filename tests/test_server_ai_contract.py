@@ -21,7 +21,7 @@ BASE = {'server_ai_atomic_v1', 'atomic_operations_v1', 'hotbar_keys_v1'}
 OPTIONAL = ('server_ai_reads_v1', 'server_ai_perception_v1', 'server_ai_map_v1',
             'server_ai_crafting_v1', 'server_ai_scene_v1', 'server_ai_actions_v1',
             'server_ai_direct_input_v1', 'server_ai_place_object_workbench_v1',
-            'server_ai_place_tile_v1', 'landing_region_navigation_v1')
+            'server_ai_place_tile_v1', 'landing_region_navigation_v1', 'server_ai_inventory_v1', 'server_ai_tasks_v1')
 
 
 def bridge(caps):
@@ -55,8 +55,11 @@ class ManifestTests(unittest.TestCase):
                                 ('server_ai_crafting_v1', 'craft_recipe'),
                                 ('server_ai_place_tile_v1', 'place_tile'),
                                 ('server_ai_place_object_workbench_v1', 'place_object'),
+                                ('server_ai_tasks_v1', 'mine_target'),
                                 ('landing_region_navigation_v1', 'navigate_to_landing_region')):
                     if cap in caps: expected.add(op)
+                if 'server_ai_inventory_v1' in caps:
+                    expected |= {'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'}
             self.assertEqual(expected, b.supported_atomic_operations)
             prompt, tools = server_contract(b)
             manifest_text, definitions, reference = contract_parts(prompt)
@@ -65,6 +68,8 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(expected, {op for c in manifest['categories'] for op in c['callableApis']})
             self.assertEqual(['execute_lua'], [t['function']['name'] for t in tools])
             for c in manifest['categories']:
+                if c['category']=='背包变更' and c['callableApis']:
+                    self.assertNotIn('不在服务器接口内',c['boundary'])
                 self.assertIn(' | '.join((c['category'], c['status'], ','.join(c['callableApis']) or '—', ','.join(c['notExposed']) or '—')), manifest_text)
                 self.assertFalse(set(c['notExposed']) & expected)
                 reads = set(c.get('relatedReadOnlyApis', ()))
@@ -114,7 +119,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual('string', server_contract(b)[1][0]['function']['parameters']['properties']['source']['type'])
 
     def test_related_observation_is_not_an_operation_alternative(self):
-        for caps in (BASE, BASE | {'server_ai_reads_v1'}, BASE | set(OPTIONAL)):
+        for caps in (BASE, BASE | {'server_ai_reads_v1'}, BASE | (set(OPTIONAL) - {'server_ai_inventory_v1'})):
             with self.subTest(capabilities=caps):
                 b = bridge(caps)
                 manifest = capability_manifest(b)

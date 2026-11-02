@@ -36,6 +36,24 @@ class ReasonProjectionTests(unittest.TestCase):
 
 
 class StopContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_supervisor_deadline_preserves_actual_stop_terminal(self):
+        for status in ('completed','failed','timeout','cancelled','unknown'):
+            with self.subTest(status=status):
+                game=Game(pending=True)
+                original=game.command
+                def command(cmd,**params):
+                    reply=original(cmd,**params)
+                    if cmd=='cancel_move':
+                        reply['movement']['action'].update(status=status,reason='native_race_terminal')
+                    return reply
+                game.command=command
+                result=await atomic.dispatch(game,'use_item',{})
+                self.assertEqual(status,result['status'])
+                self.assertEqual(status=='completed',result['completed'])
+                self.assertEqual('native_race_terminal',result['reason'])
+                self.assertEqual({'status':'timeout','reason':'supervisor_deadline'},result['supervisorStopRequest'])
+                self.assertEqual(1,sum(c=='start_atomic' for c,_ in game.sent))
+
     async def test_terminal_transition_between_poll_and_renew_requires_same_identity_and_release(self):
         for mode in ('completed', 'failed', 'missing_release', 'new_owner', 'still_running'):
             with self.subTest(mode=mode):
@@ -161,7 +179,10 @@ class StopContractTests(unittest.IsolatedAsyncioTestCase):
                     return reply
                 game.command = command
                 result = await atomic.dispatch(game, 'mine_tile', {'x': 1, 'y': 1})
-                self.assertEqual('timeout' if cleanup == 'confirmed' else 'unknown', result['status'])
+                self.assertEqual('cancelled' if cleanup == 'confirmed' else 'unknown', result['status'])
+                if cleanup == 'confirmed':
+                    self.assertEqual({'status': 'timeout', 'reason': 'supervisor_deadline'},
+                                     result['supervisorStopRequest'])
                 self.assertFalse(result['completed'])
                 if cleanup in ('missing', 'replaced', 'error'):
                     self.assertFalse(any(c == 'cancel_move' for c, _ in game.sent))

@@ -9,7 +9,7 @@ import time
 import uuid
 from concurrent.futures import Future, TimeoutError as FutureTimeout
 
-from control import BridgeError, command_owner
+from control import BridgeError, NotAdmittedError, command_owner
 import agent_trace as tracing
 
 
@@ -127,14 +127,17 @@ class ServerAiBridge:
             tracing.emit_full('server_ai_ipc_error', connection_id=self.trace_connection_id, request=request, category='connection')
             raise
         tracing.emit_full('server_ai_ipc_reply', connection_id=self.trace_connection_id, request_id=request_id, reply=reply)
+        if op != 'bind' and (reply.get('ok') or reply.get('binding') is not None
+                             or op == 'start' and reply.get('dispatchState') == 'not_admitted') and reply.get('binding') != self.binding:
+            self.close()
+            raise BridgeError('Server AI binding changed; outcome unknown')
         if not reply.get("ok"):
+            if op == 'start' and reply.get('dispatchState') == 'not_admitted':
+                raise NotAdmittedError(reply.get('error', 'AI start rejected'), status=reply.get('error'))
             if self._action_id is not None and reply.get("error") in ("stale_binding", "identity_unavailable", "engine_unavailable", "unknown_action"):
                 self.close()
                 raise BridgeError("Action identity/outcome unresolved: " + reply["error"])
             raise BridgeError(reply.get("error", "AI request rejected"), status=reply.get("error"))
-        if op != "bind" and reply.get("binding") != self.binding:
-            self.close()
-            raise BridgeError("Server AI binding changed; outcome unknown")
         return reply
 
     def invalidate_replies(self, turn):

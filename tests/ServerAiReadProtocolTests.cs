@@ -1,6 +1,7 @@
 using System;
 using System.Text.Json;
 using CompanionBridge.ServerIpc;
+using CompanionBridge;
 
 public static class ServerAiReadProtocolTests
 {
@@ -34,6 +35,21 @@ public static class ServerAiReadProtocolTests
         current=original;
         current=null;Check(Handle(Request()).GetProperty("error").GetString()=="identity_unavailable"&&queries==projected,"unavailable identity never returns invented state");
         current=original with{CanAct=false};Check(Handle(Request()).GetProperty("ok").GetBoolean(),"managed dead actor remains observable without enabling actions");
+        {
+            int engineReads = 0;
+            object Validated(AiReadOnlyProtocol.Identity identity, string operation, JsonElement args)
+            { AtomicParameters.Validate(operation, args, true); engineReads++; throw new InvalidOperationException("engine read failed"); }
+            JsonElement Read(object args, Func<AiReadOnlyProtocol.Identity,string,JsonElement,object> adapter) =>
+                JsonDocument.Parse(protocol.Handle(owner, JsonSerializer.Serialize(new { v=1,id="bad",op="query",binding,
+                    operation="inspect_inventory",arguments=args }), Capture, query:adapter)).RootElement.Clone();
+            foreach (var args in new object[] { new { mode=true }, new { mode="item",item=7 }, new { mode="slots",slots=new[]{-1} } })
+                Check(Read(args,Validated).GetProperty("error").GetString()=="invalid_request" && engineReads==0,
+                    "JSON argument type/range failure is not engine failure");
+            Check(Read(new {mode="selected"},Validated).GetProperty("error").GetString()=="engine_unavailable" && engineReads==1,
+                "real InvalidOperationException after validation remains engine failure");
+            Check(Read(new {mode="selected"},(_,_,_)=>throw new FormatException("engine decoder failed")).GetProperty("error").GetString()=="engine_unavailable",
+                "engine FormatException is not mistaken for parameter validation");
+        }
         protocol.Forget(owner);before=captures;
         Check(Handle(Request()).GetProperty("error").GetString()=="not_bound"&&captures==before,"disconnected lease cannot query");
         Console.WriteLine($"AI read protocol fixture: {checks} checks; no Terraria process.");

@@ -1,5 +1,9 @@
 # 原子操作（Mod 0.1.40）
 
+当前 M2 契约收敛见 [API Contract & Tool System](API_TOOL_SYSTEM_MVP.md)（0.1.74）：明确宿主/原生 API 归属、后端预校验与跨语言共享参数向量。Server AI `use_item` 仅接受 `{}`；客户端原有 `target` 支持保留。只有可靠能力白名单存在时才过滤旧客户端模型工具。
+
+`dispatchState=not_admitted/admitted/unknown` 分别表示明确未受理、已创建动作记录、受理情况未知；明确拒绝不授予自动重试或扩大 continuation 权限。`completed` 仍需原有操作专属效果和结束证据；输入释放本身不证明目标完成。下文版本记录为历史阶段。
+
 0.1.40更新运行时预算、任务日志和原生异常证据，见 [可观测性](LUA_OBSERVABILITY.md)；没有新增游戏动作。
 
 0.1.39 新增单人背包持用、整件交换、指定数量搬运/拆分/堆叠及槽位token校验，见 [背包操作](INVENTORY_OPERATIONS.md)。

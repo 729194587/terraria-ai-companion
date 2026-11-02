@@ -257,7 +257,9 @@ class LuaRuntime:
                     if active_role == 'dispatch' and lifecycle.get('start_attempted'):
                         out['cleanup'] = bounded_action(result) if result is not None else {
                             'valid': False, 'status': 'unknown', 'reason': 'cleanup_unconfirmed'}
-                        if lifecycle.get('uncertain') or not safe_terminal(result):
+                        if lifecycle.get('dispatchState') == 'not_admitted' and lifecycle.get('action') is None and not lifecycle.get('uncertain'):
+                            out['lastAction'] = bounded_action(result)
+                        elif lifecycle.get('uncertain') or not safe_terminal(result):
                             await poison()
                         else:
                             out['actionState'] = 'released'
@@ -391,7 +393,10 @@ class LuaRuntime:
                             or lifecycle.get('action') is not None or lifecycle.get('uncertain'))
                         result = {'valid': False, 'status': 'failed' if rejected_before_dispatch else 'unknown',
                                   'completed': False, 'reason': str(error),
-                                  'dispatchState': 'not_dispatched' if rejected_before_dispatch else 'unconfirmed'}
+                                  'dispatchState': 'not_admitted' if rejected_before_dispatch else 'unknown'}
+                    rejected_before_dispatch |= (lifecycle.get('dispatchState') == 'not_admitted'
+                        and result.get('dispatchState') == 'not_admitted'
+                        and lifecycle.get('action') is None and not lifecycle.get('uncertain'))
                     active = None
                     if (name in atomic.READS and result.get('valid') is True
                             and result.get('available') is not False

@@ -358,6 +358,12 @@ class Agent:
         self.max_movement_ms = max_movement_ms
         self.history = [{"role": "system", "content": SYSTEM}]
         self.tools = TOOLS
+        supported = getattr(bridge, 'supported_atomic_operations', None)
+        if supported is not None and not self.server_ai:
+            self.tools = [t for t in TOOLS if t['function']['name'] not in atomic_operations.SCHEMAS
+                          or t['function']['name'] in supported]
+            self.tools = [lua_agent.client_tool(supported) if t['function']['name'] == lua_agent.TOOL_NAME else t
+                          for t in self.tools]
         if self.server_ai:
             self.history[0]['content'], self.tools = lua_agent.server_contract(bridge)
         if local_input:

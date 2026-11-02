@@ -130,6 +130,13 @@ class Handler(socketserver.StreamRequestHandler):
                 elif h.mode == 'unavailable_query':
                     data = dict(available=False, reason='fixture_state_unknown')
             elif op == 'start':
+                if h.mode in ('reject_start', 'reject_without_marker', 'reject_wrong_binding', 'reject_start_delayed'):
+                    if h.mode == 'reject_start_delayed': h.release.wait(3)
+                    refused = dict(v=1, id=r['id'], ok=False, binding=dict(h.binding), error=getattr(h,'start_error','action_busy'))
+                    if h.mode != 'reject_without_marker': refused['dispatchState'] = 'not_admitted'
+                    if h.mode == 'reject_wrong_binding': refused['binding']['generation'] += 1
+                    self.wfile.write((json.dumps(refused)+'\n').encode())
+                    continue
                 if h.mode == 'drop_start':
                     return
                 if h.mode == 'stall_start':
@@ -217,6 +224,53 @@ class Handler(socketserver.StreamRequestHandler):
 
 
 class BackendTests(unittest.IsolatedAsyncioTestCase):
+    async def test_explicit_not_admitted_is_deterministic_and_never_replayed(self):
+        self.host.mode = 'reject_start'
+        for reason in ('action_busy','actor_not_alive','unsupported_operation','invalid_arguments','request_expired','invalid_deadline'):
+            self.host.start_error = reason
+            lifecycle = {}
+            result = await atomic.dispatch(self.bridge,'select_hotbar_slot',{'slot':2},lifecycle=lifecycle)
+            self.assertEqual(('failed','not_admitted'), (result['status'],result['dispatchState']))
+            self.assertFalse(lifecycle['uncertain']); self.assertIsNone(self.host.action)
+            self.assertFalse(self.bridge._closed)
+        starts = [r['actionId'] for r in self.host.sent if r['op']=='start']
+        self.assertEqual(6,len(set(starts)))
+        runtime = LuaRuntime(self.bridge,evidence_root=self.directory.name)
+        result = await runtime.execute("pcall(function() api('select_hotbar_slot',{slot=2}) end); log('escaped')")
+        self.assertEqual(('failed','idle'),(result['status'],result['actionState']))
+        self.assertEqual('not_admitted',result['lastAction']['dispatchState'])
+        self.assertFalse(result['lastAction']['continuationAllowed']); self.assertEqual([],result['logs'])
+        self.assertFalse(self.bridge._closed); self.assertFalse(getattr(self.bridge,'_lua_poisoned',False))
+        self.assertEqual('completed',(await runtime.execute('return 1'))['status'])
+
+    async def test_refusal_without_proof_or_with_wrong_binding_remains_unknown(self):
+        for mode in ('reject_without_marker','reject_wrong_binding'):
+            self.bridge.close(); self.host.mode=mode
+            self.bridge=ServerAiBridge(self.host.server_address[1],timeout=1)
+            result=await LuaRuntime(self.bridge,evidence_root=self.directory.name).execute("api('select_hotbar_slot',{slot=2});api('select_hotbar_slot',{slot=3})")
+            self.assertEqual('unknown',result['actionState']); self.assertTrue(self.bridge._closed)
+            self.assertEqual('unknown',result['lastAction']['dispatchState'])
+        self.assertEqual(2,len([r for r in self.host.sent if r['op']=='start']))
+
+    async def test_cancel_waiting_on_explicit_refusal_does_not_poison(self):
+        self.host.mode='reject_start_delayed'
+        runtime=LuaRuntime(self.bridge,evidence_root=self.directory.name)
+        task=asyncio.create_task(runtime.execute("api('select_hotbar_slot',{slot=2})"))
+        async def started():
+            while not any(r['op']=='start' for r in self.host.sent): await asyncio.sleep(.01)
+        await asyncio.wait_for(started(),5)
+        task.cancel(); await asyncio.sleep(.01); self.host.release.set()
+        with self.assertRaises(asyncio.CancelledError): await task
+        self.assertEqual('not_admitted',runtime.last_result['cleanup']['dispatchState'])
+        self.assertEqual('idle',runtime.last_result['actionState']); self.assertFalse(self.bridge._closed)
+
+    async def test_server_targeted_use_rejected_before_any_rpc(self):
+        self.enable_native_actions()
+        before=len(self.host.sent)
+        with self.assertRaises(atomic.PreDispatchRejected):
+            await atomic.dispatch(self.bridge,'use_item',{'target':{'x':10,'y':20}})
+        self.assertEqual(before,len(self.host.sent))
+
     def enable_perception(self):
         self.bridge.close()
         self.host.perception = True

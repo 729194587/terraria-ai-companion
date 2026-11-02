@@ -52,7 +52,10 @@ class Game:
 
 class ValidationTests(unittest.TestCase):
     def test_schema_dispatch_and_tool_names(self):
-        self.assertEqual(31, len(atomic.TOOLS))
+        self.assertEqual({'wait', 'observe_exploration', 'stop_action'}, set(atomic.HOST_OPERATIONS))
+        self.assertEqual(set(atomic.SCHEMAS), {t['function']['name'] for t in atomic.TOOLS})
+        self.assertEqual(set(atomic.SCHEMAS), atomic.HOST_OPERATIONS | atomic.NATIVE_OPERATIONS)
+        self.assertFalse(atomic.HOST_OPERATIONS & atomic.NATIVE_OPERATIONS)
         server_only={'observe_scene','query_recipes','craft_recipe','place_object'}
         client_names={t['function']['name'] for t in TOOLS}
         self.assertTrue(set(atomic.SCHEMAS)-server_only <= client_names)

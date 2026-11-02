@@ -24,6 +24,10 @@ class BridgeError(Exception):
         self.status = status
 
 
+class NotAdmittedError(BridgeError):
+    """Positive, identity-checked proof that a start request created no action."""
+
+
 class Bridge:
     def __init__(self, port=18777, timeout=2.0, on_event=None):
         self.timeout = timeout

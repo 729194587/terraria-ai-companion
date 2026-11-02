@@ -29,6 +29,24 @@ public static class ServerAiAtomicOfflineTests
     }
     public static void Run()
     {
+        {
+            var f = new Fixture(); string first = null, last = null;
+            for (int i = 0; i < 1300; i++)
+            {
+                last = Fixture.Id(); first ??= last;
+                if (!f.Send("start", last).GetProperty("ok").GetBoolean()) throw new Exception("Registry stalled at " + i);
+                f.Tick(); f.Tick(); f.Tick();
+            }
+            Check(f.Writes == 1300, "more than 1024 sequential actions execute exactly once");
+            Check(f.Send("action", first).GetProperty("error").GetString() == "unknown_action", "evicted terminal identity queries explicitly unknown");
+            Check(f.Action(last).GetProperty("status").GetString() == "completed", "recent terminal identity remains queryable");
+            Check(f.Send("start", last).GetProperty("error").GetString() == "duplicate_action", "retained duplicate never executes again");
+            string live = Fixture.Id(); f.Send("start", live);
+            Check(f.Send("start", Fixture.Id()).GetProperty("error").GetString() == "action_busy", "registry rotation never removes active entry");
+            f.Actions.Forget(f.Owner);
+            Check(f.Action(live).GetProperty("status").GetString() == "running", "Forget requests cancel without deleting active entry");
+            f.Tick(); Check(f.Action(live).GetProperty("status").GetString() == "cancelled", "forgotten connection settles active action normally");
+        }
         foreach(int key in new[]{0,1,9})
         {
             var f=new Fixture();string id=Fixture.Id();var start=f.Send("start",id,key).GetProperty("data").GetProperty("action");

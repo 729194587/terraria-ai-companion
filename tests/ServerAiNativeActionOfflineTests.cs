@@ -11,11 +11,12 @@ public static class ServerAiNativeActionOfflineTests
     {
         internal int Starts,Cancels,Shutdowns;
         internal bool ThrowStart, ThrowCancel, CompleteOnCancel, UnknownOnCancel, KeepInputHeld;
+        internal string CancelStatus;
         internal AiAtomicActions.NativeResult Result=new("running","native_pending",null,false);
         public string Validate(string op,JsonElement args)=>args.TryGetProperty("bad",out _)?"invalid_arguments":null;
         public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string actionId){Starts++;if(ThrowStart)throw new Exception("partial native start");return new object();}
         public AiAtomicActions.NativeResult Poll(AiReadOnlyProtocol.Identity id,object handle)=>Result;
-        public AiAtomicActions.NativeResult Cancel(AiReadOnlyProtocol.Identity id,object handle){Cancels++;if(ThrowCancel)throw new Exception("native cleanup uncertain");return Result with{Status=UnknownOnCancel?"unknown":CompleteOnCancel?"completed":"cancelled",InputsReleased=!KeepInputHeld};}
+        public AiAtomicActions.NativeResult Cancel(AiReadOnlyProtocol.Identity id,object handle){Cancels++;if(ThrowCancel)throw new Exception("native cleanup uncertain");return Result with{Status=CancelStatus??(UnknownOnCancel?"unknown":CompleteOnCancel?"completed":"cancelled"),InputsReleased=!KeepInputHeld};}
         public void Shutdown(){Shutdowns++;}
     }
     private sealed class Fixture
@@ -41,6 +42,21 @@ public static class ServerAiNativeActionOfflineTests
     }
     public static void Run()
     {
+        foreach (string trigger in new[]{"cancel","timeout"})
+        foreach (string terminal in new[]{"completed","failed","timeout","cancelled","unknown","running"})
+        foreach (bool released in new[]{true,false})
+        {
+            var f=new Fixture(); string id=f.Start();
+            f.Native.CancelStatus=terminal; f.Native.KeepInputHeld=!released;
+            f.Native.Result=new(terminal,"observed_native_terminal",new{actual=7},released,true);
+            if(trigger=="cancel") f.Send("cancel",id); else {f.Time=30001;f.Tick();}
+            var a=f.Action(id);
+            string expected=!released||terminal is "unknown" or "running"?"unknown":terminal;
+            Check(a.GetProperty("status").GetString()==expected && f.Native.Starts==1 && f.Native.Cancels==1,
+                "actual native terminal wins "+trigger+" / "+terminal+" / released="+released);
+            Check(a.GetProperty("stopRequest").GetProperty("status").GetString()==(trigger=="cancel"?"cancelled":"timeout"),
+                "stop trigger retained separately from native terminal");
+        }
         {
             var f=new Fixture();string id=f.Start("move_input");var a=f.Action(id);
             Check(a.GetProperty("requestedInputs").GetProperty("maxUpdates").GetInt32()==60
@@ -135,7 +151,7 @@ public static class ServerAiNativeActionOfflineTests
             var f=new Fixture();string id=f.Start("mine_target");var a=f.Action(id);
             Check(a.GetProperty("durationMs").GetInt32()==55000&&a.GetProperty("targetTask").GetProperty("x").GetInt32()==100,"mine task has immutable target and bounded root deadline");
             Check(Array.IndexOf(f.Actions.Capabilities,"server_ai_tasks_v1")>=0,"task capability independent of atomic actions");
-            f.Time=55001;f.Tick();Check(f.Action(id).GetProperty("status").GetString()=="timeout"&&f.Native.Cancels==1,"root wall-clock deadline cancels native executor");
+            f.Time=55001;f.Tick();Check(f.Action(id).GetProperty("status").GetString()=="cancelled"&&f.Action(id).GetProperty("stopRequest").GetProperty("status").GetString()=="timeout"&&f.Native.Cancels==1,"root deadline preserves executor cancellation and records timeout trigger");
         }
         foreach(string op in new[]{"move_input","navigate_to_x","navigate_to_landing_region","use_item","mine_tile","place_tile","place_object","craft_recipe","mine_target"})
         {
@@ -201,7 +217,7 @@ public static class ServerAiNativeActionOfflineTests
             if(cause=="forget")f.Actions.Forget(f.Owner);
             f.Tick();var a=f.Action(id);
             Check(f.Native.Cancels==1&&a.GetProperty("endEvidence").GetProperty("inputsReleased").GetBoolean()
-                &&a.GetProperty("status").GetString()==(cause=="timeout"?"timeout":"cancelled"),cause+" retires exactly the acquired native handle");
+                &&a.GetProperty("status").GetString()=="cancelled",cause+" retires exactly the acquired native handle and retains native terminal");
         }
         foreach(string operation in new[]{"mine_tile","move_input"})
         foreach(string cause in new[]{"object","world","generation","slot"})

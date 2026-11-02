@@ -42,11 +42,17 @@ internal sealed class AiAtomicActions
         internal object Handle;
         internal NativeResult Result;
         internal string ReasonDetail;
+        internal string StopStatus, StopReason;
     }
     private readonly Dictionary<string, Entry> entries = new(StringComparer.Ordinal);
+    // Retain up to 1024 identities globally, in terminal completion order.
+    // Only terminal entries are eligible for eviction when admitting a fresh GUID.
+    // Retained IDs reject duplicates; evicted IDs query as unknown_action.
+    private const int RegistryCapacity = 1024;
+    private readonly Queue<string> terminalEntries = new();
     private Entry active;
     private long sequence;
-    internal void Clear() { executor?.Shutdown(); entries.Clear(); active = null; }
+    internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = null; }
     internal void Forget(Guid connection) { if (active?.Owner == connection) active.Cancel = true; }
     private static bool Matches(Entry e, AiReadOnlyProtocol.Identity current) => current != null
         && ReferenceEquals(e.Actor, current.Actor) && e.World == current.World && e.Generation == current.Generation && e.Slot == current.Slot;
@@ -73,6 +79,7 @@ internal sealed class AiAtomicActions
         targetRegion = e.Operation == "navigate_to_landing_region" ? (JsonElement?)e.Arguments : null,
         task = TaskState(e),
         status = e.Status, executionState = e.Phase, reason = e.Reason, reasonDetail = e.ReasonDetail,
+        stopRequest = e.StopStatus == null ? null : new { status = e.StopStatus, reason = e.StopReason },
         evidence = e.Operation == "select_hotbar_slot" ? (object)new { requestedHotbarKey = e.Key, targetSlot = e.Target, beforeSlot = e.Before,
             mutationAttempted = e.Attempted, selectionApplied = e.Applied } : e.Result?.Evidence,
         endEvidenceStatus = e.Phase == "terminal" ? e.End == null ? "unknown" : "known" : "not_ended", endEvidence = e.End
@@ -89,7 +96,6 @@ internal sealed class AiAtomicActions
             return new(new { action = Snapshot(known) });
         }
         if (entries.ContainsKey(id)) return new(Error: "duplicate_action");
-        if (entries.Count >= 1024) return new(Error: "action_registry_full");
         if (active != null) return new(Error: "action_busy");
         if (!current.CanAct) return new(Error: "actor_not_alive");
         string operation = root.GetProperty("operation").GetString();
@@ -99,8 +105,8 @@ internal sealed class AiAtomicActions
         int key = 0;
         if (selecting)
         {
-            int count = 0;
-            foreach (var field in arguments.EnumerateObject()) { if (field.Name != "slot" || ++count > 1) return new(Error: "invalid_arguments"); }
+            try { AtomicParameters.Validate(operation, arguments, false); }
+            catch (AtomicParameterException) { return new(Error: "invalid_arguments"); }
             key = arguments.GetProperty("slot").GetInt32();
             if (key < 0 || key > 9) return new(Error: "invalid_arguments");
         }
@@ -120,6 +126,9 @@ internal sealed class AiAtomicActions
         if (remaining <= 0) return new(Error: "request_expired");
         if (remaining > 2000) return new(Error: "invalid_deadline");
         int duration = operation switch { "mine_target"=>55000, "move_input" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "place_tile" or "place_object" => 10000, _ => 2000 };
+        while (entries.Count >= RegistryCapacity && terminalEntries.TryDequeue(out var oldest))
+            if (entries.TryGetValue(oldest, out var terminal) && terminal.Status != "running") entries.Remove(oldest);
+        if (entries.Count >= RegistryCapacity) return new(Error: "action_registry_full");
         active = new Entry { Owner = owner, Id = id, World = current.World, Actor = current.Actor, ActorId = binding.actor,
             Generation = current.Generation, Slot = current.Slot, Before = current.SelectedSlot,
             Operation = operation, Arguments = arguments.Clone(), Duration = duration,
@@ -142,9 +151,11 @@ internal sealed class AiAtomicActions
             inputsAcquired = e.Handle != null && e.Result?.InputsAcquired != false, inputsReleased = e.Handle == null || e.Result?.InputsReleased == true,
             effectVerified = e.Result?.EffectVerified == true, operation = e.Operation, observationSequence = sequence };
         if (ReferenceEquals(active, e)) active = null;
+        terminalEntries.Enqueue(e.Id);
     }
     private void Stop(Entry e, string status, string reason, AiReadOnlyProtocol.Identity current)
     {
+        e.StopStatus = status; e.StopReason = reason;
         if (e.Handle != null)
         {
             try { e.Result = e.Operation=="mine_target"?executor.CancelWithReason(current,e.Handle,status,reason):executor.Cancel(current,e.Handle); }
@@ -153,8 +164,12 @@ internal sealed class AiAtomicActions
             // Confirmed release does not resolve uncertain native observation/effect state.
             if(e.Result.Status=="unknown")
             {End(e,"unknown",e.Result.Reason,current,true);return;}
-            if (status == "cancelled" && current.CanAct && e.Result.Status == "completed" && e.Result.EffectVerified)
-            { status = "completed"; reason = e.Result.Reason; }
+            if (e.Result.Status is not ("completed" or "failed" or "timeout" or "cancelled"))
+            { End(e, "unknown", "native_cancel_unconfirmed", current, true); return; }
+            if (e.Result.Status == "completed" && !e.Result.EffectVerified)
+            { End(e, "unknown", "native_effect_unconfirmed", current, true); return; }
+            // The stop trigger is metadata. A reliable native terminal wins all races.
+            status = e.Result.Status; reason = e.Result.Reason;
         }
         End(e, status, reason, current, true);
     }

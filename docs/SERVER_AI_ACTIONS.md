@@ -1,5 +1,9 @@
 # Lua 的服务器 AI 移动、使用与目标格工具操作
 
+0.1.74 完成 [M2 API 契约收敛](API_TOOL_SYSTEM_MVP.md)。动作注册表最多保留 1024 个身份，受理新 GUID 前按完成顺序回收最旧终态；活动动作不回收，近期重复返回 `duplicate_action`，已回收查询返回 `unknown_action`。不要重用旧 actionId。
+
+取消/超时触发原因保留在 `stopRequest`，可信原生终态和证据优先，不用触发原因覆盖已确认的 `completed/failed/timeout/cancelled`。原生结果、效果或输入释放不确定时仍为 `unknown`。启动的明确拒绝由绑定核对后的 `dispatchState=not_admitted` 表示；旧包缺少这一证明时继续保守处理。没有后台任务 API、自动重放或控制对象变更。
+
 0.1.73 新增游戏侧任务运行时与高层 `mine_target`：可直接提交 `observe_scene` 的矿物 `target` 对象，由游戏侧组织选镐、导航和原生挖掘；任务状态、身份/取消/截止与验证范围见 [M1 任务运行时](M1_TASK_RUNTIME.md)。下文保留原子动作的独立契约。
 
 

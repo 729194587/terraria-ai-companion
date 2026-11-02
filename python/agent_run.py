@@ -67,6 +67,11 @@ def direct_action_receipt(operation, lifecycle, result=None):
     if not action and not lifecycle.get('start_attempted') and not (result or {}).get('actionId'):
         return None  # No owned action or possible start; keep the preceding execution receipt.
     cleanup = lifecycle.get('cleanup')
+    if lifecycle.get('dispatchState') == 'not_admitted' and not action and not lifecycle.get('uncertain'):
+        rejected = copy.deepcopy(result or cleanup)
+        return {'kind': 'direct_action', 'status': 'cancelled' if result is None else rejected['status'],
+                'programStatus': None, 'lastAction': rejected, 'cleanup': rejected if result is None else None,
+                'actionState': 'idle', 'inputReleased': None}
     terminal = copy.deepcopy(result if result is not None else cleanup) if result is not None or cleanup is not None else {
         'actionId': action.get('actionId'), 'operation': action.get('operation', operation),
         'actionGeneration': action.get('generation'), 'controlGeneration': lifecycle.get('control_generation'),

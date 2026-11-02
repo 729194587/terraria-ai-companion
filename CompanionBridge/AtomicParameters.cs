@@ -6,8 +6,15 @@ using CompanionBridge.Motion;
 
 namespace CompanionBridge;
 
+internal sealed class AtomicParameterException : FormatException
+{
+    internal AtomicParameterException(Exception cause) : base("Invalid atomic arguments: " + cause.Message, cause) { }
+}
+
 internal static class AtomicParameters
 {
+    // JSON Schema maxLength counts Unicode scalars, not UTF-16 code units.
+    private static int CharacterCount(JsonElement value) => value.GetString().EnumerateRunes().Count();
     internal static LandingRegion ReadLandingRegion(JsonElement args)
     {
         Validate("navigate_to_landing_region", args, false);
@@ -15,7 +22,22 @@ internal static class AtomicParameters
             args.GetProperty("surfaceY").GetSingle());
     }
 
+    internal static string ValidateServerAction(string op, JsonElement args)
+    {
+        try { Validate(op, args, false); return op == "use_item" && args.TryGetProperty("target", out _) ? "targeted_use_not_supported" : null; }
+        catch (AtomicParameterException) { return "invalid_arguments"; }
+    }
+
     internal static void Validate(string op, JsonElement args, bool query)
+    {
+        // Only this pure parameter boundary translates JSON access/type failures.
+        // Engine exceptions outside validation must retain their own classification.
+        try { ValidateCore(op, args, query); }
+        catch (Exception e) when (e is FormatException or InvalidOperationException or KeyNotFoundException or OverflowException)
+        { throw new AtomicParameterException(e); }
+    }
+
+    private static void ValidateCore(string op, JsonElement args, bool query)
     {
         if (args.ValueKind != JsonValueKind.Object) throw new FormatException("Arguments must be an object.");
         var keys = new HashSet<string>();
@@ -56,7 +78,7 @@ internal static class AtomicParameters
                     if (args.GetProperty("kind").ValueKind != JsonValueKind.String
                         || args.GetProperty("kind").GetString() is not ("item" or "tile" or "wall")) throw new FormatException("Invalid content kind.");
                     if (args.GetProperty("query").ValueKind != JsonValueKind.String
-                        || args.GetProperty("query").GetString().Length is < 1 or > 150) throw new FormatException("Invalid content query.");
+                        || CharacterCount(args.GetProperty("query")) is < 1 or > 150) throw new FormatException("Invalid content query.");
                     if (keys.Contains("mode") && (args.GetProperty("mode").ValueKind != JsonValueKind.String
                         || args.GetProperty("mode").GetString() is not ("exact" or "search"))) throw new FormatException("Invalid resolver mode.");
                     if (keys.Contains("maxResults")) Integer("maxResults",1,32);
@@ -66,7 +88,7 @@ internal static class AtomicParameters
                     string mode = args.TryGetProperty("mode", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : null;
                     if (mode is not ("selected" or "hotbar" or "item" or "full" or "slots")) throw new FormatException("Invalid inventory mode.");
                     if (keys.Contains("item") != (mode == "item")) throw new FormatException("item required only in item mode.");
-                    if (mode == "item" && (args.GetProperty("item").ValueKind != JsonValueKind.String || args.GetProperty("item").GetString().Length is < 1 or > 150)) throw new FormatException("Invalid item identifier.");
+                    if (mode == "item" && (args.GetProperty("item").ValueKind != JsonValueKind.String || CharacterCount(args.GetProperty("item")) is < 1 or > 150)) throw new FormatException("Invalid item identifier.");
                     if (keys.Contains("slots") != (mode == "slots")) throw new FormatException("slots required only in slots mode.");
                     if (mode == "slots")
                     {
@@ -160,7 +182,8 @@ internal static class AtomicParameters
                 var mineTarget=args.GetProperty("target");
                 string[] mineTargetKeys={"kind","x","y","typeId","worldSessionId","actorGeneration","actorSlot","observedGameUpdate","observedAtUnixMs","targetToken"};
                 if(mineTarget.ValueKind!=JsonValueKind.Object||!mineTarget.EnumerateObject().Select(f=>f.Name).OrderBy(k=>k).SequenceEqual(mineTargetKeys.OrderBy(k=>k)))throw new FormatException("Invalid observed mine target");
-                if(mineTarget.GetProperty("kind").GetString()!="tile"||mineTarget.GetProperty("worldSessionId").GetString().Length is <1 or >128
+                if(new[]{"kind","worldSessionId","targetToken"}.Any(k=>mineTarget.GetProperty(k).ValueKind!=JsonValueKind.String))throw new FormatException("Invalid target string");
+                if(mineTarget.GetProperty("kind").GetString()!="tile"||CharacterCount(mineTarget.GetProperty("worldSessionId")) is <1 or >128
                     ||!System.Text.RegularExpressions.Regex.IsMatch(mineTarget.GetProperty("targetToken").GetString(),"^[0-9a-f]{64}$"))throw new FormatException("Invalid target binding");
                 foreach(string key in new[]{"x","y","typeId","actorSlot","actorGeneration","observedGameUpdate","observedAtUnixMs"})
                     if(!mineTarget.GetProperty(key).TryGetInt64(out long value)||value<0||value>9007199254740991L)throw new FormatException("Invalid target field");
@@ -168,7 +191,7 @@ internal static class AtomicParameters
                 break;
             }
             case "mine_tile": case "place_tile": case "interact_tile": case "mine_wall": case "place_wall": case "hammer_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
-            case "attack_entity": Fields("entityRef"); if (args.GetProperty("entityRef").ValueKind != JsonValueKind.String || args.GetProperty("entityRef").GetString().Length is < 1 or > 150) throw new FormatException("Invalid entityRef."); break;
+            case "attack_entity": Fields("entityRef"); if (args.GetProperty("entityRef").ValueKind != JsonValueKind.String || CharacterCount(args.GetProperty("entityRef")) is < 1 or > 150) throw new FormatException("Invalid entityRef."); break;
             case "use_item":
                 if (keys.Count == 0) break;
                 Fields("target"); var target = args.GetProperty("target");

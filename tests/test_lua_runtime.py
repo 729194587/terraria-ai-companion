@@ -202,7 +202,7 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(r['value']); self.assertEqual([],r['logs'])
         rejection=r['lastAction']
         self.assertEqual('failed',rejection['status'])
-        self.assertEqual('not_dispatched',rejection['dispatchState'])
+        self.assertEqual('not_admitted',rejection['dispatchState'])
         self.assertIn('server_confirmed_interactions_v1',rejection['reason'])
         self.assertFalse(rejection['continuationAllowed'])
         self.assertFalse(any(c in ('start_atomic','query_atomic','cancel_move') for c,_ in game.sent))
@@ -221,7 +221,7 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(('failed', 'released'), (r['status'], r['actionState']), r)
         self.assertIsNone(r['value'])
         self.assertEqual(2,r['calls'])
-        self.assertEqual('not_dispatched',r['lastAction']['dispatchState'])
+        self.assertEqual('not_admitted',r['lastAction']['dispatchState'])
         self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
         self.assertFalse(game.closed)
 
@@ -281,7 +281,7 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
     async def test_result_text_cannot_claim_safe_predispatch_rejection(self):
         async def ambiguous(*args, **kwargs):
             return {'valid': False, 'status': 'failed', 'completed': False,
-                    'dispatchState': 'not_dispatched', 'reason': 'untrusted claim'}
+                    'dispatchState': 'not_admitted', 'reason': 'untrusted claim'}
         with patch.object(atomic, 'dispatch', ambiguous):
             r, game, _ = await self.run_lua("return api('use_item')")
         self.assertEqual(('action_unknown', 'unknown'), (r['status'], r['actionState']), r)
