@@ -11,7 +11,8 @@ public static class TaskRuntimeOfflineTests
     private sealed class World : IMineTargetWorld
     {
         internal bool Reach,Absent=true,ThrowPrepare;
-        internal string Error,PrepareError;
+        internal string Error,PrepareError,Danger;
+        public string InterruptionReason()=>Danger;
         internal int Selections,Observations;
         public string Prepare(){if(ThrowPrepare)throw new Exception("preflight");return PrepareError;}
         public void SelectTool(){Selections++;}
@@ -26,13 +27,13 @@ public static class TaskRuntimeOfflineTests
     {
         internal readonly List<string> Starts=new();
         internal int Polls,Cancels;
-        internal bool Pending,ThrowStart,ThrowPoll,BadEffect,UnknownCancel;
+        internal bool Pending,ThrowStart,ThrowPoll,BadEffect,UnknownCancel,CompletedCancel;
         internal Action<string> OnPoll;
         public string Validate(string op,JsonElement args)=>null;
         public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string actionId){Starts.Add(op);if(ThrowStart)throw new Exception("start");return op;}
         public Result Poll(AiReadOnlyProtocol.Identity id,object handle)
         {Polls++;if(ThrowPoll)throw new Exception("poll");OnPoll?.Invoke((string)handle);return new(Pending?"running":"completed","native_done",new{token="child_result"},!Pending,!BadEffect);}
-        public Result Cancel(AiReadOnlyProtocol.Identity id,object handle){Cancels++;return new(UnknownCancel?"unknown":"cancelled","stopped",null,true);}
+        public Result Cancel(AiReadOnlyProtocol.Identity id,object handle){Cancels++;return new(UnknownCancel?"unknown":CompletedCancel?"completed":"cancelled","stopped",new{token="cancel_observation"},true,CompletedCancel);}
         public void Shutdown(){}
     }
     private sealed class Fixture
@@ -46,6 +47,27 @@ public static class TaskRuntimeOfflineTests
     }
     public static void Run()
     {
+        foreach(bool absent in new[]{false,true})
+        {
+            var f=new Fixture();f.World.Reach=true;f.World.Absent=absent;f.Native.Pending=true;
+            f.Tick(1);f.Tick(2);f.Tick(3);f.Native.CompletedCancel=true;
+            var r=f.Root.Stop(f.Frame,"cancelled","explicit_cancel");
+            Check(r.Status==(absent?"completed":"cancelled"),"root stop preserves completed mining only after target verification");
+            Check(f.Native.Cancels==1,"completed-during-stop child is cleaned once");
+        }
+        foreach(string danger in new[]{"task_interrupt_nearby_hostile","task_interrupt_health_decreased","task_interrupt_lava_contact"})
+        {
+            var f=new Fixture();f.Native.Pending=true;f.Tick(1);f.Tick(2);f.Tick(3);
+            f.World.Danger=danger;
+            var stopped=f.Tick(4);
+            Check(stopped.Status=="cancelled"&&stopped.InputsReleased&&stopped.Reason==danger,"game-tick hazard releases child: "+danger);
+            Check(f.Native.Cancels==1&&f.Native.Starts.Count==1,"hazard never restarts child");
+            var view=JsonSerializer.SerializeToElement(f.Root.View());
+            Check(view.GetProperty("lastResult").GetProperty("status").GetString()=="cancelled"
+                &&view.GetProperty("lastResult").GetProperty("inputsReleased").GetBoolean(),"hazard retains child cleanup evidence");
+            f.World.Danger=null;f.Tick(5);
+            Check(f.Native.Starts.Count==1,"cleared hazard does not automatically resume terminal task");
+        }
         {
             var f=new Fixture();for(int i=0;i<20;i++)f.Tick(0);
             Check(f.World.Selections==0&&f.Native.Starts.Count==0,"idle pulses cannot start a task");

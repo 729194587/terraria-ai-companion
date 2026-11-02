@@ -56,7 +56,7 @@ class StoreTests(unittest.TestCase):
                             'lastAction': {'valid': True, 'status': 'cancelled'}}, [])
         self.assertFalse(result['programCompleted'])
         self.assertFalse(result['actionSuccess'])
-        self.assertEqual('not_completed', result['taskOutcome'])
+        self.assertEqual('unknown', result['taskOutcome'])
 
     def test_archive_is_bounded_deduplicated_and_secret_redacted(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -202,7 +202,7 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['programCompleted'])
         self.assertIsNone(result['value'])
         self.assertFalse(result['actionSuccess'])
-        self.assertEqual('not_completed', result['taskOutcome'])
+        self.assertEqual('unknown', result['taskOutcome'])
         self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
         self.assertIn('行动未完成', next(p['text'] for c, p in game.sent if c == 'send_chat'))
         records = [json.loads(line) for line in trace.path.read_text(encoding='utf-8').splitlines()]
@@ -261,13 +261,13 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Lua 程序未完成', next(p['text'] for c, p in game.sent if c == 'send_chat'))
         summary = next(data for kind, data in records if kind == 'chat_cost')
         self.assertEqual('completed', summary['action_outcome'])
-        self.assertEqual('not_completed', summary['task_outcome'])
+        self.assertEqual('unknown', summary['task_outcome'])
 
     async def test_syntax_only_error_can_be_corrected_before_any_action(self):
         _, model, game = await self.run_agent(program('not valid lua'),
             program("return api('inspect_inventory',{mode='selected'})"), final('读取完成'))
         self.assertEqual('script_error', lua_results(model)[0]['status'])
-        self.assertEqual('读取完成', next(p['text'] for c, p in game.sent if c == 'send_chat'))
+        self.assertIn('已取得观察：inspect_inventory', next(p['text'] for c, p in game.sent if c == 'send_chat'))
         self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
 
     async def test_lua_call_budget_stops_internal_loop_and_later_direct_action(self):

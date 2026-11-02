@@ -14,7 +14,7 @@ public static class ServerAiPackageTests
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.74","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.75","formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;
@@ -174,6 +174,15 @@ public static class ServerAiPackageTests
         Check(Calls(queryReach,"Capture")&&queryReach.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="inRange"),"reach projection keeps actor binding and audited native delegate");
         var taskResult=Type("ServerAiNativeActions").Methods.Single(m=>m.Name=="TaskResult");
         Check(Calls(taskResult,"Owned")&&Calls(taskResult,"Released"),"root result rechecks actual actor binding and input release");
+        var taskTick=Type("MineTargetTask").Methods.Single(m=>m.Name=="Tick");
+        Check(Type("AiAtomicActions").Methods.Single(m=>m.Name=="get_Capabilities").Body.Instructions.Any(
+            i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="server_ai_program_tasks_v1"),"new task safety/lifecycle semantics have an explicit capability fence");
+        var hazard=Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="InterruptionReason");
+        Check(Calls(taskTick,"InterruptionReason")&&Calls(taskTick,"Stop"),"root task checks hazards in game-tick execution and uses normal child cleanup");
+        Check(Calls(hazard,"Require")&&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="npc")
+            &&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="statLife")
+            &&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="lavaWet"),"hazard reads bound actor health/lava and current native NPCs");
+        Check(!hazard.Body.Instructions.Any(i=>i.OpCode==OpCodes.Stfld&&i.Operand is FieldReference f&&f.DeclaringType.Name=="Player"),"hazard detection never rewrites Player motion or controls");
         Console.WriteLine($"AI formal package: {checks} IL checks passed; no graphical game launched.");
     }
 }

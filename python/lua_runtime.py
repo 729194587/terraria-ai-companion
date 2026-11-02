@@ -1,6 +1,7 @@
 """Async host for whole Lua programs; Bridge and atomic supervision stay here."""
 import argparse
 import asyncio
+import copy
 from dataclasses import dataclass
 import hashlib
 import json
@@ -15,6 +16,7 @@ import agent_diagnostics as diagnostics
 import evidence
 import atomic_operations as atomic
 import navigation_recovery
+import program_tasks
 from control import Bridge, BridgeError, command_owner
 from lua_worker import (worker, encode, decode, ValueLimit, SOURCE_BYTES,
                         REQUEST_BYTES, VALUE_BYTES, FRAME_BYTES, EXPLORATION_SOURCE, SEMANTIC_SOURCE)
@@ -338,11 +340,11 @@ class LuaRuntime:
                 if type(message.get('protected', False)) is not bool:
                     raise Interrupted('protocol_error')
                 try:
-                    args = atomic.validate(name, args)
+                    args = program_tasks.validate(name, args) if name in program_tasks.NAMES else atomic.validate(name, args)
                 except ValueError as exc:
                     # Only this local schema/range check is recoverable. No
                     # dispatch, network call or game action has begun here.
-                    if name not in atomic.SCHEMAS or not message.get('protected', False):
+                    if name not in atomic.SCHEMAS.keys() | program_tasks.NAMES or not message.get('protected', False):
                         raise
                     rejection = {'status': 'bad_argument', 'error': str(exc)[:512],
                                  'argumentOperation': name}
@@ -356,6 +358,56 @@ class LuaRuntime:
                     await watch(active)
                     active = None
                     continue
+                synchronous_task = name == 'mine_target' and program_tasks.available(self.bridge)
+                if name in program_tasks.NAMES or synchronous_task:
+                    if not program_tasks.available(self.bridge):
+                        raise ValueError('Program task coordination unsupported')
+                    if name in ('submit_task', 'resume_task') or synchronous_task:
+                        if halted or not allow_actions:
+                            raise Interrupted('previous_action_failed')
+                        if out['actions'] >= limits.actions:
+                            raise Interrupted('action_limit')
+                        out['actions'] += 1
+                    manager = program_tasks.coordinator(self.bridge)
+                    origin = {'chatId': chat_id, 'programId': out['runId'], 'runId': tracing.context.get().get('run_id')}
+                    async def task_call():
+                        if not synchronous_task:
+                            return await manager.invoke(name, args, origin)
+                        submitted = await manager.invoke('submit_task', {'operation': name, 'arguments': args}, origin)
+                        if submitted.get('status') == 'running':
+                            record = manager.records[submitted['taskId']]
+                            await record['done'].wait()
+                            return copy.deepcopy(record['view'])
+                        return submitted
+                    active = asyncio.create_task(task_call())
+                    active_role = 'task'
+                    result = await watch(active)
+                    active = None
+                    out['tasks'] = manager.projection()
+                    terminal_result = result.get('result')
+                    if terminal_result is not None and on_result is not None:
+                        on_result('mine_target', {}, terminal_result)
+                    if synchronous_task and terminal_result is not None:
+                        out['lastAction'] = bounded_action(terminal_result)
+                        out['actionState'] = 'released' if safe_terminal(terminal_result) else 'unknown'
+                    call_end(result.get('status'), result=result)
+                    if result.get('status') == 'unknown':
+                        out.update(status='action_unknown', actionState='unknown')
+                        break
+                    if result.get('status') in ('failed', 'timeout', 'cancelled'):
+                        out['status'] = result['status']
+                        break
+                    active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
+                        encode({'type': 'result', 'id': sequence,
+                                'value': terminal_result if synchronous_task else result})))
+                    active_role = 'send'
+                    await watch(active)
+                    active = None
+                    continue
+                if (name in atomic.BUDGETED_ACTIONS and program_tasks.available(self.bridge)
+                        and program_tasks.coordinator(self.bridge).blocked()):
+                    out.update(status='failed', error='active_task_conflict; explicitly cancel and confirm release before replacing')
+                    break
                 fallback_attempt = False
                 if handoff is not None:
                     if name in atomic.BUDGETED_ACTIONS:
@@ -498,6 +550,9 @@ class LuaRuntime:
                     'line': out.get('errorLine',(failure_call or {}).get('line')), 'retryAllowed': False,
                     'actionState': out['actionState']}
             self.bridge._lua_owner = None
+            manager = getattr(self.bridge, '_program_tasks', None)
+            if manager is not None:
+                out['tasks'] = manager.projection()
             LuaRuntime._active_runs -= 1
             command_owner.reset(owner_token)
             self.last_result = out

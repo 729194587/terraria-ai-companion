@@ -89,7 +89,10 @@ class ContextTests(unittest.TestCase):
         self.assertEqual('completed', result['taskOutcome']); self.assertEqual('unknown', result['goalOutcome'])
         failure = dict(valid=True, status='failed', operation='mine_target')
         result = summarize(dict(status='failed', actionState='released', lastAction=failure), [task, failure])
-        self.assertEqual('partial', result['taskOutcome']); self.assertEqual('partial', result['goalOutcome'])
+        self.assertEqual('partial', result['taskOutcome']); self.assertEqual('unknown', result['goalOutcome'])
+        from agent_run import goal_outcome
+        self.assertEqual('partial', goal_outcome([task, failure], False, goal_contract={
+            'operation': 'mine_target', 'targetTask': {'x': 10, 'y': 20}}))
         task['evidence']['task']['lastResult']['evidence']['targetAbsent'] = False
         self.assertEqual('unknown', task_outcome([task]))
         result = summarize(dict(status='completed', actionState='idle', value={'taskOutcome': 'completed'}), [])
@@ -216,9 +219,10 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         agent.receive(event(1)); await agent.task
         sent = next(p['text'] for c, p in game.sent if c == 'send_chat')
         self.assertEqual(sent, agent.history[-1]['content'])
-        self.assertNotIn('任务已完成', sent); self.assertIn('建议先确认位置', sent)
+        self.assertNotIn('任务已完成', sent); self.assertIn('verified_effect', sent)
+        self.assertIn('Lua 程序未完成', sent)
         self.assertEqual('failed', agent.runs[-1].outcome)
-        self.assertEqual('not_completed', agent.runs[-1].goal_outcome)
+        self.assertEqual('unknown', agent.runs[-1].goal_outcome)
 
     async def test_script_return_cannot_certify_goal_completion(self):
         game = RuntimeGame()

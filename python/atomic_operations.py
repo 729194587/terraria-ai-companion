@@ -653,6 +653,11 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             raise BridgeError('Missing atomic query data')
         return {'valid': data.get('available') is True, **data}
     if name == 'stop_action':
+        manager = getattr(bridge, '_program_tasks', None)
+        if manager is not None and manager.blocked():
+            stopped = await manager.stop_all()
+            if stopped:
+                return copy.deepcopy(stopped[-1]['result'])
         return await stop(bridge, lifecycle=lifecycle)
     start_task, action = None, None
     landing_invalid = False

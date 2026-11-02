@@ -237,14 +237,31 @@ class ServerAiBridge:
                 return self._movement(action)
             raise BridgeError("Command unsupported by server AI backend", status="unsupported_operation")
 
-    def _movement(self, action, status="movement"):
-        if action is not None and (action.get("actionId") != self._action_id
+    def task_request(self, op, task_id, **parameters):
+        """Host task mailbox transport; independent of the current Program owner.
+
+        No reconnect/replay or new execution state here. C# checks connection ownership.
+        """
+        if op not in ('start', 'action', 'cancel') or (op == 'start' and parameters.get('operation') != 'mine_target'):
+            raise ValueError('Unsupported task request')
+        if not {'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_tasks_v1', 'server_ai_program_tasks_v1'} <= set(self.hello.get('capabilities', ())):
+            raise BridgeError('Task capability unavailable')
+        action = self._request(op, actionId=task_id, **parameters)['data']['action']
+        self._validate_action(action, task_id)
+        return action
+
+    def _validate_action(self, action, action_id):
+        if not isinstance(action, dict) or (action.get("actionId") != action_id
                                    or action.get("actorId") != self.binding["actor"]
                                    or action.get("actorSlot") != self.binding["slot"]
                                    or action.get("generation") != self.binding["generation"]
                                    or action.get("worldSessionId") != self.binding["world"]):
             self.close()
             raise BridgeError("Server AI action receipt identity mismatch")
+
+    def _movement(self, action, status="movement"):
+        if action is not None:
+            self._validate_action(action, self._action_id)
         return {"status": status, "movement": {"generation": self.binding["generation"], "action": action}}
 
     def close(self):

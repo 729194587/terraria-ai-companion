@@ -121,7 +121,8 @@ def summarize(receipt, actions):
     from agent_run import task_outcome, goal_outcome
     return {**receipt, 'valid': True, 'programCompleted': program_completed, 'actionResults': history,
             'actionSuccess': action_success,
-            'taskOutcome': task_outcome(actions, program_completed, receipt.get('actionState')),
+            'taskOutcome': task_outcome(actions, program_completed, receipt.get('actionState'),
+                                        (receipt.get('tasks') or {}).get('active', ())),
             'goalOutcome': goal_outcome(actions, program_completed, receipt.get('actionState'))}
 
 

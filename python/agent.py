@@ -15,6 +15,7 @@ import cost_metrics
 import atomic_operations
 import mining_recovery
 import lua_agent
+import program_tasks
 from dataclasses import replace
 from lua_runtime import LuaRuntime, Limits as LuaLimits
 import agent_diagnostics as diagnostics
@@ -28,7 +29,7 @@ from movement import move, stop_movement
 from exploration import read_exploration_observation
 from movement_loop import MovementLoop, LoopBudgetExhausted
 from agent_context import ContextManager, ContextBudgetExceeded
-from agent_run import AgentRun, interruption, direct_action_receipt, task_outcome, goal_outcome, final_text
+from agent_run import AgentRun, interruption, direct_action_receipt, task_outcome, goal_outcome, final_text, facts_reply
 from agent_tools import ToolExecutor
 
 SYSTEM = """你是 Terraria 中的 AI 玩家，通过游戏内聊天与其他玩家交流。使用对方的语言，简短回答，最多 400 个字符。
@@ -378,6 +379,23 @@ class Agent:
         self._game_events_dropped = 0
         self._cost_exposures = {}
         self.last_movement_result = None
+        self._closing = False
+        self._task_wakeup_sequence = 0
+        self.program_tasks = program_tasks.coordinator(bridge) if program_tasks.available(bridge) else None
+        if self.program_tasks is not None:
+            self.program_tasks.on_ready = self._wake_task_results
+
+    def _wake_task_results(self):
+        if self._closing or self.program_tasks is None or self.task is not None and not self.task.done():
+            return
+        projection = self.program_tasks.projection()
+        if not projection['results'] or projection['throughSequence'] <= self._task_wakeup_sequence:
+            return
+        self._task_wakeup_sequence = projection['throughSequence']
+        # Reuse the last authorized player's chat identity for the native reply fence.
+        # This is a host result notification, never a new human instruction.
+        self._start_turn({'eventId': self._active_turn_id, 'senderId': -1, 'senderName': 'Task runtime',
+            'source': 'host_task_result', 'text': '游戏任务结果已到达。依据runtimeTasks说明事实；不自动重试或重放。'})
 
     def receive(self, event):
         if self.server_ai and not (event.get('type') == 'chat_message'
@@ -442,8 +460,8 @@ class Agent:
             "senderId": event["senderId"], "senderName": event["senderName"],
             "text": event["text"], "eventId": event["eventId"],
             "receivedAt": event.get("receivedAt")}
-        if event.get('source') == 'local_terminal':
-            user['source'] = 'local_terminal'
+        if event.get('source') in ('local_terminal', 'host_task_result'):
+            user['source'] = event['source']
         self.history.append({"role": "user", "content": json.dumps(user, ensure_ascii=False)})
         print(f"Chat received: {event['eventId']} sender={event['senderId']}", file=sys.stderr, flush=True)
         if generation is None:
@@ -457,7 +475,8 @@ class Agent:
             luaSeconds=self.lua_limits.seconds, estimatedInputTokens=self.context_manager.input_budget)
         self.active_run = run
         self.runs.append(run)
-        self.task = asyncio.create_task(self._run(self.generation, event["eventId"], run, event['text']))
+        self.task = asyncio.create_task(self._run(self.generation, event["eventId"], run, event['text'],
+                                                 task_notification=event.get('source') == 'host_task_result'))
         self._tasks.add(self.task)
         self.task.add_done_callback(self._tasks.discard)
         generation, chat_id = self.generation, event["eventId"]
@@ -469,6 +488,7 @@ class Agent:
                 run.reason, run.phase = run.outcome, 'ended'
                 tracing.trace.emit('agent_end', run_id=run.id, outcome=run.outcome, never_started=True)
         self.task.add_done_callback(settle_unstarted)
+        self.task.add_done_callback(lambda _: self._wake_task_results())
 
     async def _wait_lua_cleanup(self):
         previous = self._lua_task
@@ -509,7 +529,7 @@ class Agent:
             finally:
                 costs.model_elapsed_ms += (time.monotonic()-started)*1000
 
-    async def _run(self, generation, chat_id, run, instruction):
+    async def _run(self, generation, chat_id, run, instruction, *, task_notification=False):
         bundle = evidence.Bundle(self.lua_store.directory.parent / 'evidence',metadata={'generation':generation,'chat_event_id':chat_id})
         evidence_token = evidence.current.set(bundle)
         token = tracing.context.set({"generation": generation, "chat_event_id": chat_id,
@@ -589,8 +609,16 @@ class Agent:
             run.phase = 'running'
             if is_stop_request(instruction):
                 run.phase = 'finalization'
-                text = await self._send_reply('已停止当前运行；已发生的动作和释放状态以执行回执为准。', chat_id, generation)
+                stopped = await self.program_tasks.stop_all() if self.program_tasks is not None else []
+                task_facts = self.program_tasks.projection() if self.program_tasks is not None else None
+                for view in (task_facts or {}).get('results', []) + stopped:
+                    if view.get('result'): record_direct(view['result'])
+                stop_text = (facts_reply(all_actions, tasks=task_facts) if stopped or all_actions else
+                             '已停止当前运行；已发生的动作和释放状态以执行回执为准。')
+                text = await self._send_reply(stop_text, chat_id, generation)
                 if generation == self.generation:
+                    if self.program_tasks is not None:
+                        self.program_tasks.consume(task_facts['throughSequence'])
                     self.history.append({'role': 'assistant', 'content': text})
                 outcome = 'cancelled'
                 return
@@ -627,6 +655,14 @@ class Agent:
                         'remainingActionAttempts': max(0, self.lua_limits.actions - actions_used),
                         'remainingSeconds': max(0, self.lua_limits.seconds - lua_seconds),
                         'maxSourceUtf8Bytes': lua_agent.SOURCE_BYTES}}
+                task_projection = self.program_tasks.projection() if self.program_tasks is not None else None
+                if task_projection is not None:
+                    runtime_data['runtimeTasks'] = task_projection
+                    for view in task_projection['results']:
+                        # Model projections can be bounded summaries; host outcome
+                        # calculations always use the retained canonical receipt.
+                        result = self.program_tasks.records[view['taskId']]['view'].get('result')
+                        if result: record_direct(result)
                 if handoffs:
                     runtime_data['interruptedRuns'] = handoffs
                     runtime_data['interruptedRunCoverage'] = {
@@ -635,7 +671,8 @@ class Agent:
                 if all_actions or last_program is not None:
                     runtime_data['runtimeOutcome'] = {
                         'runId': run.id, 'programStatus': last_program.get('status') if last_program else None,
-                        'taskOutcome': task_outcome(all_actions, not lua_failure, (last_program or {}).get('actionState')),
+                        'taskOutcome': task_outcome(all_actions, not lua_failure, (last_program or {}).get('actionState'),
+                                                    (task_projection or {}).get('active', ())),
                         'goalOutcome': goal_outcome(all_actions, not lua_failure, (last_program or {}).get('actionState')),
                         'notice': 'Only host receipts are evidence. Preserve partial progress; unknown is not success.'}
                 request.append({'role': 'user', 'content': json.dumps(runtime_data, ensure_ascii=False)})
@@ -645,6 +682,8 @@ class Agent:
                     tracing.trace.emit("agent_result_discarded", reason="newer_generation_after_llm",
                                        current_generation=self.generation)
                     return
+                if task_projection is not None:
+                    self.program_tasks.consume(task_projection['throughSequence'])
                 calls = message.get("tool_calls")
                 if calls:
                     if not isinstance(calls, list):
@@ -694,7 +733,7 @@ class Agent:
                                     tracing.trace.emit('lua_tool_result', operation=operation, result=reply,
                                                        **tool_result_metrics(operation, reply))
                                     if operation in atomic_operations.ACTIONS:
-                                        all_actions.append(copy.deepcopy(reply))
+                                        record_direct(reply)
                                         if not reply.get('blocked'):
                                             last_atomic_action = reply
                                             if ((reply.get('valid') is not True or reply.get('status') != 'completed')
@@ -710,7 +749,7 @@ class Agent:
                                     result = await executor.execute(source, chat_id=chat_id,
                                         limits=replace(self.lua_limits, seconds=seconds, calls=remaining,
                                                        actions=max(0,self.lua_limits.actions-actions_used)),
-                                        allow_actions=not atomic_halted, on_result=observe_lua)
+                                        allow_actions=not atomic_halted and not task_notification, on_result=observe_lua)
                                 finally:
                                     lua_seconds += executor.elapsed
                                     actual = executor.receipt
@@ -899,6 +938,9 @@ class Agent:
                     if filtered != text.strip():
                         text = '程序已正常结束；整体目标是否完成尚未确认。' + filtered
                 # The entire actual sent text is retained in history, including bounded truncation.
+                task_facts = self.program_tasks.projection() if self.program_tasks is not None else None
+                if all_actions or last_program is not None or task_facts and (task_facts['active'] or task_facts['results']):
+                    text = facts_reply(all_actions, last_program, task_facts)
                 text = " ".join(text.replace("\0", "").split())
                 if len(text.encode("utf-16-le")) > 800:
                     text = text.encode("utf-16-le")[:794].decode("utf-16-le", errors="ignore") + "..."
@@ -909,6 +951,8 @@ class Agent:
                     return
                 text = await self._send_reply(text, chat_id, generation)
                 if generation == self.generation:
+                    if task_facts is not None:
+                        self.program_tasks.consume(task_facts['throughSequence'])
                     print(f"{'Terminal reply' if self.local_input else 'Chat sent'}: generation={generation}", file=sys.stderr, flush=True)
                     messages.append({"role": "assistant", "content": text})
                     self.history.extend(history_receipts(messages[base:]))
@@ -930,10 +974,16 @@ class Agent:
                 text = movement_loop.final_text()
             else:
                 text = "本轮预算已用尽，未确认任务完成。"
+            task_facts = self.program_tasks.projection() if self.program_tasks is not None else None
+            if all_actions or task_facts is not None:
+                text = facts_reply(all_actions, last_program, task_facts, error=str(error))
+                text += '本轮预算已用尽。'
             if generation == self.generation:
                 try:
                     text = await self._send_reply(text,chat_id,generation)
                     if generation == self.generation:
+                        if task_facts is not None:
+                            self.program_tasks.consume(task_facts['throughSequence'])
                         self.history.append({"role":"assistant","content":text})
                 except (BridgeError,OSError):
                     tracing.trace.emit("budget_reply_failed")
@@ -957,10 +1007,13 @@ class Agent:
                             self.history.append({'role': 'assistant', 'content': text})
                     except (BridgeError,OSError):
                         tracing.trace.emit("movement_failure_reply_failed")
-                elif self.server_ai:
+                elif self.server_ai or all_actions or last_program is not None:
                     try:
-                        text = await self._send_reply('AI 未完成任务：' + str(error)[:250], chat_id,generation)
+                        task_facts = self.program_tasks.projection() if self.program_tasks is not None else None
+                        text = await self._send_reply(facts_reply(all_actions, last_program, task_facts, error=str(error)), chat_id,generation)
                         if generation == self.generation:
+                            if task_facts is not None:
+                                self.program_tasks.consume(task_facts['throughSequence'])
                             self.history.append({'role': 'assistant', 'content': text})
                     except (BridgeError, OSError):
                         tracing.trace.emit('server_ai_failure_reply_failed')
@@ -998,15 +1051,16 @@ class Agent:
             # outcome retains its existing lifecycle meaning. A normal model
             # return alone cannot establish that the player's task was achieved.
             action_result = first_atomic_failure if first_atomic_failure is not None else last_atomic_action
-            task_status = task_outcome(all_actions, lua_failure is None and outcome == 'completed',
-                                       (last_program or {}).get('actionState'))
+            task_status = task_outcome(all_actions, lua_failure is None,
+                                       (last_program or {}).get('actionState'),
+                                       self.program_tasks.projection()['active'] if self.program_tasks is not None else ())
             if first_atomic_failure is not None or lua_failure is not None or outcome != "completed":
                 if outcome == 'arrived':
                     task_status = 'completed'
             elif movement_loop.active and last_atomic_action is None:
                 task_status = "completed" if movement_loop.terminal == "arrived" else "not_completed"
             run.goal_outcome = 'completed' if outcome == 'arrived' else goal_outcome(
-                all_actions, outcome == 'completed' and lua_failure is None, (last_program or {}).get('actionState'))
+                all_actions, lua_failure is None, (last_program or {}).get('actionState'))
             task_result = {"task_outcome": task_status, 'goal_outcome': run.goal_outcome,
                            'program_outcome': last_program.get('status') if last_program is not None else None,
                            "action_outcome": action_result.get("status", "unknown") if action_result is not None else None,
@@ -1053,6 +1107,7 @@ class Agent:
         return text
 
     async def close(self):
+        self._closing = True
         self._invalidate_turn('cancelled')
         if self.server_ai and not self.bridge._closed:
             try:
@@ -1063,6 +1118,8 @@ class Agent:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        if self.program_tasks is not None:
+            await self.program_tasks.close()
 
 
 async def terminal_loop(agent, bridge, events, stream=None):

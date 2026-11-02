@@ -77,7 +77,8 @@ internal sealed class TaskSlot
         try
         {
             var stopped=Record.Started?Task.Stop(frame,status,reason):new Result(status,reason,null,true,InputsAcquired:false);
-            return Finish(stopped.Status=="unknown"||!stopped.InputsReleased?stopped:stopped with{Status=status,Reason=reason,EffectVerified=false});
+            return Finish(stopped.Status=="unknown"||!stopped.InputsReleased||stopped.Status=="completed"&&stopped.EffectVerified
+                ?stopped:stopped with{Status=status,Reason=reason,EffectVerified=false});
         }
         catch(Exception e){return Finish(new("unknown","task_cleanup_unconfirmed",null,false,ReasonDetail:e.Message));}
     }

@@ -27,7 +27,7 @@ class AgentRun:
         return f'{self.generation}:{self.chat_id}'
 
 
-def task_outcome(actions, program_completed=True, action_state=None):
+def task_outcome(actions, program_completed=True, action_state=None, active_tasks=()):
     """Only native composite-task contracts can establish task completion.
 
     Even a verified mine_target concerns one tile, not the entire player goal.
@@ -42,23 +42,87 @@ def task_outcome(actions, program_completed=True, action_state=None):
                 and a.get('endEvidenceStatus') == 'known' and end.get('inputsReleased') is True
                 and end.get('effectVerified') is True and verified_server_mine_task(raw, a.get('evidence') or {}))
     successes = [a for a in tasks if verified(a)]
-    failures = [a for a in actions if a.get('valid') is not True or a.get('status') != 'completed']
+    if any(t.get('status') == 'unknown' for t in active_tasks):
+        return 'partial' if successes else 'unknown'
+    if any(t.get('status') in ('submitting', 'running') for t in active_tasks):
+        return 'running'
+    if tasks and len(successes) == len(tasks):
+        return 'completed'  # Run/Program/other actions cannot rewrite this task fact.
+    failures = [a for a in tasks if a.get('valid') is not True or a.get('status') != 'completed']
     if action_state == 'unknown' or any(a.get('status') == 'unknown' for a in failures):
         return 'partial' if successes else 'unknown'
-    if failures or not program_completed:
+    if failures:
         return 'partial' if successes else 'not_completed'
     return 'completed' if tasks and len(successes) == len(tasks) else 'unknown'
 
 
-def goal_outcome(actions, program_completed=True, action_state=None):
+def goal_outcome(actions, program_completed=True, action_state=None, goal_contract=None):
     # There is no general natural-language goal contract. Failures can still
     # expose confirmed progress without upgrading a single task into that goal.
     failures = [a for a in actions if a.get('valid') is not True or a.get('status') != 'completed']
+    # No inferred natural-language goal relevance. Only an explicit host target
+    # contract may turn verified destructive progress into goal partial.
+    if goal_contract and any(a.get('operation') == goal_contract.get('operation')
+            and a.get('targetTask') == goal_contract.get('targetTask')
+            and task_outcome([a]) == 'completed' for a in actions):
+        return 'partial'
     if not failures and program_completed and action_state != 'unknown':
         return 'unknown'
-    if any(a.get('valid') is True and a.get('status') == 'completed' for a in actions):
-        return 'partial'
-    return 'unknown' if action_state == 'unknown' or any(a.get('status') == 'unknown' for a in failures) else 'not_completed'
+    return ('not_completed' if goal_contract and failures and action_state != 'unknown'
+            and not any(a.get('status') == 'unknown' for a in failures) else 'unknown')
+
+
+def facts_reply(actions=(), program=None, tasks=None, error=None):
+    """Construct execution feedback from host receipts, never from model prose.
+
+    One clause per important class prevents a success/failure priority branch
+    hiding another fact. Bounded reasons are diagnostics, never instructions.
+    """
+    rows = list(actions)
+    task_views = [] if tasks is None else tasks.get('results', []) + tasks.get('active', [])
+    for view in task_views:
+        if view.get('result'):
+            rows.append(view['result'])
+    unique = {}
+    for i, row in enumerate(rows):
+        unique[(row.get('actionId') or ('local', i), row.get('operation'))] = row
+    rows = list(unique.values())
+    clauses = []
+    completed = [a for a in rows if a.get('valid') is True and a.get('status') == 'completed']
+    if completed:
+        ops = ','.join(dict.fromkeys(a.get('operation', 'action') for a in completed))
+        clauses.append('已核验动作：' + ops[:64] + '。')
+    children = []
+    for row in rows:
+        task = row.get('task') or (row.get('evidence') or {}).get('task') or {}
+        for child in (task.get('progress') or {}).get('children', [])[:16]:
+            proof = child.get('result') or {}
+            if child.get('status') == 'completed' and proof.get('effectVerified') is True and proof.get('inputsReleased') is True:
+                children.append(str(child.get('taskName', 'child')))
+    if children:
+        clauses.append('已核验子步骤：' + ','.join(dict.fromkeys(children))[:64] + '；不单独证明目标进展。')
+    failed = [a for a in rows if a.get('status') in ('failed', 'timeout', 'cancelled', 'unknown') or a.get('valid') is False]
+    if failed:
+        states = ','.join(dict.fromkeys(str(a.get('status', 'unknown')) for a in failed))
+        reasons = ','.join(dict.fromkeys(str(a.get('reason', 'unconfirmed'))[:50] for a in failed))
+        clauses.append('行动未完成或未确认：' + states[:40] + '（' + reasons[:72] + '）。')
+    if any(a.get('status') == 'unknown' for a in failed):
+        clauses.append('执行或输入释放无法确认，不自动重试。')
+    if any(a.get('operation') == 'use_item' for a in completed):
+        clauses.append('仅确认物品使用周期，命中或其他实际效果未确认。')
+    if any(v.get('status') in ('submitting', 'running') for v in task_views):
+        clauses.append('已受理游戏任务仍在执行；程序结束不代表任务完成。')
+    if program is not None and program.get('status') != 'completed':
+        clauses.append('Lua 程序未完成（' + str(program.get('status'))[:32] + '）。')
+    elif program is not None and not rows:
+        observation = program.get('lastObservation') or {}
+        clauses.append('Lua 程序已正常结束。')
+        if observation.get('operation'):
+            clauses.append('已取得观察：' + str(observation['operation'])[:48] + '；观察不证明目标已完成。')
+    if error:
+        clauses.append('本轮决策/回复未完成；已确认的执行事实保留。')
+    clauses.append('整体目标完成情况尚未确认。')
+    return ''.join(clauses)
 
 
 def direct_action_receipt(operation, lifecycle, result=None):

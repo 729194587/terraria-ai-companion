@@ -3,6 +3,7 @@ import json
 from inspect import signature
 
 import atomic_operations as atomic
+import program_tasks
 from lua_runtime import Limits
 from lua_worker import SOURCE_BYTES, REQUEST_BYTES, VALUE_BYTES, MAX_DEPTH, MAX_NODES, worker
 from server_ai import operations_for_capabilities
@@ -73,6 +74,9 @@ def capability_manifest(bridge, supported=None):
             row['relatedReadOnlyApis'] = [op for op in related if op in supported and op in atomic.READS]
             row['relatedActionApis'] = [op for op in related if op in supported and op not in atomic.READS]
         categories.append(row)
+    if program_tasks.available(bridge) and 'mine_target' in supported:
+        categories.append(dict(category='Program任务协作',status='Limited',callableApis=sorted(program_tasks.NAMES),
+            notExposed=[],boundary='宿主提交/查询/等待/取消；仅既有mine_target；C#唯一执行权威，未知不重放，无自动恢复。'))
     return dict(schemaVersion=1, source='ServerAiBridge bind handshake + backend whitelist',
                 scope='当前连接/服务器AI；不是原生游戏全部功能或实机验收承诺',
                 levels={'Supported': '所列有界接口开放', 'Limited': '部分能力开放，限制见各API',
@@ -118,7 +122,7 @@ def runtime_reference(supported):
     text = f'''Lua 5.4；只提交execute_lua({{source="完整程序"}})，源码≤{SOURCE_BYTES} UTF-8字节，无Markdown围栏。
 全局基础函数：{','.join(BASE_GLOBALS)}；宿主函数：api、log、受控pcall；注入辅助函数explore、sense_world按下文依赖使用。
 标准库白名单：{libraries}。字符串用string.sub(row,start,end)，字符串metatable已移除，不能row:sub()。没有_G、os/io/package/require/load/debug/coroutine/xpcall/print或Python对象；不需要枚举环境来发现函数。
-api(name,args)仅调用API Contract所列名字，省略args等价{{}}；同步等待结果，无异步/逐Tick模型请求。动作前后按需观察；所有循环有界，为核验留预算。
+api(name,args)仅调用API Contract所列名字，省略args等价{{}}；普通原子API同步等待终态，任务协作API按契约等待ACK或指定任务；无逐Tick模型请求。动作前后按需观察；所有循环有界，为核验留预算。
 JSON：数组1起始，slot/x/y数据编号保持API约定；json.null用于比较/保留null，nil会移除表项。空{{}}是对象，json.array()标记空数组，json.object()标记对象；json没有encode/decode。
 纯数组/对象直接编码；return {{10,20,30,summary="collected"}}编码为{{"$luaTable":{{"version":1,"kind":"mixed","array":[10,20,30],"fields":{{"summary":"collected"}}}}}}。含保留键$luaTable的纯对象以kind="object",fields封套转义，嵌套同规则；API参数仍须纯对象/数组，不接受混合表封套。循环/稀疏键/函数/非有限数为serialization_error，真实资源超限为value_limit。
 每次程序默认指令上限{limits.instructions}、Lua内存{limits.memory}字节；API请求帧≤{REQUEST_BYTES}字节（含封套）、返回值≤{VALUE_BYTES}字节、深度≤{MAX_DEPTH}、节点≤{MAX_NODES}。整数为有符号64位范围，浮点须有限，字符串UTF-8；API整数可用2113.0，不接受2113.5，不静默取整。
@@ -142,6 +146,15 @@ def server_contract(bridge, tool):
     supported = exposed_operations(bridge)
     definitions = atomic.server_tools(supported)
     manifest = capability_manifest(bridge, supported)
+    task_reference = ''
+    if program_tasks.available(bridge):
+        definitions += program_tasks.definitions()
+        task_reference = ('\nProgram/Task 协作：额外宿主API见定义。submit_task仅支持mine_target，返回稳定taskId与受理状态；'
+            'query_task/await_task/cancel_task需明确taskId，等待到期不取消任务。'
+            '普通新聊天/Program结束保留游戏Task；显式停止须确认取消与释放。runtimeTasks含活动状态与未消费结果，不授权自动重试。'
+            '活动或unknown任务阻止新身体变更，替换前显式取消并确认终态。'
+            '危险由游戏Tick安全中断，resume_task只对可信危险中断显式重新受理，重新验证目标/工具/环境；不自动恢复。'
+            'Task完成不等于Goal完成；Program/Run失败不改写Task，最终模型失败不重放动作。')
     # Runtime result envelopes are shared rules; operation details live only in descriptions.
     envelopes = ('观察通常返回{valid,available,data,worldSessionId,actorGeneration,actorSlot,gameUpdate,observedAtUnixMs,clock,binding}；'
                  '例外见各API。多次调用非同帧；coverage/complete/truncated/未知各自独立；runtimeInventory是宿主AI背包摘要。')
@@ -159,4 +172,4 @@ def server_contract(bridge, tool):
     projected_tool = json.loads(json.dumps(tool))
     projected_tool['function']['description'] = ('执行完整有界Lua 5.4 source，内部api同步等待原子结果；'
         '唯一参数source。以系统的Capability Manifest、API Contract和Lua Runtime Reference为准；程序返回不证明游戏目标完成。')
-    return instructions, [projected_tool]
+    return instructions + task_reference, [projected_tool]

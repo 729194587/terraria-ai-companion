@@ -5,6 +5,7 @@ namespace CompanionBridge.ServerIpc;
 
 internal interface IMineTargetWorld
 {
+    string InterruptionReason()=>null;
     string Prepare();
     void SelectTool();
     string Revalidate();
@@ -24,10 +25,11 @@ internal sealed class MineTargetTask : AbstractCompanionTask
     internal override string Name=>"mine_target";
     internal override string Phase=>phase;
     internal override object Progress=>new{stage=phase,completedChildren,settledChildren=children.Count,children,target=world.Target,recoveryAttempts=0};
-    internal override Result Prepare(AiReadOnlyProtocol.Identity frame)=>world.Prepare() is {} why?Failed(why):null;
+    internal override Result Prepare(AiReadOnlyProtocol.Identity frame)=>(world.InterruptionReason()??world.Prepare()) is {} why?Failed(why):null;
     internal override void Start(AiReadOnlyProtocol.Identity frame){world.SelectTool();phase="observe";}
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)
     {
+        if(world.InterruptionReason() is {} danger)return Stop(frame,"cancelled",danger);
         if(phase=="mining")
         {
             if(child is NativeActionTask leaf&&!leaf.Started&&world.Revalidate() is {} changed)return Stop(frame,"failed",changed);
@@ -57,5 +59,14 @@ internal sealed class MineTargetTask : AbstractCompanionTask
         var approach=world.FindApproach();if(!approach.HasValue)return Failed("no_safe_mining_stance_in_local_window");
         phase="navigating";child=new NativeActionTask(native,"navigate_to_landing_region",approach.Value,taskId+"/approach");
         RunChild(child,frame,1800);return Running();
+    }
+    internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)
+    {
+        var stopped=base.Stop(frame,status,reason);
+        // A child completion during stop still needs the root's effect verification.
+        if(phase=="mining"&&lastResult?.Status=="completed"&&lastResult.EffectVerified
+            &&lastResult.InputsReleased&&world.TargetAbsent())
+            return new("completed","mine_target_verified",lastResult.Evidence,true,true,lastResult.InputsAcquired);
+        return stopped;
     }
 }

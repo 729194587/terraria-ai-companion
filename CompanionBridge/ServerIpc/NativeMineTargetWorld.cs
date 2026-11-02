@@ -18,7 +18,19 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
     private Item item;
     private string shape;
     private long revision;
-    internal NativeMineTargetWorld(AiReadOnlyProtocol.Identity identity,JsonElement args){this.identity=identity;this.args=args.Clone();}
+    private readonly int initialLife;
+    internal NativeMineTargetWorld(AiReadOnlyProtocol.Identity identity,JsonElement args){this.identity=identity;this.args=args.Clone();initialLife=Player.statLife;}
+    public string InterruptionReason()
+    {
+        ServerAiNativeActions.Require(identity);
+        if(Player.statLife<initialLife)return "task_interrupt_health_decreased";
+        if(Player.lavaWet)return "task_interrupt_lava_contact";
+        // Bounded native safety check, on the game thread; no model/TCP wait.
+        foreach(var npc in Main.npc)
+            if(npc.active&&!npc.friendly&&npc.damage>0&&Microsoft.Xna.Framework.Vector2.DistanceSquared(npc.Center,Player.Center)<=160*160)
+                return "task_interrupt_nearby_hostile";
+        return null;
+    }
     public object Target=>new{x,y,typeId=type,toolSlot=slot,scope="one observed vanilla ore tile; local stance search; no automatic retry"};
     public string Prepare()
     {

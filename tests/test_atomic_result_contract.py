@@ -240,9 +240,11 @@ class AgentContractTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(status == 'completed', result['success'])
                 self.assertEqual(status == 'completed', result['action_success'])
                 self.assertEqual(status, result['result']['status'])
-                self.end_and_cost(records, 'completed', 'unknown' if status == 'completed' else 'not_completed', status)
+                self.end_and_cost(records, 'completed' if status == 'completed' else 'failed', 'unknown', status)
                 text = next(p['text'] for c, p in game.sent if c == 'send_chat')
-                self.assertEqual('模型声称完成' if status == 'completed' else '行动未完成：verified_effect', text)
+                self.assertNotIn('模型声称完成', text)
+                self.assertIn('已核验动作：mine_tile' if status == 'completed' else 'verified_effect', text)
+                self.assertIn('整体目标完成情况尚未确认', text)
                 self.assertEqual(text, next(r['text'] for r in records if r['type'] == 'reply_prepared'))
 
     async def test_successful_reads_do_not_require_action_status(self):
@@ -262,11 +264,11 @@ class AgentContractTests(unittest.IsolatedAsyncioTestCase):
         agent, records = await self.run_agent(game, [tool('mine_tile', '{"x":1,"y":1}'), tool('place_tile', '{"x":2,"y":1}')], max_tool_calls=1)
         self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
         text = next(p['text'] for c, p in game.sent if c == 'send_chat')
-        self.assertIn('行动未完成：verified_effect', text)
+        self.assertIn('verified_effect', text)
         self.assertIn('预算已用尽', text)
         self.assertNotIn('抵达', text)
         self.assertEqual(text, agent.history[-1]['content'])
-        self.end_and_cost(records, 'budget_exhausted', 'not_completed', 'failed')
+        self.end_and_cost(records, 'budget_exhausted', 'unknown', 'failed')
         self.assertEqual('verified_effect', next(r for r in records if r['type'] == 'agent_end')['action_reason'])
         self.assertFalse(next(r for r in records if r['type'] == 'tool_result')['success'])
 
@@ -278,15 +280,17 @@ class AgentContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(results[1]['result']['blocked'])
         self.assertFalse(results[1]['result_valid'])
         self.assertFalse(results[1]['success'])
-        self.assertEqual('行动未完成：verified_effect', next(p['text'] for c, p in game.sent if c == 'send_chat'))
-        self.end_and_cost(records, 'completed', 'not_completed', 'failed')
+        text=next(p['text'] for c, p in game.sent if c == 'send_chat')
+        self.assertIn('verified_effect',text)
+        self.assertNotIn('已核验动作',text)
+        self.end_and_cost(records, 'failed', 'unknown', 'failed')
 
     async def test_non_movement_budget_has_generic_feedback_and_no_fake_movement_terminal(self):
         game = Game()
         agent, records = await self.run_agent(game, [tool('inspect_tile', '{"x":1,"y":1}')], max_model_calls=1)
         self.assertEqual('本轮预算已用尽，未确认任务完成。', game.sent[-1][1]['text'])
         self.assertNotEqual('budget_exhausted', agent.last_movement_result['status'])
-        self.end_and_cost(records, 'budget_exhausted', 'not_completed', None)
+        self.end_and_cost(records, 'budget_exhausted', 'unknown', None)
 
     async def test_movement_budget_uses_movement_feedback(self):
         game = Game()
@@ -294,4 +298,4 @@ class AgentContractTests(unittest.IsolatedAsyncioTestCase):
         agent, records = await self.run_agent(game, [tool('move', '{"direction":"right","duration_ms":100}'), tool()], max_tool_calls=1)
         self.assertEqual('budget_exhausted', agent.last_movement_result['status'])
         self.assertIn('未确认抵达目标', game.sent[-1][1]['text'])
-        self.end_and_cost(records, 'budget_exhausted', 'not_completed', None)
+        self.end_and_cost(records, 'budget_exhausted', 'unknown', None)
