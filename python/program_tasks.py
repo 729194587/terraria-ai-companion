@@ -144,8 +144,10 @@ class TaskCoordinator:
         except NotAdmittedError as error:
             record['view']['dispatchState'] = 'not_admitted'
             self._finish(record, atomic.not_admitted_result('mine_target', str(error)))
-        except (BridgeError, OSError, ValueError, KeyError, TypeError) as error:
+        except Exception as error:
             self._unknown(record, error)
+            diagnostics.emit('game_task_monitor_failed', taskId=record['view']['taskId'],
+                             error_type=type(error).__name__, reason=str(error)[:256])
         finally:
             record['ack'].set()
 

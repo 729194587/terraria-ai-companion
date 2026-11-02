@@ -267,8 +267,42 @@ class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
         _, model, game = await self.run_agent(program('not valid lua'),
             program("return api('inspect_inventory',{mode='selected'})"), final('读取完成'))
         self.assertEqual('script_error', lua_results(model)[0]['status'])
-        self.assertIn('已取得观察：inspect_inventory', next(p['text'] for c, p in game.sent if c == 'send_chat'))
+        self.assertEqual('读取完成', next(p['text'] for c, p in game.sent if c == 'send_chat'))
         self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
+
+    async def test_read_only_program_preserves_answers_from_ore_terrain_and_inventory_observations(self):
+        cases = (
+            ("return api('scan_tiles',{minX=10,minY=20,maxX=10,maxY=20,tileTypes={7}})",
+             'scan_tiles', {'tiles': [{'x': 10, 'y': 20, 'typeId': 7}]}, '铜矿位于 Tile (10,20)。'),
+            ("return api('observe_terrain',{})", 'observe_terrain', None, '已着地；碰撞框宽20、高42像素。'),
+            ("return api('inspect_inventory',{mode='selected'})", 'inspect_inventory',
+             {'items': [{'name': '木头', 'stack': 20}]}, '选中槽有木头20个。'),
+        )
+        for source, operation, data, answer in cases:
+            with self.subTest(operation=operation):
+                game = RuntimeGame()
+                original = game.command
+                def command(cmd, **params):
+                    reply = original(cmd, **params)
+                    if cmd == 'query_atomic' and params['operation'] == operation:
+                        reply['data']['data'] = data
+                    return reply
+                game.command = command
+                agent, model, game = await self.run_agent(program(source), final(answer), game=game)
+                receipt = lua_results(model)[0]
+                self.assertTrue(receipt['programCompleted'], receipt)
+                self.assertEqual(0, receipt['actions'])
+                self.assertEqual('idle', receipt['actionState'])
+                self.assertEqual(operation, receipt['lastObservation']['operation'])
+                self.assertEqual(answer, next(p['text'] for c, p in game.sent if c == 'send_chat'))
+                self.assertEqual(answer, agent.history[-1]['content'])
+                self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
+
+    async def test_program_return_without_reads_cannot_supply_execution_facts(self):
+        _, _, game = await self.run_agent(program('return {success=true}'), final('所有矿物都采集好了。'))
+        text = next(p['text'] for c, p in game.sent if c == 'send_chat')
+        self.assertNotIn('所有矿物都采集好了', text)
+        self.assertIn('整体目标完成情况尚未确认', text)
 
     async def test_lua_call_budget_stops_internal_loop_and_later_direct_action(self):
         records = []

@@ -225,6 +225,13 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([],json.loads(model.requests[3][-1]['content'])['runtimeTasks']['results'])
         self.assertEqual(1,await self.starts())
 
+    async def test_read_only_program_still_uses_host_facts_while_task_is_active(self):
+        model=Model(program(SUBMIT+'return t'),program("return api('get_player_state',{})"),final('生命值为73。'))
+        agent=self.make_agent(model);self.receive(agent,1);await agent.task
+        self.assertIn('仍在执行',self.bridge.reply_receipts[-1]['text'])
+        self.assertNotEqual('[AI] 生命值为73。',self.bridge.reply_receipts[-1]['text'])
+        self.assertEqual(1,await self.starts())
+
     async def test_new_chat_keeps_task_and_stop_cancels_without_model(self):
         model=Model(program(SUBMIT+"return api('await_task',{taskId=t.taskId,milliseconds=30000})"),final('new'))
         agent=self.make_agent(model);self.receive(agent,1);old=agent.task
@@ -273,6 +280,36 @@ class M3ResultTests(unittest.TestCase):
 
 
 class M3MailboxTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ordinary_monitor_exceptions_set_unknown_keep_identity_and_never_replay(self):
+        from types import SimpleNamespace
+        for phase in ('start', 'action'):
+            with self.subTest(phase=phase):
+                requests=[];notices=[];events=[]
+                def request(op, task_id, **params):
+                    requests.append((op,task_id))
+                    if op == phase:
+                        raise RuntimeError('fixture unexpected monitor failure')
+                    return {'actionId':task_id,'operation':'mine_target','status':'running',
+                            'targetTask':{'x':10,'y':20}}
+                caps=['server_ai_atomic_v1','server_ai_actions_v1','server_ai_tasks_v1','server_ai_program_tasks_v1']
+                bridge=SimpleNamespace(hello={'capabilities':caps},supported_atomic_operations={'mine_target'},task_request=request)
+                manager=TaskCoordinator(bridge,on_ready=lambda:notices.append(True))
+                with patch('program_tasks.diagnostics.emit',side_effect=lambda kind,**data:events.append((kind,data))):
+                    view=await manager.invoke('submit_task',{'operation':'mine_target','arguments':{'x':10,'y':20}})
+                    record=manager.records[view['taskId']]
+                    await asyncio.wait_for(asyncio.shield(record['monitor']),2)
+                self.assertTrue(record['ack'].is_set());self.assertTrue(record['done'].is_set())
+                result=record['view']['result']
+                self.assertEqual('unknown',result['status']);self.assertEqual(view['taskId'],result['actionId'])
+                self.assertFalse(result['retryAllowed']);self.assertTrue(manager.blocked())
+                self.assertEqual([True],notices);self.assertEqual(1,manager.sequence)
+                event_data=next(data for kind,data in events if kind=='game_task_monitor_failed')
+                self.assertEqual('RuntimeError',event_data['error_type']);self.assertEqual(view['taskId'],event_data['taskId'])
+                refused=await manager.invoke('submit_task',{'operation':'mine_target','arguments':{'x':10,'y':20}})
+                self.assertEqual('not_admitted',refused['dispatchState'])
+                self.assertEqual(1,sum(op=='start' for op,_ in requests))
+                await manager.close()
+
     async def test_bounded_batches_keep_unread_results_and_late_errors_do_not_rewrite_terminal(self):
         manager=TaskCoordinator(object())
         for i in range(12):

@@ -939,7 +939,15 @@ class Agent:
                         text = '程序已正常结束；整体目标是否完成尚未确认。' + filtered
                 # The entire actual sent text is retained in history, including bounded truncation.
                 task_facts = self.program_tasks.projection() if self.program_tasks is not None else None
-                if all_actions or last_program is not None or task_facts and (task_facts['active'] or task_facts['results']):
+                program_calls = (last_program or {}).get('trace', ())
+                read_only_program = (any(call.get('operation') in atomic_operations.READS for call in program_calls)
+                    and all(call.get('operation') in atomic_operations.READS | atomic_operations.UTILITIES
+                            for call in program_calls))
+                program_requires_facts = last_program is not None and (
+                    not read_only_program or last_program.get('status') != 'completed' or last_program.get('actions', 0) > 0
+                    or last_program.get('actionState') != 'idle'
+                    or any((last_program.get('tasks') or {}).get(key) for key in ('active', 'results')))
+                if all_actions or program_requires_facts or task_facts and (task_facts['active'] or task_facts['results']):
                     text = facts_reply(all_actions, last_program, task_facts)
                 text = " ".join(text.replace("\0", "").split())
                 if len(text.encode("utf-16-le")) > 800:

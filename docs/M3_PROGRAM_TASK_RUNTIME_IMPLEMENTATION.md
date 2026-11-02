@@ -29,7 +29,7 @@
 6. **最小危险处理采用终止及显式新受理。** 游戏 Tick 检查相对初始生命下降、熔岩接触和 160 世界像素内有接触伤害的非友好活动 NPC，沿原 Stop 清理子任务并保留结构化原因/证据，不发起战斗/躲避。无进展沿原导航失败链处理。只有可信 cancelled、task_interrupt_* 原因及真实释放证据才允许显式 resume_task；新 GUID/resumedFrom，游戏侧重新 Prepare 验证环境、目标、工具和位置。不复用旧句柄或自动恢复，unknown/明确停止/普通失败不可经此入口恢复。
 7. **结果通知不授予变更权限。** 迟到结果唤醒通知 Run，复用最后真人聊天身份和新 generation 回复授权；该 Run 的 Program 禁止新任务、恢复或普通身体变更，避免宿主通知成为自动重试授权。
 8. **结果分层。** 最终模型失败只令 Run 失败，已完成 Program/Task 保持原事实。多个 Task 可产生 TaskOutcome=partial。自然语言 Goal 缺少明确目标契约时保守 unknown；只有宿主显式目标契约匹配且有已验证目标效果才能 Goal partial，选工具/导航不够；不新增自然语言目标分类器。
-9. **事实回复由宿主构造。** 执行过 Program/动作或存在任务事实时，用结构化模板同时呈现成功、失败/unknown、子步骤、物品效果限制及模型故障；模型文本不作为执行事实输出。普通聊天保留模型回复。执行回复因此更简洁、保守，不承诺整体目标完成。
+9. **执行事实回复由宿主构造。** 有动作、任务事实、Program 失败或执行状态不确定时，用结构化模板同时呈现成功、失败/unknown、子步骤、物品效果限制及模型故障；模型文本不作为执行事实输出。普通聊天及正常完成的纯只读 Program 保留模型回答，让玩家获得观察中的实际信息；原有整体目标声明限制仍保留。没有读取的脚本自述不作为执行事实。
 10. **独立上下文。** 后台观察不继承旧 Program 的命令所有者、Run trace 或已结束 evidence bundle。真实跨层测试发现并修正了旧上下文继承及兜底已反馈结果未消费造成再次唤醒的问题。
 
 ## Lua 宿主 API
@@ -61,6 +61,13 @@ return {taskId=t.taskId,status=t.status} -- Program 结束，Task 继续
 - 独立 index 快照排除了原有探索/Worker/诊断修改：78 项定向回归通过（M3、M1 结果/中断、既有 mine_target、M2 能力交集/重复 ID/未受理）；最后补充活动状态投影后 24 项通过。最终能力围栏下 M3 的 17 项实际用例全部通过，同命令额外两个测试选择器类名误写为 AgentTests，产生 loader 错误；改用 AgentLuaTests 单独复跑两项通过，不把 loader 错误计为 M3 产品失败或掩盖原日志。
 - Lua/聊天另 40 项运行完成：38 项通过，两个旧 TaskOutcome 断言按 M3 更新后单独复验通过。旧 M1 六条结果断言也已在 78 项结果组中修正并通过；没有放宽效果或释放校验。
 - 日志：`.local/m3-staged-final.log`、`m3-staged-status-final.log`、`m3-capability-final.log`、`m3-lua-chat-final.log`、`m3-lua-assertions-final.log`、`m3-csharp-capability-final.log`、`m3-build-final.log`。早期 `m3-python-initial/second`、`m3-regression-initial`、`m3-results-final`、`m3-sync-and-authority` 等日志保留，未改写原始证据。
+
+## 审查收尾：D1 / A1（2026-11-03）
+
+- D1：依据宿主 trace 确认程序至少调用过一个只读 API，且只调用读取/宿主等待、正常完成、无变更尝试或未决执行状态、无任务事实时，保留模型基于观察生成的实际答案。动作、活动/未消费任务结果、Program 失败和 unknown 继续使用宿主事实模板；无读取的脚本自报不授予执行事实。原有整体目标声明过滤和各层结果核验不变。
+- A1：monitor 的部分异常列表确实遗漏 RuntimeError 等普通异常。仅把 `_run` 的通用出口扩大为 Exception，沿原 `_unknown` 保留 taskId、结算及通知一次，并记录 `game_task_monitor_failed` 的异常类型和原因。不捕获 BaseException/CancelledError，不引入重连、恢复或重放。
+- 修改：`python/agent.py`、`python/program_tasks.py`、`tests/test_lua_agent.py`、`tests/test_m3_program_tasks.py` 及本说明。新增矿石/地形/背包只读答案、纯脚本自报仍受限、活动任务读取仍受宿主约束，以及 monitor 启动/轮询异常的回归。
+- 独立 index 快照 **33 项定向测试通过**：整个 test_lua_agent、M3MailboxTests，以及活动任务读取、Program 取消/显式取消、新聊天/停止、迟到结果通知、通知变更禁令、释放 unknown 禁止重放、最终模型故障等 7 项跨层场景。普通 monitor 异常包含启动/轮询两个子案例，只读回答包含三类查询子案例。日志 `.local/m3-review-fixes-final.log`；无全量测试。此轮仅 Python/测试/文档改动，没有重新构建或部署游戏包；跨层执行器与模型仍为替身。
 
 ## 限制与依据
 
