@@ -27,6 +27,9 @@ from observation import project_model_observation
 from movement import move, stop_movement
 from exploration import read_exploration_observation
 from movement_loop import MovementLoop, LoopBudgetExhausted
+from agent_context import ContextManager, ContextBudgetExceeded
+from agent_run import AgentRun, interruption, task_outcome, goal_outcome, final_text
+from agent_tools import ToolExecutor
 
 SYSTEM = """你是 Terraria 中的 AI 玩家，通过游戏内聊天与其他玩家交流。使用对方的语言，简短回答，最多 400 个字符。
 游戏状态相关问题若当前信息不足，必须调用 get_state、get_exploration_observation 或 get_observation；普通聊天不必获取完整观察。不得猜测位置、生命、地形或工具结果。
@@ -89,6 +92,10 @@ def tool_result_metrics(name, result):
             execution.get("inputReleased") is True or execution.get("noOp") is True)
     return {"result_valid": valid, "action_success": action_success,
             "success": valid if action_success is None else action_success}
+
+
+def is_stop_request(text):
+    return text.strip().lower().removeprefix('!ai ').strip() in ('停止', '停下', '停止行动', 'stop')
 
 
 def read_observation(bridge):
@@ -323,7 +330,8 @@ def entity_result(reply):
 
 class Agent:
     def __init__(self, bridge, llm, max_model_calls=8, max_tool_calls=7, max_movement_ms=6000, *,
-                 local_input=False, lua_limits=LuaLimits(), lua_store=None, chat_bridge=None):
+                 local_input=False, lua_limits=LuaLimits(), lua_store=None, chat_bridge=None,
+                 context_manager=None):
         self.bridge, self.llm = bridge, llm
         self.chat_bridge = bridge if chat_bridge is None else chat_bridge
         self.server_ai = chat_bridge is not None
@@ -337,6 +345,11 @@ class Agent:
         self.lua_limits = lua_limits
         self.lua_store = lua_store if lua_store is not None else lua_agent.ProgramStore()
         self._lua_task = None
+        self.context_manager = context_manager or ContextManager()
+        self.runs = deque(maxlen=32)
+        self.active_run = None
+        self._interrupted = deque(maxlen=8)
+        self._interrupted_total = 0
         self._active_turn_id = None
         self._reply_cancel = threading.Event()
         self.max_model_calls, self.max_tool_calls = max_model_calls, max_tool_calls
@@ -380,13 +393,16 @@ class Agent:
         self._seen.add(event["eventId"])
         self._start_turn(event)
 
-    def _invalidate_turn(self):
+    def _invalidate_turn(self, reason='superseded'):
         self._reply_cancel.set()
         self.generation += 1
         self._reply_cancel = threading.Event()
         if self.server_ai:
             self.bridge.invalidate_replies(self.generation)
         if self.task and not self.task.done():
+            if self.active_run is not None:
+                self.active_run.cancel_reason = reason
+                self.active_run.cancel.set()
             tracing.trace.emit("agent_cancel_requested", generation=self.generation - 1,
                                reason="new_input", replacement_generation=self.generation)
             self.task.cancel()
@@ -398,7 +414,7 @@ class Agent:
             raise ValueError('Local instruction must be one nonempty line, at most 2000 characters')
         if 'local_terminal_input_v1' not in self.bridge.hello.get('capabilities', []):
             raise BridgeError('Local input requires local_terminal_input_v1 (Mod 0.1.36+)')
-        self._invalidate_turn()
+        self._invalidate_turn('cancelled' if is_stop_request(text) else 'superseded')
         generation = self.generation
         self._active_turn_id = None
         await self._wait_lua_cleanup()
@@ -425,16 +441,28 @@ class Agent:
         self.history.append({"role": "user", "content": json.dumps(user, ensure_ascii=False)})
         print(f"Chat received: {event['eventId']} sender={event['senderId']}", file=sys.stderr, flush=True)
         if generation is None:
-            self._invalidate_turn()
+            self._invalidate_turn('cancelled' if is_stop_request(event['text']) else 'superseded')
         self._active_turn_id = event['eventId']
         tracing.trace.emit("chat_received", chat_event_id=event["eventId"], generation=self.generation,
                            chat=event)
-        self.task = asyncio.create_task(self._run(self.generation, event["eventId"]))
+        run = AgentRun(self.generation, event['eventId'])
+        run.budgets = dict(modelCalls=self.max_model_calls, modelToolCalls=self.max_tool_calls,
+            luaApiCalls=self.lua_limits.calls, actionAttempts=self.lua_limits.actions,
+            luaSeconds=self.lua_limits.seconds, estimatedInputTokens=self.context_manager.input_budget)
+        self.active_run = run
+        self.runs.append(run)
+        self.task = asyncio.create_task(self._run(self.generation, event["eventId"], run, event['text']))
         self._tasks.add(self.task)
         self.task.add_done_callback(self._tasks.discard)
         generation, chat_id = self.generation, event["eventId"]
         self.task.add_done_callback(lambda task: tracing.trace.emit("agent_task_done",
             generation=generation, chat_event_id=chat_id, cancelled=task.cancelled()))
+        def settle_unstarted(task):
+            if task.cancelled() and run.outcome == 'running':
+                run.outcome = run.cancel_reason or 'cancelled'
+                run.reason, run.phase = run.outcome, 'ended'
+                tracing.trace.emit('agent_end', run_id=run.id, outcome=run.outcome, never_started=True)
+        self.task.add_done_callback(settle_unstarted)
 
     async def _wait_lua_cleanup(self):
         previous = self._lua_task
@@ -443,10 +471,43 @@ class Agent:
             # or send a second cancellation into its mandatory action cleanup.
             await asyncio.gather(asyncio.shield(previous), return_exceptions=True)
 
-    async def _run(self, generation, chat_id):
+    async def _model_request(self, messages, tools, current_start, run, costs):
+        """Retry only a model request; never replay tool execution."""
+        retries = 0
+        overflow_recovered = False
+        reactive = False
+        while True:
+            if run.generation != self.generation:
+                raise asyncio.CancelledError
+            if costs.model_calls >= self.max_model_calls:
+                raise LoopBudgetExhausted('model_call_limit_including_retries')
+            request = self.context_manager.prepare(messages, tools, current_start=current_start,
+                                                   reactive=reactive)
+            run.phase = 'model'
+            costs.request(request)
+            started = time.monotonic()
+            try:
+                return await self.llm.complete(request, tools)
+            except LLMError as error:
+                if error.context_overflow and not overflow_recovered:
+                    overflow_recovered = reactive = True
+                elif error.retryable and retries < 1:
+                    retries += 1
+                    await asyncio.sleep(.1)
+                else:
+                    raise
+                diagnostics.emit('model_request_retry', runId=run.id, retry=retries,
+                                 reason='context_overflow' if reactive else 'transient_error')
+                tracing.trace.emit('model_request_retry', run_id=run.id, retry=retries,
+                                   context_overflow=reactive)
+            finally:
+                costs.model_elapsed_ms += (time.monotonic()-started)*1000
+
+    async def _run(self, generation, chat_id, run, instruction):
         bundle = evidence.Bundle(self.lua_store.directory.parent / 'evidence',metadata={'generation':generation,'chat_event_id':chat_id})
         evidence_token = evidence.current.set(bundle)
-        token = tracing.context.set({"generation": generation, "chat_event_id": chat_id, 'task_id': bundle.id})
+        token = tracing.context.set({"generation": generation, "chat_event_id": chat_id,
+                                     'task_id': bundle.id, 'run_id': run.id})
         started = time.monotonic()
         outcome = "completed"
         movement_loop = MovementLoop(self.max_movement_ms)
@@ -460,6 +521,9 @@ class Agent:
         lua_seconds = 0
         lua_calls = actions_used = 0
         tool_limit = self.max_tool_calls
+        all_actions = []
+        last_program = None
+        executor = None
 
         def mutation_budget_reason():
             # A normally returned program can consume the last API call/second.
@@ -484,6 +548,14 @@ class Agent:
             if generation != self.generation:
                 outcome = 'superseded'
                 return
+            run.phase = 'running'
+            if is_stop_request(instruction):
+                run.phase = 'finalization'
+                text = await self._send_reply('已停止当前运行；已发生的动作和释放状态以执行回执为准。', chat_id, generation)
+                if generation == self.generation:
+                    self.history.append({'role': 'assistant', 'content': text})
+                outcome = 'cancelled'
+                return
             messages = copy.deepcopy(self.history)
             # Freeze the existing bounded event coverage for this turn.
             runtime_context = None
@@ -495,6 +567,9 @@ class Agent:
                                  "serverDroppedCount": self._game_events_dropped}}
             user_index = len(messages) - 1
             base = len(messages)
+            # Handoffs are facts from old runs, not old model replies or authority
+            # to retry. Wait for cleanup before freezing this projection.
+            handoffs = copy.deepcopy(list(self._interrupted))
             for model_index in range(self.max_model_calls):
                 print(f"LLM request: generation={generation}", file=sys.stderr, flush=True)
                 # Only the request copy carries runtime data; base indexes working messages.
@@ -507,20 +582,26 @@ class Agent:
                     user = json.loads(request[user_index]["content"])
                     user.update(runtime_context)
                     request[user_index]["content"] = json.dumps(user, ensure_ascii=False)
-                request.append({"role": "user", "content": json.dumps(
-                    {"runtimeInventory": inventory, 'runtimeLua': {
+                runtime_data = {"runtimeInventory": inventory, 'runtimeLua': {
                         'remainingToolCalls': tool_limit - used,
                         'remainingApiCallsIfExecutedNow': max(0, self.lua_limits.calls - lua_calls) if tool_limit>used else 0,
                         'remainingLuaApiCalls': max(0,self.lua_limits.calls-lua_calls),
                         'remainingActionAttempts': max(0, self.lua_limits.actions - actions_used),
                         'remainingSeconds': max(0, self.lua_limits.seconds - lua_seconds),
-                        'maxSourceUtf8Bytes': lua_agent.SOURCE_BYTES}}, ensure_ascii=False)})
-                costs.request(request)
-                model_started = time.monotonic()
-                try:
-                    message = await self.llm.complete(request, self.tools)
-                finally:
-                    costs.model_elapsed_ms += (time.monotonic() - model_started) * 1000
+                        'maxSourceUtf8Bytes': lua_agent.SOURCE_BYTES}}
+                if handoffs:
+                    runtime_data['interruptedRuns'] = handoffs
+                    runtime_data['interruptedRunCoverage'] = {
+                        'retainedCount': len(handoffs), 'omittedCount': self._interrupted_total-len(handoffs),
+                        'scope': 'last 8 interrupted runs in this process; effects may remain unconfirmed'}
+                if all_actions or last_program is not None:
+                    runtime_data['runtimeOutcome'] = {
+                        'runId': run.id, 'programStatus': last_program.get('status') if last_program else None,
+                        'taskOutcome': task_outcome(all_actions, not lua_failure, (last_program or {}).get('actionState')),
+                        'goalOutcome': goal_outcome(all_actions, not lua_failure, (last_program or {}).get('actionState')),
+                        'notice': 'Only host receipts are evidence. Preserve partial progress; unknown is not success.'}
+                request.append({'role': 'user', 'content': json.dumps(runtime_data, ensure_ascii=False)})
+                message = await self._model_request(request, self.tools, user_index, run, costs)
                 if generation != self.generation:
                     outcome = "superseded"
                     tracing.trace.emit("agent_result_discarded", reason="newer_generation_after_llm",
@@ -530,7 +611,7 @@ class Agent:
                 if calls:
                     if not isinstance(calls, list):
                         raise LLMError("Malformed tool calls")
-                    if used + len(calls) > tool_limit or model_index + 1 >= self.max_model_calls:
+                    if used + len(calls) > tool_limit or costs.model_calls >= self.max_model_calls:
                         raise LoopBudgetExhausted("tool_or_model_call_limit; no additional tool executed")
                     ids = set()
                     for call in calls:
@@ -546,6 +627,9 @@ class Agent:
                         tool_token = tracing.context.set({**tracing.context.get(), "tool_call_id": call["id"]})
                         tracing.trace.emit("tool_start", call=call)
                         name, arguments = None, None
+                        run.phase = 'tools'
+                        # Also serialize cleanup for direct client actions.
+                        self._lua_task = asyncio.current_task()
                         try:
                             function = call["function"]
                             name = function.get("name")
@@ -564,7 +648,6 @@ class Agent:
                                 bundle.source(source)
                                 diagnostics.emit('lua_program_saved', **program)
                                 tracing.trace.emit('lua_program_saved', **program)
-                                actions = []
                                 def observe_lua(operation, parameters, reply):
                                     nonlocal last_atomic_action, atomic_halted, first_atomic_failure, unconfirmed_item_effect
                                     content = json.dumps(reply, ensure_ascii=False)
@@ -573,7 +656,7 @@ class Agent:
                                     tracing.trace.emit('lua_tool_result', operation=operation, result=reply,
                                                        **tool_result_metrics(operation, reply))
                                     if operation in atomic_operations.ACTIONS:
-                                        actions.append(reply)
+                                        all_actions.append(copy.deepcopy(reply))
                                         if not reply.get('blocked'):
                                             last_atomic_action = reply
                                             if ((reply.get('valid') is not True or reply.get('status') != 'completed')
@@ -584,19 +667,23 @@ class Agent:
                                             movement_loop.invalidate_observation('lua_action_requires_new_observation')
                                         if operation == 'use_item' and reply.get('status') == 'completed':
                                             unconfirmed_item_effect = True
-                                runtime = LuaRuntime(self.bridge)
-                                self._lua_task = asyncio.current_task()
-                                lua_started = time.monotonic()
-                                receipt = None
+                                executor = ToolExecutor(LuaRuntime, self.bridge)
                                 try:
-                                    receipt = await runtime.execute(source, chat_id=chat_id,
+                                    result = await executor.execute(source, chat_id=chat_id,
                                         limits=replace(self.lua_limits, seconds=seconds, calls=remaining,
                                                        actions=max(0,self.lua_limits.actions-actions_used)),
                                         allow_actions=not atomic_halted, on_result=observe_lua)
                                 finally:
-                                    lua_seconds += time.monotonic() - lua_started
-                                    actual = receipt if receipt is not None else runtime.last_result
+                                    lua_seconds += executor.elapsed
+                                    actual = executor.receipt
                                     if actual is not None:
+                                        last_program = actual
+                                        for terminal in (actual.get('lastAction'), actual.get('cleanup')):
+                                            duplicate = terminal is not None and terminal.get('payloadOmitted') is True and any(
+                                                a.get('actionId') is not None and a.get('actionId') == terminal.get('actionId')
+                                                for a in all_actions)
+                                            if terminal is not None and terminal not in all_actions and not duplicate:
+                                                all_actions.append(copy.deepcopy(terminal))
                                         lua_calls += actual['calls']
                                         actions_used += actual.get('actions',0)
                                         costs.lua_api_calls += actual['calls']
@@ -610,9 +697,6 @@ class Agent:
                                                 atomic_halted = True
                                                 if first_atomic_failure is None:
                                                     first_atomic_failure = copy.deepcopy(cleanup_result)
-                                    if self._lua_task is asyncio.current_task():
-                                        self._lua_task = None
-                                result = lua_agent.summarize(receipt, actions)
                                 result['sourceSha256'] = program['sourceSha256']
                                 result['remainingLuaSeconds'] = max(0, self.lua_limits.seconds - lua_seconds)
                                 if not result['programCompleted']:
@@ -655,6 +739,7 @@ class Agent:
                                     if name == "use_item" and result.get("status") == "completed":
                                         unconfirmed_item_effect = True
                                 if name in atomic_operations.ACTIONS:
+                                    all_actions.append(copy.deepcopy(result))
                                     last_atomic_action = result
                                     if result.get("status") != "completed" and first_atomic_failure is None:
                                         first_atomic_failure = copy.deepcopy(result)
@@ -716,6 +801,8 @@ class Agent:
                             tracing.trace.emit("tool_cancelled", elapsed_ms=(time.monotonic() - tool_started) * 1000)
                             raise
                         finally:
+                            if self._lua_task is asyncio.current_task():
+                                self._lua_task = None
                             tracing.context.reset(tool_token)
                         if len(calls) == 1 and not self.server_ai:
                             result["movementLoop"] = movement_loop.snapshot()
@@ -744,24 +831,32 @@ class Agent:
                 text = message.get("content")
                 if not isinstance(text, str) or not text.strip():
                     raise LLMError("Missing final assistant text")
+                run.phase = 'finalization'
                 if first_atomic_failure is not None and atomic_halted:
                     root_failure = first_atomic_failure or last_atomic_action
                     reason = str(root_failure.get("reason", root_failure.get("error", "unknown")))
-                    if lua_failure is not None:
-                        status = str(root_failure.get('status', 'unknown'))[:32]
-                        text = f"行动未完成（{status}）：{reason[:96]}。{text}"
-                    else:
-                        text = "行动未完成：" + reason
+                    status = str(root_failure.get('status', 'unknown'))[:32]
+                    text = final_text(text, f"行动未完成（{status}）：{reason[:96]}。")
+                    outcome = 'failed'
                 elif lua_failure is not None:
-                    text = 'Lua 程序未完成：' + str(lua_failure.get('error') or lua_failure.get('reason') or lua_failure['status'])[:96] + '。' + text
+                    text = final_text(text, 'Lua 程序未完成：' + str(lua_failure.get('error') or lua_failure.get('reason') or lua_failure['status'])[:96] + '。')
+                    outcome = 'budget_exhausted' if lua_failure.get('status') in (
+                        'call_limit', 'action_limit', 'instruction_limit', 'memory_limit', 'timeout',
+                        'value_limit', 'result_limit', 'log_limit') else 'failed'
                 elif unconfirmed_item_effect:
-                    text = ("物品原生使用周期已完成；命中或其他实际效果未确认。" if self.server_ai else
-                            "物品原生使用周期已完成；实际效果（包括雀杖是否成功召唤）未确认。")
+                    text = final_text(text, ("物品原生使用周期已完成；命中或其他实际效果未确认。" if self.server_ai else
+                            "物品原生使用周期已完成；实际效果（包括雀杖是否成功召唤）未确认。"))
                 elif movement_loop.active and last_atomic_action is None:
                     if used >= self.max_tool_calls and movement_loop.terminal is None:
                         movement_loop.finish("budget_exhausted", "tool_call_limit")
                     text = movement_loop.final_text()
                     outcome = movement_loop.terminal
+                elif all_actions:
+                    text = final_text(text, '动作回执已记录；整体目标是否完成尚未确认。')
+                elif last_program is not None:
+                    filtered = final_text(text, '')
+                    if filtered != text.strip():
+                        text = '程序已正常结束；整体目标是否完成尚未确认。' + filtered
                 # The entire actual sent text is retained in history, including bounded truncation.
                 text = " ".join(text.replace("\0", "").split())
                 if len(text.encode("utf-16-le")) > 800:
@@ -782,8 +877,9 @@ class Agent:
                                        current_generation=self.generation)
                 return
             raise LoopBudgetExhausted("model_call_limit")
-        except LoopBudgetExhausted as error:
+        except (LoopBudgetExhausted, ContextBudgetExceeded) as error:
             outcome = "budget_exhausted"
+            run.reason = str(error)
             if first_atomic_failure is not None:
                 text = "行动未完成：" + str(first_atomic_failure.get("reason", first_atomic_failure.get("error", "unknown"))) + "；本轮预算已用尽。"
             elif lua_failure is not None:
@@ -801,12 +897,13 @@ class Agent:
                 except (BridgeError,OSError):
                     tracing.trace.emit("budget_reply_failed")
         except asyncio.CancelledError:
-            outcome = "cancelled"
+            outcome = run.cancel_reason or ('superseded' if generation != self.generation else 'cancelled')
             movement_loop.finish("cancelled", "new_chat_or_task_cancelled")
             tracing.trace.emit("agent_cancelled", reason="task_cancelled")
             raise
         except (LLMError, BridgeError, OSError, ValueError, TypeError, KeyError) as error:
             outcome = "failed"
+            run.reason = str(error)[:256]
             tracing.trace.emit("agent_failed", error_type=type(error).__name__)
             diagnostics.emit("agent_failed", error_type=type(error).__name__, reason=str(error))
             if generation == self.generation:
@@ -814,12 +911,16 @@ class Agent:
                 if movement_loop.active:
                     movement_loop.finish("failed", "agent_error_after_movement_request")
                     try:
-                        await self._send_reply(movement_loop.final_text(),chat_id,generation)
+                        text = await self._send_reply(movement_loop.final_text(),chat_id,generation)
+                        if generation == self.generation:
+                            self.history.append({'role': 'assistant', 'content': text})
                     except (BridgeError,OSError):
                         tracing.trace.emit("movement_failure_reply_failed")
                 elif self.server_ai:
                     try:
-                        await self._send_reply('AI 未完成任务：' + str(error)[:250], chat_id,generation)
+                        text = await self._send_reply('AI 未完成任务：' + str(error)[:250], chat_id,generation)
+                        if generation == self.generation:
+                            self.history.append({'role': 'assistant', 'content': text})
                     except (BridgeError, OSError):
                         tracing.trace.emit('server_ai_failure_reply_failed')
             else:
@@ -832,6 +933,19 @@ class Agent:
             diagnostics.emit("agent_failed", error_type=type(error).__name__, reason=str(error))
             raise
         finally:
+            if run.cancel_reason:
+                outcome = run.cancel_reason
+            if executor is not None and executor.receipt is not None and (run.cancel_reason or outcome in ('cancelled', 'superseded')):
+                handoff = interruption(run, executor.receipt, all_actions)
+                self._interrupted.append(handoff)
+                self._interrupted_total += 1
+                tracing.trace.emit('run_interrupted', result=handoff)
+                diagnostics.emit('run_interrupted', result=handoff)
+            run.outcome = outcome
+            run.reason = run.cancel_reason or run.reason or outcome
+            run.metrics = dict(modelCalls=costs.model_calls, modelToolCalls=used, luaApiCalls=lua_calls,
+                               actionAttempts=actions_used, luaSeconds=lua_seconds)
+            run.phase = 'ended'
             summary = movement_loop.snapshot()
             summary.update(modelCalls=costs.model_calls, toolCalls=used,
                            maxModelCalls=self.max_model_calls, maxToolCalls=self.max_tool_calls)
@@ -841,15 +955,20 @@ class Agent:
             # outcome retains its existing lifecycle meaning. A normal model
             # return alone cannot establish that the player's task was achieved.
             action_result = first_atomic_failure if first_atomic_failure is not None else last_atomic_action
-            task_outcome = "unknown"
+            task_status = task_outcome(all_actions, lua_failure is None and outcome == 'completed',
+                                       (last_program or {}).get('actionState'))
             if first_atomic_failure is not None or lua_failure is not None or outcome != "completed":
-                task_outcome = "completed" if outcome == "arrived" else "not_completed"
+                if outcome == 'arrived':
+                    task_status = 'completed'
             elif movement_loop.active and last_atomic_action is None:
-                task_outcome = "completed" if movement_loop.terminal == "arrived" else "not_completed"
-            task_result = {"task_outcome": task_outcome,
+                task_status = "completed" if movement_loop.terminal == "arrived" else "not_completed"
+            run.goal_outcome = 'completed' if outcome == 'arrived' else goal_outcome(
+                all_actions, outcome == 'completed' and lua_failure is None, (last_program or {}).get('actionState'))
+            task_result = {"task_outcome": task_status, 'goal_outcome': run.goal_outcome,
+                           'program_outcome': last_program.get('status') if last_program is not None else None,
                            "action_outcome": action_result.get("status", "unknown") if action_result is not None else None,
                            "action_reason": action_result.get("reason", action_result.get("error")) if action_result is not None else None}
-            costs.summary(outcome, task_outcome=task_outcome, action_outcome=task_result["action_outcome"])
+            costs.summary(outcome, task_outcome=task_status, action_outcome=task_result["action_outcome"])
             cost_metrics.current.reset(cost_token)
             tracing.trace.emit("agent_end", outcome=outcome, **task_result, elapsed_ms=(time.monotonic() - started) * 1000)
             diagnostics.emit('agent_end', outcome=outcome, **task_result, modelToolCalls=used,
@@ -891,7 +1010,7 @@ class Agent:
         return text
 
     async def close(self):
-        self._invalidate_turn()
+        self._invalidate_turn('cancelled')
         if self.server_ai and not self.bridge._closed:
             try:
                 await asyncio.to_thread(self.bridge.advance_reply_turn,self.generation)
@@ -970,7 +1089,7 @@ async def terminal_loop(agent, bridge, events, stream=None):
         stopped.set()
 
 
-async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=18779):
+async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=18779, context_input_tokens=48_000):
     llm = LLMClient()
     bridge = None
     agent = None
@@ -993,9 +1112,11 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
             execution = await asyncio.to_thread(ServerAiBridge, port=ai_port, timeout=timeout)
             if not {'server_ai_reads_v1','server_ai_actions_v1','server_ai_chat_v2'}.issubset(execution.hello.get('capabilities', [])):
                 raise BridgeError('Current server AI reads/actions capabilities unavailable; no fallback to human control')
-            agent = Agent(execution, llm, chat_bridge=bridge)
+            agent = Agent(execution, llm, chat_bridge=bridge,
+                          context_manager=ContextManager(context_input_tokens))
         else:
-            agent = Agent(bridge, llm, local_input=local_input)
+            agent = Agent(bridge, llm, local_input=local_input,
+                          context_manager=ContextManager(context_input_tokens))
         if tracing.trace.enabled:
             print(f"Local trace (contains chat/context): {tracing.trace.path}", file=sys.stderr, flush=True)
         if local_input:
@@ -1028,6 +1149,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=18777)
     parser.add_argument("--timeout", type=float, default=2)
+    parser.add_argument('--context-input-tokens', type=int, default=48_000,
+                        help='Estimated input budget including tools; reserve output tokens within your model window')
     parser.add_argument("--local-input", action="store_true", help="Read human instructions from stdin; replies go to terminal (Mod 0.1.36+)")
     parser.add_argument('--server-ai', action='store_true', help='Local game chat -> existing Agent/Lua -> separate server AI execution backend')
     parser.add_argument('--ai-port', type=int, default=18779, help='Server AI IPC port; --port remains the graphical chat Bridge')
@@ -1035,6 +1158,8 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.port <= 65535 or not 0 < args.timeout < float("inf"):
         parser.error("port must be 1..65535 and timeout finite/positive")
+    if args.context_input_tokens < 256:
+        parser.error('--context-input-tokens must be >= 256')
     if args.server_ai and (args.local_input or not 1 <= args.ai_port <= 65535 or args.ai_port == args.port):
         parser.error('--server-ai requires a distinct valid --ai-port and cannot use --local-input')
     log_path = diagnostics.configure(args.log_file)
@@ -1042,7 +1167,8 @@ def main():
         print(f"Runtime log: {log_path}", file=sys.stderr, flush=True)
     diagnostics.emit("session_start", port=args.port, timeout=args.timeout, inputMode='server_ai_chat' if args.server_ai else 'terminal' if args.local_input else 'game_chat')
     try:
-        asyncio.run(run(args.port, args.timeout, local_input=args.local_input, server_ai=args.server_ai, ai_port=args.ai_port))
+        asyncio.run(run(args.port, args.timeout, local_input=args.local_input, server_ai=args.server_ai,
+                        ai_port=args.ai_port, context_input_tokens=args.context_input_tokens))
     except KeyboardInterrupt:
         return 130
     except (LLMError, BridgeError, OSError) as error:

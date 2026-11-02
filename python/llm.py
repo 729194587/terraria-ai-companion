@@ -12,7 +12,10 @@ import cost_metrics
 
 
 class LLMError(Exception):
-    pass
+    def __init__(self, message, *, retryable=False, context_overflow=False):
+        super().__init__(message)
+        self.retryable = retryable
+        self.context_overflow = context_overflow
 
 
 def load_config(path=None):
@@ -92,16 +95,29 @@ class LLMClient:
         except httpx.TimeoutException as error:
             tracing.emit_full("llm_error", model_request_id=request_id, category="timeout",
                                elapsed_ms=(time.monotonic() - started) * 1000)
-            raise LLMError("LLM request timed out") from error
+            raise LLMError("LLM request timed out", retryable=True) from error
         except httpx.HTTPStatusError as error:
             tracing.emit_full("llm_error", model_request_id=request_id, category="http",
                                status_code=error.response.status_code,
                                elapsed_ms=(time.monotonic() - started) * 1000)
-            raise LLMError(f"LLM HTTP {error.response.status_code}") from error
+            status = error.response.status_code
+            # Read provider error only to classify it; never expose response bodies/secrets.
+            try:
+                detail = error.response.json().get('error', {})
+                code = detail.get('code', '') if isinstance(detail, dict) else ''
+                message = detail.get('message', '') if isinstance(detail, dict) else ''
+            except (ValueError, AttributeError):
+                code = message = ''
+            overflow = status in (400, 413, 422) and (
+                code in ('context_length_exceeded', 'context_window_exceeded', 'max_context_length')
+                or 'maximum context length' in str(message).lower()
+                or 'context window' in str(message).lower())
+            raise LLMError(f"LLM HTTP {status}", context_overflow=overflow,
+                           retryable=status in (408, 429, 500, 502, 503, 504)) from error
         except httpx.RequestError as error:
             tracing.emit_full("llm_error", model_request_id=request_id, category="network",
                                error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
-            raise LLMError(f"LLM network failure ({type(error).__name__})") from error
+            raise LLMError(f"LLM network failure ({type(error).__name__})", retryable=True) from error
         try:
             payload = response.json()
             accounting["usage"] = payload.get("usage")

@@ -146,6 +146,11 @@ class MineTaskAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({'target': TARGET}, starts[0]['arguments'])
         self.assertEqual(['execute_lua'], [t['function']['name'] for t in self.requests[0]['tools']])
         self.assertEqual(254, self.ai.reply_receipts[-1]['authorSlot'])
+        import json
+        receipt = json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role'] == 'tool'))
+        self.assertEqual('completed', receipt['taskOutcome'])
+        self.assertEqual('unknown', receipt['goalOutcome'])
+        self.assertEqual('unknown', self.agent.runs[-1].goal_outcome)
 
 
 if __name__ == '__main__':
