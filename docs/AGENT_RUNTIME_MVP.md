@@ -76,6 +76,29 @@ $env:PYTHONPATH='python;tests'
 
 只借鉴职责与契约，没有复制 Java/Minecraft 代码或引入完整事件总线、并行任务树、导航重写。
 
+## 非 Lua 动作中断交接修复
+
+针对 `9b9ba68` 的客户端直调缺口，Agent 使用最近一次实际执行回执生成 interruption，不再要求存在 Lua ToolExecutor。直接原子动作（包括既有挖掘恢复中的动作）传入原有 lifecycle；`move` 新增可选 lifecycle，暴露启动尝试、已知动作身份和原取消路径的 cleanup。停止工具也记录其观察到的动作，不新增停止或重放策略。原子清理异常保留 cleanupError。
+
+`direct_action_receipt` 将这些事实适配成原 interruption 输入。取消后缺少可信终态/释放回执时，保留已知 actionId、operation、generation、world 和可用 endEvidence，但标为 unknown、inputReleased=null；未收到启动 ACK 时不编造动作 ID。正常已结算的直接动作及 move 效果也会进入本轮事实账，取消发生于后续模型等待时仍可交接。按动作身份去重，先前 Lua 的已结算事实保留；最近活动的是直接动作时不会误用更早的 Lua 回执。非 Lua 的 programStatus 为 null，retryAllowed 仍为 false。
+
+`tests/test_agent_action_interruption.py` 新增 9 个自动化测试、16 个时序场景：原子 ACK 尚未返回/运行中取消，已知释放/缺失释放/清理异常，ACK 丢失，move 的运行中/ACK 等待取消，明确停止后下一轮读取，Lua 后接直接动作，完成与取消竞态，以及已结算原子动作/move 后模型等待被抢占。断言下一轮模型请求收到身份、取消原因、真实终态和可用结束证据；清理完成前不请求新模型，没有重复动作记录或重放。旧测试替身仅更新签名以接受可选 lifecycle。
+
+定向命令：
+
+```powershell
+$env:PYTHONPATH='python;tests'
+& .local/lua-venv/Scripts/python.exe -B -m unittest test_agent_action_interruption -q
+& .local/lua-venv/Scripts/python.exe -B -m unittest test_agent_runtime_mvp test_lua_agent test_lua_partial_results -q
+& .local/lua-venv/Scripts/python.exe -B -m unittest test_movement test_movement_loop test_mining_recovery test_agent_diagnostics test_atomic_operations.AtomicTests -q
+```
+
+实际结果：新增 9 项通过，Lua 相关 46 项通过；客户端组执行 84 项，出现 12 条失败记录（涉及 11 个测试方法，含子测试）。从 `9b9ba68` 的独立源码快照补齐原始 `exploration-real-observation.json.gz`，定向重跑产生失败的 `test_movement_loop/test_mining_recovery` 两个模块（48 项），12 条失败名称与当前版本完全一致。主要是既有多步移动请求超过 48,000 输入估算预算，以及未被旧文字守护过滤的“已经成功召唤”表述；本轮不调整上下文预算或回复策略。第一次基线诊断快照缺少录制 fixture，补齐后才作上述完整失败列表对照。
+
+日志在 `.local/direct-handoff-final-new.log`、`.local/direct-handoff-lua.log`、`.local/direct-handoff-client.log`、`.local/direct-handoff-baseline-complete.log`。仅本地模型/游戏替身和真实 Lua Worker，没有全量测试、付费模型请求、游戏构建/部署或原生/图形验证。工作区已有的探索、诊断和 Worker 修改未纳入本次修复。
+
+推送前从本轮 Git index 再导出独立快照，定向执行新增交接 9 项、原 Lua Agent 22 项、原子动作 11 项、服务器取消/unknown/过期回复保护 3 项，合计 45 项全部通过；日志为 `.local/direct-handoff-staged-core.log`、`.local/direct-handoff-staged-server.log`。用于失败对照的 7 个源码/测试/录制 fixture 文件也逐字节核对为 `9b9ba68` 原版本。
+
 ## 剩余限制
 
 自然语言目标的通用完成契约仍不存在，普通成功动作后的整体目标为 unknown。文字守护过滤常见无证据成功表述并补宿主事实，不是任意自然语言的形式化验证；最终事实依据仍是结构化回执。历史摘要有损且 Canonical History 仍在进程内保留，未实现跨进程恢复或长期历史内存上限。多次大体积中断回执与当前轮合计超出输入预算时会明确停止，不能假装这些证据不存在。模型窗口与 tokenizer 未自动识别，需按实际 provider 配置输入预算。

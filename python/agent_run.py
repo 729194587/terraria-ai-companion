@@ -5,6 +5,7 @@ import time
 import threading
 
 from lua_action_results import action_results
+import copy
 
 
 @dataclass
@@ -60,20 +61,54 @@ def goal_outcome(actions, program_completed=True, action_state=None):
     return 'unknown' if action_state == 'unknown' or any(a.get('status') == 'unknown' for a in failures) else 'not_completed'
 
 
+def direct_action_receipt(operation, lifecycle, result=None):
+    """Project a direct call's existing cancellation supervision; never stop/retry here."""
+    action = lifecycle.get('action') or {}
+    if not action and not lifecycle.get('start_attempted') and not (result or {}).get('actionId'):
+        return None  # No owned action or possible start; keep the preceding execution receipt.
+    cleanup = lifecycle.get('cleanup')
+    terminal = copy.deepcopy(result if result is not None else cleanup) if result is not None or cleanup is not None else {
+        'actionId': action.get('actionId'), 'operation': action.get('operation', operation),
+        'actionGeneration': action.get('generation'), 'controlGeneration': lifecycle.get('control_generation'),
+        'worldSessionId': action.get('worldSessionId'), 'session': action.get('session'),
+        'endEvidence': copy.deepcopy(action.get('endEvidence')),
+        'endEvidenceStatus': action.get('endEvidenceStatus', 'unknown'),
+        'reason': lifecycle.get('cleanupError', 'cleanup_unconfirmed')}
+    # A failed stop can lack identity even though the start ACK established it.
+    for key, value in (('actionId', action.get('actionId')), ('operation', action.get('operation', operation)),
+                       ('actionGeneration', action.get('generation')), ('worldSessionId', action.get('worldSessionId'))):
+        if terminal.get(key) is None:
+            terminal[key] = value
+    released = (terminal.get('valid') is True and terminal.get('status') in ('completed', 'cancelled', 'failed', 'timeout')
+                and terminal.get('endEvidenceStatus') == 'known' and isinstance(terminal.get('endEvidence'), dict)
+                and terminal['endEvidence'].get('inputsReleased') is not False
+                and not lifecycle.get('uncertain'))
+    if operation in ('move', 'stop_movement'):
+        released = released and (terminal.get('execution') or {}).get('inputReleased') is True
+    if result is None and not released:
+        terminal.setdefault('terminalActionStatus', terminal.get('status', action.get('status')))
+        terminal.update(valid=False, status='unknown', completed=False)
+    return {'kind': 'direct_action', 'status': 'cancelled' if result is None else terminal.get('status'),
+            'programStatus': None, 'lastAction': terminal, 'cleanup': terminal if result is None else None,
+            'actionState': 'released' if released else 'unknown', 'inputReleased': True if released else None,
+            'failure': {'call': {'operation': operation}} if result is None else None}
+
+
 def interruption(run, receipt, actions):
     history = action_results(actions, receipt.get('lastAction'), receipt.get('cleanup'))
     cleanup = receipt.get('cleanup') or receipt.get('lastAction') or {}
     end = cleanup.get('endEvidence') or {}
-    active = {key: cleanup[key] for key in ('operation', 'actionId', 'actionGeneration',
+    active = {key: cleanup[key] for key in ('operation', 'actionId', 'actionGeneration', 'worldSessionId', 'session',
         'controlGeneration', 'status', 'reason', 'valid', 'endEvidenceStatus') if key in cleanup}
     active['endEvidence'] = {key: end[key] for key in ('worldSessionId', 'actorId', 'actorGeneration',
         'actorSlot', 'gameUpdate', 'phase', 'inputsReleased', 'effectVerified') if key in end}
     return {'runId': run.id, 'generation': run.generation, 'chatId': run.chat_id,
-            'reason': run.cancel_reason or 'cancelled', 'programStatus': receipt.get('status'),
+            'reason': run.cancel_reason or 'cancelled', 'programStatus': receipt.get('programStatus', receipt.get('status')),
             'actionResults': history, 'activeCall': (receipt.get('failure') or {}).get('call'),
             'activeAction': active,
             'taskPhase': ((cleanup.get('evidence') or {}).get('task') or {}).get('phase'),
-            'phase': run.phase, 'inputReleased': end.get('inputsReleased'),
+            'phase': run.phase, 'inputReleased': receipt.get('inputReleased', end.get('inputsReleased'))
+                if receipt.get('actionState') == 'released' else None,
             'actionState': receipt.get('actionState', 'unknown'),
             'unconfirmedEffects': [item['sequence'] for item in history['items']
                 if item['result'].get('status') != 'completed'

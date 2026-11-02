@@ -518,9 +518,11 @@ async def terminal(bridge, action, generation):
     return out
 
 
-async def stop(bridge, action_id=None, expected_action=None):
+async def stop(bridge, action_id=None, expected_action=None, *, lifecycle=None):
     reply = await command(bridge, 'get_movement')
     action = reply['movement']['action']
+    if lifecycle is not None:
+        lifecycle.update(action=copy.deepcopy(action), control_generation=reply['movement']['generation'])
     if action is None:
         if action_id is not None:
             return {'valid': False, 'status': 'unknown', 'completed': False, 'reason': 'action_missing', 'actionId': action_id}
@@ -629,7 +631,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             raise BridgeError('Missing atomic query data')
         return {'valid': data.get('available') is True, **data}
     if name == 'stop_action':
-        return await stop(bridge)
+        return await stop(bridge, lifecycle=lifecycle)
     start_task, action = None, None
     landing_invalid = False
     placement_invalid = False
@@ -736,8 +738,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 track(cleanup=await stop(bridge, action['actionId'], action))
             elif start_task is not None:
                 track(uncertain=True)
-        except (BridgeError, OSError, KeyError, ValueError):
-            track(uncertain=True)
+        except (BridgeError, OSError, KeyError, ValueError) as error:
+            track(uncertain=True, cleanupError=str(error))
         raise
     except (BridgeError, OSError, KeyError, ValueError) as error:
         if action is not None:

@@ -28,7 +28,7 @@ from movement import move, stop_movement
 from exploration import read_exploration_observation
 from movement_loop import MovementLoop, LoopBudgetExhausted
 from agent_context import ContextManager, ContextBudgetExceeded
-from agent_run import AgentRun, interruption, task_outcome, goal_outcome, final_text
+from agent_run import AgentRun, interruption, direct_action_receipt, task_outcome, goal_outcome, final_text
 from agent_tools import ToolExecutor
 
 SYSTEM = """你是 Terraria 中的 AI 玩家，通过游戏内聊天与其他玩家交流。使用对方的语言，简短回答，最多 400 个字符。
@@ -524,6 +524,38 @@ class Agent:
         all_actions = []
         last_program = None
         executor = None
+        execution_receipt = None
+
+        def record_direct(result):
+            # Dispatch and its recovery/cleanup can report the same action.
+            if result.get('actionId') is not None and any(
+                    a.get('actionId') == result['actionId'] and a.get('operation') == result.get('operation')
+                    and a.get('actionGeneration') == result.get('actionGeneration') for a in all_actions):
+                return
+            all_actions.append(copy.deepcopy(result))
+
+        async def direct_action(operation, invoke):
+            nonlocal execution_receipt
+            lifecycle = {}
+            try:
+                result = await invoke(lifecycle)
+            except asyncio.CancelledError:
+                receipt = direct_action_receipt(operation, lifecycle)
+                if receipt is not None:
+                    execution_receipt = receipt
+                    record_direct(receipt['lastAction'])
+                raise
+            receipt = direct_action_receipt(operation, lifecycle, result)
+            if receipt is not None:
+                execution_receipt = receipt
+                record_direct(receipt['lastAction'])
+            return result
+
+        async def dispatch_direct(operation, parameters):
+            if operation in atomic_operations.ACTIONS:
+                return await direct_action(operation, lambda lifecycle: atomic_operations.dispatch(
+                    self.bridge, operation, parameters, chat_id, lifecycle=lifecycle))
+            return await atomic_operations.dispatch(self.bridge, operation, parameters, chat_id)
 
         def mutation_budget_reason():
             # A normally returned program can consume the last API call/second.
@@ -678,6 +710,7 @@ class Agent:
                                     actual = executor.receipt
                                     if actual is not None:
                                         last_program = actual
+                                        execution_receipt = actual
                                         for terminal in (actual.get('lastAction'), actual.get('cleanup')):
                                             duplicate = terminal is not None and terminal.get('payloadOmitted') is True and any(
                                                 a.get('actionId') is not None and a.get('actionId') == terminal.get('actionId')
@@ -717,7 +750,7 @@ class Agent:
                                 else:
                                     if name in atomic_operations.BUDGETED_ACTIONS:
                                         actions_used += 1
-                                    result = await atomic_operations.dispatch(self.bridge, name, arguments, chat_id)
+                                    result = await dispatch_direct(name, arguments)
                                     if name == "mine_tile" and not mining_recovery_used and mining_recovery.eligible(result):
                                         mining_recovery_used = True
                                         diagnostics.tool_result(name, arguments, result)
@@ -730,7 +763,7 @@ class Agent:
                                                 if budget_reason := mutation_budget_reason():
                                                     return {'valid':False,'status':'failed','reason':budget_reason,'blocked':True}
                                                 actions_used += 1
-                                            reply = await atomic_operations.dispatch(self.bridge, operation, parameters, chat_id)
+                                            reply = await dispatch_direct(operation, parameters)
                                             costs.tool(operation, json.dumps(reply, ensure_ascii=False))
                                             tracing.trace.emit("mining_recovery_step", operation=operation, result=reply)
                                             diagnostics.tool_result(operation, parameters, reply, recovery=True)
@@ -739,7 +772,7 @@ class Agent:
                                     if name == "use_item" and result.get("status") == "completed":
                                         unconfirmed_item_effect = True
                                 if name in atomic_operations.ACTIONS:
-                                    all_actions.append(copy.deepcopy(result))
+                                    record_direct(result)
                                     last_atomic_action = result
                                     if result.get("status") != "completed" and first_atomic_failure is None:
                                         first_atomic_failure = copy.deepcopy(result)
@@ -755,12 +788,14 @@ class Agent:
                                               else movement_loop.prepare(arguments))
                                 if result is None:
                                     actions_used += 1
-                                    result = await move(self.bridge, arguments["direction"], arguments["duration_ms"], chat_id=chat_id,
-                                                        expected_generation=movement_loop.before["controlGeneration"])
+                                    result = await direct_action('move', lambda lifecycle: move(
+                                        self.bridge, arguments["direction"], arguments["duration_ms"], chat_id=chat_id,
+                                        expected_generation=movement_loop.before["controlGeneration"], lifecycle=lifecycle))
                                     movement_loop.moved(result)
                                     result['goal'] = movement_loop.goal_result()
                             elif name == "stop_movement" and arguments == {}:
-                                result = await stop_movement(self.bridge)
+                                result = await direct_action('stop_movement', lambda lifecycle: stop_movement(
+                                    self.bridge, lifecycle=lifecycle))
                                 movement_loop.active = True
                                 movement_loop.finish("unknown" if result.get("status") == "unknown" else "stopped",
                                                      "explicit_stop")
@@ -935,8 +970,10 @@ class Agent:
         finally:
             if run.cancel_reason:
                 outcome = run.cancel_reason
-            if executor is not None and executor.receipt is not None and (run.cancel_reason or outcome in ('cancelled', 'superseded')):
-                handoff = interruption(run, executor.receipt, all_actions)
+            if execution_receipt is not None and (run.cancel_reason or outcome in ('cancelled', 'superseded')):
+                handoff = interruption(run, execution_receipt, all_actions)
+                if handoff.get('evidence') is None:
+                    handoff['evidence'] = bundle.receipt()
                 self._interrupted.append(handoff)
                 self._interrupted_total += 1
                 tracing.trace.emit('run_interrupted', result=handoff)
