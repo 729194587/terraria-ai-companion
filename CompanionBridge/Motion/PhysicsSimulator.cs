@@ -12,11 +12,16 @@ internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRu
     // before our input hook. Match the effective value, not the reset constant.
     internal static readonly PhysicsParameters Basic = new(0.08f, 3, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);
 
-    internal bool IsBasic => Math.Abs(AccRun - Basic.AccRun) < 0.001f
-        && Math.Abs(MaxRun - Basic.MaxRun) < 0.001f && Math.Abs(AccRunSpeed - Basic.AccRunSpeed) < 0.001f
-        && Math.Abs(RunSlowdown - Basic.RunSlowdown) < 0.001f && Math.Abs(Gravity - Basic.Gravity) < 0.001f
-        && Math.Abs(JumpSpeed - Basic.JumpSpeed) < 0.001f && JumpHeight == Basic.JumpHeight
-        && Math.Abs(MaxFall - Basic.MaxFall) < 0.001f;
+    // Native pinned-engine boundary measurement: BuffID.Swiftness (3).
+    internal static readonly PhysicsParameters Swiftness = new(0.1f, 3.75f, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);
+    internal bool IsBasic=>Matches(Basic);
+    internal bool IsSupportedGroundPhysics=>IsBasic||Matches(Swiftness);
+    internal bool Matches(PhysicsParameters other)=>Math.Abs(AccRun-other.AccRun)<.001f
+        &&Math.Abs(MaxRun-other.MaxRun)<.001f&&Math.Abs(AccRunSpeed-other.AccRunSpeed)<.001f
+        &&Math.Abs(RunSlowdown-other.RunSlowdown)<.001f&&Math.Abs(Gravity-other.Gravity)<.001f
+        &&Math.Abs(JumpSpeed-other.JumpSpeed)<.001f&&JumpHeight==other.JumpHeight
+        &&Math.Abs(MaxFall-other.MaxFall)<.001f;
+
 }
 
 internal readonly record struct PhysicsState(float Px, float Py, float Vx, float Vy,

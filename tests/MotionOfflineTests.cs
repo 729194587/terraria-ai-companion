@@ -1051,10 +1051,10 @@ public static class MotionOfflineTests
         RecordedPlatformArrivalRegression();
         RecordedMiningApproachRegression();
         NearGoalMovingRegression();
-        foreach (int type in new[] { 147, 216 })
+        foreach (int type in new[] { 3, 147, 216 })
             Check(NavigationBuffPolicy.Rejection(type, 18000, 0, "audited_vanilla") == null,
                 "Recorded MonsterBanner/BabyBird effects must not block ordinary navigation");
-        foreach (int type in new[] { 3, 8, 26, 146, 148, 215, 217, 9999 })
+        foreach (int type in new[] { 8, 26, 146, 148, 215, 217, 9999 })
         {
             string rejection = NavigationBuffPolicy.Rejection(type, 120, 2, "test/effect");
             Check(rejection != null && rejection.Contains($"type={type}") && rejection.Contains("slot=2")
@@ -1064,7 +1064,7 @@ public static class MotionOfflineTests
                 "An expired slot is not an active buff");
         }
         Check(NavigationBuffPolicy.Rejection(147, 1, 0, "Terraria/MonsterBanner") == null
-            && NavigationBuffPolicy.Rejection(3, 1, 1, "Terraria/Swiftness") != null,
+            && NavigationBuffPolicy.Rejection(8, 1, 1, "Terraria/ObsidianSkin") != null,
             "An allowed banner cannot hide a concurrent unsupported movement buff");
         var ph = PhysicsParameters.Basic;
         var reported = new PhysicsParameters(0.08f, 3, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);

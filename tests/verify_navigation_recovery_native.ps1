@@ -1,5 +1,5 @@
 param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',
-    [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes)
+    [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes,[switch]$Mobility,[switch]$Probe)
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
 $world=(Resolve-Path -LiteralPath $WorldPath).Path
@@ -24,10 +24,13 @@ $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
 foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,
     '-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest',
     '-companionactionstest','-companionterraintest','-companionnavrecoverytest')){$info.ArgumentList.Add($arg)}
+if($Mobility){$info.ArgumentList.Add('-companionmobilitytest')}
 $process=[Diagnostics.Process]::Start($info)
 $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
 try {
-    $probeArgs=@('-B',(Join-Path $PSScriptRoot 'native_navigation_recovery.py'),'--port',"$IpcPort",'--profile',$profile)
+    $testScript=if($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
+    $probeArgs=@('-B',(Join-Path $PSScriptRoot $testScript),'--port',"$IpcPort",'--profile',$profile)
+    if($Probe){$probeArgs+='--probe'}
     if($Baseline){$probeArgs+='--baseline'}
     if($Scenes){$probeArgs+=@('--scenes')+$Scenes}
     & "$repo/.local/lua-venv/Scripts/python.exe" @probeArgs

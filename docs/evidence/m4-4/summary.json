@@ -1,0 +1,1130 @@
+{
+  "baseline-probe": {
+    "packageSHA256": "15f1b4eca4ac63ea6590e880c6a46d8d6c1b47ff876a78ad852144b8879fc64f",
+    "scenarios": [
+      {
+        "case": "basic",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "actionId": "f7e08763452b45c78736ef2ef3b6f4ea",
+        "actorId": "116a893904c94c4a888cb59d60fa944a",
+        "worldSessionId": "86a43fba017e42e7a2dc63d33c0afe78",
+        "actorGeneration": 1,
+        "navigationSession": 1,
+        "startX": 33630,
+        "endX": 34021.652,
+        "endY": 3830,
+        "navigationUpdates": 161,
+        "recordedFrames": 162,
+        "maxPredictionError": 0,
+        "plans": 6,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.08,
+            "maxRunSpeed": 3,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": false
+          }
+        ],
+        "revisionTransitions": [],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": null,
+        "finalPlanRevision": null,
+        "endEvidence": {
+          "effectVerified": true,
+          "actorGeneration": 1,
+          "gameUpdate": 221,
+          "operation": "navigate_to_x",
+          "inputsReleased": true,
+          "actorId": "116a893904c94c4a888cb59d60fa944a",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "inputsAcquired": true,
+          "observationSequence": 445,
+          "actorSlot": 254,
+          "worldSessionId": "86a43fba017e42e7a2dc63d33c0afe78"
+        }
+      },
+      {
+        "case": "swiftness",
+        "status": "failed",
+        "reason": "native_navigation_failed",
+        "detail": "unsupported navigation state: unsupported_physics: PhysicsParameters { AccRun = 0.099999994, MaxRun = 3.75, AccRunSpeed = 3, RunSlowdown = 0.2, Gravity = 0.4, MaxFall = 10.01, JumpSpeed = 5.01, JumpHeight = 15 }; unsupported_buff: slot=0, type=3, contentKey=Terraria/Swiftness, timeTicks=36000",
+        "completed": false,
+        "actionId": "13fdc749bbc64fdba4bba4b42bf3d896",
+        "actorId": "116a893904c94c4a888cb59d60fa944a",
+        "worldSessionId": "86a43fba017e42e7a2dc63d33c0afe78",
+        "actorGeneration": 1,
+        "navigationSession": 2,
+        "startX": 33630,
+        "endX": 33630,
+        "endY": 3830,
+        "navigationUpdates": 1,
+        "recordedFrames": 2,
+        "maxPredictionError": 0,
+        "plans": 0,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.099999994,
+            "maxRunSpeed": 3.75,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": true
+          }
+        ],
+        "revisionTransitions": [],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": null,
+        "finalPlanRevision": null,
+        "endEvidence": {
+          "inputsAcquired": true,
+          "operation": "navigate_to_x",
+          "effectVerified": false,
+          "gameUpdate": 302,
+          "actorId": "116a893904c94c4a888cb59d60fa944a",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "worldSessionId": "86a43fba017e42e7a2dc63d33c0afe78",
+          "observationSequence": 607,
+          "inputsReleased": true,
+          "actorSlot": 254,
+          "actorGeneration": 1
+        }
+      }
+    ]
+  },
+  "final": {
+    "packageSHA256": "1f7d4d30c831a0f1490ab0a1594e12e7ac70d28997e9a18f6377515226c1799d",
+    "scenarios": [
+      {
+        "case": "basic",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "actionId": "bb27e89448aa4b058bc830d320aa3d7c",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 1,
+        "startX": 33630,
+        "endX": 34021.652,
+        "endY": 3830,
+        "navigationUpdates": 161,
+        "recordedFrames": 161,
+        "maxPredictionError": 0,
+        "plans": 6,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.08,
+            "maxRunSpeed": 3,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": false
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 1,
+            "variant": "basic",
+            "sourceTick": 77,
+            "status": "running",
+            "planRevision": 1,
+            "vxAfterUpdate": 0.08,
+            "vxPreviousUpdate": null
+          }
+        ],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": {
+          "Generation": 1,
+          "Source": "native_PostUpdateRunSpeeds",
+          "Width": 20,
+          "EffectivePhysics": {
+            "Gravity": 0.4,
+            "AccRun": 0.08,
+            "JumpHeight": 15,
+            "JumpSpeed": 5.01,
+            "RunSlowdown": 0.2,
+            "MaxFall": 10.01,
+            "AccRunSpeed": 3,
+            "MaxRun": 3
+          },
+          "UnsupportedEffects": [],
+          "SourceTick": 237,
+          "Revision": 1,
+          "Session": 1,
+          "Supported": true,
+          "Height": 42,
+          "AvailableModes": [
+            "ground_walk",
+            "ground_jump"
+          ],
+          "Variant": "basic"
+        },
+        "finalPlanRevision": 1,
+        "endEvidence": {
+          "actorGeneration": 1,
+          "phase": "ServerAI_game_thread_inputs_released",
+          "observationSequence": 477,
+          "inputsReleased": true,
+          "actorSlot": 254,
+          "gameUpdate": 237,
+          "operation": "navigate_to_x",
+          "actorId": "08e39704ed40419da9f4cf66427b90d9",
+          "effectVerified": true,
+          "inputsAcquired": true,
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08"
+        }
+      },
+      {
+        "case": "swiftness",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "actionId": "4de2c514c6c848949bb909ee26924990",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 2,
+        "startX": 33630,
+        "endX": 34015.84,
+        "endY": 3830,
+        "navigationUpdates": 134,
+        "recordedFrames": 134,
+        "maxPredictionError": 0,
+        "plans": 7,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.099999994,
+            "maxRunSpeed": 3.75,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": true
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 2,
+            "variant": "vanilla_swiftness",
+            "sourceTick": 347,
+            "status": "running",
+            "planRevision": 2,
+            "vxAfterUpdate": 0.099999994,
+            "vxPreviousUpdate": null
+          }
+        ],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": {
+          "Variant": "vanilla_swiftness",
+          "Width": 20,
+          "Session": 2,
+          "Revision": 2,
+          "Source": "native_PostUpdateRunSpeeds",
+          "Generation": 1,
+          "Supported": true,
+          "Height": 42,
+          "UnsupportedEffects": [],
+          "AvailableModes": [
+            "ground_walk",
+            "ground_jump"
+          ],
+          "SourceTick": 480,
+          "EffectivePhysics": {
+            "JumpSpeed": 5.01,
+            "JumpHeight": 15,
+            "Gravity": 0.4,
+            "AccRunSpeed": 3,
+            "MaxFall": 10.01,
+            "MaxRun": 3.75,
+            "AccRun": 0.099999994,
+            "RunSlowdown": 0.2
+          }
+        },
+        "finalPlanRevision": 2,
+        "endEvidence": {
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+          "inputsReleased": true,
+          "actorGeneration": 1,
+          "gameUpdate": 480,
+          "phase": "ServerAI_game_thread_inputs_released",
+          "operation": "navigate_to_x",
+          "observationSequence": 963,
+          "actorId": "08e39704ed40419da9f4cf66427b90d9",
+          "effectVerified": true,
+          "inputsAcquired": true,
+          "actorSlot": 254
+        }
+      },
+      {
+        "case": "basic_jump",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "actionId": "0943c9452dbe48889838927db4664af2",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 3,
+        "startX": 33630,
+        "endX": 34015.9,
+        "endY": 3830,
+        "navigationUpdates": 180,
+        "recordedFrames": 180,
+        "maxPredictionError": 0,
+        "plans": 6,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.08,
+            "maxRunSpeed": 3,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": false
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 3,
+            "variant": "basic",
+            "sourceTick": 542,
+            "status": "running",
+            "planRevision": 3,
+            "vxAfterUpdate": 0.08,
+            "vxPreviousUpdate": null
+          }
+        ],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": {
+          "Variant": "basic",
+          "Height": 42,
+          "Generation": 1,
+          "Source": "native_PostUpdateRunSpeeds",
+          "Supported": true,
+          "UnsupportedEffects": [],
+          "AvailableModes": [
+            "ground_walk",
+            "ground_jump"
+          ],
+          "EffectivePhysics": {
+            "MaxRun": 3,
+            "JumpSpeed": 5.01,
+            "RunSlowdown": 0.2,
+            "MaxFall": 10.01,
+            "JumpHeight": 15,
+            "AccRun": 0.08,
+            "Gravity": 0.4,
+            "AccRunSpeed": 3
+          },
+          "Revision": 3,
+          "Width": 20,
+          "Session": 3,
+          "SourceTick": 721
+        },
+        "finalPlanRevision": 3,
+        "endEvidence": {
+          "actorSlot": 254,
+          "actorGeneration": 1,
+          "effectVerified": true,
+          "phase": "ServerAI_game_thread_inputs_released",
+          "actorId": "08e39704ed40419da9f4cf66427b90d9",
+          "operation": "navigate_to_x",
+          "observationSequence": 1445,
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+          "gameUpdate": 721,
+          "inputsReleased": true,
+          "inputsAcquired": true
+        }
+      },
+      {
+        "case": "swiftness_jump",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "actionId": "cb682c8da5344166b1c936314f26d885",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 4,
+        "startX": 33630,
+        "endX": 34014.13,
+        "endY": 3830,
+        "navigationUpdates": 157,
+        "recordedFrames": 157,
+        "maxPredictionError": 0,
+        "plans": 5,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.099999994,
+            "maxRunSpeed": 3.75,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": true
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 4,
+            "variant": "vanilla_swiftness",
+            "sourceTick": 784,
+            "status": "running",
+            "planRevision": 4,
+            "vxAfterUpdate": 0.099999994,
+            "vxPreviousUpdate": null
+          }
+        ],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": {
+          "Generation": 1,
+          "SourceTick": 940,
+          "Revision": 4,
+          "Variant": "vanilla_swiftness",
+          "Width": 20,
+          "AvailableModes": [
+            "ground_walk",
+            "ground_jump"
+          ],
+          "UnsupportedEffects": [],
+          "Source": "native_PostUpdateRunSpeeds",
+          "Height": 42,
+          "EffectivePhysics": {
+            "RunSlowdown": 0.2,
+            "AccRun": 0.099999994,
+            "JumpHeight": 15,
+            "MaxRun": 3.75,
+            "Gravity": 0.4,
+            "AccRunSpeed": 3,
+            "MaxFall": 10.01,
+            "JumpSpeed": 5.01
+          },
+          "Session": 4,
+          "Supported": true
+        },
+        "finalPlanRevision": 4,
+        "endEvidence": {
+          "inputsAcquired": true,
+          "phase": "ServerAI_game_thread_inputs_released",
+          "actorSlot": 254,
+          "actorGeneration": 1,
+          "operation": "navigate_to_x",
+          "observationSequence": 1883,
+          "gameUpdate": 940,
+          "effectVerified": true,
+          "actorId": "08e39704ed40419da9f4cf66427b90d9",
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+          "inputsReleased": true
+        }
+      },
+      {
+        "case": "basic_region",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "actionId": "7dd37c57749a41d189b0caf175711b5d",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 5,
+        "startX": 33630,
+        "endX": 33732.52,
+        "endY": 3782,
+        "navigationUpdates": 70,
+        "recordedFrames": 70,
+        "maxPredictionError": 0,
+        "plans": 1,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.08,
+            "maxRunSpeed": 3,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": false
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 5,
+            "variant": "basic",
+            "sourceTick": 1001,
+            "status": "running",
+            "planRevision": 5,
+            "vxAfterUpdate": 0.08,
+            "vxPreviousUpdate": null
+          }
+        ],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": {
+          "Generation": 1,
+          "EffectivePhysics": {
+            "Gravity": 0.4,
+            "JumpHeight": 15,
+            "RunSlowdown": 0.2,
+            "AccRunSpeed": 3,
+            "MaxFall": 10.01,
+            "AccRun": 0.08,
+            "MaxRun": 3,
+            "JumpSpeed": 5.01
+          },
+          "Source": "native_PostUpdateRunSpeeds",
+          "Variant": "basic",
+          "Session": 5,
+          "Supported": true,
+          "AvailableModes": [
+            "ground_walk",
+            "ground_jump"
+          ],
+          "Revision": 5,
+          "SourceTick": 1070,
+          "UnsupportedEffects": [],
+          "Height": 42,
+          "Width": 20
+        },
+        "finalPlanRevision": 5,
+        "endEvidence": {
+          "observationSequence": 2143,
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "actorId": "08e39704ed40419da9f4cf66427b90d9",
+          "operation": "navigate_to_landing_region",
+          "actorSlot": 254,
+          "inputsReleased": true,
+          "effectVerified": true,
+          "gameUpdate": 1070,
+          "inputsAcquired": true,
+          "actorGeneration": 1
+        }
+      },
+      {
+        "case": "swiftness_region",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "actionId": "d8c3f8c679ee480c9cfea840b0f0114d",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 6,
+        "startX": 33630,
+        "endX": 33738.3,
+        "endY": 3782,
+        "navigationUpdates": 59,
+        "recordedFrames": 59,
+        "maxPredictionError": 0,
+        "plans": 1,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.099999994,
+            "maxRunSpeed": 3.75,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": true
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 6,
+            "variant": "vanilla_swiftness",
+            "sourceTick": 1130,
+            "status": "running",
+            "planRevision": 6,
+            "vxAfterUpdate": 0.099999994,
+            "vxPreviousUpdate": null
+          }
+        ],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": {
+          "UnsupportedEffects": [],
+          "Height": 42,
+          "Revision": 6,
+          "Generation": 1,
+          "Variant": "vanilla_swiftness",
+          "Width": 20,
+          "Session": 6,
+          "Supported": true,
+          "AvailableModes": [
+            "ground_walk",
+            "ground_jump"
+          ],
+          "EffectivePhysics": {
+            "Gravity": 0.4,
+            "JumpHeight": 15,
+            "AccRunSpeed": 3,
+            "MaxFall": 10.01,
+            "RunSlowdown": 0.2,
+            "MaxRun": 3.75,
+            "JumpSpeed": 5.01,
+            "AccRun": 0.099999994
+          },
+          "Source": "native_PostUpdateRunSpeeds",
+          "SourceTick": 1188
+        },
+        "finalPlanRevision": 6,
+        "endEvidence": {
+          "actorGeneration": 1,
+          "gameUpdate": 1188,
+          "observationSequence": 2379,
+          "actorId": "08e39704ed40419da9f4cf66427b90d9",
+          "inputsAcquired": true,
+          "phase": "ServerAI_game_thread_inputs_released",
+          "effectVerified": true,
+          "operation": "navigate_to_landing_region",
+          "actorSlot": 254,
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+          "inputsReleased": true
+        }
+      },
+      {
+        "case": "swiftness_region_left",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "actionId": "53a52f8afac54c588253e1eabf32eca0",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 7,
+        "startX": 33630,
+        "endX": 33521.7,
+        "endY": 3782,
+        "navigationUpdates": 59,
+        "recordedFrames": 59,
+        "maxPredictionError": 0,
+        "plans": 1,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.099999994,
+            "maxRunSpeed": 3.75,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": true
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 7,
+            "variant": "vanilla_swiftness",
+            "sourceTick": 1249,
+            "status": "running",
+            "planRevision": 7,
+            "vxAfterUpdate": -0.099999994,
+            "vxPreviousUpdate": null
+          }
+        ],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": {
+          "Source": "native_PostUpdateRunSpeeds",
+          "Supported": true,
+          "Generation": 1,
+          "Width": 20,
+          "AvailableModes": [
+            "ground_walk",
+            "ground_jump"
+          ],
+          "Height": 42,
+          "UnsupportedEffects": [],
+          "Session": 7,
+          "SourceTick": 1307,
+          "Variant": "vanilla_swiftness",
+          "EffectivePhysics": {
+            "JumpHeight": 15,
+            "JumpSpeed": 5.01,
+            "RunSlowdown": 0.2,
+            "MaxRun": 3.75,
+            "AccRunSpeed": 3,
+            "MaxFall": 10.01,
+            "AccRun": 0.099999994,
+            "Gravity": 0.4
+          },
+          "Revision": 7
+        },
+        "finalPlanRevision": 7,
+        "endEvidence": {
+          "inputsAcquired": true,
+          "inputsReleased": true,
+          "operation": "navigate_to_landing_region",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "effectVerified": true,
+          "gameUpdate": 1307,
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+          "actorGeneration": 1,
+          "actorSlot": 254,
+          "observationSequence": 2617,
+          "actorId": "08e39704ed40419da9f4cf66427b90d9"
+        }
+      },
+      {
+        "case": "add",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "actionId": "3e58f855ce8e4529b092cc200d3a9c1d",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 8,
+        "startX": 33630,
+        "endX": 34019.434,
+        "endY": 3830,
+        "navigationUpdates": 146,
+        "recordedFrames": 146,
+        "maxPredictionError": 0,
+        "plans": 8,
+        "recoveries": 1,
+        "recoveryReplans": 1,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.08,
+            "maxRunSpeed": 3,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": false
+          },
+          {
+            "runAcceleration": 0.099999994,
+            "maxRunSpeed": 3.75,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": true
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 8,
+            "variant": "basic",
+            "sourceTick": 1370,
+            "status": "running",
+            "planRevision": 8,
+            "vxAfterUpdate": 0.08,
+            "vxPreviousUpdate": null
+          },
+          {
+            "revision": 9,
+            "variant": "vanilla_swiftness",
+            "sourceTick": 1378,
+            "status": "recovering",
+            "planRevision": 8,
+            "vxAfterUpdate": 0.43999994,
+            "vxPreviousUpdate": 0.6399999
+          }
+        ],
+        "oldRevisionNeutralFrames": 4,
+        "finalMobility": {
+          "Generation": 1,
+          "Height": 42,
+          "Source": "native_PostUpdateRunSpeeds",
+          "Variant": "vanilla_swiftness",
+          "Revision": 9,
+          "Supported": true,
+          "UnsupportedEffects": [],
+          "EffectivePhysics": {
+            "JumpHeight": 15,
+            "Gravity": 0.4,
+            "MaxFall": 10.01,
+            "AccRunSpeed": 3,
+            "JumpSpeed": 5.01,
+            "AccRun": 0.099999994,
+            "RunSlowdown": 0.2,
+            "MaxRun": 3.75
+          },
+          "SourceTick": 1515,
+          "Session": 8,
+          "AvailableModes": [
+            "ground_walk",
+            "ground_jump"
+          ],
+          "Width": 20
+        },
+        "finalPlanRevision": 9,
+        "endEvidence": {
+          "phase": "ServerAI_game_thread_inputs_released",
+          "inputsAcquired": true,
+          "actorGeneration": 1,
+          "effectVerified": true,
+          "actorSlot": 254,
+          "observationSequence": 3033,
+          "operation": "navigate_to_x",
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+          "inputsReleased": true,
+          "actorId": "08e39704ed40419da9f4cf66427b90d9",
+          "gameUpdate": 1515
+        }
+      },
+      {
+        "case": "remove",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "actionId": "fa82ca6ac7da43c2bf9d5f78d2832120",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 9,
+        "startX": 33630,
+        "endX": 34016.773,
+        "endY": 3830,
+        "navigationUpdates": 177,
+        "recordedFrames": 178,
+        "maxPredictionError": 0,
+        "plans": 9,
+        "recoveries": 1,
+        "recoveryReplans": 1,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.099999994,
+            "maxRunSpeed": 3.75,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": true
+          },
+          {
+            "runAcceleration": 0.08,
+            "maxRunSpeed": 3,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": false
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 10,
+            "variant": "vanilla_swiftness",
+            "sourceTick": 1574,
+            "status": "running",
+            "planRevision": 10,
+            "vxAfterUpdate": 0.099999994,
+            "vxPreviousUpdate": 0
+          },
+          {
+            "revision": 11,
+            "variant": "basic",
+            "sourceTick": 1624,
+            "status": "recovering",
+            "planRevision": 10,
+            "vxAfterUpdate": 3.5999975,
+            "vxPreviousUpdate": 3.7999976
+          }
+        ],
+        "oldRevisionNeutralFrames": 20,
+        "finalMobility": {
+          "Session": 9,
+          "AvailableModes": [
+            "ground_walk",
+            "ground_jump"
+          ],
+          "EffectivePhysics": {
+            "MaxRun": 3,
+            "JumpSpeed": 5.01,
+            "AccRunSpeed": 3,
+            "RunSlowdown": 0.2,
+            "MaxFall": 10.01,
+            "Gravity": 0.4,
+            "JumpHeight": 15,
+            "AccRun": 0.08
+          },
+          "Revision": 11,
+          "SourceTick": 1750,
+          "Source": "native_PostUpdateRunSpeeds",
+          "Variant": "basic",
+          "Supported": true,
+          "UnsupportedEffects": [],
+          "Height": 42,
+          "Generation": 1,
+          "Width": 20
+        },
+        "finalPlanRevision": 11,
+        "endEvidence": {
+          "observationSequence": 3503,
+          "inputsReleased": true,
+          "inputsAcquired": true,
+          "actorGeneration": 1,
+          "actorId": "08e39704ed40419da9f4cf66427b90d9",
+          "effectVerified": true,
+          "operation": "navigate_to_x",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+          "gameUpdate": 1750,
+          "actorSlot": 254
+        }
+      },
+      {
+        "case": "unknown",
+        "status": "failed",
+        "reason": "native_navigation_failed",
+        "detail": "unsupported navigation state: unsupported_physics: PhysicsParameters { AccRun = 0.096, MaxRun = 3.6000001, AccRunSpeed = 3, RunSlowdown = 0.2, Gravity = 0.4, MaxFall = 10.01, JumpSpeed = 5.01, JumpHeight = 15 }; unsupported_buff: slot=0, type=26, contentKey=Terraria/WellFed, timeTicks=36000; unvalidated_effective_physics: PhysicsParameters { AccRun = 0.096, MaxRun = 3.6000001, AccRunSpeed = 3, RunSlowdown = 0.2, Gravity = 0.4, MaxFall = 10.01, JumpSpeed = 5.01, JumpHeight = 15 }",
+        "completed": false,
+        "actionId": "0a2c8a5b769048aca17adc98c6e8ae88",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 10,
+        "startX": 33630,
+        "endX": 33630,
+        "endY": 3830,
+        "navigationUpdates": 1,
+        "recordedFrames": 1,
+        "maxPredictionError": 0,
+        "plans": 0,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.096,
+            "maxRunSpeed": 3.6000001,
+            "accRunSpeed": 3,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": false
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 12,
+            "variant": "basic",
+            "sourceTick": 1814,
+            "status": "failed",
+            "planRevision": 0,
+            "vxAfterUpdate": 0,
+            "vxPreviousUpdate": null
+          }
+        ],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": {
+          "Variant": "basic",
+          "Height": 42,
+          "Session": 10,
+          "Generation": 1,
+          "SourceTick": 1814,
+          "Source": "native_PostUpdateRunSpeeds",
+          "Revision": 12,
+          "AvailableModes": [],
+          "EffectivePhysics": {
+            "JumpHeight": 15,
+            "RunSlowdown": 0.2,
+            "JumpSpeed": 5.01,
+            "AccRunSpeed": 3,
+            "MaxFall": 10.01,
+            "Gravity": 0.4,
+            "AccRun": 0.096,
+            "MaxRun": 3.6000001
+          },
+          "Supported": false,
+          "UnsupportedEffects": [
+            "unsupported_physics: PhysicsParameters { AccRun = 0.096, MaxRun = 3.6000001, AccRunSpeed = 3, RunSlowdown = 0.2, Gravity = 0.4, MaxFall = 10.01, JumpSpeed = 5.01, JumpHeight = 15 }; unsupported_buff: slot=0, type=26, contentKey=Terraria/WellFed, timeTicks=36000",
+            "unvalidated_effective_physics: PhysicsParameters { AccRun = 0.096, MaxRun = 3.6000001, AccRunSpeed = 3, RunSlowdown = 0.2, Gravity = 0.4, MaxFall = 10.01, JumpSpeed = 5.01, JumpHeight = 15 }"
+          ],
+          "Width": 20
+        },
+        "finalPlanRevision": 0,
+        "endEvidence": {
+          "actorSlot": 254,
+          "observationSequence": 3631,
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+          "effectVerified": false,
+          "actorGeneration": 1,
+          "actorId": "08e39704ed40419da9f4cf66427b90d9",
+          "operation": "navigate_to_x",
+          "gameUpdate": 1814,
+          "inputsReleased": true,
+          "inputsAcquired": true,
+          "phase": "ServerAI_game_thread_inputs_released"
+        }
+      },
+      {
+        "case": "equipment",
+        "status": "failed",
+        "reason": "native_navigation_failed",
+        "detail": "unsupported navigation state: unsupported_physics: PhysicsParameters { AccRun = 0.08, MaxRun = 3, AccRunSpeed = 6, RunSlowdown = 0.2, Gravity = 0.4, MaxFall = 10.01, JumpSpeed = 5.01, JumpHeight = 15 }; equipment: slot=3, type=54, name=Hermes Boots; unvalidated_effective_physics: PhysicsParameters { AccRun = 0.08, MaxRun = 3, AccRunSpeed = 6, RunSlowdown = 0.2, Gravity = 0.4, MaxFall = 10.01, JumpSpeed = 5.01, JumpHeight = 15 }",
+        "completed": false,
+        "actionId": "dd1aaa00c3fa4cef93154f4e1156feb1",
+        "actorId": "08e39704ed40419da9f4cf66427b90d9",
+        "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+        "actorGeneration": 1,
+        "navigationSession": 11,
+        "startX": 33630,
+        "endX": 33630,
+        "endY": 3830,
+        "navigationUpdates": 1,
+        "recordedFrames": 1,
+        "maxPredictionError": 0,
+        "plans": 0,
+        "recoveries": 0,
+        "recoveryReplans": 0,
+        "effectiveBoundarySamples": [
+          {
+            "runAcceleration": 0.08,
+            "maxRunSpeed": 3,
+            "accRunSpeed": 6,
+            "runSlowdown": 0.2,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "jumpSpeed": 5.01,
+            "jumpHeight": 15,
+            "width": 20,
+            "height": 42,
+            "swiftness": false
+          }
+        ],
+        "revisionTransitions": [
+          {
+            "revision": 13,
+            "variant": "basic",
+            "sourceTick": 1884,
+            "status": "failed",
+            "planRevision": 0,
+            "vxAfterUpdate": 0,
+            "vxPreviousUpdate": null
+          }
+        ],
+        "oldRevisionNeutralFrames": 0,
+        "finalMobility": {
+          "Variant": "basic",
+          "Width": 20,
+          "UnsupportedEffects": [
+            "unsupported_physics: PhysicsParameters { AccRun = 0.08, MaxRun = 3, AccRunSpeed = 6, RunSlowdown = 0.2, Gravity = 0.4, MaxFall = 10.01, JumpSpeed = 5.01, JumpHeight = 15 }; equipment: slot=3, type=54, name=Hermes Boots",
+            "unvalidated_effective_physics: PhysicsParameters { AccRun = 0.08, MaxRun = 3, AccRunSpeed = 6, RunSlowdown = 0.2, Gravity = 0.4, MaxFall = 10.01, JumpSpeed = 5.01, JumpHeight = 15 }"
+          ],
+          "Revision": 13,
+          "Height": 42,
+          "Source": "native_PostUpdateRunSpeeds",
+          "Session": 11,
+          "AvailableModes": [],
+          "SourceTick": 1884,
+          "Supported": false,
+          "EffectivePhysics": {
+            "MaxFall": 10.01,
+            "AccRunSpeed": 6,
+            "RunSlowdown": 0.2,
+            "MaxRun": 3,
+            "Gravity": 0.4,
+            "JumpHeight": 15,
+            "JumpSpeed": 5.01,
+            "AccRun": 0.08
+          },
+          "Generation": 1
+        },
+        "finalPlanRevision": 0,
+        "endEvidence": {
+          "actorGeneration": 1,
+          "inputsReleased": true,
+          "observationSequence": 3771,
+          "gameUpdate": 1884,
+          "inputsAcquired": true,
+          "operation": "navigate_to_x",
+          "actorSlot": 254,
+          "effectVerified": false,
+          "phase": "ServerAI_game_thread_inputs_released",
+          "worldSessionId": "699545c2cbcf498faee489d3fa874e08",
+          "actorId": "08e39704ed40419da9f4cf66427b90d9"
+        }
+      }
+    ]
+  }
+}

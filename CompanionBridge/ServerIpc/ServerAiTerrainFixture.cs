@@ -22,11 +22,17 @@ internal static class ServerAiTerrainFixture
     private static bool inputLeft,inputRight,inputJump;
     private static string caseName;
     private static string recoveryMode;
+    private static string mobilityMode;
+    private static bool mobilityChanged;
+    private static object inputPhysics;
     private static bool recoveryFired;
     private static int recoveryLeft,recoveryFloor;
     internal static void RecordInput(Player p)
     {
         if(!Program.LaunchParameters.ContainsKey("-companionterraintest"))return;
+        inputPhysics=new {p.runAcceleration,p.maxRunSpeed,p.accRunSpeed,p.runSlowdown,p.gravity,p.maxFallSpeed,
+            jumpSpeed=Player.jumpSpeed,jumpHeight=Player.jumpHeight,p.width,p.height,
+            swiftness=p.HasBuff(BuffID.Swiftness),sampleTick=Main.GameUpdateCount};
         inputTick=Main.GameUpdateCount;
         inputLeft=p.controlLeft;inputRight=p.controlRight;inputJump=p.controlJump;
     }
@@ -49,7 +55,7 @@ internal static class ServerAiTerrainFixture
             action=nav?.Action,frame=nav?.Frame,status=nav?.Status,maxError=nav?.MaxError,
             reason=nav?.Reason,nav?.PlanNumber,nav?.Expansions,nav?.PlanMilliseconds,nav?.ReachedGoal,nav?.TimeBudgetReached,
             nav?.CompletedActions,nav?.CompletedJumps,nav?.RecoveryCount,nav?.RecoveryReplans,
-            nav?.RecoveryReason,nav?.RecoveryPosition,nav?.RecoveryInputsReleased,nav?.FailedEdgeCount,run.Updates});
+            nav?.RecoveryReason,nav?.RecoveryPosition,nav?.RecoveryInputsReleased,nav?.FailedEdgeCount,run.Updates,inputPhysics=inputTick.HasValue?inputPhysics:null,navigation=nav});
         recording=running;
         if(!running)File.WriteAllText(Path.Combine(Main.SavePath,"terrain-motion-"+caseName+".json"),JsonSerializer.Serialize(frames));
     }
@@ -88,6 +94,14 @@ internal static class ServerAiTerrainFixture
                 {recoveryMode,active.ActionId,gameUpdate=Main.GameUpdateCount,x=p.position.X,y=p.position.Y}));
             NetworkStateSync.Full(p);
         }
+        if(mobilityMode!=null&&!mobilityChanged&&active?.Status=="running"&&active.Updates>=(mobilityMode=="remove"?50:8)
+            &&mobilityMode is "add" or "remove")
+        {
+            if(!Program.LaunchParameters.ContainsKey("-companionmobilitytest"))throw new InvalidOperationException("Missing mobility fixture gate");
+            if(mobilityMode=="add")p.AddBuff(BuffID.Swiftness,36000,true);
+            else {int index=p.FindBuffIndex(BuffID.Swiftness);if(index>=0)p.DelBuff(index);}
+            mobilityChanged=true;
+        }
         string request=Path.Combine(Main.SavePath,"terrain-request.json");
         if(settle>0)
         {
@@ -105,12 +119,17 @@ internal static class ServerAiTerrainFixture
         if(scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall" or "platform_up" or "platform_down" or "high_platform"
             or "obstacle_one" or "solid_up_three" or "solid_up_five" or "shaft_up" or "shaft_ceiling" or "alternating" or "no_landing" or "descent_five" or "hazard_target"))
             throw new ArgumentException("Unknown terrain scene");
+        mobilityMode=doc.RootElement.TryGetProperty("mobility",out var mobility)?mobility.GetString():null;
+        if(mobilityMode!=null&&(!Program.LaunchParameters.ContainsKey("-companionmobilitytest")
+            ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "unknown" or "equipment")))
+            throw new ArgumentException("Invalid isolated mobility scene");
+        mobilityChanged=false;
         recoveryMode=doc.RootElement.TryGetProperty("recovery",out var mode)?mode.GetString():null;
         if(recoveryMode!=null && (!Program.LaunchParameters.ContainsKey("-companionnavrecoverytest")
             || scene!="flat" || direction!=1 || recoveryMode is not ("offset" or "low_wall" or "high_wall" or "air" or "cancel_air")))
             throw new ArgumentException("Invalid isolated navigation recovery scene");
         recoveryFired=false;recoveryLeft=Main.spawnTileX;recoveryFloor=Main.spawnTileY+8;
-        caseName=scene+"-"+direction+(recoveryMode==null?"":"-"+recoveryMode);frames.Clear();recording=false;
+        caseName=scene+"-"+direction+(recoveryMode==null?"":"-"+recoveryMode)+(mobilityMode==null?"":"-mobility-"+mobilityMode);frames.Clear();recording=false;
         inputTick=null;
         lastRun=(ActorControl.Driver as ServerAiNavigation)?.Current;
         int left=Main.spawnTileX, floor=Main.spawnTileY+8;
@@ -160,6 +179,13 @@ internal static class ServerAiTerrainFixture
         p.jump=0;p.releaseJump=true;p.fallStart=floor;p.statLife=p.statLifeMax2;
         // Each scene starts with the audited basic profile, independent of the earlier apple test.
         Array.Clear(p.buffType);Array.Clear(p.buffTime);
+        if(mobilityMode!=null)
+        {
+            foreach(var item in p.armor)item.TurnToAir();
+            if(mobilityMode is "swiftness" or "remove")p.AddBuff(BuffID.Swiftness,36000,true);
+            if(mobilityMode=="unknown")p.AddBuff(BuffID.WellFed,36000,true);
+            if(mobilityMode=="equipment")p.armor[3].SetDefaults(ItemID.HermesBoots);
+        }
         pending=new{scene,direction,startX=p.position.X,startY=p.position.Y,targetX=p.position.X+direction*192,
             floor,originTileX=left,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI};
         settle=15;

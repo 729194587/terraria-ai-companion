@@ -9,7 +9,7 @@ internal static class SafeGroundWalk
     internal static Route TryPlan(PhysicsState start,float targetX,int direction,PhysicsParameters ph,IMotionWorld world)
     {
         var watch=Stopwatch.StartNew();
-        if(!ph.IsBasic||direction is not (-1 or 1)||!float.IsFinite(targetX)
+        if(!ph.IsSupportedGroundPhysics||direction is not (-1 or 1)||!float.IsFinite(targetX)
             ||direction*(targetX-start.Px)<=12||!PhysicsSimulator.SupportedCheckpoint(start,world)
             ||!world.SafeFlatLanding(start))return null;
         foreach(int stride in new[]{24,6})

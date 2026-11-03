@@ -1,5 +1,7 @@
 # Lua 的服务器 AI 移动、使用与目标格工具操作
 
+0.1.79 / M4.4：既有导航 API 增加原版 Swiftness 的已验证数值配置；回执导航快照含 Mobility、采样 tick/revision 与计划版本。未知装备/Buff/Mod 仍拒绝，支持配置不代表路径可达。没有新增原子 API 或自动使用药水；详见 [M4.4 验收与限制](evidence/m4-4/README.md)。
+
 0.1.75 增加 [M3 Program/Task 协作](M3_PROGRAM_TASK_RUNTIME_IMPLEMENTATION.md)：既有 mine_target 可独立于 Program 推进；提供宿主提交/查询/等待/取消和显式安全恢复。普通新聊天保留任务，明确停止须核验释放，危险由游戏 Tick 处理，unknown 不重放。下文为此前原子操作与 M2 契约记录。
 
 0.1.74 完成 [M2 API 契约收敛](API_TOOL_SYSTEM_MVP.md)。动作注册表最多保留 1024 个身份，受理新 GUID 前按完成顺序回收最旧终态；活动动作不回收，近期重复返回 `duplicate_action` 和 `dispatchState=unknown`：原动作可能已经执行，不能当作确定未受理。Python 对旧包误标的重复拒绝也保持 unknown，不自动重试。已回收查询返回 `unknown_action`。不要重用旧 actionId。
