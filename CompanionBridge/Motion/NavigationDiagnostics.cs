@@ -23,7 +23,9 @@ internal sealed class NavigationDiagnostics
             Write("navigation_plan", current);
         if (sameTask && current.CompletedActions > _previous.CompletedActions)
             Write("navigation_checkpoint", current);
-        if (current.Status is "arrived" or "failed" or "unknown" or "confirming_landing"
+        if (sameTask && (current.RecoveryCount != _previous.RecoveryCount || current.RecoveryReplans != _previous.RecoveryReplans))
+            Write("navigation_recovery", current);
+        if (current.Status is "arrived" or "failed" or "unknown" or "confirming_landing" or "recovering"
             && (!sameTask || current.Status != _previous.Status))
             Write("navigation_state", current);
         if (current.Status == "idle" && _previous?.Session > 0)

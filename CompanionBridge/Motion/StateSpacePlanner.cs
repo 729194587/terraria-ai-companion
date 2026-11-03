@@ -34,16 +34,16 @@ internal static class StateSpacePlanner
     // A horizontal crossing goal, within a rolling local horizon. Candidates prove
     // a safe braking tail, but can hand off on supported ground with residual speed.
     internal static Route Plan(PhysicsState start, float targetX, PhysicsParameters ph,
-        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, int? goalDirection = null)
-        => PlanCore(start, targetX, null, ph, world, maxExpansions, budgetMs, goalDirection);
+        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, int? goalDirection = null, Func<PhysicsState, Prediction, bool> rejectEdge = null)
+        => PlanCore(start, targetX, null, ph, world, maxExpansions, budgetMs, goalDirection, rejectEdge);
 
     internal static Route Plan(PhysicsState start, LandingRegion region, PhysicsParameters ph,
-        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25)
+        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, Func<PhysicsState, Prediction, bool> rejectEdge = null)
         => PlanCore(start, Math.Clamp(start.Px, region.MinPlayerLeftX, region.MaxPlayerLeftX),
-            region, ph, world, maxExpansions, budgetMs, null);
+            region, ph, world, maxExpansions, budgetMs, null, rejectEdge);
 
     private static Route PlanCore(PhysicsState start, float targetX, LandingRegion region, PhysicsParameters ph,
-        IMotionWorld world, int maxExpansions, double budgetMs, int? goalDirection)
+        IMotionWorld world, int maxExpansions, double budgetMs, int? goalDirection, Func<PhysicsState, Prediction, bool> rejectEdge)
     {
         var watch = Stopwatch.StartNew();
         var rejected = new Dictionary<string, int>();
@@ -140,6 +140,8 @@ internal static class StateSpacePlanner
                             Reason = settle ? edge.Reason : edge.Jump
                                 ? "safe moving jump landing; braking tail validated"
                                 : "safe walk prefix; braking tail validated" };
+                        if (rejectEdge?.Invoke(cur, edge) == true)
+                        { Reject("recently failed local edge"); continue; }
                         var next = edge.Landing;
                         if (Math.Abs(next.Px - start.Px) > 192 || Math.Abs(next.Py - start.Py) > 128)
                         { Reject("outside route span"); continue; }

@@ -49,8 +49,8 @@ public static class NavigationLandingConfirmationTests
         }
         world=new World();task=Replay(observed,world);var displaced=settled with{Px=settled.Px+20};
         task.After(displaced,world);task.After(displaced,world);
-        Check(task.Snapshot.Status=="failed"&&task.Snapshot.ActualLanding!=null
-            &&task.Snapshot.CompletedActions==0,"confirmed prediction deviation differs from unconfirmed landing");
+        Check(task.Snapshot.Status=="recovering"&&task.Snapshot.RecoveryInputsReleased==null
+            &&task.Snapshot.CompletedActions==0,"confirmed different landing enters release verification, without counting the old edge");
         world=new World{Support=false};task=Replay(settled,world);
         for(int i=1;i<NavigationTask.LandingConfirmationLimit;i++)task.After(settled,world);
         Check(task.Snapshot.Status=="unknown"&&task.Snapshot.ObservedGrounded==true&&task.Snapshot.SafeSupport==false

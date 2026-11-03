@@ -118,7 +118,8 @@ internal sealed class NativeNavigation
         if (!_paired) return;
         _paired = false;
         if (p.statLife < _life || p.dead) { Fail("life decreased/dead"); return; }
-        if (_navigation) { Task.After(State(p), _world); Diagnostics.Observe(Task.Snapshot); }
+        if (_navigation) { Task.After(State(p), _world, inputsReleased: !p.controlLeft && !p.controlRight && !p.controlJump
+            && !p.controlDown && !p.controlUp && !p.controlUseItem && !p.controlUseTile); Diagnostics.Observe(Task.Snapshot); }
         else Controller.After(State(p), _world);
     }
 

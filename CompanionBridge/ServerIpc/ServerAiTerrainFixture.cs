@@ -21,6 +21,9 @@ internal static class ServerAiTerrainFixture
     private static ulong? inputTick;
     private static bool inputLeft,inputRight,inputJump;
     private static string caseName;
+    private static string recoveryMode;
+    private static bool recoveryFired;
+    private static int recoveryLeft,recoveryFloor;
     internal static void RecordInput(Player p)
     {
         if(!Program.LaunchParameters.ContainsKey("-companionterraintest"))return;
@@ -45,7 +48,8 @@ internal static class ServerAiTerrainFixture
             expectedPosition=nav?.ExpectedPosition,expectedVelocity=nav?.ExpectedVelocity,
             action=nav?.Action,frame=nav?.Frame,status=nav?.Status,maxError=nav?.MaxError,
             reason=nav?.Reason,nav?.PlanNumber,nav?.Expansions,nav?.PlanMilliseconds,nav?.ReachedGoal,nav?.TimeBudgetReached,
-            nav?.CompletedActions,nav?.CompletedJumps});
+            nav?.CompletedActions,nav?.CompletedJumps,nav?.RecoveryCount,nav?.RecoveryReplans,
+            nav?.RecoveryReason,nav?.RecoveryPosition,nav?.RecoveryInputsReleased,nav?.FailedEdgeCount,run.Updates});
         recording=running;
         if(!running)File.WriteAllText(Path.Combine(Main.SavePath,"terrain-motion-"+caseName+".json"),JsonSerializer.Serialize(frames));
     }
@@ -59,6 +63,31 @@ internal static class ServerAiTerrainFixture
         // Terrain-only diagnostic: exclude NPC combat/knockback from these motion scenes.
         // Production navigation keeps its life-loss and velocity guards.
         foreach(var npc in Main.npc)if(npc.active&&!npc.townNPC)npc.active=false;
+        // Explicit disturbance inside the existing copied-world/main-thread gate.
+        // This is not a production steering or recovery path.
+        var active=(ActorControl.Driver as ServerAiNavigation)?.Current;
+        if (recoveryMode!=null&&!recoveryFired&&active?.Status=="running"&&active.Updates>=8)
+        {
+            if(!Program.LaunchParameters.ContainsKey("-companionnavrecoverytest"))
+                throw new InvalidOperationException("Recovery disturbance requires its explicit fixture flag");
+            NetworkStateSync.Require(p);
+            if (recoveryMode is "offset" or "air" or "cancel_air")
+            {
+                p.position.X-=32;
+                if(recoveryMode!="offset")p.position.Y-=160;
+            }
+            else
+            {
+                int height=recoveryMode=="high_wall"?12:2;
+                for(int x=recoveryLeft+3;x<=recoveryLeft+4;x++)
+                    for(int y=recoveryFloor-height;y<recoveryFloor;y++)
+                    {var tile=Main.tile[x,y];tile.ClearEverything();tile.HasTile=true;tile.TileType=TileID.Dirt;}
+            }
+            recoveryFired=true;
+            File.WriteAllText(Path.Combine(Main.SavePath,"terrain-recovery-fired.json"),JsonSerializer.Serialize(new
+                {recoveryMode,active.ActionId,gameUpdate=Main.GameUpdateCount,x=p.position.X,y=p.position.Y}));
+            NetworkStateSync.Full(p);
+        }
         string request=Path.Combine(Main.SavePath,"terrain-request.json");
         if(settle>0)
         {
@@ -76,7 +105,12 @@ internal static class ServerAiTerrainFixture
         if(scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall" or "platform_up" or "platform_down" or "high_platform"
             or "obstacle_one" or "solid_up_three" or "solid_up_five" or "shaft_up" or "shaft_ceiling" or "alternating" or "no_landing" or "descent_five" or "hazard_target"))
             throw new ArgumentException("Unknown terrain scene");
-        caseName=scene+"-"+direction;frames.Clear();recording=false;
+        recoveryMode=doc.RootElement.TryGetProperty("recovery",out var mode)?mode.GetString():null;
+        if(recoveryMode!=null && (!Program.LaunchParameters.ContainsKey("-companionnavrecoverytest")
+            || scene!="flat" || direction!=1 || recoveryMode is not ("offset" or "low_wall" or "high_wall" or "air" or "cancel_air")))
+            throw new ArgumentException("Invalid isolated navigation recovery scene");
+        recoveryFired=false;recoveryLeft=Main.spawnTileX;recoveryFloor=Main.spawnTileY+8;
+        caseName=scene+"-"+direction+(recoveryMode==null?"":"-"+recoveryMode);frames.Clear();recording=false;
         inputTick=null;
         lastRun=(ActorControl.Driver as ServerAiNavigation)?.Current;
         int left=Main.spawnTileX, floor=Main.spawnTileY+8;

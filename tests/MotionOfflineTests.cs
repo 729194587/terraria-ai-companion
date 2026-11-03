@@ -378,8 +378,8 @@ public static class MotionOfflineTests
         var first = task.Before(204, 1, region, actual, ph, world);
         actual = PhysicsSimulator.Step(actual, first, ph, world);
         task.After(actual with { Py = actual.Py - 40 }, world);
-        Check(task.Snapshot.Status == "failed" && task.Snapshot.Reason.Contains("diverged"),
-            "Region task uses existing executor to reject actual prediction divergence");
+        Check(task.Snapshot.Status == "recovering" && task.Snapshot.RecoveryReason.Contains("diverged"),
+            "Region task stops a diverged edge before safe recovery confirmation");
         task = new();
         task.Before(205, 1, region, start, ph, world);
         task.Before(205, 2, region, start with { Grounded = false, Vy = -3 }, ph, world);
@@ -656,7 +656,7 @@ public static class MotionOfflineTests
         var deviated = new NavigationTask();
         deviated.Before(82, 7, 1800, start, ph, hazard);
         deviated.After(start with { Px = 1500 }, hazard);
-        Check(deviated.Snapshot.Status == "failed", "Real-state deviation aborts autonomous task");
+        Check(deviated.Snapshot.Status == "recovering", "Real-state deviation stops the edge for bounded observation");
         var protocol = new ControlState();
         int session = protocol.BeginSession();
         var request = ControlState.Parse("{\"v\":1,\"id\":1,\"cmd\":\"navigate\",\"targetX\":2080,\"expectedGeneration\":0}");

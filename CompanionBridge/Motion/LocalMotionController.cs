@@ -18,10 +18,13 @@ internal sealed record NavigationSnapshot(int Session, string Status, string Act
     bool? ObservedGrounded = null, bool? SafeSupport = null,
     [property:System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     NavigationBlockingTile[] BlockingTiles=null, PhysicsState? PlanStart=null, string SearchFailureReason=null, string PlanKind=null, int SearchNumber=0, int FastWalkPlans=0, string SearchExit=null,
-    Dictionary<string,int> SearchRejections=null, int DominatedStates=0);
+    Dictionary<string,int> SearchRejections=null, int DominatedStates=0, int RecoveryCount=0, int RecoveryReplans=0,
+    string RecoveryReason=null, PhysicsState? RecoveryPosition=null, bool? RecoveryInputsReleased=null, int FailedEdgeCount=0);
 
 // One rolling walk or one jump; no graph, digging, placement, or autonomous retries.
 // Candidate simulation and landing feedback follow TerraBlind JumpExecutor's pattern.
+internal enum MotionFailureKind { None, RouteDeviation, Unsafe }
+
 internal sealed class LocalMotionController
 {
     private Prediction _plan;
@@ -32,11 +35,13 @@ internal sealed class LocalMotionController
     internal bool Terminal => Snapshot.Status is "failed" or "landed";
     internal bool NeedsPlan => _plan == null;
     internal bool NeedsLandingConfirmation { get; private set; }
+    internal MotionFailureKind FailureKind { get; private set; }
 
     internal void LoadPlan(Prediction plan)
     {
         _plan = plan;
         NeedsLandingConfirmation=false;
+        FailureKind=MotionFailureKind.None;
         _frame = 0; _badFrames = 0; _supportedLandingFrames = 0; _maxError = 0; _airborne = false;
         _hold = plan.Frames.FindAll(f => f.Input.Jump).Count;
         Snapshot = Snapshot with { Status = "running" };
@@ -52,6 +57,7 @@ internal sealed class LocalMotionController
     {
         _plan = null;
         NeedsLandingConfirmation=false;
+        FailureKind=MotionFailureKind.None;
         _session = 0;
         Snapshot = new(0, "idle", "none", "control released", 0, 0, null, null, 0);
     }
@@ -93,6 +99,10 @@ internal sealed class LocalMotionController
         {
             var actualNext = PhysicsSimulator.Step(state, next.Input, parameters, world);
             if (!world.SafeSweep(state, actualNext, out danger)) return Fail(danger);
+            var expected = next.State;
+            if (Math.Max(Math.Abs(actualNext.Px-expected.Px),Math.Abs(actualNext.Py-expected.Py)) > 6
+                || Math.Max(Math.Abs(actualNext.Vx-expected.Vx),Math.Abs(actualNext.Vy-expected.Vy)) > 1.5f)
+                return Fail("next step no longer matches route", MotionFailureKind.RouteDeviation);
         }
         catch (UnsafeMotionException error) { return Fail(error.Message); }
         Snapshot = new(session, "running", _plan.Jump ? "jump" : "walk", _plan.Reason,
@@ -119,7 +129,7 @@ internal sealed class LocalMotionController
         Snapshot = Snapshot with { Frame = _frame, MaxError = _maxError };
         if (_badFrames >= 2 || error > 16)
         {
-            Fail($"prediction diverged: position={error:F2}px velocity={velocityError:F2}px/tick"); return;
+            Fail($"prediction diverged: position={error:F2}px velocity={velocityError:F2}px/tick", MotionFailureKind.RouteDeviation); return;
         }
         if (_frame >= _plan.ExecuteFrames)
         {
@@ -132,6 +142,7 @@ internal sealed class LocalMotionController
                     && Math.Abs(actual.Vy) <= 0.1f
                     && (!movingLanding || _supportedLandingFrames >= 2)
                     && Math.Abs(actual.Px - _plan.Landing.Px) <= 8 && Math.Abs(actual.Py - _plan.Landing.Py) <= 4;
+                FailureKind=landed?MotionFailureKind.None:MotionFailureKind.RouteDeviation;
                 NeedsLandingConfirmation=!landed&&(!actual.Grounded||!safeSupport||Math.Abs(actual.Vy)>0.1f
                     ||movingLanding&&_supportedLandingFrames<2);
                 Snapshot = new(_session, landed ? "landed" : "failed", "jump",
@@ -147,8 +158,9 @@ internal sealed class LocalMotionController
         }
     }
 
-    internal PhysicsInput Fail(string reason)
+    internal PhysicsInput Fail(string reason, MotionFailureKind kind=MotionFailureKind.Unsafe)
     {
+        FailureKind=kind;
         Snapshot = new(_session, "failed", _plan?.Jump == true ? "jump" : "walk", reason,
             _frame, _hold, _plan == null ? null : new(_plan.Landing.Px, _plan.Landing.Py), null, _maxError,
             Snapshot.ExpectedPosition, Snapshot.ObservedPosition, Snapshot.ExpectedVelocity, Snapshot.ObservedVelocity, _generation);
