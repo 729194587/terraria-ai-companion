@@ -95,10 +95,12 @@ internal sealed class NavigationTask
             _plans++;
             Snapshot = Snapshot with { Action = "plan", Expansions = _route.Expansions,
                 PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds,
-                PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached, PlanStart=state, SearchFailureReason=_route.FailureReason, PlanKind=_route.Kind, SearchNumber=_searches, FastWalkPlans=_fastWalks };
+                PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached, PlanStart=state, SearchFailureReason=_route.FailureReason, PlanKind=_route.Kind, SearchNumber=_searches, FastWalkPlans=_fastWalks, SearchExit=_route.SearchExit, SearchRejections=_route.Rejections, DominatedStates=_route.DominatedStates };
             if (_route.Actions.Count == 0)
             {
-                return Fail(_route.TimeBudgetReached ? "navigation_search_timeout" : "no safe local route: " + _route.FailureReason,_route.BlockingTiles);
+                return Fail(_route.TimeBudgetReached ? "navigation_search_timeout"
+                    : _route.SearchExit == "expansion_budget" ? "navigation_search_expansion_budget"
+                    : "no safe local route: " + _route.FailureReason,_route.BlockingTiles);
             }
             var edge = _route.Actions[0];
             _executor.Cancel();
@@ -218,6 +220,7 @@ internal sealed class NavigationTask
         LastLanding = _lastLanding, PlanNumber = _plans, ReachedGoal = _route.ReachedGoal,
         TimeBudgetReached = _route.TimeBudgetReached, TargetRegion = _region,
         PlanStart=Snapshot.PlanStart, SearchFailureReason=_route.FailureReason,
-        PlanKind=_route.Kind, SearchNumber=_searches, FastWalkPlans=_fastWalks
+        PlanKind=_route.Kind, SearchNumber=_searches, FastWalkPlans=_fastWalks,
+        SearchExit=_route.SearchExit, SearchRejections=_route.Rejections, DominatedStates=_route.DominatedStates
     };
 }

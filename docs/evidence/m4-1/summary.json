@@ -1,0 +1,292 @@
+{
+  "baseline": {
+    "profile": ".local\\natural-native-7428c77b8d8f40e3b9b4ed7b34c7a145",
+    "binding": {
+      "actor": "7ae8266f53604ba58ae45d1393f3532c",
+      "world": "79e559992376413c8c352820d472e66f",
+      "generation": 1,
+      "slot": 254
+    },
+    "packageSHA256": "4e34801adbefb523abdb5c1e087c7596ee38de751f7d96a7a373318b67a4d914",
+    "worldSHA256": "9f4665e8c6989bc5a523349e1bd4a303895814152170ff6cf9ebc7e862a54482",
+    "scenarios": [
+      {
+        "case": "op0-r-explore",
+        "completedSegments": 6,
+        "stop": "step_limit",
+        "actualDistancePixels": 871.1169999999984,
+        "plansAcrossActions": 18,
+        "lastPlanExpansions": [
+          4,
+          1,
+          1,
+          0,
+          4,
+          0
+        ],
+        "lastPlanMilliseconds": [
+          8.0379,
+          1.4882,
+          1.2492,
+          0.1697,
+          6.415,
+          0.1795
+        ],
+        "lastPlanSearchExit": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "maxRecordedPredictionError": 0,
+        "frames": 603
+      },
+      {
+        "case": "op0-r-direct",
+        "completedSegments": 6,
+        "stop": "step_limit",
+        "actualDistancePixels": 871.1169999999984,
+        "plansAcrossActions": 18,
+        "lastPlanExpansions": [
+          4,
+          1,
+          1,
+          0,
+          4,
+          0
+        ],
+        "lastPlanMilliseconds": [
+          6.3635,
+          1.8051,
+          2.2486,
+          0.1412,
+          6.5352,
+          0.1793
+        ],
+        "lastPlanSearchExit": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "maxRecordedPredictionError": 0,
+        "frames": 555
+      },
+      {
+        "case": "op0-l-explore",
+        "completedSegments": 6,
+        "stop": "step_limit",
+        "actualDistancePixels": 758.1330000000016,
+        "plansAcrossActions": 21,
+        "lastPlanExpansions": [
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "lastPlanMilliseconds": [
+          0.1901,
+          0.1777,
+          0.2852,
+          1.4003,
+          0.1861,
+          0.2837
+        ],
+        "lastPlanSearchExit": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "maxRecordedPredictionError": 0,
+        "frames": 544
+      },
+      {
+        "case": "op0-l-direct",
+        "completedSegments": 6,
+        "stop": "step_limit",
+        "actualDistancePixels": 758.1330000000016,
+        "plansAcrossActions": 21,
+        "lastPlanExpansions": [
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "lastPlanMilliseconds": [
+          0.1777,
+          0.3753,
+          0.1786,
+          1.4956,
+          0.1764,
+          0.3505
+        ],
+        "lastPlanSearchExit": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "maxRecordedPredictionError": 0,
+        "frames": 519
+      }
+    ]
+  },
+  "fixed": {
+    "profile": ".local\\natural-native-2439070fb9b74ce0844efe7660288710",
+    "binding": {
+      "actor": "6b1a1d8b73a546a19c7d237002429092",
+      "world": "d6c33bdab4d84ce2bfcd862c32e64c78",
+      "generation": 1,
+      "slot": 254
+    },
+    "packageSHA256": "f315858d245d275fabf684b1d513f887838a0db3e951088ca2e4c5093a1cda83",
+    "worldSHA256": "9f4665e8c6989bc5a523349e1bd4a303895814152170ff6cf9ebc7e862a54482",
+    "scenarios": [
+      {
+        "case": "op0-r-explore",
+        "completedSegments": 6,
+        "stop": "step_limit",
+        "actualDistancePixels": 871.1169999999984,
+        "plansAcrossActions": 18,
+        "lastPlanExpansions": [
+          4,
+          1,
+          1,
+          0,
+          4,
+          0
+        ],
+        "lastPlanMilliseconds": [
+          6.9046,
+          2.3538,
+          2.1273,
+          0.2442,
+          10.9575,
+          0.5314
+        ],
+        "lastPlanSearchExit": [
+          "goal_reached",
+          "goal_reached",
+          "goal_reached",
+          null,
+          "goal_reached",
+          null
+        ],
+        "maxRecordedPredictionError": 0,
+        "frames": 584
+      },
+      {
+        "case": "op0-r-direct",
+        "completedSegments": 6,
+        "stop": "step_limit",
+        "actualDistancePixels": 871.1169999999984,
+        "plansAcrossActions": 18,
+        "lastPlanExpansions": [
+          4,
+          1,
+          1,
+          0,
+          4,
+          0
+        ],
+        "lastPlanMilliseconds": [
+          9.2625,
+          1.6003,
+          2.3129,
+          0.2235,
+          16.973,
+          0.3693
+        ],
+        "lastPlanSearchExit": [
+          "goal_reached",
+          "goal_reached",
+          "goal_reached",
+          null,
+          "goal_reached",
+          null
+        ],
+        "maxRecordedPredictionError": 0,
+        "frames": 552
+      },
+      {
+        "case": "op0-l-explore",
+        "completedSegments": 6,
+        "stop": "step_limit",
+        "actualDistancePixels": 758.1330000000016,
+        "plansAcrossActions": 21,
+        "lastPlanExpansions": [
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "lastPlanMilliseconds": [
+          0.2907,
+          0.3228,
+          0.2784,
+          2.0828,
+          0.1776,
+          0.3634
+        ],
+        "lastPlanSearchExit": [
+          null,
+          null,
+          null,
+          "goal_reached",
+          null,
+          null
+        ],
+        "maxRecordedPredictionError": 0,
+        "frames": 529
+      },
+      {
+        "case": "op0-l-direct",
+        "completedSegments": 6,
+        "stop": "step_limit",
+        "actualDistancePixels": 758.1330000000016,
+        "plansAcrossActions": 21,
+        "lastPlanExpansions": [
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "lastPlanMilliseconds": [
+          0.1675,
+          0.356,
+          0.2903,
+          2.8668,
+          0.4372,
+          0.1616
+        ],
+        "lastPlanSearchExit": [
+          null,
+          null,
+          null,
+          "goal_reached",
+          null,
+          null
+        ],
+        "maxRecordedPredictionError": 0,
+        "frames": 519
+      }
+    ]
+  }
+}

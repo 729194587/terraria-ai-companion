@@ -119,7 +119,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 if(!injected)throw new InvalidOperationException("Audited G4 movement boundary not reached.");
                 navigation.After(p);run.Snapshot=navigation.Snapshot;
                 if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown","native_navigation_landing_unconfirmed");}
-                else if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.SearchFailureReason is {} detail && run.Snapshot.Reason=="navigation_search_timeout"?detail:run.Snapshot.Reason;Stop("failed",AiActionReasons.Navigation(run.Snapshot.Reason));}
+                else if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.SearchFailureReason is {} detail && (run.Snapshot.Reason is "navigation_search_timeout" or "navigation_search_expansion_budget")?detail:run.Snapshot.Reason;Stop("failed",AiActionReasons.Navigation(run.Snapshot.Reason));}
                 else if(run.Snapshot.Status=="arrived")
                 {
                     var terrain=TerrainReader.Read(p);

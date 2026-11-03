@@ -98,6 +98,7 @@ class NavigationRecoveryTests(unittest.IsolatedAsyncioTestCase):
             'cancelled':lambda a:a.update(status='cancelled'),
             'timeout':lambda a:a.update(status='timeout'),
             'search_timeout':lambda a:a.update(reason='navigation_search_timeout'),
+            'expansion_budget':lambda a:a.update(reason='navigation_search_expansion_budget'),
             'no_native_permission':lambda a:a['evidence'].pop('recoverableFailure'),
             'not_settled':lambda a:a['evidence'].update(settled=False),
             'bad_velocity':lambda a:a['evidence'].update(vx=1),

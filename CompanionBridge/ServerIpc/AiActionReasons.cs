@@ -5,7 +5,7 @@ namespace CompanionBridge.ServerIpc;
 internal static class AiActionReasons
 {
     internal static string Navigation(string reason) => reason is
-        "navigation_stalled" or "navigation_action_limit" or "navigation_search_timeout"
+        "navigation_stalled" or "navigation_action_limit" or "navigation_search_timeout" or "navigation_search_expansion_budget"
         ? reason : "native_navigation_failed";
 
     // Only deterministic planner/profile refusal and confirmed no-progress can hand off.
