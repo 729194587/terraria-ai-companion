@@ -24,15 +24,29 @@ internal static class ServerAiTerrainFixture
     private static string recoveryMode;
     private static string mobilityMode;
     private static bool mobilityChanged;
+    private static bool mobilityRestored;
     private static object inputPhysics;
     private static bool recoveryFired;
     private static int recoveryLeft,recoveryFloor;
+    // Dedicated Actor timers do not count down (Player.UpdateBuffs is local-only).
+    // Reconstruct ONLY the audited local expiry phase: native buff effects have
+    // run, then the counter expires and the slot is deleted before run speeds.
+    internal static void AfterBuffs(Player p)
+    {
+        if(!Program.LaunchParameters.ContainsKey("-companionterraintest")
+            ||!Program.LaunchParameters.ContainsKey("-companionmobilitytest")||mobilityMode!="expiry"
+            ||!mobilityChanged||!ReferenceEquals(p,ProbeSession.Actor))return;
+        int index=p.FindBuffIndex(BuffID.Swiftness);
+        if(index>=0&&--p.buffTime[index]<=0)p.DelBuff(index);
+    }
     internal static void RecordInput(Player p)
     {
         if(!Program.LaunchParameters.ContainsKey("-companionterraintest"))return;
+        int swiftnessIndex=p.FindBuffIndex(BuffID.Swiftness);
         inputPhysics=new {p.runAcceleration,p.maxRunSpeed,p.accRunSpeed,p.runSlowdown,p.gravity,p.maxFallSpeed,
             jumpSpeed=Player.jumpSpeed,jumpHeight=Player.jumpHeight,p.width,p.height,
-            swiftness=p.HasBuff(BuffID.Swiftness),sampleTick=Main.GameUpdateCount};
+            swiftness=p.HasBuff(BuffID.Swiftness),swiftnessTime=swiftnessIndex>=0?p.buffTime[swiftnessIndex]:0,
+            sampleTick=Main.GameUpdateCount};
         inputTick=Main.GameUpdateCount;
         inputLeft=p.controlLeft;inputRight=p.controlRight;inputJump=p.controlJump;
     }
@@ -94,14 +108,16 @@ internal static class ServerAiTerrainFixture
                 {recoveryMode,active.ActionId,gameUpdate=Main.GameUpdateCount,x=p.position.X,y=p.position.Y}));
             NetworkStateSync.Full(p);
         }
-        if(mobilityMode!=null&&!mobilityChanged&&active?.Status=="running"&&active.Updates>=(mobilityMode=="remove"?50:8)
-            &&mobilityMode is "add" or "remove")
+        if(mobilityMode!=null&&!mobilityChanged&&active?.Status=="running"&&active.Updates>=(mobilityMode is "remove" or "rapid" or "expiry"?50:8)
+            &&mobilityMode is "add" or "remove" or "rapid" or "expiry")
         {
             if(!Program.LaunchParameters.ContainsKey("-companionmobilitytest"))throw new InvalidOperationException("Missing mobility fixture gate");
             if(mobilityMode=="add")p.AddBuff(BuffID.Swiftness,36000,true);
-            else {int index=p.FindBuffIndex(BuffID.Swiftness);if(index>=0)p.DelBuff(index);}
+            else {int index=p.FindBuffIndex(BuffID.Swiftness);if(index>=0){if(mobilityMode=="expiry")p.buffTime[index]=2;else p.DelBuff(index);}}
             mobilityChanged=true;
         }
+        if(mobilityMode=="rapid"&&mobilityChanged&&!mobilityRestored&&active?.Status=="running"&&active.Updates>=51)
+        {p.AddBuff(BuffID.Swiftness,36000,true);mobilityRestored=true;}
         string request=Path.Combine(Main.SavePath,"terrain-request.json");
         if(settle>0)
         {
@@ -121,9 +137,10 @@ internal static class ServerAiTerrainFixture
             throw new ArgumentException("Unknown terrain scene");
         mobilityMode=doc.RootElement.TryGetProperty("mobility",out var mobility)?mobility.GetString():null;
         if(mobilityMode!=null&&(!Program.LaunchParameters.ContainsKey("-companionmobilitytest")
-            ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "unknown" or "equipment")))
+            ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "rapid" or "expiry" or "unknown" or "equipment")))
             throw new ArgumentException("Invalid isolated mobility scene");
         mobilityChanged=false;
+        mobilityRestored=false;
         recoveryMode=doc.RootElement.TryGetProperty("recovery",out var mode)?mode.GetString():null;
         if(recoveryMode!=null && (!Program.LaunchParameters.ContainsKey("-companionnavrecoverytest")
             || scene!="flat" || direction!=1 || recoveryMode is not ("offset" or "low_wall" or "high_wall" or "air" or "cancel_air")))
@@ -182,7 +199,7 @@ internal static class ServerAiTerrainFixture
         if(mobilityMode!=null)
         {
             foreach(var item in p.armor)item.TurnToAir();
-            if(mobilityMode is "swiftness" or "remove")p.AddBuff(BuffID.Swiftness,36000,true);
+            if(mobilityMode is "swiftness" or "remove" or "rapid" or "expiry")p.AddBuff(BuffID.Swiftness,36000,true);
             if(mobilityMode=="unknown")p.AddBuff(BuffID.WellFed,36000,true);
             if(mobilityMode=="equipment")p.armor[3].SetDefaults(ItemID.HermesBoots);
         }

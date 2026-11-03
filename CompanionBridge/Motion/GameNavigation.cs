@@ -37,7 +37,7 @@ internal sealed class NativeNavigation
 
     internal bool Ordinary(Player p) => OrdinaryRejection(p) == null;
 
-    private string OrdinaryRejection(Player p,float transitionSpeedLimit=0)
+    private string OrdinaryRejection(Player p,float transitionSpeedLimit=0,bool expiryTail=false)
     {
         var ph = Parameters(p);
         List<string> reasons = null;
@@ -45,6 +45,9 @@ internal sealed class NativeNavigation
         {
             if (condition) (reasons ??= new()).Add(reason);
         }
+        // This is an explicit unvalidated-combination gate, not an inference
+        // that every Mod changes movement. Equal sampled scalars cannot certify
+        // later ModPlayer/On/IL hooks. Keep server engine isolation unchanged.
         foreach(var mod in ModLoader.Mods)
             Reject(mod.Name is not ("ModLoader" or "CompanionBridge"),"unvalidated_loaded_mod: "+mod.Name);
         Reject(p.mount.Active, "mount_active");
@@ -66,8 +69,8 @@ internal sealed class NativeNavigation
         Reject(p.rocketBoots != 0, "rocket_boots");
         Reject(p.itemAnimation != 0, "item_animation");
         Reject(p.width != 20 || p.height != 42, "unsupported_body_size");
-        Reject(!(Math.Abs(p.velocity.X) <= Math.Max(p.HasBuff(BuffID.Swiftness)?3.95f:3.2f,transitionSpeedLimit)), "unsupported_horizontal_velocity");
-        var expected=p.HasBuff(BuffID.Swiftness)?PhysicsParameters.Swiftness:PhysicsParameters.Basic;
+        Reject(!(Math.Abs(p.velocity.X) <= Math.Max(p.HasBuff(BuffID.Swiftness)||expiryTail?3.95f:3.2f,transitionSpeedLimit)), "unsupported_horizontal_velocity");
+        var expected=p.HasBuff(BuffID.Swiftness)||expiryTail?PhysicsParameters.Swiftness:PhysicsParameters.Basic;
         if (!ph.Matches(expected)) Reject(true, $"unsupported_physics: {ph}");
         for (int i = 0; i < 10; i++)
             if (!p.armor[i].IsAir) Reject(true, $"equipment: slot={i}, type={p.armor[i].type}, name={p.armor[i].Name}");
@@ -106,9 +109,12 @@ internal sealed class NativeNavigation
         if(sameProfileScope&&_profile.Supported&&_profile.Variant=="vanilla_swiftness"
             &&!p.HasBuff(BuffID.Swiftness)&&ph.IsBasic)_transitionSpeedLimit=3.95f;
         if(!sameProfileScope||Math.Abs(p.velocity.X)<=3.2f)_transitionSpeedLimit=0;
-        string rejection = OrdinaryRejection(p,_transitionSpeedLimit);
+        bool expiryTail=_mobility.IsSwiftnessExpiryTail(ph,p.HasBuff(BuffID.Swiftness),Main.GameUpdateCount,session,generation);
+        string rejection = OrdinaryRejection(p,_transitionSpeedLimit,expiryTail);
+        int swiftnessIndex=p.FindBuffIndex(BuffID.Swiftness);
         _profile=_mobility.Sample(ph,p.width,p.height,p.HasBuff(BuffID.Swiftness),
-            rejection==null?Array.Empty<string>():new[]{rejection},Main.GameUpdateCount,session,generation);
+            rejection==null?Array.Empty<string>():new[]{rejection},Main.GameUpdateCount,session,generation,
+            swiftnessIndex>=0?p.buffTime[swiftnessIndex]:0);
         if(!_profile.Supported)return Fail("unsupported navigation state: "+string.Join("; ",_profile.UnsupportedEffects));
         if (_session != session || _generation != generation) _life = p.statLife;
         _session = session; _generation = generation;

@@ -12,7 +12,7 @@ from native_direct_input import wait_file
 
 async def verify(args):
     p=args.profile;await wait_file(p/'action-fixture.json',90);rows=[]
-    cases=args.scenes or (['basic','swiftness'] if args.probe else ['basic','swiftness','basic_jump','swiftness_jump','basic_region','swiftness_region','swiftness_region_left','add','remove','unknown','equipment'])
+    cases=args.scenes or (['basic','swiftness'] if args.probe else ['basic','swiftness','basic_jump','swiftness_jump','basic_region','swiftness_region','swiftness_region_left','add','remove','rapid','expiry','unknown','equipment'])
     for mode in cases:
         ready=p/'terrain-ready.json';ready.unlink(missing_ok=True)
         variant=mode.split('_')[0] if mode.startswith(('basic_','swiftness_')) else mode
@@ -46,9 +46,24 @@ async def verify(args):
                 assert all(abs(e['velocityBeforeRelease'][k])<=.1 for k in ('X','Y'))
                 assert row['maxPredictionError']<.01, row
                 if 'jump' in mode or 'region' in mode:assert e['navigation']['CompletedJumps']>=1
-                if mode in ('add','remove'):
+                if mode in ('add','remove','rapid','expiry'):
                     assert e['navigation']['RecoveryCount']>=1 and e['navigation']['RecoveryReplans']>=1
                     assert any(f.get('navigation',{}).get('Status')=='recovering' for f in trace if f.get('navigation'))
+                if mode in ('rapid','expiry'):
+                    injected=[f for f in trace if f.get('injectedInput') and f.get('navigation',{}).get('Mobility')]
+                    changes=[]
+                    for f in injected:
+                        profile=f['navigation']['Mobility']
+                        if not changes or changes[-1]['Revision']!=profile['Revision']:changes.append(profile)
+                    assert len(changes)==(3 if mode=='rapid' else 2),changes
+                    assert all(a['Revision']<b['Revision'] for a,b in zip(changes,changes[1:])),changes
+                    assert e['navigation']['RecoveryCount']==e['navigation']['RecoveryReplans']==1,e
+                    if mode=='expiry':
+                        tails=[f for f in injected if f['navigation']['Mobility']['SwiftnessExpiryTail']]
+                        assert len(tails)==1 and not tails[0]['inputPhysics']['swiftness'],tails
+                        assert tails[0]['inputPhysics']['maxRunSpeed']==3.75,tails
+                        assert any(f['inputPhysics']['swiftnessTime']==1 for f in injected),injected
+                    assert e['navigation']['PlanMobilityRevision']==changes[-1]['Revision'],e
             for f in trace:
                 n=f.get('navigation') or {};profile=n.get('Mobility')
                 if profile and profile['Supported'] and f.get('injectedInput'):
