@@ -34,16 +34,16 @@ internal static class StateSpacePlanner
     // A horizontal crossing goal, within a rolling local horizon. Candidates prove
     // a safe braking tail, but can hand off on supported ground with residual speed.
     internal static Route Plan(PhysicsState start, float targetX, PhysicsParameters ph,
-        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, int? goalDirection = null, Func<PhysicsState, Prediction, bool> rejectEdge = null)
-        => PlanCore(start, targetX, null, ph, world, maxExpansions, budgetMs, goalDirection, rejectEdge);
+        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, int? goalDirection = null, Func<PhysicsState, Prediction, bool> rejectEdge = null, Func<PhysicsState,bool> detourCheckpoint = null, Func<PhysicsState,int> historicalPreference = null)
+        => PlanCore(start, targetX, null, ph, world, maxExpansions, budgetMs, goalDirection, rejectEdge, detourCheckpoint, historicalPreference);
 
     internal static Route Plan(PhysicsState start, LandingRegion region, PhysicsParameters ph,
-        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, Func<PhysicsState, Prediction, bool> rejectEdge = null)
+        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, Func<PhysicsState, Prediction, bool> rejectEdge = null, Func<PhysicsState,bool> detourCheckpoint = null, Func<PhysicsState,int> historicalPreference = null)
         => PlanCore(start, Math.Clamp(start.Px, region.MinPlayerLeftX, region.MaxPlayerLeftX),
-            region, ph, world, maxExpansions, budgetMs, null, rejectEdge);
+            region, ph, world, maxExpansions, budgetMs, null, rejectEdge, detourCheckpoint, historicalPreference);
 
     private static Route PlanCore(PhysicsState start, float targetX, LandingRegion region, PhysicsParameters ph,
-        IMotionWorld world, int maxExpansions, double budgetMs, int? goalDirection, Func<PhysicsState, Prediction, bool> rejectEdge)
+        IMotionWorld world, int maxExpansions, double budgetMs, int? goalDirection, Func<PhysicsState, Prediction, bool> rejectEdge, Func<PhysicsState,bool> detourCheckpoint, Func<PhysicsState,int> historicalPreference)
     {
         var watch = Stopwatch.StartNew();
         var rejected = new Dictionary<string, int>();
@@ -90,6 +90,7 @@ internal static class StateSpacePlanner
         came[start] = (start, null, 0);
         open.Enqueue((start, 0), H(start));
         PhysicsState best = start;
+        PhysicsState? detour=null; float detourScore=float.PositiveInfinity; int detourPreference=0;
         float bestDistance = Distance(start);
         float bestScore = float.MaxValue;
         PhysicsState? complete = null;
@@ -171,6 +172,14 @@ internal static class StateSpacePlanner
                         // Region pixel distance only ranks safe partial checkpoints;
                         // it is NOT the A* heuristic (the queue uses ng + H above).
                         float distance = Distance(next), score = ng + distance;
+                        if (detourCheckpoint?.Invoke(next)==true)
+                        {
+                            // Last-known map hints only break equal-cost safe frontier
+                            // ties. They never approve an unobserved or unsafe edge.
+                            int preference=historicalPreference?.Invoke(next)??0;
+                            if(score<detourScore-.01f||Math.Abs(score-detourScore)<=.01f&&preference>detourPreference)
+                            {detour=next;detourScore=score;detourPreference=preference;}
+                        }
                         if (PhysicsSimulator.SupportedCheckpoint(next, world) && distance < Distance(start) - 0.01f
                             && (score < bestScore - 0.01f || (Math.Abs(score - bestScore) <= 0.01f && distance < bestDistance)))
                         { best = next; bestDistance = distance; bestScore = score; }
@@ -183,6 +192,7 @@ internal static class StateSpacePlanner
         string searchExit = reachedGoal ? "goal_reached" : timedOut ? "time_budget"
             : open.Count > 0 && expansions >= maxExpansions ? "expansion_budget" : "local_frontier_exhausted";
         if (!reachedGoal && complete.HasValue) { best = complete.Value; reachedGoal = true; }
+        if(!reachedGoal&&best==start&&detour.HasValue)best=detour.Value;
         var actions = new List<Prediction>();
         for (var k = best; came.TryGetValue(k, out var e) && !e.Prev.Equals(k); k = e.Prev)
             actions.Add(e.Edge);

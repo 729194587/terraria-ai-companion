@@ -1,0 +1,1815 @@
+{
+  "baseline": {
+    "packageSHA256": "e1d3d3d5b907ccdad8eaba01199cb20588fb1da2aff226f98195be4728d799ea",
+    "worldSHA256": "9f4665e8c6989bc5a523349e1bd4a303895814152170ff6cf9ebc7e862a54482",
+    "binding": {
+      "actor": "3fafd79e348249c4a9c7c1bde1f5b4af",
+      "world": "3d7a5f3d0bc84c7899cc59feb12fcb7c",
+      "generation": 1,
+      "slot": 254
+    },
+    "completedGoals": 5,
+    "totalGoals": 6,
+    "plans": 155,
+    "replans": 149,
+    "continuedEdges": 0,
+    "netHorizontalDisplacementSum": 5672.435999999998,
+    "totalPlanMilliseconds": 1646.1227,
+    "combinedActiveTickSamples": 2389,
+    "combinedTickTotalMs": 4759.227400000007,
+    "combinedTickMedianMs": 1.2223,
+    "combinedTickP95Ms": 2.6441,
+    "combinedTickMaxMs": 146.7056,
+    "scenarios": [
+      {
+        "case": "trip-p0-r-768",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "startX": 33632,
+        "targetX": 34400,
+        "endX": 34411.277,
+        "endY": 3694,
+        "displacement": 779.2770000000019,
+        "plans": 18,
+        "replans": 17,
+        "continuedEdges": null,
+        "recoveries": 0,
+        "detourCheckpoints": null,
+        "searchExits": {
+          "time_budget": 1,
+          "goal_reached": 9,
+          "safe_ground_walk": 8
+        },
+        "totalPlanMilliseconds": 161.8189,
+        "activeTicks": 296,
+        "tickMedianMs": 1.1877,
+        "tickP95Ms": 2.8664,
+        "tickMaxMs": 146.7056,
+        "finalNavigation": {
+          "RecoveryPosition": null,
+          "DominatedStates": 0,
+          "RecoveryReplans": 0,
+          "ObservedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "TimeBudgetReached": false,
+          "PlannedActions": 1,
+          "SafeSupport": null,
+          "MaxError": 0,
+          "CompletedJumps": 2,
+          "Action": "walk",
+          "LastLanding": {
+            "Predicted": {
+              "Y": 3694,
+              "X": 34411.277
+            },
+            "ActualVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "PredictedVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "MaxError": 0,
+            "ActionNumber": 18,
+            "Jump": false,
+            "Settled": true,
+            "Actual": {
+              "Y": 3694,
+              "X": 34411.277
+            }
+          },
+          "Status": "arrived",
+          "ObservedPosition": {
+            "Y": 3694,
+            "X": 34411.277
+          },
+          "HoldFrames": 0,
+          "Generation": 1,
+          "FailedEdgeCount": 0,
+          "ObservedGrounded": null,
+          "SearchNumber": 10,
+          "PlanMilliseconds": 4.0934,
+          "LandingConfirmationFrames": 0,
+          "PlanNumber": 18,
+          "RecoveryInputsReleased": null,
+          "Session": 1,
+          "ReachedGoal": true,
+          "PlanStart": {
+            "ReleaseJump": true,
+            "Vx": 2.819989,
+            "Vy": 0,
+            "Px": 34321.027,
+            "Py": 3702,
+            "JumpFramesLeft": 0,
+            "Grounded": true
+          },
+          "FastWalkPlans": 8,
+          "CompletedActions": 18,
+          "Frame": 40,
+          "RecoveryCount": 0,
+          "SearchRejections": {
+            "no safe landing/progress": 14,
+            "outside route span": 1,
+            "no stable landing within prediction limit": 3
+          },
+          "ExpectedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "TargetX": 34400,
+          "SearchExit": "goal_reached",
+          "TargetRegion": null,
+          "RecoveryReason": null,
+          "PlanKind": "state_space",
+          "ExpectedPosition": {
+            "Y": 3694,
+            "X": 34411.277
+          },
+          "PredictedLanding": {
+            "Y": 3694,
+            "X": 34411.277
+          },
+          "SearchFailureReason": null,
+          "ActualLanding": {
+            "Y": 3694,
+            "X": 34411.277
+          },
+          "Expansions": 3,
+          "Reason": "horizontal goal crossed on safe settled ground"
+        },
+        "endEvidence": {
+          "actorId": "3fafd79e348249c4a9c7c1bde1f5b4af",
+          "inputsAcquired": true,
+          "gameUpdate": 498,
+          "actorSlot": 254,
+          "actorGeneration": 1,
+          "operation": "navigate_to_x",
+          "inputsReleased": true,
+          "effectVerified": true,
+          "observationSequence": 999,
+          "worldSessionId": "3d7a5f3d0bc84c7899cc59feb12fcb7c",
+          "phase": "ServerAI_game_thread_inputs_released"
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 291,
+        "horizontalTravelPixels": 779.2770000000019,
+        "initialState": {
+          "x": 33632,
+          "y": 3702,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      },
+      {
+        "case": "trip-p0-l-768",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "startX": 33632,
+        "targetX": 32864,
+        "endX": 32867.41,
+        "endY": 3686,
+        "displacement": 764.5899999999965,
+        "plans": 12,
+        "replans": 11,
+        "continuedEdges": null,
+        "recoveries": 0,
+        "detourCheckpoints": null,
+        "searchExits": {
+          "safe_ground_walk": 11,
+          "goal_reached": 1
+        },
+        "totalPlanMilliseconds": 8.5406,
+        "activeTicks": 291,
+        "tickMedianMs": 0.9661,
+        "tickP95Ms": 1.7237,
+        "tickMaxMs": 13.367,
+        "finalNavigation": {
+          "LandingConfirmationFrames": 0,
+          "PlannedActions": 1,
+          "TargetRegion": null,
+          "SafeSupport": null,
+          "LastLanding": {
+            "PredictedVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "Settled": true,
+            "Actual": {
+              "Y": 3686,
+              "X": 32867.41
+            },
+            "Predicted": {
+              "Y": 3686,
+              "X": 32867.41
+            },
+            "ActualVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "Jump": false,
+            "MaxError": 0,
+            "ActionNumber": 12
+          },
+          "TargetX": 32864,
+          "CompletedActions": 12,
+          "PlanNumber": 12,
+          "Session": 2,
+          "CompletedJumps": 0,
+          "ExpectedPosition": {
+            "Y": 3686,
+            "X": 32867.41
+          },
+          "TimeBudgetReached": false,
+          "Reason": "horizontal goal crossed on safe settled ground",
+          "PlanStart": {
+            "Grounded": true,
+            "ReleaseJump": true,
+            "JumpFramesLeft": 0,
+            "Px": 32903.965,
+            "Py": 3686,
+            "Vx": -2.9199839,
+            "Vy": 0
+          },
+          "ReachedGoal": true,
+          "MaxError": 0,
+          "RecoveryReason": null,
+          "SearchRejections": null,
+          "ExpectedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "PlanKind": "safe_ground_walk",
+          "SearchNumber": 1,
+          "ActualLanding": {
+            "Y": 3686,
+            "X": 32867.41
+          },
+          "RecoveryInputsReleased": null,
+          "PredictedLanding": {
+            "Y": 3686,
+            "X": 32867.41
+          },
+          "FailedEdgeCount": 0,
+          "PlanMilliseconds": 0.2017,
+          "RecoveryPosition": null,
+          "ObservedPosition": {
+            "Y": 3686,
+            "X": 32867.41
+          },
+          "SearchFailureReason": null,
+          "DominatedStates": 0,
+          "SearchExit": null,
+          "Action": "walk",
+          "ObservedGrounded": null,
+          "Frame": 22,
+          "FastWalkPlans": 11,
+          "ObservedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "HoldFrames": 0,
+          "Generation": 1,
+          "RecoveryReplans": 0,
+          "Status": "arrived",
+          "Expansions": 0,
+          "RecoveryCount": 0
+        },
+        "endEvidence": {
+          "phase": "ServerAI_game_thread_inputs_released",
+          "actorGeneration": 1,
+          "inputsReleased": true,
+          "actorSlot": 254,
+          "effectVerified": true,
+          "observationSequence": 1739,
+          "actorId": "3fafd79e348249c4a9c7c1bde1f5b4af",
+          "operation": "navigate_to_x",
+          "gameUpdate": 868,
+          "worldSessionId": "3d7a5f3d0bc84c7899cc59feb12fcb7c",
+          "inputsAcquired": true
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 287,
+        "horizontalTravelPixels": 764.5899999999965,
+        "initialState": {
+          "x": 33632,
+          "y": 3702,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      },
+      {
+        "case": "trip-p0-r-1536",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "startX": 33632,
+        "targetX": 35168,
+        "endX": 35179.43,
+        "endY": 3654,
+        "displacement": 1547.4300000000003,
+        "plans": 47,
+        "replans": 46,
+        "continuedEdges": null,
+        "recoveries": 0,
+        "detourCheckpoints": null,
+        "searchExits": {
+          "goal_reached": 27,
+          "safe_ground_walk": 20
+        },
+        "totalPlanMilliseconds": 314.3957,
+        "activeTicks": 556,
+        "tickMedianMs": 0.9095,
+        "tickP95Ms": 2.5157,
+        "tickMaxMs": 18.6178,
+        "finalNavigation": {
+          "ExpectedPosition": {
+            "X": 35179.43,
+            "Y": 3654
+          },
+          "PlanMilliseconds": 0.179,
+          "SearchExit": null,
+          "HoldFrames": 0,
+          "Reason": "horizontal goal crossed on safe settled ground",
+          "PlanStart": {
+            "Vy": 0,
+            "Vx": 2.8199697,
+            "Py": 3654,
+            "Px": 35086.855,
+            "ReleaseJump": true,
+            "Grounded": true,
+            "JumpFramesLeft": 0
+          },
+          "ActualLanding": {
+            "X": 35179.43,
+            "Y": 3654
+          },
+          "PlanKind": "safe_ground_walk",
+          "SearchNumber": 27,
+          "Frame": 41,
+          "SearchRejections": null,
+          "RecoveryInputsReleased": null,
+          "TargetX": 35168,
+          "SafeSupport": null,
+          "LastLanding": {
+            "Settled": true,
+            "Actual": {
+              "X": 35179.43,
+              "Y": 3654
+            },
+            "ActionNumber": 47,
+            "ActualVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "Jump": false,
+            "PredictedVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "Predicted": {
+              "X": 35179.43,
+              "Y": 3654
+            },
+            "MaxError": 0
+          },
+          "RecoveryCount": 0,
+          "ObservedGrounded": null,
+          "ObservedPosition": {
+            "X": 35179.43,
+            "Y": 3654
+          },
+          "ReachedGoal": true,
+          "Generation": 1,
+          "Status": "arrived",
+          "FailedEdgeCount": 0,
+          "RecoveryReplans": 0,
+          "PlanNumber": 47,
+          "PredictedLanding": {
+            "X": 35179.43,
+            "Y": 3654
+          },
+          "RecoveryReason": null,
+          "DominatedStates": 0,
+          "FastWalkPlans": 20,
+          "ExpectedVelocity": {
+            "X": 0,
+            "Y": 0
+          },
+          "MaxError": 0,
+          "Session": 3,
+          "Expansions": 0,
+          "TimeBudgetReached": false,
+          "CompletedJumps": 1,
+          "PlannedActions": 1,
+          "ObservedVelocity": {
+            "X": 0,
+            "Y": 0
+          },
+          "RecoveryPosition": null,
+          "CompletedActions": 47,
+          "Action": "walk",
+          "LandingConfirmationFrames": 0,
+          "SearchFailureReason": null,
+          "TargetRegion": null
+        },
+        "endEvidence": {
+          "actorGeneration": 1,
+          "observationSequence": 3011,
+          "gameUpdate": 1504,
+          "operation": "navigate_to_x",
+          "inputsReleased": true,
+          "effectVerified": true,
+          "worldSessionId": "3d7a5f3d0bc84c7899cc59feb12fcb7c",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "actorSlot": 254,
+          "actorId": "3fafd79e348249c4a9c7c1bde1f5b4af",
+          "inputsAcquired": true
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 553,
+        "horizontalTravelPixels": 1547.4300000000003,
+        "initialState": {
+          "x": 33632,
+          "y": 3702,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      },
+      {
+        "case": "trip-p0-l-1536",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "startX": 33632,
+        "targetX": 32096,
+        "endX": 32096.973,
+        "endY": 3742,
+        "displacement": 1535.0269999999982,
+        "plans": 40,
+        "replans": 39,
+        "continuedEdges": null,
+        "recoveries": 0,
+        "detourCheckpoints": null,
+        "searchExits": {
+          "safe_ground_walk": 20,
+          "goal_reached": 8,
+          "time_budget": 12
+        },
+        "totalPlanMilliseconds": 471.3701,
+        "activeTicks": 563,
+        "tickMedianMs": 1.3928,
+        "tickP95Ms": 2.8474,
+        "tickMaxMs": 27.7433,
+        "finalNavigation": {
+          "FastWalkPlans": 20,
+          "PlanKind": "state_space",
+          "SafeSupport": null,
+          "ExpectedVelocity": {
+            "X": 0,
+            "Y": 0
+          },
+          "Action": "walk",
+          "TargetX": 32096,
+          "HoldFrames": 0,
+          "PredictedLanding": {
+            "X": 32096.973,
+            "Y": 3742
+          },
+          "LandingConfirmationFrames": 0,
+          "PlanMilliseconds": 19.2703,
+          "RecoveryCount": 0,
+          "Session": 4,
+          "ReachedGoal": true,
+          "RecoveryReason": null,
+          "ObservedVelocity": {
+            "X": 0,
+            "Y": 0
+          },
+          "PlanNumber": 40,
+          "ActualLanding": {
+            "X": 32096.973,
+            "Y": 3742
+          },
+          "LastLanding": {
+            "Actual": {
+              "X": 32096.973,
+              "Y": 3742
+            },
+            "Predicted": {
+              "X": 32096.973,
+              "Y": 3742
+            },
+            "PredictedVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "MaxError": 0,
+            "Settled": true,
+            "ActualVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "ActionNumber": 40,
+            "Jump": false
+          },
+          "Generation": 1,
+          "PlanStart": {
+            "Vy": 0,
+            "ReleaseJump": true,
+            "Px": 32187.053,
+            "JumpFramesLeft": 0,
+            "Grounded": true,
+            "Vx": -2.9399674,
+            "Py": 3766
+          },
+          "CompletedJumps": 0,
+          "Reason": "horizontal goal crossed on safe settled ground",
+          "Frame": 40,
+          "FailedEdgeCount": 0,
+          "RecoveryInputsReleased": null,
+          "ObservedGrounded": null,
+          "RecoveryReplans": 0,
+          "DominatedStates": 0,
+          "ExpectedPosition": {
+            "X": 32096.973,
+            "Y": 3742
+          },
+          "SearchRejections": {
+            "no safe landing/progress": 7,
+            "no stable landing within prediction limit": 21,
+            "outside route span": 2
+          },
+          "SearchExit": "goal_reached",
+          "Status": "arrived",
+          "MaxError": 0,
+          "Expansions": 3,
+          "ObservedPosition": {
+            "X": 32096.973,
+            "Y": 3742
+          },
+          "SearchNumber": 20,
+          "CompletedActions": 40,
+          "PlannedActions": 1,
+          "TimeBudgetReached": false,
+          "TargetRegion": null,
+          "SearchFailureReason": null,
+          "RecoveryPosition": null
+        },
+        "endEvidence": {
+          "inputsAcquired": true,
+          "worldSessionId": "3d7a5f3d0bc84c7899cc59feb12fcb7c",
+          "actorGeneration": 1,
+          "effectVerified": true,
+          "actorId": "3fafd79e348249c4a9c7c1bde1f5b4af",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "gameUpdate": 2133,
+          "inputsReleased": true,
+          "actorSlot": 254,
+          "observationSequence": 4269,
+          "operation": "navigate_to_x"
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 549,
+        "horizontalTravelPixels": 1535.0269999999982,
+        "initialState": {
+          "x": 33632,
+          "y": 3702,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      },
+      {
+        "case": "trip-m231-r-768",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "startX": 29936,
+        "targetX": 30704,
+        "endX": 30709.68,
+        "endY": 3644.3203,
+        "displacement": 773.6800000000003,
+        "plans": 22,
+        "replans": 21,
+        "continuedEdges": null,
+        "recoveries": 0,
+        "detourCheckpoints": null,
+        "searchExits": {
+          "safe_ground_walk": 9,
+          "time_budget": 7,
+          "goal_reached": 6
+        },
+        "totalPlanMilliseconds": 292.492,
+        "activeTicks": 336,
+        "tickMedianMs": 1.4804,
+        "tickP95Ms": 2.8242,
+        "tickMaxMs": 28.9123,
+        "finalNavigation": {
+          "TargetRegion": null,
+          "TargetX": 30704,
+          "PlanStart": {
+            "JumpFramesLeft": 0,
+            "Py": 3654,
+            "Vy": 0,
+            "ReleaseJump": true,
+            "Px": 30670.416,
+            "Grounded": true,
+            "Vx": 2.8429568
+          },
+          "SearchRejections": {
+            "no safe landing/progress": 5
+          },
+          "PlanKind": "state_space",
+          "ObservedVelocity": {
+            "X": 0,
+            "Y": 0
+          },
+          "ActualLanding": {
+            "X": 30709.68,
+            "Y": 3644.3203
+          },
+          "SafeSupport": null,
+          "FailedEdgeCount": 0,
+          "ReachedGoal": true,
+          "SearchNumber": 13,
+          "SearchExit": "goal_reached",
+          "Action": "walk",
+          "RecoveryCount": 0,
+          "PlanMilliseconds": 3.4515,
+          "PlannedActions": 1,
+          "PlanNumber": 22,
+          "ExpectedPosition": {
+            "X": 30709.68,
+            "Y": 3644.3203
+          },
+          "RecoveryInputsReleased": null,
+          "RecoveryPosition": null,
+          "Reason": "horizontal goal crossed on safe settled ground",
+          "RecoveryReason": null,
+          "LandingConfirmationFrames": 0,
+          "FastWalkPlans": 9,
+          "RecoveryReplans": 0,
+          "Expansions": 1,
+          "ObservedGrounded": null,
+          "ExpectedVelocity": {
+            "X": 0,
+            "Y": 0
+          },
+          "MaxError": 0,
+          "Generation": 1,
+          "ObservedPosition": {
+            "X": 30709.68,
+            "Y": 3644.3203
+          },
+          "CompletedActions": 22,
+          "Status": "arrived",
+          "HoldFrames": 0,
+          "CompletedJumps": 1,
+          "SearchFailureReason": null,
+          "PredictedLanding": {
+            "X": 30709.68,
+            "Y": 3644.3203
+          },
+          "Session": 5,
+          "DominatedStates": 0,
+          "Frame": 23,
+          "TimeBudgetReached": false,
+          "LastLanding": {
+            "Predicted": {
+              "X": 30709.68,
+              "Y": 3644.3203
+            },
+            "Actual": {
+              "X": 30709.68,
+              "Y": 3644.3203
+            },
+            "Jump": false,
+            "ActualVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "PredictedVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "MaxError": 0,
+            "Settled": true,
+            "ActionNumber": 22
+          }
+        },
+        "endEvidence": {
+          "actorGeneration": 1,
+          "inputsAcquired": true,
+          "gameUpdate": 2660,
+          "actorId": "3fafd79e348249c4a9c7c1bde1f5b4af",
+          "operation": "navigate_to_x",
+          "worldSessionId": "3d7a5f3d0bc84c7899cc59feb12fcb7c",
+          "observationSequence": 5323,
+          "effectVerified": true,
+          "phase": "ServerAI_game_thread_inputs_released",
+          "actorSlot": 254,
+          "inputsReleased": true
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 323,
+        "horizontalTravelPixels": 773.6800000000003,
+        "initialState": {
+          "x": 29936,
+          "y": 3846,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      },
+      {
+        "case": "trip-m231-l-768",
+        "status": "failed",
+        "reason": "navigation_stalled",
+        "detail": "navigation_stalled",
+        "completed": false,
+        "startX": 29936,
+        "targetX": 29168,
+        "endX": 29663.568,
+        "endY": 4022,
+        "displacement": 272.4320000000007,
+        "plans": 16,
+        "replans": 15,
+        "continuedEdges": null,
+        "recoveries": 0,
+        "detourCheckpoints": null,
+        "searchExits": {
+          "goal_reached": 2,
+          "time_budget": 14
+        },
+        "totalPlanMilliseconds": 397.5053999999999,
+        "activeTicks": 347,
+        "tickMedianMs": 1.1359,
+        "tickP95Ms": 2.5041,
+        "tickMaxMs": 27.692,
+        "finalNavigation": {
+          "ReachedGoal": false,
+          "HoldFrames": 0,
+          "Status": "failed",
+          "RecoveryReplans": 0,
+          "ExpectedPosition": {
+            "X": 29663.568,
+            "Y": 4022
+          },
+          "Session": 6,
+          "PredictedLanding": {
+            "X": 29663.568,
+            "Y": 4022
+          },
+          "Generation": 1,
+          "SearchExit": "time_budget",
+          "DominatedStates": 0,
+          "FailedEdgeCount": 0,
+          "PlannedActions": 1,
+          "Expansions": 5,
+          "Action": "walk",
+          "PlanMilliseconds": 25.6663,
+          "SearchRejections": {
+            "unknown/hazard terrain at (1850,255)": 2,
+            "unknown/hazard terrain at (1848,255)": 4,
+            "unknown/hazard terrain at (1846,255)": 4,
+            "no safe landing/progress": 6,
+            "unknown/hazard terrain at (1852,255)": 10,
+            "unknown/hazard terrain at (1849,255)": 3,
+            "unknown/hazard terrain at (1847,255)": 2,
+            "unknown/hazard terrain at (1845,255)": 2,
+            "unknown/hazard terrain at (1851,255)": 4,
+            "no stable landing within prediction limit": 22
+          },
+          "RecoveryPosition": null,
+          "PlanKind": "state_space",
+          "RecoveryReason": null,
+          "LastLanding": {
+            "Settled": false,
+            "Jump": false,
+            "ActionNumber": 16,
+            "PredictedVelocity": {
+              "X": -1.4200004,
+              "Y": 0
+            },
+            "ActualVelocity": {
+              "X": -1.4200004,
+              "Y": 0
+            },
+            "MaxError": 0,
+            "Predicted": {
+              "X": 29663.568,
+              "Y": 4022
+            },
+            "Actual": {
+              "X": 29663.568,
+              "Y": 4022
+            }
+          },
+          "RecoveryInputsReleased": null,
+          "RecoveryCount": 0,
+          "PlanStart": {
+            "Vy": 0,
+            "Vx": -0.9400002,
+            "Grounded": true,
+            "ReleaseJump": true,
+            "JumpFramesLeft": 0,
+            "Py": 4022,
+            "Px": 29670.887
+          },
+          "LandingConfirmationFrames": 0,
+          "CompletedActions": 16,
+          "MaxError": 0,
+          "Frame": 6,
+          "ObservedVelocity": {
+            "X": -1.4200004,
+            "Y": 0
+          },
+          "Reason": "navigation_stalled",
+          "SearchFailureReason": null,
+          "TargetRegion": null,
+          "PlanNumber": 16,
+          "ObservedPosition": {
+            "X": 29663.568,
+            "Y": 4022
+          },
+          "TargetX": 29168,
+          "CompletedJumps": 4,
+          "ObservedGrounded": null,
+          "SafeSupport": null,
+          "FastWalkPlans": 0,
+          "SearchNumber": 16,
+          "ExpectedVelocity": {
+            "X": -1.4200004,
+            "Y": 0
+          },
+          "TimeBudgetReached": true,
+          "ActualLanding": {
+            "X": 29663.568,
+            "Y": 4022
+          }
+        },
+        "endEvidence": {
+          "inputsReleased": true,
+          "inputsAcquired": true,
+          "phase": "ServerAI_game_thread_inputs_released",
+          "actorGeneration": 1,
+          "actorSlot": 254,
+          "effectVerified": false,
+          "gameUpdate": 3132,
+          "observationSequence": 6267,
+          "operation": "navigate_to_x",
+          "actorId": "3fafd79e348249c4a9c7c1bde1f5b4af",
+          "worldSessionId": "3d7a5f3d0bc84c7899cc59feb12fcb7c"
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 337,
+        "horizontalTravelPixels": 491.5459999999948,
+        "initialState": {
+          "x": 29936,
+          "y": 3846,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      }
+    ]
+  },
+  "final": {
+    "packageSHA256": "5056f789aafda3b64fc6ae32ba3e2b4a3e49683fc5dfa32dd578abf944128f52",
+    "worldSHA256": "9f4665e8c6989bc5a523349e1bd4a303895814152170ff6cf9ebc7e862a54482",
+    "binding": {
+      "actor": "47e9660280404282955a78e865902190",
+      "world": "b79bcd86b0d1495684d4259b1fd76a0a",
+      "generation": 1,
+      "slot": 254
+    },
+    "completedGoals": 5,
+    "totalGoals": 6,
+    "plans": 101,
+    "replans": 95,
+    "continuedEdges": 59,
+    "netHorizontalDisplacementSum": 5607.652999999995,
+    "totalPlanMilliseconds": 940.7048,
+    "combinedActiveTickSamples": 2414,
+    "combinedTickTotalMs": 4076.6030999999966,
+    "combinedTickMedianMs": 1.1768,
+    "combinedTickP95Ms": 2.2817,
+    "combinedTickMaxMs": 142.8146,
+    "scenarios": [
+      {
+        "case": "trip-p0-r-768",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "startX": 33632,
+        "targetX": 34400,
+        "endX": 34389.195,
+        "endY": 3702,
+        "displacement": 757.1949999999997,
+        "plans": 11,
+        "replans": 10,
+        "continuedEdges": 12,
+        "recoveries": 0,
+        "detourCheckpoints": 0,
+        "searchExits": {
+          "time_budget": 1,
+          "goal_reached": 4,
+          "safe_ground_walk": 6
+        },
+        "totalPlanMilliseconds": 74.29700000000001,
+        "activeTicks": 293,
+        "tickMedianMs": 1.0954,
+        "tickP95Ms": 2.5173,
+        "tickMaxMs": 142.8146,
+        "finalNavigation": {
+          "ActualLanding": {
+            "Y": 3702,
+            "X": 34389.195
+          },
+          "LastLanding": {
+            "Actual": {
+              "Y": 3702,
+              "X": 34389.195
+            },
+            "ActionNumber": 23,
+            "Settled": true,
+            "Jump": false,
+            "PredictedVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "ActualVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "Predicted": {
+              "Y": 3702,
+              "X": 34389.195
+            },
+            "MaxError": 0
+          },
+          "Frame": 41,
+          "TargetX": 34400,
+          "Action": "walk",
+          "SafeSupport": null,
+          "TripPlanningMilliseconds": 74.29700000000001,
+          "FailedEdgeCount": 0,
+          "Generation": 1,
+          "TimeBudgetReached": false,
+          "ExpectedPosition": {
+            "Y": 3702,
+            "X": 34389.195
+          },
+          "ExpectedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "PlanKind": "state_space",
+          "DominatedStates": 5,
+          "PlanMilliseconds": 11.7685,
+          "PlannedActions": 4,
+          "ObservedGrounded": null,
+          "ReachedGoal": true,
+          "HoldFrames": 0,
+          "DetourCheckpoints": 0,
+          "ObservedPosition": {
+            "Y": 3702,
+            "X": 34389.195
+          },
+          "MaxError": 0,
+          "SearchExit": "goal_reached",
+          "CompletedActions": 23,
+          "ObservedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "PredictedLanding": {
+            "Y": 3702,
+            "X": 34389.195
+          },
+          "VisitedCheckpoints": 24,
+          "InvalidatedRoutes": 0,
+          "RecoveryInputsReleased": null,
+          "SearchFailureReason": null,
+          "TripUpdates": 285,
+          "RecoveryCount": 0,
+          "CompletedJumps": 0,
+          "RecoveryPosition": null,
+          "RecoveryReason": null,
+          "Expansions": 7,
+          "Session": 1,
+          "PlanStart": {
+            "Vy": 0,
+            "Px": 34242.445,
+            "ReleaseJump": true,
+            "Vx": 2.8799865,
+            "JumpFramesLeft": 0,
+            "Grounded": true,
+            "Py": 3718
+          },
+          "TargetRegion": null,
+          "RecoveryReplans": 0,
+          "ContinuedEdges": 12,
+          "FastWalkPlans": 6,
+          "SearchRejections": {
+            "outside route span": 25,
+            "walking blocked": 3,
+            "no stable landing within prediction limit": 15,
+            "no safe landing/progress": 28
+          },
+          "RepeatRejections": 0,
+          "Reason": "horizontal goal crossed on safe settled ground",
+          "SearchNumber": 5,
+          "PlanNumber": 11,
+          "LandingConfirmationFrames": 0,
+          "Status": "arrived"
+        },
+        "endEvidence": {
+          "gameUpdate": 461,
+          "actorSlot": 254,
+          "actorGeneration": 1,
+          "inputsAcquired": true,
+          "effectVerified": true,
+          "observationSequence": 925,
+          "operation": "navigate_to_x",
+          "actorId": "47e9660280404282955a78e865902190",
+          "worldSessionId": "b79bcd86b0d1495684d4259b1fd76a0a",
+          "inputsReleased": true,
+          "phase": "ServerAI_game_thread_inputs_released"
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 285,
+        "horizontalTravelPixels": 757.1949999999997,
+        "initialState": {
+          "x": 33632,
+          "y": 3702,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      },
+      {
+        "case": "trip-p0-l-768",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "startX": 33632,
+        "targetX": 32864,
+        "endX": 32867.41,
+        "endY": 3686,
+        "displacement": 764.5899999999965,
+        "plans": 12,
+        "replans": 11,
+        "continuedEdges": 3,
+        "recoveries": 0,
+        "detourCheckpoints": 0,
+        "searchExits": {
+          "safe_ground_walk": 11,
+          "goal_reached": 1
+        },
+        "totalPlanMilliseconds": 8.2923,
+        "activeTicks": 290,
+        "tickMedianMs": 0.894,
+        "tickP95Ms": 1.8419,
+        "tickMaxMs": 10.6092,
+        "finalNavigation": {
+          "PlanMilliseconds": 0.2923,
+          "LastLanding": {
+            "Settled": true,
+            "Predicted": {
+              "Y": 3686,
+              "X": 32867.41
+            },
+            "ActualVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "ActionNumber": 15,
+            "PredictedVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "MaxError": 0,
+            "Jump": false,
+            "Actual": {
+              "Y": 3686,
+              "X": 32867.41
+            }
+          },
+          "MaxError": 0,
+          "SearchNumber": 1,
+          "RepeatRejections": 0,
+          "PlanNumber": 12,
+          "SafeSupport": null,
+          "DominatedStates": 0,
+          "ExpectedPosition": {
+            "Y": 3686,
+            "X": 32867.41
+          },
+          "Action": "walk",
+          "SearchFailureReason": null,
+          "Frame": 22,
+          "TimeBudgetReached": false,
+          "DetourCheckpoints": 0,
+          "ExpectedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "FastWalkPlans": 11,
+          "Expansions": 0,
+          "Reason": "horizontal goal crossed on safe settled ground",
+          "RecoveryCount": 0,
+          "Generation": 1,
+          "ReachedGoal": true,
+          "TargetRegion": null,
+          "VisitedCheckpoints": 16,
+          "RecoveryReason": null,
+          "TargetX": 32864,
+          "ActualLanding": {
+            "Y": 3686,
+            "X": 32867.41
+          },
+          "ObservedPosition": {
+            "Y": 3686,
+            "X": 32867.41
+          },
+          "TripPlanningMilliseconds": 8.2923,
+          "InvalidatedRoutes": 0,
+          "TripUpdates": 287,
+          "ContinuedEdges": 3,
+          "FailedEdgeCount": 0,
+          "PlannedActions": 1,
+          "Status": "arrived",
+          "RecoveryPosition": null,
+          "PlanStart": {
+            "ReleaseJump": true,
+            "Vx": -2.9199839,
+            "Vy": 0,
+            "Px": 32903.965,
+            "Py": 3686,
+            "JumpFramesLeft": 0,
+            "Grounded": true
+          },
+          "CompletedJumps": 0,
+          "HoldFrames": 0,
+          "RecoveryReplans": 0,
+          "SearchRejections": null,
+          "RecoveryInputsReleased": null,
+          "ObservedGrounded": null,
+          "LandingConfirmationFrames": 0,
+          "ObservedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "CompletedActions": 15,
+          "SearchExit": null,
+          "Session": 2,
+          "PredictedLanding": {
+            "Y": 3686,
+            "X": 32867.41
+          },
+          "PlanKind": "safe_ground_walk"
+        },
+        "endEvidence": {
+          "phase": "ServerAI_game_thread_inputs_released",
+          "operation": "navigate_to_x",
+          "actorSlot": 254,
+          "inputsReleased": true,
+          "actorId": "47e9660280404282955a78e865902190",
+          "observationSequence": 1663,
+          "gameUpdate": 830,
+          "worldSessionId": "b79bcd86b0d1495684d4259b1fd76a0a",
+          "effectVerified": true,
+          "actorGeneration": 1,
+          "inputsAcquired": true
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 287,
+        "horizontalTravelPixels": 764.5899999999965,
+        "initialState": {
+          "x": 33632,
+          "y": 3702,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      },
+      {
+        "case": "trip-p0-r-1536",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "startX": 33632,
+        "targetX": 35168,
+        "endX": 35158.39,
+        "endY": 3654,
+        "displacement": 1526.3899999999994,
+        "plans": 22,
+        "replans": 21,
+        "continuedEdges": 20,
+        "recoveries": 0,
+        "detourCheckpoints": 0,
+        "searchExits": {
+          "goal_reached": 8,
+          "safe_ground_walk": 14
+        },
+        "totalPlanMilliseconds": 81.95909999999999,
+        "activeTicks": 551,
+        "tickMedianMs": 0.8846,
+        "tickP95Ms": 1.787,
+        "tickMaxMs": 17.5785,
+        "finalNavigation": {
+          "ExpectedPosition": {
+            "X": 35158.39,
+            "Y": 3654
+          },
+          "HoldFrames": 0,
+          "LandingConfirmationFrames": 0,
+          "SafeSupport": null,
+          "FailedEdgeCount": 0,
+          "TargetRegion": null,
+          "PlanKind": "safe_ground_walk",
+          "DominatedStates": 0,
+          "PredictedLanding": {
+            "X": 35158.39,
+            "Y": 3654
+          },
+          "FastWalkPlans": 14,
+          "ExpectedVelocity": {
+            "X": 0,
+            "Y": 0
+          },
+          "SearchFailureReason": null,
+          "CompletedJumps": 0,
+          "Status": "arrived",
+          "TripPlanningMilliseconds": 81.95909999999999,
+          "TimeBudgetReached": false,
+          "RepeatRejections": 0,
+          "LastLanding": {
+            "Settled": true,
+            "PredictedVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "MaxError": 0,
+            "ActualVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "Predicted": {
+              "X": 35158.39,
+              "Y": 3654
+            },
+            "ActionNumber": 42,
+            "Jump": false,
+            "Actual": {
+              "X": 35158.39,
+              "Y": 3654
+            }
+          },
+          "VisitedCheckpoints": 43,
+          "RecoveryReason": null,
+          "CompletedActions": 42,
+          "DetourCheckpoints": 0,
+          "ActualLanding": {
+            "X": 35158.39,
+            "Y": 3654
+          },
+          "PlanMilliseconds": 0.196,
+          "Session": 3,
+          "InvalidatedRoutes": 0,
+          "RecoveryCount": 0,
+          "ContinuedEdges": 20,
+          "TripUpdates": 545,
+          "SearchNumber": 8,
+          "PlannedActions": 1,
+          "Reason": "horizontal goal crossed on safe settled ground",
+          "Frame": 41,
+          "RecoveryReplans": 0,
+          "Expansions": 0,
+          "TargetX": 35168,
+          "ReachedGoal": true,
+          "Action": "walk",
+          "RecoveryPosition": null,
+          "Generation": 1,
+          "ObservedVelocity": {
+            "X": 0,
+            "Y": 0
+          },
+          "MaxError": 0,
+          "SearchExit": null,
+          "SearchRejections": null,
+          "ObservedPosition": {
+            "X": 35158.39,
+            "Y": 3654
+          },
+          "PlanStart": {
+            "Px": 35065.04,
+            "Py": 3654,
+            "Vx": 2.8399682,
+            "Vy": 0,
+            "ReleaseJump": true,
+            "JumpFramesLeft": 0,
+            "Grounded": true
+          },
+          "PlanNumber": 22,
+          "RecoveryInputsReleased": null,
+          "ObservedGrounded": null
+        },
+        "endEvidence": {
+          "actorGeneration": 1,
+          "inputsReleased": true,
+          "worldSessionId": "b79bcd86b0d1495684d4259b1fd76a0a",
+          "actorId": "47e9660280404282955a78e865902190",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "gameUpdate": 1453,
+          "operation": "navigate_to_x",
+          "inputsAcquired": true,
+          "effectVerified": true,
+          "actorSlot": 254,
+          "observationSequence": 2909
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 545,
+        "horizontalTravelPixels": 1526.3899999999994,
+        "initialState": {
+          "x": 33632,
+          "y": 3702,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      },
+      {
+        "case": "trip-p0-l-1536",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "startX": 33632,
+        "targetX": 32096,
+        "endX": 32096.973,
+        "endY": 3742,
+        "displacement": 1535.0269999999982,
+        "plans": 31,
+        "replans": 30,
+        "continuedEdges": 12,
+        "recoveries": 0,
+        "detourCheckpoints": 0,
+        "searchExits": {
+          "safe_ground_walk": 16,
+          "goal_reached": 5,
+          "time_budget": 10
+        },
+        "totalPlanMilliseconds": 338.52979999999997,
+        "activeTicks": 556,
+        "tickMedianMs": 1.1374,
+        "tickP95Ms": 2.4955,
+        "tickMaxMs": 28.4862,
+        "finalNavigation": {
+          "MaxError": 0,
+          "ReachedGoal": true,
+          "PlanNumber": 31,
+          "DetourCheckpoints": 0,
+          "PlanMilliseconds": 13.4641,
+          "Session": 4,
+          "RepeatRejections": 0,
+          "VisitedCheckpoints": 44,
+          "PredictedLanding": {
+            "Y": 3742,
+            "X": 32096.973
+          },
+          "LandingConfirmationFrames": 0,
+          "ObservedGrounded": null,
+          "ExpectedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "Generation": 1,
+          "TripPlanningMilliseconds": 338.52979999999997,
+          "Reason": "horizontal goal crossed on safe settled ground",
+          "RecoveryCount": 0,
+          "FailedEdgeCount": 0,
+          "Expansions": 3,
+          "DominatedStates": 0,
+          "ExpectedPosition": {
+            "Y": 3742,
+            "X": 32096.973
+          },
+          "SafeSupport": null,
+          "TargetX": 32096,
+          "TripUpdates": 549,
+          "SearchFailureReason": null,
+          "InvalidatedRoutes": 0,
+          "PlanKind": "state_space",
+          "RecoveryInputsReleased": null,
+          "RecoveryPosition": null,
+          "RecoveryReason": null,
+          "SearchRejections": {
+            "no stable landing within prediction limit": 21,
+            "outside route span": 2,
+            "no safe landing/progress": 7
+          },
+          "ObservedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "Action": "walk",
+          "SearchNumber": 15,
+          "RecoveryReplans": 0,
+          "SearchExit": "goal_reached",
+          "TargetRegion": null,
+          "PlannedActions": 1,
+          "FastWalkPlans": 16,
+          "PlanStart": {
+            "Py": 3766,
+            "Px": 32187.053,
+            "ReleaseJump": true,
+            "Vx": -2.9399674,
+            "JumpFramesLeft": 0,
+            "Grounded": true,
+            "Vy": 0
+          },
+          "ContinuedEdges": 12,
+          "ActualLanding": {
+            "Y": 3742,
+            "X": 32096.973
+          },
+          "TimeBudgetReached": false,
+          "Status": "arrived",
+          "CompletedJumps": 0,
+          "LastLanding": {
+            "ActionNumber": 43,
+            "MaxError": 0,
+            "Jump": false,
+            "PredictedVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "ActualVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "Actual": {
+              "Y": 3742,
+              "X": 32096.973
+            },
+            "Settled": true,
+            "Predicted": {
+              "Y": 3742,
+              "X": 32096.973
+            }
+          },
+          "CompletedActions": 43,
+          "ObservedPosition": {
+            "Y": 3742,
+            "X": 32096.973
+          },
+          "Frame": 40,
+          "HoldFrames": 0
+        },
+        "endEvidence": {
+          "gameUpdate": 2116,
+          "actorSlot": 254,
+          "phase": "ServerAI_game_thread_inputs_released",
+          "inputsReleased": true,
+          "inputsAcquired": true,
+          "operation": "navigate_to_x",
+          "observationSequence": 4235,
+          "effectVerified": true,
+          "worldSessionId": "b79bcd86b0d1495684d4259b1fd76a0a",
+          "actorId": "47e9660280404282955a78e865902190",
+          "actorGeneration": 1
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 549,
+        "horizontalTravelPixels": 1535.0269999999982,
+        "initialState": {
+          "x": 33632,
+          "y": 3702,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      },
+      {
+        "case": "trip-m231-r-768",
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "detail": null,
+        "completed": true,
+        "startX": 29936,
+        "targetX": 30704,
+        "endX": 30709.68,
+        "endY": 3644.3203,
+        "displacement": 773.6800000000003,
+        "plans": 16,
+        "replans": 15,
+        "continuedEdges": 6,
+        "recoveries": 0,
+        "detourCheckpoints": 0,
+        "searchExits": {
+          "safe_ground_walk": 7,
+          "time_budget": 6,
+          "goal_reached": 3
+        },
+        "totalPlanMilliseconds": 191.5178,
+        "activeTicks": 330,
+        "tickMedianMs": 1.6315,
+        "tickP95Ms": 2.7478,
+        "tickMaxMs": 28.3635,
+        "finalNavigation": {
+          "MaxError": 0,
+          "PredictedLanding": {
+            "Y": 3644.3203,
+            "X": 30709.68
+          },
+          "TargetX": 30704,
+          "Status": "arrived",
+          "ObservedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "Reason": "horizontal goal crossed on safe settled ground",
+          "Expansions": 1,
+          "SearchNumber": 9,
+          "PlanStart": {
+            "Vx": 2.8429568,
+            "Vy": 0,
+            "ReleaseJump": true,
+            "JumpFramesLeft": 0,
+            "Grounded": true,
+            "Px": 30670.416,
+            "Py": 3654
+          },
+          "DominatedStates": 0,
+          "ActualLanding": {
+            "Y": 3644.3203,
+            "X": 30709.68
+          },
+          "RepeatRejections": 0,
+          "Frame": 23,
+          "Session": 5,
+          "LandingConfirmationFrames": 0,
+          "ObservedGrounded": null,
+          "ExpectedVelocity": {
+            "Y": 0,
+            "X": 0
+          },
+          "LastLanding": {
+            "MaxError": 0,
+            "ActionNumber": 22,
+            "Actual": {
+              "Y": 3644.3203,
+              "X": 30709.68
+            },
+            "Settled": true,
+            "ActualVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "Predicted": {
+              "Y": 3644.3203,
+              "X": 30709.68
+            },
+            "PredictedVelocity": {
+              "Y": 0,
+              "X": 0
+            },
+            "Jump": false
+          },
+          "RecoveryInputsReleased": null,
+          "RecoveryReplans": 0,
+          "PlanMilliseconds": 2.8644,
+          "HoldFrames": 0,
+          "DetourCheckpoints": 0,
+          "ReachedGoal": true,
+          "ExpectedPosition": {
+            "Y": 3644.3203,
+            "X": 30709.68
+          },
+          "PlanKind": "state_space",
+          "TripPlanningMilliseconds": 191.5178,
+          "InvalidatedRoutes": 0,
+          "RecoveryPosition": null,
+          "SafeSupport": null,
+          "SearchExit": "goal_reached",
+          "RecoveryCount": 0,
+          "FailedEdgeCount": 0,
+          "Action": "walk",
+          "SearchRejections": {
+            "no safe landing/progress": 5
+          },
+          "FastWalkPlans": 7,
+          "ContinuedEdges": 6,
+          "CompletedJumps": 1,
+          "VisitedCheckpoints": 23,
+          "TripUpdates": 323,
+          "Generation": 1,
+          "ObservedPosition": {
+            "Y": 3644.3203,
+            "X": 30709.68
+          },
+          "CompletedActions": 22,
+          "TimeBudgetReached": false,
+          "PlannedActions": 1,
+          "SearchFailureReason": null,
+          "RecoveryReason": null,
+          "PlanNumber": 16,
+          "TargetRegion": null
+        },
+        "endEvidence": {
+          "actorId": "47e9660280404282955a78e865902190",
+          "observationSequence": 5157,
+          "inputsReleased": true,
+          "actorSlot": 254,
+          "worldSessionId": "b79bcd86b0d1495684d4259b1fd76a0a",
+          "operation": "navigate_to_x",
+          "actorGeneration": 1,
+          "effectVerified": true,
+          "inputsAcquired": true,
+          "gameUpdate": 2577,
+          "phase": "ServerAI_game_thread_inputs_released"
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 323,
+        "horizontalTravelPixels": 773.6800000000003,
+        "initialState": {
+          "x": 29936,
+          "y": 3846,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      },
+      {
+        "case": "trip-m231-l-768",
+        "status": "failed",
+        "reason": "navigation_search_timeout",
+        "detail": "time_budget; walking blocked (2 candidates); unknown/hazard terrain at (1852,255) (2 candidates); no stable landing within prediction limit (1 candidates)",
+        "completed": false,
+        "startX": 29936,
+        "targetX": 29168,
+        "endX": 29685.229,
+        "endY": 4014,
+        "displacement": 250.77100000000064,
+        "plans": 9,
+        "replans": 8,
+        "continuedEdges": 6,
+        "recoveries": 0,
+        "detourCheckpoints": 4,
+        "searchExits": {
+          "goal_reached": 1,
+          "time_budget": 8
+        },
+        "totalPlanMilliseconds": 246.1088,
+        "activeTicks": 394,
+        "tickMedianMs": 1.3453,
+        "tickP95Ms": 2.2121,
+        "tickMaxMs": 39.3567,
+        "finalNavigation": {
+          "Session": 6,
+          "Status": "failed",
+          "Action": "plan",
+          "Reason": "navigation_search_timeout",
+          "Frame": 30,
+          "HoldFrames": 0,
+          "PredictedLanding": {
+            "X": 29684.709,
+            "Y": 4014
+          },
+          "ActualLanding": {
+            "X": 29684.709,
+            "Y": 4014
+          },
+          "MaxError": 0,
+          "ExpectedPosition": {
+            "X": 29684.709,
+            "Y": 4014
+          },
+          "ObservedPosition": {
+            "X": 29684.709,
+            "Y": 4014
+          },
+          "ExpectedVelocity": {
+            "X": 0.72000015,
+            "Y": 0
+          },
+          "ObservedVelocity": {
+            "X": 0.72000015,
+            "Y": 0
+          },
+          "Generation": 1,
+          "TargetX": 29168,
+          "CompletedActions": 14,
+          "CompletedJumps": 6,
+          "Expansions": 1,
+          "PlannedActions": 0,
+          "PlanMilliseconds": 34.97,
+          "LastLanding": {
+            "ActionNumber": 14,
+            "Jump": false,
+            "Predicted": {
+              "X": 29684.709,
+              "Y": 4014
+            },
+            "Actual": {
+              "X": 29684.709,
+              "Y": 4014
+            },
+            "MaxError": 0,
+            "PredictedVelocity": {
+              "X": 0.72000015,
+              "Y": 0
+            },
+            "ActualVelocity": {
+              "X": 0.72000015,
+              "Y": 0
+            },
+            "Settled": false
+          },
+          "ReachedGoal": false,
+          "TimeBudgetReached": true,
+          "PlanNumber": 9,
+          "TargetRegion": null,
+          "LandingConfirmationFrames": 0,
+          "ObservedGrounded": null,
+          "SafeSupport": null,
+          "PlanStart": {
+            "Px": 29684.709,
+            "Py": 4014,
+            "Vx": 0.72000015,
+            "Vy": 0,
+            "Grounded": true,
+            "JumpFramesLeft": 0,
+            "ReleaseJump": true
+          },
+          "SearchFailureReason": "time_budget; walking blocked (2 candidates); unknown/hazard terrain at (1852,255) (2 candidates); no stable landing within prediction limit (1 candidates)",
+          "PlanKind": "state_space",
+          "SearchNumber": 9,
+          "FastWalkPlans": 0,
+          "SearchExit": "time_budget",
+          "SearchRejections": {
+            "walking blocked": 2,
+            "no stable landing within prediction limit": 1,
+            "unknown/hazard terrain at (1852,255)": 2,
+            "unknown/hazard terrain at (1851,255)": 1
+          },
+          "DominatedStates": 0,
+          "RecoveryCount": 0,
+          "RecoveryReplans": 0,
+          "RecoveryReason": null,
+          "RecoveryPosition": null,
+          "RecoveryInputsReleased": null,
+          "FailedEdgeCount": 0,
+          "TripUpdates": 386,
+          "ContinuedEdges": 6,
+          "InvalidatedRoutes": 0,
+          "TripPlanningMilliseconds": 246.1088,
+          "DetourCheckpoints": 4,
+          "VisitedCheckpoints": 14,
+          "RepeatRejections": 0
+        },
+        "endEvidence": {
+          "phase": "ServerAI_game_thread_inputs_released",
+          "gameUpdate": 3074,
+          "worldSessionId": "b79bcd86b0d1495684d4259b1fd76a0a",
+          "actorId": "47e9660280404282955a78e865902190",
+          "actorGeneration": 1,
+          "actorSlot": 254,
+          "inputsAcquired": true,
+          "inputsReleased": true,
+          "effectVerified": false,
+          "operation": "navigate_to_x",
+          "observationSequence": 6151
+        },
+        "endEvidenceStatus": "known",
+        "navigationUpdates": 386,
+        "horizontalTravelPixels": 569.9109999999928,
+        "initialState": {
+          "x": 29936,
+          "y": 3846,
+          "Grounded": true,
+          "SafeSupport": true,
+          "Settled": true
+        }
+      }
+    ]
+  }
+}

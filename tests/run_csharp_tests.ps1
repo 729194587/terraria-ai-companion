@@ -1,4 +1,4 @@
-param([switch]$RecoveryOnly, [switch]$PlannerOnly, [switch]$SafeGroundWalkOnly, [switch]$MiningSupportOnly, [switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
+param([switch]$TripOnly,[switch]$RecoveryOnly, [switch]$PlannerOnly, [switch]$SafeGroundWalkOnly, [switch]$MiningSupportOnly, [switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
     [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly, [switch]$AuthorityNetworkOnly,
     [switch]$InventoryOnly, [switch]$BridgeOnly, [switch]$ServerReadsOnly, [switch]$NavigationOnly,[switch]$SceneOnly,[switch]$VerticalOnly)
 $ErrorActionPreference = 'Stop'
@@ -50,6 +50,7 @@ $sources = @(
     (Join-Path $PSScriptRoot 'SafeGroundWalkTests.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationTask.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationFailureMemory.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/NavigationTripProgress.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationDiagnostics.cs'),
     (Join-Path $repo 'CompanionBridge/TcpControlServer.cs'),
     (Join-Path $PSScriptRoot 'BridgeOfflineTests.cs'),
@@ -58,6 +59,7 @@ $sources = @(
     (Join-Path $PSScriptRoot 'VerticalNavigationTests.cs'),
     (Join-Path $PSScriptRoot 'NavigationLandingConfirmationTests.cs'),
     (Join-Path $PSScriptRoot 'NavigationRecoveryTests.cs'),
+    (Join-Path $PSScriptRoot 'NavigationTripTests.cs'),
     (Join-Path $PSScriptRoot 'NavigationPerceptionTests.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Players/CompanionPlayer.cs'),
     (Join-Path $PSScriptRoot 'PlayerHookOfflineTests.cs')
@@ -71,13 +73,14 @@ if ($AuthorityNetworkOnly) {
     return
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
+if ($TripOnly) { [NavigationTripTests]::Run(); return }
 if ($RecoveryOnly) { [NavigationRecoveryTests]::Run(); return }
 if ($PlannerOnly) { [PlannerCorrectnessTests]::Run(); return }
 if ($SafeGroundWalkOnly) { [SafeGroundWalkTests]::Run(); return }
 if ($MiningSupportOnly) { [MiningSupportImpactTests]::Run((Join-Path $PSScriptRoot 'fixtures/mining-support-play2.json')); return }
 if ($SceneOnly) { [SceneGeometryTests]::Run(); return }
 if ($VerticalOnly) { [VerticalNavigationTests]::Run(); return }
-if ($NavigationOnly) { [NavigationRecoveryTests]::Run(); [PlannerCorrectnessTests]::Run(); [NavigationPerceptionTests]::Run(); [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }
+if ($NavigationOnly) { [NavigationTripTests]::Run(); [NavigationRecoveryTests]::Run(); [PlannerCorrectnessTests]::Run(); [NavigationPerceptionTests]::Run(); [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }
 if ($ServerReadsOnly) { [ServerAiSharedReadTests]::Run(); [AtomicExtensionsOfflineTests]::Run(); return }
 if ($BridgeOnly) { [AiChatOfflineTests]::Run(); [BridgeOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); [LocalInputOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); return }
 if ($InventoryOnly) { [InventoryOfflineTests]::Run(); return }

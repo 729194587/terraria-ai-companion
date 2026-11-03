@@ -18,7 +18,7 @@ async def verify(args):
     p=args.profile
     await wait_file(p/'action-fixture.json',90)
     rows=[]
-    for scene in (['offset'] if args.baseline else ['offset','low_wall','high_wall','air','cancel_air']):
+    for scene in (args.scenes or (['offset'] if args.baseline else ['offset','low_wall','high_wall','air','cancel_air'])):
         ready=p/'terrain-ready.json';ready.unlink(missing_ok=True)
         (p/'terrain-recovery-fired.json').unlink(missing_ok=True)
         temp=p/'terrain-request.tmp';temp.write_text(json.dumps(dict(scene='flat',direction=1,recovery=scene)))
@@ -69,20 +69,34 @@ async def verify(args):
         if args.baseline:
             assert action['status']=='failed' and not action.get('completed'),action
         elif scene in ('offset','low_wall','air'):
-            assert action['completed'] and nav['RecoveryCount']>=1 and nav['RecoveryReplans']>=1,action
+            assert action['completed'],action
+            if scene=='low_wall':
+                # A fresh checkpoint plan can see the new wall before any edge
+                # diverges. Successful native bypass need not spend recovery budget.
+                assert nav['PlanNumber']>=2 and nav['CompletedJumps']>=1,action
+            else:
+                assert nav['RecoveryCount']>=1 and nav['RecoveryReplans']>=1,action
             assert all(evidence.get(k) for k in ('arrived','grounded','safeSupport','settled'))
             assert evidence['x']>=target-12 and abs(evidence['vx'])<=.1
         elif scene=='high_wall':
-            assert action['status']=='failed' and 1<=nav['RecoveryCount']<=3,action
+            assert action['status']=='failed' and 0<=nav['RecoveryCount']<=3 and nav['PlanNumber']>=2,action
         if not args.baseline:
             recovering=[f for f in trace if f['status']=='recovering']
-            assert recovering,'No actual recovery trace'
-            assert all(not f['injectedInput'][key] for f in recovering[1:] for key in ('left','right','jump'))
+            if nav['RecoveryCount']:
+                assert recovering,'No actual recovery trace'
+                for f in recovering[1:]:
+                    if f['injectedInput'] is None:
+                        # Cancellation after the movement update adds a final
+                        # physical release observation, not another injected input.
+                        assert scene=='cancel_air' and f is trace[-1] and action['status']=='cancelled'
+                        assert not any(f[k] for k in ('left','right','jump'))
+                    else:
+                        assert not any(f['injectedInput'][k] for k in ('left','right','jump'))
             for i,f in enumerate(trace):
                 if f.get('RecoveryReplans',0) and not (trace[i-1].get('RecoveryReplans',0) if i else 0):
                     assert i>=2 and trace[i-1]['Settled'] and trace[i-2]['Settled'] and f['RecoveryInputsReleased'],f
         row=dict(scene=scene,status=action['status'],reason=action['reason'],detail=action.get('reasonDetail'),
-            recoveryCount=nav.get('RecoveryCount'),replans=nav.get('RecoveryReplans'),x=evidence.get('x'),
+            recoveryCount=nav.get('RecoveryCount'),replans=nav.get('RecoveryReplans'),plans=nav.get('PlanNumber'),x=evidence.get('x'),
             targetX=target,frames=len(trace),inputsReleased=end['inputsReleased'])
         rows.append(row)
         (p/'recovery-results.json').write_text(json.dumps(rows,indent=2))
@@ -95,4 +109,5 @@ if __name__=='__main__':
     parser.add_argument('--port',type=int,required=True)
     parser.add_argument('--profile',type=Path,required=True)
     parser.add_argument('--baseline',action='store_true')
+    parser.add_argument('--scenes',nargs='+',choices=['offset','low_wall','high_wall','air','cancel_air'])
     asyncio.run(verify(parser.parse_args()))

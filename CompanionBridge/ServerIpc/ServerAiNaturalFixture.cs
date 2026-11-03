@@ -82,7 +82,9 @@ internal static class ServerAiNaturalFixture
                     File.Delete(request);NetworkStateSync.Full(p);
                 }
             }
+            long updateStart=System.Diagnostics.Stopwatch.GetTimestamp();
             update.Invoke(Main.instance,new object[]{new GameTime()});
+            double updateMilliseconds=System.Diagnostics.Stopwatch.GetElapsedTime(updateStart).TotalMilliseconds;
             lock(ProbeSession.Reservation.Gate)
             {
                 var p=ProbeSession.Actor;NetworkStateSync.Require(p);
@@ -98,7 +100,7 @@ internal static class ServerAiNaturalFixture
                     frames.Add(new{tick=Main.GameUpdateCount,x=p.position.X,y=p.position.Y,vx=p.velocity.X,vy=p.velocity.Y,
                         o.State.Grounded,o.SafeSupport,o.Settled,left=p.controlLeft,right=p.controlRight,jump=p.controlJump,
                         status=nav?.Status,action=nav?.Action,frame=nav?.Frame,expectedPosition=nav?.ExpectedPosition,
-                        expectedVelocity=nav?.ExpectedVelocity,maxError=nav?.MaxError});
+                        expectedVelocity=nav?.ExpectedVelocity,maxError=nav?.MaxError,gameUpdateMilliseconds=updateMilliseconds,navigation=nav});
                 }
                 string finish=FileAt("natural-finish");
                 if(File.Exists(finish)&&caseId!=null)

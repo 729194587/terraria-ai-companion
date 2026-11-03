@@ -5,6 +5,7 @@ namespace CompanionBridge.ServerIpc;
 internal static class AiActionReasons
 {
     internal static string Navigation(string reason) => reason is
+        "navigation_trip_update_budget" or "navigation_trip_search_budget" or "navigation_trip_repeated_state" or
         "navigation_stalled" or "navigation_action_limit" or "navigation_search_timeout" or "navigation_search_expansion_budget"
         ? reason : "native_navigation_failed";
 

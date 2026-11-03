@@ -20,10 +20,10 @@ internal sealed class NativeNavigation
     private int _life;
     private bool _paired;
     private readonly bool _captureContacts;
-    internal NativeNavigation(bool captureContacts=false,Action<string> diagnosticWriter=null,bool enableSafeGroundWalk=false)
+    internal NativeNavigation(bool captureContacts=false,Action<string> diagnosticWriter=null,bool enableSafeGroundWalk=false,Func<PhysicsState,int> historicalPreference=null)
     {
         _captureContacts=captureContacts;
-        Task=new(enableSafeGroundWalk);
+        Task=new(enableSafeGroundWalk,historicalPreference);
         Diagnostics=new(diagnosticWriter??(line=>ModContent.GetInstance<CompanionBridge>().Logger.Info(line)));
     }
 

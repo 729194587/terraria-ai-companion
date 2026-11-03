@@ -1,0 +1,491 @@
+{
+  "date": "2026-11-03",
+  "phase": "M4.3",
+  "baselineCommit": "167a5cf46a2ed49ab06481afceb892d6fa533b5e",
+  "pr": 25,
+  "branch": "codex/g85-server-ai-perception",
+  "versions": {
+    "baseline": "0.1.77",
+    "final": "0.1.78"
+  },
+  "packageSHA256": {
+    "baseline": "e1d3d3d5b907ccdad8eaba01199cb20588fb1da2aff226f98195be4728d799ea",
+    "final": "5056f789aafda3b64fc6ae32ba3e2b4a3e49683fc5dfa32dd578abf944128f52"
+  },
+  "engine": {
+    "version": "2026.8.3.0",
+    "source": "https://github.com/tModLoader/tModLoader/releases/download/v2026.08.3.0/tModLoader.zip",
+    "releaseZipSHA256": "61e865f3702b12ce4a26c5a90b9de99a12c65ffc228455eb3390ce54af1eab15",
+    "engineDLLSHA256": "fcc6a9624b12191be4a15d714a3675440911feb8c1d374642ab1fd686f0da0a5",
+    "hooksDLLSHA256": "595d26fb3bbe27548d030943b5ed2437f690d1c002129bad21fafeaeb8118f7a",
+    "runtime": ".NET 8.0.0 from existing runtime via workspace junction; Steam installation unchanged"
+  },
+  "world": {
+    "seed": "20261028",
+    "sha256": "9f4665e8c6989bc5a523349e1bd4a303895814152170ff6cf9ebc7e862a54482",
+    "sourceArchive": "../natural-navigation/raw-runs.zip",
+    "entry": "world/source.wld",
+    "offsets": [
+      0,
+      -231
+    ],
+    "distances": [
+      768,
+      1536
+    ],
+    "initialStatesMatched": true
+  },
+  "sourceSHA256": {
+    "CompanionBridge/Motion/NavigationTask.cs": "bef6fb58bf9ff498c412dea91dc598fa229fd966acfdc0267e62a6d2f9994d1b",
+    "CompanionBridge/Motion/NavigationTripProgress.cs": "21a9fc0ba4277dae9350b37589e88f6fcae97566e7a2244e26772a4b1f57b17c",
+    "CompanionBridge/Motion/StateSpacePlanner.cs": "e375c085c957f941a3e3c7d29517ec8574e82be036a64e0718b27e67a3061d0a",
+    "CompanionBridge/Motion/LocalMotionController.cs": "55aecde4e3e8b980512398498d210bca86dd7d0c257f06fc412767ea60960f3c",
+    "CompanionBridge/Motion/GameNavigation.cs": "4d450bdfceb9ebab7a593dffde53384ca1fe4fadbf952d950b86e04a4a153c41",
+    "CompanionBridge/Motion/PhysicsSimulator.cs": "d00ab2aad257ba4414c139e580b2969916d1f8550d5149d12c5b0cea5a869877",
+    "CompanionBridge/Motion/NativeMotionWorld.cs": "22f6aaab30169553447cc1d9c5a2f135eba448bfaa3f8783b74bb2aa27022ebc",
+    "CompanionBridge/Motion/MotionSupport.cs": "fd721abaedd3fe5bbf0ada0573963a4e6706efb5ce5bdb57bdb9d85f426f0127",
+    "CompanionBridge/Motion/NavigationFailureMemory.cs": "94ab7d421ad848716e5b8695bac2fce0d7204cf6054cdbf6a7b6f1b6cae4b83b",
+    "CompanionBridge/ServerIpc/ServerAiNavigation.cs": "44669a74c5e0e039c8206195ccde908dd0129efdabaa671bceea282ebb2ab183",
+    "CompanionBridge/ServerIpc/ServerAiNaturalFixture.cs": "a32ffae50236ca1b43e3981c9e52528fb2c9c1a4784f9de1d774e57ab21e8288",
+    "CompanionBridge/ServerIpc/AiActionReasons.cs": "35bb5f00b5e4c851ca897cf1f6696e70e5af4726a0e7256215fd244b6ba41886",
+    "CompanionBridge/ServerPlayerRuntime/EngineHooks.cs": "9540e63beaf1727fec8daa5814e4eb592409ba016b3a3dec401fa377c15ae1f7",
+    "CompanionBridge/ServerPlayerRuntime/AiMapRuntime.cs": "4e82fd9577407823e535541989067fb5ec70e9370e31b07c4972fd2faf7ef7dd",
+    "CompanionBridge/ServerPlayerRuntime/AiMap.cs": "9e73179bb8ccb55cb098599ab0f3fef5954740bb9c9bb1cee39fca3e296ee80c",
+    "CompanionBridge/build.txt": "1ae6d22661071df97993f3ce04635d56d3c770624ed0e6c4b29cdad48123414e",
+    "tests/NavigationTripTests.cs": "4d0aae0dcf573b01f0a26fb9e99bf38c661edd00dd66fbfa5a052a2d5dc87284",
+    "tests/MotionOfflineTests.cs": "e353711ca37b84dd4183a04cbc3b59b5ebf8156768846c983708a89187dfb82d",
+    "tests/ServerAiNativeActionOfflineTests.cs": "0363ae33ef3942bf9d7827060e07e805147f1576c292e91f364513624f30fc86",
+    "tests/run_csharp_tests.ps1": "9d58a30c88b9b656b747bc2ecb381248a1bf0a3fc14ebdd11dc3c89f4d13582d",
+    "tests/verify_natural_navigation.ps1": "5acb04d0430a0661cd3682ca616ed005b1ae48f16804766c8826eecd4b8fb623",
+    "tests/native_trip_navigation.py": "8c0ca5c1e6cffbcab623547bddabb79f996071035eee51b8c6f8b5a98c895c53",
+    "tests/verify_navigation_recovery_native.ps1": "11025dc4f4fa2c3576e1aa14b944ad590cdb25d9eb9cc93501de57d6b423b661",
+    "tests/native_navigation_recovery.py": "9ecd53361dfee7037b5e87c127426375a495e2ba8160c73e930101b50c65334b",
+    "python/navigation_recovery.py": "6b3f5ff3be5f9c33b8af9d5780493d130e1b893067fc73b6294c715a405060fa"
+  },
+  "hashConvention": "workspace bytes used for builds/tests before Git newline normalization",
+  "archive": {
+    "path": "raw-runs.zip",
+    "bytes": 597535,
+    "sha256": "d41896cbbfdda84ada6641b7cb91e255be8c92e3d174215b72d90b6679a65b59",
+    "entries": {
+      "baseline/natural-catalog.json": {
+        "bytes": 52825,
+        "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+      },
+      "baseline/natural-motion-trip-m231-l-768.json": {
+        "bytes": 712835,
+        "sha256": "a2ee9d6cf0fca2be2cb2ec8175b3c0151f5ff2a18ced8788e9d1c0f3d7564579"
+      },
+      "baseline/natural-motion-trip-m231-r-768.json": {
+        "bytes": 612908,
+        "sha256": "0e6f81e62f216140ecbc15240a2ed2b9dd7bccbba161b7d30e96be1bb66be6f2"
+      },
+      "baseline/natural-motion-trip-p0-l-1536.json": {
+        "bytes": 954293,
+        "sha256": "47c04312d2e112a4b77ec507465c6739e4c4fa0e617729c7c0d95c8767c3200e"
+      },
+      "baseline/natural-motion-trip-p0-l-768.json": {
+        "bytes": 485849,
+        "sha256": "c0fca0f3459ccf7245314081dd7c4088f661fffc4879ed6e999cca956ba4f5ee"
+      },
+      "baseline/natural-motion-trip-p0-r-1536.json": {
+        "bytes": 951171,
+        "sha256": "dad5a1a9c0571bcaf5548716dec95dbe911c04fc2bc02971933800e1a8ad2f31"
+      },
+      "baseline/natural-motion-trip-p0-r-768.json": {
+        "bytes": 524412,
+        "sha256": "7076d75741df94e66fec45528cb57924f6e4669da1373f97c5a81ceaf09fa8da"
+      },
+      "baseline/natural-ready.json": {
+        "bytes": 385,
+        "sha256": "d3ba26197c01aabaa2f9eada48b20cc631bb651e5fb96a0f3ed44c79b34c7895"
+      },
+      "baseline/natural-results.json": {
+        "bytes": 22589,
+        "sha256": "769544956dd8a52831839ef6abc452cf956915b00b23e5a4461a68289db3949c"
+      },
+      "baseline/result.json": {
+        "bytes": 27449,
+        "sha256": "7a72e6fd3d8309aab09a0c5ae7e3a4010850fc6e748e8350b7fe5e174a08d96a"
+      },
+      "baseline/server.log": {
+        "bytes": 944637,
+        "sha256": "4fdbdd670d344894f0eeac47bee9bc9ec856cee7f9e1df18a8073b583ee2547a"
+      },
+      "baseline/stderr.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "baseline/stdout.log": {
+        "bytes": 5035,
+        "sha256": "e23bbee138685a3d429bcd4f5bfa5083c3aa9cfc7f8b3077dfab1bb4318aa7dc"
+      },
+      "baseline/trip-trip-m231-l-768-receipt.json": {
+        "bytes": 18131,
+        "sha256": "f960f16581b43c43e19d762de0113311795d4e8c27776b1bcd98670a2791f786"
+      },
+      "baseline/trip-trip-m231-r-768-receipt.json": {
+        "bytes": 16424,
+        "sha256": "7b94eab0d305ccb6b03fa200f0c879a4bfa87f493ce24648a38b3ef9c3e80ec5"
+      },
+      "baseline/trip-trip-p0-l-1536-receipt.json": {
+        "bytes": 16648,
+        "sha256": "2a347f82d5cbdfafe1ea448d7587a8b08549b7dbefbe364b1f7945f8f0ee9aef"
+      },
+      "baseline/trip-trip-p0-l-768-receipt.json": {
+        "bytes": 16132,
+        "sha256": "f41bfc0237de81e910c5d64120e9d1d5aeabce6d9d57da34cbb3cfb327b76b4b"
+      },
+      "baseline/trip-trip-p0-r-1536-receipt.json": {
+        "bytes": 16125,
+        "sha256": "8f53174a0156983315477c9fc577934f134a7d3f884e97771310c5c9845147e9"
+      },
+      "baseline/trip-trip-p0-r-768-receipt.json": {
+        "bytes": 16626,
+        "sha256": "e4f226089f6fef20a1c77d274e7befa29596ee625774f0c446074d00ca4d8f62"
+      },
+      "final/natural-catalog.json": {
+        "bytes": 52825,
+        "sha256": "8611c265c04721e8562e976988394a63f220adc60acc7ddba5e4bbabab4c68c1"
+      },
+      "final/natural-motion-trip-m231-l-768.json": {
+        "bytes": 850766,
+        "sha256": "67835dd550b6399dffbb372aaff4400ecc4668439b0dc05ebc98e9758f1e90fb"
+      },
+      "final/natural-motion-trip-m231-r-768.json": {
+        "bytes": 640633,
+        "sha256": "12aaab6bcd8d882883276670f3ad9e3d5e6953f5897351533a47933502465fe2"
+      },
+      "final/natural-motion-trip-p0-l-1536.json": {
+        "bytes": 1046701,
+        "sha256": "ad7ea2987193bcb69d4e25f8da00bc15d0b67bb96b27ac09557fdf115b01f663"
+      },
+      "final/natural-motion-trip-p0-l-768.json": {
+        "bytes": 532758,
+        "sha256": "4b79fb2b588cc318ac251e27a8706c9db506be3927572a1fbb15ed27ae7c01a6"
+      },
+      "final/natural-motion-trip-p0-r-1536.json": {
+        "bytes": 1037259,
+        "sha256": "9a8e61e04533451240d475f51d2e0c7754dab5c98bbdc12d82c5ddec57c01bda"
+      },
+      "final/natural-motion-trip-p0-r-768.json": {
+        "bytes": 562947,
+        "sha256": "b8d46024399d6c3e5bc712f8d0e4de13f0c663e875d8f41834e4b36baa57855f"
+      },
+      "final/natural-ready.json": {
+        "bytes": 385,
+        "sha256": "eb58ff8cc480c53c8635d81e290c95a7ea9a17b409e86a2a01968611d8f29c55"
+      },
+      "final/natural-results.json": {
+        "bytes": 24033,
+        "sha256": "719b0c86f92620a20e610fc07ea989d0ef929b26219dbf03286e6854bc5475a8"
+      },
+      "final/result.json": {
+        "bytes": 28967,
+        "sha256": "a71712ab6529e3066ed94cf04e3b719215e9a9b3005f964adf1a5f7dc9622f97"
+      },
+      "final/server.log": {
+        "bytes": 855556,
+        "sha256": "04ab17df50024dc99b4afeca4e976455452df343351ee1473c0e43c4699e4e2b"
+      },
+      "final/stderr.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "final/stdout.log": {
+        "bytes": 5035,
+        "sha256": "7450d0a4362f84e478881c5660036206638894fb8b255c1c73bdd58a4867b463"
+      },
+      "final/trip-trip-m231-l-768-receipt.json": {
+        "bytes": 13396,
+        "sha256": "6ec86743c5f448f981f11398ac1947287fee7e3738dacd9bef14e48a36493573"
+      },
+      "final/trip-trip-m231-r-768-receipt.json": {
+        "bytes": 17194,
+        "sha256": "b06d978c0f88bb914ecd9d3a845eb8bf28db6258840a2ddc3191e0f4d8007de0"
+      },
+      "final/trip-trip-p0-l-1536-receipt.json": {
+        "bytes": 17455,
+        "sha256": "146a846f88b553ec1bbcb3e7053af929528ad7b24c26122497ff33d84836d91e"
+      },
+      "final/trip-trip-p0-l-768-receipt.json": {
+        "bytes": 16899,
+        "sha256": "f7307cc52e3052df579eb7bc6dc55695ff14a227ad7301c0b04a13a31c9b870f"
+      },
+      "final/trip-trip-p0-r-1536-receipt.json": {
+        "bytes": 16933,
+        "sha256": "bf0329ed880effb7196e13ab4128ec9780af5f850d4ff20881f61dbe5846d7b6"
+      },
+      "final/trip-trip-p0-r-768-receipt.json": {
+        "bytes": 17544,
+        "sha256": "5e76fb60dd72fe6ae4ddd24cfa636a008f6ac7ee48a096f43f392c4267036074"
+      },
+      "safety/initial-assertion/action-fixture.json": {
+        "bytes": 187,
+        "sha256": "ffde819fbfc9c51cc07bddd4b471d0abd846ebfbbe62ee3f6781edf2f0de1585"
+      },
+      "safety/initial-assertion/recovery-low_wall-receipt.json": {
+        "bytes": 11629,
+        "sha256": "d2f6cfcb3b43daf949f41834dd4d4af0e3940b6afdeef87cb75c1471da58dceb"
+      },
+      "safety/initial-assertion/recovery-offset-receipt.json": {
+        "bytes": 11721,
+        "sha256": "84d9c934649db08a95ebbbc6c1db218047a24e49efcf82f7973b6fe6216fd755"
+      },
+      "safety/initial-assertion/recovery-results.json": {
+        "bytes": 276,
+        "sha256": "95a7b0392153593f28c51140506031f1a4553754295089319629c4a1e1f37855"
+      },
+      "safety/initial-assertion/stderr.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "safety/initial-assertion/stdout.log": {
+        "bytes": 4172,
+        "sha256": "190e5d60b8fe8af388c09a92b945922983df092cf03b4cdc6646139d0ba34474"
+      },
+      "safety/initial-assertion/terrain-motion-flat-1-low_wall.json": {
+        "bytes": 80989,
+        "sha256": "599284c899a8eb83039debfc37fb0d355d97efea834620681c56e2693d72cb8f"
+      },
+      "safety/initial-assertion/terrain-motion-flat-1-offset.json": {
+        "bytes": 90869,
+        "sha256": "5a0a3336af7fc7a72f4cb849017520286aa0b4b7ea65bbb07417511e1a3bddd6"
+      },
+      "safety/initial-assertion/terrain-ready.json": {
+        "bytes": 175,
+        "sha256": "0f6f6ddf864510115279dfbc8b7ece22c35213816094854f34518b00e3bd6116"
+      },
+      "safety/initial-assertion/terrain-recovery-fired.json": {
+        "bytes": 113,
+        "sha256": "adafc148931032649261bfa7c9bd2b9220b54f4e81aef2de0a81618607a3487e"
+      },
+      "safety/matrix-four-and-cancel-assertion/action-fixture.json": {
+        "bytes": 187,
+        "sha256": "ffde819fbfc9c51cc07bddd4b471d0abd846ebfbbe62ee3f6781edf2f0de1585"
+      },
+      "safety/matrix-four-and-cancel-assertion/recovery-air-receipt.json": {
+        "bytes": 11719,
+        "sha256": "bb775daacca39a115571bb7017c588d0027e03aa202f476b3366d328a2b848f1"
+      },
+      "safety/matrix-four-and-cancel-assertion/recovery-cancel_air-receipt.json": {
+        "bytes": 6967,
+        "sha256": "a8cc3378397f1988170a2b23a3b69ace6a574f8e3c891b832b10cc91f829d813"
+      },
+      "safety/matrix-four-and-cancel-assertion/recovery-high_wall-receipt.json": {
+        "bytes": 11708,
+        "sha256": "b025984dce3b92fd42c7d6f690b891578f8000d43f339547851686a31572e5f2"
+      },
+      "safety/matrix-four-and-cancel-assertion/recovery-low_wall-receipt.json": {
+        "bytes": 11633,
+        "sha256": "befc588e1ff363673ae58f9060d18de8a257b1caff961c4326b676cba217852f"
+      },
+      "safety/matrix-four-and-cancel-assertion/recovery-offset-receipt.json": {
+        "bytes": 11724,
+        "sha256": "cde82b73767c6d76959e2000e16dccac256f4fbc4d9a9d32528a057346cca503"
+      },
+      "safety/matrix-four-and-cancel-assertion/recovery-results.json": {
+        "bytes": 1158,
+        "sha256": "0fb04627376b3e83f5d53a401848109c8e50bb34c7886aa798d57c4b85b204e4"
+      },
+      "safety/matrix-four-and-cancel-assertion/stderr.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "safety/matrix-four-and-cancel-assertion/stdout.log": {
+        "bytes": 4172,
+        "sha256": "190e5d60b8fe8af388c09a92b945922983df092cf03b4cdc6646139d0ba34474"
+      },
+      "safety/matrix-four-and-cancel-assertion/terrain-motion-flat-1-air.json": {
+        "bytes": 112960,
+        "sha256": "9855bf1e91b81d4d6d1169eb50cd37aa0f193c4e21549afb437950b0126eaf5e"
+      },
+      "safety/matrix-four-and-cancel-assertion/terrain-motion-flat-1-cancel_air.json": {
+        "bytes": 8094,
+        "sha256": "9059c3507675ff89204b406cf2cf10106147a63cba985e319b6d750cc34f58f7"
+      },
+      "safety/matrix-four-and-cancel-assertion/terrain-motion-flat-1-high_wall.json": {
+        "bytes": 263650,
+        "sha256": "434e1e77c4d17015bc64de54802fd1bc9b63d1d8820820a35ae4ea640a2e2947"
+      },
+      "safety/matrix-four-and-cancel-assertion/terrain-motion-flat-1-low_wall.json": {
+        "bytes": 81024,
+        "sha256": "1ac156dade8976ecd9df6ea55b8d26084c5a59c64729bb178633f127ab5327e7"
+      },
+      "safety/matrix-four-and-cancel-assertion/terrain-motion-flat-1-offset.json": {
+        "bytes": 91020,
+        "sha256": "a61557a19815f94be8a834429e818ea28f02cf45751e61e3132f9e95e0b89f6d"
+      },
+      "safety/matrix-four-and-cancel-assertion/terrain-ready.json": {
+        "bytes": 175,
+        "sha256": "427002b903cf310ae0859779a948663d75ccca1ec36d55d438a8c5716f7b6171"
+      },
+      "safety/matrix-four-and-cancel-assertion/terrain-recovery-fired.json": {
+        "bytes": 116,
+        "sha256": "010710be00c71e63eeb2726ec904254d4dfb56ae01f44e0f31bebd526d256cf4"
+      },
+      "safety/cancel-final/action-fixture.json": {
+        "bytes": 187,
+        "sha256": "ffde819fbfc9c51cc07bddd4b471d0abd846ebfbbe62ee3f6781edf2f0de1585"
+      },
+      "safety/cancel-final/manifest.json": {
+        "bytes": 440,
+        "sha256": "462d54718c1fcd74c9e9841a0cd585878092c371794692203ef37a03e2a9c245"
+      },
+      "safety/cancel-final/recovery-cancel_air-receipt.json": {
+        "bytes": 6961,
+        "sha256": "bce449b2695232b9a2c0caecfd277e9e1f54e66ef52c4f39333588f9a3a17770"
+      },
+      "safety/cancel-final/recovery-results.json": {
+        "bytes": 275,
+        "sha256": "2e847eb669e142bb79e14b57e9aa06fd2980e4bf1854d179b105b8c3db9dffde"
+      },
+      "safety/cancel-final/stderr.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "safety/cancel-final/stdout.log": {
+        "bytes": 4195,
+        "sha256": "c4f77a3ce7b81fbcf612f2b2552f0c62c1205c380d60fa3d074604e45c05e164"
+      },
+      "safety/cancel-final/terrain-motion-flat-1-cancel_air.json": {
+        "bytes": 8632,
+        "sha256": "14f72e60bd09fe172b495e08d01a581bae32bf6984b416c3427ba632aa70c270"
+      },
+      "safety/cancel-final/terrain-ready.json": {
+        "bytes": 175,
+        "sha256": "58225a45c04c7ea0658ef10ceca29cb82f0ea0fade59cbdfcaa58bca723c8232"
+      },
+      "safety/cancel-final/terrain-recovery-fired.json": {
+        "bytes": 114,
+        "sha256": "929c147ef49c81f8f3c3d7c029039aa62fac60f30273e49cb316e42e15cc3231"
+      },
+      "offline/navigation-final.txt": {
+        "bytes": 4890,
+        "sha256": "0ee739d000cfb1ec330d6e038b8d5ed4b3fdfc7d4cacff7fcb35550f605bd720"
+      },
+      "offline/vertical-only.txt": {
+        "bytes": 8701,
+        "sha256": "241cce01e8e4296995f3cd1dbacf7aec93f8696910ee78aff6c9e92d58190ae1"
+      },
+      "offline/landing.txt": {
+        "bytes": 202,
+        "sha256": "314923253fa23e33bf11b11105e37648d327df9fc8e9bb23580e6d64b4bac8b6"
+      },
+      "offline/ipc.txt": {
+        "bytes": 38720,
+        "sha256": "40787ebdfefe58e7d1d61ba96b652ffa2b820a014080360270272fc4bd274794"
+      },
+      "offline/python-recovery.txt": {
+        "bytes": 29053,
+        "sha256": "ee80528e3be7acb18ec4f61bfe599c0fc41d76097394dd6fc3b98924634228b6"
+      },
+      "offline/map.txt": {
+        "bytes": 65,
+        "sha256": "f995b4a5c49a9a1eba75eed56da6b63ba460ffd2f6ece7bf23d541721fafbc5f"
+      },
+      "offline/trip-only.txt": {
+        "bytes": 626,
+        "sha256": "d211c9a795af185c316a6770b05539531afd52be6c8da25a8d66936ea06cbdbb"
+      },
+      "offline/alcove-comparison.txt": {
+        "bytes": 319,
+        "sha256": "eb56b7f1fd5a3c850e0a71f42e078660cb0644c41cc07884d8b7da756fc15ae0"
+      },
+      "offline/LegacyNavigationTask.cs": {
+        "bytes": 18141,
+        "sha256": "f8a4352afe39fb8ab2551d15def2fe75a1113e4bae431a9ec1042347c45b81c1"
+      },
+      "offline/TripComparison.cs": {
+        "bytes": 1124,
+        "sha256": "bdf2414f7e17a179a52d5d24339c1d3e86a8d87594c8bfd14abe741144ac380b"
+      },
+      "offline/comparison.ps1": {
+        "bytes": 8381,
+        "sha256": "6c6115e9e13c53f9667b6de6b7b53eb6847124fefe72cf966d19125b84030552"
+      },
+      "offline/build-final.txt": {
+        "bytes": 174,
+        "sha256": "17534c8e6f2fd2460c361b44be13b0a98bc3c21f93afa0ad19baba3794e7dd6c"
+      },
+      "offline/engine-release-assets.json": {
+        "bytes": 371,
+        "sha256": "777f6349ca4b36508f4d9e0ac04abd970ccbdb3d859ff4936c956b6f8abf901e"
+      },
+      "runtime-inputs/python/lua_runtime.py": {
+        "bytes": 34602,
+        "sha256": "bc4daf7fbbc4d3936bf824a8047aa9e6e7c6b9c9d8c7e6663afb6dc8470099ca"
+      },
+      "runtime-inputs/python/lua_worker.py": {
+        "bytes": 13235,
+        "sha256": "3fa54fac44038b4e882678068e2abc7a4dd0b6b88d801359a78880655665bc57"
+      },
+      "runtime-inputs/python/lua_agent.py": {
+        "bytes": 18688,
+        "sha256": "13e43a88d5cce77720549d5d56e43d10fb57929aa427804a15154a2d48c60f76"
+      },
+      "runtime-inputs/python/agent_diagnostics.py": {
+        "bytes": 8973,
+        "sha256": "38ed8b1d26fe14506245a258aea268f8f3cb125a916e24db138a8d0e0906d260"
+      }
+    }
+  },
+  "summarySHA256": "3eb7792618afda8bc03e87fc42c5aeb802fd72bb353b47016d310bd307b15cd0",
+  "validation": {
+    "tripChecks": 23,
+    "recoveryChecks": 111,
+    "m4_1_searchChecks": 187,
+    "navigationOnly": "passed",
+    "navigationPerceptionChecks": 44,
+    "verticalOnly": "passed",
+    "landingOnly": "passed",
+    "ipc": "passed; adapter 297, task 64, chat 30 plus protocols",
+    "pythonRecoveryTests": 8,
+    "pythonRecoverySeconds": 40.139,
+    "mapChecks": 14,
+    "mapCrossProcessRestore": "passed",
+    "build": "0 errors / 0 warnings on pinned engine",
+    "naturalComparison": "baseline 5/6 targets; final 5/6; one external navigate_to_x per target",
+    "nativeSafety": "offset/low_wall/high_wall/air passed in one run; cancel_air passed in separate focused run on identical final package",
+    "fullSuite": "NOT RUN",
+    "graphicalHostAndPlay": "NOT RUN",
+    "realLLM": "NOT RUN",
+    "deployment": "isolated test profiles only"
+  },
+  "probeCorrections": [
+    {
+      "scene": "low_wall",
+      "initialFailure": "Probe required recovery >=1 even though fresh checkpoint planning safely bypassed wall; completed true, known release.",
+      "correction": "Require actual completed bypass, >=2 plans and >=1 verified jump; offset/air still require release-confirmed recovery."
+    },
+    {
+      "scene": "cancel_air",
+      "initialFailure": "Probe indexed injectedInput on terminal observation where no additional movement update occurred.",
+      "correction": "Only final cancelled sample may lack injection, and must have physical controls clear; terminal/action/end evidence and no replay still required."
+    }
+  ],
+  "configuration": {
+    "searchHorizonPixels": 128,
+    "routeSpanXPixels": 192,
+    "searchExpansions": 32,
+    "searchBudgetMs": 25,
+    "tripUpdates": 1800,
+    "tripSearches": 128,
+    "tripPlanningBudgetMs": 3200,
+    "nonImprovingNovelCheckpointCredits": 6,
+    "detourAnchorRadiusPixels": 128,
+    "repeatPositionCellPixels": 8,
+    "repeatVxBucket": 0.5,
+    "repeatVisitsAllowed": 2,
+    "M4_2_recoveries": 3
+  },
+  "limitations": [
+    "Same fixed world/configuration, not identical trajectories or deterministic timing.",
+    "Goal completion did not increase; final difficult cave sample advanced less net X than baseline.",
+    "Cold whole Main.Update outlier 142.8146ms; no hard realtime guarantee or arbitrary-world completeness.",
+    "Normal region-goal compatibility is offline; new long native goals are horizontal.",
+    "Native exact 30-second timeout not forced; lifetime/update/search bounds and M3 timeout contracts are targeted offline regressions.",
+    "No new map/character ability, no background world reads. Historical map only ranks equal-score already-safe detour candidates.",
+    "Preliminary prototype profile .local/natural-native-5d6eaa9942e84e7c9f76a2c33e7846cd retained locally, excluded from final acceptance; different package and unfinished implementation."
+  ]
+}

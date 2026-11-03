@@ -332,7 +332,12 @@ public static class MotionOfflineTests
             var bounded = new NavigationTask(); var s = start;
             bounded.Begin(207, 1, region, s);
             if (actionCap) Seed(bounded, "_actions", 255);
-            else { Seed(bounded, "_stalled", 3); Seed(bounded, "_furthest", 0f); }
+            else {
+                Seed(bounded, "_stalled", 3);
+                var trip=(NavigationTripProgress)typeof(NavigationTask).GetField("_trip",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).GetValue(bounded);
+                trip.Begin(s,0);
+                for(int i=1;i<=NavigationTripProgress.DetourCheckpointLimit;i++)trip.Checkpoint(s with{Px=s.Px-i*8},100);
+            }
             for (int f = 0; f < 100 && !bounded.Terminal; f++)
             {
                 var input = bounded.Before(207, 1, region, s, ph, world);
@@ -761,7 +766,7 @@ public static class MotionOfflineTests
         var blocked = new NavigationTask();
         var wall = new World { WallX = 1640, WallWidth = 64, WallHeight = 1000 };
         var atWall = new PhysicsState(1600, 1558, 0, 0, true);
-        for (int frame = 0; frame < 300 && !blocked.Terminal; frame++)
+        for (int frame = 0; frame <= NavigationTripProgress.UpdateLimit && !blocked.Terminal; frame++)
         {
             var input = blocked.Before(97, 3, 1800, atWall, ph, wall);
             atWall = PhysicsSimulator.Step(atWall, input, ph, wall);

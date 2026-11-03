@@ -33,10 +33,22 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     private readonly NativeNavigation navigation;
     internal ServerAiNavigation()
     {
-        navigation=new(captureContacts:true,enableSafeGroundWalk:true,diagnosticWriter:line=>
+        navigation=new(captureContacts:true,enableSafeGroundWalk:true,historicalPreference:HistoricalPreference,diagnosticWriter:line=>
             ProbeSession.Log("atomic-navigation",new{actionId=Current?.ActionId,world=Current?.Identity.World,
                 generation=Current?.Identity.Generation,slot=Current?.Identity.Slot,session=Current?.Session,
                 gameUpdate=Main.GameUpdateCount,navigationEvent=System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(line.Substring("Navigation ".Length))}));
+    }
+    private int HistoricalPreference(PhysicsState state)
+    {
+        // Same last-known map as query_map, only on the owned game-thread path.
+        // No RPC, terrain authorization, map writes or new persistent topology.
+        var map=AiMapRuntime.Map;
+        if(Current==null||!ServerAiNativeActions.Owned(Current.Identity)||!WorldCharacterPersistence.Ready
+            ||map==null||map.World!=(Main.ActiveWorldFileData?.UniqueId??Guid.Empty)||map.Character!=WorldCharacterPersistence.ProfileId)return 0;
+        int cx=(int)Math.Floor((state.Px+10)/16),feet=(int)Math.Floor((state.Py+42)/16),rank=0;
+        for(int x=cx-1;x<=cx+1;x++)
+            if(map.Get(x,feet) is 2 or 3&&map.Get(x,feet-1)==1)rank++;
+        return rank;
     }
     private int session;
     private bool executing, injected;

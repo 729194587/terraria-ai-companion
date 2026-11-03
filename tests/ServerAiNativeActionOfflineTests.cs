@@ -87,9 +87,9 @@ public static class ServerAiNativeActionOfflineTests
         }
         foreach(string reason in new[]{"navigation_stalled","no safe local route: blocked","unsupported navigation state: wet"})
             Check(AiActionReasons.NavigationRecoveryKind(reason)!=null,"known native navigation refusal can be classified: "+reason);
-        foreach(string reason in new[]{"navigation_recovery_limit","navigation_recovery_blocked: fixture","navigation_search_expansion_budget","navigation_search_timeout","navigation_action_limit","native_navigation_exception","life decreased","navigation edge landing mismatch","local prediction exceeded 50ms budget"})
+        foreach(string reason in new[]{"navigation_trip_update_budget","navigation_trip_search_budget","navigation_trip_repeated_state","navigation_recovery_limit","navigation_recovery_blocked: fixture","navigation_search_expansion_budget","navigation_search_timeout","navigation_action_limit","native_navigation_exception","life decreased","navigation edge landing mismatch","local prediction exceeded 50ms budget"})
             Check(AiActionReasons.NavigationRecoveryKind(reason)==null,"uncertain/budget native navigation stop is not recoverable: "+reason);
-        foreach(string reason in new[]{"navigation_stalled","navigation_action_limit","navigation_search_timeout","navigation_search_expansion_budget"})
+        foreach(string reason in new[]{"navigation_trip_update_budget","navigation_trip_search_budget","navigation_trip_repeated_state","navigation_stalled","navigation_action_limit","navigation_search_timeout","navigation_search_expansion_budget"})
             Check(AiActionReasons.Navigation(reason)==reason,"navigation diagnostic survives protocol reason mapping: "+reason);
         Check(AiActionReasons.Navigation("no safe local route: blocked")=="native_navigation_failed","ordinary no-route mapping remains compatible");
         Check(AiActionReasons.Mining("completed","None")=="native_tile_destroyed","mining success translates outcome rather than failure enum");

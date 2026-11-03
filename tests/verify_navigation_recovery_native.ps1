@@ -1,5 +1,5 @@
 param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',
-    [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline)
+    [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes)
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
 $world=(Resolve-Path -LiteralPath $WorldPath).Path
@@ -29,6 +29,7 @@ $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.
 try {
     $probeArgs=@('-B',(Join-Path $PSScriptRoot 'native_navigation_recovery.py'),'--port',"$IpcPort",'--profile',$profile)
     if($Baseline){$probeArgs+='--baseline'}
+    if($Scenes){$probeArgs+=@('--scenes')+$Scenes}
     & "$repo/.local/lua-venv/Scripts/python.exe" @probeArgs
     if($LASTEXITCODE -ne 0){throw "Native recovery verification failed: $profile"}
     [IO.File]::WriteAllText("$profile/g81-test-stop",'Stop only this isolated server')
