@@ -1,8 +1,6 @@
 using System;
 using System.Text.Json;
-using Microsoft.Xna.Framework;
 using Terraria;
-using Terraria.ID;
 using CompanionBridge.Motion;
 using VirtualPlayerEngineProbe;
 using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
@@ -74,8 +72,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
                 if(!WorldGen.InWorld(x,y,2))return Reject("invalid_target",JsonSerializer.Serialize(ActorMining.TargetDiagnostic(x,y)));
-                if(Vector2.Distance(p.Center,new Vector2(x*16+8,y*16+8))>80)return Reject("out_of_conservative_80_pixel_reach");
-                ActorMining.Start(p,identity.World,identity.Generation,x,y);context=ActorMining.Current;
+                ActorMining.Start(p,identity.World,identity.Generation,x,y,
+                    child&&args.TryGetProperty("plannedToolSlot",out var planned)?planned.GetInt32():null);context=ActorMining.Current;
             }
             var handle=new Handle(identity,operation,context);
             if(!child)active=handle;
@@ -163,9 +161,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         if(!ReferenceEquals(ActorMining.Current,h.Context))return new("unknown","native_context_changed",null,false);
         var mine=(ActorMining.Context)h.Context;
         bool destroyed=mine.Destroyed&&!mine.ExternalChange&&WorldGen.InWorld(mine.X,mine.Y)&&!Main.tile[mine.X,mine.Y].HasTile;
-        string phase=mine.Phase switch{ActionPhase.Running=>"running",ActionPhase.Completed=>"completed",ActionPhase.Cancelled=>"cancelled",ActionPhase.TimedOut=>"timeout",ActionPhase.Stale=>"unknown",_=>"failed"};
+        bool furnitureAbsent=ActorMining.FurnitureAbsent(mine);
+        string phase=mine.Phase switch{ActionPhase.Running=>"running",ActionPhase.Completed=>destroyed&&furnitureAbsent?"completed":"unknown",ActionPhase.Cancelled=>"cancelled",ActionPhase.TimedOut=>"timeout",ActionPhase.Stale=>"unknown",_=>"failed"};
         return new(phase,AiActionReasons.Mining(phase,mine.Reason.ToString()),new{nativeActionId=mine.Id,mine.X,mine.Y,TileType=mine.InvalidTarget==null?(int?)mine.TileType:null,mine.ExpectedType,mine.Ticks,invalidTarget=mine.InvalidTarget,
             mine.Swings,mine.Strikes,mine.PeakDamage,mine.Transforms,toolKind=mine.Axe>0?"axe":"pickaxe",pick=mine.Pick,axe=mine.Axe,nativeDestroyed=mine.Destroyed,targetAbsent=destroyed,
+            furnitureCells=mine.Furniture.Length,furnitureAbsent=mine.Furniture.Length>0&&furnitureAbsent,
             targetChanged=mine.ExternalChange||(!mine.Destroyed&&mine.TargetCaptured&&!ActorMining.TargetUnchanged(mine)),
             targetUnchanged=!mine.ExternalChange&&mine.Transforms==0&&!mine.Destroyed&&ActorMining.TargetUnchanged(mine),
             destroyedByActor=destroyed,effectStatus=destroyed?"native_tile_destroyed":mine.Ticks==0?"not_started":"not_confirmed"},
@@ -199,7 +199,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         if(h.Operation=="move_input")directInput.Stop("cancelled","explicit_stop");
         else if(IsNavigation(h.Operation))navigation.Stop("cancelled","explicit_stop");
         else if(h.Operation is "use_item" or "place_tile" or "place_object")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
-        else ActorMining.Retire(p);
+        else ActorMining.Stop(p,h.Identity.World,h.Identity.Generation);
         return Poll(h.Identity,h);
     }
     public Result CancelWithReason(AiReadOnlyProtocol.Identity identity,object value,string status,string reason)

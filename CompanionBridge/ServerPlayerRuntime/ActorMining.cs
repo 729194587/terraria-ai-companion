@@ -5,6 +5,7 @@ using Mono.Cecil;
 using MonoMod.Utils;
 using Terraria;
 using Terraria.ID;
+using Terraria.ObjectData;
 
 namespace VirtualPlayerEngineProbe;
 
@@ -12,7 +13,8 @@ namespace VirtualPlayerEngineProbe;
 internal static class ActorMining
 {
     internal enum Failure { None, InvalidTarget, UnsupportedTarget, OutOfRange, InvalidTool, Busy,
-        ActorUnavailable, BindingChanged, ItemChanged, TargetChanged, NativeRefused, NoPickPower, NativeException, ExplicitStop, DeathOrRetirement, Deadline }
+        ActorUnavailable, BindingChanged, ItemChanged, TargetChanged, NativeRefused, TargetProtected, NoPickPower, NativeException, ExplicitStop, DeathOrRetirement, Deadline }
+    internal sealed record FurnitureCell(int X,int Y,short FrameX,short FrameY);
     internal sealed class Context
     {
         internal readonly Guid Id=Guid.NewGuid();
@@ -20,10 +22,15 @@ internal static class ActorMining
         internal int Slot,Type,Prefix,Pick,Axe, X,Y,TileType,ExpectedType,FrameX,FrameY,Ticks,Swings,Strikes,Damage,PeakDamage,AnimationPeak,ProposedDamage,Transforms;
         internal byte Slope;internal bool Half,Actuated,Destroyed,ExternalChange,TargetCaptured;
         internal object InvalidTarget;
+        internal int OriginalSlot, SourceSlot;
+        internal Item Displaced;
+        internal bool SelectionChanged,KillingTarget;
+        internal FurnitureCell[] Furniture=Array.Empty<FurnitureCell>();
         internal ActionPhase Phase=ActionPhase.Running;internal Failure Reason;internal string Detail="";
     }
     private delegate void NativeTool(Player p,Item item,ref bool hitWall,int x,int y);
     private static NativeTool tool;
+    private static Func<Player,int,int,int,int,Tile,int> pickDamage;
     private static Func<Player,Item,bool> inRange;
     [ThreadStatic] private static Context rangeContext;
     internal static Context Current;
@@ -37,6 +44,7 @@ internal static class ActorMining
             MiningPatches.Validate(a.MainModule.Types.Single(t=>t.FullName=="Terraria.Player"));
         const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public;
         tool=(NativeTool)typeof(Player).GetMethod("ItemCheck_UseMiningTools_ActuallyUseMiningTool",flags).CreateDelegate(typeof(NativeTool));
+        pickDamage=typeof(Player).GetMethod("GetPickaxeDamage",flags).CreateDelegate<Func<Player,int,int,int,int,Tile,int>>();
         using(var dmd=new DynamicMethodDefinition(typeof(Player).GetMethod("IsTargetTileInItemRange",flags)))
         {
             MiningPatches.RangeClone(dmd.Definition,dmd.Definition.Module.ImportReference(typeof(ActorMining).GetMethod(nameof(RangeX))),
@@ -67,7 +75,6 @@ internal static class ActorMining
         if(rangeContext!=null)throw new InvalidOperationException("Reentrant G7 reach check.");
         try{rangeContext=c;return inRange(c.Actor,c.Item);}finally{rangeContext=null;}
     }
-    internal static bool SupportedPick(Item item)=>SupportedTool(item)&&item.pick>0&&item.axe==0;
     private static readonly MethodInfo shallowCopy=typeof(object).GetMethod("MemberwiseClone",BindingFlags.Instance|BindingFlags.NonPublic);
     internal static bool QueryReach(Player actor,string world,long generation,Item item,int x,int y,float px,float py)
     {
@@ -81,21 +88,90 @@ internal static class ActorMining
         try
         {
             rangeContext=c;
-            return Microsoft.Xna.Framework.Vector2.Distance(new(px+actor.width/2f,py+actor.height/2f),new(x*16+8,y*16+8))<=80&&inRange(projection,item);
+            return inRange(projection,item);
         }
         finally{rangeContext=null;}
     }
     private static bool SupportedTool(Item i)=>!i.IsAir&&i.hammer==0&&!i.channel&&i.shoot<=0
         &&(i.pick>0&&i.axe==0||i.type==ItemID.CopperAxe&&i.axe>0&&i.pick==0);
     private static bool TreeTarget(int type)=>Main.tileAxe[type]&&TileID.Sets.IsATreeTrunk[type];
-    private static bool DecorationTarget(int type)=>type==TileID.SmallPiles;
+    internal static Failure ChooseTool(Player p,string world,long generation,int x,int y,bool requireReach,out int slot,int? plannedSlot=null)
+    {
+        slot=-1;
+        var tile=Main.tile[x,y];
+        int type=tile.TileType;
+        bool tree=TreeTarget(type);
+        if(tile.IsActuated||Main.tileHammer[type]||Main.tileAxe[type]&&!tree||TileID.Sets.Falling[type])
+            return Failure.UnsupportedTarget;
+        if(!WorldGen.CanKillTile(x,y))return Failure.TargetProtected;
+
+        bool hasTool=false, hasPower=false;
+        int bestDamage=0;
+        // Main inventory, including hotbar. Coin, ammo and mouse slots are separate.
+        for(int i=0;i<Math.Min(50,p.inventory.Length);i++)
+        {
+            if(plannedSlot.HasValue&&i!=plannedSlot.Value)continue;
+            Item item=p.inventory[i];
+            if(!SupportedTool(item)||(tree?item.axe<=0:item.pick<=0))continue;
+            hasTool=true;
+            // The pinned GetPickaxeDamage body does not use its HitTile buffer index.
+            int damage=tree?item.axe:pickDamage(p,x,y,item.pick,0,tile);
+            if(damage<=0)continue;
+            hasPower=true;
+            if(requireReach&&!QueryReach(p,world,generation,item,x,y,p.position.X,p.position.Y))continue;
+            if(damage>bestDamage||damage==bestDamage&&i==p.selectedItem)
+            {
+                slot=i;
+                bestDamage=damage;
+            }
+        }
+        return slot>=0?Failure.None:!hasTool?Failure.InvalidTool:!hasPower?Failure.NoPickPower:Failure.OutOfRange;
+    }
     private static bool Same(Context c)
     {
         var t=Main.tile[c.X,c.Y];return t.HasTile&&t.TileType==c.ExpectedType
             &&(byte)t.Slope==c.Slope&&t.IsHalfBlock==c.Half&&t.IsActuated==c.Actuated
-            &&(c.Axe==0&&!DecorationTarget(c.TileType)||t.TileFrameX==c.FrameX&&t.TileFrameY==c.FrameY);
+            &&(c.Axe==0&&!Main.tileFrameImportant[c.TileType]||t.TileFrameX==c.FrameX&&t.TileFrameY==c.FrameY);
     }
-    internal static bool TargetUnchanged(Context c)=>c.TargetCaptured&&WorldGen.InWorld(c.X,c.Y,2)&&Same(c);
+    internal static FurnitureCell[] FurnitureAt(int x,int y)
+    {
+        var tile=Main.tile[x,y];
+        int type=tile.TileType;
+        if(!Main.tileFrameImportant[type])return Array.Empty<FurnitureCell>();
+        var data=TileObjectData.GetTileData(tile);
+        int frameX=tile.TileFrameX,frameY=tile.TileFrameY;
+        if(data==null||data.Width*data.Height<=1||frameX<0||frameY<0)return Array.Empty<FurnitureCell>();
+        int stride=data.CoordinateWidth+data.CoordinatePadding;
+        int localX=frameX%data.CoordinateFullWidth,localY=frameY%data.CoordinateFullHeight;
+        int left=x-localX/stride, top=y;
+        int rowOffset=0;
+        for(int row=0;row<data.Height&&rowOffset<localY;row++,top--)
+            rowOffset+=data.CoordinateHeights[row]+data.CoordinatePadding;
+        if(rowOffset!=localY||localX%stride!=0||localX/stride>=data.Width
+            ||!WorldGen.InWorld(left,top,2)||!WorldGen.InWorld(left+data.Width-1,top+data.Height-1,2))
+            return Array.Empty<FurnitureCell>();
+        int frameTop=frameY-localY, frameLeft=frameX-localX;
+        var cells=new FurnitureCell[data.Width*data.Height];
+        for(int row=0,dy=0;row<data.Height;row++)
+        {
+            for(int col=0;col<data.Width;col++)
+            {
+                var cell=new FurnitureCell(left+col,top+row,(short)(frameLeft+col*stride),(short)(frameTop+dy));
+                if(!SameFurnitureCell(type,cell))return Array.Empty<FurnitureCell>();
+                cells[row*data.Width+col]=cell;
+            }
+            dy+=data.CoordinateHeights[row]+data.CoordinatePadding;
+        }
+        return cells;
+    }
+    internal static bool SameFurnitureCell(int type,FurnitureCell cell)
+    {
+        var tile=Main.tile[cell.X,cell.Y];
+        return tile.HasTile&&tile.TileType==type&&tile.TileFrameX==cell.FrameX&&tile.TileFrameY==cell.FrameY;
+    }
+    internal static bool FurnitureAbsent(Context c)=>c.Furniture.All(cell=>!Main.tile[cell.X,cell.Y].HasTile);
+    internal static bool TargetUnchanged(Context c)=>c.TargetCaptured&&WorldGen.InWorld(c.X,c.Y,2)&&Same(c)
+        &&c.Furniture.All(cell=>SameFurnitureCell(c.TileType,cell));
     internal static bool Healthy(Player p)=>!p.dead&&!p.ghost&&!p.CCed&&!p.noItems&&!p.noBuilding&&!p.frozen&&!p.stoned&&!p.mount.Active
         &&!Main.gameMenu&&!Netplay.Disconnect&&float.IsFinite(p.position.X)&&float.IsFinite(p.position.Y);
     internal static object TargetDiagnostic(int x,int y)
@@ -105,7 +181,7 @@ internal static class ActorMining
         if(inWorld){var target=Main.tile[x,y];hasTile=target.HasTile;tileType=target.TileType;}
         return new{x,y,inWorld,hasTile,tileType,withinMiningBounds=WorldGen.InWorld(x,y,2)};
     }
-    internal static void Start(Player p,string world,long generation,int x,int y)
+    internal static void Start(Player p,string world,long generation,int x,int y,int? plannedSlot=null)
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
         lock(ProbeSession.Reservation.Gate)
@@ -117,7 +193,6 @@ internal static class ActorMining
             var c=new Context{Actor=p,World=world,Generation=generation,X=x,Y=y,Slot=p.selectedItem,Item=p.HeldItem};Current=c;
             void Reject(Failure reason,string detail){c.Phase=ActionPhase.Failed;c.Reason=reason;c.Detail=detail;Emit(c);}
             if(!Healthy(p)){Reject(Failure.ActorUnavailable,"Actor cannot mine in its current state.");return;}
-            c.Type=c.Item.type;c.Prefix=c.Item.prefix;c.Pick=c.Item.pick;c.Axe=c.Item.axe;
             bool withinMiningBounds=WorldGen.InWorld(x,y,2);
             if(!withinMiningBounds||!Main.tile[x,y].HasTile)
             {
@@ -127,13 +202,20 @@ internal static class ActorMining
             }
             var t=Main.tile[x,y];int type=t.TileType;
             c.TileType=c.ExpectedType=type;c.FrameX=t.TileFrameX;c.FrameY=t.TileFrameY;c.Slope=(byte)t.Slope;c.Half=t.IsHalfBlock;c.Actuated=t.IsActuated;c.TargetCaptured=true;
-            if(p.selectedItem<0||p.selectedItem>9||!SupportedTool(c.Item))
-            {Reject(Failure.InvalidTool,$"AI 当前栏 {p.selectedItem+1}：{(c.Item.IsAir?"空栏":c.Item.Name)}×{c.Item.stack}，镐力 {c.Pick}，斧力 {c.Axe}。请选择纯镐挖普通方块，或铜斧砍树干。");return;}
-            bool targetSupported=c.Axe>0?TreeTarget(type):DecorationTarget(type)||Main.tileSolid[type]&&!Main.tileFrameImportant[type]
-                &&!Main.tileAxe[type]&&!Main.tileHammer[type]&&!Main.tileCut[type]&&!TileID.Sets.Falling[type];
-            if(!targetSupported||t.IsActuated)
-            {Reject(Failure.UnsupportedTarget,$"目标 ({x},{y}) 类型 {type} 不符合当前工具范围：纯镐仅普通单格方块及 SmallPiles 环境碎堆，铜斧仅原版斧类树干；其他家具、装饰和虚化目标会拒绝。");return;}
-            if(!InRange(c)){Reject(Failure.OutOfRange,"Native item reach check refused the fixed target; no movement is attempted.");return;}
+            var failure=ChooseTool(p,world,generation,x,y,true,out int source,plannedSlot);
+            if(failure!=Failure.None){Reject(failure,$"Mining preflight refused target ({x},{y}): {failure}.");return;}
+            c.Furniture=FurnitureAt(x,y);
+            c.Item=p.inventory[source];c.Type=c.Item.type;c.Prefix=c.Item.prefix;c.Pick=c.Item.pick;c.Axe=c.Item.axe;
+            c.OriginalSlot=p.selectedItem;c.SourceSlot=source;
+            c.Slot=source<10?source:p.selectedItem is >=0 and <10?p.selectedItem:0;
+            if(source!=c.Slot)
+            {
+                c.Displaced=p.inventory[c.Slot];
+                Utils.Swap(ref p.inventory[c.Slot],ref p.inventory[source]);
+            }
+            c.SelectionChanged=source!=c.Slot||c.Slot!=c.OriginalSlot;
+            p.selectedItem=c.Slot;
+            if(c.SelectionChanged)NetworkStateSync.Full(p);
             // New explicit intent never inherits another action's partial progress.
             ClearProgress(p,x,y);
             p.controlUseItem=false;p.releaseUseItem=true;
@@ -186,13 +268,15 @@ internal static class ActorMining
     private static void Kill(On_WorldGen.orig_KillTile orig,int x,int y,bool fail,bool effectOnly,bool noItem)
     {
         if(!fail&&!effectOnly)CompanionBridge.ServerIpc.SceneMineTargets.Changed(x,y);
-        var c=Current;bool watched=Running&&c.X==x&&c.Y==y;
+        var c=Current;bool watched=Running&&!c.KillingTarget&&c.X==x&&c.Y==y;
         bool nativePick=watched&&ReferenceEquals(c,executing)&&(picking||striking&&c.Axe>0)&&Allowed(c.Actor)&&!c.ExternalChange&&Same(c)&&c.ProposedDamage>0;
         bool own=nativePick&&c.Damage>=100&&!fail&&!effectOnly;
         bool grassHit=nativePick&&c.ExpectedType==TileID.Grass&&fail&&!effectOnly&&!noItem;
         // Also detects removal + replacement with the same type between updates.
         if(watched&&!own&&!fail&&!effectOnly)c.ExternalChange=true;
-        orig(x,y,fail,effectOnly,noItem);
+        if(own)c.KillingTarget=true;
+        try{orig(x,y,fail,effectOnly,noItem);}
+        finally{if(own)c.KillingTarget=false;}
         var tile=watched?Main.tile[x,y]:default;
         if(grassHit&&!c.ExternalChange&&tile.HasTile&&tile.TileType==TileID.Dirt
             &&(byte)tile.Slope==c.Slope&&tile.IsHalfBlock==c.Half&&tile.IsActuated==c.Actuated)
@@ -228,7 +312,7 @@ internal static class ActorMining
         {
             if(!Healthy(p)){End(c,ActionPhase.Cancelled,Failure.ActorUnavailable);return;}
             if(!Held(c)){End(c,ActionPhase.Cancelled,Failure.ItemChanged);return;}
-            if(c.ExternalChange||(c.Destroyed?Main.tile[c.X,c.Y].HasTile:!Same(c))){End(c,ActionPhase.Failed,Failure.TargetChanged);return;}
+            if(c.ExternalChange||(c.Destroyed?Main.tile[c.X,c.Y].HasTile:!TargetUnchanged(c))){End(c,ActionPhase.Failed,Failure.TargetChanged);return;}
             if(!c.Destroyed&&!InRange(c)){End(c,ActionPhase.Failed,Failure.OutOfRange);return;}
             if(++c.Ticks>600){End(c,ActionPhase.TimedOut,Failure.Deadline);return;}
             executing=c;p.controlUseItem=!c.Destroyed;
@@ -244,10 +328,10 @@ internal static class ActorMining
             if(c.Destroyed)
             {
                 if(Main.tile[c.X,c.Y].HasTile){End(c,ActionPhase.Failed,Failure.TargetChanged);return;}
-                if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0){End(c,ActionPhase.Completed,Failure.None);return;}
+                if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0){End(c,FurnitureAbsent(c)?ActionPhase.Completed:ActionPhase.Stale,Failure.None);return;}
             }
             else if(!Same(c)){End(c,ActionPhase.Failed,Failure.TargetChanged);return;}
-            if(c.Strikes>strikes&&c.ProposedDamage==0){End(c,ActionPhase.Failed,Failure.NoPickPower,$"原生工具规则拒绝：类型 {c.ExpectedType}，镐力 {c.Pick}，斧力 {c.Axe}，保护判定后的伤害为零；目标尚未破坏。");return;}
+            if(c.Strikes>strikes&&c.ProposedDamage==0){End(c,ActionPhase.Failed,WorldGen.CanKillTile(c.X,c.Y)?Failure.NoPickPower:Failure.TargetProtected,$"原生工具规则拒绝：类型 {c.ExpectedType}，镐力 {c.Pick}，斧力 {c.Axe}，保护判定后的伤害为零；目标尚未破坏。");return;}
             if(c.Ticks==1&&p.itemAnimation==0){End(c,ActionPhase.Failed,Failure.NativeRefused,"Native CanUseItem/PreItemCheck did not start use.");return;}
             if(c.Ticks==1||c.Ticks%6==0)Sync(p);
         }
@@ -273,7 +357,17 @@ internal static class ActorMining
             var p=c.Actor;p.controlUseItem=false;p.releaseUseItem=true;p.channel=false;
             if(phase!=ActionPhase.Completed)p.itemAnimation=p.itemTime=p.reuseDelay=p.toolTime=0;
             if(phase==ActionPhase.Completed)AiMapRuntime.Remember(c.X,c.Y);
-            ClearProgress(p,c.X,c.Y);Sync(p);
+            ClearProgress(p,c.X,c.Y);
+            if(c.SelectionChanged)
+            {
+                // Swap back only the same two entries. Never overwrite an unrelated inventory change.
+                if(c.Displaced!=null&&ReferenceEquals(p.inventory[c.Slot],c.Item)
+                    &&ReferenceEquals(p.inventory[c.SourceSlot],c.Displaced))
+                    Utils.Swap(ref p.inventory[c.Slot],ref p.inventory[c.SourceSlot]);
+                if(p.selectedItem==c.Slot)p.selectedItem=c.OriginalSlot;
+                NetworkStateSync.Full(p);
+            }
+            Sync(p);
         }
         Emit(c);
     }

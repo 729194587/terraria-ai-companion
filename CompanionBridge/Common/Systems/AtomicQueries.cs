@@ -82,7 +82,9 @@ internal static class AtomicQueries
             preflight = new {
                 distancePixels = Vector2.Distance(p.Center, target),
                 withinConservativeReach = Vector2.Distance(p.Center, target) <= 80,
-                reachPixels = 80, normalGravity = p.gravDir == 1,
+                reachPixels = 80,
+                reachScope = token == null ? "client conservative reach" : "placement only; server mining uses native item reach",
+                normalGravity = p.gravDir == 1,
                 selectedItem = token == null ? AtomicOperations.CompactItem(held, p.selectedItem) : AtomicOperations.CompactItem(held, p.selectedItem, token),
                 checks = new { tilePresent = cell.HasTile, wallPresent = cell.WallType > 0,
                     pickSelected = !held.IsAir && held.pick > 0,

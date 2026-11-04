@@ -13,9 +13,8 @@ public static class TaskRuntimeOfflineTests
         internal bool Reach,Absent=true,ThrowPrepare;
         internal string Error,PrepareError,Danger;
         public string InterruptionReason()=>Danger;
-        internal int Selections,Observations;
-        public string Prepare(){if(ThrowPrepare)throw new Exception("preflight");return PrepareError;}
-        public void SelectTool(){Selections++;}
+        internal int Preparations,Observations;
+        public string Prepare(){Preparations++;if(ThrowPrepare)throw new Exception("preflight");return PrepareError;}
         public string Revalidate(){Observations++;return Error;}
         public bool CanMine()=>Reach;
         public JsonElement? FindApproach()=>JsonSerializer.SerializeToElement(new{minPlayerLeftX=100,maxPlayerLeftX=108,surfaceY=200});
@@ -70,15 +69,15 @@ public static class TaskRuntimeOfflineTests
         }
         {
             var f=new Fixture();for(int i=0;i<20;i++)f.Tick(0);
-            Check(f.World.Selections==0&&f.Native.Starts.Count==0,"idle pulses cannot start a task");
-            Check(f.Tick(1).Status=="running"&&f.World.Selections==1,"start/precondition run once");
+            Check(f.World.Preparations==0&&f.Native.Starts.Count==0,"idle pulses cannot start a task");
+            Check(f.Tick(1).Status=="running"&&f.World.Preparations==1,"start/precondition run once");
             for(int i=0;i<20;i++)f.Tick(1);
-            Check(f.World.Selections==1&&f.Native.Starts.Count==0,"duplicate game update cannot advance parent");
+            Check(f.World.Preparations==1&&f.Native.Starts.Count==0,"duplicate game update cannot advance parent");
             for(ulong t=2;t<=6;t++){Check(f.Tick(t).Status=="running","parent cannot complete before mining effect");for(int i=0;i<5;i++)f.Tick(t);}
             Check(f.Native.Starts.Count==2&&f.Native.Starts[0]=="navigate_to_landing_region"&&f.Native.Starts[1]=="mine_tile","one start per child, navigation then mining");
             var r=f.Tick(7);Check(r.Status=="completed"&&r.EffectVerified&&r.InputsReleased,"root settles only verified effect and release");
             Check(JsonSerializer.Serialize(f.Root.View()).Contains("child_result"),"child results and history reach root state");
-            f.Tick(8);Check(f.Native.Starts.Count==2&&f.World.Selections==1,"terminal root cannot restart");
+            f.Tick(8);Check(f.Native.Starts.Count==2&&f.World.Preparations==1,"terminal root cannot restart");
         }
         foreach(string cause in new[]{"cancel","timeout","death","identity","world","generation","slot","unknown_cancel"})
         {
@@ -101,7 +100,7 @@ public static class TaskRuntimeOfflineTests
             int count=f.Native.Starts.Count;f.Tick(20);Check(f.Native.Starts.Count==count,"no restart after uncertainty");
         }
         {
-            var f=new Fixture();f.World.PrepareError="invalid_target";Check(f.Tick(1).Status=="failed"&&f.Native.Starts.Count==0&&f.World.Selections==0,"precondition refusal has no native side effects");
+            var f=new Fixture();f.World.PrepareError="invalid_target";Check(f.Tick(1).Status=="failed"&&f.Native.Starts.Count==0&&f.World.Preparations==1,"precondition refusal has no native side effects");
         }
         {
             var f=new Fixture();f.Tick(1);f.Tick(2);f.Tick(3);f.World.Error="target_changed";

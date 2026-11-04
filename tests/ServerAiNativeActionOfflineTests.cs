@@ -94,7 +94,7 @@ public static class ServerAiNativeActionOfflineTests
         Check(AiActionReasons.Navigation("no safe local route: blocked")=="native_navigation_failed","ordinary no-route mapping remains compatible");
         Check(AiActionReasons.Mining("completed","None")=="native_tile_destroyed","mining success translates outcome rather than failure enum");
         foreach(var pair in new[]{("InvalidTarget","invalid_target"),("InvalidTool","invalid_tool"),("TargetChanged","target_changed"),
-            ("NativeRefused","native_use_refused"),("NoPickPower","native_tool_damage_refused"),("NativeException","native_mining_exception"),
+            ("NativeRefused","native_use_refused"),("NoPickPower","insufficient_pick_power"),("TargetProtected","target_protected"),("NativeException","native_mining_exception"),
             ("ExplicitStop","explicit_stop"),("Deadline","native_mining_deadline")})
             Check(AiActionReasons.Mining("failed",pair.Item1)==pair.Item2,"native reason code mapping "+pair.Item1);
         Check(AiActionReasons.Mining("failed","None")=="native_mining_unconfirmed"
