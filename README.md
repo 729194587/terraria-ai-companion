@@ -21,7 +21,7 @@
 - [文档索引](docs/INDEX.md)：按主题查找权威文档。
 - [系统架构](docs/ARCHITECTURE.md)：模块职责、两条执行路径和关键边界。
 - [开发指南](docs/DEVELOPMENT.md)：环境、构建和定向验证。
-- [当前路线图](docs/ROADMAP.md)：已具备能力与尚待推进的方向。
+- [当前路线图](docs/DEVELOPMENT_ROADMAP.md)：已具备能力与尚待推进的方向。
 - [Agent 工作约定](AGENTS.md)：Codex/开发代理的仓库规则。
 
 ## 开发与验证
