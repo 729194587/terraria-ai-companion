@@ -27,9 +27,8 @@
 
 | 文档 | 用途 |
 | --- | --- |
-| [观察接口](OBSERVATION.md) | 客户端观察数据与兼容边界 |
+| [客户端观察历史](archive/OBSERVATION.md) | 旧客户端观察接口记录，仅供追溯 |
 | [语义场景](LOCAL_SEMANTIC_SCENE.md) | Server AI 的 L0/L1 场景快照、编码和候选语义 |
-
 | [局部语义世界](L1_SEMANTIC_WORLD.md) | 树木、矿物和掉落物的按需语义查询 |
 | [AI Map](AI_MAP_V1.md) | 持久化探索地图及其时效语义 |
 
@@ -42,7 +41,6 @@
 | [合成](SERVER_AI_CRAFTING.md) | 配方查询与原生合成 |
 | [物品放置](SERVER_AI_OBJECT_PLACEMENT.md) | 服务器侧物体放置 |
 | [导航](NAVIGATION.md) | 物理预测、路径规划、执行与落脚确认 |
-
 | [世界角色持久化](SERVER_AI_WORLD_CHARACTER_PERSISTENCE.md) | Server AI Player 的世界绑定与存档 |
 
 ## 历史资料
