@@ -112,6 +112,74 @@ async def verify(args):
     finally:
         bridge.close()
 
+    for case, status in (
+        ('opening_across', 'completed'), ('opening_down', 'completed'), ('opening_probe', 'completed'),
+        ('opening_hazard', 'failed'), ('opening_hard', 'failed'), ('opening_unsafe', 'failed'),
+        ('opening_deadline', 'timeout'), ('opening_unknown', 'unknown'),
+    ):
+        spec = await fixture(case)
+        source = f"return api('mine_target',{{x={spec['x']},y={spec['y']}}})"
+        (profile/f'mine-target-{case}.lua').write_text(source, encoding='utf-8')
+        bridge = ServerAiBridge(args.port)
+        try:
+            raw = await LuaRuntime(bridge, evidence_root=profile/'mine-target-lua').execute(
+                source, limits=Limits(actions=1, calls=1, seconds=58))
+            result = raw.get('value') if raw['status'] == 'completed' else raw.get('lastAction')
+            rows.append(dict(case=case, result=raw));save()
+            assert raw['actions'] == 1 and result and result['status'] == status, (case, raw)
+            assert result['endEvidence']['inputsReleased'], result
+            task = result['task']
+            history = task['progress']['children']
+            assert all(c['parentTaskId'] == task['taskId'] for c in history), history
+            assert len({c['taskId'] for c in history}) == len(history), history
+            ticks = [c['observedGameUpdate'] for c in history]
+            assert ticks == sorted(ticks) and task['currentChild'] is None, task
+            if status == 'completed':
+                cuts = [c for c in history if c['taskName']=='mine_tile']
+                assert len(cuts)>1 and task['progress']['clearedTiles']==len(cuts)-1, task
+                for cut in cuts[:-1]:
+                    proof = cut['result']['evidence']
+                    assert (proof['X'], proof['Y']) != (spec['x'], spec['y']) and proof['destroyedByActor'], proof
+                proof = cuts[-1]['result']['evidence']
+                assert (proof['X'], proof['Y']) == (spec['x'], spec['y']) and proof['destroyedByActor'], proof
+                if case in ('opening_down', 'opening_probe'):
+                    drops = task['progress']['opening']['drops']
+                    assert drops and all(d['toFeetY']-d['fromFeetY']==16 for d in drops), task
+                else:
+                    assert any(c['taskName']=='navigate_to_landing_region' and c['status']=='completed' for c in history), task
+            else:
+                assert result['reasonDetail'], result
+                assert all(c['taskName']!='mine_tile' or c['status']!='completed' for c in history), task
+                if case == 'opening_hard':
+                    assert 'insufficient_pick_power' in result['reasonDetail'], result
+            print(json.dumps(dict(case=case, status=status, reason=result['reason'],
+                                  cleared=task['progress']['clearedTiles'])), flush=True)
+        finally:
+            bridge.close()
+
+    spec = await fixture('opening_cancel')
+    bridge = ServerAiBridge(args.port)
+    try:
+        bridge.command('start_atomic', operation='mine_target', arguments=dict(x=spec['x'], y=spec['y']),
+                       expectedGeneration=bridge.binding['generation'])
+        for _ in range(100):
+            action = bridge.command('get_movement')['movement']['action']
+            child = (action.get('task') or {}).get('currentChild') or {}
+            if child.get('taskName') == 'mine_tile' and child.get('phase') != 'accepted':
+                break
+            assert action['status'] == 'running', action
+            await asyncio.sleep(.01)
+        else:
+            raise AssertionError('opening child never started')
+        stopped = bridge.command('cancel_move', actionId=bridge._action_id)['movement']['action']
+        assert stopped['status'] == 'cancelled' and stopped['endEvidence']['inputsReleased'], stopped
+        await asyncio.sleep(.15)
+        final = bridge.command('get_movement')['movement']['action']
+        assert final['task']['progress']['children'] == stopped['task']['progress']['children'], final
+        rows.append(dict(case='opening_cancel', result=final));save()
+    finally:
+        bridge.close()
+
     spec = await fixture('approach')
     autonomous = ServerAiBridge(args.port)
     try:

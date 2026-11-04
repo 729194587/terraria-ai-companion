@@ -146,7 +146,8 @@ def server_contract(bridge, tool):
     supported = exposed_operations(bridge)
     capabilities = bridge.hello.get('capabilities', [])
     definitions = atomic.server_tools(supported, scene_region='server_ai_scene_region_v1' in capabilities,
-                                      general_operations='server_ai_general_operations_v1' in capabilities)
+                                      general_operations='server_ai_general_operations_v1' in capabilities,
+                                      mining_opening='server_ai_mining_opening_v1' in capabilities)
     manifest = capability_manifest(bridge, supported)
     task_reference = ''
     if program_tasks.available(bridge):

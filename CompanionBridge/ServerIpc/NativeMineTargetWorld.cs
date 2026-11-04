@@ -8,7 +8,7 @@ using VirtualPlayerEngineProbe;
 
 namespace CompanionBridge.ServerIpc;
 
-internal sealed class NativeMineTargetWorld : IMineTargetWorld
+internal sealed partial class NativeMineTargetWorld : IMineTargetWorld
 {
     private readonly AiReadOnlyProtocol.Identity identity;
     private readonly JsonElement args;
@@ -31,7 +31,7 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
                 return "task_interrupt_nearby_hostile";
         return null;
     }
-    public object Target=>new{x,y,typeId=type,toolSlot=slot,scope="one specified tile; local stance search; no automatic retry"};
+    public object Target=>new{x,y,typeId=type,toolSlot=slot,scope="one specified tile; bounded local opening"};
     public string Prepare()
     {
         ServerAiNativeActions.Require(identity);
@@ -44,7 +44,7 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
         var failure=ActorMining.ChooseTool(Player,identity.World,identity.Generation,x,y,false,out slot);
         if(failure!=ActorMining.Failure.None)return AiActionReasons.Mining("failed",failure.ToString());
         furniture=ActorMining.FurnitureAt(x,y);
-        item=Player.inventory[slot];toolType=item.type;toolPrefix=item.prefix;toolPower=item.pick;toolAxe=item.axe;toolBoost=item.tileBoost;shape=SceneMineTargets.Shape(x,y);SceneMineTargets.Watch(x,y);revision=SceneMineTargets.Revision(x,y);
+        item=Player.inventory[slot];toolType=item.type;toolPrefix=item.prefix;toolPower=item.pick;toolAxe=item.axe;toolBoost=item.tileBoost;shape=TaskShape(x,y);openingOrigin=ServerAiNavigation.Observe(Player).State;SceneMineTargets.Watch(x,y);revision=SceneMineTargets.Revision(x,y);
         return null;
     }
     public string Revalidate()
@@ -52,28 +52,37 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
         ServerAiNativeActions.Require(identity);
         if(!ActorMining.Healthy(Player))return "actor_cannot_mine";
         if(!ReferenceEquals(Player.inventory[slot],item)||item.type!=toolType||item.prefix!=toolPrefix||item.pick!=toolPower||item.axe!=toolAxe||item.tileBoost!=toolBoost)return "task_tool_changed";
-        if(SceneMineTargets.Shape(x,y)!=shape||SceneMineTargets.Revision(x,y)!=revision
+        if(TaskShape(x,y)!=shape||SceneMineTargets.Revision(x,y)!=revision
             ||furniture.Any(cell=>!ActorMining.SameFurnitureCell(type,cell)))return "task_target_changed";
         return null;
     }
+    // Neighbor excavation legitimately reframes ordinary blocks. Target revisions,
+    // tile type, slope and actuation still protect the original intent.
+    private static string TaskShape(int tx,int ty)
+    {
+        var tile=Main.tile[tx,ty];
+        return tile.HasTile&&Main.tileFrameImportant[tile.TileType]?SceneMineTargets.Shape(tx,ty)
+            :$"{tile.HasTile}:{tile.TileType}:{tile.Slope}:{tile.IsHalfBlock}:{tile.IsActuated}";
+    }
+    private bool IsTargetCell(int tx,int ty)=>tx==x&&ty==y||furniture.Any(part=>part.X==tx&&part.Y==ty);
+
     private bool SafePose(PhysicsState pose,NativeMotionWorld world,bool arrival)
     {
         if(!(arrival?world.SafeFlatLanding(pose):world.SafeLanding(pose)))return false;
         // Native framing can remove the other parts with the targeted segment.
-        return MotionSupport.SafeLanding(pose,(tx,ty)=>
+        bool safe=MotionSupport.SafeLanding(pose,(tx,ty)=>
         {
             char cell=TerrainReader.ReadCell(tx,ty);
             if(cell is '?' or '!')return cell;
-            if(tx==x&&ty==y)return '.';
-            foreach(var part in furniture)
-                if(part.X==tx&&part.Y==ty)return '.';
+            if(IsTargetCell(tx,ty))return '.';
             return cell;
         });
+        return safe||!arrival&&openingModeHasStarted&&furniture.Length==0&&CanDropAfter(pose,new[]{(x,y)});
     }
     public bool CanMine()
     {
         var p=Player;var observed=ServerAiNavigation.Observe(p);
-        return observed.Settled&&SafePose(observed.State,new NativeMotionWorld(observed.State),false)
+        return observed.Settled&&(!openingModeHasStarted||SafeCutNeighbours(x,y))&&SafePose(observed.State,new NativeMotionWorld(observed.State),false)
             &&ActorMining.QueryReach(p,identity.World,identity.Generation,item,x,y,p.position.X,p.position.Y);
     }
     public JsonElement? FindApproach()
@@ -82,6 +91,7 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
         // Scan player-left positions, including offsets within a tile. A 20px
         // body can fit between obstacles even when the old tile-centred band cannot.
         LandingRegion best=null;
+        int validBands=0;
         float bestDistance=float.PositiveInfinity;
         int minLeft=(x-6)*16-PhysicsSimulator.PlayerW/2;
         int maxLeft=(x+7)*16-PhysicsSimulator.PlayerW/2;
@@ -100,6 +110,7 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
                 }
                 if(!start.HasValue)continue;
                 var candidate=new LandingRegion(start.Value,px-1,feet);
+                validBands++;
                 start=null;
                 float distance=candidate.Distance(observed.State);
                 if(distance>=bestDistance)continue;
@@ -107,6 +118,7 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
                 bestDistance=distance;
             }
         }
+        SearchDetail=$"stance search ±6 tiles; valid bands={validBands}; target=({x},{y})";
         return best==null?null:JsonSerializer.SerializeToElement(new
         {
             minPlayerLeftX=best.MinPlayerLeftX,maxPlayerLeftX=best.MaxPlayerLeftX,surfaceY=best.SurfaceY

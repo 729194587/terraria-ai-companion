@@ -10,15 +10,19 @@ public static class TaskRuntimeOfflineTests
     private static void Check(bool ok,string text){if(!ok)throw new Exception(text);checks++;}
     private sealed class World : IMineTargetWorld
     {
-        internal bool Reach,Absent=true,ThrowPrepare;
+        internal bool Reach,Absent=true,ThrowPrepare,NoApproach,AllowOpening;
+        internal bool Settled=true;
         internal string Error,PrepareError,Danger;
         public string InterruptionReason()=>Danger;
         internal int Preparations,Observations;
         public string Prepare(){Preparations++;if(ThrowPrepare)throw new Exception("preflight");return PrepareError;}
         public string Revalidate(){Observations++;return Error;}
         public bool CanMine()=>Reach;
-        public JsonElement? FindApproach()=>JsonSerializer.SerializeToElement(new{minPlayerLeftX=100,maxPlayerLeftX=108,surfaceY=200});
+        public JsonElement? FindApproach()=>NoApproach?null:JsonSerializer.SerializeToElement(new{minPlayerLeftX=100,maxPlayerLeftX=108,surfaceY=200});
         public JsonElement MineArguments()=>JsonSerializer.SerializeToElement(new{x=12,y=10});
+        public MiningOpening FindOpening(int remainingTiles)=>AllowOpening
+            ?new("mine_tile",JsonSerializer.SerializeToElement(new{x=11,y=10})):null;
+        public bool OpeningSettled()=>Settled;
         public bool TargetAbsent()=>Absent;
         public object Target=>new{x=12,y=10};
     }
@@ -105,6 +109,23 @@ public static class TaskRuntimeOfflineTests
         {
             var f=new Fixture();f.Tick(1);f.Tick(2);f.Tick(3);f.World.Error="target_changed";
             Check(f.Tick(4).Status=="failed"&&f.Native.Cancels==1&&f.Native.Starts.Count==1,"changed target stops active child and never starts mining");
+        }
+        {
+            var f=new Fixture();f.World.NoApproach=f.World.AllowOpening=true;
+            f.Tick(1);f.Tick(2);f.Tick(3);f.Tick(4);
+            f.World.Settled=false;f.World.Reach=true;
+            for(ulong tick=5;tick<10;tick++)Check(f.Tick(tick).Status=="running","fall waits for native settlement");
+            Check(f.Native.Starts.Count==1,"settling never starts another child");
+            f.World.Settled=true;f.Tick(10);f.Tick(11);
+            Check(f.Tick(12).Status=="completed"&&f.Native.Starts.Count==2,"settled opening leads to one final mine");
+        }
+        {
+            var f=new Fixture();f.World.NoApproach=f.World.AllowOpening=true;
+            Result result=null;
+            for(ulong tick=1;tick<100;tick++)
+            {result=f.Tick(tick);if(result.Status!="running")break;}
+            Check(result?.Reason=="mining_opening_budget_exhausted"&&f.Native.Starts.Count==MineTargetTask.MaxOpeningTiles,
+                "opening budget stops verified excavation without starting a further child");
         }
         Console.WriteLine($"Task runtime: {checks} checks passed; native executor/world are substitutes.");
     }

@@ -10,7 +10,7 @@ namespace CompanionBridge.ServerIpc;
 
 internal static class ServerMineTaskFixture
 {
-    private static bool expireMining;
+    private static bool expireMining, obscureMining;
     internal static bool Enabled=>ServerAiActionFixture.Enabled&&Program.LaunchParameters.ContainsKey("-companiontasktest");
     internal static void Tick(Player p)
     {
@@ -19,6 +19,12 @@ internal static class ServerMineTaskFixture
         {
             ActorMining.Current.Ticks=600;
             expireMining=false;
+        }
+        if(obscureMining&&ActorMining.Running&&ActorMining.Current.Strikes>0)
+        {
+            ActorMining.Stop(p,ProbeSession.WorldSession,ProbeSession.ActorGeneration);
+            ActorMining.Current.Phase=ActionPhase.Stale; // Isolated lost-effect observation.
+            obscureMining=false;
         }
         string request=Path.Combine(Main.SavePath,"mine-task-request.json");if(!File.Exists(request))return;
         using var document=JsonDocument.Parse(File.ReadAllText(request));string kind=document.RootElement.GetProperty("caseId").GetString();File.Delete(request);
@@ -46,7 +52,8 @@ internal static class ServerMineTaskFixture
             for(int i=0;i<p.inventory.Length;i++)p.inventory[i]=new Item();
             p.inventory[0]=new Item(ItemID.CopperShortsword);p.inventory[1]=new Item(ItemID.CopperPickaxe);p.selectedItem=0;
             if(kind is "near" or "hotbar" or "bag" or "underpowered" or "workbench" or "workbench_task" or "cutout" or "deadline")x=left+2;
-            expireMining=kind=="deadline";
+            expireMining=kind is "deadline" or "opening_deadline";
+            obscureMining=kind=="opening_unknown";
             if(kind is "bag" or "cutout" or "deadline")
                 Utils.Swap(ref p.inventory[1],ref p.inventory[20]);
             if(kind=="cutout")
@@ -67,6 +74,34 @@ internal static class ServerMineTaskFixture
                 x=left-4;
                 y=floor-5;
             }
+            if(kind=="opening_across")
+            {
+                x=left+7;y=floor-2;
+                for(int tx=left+2;tx<=left+17;tx++)
+                    for(int ty=floor-9;ty<floor;ty++)
+                    {var rock=Main.tile[tx,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
+            }
+            if(kind is "opening_down" or "opening_probe" or "opening_hazard" or "opening_hard" or "opening_unsafe" or "opening_deadline" or "opening_unknown" or "opening_cancel")
+            {
+                x=left;y=floor+4;
+                if(kind=="opening_probe")
+                {
+                    // ore8: actor left at column +3.4px; copper one column left,
+                    // three rows below feet. Rebuild that layout in copied rock.
+                    p.position.X+=3.402f;x=left-1;y=floor+3;
+                }
+                for(int tx=left-4;tx<=left+5;tx++)
+                    for(int ty=floor;ty<=floor+8;ty++)Main.tile[tx,ty].TileType=TileID.Stone;
+                if(kind=="opening_hard")
+                    for(int tx=left;tx<=left+1;tx++)Main.tile[tx,floor].TileType=TileID.Obsidian;
+                if(kind=="opening_unsafe")
+                    for(int tx=left;tx<=left+1;tx++)
+                        for(int ty=floor+1;ty<=floor+3;ty++)Main.tile[tx,ty].ClearTile();
+                if(kind=="opening_hazard")
+                {
+                    var lava=Main.tile[left,floor+1];lava.ClearTile();lava.LiquidType=LiquidID.Lava;lava.LiquidAmount=255;
+                }
+            }
             var ore=Main.tile[x,y];ore.HasTile=true;ore.TileType=kind=="underpowered"?TileID.Obsidian:TileID.Copper;
             if(kind is "workbench" or "workbench_task")
             {
@@ -78,7 +113,7 @@ internal static class ServerMineTaskFixture
                 x++; // Mine the non-origin segment.
             }
             if(kind=="blocked")
-                for(int tx=left+4;tx<=left+4;tx++)for(int ty=floor-12;ty<floor;ty++){var t=Main.tile[tx,ty];t.HasTile=true;t.TileType=TileID.Stone;}
+                for(int tx=left+4;tx<=left+4;tx++)for(int ty=floor-12;ty<floor;ty++){var t=Main.tile[tx,ty];t.HasTile=true;t.TileType=TileID.Obsidian;}
             if(kind=="no_tool")p.inventory[1]=new Item();
         }
         NetworkStateSync.Full(p);
