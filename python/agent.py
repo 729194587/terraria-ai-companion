@@ -794,7 +794,9 @@ class Agent:
                                 elif not atomic_halted:
                                     lua_failure = None
                             elif name in atomic_operations.SCHEMAS:
-                                if name in atomic_operations.BUDGETED_ACTIONS and (budget_reason := mutation_budget_reason()):
+                                if task_notification and name in atomic_operations.ACTIONS:
+                                    result = {'valid':False,'status':'failed','reason':'task_notification_read_only','blocked':True}
+                                elif name in atomic_operations.BUDGETED_ACTIONS and (budget_reason := mutation_budget_reason()):
                                     result = {'valid':False,'status':'failed','reason':budget_reason,'blocked':True}
                                 elif name in atomic_operations.ACTIONS and name != "stop_action" and atomic_halted:
                                     result = {"valid": False, "status": "failed", "reason": "previous_atomic_action_failed; no automatic retry",
