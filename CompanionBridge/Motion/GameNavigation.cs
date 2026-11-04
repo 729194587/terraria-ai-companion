@@ -22,7 +22,6 @@ internal sealed class NativeNavigation
     private readonly MobilityTracker _mobility=new();
     private MobilityProfile _profile;
     private long _planRevision;
-    private float _transitionSpeedLimit;
     private NavigationSnapshot CoreSnapshot=>_navigation?Task.Snapshot:Controller.Snapshot;
     private readonly bool _captureContacts;
     internal NativeNavigation(bool captureContacts=false,Action<string> diagnosticWriter=null,bool enableSafeGroundWalk=false,Func<PhysicsState,int> historicalPreference=null)
@@ -37,7 +36,7 @@ internal sealed class NativeNavigation
 
     internal bool Ordinary(Player p) => OrdinaryRejection(p) == null;
 
-    private string OrdinaryRejection(Player p,float transitionSpeedLimit=0,bool expiryTail=false)
+    private string OrdinaryRejection(Player p)
     {
         var ph = Parameters(p);
         List<string> reasons = null;
@@ -45,11 +44,6 @@ internal sealed class NativeNavigation
         {
             if (condition) (reasons ??= new()).Add(reason);
         }
-        // This is an explicit unvalidated-combination gate, not an inference
-        // that every Mod changes movement. Equal sampled scalars cannot certify
-        // later ModPlayer/On/IL hooks. Keep server engine isolation unchanged.
-        foreach(var mod in ModLoader.Mods)
-            Reject(mod.Name is not ("ModLoader" or "CompanionBridge"),"unvalidated_loaded_mod: "+mod.Name);
         Reject(p.mount.Active, "mount_active");
         Reject(p.gravDir != 1, "unsupported_gravity");
         Reject(p.wet, "wet");
@@ -68,20 +62,9 @@ internal sealed class NativeNavigation
         Reject(p.wingsLogic != 0, "functional_wings");
         Reject(p.rocketBoots != 0, "rocket_boots");
         Reject(p.itemAnimation != 0, "item_animation");
-        Reject(p.width != 20 || p.height != 42, "unsupported_body_size");
-        Reject(!(Math.Abs(p.velocity.X) <= Math.Max(p.HasBuff(BuffID.Swiftness)||expiryTail?3.95f:3.2f,transitionSpeedLimit)), "unsupported_horizontal_velocity");
-        var expected=p.HasBuff(BuffID.Swiftness)||expiryTail?PhysicsParameters.Swiftness:PhysicsParameters.Basic;
-        if (!ph.Matches(expected)) Reject(true, $"unsupported_physics: {ph}");
-        for (int i = 0; i < 10; i++)
-            if (!p.armor[i].IsAir) Reject(true, $"equipment: slot={i}, type={p.armor[i].type}, name={p.armor[i].Name}");
-        for (int i = 0; i < p.buffTime.Length; i++)
-        {
-            int type = p.buffType[i];
-            // Only resolve names for rejected effects; no per-tick string work for allowed buffs.
-            if (NavigationBuffPolicy.Rejection(type, p.buffTime[i], i, null) == null) continue;
-            string key = BuffLoader.GetBuff(type)?.FullName ?? "Terraria/" + BuffID.Search.GetName(type);
-            Reject(true, NavigationBuffPolicy.Rejection(type, p.buffTime[i], i, key));
-        }
+        Reject(p.width != PhysicsSimulator.PlayerW || p.height != PhysicsSimulator.PlayerH, "unsupported_body_size");
+        Reject(!float.IsFinite(p.velocity.X)||!float.IsFinite(p.velocity.Y), "invalid_velocity");
+        Reject(!ph.IsSupportedGroundPhysics, $"unsupported_physics: {ph}");
         return reasons == null ? null : string.Join("; ", reasons);
     }
 
@@ -105,12 +88,7 @@ internal sealed class NativeNavigation
             else Task.Begin(session, generation, targetX.Value, State(p));
         }
         var ph=Parameters(p);
-        bool sameProfileScope=_profile?.Session==session&&_profile?.Generation==generation;
-        if(sameProfileScope&&_profile.Supported&&_profile.Variant=="vanilla_swiftness"
-            &&!p.HasBuff(BuffID.Swiftness)&&ph.IsBasic)_transitionSpeedLimit=3.95f;
-        if(!sameProfileScope||Math.Abs(p.velocity.X)<=3.2f)_transitionSpeedLimit=0;
-        bool expiryTail=_mobility.IsSwiftnessExpiryTail(ph,p.HasBuff(BuffID.Swiftness),Main.GameUpdateCount,session,generation);
-        string rejection = OrdinaryRejection(p,_transitionSpeedLimit,expiryTail);
+        string rejection = OrdinaryRejection(p);
         int swiftnessIndex=p.FindBuffIndex(BuffID.Swiftness);
         _profile=_mobility.Sample(ph,p.width,p.height,p.HasBuff(BuffID.Swiftness),
             rejection==null?Array.Empty<string>():new[]{rejection},Main.GameUpdateCount,session,generation,
@@ -159,7 +137,7 @@ internal sealed class NativeNavigation
 
     internal void Cancel()
     {
-        _mobility.Reset();_profile=null;_planRevision=0;_transitionSpeedLimit=0;
+        _mobility.Reset();_profile=null;_planRevision=0;
         _paired = false; _world = null; _session = _generation = 0;
         Task.Cancel(); Diagnostics.Observe(Task.Snapshot); _navigation = false;
         Controller.Cancel();

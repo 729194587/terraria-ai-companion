@@ -213,7 +213,7 @@ internal static class ServerAiTerrainFixture
             foreach(var item in p.armor)item.TurnToAir();
             if(mobilityMode is "swiftness" or "remove" or "rapid" or "expiry")p.AddBuff(BuffID.Swiftness,36000,true);
             if(mobilityMode=="unknown")p.AddBuff(BuffID.WellFed,36000,true);
-            if(mobilityMode=="equipment")p.armor[3].SetDefaults(ItemID.HermesBoots);
+            if(mobilityMode=="equipment")p.armor[0].SetDefaults(ItemID.CopperHelmet);
         }
         if(environment) ProbeEnvironment(p, left, floor-4);
         pending=new{scene,direction,startX=p.position.X,startY=p.position.Y,targetX=p.position.X+direction*192,

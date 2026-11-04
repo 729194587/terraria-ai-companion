@@ -10,6 +10,7 @@ namespace CompanionBridge.Motion;
 
 internal sealed class NativeMotionWorld : IMotionWorld
 {
+    private const int CollisionMargin = 32;
     private readonly int _left, _top;
     private readonly bool _captureContacts;
     public NavigationBlockingTile[] LastHorizontalContact {get;private set;}
@@ -30,14 +31,6 @@ internal sealed class NativeMotionWorld : IMotionWorld
                 char cell = TerrainReader.ReadCell(x, y);
                 if (cell == '?' || (hazards && cell == '!'))
                     throw new UnsafeMotionException($"unknown/hazard terrain at ({x},{y})");
-                if (hazards)
-                {
-                    var tile = Main.tile[x, y];
-                    if (tile.HasUnactuatedTile && (TileID.Sets.IceSkateSlippery[tile.TileType]
-                        || tile.TileType is TileID.HoneyBlock or TileID.Cobweb or TileID.Asphalt
-                            or TileID.SlimeBlock or TileID.FrozenSlimeBlock))
-                        throw new UnsafeMotionException($"unsupported movement surface at ({x},{y})");
-                }
             }
     }
 
@@ -58,7 +51,11 @@ internal sealed class NativeMotionWorld : IMotionWorld
         LastHorizontalContact=null;
         // Native helpers inspect neighbouring tiles. Reject unloaded/custom tiles
         // there before calling them, not merely after accepting a trajectory.
-        Check(start.Px - 32, start.Py - 32, start.Px + 52, start.Py + 74, false);
+        if(!float.IsFinite(vx)||!float.IsFinite(vy)||Math.Abs(vx)>CollisionMargin||Math.Abs(vy)>CollisionMargin)
+            throw new UnsafeMotionException("movement exceeds validated native collision neighbourhood");
+        Check(start.Px - CollisionMargin, start.Py - CollisionMargin,
+            start.Px + PhysicsSimulator.PlayerW + CollisionMargin,
+            start.Py + PhysicsSimulator.PlayerH + CollisionMargin, false);
         var pos = new Vector2(start.Px, start.Py);
         var vel = new Vector2(vx, vy);
         float stepSpeed = 0, gfxOffY = 0;

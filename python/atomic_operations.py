@@ -51,6 +51,9 @@ SCENE_TEXT_CONTRACT = (
     "箱柜/门/工作台按注册锚点分组，未验证完整家具占地或内容；动态实体按当前相交碰撞框观察，槽位/objects.id不是跨观察持久身份。"
     "所有候选仅为几何预筛选，不保证路径/可达或原生放置权限，行动后仍需真实回执和新鲜观察。"
 )
+MINE_TARGET_DESCRIPTION = "服务器复合挖掘（server_ai_tasks_v1）。传 observe_scene 矿物对象的 target，或传明确的绝对 Tile 坐标 x/y，两种形式互斥。观察目标须通过身份、30秒及600游戏更新时效和目标变化检查。与 mine_tile 共用主背包自动选工具、临时切换快捷栏及原生触及和工具判定。已在安全站位且够得着时直接挖掘，否则在局部窗口内尝试一次导航，抵达后重验目标和站位。只挖指定格，可连带拆除该格所属家具。按 evidence.task.lastResult 和子动作释放证据核验，掉落入包需另行观察。unknown 停止。"
+PLACE_OBJECT_DESCRIPTION = "服务器 AI 放置快捷栏选中的多格对象。x/y 是绝对 Tile 锚点，按选中物品的 createTile、placeStyle 和原生 TileObjectData 解析占地和 Anchor。由原生范围、碰撞和 Mod Hook 判定；依赖全局光标的特殊对象不支持。核验放置事件、整组帧、消耗和释放后才完成。取消可能已有副作用，unknown 停止。10秒上限。"
+
 TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地下视野采用遮挡/近身/可见原版火把近似。",
     {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
     {"resultType":{"type":"integer","minimum":1},"availableOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":24},"offset":{"type":"integer","minimum":0,"maximum":100000}}),
@@ -115,7 +118,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("select_hotbar_slot", "按游戏显示的快捷键选择：1..9为前九格，0为最右第十格。slot不是背包数组索引。核对实际选中按键。", {"slot": {"type": "integer", "minimum": 0, "maximum": 9}}, ["slot"]),
     tool("use_item", "用当前物品完成一次原生使用周期；target可选世界像素{x,y}。completed只证明使用周期，具体效果需感知核验。无target保留原生鼠标，不限制画面缩放；有target支持当前缩放，仍限正常重力及80像素。",
          {"target": {"type": "object", "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1000000}, "y": {"type": "number", "minimum": 0, "maximum": 1000000}}, "required": ["x", "y"], "additionalProperties": False}}),
-    tool("mine_target", "服务器复合挖掘（server_ai_tasks_v1）。传 observe_scene 矿物对象的 target，或传明确的绝对 Tile 坐标 x/y，两种形式互斥。观察目标须通过身份、30秒及600游戏更新时效和目标变化检查。与 mine_tile 共用主背包自动选工具、临时切换快捷栏及原生触及和工具判定。已在安全站位且够得着时直接挖掘，否则在局部窗口内尝试一次导航，抵达后重验目标和站位。只挖指定格，可连带拆除该格所属家具。按 evidence.task.lastResult 和子动作释放证据核验，掉落入包需另行观察。unknown 停止。", {"target": MINE_TARGET, **TILE}),
+    tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE}),
     tool("mine_tile", "原生挖掘指定 Tile。服务器 AI 从整个主背包自动选择合适工具，必要时临时切换快捷栏，按 Terraria 原生范围和工具规则判定。客户端控制使用当前手持镐。动作在当前位置执行，以实际移除为准，10秒上限。",
          {"x": {**TILE["x"], "description": "目标格的绝对 Tile X 坐标"},
           "y": {**TILE["y"], "description": "目标格的绝对 Tile Y 坐标"}}, ["x", "y"]),
@@ -125,35 +128,41 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("place_wall", "选中原版消耗型墙物品，在80像素内无墙格原生放置；正确墙类型和消耗一件共同核验，多人需服务器确认；自动补邻墙或自动涂漆不支持，10秒上限。", TILE, ['x', 'y']),
     tool("hammer_tile", "选中纯锤对80像素内原版普通方块/平台原生锤击；目标无背景墙，实际形状变化才成功，多人需服务器确认。不支持家具/破坏型锤目标。10秒上限。", TILE, ['x', 'y']),
     tool("interact_tile", "80像素内原版门、未锁宝箱、开关、拉杆基础交互；多格任一占用格可指定；宝箱核验打开/关闭，开关及拉杆核验Frame切换，不证明下游电路效果。多人需同版本服务器确认。", TILE, ["x", "y"]),
-    tool("place_object", "仅服务器AI：选中快捷栏原版Work Bench默认样式，x/y为TileObjectData目标锚点（Tile坐标，左上角）；完整2×1干燥占地为空或原生可清除植物/装饰物，下方双格实心支撑、排除玩家、锚点80px内。非实心不等于可覆盖；沿用原生占地判断及清除，不额外挖掘。真实原生放置事件、全占地帧及消耗和输入释放共同核验；候选不保证原生成功，unknown不得重试。10秒上限。", TILE, ["x", "y"]),
+    tool("place_object", PLACE_OBJECT_DESCRIPTION, TILE, ["x", "y"]),
     tool("place_tile", "用选中消耗品在80像素内空格放单格方块，支持当前画面缩放，仍限正常重力；Tile类型与物品消耗共同核验；不支持多格家具或ModItem。10秒上限。", TILE, ["x", "y"]),
     tool("stop_action", "取消当前Agent动作并等待游戏线程输入释放证据，不抢占手动控制。")]
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 
 # Model-only server projection. Execution validation and the shared TOOLS stay unchanged.
 SERVER_DESCRIPTIONS = {
+    'mine_target': MINE_TARGET_DESCRIPTION,
+    'place_object': PLACE_OBJECT_DESCRIPTION,
     'transfer_inventory_item': '服务器AI：仅0..49普通库存槽，新鲜两槽token；原生拆分/堆叠，CanStack检查Mod兼容性，容量不足不执行；核验数量及后续游戏更新。unknown可能已变更，不回滚、不自动重试。',
     'swap_inventory_slots': '服务器AI：新鲜两槽token，交换0..49完整物品实例；不合并，后续游戏更新核验；unknown不回滚、不自动重试。',
     'hold_inventory_item': '服务器AI：完整交换sourceSlot与hotbarKey(游戏键1..9,0)，目标物品回源槽，再选中；同槽只选择，不自动使用；核验两槽与后续更新。unknown不回滚、不自动重试。',
     'get_player_state': '读取绑定服务器AI的实际位置/速度/生命及motion；无参数。返回{valid,player,motion,binding,...}，player.position是碰撞框左上角世界像素，velocity为像素/游戏更新，Y向下；motion.grounded与supported独立，supported只是导航profile适用性，不保证支撑/路径安全。',
     'inspect_inventory': '只读AI真实背包，必须显式mode；局部查询不代表完整背包。返回{valid,available,data,...}，data.inventoryScope/inspectedSlots标明实际检查范围，item匹配slots不等于搜索范围。hotbarKey是游戏键1..9,0；新版本server_ai_inventory_v1提供绑定World/Actor/Generation/槽位、物品实例与基础字段的inventoryToken；操作前用slots/selected/hotbar读取两槽新鲜token。full/item不保证提供token，全部Mod自定义状态未知；token不调用保存钩子，不能识别仅自定义状态变化。',
     'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。返回{valid,available,data,...}，data.terrain含originX/originY/rows，data.state含centerWorldPixels，另含bounds/legend/coverage。原点/格为Tile（16像素），不是摄像机或材质图；取具体Tile用已开放的精查接口。supported只是profile适用性。',
-    'use_item': '当前选中快捷栏物品完成一次原生使用周期；参数仅{}，先观察真实持用物品，必要时显式选栏。仅木剑、铜镐、铜斧、苹果，无target瞄准、实体锁定或其他物品适配；3秒上限。completed和cycleVerified只证明使用周期，effectStatus=unconfirmed，不证明命中或击杀。',
+    'use_item': '当前快捷栏物品执行一次原生使用周期，参数仅{}。支持可无坐标单次使用的原版物品及 ModItem，使用条件由 ItemCheck 和 Mod Hook 判定。需要瞄准、弹药、持续按住或放置坐标的物品需使用相应入口。3秒上限。cycleVerified 证明使用周期，consumptionObserved 表示持用物品堆叠减少；具体治疗、Buff、命中等效果需另行观察。',
     'mine_tile': '原生挖掘指定 Tile。自动在整个主背包（含快捷栏）选择合适工具，必要时临时切换快捷栏，无需预选镐。由 Terraria 原生挖掘范围、工具和破坏许可判定。在当前位置执行，需要接近时用 mine_target。可指定家具有效组成格，已识别的多格家具核验整组移除。10秒上限，destroyedByActor、targetAbsent 和绑定输入释放证据齐备才完成。掉落入包需另行观察，unknown 停止。',
-    'place_tile': '在空Tile格x/y，以当前选中原版泥土块、石块、木材或普通火把进行一次原生放置。检查物品、占地和原生邻接；80像素保守检查加原生条件，10秒上限。仅本AI放置目标、消耗1件、计时结束及释放共同确认completed。不支持家具/平台/沙/ModItem/替换格/墙；不自动选材或走近，取消可能已有方块/消耗。',
+    'place_tile': '在空的绝对 Tile 格 x/y 用选中的快捷栏材料放置普通单格 Tile。按 createTile、placeStyle 和原生放置范围、邻接及 Mod Hook 判定；多格对象用 place_object。核验本 AI 的放置事件、目标格、consumedCount=1 和输入释放。取消可能已有副作用，unknown 停止。10秒上限。',
     'scan_entities': '以AI中心扫描世界像素半径radius（1..1600）内真实活跃NPC/掉落/其他玩家，排除AI自身；category与可选typeIds/npcFilter按Schema，先筛选再按距离排序截断。返回data.items及范围/计数/截断；entityRef绑定世界/AI代次/NPC实例，仅是观察标识，不保证视线、可达或可攻击。',
+}
+LEGACY_SERVER_OPERATION_DESCRIPTIONS = {
+    'use_item': '旧版服务器的物品使用范围受限，参数仅{}。completed 仅核验原生使用周期。',
+    'place_tile': '旧版服务器仅支持有限的原版单格材料。按服务器预检和原生规则判定，核验放置和 consumedCount=1。',
+    'place_object': '旧版服务器放置默认样式的原版工作台。使用已观察的工作台候选锚点，核验占地、消耗和释放。',
 }
 SERVER_DESCRIPTION_SUFFIXES = {
     'query_recipes': '返回data.items中的output.count、supported/available、材料/站点/条件、hasOutputSpace和分页。仅普通原版配方/配方组、AI背包0..57、原生邻接站点、水/熔岩/蜂蜜/微光/昼夜六种条件；特殊回调/其他条件/Mod内容/箱子或虚空仓库不支持。resultType需从当前已知注册表取得，空页不证明全局无配方。',
     'craft_recipe': '仅普通原版配方/配方组、AI背包0..57与已支持制作站/六类环境条件；特殊回调、其他条件、Mod内容、箱子/虚空仓库不支持。前置：新鲜配方token及supported/available、材料/站点/条件/保守空间检查；单次产量见output.count，每批重验。按completedCrafts/producedCount、batches、inventoryVerified核验；可能部分完成，不回滚。制作站是否邻接要重新查询，不能由放置动画推定。',
     'move_input': '前置为绑定身份/控制权、无互斥动作、正常重力；坐骑/失能状态拒绝，空中/非零起速允许。30秒墙钟看门，不要求导航profile/安全支撑。evidence包含updatesExecuted、startPosition/endPosition/endVelocity（向量X/Y）、healthDelta、grounded/airborne、inputReleased、settled、noProgress；completed只证明输入时长结束，inputReleased不证明停稳或效果确定，观察/同步不确定时仍返回unknown。',
     'navigate_to_x': '先读取当前位置再计算相对targetX；起步/路径仍需普通导航profile，飞行/坐骑/反重力等不支持。结束evidence含x/y/vx/vy、arrived/grounded/safeSupport/settled；不能把经过X、零预测误差或局部搜索失败当成已落地/全局不可达。',
-    'navigate_to_landing_region': '目标须来自新鲜观察，可将已观察候选target直接传入；不同高度仍受原局部预算、普通profile及64px下降限制。半砖/斜坡/斜平台不是目标落脚面；斜坡可作路径。导航不执行Down平台下穿。成功须targetRegion一致、arrived/grounded/safeSupport/settled=true及known释放；未确认落地保持unknown。',
+    'navigate_to_landing_region': '目标须来自新鲜观察，可将已观察候选target直接传入；不同高度仍受原局部预算、普通profile及64px下降限制。半砖顶部可作水平落脚面；斜坡和斜平台可作路径，落脚区域要求水平接触。导航不执行Down平台下穿。成功须targetRegion一致、arrived/grounded/safeSupport/settled=true及known释放；未确认落地保持unknown。',
     'scan_tiles': '返回data.items及matchedCount/returnedCount/complete/truncated；按Tile格计数，一棵树有多格，不能当树的棵数。附近查询先取得观察bounds；世界像素转Tile用math.floor(px/16)，不猜内容ID。',
     'inspect_tile': '返回data内的实际格和preflight；x/y为Tile坐标。只读前提不是原生执行许可；移除支撑比较不预测实际落点。',
     'resolve_content': '返回data中的匹配候选/ID及歧义；内容注册表中存在不等于当前观察范围或世界内存在。',
     'observe_scene': 'data.map/geometry为45×29行字符串，共用Tile原点originX/Y；tileX=originX+列索引-1，tileY=originY+行索引-1。按任务选layers，未请求字段直接省略，不表示空；旧响应缺includedLayers不证明支持筛选。对应placementMaterial/objectPlacementMaterial需核对真实材料。导航候选candidate.target、单格和工作台候选用途独立；单格placementCandidates不能传给place_object，工作台用objectPlacementCandidates.items。工作台diagnostics中rejectedCount仅计已知占地/支撑的首个互斥拒绝，unknownCount/notCheckedCount不算明确排除；coveredScopeComplete仅指完整占地/支撑在观察范围内的锚点全部已知，缺diagnostics不表示计数为0。集合各自检查coverage/complete/truncated；移动后重观察。',
-    'place_object': '须检查真实快捷栏材料及完整占地；场景工作台候选来自objectPlacementCandidates，不能用单格候选替代。completed须placedByActor/targetPresent、targetChanged=false、真实消耗1件及known释放；取消可能已有副作用，放成后重查制作站邻接。',
     'select_hotbar_slot': '只改变AI当前快捷栏选择；输入slot是游戏显示键，不是inventory.slot内部索引。completed需下一游戏线程状态及绑定选择结束证据，不等于使用物品。',
     'query_map': '返回data.rows/originX/Y/cellSize/exploredRatio等；持久地图是AI探索记忆，不是脚本变量存储，不替代当前观察或保证可达。',
     'wait': '返回{valid,status,elapsedMilliseconds,clock}；占API次数但不占变更动作次数。',
@@ -176,7 +185,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene(
     'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
 
 
-def server_tools(supported, *, scene_region=False):
+def server_tools(supported, *, scene_region=False, general_operations=True):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
     definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported]
     for definition in definitions:
@@ -185,6 +194,8 @@ def server_tools(supported, *, scene_region=False):
         if name == 'use_item':
             f['parameters'] = {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}
         f['description'] = SERVER_DESCRIPTIONS.get(name, f['description'])
+        if not general_operations and name in LEGACY_SERVER_OPERATION_DESCRIPTIONS:
+            f['description'] = LEGACY_SERVER_OPERATION_DESCRIPTIONS[name]
         if name == 'observe_scene':
             f['description'] += ('新版data.lighting.available=false表示专用服暂无可信原生亮度。'
                 'hazards.entities.items可带observedGameUpdate、observationRef、velocity和threat。'

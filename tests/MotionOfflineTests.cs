@@ -390,8 +390,8 @@ public static class MotionOfflineTests
         task.Before(205, 2, region, start with { Grounded = false, Vy = -3 }, ph, world);
         Check(task.Snapshot.Status == "failed", "Generation change discards old airborne region replay");
         task = new();
-        task.Before(206, 1, region, start, ph with { Gravity = 0.2f }, world);
-        Check(task.Snapshot.Status == "failed", "Unsupported region physics rejected");
+        task.Before(206, 1, region, start, ph with { Gravity = float.NaN }, world);
+        Check(task.Snapshot.Status == "failed", "Invalid region physics rejected");
         Console.WriteLine("PASS: raised landing region planning/task execution, exact goal predicates, safety, unreachable/blocked routes, budgets and divergence (synthetic collisions)");
     }
 
@@ -1051,21 +1051,6 @@ public static class MotionOfflineTests
         RecordedPlatformArrivalRegression();
         RecordedMiningApproachRegression();
         NearGoalMovingRegression();
-        foreach (int type in new[] { 3, 147, 216 })
-            Check(NavigationBuffPolicy.Rejection(type, 18000, 0, "audited_vanilla") == null,
-                "Recorded MonsterBanner/BabyBird effects must not block ordinary navigation");
-        foreach (int type in new[] { 8, 26, 146, 148, 215, 217, 9999 })
-        {
-            string rejection = NavigationBuffPolicy.Rejection(type, 120, 2, "test/effect");
-            Check(rejection != null && rejection.Contains($"type={type}") && rejection.Contains("slot=2")
-                && rejection.Contains("test/effect") && rejection.Contains("timeTicks=120"),
-                "Movement-changing, unreviewed and Mod buffs still reject with actual effect details");
-            Check(NavigationBuffPolicy.Rejection(type, 0, 2, "test/effect") == null,
-                "An expired slot is not an active buff");
-        }
-        Check(NavigationBuffPolicy.Rejection(147, 1, 0, "Terraria/MonsterBanner") == null
-            && NavigationBuffPolicy.Rejection(8, 1, 1, "Terraria/ObsidianSkin") != null,
-            "An allowed banner cannot hide a concurrent unsupported movement buff");
         var ph = PhysicsParameters.Basic;
         var reported = new PhysicsParameters(0.08f, 3, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);
         Check(reported.IsBasic, "Real-game reported 10.01 fall cap passes the same eligibility check used in-game");

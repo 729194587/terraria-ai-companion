@@ -30,10 +30,9 @@ internal sealed class MobilityTracker
     {
         bool expiryTail=IsSwiftnessExpiryTail(ph,swiftness,tick,session,generation);
         unsupported=unsupported.Length==0?Array.Empty<string>():unsupported.ToArray();
-        string variant=swiftness||expiryTail?"vanilla_swiftness":"basic";
-        var expected=swiftness||expiryTail?PhysicsParameters.Swiftness:PhysicsParameters.Basic;
-        if(!ph.Matches(expected))unsupported=unsupported.Append("unvalidated_effective_physics: "+ph).ToArray();
-        if(width!=20||height!=42)unsupported=unsupported.Append("unsupported_body_size").ToArray();
+        string variant=ph.IsBasic?"basic":ph.Matches(PhysicsParameters.Swiftness)?"vanilla_swiftness":"measured_ground";
+        if(!ph.IsSupportedGroundPhysics)unsupported=unsupported.Append("unsupported_effective_physics: "+ph).ToArray();
+        if(width!=PhysicsSimulator.PlayerW||height!=PhysicsSimulator.PlayerH)unsupported=unsupported.Append("unsupported_body_size").ToArray();
         if(previous==null||previous.Session!=session||previous.Generation!=generation
             ||previous.Variant!=variant||previous.EffectivePhysics!=ph||previous.Width!=width||previous.Height!=height
             ||!previous.UnsupportedEffects.SequenceEqual(unsupported))revision++;

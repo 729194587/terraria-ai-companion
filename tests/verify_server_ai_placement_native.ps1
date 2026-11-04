@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27837,[switch]$Failure,[switch]$Object,[switch]$AfterPlacementException,
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27837,[switch]$Failure,[switch]$Object,[switch]$AfterPlacementException,[switch]$ItemUse,
     [string]$PackagePath,[ValidateSet('VirtualPlayerEngineProbe','CompanionBridge')][string]$ModName='CompanionBridge')
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
@@ -20,7 +20,8 @@ Copy-Item -LiteralPath $package -Destination "$profile/Mods/$ModName.tmod"
 Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value ('["'+$ModName+'"]')
 $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",
     '-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-placementselftest')
-if($Failure){$arguments+='-placementfailureselftest'}
+if($ItemUse){$arguments[$arguments.Length-1]='-itemuseselftest'}
+if($Failure){$arguments+=$(if($ItemUse){'-itemusefailureselftest'}else{'-placementfailureselftest'})}
 if($Object){$arguments+='-objectplacementselftest'}
 if($AfterPlacementException){$arguments+='-objectplacementafterexception'}
 if($ModName -eq 'CompanionBridge'){
@@ -34,7 +35,7 @@ $process=Start-Process -FilePath (Join-Path $TModLoaderPath 'dotnet/dotnet.exe')
 try{
     $null=$process.Handle
     $deadline=[DateTime]::UtcNow.AddSeconds(90)
-    $resultPath=Join-Path $profile 'placement-native-result.json'
+    $resultPath=Join-Path $profile $(if($ItemUse){'item-use-native-result.json'}else{'placement-native-result.json'})
     while(!$process.HasExited -and !(Test-Path -LiteralPath $resultPath) -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 300}
     Write-Output "Native diagnostic profile: $profile"
     if(!(Test-Path -LiteralPath $resultPath)){throw 'Native placement test did not produce a result.'}

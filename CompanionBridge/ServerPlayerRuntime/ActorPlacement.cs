@@ -3,7 +3,6 @@ using System.Linq;
 using System.Reflection;
 using Mono.Cecil;
 using MonoMod.RuntimeDetour;
-using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
 using Terraria.ObjectData;
@@ -19,15 +18,17 @@ internal static class ActorPlacement
         internal int X,Y,TileType,Prefix,Style,Attempts,ConsumedCount,NativeEvents,NativeClearEvents;
         internal bool Placed,ExternalChange,Object,UncertainNativeEffect,NativeObjectPlacement;
         internal ActorObjectPlacement.Shape Shape;
-        internal string SupportSnapshot;
+        internal string SupportSnapshot, ObjectFrames;
     }
     [ThreadStatic] private static Player scope;
     private static Action<Player> place;
-    internal static bool Supported(Item i)=>!i.IsAir&&i.ModItem==null&&i.consumable&&!i.channel&&i.shoot<=0
-        &&i.createWall<0&&i.tileWand<0&&i.placeStyle==0&&i.pick==0&&i.axe==0&&i.hammer==0
-        &&(i.type==ItemID.Torch&&i.createTile==TileID.Torches||i.type==ItemID.DirtBlock&&i.createTile==TileID.Dirt
-            ||i.type==ItemID.StoneBlock&&i.createTile==TileID.Stone||i.type==ItemID.Wood&&i.createTile==TileID.WoodBlock)
-        &&!Main.tileRope[i.createTile]&&(i.type==ItemID.Torch||TileObjectData.GetTileData(i.createTile,0)==null);
+    internal static bool TileMaterial(Item i)=>!i.IsAir&&i.consumable&&!i.channel
+        &&i.createTile>=0&&i.createTile<Main.tileSolid.Length&&i.placeStyle>=0
+        // Native rope extension retargets via the shared Player.tileTargetY.
+        &&i.createWall<0&&i.tileWand<0&&!Main.tileRope[i.createTile]
+        // These native static placement helpers read the process cursor without an Actor.
+        &&i.createTile is not (TileID.Pumpkins or TileID.Coral or TileID.BeachPiles or TileID.Pigronata);
+    internal static bool Supported(Item i)=>TileMaterial(i)&&!TileObjectData.CustomPlace(i.createTile,i.placeStyle);
     internal static string Preflight(Player p,int x,int y,bool objectPlacement=false)
     {
         if(objectPlacement)return ActorObjectPlacement.Preflight(p,x,y);
@@ -35,14 +36,14 @@ internal static class ActorPlacement
         if(Main.tile[x,y].HasTile)return "target_occupied";
         if(!Supported(p.HeldItem))return "unsupported_selected_placement_item";
         if(p.gravDir!=1||p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)return "unsupported_placement_state";
-        if(Vector2.Distance(p.Center,new Vector2(x*16+8,y*16+8))>80)return "out_of_conservative_80_pixel_reach";
         return null;
     }
     internal static Context Create(Player p,int x,int y,bool objectPlacement=false)
     {
-        string error=Preflight(p,x,y,objectPlacement);if(error!=null)throw new InvalidOperationException(error);
+        ActorObjectPlacement.Shape shape=null;
+        string error=objectPlacement?ActorObjectPlacement.Preflight(p,x,y,out shape):Preflight(p,x,y);if(error!=null)throw new InvalidOperationException(error);
         var c=new Context{X=x,Y=y,TileType=p.HeldItem.createTile,Prefix=p.HeldItem.prefix,Style=p.HeldItem.placeStyle,Object=objectPlacement};
-        if(objectPlacement){c.Shape=ActorObjectPlacement.Definition();c.SupportSnapshot=ActorObjectPlacement.SupportSnapshot(c);}
+        if(objectPlacement){c.Shape=shape;c.SupportSnapshot=ActorObjectPlacement.SupportSnapshot(c);}
         return c;
     }
     internal static bool Allowed(Player p)=>ActorItemUse.Placing(p);
@@ -81,7 +82,17 @@ internal static class ActorPlacement
         if(c.Object?ActorObjectPlacement.EmptyError(p,c.X,c.Y,c.Shape)!=null:Main.tile[c.X,c.Y].HasTile){c.ExternalChange=true;return;}
         if(scope!=null)throw new InvalidOperationException("Reentrant native placement rejected.");
         c.Attempts++;
-        try{scope=p;place(p);}finally{scope=null;}
+        try
+        {
+            scope=p;place(p);
+            if(c.Object&&c.Placed)
+            {
+                c.ObjectFrames=ActorObjectPlacement.ReadFrames(c);
+                if(c.ObjectFrames==null)c.UncertainNativeEffect=true;
+            }
+        }
+        catch{c.UncertainNativeEffect=true;throw;}
+        finally{scope=null;}
     }
     internal static Context Watching(int x,int y)
     {
@@ -91,13 +102,13 @@ internal static class ActorPlacement
     private static bool Placed(On_WorldGen.orig_PlaceTile orig,int x,int y,int type,bool mute,bool forced,int plr,int style)
     {
         var c=Watching(x,y);
-        bool own=c!=null&&Own(c)&&x==c.X&&y==c.Y
-            &&type==c.TileType&&style==c.Style&&plr==scope.whoAmI&&!forced&&!Main.tile[x,y].HasTile;
+        bool own=c?.Object==false&&Own(c)&&x==c.X&&y==c.Y
+            &&type==c.TileType&&plr==scope.whoAmI&&!forced&&!Main.tile[x,y].HasTile;
         bool result=orig(x,y,type,mute,forced,plr,style);
         if(c!=null&&result&&Main.tile[x,y].HasTile)
         {
-            if(own&&Main.tile[x,y].TileType==c.TileType&&(!c.Object||ActorObjectPlacement.Present(c))){c.Placed=true;NetMessage.SendTileSquare(-1,x,y,c.Object?4:1);}
-            else c.ExternalChange=true;
+            if(own&&Main.tile[x,y].TileType==c.TileType){c.Placed=true;c.NativeEvents++;NetMessage.SendTileSquare(-1,x,y,1);}
+            else if(!(c.Object&&c.NativeObjectPlacement&&Own(c)))c.ExternalChange=true;
         }
         return result;
     }
@@ -113,7 +124,7 @@ internal static class ActorPlacement
     }
     internal static bool Own(Context c)=>ReferenceEquals(scope,ActorItemUse.Current?.Actor)&&scope!=null&&Allowed(scope)
         &&ReferenceEquals(c,ActorItemUse.Current.Placement);
-    internal static bool SupportedFor(Context c,Item item)=>c?.Object==true?ActorObjectPlacement.Supported(item):Supported(item);
+    internal static bool SupportedFor(Context c,Item item)=>c?.Object==true?ActorObjectPlacement.CanPlace(item):Supported(item);
     internal static string Validate(ActorItemUse.Context use)
     {
         var c=use.Placement;var p=use.Actor;
@@ -122,8 +133,19 @@ internal static class ActorPlacement
             ||!c.Placed&&Main.tile[c.X,c.Y].HasTile){c.ExternalChange=true;return "placement_target_changed";}
         if((!use.Item.IsAir||c.ConsumedCount==0)&&(!Supported(use.Item)||use.Item.prefix!=c.Prefix||use.Item.placeStyle!=c.Style||use.Item.createTile!=c.TileType))
             return "placement_item_changed";
+        int remaining=p.inventory[use.Slot].IsAir?0:p.inventory[use.Slot].stack;
+        if(remaining!=use.InitialStack-c.ConsumedCount)return "placement_stack_changed";
         if(p.gravDir!=1||p.noBuilding||p.frozen||p.stoned)return "unsupported_placement_state";
         return null;
+    }
+    internal static string CancellationUncertainty(ActorItemUse.Context use)
+    {
+        var c=use.Placement;
+        if(c.Object)return ActorObjectPlacement.CancellationUncertainty(use);
+        if(c.UncertainNativeEffect)return "native_placement_effect_unconfirmed";
+        if(c.NativeEvents==0&&!c.Placed&&c.ConsumedCount==0)return null;
+        return Validate(use)??(c.NativeEvents==1&&c.Placed&&c.ConsumedCount==1
+            ?null:"native_placement_effect_unconfirmed");
     }
     internal static void AfterCheck(ActorItemUse.Context use,int beforeStack)
     {
@@ -133,10 +155,11 @@ internal static class ActorPlacement
     internal static void Complete(ActorItemUse.Context use)
     {
         var c=use.Placement;string invalid=Validate(use);
-        if(invalid!=null){use.Phase=c.Object&&(c.Placed||c.ConsumedCount!=0||c.UncertainNativeEffect)?"unknown":"failed";use.Reason=invalid;}
-        else if(c.Placed&&c.ConsumedCount==1){use.Phase="completed";use.Reason=c.Object?"native_object_placed_and_consumed":"native_tile_placed_and_consumed";
-            for(int y=c.Y;y<c.Y+(c.Object?c.Shape.Height:1);y++)for(int x=c.X;x<c.X+(c.Object?c.Shape.Width:1);x++)AiMapRuntime.Remember(x,y);}
-        else {use.Phase=c.Placed||c.ConsumedCount!=0?"unknown":"failed";
+        if(invalid!=null){use.Phase=(c.Placed||c.ConsumedCount!=0||c.UncertainNativeEffect)?"unknown":"failed";use.Reason=invalid;}
+        else if(c.Placed&&c.NativeEvents==1&&c.ConsumedCount==1&&!c.UncertainNativeEffect){use.Phase="completed";use.Reason=c.Object?"native_object_placed_and_consumed":"native_tile_placed_and_consumed";
+            int left=c.X-(c.Object?c.Shape.OriginX:0),top=c.Y-(c.Object?c.Shape.OriginY:0);
+            for(int y=top;y<top+(c.Object?c.Shape.Height:1);y++)for(int x=left;x<left+(c.Object?c.Shape.Width:1);x++)AiMapRuntime.Remember(x,y);}
+        else {use.Phase=c.Placed||c.ConsumedCount!=0||c.UncertainNativeEffect?"unknown":"failed";
             use.Reason=c.Placed?"native_placement_consumption_unconfirmed":"native_placement_refused";}
     }
 }

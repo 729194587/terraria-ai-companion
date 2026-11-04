@@ -6,7 +6,7 @@ using Mono.Cecil.Cil;
 
 namespace VirtualPlayerEngineProbe;
 
-// Exact pinned Player placement graph for ordinary tiles and the vanilla Work Bench. Original
+// Exact pinned Player placement graph for ordinary tiles and TileObject placement. Original
 // native rules remain intact. Only coordinate reads gain a checked Player scope.
 public static class PlacementPatches
 {

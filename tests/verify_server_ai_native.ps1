@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$VerticalNavigation,[switch]$TcpCapacity)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$VerticalNavigation,[switch]$TcpCapacity,[switch]$Mobility)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -7,7 +7,7 @@ if($Tasks -and !$Actions){throw 'Task validation requires isolated Actions fixtu
 if($Inventory -and !$Actions){throw 'Inventory validation requires isolated Actions fixture.'}
 if($Crafting -and !$Actions){throw 'Crafting verification requires isolated Actions fixture.'}
 if($Scene){$Perception=$true;if(!$Actions){throw 'Scene verification requires isolated Actions fixture.'}}
-if($LandingRegions){$Terrain=$true}
+if($LandingRegions -or $Mobility){$Terrain=$true}
 if($VerticalNavigation){$Terrain=$true}
 if($Placement -and !$Actions){throw 'Placement validation requires isolated Actions fixture.'}
 if($Terrain -and !$Actions){throw 'Terrain validation requires isolated Actions fixture.'}
@@ -51,6 +51,7 @@ if($Placement){$info.ArgumentList.Add("-companionplacementtest")}
 if($Perception){$info.ArgumentList.Add("-companionperceptiontest")}
 if($Semantic){$info.ArgumentList.Add("-companionsemantictest")}
 if($Terrain){$info.ArgumentList.Add("-companionterraintest")}
+if($Mobility){$info.ArgumentList.Add("-companionmobilitytest")}
 if($Actions){$info.ArgumentList.Add('-companionactionstest')}
 if($Landing){$info.ArgumentList.Add('-companionlandingtest')}
 $process=[Diagnostics.Process]::Start($info)
@@ -235,6 +236,7 @@ try {
     }
     if($Terrain){
         $terrainScripts=@()
+        if($Mobility){$terrainScripts+='tests/native_mobility.py'}
         if($LandingRegions){$terrainScripts+='tests/native_landing_regions.py'}
         if($VerticalNavigation){$terrainScripts+='tests/native_vertical_navigation.py'}
         if(!$terrainScripts.Count){$terrainScripts+='scripts/server_ai_terrain.py'}
@@ -337,7 +339,8 @@ try {
     if($Scene){$report.scene=Get-Content -LiteralPath "$profile/scene-actions.json" -Raw|ConvertFrom-Json}
     if($Placement){$report.placement=Get-Content -LiteralPath "$profile/placement-lua-result.json" -Raw|ConvertFrom-Json}
     if($Semantic){$report.semantic=$semanticResult}
-    if($Terrain){$matrixFile=if($VerticalNavigation){'vertical-result.json'}else{'terrain-result.json'};$report.terrain=Get-Content -LiteralPath "$profile/$matrixFile" -Raw|ConvertFrom-Json}
+    if($Mobility){$report.mobility=Get-Content -LiteralPath "$profile/mobility-results.json" -Raw|ConvertFrom-Json}
+    if($Terrain -and (!$Mobility -or $VerticalNavigation -or $LandingRegions)){$matrixFile=if($VerticalNavigation){'vertical-result.json'}else{'terrain-result.json'};$report.terrain=Get-Content -LiteralPath "$profile/$matrixFile" -Raw|ConvertFrom-Json}
     if($VerticalNavigation -and $LandingRegions){$report.landingRegions=Get-Content -LiteralPath "$profile/terrain-result.json" -Raw|ConvertFrom-Json}
     if($Scene){$report.combatIsolation=$combatIsolation;$report.actionFixture=$fixture;$report.actionFrameMode='isolated whole native Main.Update frames, scene candidates; no old action fixture state reuse'}
     if($Tasks){$report.tasks=Get-Content -LiteralPath "$profile/mine-target-results.json" -Raw|ConvertFrom-Json}
