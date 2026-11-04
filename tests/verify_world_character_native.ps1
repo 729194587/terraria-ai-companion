@@ -1,9 +1,21 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[Parameter(Mandatory)][string]$PackagePath,[int]$Port=27961)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[string]$PackagePath,[int]$Port=27961,[switch]$Migration,[string]$LegacyEnginePath,[string]$LegacyPackagePath,[string]$LegacySeedPackagePath)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
+$selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
+$TModLoaderPath=$selectedEngine.Path
 $repo=Split-Path $PSScriptRoot -Parent
 if(!$WorldPath){$WorldPath=Join-Path $repo '.local/companion-g82-host-20261027-175538-078/Worlds/test.wld'}
 $WorldPath=(Resolve-Path -LiteralPath $WorldPath).Path
-$package=(Resolve-Path -LiteralPath $PackagePath).Path
+$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$selectedEngine.Package}
+Assert-CompanionPackage -Package $package -Engine $selectedEngine
+if($Migration){
+    if($selectedEngine.Name -ne '2026.09.3.1'){throw 'Migration requires the target engine'}
+    $legacy=Resolve-CompanionEngine -Name '2026.08.3.0' -Path $LegacyEnginePath
+    if(!$LegacyPackagePath){$LegacyPackagePath=$legacy.Package}
+    Assert-CompanionPackage -Package $LegacyPackagePath -Engine $legacy
+    if(!$LegacySeedPackagePath){$LegacySeedPackagePath=$LegacyPackagePath}
+    Assert-CompanionPackage -Package $LegacySeedPackagePath -Engine $legacy
+}
 foreach($candidatePort in @($Port,($Port+1))){if(@(Get-NetTCPConnection -LocalPort $candidatePort -State Listen -ErrorAction SilentlyContinue).Count){throw 'Native fixture port occupied'}}
 $sourceHash=(Get-FileHash -LiteralPath $WorldPath).Hash
 $profile=Join-Path $repo ('.local/world-character-native-'+[guid]::NewGuid().ToString('N'))
@@ -16,17 +28,38 @@ Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value '["CompanionBridge"
 Set-Content -LiteralPath "$profile/isolated-world-character-fixture" -Value 'private headless diagnostic only'
 $resultPath=Join-Path $profile 'world-character-result.json'
 $identity=$null;$pointer=$null
-foreach($round in 1..5)
+$phases=if($Migration){@('seed','reject','upgrade','rollback','reupgrade')}else{@('1','2','3','4','5')}
+foreach($phase in $phases)
 {
+    $engine=$selectedEngine
+    $operation=$null
+    $round=switch($phase){
+        seed {1}
+        reject {5}
+        upgrade {3}
+        rollback {3}
+        reupgrade {3}
+        default {[int]$phase}
+    }
+    if($Migration){
+        if($phase -in 'seed','rollback'){$engine=$legacy;$roundPackage=$LegacyPackagePath}else{$roundPackage=$package}
+        if($phase -eq 'seed'){$roundPackage=$LegacySeedPackagePath}
+        Copy-Item -LiteralPath $roundPackage -Destination "$profile/Mods/CompanionBridge.tmod" -Force
+        if($phase -in 'reject','upgrade','reupgrade'){$operation='upgrade'}
+        if($phase -eq 'rollback'){$operation='rollback'}
+    }
     if($round -eq 5)
     {
         [IO.File]::SetAttributes($pointer,[IO.FileAttributes]::Normal)
-        $corrupt=Get-Content -LiteralPath $pointer -Raw|ConvertFrom-Json;$corrupt.Version=999
+        $original=[IO.File]::ReadAllBytes($pointer)
+        $corrupt=Get-Content -LiteralPath $pointer -Raw|ConvertFrom-Json
+        if($Migration){$corrupt.Native.StateHash='0'*64}else{$corrupt.Version=999}
         $corrupt|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $pointer
         $corruptHash=(Get-FileHash -LiteralPath $pointer).Hash
     }
-    $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",'-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-companionserverai','-companionaiport',"$($Port+1)",'-worldcharacterselftest','-worldcharacterround',"$round")
-    $process=Start-Process -FilePath (Join-Path $TModLoaderPath 'dotnet/dotnet.exe') -ArgumentList $arguments -WorkingDirectory $TModLoaderPath -WindowStyle Hidden -PassThru -RedirectStandardOutput "$profile/round-$round.stdout.log" -RedirectStandardError "$profile/round-$round.stderr.log"
+    $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",'-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-companionserverai','-companionengineprofile',$engine.Name,'-companionaiport',"$($Port+1)",'-worldcharacterselftest','-worldcharacterround',"$round")
+    if($operation){$arguments+=@('-companioncharactermigration',$operation)}
+    $process=Start-Process -FilePath (Join-Path $engine.Path 'dotnet/dotnet.exe') -ArgumentList $arguments -WorkingDirectory $engine.Path -WindowStyle Hidden -PassThru -RedirectStandardOutput "$profile/round-$phase.stdout.log" -RedirectStandardError "$profile/round-$phase.stderr.log"
     try
     {
         $deadline=[DateTime]::UtcNow.AddSeconds(90)
@@ -38,8 +71,8 @@ foreach($round in 1..5)
         if($round -eq 1){if($r.profileId -cnotmatch '^[0-9a-f]{32}$'){throw 'Invalid diagnostic profile identity'};$identity=$r.profileId;$pointer=Join-Path $profile "VirtualPlayerEngineProbe/Characters/$identity/world.json"}
         if($round -le 4 -and $r.profileId -ne $identity){throw 'World character identity changed across processes'}
         if($round -eq 5 -and ($r.actorPublished -or (Get-FileHash -LiteralPath $pointer).Hash -ne $corruptHash)){throw 'Corrupt load published actor or modified data'}
-        Copy-Item -LiteralPath $resultPath -Destination "$profile/round-$round-result.json"
-        Copy-Item -LiteralPath $pointer -Destination "$profile/round-$round-world-manifest.json"
+        Copy-Item -LiteralPath $resultPath -Destination "$profile/round-$phase-result.json"
+        Copy-Item -LiteralPath $pointer -Destination "$profile/round-$phase-world-manifest.json"
         Remove-Item -LiteralPath $resultPath
         if(!$process.WaitForExit(10000) -and $round -le 3){throw 'Positive native process did not exit'}
         if($round -le 3){$process.Refresh();if($process.ExitCode -ne 0){throw 'Positive native process exit failed'}}
@@ -49,6 +82,21 @@ foreach($round in 1..5)
         # Only this private diagnostic process is ours; never touch user games.
         if(!$process.HasExited){$process.Kill();$process.WaitForExit()}
         $process.Dispose()
+    }
+    if($Migration){
+        if($phase -eq 'reject'){
+            if($r.error -notmatch 'native state/identity'){throw "Failure did not reach native read-back: $($r.error)"}
+            [IO.File]::WriteAllBytes($pointer,$original)
+            continue
+        }
+        $manifest=Get-Content -LiteralPath $pointer -Raw|ConvertFrom-Json
+        if($manifest.EngineHash -cne $engine.EngineHash){throw "Wrong committed engine after $phase"}
+        if($phase -eq 'seed' -or $phase -eq 'rollback'){
+            $predecessorHash=(Get-FileHash -LiteralPath $pointer).Hash
+        }else{
+            $backup=Join-Path (Split-Path $pointer) 'world-before-engine-upgrade.json'
+            if((Get-FileHash -LiteralPath $backup).Hash -ne $predecessorHash){throw 'Wrong rollback predecessor'}
+        }
     }
 }
 if((Get-FileHash -LiteralPath $WorldPath).Hash -ne $sourceHash){throw 'Source world changed'}

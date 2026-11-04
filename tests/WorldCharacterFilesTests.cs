@@ -55,6 +55,46 @@ public static class WorldCharacterFilesTests
         Reject(()=>first.Commit(Stage(first.CharacterId,"new starter"),state,0,null),"missing native pair cannot cause pointer replacement");
         using(var orphan=new WorldCharacterFiles(root,Guid.NewGuid(),engine))
         {orphan.Acquire();Stage(orphan.CharacterId,"partial first save");Reject(()=>orphan.Read(),"missing pointer with staged data is incomplete, not new");}
+        Guid upgradeWorld=Guid.NewGuid();
+        string targetEngine=new('C',64);
+        WorldCharacterManifest old;
+        string upgradePointer,oldNative;
+        byte[] oldPointerBytes;
+        using(var legacy=new WorldCharacterFiles(root,upgradeWorld,engine))
+        {
+            legacy.Acquire();
+            oldNative=Stage(legacy.CharacterId,"legacy");
+            var mapPath=Path.Combine(Path.GetDirectoryName(oldNative),"map.bin");
+            File.WriteAllText(mapPath,"known tiles");
+            old=legacy.Commit(oldNative,state,6,null,mapHash:CharacterFiles.Hash(mapPath));
+            upgradePointer=Path.Combine(native.DirectoryFor(legacy.CharacterId),"world.json");
+            oldPointerBytes=File.ReadAllBytes(upgradePointer);
+        }
+        using(var target=new WorldCharacterFiles(root,upgradeWorld,targetEngine))
+        {
+            target.Acquire();
+            Reject(()=>target.Read(),"ordinary target startup rejects an old pointer");
+            Reject(()=>target.Migrate(target.Read(engine),engine,(_,_)=>throw new IOException("read-back failed")),
+                "migration rejects a failed read-back");
+            Check(oldPointerBytes.SequenceEqual(File.ReadAllBytes(upgradePointer)),"failed migration retains the pointer bytes");
+        }
+        using(var target=new WorldCharacterFiles(root,upgradeWorld,targetEngine))
+        {
+            target.Acquire();
+            var upgraded=target.Migrate(target.Read(engine),engine,(path,candidate)=>
+            {
+                Check(path!=oldNative&&File.ReadAllText(path)=="legacy"&&candidate.Native.StateHash==old.Native.StateHash,
+                    "verification sees the staged copy and original state fingerprint");
+            });
+            Check(target.Read()==upgraded&&upgraded.SelectedItem==old.SelectedItem&&upgraded.MapHash==old.MapHash
+                && File.ReadAllText(target.OpenMap(upgraded))=="known tiles"&&CharacterFiles.Hash(oldNative)==old.Native.PlrHash,
+                "retry uses a new generation and retains original character, map and slot");
+        }
+        using(var legacy=new WorldCharacterFiles(root,upgradeWorld,engine))
+        {
+            legacy.Acquire();
+            Check(legacy.Rollback(targetEngine,(_,_)=>{})==old&&legacy.Read()==old,"explicit rollback restores the previous verified generation");
+        }
         var session=new WorldCharacterSession();int loads=0,saves=0;
         session.Enter(a,"epoch",()=>loads++);session.Enter(a,"epoch",()=>loads++);
         Check(loads==1&&session.Phase==WorldCharacterPhase.Ready,"duplicate load never recreates/loads actor twice");

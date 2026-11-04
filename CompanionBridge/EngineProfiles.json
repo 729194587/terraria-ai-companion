@@ -1,0 +1,21 @@
+{
+  "default": "2026.09.3.1",
+  "profiles": {
+    "2026.09.3.1": {
+      "terraria": "1.4.4.9",
+      "tml": "2026.9.3.1",
+      "commit": "4f072c7a2aaad0c35ef7455f5195c526f2a9066a",
+      "engineHash": "BF2CA4D53512D064FAE664170A0D21ECC5E2ED51B5E917D871EC78CC449263E9",
+      "hooksHash": "723ECF395796E730BCAEF5261B3D37BBB83F4066B3E5920BDB87E08191B5F4C1",
+      "localPath": "D:/steam/steamapps/common/tModLoader"
+    },
+    "2026.08.3.0": {
+      "terraria": "1.4.4.9",
+      "tml": "2026.8.3.0",
+      "commit": "c9545cf27d56c456321e1896274c02adf67d0140",
+      "engineHash": "FCC6A9624B12191BE4A15D714A3675440911FEB8C1D374642AB1FD686F0DA0A5",
+      "hooksHash": "595D26FB3BBE27548D030943B5ED2437F690D1C002129BAD21FAFEAEB8118F7A",
+      "localPath": ".local/m4-3-engine"
+    }
+  }
+}

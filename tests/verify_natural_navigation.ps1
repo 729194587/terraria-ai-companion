@@ -1,12 +1,16 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$LandingRegions,[switch]$Scene,[switch]$Trip)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$LandingRegions,[switch]$Scene,[switch]$Trip)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
+$selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
+$TModLoaderPath=$selectedEngine.Path
 if($Port -eq $IpcPort){throw 'Native game and AI IPC test ports must be distinct.'}
 $occupied=@([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object {$_.Port -in @($Port,$IpcPort)})
 if($occupied.Count){throw 'Native test port already occupied; refusing to connect to an unrelated process.'}
 . (Join-Path $PSScriptRoot 'server_ai_native_evidence.ps1')
 $repo=Split-Path $PSScriptRoot -Parent
 if($WorldPath){$WorldPath=(Resolve-Path -LiteralPath $WorldPath).Path}
-$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{Join-Path $repo '.local/natural-build/Mods/CompanionBridge.tmod'}
+$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$selectedEngine.Package}
+Assert-CompanionPackage -Package $package -Engine $selectedEngine
 if(!$PythonExecutable){$PythonExecutable=Join-Path $repo '.local/lua-venv/Scripts/python.exe'}
 if(!(Test-Path -LiteralPath $package)){throw 'Build CompanionBridge first.'}
 $profile=Join-Path $repo ('.local/natural-native-'+[guid]::NewGuid().ToString('N'))
@@ -28,7 +32,7 @@ $info.CreateNoWindow=$true
 $info.RedirectStandardInput=$true
 $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
-foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
+foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
 $info.ArgumentList.Add('-companionnaturaltest')
 if(!$WorldPath){foreach($argument in @('-autocreate','1','-seed',$Seed,'-worldname','NaturalExploration','-difficulty','0')){$info.ArgumentList.Add($argument)}}
 $process=[Diagnostics.Process]::Start($info)

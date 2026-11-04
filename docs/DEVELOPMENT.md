@@ -5,7 +5,7 @@
 ## 环境
 
 - Terraria 通过 tModLoader 运行；当前项目构建配置见 `CompanionBridge/CompanionBridge.csproj` 与 `CompanionBridge/build.txt`。
-- 当前已核对的本地基线为 tModLoader 2026.08.3.0 / Terraria 1.4.4.9，目标运行时 .NET 8。其他开发环境应使用兼容的 tModLoader 安装。
+- 默认目标为 tModLoader 2026.09.3.1 Stable、Terraria 1.4.4.9 和 .NET 8。2026.08.3.0 保留独立配置，用于旧版构建、复现和角色回滚。详见 [引擎配置与角色迁移](TML_ENGINE_MIGRATION.md)。
 - Python 3.10+；依赖见 `python/requirements.txt`。Lua Runtime 的 Python 依赖应按锁定文件安装。
 - 模型配置参考 `.env.example`。不要提交或输出 `.env`、API Key 或其他凭据。
 
@@ -25,16 +25,16 @@ python -m venv .local/lua-venv
 仓库提供构建脚本：
 
 ```powershell
-pwsh -NoProfile -File scripts/build-companion.ps1 -OutputPath .local/agent-build
+pwsh -NoProfile -File scripts/build-companion.ps1
 ```
 
 构建产物位于：
 
 ```text
-.local/agent-build/Mods/CompanionBridge.tmod
+.local/companion-build-2026.09.3.1/Mods/CompanionBridge.tmod
 ```
 
-脚本使用本机 tModLoader 安装及其构建工具。非默认安装路径可通过脚本的 `-TModLoaderPath` 参数指定。构建成功只说明包已生成，不代表已部署、加载或通过游戏验收。
+脚本使用选定的本机 tModLoader 安装及其构建工具。`-EngineProfile` 选择版本，`-TModLoaderPath` 指定该版本的安装位置。构建产物按版本分开保存。
 
 构建后先核对包版本、哈希和输出路径。不要覆盖正在运行的游戏包或用户存档；部署与启动游戏必须属于明确授权的任务。
 

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Threading;
 using Microsoft.Xna.Framework;
 using MonoMod.Cil;
@@ -14,9 +13,7 @@ namespace VirtualPlayerEngineProbe;
 
 public sealed class VirtualPlayerEngineProbe
 {
-    internal const string EngineHash = "FCC6A9624B12191BE4A15D714A3675440911FEB8C1D374642AB1FD686F0DA0A5";
-    internal const string HooksHash = "595D26FB3BBE27548D030943B5ED2437F690D1C002129BAD21FAFEAEB8118F7A";
-    internal const string Commit = "c9545cf27d56c456321e1896274c02adf67d0140";
+    internal static EngineProfiles Engine { get; private set; }
     private readonly Stack<Action> rollback = new();
     private bool allocatorPatched, cleanupPatched, syncPatched, savePatched;
     internal static Mod Instance;
@@ -38,15 +35,11 @@ public sealed class VirtualPlayerEngineProbe
         ProbeSession.Reset();
         scopeThread = 0;
         listenerEntries = 0;
-        string Hash(string path) { using var input = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(input)); }
+        Engine = null;
         try
         {
-            if (typeof(Main).Assembly.GetName().Version?.ToString() != "1.4.4.9"
-                || BuildInfo.tMLVersion.ToString() != "2026.8.3.0" || BuildInfo.CommitSHA != Commit
-                || Hash(typeof(Main).Assembly.Location) != EngineHash
-                || Hash(typeof(On_Netplay).Assembly.Location) != HooksHash)
-                throw new InvalidOperationException("Unsupported engine/hooks fingerprint; no hooks installed.");
-            Instance.Logger.Info($"Engine fingerprint confirmed: Terraria 1.4.4.9 / tML {BuildInfo.tMLVersion}; {EngineHash}");
+            Engine = EngineProfiles.Verify(owner);
+            Instance.Logger.Info($"Engine fingerprint confirmed: Terraria 1.4.4.9 / tML {Engine.Selected}; {Engine.EngineHash}");
             if (ModLoader.Mods.Any(m => m != Instance && m.Name != "ModLoader"))
                 throw new InvalidOperationException("G1 isolation requires this probe and tModLoader only.");
             NetworkStateSync.Reset();
@@ -66,6 +59,7 @@ public sealed class VirtualPlayerEngineProbe
         catch (Exception e)
         {
             Ready = false;
+            Engine = null;
             SignalFault(e.Message);
             Undo(); // No server/actor has been started during Mod.Load.
             Instance.Logger.Error("G0 blocked; spawn disabled.", e);
@@ -122,6 +116,7 @@ public sealed class VirtualPlayerEngineProbe
         if (ProbeSession.Actor != null || Reservation.Snapshot != null)
             throw new InvalidOperationException("STOP: native unload reached before G1 teardown. Do not retry live spawn.");
         Ready = false;
+        Engine = null;
         Undo();
         Instance.Logger.Info("G1 teardown: no actor/reservation; hook subscriptions removed (or already removed by tML).");
         Instance = null;

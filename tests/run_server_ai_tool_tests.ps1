@@ -1,5 +1,8 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader')
+param([string]$TModLoaderPath,[string]$EngineProfile)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
+$selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
+$TModLoaderPath=$selectedEngine.Path
 $repo=Split-Path $PSScriptRoot -Parent
 $output=Join-Path $repo '.local/server-ai-tool-checks'
 $refsPath=Join-Path $output 'net80-refs'
