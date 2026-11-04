@@ -95,7 +95,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual('Not exposed', next(c for c in capability_manifest(b)['categories'] if c['category']=='直接身体输入')['status'])
 
     def test_limited_boundaries_and_shared_schemas(self):
-        b = bridge(BASE | set(OPTIONAL))
+        b = bridge(BASE | set(OPTIONAL) | {'server_ai_scene_region_v1'})
         manifest, definitions, _ = contract_parts(server_contract(b)[0])
         defs = {t['function']['name']: t['function'] for t in definitions}
         for name, f in defs.items():

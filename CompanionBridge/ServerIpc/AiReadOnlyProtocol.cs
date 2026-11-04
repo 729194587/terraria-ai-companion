@@ -93,7 +93,7 @@ internal sealed class AiReadOnlyProtocol
                 var binding = new Binding(actorId, current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
                 var capabilities=actions?.Capabilities.ToList();
-                if(query!=null){capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_crafting_v1");capabilities?.Add("server_ai_map_v1");}
+                if(query!=null){capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_scene_region_v1");capabilities?.Add("server_ai_crafting_v1");capabilities?.Add("server_ai_map_v1");}
                 if(say!=null)capabilities?.Add("server_ai_chat_v2");
                 return JsonSerializer.Serialize(Reply(true, data: capabilities==null?null:new { capabilities }, binding: binding));
             }

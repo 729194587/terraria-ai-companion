@@ -146,6 +146,8 @@ internal static class ServerAiTerrainFixture
             || scene!="flat" || direction!=1 || recoveryMode is not ("offset" or "low_wall" or "high_wall" or "air" or "cancel_air")))
             throw new ArgumentException("Invalid isolated navigation recovery scene");
         recoveryFired=false;recoveryLeft=Main.spawnTileX;recoveryFloor=Main.spawnTileY+8;
+        bool region=doc.RootElement.TryGetProperty("region",out var regionFlag)&&regionFlag.GetBoolean();
+        if(region&&!Program.LaunchParameters.ContainsKey("-companionregiontest"))throw new InvalidOperationException("Missing regional scene fixture gate");
         caseName=scene+"-"+direction+(recoveryMode==null?"":"-"+recoveryMode)+(mobilityMode==null?"":"-mobility-"+mobilityMode);frames.Clear();recording=false;
         inputTick=null;
         lastRun=(ActorControl.Driver as ServerAiNavigation)?.Current;
@@ -190,6 +192,13 @@ internal static class ServerAiTerrainFixture
             if(scene=="hazard_target"&&q>=6&&ty==floor-1)
             {tile.LiquidType=LiquidID.Lava;tile.LiquidAmount=255;}
         }
+        if(region)
+        {
+            // Beyond the 45-wide L0 window, inside the copied-world terrain fixture.
+            var ore=Main.tile[left+32,floor-1];ore.ClearEverything();ore.HasTile=true;ore.TileType=TileID.Copper;
+            var spikes=Main.tile[left+30,floor-1];spikes.ClearEverything();spikes.HasTile=true;spikes.TileType=TileID.Spikes;
+            var platform=Main.tile[left+28,floor-6];platform.ClearEverything();platform.HasTile=true;platform.TileType=TileID.Platforms;
+        }
         p.position=new(left*16+(scene is "shaft_up" or "shaft_ceiling"?(direction==1?6:-10):-2),
             (floor-(scene=="platform_down"?4:scene=="descent_five"?5:0))*16-p.height);p.velocity=Vector2.Zero;
         p.controlLeft=p.controlRight=p.controlJump=p.controlDown=p.controlUp=false;
@@ -204,7 +213,8 @@ internal static class ServerAiTerrainFixture
             if(mobilityMode=="equipment")p.armor[3].SetDefaults(ItemID.HermesBoots);
         }
         pending=new{scene,direction,startX=p.position.X,startY=p.position.Y,targetX=p.position.X+direction*192,
-            floor,originTileX=left,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI};
+            floor,originTileX=left,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,
+            regionalFixture=region};
         settle=15;
         File.Delete(request);
         NetworkStateSync.Full(p);

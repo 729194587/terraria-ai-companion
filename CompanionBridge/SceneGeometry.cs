@@ -92,7 +92,7 @@ internal static class SceneGeometry
         if(sources.Contains("honey"))return 'H';
         return 'M';
     }
-    internal static SceneObject[] Objects(SceneCell[,] cells,int ox,int oy,Func<int,int,object> oreTarget=null,float actorX=0,float actorY=0)
+    internal static SceneObject[] Objects(SceneCell[,] cells,int ox,int oy,Func<int,int,object> oreTarget=null,float actorX=0,float actorY=0,int maxGroups=int.MaxValue)
     {
         int w=cells.GetLength(0),h=cells.GetLength(1);var seen=new HashSet<(int,int)>();var output=new List<SceneObject>();
         var anchors=new Dictionary<(string,int,int,int),List<(int,int)>>();
@@ -121,9 +121,13 @@ internal static class SceneGeometry
                 if(!anchors.TryGetValue(key,out var list))anchors[key]=list=new();list.Add((x,y));continue;
             }
             Add(c,group,complete);
+            if(output.Count>=maxGroups)return output.ToArray();
         }
         foreach(var pair in anchors)
+        {
             Add(cells[pair.Value[0].Item1,pair.Value[0].Item2],pair.Value,pair.Key.Item1=="light_source");
+            if(output.Count>=maxGroups)return output.ToArray();
+        }
         return output.ToArray();
         void Add(SceneCell c,List<(int x,int y)> group,bool complete)
         {

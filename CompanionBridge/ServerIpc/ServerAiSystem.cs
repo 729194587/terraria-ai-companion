@@ -26,6 +26,9 @@ public sealed class ServerAiSystem : ModSystem
         runtime = new();
         runtime.Load(owner); // Exact engine fingerprints, pre-listen reservation and original quarantine guards.
         if (!EngineRuntime.Ready) return;
+        long warm=System.Diagnostics.Stopwatch.GetTimestamp();
+        SceneRegion.Warmup();
+        owner.Logger.Info($"Regional scene codecs prepared before IPC/world sampling: {System.Diagnostics.Stopwatch.GetElapsedTime(warm).TotalMilliseconds:F2}ms.");
         On_Netplay.StartServer += Started;
         Main.OnTickForThirdPartySoftwareOnly += IdleTick;
         callbacks = true;

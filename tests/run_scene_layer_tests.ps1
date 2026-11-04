@@ -15,7 +15,7 @@ $baselinePath=Join-Path $output 'BaselineServerSceneReader.cs'
 $baselineGeometryPath=Join-Path $output 'BaselineSceneGeometry.cs'
 $oldReader | Set-Content -LiteralPath $baselinePath -Encoding utf8
 $oldGeometry | Set-Content -LiteralPath $baselineGeometryPath -Encoding utf8
-$sources=@('CompanionBridge/SceneLayers.cs','CompanionBridge/AtomicParameters.cs','CompanionBridge/SceneGeometry.cs',
+$sources=@('CompanionBridge/SceneLayers.cs','CompanionBridge/AtomicParameters.cs','CompanionBridge/SceneGeometry.cs','CompanionBridge/SceneRegion.cs',
     'CompanionBridge/ObservationSnapshot.cs','CompanionBridge/TerrainSnapshot.cs','CompanionBridge/EntitySnapshot.cs','CompanionBridge/HotbarSlots.cs',
     'CompanionBridge/Motion/PhysicsSimulator.cs','CompanionBridge/Motion/MotionSupport.cs','CompanionBridge/ServerIpc/ServerSceneReader.cs',
     'tests/SceneReaderLayerStubs.cs','tests/SceneReaderLayerTests.cs') | ForEach-Object {Join-Path $repo $_}

@@ -58,7 +58,10 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     {"recipeId":{"type":"integer","minimum":0,"maximum":100000},"recipeToken":INVENTORY_TOKEN,"crafts":{"type":"integer","minimum":1,"maximum":20}},["recipeId","recipeToken","crafts"]),tool("observe_scene", "服务器AI局部45×29二维侧视语义图：几何/对象/危险来源、可直接用于导航的landingRegions.items[].target和相互独立的placementCandidates（单格place_tile）/objectPlacementCandidates（工作台place_object，含完整footprint/support）候选。geometry/map共用originX/originY，Lua用string.sub解析行。单次游戏线程采样；候选不保证可达/放置成功，树组件不是整树计数；检查coverage与各集合truncated。可选layers为非空、无重复的白名单数组，未传返回全部七层；data.includedLayers列出实际层，未请求字段省略。objects附带objectCounts，放置候选附带对应Material；身份、范围、角色、coverage和sample始终保留。objectPlacementCandidates.diagnostics区分已检查排除、unknownCount及notCheckedCount；matchedCount仍为通过筛选且截断前的数目。" + SCENE_TEXT_CONTRACT,
     {**{key:{"type":"integer","minimum":1,"maximum":64 if key=="maxHazards" else 24 if key=="maxRegions" else 32}
      for key in ("maxObjects","maxRegions","maxPlacements","maxHazards")},
-     "layers":{"type":"array","items":{"type":"string","enum":SCENE_LAYERS},"minItems":1,"maxItems":7,"uniqueItems":True}}),tool("get_player_state", "读取真实玩家位置/速度/生命和地面支撑及运动模型支持状态。"),
+     "layers":{"type":"array","items":{"type":"string","enum":SCENE_LAYERS},"minItems":1,"maxItems":7,"uniqueItems":True},
+     "scale":{"type":"string","enum":["local","region"]},
+     "width":{"type":"integer","minimum":45,"maximum":128},
+     "height":{"type":"integer","minimum":29,"maximum":96}}),tool("get_player_state", "读取真实玩家位置/速度/生命和地面支撑及运动模型支持状态。"),
     tool("get_player_status", "紧凑玩家状态：生命/魔力、运动和液体、所选完整物品、非空装备及活跃Buff；背包仅槽位摘要。不是完整背包，Mod自定义状态未知。"),
     tool("resolve_content", "按内容键或名称解析当前已加载的item/tile/wall ID。item支持本地化名称；tile/wall名称仅内容符号（如Terraria/Dirt），不是本地化地图名称。默认精确匹配，search为包含搜索；歧义必须选择候选，不猜ID。",
          {"kind": {"type": "string", "enum": ["item", "tile", "wall"]},
@@ -157,7 +160,22 @@ SERVER_DESCRIPTION_SUFFIXES = {
 }
 
 
-def server_tools(supported):
+SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene({scale="region",width=120,height=68})获取L1；'
+    'width=45..128、height=29..96，面积<=8192 Tile；以AI中心为中心，非摄像机/视觉可见性。'
+    'schemaVersion=3，默认geometry/objects/hazards；仅可选这三层及map，无导航/放置target。'
+    'geometry.grid及map.terrain为encodingVersion=2无损逐Tile字典行编码：palette下标从0开始；rows[].encoding为rle或hex_indices。'
+    'rle的data交替[count,paletteIndex]；hex_indices的data是ASCII字符串，每格固定indexDigits个十六进制字符；'
+    'Lua第x格（从1开始）取palette[tonumber(string.sub(row.data,(x-1)*row.indexDigits+1,x*row.indexDigits),16)+1]。'
+    'coverage.knowledge用相同编码区分原始未知/Mod碰撞/未采样；'
+    'hazards.tileMask同编码，按bitSources的0起始位保留每格全部已观察危险，即使tiles详情truncated也不抹掉危险；0不是未知格安全的证据。'
+    'map的actor/markers独立，不覆盖terrain；collection.truncated与coverage.samplingTruncated独立。'
+    'L1对象聚类最多256组；objects.groupingTruncated时matchedCount/omittedCount为null，matchedCountLowerBound仅下界，'
+    'objectCounts.observedCountsComplete=false；objects.kindGrid同编码保留每格kind/contentKey（空kind仍须结合knowledge判断）。'
+    '采样有10ms软预算，剩余格为not_sampled；检查sample耗时/分配/字节。'
+    'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
+
+
+def server_tools(supported, *, scene_region=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
     definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported]
     for definition in definitions:
@@ -166,6 +184,12 @@ def server_tools(supported):
         if name == 'use_item':
             f['parameters'] = {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}
         f['description'] = SERVER_DESCRIPTIONS.get(name, f['description'])
+        if name == 'observe_scene':
+            if scene_region:
+                f['description'] += SCENE_REGION_CONTRACT
+            else:
+                for key in ('scale','width','height'):
+                    f['parameters']['properties'].pop(key,None)
         if name in SERVER_DESCRIPTION_SUFFIXES:
             f['description'] += SERVER_DESCRIPTION_SUFFIXES[name]
         if name in ('navigate_to_x', 'navigate_to_landing_region'):
@@ -273,6 +297,16 @@ def validate(name, arguments):
         raise ArgumentValidationError(name, issues, truncated)
     if name == 'mine_target' and not (set(arguments) == {'target'} or set(arguments) == {'x', 'y'}):
         raise ValueError('mine_target requires either target or absolute x/y')
+    if name == 'observe_scene':
+        region = arguments.get('scale') == 'region'
+        if not region and any(k in arguments for k in ('width','height')):
+            raise ValueError('observe_scene width/height require scale=region')
+        if region:
+            if arguments.get('width',120)*arguments.get('height',68)>8192:
+                raise ValueError('observe_scene region area must be <=8192 tiles')
+            if any(k in arguments for k in ('maxRegions','maxPlacements')) or any(
+                    k not in ('map','geometry','objects','hazards') for k in arguments.get('layers',[])):
+                raise ValueError('observe_scene region has no action candidates; use local observation')
     if name == 'query_map':
         if arguments.get('cellSize', 2) not in (1, 2, 4):
             raise ValueError('query_map.cellSize must be 1, 2 or 4')
@@ -587,6 +621,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_place_object_workbench_v1; no object placement RPC started')
     if name == 'observe_scene' and 'server_ai_scene_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_scene_v1; no scene query started')
+    if name == 'observe_scene' and any(k in arguments for k in ('scale','width','height')) and 'server_ai_scene_region_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_scene_region_v1; no regional scene query started')
     supported = getattr(bridge, 'supported_atomic_operations', None)
     if supported is not None and name not in supported:
         raise PreDispatchRejected(f'{name} is unsupported by this backend; no action started')

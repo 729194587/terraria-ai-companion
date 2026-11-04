@@ -7,9 +7,10 @@ using CompanionBridge.Motion;
 internal static class SceneReaderFixture
 {
     internal static SceneCell[,] Cells;
+    internal static Func<int,int,SceneCell> RegionalCell;
     internal static int Reads,Anchors,Worlds,LandingChecks,Definitions,TileMaterials,ObjectMaterials,EntityChecks;
     internal static void ResetCounts(){Reads=Anchors=Worlds=LandingChecks=Definitions=TileMaterials=ObjectMaterials=EntityChecks=0;}
-    internal static char Nav(int x,int y)=>x<0||x>=45||y<2||y>=31?'?':Cells[x,y-2].Navigation;
+    internal static char Nav(int x,int y)=>RegionalCell!=null?RegionalCell(x,y).Navigation:x<0||x>=45||y<2||y>=31?'?':Cells[x,y-2].Navigation;
 }
 namespace CompanionBridge{internal sealed record StateVector(float X,float Y);}
 namespace Terraria
@@ -40,6 +41,7 @@ namespace Terraria
     public class Projectile:Entity{public bool hostile=true;public int damage=30,type=1;}
     public static class Main
     {
+        public static bool[] tileCut=new bool[1000];
         public static ulong GameUpdateCount=42;
         public static Player[] player;
         public static NPC[] npc;
@@ -57,12 +59,12 @@ namespace Terraria.ID
     public class Search{public string GetName(int type)=>"Type"+type;}
     public static class TileID
     {
-        public const int Copper=7,Tin=166,Iron=6,Lead=167,Silver=9,Tungsten=168,Gold=8,Platinum=169,
+        public const int Torches=4,Copper=7,Tin=166,Iron=6,Lead=167,Silver=9,Tungsten=168,Gold=8,Platinum=169,
             Demonite=22,Crimtane=204,Meteorite=37,Hellstone=58,Cobalt=107,Palladium=221,Mythril=108,Orichalcum=222,
             Adamantite=111,Titanium=223,Chlorophyte=211,Containers=21,Containers2=467,Dressers=88,OpenDoor=11,ClosedDoor=10,
             WorkBenches=18,HoneyBlock=229,Cobweb=51,Asphalt=234,SlimeBlock=196,FrozenSlimeBlock=197,Count=693;
         public static Search Search=new();
-        public static class Sets{public static bool[] IceSkateSlippery=new bool[1000],IsATreeTrunk=new bool[1000];}
+        public static class Sets{public static bool[] IceSkateSlippery=new bool[1000],IsATreeTrunk=new bool[1000],BreakableWhenPlacing=new bool[1000];}
     }
     public static class ItemID{public static Search Search=new();}
     public static class NPCID
@@ -81,14 +83,18 @@ namespace Terraria.ObjectData
     }
 }
 namespace CompanionBridge.ServerIpc
-{internal static class AiReadOnlyProtocol{internal sealed record Identity(object Actor,string World,long Generation,int Slot);}}
+{
+    internal static class AiReadOnlyProtocol{internal sealed record Identity(object Actor,string World,long Generation,int Slot);}
+    internal static class SceneMineTargets
+    {internal static object Observe(AiReadOnlyProtocol.Identity identity,int x,int y)=>new{x,y,world=identity.World,generation=identity.Generation,slot=identity.Slot};}
+}
 namespace CompanionBridge.Common.Systems
 {
     public class AtomicNpcIdentity{public string Token="fixture-token";}
     internal static class ObservationReader
     {
         internal static TileCell ReadCell(int x,int y,Dictionary<(int,int),object> anchors)
-        {SceneReaderFixture.Reads++;return SceneReaderFixture.Cells[x,y-2].Facts;}
+        {SceneReaderFixture.Reads++;return SceneReaderFixture.RegionalCell!=null?SceneReaderFixture.RegionalCell(x,y).Facts:SceneReaderFixture.Cells[x,y-2].Facts;}
     }
     internal static class TerrainReader
     {

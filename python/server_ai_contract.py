@@ -144,7 +144,7 @@ ROLE_PRINCIPLES = '''你通过玩家本地主动聊天与其对话并控制独�
 
 def server_contract(bridge, tool):
     supported = exposed_operations(bridge)
-    definitions = atomic.server_tools(supported)
+    definitions = atomic.server_tools(supported, scene_region='server_ai_scene_region_v1' in bridge.hello.get('capabilities', []))
     manifest = capability_manifest(bridge, supported)
     task_reference = ''
     if program_tasks.available(bridge):

@@ -1,5 +1,7 @@
 # observe_scene 按需数据层
 
+M4.5 / 0.1.80 增加握手能力 `server_ai_scene_region_v1` 与显式 `scale='region'`：默认 120×68、最多 8192 Tile，使用 schemaVersion=3 的无损行编码、独立未知/危险/对象网格和有界聚类。默认 L0 仍为 45×29、schemaVersion=2，七层及候选不变。范围、解码、预算、原生证据与限制见 [M4.5 报告](evidence/m4-5/README.md)。
+
 当前 schemaVersion=2 的固定说明精简、候选 validation 迁移及最新字节数见
 [场景说明精简](SERVER_AI_SCENE_COMPACTION.md)。本页旧字段及测量描述记录 cff5ae7 的 schemaVersion=1；
 layers 白名单、includedLayers、配套字段和省略语义在新版保持不变。

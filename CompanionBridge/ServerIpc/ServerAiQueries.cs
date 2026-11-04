@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using Terraria;
@@ -13,7 +14,7 @@ namespace CompanionBridge.ServerIpc;
 // Reuses native-player projections without entering the human Query/LocalPlayer path.
 internal static class ServerAiQueries
 {
-    private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private static readonly JsonSerializerOptions Json = SceneRegion.Json;
     private static void Require(AiReadOnlyProtocol.Identity expected)
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
@@ -29,6 +30,9 @@ internal static class ServerAiQueries
         if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map")) throw new FormatException("Unsupported server AI query.");
         AtomicParameters.Validate(operation, arguments, true);
         Require(expected);
+        bool regional=operation=="observe_scene"&&arguments.TryGetProperty("scale",out var scale)&&scale.GetString()=="region";
+        long sampleStarted=regional?Stopwatch.GetTimestamp():0;
+        long allocated=regional?GC.GetAllocatedBytesForCurrentThread():0;
         var p = (Player)expected.Actor;
         object data;
         if(operation=="query_map") data=(AiMapRuntime.Map??throw new InvalidOperationException("Map unavailable")).Query(arguments,(int)(p.Center.X/16),(int)(p.Center.Y/16));
@@ -93,6 +97,13 @@ internal static class ServerAiQueries
         projected["customState"] = "unknown; custom Mod player/item/buff data and Mod accessory slots not read";
         projected["inventoryTokenStatus"] = "server_ai_inventory_v1; use mode slots/selected/hotbar for fresh slot tokens; basic fields and instance identity only; all custom Mod state unknown; no save hooks";
         Require(expected); // Reject hooks/identity changes during projection before publishing the result.
+        if(regional)
+        {
+            var metrics=((JsonElement)projected["sample"]).EnumerateObject().ToDictionary(f=>f.Name,f=>(object)f.Value);
+            metrics["projectionElapsedMilliseconds"]=Stopwatch.GetElapsedTime(sampleStarted).TotalMilliseconds;
+            metrics["projectionAllocatedBytes"]=GC.GetAllocatedBytesForCurrentThread()-allocated;
+            projected["sample"]=metrics;
+        }
         return new { available = true, worldSessionId = expected.World, gameUpdate = Main.GameUpdateCount,
             actorGeneration = expected.Generation, actorSlot = expected.Slot,
             observedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), clock = "server_utc_at_projection", data = projected };

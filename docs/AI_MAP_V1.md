@@ -1,5 +1,7 @@
 # AI 独立地图 V1（0.1.64）
 
+M4.5 的实时 L1 区域观察复用 `observe_scene`，与本页 `query_map` 的 last-known 历史分开；没有第二套 map.bin 或存储格式升级，也不以历史格批准导航。当前分层用法与验证见 [M4.5](evidence/m4-5/README.md)。
+
 实现入口：`ServerPlayerRuntime/AiMap.cs`（纯记忆/文件/聚合）、`AiMapRuntime.cs`（游戏线程揭示）、`WorldCharacterPersistence.cs`（角色提交）、`ServerIpc/ServerAiQueries.cs`（绑定查询）。只用于 Server AI。
 
 ## 身份与存储

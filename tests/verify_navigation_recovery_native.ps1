@@ -1,6 +1,8 @@
 param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',
-    [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes,[switch]$Mobility,[switch]$Probe)
+    [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes,[switch]$Mobility,[switch]$Probe,[switch]$Region,
+    [ValidateRange(1,20)][int]$RegionIterations=8)
 $ErrorActionPreference='Stop'
+if($Region -and ($Mobility -or $Probe -or $Baseline -or $Scenes)){throw 'Region mode does not combine with mobility/recovery probes or scene selectors.'}
 $repo=Split-Path $PSScriptRoot -Parent
 $world=(Resolve-Path -LiteralPath $WorldPath).Path
 $package=(Resolve-Path -LiteralPath $PackagePath).Path
@@ -24,12 +26,14 @@ $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
 foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,
     '-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest',
     '-companionactionstest','-companionterraintest','-companionnavrecoverytest')){$info.ArgumentList.Add($arg)}
-if($Mobility){$info.ArgumentList.Add('-companionmobilitytest')}
+if($Mobility -or $Region){$info.ArgumentList.Add('-companionmobilitytest')}
+if($Region){$info.ArgumentList.Add('-companionregiontest')}
 $process=[Diagnostics.Process]::Start($info)
 $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
 try {
-    $testScript=if($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
+    $testScript=if($Region){'native_scene_region.py'}elseif($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
     $probeArgs=@('-B',(Join-Path $PSScriptRoot $testScript),'--port',"$IpcPort",'--profile',$profile)
+    if($Region){$probeArgs+=@('--iterations',"$RegionIterations")}
     if($Probe){$probeArgs+='--probe'}
     if($Baseline){$probeArgs+='--baseline'}
     if($Scenes){$probeArgs+=@('--scenes')+$Scenes}

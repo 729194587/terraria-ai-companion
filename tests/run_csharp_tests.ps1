@@ -37,6 +37,7 @@ $sources = @(
     (Join-Path $PSScriptRoot 'BoundedMovementOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/TerrainSnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/SceneGeometry.cs'),
+    (Join-Path $repo 'CompanionBridge/SceneRegion.cs'),
     (Join-Path $PSScriptRoot 'SceneGeometryTests.cs'),
     (Join-Path $repo 'CompanionBridge/EntitySnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
