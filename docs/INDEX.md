@@ -18,7 +18,7 @@
 | --- | --- |
 | [Lua Runtime](LUA_RUNTIME.md) | Lua 沙箱、调用、预算、取消和失败语义 |
 | [Lua Agent](LUA_AGENT.md) | 模型如何生成并提交 Lua 程序 |
-| [Lua 可观测性](LUA_OBSERVABILITY.md) | 执行记录、Trace 与证据 |
+| [Lua 可观测性](LUA_OBSERVABILITY.md) | 本地执行 Trace 与诊断关联 |
 | [Server AI 能力契约](SERVER_AI_CAPABILITIES.md) | 模型可见能力与运行时能力门禁 |
 | [Server AI Actions](SERVER_AI_ACTIONS.md) | 服务器侧移动和原生动作 |
 | [任务运行时](M1_TASK_RUNTIME.md) | 根任务、子任务与 mine_target 生命周期 |
@@ -47,13 +47,12 @@
 
 ## 历史资料
 
-- [历史阶段资料](archive/README.md)：少量仍有解释价值的阶段报告导航。临时运行产物不作为长期文档资产。
-- [evidence/](evidence/)：原始日志、回执、manifest、测试包和精选分析。证据用于追溯具体场景，不自动构成当前接口规范。
+- [历史阶段资料](archive/README.md)：少量仍有解释价值的早期实现与阶段报告。仅供追溯，不作为当前接口规范。
 
 ## 文档维护规则
 
 1. 一项机制只设一个权威说明；其他文档链接过去，不复制整段契约。
 2. 专题文档说明当前实现、调用方式、重要约束和未覆盖边界。
-3. 测试数量、逐轮工作记录和原始日志放入 evidence，不放在 README 或架构正文。
+3. 临时日志、Trace、回执和测试压缩包默认保存在本地临时目录，不提交到仓库；长期回归行为应由测试代码表达。
 4. 历史报告必须标明历史性质；过时结论不能继续使用“当前”“最新”等措辞。
 5. 修改接口时对照源码、Schema、能力握手和对应定向测试更新文档。
