@@ -79,7 +79,7 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.directory=tempfile.TemporaryDirectory()
         self.aihost=getattr(self, "host_type", AiHost)();self.aihost.actions=True
         self.aihost.chat=True
-        self.aihost.perception=self.aihost.perception or self._testMethodName == "test_model_can_observe_through_existing_agent_lua"
+        self.aihost.perception=self.aihost.perception or self._testMethodName == "test_model_can_observe_through_direct_tools"
         self.chathost=ChatHost()
         self.threads=[]
         for host in (self.aihost,self.chathost):
