@@ -19,6 +19,7 @@
 | [Lua Runtime](LUA_RUNTIME.md) | Lua 沙箱、调用、预算、取消和失败语义 |
 | [Lua Agent](LUA_AGENT.md) | 模型如何生成并提交 Lua 程序 |
 | [Lua 可观测性](LUA_OBSERVABILITY.md) | 本地执行 Trace 与诊断关联 |
+| [游戏系统消息](GAME_MESSAGES.md) | 系统提示事件的捕获与 Agent 上下文处理 |
 | [Server AI 能力契约](SERVER_AI_CAPABILITIES.md) | 模型可见能力与运行时能力门禁 |
 | [Server AI Actions](SERVER_AI_ACTIONS.md) | 服务器侧移动和原生动作 |
 | [任务运行时](M1_TASK_RUNTIME.md) | 根任务、子任务与 mine_target 生命周期 |
@@ -42,6 +43,7 @@
 | [物品放置](SERVER_AI_OBJECT_PLACEMENT.md) | 服务器侧物体放置 |
 | [导航](NAVIGATION.md) | 物理预测、路径规划、执行与落脚确认 |
 | [世界角色持久化](SERVER_AI_WORLD_CHARACTER_PERSISTENCE.md) | Server AI Player 的世界绑定与存档 |
+| [多人原子确认](MULTIPLAYER_ATOMIC_CONFIRMATION.md) | 多人原生交互的服务器权威确认与 unknown 语义 |
 
 ## 历史资料
 
