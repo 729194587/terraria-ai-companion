@@ -106,7 +106,7 @@ pwsh -NoProfile -File experiments/virtual-player-engine-hooks/verify-native-pers
 - IPC/包检查通过，含 69 项 IL 检查（新增保存相对退役/离开顺序与恢复门禁）；4 项 Python 身份/unknown/取消回归通过。
 - 最终包编译 0 错误、0 警告，SHA-256：`740C413ABA124184472A985397564EEFA650BD9E64D09FD1A40522E48114E5D9`。
 
-原始结果与哈希见 [证据](evidence/world-character-persistence/manifest.json)。本轮不运行无关全量测试、
+本轮的原始运行日志和回执未作为长期仓库资产保留；需要复验时从当前源码与隔离脚本重新生成。本轮不运行无关全量测试、
 真实模型或图形 Host & Play，不修改源世界；所有原生状态注入只在专用标记的独立测试 profile。
 
 ## 限制与未验证
