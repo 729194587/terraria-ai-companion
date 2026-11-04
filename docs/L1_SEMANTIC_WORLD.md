@@ -8,7 +8,7 @@
 return sense_world({maxObjects=8, radius=640})
 ```
 
-`maxObjects` 为 1..16（默认 8），分别限制 Tile 对象和掉落物数量；`radius` 为 1..1600 世界像素（默认 640），只影响掉落物。Tile 范围来自 `observe_terrain.data.bounds`。默认最多 31 次 API，16 对象最多 39 次；所有查询和候选 inspect 都计入原 Runtime 的调用/时间预算，复用取消、失败屏障、绑定身份检查与证据归档。实际执行的 helper 源码及 SHA-256 进入证据。
+`maxObjects` 为 1..16（默认 8），分别限制 Tile 对象和掉落物数量；`radius` 为 1..1600 世界像素（默认 640），只影响掉落物。Tile 范围来自 `observe_terrain.data.bounds`。默认最多 31 次 API，16 对象最多 39 次；所有查询和候选 inspect 都计入原 Runtime 的调用/时间预算，复用取消、失败屏障、绑定身份检查与证据归档。执行 Trace 和原始回执仅作为本地临时诊断数据，不作为长期仓库文档。
 
 流程：一次地形范围读取 → 精确解析 Trees 和 19 种原版矿物注册表键 → 一次最多 256 格的类型扫描 → 聚合 → 对最多 maxObjects 个候选重新 inspect → 一次掉落物扫描。解析失败保留 `unresolvedContent`，不猜数字 ID，也不把注册表内容当附近存在。矿物范围从 Copper/Tin 至 Chlorophyte，不含宝石、化石、Mod 矿物。
 
@@ -45,7 +45,7 @@ local drops = sense_world({trees=false, ores=false, drops=true, radius=320})
 
 ## 定向自动化与隔离原生验证
 
-未运行全量测试。命令从仓库根执行：
+未运行全量测试。命令从仓库根执行，结果保存在本地临时目录：
 
 ```powershell
 $env:PYTHONPATH="$pwd/python;$pwd/tests"
@@ -60,4 +60,4 @@ pwsh -NoProfile -File tests/verify_server_ai_native.ps1 -Port 27951 -IpcPort 279
 
 首次隔离运行实际砍树成功，但脚本误从 endEvidence 读取 targetAbsent，断言失败；正确字段在 evidence，输入释放在 endEvidence。保留原失败，不计为验收通过。
 
-最终隔离原生通过：64 次调用、2 次动作，矿脉分量/掉落/原生砍树后刷新及原有读取、导航、物品使用、挖掘、取消、进程清理均通过。最终隔离结果与包哈希见 [原生证据](evidence/L1_SEMANTIC_NATIVE.json)。图形 Host & Play、真实 LLM 自主找树/采矿/拾取验收尚未执行；未部署至现用 profile。原生请求代次错配拒绝不等于已验证真实死亡重生/世界重载时序，复杂树林的完整对象归属也未宣称实现。
+该能力仍需通过当前源码对应的定向测试和真实游戏场景持续验收。离线/隔离验证不等于图形 Host & Play 或真实 LLM 自主找树、采矿、拾取验收；原生请求代次错配拒绝也不等于已验证真实死亡重生/世界重载时序。复杂树林的完整对象归属仍不在支持承诺内。
