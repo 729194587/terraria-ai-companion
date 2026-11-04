@@ -16,6 +16,7 @@ import atomic_operations
 import mining_recovery
 import lua_agent
 import program_tasks
+import server_ai_contract
 from dataclasses import replace
 from lua_runtime import LuaRuntime, Limits as LuaLimits
 import agent_diagnostics as diagnostics
@@ -366,7 +367,7 @@ class Agent:
             self.tools = [lua_agent.client_tool(supported) if t['function']['name'] == lua_agent.TOOL_NAME else t
                           for t in self.tools]
         if self.server_ai:
-            self.history[0]['content'], self.tools = lua_agent.server_contract(bridge)
+            self.history[0]['content'], self.tools = server_ai_contract.tool_calling_contract(bridge)
         if local_input:
             self.history[0]['content'] += ('\n当前为本地终端测试模式：真人从终端输入指令，回复显示在终端。'
                 '你控制的仍是实际游戏中的本地角色；所有工具、观察、安全和失败停止规则保持有效。')
@@ -648,13 +649,21 @@ class Agent:
                     user = json.loads(request[user_index]["content"])
                     user.update(runtime_context)
                     request[user_index]["content"] = json.dumps(user, ensure_ascii=False)
-                runtime_data = {"runtimeInventory": inventory, 'runtimeLua': {
+                runtime_data = {"runtimeInventory": inventory}
+                if self.server_ai:
+                    runtime_data['runtimeToolBudget'] = {
+                        'remainingToolCalls': max(0, tool_limit - used),
+                        'remainingActionAttempts': max(0, self.lua_limits.actions - actions_used),
+                        'remainingModelCalls': max(0, self.max_model_calls - model_index),
+                    }
+                else:
+                    runtime_data['runtimeLua'] = {
                         'remainingToolCalls': tool_limit - used,
                         'remainingApiCallsIfExecutedNow': max(0, self.lua_limits.calls - lua_calls) if tool_limit>used else 0,
                         'remainingLuaApiCalls': max(0,self.lua_limits.calls-lua_calls),
                         'remainingActionAttempts': max(0, self.lua_limits.actions - actions_used),
                         'remainingSeconds': max(0, self.lua_limits.seconds - lua_seconds),
-                        'maxSourceUtf8Bytes': lua_agent.SOURCE_BYTES}}
+                        'maxSourceUtf8Bytes': lua_agent.SOURCE_BYTES}
                 task_projection = self.program_tasks.projection() if self.program_tasks is not None else None
                 if task_projection is not None:
                     runtime_data['runtimeTasks'] = task_projection
@@ -711,11 +720,9 @@ class Agent:
                             function = call["function"]
                             name = function.get("name")
                             arguments = json.loads(function.get("arguments", ""))
-                            if self.server_ai and name != lua_agent.TOOL_NAME:
-                                raise ValueError('Server AI model tools allow execute_lua only; no fallback execution')
                             if len(calls) > 1:
                                 result = {"valid": False, "error": "one_tool_per_model_decision_required; entire batch not executed"}
-                            elif name == lua_agent.TOOL_NAME:
+                            elif name == lua_agent.TOOL_NAME and not self.server_ai:
                                 source = lua_agent.validate_arguments(arguments)
                                 remaining = self.lua_limits.calls - lua_calls
                                 seconds = self.lua_limits.seconds - lua_seconds
