@@ -10,7 +10,6 @@
 - `G82_SERVER_AI_ATOMIC.md`、`G82_STAGE2_SERVER_READS.md`：早期原子操作与读取阶段。
 - `G84_SERVER_AI_AGENT.md`、`G85_SERVER_AI_PERCEPTION.md`：Agent 接入与感知阶段。
 - `G86_PLAY_GAPS.md`：特定版本的实机能力缺口体检。
-- `M3_PROGRAM_TASK_RUNTIME_IMPLEMENTATION.md`、`M3_Program_Task_Runtime.md`：任务运行时阶段记录；两份内容存在历史重叠。
 - `M4_AGENT_CAPABILITIES.md`、`M4_FINAL_ACCEPTANCE.md`：M4 阶段总结与验收记录。
 - `R1_NEW_CHARACTER_INITIALIZATION.md`、`R2_R3_COPPER_AXE.md`：角色初始化与早期游戏任务实验。
 - `M1.1-基础身体控制设计.md`：早期身体控制设计草案。
