@@ -10,7 +10,7 @@
 | [开发指南](DEVELOPMENT.md) | 环境、构建、定向测试和游戏验证 |
 | [路线图](DEVELOPMENT_ROADMAP.md) | 当前能力与尚待解决的方向 |
 | [工程原则](ENGINEERING.md) | 长期有效的安全与设计约束 |
-| [API 工具系统](API_TOOL_SYSTEM_MVP.md) | API 分层、校验与能力契约 |
+| [API 契约](API_CONTRACT.md) | 模型工具入口、Schema、能力投影和结果语义 |
 
 ## Agent 与运行时
 
@@ -28,8 +28,8 @@
 | 文档 | 用途 |
 | --- | --- |
 | [观察接口](OBSERVATION.md) | 客户端观察数据与兼容边界 |
-| [语义场景](LOCAL_SEMANTIC_SCENE.md) | Server AI 场景快照与语义层 |
-| [场景数据层](SERVER_AI_SCENE_LAYERS.md) | observe_scene 的可选数据层 |
+| [语义场景](LOCAL_SEMANTIC_SCENE.md) | Server AI 的 L0/L1 场景快照、编码和候选语义 |
+
 | [局部语义世界](L1_SEMANTIC_WORLD.md) | 树木、矿物和掉落物的按需语义查询 |
 | [AI Map](AI_MAP_V1.md) | 持久化探索地图及其时效语义 |
 
