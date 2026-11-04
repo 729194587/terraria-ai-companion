@@ -20,7 +20,8 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'python'))
 from agent import Agent
 from control import Bridge
 from llm import LLMClient
-from lua_agent import ProgramStore, server_contract
+from lua_agent import ProgramStore
+from server_ai_contract import tool_calling_contract
 from server_ai import ServerAiBridge
 from test_server_ai_backend import Host
 
@@ -100,8 +101,9 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         for host in (self.aihost,self.chathost):host.shutdown();host.server_close()
         for t in self.threads:t.join()
         self.directory.cleanup();self.stderr.stop()
-    def program(self,source):
-        return dict(role='assistant',content=None,tool_calls=[dict(id='lua-1',type='function',function=dict(name='execute_lua',arguments=json.dumps(dict(source=source))))])
+    def tool_call(self,name,arguments,call_id='call-1'):
+        return dict(role='assistant',content=None,tool_calls=[dict(
+            id=call_id,type='function',function=dict(name=name,arguments=json.dumps(arguments)))])
     async def receive(self,id='task-1',text='向右移动80像素'):
         self.chathost.emit(id,text)
         self.agent.receive(await asyncio.wait_for(self.events.get(),2))
@@ -130,52 +132,53 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(254,self.ai.reply_receipts[0]['authorSlot'])
         self.assertIn('无需!ai前缀',self.requests[0]['messages'][0]['content'])
 
-    async def test_chat_http_model_lua_bound_execution_and_chat_reply(self):
-        self.answers=[self.program("""
-            local before=api('get_player_state',{})
-            assert(before.valid and before.player.source=='server_ai_player')
-            local move=api('navigate_to_x',{targetX=before.player.position.x+80})
-            assert(move.valid and move.completed)
-            local after=api('get_player_state',{})
-            return {action=move,after=after.player.position}
-        """),dict(role='assistant',content='已向右移动约80像素并停稳。')]
+    async def test_server_ai_uses_direct_tools_and_chat_reply(self):
+        self.answers=[
+            self.tool_call('get_player_state',{},'state-1'),
+            self.tool_call('navigate_to_x',{'targetX':180},'move-1'),
+            self.tool_call('get_player_state',{},'state-2'),
+            dict(role='assistant',content='已向右移动并核对当前位置。')
+        ]
         await self.receive();await self.agent.task
-        self.assertEqual(2,len(self.requests))
-        self.assertEqual(['execute_lua'],[t['function']['name'] for t in self.requests[0]['tools']])
+        self.assertEqual(4,len(self.requests))
+        names={t['function']['name'] for t in self.requests[0]['tools']}
+        self.assertIn('get_player_state',names)
+        self.assertIn('navigate_to_x',names)
+        self.assertNotIn('execute_lua',names)
         start=next(r for r in self.aihost.sent if r['op']=='start')
         self.assertEqual('navigate_to_x',start['operation']);self.assertEqual(180,start['arguments']['targetX'])
         self.assertEqual(self.ai.binding,start['binding'])
         self.assertEqual(['authorize_ai_reply'],[r['cmd'] for r in self.chathost.sent])
         self.assertEqual(254,self.ai.reply_receipts[-1]['authorSlot'])
         self.assertTrue(self.chathost.sent[0]['text'].startswith('[AI] '))
+        tool_messages=[m for m in self.requests[-1]['messages'] if m['role']=='tool']
+        self.assertEqual(1,len(tool_messages))
+        result=json.loads(tool_messages[0]['content'])
+        self.assertTrue(result['valid']);self.assertEqual('completed',result['status'])
         runtime=json.loads(self.requests[0]['messages'][-1]['content'])
-        self.assertEqual('available',runtime['runtimeInventory']['status'])
-        result=json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role']=='tool'))
-        self.assertTrue(result['actionSuccess']);self.assertEqual('released',result['actionState'])
-        self.assertNotIn('movementLoop',result)
-        self.assertEqual(180,result['value']['after']['x'])
+        self.assertNotIn('runtimeLua',runtime)
+        self.assertIn('runtimeToolBudget',runtime)
 
-    async def test_only_host_verified_rejection_can_continue_across_programs(self):
-        for safe in (True, False):
-            with self.subTest(safe=safe):
-                await self.agent.close();self.ai.close()
-                self.aihost.object_placement=True;self.aihost.polls=0;self.aihost.sent.clear()
-                def reject(a):
-                    if a.get('targetTile',{}).get('x')==10:
-                        a.update(status='failed',reason='object_footprint_occupied',evidence=dict(operation='place_object',mutationAttempted=not safe,effectStatus='not_started'))
-                        a['endEvidence'].update(inputsAcquired=False,inputsReleased=True,effectVerified=False)
-                self.aihost.action_transform=reject
-                self.ai=ServerAiBridge(self.aihost.server_address[1],timeout=2)
-                self.agent=Agent(self.ai,self.llm,chat_bridge=self.chat,lua_store=ProgramStore(Path(self.directory.name)/'sources'))
-                second=self.program("return api('place_object',{x=12,y=20})")
-                second['tool_calls'][0]['id']='lua-2'
-                self.requests.clear()
-                self.answers=[self.program("return api('place_object',{x=10,y=20})"),second,dict(role='assistant',content='已根据回执停止或完成测试。')]
-                await self.receive(id='recovery-'+str(safe));await self.agent.task
-                starts=[r for r in self.aihost.sent if r['op']=='start']
-                self.assertEqual([10,12] if safe else [10],[r['arguments']['x'] for r in starts])
+    async def test_failed_direct_action_blocks_later_mutations_in_same_turn(self):
+        self.aihost.object_placement=True;self.aihost.polls=0;self.aihost.sent.clear()
+        def reject(a):
+            if a.get('targetTile',{}).get('x')==10:
+                a.update(status='failed',reason='object_footprint_occupied',evidence=dict(operation='place_object',mutationAttempted=False,effectStatus='not_started'))
+                a['endEvidence'].update(inputsAcquired=False,inputsReleased=True,effectVerified=False)
+        self.aihost.action_transform=reject
+        self.ai.close()
+        self.ai=ServerAiBridge(self.aihost.server_address[1],timeout=2)
+        self.agent=Agent(self.ai,self.llm,chat_bridge=self.chat,lua_store=ProgramStore(Path(self.directory.name)/'sources'))
+        self.answers=[
+            self.tool_call('place_object',{'x':10,'y':20},'place-1'),
+            self.tool_call('place_object',{'x':12,'y':20},'place-2'),
+            dict(role='assistant',content='根据失败回执停止，没有继续放置。')
+        ]
+        await self.receive(id='direct-failure');await self.agent.task
+        starts=[r for r in self.aihost.sent if r['op']=='start']
+        self.assertEqual([10],[r['arguments']['x'] for r in starts])
 
-    async def test_model_can_observe_through_existing_agent_lua(self):
+    async def test_model_can_observe_through_direct_tools(self):
         from server_ai import PERCEPTION_OPERATIONS
         original=self.aihost.query
         def query(operation,args):
@@ -185,29 +188,21 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
                 result['data']=dict(operation=operation,complete=True)
             return result
         self.aihost.query=query
-        self.answers=[self.program("""
-            local a=api('observe_terrain',{})
-            local b=api('resolve_content',{kind='tile',query='Terraria/Dirt'})
-            local s=api('get_player_state',{})
-            local cx=(s.player.position.x+0.25)//16
-            local cy=math.floor(s.player.position.y/16)
-            local c=api('scan_tiles',{minX=cx-1,minY=cy-1,maxX=cx+1,maxY=cy+1,tileTypes={0.0}})
-            local d=api('inspect_tile',{x=1,y=1})
-            local e=api('scan_entities',{category='all',radius=100})
-            assert(a.valid and b.valid and c.valid and d.valid and e.valid)
-            return {observedAtUnixMs=a.observedAtUnixMs,slot=a.actorSlot}
-        """),dict(role='assistant',content='已读取当前服务器AI附近世界。')]
+        calls=[
+            ('observe_terrain',{}),('resolve_content',{'kind':'tile','query':'Terraria/Dirt'}),
+            ('get_player_state',{}),('scan_tiles',{'minX':1,'minY':1,'maxX':3,'maxY':3,'tileTypes':[0]}),
+            ('inspect_tile',{'x':1,'y':1}),('scan_entities',{'category':'all','radius':100})
+        ]
+        self.answers=[self.tool_call(name,args,f'perception-{i}') for i,(name,args) in enumerate(calls)]
+        self.answers.append(dict(role='assistant',content='已读取当前服务器AI附近世界。'))
         await self.receive('perception','观察你周围');await self.agent.task
-        self.assertEqual(2,len(self.requests))
+        self.assertEqual(len(calls)+1,len(self.requests))
         prompt=self.requests[0]['messages'][0]['content']
         for name in PERCEPTION_OPERATIONS:self.assertIn(name,prompt)
         queried={r['operation'] for r in self.aihost.sent if r['op']=='query'}
         self.assertTrue(PERCEPTION_OPERATIONS <= queried)
         self.assertFalse(any(r['op']=='start' for r in self.aihost.sent))
-        result=json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role']=='tool'))
-        self.assertTrue(result['programCompleted'])
-        self.assertEqual(254,result['value']['slot'])
-        self.assertEqual(1793070000123,result['value']['observedAtUnixMs'])
+        self.assertTrue(all(any(m['role']=='tool' and m['tool_call_id']==f'perception-{i}' for m in self.requests[-1]['messages']) for i in range(len(calls))))
 
     async def test_ordinary_chat_remote_prefix_self_echo_and_game_messages_cannot_start_or_cancel(self):
         for e in (dict(type='chat_message',eventId='ordinary',text='hello',isSelf=False),
@@ -218,10 +213,9 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([],self.requests)
         self.chathost.emit('echo','[AI] !ai move',source=None)
         await asyncio.sleep(.05);self.assertTrue(self.events.empty())
-    async def test_new_command_cancels_lua_before_next_task_and_ignores_duplicate(self):
+    async def test_new_command_cancels_direct_action_before_next_task_and_ignores_duplicate(self):
         self.aihost.mode='pending'
-        self.answers=[self.program("return api('navigate_to_x',{targetX=180})"),
-                      self.program("return api('get_player_state',{}).player.life"),dict(role='assistant',content='生命73。')]
+        self.answers=[self.tool_call('navigate_to_x',{'targetX':180},'move-pending'),dict(role='assistant',content='已停止旧动作。')]
         await self.receive()
         for _ in range(200):
             if self.aihost.action is not None:break
@@ -236,25 +230,25 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2,self.agent.generation)
     async def test_unknown_identity_never_reconnects_or_reports_success(self):
         self.aihost.mode='change_on_poll'
-        self.answers=[self.program("return api('navigate_to_x',{targetX=180})"),dict(role='assistant',content='错误地声称完成。')]
+        self.answers=[self.tool_call('navigate_to_x',{'targetX':180},'move-unknown'),dict(role='assistant',content='错误地声称完成。')]
         await self.receive();await self.agent.task
         self.assertTrue(self.ai._closed)
         self.assertEqual(1,sum(r['op']=='bind' for r in self.aihost.sent))
         self.assertNotIn('错误地声称完成',self.chathost.sent[-1]['text'])
         self.assertIn('未完成',self.chathost.sent[-1]['text'])
     async def test_unadvertised_direct_tools_never_reach_human_or_ai_execution(self):
-        self.answers=[dict(role='assistant',content=None,tool_calls=[dict(id='bad',type='function',function=dict(name='get_state',arguments='{}'))]),dict(role='assistant',content='该工具未执行。')]
+        self.answers=[self.tool_call('get_state',{},'bad-tool'),dict(role='assistant',content='该工具未执行。')]
         await self.receive();await self.agent.task
         self.assertFalse(any(r['op']=='start' for r in self.aihost.sent))
         self.assertEqual(['authorize_ai_reply'],[r['cmd'] for r in self.chathost.sent])
-    async def test_backend_contract_contains_only_negotiated_apis(self):
-        prompt,tools=server_contract(self.ai)
-        definitions=json.loads(prompt.split('\nAPI Contract\n',1)[1].split('\nLua Runtime Reference\n',1)[0].split('\n',1)[1])
-        self.assertEqual(set(self.ai.supported_atomic_operations),{t['function']['name'] for t in definitions})
-        self.assertEqual({},next(t['function']['parameters']['properties'] for t in definitions if t['function']['name']=='use_item'))
+    async def test_backend_contract_contains_only_negotiated_direct_tools(self):
+        prompt,definitions=tool_calling_contract(self.ai)
+        names={t['function']['name'] for t in definitions}
+        self.assertEqual(set(self.ai.supported_atomic_operations),names)
+        self.assertNotIn('execute_lua',names)
+        self.assertIn('每次模型决策最多调用一个工具',prompt)
         for unsupported in ('observe_exploration','get_observation','navigate_to_landing_region','attack_entity','transfer_inventory_item'):
-            self.assertNotIn(unsupported,{t['function']['name'] for t in definitions})
-            self.assertNotIn(unsupported,tools[0]['function']['description'])
+            self.assertNotIn(unsupported,names)
 
     async def test_model_failure_replies_on_chat_channel_without_actions(self):
         from unittest.mock import AsyncMock
