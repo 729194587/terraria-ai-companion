@@ -1,7 +1,0 @@
-AI chat offline: 34 checks; real loopback, no graphical game.
-PASS: author filtering, unsolicited chat, unique events, game-thread send, stale reply rejection and disconnect revocation
-PASS: conservative entity classification, self/radius filters, directions, truncation and same-reply snapshots
-PASS: state/terrain snapshots, tile classification, typed input, control lease, ownership, lifecycle, protocol, real TCP framing/disconnect/unload
-PASS: actual player hook isolates remote updates; local obstacle task progresses; terminal, death and manual control preserved (offline stubs)
-PASS: local terminal protocol: game-thread identity, superseded guards, replacement cancellation, pending release, manual/readiness/expiry and session isolation
-PASS: same TCP session across death/respawn, partial observations, chat, revoked queued actions, generations and teardown

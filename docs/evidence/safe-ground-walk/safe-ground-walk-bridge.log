@@ -1,5 +1,0 @@
-ParentContainsErrorRecordException: D:\Agent Project\terraria-ai-companion\tests\run_csharp_tests.ps1:77
-Line |
-  77 |  if ($BridgeOnly) { [AiChatOfflineTests]::Run(); [BridgeOfflineTests]: …
-     |                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-     | Exception calling "Run" with "0" argument(s): "以一种访问权限不允许的方式做了一个访问套接字的尝试。 [::ffff:127.0.0.1]:8655"

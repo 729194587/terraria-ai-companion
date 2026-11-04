@@ -1,1 +1,0 @@
-return api('get_player_state',{})
