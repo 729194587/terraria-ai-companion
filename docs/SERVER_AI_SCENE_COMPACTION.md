@@ -73,9 +73,9 @@ Python 工具说明为全量图符、对象分组与候选限制的集中契约�
 | objects + map | 7414 | 5520 | 1894 |
 | 两类放置候选 | 7326 | 5440 | 1886 |
 
-原始数值见 [compaction-bytes.json](evidence/scene-compaction/compaction-bytes.json)，
-审计数据见 [audit.json](evidence/scene-compaction/audit.json)。
-规范化完整样本：[精简前](evidence/scene-compaction/before.json)、[精简后](evidence/scene-compaction/after.json)。
+原始数值见 本地临时字节测量结果，
+审计数据见 本地临时审计结果。
+规范化完整样本：精简前后样本（本地临时文件）。
 额外固定场景涵盖截断、半砖/全部实心斜坡/平台、四种液体、世界边界、空危险但存在未知、
 候选为空且完全未加载；它们也逐字段比较精简前后保留事实。
 
