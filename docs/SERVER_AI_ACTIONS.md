@@ -32,5 +32,5 @@
 - `CompanionBridge/ServerIpc/`
 - `CompanionBridge/ServerPlayerRuntime/`
 - [原子操作契约](ATOMIC_OPERATIONS.md)
-- [导航](TERRABLIND_NAVIGATION.md)
+- [导航](NAVIGATION.md)
 - [多人权威确认](MULTIPLAYER_ATOMIC_CONFIRMATION.md)
