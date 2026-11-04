@@ -1,8 +1,0 @@
-Native diagnostic profile: D:\Agent Project\terraria-ai-companion\.local\placement-native-validation-39ad406ad2484dc490022af4c84a7c21
-Exception: D:\Agent Project\terraria-ai-companion\tests\verify_server_ai_placement_native.ps1:38
-Line |
-  38 |  … sult -ne 'passed'){throw (Get-Content -LiteralPath $resultPath -Raw)}
-     |                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-     | {"result":"failed","checks":1,"evidence":[],"error":"System.InvalidOperationException: support query mutated
-     | Tile/Player/input state\r\n   at
-     | VirtualPlayerEngineProbe.PlacementSelfTest.\u003C\u003Ec__DisplayClass5_0.\u003CRunIfRequested\u003Eg__Check|0(Boolean ok, String why) in CompanionBridge\\ServerPlayerRuntime\\PlacementSelfTest.cs:line 28\r\n   at VirtualPlayerEngineProbe.PlacementSelfTest.RunIfRequested()"}

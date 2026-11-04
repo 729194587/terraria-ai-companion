@@ -1,9 +1,0 @@
-test_lua_map_read_only_contract (test_ai_map.MapIntegration.test_lua_map_read_only_contract) ... Executing <Task pending name='Task-2' coro=<MapIntegration.test_lua_map_read_only_contract() running at D:\Agent Project\terraria-ai-companion\tests\test_ai_map.py:26> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:428> cb=[_run_until_complete_cb() at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:181] created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:100> took 0.234 seconds
-Executing <Task finished name='Task-2' coro=<MapIntegration.test_lua_map_read_only_contract() done, defined at D:\Agent Project\terraria-ai-companion\tests\test_ai_map.py:13> result=None created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:100> took 0.141 seconds
-ok
-test_schema_limits (test_ai_map.MapIntegration.test_schema_limits) ... ok
-
-----------------------------------------------------------------------
-Ran 2 tests in 1.164s
-
-OK

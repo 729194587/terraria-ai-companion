@@ -1,7 +1,0 @@
-test_known_and_unknown_assessment_do_not_become_actions (test_mining_support_projection.MiningSupportProjection.test_known_and_unknown_assessment_do_not_become_actions) ... Executing <Task pending name='Task-2' coro=<MiningSupportProjection.test_known_and_unknown_assessment_do_not_become_actions() running at D:\Agent Project\terraria-ai-companion\tests\test_mining_support_projection.py:26> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:428> cb=[_run_until_complete_cb() at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py:181] created at C:\Users\86181\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py:100> took 0.235 seconds
-ok
-
-----------------------------------------------------------------------
-Ran 1 test in 1.671s
-
-OK
