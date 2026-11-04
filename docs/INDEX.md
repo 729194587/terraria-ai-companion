@@ -8,8 +8,9 @@
 | --- | --- |
 | [架构总览](ARCHITECTURE.md) | 系统组成、执行路径、模块边界 |
 | [开发指南](DEVELOPMENT.md) | 环境、构建、定向测试和游戏验证 |
-| [路线图](ROADMAP.md) | 当前能力与尚待解决的方向 |
+| [路线图](DEVELOPMENT_ROADMAP.md) | 当前能力与尚待解决的方向 |
 | [工程原则](ENGINEERING.md) | 长期有效的安全与设计约束 |
+| [API 工具系统](API_TOOL_SYSTEM_MVP.md) | API 分层、校验与能力契约 |
 
 ## Agent 与运行时
 
@@ -47,7 +48,8 @@
 ## 验证证据与历史资料
 
 - [evidence/](evidence/)：原始日志、回执、manifest、测试包和精选分析。证据用于追溯具体场景，不自动构成当前接口规范。
-- [archive/](archive/)：历史阶段报告和已被现行文档取代的材料。归档内容仅供追溯，不能作为当前实现依据。
+- [历史阶段资料](archive/README.md)：已标记为历史的阶段报告导航。
+- [evidence/](evidence/)：原始日志、回执、manifest、测试包和精选分析。证据用于追溯具体场景，不自动构成当前接口规范。
 
 ## 文档维护规则
 
