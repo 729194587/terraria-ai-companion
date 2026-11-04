@@ -21,14 +21,14 @@
 | --- | --- |
 | 模型、聊天轮次、取消与回复 | `python/agent.py`、`python/llm.py`；`docs/PLAIN_LOCAL_CHAT.md` |
 | Lua 编排、隔离 Worker、预算 | `python/lua_agent.py`、`python/lua_runtime.py`、`python/lua_worker.py`；`docs/LUA_RUNTIME.md`、`docs/LUA_OBSERVABILITY.md` |
-| 原子 API Schema、校验、分发和结果核验 | `python/atomic_operations.py`；`docs/ATOMIC_OPERATIONS.md`、`docs/ATOMIC_FOUNDATIONS.md` |
+| 原子 API Schema、校验、分发和结果核验 | `python/atomic_operations.py`；`docs/ATOMIC_OPERATIONS.md`、`docs/API_CONTRACT.md` |
 | 客户端 TCP 与本地玩家控制 | `python/control.py`、`CompanionBridge/TcpControlServer.cs`、`CompanionBridge/ControlState.cs`、`CompanionBridge/Common/Players/CompanionPlayer.cs`、`CompanionBridge/Common/Systems/CompanionSystem.cs` |
 | 服务器 AI 绑定、IPC 与动作适配 | `python/server_ai.py`、`CompanionBridge/ServerIpc/`；`docs/SERVER_AI_ACTIONS.md`、`docs/SERVER_AI_CAPABILITIES.md` |
 | 无客户端的原生 Player、存档、同步与引擎挂钩 | `CompanionBridge/ServerPlayerRuntime/`；见 `docs/SERVER_AI_WORLD_CHARACTER_PERSISTENCE.md` 与 `docs/ARCHITECTURE.md` |
-| 游戏感知与共享查询 | `CompanionBridge/Common/Systems/` 下 `TerrainReader.cs`、`ObservationReader.cs`、`EntityReader.cs`、`AtomicQueries.cs`；`docs/OBSERVATION.md` |
+| 游戏感知与共享查询 | `CompanionBridge/Common/Systems/` 下 `TerrainReader.cs`、`ObservationReader.cs`、`EntityReader.cs`、`AtomicQueries.cs`；`docs/LOCAL_SEMANTIC_SCENE.md`（Server AI）；旧客户端记录见 `docs/archive/OBSERVATION.md` |
 | 客户端原子动作、背包及多人权威确认 | 同目录 `AtomicOperations.cs`、`AtomicInventory.cs`、`AtomicMultiplayer.cs`；`docs/INVENTORY_OPERATIONS.md`、`docs/MULTIPLAYER_ATOMIC_CONFIRMATION.md` |
-| 物理预测与导航执行 | `CompanionBridge/Motion/`；`docs/TERRABLIND_NAVIGATION.md`、`docs/NAVIGATION_LANDING_CONFIRMATION.md` |
-| 探索编排与模型状态投影 | `python/exploration.py`、`python/lua/explore.lua`、`python/observation.py`；`docs/AUTONOMOUS_EXPLORATION_MVP.md`、`docs/MODEL_STATE_PROJECTION.md` |
+| 物理预测与导航执行 | `CompanionBridge/Motion/`；`docs/NAVIGATION.md` |
+| 探索编排与模型状态投影 | `python/exploration.py`、`python/lua/explore.lua`、`python/observation.py`；`docs/L1_SEMANTIC_WORLD.md`（局部语义查询）；探索行为由当前 API 与 Agent 决策组合、`docs/MODEL_STATE_PROJECTION.md` |
 
 服务器模式的主链路是：本地聊天 → 客户端聊天 Bridge → 原 Agent / `execute_lua` → 原子分发器 → `ServerAiBridge` → 游戏线程 → 独立 AI Player。
 聊天通道默认 `18777`，AI IPC 默认 `18779`，游戏联机通常 `7777`；多个实例须核对端口与同一世界的绑定。
@@ -96,7 +96,7 @@ pwsh -NoProfile -File scripts/build-companion.ps1 -OutputPath .local/agent-build
 - 重要决策简记问题、选择、理由、否决的替代方案、证据和剩余限制；改变决策时说明何处被新证据取代。
 - 优先更新现有专题文档；跨模块且稳定的理由适合 `docs/ENGINEERING.md`，环境与操作经验适合 `docs/DEVELOPMENT.md`，接口行为留在对应专题。
 - 运行诊断可从 `python/agent_trace.py`、`python/agent_diagnostics.py`、`python/evidence.py` 与 `docs/LUA_OBSERVABILITY.md` 查起；本地临时产物放 `.local/`。
-- 需要共享的精选证据可沿用 `docs/evidence/` 的任务、Lua、原始回执、manifest 与结论组织方式；注明包版本或哈希、场景和来源，不改写原始证据来配合结论。
+- 临时日志、Trace、回执和测试压缩包默认保存在 `.local/`，不提交到仓库。长期回归行为应由测试代码表达；值得保留的技术结论写入对应专题文档，并注明验证等级与适用范围。
 - 新发现的工作流改进先提出记录建议；在任务范围允许且有证据时沉淀。若用户限制改动文件，只在交付说明中建议，不额外写文件。
 - 本文件只增加跨任务高频且稳定的规则或导航；细节增长时移入专题并保留链接，不为建立体系批量创建文档。
 
