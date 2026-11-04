@@ -9,7 +9,7 @@
 - 先看 `git status --short`，保留已有修改、未跟踪实验和原始证据；不顺手清理工作区。
 - 用户给出的具体设计视为已决定，除非实现暴露实质冲突，不重复架构探索。
 - 优先直接实现；仅在复杂度、风险或明确要求需要时使用额外技能、子 Agent 或独立评审。
-- README、`docs/DEVELOPMENT.md`、`docs/ENGINEERING.md` 混有历史阶段描述；核对适用版本和后续专题。
+- 正式文档入口见 `README.md` 与 `docs/INDEX.md`；当前实现以源码和运行时能力握手为准，历史资料不得作为当前契约。
 - 当前实现看源码，包版本看 `CompanionBridge/build.txt`，运行能力看实际握手；实测结论看对应证据。
 - 文档冲突时区分“实现了什么”和“验证过什么”，必要时用相关路径的 `git log` / `git show` 查原因。
 
@@ -19,12 +19,12 @@
 
 | 职责 | 实现入口与按需资料 |
 | --- | --- |
-| 模型、聊天轮次、取消与回复 | `python/agent.py`、`python/llm.py`；`docs/PLAIN_LOCAL_CHAT.md`、`docs/G84_SERVER_AI_AGENT.md` |
+| 模型、聊天轮次、取消与回复 | `python/agent.py`、`python/llm.py`；`docs/PLAIN_LOCAL_CHAT.md` |
 | Lua 编排、隔离 Worker、预算 | `python/lua_agent.py`、`python/lua_runtime.py`、`python/lua_worker.py`；`docs/LUA_RUNTIME.md`、`docs/LUA_OBSERVABILITY.md` |
 | 原子 API Schema、校验、分发和结果核验 | `python/atomic_operations.py`；`docs/ATOMIC_OPERATIONS.md`、`docs/ATOMIC_FOUNDATIONS.md` |
 | 客户端 TCP 与本地玩家控制 | `python/control.py`、`CompanionBridge/TcpControlServer.cs`、`CompanionBridge/ControlState.cs`、`CompanionBridge/Common/Players/CompanionPlayer.cs`、`CompanionBridge/Common/Systems/CompanionSystem.cs` |
-| 服务器 AI 绑定、IPC 与动作适配 | `python/server_ai.py`、`CompanionBridge/ServerIpc/`；`docs/SERVER_AI_ACTIONS.md`、`docs/G85_SERVER_AI_PERCEPTION.md` |
-| 无客户端的原生 Player、存档、同步与引擎挂钩 | `CompanionBridge/ServerPlayerRuntime/`；按问题读 `docs/VIRTUAL_PLAYER_*.md` |
+| 服务器 AI 绑定、IPC 与动作适配 | `python/server_ai.py`、`CompanionBridge/ServerIpc/`；`docs/SERVER_AI_ACTIONS.md`、`docs/SERVER_AI_CAPABILITIES.md` |
+| 无客户端的原生 Player、存档、同步与引擎挂钩 | `CompanionBridge/ServerPlayerRuntime/`；见 `docs/SERVER_AI_WORLD_CHARACTER_PERSISTENCE.md` 与 `docs/ARCHITECTURE.md` |
 | 游戏感知与共享查询 | `CompanionBridge/Common/Systems/` 下 `TerrainReader.cs`、`ObservationReader.cs`、`EntityReader.cs`、`AtomicQueries.cs`；`docs/OBSERVATION.md` |
 | 客户端原子动作、背包及多人权威确认 | 同目录 `AtomicOperations.cs`、`AtomicInventory.cs`、`AtomicMultiplayer.cs`；`docs/INVENTORY_OPERATIONS.md`、`docs/MULTIPLAYER_ATOMIC_CONFIRMATION.md` |
 | 物理预测与导航执行 | `CompanionBridge/Motion/`；`docs/TERRABLIND_NAVIGATION.md`、`docs/NAVIGATION_LANDING_CONFIRMATION.md` |
