@@ -57,7 +57,7 @@ class Bundle:
             if oversized:
                 self.dropped += 1
                 marker={k:record[k] for k in ('task_id','lua_run_id','lua_call_id','lua_line','source_sha256',
-                    'generation','chat_event_id','tool_call_id','sequence','timestamp') if k in record}
+                    'generation','chat_event_id','tool_call_id','model_request_id','connection_id','request_id','sequence','timestamp') if k in record}
                 raw=(json.dumps(tracing.trace._redact({**marker,'type':'evidence_record_dropped',
                     'original_type':event,'bytes':len(raw),'reason':'event_limit'}),ensure_ascii=False)+'\n').encode('utf-8')
             if len(raw)>65536 or self.size+len(raw)>self.max_bytes:

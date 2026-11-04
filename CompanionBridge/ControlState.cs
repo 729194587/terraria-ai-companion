@@ -10,7 +10,7 @@ namespace CompanionBridge;
 
 internal sealed record ControlRequest(int Id, string Cmd, int Direction = 1, bool Jump = false,
     int? ExpectedGeneration = null, float? TargetX = null, string Text = null, string ChatId = null,
-    int? DurationMs = null, int? ActionId = null, string Operation = null, JsonElement Arguments = default, LandingRegion TargetRegion = null);
+    int? DurationMs = null, int? ActionId = null, string Operation = null, JsonElement Arguments = default, LandingRegion TargetRegion = null, long? ReplyTurn = null);
 internal sealed record ControlInput(int Direction, bool Jump, bool OverrideJump, bool Predictive = false, float? TargetX = null, ControlRequest Atomic = null, LandingRegion TargetRegion = null);
 internal sealed record StateVector(float X, float Y);
 internal sealed record PlayerSnapshot(bool InWorld, StateVector Position, StateVector Velocity,
@@ -57,9 +57,11 @@ internal sealed class ControlState
     private ControlMode _mode;
     private bool _wasCanControl;
     private bool _controlBlocked;
-    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "send_chat" or "get_movement" or "cancel_move" or "query_atomic";
+    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "send_chat" or "send_ai_chat" or "authorize_ai_reply" or "get_movement" or "cancel_move" or "query_atomic";
     private string _latestChatId;
+    private string _latestAiChatId;
     internal void ObserveChat(string id) { lock (_gate) _latestChatId = id; }
+    internal void ObserveAiChat(string id) { lock (_gate) _latestAiChatId = id; }
     private ControlInput _input = new(1, false, false);
     private sealed record Pending(int Session, ControlRequest Request, long ReceivedAt,
         TaskCompletionSource<ControlReply> Completion);
@@ -79,6 +81,7 @@ internal sealed class ControlState
             _session = ++_nextSession;
             _lastId = 0;
             _latestChatId = null;
+            _latestAiChatId = null;
             return _session;
         }
     }
@@ -121,6 +124,7 @@ internal sealed class ControlState
         lock (_gate)
         {
             if (!canControl && (_wasCanControl || _mode != ControlMode.None)) RevokeControl(snapshot, now);
+            if(snapshot?.InWorld!=true)_latestAiChatId=null;
             _wasCanControl = canControl;
             if (canControl) _controlBlocked = false;
             else if (snapshot?.InWorld == true) _controlBlocked = true;
@@ -200,17 +204,19 @@ internal sealed class ControlState
                         { Observation = observation, ControlGeneration = _generation });
                     continue;
                 }
-                if (request.Cmd == "send_chat")
+                if (request.Cmd is "send_chat" or "send_ai_chat" or "authorize_ai_reply")
                 {
                     string chatStatus = pending.Session != _session ? "disconnected"
-                        : snapshot?.InWorld != true || sendChat == null ? "not_ready"
-                        : request.ChatId != _latestChatId ? "superseded" : "sent";
+                        : snapshot?.InWorld != true || request.Cmd!="authorize_ai_reply" && sendChat == null ? "not_ready"
+                        : string.IsNullOrEmpty(request.ChatId) || request.ChatId != (request.Cmd is "send_ai_chat" or "authorize_ai_reply"?_latestAiChatId:_latestChatId) ? "superseded" : "sent";
+                    if (chatStatus == "sent" && request.Cmd=="authorize_ai_reply")chatStatus="authorized";
                     if (chatStatus == "sent")
                     {
                         try { sendChat(request.Text); }
                         catch (Exception) { chatStatus = "chat_send_failed"; }
                     }
-                    pending.Completion.TrySetResult(Reply(request.Id, chatStatus == "sent", chatStatus));
+                    pending.Completion.TrySetResult(Reply(request.Id, chatStatus is "sent" or "authorized", chatStatus) with
+                        { Data = chatStatus == "authorized" ? new { chatId=request.ChatId, replyTurn=request.ReplyTurn } : null });
                     continue;
                 }
                 if (request.Cmd == "get_navigation" && pending.Session == _session)
@@ -442,7 +448,7 @@ internal sealed class ControlState
             || !root.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String
             || cmd.GetString() is not ("move_right" or "stop" or "get_state" or "get_terrain" or "input"
                 or "terrain_step" or "get_navigation" or "navigate" or "send_chat" or "get_observation"
-                or "move_for" or "renew_move" or "cancel_move" or "get_movement" or "start_atomic" or "query_atomic" or "begin_local_turn"))
+                or "move_for" or "renew_move" or "cancel_move" or "get_movement" or "start_atomic" or "query_atomic" or "begin_local_turn" or "send_ai_chat" or "authorize_ai_reply"))
             throw new FormatException("Expected v=1, positive id and a supported cmd.");
         if (cmd.GetString() == "begin_local_turn")
         {
@@ -482,7 +488,7 @@ internal sealed class ControlState
             expectedGeneration = expected;
         }
         string text = null, chatId = null;
-        if (cmd.GetString() == "send_chat")
+        if (cmd.GetString() is "send_chat" or "send_ai_chat" or "authorize_ai_reply")
         {
             if (!root.TryGetProperty("text", out var t) || t.ValueKind != JsonValueKind.String
                 || string.IsNullOrWhiteSpace(text = t.GetString()) || text.Length > 400
@@ -490,6 +496,13 @@ internal sealed class ControlState
                 || !root.TryGetProperty("chatId", out var c) || c.ValueKind != JsonValueKind.String
                 || string.IsNullOrWhiteSpace(chatId = c.GetString()) || chatId.Length > 100)
                 throw new FormatException("send_chat requires single-line text (1..400 chars) and chatId.");
+        }
+        long? replyTurn = null;
+        if (cmd.GetString() == "authorize_ai_reply")
+        {
+            if (!root.TryGetProperty("replyTurn", out var turn) || !turn.TryGetInt64(out long value) || value <= 0)
+                throw new FormatException("authorize_ai_reply requires positive replyTurn.");
+            replyTurn = value;
         }
         int? durationMs = null, actionId = null;
         if (cmd.GetString() == "move_for")
@@ -525,6 +538,7 @@ internal sealed class ControlState
                 || !root.TryGetProperty("arguments", out var args) || args.ValueKind != JsonValueKind.Object)
                 throw new FormatException("Atomic operation requires operation and arguments object.");
             operation = op.GetString(); arguments = args.Clone();
+            if(operation=="mine_target")throw new FormatException("mine_target requires the server AI task backend.");
             AtomicParameters.Validate(operation, arguments, cmd.GetString() == "query_atomic");
             if (cmd.GetString() == "start_atomic" && expectedGeneration == null)
                 throw new FormatException("Atomic action requires expectedGeneration.");
@@ -536,6 +550,6 @@ internal sealed class ControlState
                     throw new FormatException("Invalid atomic chatId.");
             }
         }
-        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId, durationMs, actionId, operation, arguments, targetRegion);
+        return new ControlRequest(n, cmd.GetString(), direction, jump, expectedGeneration, targetX, text, chatId, durationMs, actionId, operation, arguments, targetRegion, replyTurn);
     }
 }

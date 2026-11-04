@@ -332,13 +332,18 @@ public static class MotionOfflineTests
             var bounded = new NavigationTask(); var s = start;
             bounded.Begin(207, 1, region, s);
             if (actionCap) Seed(bounded, "_actions", 255);
-            else { Seed(bounded, "_stalled", 3); Seed(bounded, "_furthest", 0f); }
+            else {
+                Seed(bounded, "_stalled", 3);
+                var trip=(NavigationTripProgress)typeof(NavigationTask).GetField("_trip",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic).GetValue(bounded);
+                trip.Begin(s,0);
+                for(int i=1;i<=NavigationTripProgress.DetourCheckpointLimit;i++)trip.Checkpoint(s with{Px=s.Px-i*8},100);
+            }
             for (int f = 0; f < 100 && !bounded.Terminal; f++)
             {
                 var input = bounded.Before(207, 1, region, s, ph, world);
                 s = PhysicsSimulator.Step(s, input, ph, world); bounded.After(s, world);
             }
-            Check(bounded.Snapshot.Status == "failed" && bounded.Snapshot.Reason.Contains("progress/action budget")
+            Check(bounded.Snapshot.Status == "failed" && bounded.Snapshot.Reason==(actionCap?"navigation_action_limit":"navigation_stalled")
                 && bounded.Snapshot.CompletedActions == (actionCap ? 256 : 1),
                 "Verified edge enforces action cap and four-checkpoint stall guard");
         }
@@ -378,8 +383,8 @@ public static class MotionOfflineTests
         var first = task.Before(204, 1, region, actual, ph, world);
         actual = PhysicsSimulator.Step(actual, first, ph, world);
         task.After(actual with { Py = actual.Py - 40 }, world);
-        Check(task.Snapshot.Status == "failed" && task.Snapshot.Reason.Contains("diverged"),
-            "Region task uses existing executor to reject actual prediction divergence");
+        Check(task.Snapshot.Status == "recovering" && task.Snapshot.RecoveryReason.Contains("diverged"),
+            "Region task stops a diverged edge before safe recovery confirmation");
         task = new();
         task.Before(205, 1, region, start, ph, world);
         task.Before(205, 2, region, start with { Grounded = false, Vy = -3 }, ph, world);
@@ -461,8 +466,8 @@ public static class MotionOfflineTests
             actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, world);
             task.After(actual, world); diagnostics.Observe(task.Snapshot);
         }
-        Check(task.Snapshot.Status == "arrived" && logs.Count == 2,
-            "Exactly one plan and one actual-arrival log; no per-frame spam");
+        Check(task.Snapshot.Status == "arrived" && logs.Count == 3,
+            "Exactly one plan, checkpoint and actual-arrival log; no per-frame spam");
         using (var json = Log(0))
         {
             var nav = json.RootElement.GetProperty("navigation");
@@ -478,14 +483,18 @@ public static class MotionOfflineTests
                 "Structured game log preserves exact planner data, identity and region geometry");
         }
         using (var json = Log(1))
+            Check(json.RootElement.GetProperty("event").GetString()=="navigation_checkpoint"
+                &&json.RootElement.GetProperty("navigation").GetProperty("lastLanding").GetProperty("actionNumber").GetInt32()==1,
+                "Verified checkpoint logs predicted/actual landing once");
+        using (var json = Log(2))
             Check(json.RootElement.GetProperty("event").GetString() == "navigation_state"
                 && json.RootElement.GetProperty("navigation").GetProperty("status").GetString() == "arrived",
                 "Predicted complete goal and observed arrival have separate log events");
         task.Cancel(); diagnostics.Observe(task.Snapshot); diagnostics.Observe(task.Snapshot);
-        Check(logs.Count == 3 && task.Snapshot.ReachedGoal == null && task.Snapshot.TimeBudgetReached == null
+        Check(logs.Count == 4 && task.Snapshot.ReachedGoal == null && task.Snapshot.TimeBudgetReached == null
             && task.Snapshot.PlanNumber == 0 && task.Snapshot.TargetRegion == null,
             "Cancellation clears stale DTO diagnostics and is logged only once");
-        using (var json = Log(2))
+        using (var json = Log(3))
             Check(json.RootElement.GetProperty("event").GetString() == "navigation_cancel"
                 && json.RootElement.GetProperty("navigation").GetProperty("generation").GetInt32() == 7,
                 "Cancellation log remains attributable to the old generation");
@@ -493,7 +502,7 @@ public static class MotionOfflineTests
         diagnostics.Observe(task.Snapshot);
         Check(task.Snapshot.Status == "arrived" && task.Snapshot.PlanNumber == 0 && task.Snapshot.ReachedGoal == null,
             "Already-at-goal new generation does not fabricate a search result");
-        using (var json = Log(3))
+        using (var json = Log(4))
             Check(json.RootElement.GetProperty("navigation").GetProperty("reachedGoal").ValueKind == JsonValueKind.Null,
                 "No planning is distinguishable from a false goal result in JSON");
 
@@ -513,6 +522,20 @@ public static class MotionOfflineTests
             using (var json = Log(0))
                 Check(json.RootElement.GetProperty("navigation").GetProperty("timeBudgetReached").GetBoolean(),
                     "Checked time budget is observable in game log serialization");
+            Check(blocked ? task.Snapshot.Reason=="navigation_search_timeout"
+                : task.Snapshot.Status=="running"&&input!=default,
+                "Empty timed search reports timeout; executable partial route still runs");
+            Check(task.Snapshot.PlanStart==actual,"Plan start preserved even after executor projection");
+            if(blocked)
+            {
+                Check(!string.IsNullOrEmpty(task.Snapshot.SearchFailureReason)&&task.Snapshot.SearchFailureReason.Contains("candidates"),
+                    "Timeout retains actual planner candidate rejection detail alongside stable reason");
+                var sample=Environment.GetEnvironmentVariable("NAVIGATION_DIAGNOSTIC_SAMPLE");
+                if(!string.IsNullOrEmpty(sample))System.IO.File.WriteAllLines(sample,logs);
+            }
+            var failedLog=new NavigationDiagnostics(_=>throw new System.IO.IOException("fixture log failure"));
+            var unchanged=task.Snapshot;failedLog.Observe(unchanged);
+            Check(failedLog.WriteErrors>0&&task.Snapshot==unchanged,"Diagnostic write failure cannot change task result");
             if (!blocked)
             {
                 actual = PhysicsSimulator.Step(actual, input, PhysicsParameters.Basic, delayed);
@@ -638,7 +661,7 @@ public static class MotionOfflineTests
         var deviated = new NavigationTask();
         deviated.Before(82, 7, 1800, start, ph, hazard);
         deviated.After(start with { Px = 1500 }, hazard);
-        Check(deviated.Snapshot.Status == "failed", "Real-state deviation aborts autonomous task");
+        Check(deviated.Snapshot.Status == "recovering", "Real-state deviation stops the edge for bounded observation");
         var protocol = new ControlState();
         int session = protocol.BeginSession();
         var request = ControlState.Parse("{\"v\":1,\"id\":1,\"cmd\":\"navigate\",\"targetX\":2080,\"expectedGeneration\":0}");
@@ -743,7 +766,7 @@ public static class MotionOfflineTests
         var blocked = new NavigationTask();
         var wall = new World { WallX = 1640, WallWidth = 64, WallHeight = 1000 };
         var atWall = new PhysicsState(1600, 1558, 0, 0, true);
-        for (int frame = 0; frame < 300 && !blocked.Terminal; frame++)
+        for (int frame = 0; frame <= NavigationTripProgress.UpdateLimit && !blocked.Terminal; frame++)
         {
             var input = blocked.Before(97, 3, 1800, atWall, ph, wall);
             atWall = PhysicsSimulator.Step(atWall, input, ph, wall);
@@ -1013,6 +1036,10 @@ public static class MotionOfflineTests
         Check(controller.Snapshot.Status == "landed", "Partial contact must not prematurely exhaust two-frame landing handoff");
         Check(raw.Frames.Take(raw.ExecuteFrames).All(f => f.Input.Direction == 1),
             "Forward input remains held through partial contact and full landing");
+        var walk=PhysicsSimulator.Predict(new(1600,1557.7f,2.8f,0,true),1,0,ph,world,walkFrames:1);
+        Check(walk.Safe&&walk.Frames[0].State.Grounded&&walk.Frames[0].State.Vy>0.1f
+            &&walk.ExecuteFrames>1&&PhysicsSimulator.SupportedCheckpoint(walk.Frames[walk.ExecuteFrames-1].State,world),
+            "Walking handoff skips clipped contact with residual downward velocity despite zero prediction error");
         Console.WriteLine("PASS: clipped downward contact before true grounding, two-frame landing handoff and uninterrupted input");
     }
 
@@ -1024,10 +1051,10 @@ public static class MotionOfflineTests
         RecordedPlatformArrivalRegression();
         RecordedMiningApproachRegression();
         NearGoalMovingRegression();
-        foreach (int type in new[] { 147, 216 })
+        foreach (int type in new[] { 3, 147, 216 })
             Check(NavigationBuffPolicy.Rejection(type, 18000, 0, "audited_vanilla") == null,
                 "Recorded MonsterBanner/BabyBird effects must not block ordinary navigation");
-        foreach (int type in new[] { 3, 8, 26, 146, 148, 215, 217, 9999 })
+        foreach (int type in new[] { 8, 26, 146, 148, 215, 217, 9999 })
         {
             string rejection = NavigationBuffPolicy.Rejection(type, 120, 2, "test/effect");
             Check(rejection != null && rejection.Contains($"type={type}") && rejection.Contains("slot=2")
@@ -1037,7 +1064,7 @@ public static class MotionOfflineTests
                 "An expired slot is not an active buff");
         }
         Check(NavigationBuffPolicy.Rejection(147, 1, 0, "Terraria/MonsterBanner") == null
-            && NavigationBuffPolicy.Rejection(3, 1, 1, "Terraria/Swiftness") != null,
+            && NavigationBuffPolicy.Rejection(8, 1, 1, "Terraria/ObsidianSkin") != null,
             "An allowed banner cannot hide a concurrent unsupported movement buff");
         var ph = PhysicsParameters.Basic;
         var reported = new PhysicsParameters(0.08f, 3, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);

@@ -1,0 +1,589 @@
+{
+  "date": "2026-10-27",
+  "scope": "Real graphical Host & Play operated and visually confirmed by the user; saved Lua/native receipts inspected by the assistant. Not an automated GUI test.",
+  "packageVersion": "0.1.44",
+  "packageSHA256": "071EDEAA49F35FDF88EEFB7649C2F0B77F7BB97328AAF9203F948A2C75A00E26",
+  "profile": ".local/companion-g82-host-20261027-111108-230",
+  "visualConfirmation": {
+    "source": "User messages in this task",
+    "confirmed": [
+      "Basic movement succeeded",
+      "Single wooden sword use succeeded",
+      "Specified stone removed; pumpkin and support ground retained"
+    ],
+    "notClaimed": [
+      "Hit or damage confirmation",
+      "Graphical drops or pickup verification",
+      "Comprehensive simultaneous human-control regression"
+    ]
+  },
+  "cases": [
+    {
+      "case": "movement",
+      "source": ".local/server-ai-actions-708fd5c6fa6742529f18869037d62d7d.json",
+      "sha256": "ba624c971b8d367f267bb4e7a004ea346dea002208ce81419ed8d1c1a61495e3",
+      "runId": "abfb9feb09af46b5b04bcc9cfd8dd8dd",
+      "status": "completed",
+      "actions": 1,
+      "actionState": "released",
+      "before": {
+        "binding": {
+          "world": "1d1984b9c6214927aa89da9644729da5",
+          "actor": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "generation": 1,
+          "slot": 254
+        },
+        "life": 100,
+        "position": {
+          "y": 3318,
+          "x": 33680
+        }
+      },
+      "after": {
+        "binding": {
+          "world": "1d1984b9c6214927aa89da9644729da5",
+          "actor": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "generation": 1,
+          "slot": 254
+        },
+        "life": 100,
+        "position": {
+          "y": 3318,
+          "x": 33730.395
+        }
+      },
+      "operationReceipts": [
+        {
+          "endEvidence": {
+            "inputsReleased": true,
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 13120,
+            "effectVerified": true,
+            "actorSlot": 254,
+            "observationSequence": 13122,
+            "worldSessionId": "1d1984b9c6214927aa89da9644729da5",
+            "actorGeneration": 1,
+            "actorId": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+            "inputsAcquired": true,
+            "operation": "navigate_to_x"
+          },
+          "actionId": "ad24209fa8ed418aa5826a24ea3a2138",
+          "operation": "navigate_to_x",
+          "y": 3318,
+          "effectStatus": "native_navigation_observed",
+          "x": 33730.395,
+          "status": "completed",
+          "arrived": true
+        }
+      ],
+      "lastAction": {
+        "valid": true,
+        "status": "completed",
+        "reason": "native_navigation_arrival_verified",
+        "operation": "navigate_to_x",
+        "actionId": "ad24209fa8ed418aa5826a24ea3a2138",
+        "session": "54fb101f5dbb4eb8a463991b18a69b55",
+        "actionGeneration": 1,
+        "targetRegion": null,
+        "evidence": {
+          "targetX": 33728,
+          "startX": 33680,
+          "x": 33730.395,
+          "y": 3318,
+          "vx": 0,
+          "vy": 0,
+          "updates": 44,
+          "navigation": {
+            "Session": 2,
+            "Status": "arrived",
+            "Action": "walk",
+            "Reason": "horizontal goal crossed on safe settled ground",
+            "Frame": 19,
+            "HoldFrames": 0,
+            "PredictedLanding": {
+              "X": 33730.395,
+              "Y": 3318
+            },
+            "ActualLanding": {
+              "X": 33730.395,
+              "Y": 3318
+            },
+            "MaxError": 0,
+            "ExpectedPosition": {
+              "X": 33730.395,
+              "Y": 3318
+            },
+            "ObservedPosition": {
+              "X": 33730.395,
+              "Y": 3318
+            },
+            "ExpectedVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "ObservedVelocity": {
+              "X": 0,
+              "Y": 0
+            },
+            "Generation": 1,
+            "TargetX": 33728,
+            "CompletedActions": 2,
+            "CompletedJumps": 0,
+            "Expansions": 1,
+            "PlannedActions": 1,
+            "PlanMilliseconds": 5.8878,
+            "LastLanding": {
+              "ActionNumber": 2,
+              "Jump": false,
+              "Predicted": {
+                "X": 33730.395,
+                "Y": 3318
+              },
+              "Actual": {
+                "X": 33730.395,
+                "Y": 3318
+              },
+              "MaxError": 0,
+              "PredictedVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "ActualVelocity": {
+                "X": 0,
+                "Y": 0
+              },
+              "Settled": true
+            },
+            "ReachedGoal": true,
+            "TimeBudgetReached": false,
+            "PlanNumber": 2,
+            "TargetRegion": null
+          },
+          "arrived": true,
+          "effectStatus": "native_navigation_observed"
+        },
+        "endEvidence": {
+          "phase": "ServerAI_game_thread_inputs_released",
+          "gameUpdate": 13120,
+          "worldSessionId": "1d1984b9c6214927aa89da9644729da5",
+          "actorId": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "actorGeneration": 1,
+          "actorSlot": 254,
+          "inputsAcquired": true,
+          "inputsReleased": true,
+          "effectVerified": true,
+          "operation": "navigate_to_x",
+          "observationSequence": 13122
+        },
+        "endEvidenceStatus": "known",
+        "controlGeneration": 1,
+        "completed": true,
+        "cancelled": false
+      },
+      "failure": null
+    },
+    {
+      "case": "wooden_sword",
+      "source": ".local/server-ai-actions-c584baaccf6142e0ba71452cd6b91639.json",
+      "sha256": "3c0fb2e5f111a0845d584a5c66125b060d884e400853a9a8adccb119f4ad758e",
+      "runId": "b8e7adcf11d34e019811a6cfb8330a7e",
+      "status": "completed",
+      "actions": 2,
+      "actionState": "released",
+      "before": {
+        "life": 100,
+        "binding": {
+          "slot": 254,
+          "world": "1d1984b9c6214927aa89da9644729da5",
+          "actor": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "generation": 1
+        },
+        "position": {
+          "y": 3318,
+          "x": 33730.395
+        }
+      },
+      "after": {
+        "life": 100,
+        "binding": {
+          "slot": 254,
+          "world": "1d1984b9c6214927aa89da9644729da5",
+          "actor": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "generation": 1
+        },
+        "position": {
+          "y": 3318,
+          "x": 33730.395
+        }
+      },
+      "operationReceipts": [
+        {
+          "status": "completed",
+          "endEvidence": {
+            "actorId": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+            "gameUpdate": 32580,
+            "phase": "ServerAI_game_thread_no_input",
+            "actorGeneration": 1,
+            "selectedHotbarKey": 2,
+            "selectionVerified": true,
+            "observationSequence": 32582,
+            "worldSessionId": "1d1984b9c6214927aa89da9644729da5",
+            "selectedSlot": 1,
+            "actorSlot": 254,
+            "inputsAcquired": false
+          },
+          "operation": "select_hotbar_slot",
+          "actionId": "2acc612a170b4c6dbc7ad1dbe63a6713"
+        },
+        {
+          "consumptionObserved": false,
+          "status": "completed",
+          "effectStatus": "unconfirmed",
+          "endEvidence": {
+            "actorId": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+            "gameUpdate": 32608,
+            "inputsReleased": true,
+            "actorGeneration": 1,
+            "operation": "use_item",
+            "worldSessionId": "1d1984b9c6214927aa89da9644729da5",
+            "observationSequence": 32610,
+            "effectVerified": true,
+            "inputsAcquired": true,
+            "actorSlot": 254,
+            "phase": "ServerAI_game_thread_inputs_released"
+          },
+          "operation": "use_item",
+          "starts": 1,
+          "animationPeak": 20,
+          "cycleVerified": true,
+          "actionId": "8998e5d3982f4182a8305fc235ff8e11"
+        }
+      ],
+      "lastAction": {
+        "valid": true,
+        "status": "completed",
+        "reason": "native animation/time drained",
+        "operation": "use_item",
+        "actionId": "8998e5d3982f4182a8305fc235ff8e11",
+        "session": "03b87e0f5ef8437fae106b6e24bceee9",
+        "actionGeneration": 1,
+        "targetRegion": null,
+        "evidence": {
+          "itemType": 24,
+          "Ticks": 21,
+          "Starts": 1,
+          "AnimationPeak": 20,
+          "TimePeak": 0,
+          "ToolPeak": 0,
+          "UsesPeak": 0,
+          "InitialStack": 1,
+          "stack": 1,
+          "consumptionObserved": false,
+          "cycleVerified": true,
+          "effectStatus": "unconfirmed"
+        },
+        "endEvidence": {
+          "phase": "ServerAI_game_thread_inputs_released",
+          "gameUpdate": 32608,
+          "worldSessionId": "1d1984b9c6214927aa89da9644729da5",
+          "actorId": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "actorGeneration": 1,
+          "actorSlot": 254,
+          "inputsAcquired": true,
+          "inputsReleased": true,
+          "effectVerified": true,
+          "operation": "use_item",
+          "observationSequence": 32610
+        },
+        "endEvidenceStatus": "known",
+        "controlGeneration": 1,
+        "completed": true,
+        "cancelled": false
+      },
+      "failure": null
+    },
+    {
+      "case": "stone_mining",
+      "source": ".local/server-ai-actions-a1376c70b9314ec6955a816820d0ac99.json",
+      "sha256": "02907c2f160afacb09acec229fa921ec74dd9eac5cb858b46f3e0d07aa515a6b",
+      "runId": "0a96b81f03ad4325956982f0720b44df",
+      "status": "completed",
+      "actions": 2,
+      "actionState": "released",
+      "before": {
+        "life": 100,
+        "position": {
+          "x": 33730.395,
+          "y": 3318
+        },
+        "binding": {
+          "generation": 1,
+          "world": "1d1984b9c6214927aa89da9644729da5",
+          "actor": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "slot": 254
+        }
+      },
+      "after": {
+        "life": 100,
+        "position": {
+          "x": 33730.395,
+          "y": 3318
+        },
+        "binding": {
+          "generation": 1,
+          "world": "1d1984b9c6214927aa89da9644729da5",
+          "actor": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "slot": 254
+        }
+      },
+      "operationReceipts": [
+        {
+          "status": "completed",
+          "operation": "select_hotbar_slot",
+          "endEvidence": {
+            "selectedSlot": 2,
+            "selectionVerified": true,
+            "inputsAcquired": false,
+            "selectedHotbarKey": 3,
+            "phase": "ServerAI_game_thread_no_input",
+            "worldSessionId": "1d1984b9c6214927aa89da9644729da5",
+            "observationSequence": 68792,
+            "gameUpdate": 68790,
+            "actorSlot": 254,
+            "actorId": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+            "actorGeneration": 1
+          },
+          "actionId": "8a987981aaf74b78ad85baabb9f1ebe0"
+        },
+        {
+          "status": "completed",
+          "operation": "mine_tile",
+          "peakDamage": 105,
+          "effectStatus": "native_tile_destroyed",
+          "targetAbsent": true,
+          "destroyedByActor": true,
+          "endEvidence": {
+            "inputsReleased": true,
+            "observationSequence": 68845,
+            "inputsAcquired": true,
+            "effectVerified": true,
+            "phase": "ServerAI_game_thread_inputs_released",
+            "worldSessionId": "1d1984b9c6214927aa89da9644729da5",
+            "operation": "mine_tile",
+            "gameUpdate": 68843,
+            "actorSlot": 254,
+            "actorId": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+            "actorGeneration": 1
+          },
+          "strikes": 3,
+          "actionId": "e12adb8811ff4cafb0a633680ae254a9"
+        }
+      ],
+      "lastAction": {
+        "valid": true,
+        "status": "completed",
+        "reason": "None: ",
+        "operation": "mine_tile",
+        "actionId": "e12adb8811ff4cafb0a633680ae254a9",
+        "session": "fbabe083ee7e4107969cc33905d8b372",
+        "actionGeneration": 1,
+        "targetRegion": null,
+        "evidence": {
+          "nativeActionId": "205986d8-4791-44ae-ba38-6490027812f3",
+          "X": 2111,
+          "Y": 209,
+          "TileType": 1,
+          "ExpectedType": 1,
+          "Ticks": 46,
+          "Swings": 2,
+          "Strikes": 3,
+          "PeakDamage": 105,
+          "Transforms": 0,
+          "nativeDestroyed": true,
+          "targetAbsent": true,
+          "targetChanged": false,
+          "destroyedByActor": true,
+          "effectStatus": "native_tile_destroyed"
+        },
+        "endEvidence": {
+          "phase": "ServerAI_game_thread_inputs_released",
+          "gameUpdate": 68843,
+          "worldSessionId": "1d1984b9c6214927aa89da9644729da5",
+          "actorId": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "actorGeneration": 1,
+          "actorSlot": 254,
+          "inputsAcquired": true,
+          "inputsReleased": true,
+          "effectVerified": true,
+          "operation": "mine_tile",
+          "observationSequence": 68845
+        },
+        "endEvidenceStatus": "known",
+        "controlGeneration": 1,
+        "completed": true,
+        "cancelled": false
+      },
+      "failure": null
+    },
+    {
+      "case": "insufficient_support",
+      "source": ".local/server-ai-actions-c4d5da8cdaeb42aa9c8fb29812cc53ab.json",
+      "sha256": "4c4782eebbec877f8d5c7592381e3a5a15c5879411f73696045365d206817d7f",
+      "runId": "72985b873a2f400d80de25152983745b",
+      "status": "script_error",
+      "actions": 1,
+      "actionState": "released",
+      "before": null,
+      "after": null,
+      "operationReceipts": null,
+      "lastAction": {
+        "valid": true,
+        "status": "failed",
+        "reason": "replan requires safe foot support and body clearance: insufficient foot support: 4.000px < 8px; position=(33680,3318), velocity=(0,0)",
+        "operation": "navigate_to_x",
+        "actionId": "babb63f988374db4b9a5046a1e13e9fa",
+        "session": "43a6fa9a290a494ca07f1a0ae503c1a0",
+        "actionGeneration": 1,
+        "targetRegion": null,
+        "evidence": {
+          "targetX": 33728,
+          "startX": 33680,
+          "x": 33680,
+          "y": 3318,
+          "vx": 0,
+          "vy": 0,
+          "updates": 1,
+          "navigation": {
+            "Session": 1,
+            "Status": "failed",
+            "Action": "plan",
+            "Reason": "replan requires safe foot support and body clearance: insufficient foot support: 4.000px < 8px; position=(33680,3318), velocity=(0,0)",
+            "Frame": 0,
+            "HoldFrames": 0,
+            "PredictedLanding": null,
+            "ActualLanding": null,
+            "MaxError": 0,
+            "ExpectedPosition": null,
+            "ObservedPosition": null,
+            "ExpectedVelocity": null,
+            "ObservedVelocity": null,
+            "Generation": 1,
+            "TargetX": 33728,
+            "CompletedActions": 0,
+            "CompletedJumps": 0,
+            "Expansions": 0,
+            "PlannedActions": 0,
+            "PlanMilliseconds": 0,
+            "LastLanding": null,
+            "ReachedGoal": null,
+            "TimeBudgetReached": null,
+            "PlanNumber": 0,
+            "TargetRegion": null
+          },
+          "arrived": false,
+          "effectStatus": "native_navigation_observed"
+        },
+        "endEvidence": {
+          "phase": "ServerAI_game_thread_inputs_released",
+          "gameUpdate": 6944,
+          "worldSessionId": "1d1984b9c6214927aa89da9644729da5",
+          "actorId": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "actorGeneration": 1,
+          "actorSlot": 254,
+          "inputsAcquired": true,
+          "inputsReleased": true,
+          "effectVerified": false,
+          "operation": "navigate_to_x",
+          "observationSequence": 6946
+        },
+        "endEvidenceStatus": "known",
+        "controlGeneration": 1,
+        "completed": false,
+        "cancelled": false
+      },
+      "failure": {
+        "kind": "script_error",
+        "message": "[string \"companion.lua\"]:6: replan requires safe foot support and body clearance: insufficient foot support: 4.000px < 8px; position=(33680,3318), velocity=(0,0)\nstack traceback:\n\t[C]: in function 'assert'\n\t[string \"companion.lua\"]:6: in main chunk\n\t(...tail calls...)",
+        "call": null,
+        "line": 6,
+        "retryAllowed": false,
+        "actionState": "released"
+      }
+    },
+    {
+      "case": "empty_target",
+      "source": ".local/server-ai-actions-de99c56f78eb4aeb8b6210e0a31bb18d.json",
+      "sha256": "bf0976a5ba5d7c3402a3c06427a0c3383ef9f222c96a8ce4ba5da2e1d8ecd580",
+      "runId": "cf152d0d06994e10982900903ef9ff50",
+      "status": "script_error",
+      "actions": 2,
+      "actionState": "released",
+      "before": null,
+      "after": null,
+      "operationReceipts": null,
+      "lastAction": {
+        "valid": true,
+        "status": "failed",
+        "reason": "InvalidTarget: Target must be an occupied in-world tile.",
+        "operation": "mine_tile",
+        "actionId": "63cd4202fe9444c1b4caa0c47b1f7cba",
+        "session": "f6de9aba34444e6bb07b46b20a68ed5d",
+        "actionGeneration": 1,
+        "targetRegion": null,
+        "evidence": {
+          "nativeActionId": "2e0d1438-4648-45c8-8831-a982995c4442",
+          "X": 2111,
+          "Y": 208,
+          "TileType": 0,
+          "ExpectedType": 0,
+          "Ticks": 0,
+          "Swings": 0,
+          "Strikes": 0,
+          "PeakDamage": 0,
+          "Transforms": 0,
+          "nativeDestroyed": false,
+          "targetAbsent": false,
+          "targetChanged": false,
+          "destroyedByActor": false,
+          "effectStatus": "not_confirmed"
+        },
+        "endEvidence": {
+          "phase": "ServerAI_game_thread_inputs_released",
+          "gameUpdate": 55756,
+          "worldSessionId": "1d1984b9c6214927aa89da9644729da5",
+          "actorId": "2635ed5b6f4b4a1cba3e90dfc2e95f2e",
+          "actorGeneration": 1,
+          "actorSlot": 254,
+          "inputsAcquired": false,
+          "inputsReleased": true,
+          "effectVerified": false,
+          "operation": "mine_tile",
+          "observationSequence": 55758
+        },
+        "endEvidenceStatus": "known",
+        "controlGeneration": 1,
+        "completed": false,
+        "cancelled": false
+      },
+      "failure": {
+        "kind": "script_error",
+        "message": "[string \"companion.lua\"]:10: InvalidTarget: Target must be an occupied in-world tile.\nstack traceback:\n\t[C]: in function 'assert'\n\t[string \"companion.lua\"]:10: in main chunk\n\t(...tail calls...)",
+        "call": null,
+        "line": 10,
+        "retryAllowed": false,
+        "actionState": "released"
+      }
+    }
+  ],
+  "notValidated": [
+    "Leftward navigation and native obstacle jumps",
+    "Other terrain/tools/protected targets",
+    "Graphical apple use or drops/pickup",
+    "Cancellation/timeout/disconnect in Host & Play",
+    "Persistent old connection across actual actor generation/world lifecycle changes",
+    "Death/respawn during action",
+    "Continuous simultaneous human operation",
+    "Remote multiplayer and late join",
+    "Host & Play teardown and reservation release"
+  ]
+}

@@ -61,7 +61,7 @@ def end_receipt(world, tick):
 
 async def run_scene(answers,game=None,delta=20,result=None,**budgets):
     game=game or Scene();agent=Agent(game,Model(*answers),**budgets)
-    async def act(bridge,direction,duration_ms,chat_id,expected_generation):
+    async def act(bridge,direction,duration_ms,chat_id,expected_generation,*,lifecycle=None):
         if result is None:
             game.x+=delta if direction=='right' else -delta
             game.generation+=2
@@ -143,7 +143,7 @@ class MovementLoopTests(unittest.IsolatedAsyncioTestCase):
                 decisions.append((x,direction,duration,last['exploration']['observationId']))
                 return movement(direction,duration,100 if x==0 else None)
         model=Decisions();agent=Agent(game,model)
-        async def act(bridge,direction,duration_ms,chat_id,expected_generation):
+        async def act(bridge,direction,duration_ms,chat_id,expected_generation,*,lifecycle=None):
             game.x=140 if len(decisions)==1 else 100
             game.generation+=2
             return {'valid':True,'status':'completed','completed':True,'cancelled':False,'controlGeneration':game.generation,
@@ -247,7 +247,7 @@ class MovementLoopTests(unittest.IsolatedAsyncioTestCase):
     async def test_unchanged_tick_stale_camera_and_world_change_block_next_action(self):
         for mode in ('repeat','stale','world','fail_read'):
             game=Scene()
-            async def act(bridge,direction,duration_ms,chat_id,expected_generation):
+            async def act(bridge,direction,duration_ms,chat_id,expected_generation,*,lifecycle=None):
                 if mode=='world':game.world='other-world'
                 else:setattr(game,mode,True)
                 game.generation+=2

@@ -8,25 +8,36 @@ using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Motion;
 
-internal static class GameNavigation
+internal sealed class NativeNavigation
 {
-    internal static LocalMotionController Controller { get; } = new();
-    internal static NavigationTask Task { get; } = new();
-    private static readonly NavigationDiagnostics Diagnostics = new(line =>
-        ModContent.GetInstance<CompanionBridge>().Logger.Info(line));
-    internal static NavigationSnapshot Snapshot => _navigation ? Task.Snapshot : Controller.Snapshot;
-    private static bool _navigation;
-    private static int _session, _generation;
-    private static NativeMotionWorld _world;
-    private static int _life;
-    private static bool _paired;
+    internal LocalMotionController Controller { get; } = new();
+    internal NavigationTask Task { get; }
+    private readonly NavigationDiagnostics Diagnostics;
+    internal NavigationSnapshot Snapshot => CoreSnapshot with {Mobility=_profile};
+    private bool _navigation;
+    private int _session, _generation;
+    private NativeMotionWorld _world;
+    private int _life;
+    private bool _paired;
+    private readonly MobilityTracker _mobility=new();
+    private MobilityProfile _profile;
+    private long _planRevision;
+    private float _transitionSpeedLimit;
+    private NavigationSnapshot CoreSnapshot=>_navigation?Task.Snapshot:Controller.Snapshot;
+    private readonly bool _captureContacts;
+    internal NativeNavigation(bool captureContacts=false,Action<string> diagnosticWriter=null,bool enableSafeGroundWalk=false,Func<PhysicsState,int> historicalPreference=null)
+    {
+        _captureContacts=captureContacts;
+        Task=new(enableSafeGroundWalk,historicalPreference);
+        Diagnostics=new(diagnosticWriter??(line=>ModContent.GetInstance<CompanionBridge>().Logger.Info(line)));
+    }
 
-    private static PhysicsState State(Player p) => new(p.position.X, p.position.Y,
+    private PhysicsState State(Player p) => new(p.position.X, p.position.Y,
         p.velocity.X, p.velocity.Y, TerrainReader.Read(p).Grounded, p.jump, p.releaseJump);
 
-    internal static bool Ordinary(Player p) => OrdinaryRejection(p) == null;
+    internal bool Ordinary(Player p) => OrdinaryRejection(p) == null;
 
-    private static string OrdinaryRejection(Player p)
+    private string OrdinaryRejection(Player p,float transitionSpeedLimit=0,bool expiryTail=false)
     {
         var ph = Parameters(p);
         List<string> reasons = null;
@@ -34,6 +45,11 @@ internal static class GameNavigation
         {
             if (condition) (reasons ??= new()).Add(reason);
         }
+        // This is an explicit unvalidated-combination gate, not an inference
+        // that every Mod changes movement. Equal sampled scalars cannot certify
+        // later ModPlayer/On/IL hooks. Keep server engine isolation unchanged.
+        foreach(var mod in ModLoader.Mods)
+            Reject(mod.Name is not ("ModLoader" or "CompanionBridge"),"unvalidated_loaded_mod: "+mod.Name);
         Reject(p.mount.Active, "mount_active");
         Reject(p.gravDir != 1, "unsupported_gravity");
         Reject(p.wet, "wet");
@@ -53,8 +69,9 @@ internal static class GameNavigation
         Reject(p.rocketBoots != 0, "rocket_boots");
         Reject(p.itemAnimation != 0, "item_animation");
         Reject(p.width != 20 || p.height != 42, "unsupported_body_size");
-        Reject(!(Math.Abs(p.velocity.X) <= 3.2f), "unsupported_horizontal_velocity");
-        if (!ph.IsBasic) Reject(true, $"unsupported_physics: {ph}");
+        Reject(!(Math.Abs(p.velocity.X) <= Math.Max(p.HasBuff(BuffID.Swiftness)||expiryTail?3.95f:3.2f,transitionSpeedLimit)), "unsupported_horizontal_velocity");
+        var expected=p.HasBuff(BuffID.Swiftness)||expiryTail?PhysicsParameters.Swiftness:PhysicsParameters.Basic;
+        if (!ph.Matches(expected)) Reject(true, $"unsupported_physics: {ph}");
         for (int i = 0; i < 10; i++)
             if (!p.armor[i].IsAir) Reject(true, $"equipment: slot={i}, type={p.armor[i].type}, name={p.armor[i].Name}");
         for (int i = 0; i < p.buffTime.Length; i++)
@@ -68,10 +85,10 @@ internal static class GameNavigation
         return reasons == null ? null : string.Join("; ", reasons);
     }
 
-    private static PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
+    private PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
         p.accRunSpeed, p.runSlowdown, p.gravity, p.maxFallSpeed, Player.jumpSpeed, Player.jumpHeight);
 
-    internal static PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
+    internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
         LandingRegion region = null)
     {
         _paired = false;
@@ -87,46 +104,78 @@ internal static class GameNavigation
             if (region != null) Task.Begin(session, generation, region, State(p));
             else Task.Begin(session, generation, targetX.Value, State(p));
         }
-        string rejection = OrdinaryRejection(p);
-        if (rejection != null) return Fail("unsupported navigation state: " + rejection);
+        var ph=Parameters(p);
+        bool sameProfileScope=_profile?.Session==session&&_profile?.Generation==generation;
+        if(sameProfileScope&&_profile.Supported&&_profile.Variant=="vanilla_swiftness"
+            &&!p.HasBuff(BuffID.Swiftness)&&ph.IsBasic)_transitionSpeedLimit=3.95f;
+        if(!sameProfileScope||Math.Abs(p.velocity.X)<=3.2f)_transitionSpeedLimit=0;
+        bool expiryTail=_mobility.IsSwiftnessExpiryTail(ph,p.HasBuff(BuffID.Swiftness),Main.GameUpdateCount,session,generation);
+        string rejection = OrdinaryRejection(p,_transitionSpeedLimit,expiryTail);
+        int swiftnessIndex=p.FindBuffIndex(BuffID.Swiftness);
+        _profile=_mobility.Sample(ph,p.width,p.height,p.HasBuff(BuffID.Swiftness),
+            rejection==null?Array.Empty<string>():new[]{rejection},Main.GameUpdateCount,session,generation,
+            swiftnessIndex>=0?p.buffTime[swiftnessIndex]:0);
+        if(!_profile.Supported)return Fail("unsupported navigation state: "+string.Join("; ",_profile.UnsupportedEffects));
         if (_session != session || _generation != generation) _life = p.statLife;
         _session = session; _generation = generation;
         if (p.statLife < _life) return Fail("life decreased");
         _life = p.statLife;
         var state = State(p);
-        _world = new NativeMotionWorld(state);
+        if(_planRevision!=_profile.Revision)
+        {
+            if(_navigation)Task.InvalidateMobility(state,_profile.Revision);
+            else Controller.Cancel();
+        }
+        _planRevision=_profile.Revision;
+        _world = new NativeMotionWorld(state,_captureContacts);
         long started = Stopwatch.GetTimestamp();
         var input = _navigation
-            ? region != null ? Task.Before(session, generation, region, state, Parameters(p), _world)
-                : Task.Before(session, generation, targetX.Value, state, Parameters(p), _world)
-            : Controller.Before(session, direction, state, Parameters(p), _world, generation);
+            ? region != null ? Task.Before(session, generation, region, state, ph, _world)
+                : Task.Before(session, generation, targetX.Value, state, ph, _world)
+            : Controller.Before(session, direction, state, ph, _world, generation);
         if (Stopwatch.GetElapsedTime(started).TotalMilliseconds > 50)
             return Fail("local prediction exceeded 50ms budget");
-        if (_navigation) Diagnostics.Observe(Task.Snapshot);
+        if (_navigation) Diagnostics.Observe(Snapshot);
         _paired = true;
         return input;
     }
 
-    internal static void After(Player p)
+    internal void After(Player p)
     {
         if (!_paired) return;
         _paired = false;
         if (p.statLife < _life || p.dead) { Fail("life decreased/dead"); return; }
-        if (_navigation) { Task.After(State(p), _world); Diagnostics.Observe(Task.Snapshot); }
+        if (_navigation) { Task.After(State(p), _world, inputsReleased: !p.controlLeft && !p.controlRight && !p.controlJump
+            && !p.controlDown && !p.controlUp && !p.controlUseItem && !p.controlUseTile); Diagnostics.Observe(Snapshot); }
         else Controller.After(State(p), _world);
     }
 
-    private static PhysicsInput Fail(string reason)
+    private PhysicsInput Fail(string reason)
     {
         var input = _navigation ? Task.Fail(reason) : Controller.Fail(reason);
-        if (_navigation) Diagnostics.Observe(Task.Snapshot);
+        if (_navigation) Diagnostics.Observe(Snapshot);
         return input;
     }
 
-    internal static void Cancel()
+    internal void Cancel()
     {
+        _mobility.Reset();_profile=null;_planRevision=0;_transitionSpeedLimit=0;
         _paired = false; _world = null; _session = _generation = 0;
         Task.Cancel(); Diagnostics.Observe(Task.Snapshot); _navigation = false;
         Controller.Cancel();
     }
+}
+
+// Existing human callers retain their process-local instance and API.
+internal static class GameNavigation
+{
+    private static readonly NativeNavigation instance = new();
+    internal static LocalMotionController Controller => instance.Controller;
+    internal static NavigationTask Task => instance.Task;
+    internal static NavigationSnapshot Snapshot => instance.Snapshot;
+    internal static bool Ordinary(Player p) => instance.Ordinary(p);
+    internal static PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null, LandingRegion region = null)
+        => instance.Before(p, session, direction, generation, targetX, region);
+    internal static void After(Player p) => instance.After(p);
+    internal static void Cancel() => instance.Cancel();
 }

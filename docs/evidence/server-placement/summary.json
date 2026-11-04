@@ -1,0 +1,848 @@
+{
+  "version": "0.1.58",
+  "nativePlacement": {
+    "result": "passed",
+    "checks": 24,
+    "HumanScopeChecks": 11,
+    "evidence": [
+      {
+        "Status": "completed",
+        "Reason": "native_tile_placed_and_consumed",
+        "Evidence": {
+          "x": 2104,
+          "y": 218,
+          "typeId": 30,
+          "itemType": 9,
+          "InitialStack": 5,
+          "remainingStack": 4,
+          "Ticks": 15,
+          "Starts": 1,
+          "AnimationPeak": 14,
+          "Attempts": 1,
+          "consumedCount": 1,
+          "placedByActor": true,
+          "targetPresent": true,
+          "targetChanged": false,
+          "effectStatus": "native_tile_placed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": true,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "Status": "completed",
+        "Reason": "native_tile_placed_and_consumed",
+        "Evidence": {
+          "x": 2104,
+          "y": 218,
+          "typeId": 1,
+          "itemType": 3,
+          "InitialStack": 5,
+          "remainingStack": 4,
+          "Ticks": 15,
+          "Starts": 1,
+          "AnimationPeak": 14,
+          "Attempts": 1,
+          "consumedCount": 1,
+          "placedByActor": true,
+          "targetPresent": true,
+          "targetChanged": false,
+          "effectStatus": "native_tile_placed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": true,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "Status": "completed",
+        "Reason": "native_tile_placed_and_consumed",
+        "Evidence": {
+          "x": 2104,
+          "y": 218,
+          "typeId": 0,
+          "itemType": 2,
+          "InitialStack": 5,
+          "remainingStack": 4,
+          "Ticks": 15,
+          "Starts": 1,
+          "AnimationPeak": 14,
+          "Attempts": 1,
+          "consumedCount": 1,
+          "placedByActor": true,
+          "targetPresent": true,
+          "targetChanged": false,
+          "effectStatus": "native_tile_placed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": true,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "Status": "completed",
+        "Reason": "native_tile_placed_and_consumed",
+        "Evidence": {
+          "x": 2104,
+          "y": 218,
+          "typeId": 30,
+          "itemType": 9,
+          "InitialStack": 1,
+          "remainingStack": 0,
+          "Ticks": 15,
+          "Starts": 1,
+          "AnimationPeak": 14,
+          "Attempts": 1,
+          "consumedCount": 1,
+          "placedByActor": true,
+          "targetPresent": true,
+          "targetChanged": false,
+          "effectStatus": "native_tile_placed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": true,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "Status": "failed",
+        "Reason": "native_placement_refused",
+        "Evidence": {
+          "x": 2104,
+          "y": 215,
+          "typeId": 30,
+          "itemType": 9,
+          "InitialStack": 5,
+          "remainingStack": 5,
+          "Ticks": 15,
+          "Starts": 1,
+          "AnimationPeak": 14,
+          "Attempts": 1,
+          "consumedCount": 0,
+          "placedByActor": false,
+          "targetPresent": false,
+          "targetChanged": false,
+          "effectStatus": "not_confirmed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": false,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "Status": "failed",
+        "Reason": "native_placement_refused",
+        "Evidence": {
+          "x": 2101,
+          "y": 222,
+          "typeId": 30,
+          "itemType": 9,
+          "InitialStack": 5,
+          "remainingStack": 5,
+          "Ticks": 15,
+          "Starts": 1,
+          "AnimationPeak": 14,
+          "Attempts": 1,
+          "consumedCount": 0,
+          "placedByActor": false,
+          "targetPresent": false,
+          "targetChanged": false,
+          "effectStatus": "not_confirmed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": false,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "Status": "failed",
+        "Reason": "native_placement_refused",
+        "Evidence": {
+          "x": 2104,
+          "y": 218,
+          "typeId": 30,
+          "itemType": 9,
+          "InitialStack": 5,
+          "remainingStack": 5,
+          "Ticks": 15,
+          "Starts": 1,
+          "AnimationPeak": 14,
+          "Attempts": 1,
+          "consumedCount": 0,
+          "placedByActor": false,
+          "targetPresent": false,
+          "targetChanged": false,
+          "effectStatus": "not_confirmed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": false,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "Status": "failed",
+        "Reason": "native_use_refused",
+        "Evidence": {
+          "x": 2104,
+          "y": 218,
+          "typeId": 30,
+          "itemType": 9,
+          "InitialStack": 5,
+          "remainingStack": 5,
+          "Ticks": 1,
+          "Starts": 0,
+          "AnimationPeak": 0,
+          "Attempts": 1,
+          "consumedCount": 0,
+          "placedByActor": false,
+          "targetPresent": false,
+          "targetChanged": false,
+          "effectStatus": "not_confirmed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": false,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "Status": "unknown",
+        "Reason": "native_placement_consumption_unconfirmed",
+        "Evidence": {
+          "x": 2104,
+          "y": 218,
+          "typeId": 30,
+          "itemType": 9,
+          "InitialStack": 5,
+          "remainingStack": 5,
+          "Ticks": 15,
+          "Starts": 1,
+          "AnimationPeak": 14,
+          "Attempts": 1,
+          "consumedCount": 0,
+          "placedByActor": true,
+          "targetPresent": true,
+          "targetChanged": false,
+          "effectStatus": "not_confirmed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": false,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "Status": "cancelled",
+        "Reason": "explicit_stop",
+        "Evidence": {
+          "x": 2104,
+          "y": 218,
+          "typeId": 30,
+          "itemType": 9,
+          "InitialStack": 5,
+          "remainingStack": 4,
+          "Ticks": 1,
+          "Starts": 1,
+          "AnimationPeak": 14,
+          "Attempts": 1,
+          "consumedCount": 1,
+          "placedByActor": true,
+          "targetPresent": true,
+          "targetChanged": false,
+          "effectStatus": "not_confirmed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": false,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "Status": "failed",
+        "Reason": "placement_item_changed",
+        "Evidence": {
+          "x": 2104,
+          "y": 218,
+          "typeId": 30,
+          "itemType": 9,
+          "InitialStack": 5,
+          "remainingStack": 4,
+          "Ticks": 1,
+          "Starts": 1,
+          "AnimationPeak": 14,
+          "Attempts": 1,
+          "consumedCount": 1,
+          "placedByActor": true,
+          "targetPresent": true,
+          "targetChanged": false,
+          "effectStatus": "not_confirmed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": false,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      {
+        "isolation": {
+          "HumanScopeChecks": 11,
+          "localBefore": 255,
+          "localAfter": 255,
+          "txBefore": 0,
+          "txAfter": 0,
+          "tyBefore": 0,
+          "tyAfter": 0,
+          "mouseBefore": false,
+          "mouseAfter": false
+        }
+      }
+    ],
+    "mode": "isolated native ItemCheckWrapped, real Player placement and consumption; not graphical Host & Play"
+  },
+  "nativeLua": {
+    "status": "completed",
+    "calls": 9,
+    "actions": 2,
+    "value": {
+      "after": {
+        "actorGeneration": 1,
+        "binding": {
+          "world": "77285e57d2f14d76b97cd74cc179faa9",
+          "actor": "df03478524544d78a7ca73f703dd7137",
+          "slot": 254,
+          "generation": 1
+        },
+        "available": true,
+        "actorSlot": 254,
+        "valid": true,
+        "data": {
+          "cell": {
+            "knowledge": "read",
+            "liquidAmount": 0,
+            "tileInvisible": false,
+            "frameX": 72,
+            "actuated": false,
+            "bleeding": false,
+            "boulder": false,
+            "tilePaint": 0,
+            "solidTop": false,
+            "destroyOnTouch": false,
+            "actuator": false,
+            "hot": false,
+            "tileType": 30,
+            "collisionKnowledge": "known",
+            "solid": true,
+            "touchDamage": 0,
+            "wallFullbright": false,
+            "frameY": 72,
+            "tileFullbright": false,
+            "wallType": 0,
+            "wallInvisible": false,
+            "wallPaint": 0,
+            "halfBlock": false,
+            "slope": 0,
+            "liquidType": 0,
+            "wireMask": 0,
+            "hasTile": true
+          },
+          "wallContent": null,
+          "source": "server_ai_player",
+          "content": "Terraria/WoodBlock",
+          "x": 2109,
+          "y": 217,
+          "preflight": {
+            "distancePixels": 53.25644,
+            "selectedItem": {
+              "contentKey": "Terraria/Wood",
+              "stack": 3,
+              "prefix": 0,
+              "maxStack": 9999,
+              "name": "Wood",
+              "use": {
+                "createTile": 30,
+                "createWall": -1,
+                "axe": 0,
+                "pick": 0,
+                "hammer": 0
+              },
+              "inventoryToken": null,
+              "hotbarKey": 5,
+              "empty": false,
+              "favorited": false,
+              "slot": 4,
+              "typeId": 9
+            },
+            "limitations": "Preflight only: not proof of path, safety, line of sight, pick power, native permissions, object footprint, placement adjacency or server acceptance. Action validates again; re-observe effects.",
+            "checks": {
+              "vanillaNonFrameImportantTile": true,
+              "consumableTileSelected": true,
+              "pickSelected": false,
+              "supportedInteractionType": false,
+              "tilePresent": true,
+              "wallPresent": false,
+              "consumableWallSelected": false,
+              "pureHammerSelected": false
+            },
+            "withinConservativeReach": true,
+            "reachPixels": 80,
+            "normalGravity": true
+          },
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "preflightStatus": "partial_checks_only"
+        },
+        "gameUpdate": 808,
+        "worldSessionId": "77285e57d2f14d76b97cd74cc179faa9",
+        "observedAtUnixMs": 1793194149640,
+        "clock": "server_utc_at_projection"
+      },
+      "material": {
+        "contentKey": "Terraria/Wood",
+        "stack": 4,
+        "prefix": 0,
+        "maxStack": 9999,
+        "name": "Wood",
+        "use": {
+          "createTile": 30,
+          "createWall": -1,
+          "axe": 0,
+          "pick": 0,
+          "hammer": 0
+        },
+        "inventoryToken": null,
+        "hotbarKey": 5,
+        "empty": false,
+        "favorited": false,
+        "slot": 4,
+        "typeId": 9
+      },
+      "target": {
+        "x": 2109,
+        "y": 217
+      },
+      "before": {
+        "actorGeneration": 1,
+        "binding": {
+          "world": "77285e57d2f14d76b97cd74cc179faa9",
+          "actor": "df03478524544d78a7ca73f703dd7137",
+          "slot": 254,
+          "generation": 1
+        },
+        "available": true,
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+        "actorSlot": 254,
+        "valid": true,
+        "motion": {
+          "playerHeight": 42,
+          "playerWidth": 20,
+          "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety",
+          "supported": true,
+          "grounded": true
+        },
+        "gameUpdate": 771,
+        "worldSessionId": "77285e57d2f14d76b97cd74cc179faa9",
+        "source": "server_ai_player",
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "player": {
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "position": {
+            "x": 33688.83,
+            "y": 3462
+          },
+          "breathMax": 200,
+          "name": "G31_NoClient_Probe",
+          "ghost": false,
+          "life": 81,
+          "mana": 20,
+          "statDefense": {
+            "negative": 0,
+            "positive": 2
+          },
+          "velocityPixelsPerTick": {
+            "x": 0,
+            "y": 0
+          },
+          "id": 254,
+          "positionWorldPixels": {
+            "x": 33688.83,
+            "y": 3462
+          },
+          "lifeMax": 100,
+          "hotbarKeyBindings": [
+            {
+              "key": 1,
+              "inventorySlot": 0
+            },
+            {
+              "key": 2,
+              "inventorySlot": 1
+            },
+            {
+              "key": 3,
+              "inventorySlot": 2
+            },
+            {
+              "key": 4,
+              "inventorySlot": 3
+            },
+            {
+              "key": 5,
+              "inventorySlot": 4
+            },
+            {
+              "key": 6,
+              "inventorySlot": 5
+            },
+            {
+              "key": 7,
+              "inventorySlot": 6
+            },
+            {
+              "key": 8,
+              "inventorySlot": 7
+            },
+            {
+              "key": 9,
+              "inventorySlot": 8
+            },
+            {
+              "key": 0,
+              "inventorySlot": 9
+            }
+          ],
+          "inWorld": true,
+          "boundsWorldPixels": {
+            "height": 42,
+            "width": 20,
+            "x": 33688.83,
+            "y": 3462
+          },
+          "movement": {
+            "pulley": false,
+            "wet": false,
+            "grapCount": 0,
+            "stoned": false,
+            "stairFall": false,
+            "controlDown": false,
+            "gravity": 0.4,
+            "gravDir": 1,
+            "controlJump": false,
+            "shimmerWet": false,
+            "sloping": false,
+            "maxFallSpeed": 10.01,
+            "maxRunSpeed": 3.6000001,
+            "lavaWet": false,
+            "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred",
+            "runAcceleration": 0.096,
+            "frozen": false,
+            "honeyWet": false,
+            "webbed": false,
+            "jump": 0
+          },
+          "mount": {
+            "typeId": null,
+            "active": false
+          },
+          "equipmentScope": "vanilla player arrays, including vanilla social slots; mod accessory slots not included",
+          "direction": 1,
+          "active": true,
+          "dead": false,
+          "source": "server_ai_player",
+          "manaMax": 20,
+          "hotbarNumbering": "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
+          "selectedHotbarKey": 2,
+          "immune": false,
+          "breath": 200,
+          "immuneTime": 0,
+          "hotbarInventorySlots": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "selectedSlot": 1
+        },
+        "observedAtUnixMs": 1793194149029,
+        "clock": "server_utc_at_projection"
+      },
+      "action": {
+        "actionGeneration": 1,
+        "actionId": "baac7a27353345309cd6a18d440069da",
+        "targetRegion": null,
+        "status": "completed",
+        "operation": "place_tile",
+        "endEvidenceStatus": "known",
+        "session": "918077ffdcc449c5abd3c8e900712c38",
+        "valid": true,
+        "reason": "native_tile_placed_and_consumed",
+        "controlGeneration": 1,
+        "endEvidence": {
+          "actorGeneration": 1,
+          "effectVerified": true,
+          "observationSequence": 1603,
+          "operation": "place_tile",
+          "actorSlot": 254,
+          "gameUpdate": 800,
+          "phase": "ServerAI_game_thread_inputs_released",
+          "worldSessionId": "77285e57d2f14d76b97cd74cc179faa9",
+          "inputsAcquired": true,
+          "actorId": "df03478524544d78a7ca73f703dd7137",
+          "inputsReleased": true
+        },
+        "evidence": {
+          "Ticks": 15,
+          "AnimationPeak": 14,
+          "typeId": 30,
+          "effectStatus": "native_tile_placed",
+          "remainingStack": 3,
+          "targetChanged": false,
+          "placedByActor": true,
+          "consumedCount": 1,
+          "itemType": 9,
+          "x": 2109,
+          "y": 217,
+          "Attempts": 1,
+          "InitialStack": 4,
+          "targetPresent": true,
+          "Starts": 1
+        },
+        "cancelled": false,
+        "completed": true,
+        "reasonDetail": null,
+        "targetTile": {
+          "x": 2109,
+          "y": 217
+        }
+      },
+      "inventory": {
+        "actorGeneration": 1,
+        "binding": {
+          "world": "77285e57d2f14d76b97cd74cc179faa9",
+          "actor": "df03478524544d78a7ca73f703dd7137",
+          "slot": 254,
+          "generation": 1
+        },
+        "available": true,
+        "actorSlot": 254,
+        "valid": true,
+        "data": {
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "selectedHotbarKey": 5,
+          "source": "server_ai_player",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "status": "ok",
+          "inventory": [
+            {
+              "contentKey": "Terraria/Wood",
+              "stack": 3,
+              "prefix": 0,
+              "maxStack": 9999,
+              "name": "Wood",
+              "use": {
+                "createTile": 30,
+                "createWall": -1,
+                "axe": 0,
+                "pick": 0,
+                "hammer": 0
+              },
+              "inventoryToken": null,
+              "hotbarKey": 5,
+              "empty": false,
+              "favorited": false,
+              "slot": 4,
+              "typeId": 9
+            }
+          ],
+          "selectedSlot": 4
+        },
+        "gameUpdate": 809,
+        "worldSessionId": "77285e57d2f14d76b97cd74cc179faa9",
+        "observedAtUnixMs": 1793194149663,
+        "clock": "server_utc_at_projection"
+      },
+      "terrain": {
+        "actorGeneration": 1,
+        "binding": {
+          "world": "77285e57d2f14d76b97cd74cc179faa9",
+          "actor": "df03478524544d78a7ca73f703dd7137",
+          "slot": 254,
+          "generation": 1
+        },
+        "available": true,
+        "actorSlot": 254,
+        "valid": true,
+        "data": {
+          "scannedCount": 1305,
+          "complete": true,
+          "scope": "45x29 collision categories, not tile types or visibility; unknown Mod collision hooks; no path guarantee",
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "source": "server_ai_player",
+          "legend": ". clear/nonblocking/actuated; # solid; h halfblock; 1..4 slopes; = platform; a/b platform slopes; ! liquid or hazard; ? unknown collision or world boundary",
+          "unknownCount": 0,
+          "state": {
+            "velocityPixelsPerTick": {
+              "x": 0,
+              "y": 0
+            },
+            "id": 254,
+            "positionWorldPixels": {
+              "x": 33688.83,
+              "y": 3462
+            },
+            "direction": 1,
+            "dead": false,
+            "centerWorldPixels": {
+              "x": 33698.83,
+              "y": 3483
+            }
+          },
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "coordinates": "Tile cells; 16 world pixels per tile; +X right,+Y down; rows[y][x] relative to origin",
+          "bounds": {
+            "maxY": 230,
+            "maxX": 2128,
+            "minY": 202,
+            "minX": 2084
+          },
+          "terrain": {
+            "originY": 202,
+            "playerHeight": 42,
+            "supported": true,
+            "tileSize": 16,
+            "originX": 2084,
+            "playerWidth": 20,
+            "rows": [
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              "..........................................###",
+              "..........................................###",
+              "..........................................###",
+              "..........................................###",
+              "..........................................###",
+              "..........................................###",
+              "..........................................###",
+              ".........................#................###",
+              "..........................#...............###",
+              "..........................................###",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################"
+            ],
+            "grounded": true
+          }
+        },
+        "gameUpdate": 772,
+        "worldSessionId": "77285e57d2f14d76b97cd74cc179faa9",
+        "observedAtUnixMs": 1793194149046,
+        "clock": "server_utc_at_projection"
+      }
+    }
+  },
+  "nativeMining": {
+    "result": "passed",
+    "checks": 43,
+    "tree": {
+      "itemType": 3506,
+      "axe": 7,
+      "Ticks": 274,
+      "Swings": 9,
+      "Strikes": 13,
+      "AnimationPeak": 29,
+      "PeakDamage": 104,
+      "targetDestroyed": true,
+      "treeTilesBefore": 22,
+      "treeTilesRemaining": 0,
+      "worldWoodDropped": 14,
+      "woodInBagAtCompletion": 25,
+      "woodActuallyCollected": 25,
+      "pickupDuringMining": {
+        "Ticks": 1,
+        "Strikes": 1,
+        "PeakDamage": 8,
+        "woodCollected": 7,
+        "targetPresent": true,
+        "running": true,
+        "heldToolUnchanged": true
+      },
+      "apiResult": {
+        "Status": "completed",
+        "Reason": "native_tile_destroyed",
+        "Evidence": {
+          "nativeActionId": "d0f3bbfa-55b3-4f68-8450-b01835f31ca2",
+          "X": 2108,
+          "Y": 208,
+          "TileType": 5,
+          "ExpectedType": 5,
+          "Ticks": 274,
+          "Swings": 9,
+          "Strikes": 13,
+          "PeakDamage": 104,
+          "Transforms": 0,
+          "toolKind": "axe",
+          "pick": 0,
+          "axe": 7,
+          "nativeDestroyed": true,
+          "targetAbsent": true,
+          "targetChanged": false,
+          "destroyedByActor": true,
+          "effectStatus": "native_tile_destroyed"
+        },
+        "InputsReleased": true,
+        "EffectVerified": true,
+        "InputsAcquired": true,
+        "ReasonDetail": null
+      },
+      "fullWorldFrameCursor": {
+        "beforeX": 0,
+        "beforeY": 0,
+        "afterX": 5,
+        "afterY": 5,
+        "beforeMouse": false,
+        "afterMouse": false
+      },
+      "nativeProtection": true,
+      "nativeCanUseRefusal": true,
+      "cancelReleased": true,
+      "timeoutReleased": true,
+      "targetReplacementRejected": true,
+      "mode": "isolated native APIs + sustained mining in full native world frames; no graphical client"
+    }
+  },
+  "offline": {
+    "pythonPlacement": 5,
+    "pythonBackend": 28,
+    "pythonLanding": 5,
+    "pythonAtomic": 12,
+    "placementIL": 119,
+    "itemUseIL": 19,
+    "miningIL": 30,
+    "ipc": 45,
+    "atomic": 40,
+    "reads": 45,
+    "nativeAdapter": 57,
+    "chat": 30,
+    "formalPackageIL": 60
+  },
+  "hostAndPlay": "not run; no deployment to live profile",
+  "liveLLM": "not run"
+}

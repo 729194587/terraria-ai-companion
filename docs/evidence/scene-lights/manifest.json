@@ -1,0 +1,417 @@
+{
+  "baseCommit": "4e6dc46ffea1a4f87d645c467c0e46aed3307dab",
+  "scope": "isolated copied world; native placed torches; real Lua Worker and IPC; no clients or model requests",
+  "baseline": "0.1.66 production reader plus new diagnostic-only torch fixture; no light semantics",
+  "after": "0.1.67 final build; dense torches gated by additional diagnostic flag",
+  "summaries": {
+    "before": {
+      "baseline": true,
+      "fullBytes": 13243,
+      "objectsOnlyBytes": 6108,
+      "observed": {
+        "tree_component": 8,
+        "drop": 1,
+        "npc": 2,
+        "workbench": 1,
+        "ore_component": 1,
+        "door": 1,
+        "chest": 1
+      },
+      "returned": {
+        "tree_component": 8,
+        "door": 1,
+        "npc": 2,
+        "drop": 1,
+        "ore_component": 1,
+        "chest": 1,
+        "workbench": 1
+      },
+      "lightsLocated": 0
+    },
+    "after": {
+      "baseline": false,
+      "fullBytes": 13559,
+      "objectsOnlyBytes": 10529,
+      "observed": {
+        "drop": 1,
+        "ore_component": 1,
+        "light_source": 23,
+        "npc": 2,
+        "workbench": 1,
+        "chest": 1,
+        "door": 1,
+        "tree_component": 8
+      },
+      "returned": {
+        "light_source": 1,
+        "workbench": 1,
+        "drop": 1,
+        "npc": 2,
+        "tree_component": 8,
+        "chest": 1,
+        "door": 1,
+        "ore_component": 1
+      },
+      "lightsLocated": 17
+    }
+  },
+  "unchanged": {
+    "geometry": true,
+    "landingRegions": true,
+    "coverage": true
+  },
+  "exampleLight": {
+    "id": "o15",
+    "observedTileCount": 1,
+    "contentKey": "Terraria/Torches",
+    "details": {
+      "frameX": 0,
+      "anchorTile": {
+        "y": 218,
+        "x": 2101
+      },
+      "actuated": false,
+      "frameY": 0
+    },
+    "complete": true,
+    "kind": "light_source",
+    "observedBounds": {
+      "y": 218,
+      "x": 2101,
+      "height": 1,
+      "width": 1
+    },
+    "typeId": 4
+  },
+  "fullMapTorchGlyphs": 23,
+  "measurement": "compact JSON UTF-8 byte size of complete Lua API result, not network framing or token measurement; observations have distinct identities/times and naturally moving Guide",
+  "failures": {
+    "initial-fixture-failure": "Direct Input fixture removed hostile test slime. Scene launcher now excludes that fixture flag.",
+    "cross-update-assertion-failure": "Guide moved one tile between distinct API queries. Static-map comparison now excludes entity overlay cells; no game behavior changed."
+  },
+  "regression": "SceneOnly 1941 checks; NavigationOnly; IPC/atomic/read/native/chat and 76 final-package IL checks; Python scene/layer 13 cases. No full suite.",
+  "limitations": [
+    "graphical Host & Play",
+    "natural-world alternate torch styles",
+    "real model decisions",
+    "other light tile families or Mod lights",
+    "illumination/emission inference"
+  ],
+  "rawArchive": {
+    "path": "raw-evidence.zip",
+    "bytes": 1181451,
+    "sha256": "d6a98593eb99773c295c4c60b3b85db6805d1312ded31ccd2e6ca1222c18aa57"
+  },
+  "entries": [
+    {
+      "path": "initial-fixture-failure/action-fixture.json",
+      "bytes": 184,
+      "sha256": "e13e302e7319f48e8e6c87893aeec707ec5a0901b561a912f6fe51e4bcb1c519"
+    },
+    {
+      "path": "initial-fixture-failure/scene-fixture.json",
+      "bytes": 743,
+      "sha256": "12e8994804b07641e305a917eb571fd0618de9f057a345560a1c9632260188ba"
+    },
+    {
+      "path": "initial-fixture-failure/scene-light-lua/c40f188f9d794ee5a26f02df9121afc0/events.jsonl",
+      "bytes": 5759,
+      "sha256": "b77f2f390a834ed11981bda273e9541127075ed0fac53c667d650f34621d3c23"
+    },
+    {
+      "path": "initial-fixture-failure/scene-light-lua/c40f188f9d794ee5a26f02df9121afc0/manifest.json",
+      "bytes": 889,
+      "sha256": "57b4080464acee75930552cc14d448fc6a1095423157772dc8f9859d90816c11"
+    },
+    {
+      "path": "initial-fixture-failure/scene-light-lua/c40f188f9d794ee5a26f02df9121afc0/source-03e9a3ff20f881a335e21dc7cda912cda544cb8c018281ea86b156b53e8599a9.lua",
+      "bytes": 351,
+      "sha256": "bccdc89f4e67f90315df09657b216389e5379644efab85bd756e25db0267b5fb"
+    },
+    {
+      "path": "initial-fixture-failure/scene-light-lua/c40f188f9d794ee5a26f02df9121afc0/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "bytes": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "initial-fixture-failure/scene-lights.json",
+      "bytes": 122747,
+      "sha256": "88b63b86133072b101d4c3882cc7d40377ab4074c010982d50f044cc2f39533c"
+    },
+    {
+      "path": "initial-fixture-failure/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "initial-fixture-failure/stdout.log",
+      "bytes": 4333,
+      "sha256": "5544e63017c2dafd4885de4c40bf6ecd85792039f6e6b4fa52a3f1164c2c76fb"
+    },
+    {
+      "path": "before/action-fixture.json",
+      "bytes": 184,
+      "sha256": "e13e302e7319f48e8e6c87893aeec707ec5a0901b561a912f6fe51e4bcb1c519"
+    },
+    {
+      "path": "before/manifest.json",
+      "bytes": 331,
+      "sha256": "7f3ccac3940648d7fd51b8331e01c34d021d47591f7882b64b52af43220a32d6"
+    },
+    {
+      "path": "before/scene-fixture.json",
+      "bytes": 743,
+      "sha256": "12e8994804b07641e305a917eb571fd0618de9f057a345560a1c9632260188ba"
+    },
+    {
+      "path": "before/scene-light-lua/575bc047f5884477b311ab1354c8fa58/events.jsonl",
+      "bytes": 5773,
+      "sha256": "754e7ec5f4ffd6790a8408f3ad22df7140ef74c141f0a0b61c84b55345c87ef1"
+    },
+    {
+      "path": "before/scene-light-lua/575bc047f5884477b311ab1354c8fa58/manifest.json",
+      "bytes": 889,
+      "sha256": "ad5dfe0829cd1b739f7a114cd88792bfccc1e9540d1bbf2899f95c5e5bb5f0b0"
+    },
+    {
+      "path": "before/scene-light-lua/575bc047f5884477b311ab1354c8fa58/source-03e9a3ff20f881a335e21dc7cda912cda544cb8c018281ea86b156b53e8599a9.lua",
+      "bytes": 351,
+      "sha256": "bccdc89f4e67f90315df09657b216389e5379644efab85bd756e25db0267b5fb"
+    },
+    {
+      "path": "before/scene-light-lua/575bc047f5884477b311ab1354c8fa58/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "bytes": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "before/scene-lights.json",
+      "bytes": 130656,
+      "sha256": "98972e2255489e3a34b419e517bdfd9936545fa3625dd73a9820b4eed273133d"
+    },
+    {
+      "path": "before/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "before/stdout.log",
+      "bytes": 4356,
+      "sha256": "b5ba6b6ce65bdc5ff77c2871cd8beeb54759c669c75806c98d8786a612b491fa"
+    },
+    {
+      "path": "first-after/action-fixture.json",
+      "bytes": 184,
+      "sha256": "e13e302e7319f48e8e6c87893aeec707ec5a0901b561a912f6fe51e4bcb1c519"
+    },
+    {
+      "path": "first-after/manifest.json",
+      "bytes": 331,
+      "sha256": "3cc378ff96b33abee9592d7be2558a05613038ad33f519326dedac8056ad89c2"
+    },
+    {
+      "path": "first-after/scene-fixture.json",
+      "bytes": 743,
+      "sha256": "12e8994804b07641e305a917eb571fd0618de9f057a345560a1c9632260188ba"
+    },
+    {
+      "path": "first-after/scene-light-lua/762f92a4bea948a297ee3d86851f5564/events.jsonl",
+      "bytes": 5771,
+      "sha256": "4404f67ed649eca4749fe23e30bc4b2fd9a85a52b06e38946a405aed5fd531fc"
+    },
+    {
+      "path": "first-after/scene-light-lua/762f92a4bea948a297ee3d86851f5564/manifest.json",
+      "bytes": 889,
+      "sha256": "b9a26646137fa3f8c1efbe47466a9d8d048c21114524d1a2141647f97dbee1a2"
+    },
+    {
+      "path": "first-after/scene-light-lua/762f92a4bea948a297ee3d86851f5564/source-03e9a3ff20f881a335e21dc7cda912cda544cb8c018281ea86b156b53e8599a9.lua",
+      "bytes": 351,
+      "sha256": "bccdc89f4e67f90315df09657b216389e5379644efab85bd756e25db0267b5fb"
+    },
+    {
+      "path": "first-after/scene-light-lua/762f92a4bea948a297ee3d86851f5564/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "bytes": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "first-after/scene-lights.json",
+      "bytes": 156683,
+      "sha256": "44a2dc6621b17ce42d088f2eedebf8546b3080c44dd3160c107701137512f8da"
+    },
+    {
+      "path": "first-after/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "first-after/stdout.log",
+      "bytes": 4356,
+      "sha256": "e9b23b135348f3bbb520f3bf76690498a4a6d61777186e9358b9dc58e7993928"
+    },
+    {
+      "path": "cross-update-assertion-failure/action-fixture.json",
+      "bytes": 184,
+      "sha256": "e13e302e7319f48e8e6c87893aeec707ec5a0901b561a912f6fe51e4bcb1c519"
+    },
+    {
+      "path": "cross-update-assertion-failure/scene-fixture.json",
+      "bytes": 743,
+      "sha256": "12e8994804b07641e305a917eb571fd0618de9f057a345560a1c9632260188ba"
+    },
+    {
+      "path": "cross-update-assertion-failure/scene-light-lua/6a0fe3cb54f243d880ef47baf89cfd71/events.jsonl",
+      "bytes": 5761,
+      "sha256": "3009f9976103876b1e7ed0ea5de39ffd0ed7f60567b5c53a457faaa6c6d344ce"
+    },
+    {
+      "path": "cross-update-assertion-failure/scene-light-lua/6a0fe3cb54f243d880ef47baf89cfd71/manifest.json",
+      "bytes": 889,
+      "sha256": "38f33ff7dc66e8ad5660d2c6f9a5f861fbfc3fc413705069888aacf22860f2de"
+    },
+    {
+      "path": "cross-update-assertion-failure/scene-light-lua/6a0fe3cb54f243d880ef47baf89cfd71/source-03e9a3ff20f881a335e21dc7cda912cda544cb8c018281ea86b156b53e8599a9.lua",
+      "bytes": 351,
+      "sha256": "bccdc89f4e67f90315df09657b216389e5379644efab85bd756e25db0267b5fb"
+    },
+    {
+      "path": "cross-update-assertion-failure/scene-light-lua/6a0fe3cb54f243d880ef47baf89cfd71/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "bytes": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "cross-update-assertion-failure/scene-lights.json",
+      "bytes": 156124,
+      "sha256": "46aa606c6536986abd8b21e94be587e5421426ea9ffe3a748e68822bfd86fa80"
+    },
+    {
+      "path": "cross-update-assertion-failure/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "cross-update-assertion-failure/stdout.log",
+      "bytes": 4333,
+      "sha256": "a0be072f5c692786b3349294ab0c630b85cfc61eb2169bb3c069b7e1a35d242b"
+    },
+    {
+      "path": "after/action-fixture.json",
+      "bytes": 184,
+      "sha256": "e13e302e7319f48e8e6c87893aeec707ec5a0901b561a912f6fe51e4bcb1c519"
+    },
+    {
+      "path": "after/manifest.json",
+      "bytes": 331,
+      "sha256": "725c3da7c3934550abf4c4ac97c5e2284b83ccec674a000d7ccabb9e148f9b25"
+    },
+    {
+      "path": "after/scene-fixture.json",
+      "bytes": 743,
+      "sha256": "12e8994804b07641e305a917eb571fd0618de9f057a345560a1c9632260188ba"
+    },
+    {
+      "path": "after/scene-light-lua/4dc9a4cedfe9489eb04677c77e83d961/events.jsonl",
+      "bytes": 5770,
+      "sha256": "efda30f7d24917a571170aeaf1d74ea706c2a913a67bfdcc0351ca5e2c37903d"
+    },
+    {
+      "path": "after/scene-light-lua/4dc9a4cedfe9489eb04677c77e83d961/manifest.json",
+      "bytes": 889,
+      "sha256": "cbc4683b9b0c2f16d08cd8a65f0bc7454845dbf82bab8a618c5ebe28b1d82266"
+    },
+    {
+      "path": "after/scene-light-lua/4dc9a4cedfe9489eb04677c77e83d961/source-03e9a3ff20f881a335e21dc7cda912cda544cb8c018281ea86b156b53e8599a9.lua",
+      "bytes": 351,
+      "sha256": "bccdc89f4e67f90315df09657b216389e5379644efab85bd756e25db0267b5fb"
+    },
+    {
+      "path": "after/scene-light-lua/4dc9a4cedfe9489eb04677c77e83d961/source-851c1ec207c30f219bb033ae79d4a51442ccb6a6e840d4e466ec15bbc6d3f0a5.lua",
+      "bytes": 9715,
+      "sha256": "66c6db9aa2bd9aac1ea8d10d904536e18bd85deefaf32e1322b7adb8e9e06469"
+    },
+    {
+      "path": "after/scene-lights.json",
+      "bytes": 156735,
+      "sha256": "1ffb2178a3831003f9ff377ef72a690aacee003949832212e5dffe574a50c851"
+    },
+    {
+      "path": "after/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "after/stdout.log",
+      "bytes": 4356,
+      "sha256": "4af7c52456b71a2d3a8a1b13668c5395b3ab461f297cbe057916a7fb12b98f66"
+    },
+    {
+      "path": "before/CompanionBridge.tmod",
+      "bytes": 516976,
+      "sha256": "4c0a52ebb1ffbc259faacef0698ee718f9f781d48f931927c9efcec7b97ee95f"
+    },
+    {
+      "path": "after/CompanionBridge.tmod",
+      "bytes": 517589,
+      "sha256": "772a872103ad431bf026809c55348670f31cc592b217f0da5289cc9b4f29a4fc"
+    },
+    {
+      "path": "tested-source/CompanionBridge/SceneGeometry.cs",
+      "bytes": 17068,
+      "sha256": "72428df50cc359f87121be2779d42564e51b5ea5ab8823c90e59ed6627bf04e5"
+    },
+    {
+      "path": "tested-source/CompanionBridge/ServerIpc/ServerSceneReader.cs",
+      "bytes": 12548,
+      "sha256": "3788a6e8fb7725753ffe5e42825a51c5e2345ec96c965bcef26912565ebbbb1b"
+    },
+    {
+      "path": "tested-source/CompanionBridge/ServerIpc/ServerSceneFixture.cs",
+      "bytes": 3185,
+      "sha256": "ae40bd1876dc47fc38e1945aeed2db96c84a9d160e3f418a95e5210e3f8f49b6"
+    },
+    {
+      "path": "tested-source/tests/native_scene_lights.py",
+      "bytes": 5272,
+      "sha256": "53c0b929cfb6603e9bb1d27ca6f8403d94a45713c403a9f2411ab53c038e40dd"
+    },
+    {
+      "path": "tested-source/tests/verify_server_ai_direct_input_native.ps1",
+      "bytes": 3305,
+      "sha256": "2559927eb56fd7245c5aab28e95b0fb7a2ea4561440eef8d3a91de1065147508"
+    },
+    {
+      "path": "tested-source/python/atomic_operations.py",
+      "bytes": 60566,
+      "sha256": "12f4bc1b96b97a01bf75bb51e5db8e7255b0432a3e3640ad5c357f9b286f0af1"
+    },
+    {
+      "path": "tested-source/python/lua_runtime.py",
+      "bytes": 30019,
+      "sha256": "4d84fe3a7fac2c79f8bff55115356057f44c6d0c64f0faf0f16abfa5bbe1a297"
+    },
+    {
+      "path": "tested-source/python/lua_worker.py",
+      "bytes": 13529,
+      "sha256": "05129db76f70d528bb697630bf6014ae421c5e7bf3a264f5e6e6eaa70fe2c9d5"
+    },
+    {
+      "path": "tested-source/python/lua/explore.lua",
+      "bytes": 26612,
+      "sha256": "ea1dbc0412ec02f51130055e7ba9b94e3adcbb2f2194098dc8c7c6360cfee94f"
+    },
+    {
+      "path": "baseline-source/CompanionBridge/SceneGeometry.cs",
+      "bytes": 16175,
+      "sha256": "199060f6faba7b9859ab7f4636114d3ae77a4ad12d8debc9e3b571a1fc0bf1a2"
+    },
+    {
+      "path": "baseline-source/CompanionBridge/ServerIpc/ServerSceneReader.cs",
+      "bytes": 12382,
+      "sha256": "ed942212594b6ad4760f921ce5f9bff5872a07f28905f292a3ae1190b4987ee7"
+    },
+    {
+      "path": "offline/scene-light-ipc-tests.log",
+      "bytes": 35909,
+      "sha256": "bdd3144739323861887e111763d6390987dfa776ca0085b62fa55026bc0c3cb6"
+    }
+  ]
+}

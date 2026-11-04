@@ -69,12 +69,12 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_sequence_result_branch_and_chat_identity(self):
         result, game, _ = await self.run_lua('''
-            local before = api('inspect_inventory', {})
+            local before = api('inspect_inventory', {mode='selected'})
             if before.data.slot == 1 then
                 local action = api('select_hotbar_slot', {slot=2})
                 assert(action.completed and action.endEvidenceStatus == 'known')
             end
-            local after = api('inspect_inventory', {})
+            local after = api('inspect_inventory', {mode='selected'})
             return {before=before.data.slot, after=after.data.slot,
                     name=after.data.items[1].name, null=after.data.items[1].target}
         ''', chat_id='current-chat')
@@ -86,7 +86,7 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_nested_arrays_objects_and_explicit_null_round_trip(self):
         r, _, _ = await self.run_lua('''
-            local r = api('inspect_inventory')
+            local r = api('inspect_inventory',{mode='selected'})
             assert(r.data.nothing == json.null)
             assert(#r.data.items == 1)
             r.data.added = json.array({json.null, true, {x=3}})
@@ -108,77 +108,65 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([0, 1], next(p['arguments']['tileTypes'] for c, p in game.sent if c == 'query_atomic'))
         self.assertEqual({'x': 12.5, 'y': 20}, next(p['arguments']['target'] for c, p in game.sent if c == 'start_atomic'))
 
-    async def test_failed_action_delivered_for_branching_but_following_action_blocked(self):
+
+    async def test_failed_action_stops_entire_program_and_preserves_receipt(self):
         for status in ('failed', 'timeout', 'cancelled'):
-            r, game, runtime = await self.run_lua('''
-                local a = api('use_item')
-                if not a.completed then
-                    local read = api('inspect_inventory')
-                    local b = api('use_item')
-                    return {status=a.status, readable=read.valid, blocked=b.status}
-                end
-            ''', RuntimeGame(status))
-            self.assertEqual('completed', r['status'])  # Program ended, task success is separate.
-            self.assertEqual({'status': status, 'readable': True, 'blocked': 'blocked'}, r['value'])
+            r, game, runtime = await self.run_lua("api('use_item'); log('escaped'); api('inspect_inventory',{mode='selected'}); api('use_item'); return true", RuntimeGame(status))
+            self.assertEqual(status, r['status'], r)
+            self.assertIsNone(r['value']); self.assertEqual([], r['logs'])
             self.assertEqual(status, r['lastAction']['status'])
+            self.assertEqual('known', r['lastAction']['endEvidenceStatus'])
+            self.assertEqual((1,1,'released'), (r['calls'],r['actions'],r['actionState']))
             self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
-            self.assertEqual('released', r['actionState'])
+            self.assertFalse(any(c == 'query_atomic' for c,_ in game.sent))
             self.assertFalse(game.closed)
-            self.assertFalse(getattr(game, '_lua_poisoned', False))
-            self.assertEqual('completed', (await runtime.execute("return api('inspect_inventory')"))['status'])
+            self.assertEqual('completed', (await runtime.execute("return api('inspect_inventory',{mode='selected'})"))['status'])
 
-    async def test_disabled_actions_are_synthetic_and_do_not_fence_bridge(self):
-        replies = []
-        r, game, runtime = await self.run_lua("local b=api('use_item'); return {blocked=b,read=api('inspect_inventory')}",
-            allow_actions=False, on_result=lambda name, args, reply: replies.append((name, reply)))
-        self.assertEqual(('completed', 'idle', 0), (r['status'], r['actionState'], r['actions']))
-        self.assertTrue(r['value']['blocked']['blocked'])
-        self.assertTrue(r['value']['read']['valid'])
-        self.assertIsNone(r['lastAction'])
-        self.assertIsNone(r['cleanup'])
-        self.assertEqual('blocked', replies[0][1]['status'])
-        self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
+
+    async def test_disabled_action_stops_program_without_fencing_bridge(self):
+        replies=[]
+        r,game,runtime=await self.run_lua("pcall(function() api('use_item') end); log('escaped'); api('inspect_inventory',{mode='selected'})",
+            allow_actions=False,on_result=lambda name,args,reply:replies.append((name,reply)))
+        self.assertEqual(('blocked','idle',0),(r['status'],r['actionState'],r['actions']))
+        self.assertIsNone(r['value']); self.assertEqual([],r['logs'])
+        self.assertIsNone(r['lastAction']); self.assertIsNone(r['cleanup'])
+        self.assertEqual('blocked',replies[0][1]['status'])
+        self.assertFalse(any(c in ('start_atomic','query_atomic','cancel_move') for c,_ in game.sent))
         self.assertFalse(game.closed)
-        self.assertFalse(getattr(game, '_lua_poisoned', False))
-        self.assertEqual('completed', (await runtime.execute("return api('use_item')"))['status'])
+        self.assertEqual('completed',(await runtime.execute("return api('use_item')"))['status'])
 
-    async def test_failure_barrier_allows_real_stop_without_allowing_more_mutations(self):
-        for allow_actions in (False, True):
-            with self.subTest(allow_actions=allow_actions):
-                prefix = "api('use_item');" if allow_actions else ''
-                r, game, _ = await self.run_lua(prefix + "local stop=api('stop_action'); return {stop=stop,blocked=api('use_item')}",
-                                               RuntimeGame('failed'), allow_actions=allow_actions,
-                                               limits=Limits(actions=int(allow_actions)))
-                stopped = r['value']['stop']
-                self.assertTrue(stopped['valid'], stopped)
-                self.assertNotIn('blocked', stopped)
-                self.assertEqual('failed' if allow_actions else 'completed', stopped['status'])
-                self.assertEqual('blocked', r['value']['blocked']['status'])
-                self.assertEqual(int(allow_actions), r['actions'])
-                self.assertEqual(int(allow_actions), sum(c == 'start_atomic' for c, _ in game.sent))
-                self.assertFalse(game.closed)
 
-    async def test_unknown_stop_receipt_under_failure_barrier_still_fences_bridge(self):
-        game = RuntimeGame('failed')
-        original = game.command
-        stop_unknown = False
-        def command(cmd, **params):
-            reply = original(cmd, **params)
-            if stop_unknown and cmd == 'get_movement' and game.action:
-                reply['movement']['action']['endEvidenceStatus'] = 'unknown'
+    async def test_stop_remains_available_in_separate_program_after_failure(self):
+        for allow in (False,True):
+            game=RuntimeGame('failed'); runtime=LuaRuntime(game)
+            first=await runtime.execute("api('use_item'); api('stop_action')",allow_actions=allow)
+            self.assertEqual('failed' if allow else 'blocked',first['status'])
+            self.assertEqual(1,first['calls'])
+            stopped=await runtime.execute("return api('stop_action')",allow_actions=False)
+            self.assertEqual('failed' if allow else 'completed',stopped['status'],stopped)
+            self.assertEqual(0,stopped['actions'])
+            self.assertEqual(int(allow),sum(c=='start_atomic' for c,_ in game.sent))
+            self.assertFalse(game.closed)
+
+
+    async def test_unknown_stop_receipt_still_fences_bridge(self):
+        game=RuntimeGame('failed')
+        game.command('start_atomic',operation='use_item',arguments={})
+        original=game.command; reads=0
+        def command(cmd,**params):
+            nonlocal reads
+            reply=original(cmd,**params)
+            if cmd=='get_movement':
+                reads+=1
+                if reads>=2: reply['movement']['action']['endEvidenceStatus']='unknown'
             return reply
-        def observe(name, args, reply):
-            nonlocal stop_unknown
-            if name == 'use_item':
-                stop_unknown = True
-        game.command = command
-        r, _, _ = await self.run_lua("api('use_item'); api('stop_action'); api('use_item')", game, on_result=observe)
-        self.assertEqual(('action_unknown', 'unknown'), (r['status'], r['actionState']))
-        self.assertEqual('unknown', r['lastAction']['status'])
-        self.assertTrue(game.closed)
-        self.assertTrue(game._lua_poisoned)
-        self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
-        self.assertEqual('blocked', (await LuaRuntime(game).execute('return 1'))['status'])
+        game.command=command
+        r,_,_=await self.run_lua("api('stop_action'); api('use_item')",game)
+        self.assertEqual(('action_unknown','unknown'),(r['status'],r['actionState']),r)
+        self.assertEqual('unknown',r['lastAction']['status'])
+        self.assertTrue(game.closed); self.assertTrue(game._lua_poisoned)
+        self.assertEqual(1,sum(c=='start_atomic' for c,_ in game.sent))
+        self.assertEqual('blocked',(await LuaRuntime(game).execute('return 1'))['status'])
 
     async def test_bad_parameters_and_unknown_api_never_start_action(self):
         for source in ("api('mine_tile', {x=true,y=1})", "api('unknown')",
@@ -205,30 +193,21 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(BridgeError):
             await atomic.dispatch(game, 'use_item', {})
 
-    async def test_capability_rejection_allows_reads_but_blocks_later_mutation(self):
-        game = RuntimeGame()
+
+    async def test_capability_rejection_stops_program_without_quarantine(self):
+        game=RuntimeGame()
         game.hello['capabilities'].remove('server_confirmed_interactions_v1')
-        r, _, runtime = await self.run_lua('''
-            local rejected = api('interact_tile', {x=5,y=5})
-            assert(not rejected.valid and not rejected.completed)
-            local read = api('inspect_inventory')
-            local blocked = api('use_item')
-            return {rejected=rejected, readable=read.valid, blocked=blocked.status}
-        ''', game)
-        self.assertEqual(('completed', 'idle'), (r['status'], r['actionState']), r)
-        rejection = r['value']['rejected']
-        self.assertEqual('failed', rejection['status'])
-        self.assertEqual('not_dispatched', rejection['dispatchState'])
-        self.assertIn('server_confirmed_interactions_v1', rejection['reason'])
-        self.assertTrue(r['value']['readable'])
-        self.assertEqual('blocked', r['value']['blocked'])
-        self.assertEqual(rejection, r['lastAction'])
-        self.assertEqual(3, r['calls'])
-        self.assertFalse(any(c in ('start_atomic', 'cancel_move') for c, _ in game.sent))
+        r,_,runtime=await self.run_lua("pcall(function() api('interact_tile',{x=5,y=5}) end); log('escaped'); api('inspect_inventory',{mode='selected'})",game)
+        self.assertEqual(('failed','idle',1),(r['status'],r['actionState'],r['calls']),r)
+        self.assertIsNone(r['value']); self.assertEqual([],r['logs'])
+        rejection=r['lastAction']
+        self.assertEqual('failed',rejection['status'])
+        self.assertEqual('not_admitted',rejection['dispatchState'])
+        self.assertIn('server_confirmed_interactions_v1',rejection['reason'])
+        self.assertFalse(rejection['continuationAllowed'])
+        self.assertFalse(any(c in ('start_atomic','query_atomic','cancel_move') for c,_ in game.sent))
         self.assertFalse(game.closed)
-        self.assertFalse(getattr(game, '_lua_poisoned', False))
-        second = await runtime.execute("return api('inspect_inventory').valid")
-        self.assertEqual(('completed', True), (second['status'], second['value']))
+        self.assertEqual('completed',(await runtime.execute("return api('inspect_inventory',{mode='selected'}).valid"))['status'])
 
     async def test_capability_rejection_preserves_prior_release_evidence(self):
         game = RuntimeGame()
@@ -236,11 +215,13 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
         r, _, _ = await self.run_lua('''
             assert(api('use_item').completed)
             local rejected = api('interact_tile', {x=5,y=5})
-            return {status=rejected.status, readable=api('inspect_inventory').valid,
+            return {status=rejected.status, readable=api('inspect_inventory',{mode='selected'}).valid,
                     blocked=api('use_item').status}
         ''', game)
-        self.assertEqual(('completed', 'released'), (r['status'], r['actionState']), r)
-        self.assertEqual({'status': 'failed', 'readable': True, 'blocked': 'blocked'}, r['value'])
+        self.assertEqual(('failed', 'released'), (r['status'], r['actionState']), r)
+        self.assertIsNone(r['value'])
+        self.assertEqual(2,r['calls'])
+        self.assertEqual('not_admitted',r['lastAction']['dispatchState'])
         self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
         self.assertFalse(game.closed)
 
@@ -259,7 +240,7 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
                             raise error
                     return original(cmd, **params)
                 game.command = fault
-                r, _, _ = await self.run_lua("api('use_item'); return api('inspect_inventory')", game)
+                r, _, _ = await self.run_lua("api('use_item'); return api('inspect_inventory',{mode='selected'})", game)
                 self.assertEqual(('action_unknown', 'unknown'), (r['status'], r['actionState']), r)
                 self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
                 self.assertTrue(game.closed)
@@ -274,7 +255,7 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
                 raise BridgeError('start acknowledgement lost')
             return reply
         game.command = lost_ack
-        r, _, _ = await self.run_lua("api('use_item'); return api('inspect_inventory')", game)
+        r, _, _ = await self.run_lua("api('use_item'); return api('inspect_inventory',{mode='selected'})", game)
         self.assertEqual(('action_unknown', 'unknown'), (r['status'], r['actionState']), r)
         self.assertEqual('running', game.action['status'])
         self.assertEqual(1, sum(c == 'start_atomic' for c, _ in game.sent))
@@ -291,7 +272,7 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
                 reply['movement']['action']['actionId'] += 1
             return reply
         game.command = replaced
-        r, _, _ = await self.run_lua("api('use_item'); return api('inspect_inventory')", game)
+        r, _, _ = await self.run_lua("api('use_item'); return api('inspect_inventory',{mode='selected'})", game)
         self.assertEqual(('action_unknown', 'unknown'), (r['status'], r['actionState']), r)
         self.assertEqual('action_ownership_changed', r['lastAction']['reason'])
         self.assertTrue(game.closed)
@@ -300,7 +281,7 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
     async def test_result_text_cannot_claim_safe_predispatch_rejection(self):
         async def ambiguous(*args, **kwargs):
             return {'valid': False, 'status': 'failed', 'completed': False,
-                    'dispatchState': 'not_dispatched', 'reason': 'untrusted claim'}
+                    'dispatchState': 'not_admitted', 'reason': 'untrusted claim'}
         with patch.object(atomic, 'dispatch', ambiguous):
             r, game, _ = await self.run_lua("return api('use_item')")
         self.assertEqual(('action_unknown', 'unknown'), (r['status'], r['actionState']), r)
@@ -467,14 +448,14 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
     async def test_source_call_instruction_memory_and_value_budgets(self):
         for source, limits, expected in (
             ('x' * 16385, Limits(), 'source_limit'),
-            ("api('inspect_inventory'); api('inspect_inventory')", Limits(calls=1), 'call_limit'),
+            ("api('inspect_inventory',{mode='selected'}); api('inspect_inventory',{mode='selected'})", Limits(calls=1), 'call_limit'),
             ('while true do end', Limits(instructions=1000), 'instruction_limit'),
             ('local s="12345678"; for i=1,30 do s=s..s end; return s', Limits(memory=100_000), 'memory_limit'),
-            ('local t={}; t.self=t; return t', Limits(), 'value_limit'),
-            ('return {[1]=1,[3]=3}', Limits(), 'value_limit'),
-            ('return {x=1,[1]=2}', Limits(), 'value_limit'),
-            ('return 0/0', Limits(), 'value_limit'),
-            ('return function() end', Limits(), 'value_limit')):
+            ('local t={}; t.self=t; return t', Limits(), 'serialization_error'),
+            ('return {[1]=1,[3]=3}', Limits(), 'serialization_error'),
+            ('return {x=1,[1]=2}', Limits(), 'completed'),
+            ('return 0/0', Limits(), 'serialization_error'),
+            ('return function() end', Limits(), 'serialization_error')):
             r, _, _ = await self.run_lua(source, limits=limits)
             self.assertEqual(expected, r['status'], source[:40])
 
@@ -487,17 +468,41 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
                 r['data']['huge'] = 'a' * 270_000
             return r
         game.command = command
-        r, _, _ = await self.run_lua("api('inspect_inventory'); api('use_item')", game)
+        r, _, _ = await self.run_lua("api('inspect_inventory',{mode='selected'}); api('use_item')", game)
         self.assertEqual('result_limit', r['status'])
         self.assertEqual('idle', r['actionState'])
         self.assertFalse(any(c == 'start_atomic' for c, _ in game.sent))
 
+    async def test_pure_computation_lists_and_local_state(self):
+        r, _, _ = await self.run_lua("""
+            local candidates={{id='far',x=9,y=12},{id='near',x=3,y=4}}
+            for _,t in ipairs(candidates) do t.distance=math.sqrt(t.x^2+t.y^2) end
+            table.sort(candidates,function(a,b) return a.distance < b.distance end)
+            local visited={}; visited[candidates[1].id]=true
+            local names={}; table.insert(names,table.remove(candidates,1).id)
+            table.insert(names,candidates[1].id)
+            local packed=table.pack(table.unpack(names))
+            return {order=table.concat(names,','),visited=visited,n=packed.n,
+                numbers={math.abs(-3),math.min(4,2),math.max(4,2),math.ceil(1.2),math.floor(1.8)}}
+        """)
+        self.assertEqual('completed',r['status'],r)
+        self.assertEqual(dict(order='near,far',visited={'near':True},n=2,numbers=[3,2,4,2,1]),r['value'])
+
+    async def test_library_callbacks_cannot_escape_instruction_or_memory_budgets(self):
+        for source,limits,expected in (
+            ('table.sort({3,2,1},function(a,b) while true do end end)',Limits(instructions=1000),'instruction_limit'),
+            ('local t={}; for i=1,100000 do table.insert(t,{i,i}) end',Limits(memory=100000),'memory_limit'),
+            ('local t={}; for i=1,100 do table.insert(t,0) end; return table.concat(t)',Limits(), 'completed')):
+            r,_,_=await self.run_lua(source,limits=limits)
+            self.assertEqual(expected,r['status'],r)
+
     async def test_permissions_and_text_only_loader(self):
         r, _, _ = await self.run_lua('''
             return {type(os),type(io),type(package),type(require),type(debug),type(python),
-                    type(load),type(dofile),type(pcall),type(coroutine),type(getmetatable)}
+                    type(load),type(dofile),type(pcall),type(coroutine),type(getmetatable),
+                    type(math.random),type(math.randomseed),type(table.__globals__),type(string.dump)}
         ''')
-        self.assertEqual(['nil'] * 11, r['value'])
+        self.assertEqual(['nil'] * 8 + ['function'] + ['nil'] * 6, r['value'])
         for source in ("return ('x').rep", 'return api.__globals__', '\x1bLua', 'not valid lua'):
             r, _, _ = await self.run_lua(source)
             self.assertEqual('script_error', r['status'])
@@ -506,7 +511,7 @@ class LuaTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             trace = tracing.Trace(Path(directory) / 'lua.jsonl', enabled=True)
             with patch.object(tracing, 'trace', trace):
-                r, game, runtime = await self.run_lua("x=12; return api('inspect_inventory')")
+                r, game, runtime = await self.run_lua("x=12; return api('inspect_inventory',{mode='selected'})")
                 second = await runtime.execute('return type(x)')
             records = [json.loads(line) for line in trace.path.read_text(encoding='utf-8').splitlines()]
         self.assertEqual('nil', second['value'])

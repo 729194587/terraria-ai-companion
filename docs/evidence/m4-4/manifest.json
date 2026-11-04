@@ -1,0 +1,258 @@
+{
+  "date": "2026-11-03",
+  "phase": "M4.4",
+  "baselineCommit": "39a988746e464a6b30e44688e9dfa1326373fc38",
+  "pr": 25,
+  "branch": "codex/g85-server-ai-perception",
+  "packageVersion": "0.1.79",
+  "packageSHA256": "1f7d4d30c831a0f1490ab0a1594e12e7ac70d28997e9a18f6377515226c1799d",
+  "baselineProbePackageSHA256": "15f1b4eca4ac63ea6590e880c6a46d8d6c1b47ff876a78ad852144b8879fc64f",
+  "engine": {
+    "version": "2026.8.3.0",
+    "sha256": "fcc6a9624b12191be4a15d714a3675440911feb8c1d374642ab1fd686f0da0a5",
+    "hooksSHA256": "595d26fb3bbe27548d030943b5ed2437f690d1c002129bad21fafeaeb8118f7a"
+  },
+  "worldSHA256": "9f4665e8c6989bc5a523349e1bd4a303895814152170ff6cf9ebc7e862a54482",
+  "worldSource": "../natural-navigation/raw-runs.zip :: world/source.wld",
+  "validation": {
+    "mobilityOfflineChecks": 56,
+    "navigationOnly": "passed; includes M4.1 187 / M4.2 111 / M4.3 23 / perception 44",
+    "verticalOnly": "passed",
+    "ipc": "passed; adapter 297 / task 64 / chat 30 plus protocols",
+    "pythonRecoveryTests": 8,
+    "pythonRecoverySeconds": 45.225,
+    "build": "0 errors / 0 warnings",
+    "native": "11 final-package scenes: 9 completed navigation goals, 2 expected profile refusals; all known end/input release",
+    "nativeControlledPredictionErrorMax": 0,
+    "profileChanges": "add/remove each one recovery and one new-version replan; no input emitted from mismatched old plan",
+    "fullSuite": "NOT RUN",
+    "graphicalHostAndPlay": "NOT RUN",
+    "realLLM": "NOT RUN",
+    "deployment": "isolated profiles only"
+  },
+  "sourceSHA256": {
+    "CompanionBridge/Motion/MobilityProfile.cs": "2525f0b9d4d2d80520883ef8108fb98c7ba1579746a157e13ec2aef8ef66c7f4",
+    "CompanionBridge/Motion/GameNavigation.cs": "b96e2c59594223ac632d917d06ebfb7b2e5740a5c6e91bfdb8848b6d0c6fa76e",
+    "CompanionBridge/Motion/LocalMotionController.cs": "d0a9a176c1ed82bb2c2372e97f73416b900c5fd0e5e3c93c1aa6cb8514495a20",
+    "CompanionBridge/Motion/NavigationTask.cs": "345a8992ca97d721cbd0c06a5439b5f52b10cd90ce3a73aa20d0e866a4291e37",
+    "CompanionBridge/Motion/NavigationBuffPolicy.cs": "59e8a21b6b785ac96e297b163615d29b7bb2c34551f124c5f1dda9dc350e1cf5",
+    "CompanionBridge/Motion/PhysicsSimulator.cs": "0dfe164b57a104ce825b535360c5c124f8f5c780a6b9e74b87c83f4a0fddbb90",
+    "CompanionBridge/Motion/SafeGroundWalk.cs": "3601d64710dd09a8fdaad180c5593f26835c34dc886cfc871fa6426ed69fdc03",
+    "CompanionBridge/Motion/NativeMotionWorld.cs": "22f6aaab30169553447cc1d9c5a2f135eba448bfaa3f8783b74bb2aa27022ebc",
+    "CompanionBridge/Motion/MotionSupport.cs": "fd721abaedd3fe5bbf0ada0573963a4e6706efb5ce5bdb57bdb9d85f426f0127",
+    "CompanionBridge/ServerIpc/ServerAiTerrainFixture.cs": "3ad28ec7482a401c65bb06bcac3db12346c88d7bd2d690684e772100fb760c31",
+    "CompanionBridge/ServerPlayerRuntime/EngineHooks.cs": "9540e63beaf1727fec8daa5814e4eb592409ba016b3a3dec401fa377c15ae1f7",
+    "CompanionBridge/build.txt": "803118df79a359c3dda164cbae92c4a340eea4115d75220a57317176e540ed0f",
+    "tests/MobilityProfileTests.cs": "0e7604c02eebc22a36b642084199a8c0f84f12d54eee35d0413dd497868a7eab",
+    "tests/MotionOfflineTests.cs": "14cf36cdb5994098da3f7f5e80c57feccca3d18fff2b203e10581d9bdab686f0",
+    "tests/run_csharp_tests.ps1": "37fdae06869bb0ce1e9f7413af14deab4e27df921761531be99dbb52d623002c",
+    "tests/native_mobility.py": "c3598cde4c3fff957ed34bc674c376c1301b6ea4457f95200df4e107f63caaae",
+    "tests/verify_navigation_recovery_native.ps1": "a1d61b909ada088f0293ba3b1f956fa8fe12b28e81611a96d2c43ce9bc9d6beb",
+    "python/navigation_recovery.py": "6b3f5ff3be5f9c33b8af9d5780493d130e1b893067fc73b6294c715a405060fa"
+  },
+  "hashConvention": "workspace bytes before Git newline normalization",
+  "archive": {
+    "path": "raw-runs.zip",
+    "bytes": 210720,
+    "sha256": "d8567a546a728946d187664e19ec6d8e7d17a14af8fa76034e2735b5b8cff343",
+    "entries": {
+      "baseline-probe/action-fixture.json": {
+        "bytes": 187,
+        "sha256": "ffde819fbfc9c51cc07bddd4b471d0abd846ebfbbe62ee3f6781edf2f0de1585"
+      },
+      "baseline-probe/manifest.json": {
+        "bytes": 440,
+        "sha256": "a2d70de00a10fa928088e38979c1c172366d4a6c3694b30e753c1f6c8f01ac8a"
+      },
+      "baseline-probe/mobility-basic-receipt.json": {
+        "bytes": 11189,
+        "sha256": "0dba6ef94fcadd71c8b1efa8319194628baaf762f9589bc97348e3ecd4db7d36"
+      },
+      "baseline-probe/mobility-results.json": {
+        "bytes": 57542,
+        "sha256": "c020d1e619123a4c734708dfde27105e7d8a50051ba026dac107d76904e21d83"
+      },
+      "baseline-probe/mobility-swiftness-receipt.json": {
+        "bytes": 10140,
+        "sha256": "99952b1ae66d4837562bca852cf2b45c10e989d2fdf9dbbd553d8fa1fe387dc5"
+      },
+      "baseline-probe/stderr.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "baseline-probe/stdout.log": {
+        "bytes": 4195,
+        "sha256": "c4f77a3ce7b81fbcf612f2b2552f0c62c1205c380d60fa3d074604e45c05e164"
+      },
+      "baseline-probe/terrain-motion-flat-1-mobility-basic.json": {
+        "bytes": 378581,
+        "sha256": "1a856fb6bb4e1818c2a526f95e605e69c5889c071377eab5e9ed3ea4e95d48be"
+      },
+      "baseline-probe/terrain-motion-flat-1-mobility-swiftness.json": {
+        "bytes": 3222,
+        "sha256": "697907cf1d905539da4911b5f6ac30e8585af2bbd29f4525be67bb6374838e6e"
+      },
+      "baseline-probe/terrain-ready.json": {
+        "bytes": 175,
+        "sha256": "de30d8ff735496a61b412a1f4c383a52a89416fbbc2ffba13446d0e2ad9890cb"
+      },
+      "final/action-fixture.json": {
+        "bytes": 187,
+        "sha256": "ffde819fbfc9c51cc07bddd4b471d0abd846ebfbbe62ee3f6781edf2f0de1585"
+      },
+      "final/manifest.json": {
+        "bytes": 440,
+        "sha256": "96586904fdd7a1b2fea7e79ffa079d6a95ca8036f15e1b0c15380d7ee2a938fc"
+      },
+      "final/mobility-add-receipt.json": {
+        "bytes": 13441,
+        "sha256": "bef4053f88c7aee64e4bbbbb87d7c63873b71fbeb468175553698aaa4bf8dffa"
+      },
+      "final/mobility-basic-receipt.json": {
+        "bytes": 12883,
+        "sha256": "1fa8956169755f4ee0d73b2a918569ff52c21574d256954d2d4bb754d4749acc"
+      },
+      "final/mobility-basic_jump-receipt.json": {
+        "bytes": 12866,
+        "sha256": "7cb87e49c23c2b469893bd36827efd578e5e6213c58ac7f5d7463e9d04a057c0"
+      },
+      "final/mobility-basic_region-receipt.json": {
+        "bytes": 14019,
+        "sha256": "ac2d597e8b29042e81d75cc7490875691581838dbe954123646cf6f5731bb0fe"
+      },
+      "final/mobility-equipment-receipt.json": {
+        "bytes": 13155,
+        "sha256": "ea4dc90df8a6830362c788486b71d7b73b01e4afbef7b0580ae333f0dc9be612"
+      },
+      "final/mobility-remove-receipt.json": {
+        "bytes": 13429,
+        "sha256": "4a4fa7fdb704b57ab178c06aeb1c49a3f86f164792aeedc94f8be06ddc8a772c"
+      },
+      "final/mobility-results.json": {
+        "bytes": 444882,
+        "sha256": "2a021630017a1fba2fe26d6688085daab59f3f4ad7dc43a60aa00f3ba0bdfeec"
+      },
+      "final/mobility-swiftness-receipt.json": {
+        "bytes": 12913,
+        "sha256": "9f87492d9a13e30ca7efc6d947bd290e9df9919048e48db6740b9f780e91bd51"
+      },
+      "final/mobility-swiftness_jump-receipt.json": {
+        "bytes": 12929,
+        "sha256": "97a367822e3717b27b49f5b2c947d76587139d010f86d648f1fe4701f22ef275"
+      },
+      "final/mobility-swiftness_region-receipt.json": {
+        "bytes": 14182,
+        "sha256": "059a60b51044564de849fc485fa8595fdc214ae9ce04dcea924b146a35352d50"
+      },
+      "final/mobility-swiftness_region_left-receipt.json": {
+        "bytes": 14184,
+        "sha256": "8cb6daee4ccda71cedb5ea672470d018e2785f6a0d7684bab7d9f46a9fdbdb53"
+      },
+      "final/mobility-unknown-receipt.json": {
+        "bytes": 13498,
+        "sha256": "5f4d3527b7955331a4a61a344c06db43526e26e4435c7dc89596e17af1f6070c"
+      },
+      "final/stderr.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "final/stdout.log": {
+        "bytes": 4353,
+        "sha256": "ea3ac9547ab936513f1a967e7645ffe695b8c557f409a347a4acdc49485dc283"
+      },
+      "final/terrain-motion-flat-1-mobility-add.json": {
+        "bytes": 444279,
+        "sha256": "389174d380b9dbc4c6da914462a06a1013a8da90e28a3add169a96006ee49e24"
+      },
+      "final/terrain-motion-flat-1-mobility-basic.json": {
+        "bytes": 446034,
+        "sha256": "de54c2f4026867f24002ce5ad32d511a96d01223d9e5134e4d66c207a12e8c0b"
+      },
+      "final/terrain-motion-flat-1-mobility-equipment.json": {
+        "bytes": 3485,
+        "sha256": "a806ffd26aead84492ea2bf246c7de4aabe21a65ed45e1f901eb42d9e9d580bc"
+      },
+      "final/terrain-motion-flat-1-mobility-remove.json": {
+        "bytes": 529182,
+        "sha256": "a6910933e70e9073449461c266c5823c1ad2dc0e2c3acd98e13de1b1d6af639d"
+      },
+      "final/terrain-motion-flat-1-mobility-swiftness.json": {
+        "bytes": 373923,
+        "sha256": "7ba4745ae27a019d6bf44cac74d5646ebda332146d04c48bc962e047c1ccd248"
+      },
+      "final/terrain-motion-flat-1-mobility-unknown.json": {
+        "bytes": 3659,
+        "sha256": "6aa45215ad64e74f95e39227ac64cc337abfa81b80c265f23d03be0e2e903e82"
+      },
+      "final/terrain-motion-low_obstacle-1-mobility-basic.json": {
+        "bytes": 508815,
+        "sha256": "cccc0ba5abdf3bf6a994edfc8a566cedbc5ffa8d2bf69d84668407be8c1df01c"
+      },
+      "final/terrain-motion-low_obstacle-1-mobility-swiftness.json": {
+        "bytes": 445522,
+        "sha256": "f3edb5c1c9ecc8c9dceb76eebb9c145215cdfc2ab01d77c35e0277961270f668"
+      },
+      "final/terrain-motion-solid_up_three--1-mobility-swiftness.json": {
+        "bytes": 168099,
+        "sha256": "8df0bd6c404922c473b6b7e1f01613573cf54f251df6ff5b262af25815ea2d57"
+      },
+      "final/terrain-motion-solid_up_three-1-mobility-basic.json": {
+        "bytes": 202611,
+        "sha256": "c4eb8ab64ad1a971ea48736b70668550335ab77970e9915339ab77ebdcdcfdc8"
+      },
+      "final/terrain-motion-solid_up_three-1-mobility-swiftness.json": {
+        "bytes": 167875,
+        "sha256": "544a0b363faafd4ec91d2e9f7fe385199b4b517c4d6469212505da1581359683"
+      },
+      "final/terrain-ready.json": {
+        "bytes": 175,
+        "sha256": "de08a3629a2c6c4d5b79d914b0438e4aa236d400e3a469e8007bc3de7bd1dc32"
+      },
+      "offline/navigation-final.txt": {
+        "bytes": 4998,
+        "sha256": "59e0e166b145fece4071f5ae1f001461b4dca43a4ba52fe9b1dbc2957c2de6a3"
+      },
+      "offline/vertical.txt": {
+        "bytes": 8674,
+        "sha256": "2afff102c52aa6a142321d8ec80e4c3a8a83a495066c3834d25b1814595943ef"
+      },
+      "offline/ipc.txt": {
+        "bytes": 38720,
+        "sha256": "40787ebdfefe58e7d1d61ba96b652ffa2b820a014080360270272fc4bd274794"
+      },
+      "offline/python.txt": {
+        "bytes": 31373,
+        "sha256": "b9d59e4692279e9f4460ef9dbccfe4e20bbebf7105329926ee2a1f391b37b2cb"
+      },
+      "offline/build-final.txt": {
+        "bytes": 174,
+        "sha256": "17534c8e6f2fd2460c361b44be13b0a98bc3c21f93afa0ad19baba3794e7dd6c"
+      },
+      "runtime-inputs/python/lua_runtime.py": {
+        "bytes": 34602,
+        "sha256": "bc4daf7fbbc4d3936bf824a8047aa9e6e7c6b9c9d8c7e6663afb6dc8470099ca"
+      },
+      "runtime-inputs/python/lua_worker.py": {
+        "bytes": 13235,
+        "sha256": "3fa54fac44038b4e882678068e2abc7a4dd0b6b88d801359a78880655665bc57"
+      },
+      "runtime-inputs/python/lua_agent.py": {
+        "bytes": 18688,
+        "sha256": "13e43a88d5cce77720549d5d56e43d10fb57929aa427804a15154a2d48c60f76"
+      },
+      "runtime-inputs/python/agent_diagnostics.py": {
+        "bytes": 8973,
+        "sha256": "38ed8b1d26fe14506245a258aea268f8f3cb125a916e24db138a8d0e0906d260"
+      }
+    }
+  },
+  "summarySHA256": "d5524be405b249ba0e0528b917b4f9d4a90e5df4d9a071b1e5e1ed5ad01a572c",
+  "limitations": [
+    "Only Basic and vanilla Swiftness numerical ground-walk/jump profiles; no equipment, wings, extra jump, mount, dash or arbitrary Mod support.",
+    "Client navigation now conservatively rejects additional loaded mods; server isolation was already strict.",
+    "Special motion/airborne buff changes and arbitrary combinations are not newly native-validated.",
+    "Baseline probe raw report included a stale non-injected diagnostic sample; derived summary uses only matching actual injected-input samples; raw bytes retained.",
+    "Earlier candidate profiles 6a55bec57b1f4821a16539533f5f61de and d9f3f567b7bf409ab5710c83bcbc64cc retained in .local, not final-package evidence.",
+    "No M4.5 map expansion or new M2 API; existing dirty Python driver inputs archived, not committed as source changes."
+  ]
+}

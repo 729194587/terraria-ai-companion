@@ -1,0 +1,18 @@
+{
+  "fixture": "actual ServerSceneReader; deterministic 45x29 engine stubs; normalized sceneId/elapsedMilliseconds only",
+  "fullBytes": 17071,
+  "sizes": {
+    "all_default": 17071,
+    "map": 3155,
+    "geometry": 2858,
+    "objects": 5485,
+    "hazards": 2849,
+    "landingRegions": 1528,
+    "placementCandidates": 2748,
+    "objectPlacementCandidates": 5804,
+    "geometry\u002BlandingRegions\u002Bhazards": 4783,
+    "objects\u002Bmap": 7414,
+    "placementCandidates\u002BobjectPlacementCandidates": 7326,
+    "map\u002Bgeometry\u002Bobjects\u002Bhazards\u002BlandingRegions\u002BplacementCandidates\u002BobjectPlacementCandidates": 17071
+  }
+}

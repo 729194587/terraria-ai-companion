@@ -1,0 +1,120 @@
+{
+ "status": "completed",
+ "actions": 3,
+ "actionState": "released",
+ "lastAction": {
+  "valid": true,
+  "status": "failed",
+  "reason": "OutOfRange: Native item reach check refused the fixed target; no movement is attempted.",
+  "operation": "mine_tile",
+  "actionId": "b927c91b3c4147adb5ecc41cd4ae3c70",
+  "session": "61ef42cf9f7f48d38256d75894de81fc",
+  "actionGeneration": 1,
+  "targetRegion": null,
+  "evidence": {
+   "nativeActionId": "5097db3a-e1a6-4933-a2a7-ba3df590bc18",
+   "X": 2103,
+   "Y": 210,
+   "TileType": 5,
+   "ExpectedType": 5,
+   "Ticks": 0,
+   "Swings": 0,
+   "Strikes": 0,
+   "PeakDamage": 0,
+   "Transforms": 0,
+   "toolKind": "axe",
+   "pick": 0,
+   "axe": 7,
+   "nativeDestroyed": false,
+   "targetAbsent": false,
+   "targetChanged": false,
+   "destroyedByActor": false,
+   "effectStatus": "not_started"
+  },
+  "endEvidence": {
+   "phase": "ServerAI_game_thread_inputs_released",
+   "gameUpdate": 3668,
+   "worldSessionId": "d8808dd7e3614537ab21c9c35b759ed1",
+   "actorId": "5a276430b11d4cd790b531a482e6dc84",
+   "actorGeneration": 1,
+   "actorSlot": 254,
+   "inputsAcquired": false,
+   "inputsReleased": true,
+   "effectVerified": false,
+   "operation": "mine_tile",
+   "observationSequence": 3670
+  },
+  "endEvidenceStatus": "known",
+  "controlGeneration": 1,
+  "completed": false,
+  "cancelled": false
+ },
+ "logs": [],
+ "value": {
+  "items": [
+   {
+    "stack": 1,
+    "slot": 0,
+    "key": "Terraria/CopperShortsword"
+   },
+   {
+    "stack": 1,
+    "slot": 1,
+    "key": "Terraria/CopperPickaxe"
+   },
+   {
+    "stack": 1,
+    "slot": 2,
+    "key": "Terraria/CopperAxe"
+   }
+  ],
+  "mine": {
+   "reason": "OutOfRange: Native item reach check refused the fixed target; no movement is attempted.",
+   "completed": false,
+   "valid": true,
+   "evidence": {
+    "X": 2103,
+    "Y": 210,
+    "axe": 7,
+    "TileType": 5,
+    "nativeActionId": "5097db3a-e1a6-4933-a2a7-ba3df590bc18",
+    "Swings": 0,
+    "Transforms": 0,
+    "targetChanged": false,
+    "Strikes": 0,
+    "Ticks": 0,
+    "effectStatus": "not_started",
+    "nativeDestroyed": false,
+    "destroyedByActor": false,
+    "ExpectedType": 5,
+    "PeakDamage": 0,
+    "toolKind": "axe",
+    "pick": 0,
+    "targetAbsent": false
+   },
+   "status": "failed",
+   "endEvidenceStatus": "known"
+  },
+  "use": {
+   "reason": "previous_action_failed",
+   "valid": false,
+   "status": "blocked"
+  },
+  "selected": {
+   "completed": true,
+   "reason": "native_selection_verified_next_pump"
+  },
+  "cellNow": {
+   "content": "Terraria/Trees",
+   "hasTile": true
+  },
+  "nav": {
+   "reason": "native_navigation_arrival_verified",
+   "completed": true,
+   "evidence": {
+    "x": 33570.246,
+    "targetX": 33560
+   }
+  }
+ }
+}

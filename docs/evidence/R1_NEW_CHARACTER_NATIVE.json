@@ -1,0 +1,38 @@
+{
+  "packageVersion": "0.1.50",
+  "packageSha256": "1C95813C096ECEBA3B38020E421C87E763E550C1A9778F24BAB6A8088FD4CDEC",
+  "engine": "Terraria 1.4.4.9 / tModLoader 2026.8.3.0",
+  "profile": ".local/character-native-validation-2a2bca4930714b6797dcd14d7f9c41c1",
+  "process1": {
+    "result": "native-persistence-selftest-passed",
+    "id": "4367046e9b4d4a0e9a593051ace537c9",
+    "roundTrips": 2,
+    "restoredFromPriorProcess": false,
+    "corruptLoadRejected": true,
+    "starterInventory": true,
+    "repeatedSpawnPreserved": true,
+    "nativeStarterRespawn": true,
+    "saveFailureRetained": true,
+    "exitRequests": 0,
+    "hostAndPlay": "not executed",
+    "remoteMultiplayer": "not executed"
+  },
+  "process2": {
+    "result": "native-persistence-selftest-passed",
+    "id": "4367046e9b4d4a0e9a593051ace537c9",
+    "roundTrips": 2,
+    "restoredFromPriorProcess": true,
+    "corruptLoadRejected": true,
+    "starterInventory": true,
+    "repeatedSpawnPreserved": true,
+    "nativeStarterRespawn": false,
+    "saveFailureRetained": true,
+    "exitRequests": 0,
+    "hostAndPlay": "not executed",
+    "remoteMultiplayer": "not executed"
+  },
+  "ipcAndPackageTests": "passed; 46 package IL checks",
+  "fullSuite": "not run",
+  "hostAndPlay": "not executed",
+  "remoteMultiplayer": "not executed"
+}

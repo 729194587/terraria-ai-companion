@@ -1,0 +1,577 @@
+{
+  "result": "passed",
+  "scope": "Real isolated dedicated server with explicit diagnostic whole Main.Update frames. NOT graphical Host & Play or remote multiplayer.",
+  "sourceProfile": ".local/companion-g82-native-470cbfc928bb41ac81aff6b6e4bd25a4",
+  "processId": 18832,
+  "startedUtc": "2026-10-27T03:08:51.3190579Z",
+  "exitedUtc": "2026-10-27T03:09:23.7773563Z",
+  "exitCode": 0,
+  "packageVersion": "0.1.44",
+  "packageSHA256": "071EDEAA49F35FDF88EEFB7649C2F0B77F7BB97328AAF9203F948A2C75A00E26",
+  "engine": "Terraria 1.4.4.9 / tML 2026.8.3.0",
+  "frameMode": "Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.",
+  "binding": {
+    "actor": "7471933065274c85a7cc53e141d6f8a4",
+    "world": "851d7f28042a4e5687c4b0060de80232",
+    "generation": 1,
+    "slot": 254
+  },
+  "fixture": {
+    "targetX": 33680,
+    "mineX": 2109,
+    "mineY": 217,
+    "initialLife": 80,
+    "initialAppleStack": 2,
+    "mode": "isolated copied world; diagnostic native Main.Update frames; no clients"
+  },
+  "lua": {
+    "status": "completed",
+    "calls": 9,
+    "actions": 7,
+    "actionState": "released",
+    "before": {
+      "binding": {
+        "actor": "7471933065274c85a7cc53e141d6f8a4",
+        "slot": 254,
+        "generation": 1,
+        "world": "851d7f28042a4e5687c4b0060de80232"
+      },
+      "position": {
+        "x": 33617.195,
+        "y": 3462
+      },
+      "life": 80
+    },
+    "after": {
+      "binding": {
+        "actor": "7471933065274c85a7cc53e141d6f8a4",
+        "slot": 254,
+        "generation": 1,
+        "world": "851d7f28042a4e5687c4b0060de80232"
+      },
+      "position": {
+        "x": 33689.785,
+        "y": 3462
+      },
+      "life": 81
+    },
+    "receipts": [
+      {
+        "arrived": true,
+        "endEvidence": {
+          "actorId": "7471933065274c85a7cc53e141d6f8a4",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "observationSequence": 1235,
+          "effectVerified": true,
+          "actorGeneration": 1,
+          "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+          "operation": "navigate_to_x",
+          "inputsAcquired": true,
+          "gameUpdate": 616,
+          "actorSlot": 254,
+          "inputsReleased": true
+        },
+        "actionId": "beae82059baa4847959eb8cea392c0a5",
+        "effectStatus": "native_navigation_observed",
+        "y": 3462,
+        "operation": "navigate_to_x",
+        "status": "completed",
+        "x": 33689.785
+      },
+      {
+        "endEvidence": {
+          "actorId": "7471933065274c85a7cc53e141d6f8a4",
+          "phase": "ServerAI_game_thread_no_input",
+          "observationSequence": 1241,
+          "selectedHotbarKey": 1,
+          "actorGeneration": 1,
+          "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+          "selectionVerified": true,
+          "inputsAcquired": false,
+          "gameUpdate": 619,
+          "actorSlot": 254,
+          "selectedSlot": 0
+        },
+        "actionId": "cafd79ffb706483c8f89ded3108babc2",
+        "operation": "select_hotbar_slot",
+        "status": "completed"
+      },
+      {
+        "endEvidence": {
+          "actorId": "7471933065274c85a7cc53e141d6f8a4",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "observationSequence": 1297,
+          "effectVerified": true,
+          "actorGeneration": 1,
+          "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+          "operation": "use_item",
+          "inputsAcquired": true,
+          "gameUpdate": 647,
+          "actorSlot": 254,
+          "inputsReleased": true
+        },
+        "actionId": "09a2d148e95b4eca89439c078db46d18",
+        "cycleVerified": true,
+        "consumptionObserved": false,
+        "animationPeak": 20,
+        "effectStatus": "unconfirmed",
+        "operation": "use_item",
+        "status": "completed",
+        "starts": 1
+      },
+      {
+        "endEvidence": {
+          "actorId": "7471933065274c85a7cc53e141d6f8a4",
+          "phase": "ServerAI_game_thread_no_input",
+          "observationSequence": 1315,
+          "selectedHotbarKey": 3,
+          "actorGeneration": 1,
+          "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+          "selectionVerified": true,
+          "inputsAcquired": false,
+          "gameUpdate": 656,
+          "actorSlot": 254,
+          "selectedSlot": 2
+        },
+        "actionId": "ea9eba60f62f4ff6946a26cfcbc8a3c2",
+        "operation": "select_hotbar_slot",
+        "status": "completed"
+      },
+      {
+        "endEvidence": {
+          "actorId": "7471933065274c85a7cc53e141d6f8a4",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "observationSequence": 1365,
+          "effectVerified": true,
+          "actorGeneration": 1,
+          "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+          "operation": "use_item",
+          "inputsAcquired": true,
+          "gameUpdate": 681,
+          "actorSlot": 254,
+          "inputsReleased": true
+        },
+        "actionId": "a0d2d894adf940cfbc99e13d410395aa",
+        "cycleVerified": true,
+        "consumptionObserved": true,
+        "animationPeak": 17,
+        "effectStatus": "unconfirmed",
+        "operation": "use_item",
+        "status": "completed",
+        "starts": 1
+      },
+      {
+        "endEvidence": {
+          "actorId": "7471933065274c85a7cc53e141d6f8a4",
+          "phase": "ServerAI_game_thread_no_input",
+          "observationSequence": 1373,
+          "selectedHotbarKey": 2,
+          "actorGeneration": 1,
+          "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+          "selectionVerified": true,
+          "inputsAcquired": false,
+          "gameUpdate": 685,
+          "actorSlot": 254,
+          "selectedSlot": 1
+        },
+        "actionId": "334c6d64da594f29bfcaa359d4c2e091",
+        "operation": "select_hotbar_slot",
+        "status": "completed"
+      },
+      {
+        "endEvidence": {
+          "actorId": "7471933065274c85a7cc53e141d6f8a4",
+          "phase": "ServerAI_game_thread_inputs_released",
+          "observationSequence": 1471,
+          "effectVerified": true,
+          "actorGeneration": 1,
+          "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+          "operation": "mine_tile",
+          "inputsAcquired": true,
+          "gameUpdate": 734,
+          "actorSlot": 254,
+          "inputsReleased": true
+        },
+        "targetAbsent": true,
+        "actionId": "9f4c21c94bfb4be080e0be11b6e1a3e9",
+        "effectStatus": "native_tile_destroyed",
+        "peakDamage": 105,
+        "destroyedByActor": true,
+        "operation": "mine_tile",
+        "status": "completed",
+        "strikes": 3
+      }
+    ],
+    "lastAction": {
+      "valid": true,
+      "status": "completed",
+      "reason": "None: ",
+      "operation": "mine_tile",
+      "actionId": "9f4c21c94bfb4be080e0be11b6e1a3e9",
+      "session": "f6c351d174804431b3e000a0ce8edf74",
+      "actionGeneration": 1,
+      "targetRegion": null,
+      "evidence": {
+        "nativeActionId": "4d3281fc-df6a-4f48-8032-40c3bcf37391",
+        "X": 2109,
+        "Y": 217,
+        "TileType": 1,
+        "ExpectedType": 1,
+        "Ticks": 43,
+        "Swings": 2,
+        "Strikes": 3,
+        "PeakDamage": 105,
+        "Transforms": 0,
+        "nativeDestroyed": true,
+        "targetAbsent": true,
+        "targetChanged": false,
+        "destroyedByActor": true,
+        "effectStatus": "native_tile_destroyed"
+      },
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_inputs_released",
+        "gameUpdate": 734,
+        "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+        "actorId": "7471933065274c85a7cc53e141d6f8a4",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "effectVerified": true,
+        "operation": "mine_tile",
+        "observationSequence": 1471
+      },
+      "endEvidenceStatus": "known",
+      "controlGeneration": 1,
+      "completed": true,
+      "cancelled": false
+    }
+  },
+  "worldAfterLua": {
+    "gameUpdate": 741,
+    "targetAbsent": true,
+    "neighborPresent": true,
+    "cancellationTargetPresent": true,
+    "statLife": 81,
+    "appleStack": 1,
+    "pickStack": 1,
+    "x": 33689.785,
+    "y": 3462,
+    "drops": [
+      {
+        "type": 3,
+        "stack": 1,
+        "x": 33738.55,
+        "y": 3475.7476
+      }
+    ],
+    "observedDrop": {
+      "gameUpdate": 721,
+      "items": [
+        {
+          "type": 3,
+          "stack": 1,
+          "x": 33747.805,
+          "y": 3472.01
+        }
+      ],
+      "nativeActionId": "4d3281fc-df6a-4f48-8032-40c3bcf37391"
+    },
+    "stoneInInventory": 0,
+    "controlsReleased": true,
+    "networkFull": 12,
+    "networkControls": 123
+  },
+  "nativeCancellations": {
+    "navigation": {
+      "actionId": "1c886df1322c49578deef4cad2a462f4",
+      "operation": "navigate_to_x",
+      "session": "cd5881d4b3bf468fb1524fcb8a6a9f2c",
+      "generation": 1,
+      "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+      "actorId": "7471933065274c85a7cc53e141d6f8a4",
+      "actorSlot": 254,
+      "durationMs": 30000,
+      "status": "cancelled",
+      "executionState": "terminal",
+      "reason": "explicit_cancel",
+      "evidence": {
+        "targetX": 33712,
+        "startX": 33616,
+        "x": 33617.195,
+        "y": 3462,
+        "vx": 0,
+        "vy": 0,
+        "updates": 5,
+        "navigation": {
+          "Session": 1,
+          "Status": "running",
+          "Action": "walk",
+          "Reason": "safe walk prefix; braking tail validated",
+          "Frame": 5,
+          "HoldFrames": 0,
+          "PredictedLanding": {
+            "X": 33640,
+            "Y": 3462
+          },
+          "ActualLanding": null,
+          "MaxError": 0,
+          "ExpectedPosition": {
+            "X": 33617.195,
+            "Y": 3462
+          },
+          "ObservedPosition": {
+            "X": 33617.195,
+            "Y": 3462
+          },
+          "ExpectedVelocity": {
+            "X": 0.39999998,
+            "Y": 0
+          },
+          "ObservedVelocity": {
+            "X": 0.39999998,
+            "Y": 0
+          },
+          "Generation": 1,
+          "TargetX": 33712,
+          "CompletedActions": 0,
+          "CompletedJumps": 0,
+          "Expansions": 4,
+          "PlannedActions": 3,
+          "PlanMilliseconds": 13.1711,
+          "LastLanding": null,
+          "ReachedGoal": true,
+          "TimeBudgetReached": false,
+          "PlanNumber": 1,
+          "TargetRegion": null
+        },
+        "arrived": false,
+        "effectStatus": "native_navigation_observed"
+      },
+      "endEvidenceStatus": "known",
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_inputs_released",
+        "gameUpdate": 471,
+        "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+        "actorId": "7471933065274c85a7cc53e141d6f8a4",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "effectVerified": false,
+        "operation": "navigate_to_x",
+        "observationSequence": 944
+      }
+    },
+    "use": {
+      "actionId": "5730b92442574535b13f5cfdd53932a4",
+      "operation": "use_item",
+      "session": "cd5881d4b3bf468fb1524fcb8a6a9f2c",
+      "generation": 1,
+      "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+      "actorId": "7471933065274c85a7cc53e141d6f8a4",
+      "actorSlot": 254,
+      "durationMs": 3000,
+      "status": "cancelled",
+      "executionState": "terminal",
+      "reason": "explicit_cancel",
+      "evidence": {
+        "itemType": 3509,
+        "Ticks": 3,
+        "Starts": 1,
+        "AnimationPeak": 20,
+        "TimePeak": 0,
+        "ToolPeak": 0,
+        "UsesPeak": 0,
+        "InitialStack": 1,
+        "stack": 1,
+        "consumptionObserved": false,
+        "cycleVerified": false,
+        "effectStatus": "unconfirmed"
+      },
+      "endEvidenceStatus": "known",
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_inputs_released",
+        "gameUpdate": 752,
+        "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+        "actorId": "7471933065274c85a7cc53e141d6f8a4",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "effectVerified": false,
+        "operation": "use_item",
+        "observationSequence": 1506
+      }
+    },
+    "mining": {
+      "actionId": "99b94db93d404e94969ad0ce31298a00",
+      "operation": "mine_tile",
+      "session": "cd5881d4b3bf468fb1524fcb8a6a9f2c",
+      "generation": 1,
+      "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+      "actorId": "7471933065274c85a7cc53e141d6f8a4",
+      "actorSlot": 254,
+      "durationMs": 10000,
+      "status": "cancelled",
+      "executionState": "terminal",
+      "reason": "explicit_cancel",
+      "evidence": {
+        "nativeActionId": "01e03bff-13b0-4d70-b739-501e4210208d",
+        "X": 2109,
+        "Y": 216,
+        "TileType": 1,
+        "ExpectedType": 1,
+        "Ticks": 3,
+        "Swings": 1,
+        "Strikes": 1,
+        "PeakDamage": 35,
+        "Transforms": 0,
+        "nativeDestroyed": false,
+        "targetAbsent": false,
+        "targetChanged": false,
+        "destroyedByActor": false,
+        "effectStatus": "not_confirmed"
+      },
+      "endEvidenceStatus": "known",
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_inputs_released",
+        "gameUpdate": 758,
+        "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+        "actorId": "7471933065274c85a7cc53e141d6f8a4",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "effectVerified": false,
+        "operation": "mine_tile",
+        "observationSequence": 1518
+      }
+    }
+  },
+  "worldAfterCancel": {
+    "gameUpdate": 760,
+    "targetAbsent": true,
+    "neighborPresent": true,
+    "cancellationTargetPresent": true,
+    "statLife": 81,
+    "appleStack": 1,
+    "pickStack": 1,
+    "x": 33689.785,
+    "y": 3462,
+    "drops": [],
+    "observedDrop": {
+      "gameUpdate": 721,
+      "items": [
+        {
+          "type": 3,
+          "stack": 1,
+          "x": 33747.805,
+          "y": 3472.01
+        }
+      ],
+      "nativeActionId": "4d3281fc-df6a-4f48-8032-40c3bcf37391"
+    },
+    "stoneInInventory": 1,
+    "controlsReleased": true,
+    "networkFull": 14,
+    "networkControls": 126
+  },
+  "emptyTileRefusal": {
+    "actionId": "bef95cf9d362496797d811558174086a",
+    "operation": "mine_tile",
+    "session": "cd5881d4b3bf468fb1524fcb8a6a9f2c",
+    "generation": 1,
+    "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+    "actorId": "7471933065274c85a7cc53e141d6f8a4",
+    "actorSlot": 254,
+    "durationMs": 10000,
+    "status": "failed",
+    "executionState": "terminal",
+    "reason": "InvalidTarget: Target must be an occupied in-world tile.",
+    "evidence": {
+      "nativeActionId": "e9edb846-0844-4ae4-a4c1-8adcb7a869ac",
+      "X": 2109,
+      "Y": 217,
+      "TileType": 0,
+      "ExpectedType": 0,
+      "Ticks": 0,
+      "Swings": 0,
+      "Strikes": 0,
+      "PeakDamage": 0,
+      "Transforms": 0,
+      "nativeDestroyed": false,
+      "targetAbsent": false,
+      "targetChanged": false,
+      "destroyedByActor": false,
+      "effectStatus": "not_confirmed"
+    },
+    "endEvidenceStatus": "known",
+    "endEvidence": {
+      "phase": "ServerAI_game_thread_inputs_released",
+      "gameUpdate": 767,
+      "worldSessionId": "851d7f28042a4e5687c4b0060de80232",
+      "actorId": "7471933065274c85a7cc53e141d6f8a4",
+      "actorGeneration": 1,
+      "actorSlot": 254,
+      "inputsAcquired": false,
+      "inputsReleased": true,
+      "effectVerified": false,
+      "operation": "mine_tile",
+      "observationSequence": 1537
+    }
+  },
+  "teardown": {
+    "probe": "VirtualPlayerEngineProbe",
+    "eventName": "teardown",
+    "utc": "2026-10-27T03:09:23.7642018Z",
+    "WorldSession": "851d7f28042a4e5687c4b0060de80232",
+    "Phase": "released; fresh server process required to re-arm",
+    "thread": 4,
+    "process": 18832,
+    "role": "native-server",
+    "programMainThread": 4,
+    "programIsMainThread": true,
+    "worldSnapshot": true,
+    "gameUpdate": 770,
+    "ownerThread": 4,
+    "netMode": 2,
+    "dedServ": true,
+    "myPlayer": 255,
+    "reservation": {
+      "Slot": 254,
+      "Capacity": 255,
+      "Session": "ff652e76-ba0b-4e44-833d-839bb60522b0"
+    },
+    "actorSlot": -1,
+    "actor": null,
+    "humans": [],
+    "networkLoops": 8300,
+    "loopsSinceSpawn": 0,
+    "cleanupSkips": 8290,
+    "syncSkips": 0,
+    "sectionSkips": 770,
+    "accepts": 0,
+    "fullSnapshots": 14,
+    "controlPackets": 128,
+    "departures": 1,
+    "joinNotices": 1,
+    "leaveNotices": 1,
+    "noticeFailures": 0,
+    "fault": null,
+    "liveGateResult": "not automatically assessed",
+    "detail": {
+      "reason": "OnWorldUnload",
+      "same": true,
+      "occupied": false
+    }
+  },
+  "logScope": "process ID + bound world session + process lifetime",
+  "notValidated": [
+    "Graphical Host & Play actions and rendering",
+    "Remote multiplayer and late join",
+    "Persistent old connection across real generation/world lifecycle changes",
+    "Death/respawn during an action",
+    "Native obstacle jumps and terrain matrix"
+  ]
+}

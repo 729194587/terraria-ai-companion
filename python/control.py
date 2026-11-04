@@ -24,6 +24,10 @@ class BridgeError(Exception):
         self.status = status
 
 
+class NotAdmittedError(BridgeError):
+    """Positive, identity-checked proof that a start request created no action."""
+
+
 class Bridge:
     def __init__(self, port=18777, timeout=2.0, on_event=None):
         self.timeout = timeout
@@ -89,7 +93,8 @@ class Bridge:
                         raise BridgeError("Malformed chat event")
                     if event_id not in self._seen:
                         self._seen.add(event_id)
-                        if not frame["isSelf"] and self.on_event:
+                        local_ai = frame['isSelf'] and frame.get('source') == 'local_ai_command'
+                        if (not frame["isSelf"] or local_ai) and self.on_event:
                             # Callback must only dispatch, never perform inference here.
                             self.on_event(frame)
                     continue

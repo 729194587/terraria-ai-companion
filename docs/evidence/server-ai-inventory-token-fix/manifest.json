@@ -1,0 +1,164 @@
+{
+  "date": "2026-11-01",
+  "baseCommit": "305b9febec1e5d814ed329691dc32da20d890016",
+  "version": "0.1.71",
+  "package": {
+    "path": "D:\\Agent Project\\terraria-ai-companion\\.local\\inventory-token-fix-build\\Mods\\CompanionBridge.tmod",
+    "sha256": "242bba96417152d8981317e1b17c0f96fd3a28e9a99783af0282f8861e514fa8"
+  },
+  "profile": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-0b4369444e5348c0aaa9dac60a37a645",
+  "mode": "isolated copied world, real dedicated Terraria updates and native ModItem/GlobalItem hooks; no graphical or remote client, no model",
+  "results": {
+    "build": "0 errors, 0 warnings",
+    "pythonServerInventory": 6,
+    "pythonLocalInventory": 7,
+    "csharpIpc": 45,
+    "csharpAtomic": 40,
+    "csharpReads": 63,
+    "csharpNativeAdapter": 226,
+    "csharpChat": 30,
+    "csharpPackageIL": 80,
+    "nativeInventoryCases": 36,
+    "luaInventoryActions": 7,
+    "existingReadsSelectionNavigationUseMiningCancelAndTeardown": "passed",
+    "fullTestSuite": "NOT RUN"
+  },
+  "readOnlyChecks": {
+    "cases": [
+      "save_throw",
+      "save_mutate",
+      "global_save_throw",
+      "global_save_mutate"
+    ],
+    "queryModes": [
+      "selected",
+      "hotbar",
+      "slots",
+      "full",
+      "item",
+      "get_player_state"
+    ],
+    "modSaveDataCalls": 0,
+    "globalSaveDataCalls": 0,
+    "sourceFieldsAndCustomStateUnchanged": true
+  },
+  "exceptionChecks": {
+    "cases": [
+      "permission_throw",
+      "stack_throw",
+      "split_throw"
+    ],
+    "status": "unknown",
+    "fields": [
+      "typeId",
+      "stack",
+      "prefix",
+      "maxStack",
+      "favorited",
+      "present",
+      "instanceId",
+      "instanceChanged"
+    ],
+    "sourceInstanceReplacement": "OnStack fixture replaced source; after.instanceChanged=true; current fields matched",
+    "rollbackOrRetry": false
+  },
+  "commands": [
+    "pwsh -NoProfile -File scripts/build-companion.ps1 -OutputPath .local/inventory-token-fix-build",
+    "pwsh -NoProfile -File tests/verify_server_ai_native.ps1 -PackagePath .local/inventory-token-fix-build/Mods/CompanionBridge.tmod -Actions -Inventory -Atomic -Reads -Port 27861 -IpcPort 27862",
+    "pwsh -NoProfile -File tests/run_server_ai_ipc_tests.ps1 -PackagePath .local/inventory-token-fix-build/Mods/CompanionBridge.tmod",
+    ".local/lua-venv/Scripts/python.exe -B -m unittest discover -s tests -p test_server_ai_inventory.py -v",
+    ".local/lua-venv/Scripts/python.exe -B -m unittest discover -s tests -p test_inventory_operations.py -v"
+  ],
+  "initialFailures": {
+    "profiles": [
+      ".local/companion-g82-native-ed8860018a38440fa3ef4609e7c36c26",
+      ".local/companion-g82-native-dd0e7b9d7d4748c1966bcf1379ff0475"
+    ],
+    "symptom": "No AI IPC listener within 90 seconds; inventory tests not entered",
+    "rootCause": "Diagnostic GlobalItem overrode SaveData without required LoadData pair. tModLoader disabled CompanionBridge, then started a vanilla-only server. Initial slow-world-load explanation was incorrect.",
+    "fix": "Added paired LoadData to test-only GlobalItem; final rebuilt package passed same harness without relaxed deadlines or schema"
+  },
+  "limitations": [
+    "All custom ModItem/GlobalItem state is outside tokens, including saved state. Custom-only change is not detected; explicit native case demonstrates this limit.",
+    "No save/network/serialization hooks in Token or basic exception snapshots; native CanStack/StackItems/TransferWithLimit semantics retained.",
+    "Exception snapshots are best effort, do not establish success/failure, and unavailable if actor binding is lost.",
+    "No rollback, automatic replay, graphical Host & Play, remote-client synchronization or arbitrary third-party Mod guarantee."
+  ],
+  "files": [
+    {
+      "file": "initial-fixture-registration-server.log",
+      "bytes": 65933,
+      "sha256": "c74fd637329e9c414e4068d3cc8316c0fd1d0a764fafb819d28e173da33bb6d1"
+    },
+    {
+      "file": "initial-startup-stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "initial-startup-stdout.log",
+      "bytes": 7515,
+      "sha256": "549fa924ee31836fef665d2aaad7d19c8cc22272a84b283ccd1d30697780d46e"
+    },
+    {
+      "file": "inventory-results.json",
+      "bytes": 108886,
+      "sha256": "8bc376a5fdaf7de243e06e0d22ec7dce199b7873008920d92e00017717d0c25b"
+    },
+    {
+      "file": "inventory-selftest.json",
+      "bytes": 40296,
+      "sha256": "e16d2b5833e6265b45e30b7df8a5641c69a5386b6715bda2d7bfd7fdba9c1ead"
+    },
+    {
+      "file": "inventory-token-fix-build.log",
+      "bytes": 174,
+      "sha256": "17534c8e6f2fd2460c361b44be13b0a98bc3c21f93afa0ad19baba3794e7dd6c"
+    },
+    {
+      "file": "result.json",
+      "bytes": 227658,
+      "sha256": "1ebfc8d01554dfc5158a8d548059a12a4dd866208fa7e4a72a61f2a0174e840e"
+    },
+    {
+      "file": "second-startup-stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "second-startup-stdout.log",
+      "bytes": 7515,
+      "sha256": "549fa924ee31836fef665d2aaad7d19c8cc22272a84b283ccd1d30697780d46e"
+    },
+    {
+      "file": "server.log",
+      "bytes": 136807,
+      "sha256": "588a806e209dce10cd700ca64f56c2985edfa4612174a972e7c19b1b45cbcfbc"
+    },
+    {
+      "file": "stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "stdout.log",
+      "bytes": 4427,
+      "sha256": "542724205d55a0efbe75b929388ad120f0115b625a54d81928f0835f424a32c6"
+    },
+    {
+      "file": "token-fix-csharp.log",
+      "bytes": 37140,
+      "sha256": "e4634a1dfd91d479b624f2322c01eab0f0ad4ce84fea0368ab19caab6edd8a83"
+    },
+    {
+      "file": "token-fix-python-local.log",
+      "bytes": 4023,
+      "sha256": "3819083ea3a2188971497f45af131d921aac497f2b7213fe35c4285b49158edb"
+    },
+    {
+      "file": "token-fix-python-server.log",
+      "bytes": 4838,
+      "sha256": "ef6efbf1711f745f456bc845cafb1dea9682dad2bdc6e5c817cae38f28ba6103"
+    }
+  ]
+}

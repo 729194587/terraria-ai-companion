@@ -1,4 +1,5 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27834,[switch]$Failure)
+param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27834,[switch]$Failure,
+    [string]$PackagePath,[ValidateSet('VirtualPlayerEngineProbe','CompanionBridge')][string]$ModName='VirtualPlayerEngineProbe')
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'probe-paths.ps1')
 $paths=Get-ProbePaths
@@ -11,11 +12,17 @@ New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds"|Out-Null
 Copy-Item -LiteralPath $WorldPath -Destination "$profile/Worlds/test.wld"
 $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
-Copy-Item -LiteralPath $paths.Package -Destination "$profile/Mods"
-Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value '["VirtualPlayerEngineProbe"]'
+$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$paths.Package}
+Copy-Item -LiteralPath $package -Destination "$profile/Mods/$ModName.tmod"
+Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value ('["'+$ModName+'"]')
 $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",
     '-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-itemuseselftest')
 if($Failure){$arguments+='-itemusefailureselftest'}
+if($ModName -eq 'CompanionBridge'){
+    $ipcPort=$Port+1
+    if(@(Get-NetTCPConnection -LocalPort $ipcPort -State Listen -ErrorAction SilentlyContinue).Count){throw 'Diagnostic IPC port is in use.'}
+    $arguments+=@('-companionserverai','-companionaiport',"$ipcPort")
+}
 $process=Start-Process -FilePath (Join-Path $TModLoaderPath 'dotnet/dotnet.exe') -ArgumentList $arguments `
     -WorkingDirectory $TModLoaderPath -WindowStyle Hidden -PassThru `
     -RedirectStandardOutput "$profile/stdout.log" -RedirectStandardError "$profile/stderr.log"

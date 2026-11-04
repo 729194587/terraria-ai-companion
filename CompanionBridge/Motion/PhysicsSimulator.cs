@@ -12,11 +12,16 @@ internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRu
     // before our input hook. Match the effective value, not the reset constant.
     internal static readonly PhysicsParameters Basic = new(0.08f, 3, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);
 
-    internal bool IsBasic => Math.Abs(AccRun - Basic.AccRun) < 0.001f
-        && Math.Abs(MaxRun - Basic.MaxRun) < 0.001f && Math.Abs(AccRunSpeed - Basic.AccRunSpeed) < 0.001f
-        && Math.Abs(RunSlowdown - Basic.RunSlowdown) < 0.001f && Math.Abs(Gravity - Basic.Gravity) < 0.001f
-        && Math.Abs(JumpSpeed - Basic.JumpSpeed) < 0.001f && JumpHeight == Basic.JumpHeight
-        && Math.Abs(MaxFall - Basic.MaxFall) < 0.001f;
+    // Native pinned-engine boundary measurement: BuffID.Swiftness (3).
+    internal static readonly PhysicsParameters Swiftness = new(0.1f, 3.75f, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);
+    internal bool IsBasic=>Matches(Basic);
+    internal bool IsSupportedGroundPhysics=>IsBasic||Matches(Swiftness);
+    internal bool Matches(PhysicsParameters other)=>Math.Abs(AccRun-other.AccRun)<.001f
+        &&Math.Abs(MaxRun-other.MaxRun)<.001f&&Math.Abs(AccRunSpeed-other.AccRunSpeed)<.001f
+        &&Math.Abs(RunSlowdown-other.RunSlowdown)<.001f&&Math.Abs(Gravity-other.Gravity)<.001f
+        &&Math.Abs(JumpSpeed-other.JumpSpeed)<.001f&&JumpHeight==other.JumpHeight
+        &&Math.Abs(MaxFall-other.MaxFall)<.001f;
+
 }
 
 internal readonly record struct PhysicsState(float Px, float Py, float Vx, float Vy,
@@ -24,10 +29,40 @@ internal readonly record struct PhysicsState(float Px, float Py, float Vx, float
 internal readonly record struct PhysicsInput(int Direction, bool Jump);
 internal readonly record struct PredictedFrame(PhysicsInput Input, PhysicsState State);
 internal sealed record Prediction(bool Safe, string Reason, List<PredictedFrame> Frames,
-    PhysicsState Landing, int ExecuteFrames, bool Jump);
+    PhysicsState Landing, int ExecuteFrames, bool Jump,
+    NavigationBlockingTile[] BlockingTiles = null);
+
+internal sealed record NavigationBlockingTile(int X,int Y,string ContentKey,
+    string Basis="rejected_root_forward_walk_contact");
+
+// A confirmed horizontal TileCollision clip against a full solid face only.
+// Native StepUp/Down has already run. Platforms, slopes, liquids, unknown cells
+// and mere nearby solids cannot produce this evidence. At most four cells.
+internal static class NavigationContact
+{
+    internal static NavigationBlockingTile[] Horizontal(float x,float y,float requestedX,float clippedX,
+        System.Func<int,int,(char Shape,string ContentKey)> read)
+    {
+        if(!float.IsFinite(x)||!float.IsFinite(y)||!float.IsFinite(requestedX)||!float.IsFinite(clippedX)
+            ||requestedX==0||System.Math.Abs(clippedX)>=System.Math.Abs(requestedX)
+            ||requestedX*clippedX<0)return null;
+        float face=x+clippedX+(requestedX>0?PhysicsSimulator.PlayerW:0);
+        int grid=(int)System.Math.Round(face/16);
+        if(System.Math.Abs(face-grid*16)>0.001f)return null;
+        int tx=requestedX>0?grid:grid-1;
+        var found=new List<NavigationBlockingTile>();
+        for(int ty=(int)System.Math.Floor(y/16);ty<(int)System.Math.Ceiling((y+PhysicsSimulator.PlayerH)/16)&&found.Count<4;ty++)
+        {
+            var cell=read(tx,ty);
+            if(cell.Shape=='#'&&!string.IsNullOrEmpty(cell.ContentKey))found.Add(new(tx,ty,cell.ContentKey));
+        }
+        return found.Count==0?null:found.ToArray();
+    }
+}
 
 internal interface IMotionWorld
 {
+    NavigationBlockingTile[] LastHorizontalContact => null;
     PhysicsState Move(PhysicsState start, float vx, float vy, float gravity);
     bool SafeSweep(PhysicsState start, PhysicsState end, out string reason);
     bool SafeLanding(PhysicsState state);
@@ -43,6 +78,8 @@ internal sealed class UnsafeMotionException : Exception
 
 internal static class PhysicsSimulator
 {
+    internal static bool SupportedCheckpoint(PhysicsState s,IMotionWorld world)=>s.Grounded
+        &&Math.Abs(s.Vy)<=0.1f&&s.ReleaseJump&&s.JumpFramesLeft==0&&world.SafeLanding(s);
     internal const int PlayerW = 20, PlayerH = 42, MaxFrames = 90, WalkFrames = 12;
 
     // TerraBlind's dry step, adapted to the installed 1.4.4.9 IL. Collision is
@@ -145,7 +182,7 @@ internal static class PhysicsSimulator
             }
             catch (UnsafeMotionException error) { return new(false, error.Message, frames, s, 0, hold > 0); }
             if (hold == 0 && Math.Abs(next.Px - s.Px) < 0.01f && Math.Abs(next.Vx) < 0.01f && f < walkFrames)
-                return new(false, "walking blocked", frames, next, 0, false);
+                return new(false, "walking blocked", frames, next, 0, false, world.LastHorizontalContact);
             airborne |= !next.Grounded;
             if (hold > 0 && next.Py - start.Py > maxDropPixels)
                 return new(false, $"jump descent exceeds {maxDropPixels:0}px limit", frames, next, 0, true);
@@ -173,17 +210,23 @@ internal static class PhysicsSimulator
                 }
             }
             bool doneMoving = hold > 0 ? airborne && next.Grounded && f >= hold : f >= walkFrames;
-            stable = doneMoving && next.Grounded && Math.Abs(next.Vx) < 0.01f ? stable + 1 : 0;
+            stable = doneMoving && SupportedCheckpoint(next,world) && Math.Abs(next.Vx) < 0.01f ? stable + 1 : 0;
             s = next;
             if (stable >= 2)
             {
-                bool safe = (brakingOnly || direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4))
+                // A neutral jump can ascend through a one-way platform without
+                // horizontal travel. Require a different supported height; a
+                // hop returning to the same floor must not create search cycles.
+                bool progress = direction == 0 && hold > 0
+                    ? start.Py - s.Py >= 4
+                    : direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4);
+                bool safe = (brakingOnly || progress)
                     && world.SafeLanding(s);
                 int execute = movingLandingFrames > 0 ? movingLandingFrames : frames.Count;
                 if (hold == 0 && !brakingOnly)
                 {
                     execute = walkFrames;
-                    while (!frames[execute - 1].State.Grounded && execute < frames.Count) execute++;
+                    while (!SupportedCheckpoint(frames[execute - 1].State,world) && execute < frames.Count) execute++;
                 }
                 return new(safe, safe ? "safe landing and braking" : "no safe landing/progress",
                     frames, s, execute, hold > 0);

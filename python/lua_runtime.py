@@ -1,6 +1,7 @@
 """Async host for whole Lua programs; Bridge and atomic supervision stay here."""
 import argparse
 import asyncio
+import copy
 from dataclasses import dataclass
 import hashlib
 import json
@@ -14,9 +15,11 @@ import agent_trace as tracing
 import agent_diagnostics as diagnostics
 import evidence
 import atomic_operations as atomic
+import navigation_recovery
+import program_tasks
 from control import Bridge, BridgeError, command_owner
 from lua_worker import (worker, encode, decode, ValueLimit, SOURCE_BYTES,
-                        REQUEST_BYTES, VALUE_BYTES, FRAME_BYTES)
+                        REQUEST_BYTES, VALUE_BYTES, FRAME_BYTES, EXPLORATION_SOURCE, SEMANTIC_SOURCE)
 
 
 @dataclass(frozen=True)
@@ -61,6 +64,84 @@ def bounded_action(result):
                 'payloadOmitted': True}
 
 
+LAST_OBSERVATION_BYTES = 65_536
+
+
+def retained_observation(operation, call_id, run_id, result):
+    """Detached host evidence, separate from the program's return value."""
+    snapshot = {'operation': operation, 'callId': call_id, 'runId': run_id}
+    try:
+        checked = decode(encode(result, VALUE_BYTES))
+        data = checked.get('data')
+        data = data if isinstance(data, dict) else checked
+        for key in ('worldSessionId', 'actorGeneration', 'actorSlot', 'gameUpdate', 'observedAtUnixMs', 'clock'):
+            value = checked.get(key, data.get(key))
+            if type(value) in (int, float, bool) or type(value) is str and len(value) <= 512:
+                snapshot[key] = value
+        scene_id = data.get('sceneId')
+        if isinstance(scene_id, str) and len(scene_id) <= 512:
+            snapshot['sceneId'] = scene_id
+        snapshot.update(result=checked, payloadOmitted=False)
+        encode(snapshot, LAST_OBSERVATION_BYTES)
+    except ValueLimit:
+        snapshot.update(result=None, payloadOmitted=True, omissionReason='last_observation_limit')
+    return snapshot
+
+
+def safe_preflight_rejection(result, lifecycle):
+    """Only bound server evidence can authorize another mutation in this run."""
+    if (not isinstance(result, dict) or result.get('valid') is not True
+            or result.get('status') != 'failed' or result.get('supervisorError')
+            or lifecycle.get('uncertain') or result.get('endEvidenceStatus') != 'known'):
+        return False
+    proof, end, action = result.get('evidence'), result.get('endEvidence'), lifecycle.get('action')
+    if not all(isinstance(v, dict) for v in (proof, end, action)):
+        return False
+    if any(k in proof and proof[k] is not False
+           for k in ('uncertainNativeEffect', 'targetChanged', 'placedByActor', 'destroyedByActor')):
+        return False
+    if any(k in proof and (type(proof[k]) is not int or proof[k] != 0)
+           for k in ('consumedCount', 'nativePlacementEvents')):
+        return False
+    bound = (end.get('inputsReleased') is True and type(end.get('inputsAcquired')) is bool
+            and end.get('phase') == 'ServerAI_game_thread_inputs_released'
+            and end.get('effectVerified') is False and end.get('operation') == result.get('operation')
+            and type(end.get('gameUpdate')) is int and end['gameUpdate'] >= 0
+            and action.get('status') == 'failed' and action.get('operation') == result.get('operation')
+            and isinstance(result.get('actionId'), str) and bool(result['actionId'])
+            and result['actionId'] == action.get('actionId')
+            and isinstance(action.get('session'), str) and bool(action['session'])
+            and result.get('session') == action['session']
+            and isinstance(action.get('worldSessionId'), str) and bool(action['worldSessionId'])
+            and end.get('worldSessionId') == action['worldSessionId']
+            and isinstance(action.get('actorId'), str) and bool(action['actorId'])
+            and end.get('actorId') == action['actorId']
+            and type(action.get('generation')) is int and end.get('actorGeneration') == action['generation']
+            and type(action.get('actorSlot')) is int and type(end.get('actorSlot')) is int
+            and end.get('actorSlot') == action['actorSlot']
+            and type(end.get('actorGeneration')) is int
+            and result.get('actionGeneration') == action['generation']
+            and result.get('controlGeneration') == action['generation'])
+    if not bound:
+        return False
+    preflight = (proof.get('mutationAttempted') is False and proof.get('effectStatus') == 'not_started'
+                 and proof.get('operation') == result.get('operation') and end['inputsAcquired'] is False)
+    if preflight:
+        return True
+    def zero(*keys):
+        return all(type(proof.get(k)) is int and proof[k] == 0 for k in keys)
+    if result.get('operation') == 'mine_tile':
+        return (zero('Ticks', 'Swings', 'Strikes', 'PeakDamage', 'Transforms')
+                and proof.get('targetUnchanged') is True
+                and all(proof.get(k) is False for k in ('targetChanged', 'destroyedByActor', 'nativeDestroyed', 'targetAbsent'))
+                and proof.get('effectStatus') == 'not_started' and end['inputsAcquired'] is False)
+    if result.get('operation') == 'place_object':
+        return (zero('nativePlacementEvents', 'consumedCount')
+                and all(proof.get(k) is False for k in ('targetChanged', 'uncertainNativeEffect', 'placedByActor', 'fullFootprintVerified', 'targetPresent'))
+                and proof.get('objectPlacement') is True and proof.get('effectStatus') == 'not_confirmed')
+    return False
+
+
 class LuaRuntime:
     """One exclusive run per Bridge. Unknown action state permanently fences it.
 
@@ -79,7 +160,7 @@ class LuaRuntime:
                       allow_actions=True, on_result=None):
         limits.validate()
         out = {'runId': uuid.uuid4().hex, 'status': 'unknown', 'calls': 0, 'value': None,
-               'actions': 0, 'logs': [], 'actionState': 'idle', 'lastAction': None, 'cleanup': None, 'trace': []}
+               'actions': 0, 'logs': [], 'actionState': 'idle', 'lastAction': None, 'lastObservation': None, 'cleanup': None, 'trace': []}
         if type(source) is not str or len(source) > SOURCE_BYTES or len(source.encode('utf-8')) > SOURCE_BYTES:
             return {**out, 'status': 'source_limit'}
         if getattr(self.bridge, '_lua_poisoned', False):
@@ -97,6 +178,11 @@ class LuaRuntime:
         process, connection, active = None, None, None
         active_role = None
         lifecycle = {}
+        handoff = getattr(self.bridge, '_lua_navigation_handoff', None)
+        if handoff is not None and handoff.chat_id != chat_id:
+            self.bridge._lua_navigation_handoff = None
+            handoff = None  # A new user turn does not inherit a previous turn's fallback grant.
+        if handoff is not None: handoff.observed = False
         deadline = monotonic() + limits.seconds
         bundle = evidence.current.get()
         owns_bundle = bundle is None
@@ -104,6 +190,8 @@ class LuaRuntime:
             bundle = evidence.Bundle(self.evidence_root,metadata={'chat_event_id':chat_id,'lua_run_id':out['runId']})
         evidence_token = evidence.current.set(bundle)
         digest = bundle.source(source)
+        helper_digest = bundle.source(EXPLORATION_SOURCE)
+        semantic_digest = bundle.source(SEMANTIC_SOURCE)
         token = tracing.context.set({**tracing.context.get(), 'task_id': bundle.id,
                                     'lua_run_id': out['runId'], 'source_sha256': digest})
         call_token, call_open, call_meta, failure_call = None, False, {}, None
@@ -127,7 +215,7 @@ class LuaRuntime:
             out['trace'].append({key:row[key] for key in ('id','operation','line','status','valid','reason','elapsed_ms','error') if key in row})
             emit('lua_api_result' if result is not None else 'lua_api_error', **row)
             call_open = False
-        emit('lua_start', source_sha256=digest, source_bytes=len(source.encode()), limits=vars(limits), chat_id=chat_id)
+        emit('lua_start', semantic_helper_sha256=semantic_digest, exploration_helper_sha256=helper_digest, source_sha256=digest, source_bytes=len(source.encode()), limits=vars(limits), chat_id=chat_id)
 
         async def watch(task):
             while True:
@@ -171,7 +259,9 @@ class LuaRuntime:
                     if active_role == 'dispatch' and lifecycle.get('start_attempted'):
                         out['cleanup'] = bounded_action(result) if result is not None else {
                             'valid': False, 'status': 'unknown', 'reason': 'cleanup_unconfirmed'}
-                        if lifecycle.get('uncertain') or not safe_terminal(result):
+                        if lifecycle.get('dispatchState') == 'not_admitted' and lifecycle.get('action') is None and not lifecycle.get('uncertain'):
+                            out['lastAction'] = bounded_action(result)
+                        elif lifecycle.get('uncertain') or not safe_terminal(result):
                             await poison()
                         else:
                             out['actionState'] = 'released'
@@ -197,7 +287,7 @@ class LuaRuntime:
                 return out
             context = mp.get_context('spawn')
             connection, child = context.Pipe(duplex=True)
-            process = context.Process(target=worker, args=(child, source, limits), daemon=True)
+            process = context.Process(target=worker, args=(child, source, limits, EXPLORATION_SOURCE), daemon=True)
             try:
                 process.start()
             finally:
@@ -221,7 +311,7 @@ class LuaRuntime:
                     continue
                 if message.get('type') == 'done':
                     if message.get('status') not in ('completed', 'script_error', 'instruction_limit',
-                            'memory_limit', 'value_limit', 'bad_argument', 'protocol_error', 'worker_error', 'log_limit'):
+                            'memory_limit', 'value_limit', 'serialization_error', 'bad_argument', 'protocol_error', 'worker_error', 'log_limit'):
                         raise Interrupted('protocol_error')
                     out.update(status=message['status'], value=message.get('value'))
                     if 'error' in message:
@@ -247,7 +337,88 @@ class LuaRuntime:
                 out['calls'] += 1
                 if type(name) is not str:
                     raise Interrupted('bad_argument')
-                atomic.validate(name, args)
+                if type(message.get('protected', False)) is not bool:
+                    raise Interrupted('protocol_error')
+                try:
+                    args = program_tasks.validate(name, args) if name in program_tasks.NAMES else atomic.validate(name, args)
+                except ValueError as exc:
+                    # Only this local schema/range check is recoverable. No
+                    # dispatch, network call or game action has begun here.
+                    if name not in atomic.SCHEMAS.keys() | program_tasks.NAMES or not message.get('protected', False):
+                        raise
+                    rejection = {'status': 'bad_argument', 'error': str(exc)[:512],
+                                 'argumentOperation': name}
+                    if isinstance(exc, atomic.ArgumentValidationError):
+                        rejection.update(diagnostics=exc.diagnostics,
+                                         diagnosticsTruncated=exc.diagnostics_truncated)
+                    call_end('bad_argument', error=rejection['error'])
+                    active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
+                        encode({'type': 'local_argument_rejected', 'id': sequence, 'value': rejection})))
+                    active_role = 'send'
+                    await watch(active)
+                    active = None
+                    continue
+                synchronous_task = name == 'mine_target' and program_tasks.available(self.bridge)
+                if name in program_tasks.NAMES or synchronous_task:
+                    if not program_tasks.available(self.bridge):
+                        raise ValueError('Program task coordination unsupported')
+                    if name in ('submit_task', 'resume_task') or synchronous_task:
+                        if halted or not allow_actions:
+                            raise Interrupted('previous_action_failed')
+                        if out['actions'] >= limits.actions:
+                            raise Interrupted('action_limit')
+                        out['actions'] += 1
+                    manager = program_tasks.coordinator(self.bridge)
+                    origin = {'chatId': chat_id, 'programId': out['runId'], 'runId': tracing.context.get().get('run_id')}
+                    async def task_call():
+                        if not synchronous_task:
+                            return await manager.invoke(name, args, origin)
+                        submitted = await manager.invoke('submit_task', {'operation': name, 'arguments': args}, origin)
+                        if submitted.get('status') == 'running':
+                            record = manager.records[submitted['taskId']]
+                            await record['done'].wait()
+                            return copy.deepcopy(record['view'])
+                        return submitted
+                    active = asyncio.create_task(task_call())
+                    active_role = 'task'
+                    result = await watch(active)
+                    active = None
+                    out['tasks'] = manager.projection()
+                    terminal_result = result.get('result')
+                    if terminal_result is not None and on_result is not None:
+                        on_result('mine_target', {}, terminal_result)
+                    if synchronous_task and terminal_result is not None:
+                        out['lastAction'] = bounded_action(terminal_result)
+                        out['actionState'] = 'released' if safe_terminal(terminal_result) else 'unknown'
+                    call_end(result.get('status'), result=result)
+                    if result.get('status') == 'unknown':
+                        out.update(status='action_unknown', actionState='unknown')
+                        break
+                    if result.get('status') in ('failed', 'timeout', 'cancelled'):
+                        out['status'] = result['status']
+                        break
+                    active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
+                        encode({'type': 'result', 'id': sequence,
+                                'value': terminal_result if synchronous_task else result})))
+                    active_role = 'send'
+                    await watch(active)
+                    active = None
+                    continue
+                if (name in atomic.BUDGETED_ACTIONS and program_tasks.available(self.bridge)
+                        and program_tasks.coordinator(self.bridge).blocked()):
+                    out.update(status='failed', error='active_task_conflict; explicitly cancel and confirm release before replacing')
+                    break
+                fallback_attempt = False
+                if handoff is not None:
+                    if name in atomic.BUDGETED_ACTIONS:
+                        if name != 'move_input' or not handoff.observed:
+                            out.update(status='failed', error='navigation_handoff_requires_fresh_scene_then_move_input')
+                            break
+                        fallback_attempt = True
+                        self.bridge._lua_navigation_handoff = None
+                        handoff = None  # One attempt only; no automatic fallback or replay.
+                    else:
+                        handoff.observed = False  # Scene must immediately precede the next mutation.
                 if halted and name in atomic.BUDGETED_ACTIONS:
                     # No dispatch occurred: this is not an unknown game action.
                     # stop_action still dispatches and must prove release below.
@@ -274,8 +445,30 @@ class LuaRuntime:
                             or lifecycle.get('action') is not None or lifecycle.get('uncertain'))
                         result = {'valid': False, 'status': 'failed' if rejected_before_dispatch else 'unknown',
                                   'completed': False, 'reason': str(error),
-                                  'dispatchState': 'not_dispatched' if rejected_before_dispatch else 'unconfirmed'}
+                                  'dispatchState': 'not_admitted' if rejected_before_dispatch else 'unknown'}
+                    rejected_before_dispatch |= (lifecycle.get('dispatchState') == 'not_admitted'
+                        and result.get('dispatchState') == 'not_admitted'
+                        and lifecycle.get('action') is None and not lifecycle.get('uncertain'))
                     active = None
+                    if (name in atomic.READS and result.get('valid') is True
+                            and result.get('available') is not False
+                            and result.get('status') not in ('failed', 'timeout', 'cancelled', 'unknown', 'unavailable')):
+                        out['lastObservation'] = retained_observation(name, sequence, out['runId'], result)
+                    if handoff is not None and name in atomic.READS:
+                        if (result.get('valid') is not True or result.get('status') in ('unknown', 'timeout', 'cancelled')
+                                or name == 'observe_scene' and not handoff.observe_scene(result)):
+                            out.update(status='action_unknown', actionState='unknown', error='navigation_handoff_observation_unconfirmed')
+                            break
+                    if name in atomic.ACTIONS:
+                        navigation_continuation = ({'observe_scene', 'move_input'} <= set(getattr(self.bridge, 'supported_atomic_operations', ()))
+                            and navigation_recovery.confirmed_failure(result, lifecycle) and not fallback_attempt)
+                        result = {**result, 'continuationAllowed': navigation_continuation or
+                                  (not fallback_attempt and safe_preflight_rejection(result, lifecycle))}
+                        if navigation_continuation:
+                            handoff = navigation_recovery.Handoff(result, lifecycle['action'], chat_id)
+                            self.bridge._lua_navigation_handoff = handoff
+                            result['continuationScope'] = 'observe_scene_then_move_input'
+
                     if on_result is not None:
                         on_result(name, args, result)
                     call_end(result.get('status'), result=result)
@@ -287,8 +480,16 @@ class LuaRuntime:
                             break
                         if not rejected_before_dispatch:
                             out['actionState'] = 'released'
-                        halted |= result.get('status') != 'completed'
+                        halted |= result.get('status') != 'completed' and not result['continuationAllowed']
                 call_end(result.get('status'), result=result)
+                if (name in atomic.ACTIONS and result.get('status') != 'completed'
+                        and result.get('continuationAllowed') is not True):
+                    # Keep the real receipt above, but never send this failure
+                    # back into Lua (including a protected call). The parent
+                    # terminates the worker before any following script code.
+                    out['status'] = result['status']
+                    failure_call = dict(call_meta)
+                    break
                 try:
                     encode(result, VALUE_BYTES)
                 except ValueLimit:
@@ -306,6 +507,10 @@ class LuaRuntime:
             out['status'] = str(exc)
         except ValueLimit:
             out['status'] = 'value_limit'
+        except atomic.ArgumentValidationError as exc:
+            out.update(status='bad_argument', error=str(exc)[:512],
+                       diagnostics=exc.diagnostics, diagnosticsTruncated=exc.diagnostics_truncated,
+                       argumentOperation=exc.operation)
         except ValueError as exc:
             out.update(status='bad_argument', error=str(exc)[:512])
         except (EOFError, OSError):
@@ -345,11 +550,16 @@ class LuaRuntime:
                     'line': out.get('errorLine',(failure_call or {}).get('line')), 'retryAllowed': False,
                     'actionState': out['actionState']}
             self.bridge._lua_owner = None
+            manager = getattr(self.bridge, '_program_tasks', None)
+            if manager is not None:
+                out['tasks'] = manager.projection()
             LuaRuntime._active_runs -= 1
             command_owner.reset(owner_token)
             self.last_result = out
             if call_token is not None:
                 tracing.context.reset(call_token)
+            if out['status']=='completed':
+                diagnostics.exploration_report(out.get('value'))
             tracing.trace.emit('lua_end', **out)
             diagnostics.emit('lua_end', status=out['status'], calls=out['calls'], actions=out['actions'],
                  actionState=out['actionState'], lastAction=out['lastAction'], cleanup=out['cleanup'],

@@ -1,0 +1,308 @@
+{
+  "initial-candidate": {
+    "profile": ".local\\navigation-recovery-native-d3de3aaf90df4745b00ae696e030daf1",
+    "packageSHA256": "bb003c0fa92d440b3e31b639a4ebfc01253d13f70e1d9f71e55482c6ea32c74d",
+    "fixture": {
+      "scene": "flat",
+      "direction": 1,
+      "startX": 33630,
+      "startY": 3830,
+      "targetX": 33822,
+      "floor": 242,
+      "originTileX": 2102,
+      "world": "640fb0d3a45f41a2900c2c86b78b2ddb",
+      "generation": 1,
+      "slot": 254,
+      "regionalFixture": true
+    },
+    "binding": {
+      "actor": "be1633049c49449895ed3a7157073598",
+      "world": "640fb0d3a45f41a2900c2c86b78b2ddb",
+      "generation": 1,
+      "slot": 254
+    },
+    "costs": [
+      {
+        "viewport": "1280x720",
+        "count": 8,
+        "complete": 8,
+        "minMilliseconds": 3.6803,
+        "medianMilliseconds": 9.5475,
+        "maxMilliseconds": 26.3113,
+        "timing": "reader only",
+        "allocationBytes": [
+          1110032,
+          1885768
+        ],
+        "dataJsonBytes": [
+          9602,
+          9613
+        ]
+      },
+      {
+        "viewport": "1920x1080",
+        "count": 8,
+        "complete": 6,
+        "minMilliseconds": 10.6409,
+        "medianMilliseconds": 15.05745,
+        "maxMilliseconds": 27.6069,
+        "timing": "reader only",
+        "allocationBytes": [
+          1775616,
+          2498864
+        ],
+        "dataJsonBytes": [
+          12538,
+          13452
+        ]
+      },
+      {
+        "viewport": "bounded_2048x1024",
+        "count": 8,
+        "complete": 7,
+        "minMilliseconds": 8.0213,
+        "medianMilliseconds": 10.123650000000001,
+        "maxMilliseconds": 20.4528,
+        "timing": "reader only",
+        "allocationBytes": [
+          2328768,
+          2517136
+        ],
+        "dataJsonBytes": [
+          13149,
+          13307
+        ]
+      }
+    ],
+    "worker": {
+      "count": 14,
+      "coverage": false,
+      "version": 3,
+      "world": "640fb0d3a45f41a2900c2c86b78b2ddb",
+      "source": "server_world_tile_current"
+    },
+    "historyIdentity": {
+      "worldUid": "0529c238e79c44e7bbe2fd3c7648f041",
+      "characterId": "294df081bab96bd85f46b67312e3ffb7",
+      "knowledge": "last_known_state; not live; square Tile cells (+X right,+Y down); overview strategic only; region zoom with cellSize=1",
+      "visibility": "server approximation v1: 120x68 actor viewport, opaque ray occlusion, surface daylight, underground radius 4, visible vanilla torches radius 14; no native lighting/mod light hooks"
+    },
+    "navigation": {
+      "status": "completed",
+      "startX": 33630,
+      "endX": 33810.27,
+      "updates": 89,
+      "distance": 180.2699999999968,
+      "actionId": "7052240d7ee8416e8d40ab5d819ea5e7",
+      "endEvidenceStatus": "known",
+      "inputsReleased": true,
+      "plans": 3,
+      "recoveryReplans": 0,
+      "maxPredictionError": 0
+    }
+  },
+  "prewarm-candidate": {
+    "profile": ".local\\navigation-recovery-native-c337c97f237c40e18190bd94cd088930",
+    "packageSHA256": "e68b7aab7a39427d47ffed69e2237cddc6b73cd2e542b18c001451da7453313a",
+    "fixture": {
+      "scene": "flat",
+      "direction": 1,
+      "startX": 33630,
+      "startY": 3830,
+      "targetX": 33822,
+      "floor": 242,
+      "originTileX": 2102,
+      "world": "ef790adedf97409087e0de7df5ca1b68",
+      "generation": 1,
+      "slot": 254,
+      "regionalFixture": true
+    },
+    "binding": {
+      "actor": "5917d96fc9ee45ff926266db9afcd684",
+      "world": "ef790adedf97409087e0de7df5ca1b68",
+      "generation": 1,
+      "slot": 254
+    },
+    "costs": [
+      {
+        "viewport": "1280x720",
+        "count": 5,
+        "complete": 5,
+        "minMilliseconds": 4.7882,
+        "medianMilliseconds": 9.212,
+        "maxMilliseconds": 58.0742,
+        "timing": "reader + game-thread projection, excludes final IPC serialization/network",
+        "allocationBytes": [
+          929552,
+          1400712
+        ],
+        "dataJsonBytes": [
+          11989,
+          11993
+        ]
+      },
+      {
+        "viewport": "1920x1080",
+        "count": 5,
+        "complete": 5,
+        "minMilliseconds": 7.1918,
+        "medianMilliseconds": 9.5623,
+        "maxMilliseconds": 11.165,
+        "timing": "reader + game-thread projection, excludes final IPC serialization/network",
+        "allocationBytes": [
+          2043776,
+          2079176
+        ],
+        "dataJsonBytes": [
+          18397,
+          18398
+        ]
+      },
+      {
+        "viewport": "bounded_2048x1024",
+        "count": 5,
+        "complete": 5,
+        "minMilliseconds": 7.8165,
+        "medianMilliseconds": 8.1579,
+        "maxMilliseconds": 10.4161,
+        "timing": "reader + game-thread projection, excludes final IPC serialization/network",
+        "allocationBytes": [
+          2060960,
+          2060960
+        ],
+        "dataJsonBytes": [
+          18651,
+          18652
+        ]
+      }
+    ],
+    "worker": {
+      "coverage": false,
+      "source": "server_world_tile_current",
+      "world": "ef790adedf97409087e0de7df5ca1b68",
+      "version": 3,
+      "count": 14
+    },
+    "historyIdentity": {
+      "worldUid": "0529c238e79c44e7bbe2fd3c7648f041",
+      "characterId": "294df081bab96bd85f46b67312e3ffb7",
+      "knowledge": "last_known_state; not live; square Tile cells (+X right,+Y down); overview strategic only; region zoom with cellSize=1",
+      "visibility": "server approximation v1: 120x68 actor viewport, opaque ray occlusion, surface daylight, underground radius 4, visible vanilla torches radius 14; no native lighting/mod light hooks"
+    },
+    "navigation": {
+      "status": "completed",
+      "startX": 33630,
+      "endX": 33810.27,
+      "updates": 89,
+      "distance": 180.2699999999968,
+      "actionId": "eb389c0c447842398bfef4e2601a7328",
+      "endEvidenceStatus": "known",
+      "inputsReleased": true,
+      "plans": 3,
+      "recoveryReplans": 0,
+      "maxPredictionError": 0
+    }
+  },
+  "final": {
+    "profile": ".local\\navigation-recovery-native-ffe0232411c6436898ad14e4e195901f",
+    "packageSHA256": "cbbcfe1d442c6627aaab6907564c423dd62ce1cda03f6c805212dffd5994e913",
+    "fixture": {
+      "scene": "flat",
+      "direction": 1,
+      "startX": 33630,
+      "startY": 3830,
+      "targetX": 33822,
+      "floor": 242,
+      "originTileX": 2102,
+      "world": "2b2e6a9d81ef4383b1fdf4d77741422f",
+      "generation": 1,
+      "slot": 254,
+      "regionalFixture": true
+    },
+    "binding": {
+      "actor": "4ab161bfd2144d36888b491c83858f5c",
+      "world": "2b2e6a9d81ef4383b1fdf4d77741422f",
+      "generation": 1,
+      "slot": 254
+    },
+    "costs": [
+      {
+        "viewport": "1280x720",
+        "count": 5,
+        "complete": 5,
+        "minMilliseconds": 3.9871,
+        "medianMilliseconds": 4.8353,
+        "maxMilliseconds": 24.355,
+        "timing": "reader + game-thread projection, excludes final IPC serialization/network",
+        "allocationBytes": [
+          929544,
+          1176712
+        ],
+        "dataJsonBytes": [
+          11981,
+          11997
+        ]
+      },
+      {
+        "viewport": "1920x1080",
+        "count": 5,
+        "complete": 5,
+        "minMilliseconds": 5.9796,
+        "medianMilliseconds": 10.4235,
+        "maxMilliseconds": 11.5308,
+        "timing": "reader + game-thread projection, excludes final IPC serialization/network",
+        "allocationBytes": [
+          2043776,
+          2079176
+        ],
+        "dataJsonBytes": [
+          18397,
+          18400
+        ]
+      },
+      {
+        "viewport": "bounded_2048x1024",
+        "count": 5,
+        "complete": 5,
+        "minMilliseconds": 6.2385,
+        "medianMilliseconds": 7.5708,
+        "maxMilliseconds": 14.1398,
+        "timing": "reader + game-thread projection, excludes final IPC serialization/network",
+        "allocationBytes": [
+          2060960,
+          2060968
+        ],
+        "dataJsonBytes": [
+          18651,
+          18653
+        ]
+      }
+    ],
+    "worker": {
+      "coverage": false,
+      "version": 3,
+      "world": "2b2e6a9d81ef4383b1fdf4d77741422f",
+      "source": "server_world_tile_current",
+      "count": 14
+    },
+    "historyIdentity": {
+      "worldUid": "0529c238e79c44e7bbe2fd3c7648f041",
+      "characterId": "294df081bab96bd85f46b67312e3ffb7",
+      "knowledge": "last_known_state; not live; square Tile cells (+X right,+Y down); overview strategic only; region zoom with cellSize=1",
+      "visibility": "server approximation v1: 120x68 actor viewport, opaque ray occlusion, surface daylight, underground radius 4, visible vanilla torches radius 14; no native lighting/mod light hooks"
+    },
+    "navigation": {
+      "status": "completed",
+      "startX": 33630,
+      "endX": 33810.27,
+      "updates": 89,
+      "distance": 180.2699999999968,
+      "actionId": "c7be3a5076014adeb64b4e02a32ecef8",
+      "endEvidenceStatus": "known",
+      "inputsReleased": true,
+      "plans": 3,
+      "recoveryReplans": 0,
+      "maxPredictionError": 0
+    }
+  }
+}

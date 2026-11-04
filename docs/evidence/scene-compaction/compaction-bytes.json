@@ -1,0 +1,65 @@
+{
+  "fixture": "actual readers and separate records pinned to cff5ae7; normalize sceneId/elapsedMilliseconds only; data object UTF-8",
+  "comparisons": {
+    "all_default": {
+      "before": 17071,
+      "after": 13452,
+      "saved": 3619
+    },
+    "map": {
+      "before": 3155,
+      "after": 2171,
+      "saved": 984
+    },
+    "geometry": {
+      "before": 2858,
+      "after": 2181,
+      "saved": 677
+    },
+    "objects": {
+      "before": 5485,
+      "after": 4081,
+      "saved": 1404
+    },
+    "hazards": {
+      "before": 2849,
+      "after": 2205,
+      "saved": 644
+    },
+    "landingRegions": {
+      "before": 1528,
+      "after": 1034,
+      "saved": 494
+    },
+    "placementCandidates": {
+      "before": 2748,
+      "after": 1552,
+      "saved": 1196
+    },
+    "objectPlacementCandidates": {
+      "before": 5804,
+      "after": 4620,
+      "saved": 1184
+    },
+    "geometry\u002BlandingRegions\u002Bhazards": {
+      "before": 4783,
+      "after": 3956,
+      "saved": 827
+    },
+    "objects\u002Bmap": {
+      "before": 7414,
+      "after": 5520,
+      "saved": 1894
+    },
+    "placementCandidates\u002BobjectPlacementCandidates": {
+      "before": 7326,
+      "after": 5440,
+      "saved": 1886
+    },
+    "map\u002Bgeometry\u002Bobjects\u002Bhazards\u002BlandingRegions\u002BplacementCandidates\u002BobjectPlacementCandidates": {
+      "before": 17071,
+      "after": 13452,
+      "saved": 3619
+    }
+  }
+}

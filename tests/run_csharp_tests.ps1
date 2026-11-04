@@ -1,11 +1,14 @@
-param([switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
+param([switch]$MobilityOnly,[switch]$TripOnly,[switch]$RecoveryOnly, [switch]$PlannerOnly, [switch]$SafeGroundWalkOnly, [switch]$MiningSupportOnly, [switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
     [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly, [switch]$AuthorityNetworkOnly,
-    [switch]$InventoryOnly)
+    [switch]$InventoryOnly, [switch]$BridgeOnly, [switch]$ServerReadsOnly, [switch]$NavigationOnly,[switch]$SceneOnly,[switch]$VerticalOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
 $sources = @(
+    (Join-Path $repo 'CompanionBridge/AiChatInput.cs'),
+    (Join-Path $PSScriptRoot 'AiChatOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/AtomicParameters.cs'),
+    (Join-Path $repo 'CompanionBridge/SceneLayers.cs'),
     (Join-Path $repo 'CompanionBridge/AtomicAuthority.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/NativeAuthorityWorld.cs'),
     (Join-Path $PSScriptRoot 'AtomicAuthorityOfflineTests.cs'),
@@ -20,6 +23,7 @@ $sources = @(
     (Join-Path $PSScriptRoot 'AtomicExtensionsOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'AtomicFoundationsOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'InventoryOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'ServerAiSharedReadTests.cs'),
     (Join-Path $PSScriptRoot 'LocalInputOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicOperations.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicInventory.cs'),
@@ -32,17 +36,34 @@ $sources = @(
     (Join-Path $PSScriptRoot 'DeathLifecycleOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'BoundedMovementOfflineTests.cs'),
     (Join-Path $repo 'CompanionBridge/TerrainSnapshot.cs'),
+    (Join-Path $repo 'CompanionBridge/SceneGeometry.cs'),
+    (Join-Path $repo 'CompanionBridge/SceneRegion.cs'),
+    (Join-Path $PSScriptRoot 'SceneGeometryTests.cs'),
     (Join-Path $repo 'CompanionBridge/EntitySnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationBuffPolicy.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/MobilityProfile.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MotionSupport.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/MiningSupportImpact.cs'),
+    (Join-Path $PSScriptRoot 'MiningSupportImpactTests.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/LocalMotionController.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/StateSpacePlanner.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/SafeGroundWalk.cs'),
+    (Join-Path $PSScriptRoot 'SafeGroundWalkTests.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationTask.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/NavigationFailureMemory.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/NavigationTripProgress.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationDiagnostics.cs'),
     (Join-Path $repo 'CompanionBridge/TcpControlServer.cs'),
     (Join-Path $PSScriptRoot 'BridgeOfflineTests.cs'),
     (Join-Path $PSScriptRoot 'MotionOfflineTests.cs'),
+    (Join-Path $PSScriptRoot 'PlannerCorrectnessTests.cs'),
+    (Join-Path $PSScriptRoot 'VerticalNavigationTests.cs'),
+    (Join-Path $PSScriptRoot 'NavigationLandingConfirmationTests.cs'),
+    (Join-Path $PSScriptRoot 'NavigationRecoveryTests.cs'),
+    (Join-Path $PSScriptRoot 'NavigationTripTests.cs'),
+    (Join-Path $PSScriptRoot 'MobilityProfileTests.cs'),
+    (Join-Path $PSScriptRoot 'NavigationPerceptionTests.cs'),
     (Join-Path $repo 'CompanionBridge/Common/Players/CompanionPlayer.cs'),
     (Join-Path $PSScriptRoot 'PlayerHookOfflineTests.cs')
 )
@@ -55,6 +76,17 @@ if ($AuthorityNetworkOnly) {
     return
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
+if ($MobilityOnly) { [MobilityProfileTests]::Run(); return }
+if ($TripOnly) { [NavigationTripTests]::Run(); return }
+if ($RecoveryOnly) { [NavigationRecoveryTests]::Run(); return }
+if ($PlannerOnly) { [PlannerCorrectnessTests]::Run(); return }
+if ($SafeGroundWalkOnly) { [SafeGroundWalkTests]::Run(); return }
+if ($MiningSupportOnly) { [MiningSupportImpactTests]::Run((Join-Path $PSScriptRoot 'fixtures/mining-support-play2.json')); return }
+if ($SceneOnly) { [SceneGeometryTests]::Run(); return }
+if ($VerticalOnly) { [VerticalNavigationTests]::Run(); return }
+if ($NavigationOnly) { [MobilityProfileTests]::Run(); [NavigationTripTests]::Run(); [NavigationRecoveryTests]::Run(); [PlannerCorrectnessTests]::Run(); [NavigationPerceptionTests]::Run(); [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }
+if ($ServerReadsOnly) { [ServerAiSharedReadTests]::Run(); [AtomicExtensionsOfflineTests]::Run(); return }
+if ($BridgeOnly) { [AiChatOfflineTests]::Run(); [BridgeOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); [LocalInputOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); return }
 if ($InventoryOnly) { [InventoryOfflineTests]::Run(); return }
 if ($LandingProtocolHost) { [LandingNavigationOfflineTests]::RunProtocolHost(); return }
 if ($LandingOnly) { [LandingNavigationOfflineTests]::Run(); return }

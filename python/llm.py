@@ -12,7 +12,10 @@ import cost_metrics
 
 
 class LLMError(Exception):
-    pass
+    def __init__(self, message, *, retryable=False, context_overflow=False):
+        super().__init__(message)
+        self.retryable = retryable
+        self.context_overflow = context_overflow
 
 
 def load_config(path=None):
@@ -81,33 +84,46 @@ class LLMClient:
                 "messages": messages, "tools": tools, "tool_choice": "auto", "max_tokens": self.max_tokens,
                 # Raw HTTP body, not the OpenAI SDK's extra_body wrapper.
                 "thinking": {"type": "disabled"}}
-        tracing.trace.emit("llm_request", model_request_id=request_id, model=self.model, body=body)
+        tracing.emit_full("llm_request", model_request_id=request_id, model=self.model, body=body)
         try:
             response = await self.http.post(self.url, json=body)
             response.raise_for_status()
         except asyncio.CancelledError:
-            tracing.trace.emit("llm_cancelled", model_request_id=request_id,
+            tracing.emit_full("llm_cancelled", model_request_id=request_id,
                                elapsed_ms=(time.monotonic() - started) * 1000)
             raise
         except httpx.TimeoutException as error:
-            tracing.trace.emit("llm_error", model_request_id=request_id, category="timeout",
+            tracing.emit_full("llm_error", model_request_id=request_id, category="timeout",
                                elapsed_ms=(time.monotonic() - started) * 1000)
-            raise LLMError("LLM request timed out") from error
+            raise LLMError("LLM request timed out", retryable=True) from error
         except httpx.HTTPStatusError as error:
-            tracing.trace.emit("llm_error", model_request_id=request_id, category="http",
+            tracing.emit_full("llm_error", model_request_id=request_id, category="http",
                                status_code=error.response.status_code,
                                elapsed_ms=(time.monotonic() - started) * 1000)
-            raise LLMError(f"LLM HTTP {error.response.status_code}") from error
+            status = error.response.status_code
+            # Read provider error only to classify it; never expose response bodies/secrets.
+            try:
+                detail = error.response.json().get('error', {})
+                code = detail.get('code', '') if isinstance(detail, dict) else ''
+                message = detail.get('message', '') if isinstance(detail, dict) else ''
+            except (ValueError, AttributeError):
+                code = message = ''
+            overflow = status in (400, 413, 422) and (
+                code in ('context_length_exceeded', 'context_window_exceeded', 'max_context_length')
+                or 'maximum context length' in str(message).lower()
+                or 'context window' in str(message).lower())
+            raise LLMError(f"LLM HTTP {status}", context_overflow=overflow,
+                           retryable=status in (408, 429, 500, 502, 503, 504)) from error
         except httpx.RequestError as error:
-            tracing.trace.emit("llm_error", model_request_id=request_id, category="network",
+            tracing.emit_full("llm_error", model_request_id=request_id, category="network",
                                error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
-            raise LLMError(f"LLM network failure ({type(error).__name__})") from error
+            raise LLMError(f"LLM network failure ({type(error).__name__})", retryable=True) from error
         try:
             payload = response.json()
             accounting["usage"] = payload.get("usage")
             choice = payload["choices"][0]
             message = choice["message"]
-            tracing.trace.emit("llm_response", model_request_id=request_id, model=self.model,
+            tracing.emit_full("llm_response", model_request_id=request_id, model=self.model,
                                assistant=message, finish_reason=choice.get("finish_reason"),
                                elapsed_ms=(time.monotonic() - started) * 1000)
             if (message["role"] != "assistant" or choice["finish_reason"] not in ("stop", "tool_calls")
@@ -115,10 +131,10 @@ class LLMClient:
                             and message["content"].strip())):
                 raise ValueError()
             returned = {key: message[key] for key in ("role", "content", "tool_calls") if key in message}
-            tracing.trace.emit("llm_return", model_request_id=request_id, assistant=returned)
+            tracing.emit_full("llm_return", model_request_id=request_id, assistant=returned)
             return returned
         except (ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
-            tracing.trace.emit("llm_error", model_request_id=request_id, category="invalid_response",
+            tracing.emit_full("llm_error", model_request_id=request_id, category="invalid_response",
                                error_type=type(error).__name__, elapsed_ms=(time.monotonic() - started) * 1000)
             raise LLMError("Malformed or incomplete LLM response") from error
 

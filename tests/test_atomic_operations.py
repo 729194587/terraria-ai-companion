@@ -52,8 +52,14 @@ class Game:
 
 class ValidationTests(unittest.TestCase):
     def test_schema_dispatch_and_tool_names(self):
-        self.assertEqual(27, len(atomic.TOOLS))
-        self.assertTrue(set(atomic.SCHEMAS) <= {t['function']['name'] for t in TOOLS})
+        self.assertEqual({'wait', 'observe_exploration', 'stop_action'}, set(atomic.HOST_OPERATIONS))
+        self.assertEqual(set(atomic.SCHEMAS), {t['function']['name'] for t in atomic.TOOLS})
+        self.assertEqual(set(atomic.SCHEMAS), atomic.HOST_OPERATIONS | atomic.NATIVE_OPERATIONS)
+        self.assertFalse(atomic.HOST_OPERATIONS & atomic.NATIVE_OPERATIONS)
+        server_only={'observe_scene','query_recipes','craft_recipe','place_object'}
+        client_names={t['function']['name'] for t in TOOLS}
+        self.assertTrue(set(atomic.SCHEMAS)-server_only <= client_names)
+        self.assertTrue(server_only.isdisjoint(client_names))
         for name, args in [('mine_tile', {'x': 1.5, 'y': 2}), ('place_tile', {'x': True, 'y': 2}),
                            ('select_hotbar_slot', {'slot': 10}), ('navigate_to_x', {'targetX': float('nan')}),
                            ('attack_entity', {'entityRef': 1}), ('scan_entities', {'category': 'bad', 'radius': 10}),
@@ -66,7 +72,7 @@ class AtomicTests(unittest.IsolatedAsyncioTestCase):
         game = Game()
         self.assertEqual(100, (await atomic.dispatch(game, 'get_player_state', {}))['player']['life'])
         self.assertTrue((await atomic.dispatch(game, 'observe_terrain', {}))['terrain']['grounded'])
-        self.assertTrue((await atomic.dispatch(game, 'inspect_inventory', {}))['available'])
+        self.assertTrue((await atomic.dispatch(game, 'inspect_inventory', {'mode': 'selected'}))['available'])
         self.assertEqual(['query_atomic'], [c for c, _ in game.sent])
 
     async def test_ack_not_success_requires_terminal_evidence(self):

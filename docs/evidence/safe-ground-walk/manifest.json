@@ -1,0 +1,71 @@
+{
+  ".gitattributes": {
+    "bytes": 30,
+    "sha256": "f06202a408fef9b9ea69bb6b1cb8160dbb0378c5bb67a444d510d231813824c8"
+  },
+  "analysis.md": {
+    "bytes": 6109,
+    "sha256": "1d506ffd88638c63a12a94b1e6be7ce0accd5b9e38892e961e2a8f7d03b1ac69"
+  },
+  "comparison.json": {
+    "bytes": 12389,
+    "sha256": "a87821c2716e8e8d6b10738f88ef43232df191df9b461b5c30aa0897343df149"
+  },
+  "native-events.jsonl": {
+    "bytes": 33029,
+    "sha256": "d263311fba3e5236b4f22648627d274b3640720002236ebbb12c8b447ed61f29"
+  },
+  "native-result.json": {
+    "bytes": 103430,
+    "sha256": "2d13355bd2e84f539b19f7c12712c9ccf9985f37dc23dff7398f6f0152c688cb"
+  },
+  "references.json": {
+    "bytes": 665,
+    "sha256": "9839fb8a88aa84aa6ede1372edc11e5baca93491e002be001d05e6a504d6436b"
+  },
+  "safe-ground-walk-bridge-verified.log": {
+    "bytes": 876,
+    "sha256": "b742acec92f8dd0b09714ee2a9b1334eb9e7333369932fffb0cc567491750d22"
+  },
+  "safe-ground-walk-bridge.log": {
+    "bytes": 412,
+    "sha256": "6aabf653e710abee0f6806c55488c86c64ffbf8922609d1ddeb10ca289cd4ee7"
+  },
+  "safe-ground-walk-build.log": {
+    "bytes": 174,
+    "sha256": "17534c8e6f2fd2460c361b44be13b0a98bc3c21f93afa0ad19baba3794e7dd6c"
+  },
+  "safe-ground-walk-ipc.log": {
+    "bytes": 19359,
+    "sha256": "186af94980dfba95a419fe77aee10e0decec7fcc3be302d85e16523612c3f199"
+  },
+  "safe-ground-walk-native.log": {
+    "bytes": 135,
+    "sha256": "7e2b61dec4dd55484b78d16a1a7efbeda80a8fd97ba920c3f39d0e1c4fab15cc"
+  },
+  "safe-ground-walk-navigation.log": {
+    "bytes": 3495,
+    "sha256": "b1af990744e0a3833e0dd02d9ed4d8291b6329bfa964497bda4e1c9236e283ab"
+  },
+  "safe-ground-walk-python-nav.log": {
+    "bytes": 3211,
+    "sha256": "9c2511a6605bde1d2f2050dc8eba2ba641767f4a83d6ef09232320a2ef11fd0d"
+  },
+  "safe-ground-walk-tests-verified.log": {
+    "bytes": 8557,
+    "sha256": "bdabedc2b47d8d943771952eb411ac67996b645f8e42c659a582085e9c6113a6"
+  },
+  "safe-ground-walk-vertical.log": {
+    "bytes": 8632,
+    "sha256": "d2795984634188f8e1a920d04f52bd8a2123b41e0c658d783d1022da6096da0f"
+  },
+  "testedPackage": {
+    "path": ".local\\safe-ground-walk-build\\Mods\\CompanionBridge.tmod",
+    "sha256": "5f29a49b009ebf1a6713cd6783559ad6a7bd89e39ab1624a11a2195fa62bf06f",
+    "version": "0.1.64 diagnostic build; existing user deployment unchanged"
+  },
+  "safe-ground-walk-comparison-final.log": {
+    "bytes": 8620,
+    "sha256": "d3da9bcd41bd2a63ff583f2e99730d35463ce423cce8b2d8455d51bba1909e22"
+  }
+}

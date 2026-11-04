@@ -68,7 +68,7 @@ internal static class AtomicQueries
         return result;
     }
 
-    internal static object InspectTile(Player p, int x, int y)
+    internal static object InspectTile(Player p, int x, int y, Func<Item,int,string> token = null)
     {
         var cell = ObservationReader.ReadCell(x, y, new());
         if (cell.Knowledge != "read") return new { x, y, cell, preflight = (object)null,
@@ -83,7 +83,7 @@ internal static class AtomicQueries
                 distancePixels = Vector2.Distance(p.Center, target),
                 withinConservativeReach = Vector2.Distance(p.Center, target) <= 80,
                 reachPixels = 80, normalGravity = p.gravDir == 1,
-                selectedItem = AtomicOperations.CompactItem(held, p.selectedItem),
+                selectedItem = token == null ? AtomicOperations.CompactItem(held, p.selectedItem) : AtomicOperations.CompactItem(held, p.selectedItem, token),
                 checks = new { tilePresent = cell.HasTile, wallPresent = cell.WallType > 0,
                     pickSelected = !held.IsAir && held.pick > 0,
                     pureHammerSelected = !held.IsAir && held.hammer > 0 && held.pick == 0 && held.axe == 0,
@@ -121,7 +121,7 @@ internal static class AtomicQueries
             coordinates = "tile cells; inclusive bounds; 16 pixels per cell; +X right,+Y down" };
     }
 
-    internal static object ScanEntities(Player p, JsonElement args, Func<NPC,string> entityRef)
+    internal static object ScanEntities(Player p, JsonElement args, Func<NPC,string> entityRef, bool authoritative = false)
     {
         string category = args.GetProperty("category").GetString();
         float radius = args.GetProperty("radius").GetSingle();
@@ -146,7 +146,7 @@ internal static class AtomicQueries
             Add(n,"npc",n.whoAmI,n.type,n.GivenOrTypeName,c.Kind,c.Basis,
                 new { entityRef=entityRef(n),n.type,n.life,n.lifeMax,n.friendly,n.dontTakeDamage,chaseable=n.CanBeChasedBy(),evidence });
         }
-        if (category is "all" or "player") foreach (var other in Main.player) if (other.active && other.whoAmI != Main.myPlayer)
+        if (category is "all" or "player") foreach (var other in Main.player) if (other.active && other.whoAmI != p.whoAmI)
             Add(other,"player",other.whoAmI,null,other.name,"other_player","PvP hostility not evaluated",new {other.dead,other.statLife,other.team});
         if (category is "all" or "item") for (int i=0;i<Main.item.Length;i++)
         {
@@ -157,6 +157,9 @@ internal static class AtomicQueries
         return new { items=list.OrderBy(e=>e.Distance).ThenBy(e=>e.Kind,StringComparer.Ordinal).ThenBy(e=>e.Slot).Take(limit).Select(e=>e.Value).ToArray(),
             matchedCount=list.Count, returnedCount=Math.Min(list.Count,limit),truncated=list.Count>limit,radiusPixels=radius,
             sort="distance_from_player_center_then_kind_slot; filters before truncation",
-            scope="Client-known entities only; synchronization age/visibility unknown; hostility is conservative inference, not current threat" };
+            complete=true, status=list.Count == 0 ? "not_found" : "ok",
+            originWorldPixels=new StateVector(p.Center.X,p.Center.Y),
+            scope=authoritative ? "Server active entities within radius; no line-of-sight test; hostility is inference, not current threat"
+                : "Client-known entities only; synchronization age/visibility unknown; hostility is conservative inference, not current threat" };
     }
 }

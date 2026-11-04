@@ -1,0 +1,799 @@
+{
+  "result": "passed",
+  "mode": "isolated real native dedicated server; no graphical Host & Play",
+  "binding": {
+    "actor": "a8f918dfad5e447d870969e151dfe52b",
+    "world": "4ca76c534c03498b87df668361a70317",
+    "generation": 1,
+    "slot": 254
+  },
+  "exitCode": 0,
+  "processId": 22152,
+  "startedUtc": "2026-10-27T07:38:52.0269230Z",
+  "exitedUtc": "2026-10-27T07:39:31.9739842Z",
+  "logScope": "process ID + bound world session + process lifetime",
+  "spawn": {
+    "probe": "VirtualPlayerEngineProbe",
+    "eventName": "spawn",
+    "utc": "2026-10-27T07:39:11.933529Z",
+    "WorldSession": "4ca76c534c03498b87df668361a70317",
+    "Phase": "actor exists; G2 visibility requires client verification",
+    "thread": 4,
+    "process": 22152,
+    "role": "native-server",
+    "programMainThread": 4,
+    "programIsMainThread": true,
+    "worldSnapshot": true,
+    "gameUpdate": 0,
+    "ownerThread": 4,
+    "netMode": 2,
+    "dedServ": true,
+    "myPlayer": 255,
+    "reservation": {
+      "Slot": 254,
+      "Capacity": 255,
+      "Session": "fe82517f-7956-4a8e-bc78-2844db1d0595"
+    },
+    "actorSlot": 254,
+    "actor": {
+      "whoAmI": 254,
+      "active": true,
+      "dead": false,
+      "x": 33680,
+      "y": 3318,
+      "vx": 0,
+      "vy": 0,
+      "preUpdates": 0,
+      "postUpdates": 0,
+      "sameReference": true,
+      "connected": false,
+      "socketType": null,
+      "remoteState": 0,
+      "remoteActive": false,
+      "pendingTermination": false,
+      "terminationApproved": false
+    },
+    "humans": [],
+    "networkLoops": 20,
+    "loopsSinceSpawn": 0,
+    "cleanupSkips": 0,
+    "syncSkips": 0,
+    "sectionSkips": 0,
+    "accepts": 0,
+    "fullSnapshots": 1,
+    "controlPackets": 0,
+    "departures": 0,
+    "joinNotices": 0,
+    "leaveNotices": 0,
+    "noticeFailures": 0,
+    "fault": null,
+    "liveGateResult": "not automatically assessed",
+    "detail": null
+  },
+  "teardown": {
+    "probe": "VirtualPlayerEngineProbe",
+    "eventName": "teardown",
+    "utc": "2026-10-27T07:39:31.943434Z",
+    "WorldSession": "4ca76c534c03498b87df668361a70317",
+    "Phase": "released; fresh server process required to re-arm",
+    "thread": 4,
+    "process": 22152,
+    "role": "native-server",
+    "programMainThread": 4,
+    "programIsMainThread": true,
+    "worldSnapshot": true,
+    "gameUpdate": 1051,
+    "ownerThread": 4,
+    "netMode": 2,
+    "dedServ": true,
+    "myPlayer": 255,
+    "reservation": {
+      "Slot": 254,
+      "Capacity": 255,
+      "Session": "fe82517f-7956-4a8e-bc78-2844db1d0595"
+    },
+    "actorSlot": -1,
+    "actor": null,
+    "humans": [],
+    "networkLoops": 15280,
+    "loopsSinceSpawn": 0,
+    "cleanupSkips": 15260,
+    "syncSkips": 0,
+    "sectionSkips": 1051,
+    "accepts": 0,
+    "fullSnapshots": 13,
+    "controlPackets": 175,
+    "departures": 1,
+    "joinNotices": 1,
+    "leaveNotices": 1,
+    "noticeFailures": 0,
+    "fault": null,
+    "liveGateResult": "not automatically assessed",
+    "detail": {
+      "reason": "OnWorldUnload",
+      "same": true,
+      "occupied": false
+    }
+  },
+  "packageSHA256": "3E99ACD132545DB2A5159F610D6F70E4642AD752C34942C5AC94112D2424EF33",
+  "bindingMismatchTest": "request generation is current generation + 1; no native lifecycle change",
+  "nativeGenerationLifecycle": "NOT RUN",
+  "actionFrameMode": "Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.",
+  "baseline": "a6138e9",
+  "packageVersion": "0.1.48",
+  "perception": {
+    "runId": "5bc700bb7cb04c3ba2ac56deb964ae8e",
+    "status": "completed",
+    "calls": 10,
+    "value": {
+      "drops": {
+        "clock": "server_utc_at_projection",
+        "observedAtUnixMs": 1793086763305,
+        "binding": {
+          "slot": 254,
+          "world": "4ca76c534c03498b87df668361a70317",
+          "actor": "a8f918dfad5e447d870969e151dfe52b",
+          "generation": 1
+        },
+        "gameUpdate": 649,
+        "valid": true,
+        "actorSlot": 254,
+        "data": {
+          "matchedCount": 1,
+          "radiusPixels": 1600,
+          "complete": true,
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "originWorldPixels": {
+            "x": 33545.2,
+            "y": 3483
+          },
+          "status": "ok",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "sort": "distance_from_player_center_then_kind_slot; filters before truncation",
+          "truncated": false,
+          "returnedCount": 1,
+          "items": [
+            {
+              "velocityPixelsPerTick": {
+                "x": 0,
+                "y": 0
+              },
+              "distancePixels": 370.31174,
+              "name": "Stone Block",
+              "kind": "item",
+              "classificationBasis": "Active item; not proof of pickup eligibility",
+              "details": {
+                "type": 3,
+                "contentKey": "Terraria/StoneBlock",
+                "stack": 3
+              },
+              "typeId": 3,
+              "slot": 0,
+              "classification": "dropped_item",
+              "centerWorldPixels": {
+                "x": 33915.207,
+                "y": 3498
+              }
+            }
+          ],
+          "source": "server_ai_player",
+          "scope": "Server active entities within radius; no line-of-sight test; hostility is inference, not current threat"
+        },
+        "actorGeneration": 1,
+        "available": true,
+        "worldSessionId": "4ca76c534c03498b87df668361a70317"
+      },
+      "tiles": {
+        "clock": "server_utc_at_projection",
+        "observedAtUnixMs": 1793086763121,
+        "binding": {
+          "slot": 254,
+          "world": "4ca76c534c03498b87df668361a70317",
+          "actor": "a8f918dfad5e447d870969e151dfe52b",
+          "generation": 1
+        },
+        "gameUpdate": 638,
+        "valid": true,
+        "actorSlot": 254,
+        "data": {
+          "matchedCount": 498,
+          "sort": "distance_from_player_center_then_y_x; nearest before truncation",
+          "complete": true,
+          "returnedCount": 1,
+          "scannedCount": 1305,
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "status": "ok",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "bounds": {
+            "maxX": 2118,
+            "minX": 2074,
+            "minY": 202,
+            "maxY": 230
+          },
+          "coordinates": "tile cells; inclusive bounds; 16 pixels per cell; +X right,+Y down",
+          "unknownCount": 0,
+          "items": [
+            {
+              "typeId": 0,
+              "contentKey": "Terraria/Dirt",
+              "x": 2096,
+              "distancePixels": 29.024784,
+              "y": 219
+            }
+          ],
+          "source": "server_ai_player",
+          "truncated": true
+        },
+        "actorGeneration": 1,
+        "available": true,
+        "worldSessionId": "4ca76c534c03498b87df668361a70317"
+      },
+      "finalTime": 1793086763332,
+      "unknown": {
+        "clock": "server_utc_at_projection",
+        "observedAtUnixMs": 1793086763178,
+        "binding": {
+          "slot": 254,
+          "world": "4ca76c534c03498b87df668361a70317",
+          "actor": "a8f918dfad5e447d870969e151dfe52b",
+          "generation": 1
+        },
+        "gameUpdate": 642,
+        "valid": true,
+        "actorSlot": 254,
+        "data": {
+          "matchedCount": 0,
+          "sort": "distance_from_player_center_then_y_x; nearest before truncation",
+          "complete": false,
+          "returnedCount": 0,
+          "scannedCount": 4,
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "status": "partial_unloaded",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "bounds": {
+            "maxX": 99999,
+            "minX": 99998,
+            "minY": 99998,
+            "maxY": 99999
+          },
+          "coordinates": "tile cells; inclusive bounds; 16 pixels per cell; +X right,+Y down",
+          "unknownCount": 4,
+          "items": [],
+          "source": "server_ai_player",
+          "truncated": false
+        },
+        "actorGeneration": 1,
+        "available": true,
+        "worldSessionId": "4ca76c534c03498b87df668361a70317"
+      },
+      "players": {
+        "clock": "server_utc_at_projection",
+        "observedAtUnixMs": 1793086763246,
+        "binding": {
+          "slot": 254,
+          "world": "4ca76c534c03498b87df668361a70317",
+          "actor": "a8f918dfad5e447d870969e151dfe52b",
+          "generation": 1
+        },
+        "gameUpdate": 645,
+        "valid": true,
+        "actorSlot": 254,
+        "data": {
+          "matchedCount": 0,
+          "radiusPixels": 1600,
+          "complete": true,
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "originWorldPixels": {
+            "x": 33545.2,
+            "y": 3483
+          },
+          "status": "not_found",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "sort": "distance_from_player_center_then_kind_slot; filters before truncation",
+          "truncated": false,
+          "returnedCount": 0,
+          "items": [],
+          "source": "server_ai_player",
+          "scope": "Server active entities within radius; no line-of-sight test; hostility is inference, not current threat"
+        },
+        "actorGeneration": 1,
+        "available": true,
+        "worldSessionId": "4ca76c534c03498b87df668361a70317"
+      },
+      "finalTick": 651,
+      "inspected": {
+        "clock": "server_utc_at_projection",
+        "observedAtUnixMs": 1793086763155,
+        "binding": {
+          "slot": 254,
+          "world": "4ca76c534c03498b87df668361a70317",
+          "actor": "a8f918dfad5e447d870969e151dfe52b",
+          "generation": 1
+        },
+        "gameUpdate": 640,
+        "valid": true,
+        "actorSlot": 254,
+        "data": {
+          "preflight": {
+            "withinConservativeReach": true,
+            "limitations": "Preflight only: not proof of path, safety, line of sight, pick power, native permissions, object footprint, placement adjacency or server acceptance. Action validates again; re-observe effects.",
+            "reachPixels": 80,
+            "checks": {
+              "vanillaNonFrameImportantTile": true,
+              "pureHammerSelected": false,
+              "wallPresent": false,
+              "tilePresent": true,
+              "supportedInteractionType": false,
+              "pickSelected": true,
+              "consumableTileSelected": false,
+              "consumableWallSelected": false
+            },
+            "distancePixels": 29.024784,
+            "selectedItem": {
+              "contentKey": "Terraria/CopperPickaxe",
+              "prefix": 0,
+              "use": {
+                "hammer": 0,
+                "createTile": -1,
+                "createWall": -1,
+                "axe": 0,
+                "pick": 35
+              },
+              "name": "Copper Pickaxe",
+              "hotbarKey": 2,
+              "inventoryToken": null,
+              "favorited": false,
+              "maxStack": 1,
+              "stack": 1,
+              "slot": 1,
+              "typeId": 3509,
+              "empty": false
+            },
+            "normalGravity": true
+          },
+          "x": 2096,
+          "cell": {
+            "actuated": false,
+            "destroyOnTouch": false,
+            "boulder": false,
+            "tilePaint": 0,
+            "slope": 0,
+            "tileType": 0,
+            "collisionKnowledge": "known",
+            "wallPaint": 0,
+            "solid": true,
+            "hot": false,
+            "touchDamage": 0,
+            "frameY": 0,
+            "wallFullbright": false,
+            "solidTop": false,
+            "wallType": 0,
+            "tileFullbright": false,
+            "wallInvisible": false,
+            "tileInvisible": false,
+            "wireMask": 0,
+            "liquidAmount": 0,
+            "knowledge": "read",
+            "hasTile": true,
+            "actuator": false,
+            "halfBlock": false,
+            "liquidType": 0,
+            "bleeding": false,
+            "frameX": 0
+          },
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "wallContent": null,
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "y": 219,
+          "preflightStatus": "partial_checks_only",
+          "source": "server_ai_player",
+          "content": "Terraria/Dirt"
+        },
+        "actorGeneration": 1,
+        "available": true,
+        "worldSessionId": "4ca76c534c03498b87df668361a70317"
+      },
+      "terrain": {
+        "clock": "server_utc_at_projection",
+        "observedAtUnixMs": 1793086763032,
+        "binding": {
+          "slot": 254,
+          "world": "4ca76c534c03498b87df668361a70317",
+          "actor": "a8f918dfad5e447d870969e151dfe52b",
+          "generation": 1
+        },
+        "gameUpdate": 634,
+        "valid": true,
+        "actorSlot": 254,
+        "data": {
+          "state": {
+            "centerWorldPixels": {
+              "x": 33545.098,
+              "y": 3483
+            },
+            "velocityPixelsPerTick": {
+              "x": 0.30000138,
+              "y": 0
+            },
+            "id": 254,
+            "positionWorldPixels": {
+              "x": 33535.098,
+              "y": 3462
+            },
+            "dead": false,
+            "direction": 1
+          },
+          "complete": true,
+          "scannedCount": 1305,
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "unknownCount": 0,
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "bounds": {
+            "maxX": 2118,
+            "minX": 2074,
+            "minY": 202,
+            "maxY": 230
+          },
+          "coordinates": "Tile cells; 16 world pixels per tile; +X right,+Y down; rows[y][x] relative to origin",
+          "terrain": {
+            "tileSize": 16,
+            "originX": 2074,
+            "originY": 202,
+            "grounded": true,
+            "supported": true,
+            "playerHeight": 42,
+            "playerWidth": 20,
+            "rows": [
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              ".............................................",
+              "#####........................................",
+              "#####........................................",
+              "#####........................................",
+              "#####........................................",
+              "#####........................................",
+              "#####........................................",
+              "#####..............................#.........",
+              "#####..............................##........",
+              "#####........................................",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################",
+              "#############################################"
+            ]
+          },
+          "legend": ". clear/nonblocking/actuated; # solid; h halfblock; 1..4 slopes; = platform; a/b platform slopes; ! liquid or hazard; ? unknown collision or world boundary",
+          "source": "server_ai_player",
+          "scope": "45x29 collision categories, not tile types or visibility; unknown Mod collision hooks; no path guarantee"
+        },
+        "actorGeneration": 1,
+        "available": true,
+        "worldSessionId": "4ca76c534c03498b87df668361a70317"
+      },
+      "outside": {
+        "clock": "server_utc_at_projection",
+        "observedAtUnixMs": 1793086763199,
+        "binding": {
+          "slot": 254,
+          "world": "4ca76c534c03498b87df668361a70317",
+          "actor": "a8f918dfad5e447d870969e151dfe52b",
+          "generation": 1
+        },
+        "gameUpdate": 643,
+        "valid": true,
+        "actorSlot": 254,
+        "data": {
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "source": "server_ai_player",
+          "preflight": null,
+          "x": 100000,
+          "y": 100000,
+          "preflightStatus": "unknown_target",
+          "cell": {
+            "actuated": false,
+            "destroyOnTouch": false,
+            "boulder": false,
+            "tilePaint": 0,
+            "slope": 0,
+            "tileType": null,
+            "collisionKnowledge": "known",
+            "wallPaint": 0,
+            "solid": false,
+            "hot": false,
+            "touchDamage": 0,
+            "frameY": 0,
+            "wallFullbright": false,
+            "solidTop": false,
+            "wallType": null,
+            "tileFullbright": false,
+            "wallInvisible": false,
+            "tileInvisible": false,
+            "wireMask": 0,
+            "liquidAmount": 0,
+            "knowledge": "out_of_world",
+            "hasTile": false,
+            "actuator": false,
+            "halfBlock": false,
+            "liquidType": 0,
+            "bleeding": false,
+            "frameX": 0
+          }
+        },
+        "actorGeneration": 1,
+        "available": true,
+        "worldSessionId": "4ca76c534c03498b87df668361a70317"
+      },
+      "npcs": {
+        "clock": "server_utc_at_projection",
+        "observedAtUnixMs": 1793086763281,
+        "binding": {
+          "slot": 254,
+          "world": "4ca76c534c03498b87df668361a70317",
+          "actor": "a8f918dfad5e447d870969e151dfe52b",
+          "generation": 1
+        },
+        "gameUpdate": 647,
+        "valid": true,
+        "actorSlot": 254,
+        "data": {
+          "matchedCount": 1,
+          "radiusPixels": 1600,
+          "complete": true,
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "originWorldPixels": {
+            "x": 33545.2,
+            "y": 3483
+          },
+          "status": "ok",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "sort": "distance_from_player_center_then_kind_slot; filters before truncation",
+          "truncated": false,
+          "returnedCount": 1,
+          "items": [
+            {
+              "velocityPixelsPerTick": {
+                "x": 0,
+                "y": 0
+              },
+              "distancePixels": 84.86441,
+              "name": "Blue Slime",
+              "kind": "npc",
+              "classificationBasis": "Inferred: vanilla, nonfriendly, noncritter, damaging and chaseable; current aggression not verified",
+              "details": {
+                "evidence": {
+                  "townNpc": false,
+                  "chaseable": true,
+                  "damage": 7,
+                  "friendly": false,
+                  "critter": false,
+                  "projectileNpc": false,
+                  "modded": false
+                },
+                "life": 19,
+                "chaseable": true,
+                "dontTakeDamage": false,
+                "type": 1,
+                "lifeMax": 25,
+                "entityRef": "4ca76c534c03498b87df668361a70317:1:npc:2:f6a95553-bce7-45b5-a111-067044fb0be1",
+                "friendly": false
+              },
+              "typeId": 1,
+              "slot": 2,
+              "classification": "hostile_creature",
+              "centerWorldPixels": {
+                "x": 33461.188,
+                "y": 3495
+              }
+            }
+          ],
+          "source": "server_ai_player",
+          "scope": "Server active entities within radius; no line-of-sight test; hostility is inference, not current threat"
+        },
+        "actorGeneration": 1,
+        "available": true,
+        "worldSessionId": "4ca76c534c03498b87df668361a70317"
+      },
+      "content": {
+        "clock": "server_utc_at_projection",
+        "observedAtUnixMs": 1793086763070,
+        "binding": {
+          "slot": 254,
+          "world": "4ca76c534c03498b87df668361a70317",
+          "actor": "a8f918dfad5e447d870969e151dfe52b",
+          "generation": 1
+        },
+        "gameUpdate": 636,
+        "valid": true,
+        "actorSlot": 254,
+        "data": {
+          "matchedCount": 1,
+          "truncated": false,
+          "candidates": [
+            {
+              "typeId": 0,
+              "nameSource": "content_symbol",
+              "contentKey": "Terraria/Dirt",
+              "creates": null,
+              "name": "Dirt"
+            }
+          ],
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+          "status": "ok",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "mode": "exact",
+          "kind": "tile",
+          "returnedCount": 1,
+          "source": "server_ai_player",
+          "scope": "Loaded content registry, not presence in world or inventory; numeric IDs valid only for this loaded content set"
+        },
+        "actorGeneration": 1,
+        "available": true,
+        "worldSessionId": "4ca76c534c03498b87df668361a70317"
+      }
+    },
+    "actions": 0,
+    "logs": [],
+    "actionState": "idle",
+    "lastAction": null,
+    "cleanup": null,
+    "trace": [
+      {
+        "id": 1,
+        "operation": "observe_terrain",
+        "line": 1,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 32.00000000651926
+      },
+      {
+        "id": 2,
+        "operation": "resolve_content",
+        "line": 5,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 30.999999988125637
+      },
+      {
+        "id": 3,
+        "operation": "scan_tiles",
+        "line": 8,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 46.999999991385266
+      },
+      {
+        "id": 4,
+        "operation": "inspect_tile",
+        "line": 13,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 32.00000000651926
+      },
+      {
+        "id": 5,
+        "operation": "scan_tiles",
+        "line": 16,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 15.000000013969839
+      },
+      {
+        "id": 6,
+        "operation": "inspect_tile",
+        "line": 18,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 15.000000013969839
+      },
+      {
+        "id": 7,
+        "operation": "scan_entities",
+        "line": 20,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 46.999999991385266
+      },
+      {
+        "id": 8,
+        "operation": "scan_entities",
+        "line": 23,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 32.00000000651926
+      },
+      {
+        "id": 9,
+        "operation": "scan_entities",
+        "line": 25,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 30.999999988125637
+      },
+      {
+        "id": 10,
+        "operation": "observe_terrain",
+        "line": 27,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 15.000000013969839
+      }
+    ],
+    "evidence": {
+      "taskId": "981bfd45ca394b818a700858c6a76b21",
+      "path": "D:\\Agent Project\\terraria-ai-companion\\.local\\g85-lua-evidence\\981bfd45ca394b818a700858c6a76b21",
+      "available": true,
+      "eventsDropped": 0,
+      "writeErrors": 0
+    }
+  },
+  "otherNativeChecks": {
+    "luaActionsStatus": "completed",
+    "readBindingMismatchError": "stale_binding",
+    "nativeWorldEvidence": {
+      "gameUpdate": 1020,
+      "targetAbsent": true,
+      "neighborPresent": true,
+      "cancellationTargetPresent": true,
+      "statLife": 60,
+      "appleStack": 1,
+      "pickStack": 1,
+      "x": 33678.465,
+      "y": 3462,
+      "drops": [
+        {
+          "type": 3,
+          "stack": 1,
+          "x": 33748,
+          "y": 3492
+        }
+      ],
+      "observedDrop": {
+        "gameUpdate": 991,
+        "items": [
+          {
+            "type": 3,
+            "stack": 1,
+            "x": 33748,
+            "y": 3472.01
+          }
+        ],
+        "nativeActionId": "4d509aee-e95a-4385-ac18-1c43d143dbb5"
+      },
+      "stoneInInventory": 0,
+      "controlsReleased": true,
+      "networkFull": 12,
+      "networkControls": 169
+    }
+  },
+  "limitations": [
+    "No graphical Host & Play or live external model in G8.5",
+    "No real remote player presence test",
+    "No real actor replacement/world reload/death generation transition test; protocol substitutes cover stale bindings",
+    "No mod content/hooks/liquid/slope matrix; existing classifier reused",
+    "Entities are server-active radius reads, not line of sight or pickup eligibility"
+  ]
+}

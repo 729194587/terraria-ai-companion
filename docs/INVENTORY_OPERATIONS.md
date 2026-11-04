@@ -1,5 +1,58 @@
 # 背包原子能力第一批：CompanionBridge 0.1.39
 
+## 异常诊断的基线可用性：0.1.72（2026-11-01）
+
+`SourceBefore` / `DestinationBefore` 原本在 Token、参数和库存前置检查之后才赋值；之前的异常会把字段默认 null 当作“原槽位为空”，错误报告实例改变。现在分别记录 `SourceBaselineEstablished` / `DestinationBaselineEstablished`，在各引用赋值后置 true。`BasicSlot` 在对应标记为 false 时只返回 `{slot,available=false,reason='baseline_not_established'}`，不输出 `instanceChanged`；已建立的 null 基线或 air Item 基线仍返回 available=true，按引用比较判断是否改变。顶层 after.available 表示诊断可采集，各槽 availability 独立。
+
+新增三项定向诊断：内部缺 sourceToken 使 Step 在基线建立前抛异常、已建立 null/air 基线、仅建立源槽基线。测试使用隔离夹具的内部参数/状态注入，未放宽公网协议校验；断言没有变更物品或取得输入，仍为 unknown。库存执行、回滚和重试行为不变。
+
+**实验结果**：上述 3 项基线诊断、原有 36 项库存场景、7 次真实 Lua/IPC 动作和既有读取/选栏/导航/使用/挖掘/取消/进程清理通过。C# 定向 IPC/原子/读取/适配/聊天检查与 80 项正式包 IL 检查通过；构建 0 错误、0 警告。包 SHA-256 `a550d0495793752e066cc764e07cc9783ebb2ab9561787bbe2c7c3b695120049`；[命令与精选原始回执](evidence/INVENTORY_BASELINE_DIAGNOSTICS.json)。未运行全量测试、未部署现用 profile，未新增图形或远端客户端验收。
+
+## Server AI Token 与异常证据修复：0.1.71（2026-11-01）
+
+**实现**：修复 `305b9fe` 中只读 Token 调用 `ItemIO.Save` 的问题。`ActorInventory.Token` 及基础异常快照均不调用 `ItemIO`、`TagIO`、`SaveData` 或网络序列化钩子。Token 保留 World、Generation、Actor 对象身份、Actor 槽位、库存槽位、非空 Item 实例、type/stack/prefix/maxStack/favorited；空槽仍按值识别。摘要增加 `core_only_v2` 域标识，旧算法的 Token 不会被接受。共享 Schema、`server_ai_inventory_v1` 握手和客户端本地 `AtomicInventory` 不变。
+
+**能力边界**：全部 ModItem/GlobalItem 自定义状态（包括可保存状态）都不进入 Token；仅自定义状态改变时不能检测过期，不宣称完整物品相等。执行时仍调用原生 CanStack、StackItems、TransferWithLimit 及原有钩子。移除为防 SaveData 副作用而设置的重复序列化检查；`mutationAttempted` 现在在原生许可钩子或变更入口前置 true，旧基础快照拒绝不再标记已尝试变更。
+
+**异常证据**：CanStack、OnStack、SplitStack 或其他原生执行异常仍为 `unknown`。尽力填写 `after={available,kind='basic_fields_only',gameUpdate,selectedSlot,source,destination,customState='unknown'}`；两槽含原始 typeId/stack/prefix/maxStack/favorited、present、instanceId 和相对执行前引用的 instanceChanged。直接读字段，不调用 Item 属性/Mod 钩子，不把异常后的状态解释为成功或失败。绑定已失效时仅返回不可用原因，不读取替换 Actor；诊断自身失败也不覆盖原异常。保留不回滚、不自动重试及 Lua unknown 屏障。
+
+**实验结果**：最终 `0.1.71` 包 SHA-256 `242bba96417152d8981317e1b17c0f96fd3a28e9a99783af0282f8861e514fa8`，正式构建 0 错误、0 警告。服务器库存 Python 6 项、本地库存 Python 7 项通过；C# IPC 45 / 原子 40 / 读取 63 / 原生适配替身 226 / 聊天 30 项及正式包 80 项 IL 检查通过。未运行全量测试。
+
+**隔离原生**：36 个库存场景、7 次真实 Lua/IPC 库存动作及既有读取/选栏/导航/使用/挖掘/取消/进程清理通过。ModItem 与 GlobalItem 各自抛异常、修改状态的四种 SaveData 配置下，selected/hotbar/slots/full/item 及 get_player_state 查询的保存钩子调用均为零，物品状态保持不变。CanStack 修改目标数量/前缀后抛异常、OnStack 替换源实例后抛异常、SplitStack 修改源数量/前缀后抛异常均保留 unknown，并逐字段比对异常快照与真实槽位；实例替换标志也核对通过。移动、拆分、合并、交换、持用、旧绑定/旧基础字段及同值新实例 Token 拒绝通过；另有仅自定义状态改变仍接受 Token 的边界用例。
+
+原始结果、失败日志、命令和逐文件 SHA-256 见 [修复证据](evidence/server-ai-inventory-token-fix/manifest.json)。两次最初的原生尝试未进入测试：新增 GlobalItem 夹具缺少与 SaveData 配对的 LoadData，被 tModLoader 禁用；先前对世界加载慢的猜测不成立。补齐测试夹具后，同一脚本/原超时的最终重建包验收通过，原失败证据保留。没有部署现用 profile 或付费模型请求，未验证图形 Host & Play、远端客户端收包和任意第三方 Mod。
+
+下节 0.1.70 的实现描述和测试是历史记录：本节取代其中“保存状态进入 Token”“SaveData 开始即算变更尝试”等说明，原始证据不改写。
+
+## Server AI 库存：0.1.70（2026-11-01）
+
+以下为独立服务器 AI Player 的实现和验证；后文 0.1.39/0.1.40 为客户端历史记录，不将单人限制套用于服务器路径。
+
+**实现**：新增 `ServerPlayerRuntime/ActorInventory.cs`，复用已有 Schema、`AtomicOperations.ReadInventory` 投影与 `AiAtomicActions` 生命周期。与 `AtomicInventory` 采用相同原生 `ItemLoader.TransferWithLimit` / `CanStack` / `StackItems` 和 `Utils.Swap`，没有改动本地 `AtomicInventory`。没有复用本地控制器、`Main.LocalPlayer`、鼠标物品或 `Recipe.FindRecipes`；`ActorCrafting` 每次查询/批次本就重建绑定 Actor 的材料和邻接缓存，无须刷新客户端配方 UI。
+
+- 独立能力 `server_ai_inventory_v1`，同时要求原有动作能力。Python 根据实际握手开放三个操作；旧版本在 RPC 前拒绝。服务器协议继续使用绑定租约、动作互斥、取消、截止时间和原游戏线程结束证据。
+- `transfer_inventory_item` 在 0..49 普通库存槽移动、拆分、合并精确数量；不同类型/前缀、容量不足、源数量不足或原生堆叠拒绝均不执行搬运。`swap_inventory_slots` 交换完整实例。`hold_inventory_item` 将完整物品与指定快捷栏交换并选中；游戏键 0 对应内部槽 9，同槽只选中，不自动使用。
+- 用 `inspect_inventory(mode='slots', slots={source,destination})`（或 selected/hotbar）读取两槽当前 `inventoryToken`；full/item 不保证提供 token。令牌包含 World、Generation、Actor 对象随机身份、Actor 槽位、库存槽位、非空 Item 实例身份、核心字段及 `ItemIO.Save`/`TagIO` 保存状态。空槽使用值身份，避免正常 air 占位替换导致误拒绝。
+- 游戏线程执行时重验绑定与两槽 token。检查整个库存的变更前后状态、选栏、非目标槽不变、数量/收藏/类型/前缀和交换引用；调用服务器原生完整同步，然后等 `GameUpdateCount` 严格增加再验证整个库存和选栏。`completed` 必须有 `inventoryVerified`、前后状态、后续更新及绑定输入释放证据；Python 也核对不可变 `targetInventory` 与这些效果证据。
+- `failed` 表示已知前置拒绝；Mod 钩子异常、观察到额外改变、同步异常、变更后取消/断连但尚未确认均为 `unknown`。不回滚、不自动重试；Lua 保留 unknown 会话隔离和第二动作屏障。`mutationAttempted` 从可能调用 `SaveData` 开始置 true，表示已进入任意 Mod 代码，不承诺实际搬运已发生。执行前取消为 cancelled；已确认完成保留完成结果。
+
+**实验结果**：最终正式包 SHA-256 `1fdfa14316b0f08acc3d441e4defd0aa66f1e1f4125344220d2782cd5f84bf8c`，构建 0 错误、0 警告。原始回执、日志、命令、逐文件哈希见 [证据 manifest](evidence/server-ai-inventory/manifest.json)。
+
+| 定向验证 | 实际结果与范围 |
+| --- | --- |
+| Python | 新库存 6、原 Server AI 后端 36、原本地库存 7，共 49 项通过。真实 loopback/Worker；旧能力拒绝、回执缺字段/错误数量/旧目标、unknown 后不发起第二动作 |
+| C# 离线 | IPC 45、原子动作 40、读取协议 63、原生适配替身 226、聊天 30 项通过；新增不可变库存请求、取消/断连保护。本地 `-InventoryOnly` 通过 |
+| 正式包 IL | 79 项通过，包括原生库存调用、Mod 保存状态和无真人/UI 路径 |
+| 隔离原生 | 33 个真实 Terraria 库存场景通过：移动/拆分/合并、交换/空槽、快捷键 0/1/9/同槽、旧源/目标/World/Generation/Actor槽/Actor对象/Mod保存状态、容量/前缀/忙碌、Mod原生拆分/合并/拒绝、CanStack/OnStack/SplitStack 修改后抛异常、执行前后取消、真实生命周期的断连令牌/Forget、SaveData异常/不稳定状态、下一更新前干扰 |
+| 真实 Lua/IPC | 7 次新库存动作及原有读取、选栏、导航、使用、挖掘、取消与进程清理通过；下一更新才完成；真人库存、鼠标物品和 UI 选择状态未改变 |
+
+首次原生尝试在旧读取脚本省略必填 `mode` 时失败，未进入库存变更验收；保留 [原失败回执](evidence/server-ai-inventory/initial-read-failure.json)。相关读取脚本和测试已改为显式 mode，并兼容旧/新库存 token 响应，没有放宽生产 Schema。最终同包完整复验通过。受沙箱 localhost 限制的初始测试尝试在获准的沙箱外重跑；没有运行全量测试。
+
+**剩余限制**：Mod 未保存的私有数据无法进入 token；原生钩子决定自定义兼容性，不保证所有第三方 Mod 行为。验证用诊断 ModItem 仅在显式测试启动参数下注册，库存/场景注入只存在隔离夹具。断连精确时序用生产生命周期的 CancellationToken/Forget 配真实执行器验证，未声称实际 TCP 恰在堆叠与确认之间断开的确定性重演。已调用服务器原生同步，但未验证远端客户端收包、晚加入或图形 Host & Play；未部署用户现用 profile、未调用付费模型。
+
+---
+
+
 0.1.40已增加原生异常详情并更新预算，见 [可观测性与预算](LUA_OBSERVABILITY.md)。本页保留背包批次设计与验证记录。
 
 基线 `4b6f491d219b94c6b2f4567974fb7386fe9723b4`（P0基础能力），开始时工作区干净。
@@ -23,7 +76,7 @@
 三个新增动作目前只支持单人；多人返回 `inventory_requires_single_player`，不修改背包。
 旧 `select_hotbar_slot` 保留原来的单人/多人选择语义。
 
-默认selected及hotbar紧凑查询也补充上述元数据；item数量查询和full格式保持原有职责，
+显式selected及hotbar紧凑查询也补充上述元数据；0.1.69起mode必填，各模式用inventoryScope/inspectedSlots说明实际检查范围；item数量查询和full保持原有职责，
 需要动作token时按需查询slots。`get_player_status`的selectedItem不保证带token。
 
 ## Terraria规则与状态保护

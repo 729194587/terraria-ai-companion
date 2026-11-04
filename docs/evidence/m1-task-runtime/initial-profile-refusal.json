@@ -1,0 +1,365 @@
+{
+  "records": [
+    {
+      "case": "approach",
+      "result": {
+        "runId": "cd50b4def9d54bfb985299cd0183da77",
+        "status": "failed",
+        "calls": 2,
+        "value": null,
+        "actions": 1,
+        "logs": [],
+        "actionState": "released",
+        "lastAction": {
+          "valid": true,
+          "status": "failed",
+          "reason": "unsupported_mining_profile",
+          "reasonDetail": null,
+          "operation": "mine_target",
+          "actionId": "a0912356a1ac4911a962ea897f654f48",
+          "session": "f6c3ea4be1164b7e8605d174ebea18b1",
+          "actionGeneration": 1,
+          "targetRegion": null,
+          "targetTile": null,
+          "targetRecipe": null,
+          "targetInventory": null,
+          "targetTask": {
+            "target": {
+              "observedGameUpdate": 1129,
+              "actorGeneration": 1,
+              "y": 217,
+              "x": 2111,
+              "observedAtUnixMs": 1793521982885,
+              "targetToken": "d56f5241c40e49a392a2c4fe69996c452546ff59223a412dab56571d2605106a",
+              "typeId": 7,
+              "kind": "tile",
+              "worldSessionId": "8338fa57e73742f29000e178e33f6f8b",
+              "actorSlot": 254
+            }
+          },
+          "task": {
+            "taskId": "a0912356a1ac4911a962ea897f654f48",
+            "taskName": "mine_target",
+            "parentTaskId": null,
+            "phase": "terminal",
+            "status": "failed",
+            "worldSessionId": "8338fa57e73742f29000e178e33f6f8b",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "observedGameUpdate": 1134,
+            "deadlineGameUpdate": 3833,
+            "currentChild": null,
+            "progress": {
+              "stage": "preflight",
+              "completedChildren": 0,
+              "children": [],
+              "target": {
+                "x": 2111,
+                "y": 217,
+                "typeId": 7,
+                "toolSlot": 0,
+                "scope": "one observed vanilla ore tile; local stance search; no automatic retry"
+              },
+              "recoveryAttempts": 0
+            },
+            "lastResult": null,
+            "reason": "unsupported_mining_profile",
+            "result": {
+              "status": "failed",
+              "reason": "unsupported_mining_profile",
+              "evidence": null,
+              "inputsReleased": true,
+              "effectVerified": false,
+              "inputsAcquired": false,
+              "reasonDetail": null
+            }
+          },
+          "evidence": {
+            "task": {
+              "taskId": "a0912356a1ac4911a962ea897f654f48",
+              "taskName": "mine_target",
+              "parentTaskId": null,
+              "phase": "terminal",
+              "status": "failed",
+              "worldSessionId": "8338fa57e73742f29000e178e33f6f8b",
+              "actorGeneration": 1,
+              "actorSlot": 254,
+              "observedGameUpdate": 1134,
+              "deadlineGameUpdate": 3833,
+              "currentChild": null,
+              "progress": {
+                "stage": "preflight",
+                "completedChildren": 0,
+                "children": [],
+                "target": {
+                  "x": 2111,
+                  "y": 217,
+                  "typeId": 7,
+                  "toolSlot": 0,
+                  "scope": "one observed vanilla ore tile; local stance search; no automatic retry"
+                },
+                "recoveryAttempts": 0
+              },
+              "lastResult": null,
+              "reason": "unsupported_mining_profile",
+              "result": {
+                "status": "failed",
+                "reason": "unsupported_mining_profile",
+                "evidence": null,
+                "inputsReleased": true,
+                "effectVerified": false,
+                "inputsAcquired": false,
+                "reasonDetail": null
+              }
+            },
+            "target": {
+              "stage": "preflight",
+              "completedChildren": 0,
+              "children": [],
+              "target": {
+                "x": 2111,
+                "y": 217,
+                "typeId": 7,
+                "toolSlot": 0,
+                "scope": "one observed vanilla ore tile; local stance search; no automatic retry"
+              },
+              "recoveryAttempts": 0
+            }
+          },
+          "endEvidence": {
+            "phase": "ServerAI_game_thread_inputs_released",
+            "gameUpdate": 1134,
+            "worldSessionId": "8338fa57e73742f29000e178e33f6f8b",
+            "actorId": "1dec3995a5c444d1b424160b79f0d23d",
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "inputsAcquired": false,
+            "inputsReleased": true,
+            "effectVerified": false,
+            "operation": "mine_target",
+            "observationSequence": 2270
+          },
+          "endEvidenceStatus": "known",
+          "controlGeneration": 1,
+          "completed": false,
+          "cancelled": false,
+          "continuationAllowed": false
+        },
+        "lastObservation": {
+          "operation": "observe_scene",
+          "callId": 1,
+          "runId": "cd50b4def9d54bfb985299cd0183da77",
+          "worldSessionId": "8338fa57e73742f29000e178e33f6f8b",
+          "actorGeneration": 1,
+          "actorSlot": 254,
+          "gameUpdate": 1129,
+          "observedAtUnixMs": 1793521982948,
+          "clock": "server_utc_at_projection",
+          "sceneId": "8338fa57e73742f29000e178e33f6f8b:scene:1",
+          "result": {
+            "valid": true,
+            "available": true,
+            "worldSessionId": "8338fa57e73742f29000e178e33f6f8b",
+            "gameUpdate": 1129,
+            "actorGeneration": 1,
+            "actorSlot": 254,
+            "observedAtUnixMs": 1793521982948,
+            "clock": "server_utc_at_projection",
+            "data": {
+              "schemaVersion": 2,
+              "sceneId": "8338fa57e73742f29000e178e33f6f8b:scene:1",
+              "gameUpdate": 1129,
+              "bounds": {
+                "minX": 2079,
+                "minY": 202,
+                "maxX": 2123,
+                "maxY": 230
+              },
+              "tileSize": 16,
+              "actor": {
+                "slot": 254,
+                "boundsWorldPixels": {
+                  "x": 33616,
+                  "y": 3462,
+                  "width": 20,
+                  "height": 42
+                },
+                "feetY": 3504,
+                "velocity": {
+                  "x": 0,
+                  "y": 0
+                },
+                "dead": false,
+                "navigationProfileSupported": false,
+                "mapTile": {
+                  "x": 2101,
+                  "y": 217
+                },
+                "bodyTileBounds": {
+                  "minX": 2101,
+                  "minY": 216,
+                  "maxX": 2102,
+                  "maxY": 218
+                }
+              },
+              "coverage": {
+                "scannedTiles": 1305,
+                "unknownCells": 0,
+                "uninterpretedCollisionCells": 0,
+                "unknownNavigationCells": 0,
+                "geometryComplete": true
+              },
+              "limits": "observation-scoped IDs; no visibility/lighting, contents, persistent map or custom Mod hook interpretation; truncation is per collection, never empty=absent",
+              "includedLayers": [
+                "objects"
+              ],
+              "objectCounts": {
+                "observed": {
+                  "ore_component": 1,
+                  "npc": 1
+                },
+                "returned": {
+                  "ore_component": 1,
+                  "npc": 1
+                }
+              },
+              "objects": {
+                "items": [
+                  {
+                    "id": "o1",
+                    "kind": "ore_component",
+                    "typeId": 7,
+                    "contentKey": "Terraria/Copper",
+                    "observedBounds": {
+                      "x": 2111,
+                      "y": 217,
+                      "width": 1,
+                      "height": 1
+                    },
+                    "observedTileCount": 1,
+                    "complete": true,
+                    "details": {
+                      "anchorTile": {
+                        "x": 2111,
+                        "y": 217
+                      },
+                      "observedTargetTile": {
+                        "x": 2111,
+                        "y": 217
+                      }
+                    },
+                    "target": {
+                      "kind": "tile",
+                      "x": 2111,
+                      "y": 217,
+                      "typeId": 7,
+                      "worldSessionId": "8338fa57e73742f29000e178e33f6f8b",
+                      "actorGeneration": 1,
+                      "actorSlot": 254,
+                      "observedGameUpdate": 1129,
+                      "observedAtUnixMs": 1793521982885,
+                      "targetToken": "d56f5241c40e49a392a2c4fe69996c452546ff59223a412dab56571d2605106a"
+                    }
+                  },
+                  {
+                    "id": "e1",
+                    "kind": "npc",
+                    "typeId": 22,
+                    "contentKey": "Terraria/Guide",
+                    "observedBounds": {
+                      "x": 2091,
+                      "y": 217,
+                      "width": 1,
+                      "height": 1
+                    },
+                    "observedTileCount": 1,
+                    "complete": false,
+                    "details": {
+                      "boundsWorldPixels": {
+                        "x": 33455.46,
+                        "y": 3464,
+                        "width": 18,
+                        "height": 40
+                      },
+                      "velocity": {
+                        "x": -1.05,
+                        "y": 0
+                      },
+                      "detail": {
+                        "slot": 1,
+                        "entityRef": "8338fa57e73742f29000e178e33f6f8b:1:npc:1:d282f0ce-5a21-4c70-8cde-cdb26fa9b64e",
+                        "life": 250,
+                        "damage": 10,
+                        "classification": "friendly_npc",
+                        "basis": "Engine town-NPC flag"
+                      }
+                    }
+                  }
+                ],
+                "matchedCount": 2,
+                "returnedCount": 2,
+                "truncated": false,
+                "omittedCount": 0
+              },
+              "sample": {
+                "phase": "one bound game-thread query",
+                "sameGameUpdate": true,
+                "elapsedMilliseconds": 30.1708
+              },
+              "source": "server_ai_player",
+              "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+              "inventoryTokenStatus": "server_ai_inventory_v1; use mode slots/selected/hotbar for fresh slot tokens; basic fields and instance identity only; all custom Mod state unknown; no save hooks"
+            },
+            "binding": {
+              "actor": "1dec3995a5c444d1b424160b79f0d23d",
+              "world": "8338fa57e73742f29000e178e33f6f8b",
+              "generation": 1,
+              "slot": 254
+            }
+          },
+          "payloadOmitted": false
+        },
+        "cleanup": null,
+        "trace": [
+          {
+            "id": 1,
+            "operation": "observe_scene",
+            "line": 1,
+            "status": null,
+            "valid": true,
+            "reason": null,
+            "elapsed_ms": 94.00000000096043
+          },
+          {
+            "id": 2,
+            "operation": "mine_target",
+            "line": 1,
+            "status": "failed",
+            "valid": true,
+            "reason": "unsupported_mining_profile",
+            "elapsed_ms": 155.99999999903957
+          }
+        ],
+        "failure": {
+          "kind": "failed",
+          "message": "failed",
+          "call": {
+            "id": 2,
+            "operation": "mine_target",
+            "line": 1
+          },
+          "line": 1,
+          "retryAllowed": false,
+          "actionState": "released"
+        },
+        "evidence": {
+          "taskId": "4e427b2b38fe47e2aa4c101f89388dc5",
+          "path": "D:\\Agent Project\\terraria-ai-companion\\.local\\companion-g82-native-1eeeb63d46e24010a90c683c35483c9f\\mine-target-lua\\4e427b2b38fe47e2aa4c101f89388dc5",
+          "available": true,
+          "eventsDropped": 1,
+          "writeErrors": 0
+        }
+      }
+    }
+  ]
+}

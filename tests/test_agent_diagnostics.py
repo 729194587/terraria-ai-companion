@@ -81,7 +81,7 @@ class LogTests(unittest.TestCase):
 class FailureTests(unittest.IsolatedAsyncioTestCase):
     async def test_blocked_followup_preserves_first_failure_in_reply_and_log(self):
         game = Game(); model = Model(tool("mine_tile",'{"x":1,"y":2}'), tool("use_item"), final("done"))
-        async def dispatch(*args):
+        async def dispatch(*args, **kwargs):
             return {"valid":True,"status":"failed","reason":"item_aim_requires_default_zoom"}
         with tempfile.TemporaryDirectory() as directory, patch.object(diagnostics,"log",tracing.Trace(enabled=False)):
             path = diagnostics.configure(Path(directory)/"run.jsonl")

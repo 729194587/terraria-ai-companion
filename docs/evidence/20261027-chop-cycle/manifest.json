@@ -1,0 +1,88 @@
+{
+  "newReasonFixNotTestedInThisRun": true,
+  "source": "runs/20261027-chop-cycle",
+  "kind": "user-supplied Host & Play evidence; archived byte-for-byte",
+  "gamePackageVersion": "0.1.51",
+  "files": [
+    {
+      "sha256": "2A2A856E67DDAD35F608B288D9618A9484A39277F38202A509D73E8AA633D346",
+      "bytes": 886,
+      "path": "lua/r10.lua"
+    },
+    {
+      "sha256": "5E7733A2DD396FFA5EFF2B24B8CD8C38638969BEC71F4C0E056DCAA10A1A3706",
+      "bytes": 381,
+      "path": "lua/r11.lua"
+    },
+    {
+      "sha256": "4357D0C2789E02A4E046F146E946C8CFBF1DBFA9A75C57973A9FE6462E01E066",
+      "bytes": 1147,
+      "path": "lua/r12.lua"
+    },
+    {
+      "sha256": "5C654B2875C402484202D8A5039A28F022C4C748E30904ED0794C8531552DBE8",
+      "bytes": 849,
+      "path": "lua/r6.lua"
+    },
+    {
+      "sha256": "EDCEB35D2E263DE980C819BA2E3FB4BFE82C3527A71BB067B2F23E5D7D9DBBB9",
+      "bytes": 1197,
+      "path": "lua/r7.lua"
+    },
+    {
+      "sha256": "9EDCA5ACA973588BAE06F5E4142C2C730ACD19201813B06B1AB518AF312038AB",
+      "bytes": 1054,
+      "path": "lua/r8.lua"
+    },
+    {
+      "sha256": "0CA801949CB9A9342DE6CADE3ECB3C179C21A790A5A38064BC66ED11D5C509F5",
+      "bytes": 542,
+      "path": "lua/r9.lua"
+    },
+    {
+      "sha256": "DA48C1131DBAFC3D694E182F1CC76FDF9403BB3AB4B095A22F3D4E6B191AFB0A",
+      "bytes": 2976,
+      "path": "receipts/r10.json"
+    },
+    {
+      "sha256": "5BC5BD3CA4F2DB894F8E777342D99C60AEB35C1D0CDDA63FED652E7E63C3AA4E",
+      "bytes": 1775,
+      "path": "receipts/r11.json"
+    },
+    {
+      "sha256": "898A88AE5AF3CEEAE398D5CF5204CE123DF6F4899B939AC8EC9888C98271A015",
+      "bytes": 2685,
+      "path": "receipts/r12.json"
+    },
+    {
+      "sha256": "89F9BF97695CC64DAD1834A6B15AB11A066080E93BFDB4F2F6137C8A07BF04D4",
+      "bytes": 4451,
+      "path": "receipts/r6.json"
+    },
+    {
+      "sha256": "C7DC21C517D126C4FE2526D2C88BEFB79A5469BE98AA9C3AE9C0A0C2E0A1EE90",
+      "bytes": 2814,
+      "path": "receipts/r7.json"
+    },
+    {
+      "sha256": "C21759BB20C6AD533E50FA54D7D2451F112C090EA6D8648DBA38F71ECCBD89AC",
+      "bytes": 2570,
+      "path": "receipts/r8.json"
+    },
+    {
+      "sha256": "53C33E1D84ACFE0E39BA621E253AC8399CE7BF834F07035ED411C8415A900E8D",
+      "bytes": 927,
+      "path": "receipts/r9.json"
+    },
+    {
+      "sha256": "6F21425F31DB5BA77A3F02BA03BA3C41B5ECFDDE5BE5A703D44736A260AE5612",
+      "bytes": 357,
+      "path": "task.md"
+    },
+    {
+      "sha256": "FC058E1BA8AF94EEA009A15C8BAE6B5100672D1AB5BD9E6087F21D531D25FACA",
+      "bytes": 1720,
+      "path": "verdict.md"
+    }
+  ]
+}

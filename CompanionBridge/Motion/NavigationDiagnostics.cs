@@ -10,6 +10,7 @@ internal sealed class NavigationDiagnostics
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private readonly Action<string> _write;
     private NavigationSnapshot _previous;
+    internal int WriteErrors { get; private set; }
 
     internal NavigationDiagnostics(Action<string> write) => _write = write;
 
@@ -20,7 +21,11 @@ internal sealed class NavigationDiagnostics
             && current.TargetRegion == _previous.TargetRegion;
         if (current.PlanNumber > 0 && (!sameTask || current.PlanNumber != _previous.PlanNumber))
             Write("navigation_plan", current);
-        if (current.Status is "arrived" or "failed"
+        if (sameTask && current.CompletedActions > _previous.CompletedActions)
+            Write("navigation_checkpoint", current);
+        if (sameTask && (current.RecoveryCount != _previous.RecoveryCount || current.RecoveryReplans != _previous.RecoveryReplans))
+            Write("navigation_recovery", current);
+        if (current.Status is "arrived" or "failed" or "unknown" or "confirming_landing" or "recovering"
             && (!sameTask || current.Status != _previous.Status))
             Write("navigation_state", current);
         if (current.Status == "idle" && _previous?.Session > 0)
@@ -30,7 +35,10 @@ internal sealed class NavigationDiagnostics
         _previous = current;
     }
 
-    private void Write(string eventName, NavigationSnapshot snapshot) => _write("Navigation "
-        + JsonSerializer.Serialize(new { @event = eventName,
-            goalKind = snapshot.TargetRegion != null ? "landing_region" : "horizontal", navigation = snapshot }, JsonOptions));
+    private void Write(string eventName, NavigationSnapshot snapshot)
+    {
+        try { _write("Navigation " + JsonSerializer.Serialize(new { @event = eventName,
+            goalKind = snapshot.TargetRegion != null ? "landing_region" : "horizontal", navigation = snapshot }, JsonOptions)); }
+        catch { WriteErrors++; } // Observability must not change navigation inputs or outcomes.
+    }
 }

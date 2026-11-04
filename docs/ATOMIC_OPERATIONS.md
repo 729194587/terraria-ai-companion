@@ -1,5 +1,9 @@
 # 原子操作（Mod 0.1.40）
 
+当前 M2 契约收敛见 [API Contract & Tool System](API_TOOL_SYSTEM_MVP.md)（0.1.74）：明确宿主/原生 API 归属、后端预校验与跨语言共享参数向量。Server AI `use_item` 仅接受 `{}`；客户端原有 `target` 支持保留。只有可靠能力白名单存在时才过滤旧客户端模型工具。
+
+`dispatchState=not_admitted/admitted/unknown` 分别表示明确未受理、已创建动作记录、受理情况未知；明确拒绝不授予自动重试或扩大 continuation 权限。`completed` 仍需原有操作专属效果和结束证据；输入释放本身不证明目标完成。下文版本记录为历史阶段。
+
 0.1.40更新运行时预算、任务日志和原生异常证据，见 [可观测性](LUA_OBSERVABILITY.md)；没有新增游戏动作。
 
 0.1.39 新增单人背包持用、整件交换、指定数量搬运/拆分/堆叠及槽位token校验，见 [背包操作](INVENTORY_OPERATIONS.md)。
@@ -24,7 +28,7 @@
 | `observe_terrain()` | 直接复用 `get_terrain`，45×29 碰撞分类及同次玩家状态 |
 | `inspect_tile(x,y)` | `query_atomic → AtomicOperations.Query → ObservationReader.ReadCell`；Tile 类型、Frame、半砖/坡、液体、墙、线、颜色及危险属性，越界/未加载知识状态明确 |
 | `scan_entities(category,radius)` | `query_atomic → AtomicOperations.Query`；扫描客户端已知 NPC / item / 其他 player；category 为 all/npc/item/player，radius 为 1..1600 像素，最多 128 项，明确 matchedCount/truncated |
-| `inspect_inventory(mode?,item?)` | 默认 selected，仅选中槽；hotbar 返回十格；item 精确解析标识/本地名称，返回数量与槽位；full 才复用完整 `ObservationReader.ReadPlayer`。详见下文兼容说明 |
+| `inspect_inventory(mode,item?,slots?)` | mode 必填；selected 仅选中槽，hotbar 十格，slots 指定内部槽位，item 搜索全部玩家背包槽，full 包含原版装备/染料/Buff。各模式返回实际检查范围，详见下文 |
 | `scan_tiles(minX,minY,maxX,maxY,tileTypes,maxResults?)` | 游戏线程复用 `ObservationReader.ReadCell`，Tile 闭区间矩形最多 4096 格，返回目标坐标/类型，数量/截断/未知格状态 |
 | `get_world_state()` | 复用提取后的 `ReadEnvironment`，附生物群系深度标志、地表/岩层高度和世界尺寸 |
 | `navigate_to_x(targetX)` | `start_atomic → ControlInput.Predictive → 原有 GameNavigation/NavigationTask/物理模拟与落点验证`；原有 settled/crossed 水平目标判据报告 arrived 才完成，不承诺精确 XY；30 秒上限 |
@@ -88,13 +92,13 @@ NPC 引用由世界会话、NPC 槽位和 `InstancePerEntity GlobalNPC` 实例 T
 
 ### inspect_inventory
 
-- `{}` 或 `{"mode":"selected"}`：只返回 selectedSlot、selectedHotbarKey 和 inventory 中的选中槽。保留物品 typeId、contentKey、当前语言 name、stack、slot、hotbarKey，以及后续选工具所需的 pick/axe/hammer/createTile/createWall。
+- `{"mode":"selected"}`：只检查并返回选中槽；遗漏 mode 在本地校验时返回 bad_argument。保留 selectedSlot、selectedHotbarKey、物品 typeId、contentKey、当前语言 name、stack、slot、hotbarKey，以及后续选工具所需的 pick/axe/hammer/createTile/createWall。
 - `{"mode":"hotbar"}`：返回十格快捷栏及选中信息。数组 slot 0..9 与键帽 1..9、0 不同，仍使用 hotbarKey 映射。
 - `{"mode":"item","item":"Terraria/StoneBlock"}` 或传当前语言精确名称：在已加载 ContentSamples 物品注册表中做不区分大小写的精确匹配；同时支持 ModItem.FullName。不给模型硬编码 ID 的责任。不作模糊匹配或静默选歧义项。未知名称 status=unknown_item；同名多类型 status=ambiguous_item，最多返回 32 个候选及截断标记。已知物品未持有为 status=ok/count=0/slots=[]。
 - item 成功返回 typeId/contentKey/name、所有匹配栈总 count 与 `{slot,hotbarKey,stack}` 列表，不附完整背包。范围是 player.inventory（包括快捷栏、硬币和弹药槽）；不含装备、银行、箱子、鼠标物品。
 - `{"mode":"full"}`：原有完整 ReadPlayer 输出，包括背包、装备和玩家附带状态。Mod 自定义装备槽仍未知。item 字段仅允许且必须与 mode=item 一起出现，所有未知字段拒绝。
 
-**兼容影响：** 无参 inspect_inventory 从完整输出改为选中槽紧凑输出，这是本轮明确要求的默认值调整。依赖完整 inventory/equipment 数组的调用方必须改传 mode=full；依赖选中槽镐力的 Agent 仍可读取 inventory[].use.pick。握手能力阻止旧包返回不同默认语义。其他工具不受此变更影响。
+**0.1.69 兼容影响：** 不再存在默认 mode，旧无参调用必须显式选择模式；Python Schema、C# 参数校验和共享读取实现同步拒绝遗漏。所有模式都有 `inspectedSlots`（实际检查的 player.inventory 内部索引，包含空槽）及 `inventoryScope={mode,arrays,slotNumbering,excluded}`。`arrays` 列出各实际检查数组的内部槽位；item 的匹配 `slots` 不等于搜索范围。item 名称未解析或有歧义时未搜索背包，inspectedSlots 为空。full 的 arrays 还包括 equipment/社交栏、dyes、miscEquipment、miscDyes、buffs，Buff 检查所有槽但仍仅返回活跃项；不读银行/仓库、箱子、Main.mouseItem 或 Mod 自定义槽位/状态。player.inventory 的 58 号槽按该数组实际数据读取，不独立查询全局鼠标物品，也不保证两者同步。局部查询不代表完整背包。
 
 ### 墙与锤击
 

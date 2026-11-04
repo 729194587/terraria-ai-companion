@@ -1,0 +1,204 @@
+{
+  "baseline": "619eac9684a26648ca11890eba6cb12f7cf2751d",
+  "branch": "codex/g85-server-ai-perception",
+  "sourceState": "evidence captured from the uncommitted audit patch before publication; original workspace edits retained; package version remains 0.1.79",
+  "expiryScope": "IL-audited local expiry phase reconstructed in gated dedicated-server fixture; NOT autonomous server timer or graphical client validation",
+  "packages": {
+    "baseline": {
+      "path": ".local/m4-4-close-baseline-build/Mods/CompanionBridge.tmod",
+      "sha256": "52fb0e267b675520afe0a3d10828a70b0d1451f3620cd3788ec38f27af34a647"
+    },
+    "final": {
+      "path": ".local/m4-4-close-final-build/Mods/CompanionBridge.tmod",
+      "sha256": "e7f06b183ce6f05d9be62a932aad522c443b6c58d30a72b0615380d9353d3304"
+    }
+  },
+  "runs": {
+    "baseline-expiry": ".local\\navigation-recovery-native-e26829cbf22f406081e3af56e72f80bb",
+    "final": ".local\\navigation-recovery-native-92d41c363b0c46b7ad8e74bef9b70262"
+  },
+  "entries": [
+    {
+      "path": "baseline-expiry/manifest.json",
+      "sha256": "2f2ddc643b1d0c4b8d5615d8b0ea3462148c172e175c363398364375d86c7adc",
+      "bytes": 440
+    },
+    {
+      "path": "baseline-expiry/mobility-expiry-receipt.json",
+      "sha256": "982b4675180f25d1c042e77ff11e6058318a172723fcb24e6da8277ca8522870",
+      "bytes": 15410
+    },
+    {
+      "path": "baseline-expiry/mobility-results.json",
+      "sha256": "ab50464e38163cbbeb0d5814b00db192777a56f75ff92a96b8da5187554d4968",
+      "bytes": 24874
+    },
+    {
+      "path": "baseline-expiry/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "baseline-expiry/stdout.log",
+      "sha256": "4b8de586a47e5eaf275c8db8b5294f4eb4889af5908fcd6f354876b6c3b49797",
+      "bytes": 4195
+    },
+    {
+      "path": "baseline-expiry/terrain-motion-flat-1-mobility-expiry.json",
+      "sha256": "7c2c0b9e1638eebb72911e09d8f34f958783cf4697746e1992a7c3d6c26bb2c3",
+      "bytes": 144499
+    },
+    {
+      "path": "final/manifest.json",
+      "sha256": "47daad08c576fa7311f661659fb4631578471edb555a761804150bd9160e0eeb",
+      "bytes": 440
+    },
+    {
+      "path": "final/mobility-basic-receipt.json",
+      "sha256": "a061032a23ecc69a749467c9bcbc5d9cb9627c64fb380af4b32d12cb9278b6ce",
+      "bytes": 12957
+    },
+    {
+      "path": "final/mobility-equipment-receipt.json",
+      "sha256": "dee7e59995613ba93371d96439d97f84809ee8e7a81c8114aa547777009b36e3",
+      "bytes": 13240
+    },
+    {
+      "path": "final/mobility-expiry-receipt.json",
+      "sha256": "d6adcce4b10a0d54c02e084cddb21d5dcb4fda299055d9c534c76ed5cd06bb9c",
+      "bytes": 13474
+    },
+    {
+      "path": "final/mobility-rapid-receipt.json",
+      "sha256": "3c349d766dd4ba40694df2f3772f028a707a9b30b56546645a64362b01b12214",
+      "bytes": 13521
+    },
+    {
+      "path": "final/mobility-results.json",
+      "sha256": "0cd4a935c76bb8caa2c53a7945650a52c07f7521c5c2989a31eb00c132d8ca7d",
+      "bytes": 209248
+    },
+    {
+      "path": "final/mobility-unknown-receipt.json",
+      "sha256": "b01a134b2cd6197d04b34758b2da1d85bf0431ddc103a9ad1c66b2812ade297e",
+      "bytes": 13572
+    },
+    {
+      "path": "final/stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "final/stdout.log",
+      "sha256": "4b8de586a47e5eaf275c8db8b5294f4eb4889af5908fcd6f354876b6c3b49797",
+      "bytes": 4195
+    },
+    {
+      "path": "final/terrain-motion-flat-1-mobility-basic.json",
+      "sha256": "a026161210765434d56c74d9c39cd87f1b6d870ad25e64031f7b2d0b16b2b390",
+      "bytes": 452580
+    },
+    {
+      "path": "final/terrain-motion-flat-1-mobility-equipment.json",
+      "sha256": "0edb7737913ac9962ccbaa94b47667762c9fb28aad756db782df26d18deaa408",
+      "bytes": 3524
+    },
+    {
+      "path": "final/terrain-motion-flat-1-mobility-expiry.json",
+      "sha256": "166426cb9380db1132f04408877946aa22746900c852af9800346fe77b8f9d60",
+      "bytes": 521919
+    },
+    {
+      "path": "final/terrain-motion-flat-1-mobility-rapid.json",
+      "sha256": "f2c0ba7392b8d952006bfe2d491b992bbc840f85947abb5da87701693c8fc362",
+      "bytes": 491278
+    },
+    {
+      "path": "final/terrain-motion-flat-1-mobility-unknown.json",
+      "sha256": "34ede8755eb4baa08d68e7626acc8e42b82dbcbc146a7e5469acc67604cf85db",
+      "bytes": 3698
+    },
+    {
+      "path": "audit/build.txt",
+      "sha256": "17534c8e6f2fd2460c361b44be13b0a98bc3c21f93afa0ad19baba3794e7dd6c",
+      "bytes": 174
+    },
+    {
+      "path": "audit/HasBuff.il.txt",
+      "sha256": "fed3dede97ce80fd5b2f6c7690a1c2d194d686300053613a44bedd2c5a6aa4ed",
+      "bytes": 174
+    },
+    {
+      "path": "audit/ipc.txt",
+      "sha256": "40787ebdfefe58e7d1d61ba96b652ffa2b820a014080360270272fc4bd274794",
+      "bytes": 38720
+    },
+    {
+      "path": "audit/mobility-final.txt",
+      "sha256": "a0b100c9724a5cf38d001dab036da4dec18d31d5ec0d42dcdb8c975f51a946af",
+      "bytes": 85
+    },
+    {
+      "path": "audit/navigation.txt",
+      "sha256": "53a91e947917ea75eebd315259d91d4f332307dee92bb9f22ebc46f143f42608",
+      "bytes": 4987
+    },
+    {
+      "path": "audit/python.txt",
+      "sha256": "c08aa3deda7e80288286849ed365a7954868e3ba1fbcbf0afa316c6d0128c786",
+      "bytes": 29454
+    },
+    {
+      "path": "audit/Update.il.txt",
+      "sha256": "ffeb4bd81b7cd13f9178e54d68d6a7b21bcfd08e133a20a1efa87fe322fd2043",
+      "bytes": 430002
+    },
+    {
+      "path": "audit/UpdateBuffs.il.txt",
+      "sha256": "20563c2d935dc74368383319285dca0b8eb8110afcdd221db94f69cbaf83ea39",
+      "bytes": 222955
+    },
+    {
+      "path": "source/CompanionBridge/Motion/GameNavigation.cs",
+      "sha256": "6ce06d642d46c163f6f027d67b7f2f417d1aacde0a5e73746d693933cd8125ec",
+      "bytes": 9203
+    },
+    {
+      "path": "source/CompanionBridge/Motion/MobilityProfile.cs",
+      "sha256": "c730e3190e82cf740ea0fcba1b59c33e36c167744dfbff98dd693307fd1e4ffc",
+      "bytes": 2698
+    },
+    {
+      "path": "source/CompanionBridge/ServerIpc/ServerAiTerrainFixture.cs",
+      "sha256": "bcda845947866fdb34799f740214a82ca13371d511f865ac8dd9bd5c7d4ff70b",
+      "bytes": 13320
+    },
+    {
+      "path": "source/CompanionBridge/ServerPlayerRuntime/ProbeSession.cs",
+      "sha256": "9e3cf6f02b879a094e3ee25c59edb30e05d52242126d599ddd3015c115b6bac6",
+      "bytes": 32111
+    },
+    {
+      "path": "source/tests/MobilityProfileTests.cs",
+      "sha256": "07c27ede6315e76231fe37316859ae52f767e10b7bfd01b948e36925bc71de44",
+      "bytes": 7878
+    },
+    {
+      "path": "source/tests/native_mobility.py",
+      "sha256": "f170b578e7fba07eb05a9d3aaa880f286b71898ed0eb4f5de2eee6ef7f81b9be",
+      "bytes": 5883
+    },
+    {
+      "path": "baseline-product/GameNavigation.cs",
+      "sha256": "b96e2c59594223ac632d917d06ebfb7b2e5740a5c6e91bfdb8848b6d0c6fa76e",
+      "bytes": 8650
+    },
+    {
+      "path": "baseline-product/MobilityProfile.cs",
+      "sha256": "2525f0b9d4d2d80520883ef8108fb98c7ba1579746a157e13ec2aef8ef66c7f4",
+      "bytes": 1881
+    }
+  ],
+  "archiveSHA256": "b487c0bb4e76e2144b7bebc8bf1b20efdeedf865be6185c053ccd293fb9b46e4",
+  "summarySHA256": "464d14127c23e3d5bc0c8cf18cd978aa61d559c555b62cabb07a0965f4cca650"
+}

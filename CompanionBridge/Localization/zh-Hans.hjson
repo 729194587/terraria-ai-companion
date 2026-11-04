@@ -1,1 +1,12 @@
-Mods.CompanionBridge.Keybinds.ToggleAutoMove.DisplayName: 切换自动向右移动
+Mods: {
+	CompanionBridge: {
+		Keybinds.ToggleAutoMove.DisplayName: 切换自动向右移动
+
+		Items: {
+			InventoryDiagnosticItem: {
+				// DisplayName: Inventory Diagnostic Item
+				// Tooltip: ""
+			}
+		}
+	}
+}

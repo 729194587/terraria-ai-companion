@@ -1,0 +1,254 @@
+PASS AI IPC: independent default port
+PASS AI IPC: reject invalid/conflicting port 18777
+PASS AI IPC: reject invalid/conflicting port 0
+PASS AI IPC: reject invalid/conflicting port 65536
+PASS AI IPC: reject invalid/conflicting port invalid
+PASS AI IPC: malformed protocol fails closed
+PASS AI IPC: malformed protocol fails closed
+PASS AI IPC: malformed protocol fails closed
+PASS AI IPC: malformed protocol fails closed
+PASS AI IPC: malformed protocol fails closed
+PASS AI IPC: invalid requests never invoke state capture
+PASS AI IPC: actions are unavailable
+PASS AI IPC: bind returns world and generation
+PASS AI IPC: bound state returned
+PASS AI IPC: binding cannot cross connections
+PASS AI IPC: unbound state rejects before capture
+PASS AI IPC: connection cannot silently rebind
+PASS AI IPC: duplicate bind rejects before capture
+PASS AI IPC: mismatched binding rejects before engine validation
+PASS AI IPC: mismatched binding never invokes capture
+PASS AI IPC: mismatched binding rejects before engine validation
+PASS AI IPC: mismatched binding never invokes capture
+PASS AI IPC: mismatched binding rejects before engine validation
+PASS AI IPC: mismatched binding never invokes capture
+PASS AI IPC: mismatched binding rejects before engine validation
+PASS AI IPC: mismatched binding never invokes capture
+PASS AI IPC: object replacement rejected even at same slot/generation
+PASS AI IPC: matching lease still captures current object for secondary validation
+PASS AI IPC: old generation rejected
+PASS AI IPC: current generation change is checked after capture
+PASS AI IPC: old world rejected
+PASS AI IPC: current world change is checked after capture
+PASS AI IPC: current slot replacement rejects matching old binding
+PASS AI IPC: current slot change is checked after capture
+PASS AI IPC: missing identity cannot fall back to human
+PASS AI IPC: engine/quarantine failures return structured refusal
+PASS AI IPC: unload invalidates all leases
+PASS AI IPC: TCP worker queues without reading Player provider
+PASS AI IPC: off-thread pump rejects before dequeuing
+PASS AI IPC: native provider stays on simulation thread
+PASS AI IPC: real loopback bind/state framing
+PASS AI IPC: native provider stays on simulation thread
+PASS AI IPC: real TCP rejects stale generation
+PASS AI IPC: disconnect cancels queued state read
+PASS AI IPC: unload releases IPC listener
+AI IPC offline fixture: 45 checks passed; NOT Host & Play.
+PASS AI atomic fixture: acceptance never mutates native state
+PASS AI atomic fixture: running stage precedes mutation
+PASS AI atomic fixture: native call alone is not completion
+PASS AI atomic fixture: next owner-thread pump verifies key mapping and selection
+PASS AI atomic fixture: terminal evidence binds generation/world and no input ownership
+PASS AI atomic fixture: duplicate ID never repeats mutation
+PASS AI atomic fixture: acceptance never mutates native state
+PASS AI atomic fixture: running stage precedes mutation
+PASS AI atomic fixture: native call alone is not completion
+PASS AI atomic fixture: next owner-thread pump verifies key mapping and selection
+PASS AI atomic fixture: terminal evidence binds generation/world and no input ownership
+PASS AI atomic fixture: duplicate ID never repeats mutation
+PASS AI atomic fixture: acceptance never mutates native state
+PASS AI atomic fixture: running stage precedes mutation
+PASS AI atomic fixture: native call alone is not completion
+PASS AI atomic fixture: next owner-thread pump verifies key mapping and selection
+PASS AI atomic fixture: terminal evidence binds generation/world and no input ownership
+PASS AI atomic fixture: duplicate ID never repeats mutation
+PASS AI atomic fixture: cancel before mutation returns synchronous safe terminal receipt
+PASS AI atomic fixture: unknown actions rejected
+PASS AI atomic fixture: disconnect cancels accepted operation without native writes
+PASS AI atomic fixture: another bound connection cannot cancel or inspect owned action
+PASS AI atomic fixture: connection retirement cancels before native mutation
+PASS AI atomic fixture: native death cancels pending selection without input writes
+PASS AI atomic fixture: dead AI cannot start another selection
+PASS AI atomic fixture: stale object refuses execution and old receipts
+PASS AI atomic fixture: stale world refuses execution and old receipts
+PASS AI atomic fixture: stale generation refuses execution and old receipts
+PASS AI atomic fixture: stale slot refuses execution and old receipts
+PASS AI atomic fixture: expired request rejected before admission
+PASS AI atomic fixture: admitted deadline expires with safe no-input evidence
+PASS AI atomic fixture: deadline after mutation preserves partial-effect evidence without success or rollback
+PASS AI atomic fixture: ambiguous native failure is never retried or reported complete
+PASS AI atomic fixture: external selected-slot change before confirmation is not success
+PASS AI atomic fixture: cancel after selection preserves the known effect without rollback or extra writes
+PASS AI atomic fixture: one global atomic selection at a time
+PASS AI atomic fixture: unsupported native actions are not admitted
+PASS AI atomic fixture: out of range public key rejected
+PASS AI atomic fixture: malformed action identity rejected
+PASS AI atomic fixture: unbounded client deadline rejected
+AI atomic offline fixture: 40 checks; no Host & Play.
+PASS AI read protocol fixture: read capability is advertised only with an installed query adapter
+PASS AI read protocol fixture: projection receives the validated actor reference
+PASS AI read protocol fixture: query result carries actual capture tick
+PASS AI read protocol fixture: projection receives the validated actor reference
+PASS AI read protocol fixture: observe_terrain reaches bound read adapter
+PASS AI read protocol fixture: projection receives the validated actor reference
+PASS AI read protocol fixture: scan_tiles reaches bound read adapter
+PASS AI read protocol fixture: projection receives the validated actor reference
+PASS AI read protocol fixture: scan_entities reaches bound read adapter
+PASS AI read protocol fixture: projection receives the validated actor reference
+PASS AI read protocol fixture: inspect_tile reaches bound read adapter
+PASS AI read protocol fixture: projection receives the validated actor reference
+PASS AI read protocol fixture: resolve_content reaches bound read adapter
+PASS AI read protocol fixture: projection receives the validated actor reference
+PASS AI read protocol fixture: observe_scene reaches bound read adapter
+PASS AI read protocol fixture: projection receives the validated actor reference
+PASS AI read protocol fixture: query_recipes reaches bound read adapter
+PASS AI read protocol fixture: projection receives the validated actor reference
+PASS AI read protocol fixture: query_map reaches bound read adapter
+PASS AI read protocol fixture: unbound query cannot read Player or project data
+PASS AI read protocol fixture: mismatched query binding rejects before native access
+PASS AI read protocol fixture: unsupported queries reject without capture
+PASS AI read protocol fixture: read query cannot smuggle action parameters
+PASS AI read protocol fixture: current actor change refuses get_player_state projection
+PASS AI read protocol fixture: current actor change refuses observe_terrain projection
+PASS AI read protocol fixture: current actor change refuses scan_tiles projection
+PASS AI read protocol fixture: current actor change refuses scan_entities projection
+PASS AI read protocol fixture: current actor change refuses inspect_tile projection
+PASS AI read protocol fixture: current actor change refuses resolve_content projection
+PASS AI read protocol fixture: current actor change refuses observe_scene projection
+PASS AI read protocol fixture: current actor change refuses query_recipes projection
+PASS AI read protocol fixture: current actor change refuses query_map projection
+PASS AI read protocol fixture: current world change refuses get_player_state projection
+PASS AI read protocol fixture: current world change refuses observe_terrain projection
+PASS AI read protocol fixture: current world change refuses scan_tiles projection
+PASS AI read protocol fixture: current world change refuses scan_entities projection
+PASS AI read protocol fixture: current world change refuses inspect_tile projection
+PASS AI read protocol fixture: current world change refuses resolve_content projection
+PASS AI read protocol fixture: current world change refuses observe_scene projection
+PASS AI read protocol fixture: current world change refuses query_recipes projection
+PASS AI read protocol fixture: current world change refuses query_map projection
+PASS AI read protocol fixture: current generation change refuses get_player_state projection
+PASS AI read protocol fixture: current generation change refuses observe_terrain projection
+PASS AI read protocol fixture: current generation change refuses scan_tiles projection
+PASS AI read protocol fixture: current generation change refuses scan_entities projection
+PASS AI read protocol fixture: current generation change refuses inspect_tile projection
+PASS AI read protocol fixture: current generation change refuses resolve_content projection
+PASS AI read protocol fixture: current generation change refuses observe_scene projection
+PASS AI read protocol fixture: current generation change refuses query_recipes projection
+PASS AI read protocol fixture: current generation change refuses query_map projection
+PASS AI read protocol fixture: current slot change refuses get_player_state projection
+PASS AI read protocol fixture: current slot change refuses observe_terrain projection
+PASS AI read protocol fixture: current slot change refuses scan_tiles projection
+PASS AI read protocol fixture: current slot change refuses scan_entities projection
+PASS AI read protocol fixture: current slot change refuses inspect_tile projection
+PASS AI read protocol fixture: current slot change refuses resolve_content projection
+PASS AI read protocol fixture: current slot change refuses observe_scene projection
+PASS AI read protocol fixture: current slot change refuses query_recipes projection
+PASS AI read protocol fixture: current slot change refuses query_map projection
+PASS AI read protocol fixture: unavailable identity never returns invented state
+PASS AI read protocol fixture: projection receives the validated actor reference
+PASS AI read protocol fixture: managed dead actor remains observable without enabling actions
+PASS AI read protocol fixture: disconnected lease cannot query
+AI read protocol fixture: 63 checks; no Terraria process.
+PASS AI native-adapter fixture: navigation diagnostic survives protocol reason mapping: navigation_stalled
+PASS AI native-adapter fixture: navigation diagnostic survives protocol reason mapping: navigation_action_limit
+PASS AI native-adapter fixture: navigation diagnostic survives protocol reason mapping: navigation_search_timeout
+PASS AI native-adapter fixture: ordinary no-route mapping remains compatible
+PASS AI native-adapter fixture: mining success translates outcome rather than failure enum
+PASS AI native-adapter fixture: native reason code mapping InvalidTarget
+PASS AI native-adapter fixture: native reason code mapping InvalidTool
+PASS AI native-adapter fixture: native reason code mapping TargetChanged
+PASS AI native-adapter fixture: native reason code mapping NativeRefused
+PASS AI native-adapter fixture: native reason code mapping NoPickPower
+PASS AI native-adapter fixture: native reason code mapping NativeException
+PASS AI native-adapter fixture: native reason code mapping ExplicitStop
+PASS AI native-adapter fixture: native reason code mapping Deadline
+PASS AI native-adapter fixture: absence of failure code cannot imply success
+PASS AI native-adapter fixture: JSON preserves stable reason and diagnostic detail for completed
+PASS AI native-adapter fixture: JSON preserves stable reason and diagnostic detail for failed
+PASS AI native-adapter fixture: JSON preserves stable reason and diagnostic detail for cancelled
+PASS AI native-adapter fixture: JSON preserves stable reason and diagnostic detail for unknown
+PASS AI native-adapter fixture: unverified completion cannot retain a success reason
+PASS AI native-adapter fixture: verified completion winning cancellation race retains success reason
+PASS AI native-adapter fixture: landing region receipt fixes exact target and 30-second deadline before native start
+PASS AI native-adapter fixture: landing region capability is advertised with native executor
+PASS AI native-adapter fixture: receipt canonicalizes coordinates to the native float region before execution
+PASS AI native-adapter fixture: placement receipt fixes tile coordinates and ten-second deadline
+PASS AI native-adapter fixture: placement capability is explicit
+PASS AI native-adapter fixture: craft receipt fixes recipe identity and execution count
+PASS AI native-adapter fixture: craft capability is explicit
+PASS AI native-adapter fixture: accepted/running precede navigate_to_x native completion
+PASS AI native-adapter fixture: polling never repeats native start
+PASS AI native-adapter fixture: verified navigate_to_x has bound game-thread release evidence
+PASS AI native-adapter fixture: long action duplicate ID rejected
+PASS AI native-adapter fixture: accepted/running precede navigate_to_landing_region native completion
+PASS AI native-adapter fixture: polling never repeats native start
+PASS AI native-adapter fixture: verified navigate_to_landing_region has bound game-thread release evidence
+PASS AI native-adapter fixture: long action duplicate ID rejected
+PASS AI native-adapter fixture: accepted/running precede use_item native completion
+PASS AI native-adapter fixture: polling never repeats native start
+PASS AI native-adapter fixture: verified use_item has bound game-thread release evidence
+PASS AI native-adapter fixture: long action duplicate ID rejected
+PASS AI native-adapter fixture: accepted/running precede mine_tile native completion
+PASS AI native-adapter fixture: polling never repeats native start
+PASS AI native-adapter fixture: verified mine_tile has bound game-thread release evidence
+PASS AI native-adapter fixture: long action duplicate ID rejected
+PASS AI native-adapter fixture: accepted/running precede place_tile native completion
+PASS AI native-adapter fixture: polling never repeats native start
+PASS AI native-adapter fixture: verified place_tile has bound game-thread release evidence
+PASS AI native-adapter fixture: long action duplicate ID rejected
+PASS AI native-adapter fixture: accepted/running precede place_object native completion
+PASS AI native-adapter fixture: polling never repeats native start
+PASS AI native-adapter fixture: verified place_object has bound game-thread release evidence
+PASS AI native-adapter fixture: long action duplicate ID rejected
+PASS AI native-adapter fixture: accepted/running precede craft_recipe native completion
+PASS AI native-adapter fixture: polling never repeats native start
+PASS AI native-adapter fixture: verified craft_recipe has bound game-thread release evidence
+PASS AI native-adapter fixture: long action duplicate ID rejected
+PASS AI native-adapter fixture: object cancel preserves uncertain side effects
+PASS AI native-adapter fixture: object cancel reports actual input release
+PASS AI native-adapter fixture: object cancel never replays start or cleanup after unknown
+PASS AI native-adapter fixture: object cancel preserves uncertain side effects
+PASS AI native-adapter fixture: object cancel reports actual input release
+PASS AI native-adapter fixture: object cancel never replays start or cleanup after unknown
+PASS AI native-adapter fixture: object death preserves uncertain side effects
+PASS AI native-adapter fixture: object death reports actual input release
+PASS AI native-adapter fixture: object death never replays start or cleanup after unknown
+PASS AI native-adapter fixture: object death preserves uncertain side effects
+PASS AI native-adapter fixture: object death reports actual input release
+PASS AI native-adapter fixture: object death never replays start or cleanup after unknown
+PASS AI native-adapter fixture: object timeout preserves uncertain side effects
+PASS AI native-adapter fixture: object timeout reports actual input release
+PASS AI native-adapter fixture: object timeout never replays start or cleanup after unknown
+PASS AI native-adapter fixture: object timeout preserves uncertain side effects
+PASS AI native-adapter fixture: object timeout reports actual input release
+PASS AI native-adapter fixture: object timeout never replays start or cleanup after unknown
+PASS AI native-adapter fixture: object disconnect preserves uncertain side effects
+PASS AI native-adapter fixture: object disconnect reports actual input release
+PASS AI native-adapter fixture: object disconnect never replays start or cleanup after unknown
+PASS AI native-adapter fixture: object disconnect preserves uncertain side effects
+PASS AI native-adapter fixture: object disconnect reports actual input release
+PASS AI native-adapter fixture: object disconnect never replays start or cleanup after unknown
+PASS AI native-adapter fixture: object forget preserves uncertain side effects
+PASS AI native-adapter fixture: object forget reports actual input release
+PASS AI native-adapter fixture: object forget never replays start or cleanup after unknown
+PASS AI native-adapter fixture: object forget preserves uncertain side effects
+PASS AI native-adapter fixture: object forget reports actual input release
+PASS AI native-adapter fixture: object forget never replays start or cleanup after unknown
+PASS AI native-adapter fixture: animation/uncertain effect cannot prove completion
+PASS AI native-adapter fixture: animation/uncertain effect cannot prove completion
+PASS AI native-adapter fixture: cancel retires exactly the acquired native handle
+PASS AI native-adapter fixture: disconnect retires exactly the acquired native handle
+PASS AI native-adapter fixture: death retires exactly the acquired native handle
+PASS AI native-adapter fixture: timeout retires exactly the acquired native handle
+PASS AI native-adapter fixture: forget retires exactly the acquired native handle
+PASS AI native-adapter fixture: changed object never writes through stale handle
+PASS AI native-adapter fixture: changed world never writes through stale handle
+PASS AI native-adapter fixture: changed generation never writes through stale handle
+PASS AI native-adapter fixture: changed slot never writes through stale handle
+PASS AI native-adapter fixture: movement/use/mining share global mutual exclusion
+PASS AI native-adapter fixture: world unload delegates native retirement
+PASS AI native-adapter fixture: native argument rejection precedes start
+PASS AI native-adapter fixture: ambiguous native start is never repeated or claimed released
+PASS AI native-adapter fixture: cleanup exception preserves unknown evidence without retry
+AI native adapter offline: 101 checks; executor is a substitute, not Terraria.
+AI native chat protocol: 30 checks; no graphical client.

@@ -18,6 +18,16 @@ internal static class TerrainReader
             for (int x = 0; x < row.Length; x++) row[x] = ReadCell(left + x, top + y);
             rows[y] = new string(row);
         }
+        bool grounded = Grounded(player);
+        bool supported = !player.dead && !player.ghost && !player.mount.Active && !player.pulley
+            && !player.wet && !player.webbed && !player.stoned && !player.frozen
+            && player.gravDir == 1 && player.grapCount == 0 && player.width == 20 && player.height == 42;
+        return new TerrainSnapshot(left, top, 16, rows, player.width, player.height, grounded, supported);
+    }
+
+    // Lightweight contact observation shared by movement drivers; no profile or safety gate.
+    internal static bool Grounded(Player player)
+    {
         bool grounded = false;
         float bottom = player.Bottom.Y;
         for (int x = (int)Math.Floor(player.position.X / 16);
@@ -32,10 +42,7 @@ internal static class TerrainReader
                     && (Math.Abs(player.velocity.Y) < 0.01f || player.sloping)) grounded = true;
             }
         }
-        bool supported = !player.dead && !player.ghost && !player.mount.Active && !player.pulley
-            && !player.wet && !player.webbed && !player.stoned && !player.frozen
-            && player.gravDir == 1 && player.grapCount == 0 && player.width == 20 && player.height == 42;
-        return new TerrainSnapshot(left, top, 16, rows, player.width, player.height, grounded, supported);
+        return grounded;
     }
 
     internal static char ReadCell(int x, int y)

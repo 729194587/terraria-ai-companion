@@ -1,0 +1,77 @@
+IL_0000: ldarg.0
+IL_0001: ldflda Microsoft.Xna.Framework.Vector2 Terraria.Entity::position
+IL_0006: ldfld System.Single Microsoft.Xna.Framework.Vector2::X
+IL_000b: ldc.r4 16
+IL_0010: div
+IL_0011: ldsfld System.Int32 Terraria.Player::tileRangeX
+IL_0016: conv.r4
+IL_0017: sub
+IL_0018: ldarg.1
+IL_0019: ldfld System.Int32 Terraria.Item::tileBoost
+IL_001e: conv.r4
+IL_001f: sub
+IL_0020: ldsfld System.Int32 Terraria.Player::tileTargetX
+IL_0025: conv.r4
+IL_0026: bgt.un IL_00c3
+IL_002b: ldarg.0
+IL_002c: ldflda Microsoft.Xna.Framework.Vector2 Terraria.Entity::position
+IL_0031: ldfld System.Single Microsoft.Xna.Framework.Vector2::X
+IL_0036: ldarg.0
+IL_0037: ldfld System.Int32 Terraria.Entity::width
+IL_003c: conv.r4
+IL_003d: add
+IL_003e: ldc.r4 16
+IL_0043: div
+IL_0044: ldsfld System.Int32 Terraria.Player::tileRangeX
+IL_0049: conv.r4
+IL_004a: add
+IL_004b: ldarg.1
+IL_004c: ldfld System.Int32 Terraria.Item::tileBoost
+IL_0051: conv.r4
+IL_0052: add
+IL_0053: ldc.r4 1
+IL_0058: sub
+IL_0059: ldsfld System.Int32 Terraria.Player::tileTargetX
+IL_005e: conv.r4
+IL_005f: blt.un.s IL_00c3
+IL_0061: ldarg.0
+IL_0062: ldflda Microsoft.Xna.Framework.Vector2 Terraria.Entity::position
+IL_0067: ldfld System.Single Microsoft.Xna.Framework.Vector2::Y
+IL_006c: ldc.r4 16
+IL_0071: div
+IL_0072: ldsfld System.Int32 Terraria.Player::tileRangeY
+IL_0077: conv.r4
+IL_0078: sub
+IL_0079: ldarg.1
+IL_007a: ldfld System.Int32 Terraria.Item::tileBoost
+IL_007f: conv.r4
+IL_0080: sub
+IL_0081: ldsfld System.Int32 Terraria.Player::tileTargetY
+IL_0086: conv.r4
+IL_0087: bgt.un.s IL_00c3
+IL_0089: ldarg.0
+IL_008a: ldflda Microsoft.Xna.Framework.Vector2 Terraria.Entity::position
+IL_008f: ldfld System.Single Microsoft.Xna.Framework.Vector2::Y
+IL_0094: ldarg.0
+IL_0095: ldfld System.Int32 Terraria.Entity::height
+IL_009a: conv.r4
+IL_009b: add
+IL_009c: ldc.r4 16
+IL_00a1: div
+IL_00a2: ldsfld System.Int32 Terraria.Player::tileRangeY
+IL_00a7: conv.r4
+IL_00a8: add
+IL_00a9: ldarg.1
+IL_00aa: ldfld System.Int32 Terraria.Item::tileBoost
+IL_00af: conv.r4
+IL_00b0: add
+IL_00b1: ldc.r4 2
+IL_00b6: sub
+IL_00b7: ldsfld System.Int32 Terraria.Player::tileTargetY
+IL_00bc: conv.r4
+IL_00bd: clt.un
+IL_00bf: ldc.i4.0
+IL_00c0: ceq
+IL_00c2: ret
+IL_00c3: ldc.i4.0
+IL_00c4: ret

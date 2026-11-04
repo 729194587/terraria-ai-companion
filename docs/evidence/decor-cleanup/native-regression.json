@@ -1,0 +1,4144 @@
+{
+  "atomicSelection": {
+    "runId": "b134b5b7400747aeb9362b8c9a70d875",
+    "status": "completed",
+    "calls": 1,
+    "value": {
+      "operation": "select_hotbar_slot",
+      "actionGeneration": 1,
+      "evidence": {
+        "beforeSlot": 0,
+        "selectionApplied": true,
+        "requestedHotbarKey": 0,
+        "targetSlot": 9,
+        "mutationAttempted": true
+      },
+      "actionId": "52e13d3c5062402992c9c6e1cc9c8f85",
+      "targetRegion": null,
+      "completed": true,
+      "reason": "native_selection_verified_next_pump",
+      "cancelled": false,
+      "targetRecipe": null,
+      "controlGeneration": 1,
+      "endEvidenceStatus": "known",
+      "continuationAllowed": false,
+      "valid": true,
+      "endEvidence": {
+        "selectionVerified": true,
+        "actorSlot": 254,
+        "actorGeneration": 1,
+        "selectedSlot": 9,
+        "phase": "ServerAI_game_thread_no_input",
+        "selectedHotbarKey": 0,
+        "observationSequence": 1629,
+        "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+        "actorId": "042efc2971aa470796cb5247339a4e75",
+        "gameUpdate": 813,
+        "inputsAcquired": false
+      },
+      "reasonDetail": null,
+      "targetTile": null,
+      "status": "completed",
+      "session": "973e483ef22340afad78e52ec8ef9bf6"
+    },
+    "actions": 1,
+    "logs": [],
+    "actionState": "released",
+    "lastAction": {
+      "valid": true,
+      "status": "completed",
+      "reason": "native_selection_verified_next_pump",
+      "reasonDetail": null,
+      "operation": "select_hotbar_slot",
+      "actionId": "52e13d3c5062402992c9c6e1cc9c8f85",
+      "session": "973e483ef22340afad78e52ec8ef9bf6",
+      "actionGeneration": 1,
+      "targetRegion": null,
+      "targetTile": null,
+      "targetRecipe": null,
+      "evidence": {
+        "requestedHotbarKey": 0,
+        "targetSlot": 9,
+        "beforeSlot": 0,
+        "mutationAttempted": true,
+        "selectionApplied": true
+      },
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_no_input",
+        "gameUpdate": 813,
+        "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+        "actorId": "042efc2971aa470796cb5247339a4e75",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": false,
+        "selectedSlot": 9,
+        "selectedHotbarKey": 0,
+        "selectionVerified": true,
+        "observationSequence": 1629
+      },
+      "endEvidenceStatus": "known",
+      "controlGeneration": 1,
+      "completed": true,
+      "cancelled": false,
+      "continuationAllowed": false
+    },
+    "lastObservation": null,
+    "cleanup": null,
+    "trace": [
+      {
+        "id": 1,
+        "operation": "select_hotbar_slot",
+        "line": 1,
+        "status": "completed",
+        "valid": true,
+        "reason": "native_selection_verified_next_pump",
+        "elapsed_ms": 171.99999999991178
+      }
+    ],
+    "evidence": {
+      "taskId": "2aa293bbba5f443ba59ee5ab275d6918",
+      "path": "D:\\Agent Project\\terraria-ai-companion\\.local\\g82-lua-evidence\\2aa293bbba5f443ba59ee5ab275d6918",
+      "available": true,
+      "eventsDropped": 1,
+      "writeErrors": 0
+    }
+  },
+  "nativeWorldEvidence": {
+    "gameUpdate": 2051,
+    "targetAbsent": true,
+    "neighborPresent": true,
+    "cancellationTargetPresent": true,
+    "statLife": 100,
+    "appleStack": 1,
+    "pickStack": 1,
+    "x": 33688.83,
+    "y": 3462,
+    "drops": [],
+    "observedDrop": {
+      "gameUpdate": 1798,
+      "items": [
+        {
+          "type": 3,
+          "stack": 1,
+          "x": 33747.9,
+          "y": 3472.01
+        }
+      ],
+      "nativeActionId": "e36447d6-bb45-48a4-93d7-951281e01151"
+    },
+    "stoneInInventory": 1,
+    "controlsReleased": true,
+    "networkFull": 15,
+    "networkControls": 341
+  },
+  "actionFrameMode": "Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.",
+  "processId": 21776,
+  "state": {
+    "tick": 3,
+    "name": "G31_NoClient_Probe",
+    "active": true,
+    "dead": false,
+    "ghost": false,
+    "position": {
+      "x": 33616,
+      "y": 3462
+    },
+    "velocity": {
+      "x": 0,
+      "y": 0
+    },
+    "life": 80,
+    "lifeMax": 100,
+    "selectedSlot": 0,
+    "selectedItem": {
+      "slot": 0,
+      "type": 24,
+      "stack": 1,
+      "prefix": 0,
+      "name": "Wooden Sword"
+    },
+    "inventory": [
+      {
+        "slot": 0,
+        "type": 24,
+        "stack": 1,
+        "prefix": 0,
+        "name": "Wooden Sword"
+      },
+      {
+        "slot": 1,
+        "type": 3509,
+        "stack": 1,
+        "prefix": 0,
+        "name": "Copper Pickaxe"
+      },
+      {
+        "slot": 2,
+        "type": 4009,
+        "stack": 2,
+        "prefix": 0,
+        "name": "Apple"
+      },
+      {
+        "slot": 3,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 4,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 5,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 6,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 7,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 8,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 9,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 10,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 11,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 12,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 13,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 14,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 15,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 16,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 17,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 18,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 19,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 20,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 21,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 22,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 23,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 24,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 25,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 26,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 27,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 28,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 29,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 30,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 31,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 32,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 33,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 34,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 35,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 36,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 37,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 38,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 39,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 40,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 41,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 42,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 43,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 44,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 45,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 46,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 47,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 48,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 49,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 50,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 51,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 52,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 53,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 54,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 55,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 56,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 57,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 58,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      }
+    ]
+  },
+  "startedUtc": "2026-10-31T01:52:48.4026642Z",
+  "exitCode": 0,
+  "mode": "isolated real native dedicated server; no graphical Host & Play",
+  "combatIsolation": {
+    "world": "7a17425a17ea47b091ed683e4c197266",
+    "generation": 1,
+    "slot": 254,
+    "gameUpdate": 1435,
+    "removed": [],
+    "x": 33616,
+    "y": 3462,
+    "vx": 0,
+    "vy": 0,
+    "statLife": 88,
+    "selectedSlot": 1,
+    "itemType": 3509,
+    "pick": 35,
+    "tileBoost": -1,
+    "tileRangeX": 5,
+    "tileRangeY": 4,
+    "buffs": []
+  },
+  "packageSHA256": "BB0EE675556357FC7E637D59F24D38D52449D0EF9D93880B2FFD5AF4FDDE1E50",
+  "readBindingMismatchError": "stale_binding",
+  "nativeGenerationLifecycle": "NOT RUN",
+  "luaReads": {
+    "runId": "63b19e3345ff4d6fa4b5dd93e527114d",
+    "status": "completed",
+    "calls": 8,
+    "value": {
+      "explicitSlots": [
+        0,
+        9,
+        50,
+        58
+      ],
+      "gameUpdate": 1339,
+      "before": {
+        "inWorld": true,
+        "positionWorldPixels": {
+          "y": 3462,
+          "x": 33616
+        },
+        "selectedHotbarKey": 2,
+        "breathMax": 200,
+        "movement": {
+          "shimmerWet": false,
+          "honeyWet": false,
+          "lavaWet": false,
+          "grapCount": 0,
+          "stoned": false,
+          "pulley": false,
+          "wet": false,
+          "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred",
+          "maxFallSpeed": 10.01,
+          "sloping": false,
+          "gravity": 0.4,
+          "maxRunSpeed": 3,
+          "jump": 0,
+          "gravDir": 1,
+          "stairFall": false,
+          "controlDown": false,
+          "controlJump": false,
+          "frozen": false,
+          "webbed": false,
+          "runAcceleration": 0.08
+        },
+        "boundsWorldPixels": {
+          "y": 3462,
+          "height": 42,
+          "width": 20,
+          "x": 33616
+        },
+        "position": {
+          "y": 3462,
+          "x": 33616
+        },
+        "active": true,
+        "mount": {
+          "active": false,
+          "typeId": null
+        },
+        "mana": 20,
+        "ghost": false,
+        "immune": false,
+        "hotbarNumbering": "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
+        "life": 87,
+        "hotbarKeyBindings": [
+          {
+            "inventorySlot": 0,
+            "key": 1
+          },
+          {
+            "inventorySlot": 1,
+            "key": 2
+          },
+          {
+            "inventorySlot": 2,
+            "key": 3
+          },
+          {
+            "inventorySlot": 3,
+            "key": 4
+          },
+          {
+            "inventorySlot": 4,
+            "key": 5
+          },
+          {
+            "inventorySlot": 5,
+            "key": 6
+          },
+          {
+            "inventorySlot": 6,
+            "key": 7
+          },
+          {
+            "inventorySlot": 7,
+            "key": 8
+          },
+          {
+            "inventorySlot": 8,
+            "key": 9
+          },
+          {
+            "inventorySlot": 9,
+            "key": 0
+          }
+        ],
+        "hotbarInventorySlots": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "immuneTime": 0,
+        "selectedSlot": 1,
+        "lifeMax": 100,
+        "equipmentScope": "vanilla player arrays, including vanilla social slots; mod accessory slots not included",
+        "breath": 200,
+        "dead": false,
+        "source": "server_ai_player",
+        "velocityPixelsPerTick": {
+          "y": 0,
+          "x": 0
+        },
+        "statDefense": {
+          "positive": 0,
+          "negative": 0
+        },
+        "name": "G31_NoClient_Probe",
+        "manaMax": 20,
+        "direction": 1,
+        "id": 254,
+        "velocity": {
+          "y": 0,
+          "x": 0
+        }
+      },
+      "inventoryGameUpdate": 1335,
+      "selected": {
+        "source": "server_ai_player",
+        "inventory": [
+          {
+            "prefix": 0,
+            "use": {
+              "createTile": -1,
+              "hammer": 0,
+              "pick": 35,
+              "axe": 0,
+              "createWall": -1
+            },
+            "inventoryToken": null,
+            "hotbarKey": 2,
+            "typeId": 3509,
+            "contentKey": "Terraria/CopperPickaxe",
+            "maxStack": 1,
+            "slot": 1,
+            "favorited": false,
+            "name": "Copper Pickaxe",
+            "stack": 1,
+            "empty": false
+          }
+        ],
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+        "selectedSlot": 1,
+        "status": "ok",
+        "selectedHotbarKey": 2
+      },
+      "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+      "equipmentSlots": 20,
+      "hotbarCount": 10,
+      "after": {
+        "inWorld": true,
+        "positionWorldPixels": {
+          "y": 3462,
+          "x": 33616
+        },
+        "selectedHotbarKey": 2,
+        "breathMax": 200,
+        "movement": {
+          "shimmerWet": false,
+          "honeyWet": false,
+          "lavaWet": false,
+          "grapCount": 0,
+          "stoned": false,
+          "pulley": false,
+          "wet": false,
+          "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred",
+          "maxFallSpeed": 10.01,
+          "sloping": false,
+          "gravity": 0.4,
+          "maxRunSpeed": 3,
+          "jump": 0,
+          "gravDir": 1,
+          "stairFall": false,
+          "controlDown": false,
+          "controlJump": false,
+          "frozen": false,
+          "webbed": false,
+          "runAcceleration": 0.08
+        },
+        "boundsWorldPixels": {
+          "y": 3462,
+          "height": 42,
+          "width": 20,
+          "x": 33616
+        },
+        "position": {
+          "y": 3462,
+          "x": 33616
+        },
+        "active": true,
+        "mount": {
+          "active": false,
+          "typeId": null
+        },
+        "mana": 20,
+        "ghost": false,
+        "immune": false,
+        "hotbarNumbering": "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
+        "life": 87,
+        "hotbarKeyBindings": [
+          {
+            "inventorySlot": 0,
+            "key": 1
+          },
+          {
+            "inventorySlot": 1,
+            "key": 2
+          },
+          {
+            "inventorySlot": 2,
+            "key": 3
+          },
+          {
+            "inventorySlot": 3,
+            "key": 4
+          },
+          {
+            "inventorySlot": 4,
+            "key": 5
+          },
+          {
+            "inventorySlot": 5,
+            "key": 6
+          },
+          {
+            "inventorySlot": 6,
+            "key": 7
+          },
+          {
+            "inventorySlot": 7,
+            "key": 8
+          },
+          {
+            "inventorySlot": 8,
+            "key": 9
+          },
+          {
+            "inventorySlot": 9,
+            "key": 0
+          }
+        ],
+        "hotbarInventorySlots": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "immuneTime": 0,
+        "selectedSlot": 1,
+        "lifeMax": 100,
+        "equipmentScope": "vanilla player arrays, including vanilla social slots; mod accessory slots not included",
+        "breath": 200,
+        "dead": false,
+        "source": "server_ai_player",
+        "velocityPixelsPerTick": {
+          "y": 0,
+          "x": 0
+        },
+        "statDefense": {
+          "positive": 0,
+          "negative": 0
+        },
+        "name": "G31_NoClient_Probe",
+        "manaMax": 20,
+        "direction": 1,
+        "id": 254,
+        "velocity": {
+          "y": 0,
+          "x": 0
+        }
+      },
+      "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+      "binding": {
+        "slot": 254,
+        "generation": 1,
+        "actor": "042efc2971aa470796cb5247339a4e75",
+        "world": "7a17425a17ea47b091ed683e4c197266"
+      },
+      "motion": {
+        "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety",
+        "supported": true,
+        "playerWidth": 20,
+        "playerHeight": 42,
+        "grounded": true
+      },
+      "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+      "itemLookup": {
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+        "status": "ok",
+        "typeId": 3509,
+        "contentKey": "Terraria/CopperPickaxe",
+        "count": 1,
+        "name": "Copper Pickaxe",
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "slots": [
+          {
+            "stack": 1,
+            "slot": 1,
+            "hotbarKey": 2
+          }
+        ],
+        "scope": "player.inventory including hotbar, ammo, coins; excludes equipment, banks, chests, mouse item",
+        "source": "server_ai_player"
+      },
+      "occupiedInventorySlots": 3,
+      "fullInventorySlots": 59,
+      "inventoryAtFullQuery": [
+        {
+          "prefix": 0,
+          "customState": "not_applicable",
+          "hotbarKey": 1,
+          "typeId": 24,
+          "empty": false,
+          "use": {
+            "useStyle": 1,
+            "damage": 7,
+            "createWall": -1,
+            "useTime": 20,
+            "createTile": -1,
+            "consumable": false,
+            "hammer": 0,
+            "shoot": 0,
+            "pick": 0,
+            "ammo": 0,
+            "useAnimation": 20,
+            "axe": 0
+          },
+          "slot": 0,
+          "favorited": false,
+          "contentKey": "Terraria/WoodenSword",
+          "name": "Wooden Sword",
+          "stack": 1
+        },
+        {
+          "prefix": 0,
+          "customState": "not_applicable",
+          "hotbarKey": 2,
+          "typeId": 3509,
+          "empty": false,
+          "use": {
+            "useStyle": 1,
+            "damage": 4,
+            "createWall": -1,
+            "useTime": 15,
+            "createTile": -1,
+            "consumable": false,
+            "hammer": 0,
+            "shoot": 0,
+            "pick": 35,
+            "ammo": 0,
+            "useAnimation": 22,
+            "axe": 0
+          },
+          "slot": 1,
+          "favorited": false,
+          "contentKey": "Terraria/CopperPickaxe",
+          "name": "Copper Pickaxe",
+          "stack": 1
+        },
+        {
+          "prefix": 0,
+          "customState": "not_applicable",
+          "hotbarKey": 3,
+          "typeId": 4009,
+          "empty": false,
+          "use": {
+            "useStyle": 2,
+            "damage": -1,
+            "createWall": -1,
+            "useTime": 17,
+            "createTile": -1,
+            "consumable": true,
+            "hammer": 0,
+            "shoot": 0,
+            "pick": 0,
+            "ammo": 0,
+            "useAnimation": 17,
+            "axe": 0
+          },
+          "slot": 2,
+          "favorited": false,
+          "contentKey": "Terraria/Apple",
+          "name": "Apple",
+          "stack": 2
+        }
+      ]
+    },
+    "actions": 0,
+    "logs": [],
+    "actionState": "idle",
+    "lastAction": null,
+    "lastObservation": {
+      "operation": "inspect_inventory",
+      "callId": 8,
+      "runId": "63b19e3345ff4d6fa4b5dd93e527114d",
+      "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+      "actorGeneration": 1,
+      "actorSlot": 254,
+      "gameUpdate": 1344,
+      "observedAtUnixMs": 1793411629529,
+      "clock": "server_utc_at_projection",
+      "result": {
+        "valid": true,
+        "available": true,
+        "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+        "gameUpdate": 1344,
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "observedAtUnixMs": 1793411629529,
+        "clock": "server_utc_at_projection",
+        "data": {
+          "status": "ok",
+          "selectedSlot": 1,
+          "selectedHotbarKey": 2,
+          "inventory": [
+            {
+              "slot": 1,
+              "hotbarKey": 2,
+              "typeId": 3509,
+              "contentKey": "Terraria/CopperPickaxe",
+              "name": "Copper Pickaxe",
+              "stack": 1,
+              "empty": false,
+              "prefix": 0,
+              "maxStack": 1,
+              "favorited": false,
+              "inventoryToken": null,
+              "use": {
+                "pick": 35,
+                "axe": 0,
+                "hammer": 0,
+                "createTile": -1,
+                "createWall": -1
+              }
+            }
+          ],
+          "source": "server_ai_player",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation"
+        },
+        "binding": {
+          "actor": "042efc2971aa470796cb5247339a4e75",
+          "world": "7a17425a17ea47b091ed683e4c197266",
+          "generation": 1,
+          "slot": 254
+        }
+      },
+      "payloadOmitted": false
+    },
+    "cleanup": null,
+    "trace": [
+      {
+        "id": 1,
+        "operation": "get_player_state",
+        "line": 3,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 30.99999999994907
+      },
+      {
+        "id": 2,
+        "operation": "inspect_inventory",
+        "line": 6,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 31.99999999992542
+      },
+      {
+        "id": 3,
+        "operation": "inspect_inventory",
+        "line": 7,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 0.0
+      },
+      {
+        "id": 4,
+        "operation": "inspect_inventory",
+        "line": 8,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 15.999999999849024
+      },
+      {
+        "id": 5,
+        "operation": "inspect_inventory",
+        "line": 9,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 77.99999999997453
+      },
+      {
+        "id": 6,
+        "operation": "inspect_inventory",
+        "line": 10,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 30.99999999994907
+      },
+      {
+        "id": 7,
+        "operation": "get_player_state",
+        "line": 25,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 47.000000000025466
+      },
+      {
+        "id": 8,
+        "operation": "inspect_inventory",
+        "line": 26,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 15.000000000100044
+      }
+    ],
+    "evidence": {
+      "taskId": "f4cb336579964d8785f2e0d9f1bf08c2",
+      "path": "D:\\Agent Project\\terraria-ai-companion\\.local\\g82-lua-evidence\\f4cb336579964d8785f2e0d9f1bf08c2",
+      "available": true,
+      "eventsDropped": 1,
+      "writeErrors": 0
+    }
+  },
+  "actionError": "unsupported_operation",
+  "stateAfterReads": {
+    "tick": 1432,
+    "name": "G31_NoClient_Probe",
+    "active": true,
+    "dead": false,
+    "ghost": false,
+    "position": {
+      "x": 33616,
+      "y": 3462
+    },
+    "velocity": {
+      "x": 0,
+      "y": 0
+    },
+    "life": 88,
+    "lifeMax": 100,
+    "selectedSlot": 1,
+    "selectedItem": {
+      "slot": 1,
+      "type": 3509,
+      "stack": 1,
+      "prefix": 0,
+      "name": "Copper Pickaxe"
+    },
+    "inventory": [
+      {
+        "slot": 0,
+        "type": 24,
+        "stack": 1,
+        "prefix": 0,
+        "name": "Wooden Sword"
+      },
+      {
+        "slot": 1,
+        "type": 3509,
+        "stack": 1,
+        "prefix": 0,
+        "name": "Copper Pickaxe"
+      },
+      {
+        "slot": 2,
+        "type": 4009,
+        "stack": 2,
+        "prefix": 0,
+        "name": "Apple"
+      },
+      {
+        "slot": 3,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 4,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 5,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 6,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 7,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 8,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 9,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 10,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 11,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 12,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 13,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 14,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 15,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 16,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 17,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 18,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 19,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 20,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 21,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 22,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 23,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 24,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 25,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 26,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 27,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 28,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 29,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 30,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 31,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 32,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 33,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 34,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 35,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 36,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 37,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 38,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 39,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 40,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 41,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 42,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 43,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 44,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 45,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 46,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 47,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 48,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 49,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 50,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 51,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 52,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 53,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 54,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 55,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 56,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 57,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 58,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      }
+    ]
+  },
+  "luaCombined": {
+    "runId": "d3b34d85df4845e5aeae90d2037c588b",
+    "status": "completed",
+    "calls": 9,
+    "value": {
+      "selected": {
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "status": "ok",
+        "selectedSlot": 1,
+        "source": "server_ai_player",
+        "selectedHotbarKey": 2,
+        "inventory": [
+          {
+            "favorited": false,
+            "name": "Copper Pickaxe",
+            "typeId": 3509,
+            "slot": 1,
+            "inventoryToken": null,
+            "use": {
+              "createWall": -1,
+              "createTile": -1,
+              "axe": 0,
+              "pick": 35,
+              "hammer": 0
+            },
+            "contentKey": "Terraria/CopperPickaxe",
+            "hotbarKey": 2,
+            "maxStack": 1,
+            "stack": 1,
+            "empty": false,
+            "prefix": 0
+          }
+        ]
+      },
+      "itemLookup": {
+        "name": "Copper Pickaxe",
+        "typeId": 3509,
+        "scope": "player.inventory including hotbar, ammo, coins; excludes equipment, banks, chests, mouse item",
+        "source": "server_ai_player",
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+        "contentKey": "Terraria/CopperPickaxe",
+        "status": "ok",
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "count": 1,
+        "slots": [
+          {
+            "slot": 1,
+            "stack": 1,
+            "hotbarKey": 2
+          }
+        ]
+      },
+      "motion": {
+        "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety",
+        "supported": true,
+        "grounded": true,
+        "playerWidth": 20,
+        "playerHeight": 42
+      },
+      "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+      "gameUpdate": 1106,
+      "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation",
+      "fullInventorySlots": 59,
+      "before": {
+        "position": {
+          "x": 33616,
+          "y": 3462
+        },
+        "positionWorldPixels": {
+          "x": 33616,
+          "y": 3462
+        },
+        "life": 84,
+        "velocity": {
+          "x": 0,
+          "y": 0
+        },
+        "equipmentScope": "vanilla player arrays, including vanilla social slots; mod accessory slots not included",
+        "active": true,
+        "ghost": false,
+        "mana": 20,
+        "breathMax": 200,
+        "hotbarKeyBindings": [
+          {
+            "inventorySlot": 0,
+            "key": 1
+          },
+          {
+            "inventorySlot": 1,
+            "key": 2
+          },
+          {
+            "inventorySlot": 2,
+            "key": 3
+          },
+          {
+            "inventorySlot": 3,
+            "key": 4
+          },
+          {
+            "inventorySlot": 4,
+            "key": 5
+          },
+          {
+            "inventorySlot": 5,
+            "key": 6
+          },
+          {
+            "inventorySlot": 6,
+            "key": 7
+          },
+          {
+            "inventorySlot": 7,
+            "key": 8
+          },
+          {
+            "inventorySlot": 8,
+            "key": 9
+          },
+          {
+            "inventorySlot": 9,
+            "key": 0
+          }
+        ],
+        "breath": 200,
+        "velocityPixelsPerTick": {
+          "x": 0,
+          "y": 0
+        },
+        "immuneTime": 0,
+        "selectedHotbarKey": 0,
+        "inWorld": true,
+        "mount": {
+          "typeId": null,
+          "active": false
+        },
+        "name": "G31_NoClient_Probe",
+        "movement": {
+          "stairFall": false,
+          "lavaWet": false,
+          "gravDir": 1,
+          "shimmerWet": false,
+          "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred",
+          "wet": false,
+          "frozen": false,
+          "stoned": false,
+          "maxRunSpeed": 3,
+          "pulley": false,
+          "sloping": false,
+          "maxFallSpeed": 10.01,
+          "gravity": 0.4,
+          "controlDown": false,
+          "webbed": false,
+          "honeyWet": false,
+          "grapCount": 0,
+          "runAcceleration": 0.08,
+          "jump": 0,
+          "controlJump": false
+        },
+        "hotbarInventorySlots": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "source": "server_ai_player",
+        "hotbarNumbering": "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
+        "selectedSlot": 9,
+        "dead": false,
+        "direction": 1,
+        "immune": false,
+        "boundsWorldPixels": {
+          "x": 33616,
+          "y": 3462,
+          "height": 42,
+          "width": 20
+        },
+        "statDefense": {
+          "positive": 0,
+          "negative": 0
+        },
+        "id": 254,
+        "lifeMax": 100,
+        "manaMax": 20
+      },
+      "after": {
+        "position": {
+          "x": 33616,
+          "y": 3462
+        },
+        "positionWorldPixels": {
+          "x": 33616,
+          "y": 3462
+        },
+        "life": 84,
+        "velocity": {
+          "x": 0,
+          "y": 0
+        },
+        "equipmentScope": "vanilla player arrays, including vanilla social slots; mod accessory slots not included",
+        "active": true,
+        "ghost": false,
+        "mana": 20,
+        "breathMax": 200,
+        "hotbarKeyBindings": [
+          {
+            "inventorySlot": 0,
+            "key": 1
+          },
+          {
+            "inventorySlot": 1,
+            "key": 2
+          },
+          {
+            "inventorySlot": 2,
+            "key": 3
+          },
+          {
+            "inventorySlot": 3,
+            "key": 4
+          },
+          {
+            "inventorySlot": 4,
+            "key": 5
+          },
+          {
+            "inventorySlot": 5,
+            "key": 6
+          },
+          {
+            "inventorySlot": 6,
+            "key": 7
+          },
+          {
+            "inventorySlot": 7,
+            "key": 8
+          },
+          {
+            "inventorySlot": 8,
+            "key": 9
+          },
+          {
+            "inventorySlot": 9,
+            "key": 0
+          }
+        ],
+        "breath": 200,
+        "velocityPixelsPerTick": {
+          "x": 0,
+          "y": 0
+        },
+        "immuneTime": 0,
+        "selectedHotbarKey": 2,
+        "inWorld": true,
+        "mount": {
+          "typeId": null,
+          "active": false
+        },
+        "name": "G31_NoClient_Probe",
+        "movement": {
+          "stairFall": false,
+          "lavaWet": false,
+          "gravDir": 1,
+          "shimmerWet": false,
+          "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred",
+          "wet": false,
+          "frozen": false,
+          "stoned": false,
+          "maxRunSpeed": 3,
+          "pulley": false,
+          "sloping": false,
+          "maxFallSpeed": 10.01,
+          "gravity": 0.4,
+          "controlDown": false,
+          "webbed": false,
+          "honeyWet": false,
+          "grapCount": 0,
+          "runAcceleration": 0.08,
+          "jump": 0,
+          "controlJump": false
+        },
+        "hotbarInventorySlots": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "source": "server_ai_player",
+        "hotbarNumbering": "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
+        "selectedSlot": 1,
+        "dead": false,
+        "direction": 1,
+        "immune": false,
+        "boundsWorldPixels": {
+          "x": 33616,
+          "y": 3462,
+          "height": 42,
+          "width": 20
+        },
+        "statDefense": {
+          "positive": 0,
+          "negative": 0
+        },
+        "id": 254,
+        "lifeMax": 100,
+        "manaMax": 20
+      },
+      "occupiedInventorySlots": 3,
+      "inventoryGameUpdate": 1089,
+      "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+      "inventoryAtFullQuery": [
+        {
+          "favorited": false,
+          "name": "Wooden Sword",
+          "typeId": 24,
+          "slot": 0,
+          "customState": "not_applicable",
+          "contentKey": "Terraria/WoodenSword",
+          "hotbarKey": 1,
+          "use": {
+            "createWall": -1,
+            "useAnimation": 20,
+            "useStyle": 1,
+            "damage": 7,
+            "ammo": 0,
+            "useTime": 20,
+            "createTile": -1,
+            "axe": 0,
+            "shoot": 0,
+            "pick": 0,
+            "consumable": false,
+            "hammer": 0
+          },
+          "empty": false,
+          "stack": 1,
+          "prefix": 0
+        },
+        {
+          "favorited": false,
+          "name": "Copper Pickaxe",
+          "typeId": 3509,
+          "slot": 1,
+          "customState": "not_applicable",
+          "contentKey": "Terraria/CopperPickaxe",
+          "hotbarKey": 2,
+          "use": {
+            "createWall": -1,
+            "useAnimation": 22,
+            "useStyle": 1,
+            "damage": 4,
+            "ammo": 0,
+            "useTime": 15,
+            "createTile": -1,
+            "axe": 0,
+            "shoot": 0,
+            "pick": 35,
+            "consumable": false,
+            "hammer": 0
+          },
+          "empty": false,
+          "stack": 1,
+          "prefix": 0
+        },
+        {
+          "favorited": false,
+          "name": "Apple",
+          "typeId": 4009,
+          "slot": 2,
+          "customState": "not_applicable",
+          "contentKey": "Terraria/Apple",
+          "hotbarKey": 3,
+          "use": {
+            "createWall": -1,
+            "useAnimation": 17,
+            "useStyle": 2,
+            "damage": -1,
+            "ammo": 0,
+            "useTime": 17,
+            "createTile": -1,
+            "axe": 0,
+            "shoot": 0,
+            "pick": 0,
+            "consumable": true,
+            "hammer": 0
+          },
+          "empty": false,
+          "stack": 2,
+          "prefix": 0
+        }
+      ],
+      "selection": {
+        "reasonDetail": null,
+        "actionGeneration": 1,
+        "evidence": {
+          "targetSlot": 1,
+          "beforeSlot": 9,
+          "requestedHotbarKey": 2,
+          "selectionApplied": true,
+          "mutationAttempted": true
+        },
+        "targetRegion": null,
+        "valid": true,
+        "status": "completed",
+        "completed": true,
+        "continuationAllowed": false,
+        "reason": "native_selection_verified_next_pump",
+        "actionId": "1f4483c24d434c0aa586bfed5ccf38fb",
+        "operation": "select_hotbar_slot",
+        "endEvidence": {
+          "observationSequence": 2195,
+          "actorSlot": 254,
+          "phase": "ServerAI_game_thread_no_input",
+          "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+          "actorId": "042efc2971aa470796cb5247339a4e75",
+          "actorGeneration": 1,
+          "selectionVerified": true,
+          "selectedSlot": 1,
+          "inputsAcquired": false,
+          "gameUpdate": 1096,
+          "selectedHotbarKey": 2
+        },
+        "cancelled": false,
+        "targetTile": null,
+        "controlGeneration": 1,
+        "endEvidenceStatus": "known",
+        "session": "5354223eed7140acb2b956d5a09df436",
+        "targetRecipe": null
+      },
+      "binding": {
+        "slot": 254,
+        "generation": 1,
+        "actor": "042efc2971aa470796cb5247339a4e75",
+        "world": "7a17425a17ea47b091ed683e4c197266"
+      },
+      "explicitSlots": [
+        0,
+        9,
+        50,
+        58
+      ],
+      "hotbarCount": 10,
+      "equipmentSlots": 20
+    },
+    "actions": 1,
+    "logs": [],
+    "actionState": "released",
+    "lastAction": {
+      "valid": true,
+      "status": "completed",
+      "reason": "native_selection_verified_next_pump",
+      "reasonDetail": null,
+      "operation": "select_hotbar_slot",
+      "actionId": "1f4483c24d434c0aa586bfed5ccf38fb",
+      "session": "5354223eed7140acb2b956d5a09df436",
+      "actionGeneration": 1,
+      "targetRegion": null,
+      "targetTile": null,
+      "targetRecipe": null,
+      "evidence": {
+        "requestedHotbarKey": 2,
+        "targetSlot": 1,
+        "beforeSlot": 9,
+        "mutationAttempted": true,
+        "selectionApplied": true
+      },
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_no_input",
+        "gameUpdate": 1096,
+        "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+        "actorId": "042efc2971aa470796cb5247339a4e75",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": false,
+        "selectedSlot": 1,
+        "selectedHotbarKey": 2,
+        "selectionVerified": true,
+        "observationSequence": 2195
+      },
+      "endEvidenceStatus": "known",
+      "controlGeneration": 1,
+      "completed": true,
+      "cancelled": false,
+      "continuationAllowed": false
+    },
+    "lastObservation": {
+      "operation": "inspect_inventory",
+      "callId": 9,
+      "runId": "d3b34d85df4845e5aeae90d2037c588b",
+      "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+      "actorGeneration": 1,
+      "actorSlot": 254,
+      "gameUpdate": 1108,
+      "observedAtUnixMs": 1793411625468,
+      "clock": "server_utc_at_projection",
+      "result": {
+        "valid": true,
+        "available": true,
+        "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+        "gameUpdate": 1108,
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "observedAtUnixMs": 1793411625468,
+        "clock": "server_utc_at_projection",
+        "data": {
+          "status": "ok",
+          "selectedSlot": 1,
+          "selectedHotbarKey": 2,
+          "inventory": [
+            {
+              "slot": 1,
+              "hotbarKey": 2,
+              "typeId": 3509,
+              "contentKey": "Terraria/CopperPickaxe",
+              "name": "Copper Pickaxe",
+              "stack": 1,
+              "empty": false,
+              "prefix": 0,
+              "maxStack": 1,
+              "favorited": false,
+              "inventoryToken": null,
+              "use": {
+                "pick": 35,
+                "axe": 0,
+                "hammer": 0,
+                "createTile": -1,
+                "createWall": -1
+              }
+            }
+          ],
+          "source": "server_ai_player",
+          "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+          "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation"
+        },
+        "binding": {
+          "actor": "042efc2971aa470796cb5247339a4e75",
+          "world": "7a17425a17ea47b091ed683e4c197266",
+          "generation": 1,
+          "slot": 254
+        }
+      },
+      "payloadOmitted": false
+    },
+    "cleanup": null,
+    "trace": [
+      {
+        "id": 1,
+        "operation": "get_player_state",
+        "line": 3,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 156.00000000017644
+      },
+      {
+        "id": 2,
+        "operation": "inspect_inventory",
+        "line": 6,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 46.99999999979809
+      },
+      {
+        "id": 3,
+        "operation": "inspect_inventory",
+        "line": 7,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 16.000000000076398
+      },
+      {
+        "id": 4,
+        "operation": "inspect_inventory",
+        "line": 8,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 15.999999999849024
+      },
+      {
+        "id": 5,
+        "operation": "inspect_inventory",
+        "line": 9,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 77.99999999997453
+      },
+      {
+        "id": 6,
+        "operation": "inspect_inventory",
+        "line": 10,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 47.000000000025466
+      },
+      {
+        "id": 7,
+        "operation": "select_hotbar_slot",
+        "line": 22,
+        "status": "completed",
+        "valid": true,
+        "reason": "native_selection_verified_next_pump",
+        "elapsed_ms": 186.99999999989814
+      },
+      {
+        "id": 8,
+        "operation": "get_player_state",
+        "line": 25,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 47.000000000025466
+      },
+      {
+        "id": 9,
+        "operation": "inspect_inventory",
+        "line": 26,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 15.999999999849024
+      }
+    ],
+    "evidence": {
+      "taskId": "f56efc61e42a4c09ac0232ecbb715619",
+      "path": "D:\\Agent Project\\terraria-ai-companion\\.local\\g82-lua-evidence\\f56efc61e42a4c09ac0232ecbb715619",
+      "available": true,
+      "eventsDropped": 1,
+      "writeErrors": 0
+    }
+  },
+  "afterSelection": {
+    "tick": 924,
+    "name": "G31_NoClient_Probe",
+    "active": true,
+    "dead": false,
+    "ghost": false,
+    "position": {
+      "x": 33616,
+      "y": 3462
+    },
+    "velocity": {
+      "x": 0,
+      "y": 0
+    },
+    "life": 82,
+    "lifeMax": 100,
+    "selectedSlot": 9,
+    "selectedItem": {
+      "slot": 9,
+      "type": 0,
+      "stack": 0,
+      "prefix": 0,
+      "name": ""
+    },
+    "inventory": [
+      {
+        "slot": 0,
+        "type": 24,
+        "stack": 1,
+        "prefix": 0,
+        "name": "Wooden Sword"
+      },
+      {
+        "slot": 1,
+        "type": 3509,
+        "stack": 1,
+        "prefix": 0,
+        "name": "Copper Pickaxe"
+      },
+      {
+        "slot": 2,
+        "type": 4009,
+        "stack": 2,
+        "prefix": 0,
+        "name": "Apple"
+      },
+      {
+        "slot": 3,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 4,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 5,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 6,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 7,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 8,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 9,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 10,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 11,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 12,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 13,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 14,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 15,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 16,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 17,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 18,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 19,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 20,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 21,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 22,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 23,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 24,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 25,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 26,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 27,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 28,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 29,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 30,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 31,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 32,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 33,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 34,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 35,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 36,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 37,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 38,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 39,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 40,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 41,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 42,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 43,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 44,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 45,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 46,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 47,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 48,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 49,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 50,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 51,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 52,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 53,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 54,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 55,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 56,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 57,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      },
+      {
+        "slot": 58,
+        "type": 0,
+        "stack": 0,
+        "prefix": 0,
+        "name": ""
+      }
+    ]
+  },
+  "teardown": {
+    "probe": "VirtualPlayerEngineProbe",
+    "eventName": "teardown",
+    "utc": "2026-10-31T01:54:04.7976578Z",
+    "WorldSession": "7a17425a17ea47b091ed683e4c197266",
+    "Phase": "released; fresh server process required to re-arm",
+    "thread": 4,
+    "process": 21776,
+    "role": "native-server",
+    "programMainThread": 4,
+    "programIsMainThread": true,
+    "worldSnapshot": true,
+    "gameUpdate": 2082,
+    "ownerThread": 4,
+    "netMode": 2,
+    "dedServ": true,
+    "myPlayer": 255,
+    "reservation": {
+      "Slot": 254,
+      "Capacity": 255,
+      "Session": "b8151d11-3003-49fd-876f-240464129010"
+    },
+    "actorSlot": -1,
+    "actor": null,
+    "humans": [],
+    "networkLoops": 27760,
+    "loopsSinceSpawn": 0,
+    "cleanupSkips": 27740,
+    "syncSkips": 0,
+    "sectionSkips": 2082,
+    "accepts": 0,
+    "fullSnapshots": 16,
+    "controlPackets": 346,
+    "departures": 1,
+    "joinNotices": 1,
+    "leaveNotices": 1,
+    "noticeFailures": 0,
+    "fault": null,
+    "liveGateResult": "not automatically assessed",
+    "detail": {
+      "reason": "OnWorldUnload",
+      "same": true,
+      "occupied": false
+    }
+  },
+  "nativeCancellations": {
+    "navigation": {
+      "actionId": "d302b01780174c5a83f67b776606059d",
+      "operation": "navigate_to_x",
+      "session": "dbd52bdd61f846c084a5dec02cf459d3",
+      "generation": 1,
+      "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+      "actorId": "042efc2971aa470796cb5247339a4e75",
+      "actorSlot": 254,
+      "durationMs": 30000,
+      "targetTile": null,
+      "targetRecipe": null,
+      "targetRegion": null,
+      "status": "cancelled",
+      "executionState": "terminal",
+      "reason": "explicit_cancel",
+      "reasonDetail": null,
+      "evidence": {
+        "targetX": 33712,
+        "targetRegion": null,
+        "startX": 33616,
+        "x": 33616.24,
+        "y": 3462,
+        "vx": 0,
+        "vy": 0,
+        "updates": 2,
+        "navigation": {
+          "Session": 1,
+          "Status": "running",
+          "Action": "walk",
+          "Reason": "safe flat walk prefix; braking tail validated",
+          "Frame": 2,
+          "HoldFrames": 0,
+          "PredictedLanding": {
+            "X": 33640,
+            "Y": 3462
+          },
+          "ActualLanding": null,
+          "MaxError": 0,
+          "ExpectedPosition": {
+            "X": 33616.24,
+            "Y": 3462
+          },
+          "ObservedPosition": {
+            "X": 33616.24,
+            "Y": 3462
+          },
+          "ExpectedVelocity": {
+            "X": 0.16,
+            "Y": 0
+          },
+          "ObservedVelocity": {
+            "X": 0.16,
+            "Y": 0
+          },
+          "Generation": 1,
+          "TargetX": 33712,
+          "CompletedActions": 0,
+          "CompletedJumps": 0,
+          "Expansions": 0,
+          "PlannedActions": 1,
+          "PlanMilliseconds": 1.5668,
+          "LastLanding": null,
+          "ReachedGoal": false,
+          "TimeBudgetReached": false,
+          "PlanNumber": 1,
+          "TargetRegion": null,
+          "LandingConfirmationFrames": 0,
+          "ObservedGrounded": null,
+          "SafeSupport": null,
+          "PlanStart": {
+            "Px": 33616,
+            "Py": 3462,
+            "Vx": 0,
+            "Vy": 0,
+            "Grounded": true,
+            "JumpFramesLeft": 0,
+            "ReleaseJump": true
+          },
+          "SearchFailureReason": null,
+          "PlanKind": "safe_ground_walk",
+          "SearchNumber": 0,
+          "FastWalkPlans": 1
+        },
+        "arrived": false,
+        "grounded": true,
+        "safeSupport": true,
+        "settled": true,
+        "velocityBeforeRelease": {
+          "X": 0.16,
+          "Y": 0
+        },
+        "observedGameUpdate": 1448,
+        "effectStatus": "native_navigation_observed"
+      },
+      "endEvidenceStatus": "known",
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_inputs_released",
+        "gameUpdate": 1448,
+        "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+        "actorId": "042efc2971aa470796cb5247339a4e75",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "effectVerified": false,
+        "operation": "navigate_to_x",
+        "observationSequence": 2898
+      }
+    },
+    "use": {
+      "actionId": "bcb211c9cc894c948bf72ff6d52f7b18",
+      "operation": "use_item",
+      "session": "dbd52bdd61f846c084a5dec02cf459d3",
+      "generation": 1,
+      "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+      "actorId": "042efc2971aa470796cb5247339a4e75",
+      "actorSlot": 254,
+      "durationMs": 3000,
+      "targetTile": null,
+      "targetRecipe": null,
+      "targetRegion": null,
+      "status": "cancelled",
+      "executionState": "terminal",
+      "reason": "explicit_cancel",
+      "reasonDetail": null,
+      "evidence": {
+        "itemType": 3509,
+        "Ticks": 3,
+        "Starts": 1,
+        "AnimationPeak": 20,
+        "TimePeak": 0,
+        "ToolPeak": 0,
+        "UsesPeak": 0,
+        "InitialStack": 1,
+        "stack": 1,
+        "consumptionObserved": false,
+        "cycleVerified": false,
+        "effectStatus": "unconfirmed"
+      },
+      "endEvidenceStatus": "known",
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_inputs_released",
+        "gameUpdate": 2060,
+        "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+        "actorId": "042efc2971aa470796cb5247339a4e75",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "effectVerified": false,
+        "operation": "use_item",
+        "observationSequence": 4122
+      }
+    },
+    "mining": {
+      "actionId": "efbe266a02464981a4c8e46c1e2f8209",
+      "operation": "mine_tile",
+      "session": "dbd52bdd61f846c084a5dec02cf459d3",
+      "generation": 1,
+      "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+      "actorId": "042efc2971aa470796cb5247339a4e75",
+      "actorSlot": 254,
+      "durationMs": 10000,
+      "targetTile": null,
+      "targetRecipe": null,
+      "targetRegion": null,
+      "status": "cancelled",
+      "executionState": "terminal",
+      "reason": "explicit_cancel",
+      "reasonDetail": null,
+      "evidence": {
+        "nativeActionId": "388cd7df-41bd-4fc0-8454-45700527bade",
+        "X": 2109,
+        "Y": 216,
+        "TileType": 1,
+        "ExpectedType": 1,
+        "Ticks": 3,
+        "invalidTarget": null,
+        "Swings": 1,
+        "Strikes": 1,
+        "PeakDamage": 35,
+        "Transforms": 0,
+        "toolKind": "pickaxe",
+        "pick": 35,
+        "axe": 0,
+        "nativeDestroyed": false,
+        "targetAbsent": false,
+        "targetChanged": false,
+        "destroyedByActor": false,
+        "effectStatus": "not_confirmed"
+      },
+      "endEvidenceStatus": "known",
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_inputs_released",
+        "gameUpdate": 2067,
+        "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+        "actorId": "042efc2971aa470796cb5247339a4e75",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "effectVerified": false,
+        "operation": "mine_tile",
+        "observationSequence": 4136
+      }
+    }
+  },
+  "result": "passed",
+  "luaActions": {
+    "runId": "df32a46f4bf24a919eccac62224149fd",
+    "status": "completed",
+    "calls": 9,
+    "value": {
+      "after": {
+        "life": 95,
+        "position": {
+          "y": 3462,
+          "x": 33688.83
+        },
+        "binding": {
+          "world": "7a17425a17ea47b091ed683e4c197266",
+          "generation": 1,
+          "actor": "042efc2971aa470796cb5247339a4e75",
+          "slot": 254
+        }
+      },
+      "actions": [
+        {
+          "endEvidence": {
+            "actorId": "042efc2971aa470796cb5247339a4e75",
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "actorSlot": 254,
+            "gameUpdate": 1672,
+            "observationSequence": 3347,
+            "effectVerified": true,
+            "operation": "navigate_to_x",
+            "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+            "phase": "ServerAI_game_thread_inputs_released",
+            "actorGeneration": 1
+          },
+          "status": "completed",
+          "effectStatus": "native_navigation_observed",
+          "y": 3462,
+          "x": 33688.83,
+          "operation": "navigate_to_x",
+          "arrived": true,
+          "actionId": "0d40f1181d0845e3bfcc2fc382e0b1bd"
+        },
+        {
+          "endEvidence": {
+            "actorId": "042efc2971aa470796cb5247339a4e75",
+            "inputsAcquired": false,
+            "selectedSlot": 0,
+            "actorSlot": 254,
+            "gameUpdate": 1678,
+            "observationSequence": 3359,
+            "selectedHotbarKey": 1,
+            "selectionVerified": true,
+            "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+            "phase": "ServerAI_game_thread_no_input",
+            "actorGeneration": 1
+          },
+          "status": "completed",
+          "operation": "select_hotbar_slot",
+          "actionId": "7ddb3ada89b04c839da607e0af63468d"
+        },
+        {
+          "consumptionObserved": false,
+          "animationPeak": 20,
+          "cycleVerified": true,
+          "endEvidence": {
+            "actorId": "042efc2971aa470796cb5247339a4e75",
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "actorSlot": 254,
+            "gameUpdate": 1709,
+            "observationSequence": 3421,
+            "effectVerified": true,
+            "operation": "use_item",
+            "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+            "phase": "ServerAI_game_thread_inputs_released",
+            "actorGeneration": 1
+          },
+          "starts": 1,
+          "status": "completed",
+          "effectStatus": "unconfirmed",
+          "operation": "use_item",
+          "actionId": "e23d6bd1bd3b480a9bb17775cda8aa12"
+        },
+        {
+          "endEvidence": {
+            "actorId": "042efc2971aa470796cb5247339a4e75",
+            "inputsAcquired": false,
+            "selectedSlot": 2,
+            "actorSlot": 254,
+            "gameUpdate": 1717,
+            "observationSequence": 3437,
+            "selectedHotbarKey": 3,
+            "selectionVerified": true,
+            "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+            "phase": "ServerAI_game_thread_no_input",
+            "actorGeneration": 1
+          },
+          "status": "completed",
+          "operation": "select_hotbar_slot",
+          "actionId": "4fababa8eac84d2aac3eb22127c373ee"
+        },
+        {
+          "consumptionObserved": true,
+          "animationPeak": 17,
+          "cycleVerified": true,
+          "endEvidence": {
+            "actorId": "042efc2971aa470796cb5247339a4e75",
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "actorSlot": 254,
+            "gameUpdate": 1745,
+            "observationSequence": 3493,
+            "effectVerified": true,
+            "operation": "use_item",
+            "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+            "phase": "ServerAI_game_thread_inputs_released",
+            "actorGeneration": 1
+          },
+          "starts": 1,
+          "status": "completed",
+          "effectStatus": "unconfirmed",
+          "operation": "use_item",
+          "actionId": "09f57a9fa76347e89365215790766d28"
+        },
+        {
+          "endEvidence": {
+            "actorId": "042efc2971aa470796cb5247339a4e75",
+            "inputsAcquired": false,
+            "selectedSlot": 1,
+            "actorSlot": 254,
+            "gameUpdate": 1759,
+            "observationSequence": 3521,
+            "selectedHotbarKey": 2,
+            "selectionVerified": true,
+            "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+            "phase": "ServerAI_game_thread_no_input",
+            "actorGeneration": 1
+          },
+          "status": "completed",
+          "operation": "select_hotbar_slot",
+          "actionId": "c87b15977154491983ceb8f900408dc2"
+        },
+        {
+          "endEvidence": {
+            "actorId": "042efc2971aa470796cb5247339a4e75",
+            "inputsAcquired": true,
+            "inputsReleased": true,
+            "actorSlot": 254,
+            "gameUpdate": 1811,
+            "observationSequence": 3625,
+            "effectVerified": true,
+            "operation": "mine_tile",
+            "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+            "phase": "ServerAI_game_thread_inputs_released",
+            "actorGeneration": 1
+          },
+          "status": "completed",
+          "destroyedByActor": true,
+          "peakDamage": 105,
+          "strikes": 3,
+          "operation": "mine_tile",
+          "effectStatus": "native_tile_destroyed",
+          "targetAbsent": true,
+          "actionId": "3c138f2ef05e4280aaf0599bcfceee10"
+        }
+      ],
+      "before": {
+        "life": 91,
+        "position": {
+          "y": 3462,
+          "x": 33616.24
+        },
+        "binding": {
+          "world": "7a17425a17ea47b091ed683e4c197266",
+          "generation": 1,
+          "actor": "042efc2971aa470796cb5247339a4e75",
+          "slot": 254
+        }
+      }
+    },
+    "actions": 7,
+    "logs": [],
+    "actionState": "released",
+    "lastAction": {
+      "valid": true,
+      "status": "completed",
+      "reason": "native_tile_destroyed",
+      "reasonDetail": null,
+      "operation": "mine_tile",
+      "actionId": "3c138f2ef05e4280aaf0599bcfceee10",
+      "session": "aa9d469c80404d709c4a77cee825c5c9",
+      "actionGeneration": 1,
+      "targetRegion": null,
+      "targetTile": null,
+      "targetRecipe": null,
+      "evidence": {
+        "nativeActionId": "e36447d6-bb45-48a4-93d7-951281e01151",
+        "X": 2109,
+        "Y": 217,
+        "TileType": 1,
+        "ExpectedType": 1,
+        "Ticks": 43,
+        "invalidTarget": null,
+        "Swings": 2,
+        "Strikes": 3,
+        "PeakDamage": 105,
+        "Transforms": 0,
+        "toolKind": "pickaxe",
+        "pick": 35,
+        "axe": 0,
+        "nativeDestroyed": true,
+        "targetAbsent": true,
+        "targetChanged": false,
+        "destroyedByActor": true,
+        "effectStatus": "native_tile_destroyed"
+      },
+      "endEvidence": {
+        "phase": "ServerAI_game_thread_inputs_released",
+        "gameUpdate": 1811,
+        "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+        "actorId": "042efc2971aa470796cb5247339a4e75",
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "effectVerified": true,
+        "operation": "mine_tile",
+        "observationSequence": 3625
+      },
+      "endEvidenceStatus": "known",
+      "controlGeneration": 1,
+      "completed": true,
+      "cancelled": false,
+      "continuationAllowed": false
+    },
+    "lastObservation": {
+      "operation": "get_player_state",
+      "callId": 9,
+      "runId": "df32a46f4bf24a919eccac62224149fd",
+      "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+      "actorGeneration": 1,
+      "actorSlot": 254,
+      "gameUpdate": 1815,
+      "observedAtUnixMs": 1793411637749,
+      "clock": "server_utc_at_projection",
+      "result": {
+        "valid": true,
+        "available": true,
+        "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+        "gameUpdate": 1815,
+        "actorGeneration": 1,
+        "actorSlot": 254,
+        "observedAtUnixMs": 1793411637749,
+        "clock": "server_utc_at_projection",
+        "binding": {
+          "actor": "042efc2971aa470796cb5247339a4e75",
+          "world": "7a17425a17ea47b091ed683e4c197266",
+          "generation": 1,
+          "slot": 254
+        },
+        "player": {
+          "id": 254,
+          "source": "server_ai_player",
+          "positionWorldPixels": {
+            "x": 33688.83,
+            "y": 3462
+          },
+          "boundsWorldPixels": {
+            "x": 33688.83,
+            "y": 3462,
+            "width": 20,
+            "height": 42
+          },
+          "velocityPixelsPerTick": {
+            "x": 0,
+            "y": 0
+          },
+          "life": 95,
+          "lifeMax": 100,
+          "mana": 20,
+          "manaMax": 20,
+          "name": "G31_NoClient_Probe",
+          "statDefense": {
+            "positive": 2,
+            "negative": 0
+          },
+          "breath": 200,
+          "breathMax": 200,
+          "immune": false,
+          "immuneTime": 0,
+          "direction": 1,
+          "dead": false,
+          "ghost": false,
+          "selectedSlot": 1,
+          "selectedHotbarKey": 2,
+          "hotbarNumbering": "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
+          "hotbarInventorySlots": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "hotbarKeyBindings": [
+            {
+              "key": 1,
+              "inventorySlot": 0
+            },
+            {
+              "key": 2,
+              "inventorySlot": 1
+            },
+            {
+              "key": 3,
+              "inventorySlot": 2
+            },
+            {
+              "key": 4,
+              "inventorySlot": 3
+            },
+            {
+              "key": 5,
+              "inventorySlot": 4
+            },
+            {
+              "key": 6,
+              "inventorySlot": 5
+            },
+            {
+              "key": 7,
+              "inventorySlot": 6
+            },
+            {
+              "key": 8,
+              "inventorySlot": 7
+            },
+            {
+              "key": 9,
+              "inventorySlot": 8
+            },
+            {
+              "key": 0,
+              "inventorySlot": 9
+            }
+          ],
+          "equipmentScope": "vanilla player arrays, including vanilla social slots; mod accessory slots not included",
+          "mount": {
+            "active": false,
+            "typeId": null
+          },
+          "movement": {
+            "gravDir": 1,
+            "sloping": false,
+            "stairFall": false,
+            "wet": false,
+            "lavaWet": false,
+            "honeyWet": false,
+            "shimmerWet": false,
+            "pulley": false,
+            "grapCount": 0,
+            "jump": 0,
+            "controlDown": false,
+            "controlJump": false,
+            "frozen": false,
+            "webbed": false,
+            "stoned": false,
+            "runAcceleration": 0.096,
+            "maxRunSpeed": 3.6000001,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred"
+          },
+          "inWorld": true,
+          "active": true,
+          "position": {
+            "x": 33688.83,
+            "y": 3462
+          },
+          "velocity": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "motion": {
+          "grounded": true,
+          "supported": true,
+          "playerWidth": 20,
+          "playerHeight": 42,
+          "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety"
+        },
+        "source": "server_ai_player",
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation"
+      },
+      "payloadOmitted": false
+    },
+    "cleanup": null,
+    "trace": [
+      {
+        "id": 1,
+        "operation": "get_player_state",
+        "line": 2,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 0.0
+      },
+      {
+        "id": 2,
+        "operation": "navigate_to_x",
+        "line": 5,
+        "status": "completed",
+        "valid": true,
+        "reason": "native_navigation_arrival_verified",
+        "elapsed_ms": 984.9999999999
+      },
+      {
+        "id": 3,
+        "operation": "select_hotbar_slot",
+        "line": 9,
+        "status": "completed",
+        "valid": true,
+        "reason": "native_selection_verified_next_pump",
+        "elapsed_ms": 171.9999999997981
+      },
+      {
+        "id": 4,
+        "operation": "use_item",
+        "line": 13,
+        "status": "completed",
+        "valid": true,
+        "reason": "native_item_cycle_verified",
+        "elapsed_ms": 437.0000000001255
+      },
+      {
+        "id": 5,
+        "operation": "select_hotbar_slot",
+        "line": 17,
+        "status": "completed",
+        "valid": true,
+        "reason": "native_selection_verified_next_pump",
+        "elapsed_ms": 155.99999999994907
+      },
+      {
+        "id": 6,
+        "operation": "use_item",
+        "line": 21,
+        "status": "completed",
+        "valid": true,
+        "reason": "native_item_cycle_verified",
+        "elapsed_ms": 500.0
+      },
+      {
+        "id": 7,
+        "operation": "select_hotbar_slot",
+        "line": 25,
+        "status": "completed",
+        "valid": true,
+        "reason": "native_selection_verified_next_pump",
+        "elapsed_ms": 202.99999999997453
+      },
+      {
+        "id": 8,
+        "operation": "mine_tile",
+        "line": 29,
+        "status": "completed",
+        "valid": true,
+        "reason": "native_tile_destroyed",
+        "elapsed_ms": 797.0000000000255
+      },
+      {
+        "id": 9,
+        "operation": "get_player_state",
+        "line": 33,
+        "status": null,
+        "valid": true,
+        "reason": null,
+        "elapsed_ms": 15.000000000100044
+      }
+    ],
+    "evidence": {
+      "taskId": "a4cdb421aec944e1ba2415d8a6bbd5f8",
+      "path": "D:\\Agent Project\\terraria-ai-companion\\.local\\server-ai-action-evidence\\a4cdb421aec944e1ba2415d8a6bbd5f8",
+      "available": true,
+      "eventsDropped": 1,
+      "writeErrors": 0
+    }
+  },
+  "nativeSelection": {
+    "probe": "VirtualPlayerEngineProbe",
+    "eventName": "atomic-select",
+    "utc": "2026-10-31T01:53:40.249536Z",
+    "WorldSession": "7a17425a17ea47b091ed683e4c197266",
+    "Phase": "actor exists; G2 visibility requires client verification",
+    "thread": 4,
+    "process": 21776,
+    "role": "native-server",
+    "programMainThread": 4,
+    "programIsMainThread": true,
+    "worldSnapshot": true,
+    "gameUpdate": 813,
+    "ownerThread": 4,
+    "netMode": 2,
+    "dedServ": true,
+    "myPlayer": 255,
+    "reservation": {
+      "Slot": 254,
+      "Capacity": 255,
+      "Session": "b8151d11-3003-49fd-876f-240464129010"
+    },
+    "actorSlot": 254,
+    "actor": {
+      "whoAmI": 254,
+      "active": true,
+      "dead": false,
+      "x": 33616,
+      "y": 3462,
+      "vx": 0,
+      "vy": 0,
+      "preUpdates": 813,
+      "postUpdates": 813,
+      "sameReference": true,
+      "connected": false,
+      "socketType": null,
+      "remoteState": 0,
+      "remoteActive": false,
+      "pendingTermination": false,
+      "terminationApproved": false
+    },
+    "humans": [],
+    "networkLoops": 9990,
+    "loopsSinceSpawn": 9970,
+    "cleanupSkips": 9970,
+    "syncSkips": 0,
+    "sectionSkips": 813,
+    "accepts": 0,
+    "fullSnapshots": 5,
+    "controlPackets": 135,
+    "departures": 0,
+    "joinNotices": 1,
+    "leaveNotices": 0,
+    "noticeFailures": 0,
+    "fault": null,
+    "liveGateResult": "not automatically assessed",
+    "detail": {
+      "beforeSlot": 0,
+      "selectedSlot": 9,
+      "Generation": 1,
+      "World": "7a17425a17ea47b091ed683e4c197266"
+    }
+  },
+  "spawn": {
+    "probe": "VirtualPlayerEngineProbe",
+    "eventName": "spawn",
+    "utc": "2026-10-31T01:53:25.7765311Z",
+    "WorldSession": "7a17425a17ea47b091ed683e4c197266",
+    "Phase": "actor exists; G2 visibility requires client verification",
+    "thread": 4,
+    "process": 21776,
+    "role": "native-server",
+    "programMainThread": 4,
+    "programIsMainThread": true,
+    "worldSnapshot": true,
+    "gameUpdate": 0,
+    "ownerThread": 4,
+    "netMode": 2,
+    "dedServ": true,
+    "myPlayer": 255,
+    "reservation": {
+      "Slot": 254,
+      "Capacity": 255,
+      "Session": "b8151d11-3003-49fd-876f-240464129010"
+    },
+    "actorSlot": 254,
+    "actor": {
+      "whoAmI": 254,
+      "active": true,
+      "dead": false,
+      "x": 33680,
+      "y": 3318,
+      "vx": 0,
+      "vy": 0,
+      "preUpdates": 0,
+      "postUpdates": 0,
+      "sameReference": true,
+      "connected": false,
+      "socketType": null,
+      "remoteState": 0,
+      "remoteActive": false,
+      "pendingTermination": false,
+      "terminationApproved": false
+    },
+    "humans": [],
+    "networkLoops": 20,
+    "loopsSinceSpawn": 0,
+    "cleanupSkips": 0,
+    "syncSkips": 0,
+    "sectionSkips": 0,
+    "accepts": 0,
+    "fullSnapshots": 1,
+    "controlPackets": 0,
+    "departures": 0,
+    "joinNotices": 0,
+    "leaveNotices": 0,
+    "noticeFailures": 0,
+    "fault": null,
+    "liveGateResult": "not automatically assessed",
+    "detail": null
+  },
+  "binding": {
+    "actor": "042efc2971aa470796cb5247339a4e75",
+    "world": "7a17425a17ea47b091ed683e4c197266",
+    "generation": 1,
+    "slot": 254
+  },
+  "nativeSelections": [
+    {
+      "probe": "VirtualPlayerEngineProbe",
+      "eventName": "atomic-select",
+      "utc": "2026-10-31T01:53:40.249536Z",
+      "WorldSession": "7a17425a17ea47b091ed683e4c197266",
+      "Phase": "actor exists; G2 visibility requires client verification",
+      "thread": 4,
+      "process": 21776,
+      "role": "native-server",
+      "programMainThread": 4,
+      "programIsMainThread": true,
+      "worldSnapshot": true,
+      "gameUpdate": 813,
+      "ownerThread": 4,
+      "netMode": 2,
+      "dedServ": true,
+      "myPlayer": 255,
+      "reservation": {
+        "Slot": 254,
+        "Capacity": 255,
+        "Session": "b8151d11-3003-49fd-876f-240464129010"
+      },
+      "actorSlot": 254,
+      "actor": {
+        "whoAmI": 254,
+        "active": true,
+        "dead": false,
+        "x": 33616,
+        "y": 3462,
+        "vx": 0,
+        "vy": 0,
+        "preUpdates": 813,
+        "postUpdates": 813,
+        "sameReference": true,
+        "connected": false,
+        "socketType": null,
+        "remoteState": 0,
+        "remoteActive": false,
+        "pendingTermination": false,
+        "terminationApproved": false
+      },
+      "humans": [],
+      "networkLoops": 9990,
+      "loopsSinceSpawn": 9970,
+      "cleanupSkips": 9970,
+      "syncSkips": 0,
+      "sectionSkips": 813,
+      "accepts": 0,
+      "fullSnapshots": 5,
+      "controlPackets": 135,
+      "departures": 0,
+      "joinNotices": 1,
+      "leaveNotices": 0,
+      "noticeFailures": 0,
+      "fault": null,
+      "liveGateResult": "not automatically assessed",
+      "detail": {
+        "beforeSlot": 0,
+        "selectedSlot": 9,
+        "Generation": 1,
+        "World": "7a17425a17ea47b091ed683e4c197266"
+      }
+    },
+    {
+      "probe": "VirtualPlayerEngineProbe",
+      "eventName": "atomic-select",
+      "utc": "2026-10-31T01:53:45.2642246Z",
+      "WorldSession": "7a17425a17ea47b091ed683e4c197266",
+      "Phase": "actor exists; G2 visibility requires client verification",
+      "thread": 4,
+      "process": 21776,
+      "role": "native-server",
+      "programMainThread": 4,
+      "programIsMainThread": true,
+      "worldSnapshot": true,
+      "gameUpdate": 1096,
+      "ownerThread": 4,
+      "netMode": 2,
+      "dedServ": true,
+      "myPlayer": 255,
+      "reservation": {
+        "Slot": 254,
+        "Capacity": 255,
+        "Session": "b8151d11-3003-49fd-876f-240464129010"
+      },
+      "actorSlot": 254,
+      "actor": {
+        "whoAmI": 254,
+        "active": true,
+        "dead": false,
+        "x": 33616,
+        "y": 3462,
+        "vx": 0,
+        "vy": 0,
+        "preUpdates": 1096,
+        "postUpdates": 1096,
+        "sameReference": true,
+        "connected": false,
+        "socketType": null,
+        "remoteState": 0,
+        "remoteActive": false,
+        "pendingTermination": false,
+        "terminationApproved": false
+      },
+      "humans": [],
+      "networkLoops": 13580,
+      "loopsSinceSpawn": 13560,
+      "cleanupSkips": 13560,
+      "syncSkips": 0,
+      "sectionSkips": 1096,
+      "accepts": 0,
+      "fullSnapshots": 6,
+      "controlPackets": 182,
+      "departures": 0,
+      "joinNotices": 1,
+      "leaveNotices": 0,
+      "noticeFailures": 0,
+      "fault": null,
+      "liveGateResult": "not automatically assessed",
+      "detail": {
+        "beforeSlot": 9,
+        "selectedSlot": 1,
+        "Generation": 1,
+        "World": "7a17425a17ea47b091ed683e4c197266"
+      }
+    },
+    {
+      "probe": "VirtualPlayerEngineProbe",
+      "eventName": "atomic-select",
+      "utc": "2026-10-31T01:53:55.3856699Z",
+      "WorldSession": "7a17425a17ea47b091ed683e4c197266",
+      "Phase": "actor exists; G2 visibility requires client verification",
+      "thread": 4,
+      "process": 21776,
+      "role": "native-server",
+      "programMainThread": 4,
+      "programIsMainThread": true,
+      "worldSnapshot": true,
+      "gameUpdate": 1678,
+      "ownerThread": 4,
+      "netMode": 2,
+      "dedServ": true,
+      "myPlayer": 255,
+      "reservation": {
+        "Slot": 254,
+        "Capacity": 255,
+        "Session": "b8151d11-3003-49fd-876f-240464129010"
+      },
+      "actorSlot": 254,
+      "actor": {
+        "whoAmI": 254,
+        "active": true,
+        "dead": false,
+        "x": 33688.83,
+        "y": 3462,
+        "vx": 0,
+        "vy": 0,
+        "preUpdates": 1678,
+        "postUpdates": 1678,
+        "sameReference": true,
+        "connected": false,
+        "socketType": null,
+        "remoteState": 0,
+        "remoteActive": false,
+        "pendingTermination": false,
+        "terminationApproved": false
+      },
+      "humans": [],
+      "networkLoops": 21950,
+      "loopsSinceSpawn": 21930,
+      "cleanupSkips": 21930,
+      "syncSkips": 0,
+      "sectionSkips": 1678,
+      "accepts": 0,
+      "fullSnapshots": 9,
+      "controlPackets": 279,
+      "departures": 0,
+      "joinNotices": 1,
+      "leaveNotices": 0,
+      "noticeFailures": 0,
+      "fault": null,
+      "liveGateResult": "not automatically assessed",
+      "detail": {
+        "beforeSlot": 1,
+        "selectedSlot": 0,
+        "Generation": 1,
+        "World": "7a17425a17ea47b091ed683e4c197266"
+      }
+    },
+    {
+      "probe": "VirtualPlayerEngineProbe",
+      "eventName": "atomic-select",
+      "utc": "2026-10-31T01:53:56.0328228Z",
+      "WorldSession": "7a17425a17ea47b091ed683e4c197266",
+      "Phase": "actor exists; G2 visibility requires client verification",
+      "thread": 4,
+      "process": 21776,
+      "role": "native-server",
+      "programMainThread": 4,
+      "programIsMainThread": true,
+      "worldSnapshot": true,
+      "gameUpdate": 1717,
+      "ownerThread": 4,
+      "netMode": 2,
+      "dedServ": true,
+      "myPlayer": 255,
+      "reservation": {
+        "Slot": 254,
+        "Capacity": 255,
+        "Session": "b8151d11-3003-49fd-876f-240464129010"
+      },
+      "actorSlot": 254,
+      "actor": {
+        "whoAmI": 254,
+        "active": true,
+        "dead": false,
+        "x": 33688.83,
+        "y": 3462,
+        "vx": 0,
+        "vy": 0,
+        "preUpdates": 1717,
+        "postUpdates": 1717,
+        "sameReference": true,
+        "connected": false,
+        "socketType": null,
+        "remoteState": 0,
+        "remoteActive": false,
+        "pendingTermination": false,
+        "terminationApproved": false
+      },
+      "humans": [],
+      "networkLoops": 22550,
+      "loopsSinceSpawn": 22530,
+      "cleanupSkips": 22530,
+      "syncSkips": 0,
+      "sectionSkips": 1717,
+      "accepts": 0,
+      "fullSnapshots": 11,
+      "controlPackets": 286,
+      "departures": 0,
+      "joinNotices": 1,
+      "leaveNotices": 0,
+      "noticeFailures": 0,
+      "fault": null,
+      "liveGateResult": "not automatically assessed",
+      "detail": {
+        "beforeSlot": 0,
+        "selectedSlot": 2,
+        "Generation": 1,
+        "World": "7a17425a17ea47b091ed683e4c197266"
+      }
+    },
+    {
+      "probe": "VirtualPlayerEngineProbe",
+      "eventName": "atomic-select",
+      "utc": "2026-10-31T01:53:56.7531029Z",
+      "WorldSession": "7a17425a17ea47b091ed683e4c197266",
+      "Phase": "actor exists; G2 visibility requires client verification",
+      "thread": 4,
+      "process": 21776,
+      "role": "native-server",
+      "programMainThread": 4,
+      "programIsMainThread": true,
+      "worldSnapshot": true,
+      "gameUpdate": 1759,
+      "ownerThread": 4,
+      "netMode": 2,
+      "dedServ": true,
+      "myPlayer": 255,
+      "reservation": {
+        "Slot": 254,
+        "Capacity": 255,
+        "Session": "b8151d11-3003-49fd-876f-240464129010"
+      },
+      "actorSlot": 254,
+      "actor": {
+        "whoAmI": 254,
+        "active": true,
+        "dead": false,
+        "x": 33688.83,
+        "y": 3462,
+        "vx": 0,
+        "vy": 0,
+        "preUpdates": 1759,
+        "postUpdates": 1759,
+        "sameReference": true,
+        "connected": false,
+        "socketType": null,
+        "remoteState": 0,
+        "remoteActive": false,
+        "pendingTermination": false,
+        "terminationApproved": false
+      },
+      "humans": [],
+      "networkLoops": 23170,
+      "loopsSinceSpawn": 23150,
+      "cleanupSkips": 23150,
+      "syncSkips": 0,
+      "sectionSkips": 1759,
+      "accepts": 0,
+      "fullSnapshots": 13,
+      "controlPackets": 293,
+      "departures": 0,
+      "joinNotices": 1,
+      "leaveNotices": 0,
+      "noticeFailures": 0,
+      "fault": null,
+      "liveGateResult": "not automatically assessed",
+      "detail": {
+        "beforeSlot": 2,
+        "selectedSlot": 1,
+        "Generation": 1,
+        "World": "7a17425a17ea47b091ed683e4c197266"
+      }
+    }
+  ],
+  "worldAfterCancel": {
+    "gameUpdate": 2070,
+    "targetAbsent": true,
+    "neighborPresent": true,
+    "cancellationTargetPresent": true,
+    "statLife": 100,
+    "appleStack": 1,
+    "pickStack": 1,
+    "x": 33688.83,
+    "y": 3462,
+    "drops": [],
+    "observedDrop": {
+      "gameUpdate": 1798,
+      "items": [
+        {
+          "type": 3,
+          "stack": 1,
+          "x": 33747.9,
+          "y": 3472.01
+        }
+      ],
+      "nativeActionId": "e36447d6-bb45-48a4-93d7-951281e01151"
+    },
+    "stoneInInventory": 1,
+    "controlsReleased": true,
+    "networkFull": 16,
+    "networkControls": 344
+  },
+  "pythonClient": "passed",
+  "logScope": "process ID + bound world session + process lifetime",
+  "actionFixture": {
+    "targetX": 33680,
+    "mineX": 2109,
+    "mineY": 217,
+    "initialLife": 80,
+    "initialAppleStack": 2,
+    "perceptionNpcSlot": null,
+    "mode": "isolated copied world; diagnostic native Main.Update frames; no clients"
+  },
+  "rawPlayerQuery": {
+    "v": 1,
+    "id": "native-player-query",
+    "ok": true,
+    "binding": {
+      "actor": "042efc2971aa470796cb5247339a4e75",
+      "world": "7a17425a17ea47b091ed683e4c197266",
+      "generation": 1,
+      "slot": 254
+    },
+    "data": {
+      "available": true,
+      "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+      "gameUpdate": 1431,
+      "actorGeneration": 1,
+      "actorSlot": 254,
+      "observedAtUnixMs": 1793411631027,
+      "clock": "server_utc_at_projection",
+      "data": {
+        "player": {
+          "id": 254,
+          "source": "server_ai_player",
+          "positionWorldPixels": {
+            "x": 33616,
+            "y": 3462
+          },
+          "boundsWorldPixels": {
+            "x": 33616,
+            "y": 3462,
+            "width": 20,
+            "height": 42
+          },
+          "velocityPixelsPerTick": {
+            "x": 0,
+            "y": 0
+          },
+          "life": 88,
+          "lifeMax": 100,
+          "mana": 20,
+          "manaMax": 20,
+          "name": "G31_NoClient_Probe",
+          "statDefense": {
+            "positive": 0,
+            "negative": 0
+          },
+          "breath": 200,
+          "breathMax": 200,
+          "immune": false,
+          "immuneTime": 0,
+          "direction": 1,
+          "dead": false,
+          "ghost": false,
+          "selectedSlot": 1,
+          "selectedHotbarKey": 2,
+          "hotbarNumbering": "Keyboard labels 1..9,0; selectedSlot/inventory.slot are internal array indices",
+          "hotbarInventorySlots": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "hotbarKeyBindings": [
+            {
+              "key": 1,
+              "inventorySlot": 0
+            },
+            {
+              "key": 2,
+              "inventorySlot": 1
+            },
+            {
+              "key": 3,
+              "inventorySlot": 2
+            },
+            {
+              "key": 4,
+              "inventorySlot": 3
+            },
+            {
+              "key": 5,
+              "inventorySlot": 4
+            },
+            {
+              "key": 6,
+              "inventorySlot": 5
+            },
+            {
+              "key": 7,
+              "inventorySlot": 6
+            },
+            {
+              "key": 8,
+              "inventorySlot": 7
+            },
+            {
+              "key": 9,
+              "inventorySlot": 8
+            },
+            {
+              "key": 0,
+              "inventorySlot": 9
+            }
+          ],
+          "equipmentScope": "vanilla player arrays, including vanilla social slots; mod accessory slots not included",
+          "mount": {
+            "active": false,
+            "typeId": null
+          },
+          "movement": {
+            "gravDir": 1,
+            "sloping": false,
+            "stairFall": false,
+            "wet": false,
+            "lavaWet": false,
+            "honeyWet": false,
+            "shimmerWet": false,
+            "pulley": false,
+            "grapCount": 0,
+            "jump": 0,
+            "controlDown": false,
+            "controlJump": false,
+            "frozen": false,
+            "webbed": false,
+            "stoned": false,
+            "runAcceleration": 0.08,
+            "maxRunSpeed": 3,
+            "gravity": 0.4,
+            "maxFallSpeed": 10.01,
+            "contactStatus": "unknown; no universal player collideX/Y or grounded flag inferred"
+          },
+          "inWorld": true,
+          "active": true,
+          "position": {
+            "x": 33616,
+            "y": 3462
+          },
+          "velocity": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        "motion": {
+          "grounded": true,
+          "supported": true,
+          "playerWidth": 20,
+          "playerHeight": 42,
+          "knowledge": "existing_terrain_classifier; supported is the existing movement-profile check, not path safety"
+        },
+        "source": "server_ai_player",
+        "customState": "unknown; custom Mod player/item/buff data and Mod accessory slots not read",
+        "inventoryTokenStatus": "unsupported_server_ai_inventory_mutation"
+      }
+    },
+    "error": null
+  },
+  "bindingMismatchError": "stale_binding",
+  "emptyTileRefusal": {
+    "actionId": "96867d4ab74a4bce8dba56b798f22506",
+    "operation": "mine_tile",
+    "session": "dbd52bdd61f846c084a5dec02cf459d3",
+    "generation": 1,
+    "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+    "actorId": "042efc2971aa470796cb5247339a4e75",
+    "actorSlot": 254,
+    "durationMs": 10000,
+    "targetTile": null,
+    "targetRecipe": null,
+    "targetRegion": null,
+    "status": "failed",
+    "executionState": "terminal",
+    "reason": "invalid_target",
+    "reasonDetail": "{\"x\":2109,\"y\":217,\"inWorld\":true,\"hasTile\":false,\"tileType\":0,\"withinMiningBounds\":true}",
+    "evidence": {
+      "nativeActionId": "ba988e39-4957-4583-bd99-47afcb0f03c2",
+      "X": 2109,
+      "Y": 217,
+      "TileType": null,
+      "ExpectedType": 0,
+      "Ticks": 0,
+      "invalidTarget": {
+        "x": 2109,
+        "y": 217,
+        "inWorld": true,
+        "hasTile": false,
+        "tileType": 0,
+        "withinMiningBounds": true
+      },
+      "Swings": 0,
+      "Strikes": 0,
+      "PeakDamage": 0,
+      "Transforms": 0,
+      "toolKind": "pickaxe",
+      "pick": 35,
+      "axe": 0,
+      "nativeDestroyed": false,
+      "targetAbsent": false,
+      "targetChanged": false,
+      "destroyedByActor": false,
+      "effectStatus": "not_started"
+    },
+    "endEvidenceStatus": "known",
+    "endEvidence": {
+      "phase": "ServerAI_game_thread_inputs_released",
+      "gameUpdate": 2078,
+      "worldSessionId": "7a17425a17ea47b091ed683e4c197266",
+      "actorId": "042efc2971aa470796cb5247339a4e75",
+      "actorGeneration": 1,
+      "actorSlot": 254,
+      "inputsAcquired": false,
+      "inputsReleased": true,
+      "effectVerified": false,
+      "operation": "mine_tile",
+      "observationSequence": 4159
+    }
+  },
+  "bindingMismatchTest": "request generation is current generation + 1; no native lifecycle change",
+  "exitedUtc": "2026-10-31T01:54:04.8309465Z"
+}

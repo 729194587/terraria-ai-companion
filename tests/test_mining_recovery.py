@@ -32,7 +32,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         calls = []
         first = first or failure()
         results = iter([first, *replies])
-        async def dispatch(bridge, name, args, chat_id):
+        async def dispatch(bridge, name, args, chat_id, *, lifecycle=None):
             calls.append((name, copy.deepcopy(args)))
             return copy.deepcopy(next(results))
         answers = [tool("mine_tile", '{"x":14,"y":8}')]
@@ -90,7 +90,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_use_cycle_cannot_be_reported_as_successful_summon(self):
         game = Game()
         model = Model(tool("use_item"), final("雀杖已经成功召唤！"))
-        async def dispatch(*args):
+        async def dispatch(*args, **kwargs):
             return {"valid": True, "status": "completed", "reason": "native_item_use_cycle_finished",
                     "evidence": {"effectStatus": "unconfirmed"}}
         agent = Agent(game, model)

@@ -1,5 +1,6 @@
 """Bounded horizontal actions over the existing Bridge; no model or pathfinding loop."""
 import asyncio
+import copy
 import math
 
 from control import BridgeError
@@ -129,11 +130,15 @@ async def _await_end_evidence(bridge, action, generation, deadline):
     return _result(action, generation)
 
 
-async def move(bridge, direction, duration_ms, chat_id=None, expected_generation=None):
-    return describe_movement_result(await _move(bridge, direction, duration_ms, chat_id, expected_generation))
+async def move(bridge, direction, duration_ms, chat_id=None, expected_generation=None, *, lifecycle=None):
+    return describe_movement_result(await _move(bridge, direction, duration_ms, chat_id, expected_generation,
+                                                lifecycle=lifecycle))
 
 
-async def _move(bridge, direction, duration_ms, chat_id=None, expected_generation=None):
+async def _move(bridge, direction, duration_ms, chat_id=None, expected_generation=None, *, lifecycle=None):
+    def track(**fields):
+        if lifecycle is not None:
+            lifecycle.update(copy.deepcopy(fields))
     if direction not in ("left", "right") or type(duration_ms) is not int or not 50 <= duration_ms <= MAX_DURATION_MS:
         raise ValueError("move requires direction left/right and integer duration_ms in 50..2000")
     if "bounded_movement_v1" not in bridge.hello.get("capabilities", []):
@@ -155,10 +160,12 @@ async def _move(bridge, direction, duration_ms, chat_id=None, expected_generatio
             parameters["chatId"] = chat_id
         # Cancellation waits for the short start ACK before stopping its exact ID. An uncancellable
         # to_thread start cannot arrive later and restart a cancelled task's movement.
+        track(start_attempted=True)
         start_task = asyncio.create_task(_command(bridge, "move_for", **parameters))
         started = await asyncio.shield(start_task)
         action = _feedback(started)["action"]
         generation = _feedback(started)["generation"]
+        track(action=action, control_generation=generation)
         if started.get("status") != "movement_started" or action is None:
             raise BridgeError("Missing movement start acknowledgement")
         action_id = action["actionId"]
@@ -174,6 +181,7 @@ async def _move(bridge, direction, duration_ms, chat_id=None, expected_generatio
             if current is None or current["actionId"] != action_id:
                 return _unknown("Action ownership changed; no automatic retry", action)
             action = current
+            track(action=action, control_generation=generation)
             if action["status"] == "running":
                 await _command(bridge, "renew_move", actionId=action_id)
         return await _await_end_evidence(bridge, action, generation, deadline)
@@ -182,10 +190,14 @@ async def _move(bridge, direction, duration_ms, chat_id=None, expected_generatio
             if action is None and start_task is not None:
                 started = await start_task
                 action = _feedback(started)["action"]
+                track(action=action, control_generation=_feedback(started)['generation'])
             if action is not None:
-                await _cancel_owned(bridge, action["actionId"])
-        except (BridgeError, OSError, ValueError):
-            pass  # Socket timeout closes the Bridge; the lease/deadline still stop injected input.
+                track(cleanup=describe_movement_result(await _cancel_owned(bridge, action["actionId"])))
+            elif start_task is not None:
+                track(uncertain=True)
+        except (BridgeError, OSError, ValueError) as error:
+            # Socket timeout still relies on the existing lease/deadline, not release evidence.
+            track(uncertain=True, cleanupError=str(error))
         raise
     except (BridgeError, OSError, ValueError) as error:
         if action is not None:
@@ -206,8 +218,8 @@ async def _move(bridge, direction, duration_ms, chat_id=None, expected_generatio
                 "reason": str(error), "beforePositionWorldPixels": before, "afterPositionWorldPixels": None}
 
 
-async def stop_movement(bridge):
-    result = describe_movement_result(await _stop_movement(bridge))
+async def stop_movement(bridge, *, lifecycle=None):
+    result = describe_movement_result(await _stop_movement(bridge, lifecycle=lifecycle))
     # Legacy status/completed still describe the queried movement, not this stop request.
     result['targetAction'] = {'actionId': result.get('actionId'),
                               'execution': dict(result['execution'])} if result.get('actionId') else None
@@ -222,7 +234,7 @@ async def stop_movement(bridge):
     return result
 
 
-async def _stop_movement(bridge):
+async def _stop_movement(bridge, *, lifecycle=None):
     if "bounded_movement_v1" not in bridge.hello.get("capabilities", []):
         raise BridgeError("Stopping movement requires bounded_movement_v1")
     action = None
@@ -230,6 +242,8 @@ async def _stop_movement(bridge):
     try:
         reply = await _command(bridge, "get_movement")
         action = _feedback(reply)["action"]
+        if lifecycle is not None:
+            lifecycle.update(action=copy.deepcopy(action), control_generation=_feedback(reply)['generation'])
         if action is None:
             return {"valid": True, "status": "idle", "completed": False, "cancelled": False,
                     "cancelRequested": False,
