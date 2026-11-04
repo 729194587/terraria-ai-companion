@@ -45,10 +45,9 @@
 | [落脚确认](NAVIGATION_LANDING_CONFIRMATION.md) | 导航落点和真实支撑确认 |
 | [世界角色持久化](SERVER_AI_WORLD_CHARACTER_PERSISTENCE.md) | Server AI Player 的世界绑定与存档 |
 
-## 验证证据与历史资料
+## 历史资料
 
-- [evidence/](evidence/)：原始日志、回执、manifest、测试包和精选分析。证据用于追溯具体场景，不自动构成当前接口规范。
-- [历史阶段资料](archive/README.md)：已标记为历史的阶段报告导航。
+- [历史阶段资料](archive/README.md)：少量仍有解释价值的阶段报告导航。临时运行产物不作为长期文档资产。
 - [evidence/](evidence/)：原始日志、回执、manifest、测试包和精选分析。证据用于追溯具体场景，不自动构成当前接口规范。
 
 ## 文档维护规则
