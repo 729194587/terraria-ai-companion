@@ -76,6 +76,7 @@ def tool_calling_contract(bridge):
         scene_region='server_ai_scene_region_v1' in bridge.hello.get('capabilities', []),
     )
     manifest = capability_manifest(bridge, supported)
+    manifest['categories'] = [row for row in manifest['categories'] if row['category'] != 'Program任务协作']
     instructions = (
         SERVER_TOOL_PRINCIPLES
         + '\\nCapability Manifest\\n'
