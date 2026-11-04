@@ -1,6 +1,6 @@
 # AI 独立地图 V1（0.1.64）
 
-M4.5 的实时 L1 区域观察复用 `observe_scene`，与本页 `query_map` 的 last-known 历史分开；没有第二套 map.bin 或存储格式升级，也不以历史格批准导航。当前分层用法与验证见 [M4.5](evidence/m4-5/README.md)。
+实时区域观察由 [Server AI 语义场景](LOCAL_SEMANTIC_SCENE.md) 的 L1 `observe_scene` 提供，与本页 `query_map` 的 last-known 历史分开；不以历史格批准导航。
 
 实现入口：`ServerPlayerRuntime/AiMap.cs`（纯记忆/文件/聚合）、`AiMapRuntime.cs`（游戏线程揭示）、`WorldCharacterPersistence.cs`（角色提交）、`ServerIpc/ServerAiQueries.cs`（绑定查询）。只用于 Server AI。
 
@@ -38,15 +38,10 @@ overview只接受mode，自动选择统一方格cellSize，整个世界最多128
 
 全未知`?`，全空格为空格，全实心`#`，全平台`=`；不同状态或部分未知为`:`，不会比例平均抹平单格洞口。液体存在时优先保留L/S/H/~标记，表示该格中存在，不表示满格液体或全格已知，exploredRatio独立计算。进一步用cellSize=1查询结构。Query只遍历内存地图，不能读取Main.tile补全未知；不会隐式揭示或刷新。
 
-## 验证结果与限制
+## 当前限制
 
-- 纯地图14项：未知/2×2单格洞口/放大/液体、世界与角色隔离、输出上限、文件恢复、跨身份拒绝、截断损坏、世代提交与哈希损坏拒绝；额外独立PowerShell进程恢复通过。
-- 既有角色文件/生命周期39项通过。地图与原生角色一起跨五个真实服务器进程恢复，包含死亡、只读指针保存失败与损坏版本拒绝；地图哨兵值随角色世代恢复。
-- 最终隔离原生场景35项通过：实际方块/火把放置消费和释放、实际铜镐挖掘与记忆更新、地下近身、火把扩大、遮挡、重新采样、传送中途未知、远处修改保留历史、死亡不揭示与返回刷新。移动/死亡通过隔离fixture状态注入，非图形操控/真实死亡重生全过程；原生生命周期组另外验证死亡存档恢复。
-- 新Python地图2项通过，真实Lua Worker→dispatcher→loopback IPC，只读0动作、能力拒绝及参数上限。IPC绑定/旧身份/断连和原子/适配/聊天定向回归通过，query_map加入绑定协议矩阵。
-- 既有test_server_ai_backend.py：32项中31通过、1项基线失败（test_perception_contract_is_capability_gated要求无扫描能力时提示词不含scan_tiles，但HEAD原有pcall错误示例已含该词；HEAD模块直接复现）。未改动此范围外问题。
-- 原生工具IL定向检查通过（ItemUse19、Mining30、Placement119、Crafting11）；Mod构建0错误0警告。未运行全量测试。
-
-复现：`tests/run_ai_map_tests.ps1`、`tests/run_world_character_tests.ps1`、`tests/run_server_ai_ipc_tests.ps1`；Python按test_ai_map.py/test_server_ai_backend.py文件执行；`tests/verify_server_ai_placement_native.ps1 -PackagePath ...`、`tests/verify_world_character_native.ps1 -PackagePath ...`。原生脚本创建新profile、复制世界并只终止自己的诊断进程；需要tModLoader日志写权限和localhost套接字。首次沙箱权限限制已在允许日志写入及套接字的环境重跑；证据目录保存最终结果与原始IL检查。
-
-未验证真实模型自主使用地图、图形Host & Play、人类摄像机实际移动、真人并发修改、所有光源/Mod/全部世界规模压力；地图实现不引用摄像机。当前全图1字节/Tile，最大支持4000万Tile，概览扫描整张记忆图；高频概览可能影响游戏线程，V1不声称性能压力验收完成。现用游戏profile未部署。
+- 地图只记录服务器 AI 已揭示的近似知识，不等价于 Terraria 原生光照、玩家视野或实时 Tile 状态。
+- 揭示按当前采样区域更新，不沿传送路径插值；历史格不会因人类玩家修改而自动刷新。
+- 单字节/Tile 的压缩状态是战略记忆，不保留完整 Tile Frame、家具、墙或逐格新鲜度。
+- 世界回滚、复制相同 UUID 的世界或更换保存根时，必须考虑角色档案身份；不能将历史地图当作独立世界文件的通用缓存。
+- 高频全图概览可能增加游戏线程工作量；当前实现不宣称完成最大世界规模压力验收。
