@@ -472,8 +472,9 @@ class Agent:
                            chat=event)
         run = AgentRun(self.generation, event['eventId'])
         run.budgets = dict(modelCalls=self.max_model_calls, modelToolCalls=self.max_tool_calls,
-            luaApiCalls=self.lua_limits.calls, actionAttempts=self.lua_limits.actions,
-            luaSeconds=self.lua_limits.seconds, estimatedInputTokens=self.context_manager.input_budget)
+            actionAttempts=self.lua_limits.actions, estimatedInputTokens=self.context_manager.input_budget)
+        if not self.server_ai:
+            run.budgets.update(luaApiCalls=self.lua_limits.calls, luaSeconds=self.lua_limits.seconds)
         self.active_run = run
         self.runs.append(run)
         self.task = asyncio.create_task(self._run(self.generation, event["eventId"], run, event['text'],
@@ -654,7 +655,7 @@ class Agent:
                     runtime_data['runtimeToolBudget'] = {
                         'remainingToolCalls': max(0, tool_limit - used),
                         'remainingActionAttempts': max(0, self.lua_limits.actions - actions_used),
-                        'remainingModelCalls': max(0, self.max_model_calls - model_index),
+                        'remainingModelCalls': max(0, self.max_model_calls - model_index - 1),
                     }
                 else:
                     runtime_data['runtimeLua'] = {
