@@ -151,7 +151,7 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(['authorize_ai_reply'],[r['cmd'] for r in self.chathost.sent])
         self.assertEqual(254,self.ai.reply_receipts[-1]['authorSlot'])
         self.assertTrue(self.chathost.sent[0]['text'].startswith('[AI] '))
-        tool_messages=[m for m in self.requests[-1]['messages'] if m['role']=='tool']
+        tool_messages=[m for m in self.requests[-1]['messages'] if m['role']=='tool' and m['tool_call_id']=='move-1']
         self.assertEqual(1,len(tool_messages))
         result=json.loads(tool_messages[0]['content'])
         self.assertTrue(result['valid']);self.assertEqual('completed',result['status'])
