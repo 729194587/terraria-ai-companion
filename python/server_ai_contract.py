@@ -79,9 +79,9 @@ def tool_calling_contract(bridge):
     manifest['categories'] = [row for row in manifest['categories'] if row['category'] != 'Program任务协作']
     instructions = (
         SERVER_TOOL_PRINCIPLES
-        + '\\nCapability Manifest\\n'
+        + '\nCapability Manifest\n'
         + render_manifest(manifest)
-        + '\\nTool Contract\\n'
+        + '\nTool Contract\n'
         + json.dumps(definitions, ensure_ascii=False, separators=(',', ':'))
     )
     return instructions, definitions
