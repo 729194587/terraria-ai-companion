@@ -19,7 +19,7 @@
 
 | 职责 | 实现入口与按需资料 |
 | --- | --- |
-| 模型、聊天轮次、取消与回复 | `python/agent.py`、`python/llm.py`；`docs/PLAIN_LOCAL_CHAT.md` |
+| 模型、聊天轮次、取消与回复 | `python/agent.py`、`python/llm.py`；`docs/archive/PLAIN_LOCAL_CHAT.md` |
 | Lua 编排、隔离 Worker、预算 | `python/lua_agent.py`、`python/lua_runtime.py`、`python/lua_worker.py`；`docs/LUA_RUNTIME.md`、`docs/LUA_OBSERVABILITY.md` |
 | 原子 API Schema、校验、分发和结果核验 | `python/atomic_operations.py`；`docs/ATOMIC_OPERATIONS.md`、`docs/API_CONTRACT.md` |
 | 客户端 TCP 与本地玩家控制 | `python/control.py`、`CompanionBridge/TcpControlServer.cs`、`CompanionBridge/ControlState.cs`、`CompanionBridge/Common/Players/CompanionPlayer.cs`、`CompanionBridge/Common/Systems/CompanionSystem.cs` |
