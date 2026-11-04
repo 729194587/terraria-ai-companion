@@ -1,11 +1,11 @@
-# Numen 架构借鉴与 Terraria 适配路线
+# Numen 架构研究与 Terraria 适配选项
 
-**状态：** 架构方向已确认，模块适配待逐步开展\
+**状态：** 参考方案草案；各模块是否采纳须经独立审查和验证\
 **项目：** Terraria AI Companion\
 **参考项目：**
 [Dwinovo/minecraft-numen](https://github.com/Dwinovo/minecraft-numen/tree/1.21.1)
 
-## 1. 项目目标
+ > 本文列出一种研究框架，不是已批准的目标架构或排期。它与 `ARCHITECTURE_AUDIT_PLAN.md` 一样，不覆盖正式架构和专题契约。\n\n## 1. 项目目标
 
 Terraria AI Companion 的长期目标，是让 AI 成为 Terraria
 世界中的第二名玩家，能够像真人一样理解环境、探索世界、采集资源、挖掘、建造、合成、战斗和生存。
