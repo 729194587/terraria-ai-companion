@@ -41,8 +41,8 @@
 | [背包操作](INVENTORY_OPERATIONS.md) | 库存 Token、原生堆叠/拆分和 unknown |
 | [合成](SERVER_AI_CRAFTING.md) | 配方查询与原生合成 |
 | [物品放置](SERVER_AI_OBJECT_PLACEMENT.md) | 服务器侧物体放置 |
-| [导航](TERRABLIND_NAVIGATION.md) | 物理预测、路径规划与执行 |
-| [落脚确认](NAVIGATION_LANDING_CONFIRMATION.md) | 导航落点和真实支撑确认 |
+| [导航](NAVIGATION.md) | 物理预测、路径规划、执行与落脚确认 |
+
 | [世界角色持久化](SERVER_AI_WORLD_CHARACTER_PERSISTENCE.md) | Server AI Player 的世界绑定与存档 |
 
 ## 历史资料
