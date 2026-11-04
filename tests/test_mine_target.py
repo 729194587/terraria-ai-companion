@@ -65,6 +65,22 @@ class MineTargetTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('mine_target', operations_for_capabilities(['server_ai_atomic_v1', 'server_ai_tasks_v1']))
         self.assertIn('mine_target', operations_for_capabilities(['server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_tasks_v1']))
 
+    def test_server_mining_tool_descriptions_share_automatic_selection(self):
+        tools = {t['function']['name']: t['function']
+                 for t in atomic.server_tools({'mine_tile', 'mine_target'})}
+        for definition in tools.values():
+            description = definition['description']
+            self.assertIn('主背包', description)
+            self.assertIn('切换快捷栏', description)
+            self.assertIn('原生', description)
+            self.assertNotIn('80', description)
+            self.assertNotIn('仅选快捷栏', description)
+        params = tools['mine_tile']['parameters']
+        self.assertEqual({'x', 'y'}, set(params['properties']))
+        self.assertEqual(['x', 'y'], params['required'])
+        self.assertFalse(params['additionalProperties'])
+        self.assertTrue(all('绝对 Tile' in p['description'] for p in params['properties'].values()))
+
     async def test_old_server_refuses_before_rpc(self):
         with self.assertRaises(atomic.PreDispatchRejected):
             await atomic.dispatch(self.bridge, 'mine_target', {'target': TARGET})

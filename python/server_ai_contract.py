@@ -21,7 +21,7 @@ CATEGORIES = (
     ('目标导航', ('navigate_to_x', 'navigate_to_landing_region', 'drop_through_platform'),
      'Limited', '普通profile局部导航；不能保证任意目标可达。'),
     ('物品与战斗', ('use_item', 'attack_entity'), 'Limited', '白名单物品使用周期；没有实体定向攻击/命中保证。'),
-    ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '支持工具/目标受限；复合挖掘仅指定单格，破坏不等于掉落已入包。'),
+    ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '服务器挖掘从主背包自动选工具；复合挖掘可先接近指定格，掉落入包需另行核验。'),
     ('建造', ('place_tile', 'place_object', 'place_wall', 'hammer_tile'),
      'Limited', '仅所列API的材料/样式白名单；不是通用家具/建造系统。'),
     ('制作', ('query_recipes', 'craft_recipe'), 'Limited', '普通原版配方及已支持环境/制作站；按当前supported判定。'),
