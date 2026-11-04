@@ -28,4 +28,4 @@ pwsh -NoProfile -File tests/run_scene_region_tests.ps1
   -Region -RegionIterations 5 -Environment
 ```
 
-原生清单、光照探针、查询回执和导航轨迹见 [原始证据](native.zip)。[验证摘要](summary.json) 记录最终包、源世界、观察结果和导航终态。
+原始运行压缩包已在文档减重中删除。此页仅保留当时验证范围与结论；如需重新验收，应使用当前源码和测试脚本生成新证据，不依赖该历史运行包。
