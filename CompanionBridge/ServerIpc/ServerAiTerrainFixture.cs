@@ -148,6 +148,9 @@ internal static class ServerAiTerrainFixture
         recoveryFired=false;recoveryLeft=Main.spawnTileX;recoveryFloor=Main.spawnTileY+8;
         bool region=doc.RootElement.TryGetProperty("region",out var regionFlag)&&regionFlag.GetBoolean();
         if(region&&!Program.LaunchParameters.ContainsKey("-companionregiontest"))throw new InvalidOperationException("Missing regional scene fixture gate");
+        bool environment=doc.RootElement.TryGetProperty("environment",out var environmentFlag)&&environmentFlag.GetBoolean();
+        if(environment&&(!region||!Program.LaunchParameters.ContainsKey("-companionenvironmenttest")))
+            throw new InvalidOperationException("Missing environment fixture gate");
         caseName=scene+"-"+direction+(recoveryMode==null?"":"-"+recoveryMode)+(mobilityMode==null?"":"-mobility-"+mobilityMode);frames.Clear();recording=false;
         inputTick=null;
         lastRun=(ActorControl.Driver as ServerAiNavigation)?.Current;
@@ -212,11 +215,40 @@ internal static class ServerAiTerrainFixture
             if(mobilityMode=="unknown")p.AddBuff(BuffID.WellFed,36000,true);
             if(mobilityMode=="equipment")p.armor[3].SetDefaults(ItemID.HermesBoots);
         }
+        if(environment) ProbeEnvironment(p, left, floor-4);
         pending=new{scene,direction,startX=p.position.X,startY=p.position.Y,targetX=p.position.X+direction*192,
             floor,originTileX=left,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,
             regionalFixture=region};
         settle=15;
         File.Delete(request);
         NetworkStateSync.Full(p);
+    }
+
+    private static void ProbeEnvironment(Player actor, int tileX, int tileY)
+    {
+        object SampleLight()
+        {
+            try
+            {
+                var values = new float[49];
+                for (int y = -3; y <= 3; y++)
+                    for (int x = -3; x <= 3; x++)
+                        values[(y+3)*7+x+3] = Lighting.Brightness(tileX+x,tileY+y);
+                return new { values };
+            }
+            catch (Exception e) { return new { error = e.GetType().FullName, e.Message }; }
+        }
+        var before = SampleLight();
+        Lighting.AddLight(tileX,tileY,1f,1f,1f);
+        var after = SampleLight();
+        int slot = Projectile.NewProjectile(new Terraria.DataStructures.EntitySource_Misc("m4.6-environment-fixture"),
+            actor.Center + new Vector2(80,-96), new Vector2(-4,0), ProjectileID.DeathLaser, 0, 0, Main.myPlayer);
+        if (slot >= Main.projectile.Length || !Main.projectile[slot].hostile)
+            throw new InvalidOperationException("Expected a native hostile DeathLaser fixture.");
+        File.WriteAllText(Path.Combine(Main.SavePath,"environment-probe.json"),JsonSerializer.Serialize(new
+        {
+            tileX, tileY, before, after, Main.netMode, Main.dedServ, Main.gameMenu,
+            gameUpdate = Main.GameUpdateCount, projectileSlot = slot
+        }));
     }
 }

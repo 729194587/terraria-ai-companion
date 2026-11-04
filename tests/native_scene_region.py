@@ -27,7 +27,7 @@ def at(grid,x,y):
 async def verify(args):
     p=args.profile;await wait_file(p/'action-fixture.json',90)
     ready=p/'terrain-ready.json';ready.unlink(missing_ok=True)
-    temp=p/'terrain-request.tmp';temp.write_text(json.dumps(dict(scene='flat',direction=1,mobility='basic',region=True)))
+    temp=p/'terrain-request.tmp';temp.write_text(json.dumps(dict(scene='flat',direction=1,mobility='basic',region=True,environment=args.environment)))
     temp.replace(p/'terrain-request.json');fixture=await wait_file(ready)
     bridge=ServerAiBridge(args.port);rows=[]
     try:
@@ -42,6 +42,20 @@ async def verify(args):
             return d
         local=await read('local',dict(layers=['geometry','objects','hazards']))
         assert local['schemaVersion']==2 and len(local['geometry']['rows'])==29
+        if args.environment:
+            probe=await wait_file(p/'environment-probe.json')
+            assert probe['dedServ'] and probe['netMode']==2
+            assert probe['before']==probe['after'],probe
+            assert local['lighting']['available'] is False and 'mean' not in local['lighting']
+            def projectile(scene):
+                return next(h for h in scene['hazards']['entities']['items']
+                    if h['kind']=='hostile_projectile' and h['slot']==probe['projectileSlot'])
+            first=projectile(local)
+            assert first['observedGameUpdate']==local['gameUpdate'] and first['velocity']['x']==-4,first
+            assert first['threat']['status']=='no_projected_contact' and first['threat']['horizonTicks']==12,first
+            repeat=await read('environment-repeat',dict(layers=['geometry','hazards']))
+            assert projectile(repeat)['observationRef']!=first['observationRef']
+            assert repeat['geometry']==local['geometry']
         assert not local['bounds']['minX']<=x<=local['bounds']['maxX']
         # Include cold and warm runs; never drop a slow observation from the evidence.
         for width,height,label in ((80,45,'1280x720'),(120,68,'1920x1080'),(128,64,'bounded_2048x1024')):
@@ -95,4 +109,5 @@ if __name__=='__main__':
     a=argparse.ArgumentParser(description=__doc__)
     a.add_argument('--profile',type=Path,required=True);a.add_argument('--port',type=int,required=True)
     a.add_argument('--iterations',type=int,choices=range(1,21),default=8)
+    a.add_argument('--environment',action='store_true')
     asyncio.run(verify(a.parse_args()))

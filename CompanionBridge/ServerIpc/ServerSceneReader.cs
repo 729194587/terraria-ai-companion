@@ -88,7 +88,25 @@ internal static class ServerSceneReader
         var objects=layers.Has("objects")?SceneGeometry.Objects(cells,ox,oy,scope.Region?null:(tx,ty)=>new MineCell(tx,ty),p.Center.X,p.Center.Y,
             scope.Region?SceneRegion.MaxObjectGroups:int.MaxValue).ToList():new List<SceneObject>();
         bool objectGroupingTruncated=scope.Region&&objects.Count>=SceneRegion.MaxObjectGroups;
-        var dynamicHazards=new List<(float Distance,object Value)>();
+        var dynamicHazards=new List<(double? Contact, float Distance, object Value)>();
+        var actorVelocity = new StateVector(p.velocity.X, p.velocity.Y);
+        void AddHazard(Entity entity, string kind, int typeId, int damage, string classification,
+            string entityRef, string classificationBasis, int extraUpdates = 0)
+        {
+            var bounds = new WorldRect(entity.position.X, entity.position.Y, entity.width, entity.height);
+            var velocity = new StateVector(entity.velocity.X, entity.velocity.Y);
+            var threat = SceneThreat.Project(actor, actorVelocity, bounds, velocity, extraUpdates);
+            dynamicHazards.Add((threat.ContactAfterTicks, HazardDistance(entity), new
+            {
+                kind, slot = entity.whoAmI, typeId, damage, classification, entityRef,
+                observationRef = $"{sceneId}:{kind}:{entity.whoAmI}",
+                observedGameUpdate = tick, boundsWorldPixels = bounds,
+                velocity = float.IsFinite(velocity.X) && float.IsFinite(velocity.Y) ? velocity : null,
+                extraUpdates,
+                knowledge = classificationBasis,
+                threat
+            }));
+        }
         float HazardDistance(Entity e)=>Math.Abs(e.Center.X-p.Center.X)+Math.Abs(e.Center.Y-p.Center.Y);int entitiesScanned=0;
         var entityMarkers=new List<(int,int,char)>();
         void EntityObject(Entity e,string kind,int? type,string key,object detail,char glyph)
@@ -104,15 +122,17 @@ internal static class ServerSceneReader
             var classification=EntityCollector.Classify(evidence);
             string entityRef=identity.World+":"+identity.Generation+":npc:"+n.whoAmI+":"+n.GetGlobalNPC<AtomicNpcIdentity>().Token;
             EntityObject(n,"npc",n.type,n.ModNPC?.FullName??"Terraria/"+NPCID.Search.GetName(n.type),new{slot=n.whoAmI,entityRef,n.life,n.damage,classification=classification.Kind,basis=classification.Basis},classification.Kind=="hostile_creature"?'!':'N');
-            if(layers.Has("hazards")&&classification.Kind is ("hostile_creature" or "unknown"))dynamicHazards.Add((HazardDistance(n),new{kind="npc",slot=n.whoAmI,entityRef,classification=classification.Kind,boundsWorldPixels=new WorldRect(n.position.X,n.position.Y,n.width,n.height),n.damage,knowledge="inferred classification; no current threat or path prediction"}));
+            if(layers.Has("hazards")&&classification.Kind is ("hostile_creature" or "unknown"))
+                AddHazard(n, "npc", n.type, n.damage, classification.Kind, entityRef, classification.Basis);
         }
         if(layers.Has("map")||layers.Has("objects"))for(int i=0;i<Main.item.Length;i++)
         {var item=Main.item[i];if(item.active&&!item.IsAir&&Intersects(item))EntityObject(item,"drop",item.type,item.ModItem?.FullName??"Terraria/"+ItemID.Search.GetName(item.type),new{slot=i,item.stack,pickup="not evaluated"},'$');}
         if(layers.Has("map")||layers.Has("objects"))foreach(var other in Main.player)if(other.active&&!ReferenceEquals(other,p)&&Intersects(other))EntityObject(other,"player",null,"Terraria/Player",new{slot=other.whoAmI,other.dead,other.ghost},'P');
         if(layers.Has("map")||layers.Has("hazards"))foreach(var projectile in Main.projectile)if(projectile.active&&projectile.hostile&&Intersects(projectile))
         {
-            if(layers.Has("hazards"))dynamicHazards.Add((HazardDistance(projectile),new{kind="hostile_projectile",slot=projectile.whoAmI,typeId=projectile.type,projectile.damage,
-                boundsWorldPixels=new WorldRect(projectile.position.X,projectile.position.Y,projectile.width,projectile.height),velocity=new StateVector(projectile.velocity.X,projectile.velocity.Y),knowledge="current hostile flag; no hit/trajectory prediction"}));
+            if(layers.Has("hazards"))
+                AddHazard(projectile, "hostile_projectile", projectile.type, projectile.damage, "hostile_projectile",
+                    null, "native hostile flag", projectile.extraUpdates);
             if(layers.Has("map"))entityMarkers.Add((Math.Clamp((int)(projectile.Center.X/16)-ox,0,width-1),Math.Clamp((int)(projectile.Center.Y/16)-oy,0,height-1),'*'));
         }
         int actorX=Math.Clamp((int)(p.Center.X/16)-ox,0,width-1),actorY=Math.Clamp((int)(p.Center.Y/16)-oy,0,height-1);
@@ -120,6 +140,7 @@ internal static class ServerSceneReader
         var regionalGeometry=new Lazy<object>(()=>SceneRegion.Encode(cells,c=>SceneGeometry.Geometry(c).ToString()));
         var response=new Dictionary<string,object>{
             ["schemaVersion"]=scope.Region?3:2,["sceneId"]=sceneId,["gameUpdate"]=tick,
+            ["lighting"]=new{available=false,source="dedicated_server",reason="native_light_buffer_not_verified"},
             ["bounds"]=new{minX=ox,minY=oy,maxX=ox+width-1,maxY=oy+height-1},["tileSize"]=16,
             ["actor"]=new{slot=p.whoAmI,boundsWorldPixels=actor,feetY=p.Bottom.Y,velocity=new StateVector(p.velocity.X,p.velocity.Y),p.dead,
                 navigationProfileSupported=GameNavigation.Ordinary(p),mapTile=new{x=ox+actorX,y=oy+actorY},
@@ -166,7 +187,8 @@ internal static class ServerSceneReader
         {
             var tileHazards=SceneGeometry.Hazards(cells,ox,oy).OrderBy(h=>Math.Max(0,Math.Max(h.MinX*16-p.Center.X,p.Center.X-(h.MaxX+1)*16))+Math.Abs(h.Y*16+8-p.Center.Y)).ThenBy(h=>h.Y).ThenBy(h=>h.MinX);
             var result=new Dictionary<string,object>{["tiles"]=SceneGeometry.Limit(tileHazards,hazardCap),
-                ["entities"]=SceneGeometry.Limit(dynamicHazards.OrderBy(h=>h.Distance).Select(h=>h.Value),hazardCap)};
+                ["entities"]=SceneGeometry.Limit(dynamicHazards.OrderBy(h=>h.Contact ?? double.PositiveInfinity)
+                    .ThenBy(h=>h.Distance).Select(h=>h.Value),hazardCap)};
             if(scope.Region)
             {
                 result["tileMask"]=SceneRegion.Encode(cells,SceneRegion.HazardMask);

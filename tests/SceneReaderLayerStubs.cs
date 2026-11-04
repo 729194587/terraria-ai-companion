@@ -38,7 +38,7 @@ namespace Terraria
     }
     public class Item:Entity
     {public int type=1,stack=3,createTile=-1;public bool IsAir=>stack<=0;public ModLoader.ModType ModItem;}
-    public class Projectile:Entity{public bool hostile=true;public int damage=30,type=1;}
+    public class Projectile:Entity{public bool hostile=true;public int damage=30,type=1,extraUpdates;}
     public static class Main
     {
         public static bool[] tileCut=new bool[1000];

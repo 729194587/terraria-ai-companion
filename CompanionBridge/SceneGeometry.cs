@@ -23,6 +23,38 @@ internal sealed record ScenePlacement(string Id,object Target,object SolidNeighb
 internal sealed record SceneObjectPlacement(string Id,object Target,TileBounds Footprint,TileBounds Support,float DistancePixels,
     string ContentKey="Terraria/WorkBench",int Style=0);
 internal sealed record SceneHazard(string Id,string[] Sources,int MinX,int MaxX,int Y,int MinLiquidAmount,int MaxLiquidAmount,int? TileType,string ContentKey,int TouchDamage);
+
+internal sealed record SceneThreat(string Status, double? ContactAfterTicks)
+{
+    private const int Horizon = 12;
+    public int HorizonTicks => Horizon;
+    public string Basis => "constant_velocity_aabb_with_projectile_substeps; ignores terrain, AI, input and damage rules";
+
+    internal static SceneThreat Project(WorldRect actor, StateVector actorVelocity, WorldRect entity,
+        StateVector entityVelocity, int extraUpdates = 0)
+    {
+        static bool Valid(WorldRect box, StateVector velocity) => float.IsFinite(box.X) && float.IsFinite(box.Y)
+            && float.IsFinite(box.Width) && float.IsFinite(box.Height) && box.Width > 0 && box.Height > 0
+            && float.IsFinite(velocity.X) && float.IsFinite(velocity.Y);
+        if (extraUpdates < 0 || !Valid(actor, actorVelocity) || !Valid(entity, entityVelocity)) return new("unavailable", null);
+
+        double enter = 0, exit = Horizon;
+        bool Axis(double actorStart, double actorSize, double entityStart, double entitySize, double speed)
+        {
+            double first = actorStart - entityStart - entitySize;
+            double last = actorStart + actorSize - entityStart;
+            if (speed == 0) return first <= 0 && last >= 0;
+            double t1 = first / speed, t2 = last / speed;
+            enter = Math.Max(enter, Math.Min(t1, t2));
+            exit = Math.Min(exit, Math.Max(t1, t2));
+            return enter <= exit;
+        }
+        double steps = 1d + extraUpdates;
+        return Axis(actor.X, actor.Width, entity.X, entity.Width, steps * entityVelocity.X - actorVelocity.X)
+            && Axis(actor.Y, actor.Height, entity.Y, entity.Height, steps * entityVelocity.Y - actorVelocity.Y)
+            ? new("projected_contact", enter) : new("no_projected_contact", null);
+    }
+}
 internal sealed record SceneList<T>(T[] Items,int MatchedCount,int ReturnedCount,bool Truncated,int OmittedCount);
 internal sealed record SceneCandidateList<T>(T[] Items,int MatchedCount,int ReturnedCount,bool Truncated,int OmittedCount,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string Validation);

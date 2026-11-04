@@ -185,6 +185,11 @@ def server_tools(supported, *, scene_region=False):
             f['parameters'] = {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}
         f['description'] = SERVER_DESCRIPTIONS.get(name, f['description'])
         if name == 'observe_scene':
+            f['description'] += ('新版data.lighting.available=false表示专用服暂无可信原生亮度。'
+                'hazards.entities.items可带observedGameUpdate、observationRef、velocity和threat。'
+                'observationRef仅本次场景有效。threat是在12游戏更新内按恒速和弹幕extraUpdates推算的包围盒接触，'
+                '未评估地形、AI、输入和伤害规则。先按推断接触时间排序，再按距离。'
+                '无推断接触、字段缺失或列表截断都不能证明安全。')
             if scene_region:
                 f['description'] += SCENE_REGION_CONTRACT
             else:

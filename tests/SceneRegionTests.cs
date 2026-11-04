@@ -43,7 +43,44 @@ public static class SceneRegionTests
             new[]{"map","geometry","objects","hazards","landingRegions","placementCandidates","objectPlacementCandidates"}
                 .Select(layer=>"{\"layers\":[\""+layer+"\"]}"));
         foreach(string layers in localCases)
-            Check(JsonNode.DeepEquals(Node(BaselineServerSceneReader.Read(actor,identity,Args(layers))),Node(ServerSceneReader.Read(actor,identity,Args(layers)))),"L0 exact wire compatibility against d8e98e1: "+layers);
+        {
+            var current = Node(ServerSceneReader.Read(actor,identity,Args(layers)));
+            Check(!current["lighting"]["available"].GetValue<bool>() && current["lighting"]["mean"] == null,
+                "dedicated lighting exposes unavailability without a fabricated value");
+            current.Remove("lighting");
+            Check(JsonNode.DeepEquals(Node(BaselineServerSceneReader.Read(actor,identity,Args(layers))),current),
+                "L0 wire compatibility apart from additive lighting status: "+layers);
+        }
+        var body = new WorldRect(0, 0, 20, 42);
+        var still = new StateVector(0, 0);
+        var approaching = new WorldRect(50, 10, 8, 8);
+        Check(SceneThreat.Project(body, new(2, 0), approaching, new(-3, 0)).ContactAfterTicks == 6,
+            "relative velocity yields the first box contact");
+        Check(SceneThreat.Project(body, still, approaching, new(-2.5f, 0)).ContactAfterTicks == 12,
+            "contact exactly at the horizon is included");
+        Check(SceneThreat.Project(body, still, approaching, new(-2.5f, 0), extraUpdates: 1).ContactAfterTicks == 6,
+            "projectile substeps preserve game-tick units");
+        Check(SceneThreat.Project(body, still, approaching, new(-2, 0)).ContactAfterTicks == null,
+            "contact beyond the horizon is omitted");
+        Check(SceneThreat.Project(body, still, approaching, new(3, 0)).ContactAfterTicks == null,
+            "receding entity does not project contact");
+        Check(SceneThreat.Project(body, still, approaching with { Y = 50 }, new(-5, 0)).ContactAfterTicks == null,
+            "parallel motion outside the other axis does not project contact");
+        Check(SceneThreat.Project(body, still, approaching with { X = 10 }, still).ContactAfterTicks == 0,
+            "current overlap is represented at tick zero");
+        Check(SceneThreat.Project(body, still, approaching, new(float.NaN, 0)).Status == "unavailable",
+            "invalid velocity cannot establish a prediction");
+        Main.npc = new[]{new NPC { position = new(376, 270) }};
+        Main.projectile = new[]{new Projectile { position = new(410, 270), velocity = new(-5, 0) }};
+        var hazardScene = Node(ServerSceneReader.Read(actor,identity,Args("{\"layers\":[\"hazards\",\"geometry\"],\"maxHazards\":1}")));
+        var hazard = hazardScene["hazards"]["entities"]["items"][0];
+        Check(hazard["kind"].GetValue<string>() == "hostile_projectile" && hazard["threat"]["contactAfterTicks"].GetValue<double>() == 8
+            && hazard["observedGameUpdate"].GetValue<ulong>() == Main.GameUpdateCount
+            && hazardScene["hazards"]["entities"]["truncated"].GetValue<bool>(), "projected contact ranks first under the existing list cap");
+        var next = Node(ServerSceneReader.Read(actor,identity,Args("{\"layers\":[\"hazards\"],\"maxHazards\":1}")));
+        Check(next["hazards"]["entities"]["items"][0]["observationRef"].GetValue<string>() != hazard["observationRef"].GetValue<string>(),
+            "projectile observation identity cannot survive a new scene");
+        Main.npc = Array.Empty<NPC>(); Main.projectile = Array.Empty<Projectile>();
         foreach(string bad in new[]{"{\"width\":120}","{\"scale\":\"region\",\"width\":128,\"height\":96}","{\"scale\":\"region\",\"layers\":[\"landingRegions\"]}","{\"scale\":\"region\",\"maxPlacements\":1}","{\"scale\":true}","{\"scale\":\"region\",\"height\":28}","{\"scale\":\"region\",\"width\":45.5}"})
         {
             bool rejected=false;try{AtomicParameters.Validate("observe_scene",Args(bad),true);}catch(AtomicParameterException){rejected=true;}
