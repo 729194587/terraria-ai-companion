@@ -1,6 +1,6 @@
 # Numen 参考研究
 
-<text>研究资料 · 非规范性</text>
+**研究资料 · 非规范性**
 
 参考项目：[Dwinovo/minecraft-numen](https://github.com/Dwinovo/minecraft-numen/tree/1.21.1)。
 
