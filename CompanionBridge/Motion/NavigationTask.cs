@@ -221,6 +221,8 @@ internal sealed class NavigationTask
                     PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached, PlanStart=state, SearchFailureReason=_route.FailureReason, PlanKind=_route.Kind, SearchNumber=_searches, FastWalkPlans=_fastWalks, SearchExit=_route.SearchExit, SearchRejections=_route.Rejections, DominatedStates=_route.DominatedStates };
                 if (_route.Actions.Count == 0)
                 {
+                    if(_route.SearchExit=="surface_node_budget")
+                        return Fail("navigation_surface_node_budget");
                     bool sliceExhausted=_route.TimeBudgetReached||_route.SearchExit is "expansion_budget" or "local_state_budget";
                     if(Continuous&&sliceExhausted)
                     {

@@ -14,8 +14,9 @@ public static class SurfaceGraphTests
     {
         internal readonly Dictionary<(int,int),char> Tiles=new();
         internal bool Floor,Unknown;
+        internal Func<int,int,char> ReadOverride;
         internal int Reads,Probes;
-        internal char Cell(int x,int y)=>Tiles.TryGetValue((x,y),out char c)?c:Unknown?'?':Floor&&y>=100?'#':'.';
+        internal char Cell(int x,int y)=>ReadOverride!=null?ReadOverride(x,y):Tiles.TryGetValue((x,y),out char c)?c:Unknown?'?':Floor&&y>=100?'#':'.';
         public SurfaceCell ReadSurfaceCell(int x,int y){Reads++;return new(Cell(x,y),Cell(x,y));}
         public IMotionWorld MotionAt(PhysicsState s){Probes++;return this;}
         public long TerrainSignature(PhysicsState s,Prediction e=null)
@@ -68,6 +69,8 @@ public static class SurfaceGraphTests
     }
     public static void Run()
     {
+        CheckStepCandidates();
+        CheckNodeBudget();
         {
             var t=new Terrain{Floor=true};var pose=new PhysicsState(1600,1558,0,0,true);
             using var pending=new SurfaceNavigator(new(),pose,LandingRegion.AtDestination(2400,1600),PhysicsParameters.Basic,t,t,new(),null);
@@ -235,5 +238,72 @@ public static class SurfaceGraphTests
             Check(route.Actions.Count==0&&snap.Exit=="no_route_in_coverage","known isolated support has no connection in current model/coverage");
         }
         Console.WriteLine($"Surface graph: {checks} checks passed");
+    }
+
+    private static void CheckStepCandidates()
+    {
+        foreach(char shape in new[]{'h','#'})foreach(bool roof in new[]{false,true})
+        {
+            var terrain=new Terrain{Floor=true};
+            for(int x=103;x<=106;x++)terrain.Tiles[(x,99)]=shape;
+            if(roof)for(int x=95;x<=110;x++)terrain.Tiles[(x,95)]='#';
+            var graph=new SurfaceGraph();Refresh(graph,terrain,16);
+            float height=shape=='h'?1592:1584;
+            var low=new SurfaceNode(-1,100,100,new(1600,1600,1600),1600,1616,SurfaceKind.Solid,0,true,true);
+            var high=graph.Nodes.First(n=>n.TileX==105&&n.Region.SurfaceY==height);
+            Check(graph.Candidate(low,high,PhysicsParameters.Basic).Motion==SurfaceMotion.Walk,"half/full tile StepUp remains walk candidate, including low roof");
+            Check(graph.Candidate(high,low,PhysicsParameters.Basic).Motion==SurfaceMotion.Walk,"half/full tile StepDown remains walk candidate, including low roof");
+            var beyond=low with{Id=-2,TileX=108,Region=new(1728,1728,1600)};
+            // Same-height endpoints over a short raised surface still use the
+            // height envelope, rather than demanding a flat stance throughout.
+            Check(graph.Candidate(low,beyond,PhysicsParameters.Basic).Motion==SurfaceMotion.Walk,"same-height endpoints can walk over a raised step");
+        }
+        {
+            var terrain=new Terrain{Floor=true};
+            for(int x=102;x<=105;x++)for(int y=100;y<=105;y++)terrain.Tiles[(x,y)]='.';
+            var graph=new SurfaceGraph();Refresh(graph,terrain);
+            var left=graph.Nodes.First(n=>n.TileX==100);var right=graph.Nodes.First(n=>n.TileX==107&&n.Region.SurfaceY==1600);
+            Check(graph.Candidate(left,right,PhysicsParameters.Basic).Motion==SurfaceMotion.Jump,"genuine unsupported gap still requires jump candidate");
+        }
+    }
+
+    private static void CheckNodeBudget()
+    {
+        // Repeated slopes give >8192 valid raw stance samples within the FIRST
+        // radius. Exercise real scanning/probing, not injected cache entries.
+        Terrain Dense()=>new(){ReadOverride=(x,y)=>y%4==0?'1':'.'};
+        var terrain=Dense();var graph=new SurfaceGraph();
+        Refresh(graph,terrain,SurfaceGraph.InitialRadius);
+        Check(graph.Truncated&&graph.Nodes.Count()==SurfaceGraph.MaximumNodes,"additional valid node beyond 8192 truncates construction at the hard cap");
+        Refresh(graph,terrain,SurfaceGraph.InitialRadius);
+        Check(graph.Truncated&&graph.Nodes.Count()==SurfaceGraph.MaximumNodes,"explicit later refresh cannot treat partially sampled tile as complete cached coverage");
+        var start=new PhysicsState(1600,1558,0,0,true);var goal=LandingRegion.AtDestination(2000,1600);
+        terrain=Dense();graph=new();
+        using(var nav=new SurfaceNavigator(graph,start,goal,PhysicsParameters.Basic,terrain,terrain,new(),null))
+        {
+            Route route;int slices=0;
+            do
+            {
+                route=nav.Advance(4096,100);
+                if(!nav.Finished)Check(route.TimeBudgetReached&&route.SearchExit=="surface_budget","frame slice retains dense graph scan");
+                Check(++slices<1000,"dense graph terminates within bounded scan slices");
+            }while(!nav.Finished);
+            Check(route.SearchExit=="surface_node_budget"&&!route.TimeBudgetReached&&route.Actions.Count==0,"graph total-node exhaustion is a terminal resource result, not a time slice");
+            Check(nav.Snapshot is {Exit:"surface_node_budget",Radius:SurfaceGraph.InitialRadius,RangeExpansions:0,Expansions:0,Nodes:SurfaceGraph.MaximumNodes},"node-budget diagnostic survives without searching or expanding incomplete graph");
+            bool refused=false;try{nav.Advance();}catch(InvalidOperationException){refused=true;}
+            Check(refused,"completed resource-limited search cannot restart on Advance");
+        }
+        terrain=Dense();var task=new NavigationTask(){Continuous=true};int updates=0;
+        while(!task.Terminal&&updates++<2000)
+        {
+            var input=task.Before(915,1,goal,start,PhysicsParameters.Basic,terrain);
+            Check(input==default,"node-budget scan never dispatches candidate input");task.After(start,terrain,true);
+        }
+        Check(task.Snapshot is {Status:"failed",Reason:"navigation_surface_node_budget",SearchExit:"surface_node_budget",TimeBudgetReached:false},"navigation ends exactly once with explicit graph resource reason");
+        Check(task.Snapshot.SurfaceGraph?.Nodes==SurfaceGraph.MaximumNodes,"navigation retains node-limit telemetry after cleanup");
+        int reads=terrain.Reads,probes=terrain.Probes,searches=task.Snapshot.SearchNumber;
+        for(int i=0;i<100;i++)Check(task.Before(915,1,goal,start,PhysicsParameters.Basic,terrain)==default,"terminal budget result keeps input released");
+        Check(terrain.Reads==reads&&terrain.Probes==probes&&task.Snapshot.SearchNumber==searches,"100 later updates cannot rebuild the same exhausted search");
+        Console.WriteLine($"Graph node budget: nodes={task.Snapshot.SurfaceGraph.Nodes}, updates={updates}, terminal={task.Snapshot.Reason}, repeatedReads={terrain.Reads-reads}");
     }
 }

@@ -35,7 +35,8 @@ walk/jump/drop 仅是候选关系。图节点不吞并 `Vx/Vy/Grounded/JumpFrame
 | 节点/缓存 | 至多 8192 节点的构建预算；缓存随角色滚动裁剪，不是永久世界数据库。普通平地在图搜索中每 4 Tile 保留代表，端点、窄支撑、起终点和特殊形状保留密集节点，原始区间缓存保留。 |
 | 图诊断 | `NavigationSnapshot.SurfaceGraph`：exit/radius、Tile 读取、节点、候选边、已验证连接、展开量、单帧工作/耗时、变化 Tile、保留节点、扩展次数及当前子目标。物理扫描内部 Tile 访问不计作地形采集的 TileReads。 |
 | complete / safe_partial | 分别表示最终局部物理路线或安全制动后的部分路线；完整图候选路线本身不证明整条已执行。 |
-| surface_budget / surface_node_budget / surface_local_budget | 当前工作片、图节点或局部物理状态预算；保持行程运行，由根行程期限控制总预算，不解释成不可达。 |
+| surface_budget / surface_local_budget | 当前工作片或局部物理状态预算；保持行程运行，由根行程期限控制总预算，不解释成不可达。 |
+| surface_node_budget | 图节点总量资源耗尽；搜索结束，`TimeBudgetReached=false`。导航以 `navigation_surface_node_budget` 失败并释放输入，不自动重建、不降级挖掘、不解释成不可达。详见下文基于 `3c3fa86` 的审查修复。 |
 | no_route_in_coverage | 当前覆盖及当前普通地面运动模型内未取得可交付路线；不是全世界不可达证明。 |
 | unknown_terrain / unsupported_model | 与无路线分开。耗尽覆盖后仍缺少地形时，生产适配返回 `unknown` / `native_navigation_terrain_unknown` 并释放输入，不自动降级开路、重连或重放。 |
 
@@ -76,3 +77,24 @@ walk/jump/drop 仅是候选关系。图节点不吞并 `Vx/Vy/Grounded/JumpFrame
 图 A* 的代价与采样用于发现路线，不保证全局完备、最短路线或最少跳跃；图覆盖、节点及行程期限仍然有限。候选图中的连接可由多条实际局部运动实现；已验证信息绑定精确状态，不能推广到该 Surface 上的任意速度。最大范围/高密度图预算压力主要由离线场景验证，未完成大规模复杂自然世界的性能基准；4ms 是协作式检查预算而非硬实时上限。
 
 没有新增平台穿透输入、液体环境、特殊装备/绳索/钩爪/飞行/坐骑/Mod 运动能力，没有 Phase 3 多步改造成本搜索，没有后台原生碰撞访问或世界级持久图。未进行图形 Host & Play 或真人联机端到端验收；四阶段完整系统验收仍按规范留到 Phase 1–4 完成后。
+
+## 基于 `3c3fa86` 的 Phase 2 审查修复
+
+本轮仅修正 StepUp/StepDown 候选分类与图节点总量耗尽的控制流，不修改原生物理、运动控制器或 Task Runtime。
+
+**台阶分类根因与变化。** 原 `SurfaceGraph.Candidate` 对每个中间 X 使用起点的固定脚部高度 `a.Rest(px)` 检查支撑和净空，台阶面因与该姿态相交而被改成 Jump。`SurfaceNavigator` 随后为 Jump 设置首动作必须跳跃，导致图候选比原生 StepUp 更严格。现在对小高度变化的 Walk 候选检查周边可能支撑高度，半砖、整格台阶以及同高度端点之间的短台阶不再要求中间全程平地；实际无支撑断面仍保留 Jump 分类。这只是候选层的高度包络，不是第二套 StepUp 算法；穿过过渡区的身体净空、惯性、制动及实际可行性仍由现有 `StateSpacePlanner` → `PhysicsSimulator` → `NativeMotionWorld` 的原生 StepUp/StepDown 验证。
+
+**节点预算根因与策略。** 原构建在整 Tile 完成后才检查 `count>8192`，随后图搜索返回 `Finished + TimeBudgetReached`；`NavigationTask` 将其作为时间片耗尽丢弃并重建。现在在新增节点之前执行 8192 硬上限，标记最后的未完整 Tile，避免以后显式刷新误用部分缓存；单帧耗尽继续保留迭代器，节点总量耗尽则立即返回独立的终态资源结果，不再搜索不完整图或扩大范围。`NavigationTask` 在时间片分支之前处理该结果，释放输入并终止本次移动任务；`AiActionReasons` 保留明确原因，且不将它分类为可自动挖掘恢复的 no_route/no_progress。现有诊断中的节点数、范围、读取量、搜索退出原因仍保留。
+
+新增定向证据：
+
+- `SurfaceGraphTests.CheckStepCandidates`：半砖、整格高度变化、低顶棚、双向候选、同高度端点中间有台阶、真实缺口仍为 Jump。
+- `SurfaceGraphTests.CheckNodeBudget`：真实扫描和探测重复斜坡，在初始半径内产生超过 8192 个有效采样需求；缓存保持恰好 8192 个节点，返回 `surface_node_budget`，`Finished=true / TimeBudgetReached=false`，不展开 A* 或再次扩大范围。以后显式刷新仍识别未完整覆盖。导航约 34–35 次更新后以资源原因终止，后续 100 次更新新增读取和探测均为 0，搜索计数不变。更新次数取决于时间片调度，不作为固定性能指标。
+- `tests/run_csharp_tests.ps1 -NavigationOnly`：最终代码的 Surface Graph、PlannerCorrectness、Phase 1 trip/recovery/landing/motion/mobility 与 Player hook 定向回归通过，包含未完整 Tile 缓存覆盖断言；另在实现中使用 `-SurfaceGraphOnly` 验证局部变化。未运行仓库全量测试。
+- `tests/run_server_ai_ipc_tests.ps1 -PackagePath .local/phase2-review-fixes-build/Mods/CompanionBridge.tmod`：IPC 45、atomic 48、读取 68、Task Runtime 81、包/IL 91 项及脚本内 native adapter/chat 检查通过；新增两项资源原因保留和不自动恢复断言通过。
+- 原生隔离场景 `navigation_step_half_roof / navigation_step_up_roof / navigation_step_down_roof`：原生碰撞世界中的候选均为 Walk；零跳跃输入的完整运动预测安全到达，脚部高度分别变化 -8/-16/+16px；同一低顶棚将跳跃上升分别限制在约 13.99/5.99/5.99px。三个场景随后通过真实 Player 输入到达核验。逐项凭据保存为隔离 profile 下的 `navigation_step_*-proof.json`。夹具内状态注入、碰撞预测均受现有隔离测试开关保护，不是正式执行路径。
+- `companion-g81-native-d3d8f65f169244d7824eebb9a8762efd/result.json`：上述三项及原 15 项自主导航全部通过，包括长距离持续导航、地形改造后接续、27 次挖掘和 11 次平台放置。
+- 最终相关原生回归 `companion-g81-native-a008aa02444f4c4d962e28e2e099dcbd/result.json`（`verify_server_ai_native.ps1 -Actions -Tasks -Placement`）：34 个 `mine_target` 场景、18 个自主导航场景及独立放置检查均符合预期；包括危险拒绝、超时、unknown、取消和输入释放，以及新增三个台阶场景的持久物理凭据。
+- 构建 `.local/phase2-review-fixes-build/Mods/CompanionBridge.tmod`：0 errors / 0 warnings。SHA256：`0CEFDEA0E840E6BF57B3D47801211CCCC18B92F904D3035EDA972D98F7613266`。未部署现用 profile。
+
+剩余限制：Walk 分类仍是有界的乐观结构候选，不能用它证明过渡可走；原生物理验证有最终决定权。8192 仍是总量硬预算，本轮没有引入更高容量、自适应降密或截断图降级；高密度地形可能得到明确资源失败，调用方可以在新的明确请求中重新观察，但当前任务不会自动重启。超 8192 节点压力使用离线碰撞替身验证；本轮未进行高密度自然世界、图形 Host & Play 或特殊运动能力验收。
