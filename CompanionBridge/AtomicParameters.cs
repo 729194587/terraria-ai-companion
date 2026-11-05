@@ -166,6 +166,10 @@ internal static class AtomicParameters
                 if (args.GetProperty("minPlayerLeftX").GetDouble() > args.GetProperty("maxPlayerLeftX").GetDouble())
                     throw new FormatException("Landing X bounds must be ordered.");
                 break;
+            case "navigate_to":
+                Fields("x","y");
+                foreach(string key in keys)Number(args.GetProperty(key),0,1000000);
+                break;
             case "navigate_to_x": Fields("targetX"); Number(args.GetProperty("targetX"), 0, 1000000); break;
             case "craft_recipe":
                 Fields("recipeId","recipeToken","crafts");Integer("recipeId",0,100000);Integer("crafts",1,20);
