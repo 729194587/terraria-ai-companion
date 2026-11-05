@@ -110,7 +110,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          ["horizontal","vertical","jumpHoldUpdates","maxUpdates"]),
     tool("navigate_to_x", "复用连续导航至玩家左上角水平世界像素targetX；30秒上限，普通角色运动限制仍适用；arrived由游戏物理状态校验。失败时evidence.navigation.blockingTiles若存在，提供x/y/contentKey及basis，表示被拒绝的根节点前向步行试算中原生裁剪确认的完整实心接触，不证明全部路径被封死；缺失表示未可靠定位。",
          {"targetX": {"type": "number", "minimum": 0, "maximum": 1000000}}, ["targetX"]),
-    tool("navigate_to_landing_region", "二维落脚导航：全部为世界像素，Y向下；minPlayerLeftX/maxPlayerLeftX是玩家碰撞框左边缘的闭区间，surfaceY是脚底目标水平表面高度（非玩家顶部）。原有普通角色限制；落点支持完整方块顶面和水平单向平台，不支持斜平台/半砖；30秒上限。仅实际进入X区间、脚底高度误差<=0.5px、安全着地且停稳后完成，不能只经过目标X。失败时evidence.navigation.blockingTiles若存在，提供x/y/contentKey及basis，仅表示被拒绝的根节点前向步行试算的已确认完整实心接触；缺失表示未可靠定位。",
+    tool("navigate_to_landing_region", "二维落脚导航：全部为世界像素，Y向下；minPlayerLeftX/maxPlayerLeftX是玩家碰撞框左边缘的闭区间，surfaceY是目标脚底高度（世界像素）。按原生碰撞确认方块、平台、半砖或斜坡支撑，适用普通角色运动；30秒上限。仅实际进入X区间、脚底高度误差<=0.5px、安全着地且停稳后完成，不能只经过目标X。失败时evidence.navigation.blockingTiles若存在，提供x/y/contentKey及basis，仅表示被拒绝的根节点前向步行试算的已确认完整实心接触；缺失表示未可靠定位。",
          {key: {"type": "number", "minimum": 0, "maximum": 1000000}
           for key in ("minPlayerLeftX", "maxPlayerLeftX", "surfaceY")},
          ["minPlayerLeftX", "maxPlayerLeftX", "surfaceY"]),
@@ -161,7 +161,7 @@ SERVER_DESCRIPTION_SUFFIXES = {
     'craft_recipe': '仅普通原版配方/配方组、AI背包0..57与已支持制作站/六类环境条件；特殊回调、其他条件、Mod内容、箱子/虚空仓库不支持。前置：新鲜配方token及supported/available、材料/站点/条件/保守空间检查；单次产量见output.count，每批重验。按completedCrafts/producedCount、batches、inventoryVerified核验；可能部分完成，不回滚。制作站是否邻接要重新查询，不能由放置动画推定。',
     'move_input': '前置为绑定身份/控制权、无互斥动作、正常重力；坐骑/失能状态拒绝，空中/非零起速允许。30秒墙钟看门，不要求导航profile/安全支撑。evidence包含updatesExecuted、startPosition/endPosition/endVelocity（向量X/Y）、healthDelta、grounded/airborne、inputReleased、settled、noProgress；completed只证明输入时长结束，inputReleased不证明停稳或效果确定，观察/同步不确定时仍返回unknown。',
     'navigate_to_x': '先读取当前位置再计算相对targetX；起步/路径仍需普通导航profile，飞行/坐骑/反重力等不支持。结束evidence含x/y/vx/vy、arrived/grounded/safeSupport/settled；不能把经过X、零预测误差或局部搜索失败当成已落地/全局不可达。',
-    'navigate_to_landing_region': '目标须来自新鲜观察，可将已观察候选target直接传入；不同高度仍受原局部预算、普通profile及64px下降限制。半砖顶部可作水平落脚面；斜坡和斜平台可作路径，落脚区域要求水平接触。导航不执行Down平台下穿。成功须targetRegion一致、arrived/grounded/safeSupport/settled=true及known释放；未确认落地保持unknown。',
+    'navigate_to_landing_region': '目标须来自新鲜观察，可将已观察候选target直接传入；不同高度仍受原局部预算、普通profile及64px下降限制。支持部分脚底悬空的落点，须由原生碰撞和停稳状态核验。导航不执行Down平台下穿。成功须targetRegion一致、arrived/grounded/safeSupport/settled=true及known释放；未确认落地保持unknown。',
     'scan_tiles': '返回data.items及matchedCount/returnedCount/complete/truncated；按Tile格计数，一棵树有多格，不能当树的棵数。附近查询先取得观察bounds；世界像素转Tile用math.floor(px/16)，不猜内容ID。',
     'inspect_tile': '返回data内的实际格和preflight；x/y为Tile坐标。只读前提不是原生执行许可；移除支撑比较不预测实际落点。',
     'resolve_content': '返回data中的匹配候选/ID及歧义；内容注册表中存在不等于当前观察范围或世界内存在。',

@@ -70,8 +70,8 @@ internal static class StateSpacePlanner
         float Distance(PhysicsState s) => region?.Distance(s)
             ?? Math.Max(0, sign * (goal - s.Px)) / ph.MaxRun;
         bool Reached(PhysicsState s) => region != null ? region.Arrived(s, world)
-            : sign * (goal - s.Px) <= 12 && (!finalGoal || Math.Abs(s.Vx) <= 0.1f)
-                && PhysicsSimulator.SupportedCheckpoint(s, world);
+            : sign * (goal - s.Px) <= 12 && (finalGoal
+                ? PhysicsSimulator.Settled(s,world) : PhysicsSimulator.SupportedCheckpoint(s,world));
         if (region != null ? region.Contains(start) : sign * (targetX - start.Px) <= 12)
         {
             // Distance alone is not a terminal physical state. Use the same

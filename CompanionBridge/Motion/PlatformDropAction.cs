@@ -31,7 +31,7 @@ internal sealed class PlatformDropAction
             if (c is not ('.' or '=')) { Fail("drop_requires_horizontal_platform"); return; }
             if(c=='=') support+=Math.Min(_x+PhysicsSimulator.PlayerW,(x+1)*16)-Math.Max(_x,x*16);
         }
-        if(support < MotionSupport.MinimumSupportPixels) { Fail("drop_requires_horizontal_platform"); return; }
+        if(support <= MotionSupport.MinimumSupportPixels) { Fail("drop_requires_horizontal_platform"); return; }
         for(int offset=16;offset<=MaxDropPixels;offset+=16)
         {
             float surface = row*16+offset;

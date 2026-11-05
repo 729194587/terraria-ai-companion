@@ -47,8 +47,13 @@ internal sealed class NativeMotionWorld : IMotionWorld
     }
 
     public PhysicsState Move(PhysicsState start, float vx, float vy, float gravity)
+        => MoveCore(start,vx,vy,gravity,stepAssist:true);
+
+    // A stationary downward probe asks whether native collision holds this
+    // exact pose. Step assist could move the probe onto a different surface.
+    private PhysicsState MoveCore(PhysicsState start,float vx,float vy,float gravity,bool stepAssist)
     {
-        LastHorizontalContact=null;
+        if(stepAssist)LastHorizontalContact=null;
         // Native helpers inspect neighbouring tiles. Reject unloaded/custom tiles
         // there before calling them, not merely after accepting a trajectory.
         if(!float.IsFinite(vx)||!float.IsFinite(vy)||Math.Abs(vx)>CollisionMargin||Math.Abs(vy)>CollisionMargin)
@@ -65,14 +70,17 @@ internal sealed class NativeMotionWorld : IMotionWorld
             Collision.sloping, Collision.landMine, Collision.up, Collision.down);
         try
         {
-            var down = Collision.WalkDownSlope(pos, vel, 20, 42, gravity);
-            pos = new(down.X, down.Y); vel = new(down.Z, down.W);
-            if (vel.Y == gravity)
-                Collision.StepDown(ref pos, ref vel, 20, 42, ref stepSpeed, ref gfxOffY);
-            if (vel.Y >= gravity)
-                Collision.StepUp(ref pos, ref vel, 20, 42, ref stepSpeed, ref gfxOffY);
+            if(stepAssist)
+            {
+                var down = Collision.WalkDownSlope(pos, vel, 20, 42, gravity);
+                pos = new(down.X, down.Y); vel = new(down.Z, down.W);
+                if (vel.Y == gravity)
+                    Collision.StepDown(ref pos, ref vel, 20, 42, ref stepSpeed, ref gfxOffY);
+                if (vel.Y >= gravity)
+                    Collision.StepUp(ref pos, ref vel, 20, 42, ref stepSpeed, ref gfxOffY);
+            }
             var clipped = Collision.TileCollision(pos, vel, 20, 42, false, false, 1);
-            if(_captureContacts)LastHorizontalContact=NavigationContact.Horizontal(pos.X,pos.Y,vel.X,clipped.X,(x,y)=>
+            if(stepAssist&&_captureContacts)LastHorizontalContact=NavigationContact.Horizontal(pos.X,pos.Y,vel.X,clipped.X,(x,y)=>
             {
                 // This face lies inside the neighbourhood already checked above.
                 // Unknown/out-of-window positions never yield content evidence.
@@ -96,6 +104,28 @@ internal sealed class NativeMotionWorld : IMotionWorld
     public bool SafeLanding(PhysicsState state)
         => LandingRejection(state) == null;
 
+    internal static PhysicsState Observe(Player player)
+    {
+        var state=new PhysicsState(player.position.X,player.position.Y,player.velocity.X,player.velocity.Y,
+            false,player.jump,player.releaseJump);
+        if(player.width!=PhysicsSimulator.PlayerW||player.height!=PhysicsSimulator.PlayerH||player.gravDir!=1)
+            return state;
+        bool eligible=Math.Abs(state.Vy)<.01f||player.sloping&&state.Vy>=-.01f;
+        return state with{Grounded=eligible&&new NativeMotionWorld(state).ContactRejection(state)==null};
+    }
+
+    private string ContactRejection(PhysicsState state)
+    {
+        const float probe=.125f;
+        try
+        {
+            var contact=MoveCore(state,0,probe,probe,stepAssist:false);
+            return contact.Grounded&&Math.Abs(contact.Py-state.Py)<.01f&&Math.Abs(contact.Vy)<.01f
+                ?null:"no native foot contact";
+        }
+        catch(UnsafeMotionException error){return error.Message;}
+    }
+
     public bool SafeFlatLanding(PhysicsState state) => SafeLanding(state)
         && MotionSupport.SafeFlatLanding(state, TerrainReader.ReadCell);
 
@@ -105,6 +135,6 @@ internal sealed class NativeMotionWorld : IMotionWorld
         if (!SafeSweep(state, state, out string reason)) return reason;
         try { Check(state.Px, state.Py - 2, state.Px + 20, state.Py + 46, true); }
         catch (UnsafeMotionException error) { return error.Message; }
-        return MotionSupport.LandingRejection(state, TerrainReader.ReadCell);
+        return MotionSupport.ClearanceRejection(state,TerrainReader.ReadCell)??ContactRejection(state);
     }
 }

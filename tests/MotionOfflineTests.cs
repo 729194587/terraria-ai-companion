@@ -196,8 +196,9 @@ public static class MotionOfflineTests
             landed with { Py=3670.6f } })
             Check(!goal.Arrived(invalid,world), "Platform support never replaces actual height/grounded/settled checks");
         world.Narrow = true;
-        Check(!goal.Arrived(landed with { Px=34879 },world), "One pixel of platform is insufficient support");
-        Console.WriteLine("PASS: recorded real Tile19 platform landing arrives without replanning; wrong height, air, velocity, jump and insufficient support still rejected");
+        Check(goal.Arrived(landed with { Px=34879 },world), "Positive platform contact supports the settled player");
+        Check(!goal.Arrived(landed with { Px=34880 },world), "No platform contact is not an arrival");
+        Console.WriteLine("PASS: recorded Tile19 platform, narrow positive contact and settled arrival; air, wrong height and missing contact rejected");
     }
 
     // Replays the 0.1.32 recovery scene with synthetic ordinary floor/platform
@@ -281,18 +282,21 @@ public static class MotionOfflineTests
         var outsideTask = new NavigationTask();
         outsideTask.Before(202, 1, region, top with { Px = 1650 }, ph, world);
         Check(outsideTask.Snapshot.Status != "arrived", "Task rejects correct height outside X bounds");
-        foreach (char invalid in new[] { '.', '?', '!', 'h', 'a', 'b', '1', '2', '3', '4' })
+        foreach (char invalid in new[] { '.', '?', '!', 'h' })
         {
             world.Override = (x, y) => y == 97 ? invalid : world.BaseTile(x, y);
             Check(!region.Arrived(top, world), "Missing/unknown/hazard/non-solid target support rejected");
         }
-        world.Override = (x, y) => y == 97 ? '=' : world.BaseTile(x, y);
-        Check(region.Arrived(top, world), "Flat one-way platforms are valid settled landing targets");
+        foreach(char support in new[]{'=','1','2','3','4','a','b'})
+        {
+            world.Override = (x, y) => y == 97 ? support : world.BaseTile(x, y);
+            Check(region.Arrived(top, world), "Verified contact shape can satisfy a settled goal");
+        }
         world.Override = (x, y) => y == 95 ? '#' : world.BaseTile(x, y);
         Check(!region.Arrived(top, world), "Target body clearance required");
         world.Override = null;
         var corner = new LandingRegion(1775, 1775, 1552);
-        Check(!corner.Arrived(top with { Px = 1775 }, world), "One pixel target support rejected");
+        Check(!corner.Arrived(top with { Px = 1775 }, world), "A collision double that reports no support cannot satisfy the region");
 
         foreach (var scene in new[] { new RegionWorld { Ceiling = true }, new RegionWorld() })
         {
@@ -367,18 +371,26 @@ public static class MotionOfflineTests
         {
             var input = task.Before(209, 1, region, actual, ph, world);
             actual = PhysicsSimulator.Step(actual, input, ph, world);
-            // Keep per-frame prediction exact, but report the terminal checkpoint
-            // one pixel high (within the executor's existing 4px landing tolerance).
+            // Report a checkpoint one pixel above the surface. The old
+            // position tolerance must not stand in for actual contact.
             bool checkpoint = actual.Grounded && actual.Py == 1510 && actual.Vx == 0;
             int completed = task.Snapshot.CompletedActions;
             task.After(checkpoint ? actual with { Py = actual.Py - 1 } : actual, world);
-            if (checkpoint && task.Snapshot.CompletedActions > completed)
-            { actual = actual with { Py = actual.Py - 1 }; injectedCheckpoint = true; }
+            if (checkpoint)
+            {
+                Check(task.Snapshot.CompletedActions==completed&&task.Snapshot.Status!="arrived",
+                    "A suspended checkpoint is not counted as a landing");
+                injectedCheckpoint=true;
+            }
         }
-        Check(injectedCheckpoint && task.Snapshot.Status == "running",
-            "One-pixel checkpoint discrepancy is accepted by existing edge tolerance: " + task.Snapshot.Reason);
-        task.Before(209, 1, region, actual, ph, world);
-        Check(task.Snapshot.Status != "arrived", "Executor landing tolerance does not bypass stricter actual region height");
+        Check(injectedCheckpoint,"Suspended terminal checkpoint was exercised");
+        for(int f=0;f<20&&!task.Terminal;f++)
+        {
+            var input=task.Before(209,1,region,actual,ph,world);
+            actual=PhysicsSimulator.Step(actual,input,ph,world);
+            task.After(actual,world);
+        }
+        Check(task.Snapshot.Status=="arrived","Subsequent actual contact confirms arrival");
         task = new(); actual = start;
         var first = task.Before(204, 1, region, actual, ph, world);
         actual = PhysicsSimulator.Step(actual, first, ph, world);
@@ -423,22 +435,24 @@ public static class MotionOfflineTests
     private sealed class DelayedWorld : IMotionWorld
     {
         private readonly IMotionWorld _world;
-        private readonly bool _afterGoal;
-        private bool _delayed, _goalSeen;
-        internal DelayedWorld(IMotionWorld world, bool afterGoal = false) { _world = world; _afterGoal = afterGoal; }
+        private readonly LandingRegion _afterGoal;
+        private bool _delayed;
+        internal DelayedWorld(IMotionWorld world, LandingRegion afterGoal = null) { _world = world; _afterGoal = afterGoal; }
         public PhysicsState Move(PhysicsState s, float vx, float vy, float gravity)
         {
-            if (!_delayed && (!_afterGoal || _goalSeen)) { _delayed = true; System.Threading.Thread.Sleep(35); }
+            if (!_delayed && _afterGoal==null) { _delayed = true; System.Threading.Thread.Sleep(35); }
             return _world.Move(s, vx, vy, gravity);
         }
         public bool SafeSweep(PhysicsState s, PhysicsState end, out string reason) => _world.SafeSweep(s, end, out reason);
-        public bool SafeLanding(PhysicsState s) => _world.SafeLanding(s);
-        public bool SafeFlatLanding(PhysicsState s)
+        public bool SafeLanding(PhysicsState s)
         {
-            bool safe = _world.SafeFlatLanding(s);
-            _goalSeen |= safe;
+            bool safe = _world.SafeLanding(s);
+            if(!_delayed&&_afterGoal?.Contains(s)==true&&safe&&Math.Abs(s.Vx)<=.1f
+                &&Math.Abs(s.Vy)<=.1f&&s.ReleaseJump&&s.JumpFramesLeft==0)
+            { _delayed=true; System.Threading.Thread.Sleep(35); }
             return safe;
         }
+        public bool SafeFlatLanding(PhysicsState s) => _world.SafeFlatLanding(s);
     }
 
     private static void NavigationDiagnosticsRegression()
@@ -550,12 +564,12 @@ public static class MotionOfflineTests
                 "No-route or adapter failure has one plan record and one terminal state record");
         }
         task = new(); logs.Clear(); diagnostics = new(logs.Add);
-        var afterGoal = new DelayedWorld(new RegionWorld(), afterGoal: true);
+        var afterGoal = new DelayedWorld(new RegionWorld(), afterGoal: goal);
         task.Before(401, 10, goal, new(1600, 1558, 0, 0, true), PhysicsParameters.Basic, afterGoal);
         diagnostics.Observe(task.Snapshot);
         Check(task.Snapshot.Status == "running" && task.Snapshot.ReachedGoal == true
             && task.Snapshot.TimeBudgetReached == true && logs.Count == 1,
-            "Complete incumbent plus deadline exit remains a running prediction, not actual arrival");
+            $"Complete incumbent plus deadline exit remains a running prediction, not actual arrival: {task.Snapshot.Status}, {task.Snapshot.ReachedGoal}, {task.Snapshot.TimeBudgetReached}, {logs.Count}");
         using (var json = Log(0))
             Check(json.RootElement.GetProperty("navigation").GetProperty("reachedGoal").GetBoolean()
                 && json.RootElement.GetProperty("navigation").GetProperty("timeBudgetReached").GetBoolean(),
@@ -978,12 +992,12 @@ public static class MotionOfflineTests
         }
         Check(MotionSupport.SafeLanding(new(34112, 4310, 0, 0, true), Tile), "Full support still accepted");
         Check(MotionSupport.SafeLanding(new(34136, 4310, 0, 0, true), Tile), "Eight pixels of real contact accepted");
-        Check(!MotionSupport.SafeLanding(new(34143, 4310, 0, 0, true), Tile), "One-pixel corner support rejected");
+        Check(MotionSupport.SafeLanding(new(34143, 4310, 0, 0, true), Tile), "One-pixel corner support accepted");
         Check(!MotionSupport.SafeLanding(new(34145, 4310, 0, 0, true), Tile), "Air with a stale grounded flag rejected");
         Check(!MotionSupport.SafeLanding(new(34112, 4310, 0, 0, false), Tile), "Airborne state rejected");
         Check(!MotionSupport.SafeLanding(new(34112, 4326, 0, 0, true), Tile), "Body embedded in block rejected");
-        Check(MotionSupport.LandingRejection(new(34143, 4310, 0, 0, true), Tile)
-            .StartsWith("insufficient foot support: 1.000px"), "Diagnostic reports actual contact width without lowering safety threshold");
+        Check(MotionSupport.Assess(new(34143, 4310, 0, 0, true), Tile).SupportPixels==1,
+            "Diagnostic reports actual contact width");
         Check(MotionSupport.LandingRejection(new(34112, 4326, 0, 0, true), Tile)
             .Contains("body intersects solid at (2132,272)"), "Diagnostic locates body collision");
         Check(MotionSupport.LandingRejection(new(34112, 4310, 0, 0, true),

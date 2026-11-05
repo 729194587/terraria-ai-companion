@@ -45,10 +45,25 @@ async def verify(args):
     async def verify_navigation():
         for case, edit in (
             ('navigation_flat', None), ('navigation_jump', None), ('navigation_drop', None), ('navigation_trip', None),
+            ('navigation_single', None), ('navigation_single_platform', None),
+            ('navigation_half', None), ('navigation_slope', None),
             ('navigation_dig', 'mine_tile'), ('navigation_down', 'mine_tile'),
             ('navigation_place', 'place_tile'),
         ):
             spec = await fixture(case)
+            if case in ('navigation_single', 'navigation_single_platform', 'navigation_half', 'navigation_slope'):
+                await asyncio.sleep(.25)  # Let native Player.Update land from above the support.
+                if case == 'navigation_slope':
+                    bridge = ServerAiBridge(args.port)
+                    try:
+                        q = bridge.command('query_atomic', operation='get_player_state', arguments={})
+                        pos = q['data']['data']['player']['position']
+                        assert abs(pos['x'] + 10 - spec['destinationX']) < 1, q
+                        surface = spec['destinationY'] // 16 * 16
+                        assert surface <= pos['y'] + 42 < surface + 16, q
+                        spec['destinationY'] = pos['y'] + 42
+                    finally:
+                        bridge.close()
             source = f"return api('navigate_to',{{x={spec['destinationX']},y={spec['destinationY']}}})"
             result = await run(case, source)
             task = result['task']
