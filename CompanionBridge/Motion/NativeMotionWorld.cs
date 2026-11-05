@@ -8,8 +8,24 @@ using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Motion;
 
-internal sealed class NativeMotionWorld : IMotionWorld
+internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
 {
+    public IMotionWorld MotionAt(PhysicsState pose)=>new NativeMotionWorld(pose);
+    public SurfaceCell ReadSurfaceCell(int x,int y)
+    {
+        char shape=TerrainReader.ReadCell(x,y);
+        if(!WorldGen.InWorld(x,y,1))return new('?',long.MinValue);
+        var tile=Main.tile[x,y];
+        unchecked
+        {
+            long h=shape;
+            void Add(long v){h=(h^v)*1099511628211;}
+            Add(tile.TileType);Add(tile.HasTile?1:0);Add(tile.IsActuated?1:0);
+            Add((int)tile.Slope);Add(tile.IsHalfBlock?1:0);Add(tile.TileFrameX);Add(tile.TileFrameY);
+            Add(tile.LiquidAmount);Add(tile.LiquidType);
+            return new(shape,h);
+        }
+    }
     private const int CollisionMargin = 32;
     private readonly int _left, _top;
     private readonly bool _captureContacts;

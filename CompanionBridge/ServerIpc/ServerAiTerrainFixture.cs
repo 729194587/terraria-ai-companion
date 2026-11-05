@@ -86,7 +86,8 @@ internal static class ServerAiTerrainFixture
         // Explicit disturbance inside the existing copied-world/main-thread gate.
         // This is not a production steering or recovery path.
         var active=(ActorControl.Driver as ServerAiNavigation)?.Current;
-        if (recoveryMode!=null&&!recoveryFired&&active?.Status=="running"&&active.Updates>=8)
+        if (recoveryMode!=null&&!recoveryFired&&active?.Status=="running"&&active.Updates>=8
+            &&active.Snapshot is {Status:"running",Frame:>=4,Action:"walk" or "jump"})
         {
             if(!Program.LaunchParameters.ContainsKey("-companionnavrecoverytest"))
                 throw new InvalidOperationException("Recovery disturbance requires its explicit fixture flag");
@@ -105,7 +106,8 @@ internal static class ServerAiTerrainFixture
             }
             recoveryFired=true;
             File.WriteAllText(Path.Combine(Main.SavePath,"terrain-recovery-fired.json"),JsonSerializer.Serialize(new
-                {recoveryMode,active.ActionId,gameUpdate=Main.GameUpdateCount,x=p.position.X,y=p.position.Y}));
+                {recoveryMode,active.ActionId,gameUpdate=Main.GameUpdateCount,x=p.position.X,y=p.position.Y,
+                    navigationFrame=active.Snapshot.Frame,navigationAction=active.Snapshot.Action}));
             NetworkStateSync.Full(p);
         }
         if(mobilityMode!=null&&!mobilityChanged&&active?.Status=="running"&&active.Updates>=(mobilityMode is "remove" or "rapid" or "expiry"?50:8)

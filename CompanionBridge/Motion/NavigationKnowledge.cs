@@ -13,7 +13,8 @@ internal sealed class NavigationKnowledge
     private int slot;
     internal NavigationFailureMemory Failures { get; }=new();
     internal NavigationSearchMemory Search { get; }=new();
-    internal void Clear(){Failures.Clear();Search.Clear();physics=null;}
+    internal SurfaceGraph Surfaces { get; }=new();
+    internal void Clear(){Failures.Clear();Search.Clear();Surfaces.Clear();physics=null;}
     internal void ObservePhysics(PhysicsParameters profile)
     {
         if(profile==null||physics!=profile)Clear();
