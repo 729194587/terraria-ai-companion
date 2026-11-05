@@ -71,6 +71,7 @@ public static class SurfaceGraphTests
     {
         CheckStepCandidates();
         CheckNodeBudget();
+        CheckRollingCache();
         {
             var t=new Terrain{Floor=true};var pose=new PhysicsState(1600,1558,0,0,true);
             using var pending=new SurfaceNavigator(new(),pose,LandingRegion.AtDestination(2400,1600),PhysicsParameters.Basic,t,t,new(),null);
@@ -264,6 +265,36 @@ public static class SurfaceGraphTests
             var graph=new SurfaceGraph();Refresh(graph,terrain);
             var left=graph.Nodes.First(n=>n.TileX==100);var right=graph.Nodes.First(n=>n.TileX==107&&n.Region.SurfaceY==1600);
             Check(graph.Candidate(left,right,PhysicsParameters.Basic).Motion==SurfaceMotion.Jump,"genuine unsupported gap still requires jump candidate");
+        }
+    }
+
+    private static void CheckRollingCache()
+    {
+        // The old region is close to capacity but complete. The new region is
+        // much sparser; counting stale nodes would incorrectly exceed the cap.
+        foreach(var center in new[]{(X:400,Y:100),(X:100,Y:300),(X:240,Y:100),(X:100,Y:180)})
+        {
+            var terrain=new Terrain{ReadOverride=(x,y)=>y%4==0?(x<160&&y<140?'1':'='):'.'};
+            var graph=new SurfaceGraph();Refresh(graph,terrain,18);
+            var old=graph.Nodes.ToArray();
+            Check(!graph.Truncated&&old.Length>7000,"old rolling region is near the node cap but fully built");
+            var fresh=new SurfaceGraph();
+            foreach(int _ in fresh.Refresh(terrain,center.X,center.Y,SurfaceGraph.InitialRadius)){}
+            int newCount=fresh.Nodes.Count();
+            Check(!fresh.Truncated&&newCount>0&&old.Length+newCount>SurfaceGraph.MaximumNodes,
+                "stale old nodes plus the new region would exceed the node cap");
+            var retained=old.Where(n=>Math.Abs(n.TileX-center.X)<=SurfaceGraph.MaximumRadius+4&&Math.Abs(n.TileY-center.Y)<=72).ToArray();
+            foreach(int _ in graph.Refresh(terrain,center.X,center.Y,SurfaceGraph.InitialRadius)){}
+            Check(!graph.Truncated&&graph.RetainedNodes==retained.Length,"eviction precedes retained-node budget accounting on both axes");
+            var actual=graph.Nodes.ToArray();
+            Check(actual.Length==retained.Length+newCount&&actual.Length<=SurfaceGraph.MaximumNodes,
+                "new rolling region builds completely using only the retained cache budget");
+            Check(retained.All(n=>actual.Any(a=>ReferenceEquals(a,n))),"unchanged nodes still inside retention range keep their identity");
+            Check(actual.All(n=>Math.Abs(n.TileX-center.X)<=SurfaceGraph.MaximumRadius+4&&Math.Abs(n.TileY-center.Y)<=72),
+                "out-of-range old nodes are removed");
+            var expiredCell=old.First(n=>Math.Abs(n.TileX-center.X)>SurfaceGraph.MaximumRadius+8||Math.Abs(n.TileY-center.Y)>80);
+            Check(graph.Shape(expiredCell.TileX,expiredCell.TileY)=='?',"out-of-range old terrain cells are also removed");
+            Console.WriteLine($"Graph rolling cache: center=({center.X},{center.Y}), old={old.Length}, retained={retained.Length}, new={newCount}, total={actual.Length}");
         }
     }
 

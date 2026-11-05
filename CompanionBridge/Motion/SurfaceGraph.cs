@@ -82,6 +82,13 @@ internal sealed class SurfaceGraph
         // A later, explicitly requested refresh must not mistake the last
         // partially sampled tile for complete cached coverage.
         if(incompleteTile is {} unfinished){surfaces.Remove(unfinished);incompleteTile=null;}
+        // Evict before reading the new window and accounting for its budget.
+        // Otherwise expired nodes can exhaust the cap before the old end-of-
+        // refresh cleanup is reached, even when the new region is sparse.
+        foreach(var key in cells.Keys.Where(k=>Math.Abs(k.X-cx)>MaximumRadius+8||Math.Abs(k.Y-cy)>80).ToArray())
+        {cells.Remove(key);yield return 0;}
+        foreach(var key in surfaces.Keys.Where(k=>Math.Abs(k.X-cx)>MaximumRadius+4||Math.Abs(k.Y-cy)>72).ToArray())
+        {surfaces.Remove(key);yield return 0;}
         if(LastVerifiedEdge?.Verification=="verified"&&verifiedWorld.TerrainSignature(LastVerifiedEdge.VerifiedStart.Value,verifiedFootprint)!=LastVerifiedEdge.Signature)
             LastVerifiedEdge=LastVerifiedEdge with{Verification="stale"};
         // The extra rim covers body clearance and native step/collision probes.
@@ -154,10 +161,6 @@ internal sealed class SurfaceGraph
                 lo=null;
             }
         }
-        // Cache is spatially bounded around the current journey, without
-        // deleting unchanged regions during an ordinary local update.
-        foreach(var key in cells.Keys.Where(k=>Math.Abs(k.X-cx)>MaximumRadius+8||Math.Abs(k.Y-cy)>80).ToArray())cells.Remove(key);
-        foreach(var key in surfaces.Keys.Where(k=>Math.Abs(k.X-cx)>MaximumRadius+4||Math.Abs(k.Y-cy)>72).ToArray())surfaces.Remove(key);
     }
 
     // An observed destination can have a fractional slope height. Integer graph
