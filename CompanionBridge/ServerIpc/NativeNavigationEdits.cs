@@ -10,7 +10,7 @@ using VirtualPlayerEngineProbe;
 
 namespace CompanionBridge.ServerIpc;
 
-internal sealed class NativeNavigationEdits
+internal sealed class NativeNavigationEdits : ILocalEditSource
 {
     private const int TileSize=16, MaxWidthTiles=12, MaxDepthTiles=8;
     private readonly AiReadOnlyProtocol.Identity identity;
@@ -38,6 +38,8 @@ internal sealed class NativeNavigationEdits
     private PhysicsState cutPose;
     private (int X,int Y,int Slot,Item Item,string Shape,long Revision)? openingTile;
     private bool expectedDrop;
+    private string armedInventory;
+    private static string ItemStamp(Item item)=>$"{item.type}/{item.prefix}/{item.pick}/{item.axe}/{item.tileBoost}/{item.useTime}/{item.useAnimation}/{item.createTile}/{item.placeStyle}/{item.stack}";
     private readonly List<object> drops=new();
     internal string SearchFailure { get; private set; }
     public string SearchDetail{get;private set;}
@@ -49,7 +51,7 @@ internal sealed class NativeNavigationEdits
 
     internal NavigationStep FindOpening(float targetCenter, float targetFeet, int remainingTiles)
     {
-        placement=null; openingTile=null; expectedLanding=null; SearchFailure=null;
+        placement=null; openingTile=null; expectedLanding=null; SearchFailure=null;armedInventory=null;
         int x=Grid(targetCenter), y=Grid(targetFeet);
         var observed=ServerAiNavigation.Observe(Player);
         var pose=observed.State;
@@ -105,11 +107,8 @@ internal sealed class NativeNavigationEdits
         {SearchDetail+="; horizontal destination exceeds opening window";return null;}
         Waypoint=pose with{Px=destination};
         const float arrivalWidth=2;
-        float left=Math.Min(pose.Px,destination-arrivalWidth);
-        float right=Math.Max(pose.Px,destination+PhysicsSimulator.PlayerW+arrivalWidth);
-        int top=Grid(pose.Py), bottom=(int)Math.Round(Feet(pose)/TileSize);
-        var blocks=(from ty in Enumerable.Range(top,bottom-top)
-            from tx in Columns(left,right)
+        var blocks=(from cell in LocalEditGeometry.Across(pose,destination)
+            let tx=cell.X let ty=cell.Y
             where TerrainReader.ReadCell(tx,ty)!='.'
             select (tx,ty)).ToArray();
 
@@ -184,8 +183,87 @@ internal sealed class NativeNavigationEdits
         }
         // A fall is only admitted into a dry, fully cleared row with a verified
         // flat floor one tile below. No jump, teleports or speculative world edits.
-        return Columns(pose.Px,pose.Px+PhysicsSimulator.PlayerW).All(tx=>After(tx,row)=='.')
-            &&MotionSupport.SafeFlatLanding(pose with{Py=pose.Py+TileSize},After);
+        return LocalEditGeometry.DropOneRow(pose,After);
+    }
+
+    internal void BeginLocalPlanning(PhysicsState pose)
+    {if(rolling)openingOrigin=pose;SearchFailure=null;SearchDetail="bounded local edit evaluation";}
+    public char Cell(int x,int y)=>TerrainReader.ReadCell(x,y);
+    private static bool SafeMaterial(Item item)
+    {
+        if(!ActorPlacement.Supported(item))return false;
+        int type=item.createTile;
+        return type<TileID.Count&&Main.tileSolid[type]&&!TileID.Sets.Falling[type]
+            &&(!Main.tileFrameImportant[type]||TileID.Sets.Platforms[type])
+            &&TileID.Sets.TouchDamageImmediate[type]==0&&!TileID.Sets.TouchDamageHot[type]
+            &&!TileID.Sets.TouchDamageBleeding[type]&&!TileID.Sets.TouchDamageDestroyTile[type]&&!TileID.Sets.Boulders[type];
+    }
+    public IReadOnlyList<LocalMaterial> Materials=>Enumerable.Range(0,10).Where(slot=>SafeMaterial(Player.inventory[slot])).Select(slot=>
+        {
+            var item=Player.inventory[slot];
+            return new LocalMaterial(slot,item.createTile,Main.tileSolidTop[item.createTile]?'=':'#',item.stack,Math.Max(1,Math.Max(item.useTime,item.useAnimation))+1);
+        }).ToArray();
+    private bool SafeVirtualNeighbours(int x,int y,LocalTerrainView view,bool allowPlatforms)
+    {
+        for(int tx=x-1;tx<=x+1;tx++)for(int ty=y-1;ty<=y+1;ty++)
+        {
+            char shape=view.Cell(tx,ty);
+            if(shape is '?' or '!'||!WorldGen.InWorld(tx,ty,1))return false;
+            if(shape=='.'&&Cell(tx,ty)!='.')continue; // a previously admitted virtual removal
+            var tile=Main.tile[tx,ty];
+            if(tile.HasUnactuatedTile&&(TileID.Sets.Falling[tile.TileType]
+                ||Main.tileFrameImportant[tile.TileType]&&!(allowPlatforms&&TileID.Sets.Platforms[tile.TileType])))return false;
+        }
+        return true;
+    }
+    public LocalEditQuote Mine(PhysicsState pose,int x,int y,LocalTerrainView view)
+    {
+        if(!ActorMining.Healthy(Player)||IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||view.Cell(x,y)!='#'||!Main.tile[x,y].HasUnactuatedTile
+            ||Main.tileFrameImportant[Main.tile[x,y].TileType]||!SafeVirtualNeighbours(x,y,view,false)
+            ||Math.Abs(x-Grid(openingOrigin.Px+10))>MaxWidthTiles||y<Grid(openingOrigin.Py)
+            ||y>=(int)Math.Round(Feet(openingOrigin)/16)+MaxDepthTiles)return null;
+        var failure=ActorMining.ChooseTool(Player,identity.World,identity.Generation,x,y,false,out int slot);
+        if(failure!=ActorMining.Failure.None||Player.inventory[slot].pick<=0
+            ||!ActorMining.QueryReach(Player,identity.World,identity.Generation,Player.inventory[slot],x,y,pose.Px,pose.Py))return null;
+        return new(slot,Main.tile[x,y].TileType,ActorMining.EstimateUpdates(Player,slot,x,y));
+    }
+    public bool Place(PhysicsState pose,int x,int y,LocalMaterial material,LocalTerrainView view)
+    {
+        if(IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||view.Cell(x,y)!='.'||!SafeVirtualNeighbours(x,y,view,true)
+            ||Player.noBuilding||Player.CCed||Player.noItems||Player.frozen||Player.stoned)return false;
+        var item=Player.inventory[material.Slot];
+        if(!SafeMaterial(item)||item.createTile!=material.Type||item.stack<=0||Main.tile[x,y].HasTile&&Cell(x,y)=='.')return false;
+        // Keep the existing Simple placement reach check. Future work poses in
+        // this template move toward the cell; cells outside current reach are
+        // conservatively reconsidered only after an actual movement checkpoint.
+        if(!Player.InInteractionRange(x,y,Terraria.DataStructures.TileReachCheckSettings.Simple))return false;
+        return view.Cell(x-1,y) is '#' or '='||view.Cell(x+1,y) is '#' or '='||view.Cell(x,y+1)=='#';
+    }
+    internal NavigationStep Arm(LocalEditAction action)
+    {
+        placement=null;openingTile=null;expectedLanding=null;
+        var now=ServerAiNavigation.Observe(Player);
+        if(!now.Settled||now.State!=action.Start){SearchDetail="local plan start changed";return null;}
+        if(action.Kind==LocalEditKind.Move)return new("navigate_to_landing_region",JsonSerializer.SerializeToElement(new
+            {minPlayerLeftX=action.Expected.Px-2,maxPlayerLeftX=action.Expected.Px+2,surfaceY=Feet(action.Expected)}));
+        if(action.Kind==LocalEditKind.Place)
+        {
+            var item=Player.inventory[action.Slot];
+            if(item.createTile!=action.Type||!PlacementAllowed(action.X,action.Y,item))return null;
+            placement=(action.X,action.Y,action.Slot,item,item.createTile,now.State);
+            armedInventory=ItemStamp(item);
+            expectedLanding=now.State;expectedDrop=false;
+            return new("place_tile",JsonSerializer.SerializeToElement(new{x=action.X,y=action.Y,plannedPlacementSlot=action.Slot}));
+        }
+        var quote=Mine(now.State,action.X,action.Y,new(Cell));
+        if(quote==null||quote.Slot!=action.Slot||quote.Type!=action.Type)return null;
+        bool drop=CanDropAfter(now.State,new[]{(action.X,action.Y)});
+        if(!drop&&!MotionSupport.SafeLanding(now.State,(x,y)=>x==action.X&&y==action.Y?'.':Cell(x,y)))return null;
+        SceneMineTargets.Watch(action.X,action.Y);cutPose=now.State;
+        openingTile=(action.X,action.Y,action.Slot,Player.inventory[action.Slot],SceneMineTargets.NavigationShape(action.X,action.Y),SceneMineTargets.Revision(action.X,action.Y));
+        armedInventory=ItemStamp(Player.inventory[action.Slot]);
+        expectedDrop=drop;expectedLanding=now.State with{Py=now.State.Py+(drop?16:0)};
+        return new("mine_tile",JsonSerializer.SerializeToElement(new{x=action.X,y=action.Y,plannedToolSlot=action.Slot}));
     }
 
     private NavigationStep PlanCut((int X,int Y)[] blocks,int remainingTiles)
@@ -231,6 +309,8 @@ internal sealed class NativeNavigationEdits
 
     public string RevalidateOpening()
     {
+        int armedSlot=placement?.Slot??openingTile?.Slot??-1;
+        if(armedInventory!=null&&(armedSlot<0||ItemStamp(Player.inventory[armedSlot])!=armedInventory))return "navigation_planned_item_changed";
         if(placement is {} block)
         {
             var now=ServerAiNavigation.Observe(Player);

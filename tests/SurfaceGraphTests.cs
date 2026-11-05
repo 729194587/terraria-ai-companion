@@ -73,6 +73,13 @@ public static class SurfaceGraphTests
         CheckNodeBudget();
         CheckRollingCache();
         {
+            var world=new Terrain{Floor=true};var start=new PhysicsState(1600.4f,1558,0,0,true);
+            using var search=new SurfaceNavigator(new(),start,LandingRegion.AtDestination(1640,1600),PhysicsParameters.Basic,world,world,new(),(_,_)=>true);
+            int slices=0;Route result;
+            do{result=search.Advance(4096,100);Check(++slices<2000,"failed connections through occupied overlapping surfaces cannot loop forever");}while(!search.Finished);
+            Check(result.Actions.Count==0&&result.SearchExit=="no_route_in_coverage","all rejected actual-state connections exhaust finite coverage without replay");
+        }
+        {
             var t=new Terrain{Floor=true};var pose=new PhysicsState(1600,1558,0,0,true);
             using var pending=new SurfaceNavigator(new(),pose,LandingRegion.AtDestination(2400,1600),PhysicsParameters.Basic,t,t,new(),null);
             Check(pending.Advance(1,0).TimeBudgetReached&&t.Reads==0,"zero slice budget does not touch world or fail journey");

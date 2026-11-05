@@ -27,6 +27,10 @@ internal interface INavigationWorld
     bool PreferEdit(int remainingTiles)=>false;
     object ArrivalEvidence=>null;
     string NoRouteReason=>"navigation_local_frontier_exhausted";
+    bool PlanningPending=>false;
+    Result PlanningFailure=>null;
+    object PlanningEvidence=>null;
+    void ReleasePlanning(){}
 }
 internal class AutonomousNavigationTask : AbstractCompanionTask
 {
@@ -57,7 +61,7 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
     internal override object Progress=>new{stage=phase,completedChildren,settledChildren,
         children=children.ToArray(),childrenTruncated=settledChildren>children.Count,omittedChildren=settledChildren-children.Count,
         target=world.Target,clearedTiles,dugTiles,placedTiles,openingMoves,openingMode,search=world.SearchDetail,
-        opening=world.OpeningEvidence,activity=progressWatch.Activity.ToString(),verifiedTerrainActions=progressWatch.VerifiedEffects};
+        opening=world.OpeningEvidence,planning=world.PlanningEvidence,activity=progressWatch.Activity.ToString(),verifiedTerrainActions=progressWatch.VerifiedEffects};
     internal override Result Prepare(AiReadOnlyProtocol.Identity frame)=>(world.InterruptionReason()??world.Prepare()) is {} why?Describe(Failed(why)):null;
     internal override void Start(AiReadOnlyProtocol.Identity frame){phase="observe";}
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)
@@ -84,6 +88,8 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
             acquired|=r.InputsAcquired;
             child=null;
             if(r.Status=="completed")invalidatedEdits=0;
+            if(r.Status=="completed"&&world.ReplanAfterChange)
+            {openingMode=false;phase="observe";return Running();}
             if(r.Status!="completed")
             {
                 if(!CanOpenAfterNavigation(r)||openingMode)return Describe(r);
@@ -126,17 +132,25 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
             if(world.ReplanAfterChange)openingMode=false;
         }
         if(world.Arrived())
+        {
+            world.ReleasePlanning();
             return new("completed","navigation_destination_verified",world.ArrivalEvidence,true,true,acquired);
+        }
         progressWatch.Observe(NavigationActivity.Search);
         if(!openingMode)
         {
-            if(phase!="reobserve"&&!world.PreferEdit(LocalCutTileLimit)&&world.FindApproach() is {} approach)
+            bool prefer=phase!="reobserve"&&world.PreferEdit(LocalCutTileLimit);
+            if(world.PlanningFailure is {} refusal)return Describe(refusal);
+            if(world.PlanningPending)return Running();
+            if(phase!="reobserve"&&!prefer&&world.FindApproach() is {} approach)
             {
                 return StartChild(frame,"navigate_to_landing_region",approach,"navigating",TripUpdates);
             }
             openingMode=true;
         }
         var opening=world.FindOpening(LocalCutTileLimit);
+        if(world.PlanningFailure is {} planningFailure)return Describe(planningFailure);
+        if(world.PlanningPending)return Running();
         if(opening==null)return Describe(Failed(world.NoRouteReason));
         if(opening.Operation=="mine_tile")return StartChild(frame,opening.Operation,opening.Arguments,"opening_tile",600);
         if(opening.Operation=="place_tile")return StartChild(frame,opening.Operation,opening.Arguments,"placing_support",600);
@@ -158,5 +172,5 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
             &&kind.GetString() is "no_route" or "no_progress";
     }
     internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)
-        => Describe(base.Stop(frame,status,reason));
+    {world.ReleasePlanning();return Describe(base.Stop(frame,status,reason));}
 }

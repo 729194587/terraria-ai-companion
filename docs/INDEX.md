@@ -44,6 +44,7 @@
 | [物品放置](SERVER_AI_OBJECT_PLACEMENT.md) | 服务器侧物体放置 |
 | [导航](NAVIGATION.md) | 物理预测、路径规划、执行与落脚确认 |
 | [Phase 2 Surface Graph 实现](PHASE2_SURFACE_GRAPH_IMPLEMENTATION.md) | 地形图、多尺度搜索、物理验证、阶段证据与范围 |
+| [Phase 3 局部改造规划](PHASE3_LOCAL_PLANNING_IMPLEMENTATION.md) | v1.1 简化版成本比较、独立虚拟地形、逐项执行与验证 |
 | [世界角色持久化](SERVER_AI_WORLD_CHARACTER_PERSISTENCE.md) | Server AI Player 的世界绑定与存档 |
 | [多人原子确认](MULTIPLAYER_ATOMIC_CONFIRMATION.md) | 多人原生交互的服务器权威确认与 unknown 语义 |
 

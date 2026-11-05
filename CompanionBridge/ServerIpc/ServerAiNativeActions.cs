@@ -51,7 +51,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 var executor=new ChildExecutor(this,continuous:true);
                 CompanionTask task=operation=="mine_target"
                     ?new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
-                    :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args),executor);
+                    :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},AutonomousNavigationTask.TripUpdates);
             }
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
@@ -238,6 +238,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         private readonly ServerAiNativeActions owner;
         private readonly bool continuous;
         private readonly NavigationKnowledge knowledge=new();
+        internal NavigationKnowledge Knowledge=>knowledge;
         internal ChildExecutor(ServerAiNativeActions owner,bool continuous){this.owner=owner;this.continuous=continuous;}
         public string Validate(string op,JsonElement args)=>owner.Validate(op,args);
         public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>owner.StartCore(id,op,args,taskId,true,continuous,knowledge);
