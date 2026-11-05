@@ -163,10 +163,27 @@ internal static class ServerMineTaskFixture
                         for(int ty=floor-2;ty<floor;ty++)
                         {var rock=Main.tile[left+column,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
                 }
+                if(kind=="navigation_long_dig")
+                {
+                    destinationX=(left+11)*16+8;
+                    for(int tx=left+2;tx<=left+10;tx++)
+                        for(int ty=floor-10;ty<floor;ty++)
+                        {var rock=Main.tile[tx,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
+                }
+                if(kind=="navigation_long_place")
+                {
+                    for(int tx=left+1;tx<=left+20;tx++)
+                        for(int ty=floor;ty<=floor+8;ty++)Main.tile[tx,ty].ClearTile();
+                    destinationX=(left+11)*16+8;
+                    p.inventory[2]=new Item(ItemID.WoodPlatform){stack=40};
+                }
                 if(kind is "navigation_dig" or "navigation_jump")
                     for(int tx=left+2;tx<=left+3;tx++)
                         for(int ty=floor-(kind=="navigation_dig"?10:2);ty<floor;ty++)
                         {var rock=Main.tile[tx,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
+                // Isolate movement acceptance from the independently permitted
+                // terrain-modification choice in these two movement fixtures.
+                if(kind is "navigation_jump" or "navigation_trip")p.inventory[1]=new Item();
                 if(kind=="navigation_down")
                 {
                     destinationX=left*16+10;

@@ -30,6 +30,12 @@ internal sealed class NativeNavigationWorld : INavigationWorld
 
     public object Target=>target;
     public bool ReplanAfterChange=>true;
+    public string ProgressKey=>CheckpointKey(player);
+    internal static string CheckpointKey(Player actor)
+    {
+        var pose=NativeMotionWorld.Observe(actor);
+        return JsonSerializer.Serialize(new{pose,terrain=new NativeMotionWorld(pose).TerrainSignature(pose)});
+    }
     public string NoRouteReason=>edits.SearchFailure??"navigation_local_frontier_exhausted";
     public string SearchDetail=>edits?.SearchDetail;
     public object OpeningEvidence=>edits?.OpeningEvidence;
@@ -53,7 +59,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
     {
         if(!WorldGen.InWorld((int)(x/16),(int)(y/16),2))return "invalid_navigation_destination";
         if(!GameNavigation.Ordinary(player))return "unsupported_navigation_profile";
-        edits=new(identity,ServerAiNavigation.Observe(player).State);
+        edits=new(identity,ServerAiNavigation.Observe(player).State,rolling:true);
         return null;
     }
 
@@ -86,6 +92,8 @@ internal sealed class NativeNavigationWorld : INavigationWorld
     public bool PreferEdit(int remainingTiles)
     {
         preferredEdit=edits.FindOpening(x,y,remainingTiles);
+        if(preferredEdit?.Operation=="navigate_to_landing_region"&&edits.Edited)
+            return true; // Continue the verified opening before attempting the far goal again.
         if(preferredEdit==null||preferredEdit.Operation=="navigate_to_landing_region")
         {preferredEdit=null;return false;}
 

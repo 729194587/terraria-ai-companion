@@ -9,7 +9,7 @@ internal sealed class NavigationTripProgress
     internal const int UpdateLimit=1800, SearchLimit=128;
     internal const double PlanningLimitMilliseconds=SearchLimit*25;
     internal const int DetourCheckpointLimit=6;
-    private readonly Dictionary<(int X,int Y,int Vx),int> visits=new();
+    private readonly Dictionary<PhysicsState,int> visits=new();
     private readonly HashSet<(int X,int Y)> discovered=new();
     private PhysicsState anchor;
     private float bestDistance;
@@ -18,7 +18,7 @@ internal sealed class NavigationTripProgress
     internal int RepeatRejections {get;private set;}
     internal int VisitedCheckpoints=>discovered.Count;
     private static (int,int) Key(PhysicsState s)=>((int)MathF.Floor(s.Px/8),(int)MathF.Floor(s.Py/8));
-    private static (int,int,int) RepeatKey(PhysicsState s)=>(Key(s).Item1,Key(s).Item2,(int)MathF.Round(s.Vx/.5f));
+    private static PhysicsState RepeatKey(PhysicsState s)=>s;
     internal void Begin(PhysicsState start,float distance)
     {
         visits.Clear(); discovered.Clear(); visits[RepeatKey(start)]=1; discovered.Add(Key(start));anchor=start;bestDistance=distance;
@@ -31,7 +31,7 @@ internal sealed class NavigationTripProgress
         if(visits.GetValueOrDefault(RepeatKey(s))<2)return false;
         RepeatRejections++;return true;
     }
-    internal bool Checkpoint(PhysicsState s,float distance)
+    internal bool Checkpoint(PhysicsState s,float distance,bool continuous=false)
     {
         bool novel=!discovered.Contains(Key(s));
         bool excursion=Detour(s);
@@ -39,6 +39,8 @@ internal sealed class NavigationTripProgress
         visits[RepeatKey(s)]=visits.GetValueOrDefault(RepeatKey(s))+1;
         if(distance<=bestDistance-4)
         {bestDistance=distance;anchor=s;detours=0;return true;}
+        if(continuous&&novel)
+        {anchor=s;detours=0;DetourCheckpoints++;return true;}
         if(novel&&excursion){detours++;DetourCheckpoints++;return true;}
         return false;
     }

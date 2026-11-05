@@ -35,9 +35,15 @@ async def verify(args):
         finally:
             bridge.close()
         rows.append(dict(case=case, result=r));save()
-        expected = {'blocked': 'failed', 'no_tool': 'failed', 'deadline': 'timeout'}
+        expected = {'no_tool': 'failed', 'deadline': 'timeout'}
         if case == 'underpowered':
             assert r['lastAction']['status'] == 'failed', (case, r)
+        elif case == 'blocked':
+            # The local planner may exhaust a frontier or spend the whole trip
+            # searching. A budget exit does not prove this wall globally impassable.
+            assert r['status'] in ('failed', 'timeout'), (case, r)
+            if r['status'] == 'timeout':
+                assert r['lastAction']['reason'] in ('execution_deadline', 'task_game_update_deadline'), r
         else:
             assert r['status'] == expected.get(case, 'completed'), (case, r)
         assert r['actions'] == 1, r
@@ -49,6 +55,7 @@ async def verify(args):
             ('navigation_half', None), ('navigation_slope', None),
             ('navigation_dig', 'mine_tile'), ('navigation_down', 'mine_tile'),
             ('navigation_place', 'place_tile'),
+            ('navigation_long_dig', 'mine_tile'), ('navigation_long_place', 'place_tile'),
         ):
             spec = await fixture(case)
             if case in ('navigation_single', 'navigation_single_platform', 'navigation_half', 'navigation_slope'):
@@ -86,6 +93,10 @@ async def verify(args):
             if case == 'navigation_place':
                 proof = next(c['result']['evidence'] for c in children if c['taskName'] == 'place_tile')
                 assert proof['placedByActor'] and proof['consumedCount'] == 1, proof
+            if case == 'navigation_long_dig':
+                assert task['progress']['dugTiles'] > 18, task
+            if case == 'navigation_long_place':
+                assert task['progress']['placedTiles'] > 8, task
             print(json.dumps(dict(case=case, children=names, reason=result['reason'])), flush=True)
     if args.navigation_only:
         await verify_navigation()
@@ -105,7 +116,7 @@ async def verify(args):
             proof = task['lastResult']['evidence']
             assert proof['X'] == spec['x'] and proof['Y'] == spec['y'] and proof['destroyedByActor'] and proof['targetAbsent'], proof
         else:
-            assert result['status'] == 'failed' and not result['completed'], result
+            assert result['status'] in ('failed','timeout') and not result['completed'], result
             assert 'mine_tile' not in [c['taskName'] for c in task['progress']['children']], task
         print(json.dumps(dict(case=case, status=result['status'], reason=result['reason'])), flush=True)
     for case in ('hotbar', 'bag', 'reach_corner', 'workbench', 'workbench_task', 'underpowered', 'cutout', 'deadline'):
@@ -164,7 +175,7 @@ async def verify(args):
     for case, status in (
         ('opening_across', 'completed'), ('opening_bag', 'completed'), ('opening_bag_replaced', 'failed'),
         ('opening_down', 'completed'), ('opening_probe', 'completed'),
-        ('opening_hazard', 'failed'), ('opening_hard', 'failed'), ('opening_unsafe', 'failed'),
+        ('opening_hazard', 'failed'), ('opening_hard', 'failed'), ('opening_unsafe', 'timeout'),
         ('opening_deadline', 'timeout'), ('opening_unknown', 'unknown'),
     ):
         spec = await fixture(case)
@@ -176,7 +187,11 @@ async def verify(args):
                 source, limits=Limits(actions=1, calls=1, seconds=58))
             result = raw.get('value') if raw['status'] == 'completed' else raw.get('lastAction')
             rows.append(dict(case=case, result=raw));save()
-            assert raw['actions'] == 1 and result and result['status'] == status, (case, raw)
+            allowed = ('failed','timeout') if case == 'opening_unsafe' else (status,)
+            assert raw['actions'] == 1 and result and result['status'] in allowed, (case, raw)
+            status = result['status']
+            if case == 'opening_unsafe' and status == 'timeout':
+                assert result['reason'] in ('execution_deadline','task_game_update_deadline'), result
             assert result['endEvidence']['inputsReleased'], result
             task = result['task']
             history = task['progress']['children']

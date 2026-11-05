@@ -109,6 +109,15 @@ public static class TaskRuntimeOfflineTests
             var f=new Fixture();f.World.PrepareError="invalid_target";Check(f.Tick(1).Status=="failed"&&f.Native.Starts.Count==0&&f.World.Preparations==1,"precondition refusal has no native side effects");
         }
         {
+            var f=new Fixture();
+            for(ulong tick=1;tick<=4;tick++)f.Tick(tick);
+            var published=f.Root.View();
+            string snapshot=JsonSerializer.Serialize(published);
+            for(ulong tick=5;tick<=7;tick++)f.Tick(tick);
+            Check(JsonSerializer.Serialize(published)==snapshot,
+                "published task history is detached from subsequent game-thread updates");
+        }
+        {
             var f=new Fixture();f.Tick(1);f.Tick(2);f.Tick(3);f.World.Error="target_changed";
             Check(f.Tick(4).Status=="failed"&&f.Native.Cancels==1&&f.Native.Starts.Count==1,"changed target stops active child and never starts mining");
         }
@@ -124,10 +133,10 @@ public static class TaskRuntimeOfflineTests
         {
             var f=new Fixture();f.World.NoApproach=f.World.AllowOpening=true;
             Result result=null;
-            for(ulong tick=1;tick<100;tick++)
+            for(ulong tick=1;tick<=100;tick++)
             {result=f.Tick(tick);if(result.Status!="running")break;}
-            Check(result?.Reason=="mining_opening_budget_exhausted"&&f.Native.Starts.Count==MineTargetTask.MaxOpeningTiles,
-                "opening budget stops verified excavation without starting a further child");
+            Check(result?.Status=="timeout"&&result.Reason=="task_game_update_deadline"&&f.Native.Starts.Count>AutonomousNavigationTask.LocalCutTileLimit,
+                "verified excavation continues beyond old count limit until root deadline");
         }
         foreach(bool uncertain in new[]{false,true})
         {
@@ -148,6 +157,29 @@ public static class TaskRuntimeOfflineTests
             else
                 Check(result.Status=="completed"&&native.Starts.Count==2&&native.Starts[1]=="navigate_to_landing_region",
                     "confirmed placement and changed landing trigger one newly observed movement");
+        }
+        foreach(bool placement in new[]{false,true})
+        {
+            var world=new World{NoApproach=true,AllowOpening=true,PlaceSupport=placement};
+            var native=new Native();
+            int effects=0;
+            native.OnPoll=op=>{effects++;world.Reach=effects==25;};
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var root=new TaskSlot(new AutonomousNavigationTask("many",world,native),"many",null,frame,200);
+            Result result=null;
+            for(ulong tick=1;tick<200;tick++)
+            {
+                result=root.Tick(frame with{GameUpdate=tick});
+                if(result.Status!="running")break;
+            }
+            Check(result?.Status=="completed"&&effects==25,
+                "one root continues beyond cumulative terrain action cap: "+placement);
+            var view=JsonSerializer.SerializeToElement(root.View()).GetProperty("progress");
+            Check(view.GetProperty("settledChildren").GetInt32()==25
+                &&view.GetProperty("childrenTruncated").GetBoolean()
+                &&view.GetProperty("children").GetArrayLength()==16
+                &&view.GetProperty("verifiedTerrainActions").GetInt32()==25,
+                "long journeys retain exact totals and bounded, explicitly truncated history");
         }
         Console.WriteLine($"Task runtime: {checks} checks passed; native executor/world are substitutes.");
     }

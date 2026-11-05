@@ -51,6 +51,8 @@ $sources = @(
     (Join-Path $PSScriptRoot 'SafeGroundWalkTests.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationTask.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationFailureMemory.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/NavigationKnowledge.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/NavigationProgressWatchdog.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationTripProgress.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationDiagnostics.cs'),
     (Join-Path $repo 'CompanionBridge/TcpControlServer.cs'),

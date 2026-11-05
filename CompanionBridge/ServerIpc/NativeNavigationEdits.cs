@@ -14,15 +14,17 @@ internal sealed class NativeNavigationEdits
 {
     private const int TileSize=16, MaxWidthTiles=12, MaxDepthTiles=8;
     private readonly AiReadOnlyProtocol.Identity identity;
-    private readonly PhysicsState openingOrigin;
+    private PhysicsState openingOrigin;
+    private readonly bool rolling;
     private readonly Func<int,int,bool> protectedCell;
     private readonly Player Player;
     private (int X,int Y,int Slot,Item Item,int Type,PhysicsState Pose)? placement;
 
     internal NativeNavigationEdits(AiReadOnlyProtocol.Identity identity, PhysicsState origin,
-        Func<int,int,bool> protectedCell=null)
+        Func<int,int,bool> protectedCell=null,bool rolling=false)
     {
         this.identity=identity;
+        this.rolling=rolling;
         openingOrigin=origin;
         this.protectedCell=protectedCell ?? ((_,_)=>false);
         Player=(Player)identity.Actor;
@@ -39,7 +41,7 @@ internal sealed class NativeNavigationEdits
     private readonly List<object> drops=new();
     internal string SearchFailure { get; private set; }
     public string SearchDetail{get;private set;}
-    public object OpeningEvidence=>new{drops};
+    public object OpeningEvidence=>new{drops=drops.ToArray()};
     private static float Feet(PhysicsState p)=>p.Py+PhysicsSimulator.PlayerH;
     private static int Grid(float coordinate)=>(int)Math.Floor(coordinate/TileSize);
     private static IEnumerable<int> Columns(float left,float right)
@@ -51,12 +53,13 @@ internal sealed class NativeNavigationEdits
         int x=Grid(targetCenter), y=Grid(targetFeet);
         var observed=ServerAiNavigation.Observe(Player);
         var pose=observed.State;
+        if(rolling&&observed.Settled)openingOrigin=pose;
         SearchDetail=$"opening window ±{MaxWidthTiles}x/{MaxDepthTiles} down from start; target=({x},{y}); " +
             $"actor tile=({Grid(Player.Center.X)},{Grid(Feet(pose))}); remaining cuts={remainingTiles}";
         if(!observed.Settled||!GameNavigation.Ordinary(Player))
         {SearchDetail+="; actor is not settled in the ground profile";return null;}
-        if(Math.Abs(x-Grid(openingOrigin.Px+PhysicsSimulator.PlayerW/2f))>MaxWidthTiles
-            ||y-Grid(Feet(openingOrigin))>MaxDepthTiles
+        if(!rolling&&(Math.Abs(x-Grid(openingOrigin.Px+PhysicsSimulator.PlayerW/2f))>MaxWidthTiles
+            ||y-Grid(Feet(openingOrigin))>MaxDepthTiles)
             ||Math.Abs(pose.Px-openingOrigin.Px)>MaxWidthTiles*TileSize
             ||Feet(pose)-Feet(openingOrigin)>=MaxDepthTiles*TileSize)
         {SearchFailure="navigation_edit_window_exceeded";SearchDetail+="; excavation window exceeded";return null;}
@@ -146,7 +149,7 @@ internal sealed class NativeNavigationEdits
                 if(!MotionSupport.SafeFlatLanding(pose with{Px=destination},After))continue;
                 Cost=Math.Max(1,item.useTime)+20;
                 placement=(tx,row,slot,item,item.createTile,pose);
-                expectedDrop=false;expectedLanding=pose;Edited=true;
+                expectedDrop=false;expectedLanding=pose;
                 SearchDetail+=$"; bridge support at ({tx},{row})";
                 return new("place_tile",JsonSerializer.SerializeToElement(new{x=tx,y=row,plannedPlacementSlot=slot}));
             }
@@ -157,7 +160,7 @@ internal sealed class NativeNavigationEdits
     private bool PlacementAllowed(int x,int y,Item item)
     {
         if(IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||Main.tile[x,y].HasTile
-            ||TerrainReader.ReadCell(x,y)!='.'||!SafeCutNeighbours(x,y)
+            ||TerrainReader.ReadCell(x,y)!='.'||!SafeCutNeighbours(x,y,allowPlatforms:true)
             ||!ActorPlacement.Supported(item)||!Main.tileSolid[item.createTile]
             ||TileID.Sets.Falling[item.createTile]
             ||Player.noBuilding||Player.CCed||Player.noItems||Player.frozen||Player.stoned
@@ -210,18 +213,18 @@ internal sealed class NativeNavigationEdits
         SceneMineTargets.Watch(first.X,first.Y);
         cutPose=ServerAiNavigation.Observe(p).State;
         openingTile=(first.X,first.Y,nextSlot,p.inventory[nextSlot],SceneMineTargets.NavigationShape(first.X,first.Y),SceneMineTargets.Revision(first.X,first.Y));
-        Edited=true;
         return new("mine_tile",JsonSerializer.SerializeToElement(new{x=first.X,y=first.Y,plannedToolSlot=nextSlot}));
     }
 
-    internal static bool SafeCutNeighbours(int x,int y)
+    internal static bool SafeCutNeighbours(int x,int y,bool allowPlatforms=false)
     {
         for(int tx=x-1;tx<=x+1;tx++)
             for(int ty=y-1;ty<=y+1;ty++)
             {
                 if(TerrainReader.ReadCell(tx,ty) is '?' or '!')return false;
                 var tile=Main.tile[tx,ty];
-                if(tile.HasUnactuatedTile&&(TileID.Sets.Falling[tile.TileType]||Main.tileFrameImportant[tile.TileType]))return false;
+                if(tile.HasUnactuatedTile&&(TileID.Sets.Falling[tile.TileType]
+                    ||Main.tileFrameImportant[tile.TileType]&&!(allowPlatforms&&TileID.Sets.Platforms[tile.TileType])))return false;
             }
         return true;
     }
@@ -252,6 +255,8 @@ internal sealed class NativeNavigationEdits
     public bool OpeningSettled()=>ServerAiNavigation.Observe(Player).Settled;
     public string OpeningLandingError()
     {
+        // Called only after a child returned a verified native effect.
+        if(openingTile!=null||placement!=null)Edited=true;
         var pose=ServerAiNavigation.Observe(Player).State;
         if(expectedLanding is not {} expected||Math.Abs(pose.Px-expected.Px)>2
             ||Math.Abs(Feet(pose)-Feet(expected))>LandingRegion.FeetTolerance)

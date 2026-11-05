@@ -32,6 +32,17 @@ public static class NavigationTripTests
         public bool SafeSweep(PhysicsState a,PhysicsState b,out string reason){reason=null;return true;}
         public bool SafeLanding(PhysicsState s)=>s.Grounded&&!blocks.Any(b=>s.Px+20>b.L&&s.Px<b.R&&s.Py+42>b.T+.01f&&s.Py<b.B);
     }
+    private sealed class ChangingWorld : IMotionWorld
+    {
+        internal readonly MotionOfflineTests.RegionWorld Inner=new();
+        internal long Stamp;
+        internal int Moves;
+        public long TerrainSignature(PhysicsState state,Prediction edge=null)=>Stamp;
+        public PhysicsState Move(PhysicsState state,float vx,float vy,float gravity)
+        {Moves++;return Inner.Move(state,vx,vy,gravity);}
+        public bool SafeSweep(PhysicsState start,PhysicsState end,out string reason)=>Inner.SafeSweep(start,end,out reason);
+        public bool SafeLanding(PhysicsState state)=>Inner.SafeLanding(state);
+    }
     public static void Run()
     {
         foreach(int direction in new[]{1,-1})
@@ -54,6 +65,13 @@ public static class NavigationTripTests
         Check(progress.Reject(start),"repeated checkpoint is quarantined");
         Check(!progress.Reject(start with{Vx=2.5f}),"different checkpoint momentum is not the same repeated state");
         Check(!progress.Detour(start with{Px=1400}),"detour does not enlarge search span");
+        var journey=new NavigationTripProgress();
+        journey.Begin(start,200);
+        for(int n=1;n<=12;n++)
+            Check(journey.Checkpoint(start with{Px=start.Px-n*16},200+n*16,continuous:true),
+                "verified new terrain is journey progress even while temporarily retreating");
+        Check(journey.Detour(start with{Px=start.Px-13*16}),
+            "continuous progress rolls the local detour anchor instead of spending a cumulative detour count");
         var alcove=new Alcove();var nav=new NavigationTask();var actual=new PhysicsState(1620,1558,0,0,true);
         float minX=actual.Px;
         for(int n=0;n<=1800&&!nav.Terminal;n++)
@@ -110,13 +128,17 @@ public static class NavigationTripTests
         Check(approach is {ReachedGoal:true}&&narrow.Arrived(approach.Actions[0].Landing,flat),
             "short flat approach selects a stride that brakes inside the narrow goal");
         nav=new(searchBudgetMilliseconds:0){Continuous=true};
-        for(int n=1;n<=3;n++)
+        for(int n=1;n<=5;n++)
         {
             Check(nav.Before(807,3,region,start,Ph,flat)==default,"empty budget slice emits no input");
-            Check(nav.Terminal==(n==3),"empty search slices defer before giving up");
+            Check(!nav.Terminal,"empty search slices stay inside the root journey");
         }
-        Check(nav.Snapshot.DeferredSearches==2&&nav.Snapshot.Reason=="navigation_search_budget_exhausted",
-            "trip budget exhaustion is distinct from no local route");
+        Check(nav.Snapshot.DeferredSearches==5&&nav.Snapshot.Reason=="local search deferred"
+            &&nav.Snapshot.NoProgressUpdates==0,"search waiting does not count as motion stall");
+        nav.Cancel();
+        var cancelledSearch=nav.Snapshot;
+        nav.Before(807,3,region,start,Ph,flat);
+        Check(nav.Snapshot==cancelledSearch,"cancellation retires the suspended search without resuming its frontier");
         nav=new(enableSafeGroundWalk:true,searchBudgetMilliseconds:0){Continuous=true};
         flat.Collision.WallX=start.Px+20;
         Check(nav.Before(808,3,region,start,Ph,flat)==default&&!nav.Terminal,"budget miss keeps trip running");
@@ -140,6 +162,60 @@ public static class NavigationTripTests
         }
         Check(displaced&&nav.Snapshot.RecoveryReplans==1&&nav.Snapshot.Status=="arrived"
             &&recoveryGoal.Arrived(actual,flat),"continuous goal recovers from actual displacement and arrives");
+        var changing=new ChangingWorld();
+        var upper=new LandingRegion(1664,1744,1552);
+        using(var search=new StateSpacePlanner.Search(start,1664,upper,Ph,changing))
+        {
+            var firstSlice=search.Advance(maxExpansions:1,budgetMs:1000);
+            Check(!search.Finished&&firstSlice.SearchExit=="expansion_budget"&&search.TotalExpansions==1,
+                "local expansion budget yields a resumable frontier");
+            search.Advance(maxExpansions:1,budgetMs:1000);
+            Check(search.TotalExpansions>=2,"continuation expands the next physical state");
+        }
+        var learning=new NavigationSearchMemory();
+        changing.Inner.Collision.WallX=start.Px+20;
+        learning.Scope(changing.Stamp,Ph,0);
+        var rejected=learning.Predict(start,1,0,24,Ph,changing);
+        int moves=changing.Moves;
+        learning.Predict(start,1,0,24,Ph,changing);
+        Check(!rejected.Safe&&changing.Moves==moves&&learning.CacheHits==1,
+            "exact rejected search candidate is learned without executing it");
+        learning.Predict(start with{Vx=.2f},1,0,24,Ph,changing);
+        learning.Predict(start with{ReleaseJump=false},1,0,24,Ph,changing);
+        Check(learning.Count==3,"velocity and jump state remain distinct search keys");
+        changing.Inner.Collision.WallX=float.PositiveInfinity;changing.Stamp++;
+        learning.Scope(changing.Stamp,Ph,1);
+        var viable=learning.Predict(start,1,0,24,Ph,changing);
+        Check(viable.Safe&&learning.Count==0,"terrain change invalidates learned rejection");
+        var memory=new NavigationFailureMemory();
+        memory.Remember(start,viable,0,changing,Ph,"fixture_collision",start with{Px=1580});
+        Check(memory.Reject(start,viable,1,changing,Ph)&&memory.Records[0].Reason=="fixture_collision"
+            &&memory.Records[0].ActualLanding.Px==1580,"execution memory keeps movement and observed failure evidence");
+        Check(!memory.Reject(start with{Vx=.2f},viable,1,changing,Ph),"failed edge cannot collapse distinct momentum");
+        changing.Stamp++;
+        Check(!memory.Reject(start,viable,2,changing,Ph)&&memory.Count==0,
+            "changed terrain permits reevaluating an actually failed edge");
+        memory.Remember(start,viable,2,changing,Ph,"fixture",start);
+        Check(!memory.Reject(start,viable,3,changing,PhysicsParameters.Swiftness)&&memory.Count==0,
+            "changed motion capability invalidates the old failed edge");
+        var knowledge=new NavigationKnowledge();
+        var actor=new object();
+        knowledge.Bind(actor,"world",3,254);
+        knowledge.Failures.Remember(start,viable,0);
+        knowledge.Bind(actor,"other-world",3,254);
+        Check(knowledge.Failures.Count==0,"world session change clears root journey memory");
+        knowledge.Failures.Remember(start,viable,0);
+        knowledge.Bind(actor,"other-world",4,254);
+        Check(knowledge.Failures.Count==0,"actor generation change clears root journey memory");
+        for(int n=0;n<NavigationFailureMemory.Capacity+8;n++)memory.Remember(start,viable,n);
+        Check(memory.Count==NavigationFailureMemory.Capacity,"execution memory has bounded capacity");
+        var watchdog=new NavigationProgressWatchdog();
+        for(int n=0;n<500;n++)watchdog.Observe(NavigationActivity.Search);
+        Check(!watchdog.Stalled&&watchdog.SearchUpdates==500,"normal search waiting cannot trip motion watchdog");
+        for(int n=0;n<NavigationProgressWatchdog.ActiveUpdateLimit;n++)watchdog.Observe(NavigationActivity.Movement);
+        Check(watchdog.Stalled,"active movement without verified progress is bounded");
+        watchdog.Observe(NavigationActivity.VerifiedEffect);
+        Check(!watchdog.Stalled&&watchdog.VerifiedEffects==1,"verified terrain work is meaningful progress");
         Console.WriteLine($"M4.3 trip: {checks} checks; collision fixtures, not native execution.");
     }
 }

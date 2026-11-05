@@ -56,15 +56,19 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     public bool Matches(Player p) => Current!=null && ReferenceEquals(Current.Identity.Actor,p);
     internal Run Start(AiReadOnlyProtocol.Identity identity,float target,string actionId=null)
         =>Start(identity,target,null,actionId);
-    internal Run Start(AiReadOnlyProtocol.Identity identity,LandingRegion region,string actionId=null,bool continuous=false,bool preferFlatRegion=false)
-        =>Start(identity,region.MinPlayerLeftX,region,actionId,continuous,preferFlatRegion);
-    private Run Start(AiReadOnlyProtocol.Identity identity,float target,LandingRegion region,string actionId,bool continuous=false,bool preferFlatRegion=false)
+    internal Run Start(AiReadOnlyProtocol.Identity identity,LandingRegion region,string actionId=null,bool continuous=false,bool preferFlatRegion=false,
+        NavigationKnowledge knowledge=null)
+        =>Start(identity,region.MinPlayerLeftX,region,actionId,continuous,preferFlatRegion,knowledge);
+    private Run Start(AiReadOnlyProtocol.Identity identity,float target,LandingRegion region,string actionId,bool continuous=false,bool preferFlatRegion=false,
+        NavigationKnowledge knowledge=null)
     {
         var p=(Player)identity.Actor;
         ServerAiNativeActions.Require(identity);
         ActorControl.Healthy(p);
         if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Actor busy.");
         navigation.Cancel();
+        knowledge?.Bind(identity.Actor,identity.World,identity.Generation,identity.Slot);
+        navigation.Task.SetKnowledge(knowledge);
         navigation.Task.Continuous=continuous;
         navigation.Task.PreferFlatRegion=preferFlatRegion;
         Current=new Run{Identity=identity,ActionId=actionId,Target=target,Region=region,StartX=p.position.X,Session=checked(++session),Generation=checked((int)identity.Generation)};
@@ -74,6 +78,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     {
         if(!executing||!Matches(p)||!NativeSurvival.Owns(p))throw new InvalidOperationException("No owned navigation update scope.");
         ServerAiNativeActions.Require(Current.Identity);
+        navigation.Task.ObservationUpdate=checked((long)Main.GameUpdateCount);
         var input=navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,Current.Region==null?Current.Target:null,Current.Region);
         p.controlLeft=input.Direction<0;p.controlRight=input.Direction>0;p.controlJump=input.Jump;
         p.controlDown=p.controlUp=p.controlUseItem=p.controlUseTile=false;
@@ -132,11 +137,6 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 if(!injected)throw new InvalidOperationException("Audited G4 movement boundary not reached.");
                 navigation.After(p);run.Snapshot=navigation.Snapshot;
                 if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown","native_navigation_landing_unconfirmed");}
-                else if(run.Snapshot.Reason=="navigation_search_budget_exhausted")
-                {
-                    run.ReasonDetail=run.Snapshot.SearchFailureReason;
-                    Stop("timeout",run.Snapshot.Reason);
-                }
                 else if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.SearchFailureReason is {} detail && (run.Snapshot.Reason is "navigation_search_timeout" or "navigation_search_expansion_budget")?detail:run.Snapshot.Reason;Stop("failed",AiActionReasons.Navigation(run.Snapshot.Reason));}
                 else if(run.Snapshot.Status=="arrived")
                 {

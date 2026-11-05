@@ -46,11 +46,11 @@ return {status='no_returned_target'}
 
 ## 有界开路
 
-- 任务优先在当前位置挖掘，再尝试现有地形上的安全接近。找不到站位，或导航已确认无路线/无进展且输入已释放时，才进入开路。预算、预测分歧、取消或 unknown 等其他导航终态直接返回。
-- 开路在起点左右各 12 格、向下 8 格内规划，最多移除 18 个阻挡格、发起 8 次开路导航。根任务期限为 2700 游戏更新及 55 秒墙钟。
+- 任务优先在当前位置挖掘，再尝试现有地形上的安全接近。单次搜索预算耗尽时留在游戏侧接续搜索；找不到站位，或导航已确认局部无路线/无进展且输入已释放时进入开路。取消或 unknown 停止后续动作。
+- 开路从当前已确认的真实站位，以左右各 12 格、向下 8 格的局部窗口审核，每次局部开路方案最多包含 18 格。累计挖掘、放置和移动次数不截断行程。根任务期限为 2700 游戏更新及 55 秒墙钟。
 - 横向开路以目标方向一格为单位，先核验拟开空间的身体净空和支撑，再逐格清除阻挡。向下仅开挖有干燥净空和已知平坦支撑的一格落差。优先清除较小的脚底重叠，保留中间站位的支撑。子动作完成后等待实际落脚再规划，最长等待 90 更新。
 - 阻挡格使用原生工具、交互范围和破坏核验。保护块、未知碰撞、液体、伤害地形、相邻家具或落沙风险以及无安全落脚都会拒绝。指定目标和已识别的家具组成格只由最终目标子动作处理。
-- `task.progress` 的 `clearedTiles`、`openingMoves`、`opening.drops` 和 `search` 记录部分进度及实际下落。失败的 `reasonDetail` 包含阶段、预算和搜索拒绝原因。取消或失败前已核验的地形变化会保留。
+- `task.progress` 的 `clearedTiles`、`dugTiles`、`placedTiles`、`openingMoves`、`opening.drops` 和 `search` 记录累计进度及实际下落。子动作详细历史保留最近 16 项，用 `childrenTruncated`、`omittedChildren` 标明覆盖；累计计数及最终效果独立保留。失败的 `reasonDetail` 包含阶段、预算和搜索拒绝原因。取消或失败前已核验的地形变化会保留。
 
 ## 当前范围与限制
 
@@ -59,4 +59,4 @@ return {status='no_returned_target'}
 - 任务运行时不提供通用并行、抢占、持久化或进程重启恢复。
 - 隔离原生验证不等于图形 Host & Play、远端客户端同步或真实 LLM 长期任务验收。
 
-实现入口：`CompanionBridge/ServerIpc/TaskRuntime.cs`、`MineTargetTask.cs`、`NativeMineTargetWorld.cs`、`NativeMiningOpening.cs`、`ServerAiNativeActions.cs`，以及 Python 侧 `server_ai.py`、`program_tasks.py`。
+实现入口：`CompanionBridge/ServerIpc/TaskRuntime.cs`、`AutonomousNavigationTask.cs`、`MineTargetTask.cs`、`NativeMineTargetWorld.cs`、`NativeNavigationEdits.cs`、`ServerAiNativeActions.cs`，以及 Python 侧 `server_ai.py`、`program_tasks.py`。

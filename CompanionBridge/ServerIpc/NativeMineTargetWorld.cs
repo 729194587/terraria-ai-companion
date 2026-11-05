@@ -10,6 +10,7 @@ namespace CompanionBridge.ServerIpc;
 
 internal sealed class NativeMineTargetWorld : IMineTargetWorld
 {
+    public string ProgressKey=>NativeNavigationWorld.CheckpointKey(Player);
     private readonly AiReadOnlyProtocol.Identity identity;
     private readonly JsonElement args;
     private Player Player=>(Player)identity.Actor;
@@ -38,7 +39,7 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
         var failure=ActorMining.ChooseTool(Player,identity.World,identity.Generation,x,y,false,out slot);
         if(failure!=ActorMining.Failure.None)return AiActionReasons.Mining("failed",failure.ToString());
         furniture=ActorMining.FurnitureAt(x,y);
-        item=Player.inventory[slot];toolType=item.type;toolPrefix=item.prefix;toolPower=item.pick;toolAxe=item.axe;toolBoost=item.tileBoost;shape=SceneMineTargets.NavigationShape(x,y);edits=new(identity,ServerAiNavigation.Observe(Player).State,IsTargetCell);SceneMineTargets.Watch(x,y);revision=SceneMineTargets.Revision(x,y);
+        item=Player.inventory[slot];toolType=item.type;toolPrefix=item.prefix;toolPower=item.pick;toolAxe=item.axe;toolBoost=item.tileBoost;shape=SceneMineTargets.NavigationShape(x,y);edits=new(identity,ServerAiNavigation.Observe(Player).State,IsTargetCell,rolling:true);SceneMineTargets.Watch(x,y);revision=SceneMineTargets.Revision(x,y);
         return null;
     }
     public string Revalidate()
