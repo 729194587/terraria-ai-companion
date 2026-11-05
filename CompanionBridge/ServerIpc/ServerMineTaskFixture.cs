@@ -142,6 +142,20 @@ internal static class ServerMineTaskFixture
                 ore.ClearTile();
                 destinationX=(left+5)*16+8;
                 destinationY=floor*16;
+                if(kind is "navigation_single" or "navigation_single_platform" or "navigation_half" or "navigation_slope")
+                {
+                    for(int tx=left-2;tx<=left+5;tx++)Main.tile[tx,floor].ClearTile();
+                    var support=Main.tile[left+1,floor];
+                    support.HasTile=true;
+                    support.TileType=kind=="navigation_single_platform"?TileID.Platforms:TileID.Stone;
+                    support.IsHalfBlock=kind=="navigation_half";
+                    if(kind=="navigation_slope")support.Slope=SlopeType.SlopeDownRight;
+                    int feetOffset=kind=="navigation_half"?8:kind=="navigation_slope"?6:0;
+                    int playerX=kind=="navigation_slope"?(left+1)*16+6:(left+2)*16-2;
+                    destinationX=playerX+10;
+                    destinationY=floor*16+feetOffset;
+                    p.position=new(playerX,destinationY.Value-p.height-4);
+                }
                 if(kind=="navigation_trip")
                 {
                     destinationX=(left+20)*16+8;

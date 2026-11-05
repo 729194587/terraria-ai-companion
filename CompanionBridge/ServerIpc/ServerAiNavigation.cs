@@ -1,6 +1,5 @@
 using System;
 using Terraria;
-using CompanionBridge.Common.Systems;
 using CompanionBridge.Motion;
 using VirtualPlayerEngineProbe;
 
@@ -12,7 +11,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     internal sealed record LandingObservation(PhysicsState State,bool SafeSupport,bool Settled);
     internal static LandingObservation Observe(Player p)
     {
-        var s=new PhysicsState(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,TerrainReader.Read(p).Grounded,p.jump,p.releaseJump);
+        var s=NativeMotionWorld.Observe(p);
         bool safe=new NativeMotionWorld(s).SafeLanding(s);
         return new(s,safe,s.Grounded&&safe&&Math.Abs(s.Vy)<=0.1f&&Math.Abs(s.Vx)<=0.1f&&s.ReleaseJump&&s.JumpFramesLeft==0);
     }
@@ -141,15 +140,14 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 else if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.SearchFailureReason is {} detail && (run.Snapshot.Reason is "navigation_search_timeout" or "navigation_search_expansion_budget")?detail:run.Snapshot.Reason;Stop("failed",AiActionReasons.Navigation(run.Snapshot.Reason));}
                 else if(run.Snapshot.Status=="arrived")
                 {
-                    var terrain=TerrainReader.Read(p);
                     var observed=Observe(p);
                     bool arrived=run.Region!=null
                         ? run.Region.Arrived(observed.State,new NativeMotionWorld(observed.State))
-                        : terrain.Grounded&&Math.Abs(p.velocity.X)<=0.1f&&Math.Abs(p.velocity.Y)<=0.1f
+                        : observed.Settled
                         &&(run.Target>=run.StartX?1:-1)*(run.Target-p.position.X)<=12;
                     Stop(arrived?"completed":"unknown",arrived?"native_navigation_arrival_verified":"arrival_not_settled");
                 }
-                else if(run.Updates>=1800)Stop("timeout","navigation_frame_budget");
+                else if(!navigation.Task.Continuous&&run.Updates>=1800)Stop("timeout","navigation_frame_budget");
                 if(Running)NetworkStateSync.Tick(p);else NetworkStateSync.Full(p);
             }
             catch(Exception e){run.ReasonDetail=e.Message;Stop("failed","native_navigation_exception");}

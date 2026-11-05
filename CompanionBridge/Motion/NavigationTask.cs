@@ -126,9 +126,7 @@ internal sealed class NavigationTask
             if (landingRejection != null)
                 return Fail($"replan requires safe foot support and body clearance: {landingRejection}; "
                     + $"position=({state.Px},{state.Py}), velocity=({state.Vx},{state.Vy})");
-            if (region != null ? region.Arrived(state, world)
-                : _direction * (targetX - state.Px) <= 12 && Math.Abs(state.Vx) <= 0.1f
-                    && Math.Abs(state.Vy) <= 0.1f && state.ReleaseJump && state.JumpFramesLeft == 0)
+            if ((region?.Contains(state)??(_direction * (targetX - state.Px) <= 12))&&PhysicsSimulator.Settled(state,world))
             { Snapshot = Snapshot with { Status = "arrived", Reason = region != null
                 ? "landing region verified on safe settled ground" : "horizontal goal crossed on safe settled ground" }; return default; }
             if (!state.ReleaseJump || state.JumpFramesLeft != 0) return default;
@@ -266,7 +264,7 @@ internal sealed class NavigationTask
             ObservedGrounded=state.Grounded,SafeSupport=support,LandingConfirmationFrames=_confirmationFrames};
         if(!world.SafeSweep(state,state,out string danger))
         {Unconfirmed("landing observation unsafe: "+danger);return;}
-        bool settled=PhysicsSimulator.SupportedCheckpoint(state,world)&&Math.Abs(state.Vx)<=0.1f;
+        bool settled=PhysicsSimulator.Settled(state,world);
         _settledFrames=settled?_settledFrames+1:0;
         if(_settledFrames>=2)
         {
@@ -364,7 +362,7 @@ internal sealed class NavigationTask
             RecoveryInputsReleased=inputsReleased,LandingConfirmationFrames=_recoveryFrames};
         if (!inputsReleased) { Unconfirmed("recovery_input_release_unconfirmed"); return; }
         if (!world.SafeSweep(state,state,out string danger)) { Unconfirmed("recovery observation unsafe: "+danger); return; }
-        bool settled=PhysicsSimulator.SupportedCheckpoint(state,world) && Math.Abs(state.Vx)<=.1f;
+        bool settled=PhysicsSimulator.Settled(state,world);
         _recoverySettled=settled?_recoverySettled+1:0;
         if (_recoverySettled>=2)
         {

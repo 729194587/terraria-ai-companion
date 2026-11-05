@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
-using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Motion;
 
@@ -31,8 +30,7 @@ internal sealed class NativeNavigation
         Diagnostics=new(diagnosticWriter??(line=>ModContent.GetInstance<CompanionBridge>().Logger.Info(line)));
     }
 
-    private PhysicsState State(Player p) => new(p.position.X, p.position.Y,
-        p.velocity.X, p.velocity.Y, TerrainReader.Read(p).Grounded, p.jump, p.releaseJump);
+    private PhysicsState State(Player p) => NativeMotionWorld.Observe(p);
 
     internal bool Ordinary(Player p) => OrdinaryRejection(p) == null;
 

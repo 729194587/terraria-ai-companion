@@ -18,7 +18,7 @@ public static class MiningSupportImpactTests
         var narrow=MiningSupportImpact.Read(pose,1,10,Read);
         Width(narrow.Current.SupportPixels,20,"current full support");Width(narrow.AfterRemoval.SupportPixels,4,"single removal leaves 4px");
         Check(narrow.Available&&narrow.AffectsCurrentStance==true&&narrow.SupportDeltaPixels==-16,"narrow support impact explicit");
-        Check(narrow.AfterRemoval.Rejection.Contains("4.000px < 8px"),"same navigation rejection");
+        Check(narrow.AfterRemoval.Rejection==null,"positive residual contact is represented");
         Check(world[(1,10)]=='#',"counterfactual did not mutate terrain");
         world[(3,9)]='#';var side=MiningSupportImpact.Read(pose,3,9,Read);
         Check(side.Available&&side.AffectsCurrentStance==false&&side.SupportDeltaPixels==0,"ordinary side mining unchanged");

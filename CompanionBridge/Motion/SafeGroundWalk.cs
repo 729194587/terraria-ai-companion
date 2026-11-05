@@ -12,8 +12,7 @@ internal static class SafeGroundWalk
         var watch=Stopwatch.StartNew();
         if(region!=null&&Math.Abs(start.Py+PhysicsSimulator.PlayerH-region.SurfaceY)>LandingRegion.FeetTolerance)return null;
         if(!ph.IsSupportedGroundPhysics||direction is not (-1 or 1)||!float.IsFinite(targetX)
-            ||(region?.Contains(start)??(direction*(targetX-start.Px)<=12))||!PhysicsSimulator.SupportedCheckpoint(start,world)
-            ||!world.SafeFlatLanding(start))return null;
+            ||(region?.Contains(start)??(direction*(targetX-start.Px)<=12))||!PhysicsSimulator.SupportedCheckpoint(start,world))return null;
         var strides=region!=null&&region.Distance(start)<=48
             ?Enumerable.Range(1,24).Reverse():new[]{24,6}.AsEnumerable();
         foreach(int stride in strides)
@@ -25,7 +24,7 @@ internal static class SafeGroundWalk
             bool flat=true;
             foreach(var frame in edge.Frames)
                 if(Math.Abs(frame.State.Py-start.Py)>0.01f
-                    ||!PhysicsSimulator.SupportedCheckpoint(frame.State,world)||!world.SafeFlatLanding(frame.State))
+                    ||!PhysicsSimulator.SupportedCheckpoint(frame.State,world))
                 {flat=false;break;}
             if(!flat||direction*(edge.Landing.Px-targetX)>12)continue;
             bool settle=region?.Arrived(edge.Landing,world)??(direction*(targetX-edge.Landing.Px)<=12);

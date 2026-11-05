@@ -56,7 +56,7 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
 
     private bool SafePose(PhysicsState pose,NativeMotionWorld world,bool arrival)
     {
-        if(!(arrival?world.SafeFlatLanding(pose):world.SafeLanding(pose)))return false;
+        if(!world.SafeLanding(pose))return false;
         // Native framing can remove the other parts with the targeted segment.
         bool safe=MotionSupport.SafeLanding(pose,(tx,ty)=>
         {
