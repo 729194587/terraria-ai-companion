@@ -40,6 +40,7 @@ internal sealed class SurfaceGraph
     private readonly Dictionary<(int X,int Y),SurfaceCell> cells=new();
     private readonly Dictionary<(int X,int Y),List<SurfaceNode>> surfaces=new();
     private int nextId;
+    private (int X,int Y)? incompleteTile;
     internal SurfaceEdge LastVerifiedEdge {get;private set;}
     private IMotionWorld verifiedWorld;
     private Prediction verifiedFootprint;
@@ -47,7 +48,7 @@ internal sealed class SurfaceGraph
     internal int RetainedNodes {get;private set;}
     internal bool Truncated {get;private set;}
     internal IEnumerable<SurfaceNode> Nodes=>surfaces.Values.SelectMany(x=>x);
-    internal void Clear(){cells.Clear();surfaces.Clear();nextId=0;LastVerifiedEdge=null;verifiedWorld=null;verifiedFootprint=null;}
+    internal void Clear(){cells.Clear();surfaces.Clear();nextId=0;incompleteTile=null;Truncated=false;LastVerifiedEdge=null;verifiedWorld=null;verifiedFootprint=null;}
     internal void RecordVerified(SurfaceEdge edge,PhysicsState start,Route route,PhysicsParameters ph,IMotionWorld world)
     {
         // Cover the complete simulated trajectory, including every braking tail,
@@ -78,6 +79,9 @@ internal sealed class SurfaceGraph
         int l=cx-radius,r=cx+radius,t=cy-height,b=cy+height;
         var dirty=new HashSet<(int X,int Y)>();
         ChangedTiles=0;RetainedNodes=0;Truncated=false;
+        // A later, explicitly requested refresh must not mistake the last
+        // partially sampled tile for complete cached coverage.
+        if(incompleteTile is {} unfinished){surfaces.Remove(unfinished);incompleteTile=null;}
         if(LastVerifiedEdge?.Verification=="verified"&&verifiedWorld.TerrainSignature(LastVerifiedEdge.VerifiedStart.Value,verifiedFootprint)!=LastVerifiedEdge.Signature)
             LastVerifiedEdge=LastVerifiedEdge with{Verification="stale"};
         // The extra rim covers body clearance and native step/collision probes.
@@ -133,14 +137,18 @@ internal sealed class SurfaceGraph
                     lo??=px;hi=px;feet=fy;
                 }
                 else Flush();
+                if(Truncated){surfaces[(x,y)]=found;incompleteTile=(x,y);yield break;}
                 yield return 0;
             }
             Flush();surfaces[(x,y)]=found;
+            if(Truncated){incompleteTile=(x,y);yield break;}
             count+=found.Count;
-            if(count>MaximumNodes){Truncated=true;yield break;}
             void Flush()
             {
                 if(!lo.HasValue)return;
+                // This is a total graph resource limit, not a resumable frame
+                // slice. Keep the cache bounded even inside one dense tile.
+                if(count+found.Count>=MaximumNodes){Truncated=true;lo=null;return;}
                 found.Add(new(++nextId,x,y,new(lo.Value,hi,feet),x*16,x*16+16,kind,
                     Stamp(x-3,y-5,x+3,y+2),true,true));
                 lo=null;
@@ -205,12 +213,23 @@ internal sealed class SurfaceGraph
         SurfaceMotion kind=dy>16?SurfaceMotion.Drop:Math.Abs(dy)<=16?SurfaceMotion.Walk:SurfaceMotion.Jump;
         if(kind==SurfaceMotion.Walk)
         {
-            // Cheap structure check, NOT movement validation. A gap is a jump;
-            // blocked corridors stay optimistic jumps for the physical planner.
+            // Candidate support can change height as native StepUp/StepDown
+            // moves the body. Testing every X at a.Rest's fixed Y incorrectly
+            // turns half/full-brick steps into mandatory jumps under low roofs.
+            // This envelope only preserves walking candidates; it does not prove
+            // clearance through the transition or implement native step physics.
             for(float px=Math.Min(a.X,b.X);px<=Math.Max(a.X,b.X);px+=8)
             {
-                var p=a.Rest(px);
-                if(!MotionSupport.SafeLanding(p,Shape)){kind=SurfaceMotion.Jump;break;}
+                float minFeet=Math.Min(a.Region.SurfaceY,b.Region.SurfaceY)-16;
+                float maxFeet=Math.Max(a.Region.SurfaceY,b.Region.SurfaceY)+16;
+                bool supported=false;
+                for(int x=(int)Math.Floor(px/16);x<Math.Ceiling((px+20)/16)&&!supported;x++)
+                    for(int y=(int)Math.Floor(minFeet/16);y<=Math.Floor(maxFeet/16)&&!supported;y++)
+                    {
+                        float feet=y*16+TerrainClassifier.SurfaceOffset(Shape(x,y),Math.Max(0,px-x*16),Math.Min(16,px+20-x*16));
+                        supported=feet>=minFeet&&feet<=maxFeet&&MotionSupport.SafeLanding(new(px,feet-42,0,0,true),Shape);
+                    }
+                if(!supported){kind=SurfaceMotion.Jump;break;}
             }
         }
         int l=(int)Math.Floor(Math.Min(a.X,b.X)/16)-3,r=(int)Math.Ceiling((Math.Max(a.X,b.X)+20)/16)+3;
@@ -276,6 +295,15 @@ internal sealed class SurfaceNavigator : IDisposable
                     reads+=refresh.Current;
                     if(YieldWork())yield return Waiting();
                 }
+            if(graph.Truncated)
+            {
+                // Searching an incomplete graph cannot discharge this resource
+                // limit. End this search once, without conflating it with a
+                // time slice or expanding/rebuilding the same dense coverage.
+                exit="surface_node_budget";Finished=true;
+                yield return new(new(),0,timer.Elapsed.TotalMilliseconds,FailureReason:exit,Kind:"surface_graph",SearchExit:exit);
+                yield break;
+            }
             var selected=graph.Nodes.Where(n=>Math.Abs(n.TileX-cx)<=radius&&Math.Abs(n.TileY-cy)<=Math.Min(64,Math.Max(16,radius/2))
                 &&graph.KeySample(n,start,goal)).ToList();
             if(Math.Abs((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/32-cx)<=radius
@@ -393,8 +421,8 @@ internal sealed class SurfaceNavigator : IDisposable
         for(int x=cx-radius;x<=cx+radius&&!unknown;x++)
             for(int y=cy-Math.Min(64,radius/2);y<=cy+Math.Min(64,radius/2);y++)
             {if(graph.Shape(x,y)=='?')unknown=true;if(YieldWork())yield return Waiting();}
-        exit=graph.Truncated?"surface_node_budget":localBudget?"surface_local_budget":unknown?"unknown_terrain":"no_route_in_coverage";Finished=true;
-        yield return new(new(),0,timer.Elapsed.TotalMilliseconds,FailureReason:exit,TimeBudgetReached:graph.Truncated||localBudget,Kind:"surface_graph",SearchExit:exit);
+        exit=localBudget?"surface_local_budget":unknown?"unknown_terrain":"no_route_in_coverage";Finished=true;
+        yield return new(new(),0,timer.Elapsed.TotalMilliseconds,FailureReason:exit,TimeBudgetReached:localBudget,Kind:"surface_graph",SearchExit:exit);
     }
 
     // Locate usable take-off space inside a stance interval. A low roof can

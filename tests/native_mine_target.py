@@ -52,6 +52,7 @@ async def verify(args):
         for case, edit in (
             ('navigation_flat', None), ('navigation_jump', None), ('navigation_drop', None), ('navigation_trip', None),
             ('navigation_surface_wide', None), ('navigation_surface_detour', None),
+            ('navigation_step_half_roof', None), ('navigation_step_up_roof', None), ('navigation_step_down_roof', None),
             ('navigation_single', None), ('navigation_single_platform', None),
             ('navigation_half', None), ('navigation_slope', None),
             ('navigation_dig', 'mine_tile'), ('navigation_down', 'mine_tile'),
@@ -59,6 +60,12 @@ async def verify(args):
             ('navigation_long_dig', 'mine_tile'), ('navigation_long_place', 'place_tile'),
         ):
             spec = await fixture(case)
+            if case.startswith('navigation_step_'):
+                proof=spec['stepEvidence']
+                assert proof['candidate']=='Walk' and proof['walkSafe'] and proof['walkArrived'] and not proof['walkJump'],proof
+                assert 0 < proof['jumpRise'] <= 16,proof
+                assert proof['feetChange']==(16 if case=='navigation_step_down_roof' else -8 if case=='navigation_step_half_roof' else -16),proof
+                (profile/f'{case}-proof.json').write_text(json.dumps(proof,indent=2),encoding='utf-8')
             if case in ('navigation_single', 'navigation_single_platform', 'navigation_half', 'navigation_slope'):
                 await asyncio.sleep(.25)  # Let native Player.Update land from above the support.
                 if case == 'navigation_slope':

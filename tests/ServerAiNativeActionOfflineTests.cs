@@ -92,6 +92,8 @@ public static class ServerAiNativeActionOfflineTests
         foreach(string reason in new[]{"navigation_trip_update_budget","navigation_trip_search_budget","navigation_trip_repeated_state","navigation_stalled","navigation_action_limit","navigation_search_timeout","navigation_search_expansion_budget"})
             Check(AiActionReasons.Navigation(reason)==reason,"navigation diagnostic survives protocol reason mapping: "+reason);
         Check(AiActionReasons.Navigation("no safe local route: blocked")=="native_navigation_failed","ordinary no-route mapping remains compatible");
+        Check(AiActionReasons.Navigation("navigation_surface_node_budget")=="navigation_surface_node_budget","graph node resource reason survives protocol mapping");
+        Check(AiActionReasons.NavigationRecoveryKind("navigation_surface_node_budget")==null,"graph node resource failure cannot trigger root excavation fallback");
         Check(AiActionReasons.Mining("completed","None")=="native_tile_destroyed","mining success translates outcome rather than failure enum");
         foreach(var pair in new[]{("InvalidTarget","invalid_target"),("InvalidTool","invalid_tool"),("TargetChanged","target_changed"),
             ("NativeRefused","native_use_refused"),("NoPickPower","insufficient_pick_power"),("TargetProtected","target_protected"),("NativeException","native_mining_exception"),

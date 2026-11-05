@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using Terraria;
 using Terraria.ID;
+using CompanionBridge.Motion;
 using VirtualPlayerEngineProbe;
 
 namespace CompanionBridge.ServerIpc;
@@ -51,6 +52,7 @@ internal static class ServerMineTaskFixture
         if(ActorControl.Running||ActorMining.Running||ActorItemUse.Running)throw new InvalidOperationException("Cannot reseed running native action");
         int left=Main.spawnTileX,floor=Main.spawnTileY+8,x=left+10,y=floor-2;
         int? destinationX=null,destinationY=null;
+        object stepEvidence=null;
         if(kind is "change" or "replace_same")
         {
             if(kind=="change")Main.tile[x,y].TileType=TileID.Stone;
@@ -166,6 +168,33 @@ internal static class ServerMineTaskFixture
                 }
                 if(kind=="navigation_surface_wide")
                     destinationX=(left+60)*16+8;
+                if(kind is "navigation_step_half_roof" or "navigation_step_up_roof" or "navigation_step_down_roof")
+                {
+                    bool half=kind=="navigation_step_half_roof",down=kind=="navigation_step_down_roof";
+                    for(int tx=left-4;tx<=left+14;tx++)
+                    {
+                        var roof=Main.tile[tx,floor-5];roof.HasTile=true;roof.TileType=TileID.Stone;
+                        if(down?tx<left+3:tx>=left+3)
+                        {var step=Main.tile[tx,floor-1];step.HasTile=true;step.TileType=TileID.Stone;step.IsHalfBlock=half;}
+                    }
+                    if(down)p.position.Y-=16;
+                    destinationY=floor*16-(down?0:half?8:16);
+                    var start=NativeMotionWorld.Observe(p);var physics=NativeNavigation.Parameters(p);
+                    var goal=LandingRegion.AtDestination(destinationX.Value,destinationY.Value);
+                    var graph=new SurfaceGraph();var source=new NativeMotionWorld(start);
+                    foreach(int _ in graph.Refresh(source,left,floor,8,physics)){}
+                    var from=new SurfaceNode(-1,left,floor,new(start.Px,start.Px,start.Py+42),start.Px,start.Px+20,SurfaceKind.Solid,0,true,true);
+                    var to=new SurfaceNode(-2,left+5,floor,goal,(left+5)*16,(left+6)*16,half?SurfaceKind.Half:SurfaceKind.Solid,0,true,true);
+                    var edge=graph.Candidate(from,to,physics);
+                    var walk=PhysicsSimulator.Predict(start,1,0,physics,source,walkFrames:40,maxDropPixels:StateSpacePlanner.MaxDropPixels);
+                    var probe=down?start:to.Rest((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2);
+                    var jumpWorld=new NativeMotionWorld(probe);var jumped=probe;float rise=0;
+                    for(int frame=0;frame<12;frame++)
+                    {jumped=PhysicsSimulator.Step(jumped,new(0,true),physics,jumpWorld);rise=Math.Max(rise,probe.Py-jumped.Py);}
+                    stepEvidence=new{candidate=edge?.Motion.ToString(),walkSafe=walk.Safe,walkArrived=goal.Arrived(walk.Landing,source),
+                        walkJump=walk.Jump,walkReason=walk.Reason,jumpRise=rise,feetChange=walk.Landing.Py-start.Py};
+                    p.inventory[1]=new Item();
+                }
                 if(kind=="navigation_surface_detour")
                 {
                     destinationX=(left+14)*16+8;
@@ -215,6 +244,6 @@ internal static class ServerMineTaskFixture
             }
         }
         NetworkStateSync.Full(p);
-        File.WriteAllText(Path.Combine(Main.SavePath,"mine-task-ready.json"),JsonSerializer.Serialize(new{caseId=kind,x,y,destinationX,destinationY,typeId=(int)Main.tile[x,y].TileType,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,gameUpdate=Main.GameUpdateCount}));
+        File.WriteAllText(Path.Combine(Main.SavePath,"mine-task-ready.json"),JsonSerializer.Serialize(new{caseId=kind,x,y,destinationX,destinationY,stepEvidence,typeId=(int)Main.tile[x,y].TileType,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,gameUpdate=Main.GameUpdateCount}));
     }
 }
