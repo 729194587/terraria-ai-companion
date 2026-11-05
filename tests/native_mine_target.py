@@ -42,6 +42,36 @@ async def verify(args):
             assert r['status'] == expected.get(case, 'completed'), (case, r)
         assert r['actions'] == 1, r
         return r['value'] if r['status'] == 'completed' else r['lastAction']
+    async def verify_navigation():
+        for case, edit in (
+            ('navigation_flat', None), ('navigation_jump', None), ('navigation_drop', None),
+            ('navigation_dig', 'mine_tile'), ('navigation_down', 'mine_tile'),
+            ('navigation_place', 'place_tile'),
+        ):
+            spec = await fixture(case)
+            source = f"return api('navigate_to',{{x={spec['destinationX']},y={spec['destinationY']}}})"
+            result = await run(case, source)
+            task = result['task']
+            children = task['progress']['children']
+            assert result['valid'] and result['completed'] and result['endEvidence']['inputsReleased'], result
+            assert task['currentChild'] is None and all(c['parentTaskId'] == task['taskId'] for c in children), task
+            ticks = [c['observedGameUpdate'] for c in children]
+            assert ticks == sorted(set(ticks)), task
+            names = [c['taskName'] for c in children]
+            edits = [name for name in names if name != 'navigate_to_landing_region']
+            assert (not edits if edit is None else edit in edits), task
+            if case == 'navigation_jump':
+                assert any(c['result']['evidence']['navigation']['CompletedJumps'] > 0 for c in children), task
+            if case == 'navigation_down':
+                assert task['progress']['opening']['drops'], task
+            if case == 'navigation_place':
+                proof = next(c['result']['evidence'] for c in children if c['taskName'] == 'place_tile')
+                assert proof['placedByActor'] and proof['consumedCount'] == 1, proof
+            print(json.dumps(dict(case=case, children=names, reason=result['reason'])), flush=True)
+    if args.navigation_only:
+        await verify_navigation()
+        return
+
     choose = "local q=api('observe_scene',{layers={'objects'}}); for _,o in ipairs(q.data.objects.items) do if o.kind=='ore_component' and o.target then return api('mine_target',{target=o.target}) end end; error('no observed ore')"
     for case in ('approach', 'near', 'blocked', 'no_tool'):
         spec = await fixture(case)
@@ -273,10 +303,13 @@ async def verify(args):
     finally:
         bridge.close()
     print(f'Mine target: {len(rows)} isolated cases passed; one external action per task, no model', flush=True)
+    await verify_navigation()
+
 
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('--port', type=int, required=True)
     p.add_argument('--profile', type=Path, required=True)
+    p.add_argument('--navigation-only', action='store_true')
     asyncio.run(verify(p.parse_args()))

@@ -44,12 +44,14 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         try
         {
             object context;
-            if(operation=="mine_target")
+            if(AiAtomicActions.IsTask(operation))
             {
                 if(child)throw new InvalidOperationException("Nested root task denied");
-                var world=new NativeMineTargetWorld(identity,args);
-                context=new TaskSlot(new MineTargetTask(actionId,world,new ChildExecutor(this)),actionId,null,
-                    identity with{GameUpdate=Main.GameUpdateCount},2700);
+                var executor=new ChildExecutor(this);
+                CompanionTask task=operation=="mine_target"
+                    ?new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
+                    :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args),executor);
+                context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},2700);
             }
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
             else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
@@ -59,6 +61,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             else if(operation is "place_tile" or "place_object")
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
+                if(child&&operation=="place_tile"&&args.TryGetProperty("plannedPlacementSlot",out var plannedSlot))
+                    ActorItemUse.Select(p,identity.World,identity.Generation,plannedSlot.GetInt32());
                 string error=ActorPlacement.Preflight(p,x,y,operation=="place_object");
                 if(error!=null)return Reject(error,operation=="place_object"?ActorObjectPlacement.PreflightDetail(p,x,y,error):null);
                 ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,operation=="place_object");context=ActorItemUse.Current;
@@ -92,7 +96,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
         var p=(Player)h.Identity.Actor;
-        if(h.Operation=="mine_target")
+        if(AiAtomicActions.IsTask(h.Operation))
         {
             var task=(TaskSlot)h.Context;var result=task.Tick(identity with{GameUpdate=Main.GameUpdateCount});
             return TaskResult(task,result,h.Identity);
@@ -175,7 +179,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
-        if(h.Operation=="mine_target")return CancelWithReason(identity,value,"cancelled","explicit_stop");
+        if(AiAtomicActions.IsTask(h.Operation))return CancelWithReason(identity,value,"cancelled","explicit_stop");
         if(ActorInventory.IsOperation(h.Operation))
         {
             var c=(ActorInventory.Context)h.Context;ActorInventory.Cancel(c);
@@ -205,7 +209,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public Result CancelWithReason(AiReadOnlyProtocol.Identity identity,object value,string status,string reason)
     {
         var h=(Handle)value;Require(h.Identity);
-        if(h.Operation!="mine_target")return Cancel(identity,value);
+        if(!AiAtomicActions.IsTask(h.Operation))return Cancel(identity,value);
         if(h.Rejection!=null)return h.Rejection;
         var task=(TaskSlot)h.Context;var result=task.Stop(identity with{GameUpdate=Main.GameUpdateCount},status,reason);
         return TaskResult(task,result,h.Identity);
@@ -224,7 +228,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public Result BindingLost(object value)
     {
         var h=(Handle)value;
-        if(h.Operation!="mine_target")return new("unknown","actor_binding_changed",null,false);
+        if(!AiAtomicActions.IsTask(h.Operation))return new("unknown","actor_binding_changed",null,false);
         var task=(TaskSlot)h.Context;var result=task.Abandon();return result with{Evidence=new{task=task.View()}};
     }
     // Native contexts only: no AiAtomicActions.Handle/registry/IPC start per child.

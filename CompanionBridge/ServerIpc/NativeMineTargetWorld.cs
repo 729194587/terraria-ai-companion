@@ -8,7 +8,7 @@ using VirtualPlayerEngineProbe;
 
 namespace CompanionBridge.ServerIpc;
 
-internal sealed partial class NativeMineTargetWorld : IMineTargetWorld
+internal sealed class NativeMineTargetWorld : IMineTargetWorld
 {
     private readonly AiReadOnlyProtocol.Identity identity;
     private readonly JsonElement args;
@@ -19,18 +19,12 @@ internal sealed partial class NativeMineTargetWorld : IMineTargetWorld
     private string shape;
     private long revision;
     private readonly int initialLife;
+    private NativeNavigationEdits edits;
+    public string SearchDetail { get; private set; }
+    public object OpeningEvidence=>edits?.OpeningEvidence;
     internal NativeMineTargetWorld(AiReadOnlyProtocol.Identity identity,JsonElement args){this.identity=identity;this.args=args.Clone();initialLife=Player.statLife;}
-    public string InterruptionReason()
-    {
-        ServerAiNativeActions.Require(identity);
-        if(Player.statLife<initialLife)return "task_interrupt_health_decreased";
-        if(Player.lavaWet)return "task_interrupt_lava_contact";
-        // Bounded native safety check, on the game thread; no model/TCP wait.
-        foreach(var npc in Main.npc)
-            if(npc.active&&!npc.friendly&&npc.damage>0&&Microsoft.Xna.Framework.Vector2.DistanceSquared(npc.Center,Player.Center)<=160*160)
-                return "task_interrupt_nearby_hostile";
-        return null;
-    }
+    public string InterruptionReason()=>NativeNavigationWorld.CheckHazards(identity,initialLife);
+
     public object Target=>new{x,y,typeId=type,toolSlot=slot,scope="one specified tile; bounded local opening"};
     public string Prepare()
     {
@@ -44,7 +38,7 @@ internal sealed partial class NativeMineTargetWorld : IMineTargetWorld
         var failure=ActorMining.ChooseTool(Player,identity.World,identity.Generation,x,y,false,out slot);
         if(failure!=ActorMining.Failure.None)return AiActionReasons.Mining("failed",failure.ToString());
         furniture=ActorMining.FurnitureAt(x,y);
-        item=Player.inventory[slot];toolType=item.type;toolPrefix=item.prefix;toolPower=item.pick;toolAxe=item.axe;toolBoost=item.tileBoost;shape=TaskShape(x,y);openingOrigin=ServerAiNavigation.Observe(Player).State;SceneMineTargets.Watch(x,y);revision=SceneMineTargets.Revision(x,y);
+        item=Player.inventory[slot];toolType=item.type;toolPrefix=item.prefix;toolPower=item.pick;toolAxe=item.axe;toolBoost=item.tileBoost;shape=SceneMineTargets.NavigationShape(x,y);edits=new(identity,ServerAiNavigation.Observe(Player).State,IsTargetCell);SceneMineTargets.Watch(x,y);revision=SceneMineTargets.Revision(x,y);
         return null;
     }
     public string Revalidate()
@@ -54,17 +48,9 @@ internal sealed partial class NativeMineTargetWorld : IMineTargetWorld
         bool toolPresent=ReferenceEquals(Player.inventory[slot],item)
             ||ActorMining.HoldsBorrowedTool(Player,identity.World,identity.Generation,slot,item);
         if(!toolPresent||item.type!=toolType||item.prefix!=toolPrefix||item.pick!=toolPower||item.axe!=toolAxe||item.tileBoost!=toolBoost)return "task_tool_changed";
-        if(TaskShape(x,y)!=shape||SceneMineTargets.Revision(x,y)!=revision
+        if(SceneMineTargets.NavigationShape(x,y)!=shape||SceneMineTargets.Revision(x,y)!=revision
             ||furniture.Any(cell=>!ActorMining.SameFurnitureCell(type,cell)))return "task_target_changed";
         return null;
-    }
-    // Neighbor excavation legitimately reframes ordinary blocks. Target revisions,
-    // tile type, slope and actuation still protect the original intent.
-    private static string TaskShape(int tx,int ty)
-    {
-        var tile=Main.tile[tx,ty];
-        return tile.HasTile&&Main.tileFrameImportant[tile.TileType]?SceneMineTargets.Shape(tx,ty)
-            :$"{tile.HasTile}:{tile.TileType}:{tile.Slope}:{tile.IsHalfBlock}:{tile.IsActuated}";
     }
     private bool IsTargetCell(int tx,int ty)=>tx==x&&ty==y||furniture.Any(part=>part.X==tx&&part.Y==ty);
 
@@ -79,12 +65,12 @@ internal sealed partial class NativeMineTargetWorld : IMineTargetWorld
             if(IsTargetCell(tx,ty))return '.';
             return cell;
         });
-        return safe||!arrival&&openingModeHasStarted&&furniture.Length==0&&CanDropAfter(pose,new[]{(x,y)});
+        return safe||!arrival&&edits.Edited&&furniture.Length==0&&edits.CanDropAfter(pose,new[]{(x,y)});
     }
     public bool CanMine()
     {
         var p=Player;var observed=ServerAiNavigation.Observe(p);
-        return observed.Settled&&(!openingModeHasStarted||SafeCutNeighbours(x,y))&&SafePose(observed.State,new NativeMotionWorld(observed.State),false)
+        return observed.Settled&&(!edits.Edited||NativeNavigationEdits.SafeCutNeighbours(x,y))&&SafePose(observed.State,new NativeMotionWorld(observed.State),false)
             &&ActorMining.QueryReach(p,identity.World,identity.Generation,item,x,y,p.position.X,p.position.Y);
     }
     public JsonElement? FindApproach()
@@ -126,6 +112,19 @@ internal sealed partial class NativeMineTargetWorld : IMineTargetWorld
             minPlayerLeftX=best.MinPlayerLeftX,maxPlayerLeftX=best.MaxPlayerLeftX,surfaceY=best.SurfaceY
         });
     }
+    public NavigationStep FindOpening(int remainingTiles)
+    {
+        if(item.pick<=0||Main.tileFrameImportant[type])return null;
+        var p=Player;
+        if(ActorMining.QueryReach(p,identity.World,identity.Generation,item,x,y,p.position.X,p.position.Y)
+            &&!NativeNavigationEdits.SafeCutNeighbours(x,y))return null;
+        var step=edits.FindOpening(x*16+8,y*16,remainingTiles);
+        SearchDetail=edits.SearchDetail;
+        return step;
+    }
+    public string RevalidateOpening()=>edits.RevalidateOpening();
+    public bool OpeningSettled()=>edits.OpeningSettled();
+    public string OpeningLandingError()=>edits.OpeningLandingError();
     public JsonElement MineArguments()=>JsonSerializer.SerializeToElement(new{x,y,plannedToolSlot=slot});
     public bool TargetAbsent(){ServerAiNativeActions.Require(identity);return !Main.tile[x,y].HasTile;}
 }

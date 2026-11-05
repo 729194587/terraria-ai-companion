@@ -10,7 +10,8 @@ public static class TaskRuntimeOfflineTests
     private static void Check(bool ok,string text){if(!ok)throw new Exception(text);checks++;}
     private sealed class World : IMineTargetWorld
     {
-        internal bool Reach,Absent=true,ThrowPrepare,NoApproach,AllowOpening;
+        internal bool Reach,Absent=true,ThrowPrepare,NoApproach,AllowOpening,PlaceSupport;
+        public bool ReplanAfterChange=>PlaceSupport;
         internal bool Settled=true;
         internal string Error,PrepareError,Danger;
         public string InterruptionReason()=>Danger;
@@ -20,9 +21,10 @@ public static class TaskRuntimeOfflineTests
         public bool CanMine()=>Reach;
         public JsonElement? FindApproach()=>NoApproach?null:JsonSerializer.SerializeToElement(new{minPlayerLeftX=100,maxPlayerLeftX=108,surfaceY=200});
         public JsonElement MineArguments()=>JsonSerializer.SerializeToElement(new{x=12,y=10});
-        public MiningOpening FindOpening(int remainingTiles)=>AllowOpening
-            ?new("mine_tile",JsonSerializer.SerializeToElement(new{x=11,y=10})):null;
+        public NavigationStep FindOpening(int remainingTiles)=>AllowOpening
+            ?new(PlaceSupport?"place_tile":"mine_tile",JsonSerializer.SerializeToElement(new{x=11,y=10})):null;
         public bool OpeningSettled()=>Settled;
+        public string OpeningLandingError()=>PlaceSupport?"fixture_landing_changed":null;
         public bool TargetAbsent()=>Absent;
         public object Target=>new{x=12,y=10};
     }
@@ -126,6 +128,26 @@ public static class TaskRuntimeOfflineTests
             {result=f.Tick(tick);if(result.Status!="running")break;}
             Check(result?.Reason=="mining_opening_budget_exhausted"&&f.Native.Starts.Count==MineTargetTask.MaxOpeningTiles,
                 "opening budget stops verified excavation without starting a further child");
+        }
+        foreach(bool uncertain in new[]{false,true})
+        {
+            var world=new World{NoApproach=true,AllowOpening=true,PlaceSupport=true};
+            var native=new Native{BadEffect=uncertain};
+            native.OnPoll=op=>
+            {
+                if(op=="place_tile")world.NoApproach=false;
+                if(op=="navigate_to_landing_region")world.Reach=true;
+            };
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var root=new TaskSlot(new AutonomousNavigationTask("nav",world,native),"nav",null,frame,100);
+            Result result=null;
+            for(ulong tick=1;tick<=15;tick++)result=root.Tick(frame with{GameUpdate=tick});
+            Check(native.Starts[0]=="place_tile","navigation selects placement without model assistance");
+            if(uncertain)
+                Check(result.Status=="unknown"&&native.Starts.Count==1,"unknown placement stops without replay");
+            else
+                Check(result.Status=="completed"&&native.Starts.Count==2&&native.Starts[1]=="navigate_to_landing_region",
+                    "confirmed placement and changed landing trigger one newly observed movement");
         }
         Console.WriteLine($"Task runtime: {checks} checks passed; native executor/world are substitutes.");
     }

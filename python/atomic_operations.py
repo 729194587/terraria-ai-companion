@@ -118,6 +118,8 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("select_hotbar_slot", "按游戏显示的快捷键选择：1..9为前九格，0为最右第十格。slot不是背包数组索引。核对实际选中按键。", {"slot": {"type": "integer", "minimum": 0, "maximum": 9}}, ["slot"]),
     tool("use_item", "用当前物品完成一次原生使用周期；target可选世界像素{x,y}。completed只证明使用周期，具体效果需感知核验。无target保留原生鼠标，不限制画面缩放；有target支持当前缩放，仍限正常重力及80像素。",
          {"target": {"type": "object", "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1000000}, "y": {"type": "number", "minimum": 0, "maximum": 1000000}}, "required": ["x", "y"], "additionalProperties": False}}),
+    tool("navigate_to", "服务器自主导航。只传预期落脚面的世界像素 x、y（Y 向下）。游戏侧自行选择走、跳、安全下落、挖掘和搭路。安全着地停稳且脚底覆盖目的地才完成。unknown 后停止。",
+         {key: {"type": "number", "minimum": 0, "maximum": 1000000} for key in ("x", "y")}, ["x", "y"]),
     tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE}),
     tool("mine_tile", "原生挖掘指定 Tile。服务器 AI 从整个主背包自动选择合适工具，必要时临时切换快捷栏，按 Terraria 原生范围和工具规则判定。客户端控制使用当前手持镐。动作在当前位置执行，以实际移除为准，10秒上限。",
          {"x": {**TILE["x"], "description": "目标格的绝对 Tile X 坐标"},
@@ -136,6 +138,7 @@ SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 # Model-only server projection. Execution validation and the shared TOOLS stay unchanged.
 SERVER_DESCRIPTIONS = {
     'mine_target': MINE_TARGET_DESCRIPTION,
+    'navigate_to': '到达目的地用 navigate_to，只传落脚面世界像素 x/y，Y 向下。游戏侧自主选择走、跳、安全下落、挖掘或搭路。受普通角色运动、局部安全和任务预算限制。unknown 后停止。',
     'place_object': PLACE_OBJECT_DESCRIPTION,
     'transfer_inventory_item': '服务器AI：仅0..49普通库存槽，新鲜两槽token；原生拆分/堆叠，CanStack检查Mod兼容性，容量不足不执行；核验数量及后续游戏更新。unknown可能已变更，不回滚、不自动重试。',
     'swap_inventory_slots': '服务器AI：新鲜两槽token，交换0..49完整物品实例；不合并，后续游戏更新核验；unknown不回滚、不自动重试。',
@@ -488,6 +491,25 @@ def verify_landing_start(action, arguments, *, server_ai=False):
         raise BridgeError('Landing target/identity missing or different in start receipt')
 
 
+def verified_server_navigation(action, evidence):
+    task = evidence.get('task')
+    target = action.get('targetTask')
+    if (not isinstance(task, dict) or not isinstance(target, dict) or set(target) != {'x', 'y'}
+            or any(type(value) not in (float, int) for value in target.values())
+            or task.get('taskId') != action.get('actionId') or task.get('taskName') != 'navigate_to'
+            or task.get('status') != 'completed' or task.get('currentChild') is not None):
+        return False
+    result = task.get('result')
+    arrival = result.get('evidence') if isinstance(result, dict) else None
+    return (isinstance(arrival, dict)
+            and result.get('effectVerified') is True and result.get('inputsReleased') is True
+            and arrival.get('target') == target
+            and all(arrival.get(key) is True for key in ('arrived', 'grounded', 'safeSupport', 'settled'))
+            and type(arrival.get('x')) in (float, int) and type(arrival.get('feetY')) in (float, int)
+            and arrival['x'] - .01 <= target['x'] <= arrival['x'] + 20.01
+            and abs(arrival['feetY'] - target['y']) <= .51)
+
+
 def verified_server_landing(action, evidence):
     if action.get('operation') != 'navigate_to_landing_region':
         return False
@@ -538,6 +560,7 @@ async def terminal(bridge, action, generation):
                        and native_evidence['updatesExecuted'] == action['requestedInputs'].get('maxUpdates')
                        and native_evidence.get('updatesRequested') == native_evidence['updatesExecuted']
                        and native_evidence.get('inputReleased') is True),
+        'navigate_to': verified_server_navigation(action, native_evidence),
         'navigate_to_x': native_evidence.get('arrived') is True,
         'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
@@ -569,7 +592,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe', 'mine_target', *INVENTORY_OPERATIONS)
+                  and action.get('operation') in ('move_input', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe', 'mine_target', *INVENTORY_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -632,6 +655,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             lifecycle.update(copy.deepcopy(fields))
     arguments = validate(name, arguments)
     validate_backend(bridge, name, arguments)
+    if name == 'navigate_to' and 'server_ai_navigation_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_navigation_v1; no navigation task submitted')
     if name == 'mine_target' and 'server_ai_tasks_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_tasks_v1; no task submitted')
     if name in {'query_recipes','craft_recipe'} and 'server_ai_crafting_v1' not in bridge.hello.get('capabilities', []):
@@ -748,10 +773,10 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Inventory target missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if name == 'mine_target':
+        if name in ('mine_target', 'navigate_to'):
             placement_invalid = True
             if action.get('targetTask') != arguments:
-                raise BridgeError('Mine task target missing or changed in start receipt')
+                raise BridgeError('Task target missing or changed in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
         if name == 'craft_recipe':

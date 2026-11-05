@@ -180,7 +180,7 @@ public static class ServerAiPackageTests
         var taskTick=Type("MineTargetTask").Methods.Single(m=>m.Name=="Tick");
         Check(Type("AiAtomicActions").Methods.Single(m=>m.Name=="get_Capabilities").Body.Instructions.Any(
             i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="server_ai_program_tasks_v1"),"new task safety/lifecycle semantics have an explicit capability fence");
-        var hazard=Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="InterruptionReason");
+        var hazard=Type("NativeNavigationWorld").Methods.Single(m=>m.Name=="CheckHazards");
         Check(Calls(taskTick,"InterruptionReason")&&Calls(taskTick,"Stop"),"root task checks hazards in game-tick execution and uses normal child cleanup");
         Check(Calls(hazard,"Require")&&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="npc")
             &&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="statLife")

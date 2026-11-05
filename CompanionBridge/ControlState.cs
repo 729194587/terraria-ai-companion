@@ -538,7 +538,7 @@ internal sealed class ControlState
                 || !root.TryGetProperty("arguments", out var args) || args.ValueKind != JsonValueKind.Object)
                 throw new FormatException("Atomic operation requires operation and arguments object.");
             operation = op.GetString(); arguments = args.Clone();
-            if(operation=="mine_target")throw new FormatException("mine_target requires the server AI task backend.");
+            if(operation is "mine_target" or "navigate_to")throw new FormatException(operation+" requires the server AI task backend.");
             AtomicParameters.Validate(operation, arguments, cmd.GetString() == "query_atomic");
             if (cmd.GetString() == "start_atomic" && expectedGeneration == null)
                 throw new FormatException("Atomic action requires expectedGeneration.");

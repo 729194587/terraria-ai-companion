@@ -36,6 +36,16 @@ def contract_parts(prompt):
 
 
 class ManifestTests(unittest.TestCase):
+    def test_autonomous_navigation_is_gated_and_takes_only_a_destination(self):
+        capability = {'server_ai_navigation_v1'}
+        self.assertNotIn('navigate_to', exposed_operations(bridge(BASE | capability)))
+        self.assertNotIn('navigate_to', exposed_operations(bridge(BASE | {'server_ai_actions_v1'})))
+        prompt, _ = server_contract(bridge(BASE | capability | {'server_ai_actions_v1'}))
+        _, definitions, _ = contract_parts(prompt)
+        schema = next(t['function']['parameters'] for t in definitions if t['function']['name'] == 'navigate_to')
+        self.assertEqual({'x', 'y'}, set(schema['required']))
+        self.assertEqual({'x', 'y'}, set(schema['properties']))
+
     def test_all_handshake_combinations_match_manifest_and_contract(self):
         original = copy.deepcopy(atomic.TOOLS)
         for enabled in itertools.product((False, True), repeat=len(OPTIONAL)):

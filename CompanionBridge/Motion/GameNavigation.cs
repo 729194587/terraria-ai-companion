@@ -68,7 +68,7 @@ internal sealed class NativeNavigation
         return reasons == null ? null : string.Join("; ", reasons);
     }
 
-    private PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
+    internal static PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
         p.accRunSpeed, p.runSlowdown, p.gravity, p.maxFallSpeed, Player.jumpSpeed, Player.jumpHeight);
 
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,

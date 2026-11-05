@@ -11,6 +11,11 @@ internal sealed record LandingRegion
     public float SurfaceY { get; }
     internal const float FeetTolerance = 0.5f;
 
+    // The destination is a point at foot level. Accept any stable pose whose
+    // horizontal footprint covers the point.
+    internal static LandingRegion AtDestination(float x, float y)
+        => new(x - PhysicsSimulator.PlayerW, x, y);
+
     internal LandingRegion(float minPlayerLeftX, float maxPlayerLeftX, float surfaceY)
     {
         if (!float.IsFinite(minPlayerLeftX) || !float.IsFinite(maxPlayerLeftX)

@@ -35,9 +35,22 @@ internal static class ServerMineTaskFixture
             obscureMining=false;
         }
         string request=Path.Combine(Main.SavePath,"mine-task-request.json");if(!File.Exists(request))return;
-        using var document=JsonDocument.Parse(File.ReadAllText(request));string kind=document.RootElement.GetProperty("caseId").GetString();File.Delete(request);
+        string requestBody;
+        try
+        {
+            requestBody=File.ReadAllText(request);
+            File.Delete(request);
+        }
+        catch(IOException)
+        {
+            // Windows can still hold the file briefly after the atomic rename.
+            return;
+        }
+        using var document=JsonDocument.Parse(requestBody);
+        string kind=document.RootElement.GetProperty("caseId").GetString();
         if(ActorControl.Running||ActorMining.Running||ActorItemUse.Running)throw new InvalidOperationException("Cannot reseed running native action");
         int left=Main.spawnTileX,floor=Main.spawnTileY+8,x=left+10,y=floor-2;
+        int? destinationX=null,destinationY=null;
         if(kind is "change" or "replace_same")
         {
             if(kind=="change")Main.tile[x,y].TileType=TileID.Stone;
@@ -124,8 +137,35 @@ internal static class ServerMineTaskFixture
             if(kind=="blocked")
                 for(int tx=left+4;tx<=left+4;tx++)for(int ty=floor-12;ty<floor;ty++){var t=Main.tile[tx,ty];t.HasTile=true;t.TileType=TileID.Obsidian;}
             if(kind=="no_tool")p.inventory[1]=new Item();
+            if(kind.StartsWith("navigation_",StringComparison.Ordinal))
+            {
+                ore.ClearTile();
+                destinationX=(left+5)*16+8;
+                destinationY=floor*16;
+                if(kind is "navigation_dig" or "navigation_jump")
+                    for(int tx=left+2;tx<=left+3;tx++)
+                        for(int ty=floor-(kind=="navigation_dig"?10:2);ty<floor;ty++)
+                        {var rock=Main.tile[tx,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
+                if(kind=="navigation_down")
+                {
+                    destinationX=left*16+10;
+                    destinationY=(floor+1)*16;
+                }
+                if(kind=="navigation_drop")
+                {
+                    for(int tx=left+3;tx<=left+22;tx++)Main.tile[tx,floor].ClearTile();
+                    destinationY=(floor+1)*16;
+                }
+                if(kind=="navigation_place")
+                {
+                    for(int tx=left+1;tx<=left+20;tx++)
+                        for(int ty=floor;ty<=floor+8;ty++)Main.tile[tx,ty].ClearTile();
+                    destinationX=(left+2)*16+8;
+                    p.inventory[2]=new Item(ItemID.WoodPlatform){stack=5};
+                }
+            }
         }
         NetworkStateSync.Full(p);
-        File.WriteAllText(Path.Combine(Main.SavePath,"mine-task-ready.json"),JsonSerializer.Serialize(new{caseId=kind,x,y,typeId=(int)Main.tile[x,y].TileType,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,gameUpdate=Main.GameUpdateCount}));
+        File.WriteAllText(Path.Combine(Main.SavePath,"mine-task-ready.json"),JsonSerializer.Serialize(new{caseId=kind,x,y,destinationX,destinationY,typeId=(int)Main.tile[x,y].TileType,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,gameUpdate=Main.GameUpdateCount}));
     }
 }
