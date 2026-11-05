@@ -10,6 +10,8 @@ internal sealed class NavigationTask
     private readonly bool _enableSafeGroundWalk;
     private int _searches,_fastWalks,_deferredSearches,_consecutiveRecoveries;
     private StateSpacePlanner.Search _pendingSearch;
+    private SurfaceNavigator _surfaceSearch;
+    private SurfaceGraphSnapshot _surfaceSnapshot;
     private PhysicsState _searchStart;
     private PhysicsParameters _searchPhysics;
     private long _searchTerrain;
@@ -28,7 +30,7 @@ internal sealed class NavigationTask
         _sharedKnowledge=knowledge!=null;
         _knowledge=knowledge??new();
     }
-    private void DiscardSearch(){_pendingSearch?.Dispose();_pendingSearch=null;}
+    private void DiscardSearch(){_pendingSearch?.Dispose();_pendingSearch=null;_surfaceSearch?.Dispose();_surfaceSearch=null;}
 
     internal bool Continuous { get; set; }
     internal bool PreferFlatRegion { get; set; }
@@ -82,6 +84,7 @@ internal sealed class NavigationTask
         _deferredSearches=_consecutiveRecoveries=0;
         _recoveries=_recoveryReplans=_updates=0; _recoveryReason=null; _recoveryPosition=null; _recoveryInputsReleased=null;
         _executor.Cancel(); _session = 0; _executing = false; _lastLanding = null; _route = null;
+        _surfaceSnapshot=null;
         _confirming=false;_confirmationFrames=_settledFrames=0;
         _routeIndex=_continuedEdges=_invalidatedRoutes=0;_planningMilliseconds=0;_routePhysics=null;_mobilityRevision=_planMobilityRevision=0;_rememberFailedEdge=true;
         Snapshot = new(0, "idle", "none", "control released", 0, 0, null, null, 0);
@@ -174,7 +177,12 @@ internal sealed class NavigationTask
                 int priorRepeatRejections=_trip.RepeatRejections;
                 float walkTarget=region==null?targetX:(region.MinPlayerLeftX+region.MaxPlayerLeftX)/2;
                 int walkDirection=walkTarget>=state.Px?1:-1;
-                _route = _enableSafeGroundWalk&&(region==null||Continuous||PreferFlatRegion)
+                bool surface=Continuous&&region!=null&&world is ISurfaceTerrain;
+                // Cleared edit corridors and precise final braking retain the
+                // existing fully simulated shortcut. Larger/special terrain is
+                // organised by the graph, not a succession of flat prefixes.
+                bool shortApproach=!surface||region.Distance(state)<=64;
+                _route = shortApproach&&_enableSafeGroundWalk&&(region==null||Continuous||PreferFlatRegion)
                     ?SafeGroundWalk.TryPlan(state,walkTarget,region==null?_direction:walkDirection,ph,world,region):null;
                 if (_route != null && RejectRemembered(state, _route.Actions[0])) _route=null;
                 if(_route==null)
@@ -183,16 +191,22 @@ internal sealed class NavigationTask
                     if(Continuous&&region!=null)
                     {
                         _knowledge.Search.Scope(terrain,ph,Clock);
-                        if(_pendingSearch==null||_searchStart!=state||_searchPhysics!=ph||_searchTerrain!=terrain
+                        if((_pendingSearch==null&&_surfaceSearch==null)||_searchStart!=state||_searchPhysics!=ph||_searchTerrain!=terrain
                             ||_searchFailures!=_failures.Version)
                         {
                             DiscardSearch();
                             _searchStart=state;_searchPhysics=ph;_searchTerrain=terrain;
                             _searchFailures=_failures.Version;
-                            _pendingSearch=new(state,targetX,region,ph,world,rejectEdge:RejectRemembered,
-                                detourCheckpoint:_trip.Detour,historicalPreference:_historicalPreference,learning:_knowledge.Search);
+                            if(surface)_surfaceSearch=new(_knowledge.Surfaces,state,region,ph,world,(ISurfaceTerrain)world,_knowledge.Search,RejectRemembered,_trip.Detour,_historicalPreference);
+                            else _pendingSearch=new(state,targetX,region,ph,world,rejectEdge:RejectRemembered,
+                                    detourCheckpoint:_trip.Detour,historicalPreference:_historicalPreference,learning:_knowledge.Search);
                         }
-                        _route=_pendingSearch.Advance(budgetMs:_searchBudgetMilliseconds);
+                        if(_surfaceSearch!=null)
+                        {
+                            _route=_surfaceSearch.Advance(budgetMs:Math.Min(4,_searchBudgetMilliseconds));
+                            _surfaceSnapshot=_surfaceSearch.Snapshot;
+                        }
+                        else _route=_pendingSearch.Advance(budgetMs:_searchBudgetMilliseconds);
                     }
                     else
                         _route = region != null ? StateSpacePlanner.Plan(state, region, ph, world, budgetMs: _searchBudgetMilliseconds, rejectEdge: RejectRemembered, detourCheckpoint: _trip.Detour, historicalPreference: _historicalPreference)
@@ -213,11 +227,13 @@ internal sealed class NavigationTask
                         // Retain exact frontier/candidate cursor. Its start, terrain
                         // and physics are revalidated before the next game-thread slice.
                         _deferredSearches++;
-                        if(_pendingSearch?.Finished==true)DiscardSearch();
+                        if(_pendingSearch?.Finished==true||_surfaceSearch?.Finished==true)DiscardSearch();
                         Snapshot=Snapshot with{Status="running",Reason="local search deferred"};
                         return default;
                     }
                     DiscardSearch();
+                    if(_route.SearchExit=="unknown_terrain")
+                    {Unconfirmed("navigation_unknown_terrain");return default;}
                     return Fail(_route.TimeBudgetReached ? "navigation_search_timeout"
                         : _route.SearchExit == "expansion_budget" ? "navigation_search_expansion_budget"
                         : _trip.RepeatRejections>priorRepeatRejections ? "navigation_trip_repeated_state"
@@ -474,7 +490,7 @@ internal sealed class NavigationTask
             FailureMemory=_failures.Records,ProgressActivity=_watchdog.Activity.ToString(),
             SearchWaitUpdates=_watchdog.SearchUpdates,NoProgressUpdates=_watchdog.NoProgressUpdates,
             ActualMovingUpdates=_watchdog.ActualMovingUpdates,ActualTravelPixels=_watchdog.ActualTravelPixels,
-            SearchExpansionHits=_knowledge.Search.ExpansionHits};
+            SearchExpansionHits=_knowledge.Search.ExpansionHits,SurfaceGraph=_surfaceSnapshot};
     }
     private void Publish() => Snapshot = _executor.Snapshot with
     {

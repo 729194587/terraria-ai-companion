@@ -22,7 +22,8 @@ internal sealed record NavigationSnapshot(int Session, string Status, string Act
     string RecoveryReason=null, PhysicsState? RecoveryPosition=null, bool? RecoveryInputsReleased=null, int FailedEdgeCount=0, int TripUpdates=0,int ContinuedEdges=0,int InvalidatedRoutes=0,
     double TripPlanningMilliseconds=0,int DetourCheckpoints=0,int VisitedCheckpoints=0,int RepeatRejections=0, MobilityProfile Mobility=null, long MobilityRevision=0, long PlanMobilityRevision=0, int DeferredSearches=0,int SearchCacheHits=0,NavigationFailureMemory.Failure[] FailureMemory=null,
     string ProgressActivity=null,int SearchWaitUpdates=0,int NoProgressUpdates=0,
-    int ActualMovingUpdates=0,double ActualTravelPixels=0,int SearchExpansionHits=0);
+    int ActualMovingUpdates=0,double ActualTravelPixels=0,int SearchExpansionHits=0,
+    SurfaceGraphSnapshot SurfaceGraph=null);
 
 // One rolling walk or one jump; no graph, digging, placement, or autonomous retries.
 // Candidate simulation and landing feedback follow TerraBlind JumpExecutor's pattern.

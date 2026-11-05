@@ -136,7 +136,8 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 if(!Running)return; // Native death/retirement may have stopped the driver.
                 if(!injected)throw new InvalidOperationException("Audited G4 movement boundary not reached.");
                 navigation.After(p);run.Snapshot=navigation.Snapshot;
-                if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown","native_navigation_landing_unconfirmed");}
+                if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown",run.Snapshot.Reason=="navigation_unknown_terrain"
+                    ?"native_navigation_terrain_unknown":"native_navigation_landing_unconfirmed");}
                 else if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.SearchFailureReason is {} detail && (run.Snapshot.Reason is "navigation_search_timeout" or "navigation_search_expansion_budget")?detail:run.Snapshot.Reason;Stop("failed",AiActionReasons.Navigation(run.Snapshot.Reason));}
                 else if(run.Snapshot.Status=="arrived")
                 {

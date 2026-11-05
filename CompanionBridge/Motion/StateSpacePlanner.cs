@@ -64,9 +64,9 @@ internal static class StateSpacePlanner
         internal Search(PhysicsState start,float targetX,LandingRegion region,PhysicsParameters ph,IMotionWorld world,
             int? goalDirection=null,Func<PhysicsState,Prediction,bool> rejectEdge=null,
             Func<PhysicsState,bool> detourCheckpoint=null,Func<PhysicsState,int> historicalPreference=null,
-            NavigationSearchMemory learning=null)
+            NavigationSearchMemory learning=null,bool requireInitialJump=false)
         {
-            steps=Run(start,targetX,region,ph,world,goalDirection,rejectEdge,detourCheckpoint,historicalPreference,learning).GetEnumerator();
+            steps=Run(start,targetX,region,ph,world,goalDirection,rejectEdge,detourCheckpoint,historicalPreference,learning,requireInitialJump).GetEnumerator();
         }
         internal Route Advance(int maxExpansions=32,double budgetMs=25)
         {
@@ -85,7 +85,7 @@ internal static class StateSpacePlanner
         private IEnumerable<Route> Run(PhysicsState start,float targetX,LandingRegion region,PhysicsParameters ph,
             IMotionWorld world,int? goalDirection,Func<PhysicsState,Prediction,bool> rejectEdge,
             Func<PhysicsState,bool> detourCheckpoint,Func<PhysicsState,int> historicalPreference,
-            NavigationSearchMemory learning)
+            NavigationSearchMemory learning,bool requireInitialJump)
         {
             var watch = timer;
             int maxExpansions=sliceNodes;
@@ -204,6 +204,8 @@ internal static class StateSpacePlanner
                             budgetMs=sliceMilliseconds;maxExpansions=sliceNodes;
                         }
                         int hold = Math.Min(option * 2, ph.JumpHeight);
+                        if(requireInitialJump&&cur==start&&hold==0)
+                        {Reject("graph launch requires jump");continue;}
                         foreach (int stride in hold == 0 ? new[] { 24, 6 } : new[] { 24 })
                         {
                             if(watch.Elapsed.TotalMilliseconds>=budgetMs)

@@ -34,7 +34,7 @@ async def verify(args):
             if scene=='cancel_air':
                 await asyncio.to_thread(bridge.command,'start_atomic',operation=operation,
                     arguments=arguments,expectedGeneration=bridge.binding['generation'])
-                for _ in range(150):
+                for _ in range(300):
                     state=await asyncio.to_thread(bridge.command,'get_movement')
                     action=state['movement']['action']
                     nav=(action.get('evidence') or {}).get('navigation') or {}
@@ -61,6 +61,8 @@ async def verify(args):
         finally:bridge.close()
         (p/f'recovery-{scene}-receipt.json').write_text(json.dumps(dict(source=source,fixture=fixture,receipt=receipt),indent=2))
         trace=await wait_file(p/f'terrain-motion-flat-1-{scene}.json')
+        fired=await wait_file(p/'terrain-recovery-fired.json')
+        assert fired['navigationFrame']>=4 and fired['navigationAction'] in ('walk','jump'),fired
         evidence=action.get('evidence') or {};end=action.get('endEvidence') or {}
         if args.autonomous:
             history=evidence['task']['progress']['children']

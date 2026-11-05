@@ -64,7 +64,8 @@ internal static class ServerMineTaskFixture
         }
         else
         {
-            for(int tx=left-24;tx<=left+24;tx++)for(int ty=floor-20;ty<=floor+16;ty++)
+            int fixtureRight=kind=="navigation_surface_wide"?72:24;
+            for(int tx=left-24;tx<=left+fixtureRight;tx++)for(int ty=floor-20;ty<=floor+16;ty++)
             {var t=Main.tile[tx,ty];t.ClearEverything();if(ty>=floor){t.HasTile=true;t.TileType=TileID.Dirt;}}
             foreach(var drop in Main.item)drop.active=false;
             Array.Clear(p.buffType);Array.Clear(p.buffTime); // Isolate from preceding native apple regression.
@@ -163,6 +164,16 @@ internal static class ServerMineTaskFixture
                         for(int ty=floor-2;ty<floor;ty++)
                         {var rock=Main.tile[left+column,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
                 }
+                if(kind=="navigation_surface_wide")
+                    destinationX=(left+60)*16+8;
+                if(kind=="navigation_surface_detour")
+                {
+                    destinationX=(left+14)*16+8;
+                    for(int tx=left-1;tx<=left+5;tx++)
+                    {var roof=Main.tile[tx,floor-4];roof.HasTile=true;roof.TileType=TileID.Stone;}
+                    for(int ty=floor-4;ty<floor;ty++)
+                    {var wall=Main.tile[left+5,ty];wall.HasTile=true;wall.TileType=TileID.Stone;}
+                }
                 if(kind=="navigation_long_dig")
                 {
                     destinationX=(left+11)*16+8;
@@ -183,7 +194,7 @@ internal static class ServerMineTaskFixture
                         {var rock=Main.tile[tx,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
                 // Isolate movement acceptance from the independently permitted
                 // terrain-modification choice in these two movement fixtures.
-                if(kind is "navigation_jump" or "navigation_trip")p.inventory[1]=new Item();
+                if(kind is "navigation_jump" or "navigation_trip" or "navigation_surface_wide" or "navigation_surface_detour")p.inventory[1]=new Item();
                 if(kind=="navigation_down")
                 {
                     destinationX=left*16+10;

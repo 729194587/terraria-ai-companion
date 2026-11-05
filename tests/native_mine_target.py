@@ -51,6 +51,7 @@ async def verify(args):
     async def verify_navigation():
         for case, edit in (
             ('navigation_flat', None), ('navigation_jump', None), ('navigation_drop', None), ('navigation_trip', None),
+            ('navigation_surface_wide', None), ('navigation_surface_detour', None),
             ('navigation_single', None), ('navigation_single_platform', None),
             ('navigation_half', None), ('navigation_slope', None),
             ('navigation_dig', 'mine_tile'), ('navigation_down', 'mine_tile'),
@@ -88,6 +89,15 @@ async def verify(args):
                 assert names == ['navigate_to_landing_region'], task
                 motion = children[0]['result']['evidence']
                 assert motion['x'] - motion['startX'] > 192 and motion['navigation']['PlanNumber'] > 1, motion
+            if case in ('navigation_surface_wide', 'navigation_surface_detour'):
+                assert names == ['navigate_to_landing_region'], task
+                motion = children[0]['result']['evidence']
+                assert motion['arrived'] and motion['grounded'] and motion['safeSupport'] and motion['settled'], motion
+                assert motion['navigation']['SurfaceGraph']['CandidateEdges'] > 0, motion
+                if case == 'navigation_surface_wide':
+                    assert motion['x'] - motion['startX'] > 24 * 16, motion
+                else:
+                    assert motion['navigation']['CompletedJumps'] > 0, motion
             if case == 'navigation_down':
                 assert task['progress']['opening']['drops'], task
             if case == 'navigation_place':
@@ -187,7 +197,9 @@ async def verify(args):
                 source, limits=Limits(actions=1, calls=1, seconds=58))
             result = raw.get('value') if raw['status'] == 'completed' else raw.get('lastAction')
             rows.append(dict(case=case, result=raw));save()
-            allowed = ('failed','timeout') if case == 'opening_unsafe' else (status,)
+            # The original shaft is unsafe, but a graph detour may find a
+            # supported side shaft. Completion needs independent native proof.
+            allowed = ('failed','timeout','completed') if case == 'opening_unsafe' else (status,)
             assert raw['actions'] == 1 and result and result['status'] in allowed, (case, raw)
             status = result['status']
             if case == 'opening_unsafe' and status == 'timeout':
@@ -207,9 +219,13 @@ async def verify(args):
                     assert (proof['X'], proof['Y']) != (spec['x'], spec['y']) and proof['destroyedByActor'], proof
                 proof = cuts[-1]['result']['evidence']
                 assert (proof['X'], proof['Y']) == (spec['x'], spec['y']) and proof['destroyedByActor'], proof
-                if case in ('opening_down', 'opening_probe'):
+                if case in ('opening_down', 'opening_probe', 'opening_unsafe'):
                     drops = task['progress']['opening']['drops']
                     assert drops and all(d['toFeetY']-d['fromFeetY']==16 for d in drops), task
+                    if case == 'opening_unsafe':
+                        assert any(c['taskName']=='navigate_to_landing_region' and c['status']=='completed'
+                                   and c['result']['evidence']['safeSupport'] and c['result']['evidence']['settled'] for c in history), task
+                        assert all(d['playerLeftX'] < spec['x'] * 16 for d in drops), task
                 else:
                     assert any(c['taskName']=='navigate_to_landing_region' and c['status']=='completed' for c in history), task
             else:
