@@ -99,7 +99,7 @@ internal sealed class NativeNavigation
         var state = State(p);
         if(_planRevision!=_profile.Revision)
         {
-            if(_navigation)Task.InvalidateMobility(state,_profile.Revision);
+            if(_navigation)Task.InvalidateMobility(state,_profile.Revision,ph);
             else Controller.Cancel();
         }
         _planRevision=_profile.Revision;
@@ -110,7 +110,11 @@ internal sealed class NativeNavigation
                 : Task.Before(session, generation, targetX.Value, state, ph, _world)
             : Controller.Before(session, direction, state, ph, _world, generation);
         if (Stopwatch.GetElapsedTime(started).TotalMilliseconds > 50)
-            return Fail("local prediction exceeded 50ms budget");
+        {
+            if(!_navigation||!Task.Continuous)return Fail("local prediction exceeded 50ms budget");
+            Task.DeferPlanningOverrun(state);
+            input=default;
+        }
         if (_navigation) Diagnostics.Observe(Snapshot);
         _paired = true;
         return input;

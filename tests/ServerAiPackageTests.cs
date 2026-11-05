@@ -44,7 +44,8 @@ public static class ServerAiPackageTests
             &&Calls(Type("CharacterStore").Methods.Single(m=>m.Name=="SaveCore"),"Read"),"world and legacy saves share native SavePlayer and native read-back validation");
         Check(Calls(Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop"),"Observe")
             &&Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="native_navigation_landing_unconfirmed"),"native airborne failure cleanup reports unconfirmed landing");
-        Check(Calls(Type("StateSpacePlanner").Methods.Single(m=>m.Name=="PlanCore"),"SupportedCheckpoint"),"planner requires real supported checkpoints beyond collision contact");
+        Check(Walk(Type("StateSpacePlanner")).SelectMany(t=>t.Methods).Where(m=>m.HasBody)
+            .Any(m=>Calls(m,"SupportedCheckpoint")),"planner requires real supported checkpoints beyond collision contact");
         var motionWorld=Type("NativeMotionWorld");
         Check(Calls(motionWorld.Methods.Single(m=>m.Name=="MoveCore"),"Horizontal"),"navigation contacts use native clipped movement rather than nearby tile scan");
         Check(Calls(motionWorld.Methods.Single(m=>m.Name=="Observe"),"ContactRejection")

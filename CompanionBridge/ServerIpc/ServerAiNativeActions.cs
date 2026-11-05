@@ -33,7 +33,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public string Validate(string operation,JsonElement args)
         => AtomicParameters.ValidateServerAction(operation, args);
     public object Start(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId)=>StartCore(identity,operation,args,actionId,false);
-    private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child,bool continuous=false)
+    private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child,bool continuous=false,
+        NavigationKnowledge knowledge=null)
     {
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
@@ -47,7 +48,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(AiAtomicActions.IsTask(operation))
             {
                 if(child)throw new InvalidOperationException("Nested root task denied");
-                var executor=new ChildExecutor(this,continuous:operation=="navigate_to");
+                var executor=new ChildExecutor(this,continuous:true);
                 CompanionTask task=operation=="mine_target"
                     ?new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
                     :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args),executor);
@@ -57,7 +58,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
             else if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
             else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId);ActorControl.Driver=navigation;}
-            else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child);ActorControl.Driver=navigation;}
+            else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge);ActorControl.Driver=navigation;}
             else if(operation is "place_tile" or "place_object")
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
@@ -236,9 +237,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         private readonly ServerAiNativeActions owner;
         private readonly bool continuous;
+        private readonly NavigationKnowledge knowledge=new();
         internal ChildExecutor(ServerAiNativeActions owner,bool continuous){this.owner=owner;this.continuous=continuous;}
         public string Validate(string op,JsonElement args)=>owner.Validate(op,args);
-        public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>owner.StartCore(id,op,args,taskId,true,continuous);
+        public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>owner.StartCore(id,op,args,taskId,true,continuous,knowledge);
         public Result Poll(AiReadOnlyProtocol.Identity id,object value)
         {
             var r=owner.Poll(id,value);

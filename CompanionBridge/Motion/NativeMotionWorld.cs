@@ -21,6 +21,40 @@ internal sealed class NativeMotionWorld : IMotionWorld
         _top = (int)Math.Floor((start.Py + 42) / 16) - 17;
     }
 
+    public long TerrainSignature(PhysicsState start,Prediction edge=null)
+    {
+        // Search signatures cover the complete native prediction window.
+        // Executed-edge signatures cover every predicted frame and collision margin.
+        float left=start.Px,top=start.Py,right=left+20,bottom=top+42;
+        if(edge!=null)
+            foreach(var frame in edge.Frames)
+            {
+                left=Math.Min(left,frame.State.Px);top=Math.Min(top,frame.State.Py);
+                right=Math.Max(right,frame.State.Px+20);bottom=Math.Max(bottom,frame.State.Py+42);
+            }
+        int minX=edge==null?_left:(int)Math.Floor((left-CollisionMargin)/16);
+        int minY=edge==null?_top:(int)Math.Floor((top-CollisionMargin)/16);
+        int maxX=edge==null?_left+44:(int)Math.Floor((right+CollisionMargin)/16);
+        int maxY=edge==null?_top+28:(int)Math.Floor((bottom+CollisionMargin)/16);
+        unchecked
+        {
+            long hash=1469598103934665603;
+            void Add(long value){hash=(hash^value)*1099511628211;}
+            Add(minX);Add(minY);Add(maxX);Add(maxY);
+            for(int x=minX;x<=maxX;x++)
+                for(int y=minY;y<=maxY;y++)
+                {
+                    char cell=TerrainReader.ReadCell(x,y);Add(cell);
+                    if(!WorldGen.InWorld(x,y,1))continue;
+                    var tile=Main.tile[x,y];
+                    Add(tile.TileType);Add(tile.HasTile?1:0);Add(tile.IsActuated?1:0);
+                    Add((int)tile.Slope);Add(tile.IsHalfBlock?1:0);
+                    Add(tile.TileFrameX);Add(tile.TileFrameY);Add(tile.LiquidAmount);Add(tile.LiquidType);
+                }
+            return hash;
+        }
+    }
+
     private void Check(float left, float top, float right, float bottom, bool hazards)
     {
         for (int x = (int)Math.Floor(left / 16); x < (int)Math.Ceiling(right / 16); x++)

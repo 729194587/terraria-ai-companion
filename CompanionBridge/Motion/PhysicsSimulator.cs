@@ -64,6 +64,7 @@ internal static class NavigationContact
 
 internal interface IMotionWorld
 {
+    long TerrainSignature(PhysicsState start,Prediction edge=null)=>0;
     NavigationBlockingTile[] LastHorizontalContact => null;
     PhysicsState Move(PhysicsState start, float vx, float vy, float gravity);
     bool SafeSweep(PhysicsState start, PhysicsState end, out string reason);

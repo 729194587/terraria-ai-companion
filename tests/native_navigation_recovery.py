@@ -18,7 +18,8 @@ async def verify(args):
     p=args.profile
     await wait_file(p/'action-fixture.json',90)
     rows=[]
-    for scene in (args.scenes or (['offset'] if args.baseline else ['offset','low_wall','high_wall','air','cancel_air'])):
+    for scene in (args.scenes or (['offset','air','cancel_air'] if args.autonomous else
+                                  ['offset'] if args.baseline else ['offset','low_wall','high_wall','air','cancel_air'])):
         ready=p/'terrain-ready.json';ready.unlink(missing_ok=True)
         (p/'terrain-recovery-fired.json').unlink(missing_ok=True)
         temp=p/'terrain-request.tmp';temp.write_text(json.dumps(dict(scene='flat',direction=1,recovery=scene)))
@@ -26,16 +27,20 @@ async def verify(args):
         fixture=await wait_file(ready)
         bridge=ServerAiBridge(args.port)
         target=fixture['targetX']
-        source=f"return api('navigate_to_x',{{targetX={target}}})"
+        operation='navigate_to' if args.autonomous else 'navigate_to_x'
+        arguments=dict(x=target+10,y=fixture['floor']*16) if args.autonomous else dict(targetX=target)
+        source=f"return api('{operation}',"+'{'+','.join(f'{k}={v}' for k,v in arguments.items())+'})'
         try:
             if scene=='cancel_air':
-                await asyncio.to_thread(bridge.command,'start_atomic',operation='navigate_to_x',
-                    arguments=dict(targetX=target),expectedGeneration=bridge.binding['generation'])
+                await asyncio.to_thread(bridge.command,'start_atomic',operation=operation,
+                    arguments=arguments,expectedGeneration=bridge.binding['generation'])
                 for _ in range(150):
                     state=await asyncio.to_thread(bridge.command,'get_movement')
                     action=state['movement']['action']
                     nav=(action.get('evidence') or {}).get('navigation') or {}
-                    if nav.get('Status')=='recovering':break
+                    recovery_seen=(p/'terrain-recovery-fired.json').exists() if args.autonomous else nav.get('Status')=='recovering'
+                    if recovery_seen:
+                        break
                     assert action['status'] in ('accepted','running'),action
                     await asyncio.sleep(.01)
                 else:raise AssertionError('Did not observe active recovery before cancellation')
@@ -57,6 +62,10 @@ async def verify(args):
         (p/f'recovery-{scene}-receipt.json').write_text(json.dumps(dict(source=source,fixture=fixture,receipt=receipt),indent=2))
         trace=await wait_file(p/f'terrain-motion-flat-1-{scene}.json')
         evidence=action.get('evidence') or {};end=action.get('endEvidence') or {}
+        if args.autonomous:
+            history=evidence['task']['progress']['children']
+            assert len(history)==1 and history[0]['parentTaskId']==action['actionId'],action
+            evidence=history[0]['result']['evidence']
         nav=evidence.get('navigation') or {}
         assert action['endEvidenceStatus']=='known' and end['inputsReleased'],action
         assert end['worldSessionId']==fixture['world'] and end['actorGeneration']==fixture['generation']
@@ -78,6 +87,8 @@ async def verify(args):
                 assert nav['RecoveryCount']>=1 and nav['RecoveryReplans']>=1,action
             assert all(evidence.get(k) for k in ('arrived','grounded','safeSupport','settled'))
             assert evidence['x']>=target-12 and abs(evidence['vx'])<=.1
+            if args.autonomous:
+                assert action['task']['result']['evidence']['arrived'] is True,action
         elif scene=='high_wall':
             assert action['status']=='failed' and 0<=nav['RecoveryCount']<=3 and nav['PlanNumber']>=2,action
         if not args.baseline:
@@ -95,6 +106,9 @@ async def verify(args):
             for i,f in enumerate(trace):
                 if f.get('RecoveryReplans',0) and not (trace[i-1].get('RecoveryReplans',0) if i else 0):
                     assert i>=2 and trace[i-1]['Settled'] and trace[i-2]['Settled'] and f['RecoveryInputsReleased'],f
+            if args.autonomous and scene in ('offset','air'):
+                failures=[entry for f in trace for entry in ((f.get('navigation') or {}).get('FailureMemory') or [])]
+                assert failures and all(entry['Reason'] and 'ActualLanding' in entry and 'Terrain' in entry for entry in failures),trace
         row=dict(scene=scene,status=action['status'],reason=action['reason'],detail=action.get('reasonDetail'),
             recoveryCount=nav.get('RecoveryCount'),replans=nav.get('RecoveryReplans'),plans=nav.get('PlanNumber'),x=evidence.get('x'),
             targetX=target,frames=len(trace),inputsReleased=end['inputsReleased'])
@@ -109,5 +123,6 @@ if __name__=='__main__':
     parser.add_argument('--port',type=int,required=True)
     parser.add_argument('--profile',type=Path,required=True)
     parser.add_argument('--baseline',action='store_true')
+    parser.add_argument('--autonomous',action='store_true')
     parser.add_argument('--scenes',nargs='+',choices=['offset','low_wall','high_wall','air','cancel_air'])
     asyncio.run(verify(parser.parse_args()))

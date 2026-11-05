@@ -1,11 +1,12 @@
 param([string]$TModLoaderPath,[string]$EngineProfile,
     [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes,[switch]$Mobility,[switch]$Probe,[switch]$Region,
-    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment)
+    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
 $TModLoaderPath=$selectedEngine.Path
 if($Environment -and !$Region){throw 'Environment probe requires Region mode.'}
+if($AutonomousNavigation -and ($Region -or $Mobility -or $Baseline -or $Probe)){throw 'Autonomous recovery uses the native recovery scenes.'}
 if($Region -and ($Mobility -or $Probe -or $Baseline -or $Scenes)){throw 'Region mode does not combine with mobility/recovery probes or scene selectors.'}
 $repo=Split-Path $PSScriptRoot -Parent
 $world=(Resolve-Path -LiteralPath $WorldPath).Path
@@ -41,6 +42,7 @@ try {
     if($Probe){$probeArgs+='--probe'}
     if($Baseline){$probeArgs+='--baseline'}
     if($Scenes){$probeArgs+=@('--scenes')+$Scenes}
+    if($AutonomousNavigation){$probeArgs+='--autonomous'}
     & "$repo/.local/lua-venv/Scripts/python.exe" @probeArgs
     if($LASTEXITCODE -ne 0){throw "Native recovery verification failed: $profile"}
     [IO.File]::WriteAllText("$profile/g81-test-stop",'Stop only this isolated server')
