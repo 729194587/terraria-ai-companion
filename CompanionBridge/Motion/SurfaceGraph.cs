@@ -30,7 +30,8 @@ internal sealed record SurfaceEdge(SurfaceNode From,SurfaceNode To,SurfaceMotion
     PhysicsState? VerifiedLanding=null,PhysicsParameters Physics=null);
 internal sealed record SurfaceGraphSnapshot(string Exit,int Radius,int TileReads,int Nodes,
     int CandidateEdges,int VerifiedEdges,int Expansions,int SliceWork,double SliceMilliseconds,
-    int ChangedTiles,int RetainedNodes,int RangeExpansions,LandingRegion Waypoint=null);
+    int ChangedTiles,int RetainedNodes,int RangeExpansions,LandingRegion Waypoint=null,
+    float? EstimatedRouteUpdates=null,bool CandidateReachedGoal=false);
 
 // Per-root cache. Raw stance intervals are kept even when the graph uses fewer
 // samples on ordinary flat spans. A tile alone never certifies a stance.
@@ -251,11 +252,13 @@ internal sealed class SurfaceNavigator : IDisposable
     private double milliseconds;
     private string exit="budget";
     private LandingRegion waypoint;
+    private float? estimatedRouteUpdates;
+    private bool candidateReachedGoal;
     private readonly SurfaceGraph graph;
     private readonly Func<PhysicsState,bool> detour;
     private readonly Func<PhysicsState,int> preference;
     internal SurfaceGraphSnapshot Snapshot=>new(exit,radius,reads,graph.Nodes.Count(),candidates,verified,expanded,
-        work,timer.Elapsed.TotalMilliseconds,graph.ChangedTiles,graph.RetainedNodes,rangeExpansions,waypoint);
+        work,timer.Elapsed.TotalMilliseconds,graph.ChangedTiles,graph.RetainedNodes,rangeExpansions,waypoint,estimatedRouteUpdates,candidateReachedGoal);
     internal bool Finished {get;private set;}
     internal SurfaceNavigator(SurfaceGraph graph,PhysicsState start,LandingRegion goal,PhysicsParameters ph,
         IMotionWorld world,ISurfaceTerrain terrain,NavigationSearchMemory learning,
@@ -340,7 +343,7 @@ internal sealed class SurfaceNavigator : IDisposable
                         if(!byColumn.TryGetValue(column,out var neighbors))continue;
                         foreach(var b in neighbors)
                         {
-                            if(closed.Contains(b.Id)||a.Id==-1&&denied.Contains(b.Id))continue;
+                            if(closed.Contains(b.Id)||(a.Id==-1||a.Region.Contains(start))&&denied.Contains(b.Id))continue;
                             var edge=graph.Candidate(a,b,ph);candidates++;
                             if(edge!=null)
                             {
@@ -366,6 +369,8 @@ internal sealed class SurfaceNavigator : IDisposable
                 var path=new List<SurfaceEdge>();
                 for(var n=end;n.Id!=-1;){var edge=came[n.Id];path.Add(edge);n=edge.From;}
                 path.Reverse();
+                estimatedRouteUpdates=path.Sum(e=>e.Cost)+(complete?0:goal.Distance(end.Rest(end.X))/ph.MaxRun);
+                candidateReachedGoal=complete;
                 int connection=0;
                 // Overlapping stance intervals are intentional. If the actual
                 // body already occupies the next launch region, validate its

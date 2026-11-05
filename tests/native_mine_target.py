@@ -35,7 +35,7 @@ async def verify(args):
         finally:
             bridge.close()
         rows.append(dict(case=case, result=r));save()
-        expected = {'no_tool': 'failed', 'deadline': 'timeout'}
+        expected = {'no_tool': 'failed', 'deadline': 'timeout','navigation_joint_changed':'failed','navigation_joint_unknown':'unknown'}
         if case == 'underpowered':
             assert r['lastAction']['status'] == 'failed', (case, r)
         elif case == 'blocked':
@@ -44,6 +44,11 @@ async def verify(args):
             assert r['status'] in ('failed', 'timeout'), (case, r)
             if r['status'] == 'timeout':
                 assert r['lastAction']['reason'] in ('execution_deadline', 'task_game_update_deadline'), r
+        elif case == 'navigation_joint_no_material':
+            assert r['status'] in ('failed','timeout'), (case,r)
+        elif case == 'navigation_joint_unknown':
+            assert r['status']=='action_unknown' and r['lastAction']['status']=='unknown',r
+            assert r['failure']['retryAllowed'] is False and not r['lastAction'].get('continuationAllowed'),r
         else:
             assert r['status'] == expected.get(case, 'completed'), (case, r)
         assert r['actions'] == 1, r
@@ -52,6 +57,7 @@ async def verify(args):
         for case, edit in (
             ('navigation_flat', None), ('navigation_jump', None), ('navigation_drop', None), ('navigation_trip', None),
             ('navigation_surface_wide', None), ('navigation_surface_detour', None),
+            ('navigation_cost_detour', None), ('navigation_joint_bridge', 'place_tile'),
             ('navigation_step_half_roof', None), ('navigation_step_up_roof', None), ('navigation_step_down_roof', None),
             ('navigation_single', None), ('navigation_single_platform', None),
             ('navigation_half', None), ('navigation_slope', None),
@@ -96,6 +102,16 @@ async def verify(args):
                 assert names == ['navigate_to_landing_region'], task
                 motion = children[0]['result']['evidence']
                 assert motion['x'] - motion['startX'] > 192 and motion['navigation']['PlanNumber'] > 1, motion
+            if case in ('navigation_cost_detour','navigation_joint_bridge'):
+                planning=task['progress']['planning']
+                assert planning['virtualNativeVerified'] is False, planning
+                history=planning['history']
+                if case=='navigation_cost_detour':
+                    assert not edits and any(d['movementVerifiedComplete'] and d['candidateCount']>0 and d['choice']=='movement' for d in history), planning
+                else:
+                    assert 'mine_tile' in edits and 'place_tile' in edits, task
+                    assert any(d['selected'] and {a['Kind'] for a in d['selected']['Actions']} >= {1,2} for d in history),planning
+                    assert all(c['result']['inputsReleased'] and c['result']['effectVerified'] for c in children if c['taskName'] in ('mine_tile','place_tile')), task
             if case in ('navigation_surface_wide', 'navigation_surface_detour'):
                 assert names == ['navigate_to_landing_region'], task
                 motion = children[0]['result']['evidence']
@@ -115,6 +131,14 @@ async def verify(args):
             if case == 'navigation_long_place':
                 assert task['progress']['placedTiles'] > 8, task
             print(json.dumps(dict(case=case, children=names, reason=result['reason'])), flush=True)
+        for case in ('navigation_joint_no_material','navigation_joint_changed','navigation_joint_unknown'):
+            spec=await fixture(case)
+            result=await run(case,f"return api('navigate_to',{{x={spec['destinationX']},y={spec['destinationY']}}})")
+            progress=result['task']['progress']
+            assert progress['dugTiles']==0 and progress['placedTiles']==0 and result['endEvidence']['inputsReleased'],result
+            if case!='navigation_joint_no_material':
+                assert len(progress['children'])==1 and progress['children'][0]['taskName']=='mine_tile',result
+            print(json.dumps(dict(case=case,status=result['status'],reason=result['reason'])),flush=True)
     if args.navigation_only:
         await verify_navigation()
         return

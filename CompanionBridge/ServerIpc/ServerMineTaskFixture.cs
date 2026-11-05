@@ -11,11 +11,16 @@ namespace CompanionBridge.ServerIpc;
 
 internal static class ServerMineTaskFixture
 {
-    private static bool expireMining, obscureMining;
+    private static bool expireMining, obscureMining,changeNavigationCut;
     internal static bool Enabled=>ServerAiActionFixture.Enabled&&Program.LaunchParameters.ContainsKey("-companiontasktest");
     internal static void Tick(Player p)
     {
         if(!Enabled)return;
+        if(changeNavigationCut&&ActorMining.Running&&ActorMining.Current.Strikes>0)
+        {
+            var cut=ActorMining.Current;Main.tile[cut.X,cut.Y].TileType=TileID.Obsidian;
+            changeNavigationCut=false;
+        }
         if(expireMining&&ActorMining.Running&&ActorMining.Current.Strikes>0)
         {
             ActorMining.Current.Ticks=600;
@@ -69,7 +74,8 @@ internal static class ServerMineTaskFixture
             p.inventory[0]=new Item(ItemID.CopperShortsword);p.inventory[1]=new Item(ItemID.CopperPickaxe);p.selectedItem=0;
             if(kind is "near" or "hotbar" or "bag" or "underpowered" or "workbench" or "workbench_task" or "cutout" or "deadline")x=left+2;
             expireMining=kind is "deadline" or "opening_deadline";
-            obscureMining=kind=="opening_unknown";
+            obscureMining=kind is "opening_unknown" or "navigation_joint_unknown";
+            changeNavigationCut=kind=="navigation_joint_changed";
             if(kind is "bag" or "cutout" or "deadline")
                 Utils.Swap(ref p.inventory[1],ref p.inventory[20]);
             if(kind=="cutout")
@@ -159,6 +165,16 @@ internal static class ServerMineTaskFixture
                 }
                 if(kind=="navigation_surface_wide")
                     destinationX=(left+60)*16+8;
+                if(kind=="navigation_cost_detour")
+                    for(int tx=left+2;tx<=left+3;tx++)for(int ty=floor-2;ty<floor;ty++)
+                    {var rock=Main.tile[tx,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
+                if(kind is "navigation_joint_bridge" or "navigation_joint_no_material" or "navigation_joint_changed" or "navigation_joint_unknown")
+                {
+                    for(int tx=left+2;tx<=left+3;tx++)for(int ty=floor;ty<=floor+8;ty++)Main.tile[tx,ty].ClearTile();
+                    for(int ty=floor-10;ty<floor;ty++)
+                    {var rock=Main.tile[left+2,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
+                    if(kind!="navigation_joint_no_material")p.inventory[2]=new Item(ItemID.WoodPlatform){stack=4};
+                }
                 if(kind is "navigation_step_half_roof" or "navigation_step_up_roof" or "navigation_step_down_roof")
                 {
                     bool half=kind=="navigation_step_half_roof",down=kind=="navigation_step_down_roof";

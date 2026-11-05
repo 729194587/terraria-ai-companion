@@ -13,6 +13,13 @@ public static class TaskRuntimeOfflineTests
         internal bool Reach,Absent=true,ThrowPrepare,NoApproach,AllowOpening,PlaceSupport;
         public bool ReplanAfterChange=>PlaceSupport;
         internal bool Settled=true;
+        internal bool PendingPlanning,PreferChanges;
+        internal Result PlanningStop;
+        internal int PlanningReleases;
+        public bool PlanningPending=>PendingPlanning;
+        public Result PlanningFailure=>PlanningStop;
+        public bool PreferEdit(int remaining)=>PreferChanges;
+        public void ReleasePlanning(){PlanningReleases++;}
         internal string Error,PrepareError,Danger;
         public string InterruptionReason()=>Danger;
         internal int Preparations,Observations;
@@ -52,6 +59,23 @@ public static class TaskRuntimeOfflineTests
     }
     public static void Run()
     {
+        {
+            var world=new World{PendingPlanning=true};var native=new Native();
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var root=new TaskSlot(new AutonomousNavigationTask("planning",world,native),"planning",null,frame,100);
+            for(ulong tick=1;tick<8;tick++)Check(root.Tick(frame with{GameUpdate=tick}).Status=="running","planning budget is waiting, not no route");
+            Check(native.Starts.Count==0,"pending candidate evaluation cannot dispatch any native action");
+            root.Stop(frame with{GameUpdate=8},"cancelled","explicit_cancel");
+            Check(world.PlanningReleases==1&&native.Starts.Count==0,"cancelling evaluation disposes pending planning without replay");
+        }
+        foreach(string failure in new[]{"unknown","failed"})
+        {
+            var world=new World{PlanningStop=new(failure,"comparison_refused",null,true),AllowOpening=true,PreferChanges=true};var native=new Native();
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var root=new TaskSlot(new AutonomousNavigationTask("refusal",world,native),"refusal",null,frame,100);
+            root.Tick(frame with{GameUpdate=1});var r=root.Tick(frame with{GameUpdate=2});
+            Check(r.Status==failure&&r.InputsReleased&&native.Starts.Count==0,"unknown/resource comparison refusal never starts dependent edits");
+        }
         foreach(bool absent in new[]{false,true})
         {
             var f=new Fixture();f.World.Reach=true;f.World.Absent=absent;f.Native.Pending=true;

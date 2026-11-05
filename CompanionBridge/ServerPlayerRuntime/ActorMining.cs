@@ -127,6 +127,14 @@ internal static class ActorMining
         }
         return slot>=0?Failure.None:!hasTool?Failure.InvalidTool:!hasPower?Failure.NoPickPower:Failure.OutOfRange;
     }
+    internal static float EstimateUpdates(Player player,int slot,int x,int y)
+    {
+        var item=player.inventory[slot];var tile=Main.tile[x,y];
+        int damage=pickDamage(player,x,y,item.pick,0,tile);
+        // Pure pinned native damage query, same tool as ChooseTool/Start. This
+        // deliberately estimates cycles rather than simulating HitTile state.
+        return damage<=0?float.PositiveInfinity:Math.Max(1,item.useTime)*(float)Math.Ceiling(100d/damage)+1;
+    }
     private static bool Same(Context c)
     {
         var t=Main.tile[c.X,c.Y];return t.HasTile&&t.TileType==c.ExpectedType
