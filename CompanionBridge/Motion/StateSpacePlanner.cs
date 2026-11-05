@@ -38,12 +38,12 @@ internal static class StateSpacePlanner
         => PlanCore(start, targetX, null, ph, world, maxExpansions, budgetMs, goalDirection, rejectEdge, detourCheckpoint, historicalPreference);
 
     internal static Route Plan(PhysicsState start, LandingRegion region, PhysicsParameters ph,
-        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, Func<PhysicsState, Prediction, bool> rejectEdge = null, Func<PhysicsState,bool> detourCheckpoint = null, Func<PhysicsState,int> historicalPreference = null)
+        IMotionWorld world, int maxExpansions = 32, double budgetMs = 25, Func<PhysicsState, Prediction, bool> rejectEdge = null, Func<PhysicsState,bool> detourCheckpoint = null, Func<PhysicsState,int> historicalPreference = null, int searchPass = 0)
         => PlanCore(start, Math.Clamp(start.Px, region.MinPlayerLeftX, region.MaxPlayerLeftX),
-            region, ph, world, maxExpansions, budgetMs, null, rejectEdge, detourCheckpoint, historicalPreference);
+            region, ph, world, maxExpansions, budgetMs, null, rejectEdge, detourCheckpoint, historicalPreference, searchPass);
 
     private static Route PlanCore(PhysicsState start, float targetX, LandingRegion region, PhysicsParameters ph,
-        IMotionWorld world, int maxExpansions, double budgetMs, int? goalDirection, Func<PhysicsState, Prediction, bool> rejectEdge, Func<PhysicsState,bool> detourCheckpoint, Func<PhysicsState,int> historicalPreference)
+        IMotionWorld world, int maxExpansions, double budgetMs, int? goalDirection, Func<PhysicsState, Prediction, bool> rejectEdge, Func<PhysicsState,bool> detourCheckpoint, Func<PhysicsState,int> historicalPreference, int searchPass = 0)
     {
         var watch = Stopwatch.StartNew();
         var rejected = new Dictionary<string, int>();
@@ -55,13 +55,15 @@ internal static class StateSpacePlanner
         // Preserve the task's crossing direction after reaching/passing targetX;
         // recomputing it from the current position would reverse an overshot goal.
         int sign = goalDirection ?? (targetX >= start.Px ? 1 : -1);
-        // Region H is the indicator of geometric non-membership (X OR feet Y).
+        // The first region pass uses the indicator of geometric non-membership (X OR feet Y).
         // Every edge costs >= one executed frame, jumps add 20. Any path from
         // outside the geometry needs at least one edge, so H <= remaining G.
         // Inside geometry H=0 even if settling/support is still needed. This also
         // stays consistent across native StepUp/Down positional corrections;
         // no unproved horizontal/vertical speed bound is used for region goals.
-        float H(PhysicsState s) => SearchEstimate(s, goal, sign, region, ph);
+        // The final retry trades cost ordering for progress toward the goal.
+        float H(PhysicsState s) => SearchEstimate(s, goal, sign, region, ph)
+            + (searchPass == 2 ? region.Distance(s) / ph.MaxRun : 0);
         // Horizontal H is existing best-first guidance, NOT an admissible lower
         // bound: the arrival band and native step corrections invalidate a
         // MaxRun proof. Neither goal dequeue nor budget incumbents imply optimality.
@@ -112,7 +114,9 @@ internal static class StateSpacePlanner
             // candidates; all variants use the same sweep, drop and braking proof.
             bool neutralAscent = region != null && cur.Px >= region.MinPlayerLeftX && cur.Px <= region.MaxPlayerLeftX
                 && cur.Py + PhysicsSimulator.PlayerH - region.SurfaceY >= 4;
-            foreach (int dir in neutralAscent ? new[] { 0, sign, -sign } : new[] { sign, -sign })
+            var directions = neutralAscent ? new[] { 0, sign, -sign } : new[] { sign, -sign };
+            if (searchPass == 1) Array.Reverse(directions);
+            foreach (int dir in directions)
             {
                 // BuildHoldOptions from upstream: walk then 2-frame hold increments.
                 for (int option = 0; option <= (ph.JumpHeight + 1) / 2; option++)

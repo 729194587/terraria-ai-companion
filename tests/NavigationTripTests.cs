@@ -91,6 +91,55 @@ public static class NavigationTripTests
         var refused=StateSpacePlanner.Plan(start,1800,Ph,hazard,budgetMs:5000,detourCheckpoint:_=>true,
             historicalPreference:_=>{priorReads++;return int.MaxValue;});
         Check(refused.Actions.Count==0&&priorReads==0,"historical hints cannot approve unsafe or unobserved terrain");
+        var region=new LandingRegion(7500,7520,1600);
+        var flat=new MotionOfflineTests.RegionWorld();
+        flat.Collision.WallX=float.PositiveInfinity;
+        nav=new(enableSafeGroundWalk:true){Continuous=true};
+        actual=start;
+        for(int n=0;n<2500&&!nav.Terminal;n++)
+        {
+            var input=nav.Before(806,3,region,actual,Ph,flat);
+            actual=PhysicsSimulator.Step(actual,input,Ph,flat);
+            nav.After(actual,flat,input==default);
+        }
+        Check(nav.Snapshot.Status=="arrived"&&region.Arrived(actual,flat)
+            &&nav.Snapshot.TripUpdates>NavigationTripProgress.UpdateLimit&&nav.Snapshot.FastWalkPlans>1,
+            "continuous region trip uses verified rolling prefixes beyond legacy update limit");
+        var narrow=new LandingRegion(1614,1618,1600);
+        var approach=SafeGroundWalk.TryPlan(start,1616,1,Ph,flat,narrow);
+        Check(approach is {ReachedGoal:true}&&narrow.Arrived(approach.Actions[0].Landing,flat),
+            "short flat approach selects a stride that brakes inside the narrow goal");
+        nav=new(searchBudgetMilliseconds:0){Continuous=true};
+        for(int n=1;n<=3;n++)
+        {
+            Check(nav.Before(807,3,region,start,Ph,flat)==default,"empty budget slice emits no input");
+            Check(nav.Terminal==(n==3),"empty search slices defer before giving up");
+        }
+        Check(nav.Snapshot.DeferredSearches==2&&nav.Snapshot.Reason=="navigation_search_budget_exhausted",
+            "trip budget exhaustion is distinct from no local route");
+        nav=new(enableSafeGroundWalk:true,searchBudgetMilliseconds:0){Continuous=true};
+        flat.Collision.WallX=start.Px+20;
+        Check(nav.Before(808,3,region,start,Ph,flat)==default&&!nav.Terminal,"budget miss keeps trip running");
+        flat.Collision.WallX=float.PositiveInfinity;
+        Check(nav.Before(808,3,region,start,Ph,flat).Direction==1&&nav.Snapshot.DeferredSearches==1,
+            "same trip continues when new observation yields a safe prefix");
+        var recoveryGoal=new LandingRegion(1840,1860,1600);
+        nav=new(enableSafeGroundWalk:true){Continuous=true};
+        actual=start;
+        bool displaced=false;
+        for(int n=0;n<900&&!nav.Terminal;n++)
+        {
+            var input=nav.Before(809,3,recoveryGoal,actual,Ph,flat);
+            actual=PhysicsSimulator.Step(actual,input,Ph,flat);
+            if(!displaced&&input.Direction!=0)
+            {
+                actual=actual with{Px=actual.Px-24};
+                displaced=true;
+            }
+            nav.After(actual,flat,input==default);
+        }
+        Check(displaced&&nav.Snapshot.RecoveryReplans==1&&nav.Snapshot.Status=="arrived"
+            &&recoveryGoal.Arrived(actual,flat),"continuous goal recovers from actual displacement and arrives");
         Console.WriteLine($"M4.3 trip: {checks} checks; collision fixtures, not native execution.");
     }
 }

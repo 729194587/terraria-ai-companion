@@ -31,6 +31,7 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
     protected readonly AiAtomicActions.IExecutor native;
     protected CompanionTask child;
     internal const int MaxOpeningTiles=18, MaxOpeningMoves=8;
+    internal const ulong TripUpdates=2700;
     private const ulong SettleUpdates=90;
     protected string phase="preflight";
     private int clearedTiles, openingMoves, invalidatedEdits, sequence;
@@ -107,9 +108,7 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
         {
             if(phase!="reobserve"&&!world.PreferEdit(MaxOpeningTiles-clearedTiles)&&world.FindApproach() is {} approach)
             {
-                if(world.ReplanAfterChange&&openingMoves++>=MaxOpeningMoves)
-                    return Describe(Failed("navigation_segment_budget_exhausted"));
-                return StartChild(frame,"navigate_to_landing_region",approach,"navigating",1800);
+                return StartChild(frame,"navigate_to_landing_region",approach,"navigating",world.ReplanAfterChange?TripUpdates:1800);
             }
             openingMode=true;
         }
