@@ -57,15 +57,17 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     public bool Matches(Player p) => Current!=null && ReferenceEquals(Current.Identity.Actor,p);
     internal Run Start(AiReadOnlyProtocol.Identity identity,float target,string actionId=null)
         =>Start(identity,target,null,actionId);
-    internal Run Start(AiReadOnlyProtocol.Identity identity,LandingRegion region,string actionId=null)
-        =>Start(identity,region.MinPlayerLeftX,region,actionId);
-    private Run Start(AiReadOnlyProtocol.Identity identity,float target,LandingRegion region,string actionId)
+    internal Run Start(AiReadOnlyProtocol.Identity identity,LandingRegion region,string actionId=null,bool continuous=false,bool preferFlatRegion=false)
+        =>Start(identity,region.MinPlayerLeftX,region,actionId,continuous,preferFlatRegion);
+    private Run Start(AiReadOnlyProtocol.Identity identity,float target,LandingRegion region,string actionId,bool continuous=false,bool preferFlatRegion=false)
     {
         var p=(Player)identity.Actor;
         ServerAiNativeActions.Require(identity);
         ActorControl.Healthy(p);
         if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Actor busy.");
         navigation.Cancel();
+        navigation.Task.Continuous=continuous;
+        navigation.Task.PreferFlatRegion=preferFlatRegion;
         Current=new Run{Identity=identity,ActionId=actionId,Target=target,Region=region,StartX=p.position.X,Session=checked(++session),Generation=checked((int)identity.Generation)};
         return Current;
     }
@@ -131,6 +133,11 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 if(!injected)throw new InvalidOperationException("Audited G4 movement boundary not reached.");
                 navigation.After(p);run.Snapshot=navigation.Snapshot;
                 if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown","native_navigation_landing_unconfirmed");}
+                else if(run.Snapshot.Reason=="navigation_search_budget_exhausted")
+                {
+                    run.ReasonDetail=run.Snapshot.SearchFailureReason;
+                    Stop("timeout",run.Snapshot.Reason);
+                }
                 else if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.SearchFailureReason is {} detail && (run.Snapshot.Reason is "navigation_search_timeout" or "navigation_search_expansion_budget")?detail:run.Snapshot.Reason;Stop("failed",AiActionReasons.Navigation(run.Snapshot.Reason));}
                 else if(run.Snapshot.Status=="arrived")
                 {

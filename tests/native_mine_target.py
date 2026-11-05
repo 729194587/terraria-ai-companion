@@ -44,7 +44,7 @@ async def verify(args):
         return r['value'] if r['status'] == 'completed' else r['lastAction']
     async def verify_navigation():
         for case, edit in (
-            ('navigation_flat', None), ('navigation_jump', None), ('navigation_drop', None),
+            ('navigation_flat', None), ('navigation_jump', None), ('navigation_drop', None), ('navigation_trip', None),
             ('navigation_dig', 'mine_tile'), ('navigation_down', 'mine_tile'),
             ('navigation_place', 'place_tile'),
         ):
@@ -62,6 +62,10 @@ async def verify(args):
             assert (not edits if edit is None else edit in edits), task
             if case == 'navigation_jump':
                 assert any(c['result']['evidence']['navigation']['CompletedJumps'] > 0 for c in children), task
+            if case == 'navigation_trip':
+                assert names == ['navigate_to_landing_region'], task
+                motion = children[0]['result']['evidence']
+                assert motion['x'] - motion['startX'] > 192 and motion['navigation']['PlanNumber'] > 1, motion
             if case == 'navigation_down':
                 assert task['progress']['opening']['drops'], task
             if case == 'navigation_place':

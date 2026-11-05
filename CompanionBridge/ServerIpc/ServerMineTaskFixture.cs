@@ -142,6 +142,13 @@ internal static class ServerMineTaskFixture
                 ore.ClearTile();
                 destinationX=(left+5)*16+8;
                 destinationY=floor*16;
+                if(kind=="navigation_trip")
+                {
+                    destinationX=(left+20)*16+8;
+                    foreach(int column in new[]{3,11})
+                        for(int ty=floor-2;ty<floor;ty++)
+                        {var rock=Main.tile[left+column,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
+                }
                 if(kind is "navigation_dig" or "navigation_jump")
                     for(int tx=left+2;tx<=left+3;tx++)
                         for(int ty=floor-(kind=="navigation_dig"?10:2);ty<floor;ty++)
