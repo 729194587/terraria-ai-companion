@@ -400,10 +400,10 @@ internal sealed class NavigationTask
         var old=Edge;
         if(_routePhysics==ph&&!RejectRemembered(state,old)&&PhysicsSimulator.SupportedCheckpoint(state,world))
         {
-            int hold=old.ExtraJumpFrame>=0?old.InitialHold:old.Frames.FindAll(f=>f.Input.Jump).Count;
+            int hold=old.ExtraJumpFrame>=0||old.AirStartFrame>=0?old.InitialHold:old.Frames.FindAll(f=>f.Input.Jump).Count;
             int stride=old.Jump?24:old.Frames.FindAll(f=>f.Input.Direction!=0).Count;
             var fresh=PhysicsSimulator.Predict(state,old.Frames[0].Input.Direction,hold,ph,world,
-                walkFrames:stride,rollingJump:true,maxDropPixels:StateSpacePlanner.MaxDropPixels,extraJumpFrame:old.ExtraJumpFrame);
+                walkFrames:stride,rollingJump:true,maxDropPixels:StateSpacePlanner.MaxDropPixels,extraJumpFrame:old.ExtraJumpFrame,airStartFrame:old.AirStartFrame,airHoldFrames:old.AirHoldFrames);
             if(fresh.Safe&&old.ExecuteFrames<=fresh.Frames.Count)
             {
                 var end=fresh.Frames[old.ExecuteFrames-1].State;

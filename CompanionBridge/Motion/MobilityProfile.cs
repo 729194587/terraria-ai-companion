@@ -7,7 +7,7 @@ namespace CompanionBridge.Motion;
 // Session/generation scope the revision; outer action evidence carries Actor/world.
 internal sealed record MobilityProfile(long Revision,ulong SourceTick,int Session,int Generation,
     string Variant,PhysicsParameters EffectivePhysics,int Width,int Height,
-    string[] AvailableModes,string[] UnsupportedEffects,bool SwiftnessExpiryTail=false,MovementSnapshot Movement=null)
+    string[] AvailableModes,string[] UnsupportedEffects,bool SwiftnessExpiryTail=false,MovementSnapshot Movement=null,PhysicsParameters ObservedPhysics=null)
 {
     public bool Supported=>UnsupportedEffects.Length==0;
     public string Source=>"native_PostUpdateRunSpeeds";
@@ -26,7 +26,7 @@ internal sealed class MobilityTracker
         &&previous.Session==session&&previous.Generation==generation&&previous.SourceTick+1==tick
         &&previousSwiftnessTime==1&&ph.Matches(PhysicsParameters.Swiftness);
     internal MobilityProfile Sample(PhysicsParameters ph,int width,int height,bool swiftness,
-        string[] unsupported,ulong tick,int session,int generation,int swiftnessTime=0,MovementSnapshot movement=null,bool expectedExtraJump=false)
+        string[] unsupported,ulong tick,int session,int generation,int swiftnessTime=0,MovementSnapshot movement=null,bool expectedExtraJump=false,bool unexpectedAirResource=false,PhysicsParameters observedPhysics=null)
     {
         bool expiryTail=IsSwiftnessExpiryTail(ph,swiftness,tick,session,generation);
         unsupported=unsupported.Length==0?Array.Empty<string>():unsupported.ToArray();
@@ -36,12 +36,14 @@ internal sealed class MobilityTracker
         // The adapter grants this exemption only against the executed plan's
         // prior frame and actual native state. Registry/enabled/physics changes
         // still invalidate; the immutable snapshot always keeps the real bits.
-        if(previous==null||previous.Session!=session||previous.Generation!=generation
+        if(previous==null||unexpectedAirResource||previous.Session!=session||previous.Generation!=generation
             ||previous.Variant!=variant||previous.EffectivePhysics!=ph||previous.Width!=width||previous.Height!=height
+            ||ph.Air!=null&&previous.Movement!=null&&movement!=null
+                &&(previous.Movement.Wings.TimeMax!=movement.Wings.TimeMax||previous.Movement.Rockets.TimeMax!=movement.Rockets.TimeMax)
             ||!previous.UnsupportedEffects.SequenceEqual(unsupported)
             ||(movement==null?previous.Movement!=null:!movement.SamePlanningAssumptions(previous.Movement,expectedExtraJump)))revision++;
         previous=new(revision,tick,session,generation,variant,ph,width,height,
-            unsupported.Length==0?(ph.ExtraJump!=null?new[]{"ground_walk","ground_jump","extra_jump"}:new[]{"ground_walk","ground_jump"}):Array.Empty<string>(),unsupported,expiryTail,movement);
+            unsupported.Length==0?(ph.Air!=null?new[]{"ground_walk","ground_jump",ph.Air.Kind==AirKind.Wings?"wings":"rocket_pulse"}:ph.ExtraJump!=null?new[]{"ground_walk","ground_jump","extra_jump"}:new[]{"ground_walk","ground_jump"}):Array.Empty<string>(),unsupported,expiryTail,movement,observedPhysics);
         previousSwiftnessTime=swiftness?swiftnessTime:0;
         return previous;
     }

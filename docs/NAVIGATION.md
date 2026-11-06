@@ -43,6 +43,8 @@ Phase 4.1 在原有 `MobilityProfile` 中提供原生运动能力和环境状态
 
 Phase 4.2 在现有物理状态、地面动作搜索和逐帧执行上接入单一已验证的 Cloud ExtraJump 模型。只有动态快照中单独启用该能力、且没有阻止额外跳跃时才参与规划；计划通过真实松键/再按下请求原生触发，并核验 Active、Available、jump 计数及运动状态。正常消耗/结束/落地刷新保持规划版本，异常变化仍走释放、落地核验与恢复。范围、证据和手动验证见 [Phase 4.2 实现记录](PHASE4_2_EXTRA_JUMP_NAVIGATION_IMPLEMENTATION.md)。
 
+Phase 4.3 在同一预测与执行链上加入普通天使翅膀和基础火箭靴脉冲模型。有功能性翅膀时始终使用翅膀策略，耗尽后也不切到火箭靴；没有翅膀才考虑推进。飞行时间、推进资源和延迟进入物理搜索状态，原生观察核验与安全恢复继续复用。只对经过完整安全落脚尾段验证的小幅空中偏差进行反馈修正。当前证据为离线、IL 契约和双引擎构建，尚未进行本阶段原生飞行或真实世界验收，详见 [Phase 4.3 实现记录](PHASE4_3_WINGS_ROCKET_BOOTS_IMPLEMENTATION.md)。
+
 - 规划与执行：`CompanionBridge/Motion/`
 - Server AI 导航适配：`CompanionBridge/ServerIpc/ServerAiNavigation.cs`
 - Server Player 原生输入/钩子：`CompanionBridge/ServerPlayerRuntime/`

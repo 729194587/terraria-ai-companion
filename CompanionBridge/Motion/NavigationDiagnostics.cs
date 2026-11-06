@@ -26,6 +26,8 @@ internal sealed class NavigationDiagnostics
         }
         if (current.PlanNumber > 0 && (!sameTask || current.PlanNumber != _previous.PlanNumber))
             Write("navigation_plan", current);
+        if(current.AirMotion!=null&&(!sameTask||current.AirMotion.Phase!=_previous.AirMotion?.Phase||current.AirMotion.Confirmed!=_previous.AirMotion?.Confirmed))
+            Write("navigation_air_state",current);
         if (sameTask && current.CompletedActions > _previous.CompletedActions)
             Write("navigation_checkpoint", current);
         if (sameTask && (current.RecoveryCount != _previous.RecoveryCount || current.RecoveryReplans != _previous.RecoveryReplans))
