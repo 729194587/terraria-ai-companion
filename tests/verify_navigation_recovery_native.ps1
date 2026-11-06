@@ -45,6 +45,11 @@ try {
     if($AutonomousNavigation){$probeArgs+='--autonomous'}
     & "$repo/.local/lua-venv/Scripts/python.exe" @probeArgs
     if($LASTEXITCODE -ne 0){throw "Native recovery verification failed: $profile"}
+    if($Mobility){
+        $discovery=Get-Content -LiteralPath "$profile/movement-discovery.json" -Raw | ConvertFrom-Json
+        if($discovery.checks -lt 100 -or !$discovery.fieldInjectionRestored -or $discovery.additionalPlayerUpdates -ne 0){throw 'Movement discovery boundary checks failed'}
+        Write-Output "Movement discovery native: $($discovery.checks) checks at $($discovery.boundary)"
+    }
     [IO.File]::WriteAllText("$profile/g81-test-stop",'Stop only this isolated server')
     if(!$process.WaitForExit(20000) -or $process.ExitCode -ne 0){throw 'Isolated server did not unload cleanly'}
     @{profile=$profile;packageSHA256=(Get-FileHash -LiteralPath $package).Hash;
