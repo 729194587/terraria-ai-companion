@@ -6,7 +6,7 @@ using System.Collections.Generic;
 namespace CompanionBridge.Motion;
 
 internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRunSpeed,
-    float RunSlowdown, float Gravity, float MaxFall, float JumpSpeed, int JumpHeight)
+    float RunSlowdown, float Gravity, float MaxFall, float JumpSpeed, int JumpHeight,ExtraJumpModel ExtraJump=null)
 {
     // Player.Update initializes 10, then unconditionally adds 0.01 at IL_020d–021a
     // before our input hook. Match the effective value, not the reset constant.
@@ -27,12 +27,13 @@ internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRu
 }
 
 internal readonly record struct PhysicsState(float Px, float Py, float Vx, float Vy,
-    bool Grounded, int JumpFramesLeft = 0, bool ReleaseJump = true);
+    bool Grounded, int JumpFramesLeft = 0, bool ReleaseJump = true,
+    bool ExtraAvailable=false,bool ExtraActive=false,bool ExtraUsed=false);
 internal readonly record struct PhysicsInput(int Direction, bool Jump);
 internal readonly record struct PredictedFrame(PhysicsInput Input, PhysicsState State);
 internal sealed record Prediction(bool Safe, string Reason, List<PredictedFrame> Frames,
     PhysicsState Landing, int ExecuteFrames, bool Jump,
-    NavigationBlockingTile[] BlockingTiles = null);
+    NavigationBlockingTile[] BlockingTiles = null,int ExtraJumpFrame=-1,int InitialHold=0);
 
 internal sealed record NavigationBlockingTile(int X,int Y,string ContentKey,
     string Basis="rejected_root_forward_walk_contact");
@@ -82,7 +83,7 @@ internal sealed class UnsafeMotionException : Exception
 internal static class PhysicsSimulator
 {
     internal static bool SupportedCheckpoint(PhysicsState s,IMotionWorld world)=>s.Grounded
-        &&Math.Abs(s.Vy)<=0.1f&&s.ReleaseJump&&s.JumpFramesLeft==0&&world.SafeLanding(s);
+        &&Math.Abs(s.Vy)<=0.1f&&s.ReleaseJump&&s.JumpFramesLeft==0&&!s.ExtraActive&&world.SafeLanding(s);
     internal static bool Settled(PhysicsState s,IMotionWorld world)
         => Math.Abs(s.Vx)<=0.1f&&SupportedCheckpoint(s,world);
     internal const int PlayerW = 20, PlayerH = 42, MaxFrames = 90, WalkFrames = 12;
@@ -93,6 +94,8 @@ internal static class PhysicsSimulator
     {
         float vx = s.Vx, vy = s.Vy;
         int jfl = s.JumpFramesLeft;
+        bool available=s.ExtraAvailable,active=s.ExtraActive,used=s.ExtraUsed;
+        if(ph.ExtraJump!=null&&s.Grounded&&s.Vy==0){available=true;used=false;}
         // Upstream's else-if chain is confirmed by 1.4.4.9 IL: primary
         // acceleration jumps to IL_0f96, bypassing weak acceleration/friction.
         // The clamp at IL_021b is trackBoost-only, not ordinary running.
@@ -150,12 +153,19 @@ internal static class PhysicsSimulator
                 // Launch sets the full counter; only subsequent hold frames decrement.
                 jfl = ph.JumpHeight;
             }
+            else if(ph.ExtraJump!=null&&s.ReleaseJump&&vy!=0&&available&&!used)
+            {
+                vy=-ph.JumpSpeed;jfl=ph.ExtraJump.HoldFrames(ph);
+                available=false;active=true;used=true;
+            }
         }
         else jfl = 0;
+        if(jfl==0)active=false;
         vy = Math.Min(vy + ph.Gravity, ph.MaxFall);
         var moved = world.Move(s, vx, vy, ph.Gravity);
         if (vy < 0 && Math.Abs(moved.Vy - vy) > 0.01f) jfl = 0;
-        return moved with { JumpFramesLeft = jfl, ReleaseJump = !input.Jump };
+        return moved with { JumpFramesLeft = jfl, ReleaseJump = !input.Jump,
+            ExtraAvailable=available,ExtraActive=active,ExtraUsed=used };
     }
 
     // The upstream input-enumeration/simulation loop, bounded to one local action.
@@ -163,7 +173,7 @@ internal static class PhysicsSimulator
     // moving prefix and replans, so an open flat surface does not become stop/start.
     internal static Prediction Predict(PhysicsState start, int direction, int hold,
         PhysicsParameters ph, IMotionWorld world, int walkFrames = WalkFrames, bool rollingJump = false,
-        float maxDropPixels = 16)
+        float maxDropPixels = 16,int extraJumpFrame=-1)
     {
         var frames = new List<PredictedFrame>();
         bool brakingOnly = direction == 0 && hold == 0 && walkFrames == 0;
@@ -173,11 +183,14 @@ internal static class PhysicsSimulator
         int movingLandingFrames = 0;
         bool landingChecked = false, extendLanding = false;
         float lastGroundY = start.Py;
-        for (int f = 0; f < MaxFrames; f++)
+        for (int f = 0; f < (extraJumpFrame>=0?140:MaxFrames); f++)
         {
             bool moving = hold > 0 ? !airborne || !s.Grounded
                 || (rollingJump && (Math.Abs(s.Vy) > 0.01f || extendLanding)) : f < walkFrames;
-            var input = new PhysicsInput(moving ? direction : 0, f < hold);
+            bool extraHold=extraJumpFrame>=0&&f>=extraJumpFrame&&f<=extraJumpFrame+(ph.ExtraJump?.HoldFrames(ph)??0);
+            var input = new PhysicsInput(moving ? direction : 0, f < hold||extraHold);
+            if(f==extraJumpFrame&&(ph.ExtraJump==null||s.Grounded||!s.ReleaseJump||!s.ExtraAvailable||s.ExtraUsed||s.Vy==0))
+                return new(false,"extra jump launch unavailable",frames,s,0,true,ExtraJumpFrame:extraJumpFrame,InitialHold:hold);
             PhysicsState next;
             try
             {
@@ -226,7 +239,7 @@ internal static class PhysicsSimulator
                     ? start.Py - s.Py >= 4
                     : direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4);
                 bool safe = (brakingOnly || progress)
-                    && world.SafeLanding(s);
+                    && world.SafeLanding(s)&&(extraJumpFrame<0||f>=extraJumpFrame);
                 int execute = movingLandingFrames > 0 ? movingLandingFrames : frames.Count;
                 if (hold == 0 && !brakingOnly)
                 {
@@ -234,7 +247,7 @@ internal static class PhysicsSimulator
                     while (!SupportedCheckpoint(frames[execute - 1].State,world) && execute < frames.Count) execute++;
                 }
                 return new(safe, safe ? "safe landing and braking" : "no safe landing/progress",
-                    frames, s, execute, hold > 0);
+                    frames, s, execute, hold > 0,ExtraJumpFrame:extraJumpFrame,InitialHold:hold);
             }
         }
         return new(false, "no stable landing within prediction limit", frames, s, 0, hold > 0);

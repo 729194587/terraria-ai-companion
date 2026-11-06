@@ -41,6 +41,8 @@ Phase 3 v1.1 在原根任务中加入有限连续改造评估：在彼此独立�
 
 Phase 4.1 在原有 `MobilityProfile` 中提供原生运动能力和环境状态的只读值快照，保留 ExtraJump 原生顺序、功能性翅膀、火箭靴、坐骑及钩爪身份。资源采样与规划版本分离；发现特殊能力不会增加可用导航模式。实际采集边界、双引擎验证和限制见 [Phase 4.1 实现记录](PHASE4_1_MOVEMENT_DISCOVERY_IMPLEMENTATION.md)。
 
+Phase 4.2 在现有物理状态、地面动作搜索和逐帧执行上接入单一已验证的 Cloud ExtraJump 模型。只有动态快照中单独启用该能力、且没有阻止额外跳跃时才参与规划；计划通过真实松键/再按下请求原生触发，并核验 Active、Available、jump 计数及运动状态。正常消耗/结束/落地刷新保持规划版本，异常变化仍走释放、落地核验与恢复。范围、证据和手动验证见 [Phase 4.2 实现记录](PHASE4_2_EXTRA_JUMP_NAVIGATION_IMPLEMENTATION.md)。
+
 - 规划与执行：`CompanionBridge/Motion/`
 - Server AI 导航适配：`CompanionBridge/ServerIpc/ServerAiNavigation.cs`
 - Server Player 原生输入/钩子：`CompanionBridge/ServerPlayerRuntime/`

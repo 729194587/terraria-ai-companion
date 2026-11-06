@@ -41,9 +41,11 @@ $sources = @(
     (Join-Path $PSScriptRoot 'SceneGeometryTests.cs'),
     (Join-Path $repo 'CompanionBridge/EntitySnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/ExtraJumpModel.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MobilityProfile.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MovementSnapshot.cs'),
     (Join-Path $PSScriptRoot 'MovementSnapshotTests.cs'),
+    (Join-Path $PSScriptRoot 'ExtraJumpNavigationTests.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MotionSupport.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MiningSupportImpact.cs'),
     (Join-Path $PSScriptRoot 'MiningSupportImpactTests.cs'),
@@ -83,7 +85,7 @@ if ($AuthorityNetworkOnly) {
     return
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
-if ($MobilityOnly) { [MobilityProfileTests]::Run(); return }
+if ($MobilityOnly) { [MobilityProfileTests]::Run(); [ExtraJumpNavigationTests]::Run(); return }
 if ($SurfaceGraphOnly) { [SurfaceGraphTests]::Run(); return }
 if ($LocalEditsOnly) { [LocalTerrainPlanningTests]::Run(); return }
 if ($TripOnly) { [NavigationTripTests]::Run(); return }
@@ -93,7 +95,7 @@ if ($SafeGroundWalkOnly) { [SafeGroundWalkTests]::Run(); return }
 if ($MiningSupportOnly) { [MiningSupportImpactTests]::Run((Join-Path $PSScriptRoot 'fixtures/mining-support-play2.json')); return }
 if ($SceneOnly) { [SceneGeometryTests]::Run(); return }
 if ($VerticalOnly) { [VerticalNavigationTests]::Run(); return }
-if ($NavigationOnly) { [LocalTerrainPlanningTests]::Run(); [SurfaceGraphTests]::Run(); [MobilityProfileTests]::Run(); [NavigationTripTests]::Run(); [NavigationRecoveryTests]::Run(); [PlannerCorrectnessTests]::Run(); [NavigationPerceptionTests]::Run(); [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }
+if ($NavigationOnly) { [LocalTerrainPlanningTests]::Run(); [SurfaceGraphTests]::Run(); [MobilityProfileTests]::Run(); [ExtraJumpNavigationTests]::Run(); [NavigationTripTests]::Run(); [NavigationRecoveryTests]::Run(); [PlannerCorrectnessTests]::Run(); [NavigationPerceptionTests]::Run(); [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }
 if ($ServerReadsOnly) { [ServerAiSharedReadTests]::Run(); [AtomicExtensionsOfflineTests]::Run(); return }
 if ($BridgeOnly) { [AiChatOfflineTests]::Run(); [BridgeOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); [LocalInputOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); return }
 if ($InventoryOnly) { [InventoryOfflineTests]::Run(); return }

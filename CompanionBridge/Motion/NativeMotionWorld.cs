@@ -158,6 +158,13 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
     {
         var state=new PhysicsState(player.position.X,player.position.Y,player.velocity.X,player.velocity.Y,
             false,player.jump,player.releaseJump);
+        var movement=NativeMovementReader.Capture(player);
+        var model=ExtraJumpModel.Select(movement);
+        if(model!=null)
+        {
+            var jump=Array.Find(movement.ExtraJumps,j=>j.FullName==model.FullName);
+            state=state with{ExtraAvailable=jump.Available,ExtraActive=jump.Active,ExtraUsed=jump.Active||!jump.Available};
+        }
         if(player.width!=PhysicsSimulator.PlayerW||player.height!=PhysicsSimulator.PlayerH||player.gravDir!=1)
             return state;
         bool eligible=Math.Abs(state.Vy)<.01f||player.sloping&&state.Vy>=-.01f;

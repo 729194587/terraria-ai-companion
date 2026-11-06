@@ -32,7 +32,7 @@ internal sealed class NavigationKnowledge
 internal sealed class NavigationSearchMemory
 {
     internal const int Capacity=256,LifetimeUpdates=120;
-    private readonly record struct Key(PhysicsState State,int Direction,int Hold,int Stride);
+    private readonly record struct Key(PhysicsState State,int Direction,int Hold,int Stride,int ExtraFrame);
     private sealed record Entry(Prediction Prediction,long Expires);
     private readonly Dictionary<Key,Entry> rejected=new();
     private readonly Queue<Key> order=new();
@@ -66,16 +66,16 @@ internal sealed class NavigationSearchMemory
         terrain=stamp;physics=profile;update=now;
     }
     internal Prediction Predict(PhysicsState state,int direction,int hold,int stride,
-        PhysicsParameters profile,IMotionWorld world)
+        PhysicsParameters profile,IMotionWorld world,int extraFrame=-1)
     {
-        var key=new Key(state,direction,hold,stride);
+        var key=new Key(state,direction,hold,stride,extraFrame);
         if(rejected.TryGetValue(key,out var entry))
         {
             if(update<entry.Expires){CacheHits++;return entry.Prediction;}
             rejected.Remove(key);
         }
         var prediction=PhysicsSimulator.Predict(state,direction,hold,profile,world,
-            walkFrames:stride,rollingJump:true,maxDropPixels:StateSpacePlanner.MaxDropPixels);
+            walkFrames:stride,rollingJump:true,maxDropPixels:StateSpacePlanner.MaxDropPixels,extraJumpFrame:extraFrame);
         if(!prediction.Safe)
         {
             while(order.Count>0&&(rejected.Count>=Capacity||order.Count>=Capacity))

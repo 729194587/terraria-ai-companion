@@ -42,6 +42,11 @@ internal static class ServerAiTerrainFixture
     internal static void RecordInput(Player p)
     {
         if(!Program.LaunchParameters.ContainsKey("-companionterraintest"))return;
+        if(mobilityMode=="cloud_fail"&&!mobilityChanged&&p.controlJump&&p.releaseJump&&p.velocity.Y!=0&&p.jump==0)
+        {
+            if(!Program.LaunchParameters.ContainsKey("-companionextrajumptest"))throw new InvalidOperationException("Missing extra jump diagnostic gate");
+            p.controlJump=false;mobilityChanged=true;
+        }
         int swiftnessIndex=p.FindBuffIndex(BuffID.Swiftness);
         inputPhysics=new {p.runAcceleration,p.maxRunSpeed,p.accRunSpeed,p.runSlowdown,p.gravity,p.maxFallSpeed,
             jumpSpeed=Player.jumpSpeed,jumpHeight=Player.jumpHeight,p.width,p.height,
@@ -69,7 +74,9 @@ internal static class ServerAiTerrainFixture
             action=nav?.Action,frame=nav?.Frame,status=nav?.Status,maxError=nav?.MaxError,
             reason=nav?.Reason,nav?.PlanNumber,nav?.Expansions,nav?.PlanMilliseconds,nav?.ReachedGoal,nav?.TimeBudgetReached,
             nav?.CompletedActions,nav?.CompletedJumps,nav?.RecoveryCount,nav?.RecoveryReplans,
-            nav?.RecoveryReason,nav?.RecoveryPosition,nav?.RecoveryInputsReleased,nav?.FailedEdgeCount,run.Updates,inputPhysics=inputTick.HasValue?inputPhysics:null,navigation=nav});
+            nav?.RecoveryReason,nav?.RecoveryPosition,nav?.RecoveryInputsReleased,nav?.FailedEdgeCount,run.Updates,inputPhysics=inputTick.HasValue?inputPhysics:null,navigation=nav,
+            extraObservation=Program.LaunchParameters.ContainsKey("-companionextrajumptest")
+                ?new{movement=Motion.NativeMovementReader.Capture(p),jumpCounter=p.jump,releaseJump=p.releaseJump}:null});
         recording=running;
         if(!running)File.WriteAllText(Path.Combine(Main.SavePath,"terrain-motion-"+caseName+".json"),JsonSerializer.Serialize(frames));
     }
@@ -86,6 +93,12 @@ internal static class ServerAiTerrainFixture
         // Explicit disturbance inside the existing copied-world/main-thread gate.
         // This is not a production steering or recovery path.
         var active=(ActorControl.Driver as ServerAiNavigation)?.Current;
+        if(mobilityMode=="cloud_offset"&&!mobilityChanged&&active?.Status=="running"
+            &&Motion.NativeMovementReader.Capture(p).ActiveExtraJump)
+        {
+            if(!Program.LaunchParameters.ContainsKey("-companionextrajumptest"))throw new InvalidOperationException("Missing extra jump diagnostic gate");
+            p.position.X-=32;mobilityChanged=true;
+        }
         if (recoveryMode!=null&&!recoveryFired&&active?.Status=="running"&&active.Updates>=8
             &&active.Snapshot is {Status:"running",Frame:>=4,Action:"walk" or "jump"})
         {
@@ -135,12 +148,14 @@ internal static class ServerAiTerrainFixture
         int direction=doc.RootElement.GetProperty("direction").GetInt32();
         if(direction!=1&&direction!=-1)throw new ArgumentException("Invalid terrain direction");
         if(scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall" or "platform_up" or "platform_down" or "high_platform"
-            or "obstacle_one" or "solid_up_three" or "solid_up_five" or "shaft_up" or "shaft_ceiling" or "alternating" or "no_landing" or "descent_five" or "hazard_target"))
+            or "obstacle_one" or "solid_up_three" or "solid_up_five" or "shaft_up" or "shaft_ceiling" or "alternating" or "no_landing" or "descent_five" or "hazard_target" or "extra_up" or "extra_chain"))
             throw new ArgumentException("Unknown terrain scene");
         mobilityMode=doc.RootElement.TryGetProperty("mobility",out var mobility)?mobility.GetString():null;
         if(mobilityMode!=null&&(!Program.LaunchParameters.ContainsKey("-companionmobilitytest")
-            ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "rapid" or "expiry" or "unknown" or "equipment")))
+            ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "rapid" or "expiry" or "unknown" or "equipment" or "cloud" or "cloud_fail" or "cloud_offset")))
             throw new ArgumentException("Invalid isolated mobility scene");
+        if((mobilityMode?.StartsWith("cloud")==true||scene.StartsWith("extra_"))&&!Program.LaunchParameters.ContainsKey("-companionextrajumptest"))
+            throw new InvalidOperationException("Missing extra jump fixture flag");
         mobilityChanged=false;
         mobilityRestored=false;
         recoveryMode=doc.RootElement.TryGetProperty("recovery",out var mode)?mode.GetString():null;
@@ -174,6 +189,8 @@ internal static class ServerAiTerrainFixture
             if(scene=="obstacle_one"&&q>=4&&q<=5)surface--;
             if(scene=="solid_up_three"&&q>=4)surface-=3;
             if(scene=="solid_up_five"&&q>=4)surface-=5;
+            if(scene is "extra_up" or "extra_chain")
+            {if(q>=6)surface-=8;if(scene=="extra_chain"&&q>=14)surface-=8;}
             if(scene=="high_wall"&&q>=4&&q<=6)surface-=12;
             var tile=Main.tile[tx,ty];tile.ClearEverything();
             if(ty>=surface){tile.HasTile=true;tile.TileType=TileID.Dirt;if(ty==surface)tile.Slope=(SlopeType)slope;}
@@ -216,6 +233,7 @@ internal static class ServerAiTerrainFixture
             if(mobilityMode is "swiftness" or "remove" or "rapid" or "expiry")p.AddBuff(BuffID.Swiftness,36000,true);
             if(mobilityMode=="unknown")p.AddBuff(BuffID.WellFed,36000,true);
             if(mobilityMode=="equipment")p.armor[0].SetDefaults(ItemID.CopperHelmet);
+            if(mobilityMode.StartsWith("cloud"))p.armor[3].SetDefaults(ItemID.CloudinaBottle);
         }
         if(environment) ProbeEnvironment(p, left, floor-4);
         pending=new{scene,direction,startX=p.position.X,startY=p.position.Y,targetX=p.position.X+direction*192,

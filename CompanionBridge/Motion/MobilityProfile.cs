@@ -26,19 +26,22 @@ internal sealed class MobilityTracker
         &&previous.Session==session&&previous.Generation==generation&&previous.SourceTick+1==tick
         &&previousSwiftnessTime==1&&ph.Matches(PhysicsParameters.Swiftness);
     internal MobilityProfile Sample(PhysicsParameters ph,int width,int height,bool swiftness,
-        string[] unsupported,ulong tick,int session,int generation,int swiftnessTime=0,MovementSnapshot movement=null)
+        string[] unsupported,ulong tick,int session,int generation,int swiftnessTime=0,MovementSnapshot movement=null,bool expectedExtraJump=false)
     {
         bool expiryTail=IsSwiftnessExpiryTail(ph,swiftness,tick,session,generation);
         unsupported=unsupported.Length==0?Array.Empty<string>():unsupported.ToArray();
         string variant=ph.IsBasic?"basic":ph.Matches(PhysicsParameters.Swiftness)?"vanilla_swiftness":"measured_ground";
         if(!ph.IsSupportedGroundPhysics)unsupported=unsupported.Append("unsupported_effective_physics: "+ph).ToArray();
         if(width!=PhysicsSimulator.PlayerW||height!=PhysicsSimulator.PlayerH)unsupported=unsupported.Append("unsupported_body_size").ToArray();
+        // The adapter grants this exemption only against the executed plan's
+        // prior frame and actual native state. Registry/enabled/physics changes
+        // still invalidate; the immutable snapshot always keeps the real bits.
         if(previous==null||previous.Session!=session||previous.Generation!=generation
             ||previous.Variant!=variant||previous.EffectivePhysics!=ph||previous.Width!=width||previous.Height!=height
             ||!previous.UnsupportedEffects.SequenceEqual(unsupported)
-            ||(movement==null?previous.Movement!=null:!movement.SamePlanningAssumptions(previous.Movement)))revision++;
+            ||(movement==null?previous.Movement!=null:!movement.SamePlanningAssumptions(previous.Movement,expectedExtraJump)))revision++;
         previous=new(revision,tick,session,generation,variant,ph,width,height,
-            unsupported.Length==0?new[]{"ground_walk","ground_jump"}:Array.Empty<string>(),unsupported,expiryTail,movement);
+            unsupported.Length==0?(ph.ExtraJump!=null?new[]{"ground_walk","ground_jump","extra_jump"}:new[]{"ground_walk","ground_jump"}):Array.Empty<string>(),unsupported,expiryTail,movement);
         previousSwiftnessTime=swiftness?swiftnessTime:0;
         return previous;
     }

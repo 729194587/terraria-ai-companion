@@ -201,6 +201,11 @@ public static class ServerAiPackageTests
         var boundary=Type("ProbePlayer").Methods.Single(m=>m.Name=="PostUpdateRunSpeeds");
         Check(boundary.Body.Instructions.Count(i=>i.Operand is MethodReference r&&r.Name=="BeforeMovement")==1&&!Calls(boundary,"Update"),"one native run-speeds navigation boundary, no extra Player.Update");
         Check(!movement.Body.Instructions.Any(i=>i.OpCode==OpCodes.Stfld&&i.Operand is FieldReference f&&f.DeclaringType.Namespace.StartsWith("Terraria")),"movement collector never mutates native game state");
+        Check(types.Where(t=>t.Namespace=="CompanionBridge.Motion").SelectMany(t=>t.Methods).Where(m=>m.HasBody)
+            .SelectMany(m=>m.Body.Instructions).All(i=>i.Operand is not MethodReference r||r.DeclaringType.Namespace!="Terraria.ModLoader"
+                ||!new[]{"ProcessJumps","PerformJump","CanStart","CanStartExtraJump","GetDurationMultiplier","OnStarted"}.Contains(r.Name)),
+            "prediction/execution never probes or directly invokes native ExtraJump hooks");
+        Check(Calls(Type("LocalMotionController").Methods.Single(m=>m.Name=="After"),"MatchesResource"),"native execution verifies actual activation and counters");
         Console.WriteLine($"AI formal package: {checks} IL checks passed; no graphical game launched.");
     }
 }

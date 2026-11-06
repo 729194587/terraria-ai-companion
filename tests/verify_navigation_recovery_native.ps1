@@ -1,7 +1,8 @@
 param([string]$TModLoaderPath,[string]$EngineProfile,
     [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes,[switch]$Mobility,[switch]$Probe,[switch]$Region,
-    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation)
+    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation,[switch]$ExtraJump)
 $ErrorActionPreference='Stop'
+if($ExtraJump){$Mobility=$true}
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
 $TModLoaderPath=$selectedEngine.Path
@@ -30,12 +31,13 @@ foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld"
     '-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest',
     '-companionactionstest','-companionterraintest','-companionnavrecoverytest')){$info.ArgumentList.Add($arg)}
 if($Mobility -or $Region){$info.ArgumentList.Add('-companionmobilitytest')}
+if($ExtraJump){$info.ArgumentList.Add('-companionextrajumptest')}
 if($Region){$info.ArgumentList.Add('-companionregiontest')}
 if($Environment){$info.ArgumentList.Add('-companionenvironmenttest')}
 $process=[Diagnostics.Process]::Start($info)
 $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
 try {
-    $testScript=if($Region){'native_scene_region.py'}elseif($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
+    $testScript=if($ExtraJump){'native_extra_jump.py'}elseif($Region){'native_scene_region.py'}elseif($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
     $probeArgs=@('-B',(Join-Path $PSScriptRoot $testScript),'--port',"$IpcPort",'--profile',$profile)
     if($Region){$probeArgs+=@('--iterations',"$RegionIterations")}
     if($Environment){$probeArgs+='--environment'}
