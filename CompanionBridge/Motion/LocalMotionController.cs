@@ -38,6 +38,7 @@ internal sealed class LocalMotionController
     internal NavigationSnapshot Snapshot { get; private set; } = new(0, "idle", "none", "not started", 0, 0, null, null, 0);
     internal bool Terminal => Snapshot.Status is "failed" or "landed";
     internal bool NeedsPlan => _plan == null;
+    internal PhysicsState? ExpectedState=>_plan!=null&&_frame>0?_plan.Frames[_frame-1].State:null;
     internal bool NeedsLandingConfirmation { get; private set; }
     internal MotionFailureKind FailureKind { get; private set; }
 
@@ -124,6 +125,11 @@ internal sealed class LocalMotionController
         float error = Math.Max(Math.Abs(expected.Px - actual.Px), Math.Abs(expected.Py - actual.Py));
         _maxError = Math.Max(_maxError, error);
         float velocityError = Math.Max(Math.Abs(expected.Vx - actual.Vx), Math.Abs(expected.Vy - actual.Vy));
+        if(_plan.ExtraJumpFrame>=0&&!ExtraJumpModel.MatchesResource(expected,actual))
+        {
+            Snapshot=Snapshot with{Frame=_frame,MaxError=_maxError};
+            Fail("extra jump activation/resource/counter did not match native observation",MotionFailureKind.RouteDeviation);return;
+        }
         _badFrames = error > 6 || velocityError > 1.5f ? _badFrames + 1 : 0;
         _airborne |= !actual.Grounded;
         if (_plan.Jump && _plan.ExecuteFrames < _plan.Frames.Count)

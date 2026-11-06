@@ -64,6 +64,7 @@ internal sealed class NavigationTask
     private readonly NavigationTripProgress _trip=new();
     private int _routeIndex,_continuedEdges,_invalidatedRoutes;
     private PhysicsParameters _routePhysics;
+    internal PhysicsState? ExpectedState=>_executor.ExpectedState;
     private double _planningMilliseconds;
     private Prediction Edge=>_route.Actions[_routeIndex];
     private bool _executing;
@@ -399,10 +400,10 @@ internal sealed class NavigationTask
         var old=Edge;
         if(_routePhysics==ph&&!RejectRemembered(state,old)&&PhysicsSimulator.SupportedCheckpoint(state,world))
         {
-            int hold=old.Frames.FindAll(f=>f.Input.Jump).Count;
+            int hold=old.ExtraJumpFrame>=0?old.InitialHold:old.Frames.FindAll(f=>f.Input.Jump).Count;
             int stride=old.Jump?24:old.Frames.FindAll(f=>f.Input.Direction!=0).Count;
             var fresh=PhysicsSimulator.Predict(state,old.Frames[0].Input.Direction,hold,ph,world,
-                walkFrames:stride,rollingJump:true,maxDropPixels:StateSpacePlanner.MaxDropPixels);
+                walkFrames:stride,rollingJump:true,maxDropPixels:StateSpacePlanner.MaxDropPixels,extraJumpFrame:old.ExtraJumpFrame);
             if(fresh.Safe&&old.ExecuteFrames<=fresh.Frames.Count)
             {
                 var end=fresh.Frames[old.ExecuteFrames-1].State;

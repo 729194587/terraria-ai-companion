@@ -56,8 +56,9 @@ internal sealed class NativeNavigation
         Reject(p.slippy || p.slippy2, "slippery");
         Reject(p.sticky, "sticky");
         Reject(p.powerrun, "power_run");
-        Reject(movement.ActiveExtraJump,"extra_jump_active");
-        Reject(movement.PotentialExtraJump,"extra_jump_available");
+        bool modeled=ExtraJumpModel.Select(movement)!=null;
+        Reject(movement.ActiveExtraJump&&!modeled,"extra_jump_active");
+        Reject(movement.PotentialExtraJump&&!modeled,"extra_jump_available");
         Reject(p.wingsLogic != 0, "functional_wings");
         Reject(p.rocketBoots != 0, "rocket_boots");
         Reject(p.honeyWet&&!p.wet,"honey_wet");
@@ -71,7 +72,8 @@ internal sealed class NativeNavigation
     }
 
     internal static PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
-        p.accRunSpeed, p.runSlowdown, p.gravity, p.maxFallSpeed, Player.jumpSpeed, Player.jumpHeight);
+        p.accRunSpeed, p.runSlowdown, p.gravity, p.maxFallSpeed, Player.jumpSpeed, Player.jumpHeight,
+        ExtraJumpModel.Select(NativeMovementReader.Capture(p)));
 
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
         LandingRegion region = null)
@@ -95,7 +97,8 @@ internal sealed class NativeNavigation
         int swiftnessIndex=p.FindBuffIndex(BuffID.Swiftness);
         _profile=_mobility.Sample(ph,p.width,p.height,p.HasBuff(BuffID.Swiftness),
             rejection==null?Array.Empty<string>():new[]{rejection},Main.GameUpdateCount,session,generation,
-            swiftnessIndex>=0?p.buffTime[swiftnessIndex]:0,movement);
+            swiftnessIndex>=0?p.buffTime[swiftnessIndex]:0,movement,
+            ph.ExtraJump!=null&&ExtraJumpModel.ExpectedBoundary(_navigation?Task.ExpectedState:Controller.ExpectedState,State(p)));
         if(!_profile.Supported)return Fail("unsupported navigation state: "+string.Join("; ",_profile.UnsupportedEffects));
         if (_session != session || _generation != generation) _life = p.statLife;
         _session = session; _generation = generation;

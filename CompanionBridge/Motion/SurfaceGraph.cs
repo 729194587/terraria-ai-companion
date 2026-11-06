@@ -212,7 +212,8 @@ internal sealed class SurfaceGraph
     internal SurfaceEdge Candidate(SurfaceNode a,SurfaceNode b,PhysicsParameters ph)
     {
         float dx=Math.Abs(a.X-b.X),dy=b.Region.SurfaceY-a.Region.SurfaceY;
-        if(a.Id==b.Id||dx>144||dy>StateSpacePlanner.MaxDropPixels||dy<-(ph.JumpSpeed*ph.JumpHeight+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity)+16))return null;
+        float extraRise=ph.ExtraJump==null?0:ph.JumpSpeed*ph.ExtraJump.HoldFrames(ph)+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity);
+        if(a.Id==b.Id||dx>(ph.ExtraJump==null?144:256)||dy>StateSpacePlanner.MaxDropPixels||dy<-(ph.JumpSpeed*ph.JumpHeight+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity)+16+extraRise))return null;
         if(dx<2&&Math.Abs(dy)<1)return null;
         SurfaceMotion kind=dy>16?SurfaceMotion.Drop:Math.Abs(dy)<=16?SurfaceMotion.Walk:SurfaceMotion.Jump;
         if(kind==SurfaceMotion.Walk)
@@ -338,7 +339,7 @@ internal sealed class SurfaceNavigator : IDisposable
                     float d=goal.Distance(a.Rest(Math.Clamp((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2,a.Region.MinPlayerLeftX,a.Region.MaxPlayerLeftX)));
                     if(d<bestDistance){bestDistance=d;best=a;}
                     if(d==0){end=a;break;}
-                    for(int column=a.TileX-10;column<=a.TileX+10;column++)
+                    for(int column=a.TileX-(ph.ExtraJump==null?10:17);column<=a.TileX+(ph.ExtraJump==null?10:17);column++)
                     {
                         if(!byColumn.TryGetValue(column,out var neighbors))continue;
                         foreach(var b in neighbors)
