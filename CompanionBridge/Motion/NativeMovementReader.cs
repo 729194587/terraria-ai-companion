@@ -40,7 +40,7 @@ internal static class NativeMovementReader
         int type=mount?.Type??-1;
         string mountName=type>=0&&type<MountLoader.MountCount?MountLoader.GetMount(type)?.FullName:null;
         return new(jumps,player.blockExtraJumps,new(slot,player.wingTime,player.wingTimeMax,stats?.Length??0,wing),
-            new(player.rocketBoots,player.rocketTime,player.rocketTimeMax),new(mount?.Active??false,type,mountName,MountLoader.MountCount),
+            new(player.rocketBoots,player.rocketTime,player.rocketTimeMax,player.rocketDelay,player.rocketDelay2,player.canRocket,player.rocketRelease,player.rocketFrame),new(mount?.Active??false,type,mountName,MountLoader.MountCount),
             count,count>=0&&count<=length,hooks,new(player.pulley,player.pulleyDir,player.wet,player.honeyWet,player.lavaWet,player.shimmerWet));
     }
 }

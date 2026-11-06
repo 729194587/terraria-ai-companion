@@ -160,6 +160,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
             false,player.jump,player.releaseJump);
         var movement=NativeMovementReader.Capture(player);
         var model=ExtraJumpModel.Select(movement);
+        if(AirMotionModel.Select(movement)!=null)state=state with{Air=AirMotionModel.Resources(movement)};
         if(model!=null)
         {
             var jump=Array.Find(movement.ExtraJumps,j=>j.FullName==model.FullName);

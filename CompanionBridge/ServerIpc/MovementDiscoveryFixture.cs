@@ -37,7 +37,7 @@ internal static class MovementDiscoveryFixture
                 Check(b.FlyTime==w.FlyTime&&b.AccRunSpeedOverride==w.AccRunSpeedOverride&&b.AccRunAccelerationMult==w.AccRunAccelerationMult
                     &&b.HasDownHoverStats==w.HasDownHoverStats&&b.DownHoverSpeedOverride==w.DownHoverSpeedOverride&&b.DownHoverAccelerationMult==w.DownHoverAccelerationMult,"base wing registry values");
             }
-            Check(s.Rockets==new RocketSnapshot(p.rocketBoots,p.rocketTime,p.rocketTimeMax),"rocket fields");
+            Check(s.Rockets==new RocketSnapshot(p.rocketBoots,p.rocketTime,p.rocketTimeMax,p.rocketDelay,p.rocketDelay2,p.canRocket,p.rocketRelease,p.rocketFrame),"rocket fields");
             Check(s.Mount.Active==p.mount.Active&&s.Mount.Type==p.mount.Type,"mount fields");
             Check(s.Environment==new MovementEnvironment(p.pulley,p.pulleyDir,p.wet,p.honeyWet,p.lavaWet,p.shimmerWet),"rope and liquids");
             Check(s.GrappleCount==p.grapCount&&s.Grapples.Length==Math.Clamp(p.grapCount,0,p.grappling.Length),"grapple list");

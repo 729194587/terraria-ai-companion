@@ -7,7 +7,8 @@ internal sealed record ExtraJumpSnapshot(string FullName,int Order,bool Enabled,
 internal sealed record WingBaseSnapshot(int FlyTime,float AccRunSpeedOverride,float AccRunAccelerationMult,
     bool HasDownHoverStats,float DownHoverSpeedOverride,float DownHoverAccelerationMult);
 internal sealed record WingSnapshot(int FunctionalSlot,float Time,int TimeMax,int RegisteredSlots,WingBaseSnapshot BaseStats);
-internal sealed record RocketSnapshot(int Boots,int Time,int TimeMax);
+internal sealed record RocketSnapshot(int Boots,int Time,int TimeMax,int Delay=0,int Delay2=0,
+    bool CanRocket=false,bool Release=false,bool Frame=false);
 internal sealed record MountSnapshot(bool Active,int Type,string ModFullName,int RegisteredTypes);
 internal sealed record GrappleSnapshot(int Order,int ProjectileIndex,bool Valid,bool Active,int Type,int Identity,int Owner,bool RegisteredHook);
 internal sealed record MovementEnvironment(bool Pulley,int PulleyDir,bool Wet,bool HoneyWet,bool LavaWet,bool ShimmerWet);

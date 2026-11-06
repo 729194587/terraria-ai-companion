@@ -206,6 +206,12 @@ public static class ServerAiPackageTests
                 ||!new[]{"ProcessJumps","PerformJump","CanStart","CanStartExtraJump","GetDurationMultiplier","OnStarted"}.Contains(r.Name)),
             "prediction/execution never probes or directly invokes native ExtraJump hooks");
         Check(Calls(Type("LocalMotionController").Methods.Single(m=>m.Name=="After"),"MatchesResource"),"native execution verifies actual activation and counters");
+        Check(types.Where(t=>t.Namespace=="CompanionBridge.Motion").SelectMany(t=>t.Methods).Where(m=>m.HasBody)
+            .SelectMany(m=>m.Body.Instructions).All(i=>i.Operand is not MethodReference r
+                ||!new[]{"HorizontalWingSpeeds","VerticalWingSpeeds","WingGlidingSpeeds","WingMovement","RocketBootVisuals"}.Contains(r.Name)),
+            "air prediction and collection never replay wing/rocket extension hooks");
+        Check(Calls(Type("LocalMotionController").Methods.Single(m=>m.Name=="Before"),"Correct")
+            &&Calls(Type("NativeMotionWorld").Methods.Single(m=>m.Name=="Observe"),"Resources"),"air feedback reuses actual native resources and existing executor");
         Console.WriteLine($"AI formal package: {checks} IL checks passed; no graphical game launched.");
     }
 }
