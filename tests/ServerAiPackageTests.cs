@@ -192,6 +192,15 @@ public static class ServerAiPackageTests
             &&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="statLife")
             &&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="lavaWet"),"hazard reads bound actor health/lava and current native NPCs");
         Check(!hazard.Body.Instructions.Any(i=>i.OpCode==OpCodes.Stfld&&i.Operand is FieldReference f&&f.DeclaringType.Name=="Player"),"hazard detection never rewrites Player motion or controls");
+        var movement=Type("NativeMovementReader").Methods.Single(m=>m.Name=="Capture");
+        var nativeCalls=movement.Body.Instructions.Select(i=>i.Operand).OfType<MethodReference>().Where(r=>r.DeclaringType.Namespace.StartsWith("Terraria")).ToArray();
+        var allowed=new[]{"get_OrderedJumps","GetJumpState","get_FullName","get_Enabled","get_Available","get_Active","get_Type","get_MountCount","GetMount"};
+        Check(nativeCalls.All(r=>allowed.Contains(r.Name)),"movement discovery calls only audited registry/state getters, never extension hooks");
+        Check(!Type("NativeNavigation").Methods.Where(m=>m.HasBody).Any(m=>Calls(m,"AnyExtraJumpUsable")),"navigation admission never calls hook-bearing AnyExtraJumpUsable");
+        Check(Calls(Type("NativeNavigation").Methods.Single(m=>m.Name=="Before"),"Capture"),"movement snapshot sampled by existing navigation Before");
+        var boundary=Type("ProbePlayer").Methods.Single(m=>m.Name=="PostUpdateRunSpeeds");
+        Check(boundary.Body.Instructions.Count(i=>i.Operand is MethodReference r&&r.Name=="BeforeMovement")==1&&!Calls(boundary,"Update"),"one native run-speeds navigation boundary, no extra Player.Update");
+        Check(!movement.Body.Instructions.Any(i=>i.OpCode==OpCodes.Stfld&&i.Operand is FieldReference f&&f.DeclaringType.Namespace.StartsWith("Terraria")),"movement collector never mutates native game state");
         Console.WriteLine($"AI formal package: {checks} IL checks passed; no graphical game launched.");
     }
 }

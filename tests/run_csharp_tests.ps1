@@ -42,6 +42,8 @@ $sources = @(
     (Join-Path $repo 'CompanionBridge/EntitySnapshot.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MobilityProfile.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/MovementSnapshot.cs'),
+    (Join-Path $PSScriptRoot 'MovementSnapshotTests.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MotionSupport.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MiningSupportImpact.cs'),
     (Join-Path $PSScriptRoot 'MiningSupportImpactTests.cs'),

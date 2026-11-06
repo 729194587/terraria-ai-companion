@@ -19,6 +19,11 @@ internal sealed class NavigationDiagnostics
         bool sameTask = _previous != null && current.Session == _previous.Session
             && current.Generation == _previous.Generation && current.TargetX == _previous.TargetX
             && current.TargetRegion == _previous.TargetRegion;
+        if(current.Mobility!=null&&(!sameTask||_previous.Mobility?.Revision!=current.Mobility.Revision))
+        {
+            try{_write("Navigation "+JsonSerializer.Serialize(new{@event="navigation_mobility",previousMobility=sameTask?_previous.Mobility:null,navigation=current},JsonOptions));}
+            catch{WriteErrors++;}
+        }
         if (current.PlanNumber > 0 && (!sameTask || current.PlanNumber != _previous.PlanNumber))
             Write("navigation_plan", current);
         if (sameTask && current.CompletedActions > _previous.CompletedActions)

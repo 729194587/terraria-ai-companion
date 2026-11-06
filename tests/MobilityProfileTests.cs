@@ -7,6 +7,7 @@ public static class MobilityProfileTests
     private static void Check(bool ok,string reason){if(!ok)throw new Exception(reason);checks++;}
     public static void Run()
     {
+        MovementSnapshotTests.Run();
         var tracker=new MobilityTracker();var p=PhysicsParameters.Basic;
         var a=tracker.Sample(p,20,42,false,Array.Empty<string>(),10,1,7);
         var b=tracker.Sample(p,20,42,false,Array.Empty<string>(),11,1,7);

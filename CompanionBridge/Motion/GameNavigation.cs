@@ -32,9 +32,9 @@ internal sealed class NativeNavigation
 
     private PhysicsState State(Player p) => NativeMotionWorld.Observe(p);
 
-    internal bool Ordinary(Player p) => OrdinaryRejection(p) == null;
+    internal bool Ordinary(Player p) => OrdinaryRejection(p,NativeMovementReader.Capture(p)) == null;
 
-    private string OrdinaryRejection(Player p)
+    private string OrdinaryRejection(Player p,MovementSnapshot movement)
     {
         var ph = Parameters(p);
         List<string> reasons = null;
@@ -56,9 +56,13 @@ internal sealed class NativeNavigation
         Reject(p.slippy || p.slippy2, "slippery");
         Reject(p.sticky, "sticky");
         Reject(p.powerrun, "power_run");
-        Reject(p.AnyExtraJumpUsable(), "extra_jump_usable");
+        Reject(movement.ActiveExtraJump,"extra_jump_active");
+        Reject(movement.PotentialExtraJump,"extra_jump_available");
         Reject(p.wingsLogic != 0, "functional_wings");
         Reject(p.rocketBoots != 0, "rocket_boots");
+        Reject(p.honeyWet&&!p.wet,"honey_wet");
+        Reject(p.lavaWet&&!p.wet,"lava_wet");
+        Reject(p.shimmerWet&&!p.wet,"shimmer_wet");
         Reject(p.itemAnimation != 0, "item_animation");
         Reject(p.width != PhysicsSimulator.PlayerW || p.height != PhysicsSimulator.PlayerH, "unsupported_body_size");
         Reject(!float.IsFinite(p.velocity.X)||!float.IsFinite(p.velocity.Y), "invalid_velocity");
@@ -86,11 +90,12 @@ internal sealed class NativeNavigation
             else Task.Begin(session, generation, targetX.Value, State(p));
         }
         var ph=Parameters(p);
-        string rejection = OrdinaryRejection(p);
+        var movement=NativeMovementReader.Capture(p);
+        string rejection = OrdinaryRejection(p,movement);
         int swiftnessIndex=p.FindBuffIndex(BuffID.Swiftness);
         _profile=_mobility.Sample(ph,p.width,p.height,p.HasBuff(BuffID.Swiftness),
             rejection==null?Array.Empty<string>():new[]{rejection},Main.GameUpdateCount,session,generation,
-            swiftnessIndex>=0?p.buffTime[swiftnessIndex]:0);
+            swiftnessIndex>=0?p.buffTime[swiftnessIndex]:0,movement);
         if(!_profile.Supported)return Fail("unsupported navigation state: "+string.Join("; ",_profile.UnsupportedEffects));
         if (_session != session || _generation != generation) _life = p.statLife;
         _session = session; _generation = generation;
