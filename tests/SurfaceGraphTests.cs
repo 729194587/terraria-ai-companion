@@ -22,6 +22,7 @@ public static class SurfaceGraphTests
         public long TerrainSignature(PhysicsState s,Prediction e=null)
         {long h=Floor?1:0;foreach(var t in Tiles)h=unchecked(h*31+t.Key.Item1*7+t.Key.Item2*11+t.Value);return h;}
         public bool SafeLanding(PhysicsState s)=>MotionSupport.SafeLanding(s,Cell);
+        public bool SafeFlatLanding(PhysicsState s)=>MotionSupport.SafeFlatLanding(s,Cell);
         public bool SafeSweep(PhysicsState a,PhysicsState b,out string why)
         {
             for(int x=(int)Math.Floor(Math.Min(a.Px,b.Px)/16);x<Math.Ceiling((Math.Max(a.Px,b.Px)+20)/16);x++)

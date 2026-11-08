@@ -87,6 +87,7 @@ public sealed class VirtualPlayerEngineProbe
         ActorMining.Install(Install);
         ActorPlacement.Install(Install);
         ActorItemUse.Install(Install);
+        ActorGrapple.Install(Install);
         ActorCrafting.Initialize();
         Install(() => On_Player.Update += NativeSurvival.Update, () => On_Player.Update -= NativeSurvival.Update);
         Ready = allocatorPatched && cleanupPatched && syncPatched && savePatched;

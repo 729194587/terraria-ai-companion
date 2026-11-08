@@ -28,6 +28,9 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal LandingObservation FinalObservation;
         internal StateVector VelocityBeforeRelease;
         internal ulong FinalObservationTick;
+        internal NavigationKnowledge Knowledge;
+        internal ServerGrappleClimb Climb;
+        internal bool GrappleAttempted;
     }
     private readonly NativeNavigation navigation;
     internal ServerAiNavigation()
@@ -50,7 +53,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         return rank;
     }
     private int session;
-    private bool executing, injected;
+    private bool executing, injected, suppressStaleGrapple;
     internal Run Current;
     public bool Running => Current?.Status=="running";
     public bool Matches(Player p) => Current!=null && ReferenceEquals(Current.Identity.Actor,p);
@@ -71,15 +74,47 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         navigation.Task.SetKnowledge(knowledge);
         navigation.Task.Continuous=continuous;
         navigation.Task.PreferFlatRegion=preferFlatRegion;
-        Current=new Run{Identity=identity,ActionId=actionId,Target=target,Region=region,StartX=p.position.X,Session=checked(++session),Generation=checked((int)identity.Generation)};
+        Current=new Run{Identity=identity,ActionId=actionId,Target=target,Region=region,StartX=p.position.X,
+            Session=checked(++session),Generation=checked((int)identity.Generation),Knowledge=knowledge};
+        navigation.Task.TryGrapple=continuous&&region!=null?TryGrapple:null;
         return Current;
     }
+
+    private bool TryGrapple(PhysicsState state,PhysicsParameters physics,IMotionWorld world)
+    {
+        var run=Current;
+        if(run.GrappleAttempted||run.Knowledge?.GrappleAttempted==true||world is not ISurfaceTerrain terrain)return false;
+        var p=(Player)run.Identity.Actor;
+        if(ActorGrapple.Selected(p) is not {} item||ActorGrapple.HasHook(p)||p.noItems||p.CCed||p.tongued)return false;
+        var plan=GrappleClimbPlan.Find(state,run.Region,physics,world,terrain);
+        if(plan==null)return false;
+        run.GrappleAttempted=true;
+        if(run.Knowledge!=null)run.Knowledge.GrappleAttempted=true;
+        run.Climb=new(plan,physics,item);
+        return true;
+    }
+
     public void BeforeMovement(Player p)
     {
         if(!executing||!Matches(p)||!NativeSurvival.Owns(p))throw new InvalidOperationException("No owned navigation update scope.");
         ServerAiNativeActions.Require(Current.Identity);
         navigation.Task.ObservationUpdate=checked((long)Main.GameUpdateCount);
-        var input=navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,Current.Region==null?Current.Target:null,Current.Region);
+        var input=Current.Climb is {} climb
+            ?climb.Before(p,navigation,Current.Session,Current.Generation,nativePull:false)
+            :navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,Current.Region==null?Current.Target:null,Current.Region);
+        Apply(p,input);
+    }
+    internal bool BeforeGrappleMovement(Player p)
+    {
+        if(suppressStaleGrapple&&Matches(p))return false;
+        if(!executing||!Matches(p)||Current.Climb is not {} climb)return true;
+        ServerAiNativeActions.Require(Current.Identity);
+        bool attached=climb.WantsNativePull(p);
+        Apply(p,climb.Before(p,navigation,Current.Session,Current.Generation,nativePull:attached));
+        return attached&&climb.Failure==null;
+    }
+    private void Apply(Player p,PhysicsInput input)
+    {
         p.controlLeft=input.Direction<0;p.controlRight=input.Direction>0;p.controlJump=input.Jump;
         p.controlDown=p.controlUp=p.controlUseItem=p.controlUseTile=false;
         ServerAiTerrainFixture.RecordInput(p);
@@ -96,6 +131,12 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     internal void Stop(string status,string reason)
     {
         if(Current==null)return;
+        var climb=Current.Climb;
+        if(climb!=null)
+        {
+            Current.Climb=null;
+            if(!climb.Release()){status="unknown";reason="grapple_cleanup_unconfirmed";}
+        }
         if(ServerAiNativeActions.Owned(Current.Identity))
         {
             var p=(Player)Current.Identity.Actor;
@@ -112,7 +153,11 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         navigation.Cancel();Release(true);
         if(ServerAiNativeActions.Owned(Current.Identity))
         {
-            try{Current.FinalObservation=Observe((Player)Current.Identity.Actor);Current.FinalObservationTick=Main.GameUpdateCount;}
+            try
+            {
+                Current.FinalObservation=Observe((Player)Current.Identity.Actor);Current.FinalObservationTick=Main.GameUpdateCount;
+                climb?.Log("stopped",Current.FinalObservation.State);
+            }
             catch(Exception e){Current.Status="unknown";Current.Reason="navigation_state_unavailable";Current.ReasonDetail=e.Message;}
         }
     }
@@ -124,7 +169,15 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
         lock(ProbeSession.Reservation.Gate)
         {
-            if(!ServerAiNativeActions.Owned(run.Identity)){Stop("unknown","navigation_binding_changed");orig(p,slot);return;}
+            if(!ServerAiNativeActions.Owned(run.Identity))
+            {
+                // Retire the exact old projectile, then let the natural frame
+                // clear its sole obsolete list entry without writing a stale Player.
+                suppressStaleGrapple=run.Climb?.HasNativeEntry(p)==true;
+                try{Stop("unknown","navigation_binding_changed");orig(p,slot);}
+                finally{suppressStaleGrapple=false;}
+                return;
+            }
             try
             {
                 if(executing||slot!=p.whoAmI||run.Tick.HasValue&&Main.GameUpdateCount<=run.Tick.Value)
@@ -135,6 +188,22 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 if(!ServerAiNativeActions.Owned(run.Identity)){Stop("unknown","navigation_binding_changed");return;}
                 if(!Running)return; // Native death/retirement may have stopped the driver.
                 if(!injected)throw new InvalidOperationException("Audited G4 movement boundary not reached.");
+                if(run.Climb is {} climb)
+                {
+                    climb.After(run.Identity,run.Session,run.Generation);
+                    if(climb.Failure!=null)
+                    {
+                        var state=NativeMotionWorld.Observe(p);
+                        bool cleaned=climb.Release();
+                        climb.Log("failed",state);
+                        if(!cleaned){Stop("unknown","grapple_cleanup_unconfirmed");return;}
+                        run.Climb=null;
+                        navigation.Task.RecoverGrapple(state,climb.Failure);
+                    }
+                    else if(climb.Complete)run.Climb=null;
+                    NetworkStateSync.Tick(p);
+                    return;
+                }
                 navigation.After(p);run.Snapshot=navigation.Snapshot;
                 if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown",run.Snapshot.Reason=="navigation_unknown_terrain"
                     ?"native_navigation_terrain_unknown":"native_navigation_landing_unconfirmed");}

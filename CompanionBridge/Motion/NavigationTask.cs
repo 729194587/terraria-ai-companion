@@ -6,6 +6,7 @@ namespace CompanionBridge.Motion;
 // hosted on the existing game thread and bound to one control generation.
 internal sealed class NavigationTask
 {
+    internal Func<PhysicsState,PhysicsParameters,IMotionWorld,bool> TryGrapple { get; set; }
     private readonly LocalMotionController _executor = new();
     private readonly bool _enableSafeGroundWalk;
     private int _searches,_fastWalks,_deferredSearches,_consecutiveRecoveries;
@@ -220,6 +221,15 @@ internal sealed class NavigationTask
                 Snapshot = Snapshot with { Action = "plan", Expansions = _route.Expansions,
                     PlannedActions = _route.Actions.Count, PlanMilliseconds = _route.Milliseconds,
                     PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached, PlanStart=state, SearchFailureReason=_route.FailureReason, PlanKind=_route.Kind, SearchNumber=_searches, FastWalkPlans=_fastWalks, SearchExit=_route.SearchExit, SearchRejections=_route.Rejections, DominatedStates=_route.DominatedStates };
+                bool grappleFallback=_route.SearchExit=="no_route_in_coverage"
+                    ||_route.SearchExit=="safe_partial"&&_route.Actions.Count>0
+                    &&_route.Actions.TrueForAll(edge=>edge.Landing.Py>=state.Py-LandingRegion.FeetTolerance);
+                if(grappleFallback&&TryGrapple?.Invoke(state,ph,world)==true)
+                {
+                    DiscardSearch();_route=null;
+                    Snapshot=Snapshot with {Status="running",Reason="bounded native grapple candidate selected"};
+                    return default;
+                }
                 if (_route.Actions.Count == 0)
                 {
                     if(_route.SearchExit=="surface_node_budget")
@@ -435,11 +445,14 @@ internal sealed class NavigationTask
         }
         else _route=null;
     }
-    private void BeginRecovery(PhysicsState state, string reason)
+    internal void RecoverGrapple(PhysicsState state,string reason) => BeginRecovery(state,reason,grapple:true);
+
+    private void BeginRecovery(PhysicsState state, string reason,bool grapple=false)
     {
         if ((Continuous?_consecutiveRecoveries:_recoveries) >= RecoveryLimit) { Fail("navigation_recovery_limit"); return; }
         _recoveries++;_consecutiveRecoveries++;
-        _rememberFailedEdge=!Continuous||Snapshot.Frame>0;_failedEdge=Edge; _routeIndex=0; _executor.Cancel();
+        _rememberFailedEdge=!grapple&&(!Continuous||Snapshot.Frame>0);
+        _failedEdge=grapple?null:Edge; _routeIndex=0; _executor.Cancel();
         _recovering=true; _executing=_confirming=_neutralIssued=false;
         _recoveryFrames=_recoverySettled=0;
         _recoveryReason=reason; _recoveryPosition=state; _recoveryInputsReleased=null;

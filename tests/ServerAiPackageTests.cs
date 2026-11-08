@@ -44,6 +44,17 @@ public static class ServerAiPackageTests
             &&Calls(Type("CharacterStore").Methods.Single(m=>m.Name=="SaveCore"),"Read"),"world and legacy saves share native SavePlayer and native read-back validation");
         Check(Calls(Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop"),"Observe")
             &&Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="native_navigation_landing_unconfirmed"),"native airborne failure cleanup reports unconfirmed landing");
+        var grapple=Type("ActorGrapple");
+        var fire=grapple.Methods.Single(m=>m.Name=="Fire");
+        Check(Calls(fire,"Require")&&Calls(fire,"NewProjectile")&&Calls(fire,"CanUseGrapple")&&Calls(fire,"UseGrapple")
+            &&!Calls(fire,"QuickGrapple"),"grapple spawn uses audited native item/projectile path with explicit actor binding");
+        var grappleMethods=Walk(grapple).Concat(Walk(Type("ServerGrappleClimb")))
+            .SelectMany(t=>t.Methods).Where(m=>m.HasBody).ToArray();
+        Check(!grappleMethods.SelectMany(m=>m.Body.Instructions).Any(i=>i.OpCode==OpCodes.Stsfld
+            &&i.Operand is FieldReference f&&f.DeclaringType.FullName=="Terraria.Main"&&f.Name is "myPlayer" or "mouseX" or "mouseY")
+            &&!grappleMethods.Any(m=>Calls(m,"Update")),"grapple does not rewrite client globals or call Player.Update");
+        Check(Calls(grapple.Methods.Single(m=>m.Name=="Matches"),"TryGetGlobalProjectile")
+            &&Calls(grapple.Methods.Single(m=>m.Name=="Release"),"Matches"),"grapple release verifies the projectile incarnation before mutation");
         Check(Walk(Type("StateSpacePlanner")).SelectMany(t=>t.Methods).Where(m=>m.HasBody)
             .Any(m=>Calls(m,"SupportedCheckpoint")),"planner requires real supported checkpoints beyond collision contact");
         var motionWorld=Type("NativeMotionWorld");
