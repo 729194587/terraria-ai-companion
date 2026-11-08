@@ -1,6 +1,6 @@
 param([string]$TModLoaderPath,[string]$EngineProfile,
     [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes,[switch]$Mobility,[switch]$Probe,[switch]$Region,
-    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation,[switch]$ExtraJump,[switch]$Grapple,[switch]$Liquid,[switch]$Rope)
+    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation,[switch]$ExtraJump,[switch]$Grapple,[switch]$Liquid,[switch]$Rope,[switch]$RopeMotion)
 $ErrorActionPreference='Stop'
 if($ExtraJump){$Mobility=$true}
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
@@ -35,12 +35,13 @@ if($ExtraJump){$info.ArgumentList.Add('-companionextrajumptest')}
 if($Grapple){$info.ArgumentList.Add('-companiongrappletest')}
 if($Liquid){$info.ArgumentList.Add('-companionliquidtest')}
 if($Rope){$info.ArgumentList.Add('-companionropetest')}
+if($RopeMotion){$info.ArgumentList.Add('-companionropemotiontest')}
 if($Region){$info.ArgumentList.Add('-companionregiontest')}
 if($Environment){$info.ArgumentList.Add('-companionenvironmenttest')}
 $process=[Diagnostics.Process]::Start($info)
 $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
 try {
-    $testScript=if($Rope){'native_rope.py'}elseif($Liquid){'native_liquid.py'}elseif($Grapple){'native_grapple.py'}elseif($ExtraJump){'native_extra_jump.py'}elseif($Region){'native_scene_region.py'}elseif($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
+    $testScript=if($RopeMotion){'native_rope_motion.py'}elseif($Rope){'native_rope.py'}elseif($Liquid){'native_liquid.py'}elseif($Grapple){'native_grapple.py'}elseif($ExtraJump){'native_extra_jump.py'}elseif($Region){'native_scene_region.py'}elseif($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
     $probeArgs=@('-B',(Join-Path $PSScriptRoot $testScript),'--port',"$IpcPort",'--profile',$profile)
     if($Region){$probeArgs+=@('--iterations',"$RegionIterations")}
     if($Environment){$probeArgs+='--environment'}

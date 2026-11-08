@@ -44,6 +44,7 @@ def operations_for_capabilities(capabilities):
             ('server_ai_place_object_workbench_v1', 'place_object'),
             ('server_ai_place_tile_v1', 'place_tile'),
             ('server_ai_place_rope_v1', 'place_rope'),
+            ('server_ai_move_on_rope_v1', 'move_on_rope'),
             ('landing_region_navigation_v1', 'navigate_to_landing_region'),
         ):
             if capability in caps:
