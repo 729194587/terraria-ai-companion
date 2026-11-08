@@ -13,6 +13,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     private sealed record Handle(AiReadOnlyProtocol.Identity Identity,string Operation,object Context,Result Rejection=null);
     private readonly ServerAiNavigation navigation = new();
     private readonly ServerAiDirectInput directInput = new();
+    private readonly ServerAiRope rope = new();
     private Handle active;
     private static bool IsNavigation(string op)=>op is "navigate_to_x" or "navigate_to_landing_region";
     internal ServerAiNativeActions(){ActorControl.Driver=navigation;}
@@ -55,6 +56,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},AutonomousNavigationTask.TripUpdates);
             }
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
+            else if(operation=="move_on_rope")
+            {
+                if(rope.Start(identity,args,out var run) is {} reason)return Reject(reason);
+                context=run;ActorControl.Driver=rope;
+            }
             else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
             else if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
             else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId);ActorControl.Driver=navigation;}
@@ -103,7 +109,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         catch
         {
             // Start preflight excludes other running actions. Release only this known actor.
-            if(Owned(identity)){ActorMining.Retire(p);ActorItemUse.Retire(p);navigation.Retire(p);directInput.Retire(p);}
+            if(Owned(identity)){ActorMining.Retire(p);ActorItemUse.Retire(p);navigation.Retire(p);directInput.Retire(p);rope.Retire(p);}
             throw;
         }
     }
@@ -134,6 +140,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             var c=(ServerAiDirectInput.Run)h.Context;
             return new(c.Status,c.Reason,directInput.Evidence(),c.InputReleased&&Released(p),
                 c.Status=="completed"&&c.Updates==c.MaxUpdates,InputsAcquired:c.Updates>0,ReasonDetail:c.Detail);
+        }
+        if(h.Operation=="move_on_rope")
+        {
+            if(!ReferenceEquals(rope.Current,h.Context))return new("unknown","native_context_changed",null,false);
+            var c=(ServerAiRope.Run)h.Context;
+            return new(c.Status,c.Reason,rope.Evidence(),c.InputReleased&&Released(p),
+                c.Status=="completed",InputsAcquired:c.Updates>0,ReasonDetail:c.Detail);
         }
         if(IsNavigation(h.Operation))
         {
@@ -219,6 +232,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         if(observed.Status!="running")return observed;
         var p=(Player)h.Identity.Actor;
         if(h.Operation=="move_input")directInput.Stop("cancelled","explicit_stop");
+        else if(h.Operation=="move_on_rope")rope.Stop("cancelled","explicit_stop");
         else if(IsNavigation(h.Operation))navigation.Stop("cancelled","explicit_stop");
         else if(h.Operation is "use_item" or "place_tile" or "place_object" or "place_rope")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
         else ActorMining.Stop(p,h.Identity.World,h.Identity.Generation);

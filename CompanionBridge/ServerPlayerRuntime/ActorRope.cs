@@ -20,7 +20,7 @@ internal static class ActorRope
         return -1;
     }
 
-    private static bool IsRope(Tile tile)=>tile.HasUnactuatedTile
+    internal static bool IsRope(Tile tile)=>tile.HasUnactuatedTile
         &&tile.TileType is TileID.Rope or TileID.VineRope or TileID.SilkRope or TileID.WebRope;
 
     // PlaceThing_Tiles checks its requested target before retargeting. Apply

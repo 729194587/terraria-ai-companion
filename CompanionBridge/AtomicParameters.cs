@@ -160,6 +160,13 @@ internal static class AtomicParameters
                     ||args.GetProperty("vertical").GetString() is not ("none" or "up" or "down"))throw new FormatException("Invalid input direction.");
                 Integer("maxUpdates",1,600);Integer("jumpHoldUpdates",0,args.GetProperty("maxUpdates").GetInt32());
                 break;
+            case "move_on_rope":
+                Fields("ropeX","targetFeetY","finish","maxUpdates");
+                Integer("ropeX",0,100000);Number(args.GetProperty("targetFeetY"),0,1000000);
+                Integer("maxUpdates",1,360);
+                if(args.GetProperty("finish").GetString() is not ("hold" or "land"))
+                    throw new FormatException("Invalid rope finish.");
+                break;
             case "navigate_to_landing_region":
                 Fields("minPlayerLeftX", "maxPlayerLeftX", "surfaceY");
                 foreach (string key in keys) Number(args.GetProperty(key), 0, 1000000);

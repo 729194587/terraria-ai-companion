@@ -252,3 +252,24 @@ A/B 使用静态观察和有界轨迹采样。危险液体的扫掠包围矩形�
 两版固定引擎的 `PlaceThing_Tiles`、`PlaceThing_Tiles_CheckRopeUsability` 和 `WorldGen.PlaceTile` 的 IL 一致。绳索检查读取到空目标格后直接返回，后续放置仍使用该格。点击已有绳段才进入向下扫描。因此可用现有 `place_rope` 逐次指定绳柱顶端的 `y - 1` 空格向上建设。此次仅补充测试夹具和验证记录。
 
 两版均零错误、零警告构建，且各通过 22 个隔离原生场景，其中 15 个为既有回归。普通绳索连续向上放置 6 节，每节均重新读取真实 Tile 和快捷栏库存，确认正好消耗一件，回执 `extended=false`，原生放置检查使用所请求坐标。预留的底端空格全程保持为空。第 7 格恰好超出原生距离上限，返回 `rope_out_of_range`，无输入取得，目标格仍为空，库存保持 10 件。另通过 7 项 Python 放置与回执回归。
+
+## 10. Phase 4.6-E 原生绳索移动
+
+`move_on_rope({ropeX, targetFeetY, finish, maxUpdates})` 经 `server_ai_move_on_rope_v1` 向 Server AI Lua 开放。`ropeX` 是绝对 Tile 列，`targetFeetY` 是目标脚底的世界像素 Y，向下增大。起点须停稳并与干燥绳柱对齐，头部原生探测格及相邻格至少有两节连续原版绳索。单次最多移动 384 像素、执行 1 到 360 个更新，另有 30 秒服务器动作截止时间。操作可以在 `hold` 后继续从同一绳柱向上或向下。
+
+- `hold` 在目标 ±4 像素内连续两帧确认 Actor 仍附着、松开上下输入且已停稳。`land` 沿绳索下端原生脱离，要求下端有空格、有限落差及正下方完整实体支撑。连续两帧核验已脱绳、停稳、安全着地且脚底距目标不超过 0.5 像素。
+- 检查两版引擎程序集中的 `Player.FindPulley` 和 `Player.Update`，相关原生 IL 一致。`PlayerLoader.PostUpdateMiscEffects` 位于上下键重置之后、`FindPulley` 和攀绳运动之前。普通导航的 `PostUpdateRunSpeeds` 边界在攀绳分支之后。使用现有 ModPlayer 回调在正确位置注入 Actor 的 Up 或 Down。原生负责附着、牵引、松键减速和下端脱离。TerraBot 的竖直输入和松键停留提供了对照。
+- 复用 Actor 控制租约、单次自然 `Player.Update`、原生安全落脚检查、取消与 IPC 回执。执行中复核连续绳段、身体净空、干燥条件和退出支撑。取消和预算耗尽释放输入，绑定身份变化通过既有身份校验返回 `unknown`。正式路径只写当前 Actor 的受控输入。
+- MVP 支持连续、干燥的原版绳柱及正下方实体地面落脚。侧向或跳跃脱离、平台落脚、跨绳柱移动、液体、第三方绳索、图形客户端及多人同步效果待验证或属于后续范围。自动搭绳和 `navigate_to` 接入留在后续阶段。
+
+### 实际验证
+
+| 检查 | 结果 |
+| --- | --- |
+| tModLoader `2026.09.3.1`、`2026.08.3.0` | 均零错误、零警告构建 |
+| 双引擎 `verify_navigation_recovery_native.ps1 -RopeMotion` | 各通过 12 个隔离场景。包含对齐拒绝、从地面原生附着、两段连续攀升、松键后继续停留、小数目标下降、无出口拒绝、原生脱绳落地、身体净空阻挡、更新预算耗尽、显式取消、断绳及 generation 变化 |
+| `run_csharp_tests.ps1 -NavigationOnly` | 单独运行通过。并发运行曾在计时受限的低顶棚绕行用例失败，基线及当前版本单独运行均通过 |
+| Python 定向回执 | 3 项绳索移动检查及 7 项放置回归通过 |
+| 双包 `run_server_ai_ipc_tests.ps1` | IPC、Task Runtime 与包级验证通过。每版 92 项 Task Runtime 检查及 103 项包级 IL 检查 |
+| 新版引擎 `verify_server_ai_direct_input_native.ps1` | 16 个原生输入场景通过，包含取消、退役、断开连接、死亡和输入释放 |
+| 新版引擎 `-AutonomousNavigation -Scenes offset` | 既有自主导航在偏差后完成一次重规划并验证到达，回执确认输入释放 |

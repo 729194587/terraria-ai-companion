@@ -134,6 +134,7 @@ internal static class ServerAiActionFixture
             lock(ProbeSession.Reservation.Gate)ServerGrappleFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerLiquidFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerRopeFixture.Tick(ProbeSession.Actor);
+            lock(ProbeSession.Reservation.Gate)ServerRopeMotionFixture.Tick(ProbeSession.Actor);
             if(ServerMineTaskFixture.Enabled&&File.Exists(Path.Combine(Main.SavePath,"task-freeze-updates")))
             {
                 File.WriteAllText(Path.Combine(Main.SavePath,"task-freeze-ready.json"),JsonSerializer.Serialize(new{gameUpdate=Main.GameUpdateCount}));
