@@ -13,17 +13,17 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
     public IMotionWorld MotionAt(PhysicsState pose)=>new NativeMotionWorld(pose);
     public SurfaceCell ReadSurfaceCell(int x,int y)
     {
-        char shape=TerrainReader.ReadCell(x,y);
-        if(!WorldGen.InWorld(x,y,1))return new('?',long.MinValue);
+        if(!TerrainReader.Loaded(x,y))return new('?',long.MinValue);
         var tile=Main.tile[x,y];
+        var cell=TerrainReader.ReadEnvironment(tile);
         unchecked
         {
-            long h=shape;
+            long h=cell.Shape;
             void Add(long v){h=(h^v)*1099511628211;}
             Add(tile.TileType);Add(tile.HasTile?1:0);Add(tile.IsActuated?1:0);
             Add((int)tile.Slope);Add(tile.IsHalfBlock?1:0);Add(tile.TileFrameX);Add(tile.TileFrameY);
-            Add(tile.LiquidAmount);Add(tile.LiquidType);
-            return new(shape,h);
+            Add(cell.Liquid.Stamp);
+            return new(cell.Shape,h,cell.Liquid);
         }
     }
     private const int CollisionMargin = 32;
@@ -59,14 +59,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
             Add(minX);Add(minY);Add(maxX);Add(maxY);
             for(int x=minX;x<=maxX;x++)
                 for(int y=minY;y<=maxY;y++)
-                {
-                    char cell=TerrainReader.ReadCell(x,y);Add(cell);
-                    if(!WorldGen.InWorld(x,y,1))continue;
-                    var tile=Main.tile[x,y];
-                    Add(tile.TileType);Add(tile.HasTile?1:0);Add(tile.IsActuated?1:0);
-                    Add((int)tile.Slope);Add(tile.IsHalfBlock?1:0);
-                    Add(tile.TileFrameX);Add(tile.TileFrameY);Add(tile.LiquidAmount);Add(tile.LiquidType);
-                }
+                    Add(ReadSurfaceCell(x,y).Signature);
             return hash;
         }
     }
@@ -90,8 +83,8 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
         {
             Check(Math.Min(start.Px, end.Px) - 2, Math.Min(start.Py, end.Py) - 2,
                 Math.Max(start.Px, end.Px) + 22, Math.Max(start.Py, end.Py) + 44, true);
-            reason = null;
-            return true;
+            reason = NativeLiquidRisk.Rejection(start,end);
+            return reason==null;
         }
         catch (UnsafeMotionException error) { reason = error.Message; return false; }
     }

@@ -161,6 +161,12 @@ class Decisions(unittest.TestCase):
                 View(scene(cells=[(103, 100, cell)])).cell(103, 100)
             self.assertEqual(str(failure.exception), f"{name} at tile (103,100), 28px horizontally from player")
 
+    def test_split_liquid_layer_keeps_dry_walker_conservative(self):
+        reply = scene()
+        reply["terrain"]["liquids"] = [{"x": 103, "y": 99, "type": "water", "amount": 1}]
+        with self.assertRaisesRegex(SafetyStop, "liquid or marked hazard"):
+            View(reply).cell(103, 99)
+
     def test_joined_uphill_floor_and_stairs_walk_both_directions(self):
         for direction, code, edge in ((1, "2", 103), (-1, "1", 98), (1, "b", 103), (-1, "a", 98)):
             cells = [(edge, 99, code)] + [(edge + direction * i, 99, "#") for i in range(1, 22)]

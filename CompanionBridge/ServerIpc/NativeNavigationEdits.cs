@@ -81,7 +81,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     {
         int row=(int)Math.Round(Feet(pose)/TileSize);
         var floor=Columns(pose.Px,pose.Px+PhysicsSimulator.PlayerW)
-            .Where(tx=>TerrainReader.ReadCell(tx,row)!='.').Select(tx=>(tx,row)).ToArray();
+            .Where(tx=>TerrainReader.ReadDryCell(tx,row)!='.').Select(tx=>(tx,row)).ToArray();
         var blocks=floor.Where(c=>!IsTargetCell(c.tx,c.row))
             .OrderBy(c=>Math.Min(pose.Px+PhysicsSimulator.PlayerW,(c.tx+1)*TileSize)-Math.Max(pose.Px,c.tx*TileSize))
             .ToArray();
@@ -92,7 +92,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         if(step==null)return null;
         var cut=blocks[0];
         bool drop=CanDropAfter(pose,new[]{cut});
-        if(!drop&&!MotionSupport.SafeLanding(pose,(tx,ty)=>(tx,ty)==cut?'.':TerrainReader.ReadCell(tx,ty)))
+        if(!drop&&!MotionSupport.SafeLanding(pose,(tx,ty)=>(tx,ty)==cut?'.':TerrainReader.ReadDryCell(tx,ty)))
         {SearchDetail+="; down: intermediate stance would lose support";openingTile=null;return null;}
         expectedDrop=drop;
         expectedLanding=pose with{Py=pose.Py+(drop?TileSize:0)};
@@ -109,10 +109,10 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         const float arrivalWidth=2;
         var blocks=(from cell in LocalEditGeometry.Across(pose,destination)
             let tx=cell.X let ty=cell.Y
-            where TerrainReader.ReadCell(tx,ty)!='.'
+            where TerrainReader.ReadDryCell(tx,ty)!='.'
             select (tx,ty)).ToArray();
 
-        char After(int tx,int ty)=>blocks.Contains((tx,ty))?'.':TerrainReader.ReadCell(tx,ty);
+        char After(int tx,int ty)=>blocks.Contains((tx,ty))?'.':TerrainReader.ReadDryCell(tx,ty);
         for(int offset=-2;offset<=2;offset++)
             if(!MotionSupport.SafeFlatLanding(pose with{Px=destination+offset},After))
             {SearchDetail+="; horizontal: no supported landing behind the proposed cut";return blocks.Length==0?PlanPlacement(pose,destination):null;}
@@ -144,7 +144,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
                 var item=Player.inventory[slot];
                 if(!PlacementAllowed(tx,row,item))continue;
                 char support=Main.tileSolidTop[item.createTile]?'=':'#';
-                char After(int x,int y)=>x==tx&&y==row?support:TerrainReader.ReadCell(x,y);
+                char After(int x,int y)=>x==tx&&y==row?support:TerrainReader.ReadDryCell(x,y);
                 if(!MotionSupport.SafeFlatLanding(pose with{Px=destination},After))continue;
                 Cost=Math.Max(1,item.useTime)+20;
                 placement=(tx,row,slot,item,item.createTile,pose);
@@ -159,15 +159,15 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     private bool PlacementAllowed(int x,int y,Item item)
     {
         if(IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||Main.tile[x,y].HasTile
-            ||TerrainReader.ReadCell(x,y)!='.'||!SafeCutNeighbours(x,y,allowPlatforms:true)
+            ||TerrainReader.ReadDryCell(x,y)!='.'||!SafeCutNeighbours(x,y,allowPlatforms:true)
             ||!ActorPlacement.Supported(item)||!Main.tileSolid[item.createTile]
             ||TileID.Sets.Falling[item.createTile]
             ||Player.noBuilding||Player.CCed||Player.noItems||Player.frozen||Player.stoned
             ||!Player.InInteractionRange(x,y,Terraria.DataStructures.TileReachCheckSettings.Simple))
             return false;
-        return TerrainReader.ReadCell(x-1,y) is '#' or '='
-            ||TerrainReader.ReadCell(x+1,y) is '#' or '='
-            ||TerrainReader.ReadCell(x,y+1)=='#';
+        return TerrainReader.ReadDryCell(x-1,y) is '#' or '='
+            ||TerrainReader.ReadDryCell(x+1,y) is '#' or '='
+            ||TerrainReader.ReadDryCell(x,y+1)=='#';
     }
 
     internal bool CanDropAfter(PhysicsState pose,(int X,int Y)[] removed)
@@ -178,7 +178,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             ||feet+TileSize-Feet(openingOrigin)>MaxDepthTiles*TileSize+LandingRegion.FeetTolerance)return false;
         char After(int tx,int ty)
         {
-            char cell=TerrainReader.ReadCell(tx,ty);
+            char cell=TerrainReader.ReadDryCell(tx,ty);
             return cell is '?' or '!'?cell:removed.Contains((tx,ty))?'.':cell;
         }
         // A fall is only admitted into a dry, fully cleared row with a verified
@@ -188,7 +188,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
 
     internal void BeginLocalPlanning(PhysicsState pose)
     {if(rolling)openingOrigin=pose;SearchFailure=null;SearchDetail="bounded local edit evaluation";}
-    public char Cell(int x,int y)=>TerrainReader.ReadCell(x,y);
+    public char Cell(int x,int y)=>TerrainReader.ReadDryCell(x,y);
     private static bool SafeMaterial(Item item)
     {
         if(!ActorPlacement.Supported(item))return false;
@@ -278,7 +278,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             if(IsTargetCell(tx,ty)||!WorldGen.InWorld(tx,ty,2)
                 ||Math.Abs(tx-Grid(openingOrigin.Px+PhysicsSimulator.PlayerW/2f))>MaxWidthTiles
                 ||ty<Grid(openingOrigin.Py)||ty>=(int)Math.Round(Feet(openingOrigin)/TileSize)+MaxDepthTiles
-                ||TerrainReader.ReadCell(tx,ty)!='#'
+                ||TerrainReader.ReadDryCell(tx,ty)!='#'
                 ||Main.tileFrameImportant[Main.tile[tx,ty].TileType]||!SafeCutNeighbours(tx,ty))
             {SearchDetail+=$"; protected, hazardous or unsupported blocker ({tx},{ty})";return null;}
             var failure=ActorMining.ChooseTool(p,identity.World,identity.Generation,tx,ty,true,out int toolSlot);
@@ -299,7 +299,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         for(int tx=x-1;tx<=x+1;tx++)
             for(int ty=y-1;ty<=y+1;ty++)
             {
-                if(TerrainReader.ReadCell(tx,ty) is '?' or '!')return false;
+                if(TerrainReader.ReadDryCell(tx,ty) is '?' or '!')return false;
                 var tile=Main.tile[tx,ty];
                 if(tile.HasUnactuatedTile&&(TileID.Sets.Falling[tile.TileType]
                     ||Main.tileFrameImportant[tile.TileType]&&!(allowPlatforms&&TileID.Sets.Platforms[tile.TileType])))return false;
@@ -327,7 +327,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         if(expectedLanding==null||Math.Abs(pose.Px-cutPose.Px)>.1f||Math.Abs(pose.Py-cutPose.Py)>.1f
             ||(expectedDrop&&!CanDropAfter(pose,new[]{(cut.X,cut.Y)}))
             ||(!expectedDrop&&!MotionSupport.SafeLanding(pose,
-                (tx,ty)=>tx==cut.X&&ty==cut.Y?'.':TerrainReader.ReadCell(tx,ty))))
+                (tx,ty)=>tx==cut.X&&ty==cut.Y?'.':TerrainReader.ReadDryCell(tx,ty))))
             return "mining_opening_pose_or_safety_changed";
         return null;
     }
@@ -344,8 +344,8 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             SearchDetail+=$"; unexpected settled pose left={pose.Px:F1}, feet={Feet(pose):F1}";
             return "mining_opening_landing_changed";
         }
-        if(placement is {} block&&TerrainReader.ReadCell(block.X,block.Y)!='#'
-            &&TerrainReader.ReadCell(block.X,block.Y)!='=')
+        if(placement is {} block&&TerrainReader.ReadDryCell(block.X,block.Y)!='#'
+            &&TerrainReader.ReadDryCell(block.X,block.Y)!='=')
             return "navigation_placed_support_changed";
         placement=null;
         if(expectedDrop&&openingTile is {} cut)

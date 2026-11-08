@@ -183,8 +183,8 @@ public static class BridgeOfflineTests
     {
         char Classify(bool active = true, bool actuated = false, bool solid = true,
             bool platform = false, int frame = 0, bool half = false, int slope = 0,
-            bool liquid = false, bool harmful = false, bool loaded = true) =>
-            TerrainClassifier.Classify(loaded, active, actuated, solid, platform, frame, half, slope, liquid, harmful);
+            bool harmful = false, bool loaded = true) =>
+            TerrainClassifier.Classify(loaded, active, actuated, solid, platform, frame, half, slope, harmful);
         Check(Classify() == '#', "Ordinary full block");
         Check(Classify(active: false) == '.' && Classify(actuated: true) == '.', "Empty/actuated never collide");
         Check(Classify(solid: false) == '.', "Decorations are not walls");
@@ -206,7 +206,7 @@ public static class BridgeOfflineTests
             && TerrainClassifier.SurfaceOffset('3', 4, 12) == 0
             && TerrainClassifier.SurfaceOffset('4', 4, 12) == 0
             && float.IsNaN(TerrainClassifier.SurfaceOffset('?', 0, 16)), "Partial footprint clamps and ceiling tops");
-        Check(Classify(liquid: true, active: false) == '!' && Classify(harmful: true) == '!'
+        Check(Classify(harmful: true) == '!'
             && Classify(loaded: false) == '?', "Hazards and unloaded terrain are not air");
 
         var request = ControlState.Parse("{\"v\":1,\"id\":1,\"cmd\":\"input\",\"direction\":-1,\"jump\":true}");

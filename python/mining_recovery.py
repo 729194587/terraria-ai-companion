@@ -5,6 +5,7 @@ still plans and verifies the actual landing; unknown or complex routes stop.
 """
 import math
 import atomic_operations as atomic
+from spatial import liquid_tiles
 
 
 def eligible(result):
@@ -49,8 +50,11 @@ def _landing(x, y, t, tx, ty):
     if abs(feet / 16 - round(feet / 16)) > .001 or t.get("tileSize") != 16:
         raise ValueError("no_proven_level_approach")
     rows, ox, oy = t["rows"], t["originX"], t["originY"]
+    liquids = liquid_tiles(t)
     def cell(cx, cy):
         ix, iy = cx - ox, cy - oy
+        if (cx, cy) in liquids:
+            return "!"
         return rows[iy][ix] if 0 <= iy < len(rows) and 0 <= ix < len(rows[iy]) else "?"
     dy = y + 21 - ty
     if abs(dy) >= 72:

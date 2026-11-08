@@ -294,6 +294,7 @@ namespace CompanionBridge.Common.Systems
     {
         internal static Func<int,int,char> Cell = (x,y) => '.';
         internal static char ReadCell(int x,int y) => Cell(x,y);
+        internal static char ReadDryCell(int x,int y)=>Cell(x,y);
         internal static TerrainSnapshot Read(Terraria.Player p) => new(0,0,16,Array.Empty<string>(),p.width,p.height,
             MotionSupport.SafeLanding(new(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,Math.Abs(p.velocity.Y)<0.01f),Cell),true);
     }

@@ -36,7 +36,8 @@ internal sealed record GrappleClimbPlan(LandingRegion Landing,int AnchorX,int An
         int shelf=(int)(landing.SurfaceY/16);
         for(int anchorY=shelf-9;anchorY<=shelf-7;anchorY++)
         {
-            if(start.Py+21-(anchorY*16+8)>Range||terrain.ReadSurfaceCell(anchorX,anchorY).Shape!='#')continue;
+            var anchor=terrain.ReadSurfaceCell(anchorX,anchorY);
+            if(start.Py+21-(anchorY*16+8)>Range||anchor.Shape!='#'||anchor.Liquid.Amount>0)continue;
             int shaftLeft=(int)Math.Floor((start.Px-3)/16),shaftRight=(int)Math.Floor((start.Px+22)/16);
             int left=Math.Min(shaftLeft,(int)Math.Floor((goal-16)/16));
             int right=Math.Max(shaftRight,(int)Math.Floor((goal+36)/16));
@@ -45,10 +46,10 @@ internal sealed record GrappleClimbPlan(LandingRegion Landing,int AnchorX,int An
             for(int x=left;x<=right;x++)
                 for(int y=anchorY;y<=bottom;y++)
                 {
-                    char shape=terrain.ReadSurfaceCell(x,y).Shape;
+                    var cell=terrain.ReadSurfaceCell(x,y);
                     if(y==anchorY&&x==anchorX)continue;
                     bool openRequired=y<shelf||x>=shaftLeft&&x<=shaftRight;
-                    if(openRequired?shape!='.':shape is not ('.' or '#'))clear=false;
+                    if(cell.Liquid.Amount>0||(openRequired?cell.Shape!='.':cell.Shape is not ('.' or '#')))clear=false;
                 }
             if(!clear)continue;
             int supportLeft=(int)Math.Floor(goal/16),supportRight=(int)Math.Ceiling((goal+20)/16)-1;
