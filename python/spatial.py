@@ -3,6 +3,22 @@ from collections import Counter
 import math
 
 
+def liquid_tiles(terrain):
+    """Project the optional liquid layer for dry-only callers."""
+    cells = terrain.get("liquids", [])
+    if not isinstance(cells, list):
+        raise ValueError("invalid liquid layer")
+    positions = set()
+    for cell in cells:
+        if (not isinstance(cell, dict) or type(cell.get("x")) is not int
+                or type(cell.get("y")) is not int or type(cell.get("amount")) is not int
+                or not 1 <= cell["amount"] <= 255
+                or cell.get("type") not in ("water", "lava", "honey", "shimmer", "unknown")):
+            raise ValueError("invalid liquid entry")
+        positions.add((cell["x"], cell["y"]))
+    return positions
+
+
 def describe_space(state, terrain):
     x, y = state["position"]["x"], state["position"]["y"]
     width, height = terrain["playerWidth"], terrain["playerHeight"]

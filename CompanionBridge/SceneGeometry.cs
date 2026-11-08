@@ -109,7 +109,7 @@ internal static class SceneGeometry
         var c=cell.Facts;
         if(c.Knowledge!="read"||c.CollisionKnowledge!="known"||cell.Navigation=='?')return '?';
         if(c.HasTile&&c.Actuated)return 'A';
-        return TerrainClassifier.Classify(true,c.HasTile,c.Actuated,c.Solid,c.SolidTop,c.FrameY,c.HalfBlock,c.Slope,false,false);
+        return TerrainClassifier.Classify(true,c.HasTile,c.Actuated,c.Solid,c.SolidTop,c.FrameY,c.HalfBlock,c.Slope,false);
     }
     internal static char Glyph(string kind)=>kind switch{"tree_component"=>'T',"ore_component"=>'O',"chest"=>'C',"door"=>'D',"workbench"=>'W',"light_source"=>'t',"drop"=>'$',"npc"=>'N',"player"=>'P',_=>'+'};
     internal static char Danger(string[] sources)

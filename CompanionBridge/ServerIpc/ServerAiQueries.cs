@@ -64,7 +64,8 @@ internal static class ServerAiQueries
                     maxX=terrain.OriginX+44, maxY=terrain.OriginY+28 },
                 scannedCount=45*29, unknownCount=unknown, complete=unknown==0,
                 coordinates="Tile cells; 16 world pixels per tile; +X right,+Y down; rows[y][x] relative to origin",
-                legend=". clear/nonblocking/actuated; # solid; h halfblock; 1..4 slopes; = platform; a/b platform slopes; ! liquid or hazard; ? unknown collision or world boundary",
+                legend=". clear/nonblocking/actuated; # solid; h halfblock; 1..4 slopes; = platform; a/b platform slopes; ! harmful tile; ? unknown collision or world boundary",
+                liquidCoordinates="terrain.liquids entries use absolute Tile x/y and native amount 1..255; missing entries on unread cells are unknown",
                 scope="45x29 collision categories, not tile types or visibility; unknown Mod collision hooks; no path guarantee" };
         }
         else if (operation == "resolve_content") data = AtomicQueries.Resolve(arguments);
@@ -91,7 +92,7 @@ internal static class ServerAiQueries
             string unsupported=p.width!=20||p.height!=42?"unsupported_body_dimensions":p.gravDir!=1?"unsupported_gravity":
                 !terrain.Supported?"unsupported_player_profile":null;
             projected["miningSupportImpact"]=JsonSerializer.SerializeToElement(MiningSupportImpact.Read(pose,
-                arguments.GetProperty("x").GetInt32(),arguments.GetProperty("y").GetInt32(),TerrainReader.ReadCell,unsupported),Json);
+                arguments.GetProperty("x").GetInt32(),arguments.GetProperty("y").GetInt32(),TerrainReader.ReadDryCell,unsupported),Json);
         }
         projected["source"] = "server_ai_player";
         projected["customState"] = "unknown; custom Mod player/item/buff data and Mod accessory slots not read";

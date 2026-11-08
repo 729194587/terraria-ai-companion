@@ -61,7 +61,7 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
         // Native framing can remove the other parts with the targeted segment.
         bool safe=MotionSupport.SafeLanding(pose,(tx,ty)=>
         {
-            char cell=TerrainReader.ReadCell(tx,ty);
+            char cell=TerrainReader.ReadDryCell(tx,ty);
             if(cell is '?' or '!')return cell;
             if(IsTargetCell(tx,ty))return '.';
             return cell;

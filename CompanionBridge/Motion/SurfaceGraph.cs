@@ -13,7 +13,7 @@ internal interface ISurfaceTerrain
     IMotionWorld MotionAt(PhysicsState pose);
 }
 
-internal readonly record struct SurfaceCell(char Shape,long Signature);
+internal readonly record struct SurfaceCell(char Shape,long Signature,TileLiquid Liquid=default);
 internal enum SurfaceKind { Solid, Platform, Half, Slope, PlatformSlope }
 internal enum SurfaceMotion { Walk, Jump, Drop }
 internal sealed record SurfaceNode(int Id,int TileX,int TileY,LandingRegion Region,

@@ -171,8 +171,8 @@ internal static class AtomicOperations
         {
             var terrain = TerrainReader.Read(p);
             var state = new PhysicsState(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,terrain.Grounded,p.jump,p.releaseJump);
-            if(first) { _action=action.ActionId; _drop=new(); _drop.Begin(state,p.statLife,terrain.Supported,TerrainReader.ReadCell); }
-            _drop.Before(state,p.statLife,TerrainReader.ReadCell);
+            if(first) { _action=action.ActionId; _drop=new(); _drop.Begin(state,p.statLife,terrain.Supported,TerrainReader.ReadDryCell); }
+            _drop.Before(state,p.statLife,TerrainReader.ReadDryCell);
             p.controlLeft=p.controlRight=p.controlJump=p.controlUp=p.controlUseItem=false;
             p.controlDown=_drop.Down; _downInjected=true;
             if(_drop.Status!="running") Finish(_drop.Status,_drop.Reason);
@@ -459,7 +459,7 @@ internal static class AtomicOperations
         {
             var terrain=TerrainReader.Read(p);
             var state=new PhysicsState(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,terrain.Grounded,p.jump,p.releaseJump);
-            _drop.After(state,p.statLife,TerrainReader.ReadCell);
+            _drop.After(state,p.statLife,TerrainReader.ReadDryCell);
             if(_drop.Status!="running") Finish(_drop.Status,_drop.Reason,new {
                 startFeetY=_drop.StartFeetY,targetSurfaceY=_drop.TargetSurfaceY,
                 actualPosition=new StateVector(p.position.X,p.position.Y), actualFeetY=p.position.Y+p.height,

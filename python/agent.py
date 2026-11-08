@@ -257,7 +257,7 @@ LEGEND = {".": "empty/non-colliding", "#": "solid", "h": "bottom half block",
           "=": "one-way platform", "1": "floor slope descending right", "2": "floor slope rising right",
           "3": "solid top, sloped underside", "4": "solid top, opposite sloped underside",
           "a": "one-way slope descending right", "b": "one-way slope rising right",
-          "!": "liquid or harmful tile", "?": "unknown/unloaded"}
+          "!": "harmful tile (older snapshots also mark liquid here)", "?": "unknown/unloaded"}
 
 
 def read_state(bridge):

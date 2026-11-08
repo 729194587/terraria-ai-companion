@@ -15,7 +15,50 @@ internal sealed record BodyTileBounds(int MinX,int MinY,int MaxX,int MaxY)
 
 // Compact collision categories, not tile IDs. No Terraria objects cross the thread boundary.
 internal sealed record TerrainSnapshot(int OriginX, int OriginY, int TileSize, string[] Rows,
-    int PlayerWidth, int PlayerHeight, bool Grounded, bool Supported);
+    int PlayerWidth, int PlayerHeight, bool Grounded, bool Supported, TerrainLiquidCell[] Liquids=null);
+
+// Liquid entries use absolute tile coordinates. Only nonempty, observed cells
+// are emitted, and unknown coverage remains represented by the shape grid.
+internal sealed record TerrainLiquidCell(int X,int Y,string Type,byte Amount);
+
+internal enum LiquidKind { None, Water, Lava, Honey, Shimmer, Unknown }
+
+internal readonly record struct TileLiquid
+{
+    internal byte Amount { get; }
+    internal LiquidKind Kind { get; }
+    private int NativeType { get; }
+    internal TileLiquid(int nativeType,byte amount)
+    {
+        Amount=amount;
+        NativeType=amount==0?0:nativeType;
+        Kind=amount==0?LiquidKind.None:nativeType switch
+        {
+            0=>LiquidKind.Water,1=>LiquidKind.Lava,2=>LiquidKind.Honey,3=>LiquidKind.Shimmer,_=>LiquidKind.Unknown
+        };
+    }
+    internal long Stamp => NativeType*256L+Amount;
+    internal string Name => Kind switch
+    {
+        LiquidKind.None=>"none",LiquidKind.Water=>"water",LiquidKind.Lava=>"lava",
+        LiquidKind.Honey=>"honey",LiquidKind.Shimmer=>"shimmer",_=>"unknown"
+    };
+
+    // The pinned WetCollision/LavaCollision IL computes a fractional
+    // liquid top, then subtracts the truncated offset from a height of 16.
+    internal bool OverlapsVertical(int tileY,float top,float bottom)
+    {
+        float offset=(256-Amount)/16f;
+        float surface=tileY*16+offset;
+        return Amount>0&&bottom>surface&&top<surface+16-(int)offset;
+    }
+}
+
+internal readonly record struct TerrainCell(char Shape,TileLiquid Liquid)
+{
+    // Legacy structural-only callers cannot certify liquid trajectories.
+    internal char DryShape => Shape=='?'||Liquid.Amount==0?Shape:'!';
+}
 
 internal static class TerrainClassifier
 {
@@ -31,10 +74,9 @@ internal static class TerrainClassifier
     }
 
     internal static char Classify(bool loaded, bool active, bool actuated, bool solid,
-        bool solidTop, int frameY, bool halfBlock, int slope, bool liquid, bool harmful)
+        bool solidTop, int frameY, bool halfBlock, int slope, bool harmful)
     {
         if (!loaded) return '?';
-        if (liquid) return '!';
         if (!active || actuated) return '.';
         if (harmful) return '!';
         // One-way top surfaces never become horizontal walls. Non-top furniture frames do not support.
