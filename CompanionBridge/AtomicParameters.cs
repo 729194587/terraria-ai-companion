@@ -178,7 +178,7 @@ internal static class AtomicParameters
                 break;
             case "drop_through_platform": Fields(); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
-            case "place_object": goto case "place_tile";
+            case "place_object": case "place_rope": goto case "place_tile";
             case "mine_target":
             {
                 if(!keys.Contains("target")){Fields("x","y");Integer("x",0,100000);Integer("y",0,100000);break;}
