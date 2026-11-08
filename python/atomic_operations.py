@@ -131,6 +131,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("hammer_tile", "选中纯锤对80像素内原版普通方块/平台原生锤击；目标无背景墙，实际形状变化才成功，多人需服务器确认。不支持家具/破坏型锤目标。10秒上限。", TILE, ['x', 'y']),
     tool("interact_tile", "80像素内原版门、未锁宝箱、开关、拉杆基础交互；多格任一占用格可指定；宝箱核验打开/关闭，开关及拉杆核验Frame切换，不证明下游电路效果。多人需同版本服务器确认。", TILE, ["x", "y"]),
     tool("place_object", PLACE_OBJECT_DESCRIPTION, TILE, ["x", "y"]),
+    tool("place_rope", "服务器 AI 放置一节原版绳索。x/y 为绝对 Tile 坐标，空格直接放置，已有原版绳索则向下延伸一节。自动使用自身快捷栏绳索，点击格与实际落点均须在范围内。回执核验实际落点、绳索类型和一件库存消耗。", TILE, ["x", "y"]),
     tool("place_tile", "用选中消耗品在80像素内空格放单格方块，支持当前画面缩放，仍限正常重力；Tile类型与物品消耗共同核验；不支持多格家具或ModItem。10秒上限。", TILE, ["x", "y"]),
     tool("stop_action", "取消当前Agent动作并等待游戏线程输入释放证据，不抢占手动控制。")]
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
@@ -393,6 +394,25 @@ def verified_server_object(action, evidence):
 INVENTORY_OPERATIONS = frozenset(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
 
 
+def verified_server_rope(action, evidence):
+    target = action.get('targetTile')
+    if not isinstance(target, dict) or set(target) != {'x', 'y'}:
+        return False
+    x, y = target['x'], target['y']
+    end_y = evidence.get('y')
+    initial, remaining = evidence.get('InitialStack'), evidence.get('remainingStack')
+    return (type(x) is int and type(y) is int and type(end_y) is int and 0 <= end_y - y <= 16
+            and all(type(evidence.get(k)) is int for k in ('requestedX', 'requestedY', 'x', 'itemType', 'typeId'))
+            and evidence.get('requestedX') == evidence.get('x') == x and evidence.get('requestedY') == y
+            and evidence.get('extended') is (end_y > y)
+            and {965: 213, 2996: 353, 3077: 365, 3078: 366}.get(evidence.get('itemType'), -1) == evidence.get('typeId')
+            and evidence.get('placedByActor') is True and evidence.get('targetPresent') is True
+            and evidence.get('targetChanged') is False and evidence.get('uncertainNativeEffect') is False
+            and type(evidence.get('nativePlacementEvents')) is int and evidence['nativePlacementEvents'] == 1
+            and type(evidence.get('consumedCount')) is int and evidence['consumedCount'] == 1
+            and type(initial) is int and type(remaining) is int and remaining >= 0 and initial - remaining == 1)
+
+
 def verified_server_inventory(action, evidence):
     goal = action.get('targetInventory')
     if not isinstance(goal, dict) or action.get('operation') not in INVENTORY_OPERATIONS:
@@ -576,6 +596,7 @@ async def terminal(bridge, action, generation):
                        and native_evidence.get('targetPresent') is True
                        and native_evidence.get('targetChanged') is False
                        and type(native_evidence.get('consumedCount')) is int and native_evidence['consumedCount'] == 1),
+        'place_rope': verified_server_rope(action, native_evidence),
         'place_object': (isinstance(action.get('targetTile'), dict)
                        and set(action['targetTile']) == {'x', 'y'}
                        and all(type(action['targetTile'][key]) is int and type(native_evidence.get(key)) is int for key in ('x', 'y'))
@@ -592,7 +613,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe', 'mine_target', *INVENTORY_OPERATIONS)
+                  and action.get('operation') in ('move_input', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', *INVENTORY_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -663,6 +684,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_crafting_v1; no crafting RPC started')
     if name == 'place_object' and 'server_ai_place_object_workbench_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_place_object_workbench_v1; no object placement RPC started')
+    if name == 'place_rope' and 'server_ai_place_rope_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_place_rope_v1; no rope placement RPC started')
     if name == 'observe_scene' and 'server_ai_scene_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_scene_v1; no scene query started')
     if name == 'observe_scene' and any(k in arguments for k in ('scale','width','height')) and 'server_ai_scene_region_v1' not in bridge.hello.get('capabilities', []):
@@ -786,7 +809,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             placement_invalid = False
             placement_identity = dict(action)
         if (name == 'place_tile' and 'server_ai_place_tile_v1' in bridge.hello.get('capabilities', [])
-                or name == 'place_object' and 'server_ai_place_object_workbench_v1' in bridge.hello.get('capabilities', [])):
+                or name == 'place_object' and 'server_ai_place_object_workbench_v1' in bridge.hello.get('capabilities', [])
+                or name == 'place_rope'):
             placement_invalid = True
             if (action.get('targetTile') != arguments
                     or any(type(value) is not int for value in action['targetTile'].values())):
