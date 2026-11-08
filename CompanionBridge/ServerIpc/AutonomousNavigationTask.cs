@@ -102,6 +102,11 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
         {
             var r=RunChild(child,frame,600);if(r==null)return Running();
             acquired|=r.InputsAcquired;
+            if(r.Status=="failed"&&r.InputsReleased&&r.Reason=="navigation_water_placement_changed"&&world.ReplanAfterChange)
+            {
+                if(++invalidatedEdits>=MaxConsecutiveInvalidations)return Describe(new Result("timeout","navigation_edit_replan_budget_exhausted",null,true,InputsAcquired:acquired));
+                openingMode=false;phase="observe";return Running();
+            }
             if(r.Status!="completed")return Describe(r);
             progressWatch.Observe(NavigationActivity.VerifiedEffect);
             clearedTiles++;

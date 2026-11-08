@@ -14,14 +14,29 @@ namespace CompanionBridge.ServerIpc;
 // Invoked by the existing copied-world fixture on the game thread.
 internal static class ServerLiquidFixture
 {
+    private static string scene;
+    private static bool gateOpened;
+    private static int samples;
+    private static float minY;
+
     internal static void Tick(Player p)
     {
         if(!Program.LaunchParameters.ContainsKey("-companionliquidtest"))return;
         string request=Path.Combine(Main.SavePath,"liquid-request");
-        if(!File.Exists(request))return;
+        if(!File.Exists(request))
+        {
+            if(scene!=null)ObserveScene(p);
+            return;
+        }
         string mode=File.ReadAllText(request).Trim();
         File.Delete(request);
         int x=Main.spawnTileX,floor=Main.spawnTileY+8;
+        scene=null;
+        if(mode is "bridge" or "detour" or "hazard" or "mine" or "flood")
+        {
+            PrepareScene(p,mode,x,floor);
+            return;
+        }
         if(mode=="wet")
         {
             p.position=new((x+4)*16-2,floor*16-3);
@@ -139,5 +154,63 @@ internal static class ServerLiquidFixture
             checks,observations,walk=walk.Reason,jump=jump.Reason,
             x=(x+8)*16,y=floor*16
         }));
+    }
+
+    private static void PrepareScene(Player p,string mode,int x,int floor)
+    {
+        scene=mode;gateOpened=false;samples=0;
+        bool tunnel=mode is "mine" or "flood";
+        for(int tx=x-28;tx<=x+28;tx++)
+            for(int ty=floor-23;ty<=floor+8;ty++)
+            {
+                var tile=Main.tile[tx,ty];
+                tile.ClearEverything();
+                bool roof=mode!="detour"&&ty<=floor-4;
+                bool gap=!tunnel&&tx>=x+3&&tx<=x+8&&ty>=floor&&ty<floor+4;
+                if(roof||ty>=floor&&!gap||tunnel&&tx==x+3&&ty>=floor-3&&ty<floor)
+                {tile.HasTile=true;tile.TileType=TileID.Stone;}
+                else if(gap)
+                {tile.LiquidType=mode=="hazard"?LiquidID.Lava:LiquidID.Water;tile.LiquidAmount=255;}
+                if(mode=="detour"&&ty==floor-4&&tx>=x+2&&tx<=x+10)
+                {tile.HasTile=true;tile.TileType=TileID.Platforms;}
+                if(tunnel&&tx==x+4&&ty>=floor-11&&ty<=floor-5)
+                {tile.ClearEverything();tile.LiquidAmount=255;}
+            }
+        p.miscEquips[4].TurnToAir();
+        if(tunnel)p.inventory[1].SetDefaults(ItemID.CopperPickaxe);
+        else p.inventory[1].TurnToAir();
+        p.inventory[4].SetDefaults(ItemID.WoodPlatform);
+        p.inventory[4].stack=16;
+        p.position=new((x+2)*16-4,floor*16-p.height);
+        p.velocity=Vector2.Zero;minY=p.position.Y;
+        File.WriteAllText(Path.Combine(Main.SavePath,"liquid-edit-ready.json"),JsonSerializer.Serialize(new
+            {x=(x+11)*16,y=floor*16,left=x+3,right=x+8,floor,startX=p.position.X,startY=p.position.Y}));
+    }
+
+    private static void ObserveScene(Player p)
+    {
+        int x=Main.spawnTileX,floor=Main.spawnTileY+8;
+        minY=Math.Min(minY,p.position.Y);
+        if(scene=="flood"&&!gateOpened&&Enumerable.Range(floor-3,3).Any(y=>!Main.tile[x+3,y].HasTile))
+        {
+            // Release a pre-existing upstream reservoir after observing a real
+            // native cut. Terraria propagates the water on its ordinary ticks.
+            gateOpened=true;
+            Main.tile[x+4,floor-4].ClearTile();
+            Liquid.AddWater(x+4,floor-5);
+            Liquid.AddWater(x+4,floor-4);
+        }
+        if(++samples%4!=0)return;
+        string path=Path.Combine(Main.SavePath,"liquid-edit-"+scene+".jsonl");
+        File.AppendAllText(path,JsonSerializer.Serialize(new
+        {
+            minY,x=p.position.X,p.wet,p.lavaWet,gateOpened,
+            inflow=Main.tile[x+4,floor-1].LiquidAmount,
+            wetCorridor=gateOpened&&NativeLiquidRisk.Rejection(
+                new((x+4)*16,floor*16-42,0,0,true),new((x+4)*16,floor*16-42,0,0,true))!=null,
+            platforms=Enumerable.Range(x+3,6).Count(tx=>Main.tile[tx,floor].HasTile&&Main.tile[tx,floor].TileType==TileID.Platforms),
+            waterPlatforms=Enumerable.Range(x+3,6).Count(tx=>Main.tile[tx,floor].HasTile&&Main.tile[tx,floor].TileType==TileID.Platforms
+                &&Main.tile[tx,floor].LiquidAmount>0)
+        })+Environment.NewLine);
     }
 }

@@ -66,7 +66,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     ActorItemUse.Select(p,identity.World,identity.Generation,plannedSlot.GetInt32());
                 string error=ActorPlacement.Preflight(p,x,y,operation=="place_object");
                 if(error!=null)return Reject(error,operation=="place_object"?ActorObjectPlacement.PreflightDetail(p,x,y,error):null);
-                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,operation=="place_object");context=ActorItemUse.Current;
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,operation=="place_object");
+                if(child&&operation=="place_tile"&&args.TryGetProperty("waterBridgeDirection",out var direction))
+                    ActorItemUse.Current.Placement.WaterBridgeDirection=direction.GetInt32();
+                context=ActorItemUse.Current;
             }
             else if(operation=="use_item")
             {
