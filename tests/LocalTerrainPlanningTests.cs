@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using CompanionBridge;
 using CompanionBridge.Motion;
 
 public static class LocalTerrainPlanningTests
@@ -10,10 +11,12 @@ public static class LocalTerrainPlanningTests
     private sealed class Source:ILocalEditSource
     {
         internal readonly Dictionary<(int,int),char> Tiles=new();
+        internal readonly Dictionary<(int,int),TileLiquid> Liquids=new();
         internal int Stock=5,MineCalls,PlaceCalls;
         internal char MaterialShape='=';
         internal bool Tool=true,Unplaceable;
         public char Cell(int x,int y)=>Tiles.TryGetValue((x,y),out char c)?c:y>=100?'#':'.';
+        public TerrainCell Environment(int x,int y)=>new(Cell(x,y),Liquids.GetValueOrDefault((x,y)));
         public IReadOnlyList<LocalMaterial> Materials=>Stock>0?new[]{new LocalMaterial(2,19,MaterialShape,Stock,16)}:Array.Empty<LocalMaterial>();
         public LocalEditQuote Mine(PhysicsState s,int x,int y,LocalTerrainView view)
         {MineCalls++;return Tool&&view.Cell(x,y)=='#'?new(1,1,46):null;}
@@ -73,6 +76,41 @@ public static class LocalTerrainPlanningTests
         }
         source=new();plans=Evaluate(source,LandingRegion.AtDestination(1610,1616));
         Check(plans.Any(p=>p.Actions.Any(a=>a.Kind==LocalEditKind.Mine&&a.Expected.Py>a.Start.Py)),"safe one-row native excavation structure remains available");
+        CheckWater();
         Console.WriteLine($"Local terrain planning: {checks} checks passed; structural counterfactuals only");
+    }
+
+    private static void CheckWater()
+    {
+        var source=new Source();
+        for(int x=102;x<=105;x++)
+        {
+            source.Tiles[(x,100)]='.';
+            source.Liquids[(x,100)]=new(0,255);
+        }
+        var view=new LocalTerrainView(source.Environment);
+        Check(view.Set(102,100,'=')&&view.Cell(102,100)=='='&&view.Environment(102,100).Liquid.Amount==255,
+            "placing a platform changes structural shape without draining liquid");
+        Check(view.Set(102,100,'.')&&view.Environment(102,100).Liquid.Kind==LiquidKind.Water,
+            "virtual removal cannot erase water");
+        var plans=Evaluate(source,LandingRegion.AtDestination(1704,1600));
+        Check(plans.Any(p=>p.WaterPlatform&&p.Actions.Count(a=>a.WaterDirection!=0)>=2),
+            "flat ordinary water admits serial platform candidates");
+        Check(LocalEditEvaluation.Choose(plans,1000,true)==null,"complete dry movement wins over a water bridge");
+        Check(LocalEditGeometry.FlatWaterSpan(view,105,100,-1)==4,"flat water span is verified in both directions");
+        source.Stock=1;
+        Check(!Evaluate(source).Any(p=>p.WaterPlatform),"partial stock cannot start a known unfunded crossing");
+        source.Stock=5;
+        foreach(var unsafeLiquid in new[]{new TileLiquid(1,255),new TileLiquid(2,255),new TileLiquid(3,255),new TileLiquid(0,128)})
+        {
+            source.Liquids[(104,100)]=unsafeLiquid;
+            Check(!Evaluate(source).Any(p=>p.WaterPlatform),"hazardous or uneven span cannot select platform work");
+        }
+        source.Liquids[(104,100)]=new(0,255);
+        source.Liquids[(104,99)]=new(0,1);
+        Check(!Evaluate(source).Any(p=>p.WaterPlatform),"liquid in the body corridor invalidates the span");
+        source.Liquids.Remove((104,99));
+        source.MaterialShape='#';
+        Check(!Evaluate(source).Any(p=>p.WaterPlatform),"ordinary solid materials cannot displace water in the preview");
     }
 }

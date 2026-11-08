@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using CompanionBridge.ServerIpc;
 using Mono.Cecil;
 using MonoMod.RuntimeDetour;
 using Terraria;
@@ -16,6 +17,7 @@ internal static class ActorPlacement
     internal sealed class Context
     {
         internal int X,Y,TileType,Prefix,Style,Attempts,ConsumedCount,NativeEvents,NativeClearEvents;
+        internal int WaterBridgeDirection;
         internal bool Placed,ExternalChange,Object,UncertainNativeEffect,NativeObjectPlacement;
         internal ActorObjectPlacement.Shape Shape;
         internal string SupportSnapshot, ObjectFrames;
@@ -129,6 +131,9 @@ internal static class ActorPlacement
     {
         var c=use.Placement;var p=use.Actor;
         if(c.Object)return ActorObjectPlacement.Validate(use);
+        if(use.Ticks==0&&c.WaterBridgeDirection!=0&&(c.TileType!=TileID.Platforms
+            ||!NativeNavigationEdits.WaterPlacementStillSafe(p,c.X,c.Y,c.WaterBridgeDirection,use.Item.stack)))
+            return "navigation_water_placement_changed";
         if(c.ExternalChange||c.Placed&&(!Main.tile[c.X,c.Y].HasTile||Main.tile[c.X,c.Y].TileType!=c.TileType)
             ||!c.Placed&&Main.tile[c.X,c.Y].HasTile){c.ExternalChange=true;return "placement_target_changed";}
         if((!use.Item.IsAir||c.ConsumedCount==0)&&(!Supported(use.Item)||use.Item.prefix!=c.Prefix||use.Item.placeStyle!=c.Style||use.Item.createTile!=c.TileType))

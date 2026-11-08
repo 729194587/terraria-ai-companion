@@ -19,6 +19,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     private readonly Func<int,int,bool> protectedCell;
     private readonly Player Player;
     private (int X,int Y,int Slot,Item Item,int Type,PhysicsState Pose)? placement;
+    private int waterPlacementDirection;
 
     internal NativeNavigationEdits(AiReadOnlyProtocol.Identity identity, PhysicsState origin,
         Func<int,int,bool> protectedCell=null,bool rolling=false)
@@ -188,7 +189,8 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
 
     internal void BeginLocalPlanning(PhysicsState pose)
     {if(rolling)openingOrigin=pose;SearchFailure=null;SearchDetail="bounded local edit evaluation";}
-    public char Cell(int x,int y)=>TerrainReader.ReadDryCell(x,y);
+    public char Cell(int x,int y)=>TerrainReader.ReadCell(x,y);
+    public TerrainCell Environment(int x,int y)=>TerrainReader.ReadEnvironment(x,y);
     private static bool SafeMaterial(Item item)
     {
         if(!ActorPlacement.Supported(item))return false;
@@ -203,13 +205,15 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             var item=Player.inventory[slot];
             return new LocalMaterial(slot,item.createTile,Main.tileSolidTop[item.createTile]?'=':'#',item.stack,Math.Max(1,Math.Max(item.useTime,item.useAnimation))+1);
         }).ToArray();
-    private bool SafeVirtualNeighbours(int x,int y,LocalTerrainView view,bool allowPlatforms)
+    private static bool SafeVirtualNeighbours(int x,int y,LocalTerrainView view,bool allowPlatforms,bool allowWater=false)
     {
         for(int tx=x-1;tx<=x+1;tx++)for(int ty=y-1;ty<=y+1;ty++)
         {
-            char shape=view.Cell(tx,ty);
-            if(shape is '?' or '!'||!WorldGen.InWorld(tx,ty,1))return false;
-            if(shape=='.'&&Cell(tx,ty)!='.')continue; // a previously admitted virtual removal
+            var cell=view.Environment(tx,ty);
+            char shape=cell.Shape;
+            if(shape is '?' or '!'||!WorldGen.InWorld(tx,ty,1)
+                ||cell.Liquid.Amount>0&&(!allowWater||ty<y||cell.Liquid.Kind!=LiquidKind.Water))return false;
+            if(shape=='.'&&TerrainReader.ReadCell(tx,ty)!='.')continue; // a previously admitted virtual removal
             var tile=Main.tile[tx,ty];
             if(tile.HasUnactuatedTile&&(TileID.Sets.Falling[tile.TileType]
                 ||Main.tileFrameImportant[tile.TileType]&&!(allowPlatforms&&TileID.Sets.Platforms[tile.TileType])))return false;
@@ -229,19 +233,47 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     }
     public bool Place(PhysicsState pose,int x,int y,LocalMaterial material,LocalTerrainView view)
     {
-        if(IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||view.Cell(x,y)!='.'||!SafeVirtualNeighbours(x,y,view,true)
+        bool water=view.LiquidAtSupport(x,y);
+        if(IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||view.Cell(x,y)!='.'||!SafeVirtualNeighbours(x,y,view,true,water)
             ||Player.noBuilding||Player.CCed||Player.noItems||Player.frozen||Player.stoned)return false;
         var item=Player.inventory[material.Slot];
-        if(!SafeMaterial(item)||item.createTile!=material.Type||item.stack<=0||Main.tile[x,y].HasTile&&Cell(x,y)=='.')return false;
+        if(!SafeMaterial(item)||item.createTile!=material.Type||item.stack<=0||Main.tile[x,y].HasTile&&Cell(x,y)=='.'
+            ||water&&(item.createTile!=TileID.Platforms||PlacementBodyOverlap(x,y)))return false;
         // Keep the existing Simple placement reach check. Future work poses in
         // this template move toward the cell; cells outside current reach are
         // conservatively reconsidered only after an actual movement checkpoint.
         if(!Player.InInteractionRange(x,y,Terraria.DataStructures.TileReachCheckSettings.Simple))return false;
         return view.Cell(x-1,y) is '#' or '='||view.Cell(x+1,y) is '#' or '='||view.Cell(x,y+1)=='#';
     }
+
+    private static bool PlacementBodyOverlap(int x,int y)
+        =>Main.player.Any(p=>p.active&&!p.dead&&!p.ghost
+            &&p.position.X<(x+1)*16&&p.Right.X>x*16&&p.position.Y<(y+1)*16&&p.Bottom.Y>y*16);
+
+    private bool LivePlacementAllowed(int x,int y,int slot,int direction)
+    {
+        var item=Player.inventory[slot];
+        if(direction==0)return PlacementAllowed(x,y,item);
+        return !IsTargetCell(x,y)&&item.createTile==TileID.Platforms&&SafeMaterial(item)
+            &&WaterPlacementStillSafe(Player,x,y,direction,item.stack);
+    }
+
+    internal static bool WaterPlacementStillSafe(Player player,int x,int y,int direction,int stock)
+    {
+        if(direction is not (-1 or 1)||!WorldGen.InWorld(x,y,2)||Main.tile[x,y].HasTile
+            ||PlacementBodyOverlap(x,y)
+            ||!player.InInteractionRange(x,y,Terraria.DataStructures.TileReachCheckSettings.Simple))return false;
+        var stance=ServerAiNavigation.Observe(player);
+        if(!stance.Settled||Math.Abs(Feet(stance.State)-y*16)>LandingRegion.FeetTolerance)return false;
+        var view=new LocalTerrainView(TerrainReader.ReadEnvironment);
+        int span=LocalEditGeometry.FlatWaterSpan(view,x,y,direction);
+        return span>0&&span<=stock
+            &&SafeVirtualNeighbours(x,y,view,true,allowWater:true)
+            &&(view.Cell(x-1,y) is '#' or '='||view.Cell(x+1,y) is '#' or '='||view.Cell(x,y+1)=='#');
+    }
     internal NavigationStep Arm(LocalEditAction action)
     {
-        placement=null;openingTile=null;expectedLanding=null;
+        placement=null;openingTile=null;expectedLanding=null;waterPlacementDirection=0;
         var now=ServerAiNavigation.Observe(Player);
         if(!now.Settled||now.State!=action.Start){SearchDetail="local plan start changed";return null;}
         if(action.Kind==LocalEditKind.Move)return new("navigate_to_landing_region",JsonSerializer.SerializeToElement(new
@@ -249,16 +281,18 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         if(action.Kind==LocalEditKind.Place)
         {
             var item=Player.inventory[action.Slot];
-            if(item.createTile!=action.Type||!PlacementAllowed(action.X,action.Y,item))return null;
+            if(item.createTile!=action.Type||!LivePlacementAllowed(action.X,action.Y,action.Slot,action.WaterDirection))return null;
+            waterPlacementDirection=action.WaterDirection;
             placement=(action.X,action.Y,action.Slot,item,item.createTile,now.State);
             armedInventory=ItemStamp(item);
             expectedLanding=now.State;expectedDrop=false;
-            return new("place_tile",JsonSerializer.SerializeToElement(new{x=action.X,y=action.Y,plannedPlacementSlot=action.Slot}));
+            return new("place_tile",JsonSerializer.SerializeToElement(new{x=action.X,y=action.Y,plannedPlacementSlot=action.Slot,
+                waterBridgeDirection=action.WaterDirection}));
         }
-        var quote=Mine(now.State,action.X,action.Y,new(Cell));
+        var quote=Mine(now.State,action.X,action.Y,new(Environment));
         if(quote==null||quote.Slot!=action.Slot||quote.Type!=action.Type)return null;
         bool drop=CanDropAfter(now.State,new[]{(action.X,action.Y)});
-        if(!drop&&!MotionSupport.SafeLanding(now.State,(x,y)=>x==action.X&&y==action.Y?'.':Cell(x,y)))return null;
+        if(!drop&&!MotionSupport.SafeLanding(now.State,(x,y)=>x==action.X&&y==action.Y?'.':TerrainReader.ReadDryCell(x,y)))return null;
         SceneMineTargets.Watch(action.X,action.Y);cutPose=now.State;
         openingTile=(action.X,action.Y,action.Slot,Player.inventory[action.Slot],SceneMineTargets.NavigationShape(action.X,action.Y),SceneMineTargets.Revision(action.X,action.Y));
         armedInventory=ItemStamp(Player.inventory[action.Slot]);
@@ -316,7 +350,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             var now=ServerAiNavigation.Observe(Player);
             return now.Settled&&now.State==block.Pose
                 &&ReferenceEquals(Player.inventory[block.Slot],block.Item)&&block.Item.createTile==block.Type
-                &&PlacementAllowed(block.X,block.Y,block.Item)?null:"navigation_placement_changed";
+                &&LivePlacementAllowed(block.X,block.Y,block.Slot,waterPlacementDirection)?null:"navigation_placement_changed";
         }
         if(openingTile is not {} cut||IsTargetCell(cut.X,cut.Y)
             ||!ReferenceEquals(Player.inventory[cut.Slot],cut.Item)
@@ -344,8 +378,8 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             SearchDetail+=$"; unexpected settled pose left={pose.Px:F1}, feet={Feet(pose):F1}";
             return "mining_opening_landing_changed";
         }
-        if(placement is {} block&&TerrainReader.ReadDryCell(block.X,block.Y)!='#'
-            &&TerrainReader.ReadDryCell(block.X,block.Y)!='=')
+        if(placement is {} block&&(!Main.tile[block.X,block.Y].HasUnactuatedTile
+            ||Main.tile[block.X,block.Y].TileType!=block.Type||TerrainReader.ReadCell(block.X,block.Y) is not ('#' or '=')))
             return "navigation_placed_support_changed";
         placement=null;
         if(expectedDrop&&openingTile is {} cut)
