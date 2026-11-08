@@ -14,6 +14,7 @@ internal sealed class NavigationKnowledge
     internal NavigationFailureMemory Failures { get; }=new();
     internal NavigationSearchMemory Search { get; }=new();
     internal SurfaceGraph Surfaces { get; }=new();
+    internal bool GrappleAttempted { get; set; }
     internal void Clear(){Failures.Clear();Search.Clear();Surfaces.Clear();physics=null;}
     internal void ObservePhysics(PhysicsParameters profile)
     {

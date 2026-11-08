@@ -131,6 +131,7 @@ internal static class ServerAiActionFixture
             // Same virtual native method invoked by DedServ_PostModLoad (IL_0dcb).
             // Does not call Player.Update, spoof identity, or change Netplay.HasClients.
             lock(ProbeSession.Reservation.Gate)ServerAiTerrainFixture.Tick(ProbeSession.Actor);
+            lock(ProbeSession.Reservation.Gate)ServerGrappleFixture.Tick(ProbeSession.Actor);
             if(ServerMineTaskFixture.Enabled&&File.Exists(Path.Combine(Main.SavePath,"task-freeze-updates")))
             {
                 File.WriteAllText(Path.Combine(Main.SavePath,"task-freeze-ready.json"),JsonSerializer.Serialize(new{gameUpdate=Main.GameUpdateCount}));
