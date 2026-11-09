@@ -132,6 +132,7 @@ internal static class ServerEquipmentFixture
 public sealed class EquipmentDiagnosticSlot : ModAccessorySlot
 {
     public override bool IsLoadingEnabled(Mod mod) => ServerEquipmentFixture.Enabled;
+    public override bool DrawFunctionalSlot => ServerEquipmentFixture.Mode != "hidden_functional";
     public override bool IsEnabled() => ServerEquipmentFixture.Mode != "disabled";
     public override bool CanAcceptItem(Item item, AccessorySlotType context)
     {

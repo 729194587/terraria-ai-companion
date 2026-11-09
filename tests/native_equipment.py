@@ -105,6 +105,17 @@ async def verify(args):
         await equip("vanilla_replace", acc1, 17)
         await equip("duplicate_vanilla", acc2, 21, "failed", "equipment_accessory_rejected")
         await equip("duplicate_vanilla_in_mod", mod, 21, "failed", "equipment_accessory_rejected")
+        await setup("hidden_functional")
+        hidden = (await gear())[mod]
+        assert hidden["enabled"] and not hidden["occupied"], hidden
+        original = (await bag(23))["inventoryToken"]
+        await equip("hidden_functional_equip", mod, 23)
+        hidden = (await gear())[mod]
+        assert hidden["enabled"] and hidden["occupied"], hidden
+        await remove("hidden_functional_remove", mod, 23)
+        hidden = (await gear())[mod]
+        assert hidden["enabled"] and not hidden["occupied"] and (await bag(23))["inventoryToken"] == original, hidden
+        await setup("normal")
         await equip("mod_item_vanilla_hook", acc2, 24, "failed", "equipment_accessory_rejected")
         await equip("mod_item_in_mod_slot", mod, 24)
         assert (await gear())[mod]["item"]["contentKey"] == "CompanionBridge/EquipmentDiagnosticAccessory"
@@ -117,6 +128,7 @@ async def verify(args):
         assert not disabled["enabled"] and disabled["occupied"]
         await equip("disabled_equip", mod, 23, "failed", "equipment_slot_disabled")
         await remove("disabled_remove", mod, 31, "failed", "equipment_slot_disabled")
+        assert (await gear())[mod]["targetToken"] == disabled["targetToken"]
         await setup("reject")
         await equip("custom_reject", mod, 23, "failed", "equipment_accessory_rejected")
         await setup("throw")
