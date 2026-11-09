@@ -17,6 +17,11 @@ Mods: {
 				// DisplayName: Item Use Fixture Food
 				// Tooltip: ""
 			}
+
+			EquipmentDiagnosticAccessory: {
+				// DisplayName: Equipment Diagnostic Accessory
+				// Tooltip: ""
+			}
 		}
 	}
 }

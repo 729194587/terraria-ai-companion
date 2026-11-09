@@ -62,6 +62,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 context=run;ActorControl.Driver=rope;
             }
             else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
+            else if(ActorEquipment.IsOperation(operation))context=new ActorEquipment.Context(identity,operation,args);
             else if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
             else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId);ActorControl.Driver=navigation;}
             else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge);ActorControl.Driver=navigation;}
@@ -127,6 +128,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         {
             var c=(ActorInventory.Context)h.Context;ActorInventory.Step(c);
             return new(c.Status,c.Reason,ActorInventory.Evidence(c),Released(p),c.Status=="completed",InputsAcquired:false);
+        }
+        if(h.Context is ActorEquipment.Context equipment)
+        {
+            equipment.Step();
+            return EquipmentResult(h.Identity,equipment);
         }
         if(h.Operation=="craft_recipe")
         {
@@ -211,6 +217,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
         if(AiAtomicActions.IsTask(h.Operation))return CancelWithReason(identity,value,"cancelled","explicit_stop");
+        if(h.Context is ActorEquipment.Context equipment)
+        {
+            equipment.Cancel();
+            return EquipmentResult(h.Identity,equipment);
+        }
         if(ActorInventory.IsOperation(h.Operation))
         {
             var c=(ActorInventory.Context)h.Context;ActorInventory.Cancel(c);
@@ -238,6 +249,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         else ActorMining.Stop(p,h.Identity.World,h.Identity.Generation);
         return Poll(h.Identity,h);
     }
+    private static Result EquipmentResult(AiReadOnlyProtocol.Identity id,ActorEquipment.Context c)
+        => new(c.Status,c.Reason,c.Evidence(),Owned(id)&&Released((Player)id.Actor),c.Status=="completed",InputsAcquired:false,ReasonDetail:c.Error);
     public Result CancelWithReason(AiReadOnlyProtocol.Identity identity,object value,string status,string reason)
     {
         var h=(Handle)value;Require(h.Identity);

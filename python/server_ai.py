@@ -51,6 +51,8 @@ def operations_for_capabilities(capabilities):
                 operations.add(operation)
     if {'server_ai_actions_v1', 'server_ai_inventory_v1'} <= caps:
         operations.update(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
+    if {'server_ai_actions_v1', 'server_ai_equipment_v1'} <= caps:
+        operations.update(('equip_item', 'unequip_item'))
     return frozenset(operations)
 
 

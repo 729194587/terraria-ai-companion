@@ -95,7 +95,9 @@ internal static class ServerAiQueries
                 arguments.GetProperty("x").GetInt32(),arguments.GetProperty("y").GetInt32(),TerrainReader.ReadDryCell,unsupported),Json);
         }
         projected["source"] = "server_ai_player";
-        projected["customState"] = "unknown; custom Mod player/item/buff data and Mod accessory slots not read";
+        if(operation=="get_player_state" || operation=="inspect_inventory" && arguments.GetProperty("mode").GetString()=="full")
+            projected["functionalEquipmentSlots"] = ActorEquipment.Observe(expected);
+        projected["customState"] = "unknown; custom Mod player/item/buff data not read";
         projected["inventoryTokenStatus"] = "server_ai_inventory_v1; use mode slots/selected/hotbar for fresh slot tokens; basic fields and instance identity only; all custom Mod state unknown; no save hooks";
         Require(expected); // Reject hooks/identity changes during projection before publishing the result.
         if(regional)

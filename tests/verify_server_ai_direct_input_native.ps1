@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile, [string]$WorldPath='.local/virtual-player-control-host/Worlds/test.wld', [string]$PackagePath, [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py', [switch]$Scene)
+param([string]$TModLoaderPath,[string]$EngineProfile, [string]$WorldPath='.local/virtual-player-control-host/Worlds/test.wld', [string]$PackagePath, [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py', [switch]$Scene, [switch]$Equipment)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -21,18 +21,19 @@ $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dot
 $info.WorkingDirectory=$TModLoaderPath;$info.UseShellExecute=$false;$info.CreateNoWindow=$true
 $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
 foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest','-companionactionstest')){$info.ArgumentList.Add($arg)}
-if($Scene){$info.ArgumentList.Add('-companionscenetest');$info.ArgumentList.Add('-companionperceptiontest');$info.ArgumentList.Add('-companionscenelighttest')}
+if($Equipment){$info.ArgumentList.Add('-companionequipmenttest');$TestScript='native_equipment.py'}
+elseif($Scene){$info.ArgumentList.Add('-companionscenetest');$info.ArgumentList.Add('-companionperceptiontest');$info.ArgumentList.Add('-companionscenelighttest')}
 else{$info.ArgumentList.Add('-companiondirectinputtest')}
 $process=[Diagnostics.Process]::Start($info)
 $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
 try {
     & "$repo/.local/lua-venv/Scripts/python.exe" -B (Join-Path $PSScriptRoot $TestScript) --port $IpcPort --profile $profile
-    if($LASTEXITCODE -ne 0){throw "Direct input verification failed: $profile"}
+    if($LASTEXITCODE -ne 0){throw "$TestScript verification failed: $profile"}
     [IO.File]::WriteAllText("$profile/g81-test-stop",'Stop this isolated server')
     if(!$process.WaitForExit(20000) -or $process.ExitCode -ne 0){throw 'Isolated server did not unload cleanly'}
     $report=@{profile=$profile;packageSHA256=(Get-FileHash -LiteralPath $package).Hash;processId=$process.Id;exitCode=$process.ExitCode;mode='isolated dedicated native server; no clients or model requests'}
     $report | ConvertTo-Json | Set-Content "$profile/manifest.json"
-    Write-Output "Direct input native passed: $profile"
+    Write-Output "$TestScript native passed: $profile"
 } finally {
     if(!$process.HasExited){$process.Kill();$process.WaitForExit()}
     [IO.File]::WriteAllText("$profile/stdout.log",$stdout.GetAwaiter().GetResult())
