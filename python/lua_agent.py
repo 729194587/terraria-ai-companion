@@ -13,7 +13,7 @@ TOOL_NAME = 'execute_lua'
 TOOL = atomic.tool(TOOL_NAME,
     '执行完整 Lua 5.4 程序来编排多步骤任务；仅 source 字段，不要 Markdown 代码围栏。'
     'api(name,args) 同步等待现有同名原子工具的真实结果，参数严格使用其工具定义。'
-    '可调用的 API：' + ', '.join(name for name in atomic.SCHEMAS if name not in {'observe_scene', 'query_recipes', 'craft_recipe', 'place_object', 'place_rope', 'move_on_rope'}) + '。'
+    '可调用的 API：' + ', '.join(name for name in atomic.SCHEMAS if name not in {'observe_scene', 'query_recipes', 'craft_recipe', 'place_object', 'place_rope', 'move_on_rope', 'equip_item', 'unequip_item'}) + '。'
     '数组从1开始，JSON null使用json.null；空数组用json.array()。'
     '混合返回表自动编码为$luaTable版本1封套，array与fields分别保留数组和字符串字段；API参数仍用纯对象/数组。'
     '支持type/tonumber/tostring/pairs/ipairs/next/assert/error、受控pcall与api/json/log，以及受限math/table和string.sub/string.len纯计算函数；无os/io/require/xpcall/print。'

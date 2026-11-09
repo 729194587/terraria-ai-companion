@@ -32,7 +32,8 @@ internal static class ActorInventory
         internal bool SourceBaselineEstablished,DestinationBaselineEstablished;
     }
     internal static bool IsOperation(string op)=>op is "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item";
-    internal static string Token(AiReadOnlyProtocol.Identity id,Item item,int slot)
+    internal static string Token(AiReadOnlyProtocol.Identity id,Item item,int slot)=>Token(id,item,slot.ToString());
+    internal static string Token(AiReadOnlyProtocol.Identity id,Item item,string slot)
     {
         var c=Read(item);
         // No serialization or Mod hooks: custom ModItem/GlobalItem state is unknown.
@@ -134,7 +135,7 @@ internal static class ActorInventory
         }
         catch(Exception e){Unknown(c,e);}
     }
-    private static string Instance(Item item)=>item==null?null:identities.GetValue(item,_=>new Identity()).Value;
+    internal static string Instance(Item item)=>item==null?null:identities.GetValue(item,_=>new Identity()).Value;
     // Exception evidence must remain independent of item properties/serialization/Mod hooks.
     private static object BasicSlot(Player p,int slot,Item before,bool baselineEstablished)
     {

@@ -12,7 +12,9 @@ Server AI 背包操作只修改绑定 AI Player 的普通库存槽。读写均�
 - `item`：按精确 contentKey 或本地名称搜索。
 - `full`：检查普通库存、原版装备/社交/染料/misc 槽和活跃 Buff。
 
-回执中的 `inventoryScope` 和 `inspectedSlots` 说明实际检查范围。局部模式不是完整背包；`full` 不包括银行/箱子、鼠标持物或 Mod 自定义槽/状态。快捷栏按游戏显示键 1..9、0 表示，内部数组索引不是游戏按键。
+回执中的 `inventoryScope` 和 `inspectedSlots` 说明实际检查范围。局部模式只报告对应库存槽。`full` 的库存范围排除银行、箱子、鼠标持物和任意 Mod 自定义存储。快捷栏按游戏显示键 1..9、0 表示，内部数组索引按 0 起算。
+
+Server AI 的 `full` 和 `get_player_state` 额外返回 `functionalEquipmentSlots`，包含原版头、胸、腿、功能饰品，以及标准 tModLoader Mod 功能饰品槽。每项有稳定 `slotId`、启用和占用状态、基础物品信息及 `targetToken`。空槽的 `item` 为 null，仍提供 Token。
 
 ## 操作
 
@@ -22,7 +24,14 @@ Server AI 背包操作只修改绑定 AI Player 的普通库存槽。读写均�
 | `swap_inventory_slots` | 交换两个槽的完整物品实例，不合并、不丢弃 |
 | `hold_inventory_item` | 将完整物品交换到指定快捷栏键，原目标物品回到来源槽，再选择该键；同槽时只选择 |
 
-这些操作不会自动使用物品、操作箱子或银行、移动装备/钱币/弹药槽，也不访问鼠标持物。
+前三项只在普通背包槽间操作。装备操作通过独立能力 `server_ai_equipment_v1` 开放。
+
+| 操作 | 行为 |
+| --- | --- |
+| `equip_item({sourceSlot, sourceToken, targetSlotId, targetToken})` | 用 `slots` 模式读来源背包 Token，用功能装备列表读目标 Token。兼容时穿戴，已有装备原样返回来源槽 |
+| `unequip_item({targetSlotId, targetToken, destinationSlot?})` | 卸下并送到指定空背包槽，省略时在变更前选定首个空槽 |
+
+装备操作遵循原生槽位及饰品冲突规则。背包限制为 0..49。当前装备配置索引纳入目标 Token，切换配置后须重新观察。装备和背包槽的物品实例、数量和基础字段必须在后续游戏更新核验成功。
 
 ## Token 与过期保护
 
