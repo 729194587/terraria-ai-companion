@@ -36,6 +36,21 @@ def contract_parts(prompt):
 
 
 class ManifestTests(unittest.TestCase):
+    def test_equipment_and_rope_contract_follows_capability_whitelist(self):
+        extra = {'server_ai_equipment_v1', 'server_ai_place_rope_v1', 'server_ai_move_on_rope_v1'}
+        operations = {'equip_item', 'unequip_item', 'place_rope', 'move_on_rope'}
+        for caps in (BASE | extra, BASE | extra | {'server_ai_actions_v1'}):
+            b = bridge(caps)
+            manifest = capability_manifest(b)
+            prompt, _ = server_contract(b)
+            _, definitions, _ = contract_parts(prompt)
+            expected = b.supported_atomic_operations
+            self.assertEqual(expected, {d['function']['name'] for d in definitions})
+            self.assertEqual(expected, {op for row in manifest['categories'] for op in row['callableApis']})
+            gear = next(row for row in manifest['categories'] if row['category'] == '功能装备变更')
+            self.assertEqual({'equip_item', 'unequip_item'} & expected, set(gear['callableApis']))
+            self.assertEqual(operations if 'server_ai_actions_v1' in caps else set(), operations & expected)
+
     def test_autonomous_navigation_is_gated_and_takes_only_a_destination(self):
         capability = {'server_ai_navigation_v1'}
         self.assertNotIn('navigate_to', exposed_operations(bridge(BASE | capability)))
@@ -76,7 +91,7 @@ class ManifestTests(unittest.TestCase):
             manifest = capability_manifest(b)
             self.assertEqual(expected, {d['function']['name'] for d in definitions})
             self.assertEqual(expected, {op for c in manifest['categories'] for op in c['callableApis']})
-            self.assertEqual(['execute_lua'], [t['function']['name'] for t in tools])
+            self.assertEqual(['execute_lua', 'read_skill'], [t['function']['name'] for t in tools])
             for c in manifest['categories']:
                 if c['category']=='背包变更' and c['callableApis']:
                     self.assertNotIn('不在服务器接口内',c['boundary'])
@@ -119,7 +134,7 @@ class ManifestTests(unittest.TestCase):
             'place_tile': ('createTile', 'placeStyle', '原生放置范围', 'place_object'),
             'place_object': ('TileObjectData', 'Anchor', '整组帧', '消耗'),
             'craft_recipe': ('0..57', '特殊回调', '箱子'),
-            'navigate_to_landing_region': ('64px', '斜平台', '0.5px'),
+            'navigate_to_landing_region': ('64px', '斜坡支撑', '0.5px'),
         }.items():
             for fact in facts:self.assertIn(fact, defs[name]['description'])
         old = bridge(BASE | set(OPTIONAL))

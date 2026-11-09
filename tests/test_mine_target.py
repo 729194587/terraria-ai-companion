@@ -1,10 +1,13 @@
 import copy
+import json
+import re
 import threading
 import time
 import unittest
 
 from test_server_ai_backend import Host
 from server_ai import ServerAiBridge, operations_for_capabilities
+from gameplay_skills import bundled_skills
 from lua_runtime import LuaRuntime, Limits
 import atomic_operations as atomic
 
@@ -139,14 +142,21 @@ class TaskAgentHost(agent_fixture.AiHost):
         if op == 'observe_scene':
             return dict(available=True, worldSessionId='world-1', actorGeneration=1, actorSlot=254,
                         gameUpdate=10, observedAtUnixMs=1793520000000, clock='server_utc_at_projection',
-                        data=dict(objects=dict(items=[dict(kind='ore_component', target=copy.deepcopy(TARGET))])))
-        return super().query(op, args)
+                        data=dict(objects=dict(items=[dict(kind='ore_component', contentKey='Terraria/Copper',
+                                                          target=copy.deepcopy(TARGET))])))
+        result = super().query(op, args)
+        if op == 'inspect_inventory' and args.get('mode') == 'item':
+            completed = bool(self.action and self.action['status'] == 'completed')
+            result['gameUpdate'] += int(completed)
+            result['data'].update(typeId=12, count=int(completed))
+        return result
 
 
 class MineTaskAgentTests(unittest.IsolatedAsyncioTestCase):
     host_type = TaskAgentHost
     asyncTearDown = agent_fixture.ServerAiAgentTests.asyncTearDown
     program = agent_fixture.ServerAiAgentTests.program
+    skill = agent_fixture.ServerAiAgentTests.skill
     receive = agent_fixture.ServerAiAgentTests.receive
     async def asyncSetUp(self):
         await agent_fixture.ServerAiAgentTests.asyncSetUp(self)
@@ -154,21 +164,36 @@ class MineTaskAgentTests(unittest.IsolatedAsyncioTestCase):
         MineTargetTests.enable(self, {'target': TARGET})
         self.agent.history[0]['content'], self.agent.tools = agent_fixture.server_contract(self.ai)
     async def test_chat_model_substitute_submits_one_structured_task(self):
-        source = "local q=api('observe_scene',{layers={'objects'}});return api('mine_target',{target=q.data.objects.items[1].target})"
-        self.answers = [self.program(source), dict(role='assistant', content='指定矿物已挖掘，输入已释放。')]
+        content = bundled_skills().load({'name': 'mining_and_ores'})['content']
+        observe, collect = re.findall(r'```lua\r?\n(.*?)```', content, re.S)
+        source = f"local function observe_copper()\n{observe}end\nlocal selected = observe_copper().ore\n{collect}"
+        self.answers = [self.skill('mining_and_ores'), self.program(source),
+                        dict(role='assistant', content='指定矿物已挖掘，输入已释放。')]
         await self.receive('mine-task', '挖掘观察到的铜矿')
         await self.agent.task
-        self.assertEqual(2, len(self.requests))
-        self.assertIn('mine_target', self.requests[0]['messages'][0]['content'])
+        self.assertEqual(3, len(self.requests))
+        prompt = self.requests[0]['messages'][0]['content']
+        self.assertIn('mine_target', prompt)
+        self.assertIn('mining_and_ores', prompt)
+        self.assertIn('行动优先', prompt)
+        self.assertNotIn('# 挖矿与矿石', prompt)
+        skill = json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role'] == 'tool'))
+        self.assertTrue(skill['valid'])
+        self.assertEqual(content, skill['content'])
+        before, after = [json.loads(r['messages'][-1]['content'])['runtimeLua'] for r in self.requests[:2]]
+        self.assertEqual(before['remainingToolCalls'] - 1, after['remainingToolCalls'])
+        for key in ('remainingLuaApiCalls', 'remainingActionAttempts', 'remainingSeconds'):
+            self.assertEqual(before[key], after[key])
         starts = [r for r in self.aihost.sent if r['op'] == 'start']
         self.assertEqual(1, len(starts))
         self.assertEqual('mine_target', starts[0]['operation'])
         self.assertEqual({'target': TARGET}, starts[0]['arguments'])
-        self.assertEqual(['execute_lua'], [t['function']['name'] for t in self.requests[0]['tools']])
+        self.assertEqual(['execute_lua', 'read_skill'], [t['function']['name'] for t in self.requests[0]['tools']])
         self.assertEqual(254, self.ai.reply_receipts[-1]['authorSlot'])
-        import json
-        receipt = json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role'] == 'tool'))
+        receipt = json.loads(next(m['content'] for m in self.requests[2]['messages'] if m.get('tool_call_id') == 'lua-1'))
         self.assertEqual('completed', receipt['taskOutcome'])
+        self.assertEqual('inventory_increase_observed', receipt['value']['status'])
+        self.assertEqual(1, receipt['value']['inventoryNetChange'])
         self.assertEqual('unknown', receipt['goalOutcome'])
         self.assertEqual('unknown', self.agent.runs[-1].goal_outcome)
 

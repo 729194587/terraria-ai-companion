@@ -4,7 +4,7 @@ Lua Agent 允许模型在一次 `execute_lua` 工具调用中提交完整程序�
 
 ## 调用模型
 
-- Agent 对模型只注册 `execute_lua`；内部 Lua `api(name, args)` 调用由宿主分发。
+- Server AI 的游戏查询与动作使用 `execute_lua`；内部 Lua `api(name, args)` 调用由宿主分发。模型还可通过只读 `read_skill` 查阅[已注册的玩法攻略](TERRARIA_AGENT_GAMEPLAY_MVP_PHASE1.md)。
 - 模型可使用局部函数、条件、有限循环和普通 Lua 计算，根据观察结果动态选择后续动作。
 - 多步骤任务优先组合现有查询和原子操作；不要假设存在未开放的客户端 API 或专用任务函数。
 - `explore()` 等 helper 是可选程序辅助，不是强制探索策略，也不替代 Agent 自主决策。

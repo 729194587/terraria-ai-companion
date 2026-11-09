@@ -257,7 +257,7 @@ class M3ResultTests(unittest.TestCase):
         prompt,tools=server_contract(bridge)
         names={op for row in capability_manifest(bridge)['categories'] for op in row['callableApis']}
         self.assertTrue({'submit_task','await_task','resume_task'}<=names)
-        self.assertIn('不自动恢复',prompt);self.assertEqual(['execute_lua'],[t['function']['name'] for t in tools])
+        self.assertIn('不自动恢复',prompt);self.assertEqual(['execute_lua','read_skill'],[t['function']['name'] for t in tools])
         bridge.hello['capabilities']=caps[:-1]  # Old task support is not M3 safety support.
         self.assertNotIn('submit_task',{op for row in capability_manifest(bridge)['categories'] for op in row['callableApis']})
 

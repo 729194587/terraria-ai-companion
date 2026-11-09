@@ -13,6 +13,7 @@ import time
 import agent_trace as tracing
 import cost_metrics
 import atomic_operations
+import gameplay_skills
 import mining_recovery
 import lua_agent
 import program_tasks
@@ -711,10 +712,12 @@ class Agent:
                             function = call["function"]
                             name = function.get("name")
                             arguments = json.loads(function.get("arguments", ""))
-                            if self.server_ai and name != lua_agent.TOOL_NAME:
-                                raise ValueError('Server AI model tools allow execute_lua only; no fallback execution')
+                            if self.server_ai and name not in (lua_agent.TOOL_NAME, gameplay_skills.TOOL_NAME):
+                                raise ValueError('Server AI model tools allow execute_lua and read_skill only')
                             if len(calls) > 1:
                                 result = {"valid": False, "error": "one_tool_per_model_decision_required; entire batch not executed"}
+                            elif self.server_ai and name == gameplay_skills.TOOL_NAME:
+                                result = gameplay_skills.bundled_skills().load(arguments)
                             elif name == lua_agent.TOOL_NAME:
                                 source = lua_agent.validate_arguments(arguments)
                                 remaining = self.lua_limits.calls - lua_calls
