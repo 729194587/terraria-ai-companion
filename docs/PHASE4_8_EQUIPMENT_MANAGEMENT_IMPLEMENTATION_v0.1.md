@@ -102,7 +102,7 @@ Server AI 的 `inspect_inventory({mode="full"})` 与 `get_player_state` 新增 `
 
 - 两版固定引擎的 `ItemSlot.EquipSwap(Item, Item[], int, ref bool)`、饰品冲突检查、Mod 槽位访问和同步相关 IL 一致。原生 `EquipSwap` 会清除 incoming 的收藏标记、克隆双方物品、播放 UI 音效并调用 `Recipe.FindRecipes`。Server AI 使用原生规则校验后交换两个已有的 Item 引用，保留实例、收藏标记和 Mod 对象。
 - 原版槽位使用 `Player.IsItemSlotUnlockedAndUsable`，盔甲依照原生装备槽标记检查，饰品使用接收显式 Player 的 `ItemSlot.AccCheck_ForPlayer`。检查的临时布局包括原版和 Mod 饰品，排除即将替换的目标物品。固定引擎的 `MaxVanillaSlotCount` 是七个饰品的数量，观察索引从盔甲之后开始。
-- Mod 功能槽通过 `AccessorySlotLoader.Get(index, player)` 枚举，使用 `ModdedIsSpecificItemSlotUnlockedAndUsable` 和功能槽启用标记。原生 `IsAccessoryInConflict` 会调用槽位的 `CanAcceptItem` 并进入带 Actor 的饰品检查，含 `ItemLoader.CanEquipAccessory` 与冲突钩子。公开 `FunctionalItem` 属性访问 Actor 的原生功能饰品存储。原生 `Main.CurrentPlayerOverride` 作用域绑定并恢复 `CurrentPlayer`。
+- Mod 功能槽通过 `AccessorySlotLoader.Get(index, player)` 枚举，在 Actor 上下文中使用 `ModdedIsSpecificItemSlotUnlockedAndUsable` 判定可用性。`DrawFunctionalSlot` 只控制 UI 绘制。原生 `IsAccessoryInConflict` 会调用槽位的 `CanAcceptItem` 并进入带 Actor 的饰品检查，含 `ItemLoader.CanEquipAccessory` 与冲突钩子。公开 `FunctionalItem` 属性访问 Actor 的原生功能饰品存储。原生 `Main.CurrentPlayerOverride` 作用域绑定并恢复 `CurrentPlayer`。
 - `equip_item` 在设计建议的参数上增加必填 `targetToken`，空槽也要传。只有同时确认来源和目标的观察仍然有效才能替换。`unequip_item` 接受可选空背包槽，未指定时先确定首个可用槽。两项操作以 `server_ai_equipment_v1` 握手，复用 Actor 动作租约、游戏线程、IPC 和 Lua 回执。
 - 原生 `SyncOnePlayer` 同步库存与原版装备，并调用 `PlayerLoader.SyncPlayer`，其中标准 `ModAccessorySlotPlayer.SyncPlayer` 使用自己的槽位包。同步前后及后续游戏更新检查物品实例、基础字段、相关槽位、当前装备配置和 Actor 绑定。钩子异常或结果不一致返回 `unknown`，沿用会话栅栏，保留真实副作用。
 
@@ -113,7 +113,7 @@ Server AI 的 `inspect_inventory({mode="full"})` 与 `get_player_state` 新增 `
 | 检查 | 结果 |
 | --- | --- |
 | tModLoader `2026.09.3.1`、`2026.08.3.0` | 均零错误、零警告构建 |
-| 双引擎 `verify_server_ai_direct_input_native.ps1 -Equipment` | 每版 32 个 IPC/Lua 场景及 6 个生命周期用例通过。包括原版三类盔甲、原版与标准 Mod 饰品、Mod 物品钩子、自定义拒绝、跨槽冲突、禁用槽、背包满、指定槽占用和失效 Token |
+| 双引擎 `verify_server_ai_direct_input_native.ps1 -Equipment` | 每版 34 个 IPC/Lua 场景及 6 个生命周期用例通过。包括原版三类盔甲、原版与标准 Mod 饰品、Mod 物品钩子、自定义拒绝、跨槽冲突、隐藏但启用的功能槽可穿戴和卸下、禁用槽拒绝两项操作、背包满、指定槽占用和失效 Token |
 | 异常与隔离 | 双版夹具确认钩子抛错、钩子改变库存和原生同步期间改变库存均返回 `unknown`。钩子内核对 Actor 作用域，跨动作核对其他 Player 的装备及库存、`Main.myPlayer`、鼠标持物、鼠标和键盘状态。死亡、World、generation 的竞态用模拟绑定变化命中真实动作状态机 |
 | 双包 `run_server_ai_ipc_tests.ps1` | IPC、Task Runtime、包级验证通过。每版 92 项 Task Runtime 与 103 项包级 IL 检查 |
 | 参数与库存定向回归 | Python/C# 共享契约 209 条向量，3 项装备回执、6 项现有 Python Server AI 库存测试及 C# `-InventoryOnly` 通过 |

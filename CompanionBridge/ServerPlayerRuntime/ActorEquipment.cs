@@ -36,9 +36,8 @@ internal static class ActorEquipment
         internal bool Enabled(Player p)
         {
             if (Mod == null) return p.IsItemSlotUnlockedAndUsable(Index);
-            bool functional = Mod.DrawFunctionalSlot;
             if (!ReferenceEquals(Main.CurrentPlayer, p)) throw new InvalidOperationException("Mod slot changed the player scope.");
-            return functional && Loader.ModdedIsSpecificItemSlotUnlockedAndUsable(Index, p, false);
+            return Loader.ModdedIsSpecificItemSlotUnlockedAndUsable(Index, p, false);
         }
         internal string Token(AiReadOnlyProtocol.Identity id, Player p, Item item) =>
             ActorInventory.Token(id, item, $"equipment:{p.CurrentLoadoutIndex}:{Id}");
