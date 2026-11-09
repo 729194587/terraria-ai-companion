@@ -30,60 +30,122 @@ scope: 独立 Server AI Player 的原版矿物；Mod 内容仅按当前解析与
 
 ## Lua 示例
 
-先从局部场景筛出最近返回的铜矿目标，连同几何、危险和覆盖交给下一步决策。仅在能力契约开放 `observe_scene` 时使用。实际采集可将同样的筛选与安全判断写进有界程序，使用上面的单格动作和前后库存查询。
+**采一格附近暴露的铜矿。** 将下面整段直接作为 `execute_lua.source`。适用于玩家已委托采集，且当前契约开放 `observe_scene`、`inspect_tile`、`inspect_inventory` 和 `mine_target` 的情况。若后端允许任务开路，委托也须允许该行为。为五次 API 调用和一次动作预留预算。
+
+示例只考虑与身体同高、水平相隔至多四格、横向无遮挡的矿格，并用 80 像素距离作保守筛选。局部几何不完整、观察到危险、角色未停稳或移除矿格可能影响当前支撑时停止。快照检查只筛除明显风险，原生任务仍需重验目标、可挖性和安全站位。此例不处理远处矿脉或跨高度接近。
 
 ```lua
+local function readable(r)
+    return r.valid and r.available == true and type(r.data) == 'table'
+end
+
+local function same_actor(a, b)
+    return a.worldSessionId == b.worldSessionId
+        and a.actorGeneration == b.actorGeneration and a.actorSlot == b.actorSlot
+end
+
+local function clear_hazards(list)
+    return type(list) == 'table' and list.truncated == false and list.matchedCount == 0
+end
+
 local scene = api('observe_scene', {layers={'geometry','objects','hazards'}})
-if not scene.valid or scene.available ~= true or type(scene.data) ~= 'table' then
-    return {status='scene_unavailable'}
-end
+if not readable(scene) then return {status='scene_unavailable'} end
 local data = scene.data
+local actor, geometry, hazards = data.actor, data.geometry, data.hazards
 local objects = data.objects
-if type(objects) ~= 'table' or type(objects.items) ~= 'table' then
-    return {status='objects_unavailable'}
+if not data.coverage or data.coverage.geometryComplete ~= true
+    or not geometry or not geometry.rows or not objects or not objects.items then
+    return {status='scene_incomplete'}
 end
+if not hazards or not clear_hazards(hazards.tiles) or not clear_hazards(hazards.entities) then
+    return {status='hazards_present_or_unknown'}
+end
+if not actor or actor.dead ~= false or actor.navigationProfileSupported ~= true
+    or not actor.velocity or actor.velocity.x ~= 0 or actor.velocity.y ~= 0
+    or not actor.bodyTileBounds or not actor.boundsWorldPixels then
+    return {status='stance_unconfirmed'}
+end
+
+local body, box = actor.bodyTileBounds, actor.boundsWorldPixels
+local function exposed_from_side(target)
+    local x, y = target.x, target.y
+    if y < body.minY or y > body.maxY then return false end
+    local edge = x < body.minX and body.minX or body.maxX
+    local gap = math.abs(x - edge)
+    if (x >= body.minX and x <= body.maxX) or gap > 4 then return false end
+    local row = geometry.rows[y - geometry.originY + 1]
+    if not row then return false end
+    local step = x < edge and -1 or 1
+    local targetColumn = x - geometry.originX + 1
+    if targetColumn < 1 or targetColumn > string.len(row)
+        or string.sub(row, targetColumn, targetColumn) ~= '#' then return false end
+    for tileX = edge, x - step, step do
+        local column = tileX - geometry.originX + 1
+        if column < 1 or string.sub(row, column, column) ~= '.' then return false end
+    end
+    return true
+end
+local target, bestDistance
 for _, object in ipairs(objects.items) do
-    if object.kind == 'ore_component' and object.contentKey == 'Terraria/Copper' then
-        return {status='observed_candidate', ore=object, coverage=data.coverage,
-                objectsTruncated=objects.truncated}
+    local candidate = object.target
+    if object.kind == 'ore_component' and object.contentKey == 'Terraria/Copper'
+        and type(candidate) == 'table' and same_actor(candidate, scene)
+        and exposed_from_side(candidate) then
+        local dx = candidate.x * 16 + 8 - (box.x + box.width / 2)
+        local dy = candidate.y * 16 + 8 - (box.y + box.height / 2)
+        local distance = dx * dx + dy * dy
+        if distance <= 80 * 80 and (not bestDistance or distance < bestDistance) then
+            target, bestDistance = candidate, distance
+        end
     end
 end
-return {status='no_returned_candidate', coverage=data.coverage, objectsTruncated=objects.truncated}
-```
-
-宿主 `lastObservation` 保留最后一次场景查询（超限时可能省略）。执行前读取必要的几何与危险字段；示例状态只说明候选被观察到。
-
-下面是一格铜矿的采集模板。将函数和调用写入同一程序，给函数传入本次局部场景中实际观察到的 `object.target`。先按上文核对安全站位、开路许可和能力，且预算至少可容纳一次动作、两次查询以及前置场景读取。
-
-```lua
-local function collect_copper(target)
-    local function read_count()
-        return api('inspect_inventory', {mode='item', item='Terraria/CopperOre'})
-    end
-    local function has_count(r)
-        return r.valid and r.available == true and type(r.data) == 'table'
-            and r.data.status == 'ok' and type(r.data.count) == 'number'
-            and type(r.gameUpdate) == 'number'
-    end
-    local before = read_count()
-    if not has_count(before) then return {status='inventory_baseline_unavailable'} end
-    local action = api('mine_target', {target=target})
-    if not action.valid or action.status ~= 'completed' or action.endEvidenceStatus ~= 'known' then
-        return {status='mining_unconfirmed', action=action}
-    end
-    local after = read_count()
-    if not has_count(after) or after.worldSessionId ~= before.worldSessionId
-        or after.actorGeneration ~= before.actorGeneration or after.actorSlot ~= before.actorSlot
-        or after.data.typeId ~= before.data.typeId or after.gameUpdate <= before.gameUpdate then
-        return {status='pickup_unconfirmed', action=action}
-    end
-    local net = after.data.count - before.data.count
-    return {status=net > 0 and 'inventory_increase_observed' or 'pickup_unconfirmed',
-            inventoryNetChange=net, action=action}
+if not target then
+    return {status='no_safe_returned_target', bounds=data.bounds, objectsTruncated=objects.truncated}
 end
--- selected.target 是程序前段从新鲜场景筛选且已检查安全的铜矿目标。
-return collect_copper(selected.target)
+
+local tile = api('inspect_tile', {x=target.x, y=target.y})
+if not readable(tile) or not same_actor(tile, scene) then return {status='tile_unavailable'} end
+local cell, impact = tile.data.cell, tile.data.miningSupportImpact
+if not cell or cell.knowledge ~= 'read' or cell.hasTile ~= true or cell.tileType ~= target.typeId
+    or not tile.data.preflight or tile.data.preflight.withinConservativeReach ~= true then
+    return {status='target_changed_or_out_of_range'}
+end
+if not impact or impact.available ~= true or impact.affectsCurrentStance ~= false
+    or not impact.pose or impact.pose.grounded ~= true or impact.pose.vx ~= 0 or impact.pose.vy ~= 0
+    or impact.pose.px ~= box.x or impact.pose.py ~= box.y
+    or not impact.afterRemoval or impact.afterRemoval.rejection ~= json.null then
+    return {status='support_unconfirmed'}
+end
+
+local function read_count()
+    return api('inspect_inventory', {mode='item', item='Terraria/CopperOre'})
+end
+local function has_count(r)
+    return readable(r) and same_actor(r, scene) and r.data.status == 'ok'
+        and type(r.data.count) == 'number' and type(r.data.typeId) == 'number'
+        and type(r.gameUpdate) == 'number'
+end
+local before = read_count()
+if not has_count(before) then return {status='inventory_baseline_unavailable'} end
+
+local action = api('mine_target', {target=target})
+local ended = action.endEvidence
+if not action.valid or action.status ~= 'completed' or action.endEvidenceStatus ~= 'known'
+    or type(ended) ~= 'table' or not same_actor(ended, scene)
+    or ended.inputsReleased ~= true or ended.effectVerified ~= true then
+    return {status='mining_unconfirmed', action=action}
+end
+local after = read_count()
+if not has_count(after) or after.data.typeId ~= before.data.typeId
+    or after.gameUpdate <= before.gameUpdate or after.gameUpdate < ended.gameUpdate then
+    return {status='pickup_unconfirmed', action=action}
+end
+local net = after.data.count - before.data.count
+return {status=net > 0 and 'inventory_increase_observed' or 'pickup_unconfirmed',
+        inventoryNetChange=net, action=action}
 ```
+
+检查宿主 `lastAction` 和动作回执再报告矿格是否移除。宿主可在失败或结果未知时直接终止程序，届时不会有脚本返回值。矿格已移除而库存未确认时，报告这两项各自的结果。
 
 ## 参考
 
