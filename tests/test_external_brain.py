@@ -97,14 +97,23 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
                     guide = (await session.call_tool('guide', {})).structuredContent
                     self.assertIn('return api("help")', guide['instructions'])
                     self.assertIn('return api("help",{name="get_player_state"})', guide['instructions'])
+                    self.assertIn('returnsSchema', guide['instructions'])
                     self.assertIn('Lua Runtime Reference', guide['instructions'])
                     self.assertNotIn('"parameters":{"type":"object"', guide['instructions'])
                     self.assertLess(len(guide['instructions']), len(self.agent.history[0]['content']))
+                    sent_before_help = len(self.aihost.sent)
                     help_result = (await session.call_tool('execute_lua', {'source':
                         "return {index=api('help'),detail=api('help',{name='get_player_state'})}"})).structuredContent
                     self.assertEqual('completed', help_result['status'])
                     self.assertEqual(0, help_result['actions'])
                     self.assertEqual('get_player_state', help_result['value']['detail']['name'])
+                    self.assertEqual('https://json-schema.org/draft/2020-12/schema',
+                                     help_result['value']['detail']['returnsSchema']['$schema'])
+                    self.assertIn('Player', help_result['value']['detail']['returnsSchema']['$defs'])
+                    # execute_lua still attaches the ordinary runtime inventory
+                    # context. Help itself does not execute get_player_state.
+                    self.assertTrue(all(r['operation'] == 'inspect_inventory'
+                                        for r in self.aihost.sent[sent_before_help:] if r['op'] == 'query'))
                     index = {name for category in help_result['value']['index']['categories'] for name in category['apis']}
                     self.assertEqual(set(self.ai.supported_atomic_operations), index)
                     self.assertFalse(any(r['op'] == 'start' for r in self.aihost.sent))

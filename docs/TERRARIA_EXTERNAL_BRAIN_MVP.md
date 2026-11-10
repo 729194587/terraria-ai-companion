@@ -154,7 +154,9 @@ return api("help")
 return api("help", {name="get_player_state"})
 ```
 
-详情的 `description` 来自现有执行契约，包含用途和函数专属限制。`parameters` 是当前后端投影的 JSON Schema，含类型、必填字段及取值约束。`returns` 和 `statusSemantics` 描述回执结构与解读方式，`limits` 给出类别边界。`example` 是 Lua 调用示例，含变量的模板需要从任务参数或新鲜观察取得值。已知但当前不可调用的函数返回 `not_exposed`，未知名称返回 `unknown_api`。非法帮助参数返回 `bad_argument`。
+详情的 `description` 来自现有执行契约，包含用途和函数专属限制。`parameters` 描述当前后端接受的参数，`returns` 概述返回结构。`value.returnsSchema` 是该 API 的 Draft 2020-12 JSON Schema，包含逐字段类型、必填项、可空项和状态分支，`$ref` 均指向同一份文档内的 `$defs`。索引只返回名称和分类，按需查询一个函数的详情即可。
+
+`statusSemantics` 说明如何解读回执，`limits` 给出类别边界，`example` 提供 Lua 调用示例。已知但当前不可调用的函数返回 `not_exposed`，未知名称返回 `unknown_api`，非法参数返回 `bad_argument`。如果开放的函数缺少已登记的返回契约，帮助返回 `contract_missing`。
 
 依据帮助编写实际查询，例如：
 
@@ -164,9 +166,15 @@ if not result.valid then return result end
 return {player=result.player, motion=result.motion}
 ```
 
+读取回执时使用 Schema 中的实际字段大小写。`get_player_state` 成功时把 `player` 与 `motion` 放在顶层，其他观察通常把内容放在 `data` 下。`binding` 由 Python Bridge 从当前连接附加。`observe_scene` 只有握手开放区域能力才会描述区域结果，其字段由 `includedLayers` 决定。Lua 中用 `json.null` 判断显式空值，用 `nil` 判断字段缺失。
+
+动作的 `valid`、`completed`、`inputsReleased` 和 `effectVerified` 含义各自独立。停止无动作时可能只返回 `noOp=true`。动作或游戏任务进入失败、取消、超时或 `unknown` 分支时，宿主可能终止 Lua，回执留在已有的 `lastAction` 或任务结果中。查询 `await_task` 返回 `waitStatus="timeout"` 时，游戏任务仍可能运行。
+
 每次帮助查询占一次 Lua API 调用，受原有 Worker 预算、权限和取消限制。帮助由 Python Host 从当前握手和 Schema 生成，本身无游戏 RPC、动作或新鲜观察。MCP 回执仍附带已有运行时上下文。五个 MCP 工具保持原有接口。
 
-定向回归覆盖 Worker 的分类索引、Schema 一致性、未开放和未知名称、调用预算及无动作分发，也覆盖 MCP 从 Guide 发现帮助再执行游戏 API。隔离 tModLoader 专用服通过 DeepSeek Harness `0.2.2-rc.1` 自带 MCP 插件复验。该次握手的 Guide 为 5,690 字符，索引含 35 个函数。详情查询成功，`attack_entity` 返回 `not_exposed`，帮助回执动作数为 0。随后同一会话读取到原生 AI Player 状态。
+v1.2 的定向验证使用 `python/requirements-test.txt`。完整能力握手覆盖 30 个原子 API 和 5 个 Program Task API。测试检查 Schema 和引用闭包、字段正负例、Lua Worker 的调用预算以及 MCP Guide 到帮助的路径。离线 C# TCP 宿主用模拟数据验证玩家观察、不可用分支、挖掘回执和任务视图的跨语言投影。隔离 tModLoader 专用服验证了 15 个只读样本，涵盖全部 10 个观察 API。本次未重新执行实机变更动作，深层运动诊断和任务异常分支的类型由源码及测试样本核对。
+
+引入返回 Schema 前，隔离 tModLoader 专用服曾使用 DeepSeek Harness `0.2.2-rc.1` 自带 MCP 插件验证帮助索引、`attack_entity` 的 `not_exposed` 响应及同一会话内的原生玩家观察。
 
 ### Skills
 

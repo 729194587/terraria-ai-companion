@@ -8,11 +8,13 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from jsonschema import Draft202012Validator
 
 from test_agent import Model, final, event
 from test_lua_agent import program
 from agent import Agent
 from agent_run import facts_reply, goal_outcome, task_outcome
+from api_result_contracts import schema_for
 from control import BridgeError
 from llm import LLMError
 from lua_agent import ProgramStore
@@ -71,6 +73,7 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
     async def submit(self):
         result=await self.runtime.execute(SUBMIT+'return t')
         self.assertEqual('completed',result['status'],result)
+        Draft202012Validator(schema_for('submit_task')).validate(result['value'])
         return result['value']['taskId']
 
     def make_agent(self, model):
@@ -85,6 +88,7 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         task_id=await self.submit()
         waited=await self.runtime.execute("return api('await_task',{taskId='"+task_id+"',milliseconds=1})")
         self.assertEqual(('completed','timeout','running'),(waited['status'],waited['value']['waitStatus'],waited['value']['status']))
+        Draft202012Validator(schema_for('await_task')).validate(waited['value'])
         self.assertEqual('running',task_outcome([], active_tasks=waited['tasks']['active']))
         query=await self.runtime.execute("return api('query_task',{taskId='"+task_id+"'})")
         self.assertEqual('running',query['value']['status'])
@@ -92,7 +96,10 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('failed',conflict['status']);self.assertEqual(1,await self.starts())
         self.complete()
         await self.wait_for(lambda:self.manager.records[task_id]['done'].is_set())
-        view=(await self.manager.invoke('query_task',{'taskId':task_id}))
+        queried=await self.runtime.execute("return api('query_task',{taskId='"+task_id+"'})")
+        self.assertEqual('completed', queried['status'], queried)
+        view=queried['value']
+        Draft202012Validator(schema_for('query_task')).validate(view)
         self.assertEqual('completed',view['result']['status']);self.assertTrue(view['result']['completed'])
         self.assertEqual('completed',task_outcome([view['result']],False,'unknown'))
         self.assertEqual([True],notices)

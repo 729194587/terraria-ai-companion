@@ -2,6 +2,7 @@
 import json
 from inspect import signature
 
+import api_result_contracts
 import atomic_operations as atomic
 import gameplay_skills
 import program_tasks
@@ -48,13 +49,15 @@ SCENE_HELPER_AVAILABLE = 'scene_exploration' in signature(worker).parameters
 SCENE_EXPLORE_APIS = frozenset(('get_player_state', 'observe_scene', 'scan_entities', 'navigate_to_landing_region'))
 HORIZONTAL_EXPLORE_APIS = frozenset(('get_player_state', 'observe_terrain', 'scan_entities', 'scan_tiles', 'resolve_content', 'navigate_to_x'))
 
-OBSERVATION_RESULT = ('观察通常返回{valid,available,data,worldSessionId,actorGeneration,actorSlot,gameUpdate,observedAtUnixMs,clock,binding}；'
+OBSERVATION_RESULT = ('观察通常返回{valid,available,data,worldSessionId,actorGeneration,actorSlot,gameUpdate,observedAtUnixMs,clock}；'
+                      'ServerAiBridge附加连接binding；该字段来自Python，不是C#查询封套的一部分。'
                       '例外见各API。多次调用非同帧；coverage/complete/truncated/未知各自独立；runtimeInventory是宿主AI背包摘要。')
 HELP_REFERENCE = (
     '用 execute_lua 提交 return api("help") 获取分类索引，或 return api("help",{name="函数名"}) 获取一项详情。'
-    '读取 value 中的 description、parameters、returns、statusSemantics、limits 和 example。'
+    '读取 value 中的 description、parameters、returns、returnsSchema、statusSemantics、limits 和 example。'
+    'returnsSchema 是独立的 Draft 2020-12 JSON Schema，字段区分大小写、缺失和 null。'
     '帮助占一次 Lua API 调用，返回的是本地契约数据，不产生游戏查询、动作或新鲜观察。'
-    '已知但未开放返回 not_exposed，未知名称返回 unknown_api；按索引选择函数。'
+    '已知但未开放返回 not_exposed，未知名称返回 unknown_api；已开放但缺少返回契约时返回 contract_missing。'
 )
 
 
@@ -160,7 +163,7 @@ def help_result_contract(name):
                 '受理或running不等于完成；await_task的waitStatus=timeout仅结束等待。'
                 '终态查看result和结束证据。宿主可在失败、取消或unknown时终止Lua并保留任务视图。')
     if name in atomic.READS:
-        returns = ('{valid,available,player,motion,binding,...}；成功时player与motion位于顶层。'
+        returns = ('{valid,available,player,motion,...}；成功时player与motion位于顶层。'
                    if name == 'get_player_state' else OBSERVATION_RESULT)
         return returns, 'valid/available表示是否取得当前观察；同时检查具体数据的状态、时效、覆盖和截断。'
     statuses = ('只有valid、completed和已知结束证据才支持动作完成；'
@@ -184,12 +187,18 @@ def api_help(bridge, arguments):
     categories = callable_categories(bridge, definitions)
     if name is None:
         return {'valid': True, 'status': 'ok', 'categories': categories}
+    try:
+        returns_schema = api_result_contracts.schema_for(
+            name, capabilities=bridge.hello.get('capabilities', ()))
+    except KeyError:
+        return {'valid': False, 'status': 'contract_missing', 'name': name}
     row = next(row for row in categories if name in row['apis'])
     definition = definitions[name]
     returns, status_semantics = help_result_contract(name)
     return {'valid': True, 'status': 'ok', 'name': name, 'category': row['category'],
             'description': definition['description'], 'parameters': definition['parameters'],
-            'returns': returns, 'statusSemantics': status_semantics, 'limits': row['limits'],
+            'returns': returns, 'returnsSchema': returns_schema,
+            'statusSemantics': status_semantics, 'limits': row['limits'],
             'example': help_example(name, definition['parameters'])}
 
 
@@ -272,7 +281,9 @@ def server_contract(bridge, tool, *, compact=False):
     instructions = ('角色原则\n'+ROLE_PRINCIPLES+'\navailable_skills\n'+(skill_index or '当前无已注册攻略。')
                     +'\nCapability Manifest\n'+manifest_text
                     +'\nAPI Contract\n'+api_reference
-                    +'\nLua Runtime Reference\n'+runtime_reference(supported)+'\n示例（含动作的例子仅在授权后使用）\n'+'\n'.join(examples))
+                    +'\nLua Runtime Reference\n'+runtime_reference(supported)
+                    +('' if compact else '\n'+HELP_REFERENCE)
+                    +'\n示例（含动作的例子仅在授权后使用）\n'+'\n'.join(examples))
     projected_tool = json.loads(json.dumps(tool))
     projected_tool['function']['description'] = ('执行完整有界Lua 5.4 source，内部api同步等待原子结果；'
         '唯一参数source。以系统的Capability Manifest、API Contract和Lua Runtime Reference为准；程序返回不证明游戏目标完成。')

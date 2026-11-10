@@ -159,7 +159,7 @@ SERVER_DESCRIPTIONS = {
     'hold_inventory_item': '服务器AI：完整交换sourceSlot与hotbarKey(游戏键1..9,0)，目标物品回源槽，再选中；同槽只选择，不自动使用；核验两槽与后续更新。unknown不回滚、不自动重试。',
     'get_player_state': '读取绑定服务器AI的实际位置/速度/生命及motion；无参数。返回{valid,player,motion,binding,...}，player.position是碰撞框左上角世界像素，velocity为像素/游戏更新，Y向下；motion.grounded与supported独立，supported只是导航profile适用性，不保证支撑/路径安全。',
     'inspect_inventory': '只读AI真实背包，必须显式mode；局部查询不代表完整背包。返回{valid,available,data,...}，data.inventoryScope/inspectedSlots标明实际检查范围，item匹配slots不等于搜索范围。hotbarKey是游戏键1..9,0；新版本server_ai_inventory_v1提供绑定World/Actor/Generation/槽位、物品实例与基础字段的inventoryToken；操作前用slots/selected/hotbar读取两槽新鲜token。full附functionalEquipmentSlots及装备targetToken；full/item不提供普通背包槽token，全部Mod自定义状态未知；token不调用保存钩子，不能识别仅自定义状态变化。',
-    'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。data.terrain含originX/originY/rows和独立液体层liquids。液体项含绝对Tile坐标x/y、type、原生数量amount（1–255），未知格的缺项不代表干燥。data.state含centerWorldPixels，另含bounds/legend/coverage。格为Tile（16像素）。supported只是profile适用性。',
+    'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。data.terrain含originX/originY/rows和独立液体层liquids。液体项含绝对Tile坐标x/y、type、原生数量amount（1–255），未知格的缺项不代表干燥。data.state含centerWorldPixels；data还含bounds、legend、scannedCount、unknownCount和complete。格为Tile（16像素）。supported只是profile适用性。',
     'use_item': '当前快捷栏物品执行一次原生使用周期，参数仅{}。支持可无坐标单次使用的原版物品及 ModItem，使用条件由 ItemCheck 和 Mod Hook 判定。需要瞄准、弹药、持续按住或放置坐标的物品需使用相应入口。3秒上限。cycleVerified 证明使用周期，consumptionObserved 表示持用物品堆叠减少；具体治疗、Buff、命中等效果需另行观察。',
     'mine_tile': '原生挖掘指定 Tile。自动在整个主背包（含快捷栏）选择合适工具，必要时临时切换快捷栏，无需预选镐。由 Terraria 原生挖掘范围、工具和破坏许可判定。在当前位置执行，需要接近时用 mine_target。可指定家具有效组成格，已识别的多格家具核验整组移除。10秒上限，destroyedByActor、targetAbsent 和绑定输入释放证据齐备才完成。掉落入包需另行观察，unknown 停止。',
     'place_tile': '在空的绝对 Tile 格 x/y 用选中的快捷栏材料放置普通单格 Tile。按 createTile、placeStyle 和原生放置范围、邻接及 Mod Hook 判定；多格对象用 place_object。核验本 AI 的放置事件、目标格、consumedCount=1 和输入释放。取消可能已有副作用，unknown 停止。10秒上限。',
@@ -229,6 +229,8 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
         if name in SERVER_DESCRIPTION_SUFFIXES:
             f['description'] += SERVER_DESCRIPTION_SUFFIXES[name]
         if name in ('navigate_to_x', 'navigate_to_landing_region'):
+            f['description'] = (f['description'].replace('evidence.navigation.blockingTiles', 'evidence.navigation.BlockingTiles')
+                                .replace('x/y/contentKey及basis', 'X/Y/ContentKey及Basis'))
             f['description'] += '已确认可恢复失败仍返回failed及实际位置/速度/支撑/释放证据；只有宿主continuationAllowed=true且continuationScope=observe_scene_then_move_input时，才可重新observe_scene后尝试一次有界move_input，不能按reason文字自行放行或重试导航。'
     return definitions
 

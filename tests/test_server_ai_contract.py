@@ -7,13 +7,15 @@ import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
+from jsonschema import Draft202012Validator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'python'))
 import atomic_operations as atomic
+from api_result_contracts import DRAFT, missing_for, registered_names, schema_for
 from lua_agent import server_contract
 from lua_runtime import Limits, LuaRuntime
 from server_ai import operations_for_capabilities
-from server_ai_contract import (capability_manifest, exposed_operations, BASE_GLOBALS, LIBRARIES,
+from server_ai_contract import (api_help, capability_manifest, exposed_operations, BASE_GLOBALS, LIBRARIES,
                                 runtime_reference, helper_reference, server_definitions)
 from test_lua_runtime import RuntimeGame
 
@@ -22,11 +24,18 @@ OPTIONAL = ('server_ai_reads_v1', 'server_ai_perception_v1', 'server_ai_map_v1',
             'server_ai_crafting_v1', 'server_ai_scene_v1', 'server_ai_actions_v1',
             'server_ai_direct_input_v1', 'server_ai_place_object_workbench_v1',
             'server_ai_place_tile_v1', 'landing_region_navigation_v1', 'server_ai_inventory_v1', 'server_ai_tasks_v1')
+FULL = BASE | set(OPTIONAL) | {
+    'server_ai_scene_region_v1', 'server_ai_program_tasks_v1', 'server_ai_navigation_v1',
+    'server_ai_equipment_v1', 'server_ai_place_rope_v1', 'server_ai_move_on_rope_v1',
+}
 
 
 def bridge(caps):
-    return SimpleNamespace(hello={'capabilities': sorted(caps)},
-                           supported_atomic_operations=operations_for_capabilities(caps))
+    b = SimpleNamespace(hello={'capabilities': sorted(caps)},
+                        supported_atomic_operations=operations_for_capabilities(caps))
+    if 'server_ai_program_tasks_v1' in caps:
+        b.task_request = Mock(side_effect=AssertionError('contract inspection must not dispatch a task'))
+    return b
 
 
 def contract_parts(prompt):
@@ -49,14 +58,18 @@ class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
         return b
 
     async def test_worker_returns_current_index_and_exact_projected_schema_without_dispatch(self):
-        capabilities = BASE | set(OPTIONAL) | {'server_ai_program_tasks_v1', 'server_ai_scene_region_v1'}
-        b = self.runtime_bridge(capabilities)
+        b = self.runtime_bridge(FULL)
         b.task_request = Mock(side_effect=AssertionError('help must not send a task request'))
         result = await LuaRuntime(b).execute("""
             local index = api('help')
             local details = {}
             for _, category in ipairs(index.categories) do
-                for _, name in ipairs(category.apis) do details[name] = api('help',{name=name}) end
+                for _, name in ipairs(category.apis) do
+                    local detail = api('help',{name=name})
+                    detail.draft = detail.returnsSchema["$schema"]
+                    detail.returnsSchema = nil
+                    details[name] = detail
+                end
             end
             return {index=index,details=details}
         """, allow_actions=False)
@@ -64,10 +77,12 @@ class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, result['actions'])
         self.assertIsNone(result['lastObservation'])
         expected = {item['function']['name']: item['function'] for item in server_definitions(b)}
+        self.assertEqual(35, len(expected))
         self.assertEqual(len(expected) + 1, result['calls'])
         self.assertEqual(set(expected), set(result['value']['details']))
         for name, detail in result['value']['details'].items():
             self.assertTrue(detail['valid'])
+            self.assertEqual(DRAFT, detail['draft'])
             self.assertEqual(expected[name]['parameters'], detail['parameters'])
             self.assertEqual(expected[name]['description'], detail['description'])
             for field in ('category', 'returns', 'statusSemantics', 'limits', 'example'):
@@ -91,6 +106,13 @@ class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({'valid': False, 'status': 'unknown_api'}, missing)
         self.assertEqual('bad_argument', bad_arguments['status'])
         self.assertNotIn('scale', scene['parameters']['properties'])
+        self.assertNotIn('SceneRegional', scene['returnsSchema']['$defs'])
+
+    async def test_worker_round_trips_largest_single_help_schema(self):
+        result = await LuaRuntime(self.runtime_bridge(FULL)).execute(
+            "return api('help',{name='stop_action'})", allow_actions=False)
+        self.assertEqual('completed', result['status'], result)
+        self.assertEqual(schema_for('stop_action', capabilities=FULL), result['value']['returnsSchema'])
 
     async def test_help_uses_existing_call_budget_and_is_server_only(self):
         result = await LuaRuntime(self.runtime_bridge(BASE)).execute(
@@ -100,6 +122,55 @@ class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, result['actions'])
         client = await LuaRuntime(self.runtime_bridge(set())).execute("return api('help')")
         self.assertEqual('not_exposed', client['value']['status'])
+
+
+class ResultRegistryTests(unittest.TestCase):
+    def test_open_capabilities_and_self_contained_schemas(self):
+        for caps in (BASE, BASE | {'server_ai_scene_v1'}, FULL - {'server_ai_program_tasks_v1'}, FULL):
+            b = bridge(caps)
+            definitions = {row['function']['name']: row['function'] for row in server_definitions(b)}
+            self.assertEqual(set(), missing_for(definitions))
+            self.assertNotIn('returnsSchema', json.dumps(api_help(b, {})))
+            for name, definition in definitions.items():
+                with self.subTest(name=name, capabilities=caps):
+                    detail = api_help(b, {'name': name})
+                    schema = detail['returnsSchema']
+                    self.assertEqual(definition['parameters'], detail['parameters'])
+                    self.assertEqual(schema_for(name, capabilities=caps), schema)
+                    Draft202012Validator.check_schema(schema)
+                    reachable = set()
+
+                    def walk(node):
+                        if isinstance(node, dict):
+                            if '$ref' in node:
+                                prefix = '#/$defs/'
+                                self.assertTrue(node['$ref'].startswith(prefix))
+                                target = node['$ref'].removeprefix(prefix)
+                                if target not in reachable:
+                                    reachable.add(target)
+                                    walk(schema['$defs'][target])
+                            for key, value in node.items():
+                                if key != '$defs':
+                                    walk(value)
+                        elif isinstance(node, list):
+                            for value in node:
+                                walk(value)
+
+                    walk(schema)
+                    self.assertEqual(set(schema.get('$defs', {})), reachable)
+        self.assertEqual(set(definitions), registered_names())
+        self.assertEqual({'future_api'}, missing_for(set(definitions) | {'future_api'}))
+        self.assertNotIn('Action_mine_tile', schema_for('stop_action', capabilities=BASE)['$defs'])
+        copy = schema_for('observe_scene', capabilities=FULL)
+        copy['$defs']['SceneLocal']['required'].clear()
+        self.assertTrue(schema_for('observe_scene', capabilities=FULL)['$defs']['SceneLocal']['required'])
+        self.assertIn('return api("help")', server_contract(b)[0])
+        self.assertNotIn('"$schema"', server_contract(b)[0])
+
+    def test_open_operation_with_missing_contract_has_explicit_error(self):
+        with patch('api_result_contracts.schema_for', side_effect=KeyError):
+            self.assertEqual({'valid': False, 'status': 'contract_missing', 'name': 'wait'},
+                             api_help(bridge(BASE), {'name': 'wait'}))
 
 
 class ManifestTests(unittest.TestCase):
@@ -201,7 +272,7 @@ class ManifestTests(unittest.TestCase):
             'place_tile': ('createTile', 'placeStyle', '原生放置范围', 'place_object'),
             'place_object': ('TileObjectData', 'Anchor', '整组帧', '消耗'),
             'craft_recipe': ('0..57', '特殊回调', '箱子'),
-            'navigate_to_landing_region': ('64px', '斜坡支撑', '0.5px'),
+            'navigate_to_landing_region': ('64px', '斜坡支撑', '0.5px', 'evidence.navigation.BlockingTiles', 'X/Y/ContentKey及Basis'),
         }.items():
             for fact in facts:self.assertIn(fact, defs[name]['description'])
         old = bridge(BASE | set(OPTIONAL))
