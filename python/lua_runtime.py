@@ -339,6 +339,18 @@ class LuaRuntime:
                     raise Interrupted('bad_argument')
                 if type(message.get('protected', False)) is not bool:
                     raise Interrupted('protocol_error')
+                if name == 'help':
+                    # Host-local metadata uses the same bounded Worker reply
+                    # path, without dispatch or changing observation/continuation state.
+                    from server_ai_contract import api_help
+                    result = api_help(self.bridge, args)
+                    call_end(result['status'], result=result)
+                    active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
+                        encode({'type': 'result', 'id': sequence, 'value': result})))
+                    active_role = 'send'
+                    await watch(active)
+                    active = None
+                    continue
                 try:
                     args = program_tasks.validate(name, args) if name in program_tasks.NAMES else atomic.validate(name, args)
                 except ValueError as exc:

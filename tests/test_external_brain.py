@@ -95,7 +95,19 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual({'guide', 'execute_lua', 'read_skill', 'get_events', 'say'},
                                      {tool.name for tool in tools.tools})
                     guide = (await session.call_tool('guide', {})).structuredContent
-                    self.assertEqual(self.agent.history[0]['content'], guide['instructions'])
+                    self.assertIn('return api("help")', guide['instructions'])
+                    self.assertIn('return api("help",{name="get_player_state"})', guide['instructions'])
+                    self.assertIn('Lua Runtime Reference', guide['instructions'])
+                    self.assertNotIn('"parameters":{"type":"object"', guide['instructions'])
+                    self.assertLess(len(guide['instructions']), len(self.agent.history[0]['content']))
+                    help_result = (await session.call_tool('execute_lua', {'source':
+                        "return {index=api('help'),detail=api('help',{name='get_player_state'})}"})).structuredContent
+                    self.assertEqual('completed', help_result['status'])
+                    self.assertEqual(0, help_result['actions'])
+                    self.assertEqual('get_player_state', help_result['value']['detail']['name'])
+                    index = {name for category in help_result['value']['index']['categories'] for name in category['apis']}
+                    self.assertEqual(set(self.ai.supported_atomic_operations), index)
+                    self.assertFalse(any(r['op'] == 'start' for r in self.aihost.sent))
                     skill = await session.call_tool('read_skill', {'name': 'mining_and_ores'})
                     self.assertTrue(skill.structuredContent['valid'])
                     self.assertEqual(409, (await self.initialize()).status_code)

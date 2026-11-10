@@ -48,6 +48,15 @@ SCENE_HELPER_AVAILABLE = 'scene_exploration' in signature(worker).parameters
 SCENE_EXPLORE_APIS = frozenset(('get_player_state', 'observe_scene', 'scan_entities', 'navigate_to_landing_region'))
 HORIZONTAL_EXPLORE_APIS = frozenset(('get_player_state', 'observe_terrain', 'scan_entities', 'scan_tiles', 'resolve_content', 'navigate_to_x'))
 
+OBSERVATION_RESULT = ('观察通常返回{valid,available,data,worldSessionId,actorGeneration,actorSlot,gameUpdate,observedAtUnixMs,clock,binding}；'
+                      '例外见各API。多次调用非同帧；coverage/complete/truncated/未知各自独立；runtimeInventory是宿主AI背包摘要。')
+HELP_REFERENCE = (
+    '用 execute_lua 提交 return api("help") 获取分类索引，或 return api("help",{name="函数名"}) 获取一项详情。'
+    '读取 value 中的 description、parameters、returns、statusSemantics、limits 和 example。'
+    '帮助占一次 Lua API 调用，返回的是本地契约数据，不产生游戏查询、动作或新鲜观察。'
+    '已知但未开放返回 not_exposed，未知名称返回 unknown_api；按索引选择函数。'
+)
+
 
 def exposed_operations(bridge):
     supported = set(getattr(bridge, 'supported_atomic_operations', ()))
@@ -105,6 +114,85 @@ def render_manifest(manifest):
     return '\n'.join(lines)
 
 
+def server_definitions(bridge, supported=None):
+    """Single projection for the native prompt and on-demand help."""
+    if supported is None:
+        supported = exposed_operations(bridge)
+    capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
+    definitions = atomic.server_tools(supported, scene_region='server_ai_scene_region_v1' in capabilities,
+                                      general_operations='server_ai_general_operations_v1' in capabilities,
+                                      mining_opening='server_ai_mining_opening_v1' in capabilities)
+    if program_tasks.available(bridge):
+        definitions += program_tasks.definitions()
+    return definitions
+
+
+def callable_categories(bridge, names):
+    """Keep the manifest's grouping and drop rows with no callable operations."""
+    categories = []
+    for row in capability_manifest(bridge, names)['categories']:
+        if row['callableApis']:
+            categories.append({'category': row['category'], 'apis': row['callableApis'],
+                               'limits': row['boundary']})
+    remaining = sorted(set(names) - {name for row in categories for name in row['apis']})
+    if remaining:
+        categories.append({'category': '其他', 'apis': remaining, 'limits': '按当前执行契约核验。'})
+    return categories
+
+
+def help_example(name, schema):
+    # Templates use named inputs for game coordinates and tokens. Read examples
+    # with a known safe default are executable as written.
+    arguments = {'inspect_inventory': 'mode="selected"', 'observe_scene': 'layers={"objects"}',
+                 'query_map': 'mode="overview"', 'mine_target': 'target=target',
+                 'submit_task': 'operation="mine_target",arguments={target=target}'}.get(name)
+    if arguments is None:
+        arguments = ','.join(f'{key}={key}' for key in schema['required'])
+    return f'return api("{name}",{{{arguments}}})'
+
+
+def help_result_contract(name):
+    if name == 'wait':
+        return ('{valid,status,elapsedMilliseconds,clock,effectStatus}',
+                'completed表示宿主计时结束；clock为host_monotonic，effectStatus为not_applicable。')
+    if name in program_tasks.NAMES:
+        return ('任务视图：{taskId,operation,status,valid,completed,dispatchState,action?,result?,waitStatus?}',
+                '受理或running不等于完成；await_task的waitStatus=timeout仅结束等待。'
+                '终态查看result和结束证据。宿主可在失败、取消或unknown时终止Lua并保留任务视图。')
+    if name in atomic.READS:
+        returns = ('{valid,available,player,motion,binding,...}；成功时player与motion位于顶层。'
+                   if name == 'get_player_state' else OBSERVATION_RESULT)
+        return returns, 'valid/available表示是否取得当前观察；同时检查具体数据的状态、时效、覆盖和截断。'
+    statuses = ('只有valid、completed和已知结束证据才支持动作完成；'
+                '核对操作专属effect，unknown停止变更，不自动重试。失败可能使宿主直接终止Lua。')
+    if name == 'stop_action':
+        statuses += 'noOp=true表示无当前动作；停止回执不证明原动作成功。'
+    return '{valid,status,completed,reason,actionId?,evidence?,endEvidence?,endEvidenceStatus?,...}', statuses
+
+
+def api_help(bridge, arguments):
+    if (not isinstance(arguments, dict) or set(arguments) - {'name'}
+            or 'name' in arguments and (not isinstance(arguments['name'], str) or not arguments['name'].strip())):
+        return {'valid': False, 'status': 'bad_argument', 'reason': 'help accepts {} or {name="API name"}'}
+    if 'server_ai_atomic_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        return {'valid': False, 'status': 'not_exposed', 'reason': 'help requires a Server AI backend'}
+    definitions = {item['function']['name']: item['function'] for item in server_definitions(bridge)}
+    name = arguments.get('name')
+    if name is not None and name not in definitions:
+        known = name in atomic.SCHEMAS or name in program_tasks.NAMES
+        return {'valid': False, 'status': 'not_exposed' if known else 'unknown_api'}
+    categories = callable_categories(bridge, definitions)
+    if name is None:
+        return {'valid': True, 'status': 'ok', 'categories': categories}
+    row = next(row for row in categories if name in row['apis'])
+    definition = definitions[name]
+    returns, status_semantics = help_result_contract(name)
+    return {'valid': True, 'status': 'ok', 'name': name, 'category': row['category'],
+            'description': definition['description'], 'parameters': definition['parameters'],
+            'returns': returns, 'statusSemantics': status_semantics, 'limits': row['limits'],
+            'example': help_example(name, definition['parameters'])}
+
+
 def helper_reference(supported):
     lines = []
     if SEMANTIC_APIS <= supported:
@@ -126,7 +214,7 @@ def runtime_reference(supported):
     text = f'''游戏查询和动作统一通过execute_lua({{source="完整程序"}})提交Lua 5.4；源码≤{SOURCE_BYTES} UTF-8字节，无Markdown围栏。
 全局基础函数：{','.join(BASE_GLOBALS)}；宿主函数：api、log、受控pcall；注入辅助函数explore、sense_world按下文依赖使用。
 标准库白名单：{libraries}。字符串用string.sub(row,start,end)，字符串metatable已移除，不能row:sub()。没有_G、os/io/package/require/load/debug/coroutine/xpcall/print或Python对象；不需要枚举环境来发现函数。
-api(name,args)仅调用API Contract所列名字，省略args等价{{}}；普通原子API同步等待终态，任务协作API按契约等待ACK或指定任务；无逐Tick模型请求。动作前后按需观察；所有循环有界，为核验留预算。
+api(name,args)按Capability Manifest选择当前开放操作，省略args等价{{}}；普通原子API同步等待终态，任务协作API按契约等待ACK或指定任务；无逐Tick模型请求。动作前后按需观察；所有循环有界，为核验留预算。
 JSON：数组1起始，slot/x/y数据编号保持API约定；json.null用于比较/保留null，nil会移除表项。空{{}}是对象，json.array()标记空数组，json.object()标记对象；json没有encode/decode。
 纯数组/对象直接编码；return {{10,20,30,summary="collected"}}编码为{{"$luaTable":{{"version":1,"kind":"mixed","array":[10,20,30],"fields":{{"summary":"collected"}}}}}}。含保留键$luaTable的纯对象以kind="object",fields封套转义，嵌套同规则；API参数仍须纯对象/数组，不接受混合表封套。循环/稀疏键/函数/非有限数为serialization_error，真实资源超限为value_limit。
 每次程序默认指令上限{limits.instructions}、Lua内存{limits.memory}字节；API请求帧≤{REQUEST_BYTES}字节（含封套）、返回值≤{VALUE_BYTES}字节、深度≤{MAX_DEPTH}、节点≤{MAX_NODES}。整数为有符号64位范围，浮点须有限，字符串UTF-8；API整数可用2113.0，不接受2113.5，不静默取整。
@@ -148,37 +236,42 @@ ROLE_PRINCIPLES = '''你通过玩家本地主动聊天与其对话并控制独�
 '''
 
 
-def server_contract(bridge, tool):
+def server_contract(bridge, tool, *, compact=False):
     supported = exposed_operations(bridge)
-    capabilities = bridge.hello.get('capabilities', [])
-    definitions = atomic.server_tools(supported, scene_region='server_ai_scene_region_v1' in capabilities,
-                                      general_operations='server_ai_general_operations_v1' in capabilities,
-                                      mining_opening='server_ai_mining_opening_v1' in capabilities)
-    manifest = capability_manifest(bridge, supported)
     task_reference = ''
     if program_tasks.available(bridge):
-        definitions += program_tasks.definitions()
-        task_reference = ('\nProgram/Task 协作：额外宿主API见定义。submit_task仅支持mine_target，返回稳定taskId与受理状态；'
+        task_reference = ('\nProgram/Task 协作：submit_task仅支持mine_target，返回稳定taskId与受理状态；'
             'query_task/await_task/cancel_task需明确taskId，等待到期不取消任务。'
             '普通新聊天/Program结束保留游戏Task；显式停止须确认取消与释放。runtimeTasks含活动状态与未消费结果，不授权自动重试。'
             '活动或unknown任务阻止新身体变更，替换前显式取消并确认终态。'
             '危险由游戏Tick安全中断，resume_task只对可信危险中断显式重新受理，重新验证目标/工具/环境；不自动恢复。'
             'Task完成不等于Goal完成；Program/Run失败不改写Task，最终模型失败不重放动作。')
-    # Runtime result envelopes are shared rules; operation details live only in descriptions.
-    envelopes = ('观察通常返回{valid,available,data,worldSessionId,actorGeneration,actorSlot,gameUpdate,observedAtUnixMs,clock,binding}；'
-                 '例外见各API。多次调用非同帧；coverage/complete/truncated/未知各自独立；runtimeInventory是宿主AI背包摘要。')
-    examples = ['return {values=json.array({1,2}), absent=json.null}',
-                'local a={3,1,2}; table.sort(a); log(tostring(#a)); return a']
+    if compact:
+        manifest_text = '\n'.join(f"- {row['category']}：{', '.join(row['apis'])}"
+                                  for row in callable_categories(bridge, supported))
+        api_reference = HELP_REFERENCE + '\n' + OBSERVATION_RESULT
+        examples = ['1. 发现函数：return api("help")']
+    else:
+        manifest_text = render_manifest(capability_manifest(bridge, supported))
+        api_reference = OBSERVATION_RESULT + '\n' + json.dumps(server_definitions(bridge, supported),
+                                                               ensure_ascii=False, separators=(',',':'))
+        examples = ['return {values=json.array({1,2}), absent=json.null}',
+                    'local a={3,1,2}; table.sort(a); log(tostring(#a)); return a']
     if 'get_player_state' in supported:
-        examples.append('local p=api("get_player_state",{}); return {player=p.player,motion=p.motion}')
-    if 'move_input' in supported:
+        if compact:
+            examples.extend(['2. 查参数和回执：return api("help",{name="get_player_state"})',
+                             '3. 下一次execute_lua执行：local p=api("get_player_state",{}); '
+                             'if not p.valid then return p end; return {player=p.player,motion=p.motion}'])
+        else:
+            examples.append('local p=api("get_player_state",{}); return {player=p.player,motion=p.motion}')
+    if not compact and 'move_input' in supported:
         examples.append('local r=api("move_input",{horizontal="right",vertical="none",jumpHoldUpdates=8,maxUpdates=60}); return r')
-    elif 'select_hotbar_slot' in supported:
+    elif not compact and 'select_hotbar_slot' in supported:
         examples.append('return api("select_hotbar_slot",{slot=1})')
     skill_index = gameplay_skills.bundled_skills().render_index()
     instructions = ('角色原则\n'+ROLE_PRINCIPLES+'\navailable_skills\n'+(skill_index or '当前无已注册攻略。')
-                    +'\nCapability Manifest\n'+render_manifest(manifest)
-                    +'\nAPI Contract\n'+envelopes+'\n'+json.dumps(definitions,ensure_ascii=False,separators=(',',':'))
+                    +'\nCapability Manifest\n'+manifest_text
+                    +'\nAPI Contract\n'+api_reference
                     +'\nLua Runtime Reference\n'+runtime_reference(supported)+'\n示例（含动作的例子仅在授权后使用）\n'+'\n'.join(examples))
     projected_tool = json.loads(json.dumps(tool))
     projected_tool['function']['description'] = ('执行完整有界Lua 5.4 source，内部api同步等待原子结果；'

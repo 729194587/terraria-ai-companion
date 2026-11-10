@@ -6,15 +6,15 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'python'))
 import atomic_operations as atomic
 from lua_agent import server_contract
-from lua_runtime import LuaRuntime
+from lua_runtime import Limits, LuaRuntime
 from server_ai import operations_for_capabilities
 from server_ai_contract import (capability_manifest, exposed_operations, BASE_GLOBALS, LIBRARIES,
-                                runtime_reference, helper_reference)
+                                runtime_reference, helper_reference, server_definitions)
 from test_lua_runtime import RuntimeGame
 
 BASE = {'server_ai_atomic_v1', 'atomic_operations_v1', 'hotbar_keys_v1'}
@@ -33,6 +33,73 @@ def contract_parts(prompt):
     manifest, rest = prompt.split('\nCapability Manifest\n', 1)[1].split('\nAPI Contract\n', 1)
     api, reference = rest.split('\nLua Runtime Reference\n', 1)
     return manifest, json.loads(api.split('\n', 1)[1]), reference
+
+
+class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def runtime_bridge(capabilities):
+        b = bridge(capabilities)
+
+        def idle_movement(command):
+            if command != 'get_movement':
+                raise AssertionError(f'Unexpected game dispatch: {command}')
+            return {'movement': {'action': None}}
+
+        b.command = Mock(side_effect=idle_movement)
+        return b
+
+    async def test_worker_returns_current_index_and_exact_projected_schema_without_dispatch(self):
+        capabilities = BASE | set(OPTIONAL) | {'server_ai_program_tasks_v1', 'server_ai_scene_region_v1'}
+        b = self.runtime_bridge(capabilities)
+        b.task_request = Mock(side_effect=AssertionError('help must not send a task request'))
+        result = await LuaRuntime(b).execute("""
+            local index = api('help')
+            local details = {}
+            for _, category in ipairs(index.categories) do
+                for _, name in ipairs(category.apis) do details[name] = api('help',{name=name}) end
+            end
+            return {index=index,details=details}
+        """, allow_actions=False)
+        self.assertEqual('completed', result['status'], result)
+        self.assertEqual(0, result['actions'])
+        self.assertIsNone(result['lastObservation'])
+        expected = {item['function']['name']: item['function'] for item in server_definitions(b)}
+        self.assertEqual(len(expected) + 1, result['calls'])
+        self.assertEqual(set(expected), set(result['value']['details']))
+        for name, detail in result['value']['details'].items():
+            self.assertTrue(detail['valid'])
+            self.assertEqual(expected[name]['parameters'], detail['parameters'])
+            self.assertEqual(expected[name]['description'], detail['description'])
+            for field in ('category', 'returns', 'statusSemantics', 'limits', 'example'):
+                self.assertTrue(detail[field], (name, field))
+        self.assertIn('player,motion', result['value']['details']['get_player_state']['returns'])
+        self.assertIn('waitStatus=timeout', result['value']['details']['await_task']['statusSemantics'])
+        self.assertEqual({}, result['value']['details']['use_item']['parameters']['properties'])
+        self.assertIn('scale', result['value']['details']['observe_scene']['parameters']['properties'])
+        b.command.assert_called_once_with('get_movement')  # Normal Worker admission check.
+        b.task_request.assert_not_called()
+
+    async def test_worker_reports_missing_help_without_disclosing_unavailable_schema(self):
+        b = self.runtime_bridge(BASE | {'server_ai_scene_v1'})
+        result = await LuaRuntime(b).execute("""
+            return {api('help',{name='mine_target'}), api('help',{name='missing'}),
+                    api('help',{name=17}), api('help',{name='observe_scene'})}
+        """)
+        self.assertEqual('completed', result['status'])
+        unavailable, missing, bad_arguments, scene = result['value']
+        self.assertEqual({'valid': False, 'status': 'not_exposed'}, unavailable)
+        self.assertEqual({'valid': False, 'status': 'unknown_api'}, missing)
+        self.assertEqual('bad_argument', bad_arguments['status'])
+        self.assertNotIn('scale', scene['parameters']['properties'])
+
+    async def test_help_uses_existing_call_budget_and_is_server_only(self):
+        result = await LuaRuntime(self.runtime_bridge(BASE)).execute(
+            "api('help'); return api('help')", limits=Limits(calls=1))
+        self.assertEqual('call_limit', result['status'])
+        self.assertEqual(1, result['calls'])
+        self.assertEqual(0, result['actions'])
+        client = await LuaRuntime(self.runtime_bridge(set())).execute("return api('help')")
+        self.assertEqual('not_exposed', client['value']['status'])
 
 
 class ManifestTests(unittest.TestCase):

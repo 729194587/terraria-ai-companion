@@ -119,26 +119,54 @@ Instructions 只描述跨工具流程，不复制完整 API 文档。总长建�
 
 ### Guide
 
-新增 `guide` 工具，直接复用当前 Native Agent 的游戏专属 Contract：
+新增 `guide` 工具，复用 Native Agent 的游戏契约来源，以精简形式呈现：
 
 ```python
-lua_agent.server_contract(bridge)
+lua_agent.server_contract(bridge, compact=True)
 ```
 
-`lua_agent.server_contract(bridge)` 当前返回 `(instructions, tools)`。MCP `guide` 返回其中的 `instructions`；MCP `tools/list` 中 `execute_lua` 和 `read_skill` 的 Schema/描述则复用 `tools` 对应定义，再加上外接专用工具。
+`lua_agent.server_contract` 返回 `(instructions, tools)`。MCP `guide` 返回精简的 `instructions`。MCP `tools/list` 继续复用 `execute_lua` 和 `read_skill` 的 Schema 与描述。
 
 Guide 应包含当前握手生成的：
 
 - Agent 角色原则和行动优先规则；
 - `available_skills` 索引；
-- Capability Manifest；
-- API Contract 与实际 Schema；
+- 当前可调用的 API 分类与函数名；
+- 按需查询 API 详情的用法与示例；
 - Lua Runtime Reference、预算和结果语义；
 - 当前后端支持的任务能力。
 
 不要在 MCP 层手工维护第二份 API 清单或复制一套不同的游戏 System Prompt。能力以当前 Server AI bind handshake 为准。
 
 外部 Agent 在新对话开始时读取一次 Guide，后续按需加载 Skill。
+
+### Lua API Help
+
+参考 Numen 从登记信息生成 API 帮助的做法，Terraria 使用已有的 `api(name, args)` 调用形态。以下每段可单独作为 `execute_lua.source` 提交。 [Numen HelpApi](https://github.com/Dwinovo/minecraft-numen/blob/1.21.1/numen-api/common/src/main/java/com/dwinovo/numen/api/sdk/HelpApi.java)
+
+```lua
+return api("help")
+```
+
+在回执的 `value.categories` 读取当前握手开放的分类和函数。查询一个函数时：
+
+```lua
+return api("help", {name="get_player_state"})
+```
+
+详情的 `description` 来自现有执行契约，包含用途和函数专属限制。`parameters` 是当前后端投影的 JSON Schema，含类型、必填字段及取值约束。`returns` 和 `statusSemantics` 描述回执结构与解读方式，`limits` 给出类别边界。`example` 是 Lua 调用示例，含变量的模板需要从任务参数或新鲜观察取得值。已知但当前不可调用的函数返回 `not_exposed`，未知名称返回 `unknown_api`。非法帮助参数返回 `bad_argument`。
+
+依据帮助编写实际查询，例如：
+
+```lua
+local result = api("get_player_state", {})
+if not result.valid then return result end
+return {player=result.player, motion=result.motion}
+```
+
+每次帮助查询占一次 Lua API 调用，受原有 Worker 预算、权限和取消限制。帮助由 Python Host 从当前握手和 Schema 生成，本身无游戏 RPC、动作或新鲜观察。MCP 回执仍附带已有运行时上下文。五个 MCP 工具保持原有接口。
+
+定向回归覆盖 Worker 的分类索引、Schema 一致性、未开放和未知名称、调用预算及无动作分发，也覆盖 MCP 从 Guide 发现帮助再执行游戏 API。隔离 tModLoader 专用服通过 DeepSeek Harness `0.2.2-rc.1` 自带 MCP 插件复验。该次握手的 Guide 为 5,690 字符，索引含 35 个函数。详情查询成功，`attack_entity` 返回 `not_exposed`，帮助回执动作数为 0。随后同一会话读取到原生 AI Player 状态。
 
 ### Skills
 

@@ -21,7 +21,7 @@ class BrainHost:
         self.agent = agent
         self.bridge = agent.bridge
         self.is_chat = is_chat
-        self.guide, native_tools = lua_agent.server_contract(self.bridge)
+        self.guide, native_tools = lua_agent.server_contract(self.bridge, compact=True)
         self.tools = native_tools + [
             atomic.tool('guide', '读取当前 Server AI 游戏契约。'),
             atomic.tool('get_events', '取走未交付的游戏内指令和系统消息。', {

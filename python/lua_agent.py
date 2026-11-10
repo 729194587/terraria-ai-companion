@@ -52,10 +52,10 @@ interruptedRuns是清理后交接的旧Run执行事实，按runId/generation/cha
 '''
 
 
-def server_contract(bridge):
+def server_contract(bridge, *, compact=False):
     """Build the connected server's model-only capability and runtime reference."""
     from server_ai_contract import server_contract as build_contract
-    return build_contract(bridge, TOOL)
+    return build_contract(bridge, TOOL, compact=compact)
 
 
 EXPLORATION_INSTRUCTIONS = """
