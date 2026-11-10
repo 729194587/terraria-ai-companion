@@ -1,0 +1,211 @@
+"""Stateful HTTP SDK, existing Agent/Worker and loopback game substitutes."""
+import asyncio
+import secrets
+import socket
+import unittest
+from unittest.mock import patch
+
+import httpx
+try:
+    import uvicorn
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+except ImportError as error:
+    raise unittest.SkipTest('install python/requirements-mcp.txt to verify External Brain') from error
+
+import test_server_ai_agent as fixture
+from agent import is_server_ai_chat, run
+from control import BridgeError
+from external_brain import BrainHost
+from external_mcp import ExternalMcp, token_digest
+
+
+MOVE = "return api('navigate_to_x',{targetX=180})"
+
+
+class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        await fixture.ServerAiAgentTests.asyncSetUp(self)
+        self.socket = socket.socket()
+        self.socket.bind(('127.0.0.1', 0))
+        port = self.socket.getsockname()[1]
+        self.url = f'http://127.0.0.1:{port}/mcp'
+        self.auth = {'Authorization': f'Bearer {secrets.token_urlsafe(32)}'}
+        self.brain = BrainHost(self.agent, is_server_ai_chat)
+        self.app = ExternalMcp(self.brain, port, token_digest(self.auth['Authorization'][7:]))
+        self.server = uvicorn.Server(uvicorn.Config(self.app, lifespan='off', log_level='warning',
+                                                   access_log=False, timeout_graceful_shutdown=2))
+        self.serving = asyncio.create_task(self.server.serve(sockets=[self.socket]))
+        self.idle = asyncio.create_task(self.app.watch_idle())
+        self.http = httpx.AsyncClient(headers={**self.auth, 'Accept': 'application/json, text/event-stream'},
+                                      trust_env=False)
+        self.rpc_id = 0
+        self.headers = {}
+        await self.until(lambda: self.server.started)
+
+    async def asyncTearDown(self):
+        await self.app.close()
+        self.idle.cancel()
+        await asyncio.gather(self.idle, return_exceptions=True)
+        await self.http.aclose()
+        self.server.should_exit = True
+        await self.serving
+        self.socket.close()
+        await fixture.ServerAiAgentTests.asyncTearDown(self)
+
+    async def until(self, predicate):
+        async def wait():
+            while not predicate():
+                await asyncio.sleep(.01)
+        await asyncio.wait_for(wait(), 5)
+
+    def request(self, method, params, request_id=None):
+        if request_id is None:
+            self.rpc_id += 1
+            request_id = self.rpc_id
+        return {'jsonrpc': '2.0', 'id': request_id, 'method': method, 'params': params}
+
+    async def initialize(self, client=None):
+        body = self.request('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
+                            'clientInfo': {'name': 'fixture', 'version': '1'}})
+        response = await (client or self.http).post(self.url, json=body)
+        if response.status_code == 200:
+            self.headers = {'Mcp-Session-Id': response.headers['Mcp-Session-Id'],
+                            'MCP-Protocol-Version': response.json()['result']['protocolVersion']}
+            initialized = await self.http.post(self.url, headers=self.headers,
+                json={'jsonrpc': '2.0', 'method': 'notifications/initialized'})
+            self.assertEqual(202, initialized.status_code)
+        return response
+
+    async def tool(self, name, arguments=None, *, request_id=None):
+        return await self.http.post(self.url, headers=self.headers,
+            json=self.request('tools/call', {'name': name, 'arguments': arguments or {}}, request_id))
+
+    async def game_chat(self, event_id, text):
+        self.chathost.emit(event_id, text)
+        self.brain.receive(await asyncio.wait_for(self.events.get(), 2))
+
+    async def test_sdk_session_tools_events_say_and_native_resume(self):
+        async with httpx.AsyncClient(headers=self.auth, trust_env=False) as client:
+            async with streamable_http_client(self.url, http_client=client) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    info = await session.initialize()
+                    self.assertIn('guide', info.instructions)
+                    tools = await session.list_tools()
+                    self.assertEqual({'guide', 'execute_lua', 'read_skill', 'get_events', 'say'},
+                                     {tool.name for tool in tools.tools})
+                    guide = (await session.call_tool('guide', {})).structuredContent
+                    self.assertEqual(self.agent.history[0]['content'], guide['instructions'])
+                    skill = await session.call_tool('read_skill', {'name': 'mining_and_ores'})
+                    self.assertTrue(skill.structuredContent['valid'])
+                    self.assertEqual(409, (await self.initialize()).status_code)
+                    await self.game_chat('external-chat', '向右移动')
+                    self.brain.receive({'type': 'game_message', 'eventId': 'sys-1', 'text': 'example',
+                                        'droppedBefore': 2})
+                    self.assertEqual([], self.requests)
+                    result = (await session.call_tool('execute_lua', {'source':
+                        "local p=api('get_player_state'); assert(p.valid); " + MOVE})).structuredContent
+                    self.assertTrue(result['actionSuccess'])
+                    self.assertEqual('known', result['lastAction']['endEvidenceStatus'])
+                    self.assertEqual('available', result['runtimeInventory']['status'])
+                    self.assertEqual(['external-chat', 'sys-1'], [e['eventId'] for e in result['events']])
+                    self.assertEqual(2, result['eventCoverage']['serverDroppedCount'])
+                    events = await session.call_tool('get_events', {})
+                    self.assertEqual([], events.structuredContent['events'])
+                    reply = await session.call_tool('say', {'text': '已移动。'})
+                    self.assertEqual(254, reply.structuredContent['receipt']['authorSlot'])
+        await self.until(lambda: self.brain.phase == 'native')
+        self.answers = [{'role': 'assistant', 'content': '你好！'}]
+        await self.game_chat('native-chat', '你好')
+        await self.agent.task
+        self.assertEqual(1, len(self.requests))
+        self.assertEqual(200, (await self.initialize()).status_code)
+        self.assertEqual(1, sum(r['op'] == 'bind' for r in self.aihost.sent))
+
+    async def test_cancel_notifications_drain_poll_and_program_without_releasing_lease(self):
+        self.assertEqual(200, (await self.initialize()).status_code)
+        for name, args, request_id, started in (
+            ('get_events', {'wait_seconds': 45}, 20, lambda: self.brain.polling),
+            ('execute_lua', {'source': MOVE}, 21, lambda: self.aihost.action is not None),
+        ):
+            self.aihost.mode = 'pending'
+            call = asyncio.create_task(self.tool(name, args, request_id=request_id))
+            await self.until(started)
+            cancelled = await self.http.post(self.url, headers=self.headers, json={
+                'jsonrpc': '2.0', 'method': 'notifications/cancelled', 'params': {'requestId': request_id}})
+            self.assertEqual(202, cancelled.status_code)
+            # The SDK can answer the abandoned request before game cleanup ends.
+            await self.until(lambda: not self.app.session.jobs)
+            await asyncio.wait_for(call, 5)
+            self.assertEqual('external', self.brain.phase)
+        self.assertEqual(1, sum(r['op'] == 'cancel' for r in self.aihost.sent))
+        self.assertEqual('released', self.agent._interrupted[-1]['actionState'])
+        deleted = await self.http.delete(self.url, headers=self.headers)
+        self.assertEqual(200, deleted.status_code)
+        self.assertEqual('native', self.brain.phase)
+        self.assertEqual(404, (await self.tool('guide')).status_code)
+
+    async def test_dropped_http_post_waits_for_cleanup_and_unknown_isolates(self):
+        self.assertEqual(200, (await self.initialize()).status_code)
+        self.aihost.mode = 'cancel_unknown'
+        # Cancel the client HTTP read while the real loopback POST is in flight.
+        call = asyncio.create_task(self.tool('execute_lua', {'source': MOVE}))
+        await self.until(lambda: self.aihost.action is not None)
+        call.cancel()
+        await asyncio.gather(call, return_exceptions=True)
+        await self.until(lambda: self.app.session is None)
+        self.assertEqual('isolated', self.brain.phase)
+        self.assertEqual(1, sum(r['op'] == 'cancel' for r in self.aihost.sent))
+        self.assertEqual(409, (await self.initialize()).status_code)
+        await self.game_chat('must-not-resume', '向右移动')
+        self.assertEqual([], self.requests)
+
+    async def test_auth_host_origin_body_limit_and_idle_expiry(self):
+        for headers, status in (({'Authorization': 'Bearer invalid'}, 401),
+                                ({'Host': 'not-loopback.example'}, 403),
+                                ({'Origin': 'https://not-loopback.example'}, 403)):
+            self.assertEqual(status, (await self.http.post(self.url, headers=headers, content=b'{}')).status_code)
+        self.assertEqual(413, (await self.http.post(self.url, content=b'x' * (128 * 1024 + 1))).status_code)
+        self.assertEqual(200, (await self.initialize()).status_code)
+        self.app.idle_seconds = .1
+        await self.until(lambda: self.app.session is None)
+        self.assertEqual('native', self.brain.phase)
+        self.assertEqual(404, (await self.tool('guide')).status_code)
+
+    async def test_external_only_host_does_not_construct_llm(self):
+        with (patch('agent.LLMClient') as llm, patch('agent.Bridge', return_value=self.chat),
+              patch('server_ai.ServerAiBridge', return_value=self.ai), patch('external_mcp.serve_host') as serve):
+            await run(18777, 2, server_ai=True, mcp_port=18790, mcp_digest=self.app.digest)
+            llm.assert_not_called()
+            self.assertIsNone(serve.await_args.args[0].brain.agent.llm)
+
+    async def test_acquisition_drains_in_flight_native_lua(self):
+        self.aihost.mode = 'pending'
+        self.answers = [fixture.ServerAiAgentTests.program(self, MOVE)]
+        await self.game_chat('native-active', '移动')
+        await self.until(lambda: self.aihost.action is not None)
+        native = self.agent.task
+        self.assertEqual(200, (await self.initialize()).status_code)
+        self.assertTrue(native.cancelled())
+        self.assertEqual(1, sum(r['op'] == 'cancel' for r in self.aihost.sent))
+        self.assertEqual('released', self.agent._interrupted[-1]['actionState'])
+        self.assertEqual(1, len(self.requests))
+
+    async def test_binding_change_during_delete_does_not_resume_native(self):
+        self.assertEqual(200, (await self.initialize()).status_code)
+        self.aihost.binding = {**self.aihost.binding, 'generation': 2}
+        self.assertEqual(200, (await self.http.delete(self.url, headers=self.headers)).status_code)
+        self.assertEqual('isolated', self.brain.phase)
+        self.assertTrue(self.ai._closed)
+
+    async def test_chat_channel_failure_still_cleans_up_the_execution_channel(self):
+        self.assertEqual(200, (await self.initialize()).status_code)
+        self.aihost.mode = 'pending'
+        call = asyncio.create_task(self.tool('execute_lua', {'source': MOVE}))
+        await self.until(lambda: self.aihost.action is not None)
+        self.chat._failure = BridgeError('fixture chat disconnected')
+        await self.until(lambda: self.app.session is None)
+        await asyncio.wait_for(call, 5)
+        self.assertEqual('isolated', self.brain.phase)
+        self.assertEqual(1, sum(r['op'] == 'cancel' for r in self.aihost.sent))
+        self.assertEqual('released', self.agent._interrupted[-1]['actionState'])

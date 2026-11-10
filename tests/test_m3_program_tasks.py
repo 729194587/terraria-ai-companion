@@ -111,6 +111,54 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('cancelled',cancelled['status']);self.assertTrue(cancelled['result']['inputsReleased'])
         self.assertEqual(1,await self.starts())
 
+    async def test_mcp_program_cancel_preserves_task_but_lease_delete_stops_it(self):
+        import httpx
+        from agent import is_server_ai_chat
+        from external_brain import BrainHost
+        try:
+            from external_mcp import ExternalMcp, token_digest
+        except ImportError:
+            self.skipTest('install python/requirements-mcp.txt to verify External Brain')
+        token = 'a' * 32
+        app = ExternalMcp(BrainHost(self.make_agent(None), is_server_ai_chat), 18790, token_digest(token))
+        headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/json, text/event-stream'}
+        transport = httpx.ASGITransport(app=app)
+        try:
+            async with httpx.AsyncClient(transport=transport, base_url='http://127.0.0.1:18790',
+                                         headers=headers) as client:
+                async def post(method, params, request_id=None):
+                    body = {'jsonrpc': '2.0', 'method': method, 'params': params}
+                    if request_id is not None:
+                        body['id'] = request_id
+                    return await asyncio.wait_for(client.post('/mcp', json=body), 10)
+
+                opened = await post('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
+                                    'clientInfo': {'name': 'fixture', 'version': '1'}}, 1)
+                self.assertEqual(200, opened.status_code, opened.text)
+                client.headers.update({'Mcp-Session-Id': opened.headers['Mcp-Session-Id'],
+                                       'MCP-Protocol-Version': opened.json()['result']['protocolVersion']})
+                self.assertEqual(202, (await post('notifications/initialized', {})).status_code)
+                submitted = await post('tools/call', {'name': 'execute_lua',
+                    'arguments': {'source': SUBMIT + 'return t'}}, 2)
+                task_id = submitted.json()['result']['structuredContent']['value']['taskId']
+                wait_source = f"return api('await_task',{{taskId='{task_id}',milliseconds=30000}})"
+                waiting = asyncio.create_task(post('tools/call', {'name': 'execute_lua',
+                                             'arguments': {'source': wait_source}}, 3))
+                await self.wait_for(lambda: bool(app.session.jobs))
+                self.assertEqual(202, (await post('notifications/cancelled', {'requestId': 3})).status_code)
+                await waiting
+                await self.wait_for(lambda: not app.session.jobs)
+                self.assertEqual('running', (await self.manager.invoke('query_task', {'taskId': task_id}))['status'])
+                deleted = await asyncio.wait_for(client.delete('/mcp'), 10)
+                self.assertEqual(200, deleted.status_code)
+                self.assertEqual('native', app.brain.phase)
+                terminal = await self.manager.invoke('query_task', {'taskId': task_id})
+                self.assertEqual('cancelled', terminal['status'])
+                self.assertTrue(terminal['result']['endEvidence']['inputsReleased'])
+                self.assertEqual(1, await self.starts())
+        finally:
+            await app.close()
+
     async def test_existing_synchronous_mine_api_also_preserves_task_on_program_cancel(self):
         waiting=asyncio.create_task(self.runtime.execute("return api('mine_target',{x=10,y=20})"))
         await self.wait_for(lambda:bool(self.manager.records) and all(r['ack'].is_set() for r in self.manager.records.values()))

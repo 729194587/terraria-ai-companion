@@ -8,6 +8,7 @@ import uuid
 
 import atomic_operations as atomic
 import agent_diagnostics as diagnostics
+import agent_trace as tracing
 from control import BridgeError, NotAdmittedError
 from lua_action_results import action_results
 
@@ -120,7 +121,11 @@ class TaskCoordinator:
             self.records[task_id] = record
             # Never inherit a Program's command_owner, evidence bundle or Run
             # reply context into the independent task/result notification.
-            record['monitor'] = contextvars.Context().run(asyncio.create_task, self._run(record))
+            monitor_context = contextvars.Context()
+            correlation = {key: origin[key] for key in tracing.MCP_CORRELATION if origin and key in origin}
+            if correlation:
+                monitor_context.run(tracing.context.set, correlation)
+            record['monitor'] = monitor_context.run(asyncio.create_task, self._run(record))
         # This shield is essential: Program cancellation does not cancel admission/Task.
         await record['ack'].wait()
         return copy.deepcopy(record['view'])

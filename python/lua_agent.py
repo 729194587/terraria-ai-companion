@@ -86,6 +86,18 @@ def validate_arguments(arguments):
     return arguments['source']
 
 
+def runtime_budget(limits, *, calls=0, actions=0, seconds=0, model_tool_calls=None):
+    remaining_calls = max(0, limits.calls - calls)
+    return {
+        **({'remainingToolCalls': model_tool_calls} if model_tool_calls is not None else {}),
+        'remainingApiCallsIfExecutedNow': remaining_calls if model_tool_calls != 0 else 0,
+        'remainingLuaApiCalls': remaining_calls,
+        'remainingActionAttempts': max(0, limits.actions - actions),
+        'remainingSeconds': max(0, limits.seconds - seconds),
+        'maxSourceUtf8Bytes': SOURCE_BYTES,
+    }
+
+
 class ProgramStore:
     """At most 64 content-addressed sources, independent of opt-in full trace."""
     def __init__(self, directory=None, maximum=64):

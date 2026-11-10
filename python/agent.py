@@ -100,6 +100,11 @@ def is_stop_request(text):
     return text.strip().lower().removeprefix('!ai ').strip() in ('停止', '停下', '停止行动', 'stop')
 
 
+def is_server_ai_chat(event):
+    return (event.get('type') == 'chat_message' and event.get('source') == 'local_ai_command'
+            and event.get('isSelf') is True)
+
+
 def read_observation(bridge):
     reply = bridge.get_observation()
     observation = project_model_observation(reply["observation"])
@@ -381,13 +386,15 @@ class Agent:
         self._cost_exposures = {}
         self.last_movement_result = None
         self._closing = False
+        self._brain_paused = False
         self._task_wakeup_sequence = 0
         self.program_tasks = program_tasks.coordinator(bridge) if program_tasks.available(bridge) else None
         if self.program_tasks is not None:
             self.program_tasks.on_ready = self._wake_task_results
 
     def _wake_task_results(self):
-        if self._closing or self.program_tasks is None or self.task is not None and not self.task.done():
+        if (self._closing or self._brain_paused or self.llm is None or self.program_tasks is None
+                or self.task is not None and not self.task.done()):
             return
         projection = self.program_tasks.projection()
         if not projection['results'] or projection['throughSequence'] <= self._task_wakeup_sequence:
@@ -399,31 +406,35 @@ class Agent:
             'source': 'host_task_result', 'text': '游戏任务结果已到达。依据runtimeTasks说明事实；不自动重试或重放。'})
 
     def receive(self, event):
-        if self.server_ai and not (event.get('type') == 'chat_message'
-                and event.get('source') == 'local_ai_command' and event.get('isSelf') is True):
-            return
         if event.get("type") == "game_message":
             if any(old["eventId"] == event["eventId"] for old in self._game_events):
                 return
             if len(self._game_events) == self._game_events.maxlen:
                 self._game_events_evicted += 1
-            self._game_events_dropped += event["droppedBefore"]
+            self._game_events_dropped += event.get("droppedBefore", 0)
             self._game_events.append(dict(event))
             tracing.trace.emit("game_message_received", game_event=event,
                                buffered=len(self._game_events), evicted=self._game_events_evicted,
                                server_dropped=self._game_events_dropped)
             return  # Passive memory: no model call, cancellation, chatId or history mutation.
+        if self._closing or self._brain_paused or self.llm is None:
+            return
+        if self.server_ai and not is_server_ai_chat(event):
+            return
         if self.local_input or (not self.server_ai and event.get("isSelf") is not False) or event["eventId"] in self._seen:
             return
         self._seen.add(event["eventId"])
         self._start_turn(event)
 
-    def _invalidate_turn(self, reason='superseded'):
+    def _fence_reply(self):
         self._reply_cancel.set()
         self.generation += 1
         self._reply_cancel = threading.Event()
         if self.server_ai:
             self.bridge.invalidate_replies(self.generation)
+
+    def _invalidate_turn(self, reason='superseded'):
+        self._fence_reply()
         if self.task and not self.task.done():
             if self.active_run is not None:
                 self.active_run.cancel_reason = reason
@@ -497,6 +508,19 @@ class Agent:
             # Waiting for an older Lua turn must not propagate its cancellation,
             # or send a second cancellation into its mandatory action cleanup.
             await asyncio.gather(asyncio.shield(previous), return_exceptions=True)
+
+    def recent_game_context(self):
+        if not self._game_events:
+            return {}
+        return {
+            'recentGameEvents': list(self._game_events),
+            'coverage': {'scope': 'client messages received during this connection only',
+                         'maxEvents': self._game_events.maxlen, 'evictedCount': self._game_events_evicted,
+                         'serverDroppedCount': self._game_events_dropped},
+        }
+
+    async def runtime_inventory(self):
+        return await read_runtime_inventory(self.bridge)
 
     async def _model_request(self, messages, tools, current_start, run, costs):
         """Retry only a model request; never replay tool execution."""
@@ -625,13 +649,7 @@ class Agent:
                 return
             messages = copy.deepcopy(self.history)
             # Freeze the existing bounded event coverage for this turn.
-            runtime_context = None
-            if self._game_events:
-                runtime_context = {
-                    "recentGameEvents": list(self._game_events),
-                    "coverage": {"scope": "client messages received during this connection only",
-                                 "maxEvents": self._game_events.maxlen, "evictedCount": self._game_events_evicted,
-                                 "serverDroppedCount": self._game_events_dropped}}
+            runtime_context = self.recent_game_context()
             user_index = len(messages) - 1
             base = len(messages)
             # Handoffs are facts from old runs, not old model replies or authority
@@ -649,13 +667,9 @@ class Agent:
                     user = json.loads(request[user_index]["content"])
                     user.update(runtime_context)
                     request[user_index]["content"] = json.dumps(user, ensure_ascii=False)
-                runtime_data = {"runtimeInventory": inventory, 'runtimeLua': {
-                        'remainingToolCalls': tool_limit - used,
-                        'remainingApiCallsIfExecutedNow': max(0, self.lua_limits.calls - lua_calls) if tool_limit>used else 0,
-                        'remainingLuaApiCalls': max(0,self.lua_limits.calls-lua_calls),
-                        'remainingActionAttempts': max(0, self.lua_limits.actions - actions_used),
-                        'remainingSeconds': max(0, self.lua_limits.seconds - lua_seconds),
-                        'maxSourceUtf8Bytes': lua_agent.SOURCE_BYTES}}
+                runtime_data = {'runtimeInventory': inventory, 'runtimeLua': lua_agent.runtime_budget(
+                    self.lua_limits, calls=lua_calls, actions=actions_used, seconds=lua_seconds,
+                    model_tool_calls=tool_limit - used)}
                 task_projection = self.program_tasks.projection() if self.program_tasks is not None else None
                 if task_projection is not None:
                     runtime_data['runtimeTasks'] = task_projection
@@ -1086,7 +1100,7 @@ class Agent:
             evidence.current.reset(evidence_token)
             tracing.context.reset(token)
 
-    async def _send_reply(self, text, chat_id, generation=None):
+    async def _send_reply(self, text, chat_id, generation=None, *, receipt=False):
         generation = self.generation if generation is None else generation
         cancelled = self._reply_cancel
         def current():
@@ -1115,7 +1129,7 @@ class Agent:
         else:
             reply = await asyncio.to_thread(self.chat_bridge.command, 'send_chat', text=text, chatId=chat_id)
         tracing.emit_full("send_chat_result", reply=reply)
-        return text
+        return reply if receipt else text
 
     async def close(self):
         self._closing = True
@@ -1200,8 +1214,9 @@ async def terminal_loop(agent, bridge, events, stream=None):
         stopped.set()
 
 
-async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=18779, context_input_tokens=48_000):
-    llm = LLMClient()
+async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=18779, context_input_tokens=48_000,
+              mcp_port=None, mcp_digest=None, with_native_agent=False):
+    llm = LLMClient() if mcp_port is None or with_native_agent else None
     bridge = None
     agent = None
     execution = None
@@ -1230,6 +1245,12 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
                           context_manager=ContextManager(context_input_tokens))
         if tracing.trace.enabled:
             print(f"Local trace (contains chat/context): {tracing.trace.path}", file=sys.stderr, flush=True)
+        if mcp_port is not None:
+            from external_brain import BrainHost
+            from external_mcp import ExternalMcp, serve_host
+            await serve_host(ExternalMcp(BrainHost(agent, is_server_ai_chat), mcp_port, mcp_digest),
+                             mcp_port, events)
+            return
         if local_input:
             print('Agent ready; enter one instruction per line. New input cancels the previous turn. /quit or Ctrl+C exits.', flush=True)
             await terminal_loop(agent, bridge, events)
@@ -1253,7 +1274,8 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
             execution.close()
         if bridge:
             bridge.close()
-        await llm.close()
+        if llm is not None:
+            await llm.close()
 
 
 def main():
@@ -1265,6 +1287,9 @@ def main():
     parser.add_argument("--local-input", action="store_true", help="Read human instructions from stdin; replies go to terminal (Mod 0.1.36+)")
     parser.add_argument('--server-ai', action='store_true', help='Local game chat -> existing Agent/Lua -> separate server AI execution backend')
     parser.add_argument('--ai-port', type=int, default=18779, help='Server AI IPC port; --port remains the graphical chat Bridge')
+    parser.add_argument('--external-brain', action='store_true', help='Serve a loopback MCP endpoint without a local model')
+    parser.add_argument('--with-native-agent', action='store_true', help='Enable Native Agent between external leases')
+    parser.add_argument('--mcp-port', type=int, default=18790, help='Loopback Streamable HTTP port')
     parser.add_argument("--log-file", type=str, help="Local bounded JSONL runtime log; default .local/diagnostics/agent-runtime-*.jsonl")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535 or not 0 < args.timeout < float("inf"):
@@ -1273,13 +1298,29 @@ def main():
         parser.error('--context-input-tokens must be >= 256')
     if args.server_ai and (args.local_input or not 1 <= args.ai_port <= 65535 or args.ai_port == args.port):
         parser.error('--server-ai requires a distinct valid --ai-port and cannot use --local-input')
+    if args.with_native_agent and not args.external_brain:
+        parser.error('--with-native-agent requires --external-brain')
+    mcp_digest = None
+    if args.external_brain:
+        if not args.server_ai or not 1 <= args.mcp_port <= 65535 or args.mcp_port in (args.port, args.ai_port):
+            parser.error('--external-brain requires --server-ai and a distinct valid --mcp-port')
+        import os
+        try:
+            from external_mcp import token_digest
+            mcp_digest = token_digest(os.environ.get('TERRARIA_MCP_TOKEN'))
+        except ImportError:
+            parser.error('Install python/requirements-mcp.txt for External Brain')
+        except ValueError as error:
+            parser.error(str(error))
     log_path = diagnostics.configure(args.log_file)
     if log_path:
         print(f"Runtime log: {log_path}", file=sys.stderr, flush=True)
     diagnostics.emit("session_start", port=args.port, timeout=args.timeout, inputMode='server_ai_chat' if args.server_ai else 'terminal' if args.local_input else 'game_chat')
     try:
         asyncio.run(run(args.port, args.timeout, local_input=args.local_input, server_ai=args.server_ai,
-                        ai_port=args.ai_port, context_input_tokens=args.context_input_tokens))
+                        ai_port=args.ai_port, context_input_tokens=args.context_input_tokens,
+                        mcp_port=args.mcp_port if args.external_brain else None, mcp_digest=mcp_digest,
+                        with_native_agent=args.with_native_agent))
     except KeyboardInterrupt:
         return 130
     except (LLMError, BridgeError, OSError) as error:

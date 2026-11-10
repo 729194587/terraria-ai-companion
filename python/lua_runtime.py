@@ -369,7 +369,9 @@ class LuaRuntime:
                             raise Interrupted('action_limit')
                         out['actions'] += 1
                     manager = program_tasks.coordinator(self.bridge)
-                    origin = {'chatId': chat_id, 'programId': out['runId'], 'runId': tracing.context.get().get('run_id')}
+                    context = tracing.context.get()
+                    origin = {'chatId': chat_id, 'programId': out['runId'], 'runId': context.get('run_id')}
+                    origin.update({key: context[key] for key in tracing.MCP_CORRELATION if key in context})
                     async def task_call():
                         if not synchronous_task:
                             return await manager.invoke(name, args, origin)

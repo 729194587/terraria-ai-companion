@@ -141,7 +141,8 @@ class ServerAiBridge:
             # action may have executed; this error never proves absence of effects.
             if op == 'start' and reply.get('dispatchState') == 'not_admitted' and reply.get('error') != 'duplicate_action':
                 raise NotAdmittedError(reply.get('error', 'AI start rejected'), status=reply.get('error'))
-            if self._action_id is not None and reply.get("error") in ("stale_binding", "identity_unavailable", "engine_unavailable", "unknown_action"):
+            if (reply.get("error") in ("stale_binding", "identity_unavailable")
+                    or self._action_id is not None and reply.get("error") in ("engine_unavailable", "unknown_action")):
                 self.close()
                 raise BridgeError("Action identity/outcome unresolved: " + reply["error"])
             raise BridgeError(reply.get("error", "AI request rejected"), status=reply.get("error"))

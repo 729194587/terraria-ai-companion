@@ -1,0 +1,356 @@
+"""Loopback-only stateful MCP transport and Brain Lease lifetime."""
+import asyncio
+from dataclasses import dataclass, field
+import hashlib
+import hmac
+import json
+import math
+import re
+import secrets
+
+import anyio
+from mcp import types
+from mcp.server.lowlevel import Server
+from mcp.server.streamable_http import StreamableHTTPServerTransport
+from starlette.datastructures import Headers
+from starlette.responses import JSONResponse, Response
+
+import agent_diagnostics as diagnostics
+import agent_trace as tracing
+from control import BridgeError
+
+
+INSTRUCTIONS = (
+    '你正在驾驶 Terraria 中独立的 Server AI Player。先调用 guide 读取当前游戏契约，'
+    '用 execute_lua 组合有界游戏操作，按需用 read_skill 查攻略。'
+    '用 get_events 读取玩家指令与系统消息，用 say 回复当前授权的游戏聊天。'
+    '遵守玩家授权、运行预算及宿主回执，unknown 时停止变更。'
+    '单次 execute_lua 取消会清理 Program；已受理的独立 Task 需显式取消。'
+)
+MAX_BODY = 128 * 1024
+MAX_REQUESTS = 16
+
+
+def token_digest(token):
+    if not isinstance(token, str) or not re.fullmatch(r'[A-Za-z0-9_-]{32,128}', token):
+        raise ValueError('TERRARIA_MCP_TOKEN requires 32–128 URL-safe characters from a random generator')
+    return hashlib.sha256(token.encode('ascii')).digest()
+
+
+@dataclass
+class Session:
+    transport: StreamableHTTPServerTransport
+    id: str
+    opening: asyncio.Task | None = None
+    server: asyncio.Task | None = None
+    closing: asyncio.Task | None = None
+    initialized: bool = False
+    ready: asyncio.Event = field(default_factory=asyncio.Event)
+    jobs: dict = field(default_factory=dict)
+    cancelled: set = field(default_factory=set)
+    request_ids: set = field(default_factory=set)
+    requests: int = 0
+    last_activity: float = 0
+
+
+class ExternalMcp:
+    def __init__(self, brain, port, digest, *, idle_seconds=120):
+        self.brain = brain
+        self.digest = digest
+        self.hosts = {f'127.0.0.1:{port}', f'localhost:{port}'}
+        self.idle_seconds = idle_seconds
+        self.session = None
+        self.requests = 0
+        self.closed = False
+        self.sdk = Server('terraria', instructions=INSTRUCTIONS)
+        self.definitions = [types.Tool(name=f['name'], description=f['description'],
+                                      inputSchema=f['parameters'])
+                            for item in brain.tools for f in (item['function'],)]
+        self.sdk.list_tools()(self.list_tools)
+        self.sdk.call_tool()(self.call_tool)
+
+    async def list_tools(self):
+        return self.definitions
+
+    async def call_tool(self, name, args):
+        ctx = self.sdk.request_context
+        session = self.session
+        if session is None or session.closing is not None or not session.initialized:
+            raise ValueError('External Brain lease is unavailable')
+        if name == 'get_events' and not math.isfinite(args.get('wait_seconds', 0)):
+            raise ValueError('wait_seconds must be finite')
+        trace = tracing.context.set({'mcp_session_id': session.id,
+                                     'mcp_request_id': ctx.request_id, 'mcp_tool_name': name})
+        try:
+            job = asyncio.create_task(self.brain.invoke(name, args))
+            session.jobs[job] = name
+            tracing.trace.emit('mcp_tool_start')
+            diagnostics.emit('mcp_tool_start')
+            try:
+                result = await asyncio.shield(job)
+                tracing.trace.emit('mcp_tool_end', status=result.get('status'), valid=result.get('valid'))
+                return result
+            except asyncio.CancelledError:
+                self.cancel_job(session, job)
+                # SDK cancellation is an AnyIO scope. Give our separately owned
+                # asyncio job time to finish shielded Lua/game cleanup.
+                with anyio.CancelScope(shield=True):
+                    await asyncio.gather(asyncio.shield(job), return_exceptions=True)
+                tracing.trace.emit('mcp_tool_cancelled')
+                raise
+            except BridgeError as error:
+                if self.brain.bridge._closed or error.status in ('stale_binding', 'identity_unavailable', 'engine_unavailable'):
+                    self.brain.isolate()
+                    return {'valid': False, 'status': 'unknown', 'reason': 'native_outcome_unconfirmed'}
+                return {'valid': False, 'status': 'failed', 'reason': error.status or 'native_request_rejected'}
+            finally:
+                if job.done():
+                    session.jobs.pop(job, None)
+                    session.cancelled.discard(job)
+        finally:
+            tracing.context.reset(trace)
+
+    @staticmethod
+    def cancel_job(session, job):
+        # A say may already be waiting for its native publication receipt.
+        # Drain it under the reply fence rather than abandoning its IPC thread.
+        if not job.done() and job not in session.cancelled and session.jobs.get(job) != 'say':
+            session.cancelled.add(job)
+            job.cancel()
+
+    async def open_session(self, session):
+        if not await self.brain.acquire() or session.closing is not None:
+            return False
+        session.server = asyncio.create_task(self.serve(session))
+        await session.ready.wait()
+        return not session.server.done()
+
+    async def serve(self, session):
+        try:
+            async with session.transport.connect() as (reader, writer):
+                session.ready.set()
+                await self.sdk.run(reader, writer, self.sdk.create_initialization_options())
+        finally:
+            session.ready.set()
+            self.revoke(session, 'sdk_session_ended')
+
+    def revoke(self, session, reason):
+        if session.closing is None:
+            self.brain.begin_release()
+            for job in session.jobs:
+                self.cancel_job(session, job)
+            session.closing = asyncio.create_task(self.release(session, reason))
+        return session.closing
+
+    async def release(self, session, reason):
+        safe = False
+        try:
+            await asyncio.gather(session.opening, return_exceptions=True)
+            if session.jobs:
+                await asyncio.gather(*tuple(session.jobs), return_exceptions=True)
+            await session.transport.terminate()
+            if session.server is not None:
+                await asyncio.gather(session.server, return_exceptions=True)
+            safe = await self.brain.finish_release()
+        except Exception as error:
+            diagnostics.emit('mcp_lease_cleanup_error', mcp_session_id=session.id,
+                             error_type=type(error).__name__)
+        finally:
+            if not safe:
+                self.brain.isolate()
+            self.session = None
+            diagnostics.emit('mcp_lease_released', mcp_session_id=session.id, reason=reason, safe=safe)
+            tracing.trace.emit('mcp_lease_released', mcp_session_id=session.id, reason=reason, safe=safe)
+
+    async def watch_idle(self):
+        while not self.closed:
+            await asyncio.sleep(min(1, self.idle_seconds / 4))
+            session = self.session
+            if self.brain.bridge._closed or getattr(self.brain.agent.chat_bridge, '_failure', None):
+                self.brain.isolate()
+                if session is not None:
+                    await asyncio.shield(self.revoke(session, 'game_connection_unavailable'))
+                continue
+            if (session is not None and not session.requests and session.initialized
+                    and asyncio.get_running_loop().time() - session.last_activity >= self.idle_seconds):
+                await asyncio.shield(self.revoke(session, 'idle_timeout'))
+
+    async def close(self):
+        self.closed = True
+        self.brain.agent._closing = True
+        if self.session is not None:
+            await asyncio.shield(self.revoke(self.session, 'host_shutdown'))
+
+    @staticmethod
+    async def read_body(receive):
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message['type'] == 'http.disconnect':
+                return None
+            body.extend(message.get('body', b''))
+            if len(body) > MAX_BODY:
+                raise OverflowError
+            if not message.get('more_body', False):
+                return bytes(body)
+
+    async def __call__(self, scope, receive, send):
+        async def error(status, message):
+            await JSONResponse({'jsonrpc': '2.0', 'id': 'server-error',
+                                'error': {'code': -32000, 'message': message}},
+                               status_code=status)(scope, receive, send)
+
+        if scope['path'] != '/mcp':
+            return await error(404, 'Not found')
+        headers = Headers(scope=scope)
+        if (len(headers.getlist('host')) != 1 or headers.get('host') not in self.hosts
+                or len(headers.getlist('origin')) > 1
+                or 'origin' in headers and headers['origin'] not in {f'http://{host}' for host in self.hosts}):
+            return await error(403, 'Loopback Host/Origin required')
+        auth = headers.get('authorization', '')
+        if (len(headers.getlist('authorization')) != 1 or not auth.startswith('Bearer ')
+                or not hmac.compare_digest(hashlib.sha256(auth[7:].encode('utf-8')).digest(), self.digest)):
+            return await error(401, 'Valid Bearer token required')
+        if self.closed or self.requests >= MAX_REQUESTS:
+            return await error(503, 'Host unavailable or busy')
+        method = scope['method']
+        if method not in ('POST', 'DELETE'):
+            # The app has no unsolicited server push. POST get_events is the event channel.
+            return await Response(status_code=405, headers={'Allow': 'POST, DELETE'})(scope, receive, send)
+        if len(headers.getlist('mcp-session-id')) > 1:
+            return await error(400, 'Invalid session header')
+        session_id = headers.get('mcp-session-id')
+        self.requests += 1
+        try:
+            body = await asyncio.wait_for(self.read_body(receive), timeout=5)
+            if body is None:
+                session = self.session
+                if method == 'POST' and session is not None and session.id == session_id:
+                    await asyncio.shield(self.revoke(session, 'http_disconnect'))
+                return
+            if self.closed:
+                return await error(503, 'Host shutting down')
+            if method == 'POST':
+                if headers.get('content-type', '').partition(';')[0].strip() != 'application/json':
+                    return await error(415, 'Content-Type must be application/json')
+                if 'application/json' not in headers.get('accept', ''):
+                    return await error(406, 'Client must accept application/json')
+                try:
+                    message = types.JSONRPCMessage.model_validate_json(body).root
+                except ValueError:
+                    return await error(400, 'Invalid JSON-RPC message')
+            else:
+                message = None
+            opening = session_id is None
+            if opening:
+                if not isinstance(message, types.JSONRPCRequest) or message.method != 'initialize':
+                    return await error(400, 'Initialize a stateful MCP session first')
+                try:
+                    types.InitializeRequest.model_validate(message.model_dump(by_alias=True))
+                except ValueError:
+                    return await error(400, 'Invalid initialize request')
+                if self.session is not None or not self.brain.reserve():
+                    return await error(409, 'Brain Lease unavailable')
+                sid = secrets.token_hex(16)
+                session = self.session = Session(StreamableHTTPServerTransport(
+                    mcp_session_id=sid, is_json_response_enabled=True), sid)
+                session.opening = asyncio.create_task(self.open_session(session))
+            else:
+                session = self.session
+                if (session is None or session.id != session_id or not session.initialized
+                        or session.closing is not None):
+                    return await error(404, 'MCP session not found')
+                if isinstance(message, types.JSONRPCRequest) and message.method == 'initialize':
+                    return await error(400, 'Session already initialized')
+            request_id = str(message.id) if isinstance(message, types.JSONRPCRequest) else None
+            if request_id is not None and request_id in session.request_ids:
+                return await error(409, 'JSON-RPC request ID is already in flight')
+            if request_id is not None:
+                session.request_ids.add(request_id)
+            session.requests += 1
+            try:
+                # The SDK and tool request context only need the session and
+                # protocol headers after the Host has checked the credential.
+                sdk_scope = {**scope, 'headers': [(key, value) for key, value in scope['headers']
+                                                  if key != b'authorization']}
+                await self.exchange(session, opening, method, body, sdk_scope, receive, send, error)
+            finally:
+                session.requests -= 1
+                session.last_activity = asyncio.get_running_loop().time()
+                session.request_ids.discard(request_id)
+        except OverflowError:
+            await error(413, 'MCP request body too large')
+        except asyncio.TimeoutError:
+            await error(408, 'MCP request body timed out')
+        finally:
+            self.requests -= 1
+
+    async def exchange(self, session, opening, method, body, scope, receive, send, error):
+        disconnect = asyncio.create_task(receive())
+        status = None
+        delivered = False
+
+        async def receive_buffered():
+            nonlocal body
+            if body is not None:
+                message = {'type': 'http.request', 'body': body, 'more_body': False}
+                body = None
+                return message
+            return await asyncio.shield(disconnect)
+
+        async def send_response(message):
+            nonlocal status, delivered
+            if message['type'] == 'http.response.start':
+                status = message['status']
+                if method == 'DELETE' and status == 200:
+                    await asyncio.shield(self.revoke(session, 'client_delete'))
+            if opening and message['type'] == 'http.response.body' and status == 200:
+                payload = json.loads(message['body'])
+                session.initialized = isinstance(payload.get('result'), dict)
+            await send(message)
+            if message['type'] == 'http.response.body' and not message.get('more_body', False):
+                delivered = True
+
+        async def dispatch():
+            if not opening or await asyncio.shield(session.opening):
+                await session.transport.handle_request(scope, receive_buffered, send_response)
+            elif session.closing is None:
+                await error(409, 'Unable to verify safe Brain handoff')
+
+        handler = asyncio.create_task(dispatch())
+        try:
+            done, _ = await asyncio.wait((handler, disconnect), return_when=asyncio.FIRST_COMPLETED)
+            if disconnect in done and not delivered:
+                await asyncio.shield(self.revoke(session, 'http_disconnect'))
+            if handler in done:
+                await handler
+        finally:
+            if not delivered and (opening or method == 'POST'):
+                self.revoke(session, 'incomplete_exchange')
+            if opening and not session.initialized:
+                self.revoke(session, 'initialize_rejected')
+            for pending in (disconnect, handler):
+                if not pending.done():
+                    pending.cancel()
+            await asyncio.gather(disconnect, handler, return_exceptions=True)
+
+
+async def serve_host(app, port, events):
+    import uvicorn
+
+    async def route_events():
+        while True:
+            app.brain.receive(await events.get())
+
+    server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=port, lifespan='off', ws='none',
+                                           proxy_headers=False, access_log=False,
+                                           timeout_graceful_shutdown=5))
+    router = asyncio.create_task(route_events())
+    idle = asyncio.create_task(app.watch_idle())
+    try:
+        await server.serve()
+    finally:
+        for task in (router, idle):
+            task.cancel()
+        await asyncio.gather(router, idle, return_exceptions=True)
+        await app.close()
