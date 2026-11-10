@@ -363,7 +363,7 @@ Host 只比较令牌哈希，验证 Host 和 Origin，限制请求体为 128 KiB
 
 - 固定官方 Python SDK `mcp==1.30.0`，使用低层 `Server` 与 `StreamableHTTPServerTransport`。保留 `initialize`、Session ID 和显式 DELETE。仅使用 POST JSON 回应，GET 返回 405，游戏事件由 `get_events` 长轮询。 [Python SDK 传输源码](https://github.com/modelcontextprotocol/python-sdk/blob/v1.30.0/src/mcp/server/streamable_http.py) · [Streamable HTTP 规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 - SDK 把 `notifications/cancelled` 交给对应请求处理器。Host 将取消传给自己持有的 Lua Program，并等待游戏清理。SDK 可先结束该 MCP 请求，宿主保留中断回执，之后可用 `get_events` 查阅。取消单次 Program 后，已受理的独立 Task 仍可运行和查询。 [Python SDK 请求取消源码](https://github.com/modelcontextprotocol/python-sdk/blob/v1.30.0/src/mcp/shared/session.py)
-- 空闲的 HTTP 连接没有可靠的退出信号。作为本地驾驶权策略，在途 POST 提前断开会撤销整个租约。没有在途请求时，连续 120 秒无请求会释放租约。显式 DELETE、SDK Session 结束和 Host 停机也走同一清理路径。撤销开始即拒绝新工具和新租约。交接时 Host 显式停止独立 Task，等待在途工具，并核验绑定身份与输入释放。无法确认时隔离 Host，需人工检查 Actor 和回执后重新启动。
+- 外部会话在空闲期间保留租约。显式 DELETE、在途 POST 提前断开、SDK Session 结束、游戏连接故障和 Host 停机都会撤销租约。空闲时客户端退出可能没有可靠信号。如果退出后新客户端仍收到 `409 Brain Lease unavailable`，请在 Python Host 窗口按 Ctrl+C，等待清理完成后重启 Host。撤销开始即拒绝新工具和新租约。交接时 Host 显式停止独立 Task，等待在途工具，并核验绑定身份与输入释放。无法确认时隔离 Host，需人工检查 Actor 和回执后重新启动。
 - 每次外部 `execute_lua` 使用现有单 Program 预算。游戏查询和动作都通过已有 Lua API，执行类工具互斥。事件由同一个 64 项队列交付给 `get_events` 或 `execute_lua` 的结果，提供淘汰和服务端丢失计数。历史 `recentGameEvents` 用于上下文。租约结束时未取走的指令计入淘汰，防止被下一任大脑当作新授权。
 - `say` 需要本租约内一条当前有效的授权本地游戏指令。它沿用客户端授权、reply-turn 与 Server AI 原生发布回执。新指令会使旧的发言授权失效。外部 Program 的取消通过 MCP 请求取消或租约撤销执行。
 - 可设置 `TERRARIA_AGENT_TRACE=1` 记录 MCP Session、请求和工具关联字段。Lua 源码、Program 证据包、任务及 Server AI IPC 沿用现有诊断。原始记录包含游戏数据，仅在本地保管。
@@ -372,7 +372,7 @@ Host 只比较令牌哈希，验证 Host 和 Origin，限制请求体为 128 KiB
 
 1. 用新的 Inspector 会话初始化，检查工具列表恰有五项。调用 `guide`、`read_skill({"name":"mining_and_ores"})` 和 `execute_lua`，用 `return api('get_player_state',{})` 验证只读观察。第二个客户端在租约有效时应被拒绝。
 2. 从游戏本地发一条 AI 指令，通过 `get_events` 获取，再调用 `say`，检查游戏显示的作者与返回的 `authorSlot`。在空队列发起长轮询，取消后验证同一 Session 仍能调用工具。
-3. 在隔离存档中，用新 DSH 对话读 Guide 和挖矿 Skill，采集玩家授权的一格可达矿物，记录目标格、`lastAction.endEvidence` 与前后库存。关闭 DSH，再用新 Codex 对话读取同一端点的 Guide，执行只读观察和一项安全动作。旧客户端未显式 DELETE 时，等空闲到期后再连接。
+3. 在隔离存档中，用新 DSH 对话读 Guide 和挖矿 Skill，采集玩家授权的一格可达矿物，记录目标格、`lastAction.endEvidence` 与前后库存。让 DSH 结束 MCP 会话，再用新 Codex 对话读取同一端点的 Guide，执行只读观察和一项安全动作。如果旧租约仍在，按上文的 Host 停机步骤完成交接。
 4. 验证 Native 共存模式时，租约期间用本地聊天发送指令，应只进入外部事件队列。结束会话后观察安全交接，再发送一条新指令验证 Native Agent 恢复。结果未知时检查隔离状态及无重放证据。
 
 本次 56 个不同的定向用例通过，覆盖外部 MCP、Native Agent、`mine_target`、独立任务、Lua 取消、Server AI 绑定和回执、Skills 与模型契约。自动化使用官方 Python MCP Client、真实回环 HTTP、现有 Python Bridge 和 Lua Worker 验证协议及五个工具，并使用 C# IPC harness 验证独立 Task 的 Program 取消和租约清理。游戏身体和模型采用测试替身。

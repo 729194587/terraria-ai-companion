@@ -36,7 +36,7 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
         self.server = uvicorn.Server(uvicorn.Config(self.app, lifespan='off', log_level='warning',
                                                    access_log=False, timeout_graceful_shutdown=2))
         self.serving = asyncio.create_task(self.server.serve(sockets=[self.socket]))
-        self.idle = asyncio.create_task(self.app.watch_idle())
+        self.game_connection = asyncio.create_task(self.app.watch_game_connection())
         self.http = httpx.AsyncClient(headers={**self.auth, 'Accept': 'application/json, text/event-stream'},
                                       trust_env=False)
         self.rpc_id = 0
@@ -45,8 +45,8 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.app.close()
-        self.idle.cancel()
-        await asyncio.gather(self.idle, return_exceptions=True)
+        self.game_connection.cancel()
+        await asyncio.gather(self.game_connection, return_exceptions=True)
         await self.http.aclose()
         self.server.should_exit = True
         await self.serving
@@ -181,15 +181,31 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
         await self.game_chat('must-not-resume', '向右移动')
         self.assertEqual([], self.requests)
 
-    async def test_auth_host_origin_body_limit_and_idle_expiry(self):
+    async def test_auth_host_origin_and_body_limit(self):
         for headers, status in (({'Authorization': 'Bearer invalid'}, 401),
                                 ({'Host': 'not-loopback.example'}, 403),
                                 ({'Origin': 'https://not-loopback.example'}, 403)):
             self.assertEqual(status, (await self.http.post(self.url, headers=headers, content=b'{}')).status_code)
         self.assertEqual(413, (await self.http.post(self.url, content=b'x' * (128 * 1024 + 1))).status_code)
+        self.assertIsNone(self.app.session)
+
+    async def test_idle_session_keeps_exclusive_lease_until_delete(self):
         self.assertEqual(200, (await self.initialize()).status_code)
-        self.app.idle_seconds = .1
-        await self.until(lambda: self.app.session is None)
+        session = self.app.session
+        loop = asyncio.get_running_loop()
+        real_time = loop.time
+        # Keep the clock advanced through teardown so scheduled timers stay due.
+        clock = patch.object(loop, 'time', lambda: real_time() + 121)
+        clock.start()
+        self.addCleanup(clock.stop)
+        await asyncio.sleep(.1)
+        self.assertIs(session, self.app.session)
+        self.assertEqual('external', self.brain.phase)
+        self.assertEqual(409, (await self.initialize()).status_code)
+        guide = await self.tool('guide')
+        self.assertEqual(200, guide.status_code)
+        self.assertIn('instructions', guide.json()['result']['structuredContent'])
+        self.assertEqual(200, (await self.http.delete(self.url, headers=self.headers)).status_code)
         self.assertEqual('native', self.brain.phase)
         self.assertEqual(404, (await self.tool('guide')).status_code)
 

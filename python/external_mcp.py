@@ -49,16 +49,13 @@ class Session:
     jobs: dict = field(default_factory=dict)
     cancelled: set = field(default_factory=set)
     request_ids: set = field(default_factory=set)
-    requests: int = 0
-    last_activity: float = 0
 
 
 class ExternalMcp:
-    def __init__(self, brain, port, digest, *, idle_seconds=120):
+    def __init__(self, brain, port, digest):
         self.brain = brain
         self.digest = digest
         self.hosts = {f'127.0.0.1:{port}', f'localhost:{port}'}
-        self.idle_seconds = idle_seconds
         self.session = None
         self.requests = 0
         self.closed = False
@@ -162,18 +159,14 @@ class ExternalMcp:
             diagnostics.emit('mcp_lease_released', mcp_session_id=session.id, reason=reason, safe=safe)
             tracing.trace.emit('mcp_lease_released', mcp_session_id=session.id, reason=reason, safe=safe)
 
-    async def watch_idle(self):
+    async def watch_game_connection(self):
         while not self.closed:
-            await asyncio.sleep(min(1, self.idle_seconds / 4))
+            await asyncio.sleep(1)
             session = self.session
             if self.brain.bridge._closed or getattr(self.brain.agent.chat_bridge, '_failure', None):
                 self.brain.isolate()
                 if session is not None:
                     await asyncio.shield(self.revoke(session, 'game_connection_unavailable'))
-                continue
-            if (session is not None and not session.requests and session.initialized
-                    and asyncio.get_running_loop().time() - session.last_activity >= self.idle_seconds):
-                await asyncio.shield(self.revoke(session, 'idle_timeout'))
 
     async def close(self):
         self.closed = True
@@ -267,7 +260,6 @@ class ExternalMcp:
                 return await error(409, 'JSON-RPC request ID is already in flight')
             if request_id is not None:
                 session.request_ids.add(request_id)
-            session.requests += 1
             try:
                 # The SDK and tool request context only need the session and
                 # protocol headers after the Host has checked the credential.
@@ -275,8 +267,6 @@ class ExternalMcp:
                                                   if key != b'authorization']}
                 await self.exchange(session, opening, method, body, sdk_scope, receive, send, error)
             finally:
-                session.requests -= 1
-                session.last_activity = asyncio.get_running_loop().time()
                 session.request_ids.discard(request_id)
         except OverflowError:
             await error(413, 'MCP request body too large')
@@ -346,11 +336,11 @@ async def serve_host(app, port, events):
                                            proxy_headers=False, access_log=False,
                                            timeout_graceful_shutdown=5))
     router = asyncio.create_task(route_events())
-    idle = asyncio.create_task(app.watch_idle())
+    game_connection = asyncio.create_task(app.watch_game_connection())
     try:
         await server.serve()
     finally:
-        for task in (router, idle):
+        for task in (router, game_connection):
             task.cancel()
-        await asyncio.gather(router, idle, return_exceptions=True)
+        await asyncio.gather(router, game_connection, return_exceptions=True)
         await app.close()
