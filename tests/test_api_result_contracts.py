@@ -3,11 +3,15 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
 
 from test_server_ai_contract import FULL, bridge
 from api_result_contracts import schema_for
+import atomic_operations as atomic
+from control import BridgeError
+from lua_runtime import LuaRuntime
 from server_ai_contract import server_definitions
 
 
@@ -237,6 +241,52 @@ class TypedResultTests(unittest.TestCase):
         snapshot['Mobility']['Movement']['Rockets']['Delay'] = 'unknown'
         self.invalid('navigate_to_landing_region', landing)
 
+    def test_completed_requires_operation_specific_proof(self):
+        cases = {
+            'select_hotbar_slot': ('evidence', 'selectionApplied', False),
+            'move_input': ('evidence', 'inputReleased', False),
+            'navigate_to_x': ('evidence', 'arrived', False),
+            'navigate_to_landing_region': ('evidence', 'settled', False),
+            'use_item': ('evidence', 'cycleVerified', False),
+            'mine_tile': ('evidence', 'targetChanged', True),
+            'place_tile': ('evidence', 'consumedCount', 0),
+            'place_object': ('evidence', 'fullFootprintVerified', False),
+            'place_rope': ('evidence', 'uncertainNativeEffect', True),
+            'move_on_rope': ('evidence', 'attached', False),
+            'craft_recipe': ('evidence', 'inventoryVerified', False),
+            'transfer_inventory_item': ('evidence', 'inventoryVerified', False),
+            'equip_item': ('evidence', 'equipmentVerified', False),
+            'navigate_to': ('evidence', 'task', 'result', 'effectVerified', False),
+            'mine_target': ('evidence', 'task', 'lastResult', 'evidence', 'targetAbsent', False),
+        }
+        for name, (*path, value) in cases.items():
+            with self.subTest(name=name):
+                completed = self.actions[name]
+                self.valid(name, completed)
+                self.invalid(name, {**completed, 'cancelled': True})
+                contradicted = deepcopy(completed)
+                nested = contradicted
+                for key in path[:-1]:
+                    nested = nested[key]
+                nested[path[-1]] = value
+                self.invalid(name, contradicted)
+
+        selected = self.actions['select_hotbar_slot']
+        self.assertIsNone(selected['inputsReleased'])
+        self.invalid('select_hotbar_slot', {**selected, 'endEvidence': {**selected['endEvidence'], 'selectionVerified': False}})
+        used = self.actions['use_item']
+        self.invalid('use_item', {**used, 'endEvidence': {**used['endEvidence'], 'inputsReleased': False}})
+        self.invalid('use_item', {**used, 'endEvidence': {**used['endEvidence'], 'operation': 'mine_tile'}})
+        self.invalid('use_item', {**used, 'inputsReleased': False})
+        self.invalid('use_item', {**used, 'continuationAllowed': True})
+        self.invalid('mine_target', {**self.actions['mine_target'], 'task': None})
+
+    def test_sync_mine_has_no_submit_refusal_variant(self):
+        refusal = atomic.not_admitted_result('submit_task', 'active_task_conflict_or_unresolved')
+        self.valid('submit_task', refusal)
+        self.invalid('mine_target', refusal)
+        self.valid('mine_target', atomic.not_admitted_result('mine_target', 'actor_not_alive'))
+
     def test_program_task_layers_and_timeout(self):
         self.valid('query_task', self.programs['cancel_task'])
         self.valid('cancel_task', self.programs['query_task'])
@@ -248,6 +298,94 @@ class TypedResultTests(unittest.TestCase):
         child = finished['result']['evidence']['task']['progress']['children'][0]
         del child['parentTaskId']
         self.invalid('query_task', finished)
+
+
+class ActionProjectionTests(unittest.IsolatedAsyncioTestCase):
+    def running_use(self):
+        used = extra_actions()['use_item']
+        return {
+            'status': 'running', 'operation': 'use_item', 'actionId': used['actionId'], 'reason': 'accepted',
+            'actorId': used['actorId'], 'actorSlot': used['actorSlot'], 'worldSessionId': used['worldSessionId'],
+            'session': used['session'], 'generation': used['actionGeneration'], 'durationMs': -1000,
+            'endEvidenceStatus': 'not_ended',
+        }
+
+    async def test_supervisor_projects_short_and_full_stop_receipts(self):
+        validate = Draft202012Validator(schema_for('use_item')).validate
+        for outcome in ('missing', 'replaced', 'unconfirmed', 'completed', 'cancelled',
+                        'cancelled_unverified', 'unknown', 'error'):
+            with self.subTest(outcome=outcome):
+                running = self.running_use()
+                if outcome == 'error':
+                    running['durationMs'] = 10000
+                reads = 0
+
+                async def command(_bridge, name, **_args):
+                    nonlocal reads
+                    if name == 'get_movement':
+                        reads += 1
+                        action = running
+                        if reads == 1 or outcome == 'missing':
+                            action = None
+                        elif outcome == 'error' and reads == 2:
+                            raise BridgeError('poll interrupted')
+                        elif outcome in ('replaced', 'error'):
+                            action = {**running, 'session': 'new-owner'}
+                    elif name == 'start_atomic':
+                        action = running
+                    elif name == 'cancel_move':
+                        used = extra_actions()['use_item']
+                        action = running if outcome == 'unconfirmed' else {
+                            **running, 'status': 'cancelled' if outcome == 'cancelled_unverified' else outcome,
+                            'reason': 'native_terminal', 'evidence': used['evidence'],
+                            'endEvidenceStatus': 'unknown' if outcome == 'cancelled_unverified' else 'known',
+                            'endEvidence': {**used['endEvidence'], 'effectVerified': outcome == 'completed'},
+                        }
+                    else:
+                        self.fail(name)
+                    return {'status': 'movement_started', 'movement': {'action': action, 'generation': 1}}
+
+                with patch('atomic_operations.command', side_effect=command):
+                    result = await atomic.dispatch(bridge(FULL), 'use_item', {})
+                validate(result)
+                if outcome == 'error':
+                    self.assertEqual(('cancelled', 'ownership_changed', 'poll interrupted'),
+                                     (result['status'], result['reason'], result['supervisorError']))
+                    self.assertNotIn('completed', result)
+                else:
+                    self.assertEqual({'status': 'timeout', 'reason': 'supervisor_deadline'}, result['supervisorStopRequest'])
+                    self.assertEqual(outcome == 'completed', result['completed'])
+                if outcome in ('missing', 'replaced', 'unconfirmed', 'error'):
+                    self.assertNotIn('operation', result)
+                    self.assertNotIn('dispatchState', result)
+                if outcome == 'unknown':
+                    self.assertTrue(result['valid'])
+                    self.assertTrue(result['inputsReleased'])
+                    self.assertFalse(result['effectVerified'])
+                if outcome == 'cancelled_unverified':
+                    self.assertEqual(('unknown', False, True, 'cancelled'),
+                                     (result['status'], result['valid'], result['cancelled'], result['terminalActionStatus']))
+
+    async def test_lua_stop_noop_includes_worker_continuation_flag(self):
+        b = bridge(FULL)
+        b.command = lambda name: {'movement': {'action': None, 'generation': 1}}
+        run = await LuaRuntime(b).execute("return api('stop_action')")
+        self.assertEqual('completed', run['status'], run)
+        self.assertEqual(False, run['value']['continuationAllowed'])
+        Draft202012Validator(schema_for('stop_action', capabilities=FULL)).validate(run['value'])
+
+    async def test_invalid_start_can_report_unknown_without_regular_receipt(self):
+        running = {**self.running_use(), 'operation': 'move_input'}
+
+        def reply(action):
+            return {'status': 'movement_started', 'movement': {'action': action, 'generation': 1}}
+
+        replies = [reply(None), reply(running), reply({**running, 'session': 'new-owner'})]
+        with patch('atomic_operations.command', side_effect=replies):
+            result = await atomic.dispatch(bridge(FULL), 'move_input', MOVE['requestedInputs'])
+        self.assertEqual({'valid': False, 'status': 'unknown', 'completed': False,
+                          'reason': 'Direct inputs missing or different in start receipt'}, result)
+        Draft202012Validator(schema_for('move_input')).validate(result)
 
 
 if __name__ == '__main__':

@@ -62,6 +62,11 @@ def extend(base, properties):
     return {**obj(properties, closed=False), 'allOf': [base], 'unevaluatedProperties': False}
 
 
+def matches(**properties):
+    """Require evidence fields in a completion predicate without closing the object."""
+    return {'type': 'object', 'properties': properties, 'required': list(properties)}
+
+
 def fields(**groups):
     """Name groups for C# records whose fields share a primitive type."""
     types = {'strings': S, 'integers': I, 'numbers': N, 'booleans': B}
@@ -70,7 +75,11 @@ def fields(**groups):
 
 TILE_COORD = desc(I, 'Absolute Tile coordinate. One Tile is 16 world pixels.')
 PIXEL = desc(N, 'World pixel coordinate. X increases rightward and Y downward.')
+SPEED = desc(N, 'World pixels per game update. Positive X is rightward and positive Y is downward.')
 TICK = desc(I, 'Game update counter, independent of wall-clock time.')
+AIR_KIND = desc(enum(0, 1, 2), 'AirKind: 0 None, 1 Wings, 2 RocketBoots.')
+AIR_PHASE = desc(enum(0, 1, 2, 3, 4), 'AirPhase: 0 None, 1 Flying, 2 Gliding, 3 Descending, 4 RocketPulse.')
+INVENTORY_TOKEN = desc(S, 'Opaque guard bound to world, actor generation, slot, item instance and basic fields. Reobserve before a mutation. Custom Mod state is not covered.')
 HOTBAR = desc(nullable(I), 'Game hotbar key 1–9,0; null when the slot has no key.')
 COUNT = {'type': 'integer', 'minimum': 0}
 IDENTITY = {'worldSessionId': desc(S, 'Bound game world session.'),
@@ -91,8 +100,9 @@ DEFS = {
     'Binding': desc(obj({'actor': S, 'world': S, 'generation': I, 'slot': I}),
                     'Connection identity attached by ServerAiBridge, outside the native observation envelope.'),
     'WorldPoint': obj({'x': PIXEL, 'y': PIXEL}),
-    'Velocity': obj({key: desc(N, 'World pixels per game update.') for key in ('x', 'y')}),
-    'WireVector': obj({'X': N, 'Y': N}),
+    'Velocity': obj(dict.fromkeys(('x', 'y'), SPEED)),
+    'WirePoint': obj(dict.fromkeys(('X', 'Y'), PIXEL)),
+    'WireVelocity': obj(dict.fromkeys(('X', 'Y'), SPEED)),
     'WorldRect': obj({'x': PIXEL, 'y': PIXEL, 'width': N, 'height': N}),
     'TilePoint': obj(TILE_XY),
     'TileRect': obj({**TILE_XY, 'width': I, 'height': I}),
@@ -132,11 +142,13 @@ DEFS.update({
                     'use': obj(fields(integers='damage pick axe hammer createTile createWall useStyle useTime useAnimation ammo shoot',
                                       booleans='consumable')), 'customState': S}),
     'CompactItem': obj({**SLOT_FIELDS, **ITEM_ID, 'empty': B, 'stack': I, 'prefix': I, 'maxStack': I,
-                       'favorited': B, 'inventoryToken': nullable(S),
+                       'favorited': B, 'inventoryToken': desc(nullable(INVENTORY_TOKEN),
+                           'Pass the fresh slot token unchanged for guarded inventory actions. Null means no usable token.'),
                        'use': obj(fields(integers='pick axe hammer createTile createWall'))}),
     'EquipmentSlot': obj({'slotId': S, 'kind': enum('head', 'body', 'legs', 'accessory'),
                           'source': enum('vanilla', 'mod_accessory_slot'), 'displayName': S, 'enabled': B,
-                          'occupied': B, 'item': nullable(ref('FullItem')), 'targetToken': S}),
+                          'occupied': B, 'item': nullable(ref('FullItem')),
+                          'targetToken': desc(INVENTORY_TOKEN, 'Functional equipment slot guard, including empty slots. Pass unchanged to equip_item or unequip_item.')}),
 })
 
 FULL_SLOT = any_of(obj({'slot': I, 'empty': const(True)}), ref('FullItem'))
@@ -162,7 +174,8 @@ INVENTORY = any_of(
          'inventory': array(ref('CompactItem'))}),
 )
 
-PHYSICS_FIELDS = {**fields(numbers='px py vx vy', integers='jumpFramesLeft airPhase',
+PHYSICS_FIELDS = {**dict.fromkeys(('px', 'py'), PIXEL), **dict.fromkeys(('vx', 'vy'), SPEED), 'airPhase': AIR_PHASE,
+                  **fields(integers='jumpFramesLeft',
                            booleans='grounded releaseJump extraAvailable extraActive extraUsed'),
                   'air': nullable(ref('AirResources'))}
 DEFS['PhysicsPose'] = obj(PHYSICS_FIELDS)
@@ -438,7 +451,7 @@ DEFS.update({
     'PhysicsParameters': obj({
         **fields(numbers='AccRun MaxRun AccRunSpeed RunSlowdown Gravity MaxFall JumpSpeed', integers='JumpHeight'),
         'ExtraJump': nullable(obj(fields(strings='FullName', numbers='DurationMultiplier'))),
-        'Air': nullable(obj({'Kind': I})),
+        'Air': nullable(obj({'Kind': AIR_KIND})),
     }),
     'MovementSnapshot': obj({
         **fields(integers='GrappleCount', booleans='BlockExtraJumps GrappleListComplete', strings='Scope'),
@@ -462,30 +475,49 @@ DEFS.update({
         'AvailableModes': array(S), 'UnsupportedEffects': array(S), 'Movement': nullable(ref('MovementSnapshot')),
     }),
     'SurfaceGraph': obj({
-        **fields(strings='Exit', integers='Radius TileReads Nodes CandidateEdges VerifiedEdges Expansions SliceWork ChangedTiles RetainedNodes RangeExpansions',
-                 numbers='SliceMilliseconds', booleans='CandidateReachedGoal'),
-        'Waypoint': nullable(ref('LandingRecord')), 'EstimatedRouteUpdates': nullable(N),
+        **fields(integers='TileReads Nodes CandidateEdges VerifiedEdges Expansions SliceWork ChangedTiles RetainedNodes RangeExpansions'),
+        'Exit': desc(S, 'Search exit reason such as budget, unsupported_model or surface_node_budget. It does not establish global reachability.'),
+        'Radius': desc(I, 'Current search radius in Tiles.'),
+        'SliceMilliseconds': desc(N, 'Elapsed wall-clock milliseconds of the current search slice.'),
+        'Waypoint': nullable(ref('LandingRecord')),
+        'EstimatedRouteUpdates': desc(nullable(N), 'Estimated route cost in game updates, not a confirmed duration.'),
+        'CandidateReachedGoal': desc(B, 'A graph candidate reached the goal in search. A candidate alone cannot issue inputs or establish arrival.'),
     }),
     'LandingFeedback': obj({
         **fields(integers='ActionNumber', booleans='Jump Settled', numbers='MaxError'),
-        **dict.fromkeys(('Predicted', 'Actual', 'PredictedVelocity', 'ActualVelocity'), nullable(ref('WireVector'))),
+        **dict.fromkeys(('Predicted', 'Actual'), nullable(ref('WirePoint'))),
+        **dict.fromkeys(('PredictedVelocity', 'ActualVelocity'), nullable(ref('WireVelocity'))),
     }),
     'AirFeedback': obj({
-        **fields(integers='Kind Phase Frame', booleans='Confirmed', strings='Motion'),
+        **fields(integers='Frame', booleans='Confirmed', strings='Motion'),
+        'Kind': AIR_KIND, 'Phase': AIR_PHASE,
         'Expected': nullable(ref('WireAirResources')), 'Observed': nullable(ref('WireAirResources')),
     }),
-    'NavigationFailure': obj({
-        **fields(strings='Motion Reason', integers='Direction Hold Stride Terrain Expires ExtraJumpFrame AirStartFrame AirHoldFrames'),
+    'NavigationFailure': desc(obj({
+        **fields(strings='Motion Reason', integers='ExtraJumpFrame AirStartFrame AirHoldFrames'),
+        'Direction': desc(I, 'Signed horizontal input: -1 left, 0 neutral, 1 right.'),
+        'Hold': desc(I, 'Count of predicted frames with jump input held.'),
+        'Stride': desc(I, 'Count of predicted frames with horizontal input for a non-jump edge; zero for a jump.'),
+        'Terrain': desc(I, 'Opaque terrain signature used to invalidate failure memory when terrain changes.'),
+        'Expires': desc(I, 'Expiry on the navigation update counter. Scoped to one navigation task.'),
         'Start': ref('WirePose'), 'ExpectedLanding': ref('WirePose'), 'ActualLanding': ref('WirePose'),
         'Physics': nullable(ref('PhysicsParameters')),
-    }),
+    }), 'Recent failed edge excluded from this navigation search. It is not a permanent obstacle assertion.'),
     'NavigationSnapshot': obj({
         **fields(integers='Session Frame HoldFrames Generation CompletedActions CompletedJumps Expansions PlannedActions PlanNumber LandingConfirmationFrames SearchNumber FastWalkPlans DominatedStates RecoveryCount RecoveryReplans FailedEdgeCount TripUpdates ContinuedEdges InvalidatedRoutes DetourCheckpoints VisitedCheckpoints RepeatRejections MobilityRevision PlanMobilityRevision DeferredSearches SearchCacheHits SearchWaitUpdates NoProgressUpdates ActualMovingUpdates SearchExpansionHits',
                  numbers='MaxError PlanMilliseconds TripPlanningMilliseconds ActualTravelPixels'),
-        **dict.fromkeys('Status Action Reason SearchFailureReason PlanKind SearchExit RecoveryReason ProgressActivity'.split(), nullable(S)),
+        **dict.fromkeys('Reason SearchFailureReason PlanKind SearchExit RecoveryReason'.split(), nullable(S)),
+        'Status': desc(nullable(S), 'Motion controller diagnostic such as idle, running, landed, arrived or failed. Use the outer action receipt for terminal status.'),
+        'Action': desc(nullable(S), 'Current motion phase such as plan, walk, jump, or release before replanning.'),
+        'ProgressActivity': desc(nullable(S), 'Watchdog activity: Search, Movement, Recovery, VerifiedCheckpoint or VerifiedEffect.'),
+        'Frame': desc(I, 'Frame of the current motion edge, in game updates.'),
+        'MaxError': desc(N, 'Maximum position prediction error in world pixels. Zero is not evidence of arrival.'),
+        'PlanMilliseconds': desc(N, 'Wall-clock planning time in milliseconds.'),
+        'TripPlanningMilliseconds': desc(N, 'Accumulated planning time in milliseconds for this trip.'),
+        'ActualTravelPixels': desc(N, 'Accumulated observed travel in world pixels, distinct from displacement to the target.'),
         **dict.fromkeys('ReachedGoal TimeBudgetReached ObservedGrounded SafeSupport RecoveryInputsReleased'.split(), nullable(B)),
-        **dict.fromkeys('PredictedLanding ActualLanding ExpectedPosition ObservedPosition ExpectedVelocity ObservedVelocity'.split(),
-                        nullable(ref('WireVector'))),
+        **dict.fromkeys('PredictedLanding ActualLanding ExpectedPosition ObservedPosition'.split(), nullable(ref('WirePoint'))),
+        **dict.fromkeys(('ExpectedVelocity', 'ObservedVelocity'), nullable(ref('WireVelocity'))),
         'BlockingTiles': array(obj({'X': TILE_COORD, 'Y': TILE_COORD, 'ContentKey': nullable(S), 'Basis': S})),
         'TargetX': nullable(PIXEL), 'TargetRegion': nullable(ref('LandingRecord')),
         'LastLanding': nullable(ref('LandingFeedback')), 'PlanStart': nullable(ref('WirePose')),
@@ -497,10 +529,11 @@ DEFS.update({
 
 DEFS.update({
     'NavigationEvidence': obj({
-        **dict.fromkeys(('startX', 'x', 'y'), PIXEL), **fields(numbers='vx vy', integers='updates health',
+        **dict.fromkeys(('startX', 'x', 'y'), PIXEL), **dict.fromkeys(('vx', 'vy'), SPEED),
+        **fields(integers='updates health',
             booleans='arrived grounded safeSupport settled inputReleased alive recoverableFailure'),
         'targetX': nullable(PIXEL), 'targetRegion': nullable(ref('LandingRegion')),
-        'velocityBeforeRelease': nullable(ref('WireVector')), 'failureKind': nullable(S),
+        'velocityBeforeRelease': nullable(ref('WireVelocity')), 'failureKind': nullable(S),
         'observedGameUpdate': TICK, 'navigation': nullable(ref('NavigationSnapshot')),
         'effectStatus': const('native_navigation_observed'),
     }),
@@ -509,7 +542,8 @@ DEFS.update({
         'invalidTarget': nullable(obj({**TILE_XY, 'inWorld': B, 'hasTile': nullable(B),
                                        'tileType': nullable(I), 'withinMiningBounds': B})),
         **fields(integers='ExpectedType Ticks Swings Strikes PeakDamage Transforms pick axe furnitureCells',
-                 booleans='nativeDestroyed targetAbsent furnitureAbsent targetChanged targetUnchanged destroyedByActor'),
+                 booleans='nativeDestroyed targetAbsent furnitureAbsent targetChanged targetUnchanged'),
+        'destroyedByActor': desc(B, 'Target removal attributed to this actor. This does not verify pickup or inventory gain.'),
         'toolKind': enum('axe', 'pickaxe'), 'effectStatus': enum('native_tile_destroyed', 'not_started', 'not_confirmed'),
     }),
     'PlacementEvidence': obj({
@@ -533,16 +567,17 @@ DEFS.update({
 })
 
 INVENTORY_RECEIPT_SLOT = obj({
-    **SLOT_FIELDS, **fields(integers='typeId stack prefix maxStack', booleans='favorited', strings='inventoryToken'),
-    'instanceId': nullable(S),
+    **SLOT_FIELDS, **fields(integers='typeId stack prefix maxStack', booleans='favorited'),
+    'instanceId': nullable(S), 'inventoryToken': INVENTORY_TOKEN,
 })
 BASIC_SLOT = any_of(
     obj({'slot': I, 'available': const(False), 'reason': const('baseline_not_established')}),
     obj({'slot': I, 'available': const(True), 'present': B, 'instanceId': nullable(S), 'instanceChanged': B,
          **dict.fromkeys(('typeId', 'stack', 'prefix', 'maxStack'), nullable(I)), 'favorited': nullable(B)}),
 )
+DEFS['InventoryConfirmedSnapshot'] = obj({'source': INVENTORY_RECEIPT_SLOT, 'destination': INVENTORY_RECEIPT_SLOT, 'selectedSlot': I})
 DEFS['InventorySnapshot'] = any_of(
-    obj({'source': INVENTORY_RECEIPT_SLOT, 'destination': INVENTORY_RECEIPT_SLOT, 'selectedSlot': I}),
+    ref('InventoryConfirmedSnapshot'),
     obj({'available': const(False), 'reason': S}),
     obj({'available': const(True), 'kind': const('basic_fields_only'), 'gameUpdate': TICK, 'selectedSlot': I,
          'source': BASIC_SLOT, 'destination': BASIC_SLOT, 'customState': const('unknown')}),
@@ -573,7 +608,8 @@ DEFS.update({
         **fields(strings='actionId', integers='updatesRequested updatesExecuted healthStart healthEnd healthDelta blockedHorizontalUpdates',
                  booleans='grounded airborne dead inputReleased settled noProgress'),
         'requestedInputs': ref('MoveArguments'),
-        **dict.fromkeys(('startPosition', 'endPosition', 'endVelocity'), ref('WireVector')),
+        **dict.fromkeys(('startPosition', 'endPosition'), ref('WirePoint')),
+        'endVelocity': ref('WireVelocity'),
         'acceptedGameUpdate': TICK, 'firstInputGameUpdate': nullable(TICK),
         'lastInputGameUpdate': nullable(TICK), 'observedGameUpdate': TICK,
         'effectStatus': const('native_input_observed'),
@@ -621,7 +657,9 @@ TASK_EVIDENCE = {
 DEFS['LocalPlanCost'] = obj(fields(numbers='Movement Mining Placement Materials Alteration Remaining'))
 DEFS['LocalEditPlan'] = obj({
     'Actions': array(obj({
-        **fields(integers='Kind X Y Slot Type WaterDirection', strings='Shape'),
+        **fields(integers='Slot Type WaterDirection', strings='Shape'),
+        'Kind': desc(enum(0, 1, 2), 'LocalEditKind: 0 Move, 1 Mine, 2 Place. This is a candidate plan, not native execution.'),
+        'X': TILE_COORD, 'Y': TILE_COORD,
         'Start': ref('WirePose'), 'Expected': ref('WirePose'),
     })),
     'Cost': ref('LocalPlanCost'), 'OpenExit': B,
@@ -641,9 +679,14 @@ DEFS['TaskPlanning'] = any_of(
          'candidates': array(obj({'Cost': ref('LocalPlanCost'), 'OpenExit': B, 'changes': COUNT, 'steps': COUNT}))}),
 )
 DEFS['TaskProgress'] = obj({
-    **fields(strings='stage activity', integers='completedChildren settledChildren omittedChildren clearedTiles dugTiles placedTiles openingMoves verifiedTerrainActions',
+    **fields(strings='activity', integers='clearedTiles dugTiles placedTiles openingMoves',
              booleans='childrenTruncated openingMode'),
-    'children': array(ref('GameTaskView')),
+    'stage': desc(S, 'Current task strategy stage such as observe, navigating, opening_tile, settling, mining or verify. See task status for the outcome.'),
+    'completedChildren': desc(COUNT, 'Child actions that completed successfully. This count does not establish root completion.'),
+    'settledChildren': desc(COUNT, 'Child actions that ended, including those that did not complete.'),
+    'omittedChildren': desc(COUNT, 'Ended child views omitted from the bounded history.'),
+    'verifiedTerrainActions': desc(COUNT, 'Terrain edits verified by the task watchdog.'),
+    'children': desc(array(ref('GameTaskView')), 'Bounded history of ended child tasks. The active child is reported separately.'),
     'target': any_of(ref('WorldPoint'), obj({**TILE_XY, 'typeId': I, 'toolSlot': I, 'scope': S})),
     'search': nullable(S), 'planning': nullable(ref('TaskPlanning')),
     'opening': nullable(obj({'drops': array(obj({'fromFeetY': PIXEL, 'toFeetY': PIXEL,
@@ -663,7 +706,8 @@ DEFS['TaskReceipt'] = obj({
     **fields(booleans='inputsReleased effectVerified inputsAcquired'),
 })
 GAME_TASK_BASE = {
-    'taskId': S, 'phase': S, 'status': ACTION_STATUS, 'reason': S,
+    'taskId': S, 'phase': desc(S, 'Task lifecycle or strategy stage. Terminal means ended; check status for the outcome.'),
+    'status': ACTION_STATUS, 'reason': S,
 }
 DEFS['GameTaskView'] = obj({
     **GAME_TASK_BASE, 'taskName': enum(*TASK_NAMES, *TASK_CHILDREN), **IDENTITY,
@@ -712,7 +756,10 @@ CONTINUATION = {
     'continuationScope': const('observe_scene_then_move_input'),
 }
 RECEIPT_FLAGS = {
-    'terminalActionStatus': TERMINAL_STATUS, 'supervisorError': S, 'supervisorStopRequest': ref('StopRequest'),
+    'terminalActionStatus': desc(TERMINAL_STATUS, 'Native status before host release or effect verification downgraded the receipt.'),
+    'supervisorError': desc(S, 'Host supervision failed. A stop receipt may still contain a native terminal result.'),
+    'supervisorStopRequest': desc(obj({'status': const('timeout'), 'reason': const('supervisor_deadline')}),
+                                  'The host requested a stop at its deadline. The action status reports what the stop actually observed.'),
     **CONTINUATION,
 }
 DEFS['ActionReceipt'] = obj({
@@ -744,6 +791,103 @@ def refusal(*names, resumed=False):
     }, optional=(*CONTINUATION, *(('resumedFrom',) if resumed else ())))
 
 
+# stop() and terminal() can report loss of ownership without a native receipt.
+# _dispatch can forward the short result, annotate it, or invalidate a bad
+# start receipt and replace the reason while preserving any known action ID.
+STOP_FAILURES = (
+    {'status': const('cancelled'), 'reason': const('ownership_changed')},
+    {'status': const('unknown'), 'reason': const('action_missing'), 'completed': const(False), 'actionId': S},
+    {'status': const('unknown'), 'reason': const('cancellation_unconfirmed'), 'completed': const(False)},
+    {'status': const('unknown'), 'reason': const('action_changed_before_release_evidence')},
+)
+STOP_CONTINUATION = {'continuationAllowed': const(False)}
+DEFS['ShortStopResult'] = any_of(*(
+    obj({'valid': const(False), **fields, **STOP_CONTINUATION}, optional=STOP_CONTINUATION)
+    for fields in STOP_FAILURES
+))
+DEFS['SupervisorStopResult'] = any_of(*(
+    obj({'valid': const(False), **fields, **STOP_CONTINUATION,
+         'supervisorError': RECEIPT_FLAGS['supervisorError']}, optional=STOP_CONTINUATION)
+    for fields in STOP_FAILURES
+), *(
+    obj({'valid': const(False), **fields, **STOP_CONTINUATION, 'status': const('unknown'), 'completed': const(False),
+         'supervisorStopRequest': RECEIPT_FLAGS['supervisorStopRequest']}, optional=STOP_CONTINUATION)
+    for fields in STOP_FAILURES
+), obj({'valid': const(False), 'status': const('unknown'), 'completed': const(False), 'reason': S, 'actionId': S,
+        **STOP_CONTINUATION}, optional=('actionId', *STOP_CONTINUATION)))
+
+
+TRUE = const(True)
+FALSE = const(False)
+MINED = matches(destroyedByActor=TRUE, targetAbsent=TRUE, targetChanged=FALSE)
+ARRIVED = matches(arrived=TRUE, grounded=TRUE, safeSupport=TRUE, settled=TRUE)
+PLACED = dict(placedByActor=TRUE, targetPresent=TRUE, targetChanged=FALSE, consumedCount=const(1))
+NATIVE_PLACEMENT = dict(nativePlacementEvents=const(1), uncertainNativeEffect=FALSE)
+TASK_COMPLETION_PROOF = {
+    'navigate_to': matches(taskName=const('navigate_to'), status=const('completed'), currentChild=NULL,
+                           result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence=ARRIVED)),
+    'mine_target': matches(taskName=const('mine_target'), status=const('completed'), phase=const('terminal'),
+                           lastResult=matches(status=const('completed'), inputsReleased=TRUE,
+                                              effectVerified=TRUE, evidence=MINED)),
+}
+SUCCESSFUL_PROOF = {
+    'select_hotbar_slot': matches(selectionApplied=TRUE),
+    'move_input': matches(inputReleased=TRUE),
+    'navigate_to_x': matches(arrived=TRUE),
+    'navigate_to_landing_region': {
+        **ARRIVED, 'allOf': [matches(targetRegion=ref('LandingRegion'),
+                                     vx={'minimum': -0.1, 'maximum': 0.1}, vy={'minimum': -0.1, 'maximum': 0.1})],
+    },
+    'use_item': matches(cycleVerified=TRUE),
+    'mine_tile': MINED,
+    'place_tile': matches(**PLACED),
+    'place_object': matches(**PLACED, **NATIVE_PLACEMENT, objectPlacement=TRUE, fullFootprintVerified=TRUE,
+                            typeId=const(18), itemType=const(36), style=const(0),
+                            footprint=matches(width=const(2), height=const(1))),
+    'place_rope': matches(**PLACED, **NATIVE_PLACEMENT, requestedX=I, requestedY=I, extended=B,
+                          remainingStack=COUNT),
+    'move_on_rope': {
+        **matches(settled=TRUE, attachmentObserved=TRUE, inputReleased=TRUE,
+                  updates={'minimum': 2, 'maximum': 360}),
+        'if': matches(finish=const('hold')),
+        'then': matches(attached=TRUE),
+        'else': matches(attached=FALSE, grounded=TRUE, safeSupport=TRUE),
+    },
+    'craft_recipe': matches(mutationAttempted=TRUE, inventoryVerified=TRUE,
+                            producedCount={'minimum': 1}, outputTypeId={'minimum': 1},
+                            outputCountPerCraft={'minimum': 1}),
+    **{name: matches(task=proof) for name, proof in TASK_COMPLETION_PROOF.items()},
+    **{name: matches(inventoryVerified=TRUE, mutationAttempted=TRUE,
+                     before=ref('InventoryConfirmedSnapshot'), after=ref('InventoryConfirmedSnapshot'))
+       for name in atomic.INVENTORY_OPERATIONS},
+    **{name: matches(equipmentVerified=TRUE, mutationAttempted=TRUE,
+                     before=ref('EquipmentSnapshot'), after=ref('EquipmentSnapshot'))
+       for name in atomic.EQUIPMENT_OPERATIONS},
+}
+
+
+def completed_receipt(name):
+    proof = {
+        'completed': TRUE, 'valid': TRUE, 'cancelled': FALSE, 'dispatchState': const('admitted'),
+        'endEvidenceStatus': const('known'), 'evidence': SUCCESSFUL_PROOF[name],
+        'worldSessionId': {'minLength': 1}, 'actorId': {'minLength': 1},
+        'actionGeneration': I, 'actorSlot': I,
+        **{key: {'not': NULL} for key, names in TARGETS.items() if name in names},
+    }
+    if name == 'select_hotbar_slot':
+        proof.update(inputsAcquired=FALSE, inputsReleased=NULL, effectVerified=NULL,
+                     endEvidence=matches(phase=const('ServerAI_game_thread_no_input'),
+                                         selectionVerified=TRUE, gameUpdate=COUNT))
+    else:
+        proof.update(inputsAcquired=B, inputsReleased=TRUE, effectVerified=TRUE,
+                     endEvidence=matches(phase=const('ServerAI_game_thread_inputs_released'), operation=const(name),
+                                         inputsReleased=TRUE, effectVerified=TRUE, gameUpdate=COUNT))
+    if name in TASK_COMPLETION_PROOF:
+        proof['task'] = TASK_COMPLETION_PROOF[name]
+    return {**matches(**proof), 'properties': {**proof, **STOP_CONTINUATION},
+            'not': {'required': ['continuationScope']}}
+
+
 def action_variants(name):
     evidence = ref(ACTION_EVIDENCE[name])
     operation_fields = {
@@ -755,17 +899,23 @@ def action_variants(name):
     admitted = extend(ref('ActionReceipt'), operation_fields)
     admitted['allOf'].append({
         'if': {'properties': {'status': const('completed')}, 'required': ['status']},
-        'then': {'properties': {'completed': const(True), 'valid': const(True),
-                                'dispatchState': const('admitted'), 'endEvidenceStatus': const('known'),
-                                'endEvidence': ref('EndEvidence'), 'evidence': evidence}},
+        'then': completed_receipt(name),
         'else': {'properties': {'completed': const(False)}},
+    })
+    admitted['allOf'].append({
+        'if': matches(status=const('cancelled')),
+        'then': matches(cancelled=TRUE),
+    })
+    admitted['allOf'].append({
+        'if': matches(status=enum('failed', 'timeout')),
+        'then': matches(cancelled=FALSE),
     })
     minimal = obj({
         'operation': const(name), 'valid': const(False), 'status': enum('unknown', 'failed'),
         'completed': const(False), 'reason': S, 'dispatchState': enum('unknown', 'not_admitted'),
         'actionId': nullable(S), **RECEIPT_FLAGS,
     }, optional=('operation', 'actionId', *RECEIPT_FLAGS))
-    return any_of(admitted, refusal(name), minimal)
+    return any_of(admitted, refusal(name), minimal, ref('ShortStopResult'), ref('SupervisorStopResult'))
 
 
 def action_ref(name):
@@ -775,8 +925,8 @@ def action_ref(name):
 DEFS.update({'Action_' + name: action_variants(name) for name in ACTION_EVIDENCE})
 DEFS['ProgramTaskUnknownOutcome'] = obj({
     'valid': const(False), 'status': const('unknown'), 'completed': const(False),
-    'operation': const('mine_target'), 'actionId': S, 'reason': S, 'retryAllowed': const(False),
-})
+    'operation': const('mine_target'), 'actionId': S, 'reason': S, 'retryAllowed': const(False), **STOP_CONTINUATION,
+}, optional=STOP_CONTINUATION)
 DEFS['ProgramTaskOrigin'] = obj({
     'chatId': nullable(any_of(I, S)), 'programId': S, 'runId': nullable(S),
     'mcp_session_id': S, 'mcp_request_id': any_of(I, S), 'mcp_tool_name': S,
@@ -803,14 +953,13 @@ PRE_DISPATCH = obj({
 
 def stop_schema(operations, program_tasks=True):
     branches = [
-        obj({'valid': const(True), 'status': const('completed'), 'reason': const('no_agent_action'), 'noOp': const(True)}),
-        obj({'valid': const(False), 'status': const('cancelled'), 'reason': const('ownership_changed')}),
-        obj({'valid': const(False), 'status': const('unknown'), 'completed': const(False),
-             'reason': enum('action_missing', 'cancellation_unconfirmed'), 'actionId': S}, optional=('actionId',)),
-        PRE_DISPATCH,
+        obj({'valid': const(True), 'status': const('completed'), 'reason': const('no_agent_action'),
+             'noOp': const(True), **STOP_CONTINUATION}, optional=STOP_CONTINUATION),
+        ref('ShortStopResult'),
+        obj({**PRE_DISPATCH['properties'], **CONTINUATION}, optional=CONTINUATION),
     ]
     if program_tasks:
-        branches.append(ref('ProgramTaskUnknownOutcome'))
+        branches.extend((ref('ProgramTaskUnknownOutcome'), refusal('mine_target')))
     return any_of(*branches, *(action_ref(name) for name in ACTION_EVIDENCE if name in operations))
 
 
@@ -823,7 +972,7 @@ REGISTRY = {
         'clock': const('host_monotonic'), 'effectStatus': const('not_applicable'),
     }), PRE_DISPATCH),
     **{name: action_ref(name) for name in ACTION_EVIDENCE},
-    'mine_target': any_of(action_ref('mine_target'), refusal('submit_task')),
+    'mine_target': any_of(action_ref('mine_target'), ref('ProgramTaskUnknownOutcome')),
     'stop_action': stop_schema(ACTION_EVIDENCE),
     'submit_task': any_of(ref('ProgramTaskView'), refusal('submit_task')),
     'query_task': any_of(ref('ProgramTaskView'), ref('UnknownTask')),

@@ -181,8 +181,17 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         await self.submit()
         result=await self.runtime.execute("return api('stop_action',{})")
         self.assertEqual('cancelled',result['lastAction']['status'])
+        Draft202012Validator(schema_for('stop_action')).validate(result['lastAction'])
         self.assertTrue(result['lastAction']['inputsReleased'])
         self.assertFalse(self.manager.blocked())
+
+    async def test_synchronous_mine_conflict_has_no_submit_receipt_in_lua_or_last_action(self):
+        await self.submit()
+        result=await self.runtime.execute("return api('mine_target',{x=10,y=20})")
+        self.assertEqual('failed',result['status'])
+        self.assertIsNone(result['value'])
+        self.assertIsNone(result['lastAction'])
+        self.assertEqual(1,await self.starts())
 
     async def test_result_notification_cannot_authorize_new_mutation(self):
         model=Model(program(SUBMIT+'return t'),final('running'),program(SUBMIT+'return t'),final('invented success'))
@@ -235,6 +244,23 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(('action_unknown','unknown'),(result['status'],result['actionState']))
         self.assertTrue(self.manager.blocked())
         self.assertTrue(self.bridge._closed)
+        self.assertEqual('1',Path(str(self.ready)+'.advance.starts').read_text())
+
+    async def test_synchronous_mine_lost_ack_retains_unknown_action_receipt(self):
+        original=self.bridge.task_request
+
+        def lose(op,*args,**kwargs):
+            result=original(op,*args,**kwargs)
+            if op=='start':
+                raise BridgeError('fixture lost ACK after admission')
+            return result
+
+        with patch.object(self.bridge,'task_request',side_effect=lose):
+            result=await self.runtime.execute("return api('mine_target',{x=10,y=20})")
+        self.assertEqual(('action_unknown','unknown'),(result['status'],result['actionState']))
+        self.assertIsNone(result['value'])
+        self.assertFalse(result['lastAction']['retryAllowed'])
+        Draft202012Validator(schema_for('mine_target')).validate(result['lastAction'])
         self.assertEqual('1',Path(str(self.ready)+'.advance.starts').read_text())
 
     async def test_cancel_before_ack_keeps_admitted_task_and_receipt(self):

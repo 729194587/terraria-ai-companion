@@ -170,6 +170,10 @@ return {player=result.player, motion=result.motion}
 
 动作的 `valid`、`completed`、`inputsReleased` 和 `effectVerified` 含义各自独立。停止无动作时可能只返回 `noOp=true`。动作或游戏任务进入失败、取消、超时或 `unknown` 分支时，宿主可能终止 Lua，回执留在已有的 `lastAction` 或任务结果中。查询 `await_task` 返回 `waitStatus="timeout"` 时，游戏任务仍可能运行。
 
+v1.2.1 区分宿主的 `supervisorStopRequest` 和动作本身的终态。宿主超时请求停止时，原生动作可能已经完成。若所有权或释放无法确认，回执可能只有 `valid`、`status`、`reason` 等字段。快捷栏选择用 `selectionVerified` 确认，`inputsReleased` 和 `effectVerified` 为 null。其他原生动作使用绑定的释放回执与各自动作证据。字段之间的身份、数值和目标匹配仍由执行器核验。外层 `cleanup` 的超时诊断和 `payloadOmitted` 摘要属于程序回执。
+
+同步 `mine_target` 成功返回采矿动作回执。若提交阶段发生任务冲突，Lua 程序以失败结束，`value` 不包含 `submit_task` 的拒绝对象。任务已受理或受理结果不确定时，可按程序状态、`lastAction` 和任务结果判断进度。
+
 每次帮助查询占一次 Lua API 调用，受原有 Worker 预算、权限和取消限制。帮助由 Python Host 从当前握手和 Schema 生成，本身无游戏 RPC、动作或新鲜观察。MCP 回执仍附带已有运行时上下文。五个 MCP 工具保持原有接口。
 
 v1.2 的定向验证使用 `python/requirements-test.txt`。完整能力握手覆盖 30 个原子 API 和 5 个 Program Task API。测试检查 Schema 和引用闭包、字段正负例、Lua Worker 的调用预算以及 MCP Guide 到帮助的路径。离线 C# TCP 宿主用模拟数据验证玩家观察、不可用分支、挖掘回执和任务视图的跨语言投影。隔离 tModLoader 专用服验证了 15 个只读样本，涵盖全部 10 个观察 API。本次未重新执行实机变更动作，深层运动诊断和任务异常分支的类型由源码及测试样本核对。
