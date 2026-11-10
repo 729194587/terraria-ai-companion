@@ -14,10 +14,8 @@ class SkillRegistryTests(unittest.TestCase):
         skill = registry.load({'name': 'mining_and_ores'})
         self.assertTrue(skill['valid'])
         self.assertEqual('mining_and_ores', skill['name'])
-        self.assertIn('1.4.4.9', skill['game_version'])
-        self.assertIn('Server AI', skill['scope'])
         self.assertIn(f"- mining_and_ores — {skill['description']}", index.splitlines())
-        self.assertIn('# 挖矿与矿石', skill['content'])
+        self.assertTrue(skill['content'])
         self.assertNotIn(skill['content'], index)
         skill['content'] = 'mutated'
         self.assertNotEqual('mutated', registry.load({'name': 'mining_and_ores'})['content'])

@@ -102,9 +102,6 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.directory.cleanup();self.stderr.stop()
     def program(self,source):
         return dict(role='assistant',content=None,tool_calls=[dict(id='lua-1',type='function',function=dict(name='execute_lua',arguments=json.dumps(dict(source=source))))])
-    def skill(self, name):
-        return dict(role='assistant',content=None,tool_calls=[dict(id='skill-1',type='function',
-            function=dict(name='read_skill',arguments=json.dumps(dict(name=name))))])
     async def receive(self,id='task-1',text='向右移动80像素'):
         self.chathost.emit(id,text)
         self.agent.receive(await asyncio.wait_for(self.events.get(),2))
