@@ -3,9 +3,11 @@ import argparse
 import asyncio
 import copy
 from collections import deque
+from contextlib import ExitStack
 from datetime import datetime, timezone
 import json
 import math
+import os
 import queue
 import sys
 import threading
@@ -1215,8 +1217,9 @@ async def terminal_loop(agent, bridge, events, stream=None):
 
 
 async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=18779, context_input_tokens=48_000,
-              mcp_port=None, mcp_digest=None, with_native_agent=False):
-    llm = LLMClient() if mcp_port is None or with_native_agent else None
+              mcp_port=None, mcp_digest=None, with_native_agent=False, mcp_stdio=None):
+    external = mcp_port is not None or mcp_stdio is not None
+    llm = LLMClient() if not external or with_native_agent else None
     bridge = None
     agent = None
     execution = None
@@ -1245,11 +1248,14 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
                           context_manager=ContextManager(context_input_tokens))
         if tracing.trace.enabled:
             print(f"Local trace (contains chat/context): {tracing.trace.path}", file=sys.stderr, flush=True)
-        if mcp_port is not None:
+        if external:
             from external_brain import BrainHost
-            from external_mcp import ExternalMcp, serve_host
-            await serve_host(ExternalMcp(BrainHost(agent, is_server_ai_chat), mcp_port, mcp_digest),
-                             mcp_port, events)
+            from external_mcp import ExternalMcp, serve_host, serve_stdio
+            brain = BrainHost(agent, is_server_ai_chat)
+            if mcp_stdio is not None:
+                await serve_stdio(brain, events, *mcp_stdio)
+            else:
+                await serve_host(ExternalMcp(brain, mcp_port, mcp_digest), mcp_port, events)
             return
         if local_input:
             print('Agent ready; enter one instruction per line. New input cancels the previous turn. /quit or Ctrl+C exits.', flush=True)
@@ -1278,6 +1284,29 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
             await llm.close()
 
 
+def mcp_pipes(stack):
+    """Keep protocol pipes private from the Python Host and its spawned workers."""
+    input_fd, output_fd = sys.stdin.fileno(), sys.stdout.fileno()
+    sys.stdout.flush()
+    stdin = stack.enter_context(os.fdopen(os.dup(input_fd), 'rb', buffering=0))
+    stdout = stack.enter_context(os.fdopen(os.dup(output_fd), 'w', encoding='utf-8', newline='\n'))
+    with open(os.devnull, 'rb') as null:
+        os.dup2(null.fileno(), input_fd)
+    os.dup2(sys.stderr.fileno(), output_fd)
+    if sys.platform == 'win32':
+        # CreateProcess inherits the Win32 standard handles, not the CRT fd
+        # table. The Lua worker closes stdin at startup, which can block behind
+        # a pending synchronous read on the MCP pipe if it inherits that pipe.
+        import ctypes
+        import msvcrt
+        set_handle = ctypes.WinDLL('kernel32', use_last_error=True).SetStdHandle
+        set_handle.argtypes = (ctypes.c_uint32, ctypes.c_void_p)
+        for standard_handle, fd in ((-10, input_fd), (-11, output_fd)):
+            if not set_handle(standard_handle, msvcrt.get_osfhandle(fd)):
+                raise ctypes.WinError(ctypes.get_last_error())
+    return stdin.fileno(), stdout
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=18777)
@@ -1287,7 +1316,9 @@ def main():
     parser.add_argument("--local-input", action="store_true", help="Read human instructions from stdin; replies go to terminal (Mod 0.1.36+)")
     parser.add_argument('--server-ai', action='store_true', help='Local game chat -> existing Agent/Lua -> separate server AI execution backend')
     parser.add_argument('--ai-port', type=int, default=18779, help='Server AI IPC port; --port remains the graphical chat Bridge')
-    parser.add_argument('--external-brain', action='store_true', help='Serve a loopback MCP endpoint without a local model')
+    parser.add_argument('--external-brain', action='store_true', help='Serve MCP without a local model by default')
+    parser.add_argument('--mcp-transport', choices=('http', 'stdio'), default='http',
+                        help='External Brain transport (default: loopback Streamable HTTP)')
     parser.add_argument('--with-native-agent', action='store_true', help='Enable Native Agent between external leases')
     parser.add_argument('--mcp-port', type=int, default=18790, help='Loopback Streamable HTTP port')
     parser.add_argument("--log-file", type=str, help="Local bounded JSONL runtime log; default .local/diagnostics/agent-runtime-*.jsonl")
@@ -1300,14 +1331,21 @@ def main():
         parser.error('--server-ai requires a distinct valid --ai-port and cannot use --local-input')
     if args.with_native_agent and not args.external_brain:
         parser.error('--with-native-agent requires --external-brain')
+    if args.mcp_transport == 'stdio' and not args.external_brain:
+        parser.error('--mcp-transport stdio requires --external-brain')
     mcp_digest = None
+    mcp_port = None
     if args.external_brain:
-        if not args.server_ai or not 1 <= args.mcp_port <= 65535 or args.mcp_port in (args.port, args.ai_port):
-            parser.error('--external-brain requires --server-ai and a distinct valid --mcp-port')
-        import os
+        if not args.server_ai:
+            parser.error('--external-brain requires --server-ai')
+        http_transport = args.mcp_transport == 'http'
+        if http_transport and (not 1 <= args.mcp_port <= 65535 or args.mcp_port in (args.port, args.ai_port)):
+            parser.error('HTTP External Brain requires a distinct valid --mcp-port')
         try:
-            from external_mcp import token_digest
-            mcp_digest = token_digest(os.environ.get('TERRARIA_MCP_TOKEN'))
+            from external_mcp import external_host_lock, token_digest
+            if http_transport:
+                mcp_port = args.mcp_port
+                mcp_digest = token_digest(os.environ.get('TERRARIA_MCP_TOKEN'))
         except ImportError:
             parser.error('Install python/requirements-mcp.txt for External Brain')
         except ValueError as error:
@@ -1317,10 +1355,14 @@ def main():
         print(f"Runtime log: {log_path}", file=sys.stderr, flush=True)
     diagnostics.emit("session_start", port=args.port, timeout=args.timeout, inputMode='server_ai_chat' if args.server_ai else 'terminal' if args.local_input else 'game_chat')
     try:
-        asyncio.run(run(args.port, args.timeout, local_input=args.local_input, server_ai=args.server_ai,
-                        ai_port=args.ai_port, context_input_tokens=args.context_input_tokens,
-                        mcp_port=args.mcp_port if args.external_brain else None, mcp_digest=mcp_digest,
-                        with_native_agent=args.with_native_agent))
+        with ExitStack() as stack:
+            if args.external_brain:
+                stack.enter_context(external_host_lock(args.ai_port))
+            mcp_stdio = mcp_pipes(stack) if args.mcp_transport == 'stdio' else None
+            asyncio.run(run(args.port, args.timeout, local_input=args.local_input, server_ai=args.server_ai,
+                            ai_port=args.ai_port, context_input_tokens=args.context_input_tokens,
+                            mcp_port=mcp_port, mcp_digest=mcp_digest, mcp_stdio=mcp_stdio,
+                            with_native_agent=args.with_native_agent))
     except KeyboardInterrupt:
         return 130
     except (LLMError, BridgeError, OSError) as error:

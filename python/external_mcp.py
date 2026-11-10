@@ -1,16 +1,22 @@
-"""Loopback-only stateful MCP transport and Brain Lease lifetime."""
+"""Stateful HTTP and stdio MCP transports sharing the Brain Lease lifetime."""
 import asyncio
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import hashlib
 import hmac
 import json
 import math
+import os
+from pathlib import Path
 import re
 import secrets
+import sys
+import threading
 
 import anyio
 from mcp import types
 from mcp.server.lowlevel import Server
+from mcp.server.stdio import stdio_server
 from mcp.server.streamable_http import StreamableHTTPServerTransport
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse, Response
@@ -37,10 +43,30 @@ def token_digest(token):
     return hashlib.sha256(token.encode('ascii')).digest()
 
 
+@contextmanager
+def external_host_lock(ai_port):
+    """One External Brain process per AI IPC endpoint in this workspace."""
+    folder = Path(__file__).resolve().parents[1] / '.local' / 'diagnostics'
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder / f'external-brain-{ai_port}.lock').open('a+b') as lock:
+        try:
+            if sys.platform == 'win32':
+                import msvcrt
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            raise BridgeError(f'Cannot reserve the External Brain Host for AI port {ai_port}; '
+                              'close the other Host before connecting') from error
+        yield  # Closing the handle (including on process exit) releases the OS lock.
+
+
 @dataclass
 class Session:
-    transport: StreamableHTTPServerTransport
     id: str
+    transport: StreamableHTTPServerTransport | None = None
     opening: asyncio.Task | None = None
     server: asyncio.Task | None = None
     closing: asyncio.Task | None = None
@@ -51,13 +77,10 @@ class Session:
     request_ids: set = field(default_factory=set)
 
 
-class ExternalMcp:
-    def __init__(self, brain, port, digest):
+class McpBrain:
+    def __init__(self, brain):
         self.brain = brain
-        self.digest = digest
-        self.hosts = {f'127.0.0.1:{port}', f'localhost:{port}'}
         self.session = None
-        self.requests = 0
         self.closed = False
         self.sdk = Server('terraria', instructions=INSTRUCTIONS)
         self.definitions = [types.Tool(name=f['name'], description=f['description'],
@@ -115,22 +138,6 @@ class ExternalMcp:
             session.cancelled.add(job)
             job.cancel()
 
-    async def open_session(self, session):
-        if not await self.brain.acquire() or session.closing is not None:
-            return False
-        session.server = asyncio.create_task(self.serve(session))
-        await session.ready.wait()
-        return not session.server.done()
-
-    async def serve(self, session):
-        try:
-            async with session.transport.connect() as (reader, writer):
-                session.ready.set()
-                await self.sdk.run(reader, writer, self.sdk.create_initialization_options())
-        finally:
-            session.ready.set()
-            self.revoke(session, 'sdk_session_ended')
-
     def revoke(self, session, reason):
         if session.closing is None:
             self.brain.begin_release()
@@ -142,10 +149,12 @@ class ExternalMcp:
     async def release(self, session, reason):
         safe = False
         try:
-            await asyncio.gather(session.opening, return_exceptions=True)
+            if session.opening is not None:
+                await asyncio.gather(session.opening, return_exceptions=True)
             if session.jobs:
                 await asyncio.gather(*tuple(session.jobs), return_exceptions=True)
-            await session.transport.terminate()
+            if session.transport is not None:
+                await session.transport.terminate()
             if session.server is not None:
                 await asyncio.gather(session.server, return_exceptions=True)
             safe = await self.brain.finish_release()
@@ -167,12 +176,37 @@ class ExternalMcp:
                 self.brain.isolate()
                 if session is not None:
                     await asyncio.shield(self.revoke(session, 'game_connection_unavailable'))
+                return
 
     async def close(self):
         self.closed = True
         self.brain.agent._closing = True
         if self.session is not None:
             await asyncio.shield(self.revoke(self.session, 'host_shutdown'))
+
+
+class ExternalMcp(McpBrain):
+    def __init__(self, brain, port, digest):
+        super().__init__(brain)
+        self.digest = digest
+        self.hosts = {f'127.0.0.1:{port}', f'localhost:{port}'}
+        self.requests = 0
+
+    async def open_session(self, session):
+        if not await self.brain.acquire() or session.closing is not None:
+            return False
+        session.server = asyncio.create_task(self.serve(session))
+        await session.ready.wait()
+        return not session.server.done()
+
+    async def serve(self, session):
+        try:
+            async with session.transport.connect() as (reader, writer):
+                session.ready.set()
+                await self.sdk.run(reader, writer, self.sdk.create_initialization_options())
+        finally:
+            session.ready.set()
+            self.revoke(session, 'sdk_session_ended')
 
     @staticmethod
     async def read_body(receive):
@@ -245,8 +279,8 @@ class ExternalMcp:
                 if self.session is not None or not self.brain.reserve():
                     return await error(409, 'Brain Lease unavailable')
                 sid = secrets.token_hex(16)
-                session = self.session = Session(StreamableHTTPServerTransport(
-                    mcp_session_id=sid, is_json_response_enabled=True), sid)
+                session = self.session = Session(sid, StreamableHTTPServerTransport(
+                    mcp_session_id=sid, is_json_response_enabled=True))
                 session.opening = asyncio.create_task(self.open_session(session))
             else:
                 session = self.session
@@ -325,17 +359,18 @@ class ExternalMcp:
             await asyncio.gather(disconnect, handler, return_exceptions=True)
 
 
+async def route_events(brain, events):
+    while True:
+        brain.receive(await events.get())
+
+
 async def serve_host(app, port, events):
     import uvicorn
-
-    async def route_events():
-        while True:
-            app.brain.receive(await events.get())
 
     server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=port, lifespan='off', ws='none',
                                            proxy_headers=False, access_log=False,
                                            timeout_graceful_shutdown=5))
-    router = asyncio.create_task(route_events())
+    router = asyncio.create_task(route_events(app.brain, events))
     game_connection = asyncio.create_task(app.watch_game_connection())
     try:
         await server.serve()
@@ -343,4 +378,89 @@ async def serve_host(app, port, events):
         for task in (router, game_connection):
             task.cancel()
         await asyncio.gather(router, game_connection, return_exceptions=True)
+        await app.close()
+
+
+class StdioInput:
+    """Bounded pipe input that can stop even if the client keeps stdin open."""
+    def __init__(self, fd):
+        self.loop = asyncio.get_running_loop()
+        self.lines = asyncio.Queue(maxsize=1)
+        self.closed = threading.Event()
+        # Use a private stream. A blocked read must not pin the SDK's worker
+        # thread or hold the interpreter's standard input buffer at shutdown.
+        stream = os.fdopen(os.dup(fd), 'rb')
+        threading.Thread(target=self.read, args=(stream,), daemon=True, name='mcp-stdin').start()
+
+    def read(self, stream):
+        with stream:
+            while not self.closed.is_set():
+                try:
+                    line = stream.readline(MAX_BODY + 1)
+                except OSError:
+                    line = b''
+                if len(line) > MAX_BODY:
+                    print('MCP stdin frame exceeds 128 KiB; closing the connection', file=sys.stderr)
+                    line = b''
+                if self.closed.is_set():
+                    return
+                # The queue applies backpressure instead of buffering arbitrary
+                # client requests in the event loop.
+                put = self.lines.put(line)
+                try:
+                    asyncio.run_coroutine_threadsafe(put, self.loop).result()
+                except RuntimeError:
+                    put.close()
+                    return
+                except Exception:
+                    return
+                if not line:
+                    return
+
+    async def __aiter__(self):
+        while not self.closed.is_set():
+            line = await self.lines.get()
+            if not line:
+                return
+            yield line.decode('utf-8', errors='replace')
+
+    def close(self):
+        self.closed.set()
+        if not self.lines.full():
+            self.lines.put_nowait(b'')
+
+
+async def serve_stdio(brain, events, stdin_fd, stdout):
+    app = McpBrain(brain)
+    if not brain.reserve():
+        raise BridgeError('External Brain lease unavailable')
+    session = app.session = Session(secrets.token_hex(16))
+    router = asyncio.create_task(route_events(brain, events))
+    try:
+        if not await brain.acquire():
+            raise BridgeError('Unable to verify safe Brain handoff')
+        session.initialized = True  # The SDK enforces the stdio initialize handshake.
+        stdin = StdioInput(stdin_fd)
+        game_connection = asyncio.create_task(app.watch_game_connection())
+        try:
+            async with stdio_server(stdin=stdin, stdout=anyio.wrap_file(stdout)) as (reader, writer):
+                async with reader, writer:
+                    server = asyncio.create_task(app.sdk.run(reader, writer, app.sdk.create_initialization_options()))
+                    try:
+                        await asyncio.wait((server, game_connection), return_when=asyncio.FIRST_COMPLETED)
+                        if server.done():
+                            await server
+                    finally:
+                        stdin.close()
+                        server.cancel()
+                        await asyncio.gather(server, return_exceptions=True)
+            if game_connection.done():
+                raise BridgeError('Game connection unavailable; External Brain stdio session closed')
+        finally:
+            stdin.close()
+            game_connection.cancel()
+            await asyncio.gather(game_connection, return_exceptions=True)
+    finally:
+        router.cancel()
+        await asyncio.gather(router, return_exceptions=True)
         await app.close()

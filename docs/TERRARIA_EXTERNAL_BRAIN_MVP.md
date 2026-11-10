@@ -18,7 +18,7 @@ MCP 不调用模型 API。DeepSeek Harness 继续使用自身配置的 WorkBuddy
 
 1. **复用现有游戏身体。** MCP 只提供外部接入，不另建游戏执行系统。
 2. **MCP Server 放在 Python Agent Host。** 与现有 Runtime 共用游戏连接和执行对象。
-3. **采用 Streamable HTTP。** 默认监听 `127.0.0.1`，端点 `/mcp`。DeepSeek Harness 和 Codex 均支持该传输；一个 Host 可被不同客户端先后复用。
+3. **支持两种 MCP 传输。** Streamable HTTP 默认监听 `127.0.0.1` 的 `/mcp`，可让不同客户端先后连接同一个 Host。stdio 由客户端启动 Python Host，通过进程管道通信。
 4. **连接即取得外部驾驶权。** 有效的外部 Brain Session 持有 AI Player 控制租约；同一时刻只有一个决策大脑。断开 Session 即释放租约，不另设 acquire/release 工具。
 5. **Native Agent 与 External Brain 互斥。** 外部租约有效时，Native Agent 不发起模型请求或执行动作。释放前必须等待在途调用和游戏动作完成可信清理；`unknown` 时保持隔离，不自动恢复或重放。
 6. **不管理外部 Session。** 用户创建新对话；MCP Instructions 和 Guide 提供游戏信息。
@@ -28,7 +28,7 @@ MCP 不调用模型 API。DeepSeek Harness 继续使用自身配置的 WorkBuddy
 
 ```text
 DeepSeek Harness / Codex
-        │ Streamable HTTP
+        │ Streamable HTTP / stdio
         ▼
 Python Agent Host
   ├─ MCP Server
@@ -61,15 +61,15 @@ MCP Server 应复用同一组 `Bridge`、`ServerAiBridge`、Lua 执行入口、T
 
 ## 4. MCP 传输与认证
 
-默认端点：
+Streamable HTTP 默认端点：
 
 ```text
 http://127.0.0.1:18790/mcp
 ```
 
-选择 Streamable HTTP 而不是每个客户端启动一个 stdio 子进程：这样可以共享单一 Host、Actor 绑定、事件队列和 Runtime；DSH 与 Codex 可先后连接同一端点。
+stdio 使用 `--external-brain --mcp-transport stdio`。客户端启动并拥有子进程，stdout 传输 UTF-8 MCP 消息，诊断输出走 stderr 或本地日志。stdio 无 HTTP 端口和 Bearer Token。
 
-认证采用独立随机 Bearer Token：
+HTTP 认证采用独立随机 Bearer Token：
 
 - Token 仅用于访问 Terraria MCP Server，与模型 API Key 无关。
 - Token 不放入 URL、普通日志或 Trace；本地持久化优先保存哈希。
@@ -77,13 +77,30 @@ http://127.0.0.1:18790/mcp
 - 校验 `Host` / `Origin`，限制请求体大小与并发。
 - MVP 不实现 OAuth、远程访问或公网反向代理。
 
-一个有效 Brain 身份可拥有一个外部驾驶租约。不同身份的并发接管必须拒绝，不能让两个 Harness 同时操作同一个 Actor。
+同一工作区内，使用同一 AI IPC 端口的 External Brain 进程共用独占锁，HTTP 与 stdio 之间也互斥。切换传输前先关闭旧 Host。进程锁的范围是当前工作区，使用不同检出目录时需要自行保证每个 AI Player 只有一个 Host。
 
 ## 5. 客户端连接配置
 
-以下是端点和认证方式确定后的配置形态；实际端口与 Token 由 Host 启动时提供。`TERRARIA_MCP_TOKEN` 是本地 MCP 访问令牌，不是模型 API Key。
+先进入启用 Server AI 的 Host & Play 世界。使用 stdio 时，在 DeepSeek Harness Desktop 的 `cordis.patch.yml` 中添加以下条目。如果已经配置了同名 HTTP 条目，请替换它。Windows 路径按本机安装位置填写。
 
-DeepSeek Harness（`@deepseek-ai/dsh-mcp-client`）：
+```yaml
+- insert:
+    - id: mcp-terraria
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: terraria
+        transport: stdio
+        command: 'D:/Agent Project/terraria-ai-companion/.local/lua-venv/Scripts/python.exe'
+        cwd: 'D:/Agent Project/terraria-ai-companion'
+        args: ['python/agent.py', '--server-ai', '--external-brain', '--mcp-transport', 'stdio', '--timeout', '5']
+        toolCallTimeoutMs: 90000
+        reconnect:
+          enabled: false
+```
+
+使用默认游戏 Bridge 端口时，上面的配置会自动启动 Host。端口非默认时，可在 `args` 追加 `--port` 和 `--ai-port`。Harness 发现工具后，先调用 `mcp__terraria__guide`，再用 `mcp__terraria__execute_lua` 查询 `get_player_state`。示例关闭了 Harness 自动重连，游戏连接故障时可确认 Actor 状态后重启 Harness。
+
+继续使用 HTTP 时，端口与 `TERRARIA_MCP_TOKEN` 由手动启动的 Host 提供。DeepSeek Harness 的 HTTP 插件条目如下：
 
 ```yaml
 - id: mcp-terraria
@@ -355,7 +372,7 @@ $env:TERRARIA_MCP_TOKEN = & .local/lua-venv/Scripts/python.exe -c "import secret
 & .local/lua-venv/Scripts/python.exe python/agent.py --server-ai --external-brain
 ```
 
-默认地址为 `http://127.0.0.1:18790/mcp`，可用 `--mcp-port` 修改。Native 和 MCP 共存时仍只运行这一个 Python Host。从已设置令牌的环境启动客户端，使用第 5 节的 DSH 或 Codex 配置。用 Inspector 时选择 Streamable HTTP 并设置同一 Bearer 凭据。客户端应直连 loopback，配置了 HTTP 代理时应为 loopback 设置代理例外。
+默认 HTTP 地址为 `http://127.0.0.1:18790/mcp`，可用 `--mcp-port` 修改。Native 和 MCP 共存时仍只运行这一个 Python Host。从已设置令牌的环境启动 HTTP 客户端，使用第 5 节的 DSH 或 Codex 配置。用 Inspector 时选择 Streamable HTTP 并设置同一 Bearer 凭据。客户端应直连 loopback，配置了 HTTP 代理时应为 loopback 设置代理例外。使用 stdio 时，安装同一份依赖后直接由客户端启动 Host。
 
 Host 只比较令牌哈希，验证 Host 和 Origin，限制请求体为 128 KiB，并限制同时处理的 HTTP 请求数。第二个初始化请求即使使用同一令牌也无法获得已有租约。请求经认证后才进入 SDK，转交时移除 Authorization 头。Host 不持久化令牌。
 
@@ -363,7 +380,8 @@ Host 只比较令牌哈希，验证 Host 和 Origin，限制请求体为 128 KiB
 
 - 固定官方 Python SDK `mcp==1.30.0`，使用低层 `Server` 与 `StreamableHTTPServerTransport`。保留 `initialize`、Session ID 和显式 DELETE。仅使用 POST JSON 回应，GET 返回 405，游戏事件由 `get_events` 长轮询。 [Python SDK 传输源码](https://github.com/modelcontextprotocol/python-sdk/blob/v1.30.0/src/mcp/server/streamable_http.py) · [Streamable HTTP 规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 - SDK 把 `notifications/cancelled` 交给对应请求处理器。Host 将取消传给自己持有的 Lua Program，并等待游戏清理。SDK 可先结束该 MCP 请求，宿主保留中断回执，之后可用 `get_events` 查阅。取消单次 Program 后，已受理的独立 Task 仍可运行和查询。 [Python SDK 请求取消源码](https://github.com/modelcontextprotocol/python-sdk/blob/v1.30.0/src/mcp/shared/session.py)
-- 外部会话在空闲期间保留租约。显式 DELETE、在途 POST 提前断开、SDK Session 结束、游戏连接故障和 Host 停机都会撤销租约。空闲时客户端退出可能没有可靠信号。如果退出后新客户端仍收到 `409 Brain Lease unavailable`，请在 Python Host 窗口按 Ctrl+C，等待清理完成后重启 Host。撤销开始即拒绝新工具和新租约。交接时 Host 显式停止独立 Task，等待在途工具，并核验绑定身份与输入释放。无法确认时隔离 Host，需人工检查 Actor 和回执后重新启动。
+- HTTP 会话在空闲期间保留租约。显式 DELETE、在途 POST 提前断开、SDK Session 结束、游戏连接故障和 Host 停机都会撤销租约。空闲时客户端退出可能没有可靠信号。如果退出后新客户端仍收到 `409 Brain Lease unavailable`，请在 Python Host 窗口按 Ctrl+C，等待清理完成后重启 Host。两种传输在撤销开始时都拒绝新工具和新租约。交接时 Host 显式停止独立 Task，等待在途工具，并核验绑定身份与输入释放。无法确认时隔离 Host，需人工检查 Actor 和回执后重新启动。
+- stdio 的 stdin 到达 EOF 后，SDK 会取消在途处理器，Host 等待 Lua 清理、停止独立 Task 并关闭游戏连接。游戏连接故障也会结束子进程，即使客户端仍保持 stdin 打开。空闲本身不会触发关闭。强制结束 Python 时，OS 会释放进程锁，原生 IPC 根据连接断开清理该连接拥有的动作。强制终止可能来不及确认动作结果，重新连接后先观察，按实际状态决定下一步。
 - 每次外部 `execute_lua` 使用现有单 Program 预算。游戏查询和动作都通过已有 Lua API，执行类工具互斥。事件由同一个 64 项队列交付给 `get_events` 或 `execute_lua` 的结果，提供淘汰和服务端丢失计数。历史 `recentGameEvents` 用于上下文。租约结束时未取走的指令计入淘汰，防止被下一任大脑当作新授权。
 - `say` 需要本租约内一条当前有效的授权本地游戏指令。它沿用客户端授权、reply-turn 与 Server AI 原生发布回执。新指令会使旧的发言授权失效。外部 Program 的取消通过 MCP 请求取消或租约撤销执行。
 - 可设置 `TERRARIA_AGENT_TRACE=1` 记录 MCP Session、请求和工具关联字段。Lua 源码、Program 证据包、任务及 Server AI IPC 沿用现有诊断。原始记录包含游戏数据，仅在本地保管。
@@ -374,7 +392,8 @@ Host 只比较令牌哈希，验证 Host 和 Origin，限制请求体为 128 KiB
 2. 从游戏本地发一条 AI 指令，通过 `get_events` 获取，再调用 `say`，检查游戏显示的作者与返回的 `authorSlot`。在空队列发起长轮询，取消后验证同一 Session 仍能调用工具。
 3. 在隔离存档中，用新 DSH 对话读 Guide 和挖矿 Skill，采集玩家授权的一格可达矿物，记录目标格、`lastAction.endEvidence` 与前后库存。让 DSH 结束 MCP 会话，再用新 Codex 对话读取同一端点的 Guide，执行只读观察和一项安全动作。如果旧租约仍在，按上文的 Host 停机步骤完成交接。
 4. 验证 Native 共存模式时，租约期间用本地聊天发送指令，应只进入外部事件队列。结束会话后观察安全交接，再发送一条新指令验证 Native Agent 恢复。结果未知时检查隔离状态及无重放证据。
+5. 使用 stdio 配置启动 Harness 并读取 `guide`，至少等待 122 秒，其间不调用 Terraria 工具。随后运行 `return api('get_player_state',{})`，核对 `status: completed` 和 `actions: 0`。关闭 Harness 后再次启动并读取 Guide，核对前一连接的 `mcp_lease_released` 日志为 `safe: true`。
 
 本次 56 个不同的定向用例通过，覆盖外部 MCP、Native Agent、`mine_target`、独立任务、Lua 取消、Server AI 绑定和回执、Skills 与模型契约。自动化使用官方 Python MCP Client、真实回环 HTTP、现有 Python Bridge 和 Lua Worker 验证协议及五个工具，并使用 C# IPC harness 验证独立 Task 的 Program 取消和租约清理。游戏身体和模型采用测试替身。
 
-Inspector、真实 DSH/Codex 客户端及原生游戏地形和入包的实机验收待执行。
+stdio 改动通过 14 项定向用例，覆盖 Windows 子进程的协议流、Lua Worker、EOF 时取消在途动作、游戏断线、强制结束后重连、HTTP 会话和独立 Task 回归。使用已安装的 DeepSeek Harness 0.2.2-rc.1 内置 MCP 插件连接隔离的 tModLoader 专用服务器（聊天 Bridge 使用测试替身），插件自动启动 Host 并发现五个工具，空闲 122 秒后成功读取原生 Actor（`actions: 0`）。插件释放并重新连接后再次读取成功，两次会话日志均显示 `safe: true`。桌面模型发起调用、实机挖掘及入包仍待验证。
