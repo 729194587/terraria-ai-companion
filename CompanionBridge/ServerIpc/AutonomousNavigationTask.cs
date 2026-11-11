@@ -23,6 +23,7 @@ internal interface INavigationWorld
     object OpeningEvidence=>null;
     object Target{get;}
     bool ReplanAfterChange=>false;
+    bool RefreshApproachAfterOpening=>ReplanAfterChange;
     string ProgressKey=>null;
     bool PreferEdit(int remainingTiles)=>false;
     object ArrivalEvidence=>null;
@@ -133,8 +134,8 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
                 }
                 if(++checkpoints[key]>=3)return Describe(Failed("navigation_repeated_edit_checkpoint"));
             }
-            phase=world.ReplanAfterChange?"observe":"reobserve";
-            if(world.ReplanAfterChange)openingMode=false;
+            phase=world.RefreshApproachAfterOpening?"observe":"reobserve";
+            if(world.RefreshApproachAfterOpening)openingMode=false;
         }
         if(world.Arrived())
         {

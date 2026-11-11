@@ -54,8 +54,10 @@ internal readonly record struct TileLiquid
     }
 }
 
-internal readonly record struct TerrainCell(char Shape,TileLiquid Liquid)
+// Internal observation. Collision air can still contain a real tile.
+internal readonly record struct TerrainCell(char Shape,TileLiquid Liquid,int? TileType=null,bool Actuated=false)
 {
+    internal bool HasTile=>TileType.HasValue;
     // Legacy structural-only callers cannot certify liquid trajectories.
     internal char DryShape => Shape=='?'||Liquid.Amount==0?Shape:'!';
 }

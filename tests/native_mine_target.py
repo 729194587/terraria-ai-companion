@@ -214,7 +214,7 @@ async def verify(args):
         bridge.close()
 
     for case, status in (
-        ('opening_across', 'completed'), ('opening_down', 'completed'), ('opening_probe', 'completed'),
+        ('opening_across', 'completed'), ('opening_down', 'completed'), ('opening_multidrop', 'completed'), ('opening_probe', 'completed'),
         ('opening_hazard', 'failed'), ('opening_hard', 'failed'), ('opening_unsafe', 'timeout'),
         ('opening_deadline', 'timeout'), ('opening_unknown', 'unknown'),
     ):
@@ -249,7 +249,10 @@ async def verify(args):
                     assert (proof['X'], proof['Y']) != (spec['x'], spec['y']) and proof['destroyedByActor'], proof
                 proof = cuts[-1]['result']['evidence']
                 assert (proof['X'], proof['Y']) == (spec['x'], spec['y']) and proof['destroyedByActor'], proof
-                if case in ('opening_down', 'opening_probe', 'opening_unsafe'):
+                if case == 'opening_multidrop':
+                    drops = task['progress']['opening']['drops']
+                    assert any(d['toFeetY']-d['fromFeetY'] == 48 for d in drops), task
+                elif case in ('opening_down', 'opening_probe', 'opening_unsafe'):
                     drops = task['progress']['opening']['drops']
                     assert drops and all(d['toFeetY']-d['fromFeetY']==16 for d in drops), task
                     if case == 'opening_unsafe':

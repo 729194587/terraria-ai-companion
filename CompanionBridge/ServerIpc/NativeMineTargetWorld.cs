@@ -11,6 +11,7 @@ namespace CompanionBridge.ServerIpc;
 internal sealed class NativeMineTargetWorld : IMineTargetWorld
 {
     public string ProgressKey=>NativeNavigationWorld.CheckpointKey(Player);
+    public bool RefreshApproachAfterOpening=>true;
     private readonly AiReadOnlyProtocol.Identity identity;
     private readonly JsonElement args;
     private Player Player=>(Player)identity.Actor;
@@ -64,12 +65,13 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
             if(IsTargetCell(tx,ty))return '.';
             return cell;
         });
-        return safe||!arrival&&edits.Edited&&furniture.Length==0&&edits.CanDropAfter(pose,new[]{(x,y)});
+        return safe||!arrival&&edits.Edited&&furniture.Length==0&&edits.LandingAfterCut(pose,new[]{(x,y)}).HasValue;
     }
     public bool CanMine()
     {
         var p=Player;var observed=ServerAiNavigation.Observe(p);
-        return observed.Settled&&(!edits.Edited||NativeNavigationEdits.SafeCutNeighbours(x,y))&&SafePose(observed.State,new NativeMotionWorld(observed.State),false)
+        return observed.Settled&&(!edits.Edited||NativeNavigationEdits.SafeRemovalNeighbours(x,y,new(edits.Environment)))
+            &&SafePose(observed.State,new NativeMotionWorld(observed.State),false)
             &&ActorMining.QueryReach(p,identity.World,identity.Generation,item,x,y,p.position.X,p.position.Y);
     }
     public JsonElement? FindApproach()
@@ -113,10 +115,12 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
     }
     public NavigationStep FindOpening(int remainingTiles)
     {
-        if(item.pick<=0||Main.tileFrameImportant[type])return null;
+        if(item.pick<=0||Main.tileFrameImportant[type])
+        {SearchDetail+="; opening requires an ordinary pickaxe target";return null;}
         var p=Player;
         if(ActorMining.QueryReach(p,identity.World,identity.Generation,item,x,y,p.position.X,p.position.Y)
-            &&!NativeNavigationEdits.SafeCutNeighbours(x,y))return null;
+            &&!NativeNavigationEdits.SafeRemovalNeighbours(x,y,new(edits.Environment)))
+        {SearchDetail+="; reachable target has unsafe removal neighbours";return null;}
         var step=edits.FindOpening(x*16+8,y*16,remainingTiles);
         SearchDetail=edits.SearchDetail;
         return step;

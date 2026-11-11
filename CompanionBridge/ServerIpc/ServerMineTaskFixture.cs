@@ -103,7 +103,7 @@ internal static class ServerMineTaskFixture
                     for(int ty=floor-9;ty<floor;ty++)
                     {var rock=Main.tile[tx,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
             }
-            if(kind is "opening_down" or "opening_probe" or "opening_hazard" or "opening_hard" or "opening_unsafe" or "opening_deadline" or "opening_unknown" or "opening_cancel")
+            if(kind is "opening_down" or "opening_multidrop" or "opening_probe" or "opening_hazard" or "opening_hard" or "opening_unsafe" or "opening_deadline" or "opening_unknown" or "opening_cancel")
             {
                 x=left;y=floor+4;
                 if(kind=="opening_probe")
@@ -117,8 +117,39 @@ internal static class ServerMineTaskFixture
                 if(kind=="opening_hard")
                     for(int tx=left;tx<=left+1;tx++)Main.tile[tx,floor].TileType=TileID.Obsidian;
                 if(kind=="opening_unsafe")
+                {
+                    y=floor+5;
                     for(int tx=left;tx<=left+1;tx++)
-                        for(int ty=floor+1;ty<=floor+3;ty++)Main.tile[tx,ty].ClearTile();
+                        for(int ty=floor+1;ty<=floor+4;ty++)Main.tile[tx,ty].ClearTile();
+                }
+                if(kind=="opening_multidrop")
+                {
+                    // Replay the two pass-through rows below the original grass cover.
+                    for(int tx=left;tx<=left+1;tx++)for(int ty=floor+1;ty<=floor+2;ty++)
+                    {var vine=Main.tile[tx,ty];vine.HasTile=true;vine.TileType=TileID.Vines;}
+                    Main.tile[left+1,floor].TileType=TileID.PumpkinBlock;
+                    var grass=Main.tile[left+2,floor];grass.TileType=TileID.Grass;
+                    var plant=Main.tile[left+2,floor-1];plant.HasTile=true;plant.TileType=TileID.Plants2;
+                    var view=new LocalTerrainView(Common.Systems.TerrainReader.ReadEnvironment);
+                    if(!NativeNavigationEdits.SafeExcavation(left+1,floor,view))
+                        throw new InvalidOperationException("Plants2 rejected an adjacent PumpkinBlock cut");
+                    var above=Main.tile[left+1,floor-1];above.HasTile=true;above.TileType=TileID.Sand;
+                    if(NativeNavigationEdits.SafeExcavation(left+1,floor,view))
+                        throw new InvalidOperationException("Opening allowed removal of a sand column's support");
+                    above.ClearTile();above.LiquidType=LiquidID.Lava;above.LiquidAmount=255;
+                    if(NativeNavigationEdits.SafeExcavation(left+1,floor,view))
+                        throw new InvalidOperationException("Opening allowed removal beside lava");
+                    above.LiquidAmount=0;
+                    for(int col=0;col<2;col++)
+                    {
+                        var part=Main.tile[left+8+col,floor-1];part.HasTile=true;part.TileType=TileID.WorkBenches;
+                        part.TileFrameX=(short)(col*18);part.TileFrameY=0;
+                    }
+                    if(NativeNavigationEdits.SafeExcavation(left+8,floor,view)
+                        ||!NativeNavigationEdits.SafeExcavation(left+7,floor,view))
+                        throw new InvalidOperationException("Opening must protect the workbench's anchor, not nearby unrelated blocks");
+                    for(int col=0;col<2;col++)Main.tile[left+8+col,floor-1].ClearTile();
+                }
                 if(kind=="opening_hazard")
                 {
                     var lava=Main.tile[left,floor+1];lava.ClearTile();lava.LiquidType=LiquidID.Lava;lava.LiquidAmount=255;
