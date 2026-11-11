@@ -44,6 +44,8 @@ def action_results(actions, last_action=None, cleanup=None):
         end = result.get('endEvidence')
         if isinstance(end, dict) and type(end.get('inputsReleased')) is bool:
             fields['endEvidence'] = {'inputsReleased': end['inputsReleased']}
+        if 'recovery' in result:
+            fields['recovery'] = result['recovery']
         return fields
 
     # Reserve compact evidence for the last failure/cleanup and early progress

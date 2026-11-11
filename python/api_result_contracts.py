@@ -755,12 +755,17 @@ CONTINUATION = {
     'continuationAllowed': desc(B, 'Explicit host permission for the Lua program to continue.'),
     'continuationScope': const('observe_scene_then_move_input'),
 }
+DEFS['ActionRecovery'] = obj({
+    'callId': I, 'operation': S, 'kind': S, 'reason': S, 'nextStep': S,
+    'detail': S, 'unchangedAttemptSuppressed': const(True),
+}, optional=('detail', 'unchangedAttemptSuppressed'))
 RECEIPT_FLAGS = {
     'terminalActionStatus': desc(TERMINAL_STATUS, 'Native status before host release or effect verification downgraded the receipt.'),
     'supervisorError': desc(S, 'Host supervision failed. A stop receipt may still contain a native terminal result.'),
     'supervisorStopRequest': desc(obj({'status': const('timeout'), 'reason': const('supervisor_deadline')}),
                                   'The host requested a stop at its deadline. The action status reports what the stop actually observed.'),
     **CONTINUATION,
+    'recovery': ref('ActionRecovery'),
 }
 DEFS['ActionReceipt'] = obj({
     **ACTION_CORE, **RECEIPT_FLAGS,
@@ -786,9 +791,9 @@ def refusal(*names, resumed=False):
         'operation': enum(*names), 'valid': const(False), 'status': const('failed'), 'completed': const(False),
         'reason': S, 'dispatchState': const('not_admitted'), 'actionId': NULL, 'inputsAcquired': const(False),
         'inputsReleased': NULL, 'effectVerified': const(False), 'endEvidence': NULL,
-        'endEvidenceStatus': const('not_started'), **CONTINUATION,
+        'endEvidenceStatus': const('not_started'), **CONTINUATION, 'recovery': ref('ActionRecovery'),
         **({'resumedFrom': S} if resumed else {}),
-    }, optional=(*CONTINUATION, *(('resumedFrom',) if resumed else ())))
+    }, optional=(*CONTINUATION, 'recovery', *(('resumedFrom',) if resumed else ())))
 
 
 # stop() and terminal() can report loss of ownership without a native receipt.
@@ -956,7 +961,8 @@ def stop_schema(operations, program_tasks=True):
         obj({'valid': const(True), 'status': const('completed'), 'reason': const('no_agent_action'),
              'noOp': const(True), **STOP_CONTINUATION}, optional=STOP_CONTINUATION),
         ref('ShortStopResult'),
-        obj({**PRE_DISPATCH['properties'], **CONTINUATION}, optional=CONTINUATION),
+        obj({**PRE_DISPATCH['properties'], **CONTINUATION, 'recovery': ref('ActionRecovery')},
+            optional=(*CONTINUATION, 'recovery')),
     ]
     if program_tasks:
         branches.extend((ref('ProgramTaskUnknownOutcome'), refusal('mine_target')))

@@ -161,7 +161,8 @@ class LuaRuntime:
                       allow_actions=True, on_result=None):
         limits.validate()
         out = {'runId': uuid.uuid4().hex, 'status': 'unknown', 'calls': 0, 'value': None,
-               'actions': 0, 'logs': [], 'actionState': 'idle', 'lastAction': None, 'lastObservation': None, 'cleanup': None, 'trace': []}
+               'actions': 0, 'logs': [], 'actionState': 'idle', 'lastAction': None, 'lastObservation': None,
+               'cleanup': None, 'trace': [], 'recoveryEvents': []}
         if type(source) is not str or len(source) > SOURCE_BYTES or len(source.encode('utf-8')) > SOURCE_BYTES:
             return {**out, 'status': 'source_limit'}
         if getattr(self.bridge, '_lua_poisoned', False):
@@ -200,6 +201,13 @@ class LuaRuntime:
         token = tracing.context.set({**tracing.context.get(), 'task_id': bundle.id,
                                     'lua_run_id': out['runId'], 'source_sha256': digest})
         call_token, call_open, call_meta, failure_call = None, False, {}, None
+
+        def record_recovery(hint, **details):
+            out['recovery'] = hint
+            event = {**hint, **details, 'callId': call_meta['id']}
+            out['recoveryEvents'].append(event)
+            return event
+
         def emit(event, **fields):
             tracing.trace.emit(event, **fields)
             diagnostics.emit(event, **fields)
@@ -359,17 +367,20 @@ class LuaRuntime:
                 try:
                     args = program_tasks.validate(name, args) if name in program_tasks.NAMES else atomic.validate(name, args)
                 except ValueError as exc:
-                    if name in atomic.SCHEMAS.keys() | program_tasks.NAMES:
-                        out['recovery'] = action_recovery.guidance(name, 'bad_argument', detail=str(exc))
+                    if name not in atomic.SCHEMAS.keys() | program_tasks.NAMES:
+                        raise
                     # Only this local schema/range check is recoverable. No
                     # dispatch, network call or game action has begun here.
-                    if name not in atomic.SCHEMAS.keys() | program_tasks.NAMES or not message.get('protected', False):
-                        raise
                     rejection = {'status': 'bad_argument', 'error': str(exc)[:512],
                                  'argumentOperation': name}
+                    details = {}
                     if isinstance(exc, atomic.ArgumentValidationError):
-                        rejection.update(diagnostics=exc.diagnostics,
-                                         diagnosticsTruncated=exc.diagnostics_truncated)
+                        details = dict(diagnostics=exc.diagnostics, diagnosticsTruncated=exc.diagnostics_truncated)
+                        rejection.update(details)
+                    rejection['recovery'] = record_recovery(
+                        action_recovery.guidance(name, 'bad_argument', detail=str(exc)), **details)
+                    if not message.get('protected', False):
+                        raise
                     call_end('bad_argument', error=rejection['error'])
                     active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
                         encode({'type': 'local_argument_rejected', 'id': sequence, 'value': rejection})))
@@ -380,10 +391,10 @@ class LuaRuntime:
                 synchronous_task = name == 'mine_target' and program_tasks.available(self.bridge)
                 if (allow_actions and not halted and handoff is None and name in atomic.BUDGETED_ACTIONS
                         and (guidance := recovery.blocked(name, args)) is not None):
-                    out['recovery'] = {**guidance, 'unchangedAttemptSuppressed': True}
                     result = {'valid': False, 'status': 'failed', 'completed': False,
                               'operation': name, 'reason': 'unchanged_ineffective_action',
-                              'dispatchState': 'not_admitted', 'continuationAllowed': True}
+                              'dispatchState': 'not_admitted', 'continuationAllowed': True,
+                              'recovery': record_recovery({**guidance, 'unchangedAttemptSuppressed': True})}
                     call_end('failed', result=result)
                     active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
                         encode({'type': 'result', 'id': sequence, 'value': result})))
@@ -424,7 +435,7 @@ class LuaRuntime:
                         terminal_result = {**terminal_result, 'continuationAllowed': True}
                     if synchronous_task and terminal_result is not None:
                         if (hint := recovery.observe(name, args, terminal_result)) is not None:
-                            out['recovery'] = hint
+                            terminal_result = {**terminal_result, 'recovery': record_recovery(hint)}
                     if terminal_result is not None and on_result is not None:
                         on_result('mine_target', args if synchronous_task else {}, terminal_result)
                     if synchronous_task and terminal_result is not None:
@@ -510,7 +521,7 @@ class LuaRuntime:
                             self.bridge._lua_navigation_handoff = handoff
                             result['continuationScope'] = 'observe_scene_then_move_input'
                         if (hint := recovery.observe(name, args, result)) is not None:
-                            out['recovery'] = hint
+                            result['recovery'] = record_recovery(hint)
 
                     if on_result is not None:
                         on_result(name, args, result)
