@@ -54,7 +54,7 @@ internal static class ServerRopeFixture
             }
             Main.tile[x,floor].ClearEverything();
         }
-        else
+        else if(mode!="build_and_climb")
         {
             var anchor=Main.tile[x,y-1];
             anchor.HasTile=true;anchor.TileType=TileID.Stone;
@@ -65,7 +65,7 @@ internal static class ServerRopeFixture
             {var tile=Main.tile[x,ty];tile.ClearEverything();tile.HasTile=true;tile.TileType=TileID.Rope;}
             Main.tile[x,floor+12].ClearEverything();
         }
-        p.position=new(center*16,floor*16-p.height);
+        p.position=new(mode=="build_and_climb"?x*16-2:center*16,floor*16-p.height);
         p.velocity=Vector2.Zero;
         p.selectedItem=0;
         p.inventory[4].SetDefaults(mode switch
@@ -74,7 +74,7 @@ internal static class ServerRopeFixture
         });
         if(!p.inventory[4].IsAir)p.inventory[4].stack=mode switch
         {
-            "upward"=>16,"vine" or "silk" or "web"=>1,_=>5
+            "upward"=>16,"build_and_climb"=>10,"vine" or "silk" or "web"=>1,_=>5
         };
         PlacementSelfTest.DenyTile=mode=="refuse";
         cursor=(Main.myPlayer,Main.mouseX,Main.mouseY,Player.tileTargetX,Player.tileTargetY);

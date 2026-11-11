@@ -35,20 +35,30 @@ internal static class ActorPlacement
         &&i.createTile is not (TileID.Pumpkins or TileID.Coral or TileID.BeachPiles or TileID.Pigronata);
     internal static bool Supported(Item i)=>TileMaterial(i)&&!TileObjectData.CustomPlace(i.createTile,i.placeStyle);
     internal static string Preflight(Player p,int x,int y,bool objectPlacement=false)
+        =>Preflight(p,x,y,objectPlacement,out _);
+    private static string Preflight(Player p,int x,int y,bool objectPlacement,out ActorRope.Target rope)
     {
+        rope=null;
         if(objectPlacement)return ActorObjectPlacement.Preflight(p,x,y);
         if(!WorldGen.InWorld(x,y,2))return "invalid_target";
         if(Main.tile[x,y].HasTile)return "target_occupied";
-        if(!Supported(p.HeldItem))return "unsupported_selected_placement_item";
+        bool ropeMaterial=ActorRope.Supported(p.HeldItem);
+        if(!ropeMaterial&&!Supported(p.HeldItem))return "unsupported_selected_placement_item";
         if(p.gravDir!=1||p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)return "unsupported_placement_state";
-        return null;
+        // An empty requested cell keeps place_tile's exact-coordinate contract.
+        // Clicking an existing segment to extend it is handled by place_rope.
+        return ropeMaterial?ActorRope.Resolve(p,p.HeldItem,x,y,out rope):null;
     }
     internal static Context Create(Player p,int x,int y,bool objectPlacement=false,ActorRope.Target rope=null)
     {
         ActorObjectPlacement.Shape shape=null;
+        if(rope==null)
+        {
+            string error=objectPlacement?ActorObjectPlacement.Preflight(p,x,y,out shape):Preflight(p,x,y,false,out rope);
+            if(error!=null)throw new InvalidOperationException(error);
+        }
         if(rope!=null)return new Context{X=rope.X,Y=rope.EndY,Rope=rope,
             TileType=p.HeldItem.createTile,Prefix=p.HeldItem.prefix,Style=p.HeldItem.placeStyle};
-        string error=objectPlacement?ActorObjectPlacement.Preflight(p,x,y,out shape):Preflight(p,x,y);if(error!=null)throw new InvalidOperationException(error);
         var c=new Context{X=x,Y=y,TileType=p.HeldItem.createTile,Prefix=p.HeldItem.prefix,Style=p.HeldItem.placeStyle,Object=objectPlacement};
         if(objectPlacement){c.Shape=shape;c.SupportSnapshot=ActorObjectPlacement.SupportSnapshot(c);}
         return c;

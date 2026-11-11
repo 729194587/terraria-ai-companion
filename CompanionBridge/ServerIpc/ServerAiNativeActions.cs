@@ -92,7 +92,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             }
             else if(operation=="use_item")
             {
-                if(p.selectedItem<0||p.selectedItem>9||p.HeldItem.IsAir||!ActorItemUse.Supported(p.HeldItem))return Reject("unsupported_selected_item");
+                if(p.selectedItem<0||p.selectedItem>9||!ActorItemUse.Supported(p.HeldItem))
+                    return Reject("unsupported_selected_item",ActorRope.Supported(p.HeldItem)
+                        ?"Rope placement requires Tile coordinates. Use place_tile for an empty cell or place_rope to extend an existing rope."
+                        :null);
                 ActorItemUse.Start(p,identity.World,identity.Generation);context=ActorItemUse.Current;
             }
             else

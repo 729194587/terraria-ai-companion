@@ -162,7 +162,7 @@ SERVER_DESCRIPTIONS = {
     'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。data.terrain含originX/originY/rows和独立液体层liquids。液体项含绝对Tile坐标x/y、type、原生数量amount（1–255），未知格的缺项不代表干燥。data.state含centerWorldPixels；data还含bounds、legend、scannedCount、unknownCount和complete。格为Tile（16像素）。supported只是profile适用性。',
     'use_item': '当前快捷栏物品执行一次原生使用周期，参数仅{}。支持可无坐标单次使用的原版物品及 ModItem，使用条件由 ItemCheck 和 Mod Hook 判定。需要瞄准、弹药、持续按住或放置坐标的物品需使用相应入口。3秒上限。cycleVerified 证明使用周期，consumptionObserved 表示持用物品堆叠减少；具体治疗、Buff、命中等效果需另行观察。',
     'mine_tile': '原生挖掘指定 Tile。自动在整个主背包（含快捷栏）选择合适工具，必要时临时切换快捷栏，无需预选镐。由 Terraria 原生挖掘范围、工具和破坏许可判定。在当前位置执行，需要接近时用 mine_target。可指定家具有效组成格，已识别的多格家具核验整组移除。10秒上限，destroyedByActor、targetAbsent 和绑定输入释放证据齐备才完成。掉落入包需另行观察，unknown 停止。',
-    'place_tile': '在空的绝对 Tile 格 x/y 用选中的快捷栏材料放置普通单格 Tile。按 createTile、placeStyle 和原生放置范围、邻接及 Mod Hook 判定；多格对象用 place_object。核验本 AI 的放置事件、目标格、consumedCount=1 和输入释放。取消可能已有副作用，unknown 停止。10秒上限。',
+    'place_tile': '在空的绝对 Tile 格 x/y 用选中的快捷栏材料放置普通单格 Tile 或原版绳索。按 createTile、placeStyle 和原生放置范围、邻接及 Mod Hook 判定。点击已有绳段向下延伸用 place_rope；多格对象用 place_object。核验本 AI 的放置事件、目标格、consumedCount=1 和输入释放。取消可能已有副作用，unknown 停止。10秒上限。',
     'scan_entities': '以AI中心扫描世界像素半径radius（1..1600）内真实活跃NPC/掉落/其他玩家，排除AI自身；category与可选typeIds/npcFilter按Schema，先筛选再按距离排序截断。返回data.items及范围/计数/截断；entityRef绑定世界/AI代次/NPC实例，仅是观察标识，不保证视线、可达或可攻击。',
 }
 LEGACY_SERVER_OPERATION_DESCRIPTIONS = {
