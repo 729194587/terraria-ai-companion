@@ -16,10 +16,13 @@ async def verify(args):
     profile = args.profile
     await wait_file(profile / "action-fixture.json", 90)
     rows = []
+    scene_number = 0
     bridge = ServerAiBridge(args.port)
     assert "place_rope" in bridge.supported_atomic_operations
 
     async def setup(mode):
+        nonlocal scene_number
+        scene_number += 1
         ready = profile / "rope-ready.json"
         ready.unlink(missing_ok=True)
         temp = profile / "rope-request.tmp"
@@ -29,7 +32,7 @@ async def verify(args):
 
     async def action_for(label, source, status, reason=None, *, require_release=True):
         result = await LuaRuntime(bridge).execute(
-            source,
+            source, chat_id=f'rope-fixture-{scene_number}',
             limits=Limits(seconds=18, calls=1, actions=1))
         action = result.get("value") or result.get("lastAction") or {}
         rows.append(dict(label=label, action=action))

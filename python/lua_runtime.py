@@ -15,6 +15,7 @@ import agent_trace as tracing
 import agent_diagnostics as diagnostics
 import evidence
 import atomic_operations as atomic
+import action_recovery
 import navigation_recovery
 import program_tasks
 from control import Bridge, BridgeError, command_owner
@@ -178,6 +179,10 @@ class LuaRuntime:
         process, connection, active = None, None, None
         active_role = None
         lifecycle = {}
+        scope = (chat_id, copy.deepcopy(getattr(self.bridge, 'binding', None)))
+        recovery = getattr(self.bridge, '_lua_action_recovery', None)
+        if recovery is None or recovery.scope != scope:
+            recovery = self.bridge._lua_action_recovery = action_recovery.Recovery(scope)
         handoff = getattr(self.bridge, '_lua_navigation_handoff', None)
         if handoff is not None and handoff.chat_id != chat_id:
             self.bridge._lua_navigation_handoff = None
@@ -354,6 +359,8 @@ class LuaRuntime:
                 try:
                     args = program_tasks.validate(name, args) if name in program_tasks.NAMES else atomic.validate(name, args)
                 except ValueError as exc:
+                    if name in atomic.SCHEMAS.keys() | program_tasks.NAMES:
+                        out['recovery'] = action_recovery.guidance(name, 'bad_argument', detail=str(exc))
                     # Only this local schema/range check is recoverable. No
                     # dispatch, network call or game action has begun here.
                     if name not in atomic.SCHEMAS.keys() | program_tasks.NAMES or not message.get('protected', False):
@@ -371,6 +378,19 @@ class LuaRuntime:
                     active = None
                     continue
                 synchronous_task = name == 'mine_target' and program_tasks.available(self.bridge)
+                if (allow_actions and not halted and handoff is None and name in atomic.BUDGETED_ACTIONS
+                        and (guidance := recovery.blocked(name, args)) is not None):
+                    out['recovery'] = {**guidance, 'unchangedAttemptSuppressed': True}
+                    result = {'valid': False, 'status': 'failed', 'completed': False,
+                              'operation': name, 'reason': 'unchanged_ineffective_action',
+                              'dispatchState': 'not_admitted', 'continuationAllowed': True}
+                    call_end('failed', result=result)
+                    active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
+                        encode({'type': 'result', 'id': sequence, 'value': result})))
+                    active_role = 'send'
+                    await watch(active)
+                    active = None
+                    continue
                 if name in program_tasks.NAMES or synchronous_task:
                     if not program_tasks.available(self.bridge):
                         raise ValueError('Program task coordination unsupported')
@@ -399,8 +419,14 @@ class LuaRuntime:
                     active = None
                     out['tasks'] = manager.projection()
                     terminal_result = result.get('result')
+                    can_continue = synchronous_task and terminal_result is not None and action_recovery.released_task_failure(terminal_result)
+                    if can_continue:
+                        terminal_result = {**terminal_result, 'continuationAllowed': True}
+                    if synchronous_task and terminal_result is not None:
+                        if (hint := recovery.observe(name, args, terminal_result)) is not None:
+                            out['recovery'] = hint
                     if terminal_result is not None and on_result is not None:
-                        on_result('mine_target', {}, terminal_result)
+                        on_result('mine_target', args if synchronous_task else {}, terminal_result)
                     if synchronous_task and terminal_result is not None:
                         out['lastAction'] = bounded_action(terminal_result)
                         out['actionState'] = 'released' if safe_terminal(terminal_result) else 'unknown'
@@ -408,7 +434,7 @@ class LuaRuntime:
                     if result.get('status') == 'unknown':
                         out.update(status='action_unknown', actionState='unknown')
                         break
-                    if result.get('status') in ('failed', 'timeout', 'cancelled'):
+                    if result.get('status') in ('failed', 'timeout', 'cancelled') and not can_continue:
                         out['status'] = result['status']
                         break
                     active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
@@ -477,11 +503,14 @@ class LuaRuntime:
                         navigation_continuation = ({'observe_scene', 'move_input'} <= set(getattr(self.bridge, 'supported_atomic_operations', ()))
                             and navigation_recovery.confirmed_failure(result, lifecycle) and not fallback_attempt)
                         result = {**result, 'continuationAllowed': navigation_continuation or
-                                  (not fallback_attempt and safe_preflight_rejection(result, lifecycle))}
+                                  (not fallback_attempt and (safe_preflight_rejection(result, lifecycle)
+                                   or rejected_before_dispatch or action_recovery.released_task_failure(result)))}
                         if navigation_continuation:
                             handoff = navigation_recovery.Handoff(result, lifecycle['action'], chat_id)
                             self.bridge._lua_navigation_handoff = handoff
                             result['continuationScope'] = 'observe_scene_then_move_input'
+                        if (hint := recovery.observe(name, args, result)) is not None:
+                            out['recovery'] = hint
 
                     if on_result is not None:
                         on_result(name, args, result)

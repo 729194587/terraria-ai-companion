@@ -800,7 +800,8 @@ class Agent:
                                     lua_failure = result
                                     # A syntax-only failure may be corrected within budget;
                                     # after any action, fail closed for the rest of this turn.
-                                    atomic_halted |= (last_atomic_action is not None or result['actionState'] == 'unknown'
+                                    atomic_halted |= ((last_atomic_action is not None and result['status'] != 'bad_argument')
+                                        or result['actionState'] == 'unknown'
                                         or result['status'] in ('call_limit','action_limit','timeout','instruction_limit',
                                             'memory_limit','value_limit','result_limit','log_limit','worker_error','host_error'))
                                 elif not atomic_halted:
