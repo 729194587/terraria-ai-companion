@@ -158,6 +158,28 @@ def help_result_contract(name):
     if name == 'wait':
         return ('{valid,status,elapsedMilliseconds,clock,effectStatus}',
                 'completed表示宿主计时结束；clock为host_monotonic，effectStatus为not_applicable。')
+    if name == 'query_task':
+        return (
+            '外层 Program Task 视图：{taskId,operation,status,valid,completed,dispatchState,origin,retryAllowed,'
+            'action?,result?,resultSequence?}。未知 taskId 返回 {status="unknown",taskId,reason="unknown_task",retryAllowed=false}。'
+            'action 是最近的原生动作快照，action.task 是游戏任务视图；终态 result 是宿主核验后的动作回执，'
+            '其中 result.task 也可携带游戏任务视图。游戏任务视图含 phase、status、reason、progress、currentChild、lastResult 和 result。'
+            '受理阶段或未创建游戏任务槽时可能只有精简视图；执行中游戏任务的最终 result 为 null。',
+            'phase 描述执行阶段，terminal 表示已结束，结果以 status 和回执为准。'
+            'currentChild 是当前子任务的视图或 null；lastResult 是最近结束的子任务回执，可能失败。'
+            'progress.children 是有界的已结束子任务历史，childrenTruncated/omittedChildren 表示裁剪；'
+            'settledChildren 统计所有已结束子任务，completedChildren 只统计成功项。'
+            'progress.stage/activity 描述执行阶段和活动，target 描述目标，search/planning/opening 提供局部规划或开路信息。'
+            'dugTiles/placedTiles 和 verifiedTerrainActions 记录已核验的开路改造，不能当作目标矿块完成数量。'
+            '要报告部分完成，检查子任务 result 的具体 evidence、effectVerified 和 inputsReleased，说明已核验的效果；'
+            '角色位移、动作成功、阶段变化和子任务计数都不能单独证明任务目标取得进展。'
+            '整体完成以外层 completed/status 和最终 result 的操作专属效果及释放证据为准；'
+            '游戏任务视图中的 result 属于该层任务，子任务的 result 或根任务 lastResult 不代表根任务完成。'
+            'failed/timeout/cancelled 时查看最终 reason 和证据，仍可报告已核验的部分效果。'
+            'unknown 表示结果未确认，既不是成功也不是普通失败，不据此重试。'
+            '若 actionResults.items[].summaryOnly 或 runtimeTasks.results[].resultSummaryOnly 为 true，'
+            '用原 taskId 调用 query_task 获取当前连接保留的完整任务回执；'
+            '查询无法补齐游戏侧已经裁剪的子任务历史。')
     if name in program_tasks.NAMES:
         return ('任务视图：{taskId,operation,status,valid,completed,dispatchState,action?,result?,waitStatus?}',
                 '受理或running不等于完成；await_task的waitStatus=timeout仅结束等待。'
@@ -251,6 +273,8 @@ def server_contract(bridge, tool, *, compact=False):
     if program_tasks.available(bridge):
         task_reference = ('\nProgram/Task 协作：submit_task仅支持mine_target，返回稳定taskId与受理状态；'
             'query_task/await_task/cancel_task需明确taskId，等待到期不取消任务。'
+            '查进展时读取 query_task 的 Help，区分 action.task.currentChild、progress.children、lastResult 和根任务结果。'
+            '摘要标记 summaryOnly/resultSummaryOnly 为 true 时，用原 taskId 调用 query_task 获取完整回执。'
             '普通新聊天/Program结束保留游戏Task；显式停止须确认取消与释放。runtimeTasks含活动状态与未消费结果，不授权自动重试。'
             '活动或unknown任务阻止新身体变更，替换前显式取消并确认终态。'
             '危险由游戏Tick安全中断，resume_task只对可信危险中断显式重新受理，重新验证目标/工具/环境；不自动恢复。'

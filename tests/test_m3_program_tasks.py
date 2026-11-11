@@ -21,6 +21,7 @@ from lua_agent import ProgramStore
 from lua_runtime import LuaRuntime
 from program_tasks import TaskCoordinator, coordinator, definitions, validate
 from server_ai import ServerAiBridge
+from server_ai_contract import api_help
 
 SUBMIT = "local t=api('submit_task',{operation='mine_target',arguments={x=10,y=20}});"
 
@@ -92,6 +93,16 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('running',task_outcome([], active_tasks=waited['tasks']['active']))
         query=await self.runtime.execute("return api('query_task',{taskId='"+task_id+"'})")
         self.assertEqual('running',query['value']['status'])
+        help_view = api_help(self.bridge, {'name': 'query_task'})
+        validator = Draft202012Validator(help_view['returnsSchema'])
+        validator.validate(query['value'])
+        self.assertIsNone(query['value']['action']['task']['currentChild'])
+        self.assertNotIn('result', query['value'])
+        for field in ('action.task', 'phase', 'progress', 'currentChild', 'lastResult', 'result.task'):
+            self.assertIn(field, help_view['returns'])
+        for phrase in ('progress.children', 'effectVerified', 'inputsReleased', 'unknown',
+                       'summaryOnly', 'resultSummaryOnly', '用原 taskId 调用 query_task'):
+            self.assertIn(phrase, help_view['statusSemantics'])
         conflict=await self.runtime.execute("api('use_item',{})")
         self.assertEqual('failed',conflict['status']);self.assertEqual(1,await self.starts())
         self.complete()
@@ -99,13 +110,27 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         queried=await self.runtime.execute("return api('query_task',{taskId='"+task_id+"'})")
         self.assertEqual('completed', queried['status'], queried)
         view=queried['value']
-        Draft202012Validator(schema_for('query_task')).validate(view)
+        validator.validate(view)
+        task = view['action']['task']
+        self.assertEqual(task, view['result']['task'])
+        self.assertEqual('terminal', task['phase'])
+        self.assertIsNone(task['currentChild'])
+        child, = task['progress']['children']
+        self.assertEqual(task_id, child['parentTaskId'])
+        self.assertEqual('mine_tile', child['taskName'])
+        self.assertEqual((1, 1), (task['progress']['settledChildren'], task['progress']['completedChildren']))
+        self.assertEqual(child['result'], task['lastResult'])
+        self.assertTrue(task['result']['effectVerified'])
         self.assertEqual('completed',view['result']['status']);self.assertTrue(view['result']['completed'])
         self.assertEqual('completed',task_outcome([view['result']],False,'unknown'))
         self.assertEqual([True],notices)
         projection=self.manager.projection();self.assertEqual(1,len(projection['results']))
+        with patch('lua_action_results.ACTION_RESULTS_BYTES', 1024):
+            summary, = self.manager.projection()['results']
+        self.assertTrue(summary['resultSummaryOnly'])
+        self.assertNotIn('task', summary['result'])
         self.manager.consume(projection['throughSequence'])
-        await self.manager.invoke('query_task',{'taskId':task_id})
+        self.assertEqual(view, await self.manager.invoke('query_task',{'taskId':summary['taskId']}))
         self.assertEqual([],self.manager.projection()['results']);self.assertEqual([True],notices)
 
     async def test_program_cancel_preserves_task_then_explicit_cancel_releases(self):
