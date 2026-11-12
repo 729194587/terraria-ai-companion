@@ -1,8 +1,14 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$VerticalNavigation,[switch]$TcpCapacity,[switch]$Mobility)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$VerticalNavigation,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
 $TModLoaderPath=$selectedEngine.Path
+if([bool]$BenchmarkSpec -ne [bool]$BenchmarkProfile){throw 'Benchmark requires a spec and a fresh profile path.'}
+if($BenchmarkSpec){
+    if(Test-Path -LiteralPath $BenchmarkProfile){throw 'Benchmark profile must be new.'}
+    $BenchmarkSpec=(Resolve-Path -LiteralPath $BenchmarkSpec).Path
+    $Actions=$true
+}
 if(($Tasks -or $AutonomousNavigation) -and !$Actions){throw 'Task validation requires isolated Actions fixture.'}
 if($Inventory -and !$Actions){throw 'Inventory validation requires isolated Actions fixture.'}
 if($Crafting -and !$Actions){throw 'Crafting verification requires isolated Actions fixture.'}
@@ -24,16 +30,17 @@ $package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$se
 Assert-CompanionPackage -Package $package -Engine $selectedEngine
 if(!$PythonExecutable){$PythonExecutable=if($Atomic){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
 if(!(Test-Path -LiteralPath $package)){throw 'Build CompanionBridge first.'}
-$profile=Join-Path $repo ('.local/companion-'+$(if($Atomic){'g82'}else{'g81'})+'-native-'+[guid]::NewGuid().ToString('N'))
+$profile=if($BenchmarkSpec){[IO.Path]::GetFullPath($BenchmarkProfile)}else{Join-Path $repo ('.local/companion-'+$(if($Atomic){'g82'}else{'g81'})+'-native-'+[guid]::NewGuid().ToString('N'))}
 New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds" | Out-Null
 $oldLogs=Join-Path $TModLoaderPath 'tModLoader-Logs'
-if(Test-Path -LiteralPath $oldLogs){Copy-Item -LiteralPath $oldLogs -Destination "$profile/previous-installation-logs" -Recurse}
+if(!$BenchmarkSpec -and (Test-Path -LiteralPath $oldLogs)){Copy-Item -LiteralPath $oldLogs -Destination "$profile/previous-installation-logs" -Recurse}
 Copy-Item -LiteralPath $WorldPath -Destination "$profile/Worlds/test.wld"
 $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
 [IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')
 if($Actions){[IO.File]::WriteAllText("$profile/isolated-action-fixture",'Explicit test fixture in this copied world only.')}
+if($BenchmarkSpec){[IO.File]::WriteAllText("$profile/isolated-benchmark-fixture",'One benchmark attempt in a copied world.')}
 $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dotnet.exe'))
 $info.WorkingDirectory=$TModLoaderPath
 $info.UseShellExecute=$false
@@ -53,6 +60,7 @@ if($Semantic){$info.ArgumentList.Add("-companionsemantictest")}
 if($Terrain){$info.ArgumentList.Add("-companionterraintest")}
 if($Mobility){$info.ArgumentList.Add("-companionmobilitytest")}
 if($Actions){$info.ArgumentList.Add('-companionactionstest')}
+if($BenchmarkSpec){$info.ArgumentList.Add('-companionbenchmarktest')}
 if($Landing){$info.ArgumentList.Add('-companionlandingtest')}
 $process=[Diagnostics.Process]::Start($info)
 $startedUtc=$process.StartTime.ToUniversalTime()
@@ -123,7 +131,12 @@ try {
         if($readMismatch.ok -or $readMismatch.error -ne 'stale_binding'){throw 'Mismatched read binding was not rejected'}
     }
     $actionResult=$null;$worldEvidence=$null
-    if($Actions){
+    if($BenchmarkSpec){
+        [IO.File]::WriteAllText("$profile/benchmark-binding.json",($bound.binding|ConvertTo-Json -Compress))
+        & $PythonExecutable (Join-Path $repo 'tests/benchmark/runner.py') attempt --port $IpcPort --profile $profile --spec $BenchmarkSpec
+        if($LASTEXITCODE -ne 0){throw 'Benchmark attempt process failed to write evidence.'}
+    }
+    if($Actions -and !$BenchmarkSpec){
         $fixturePath=Join-Path $profile 'action-fixture.json'
         $fixtureDeadline=[DateTime]::UtcNow.AddSeconds(10)
         while(!(Test-Path -LiteralPath $fixturePath) -and [DateTime]::UtcNow -lt $fixtureDeadline){Start-Sleep -Milliseconds 100}
@@ -348,7 +361,7 @@ try {
     if($Tasks -or $AutonomousNavigation){$report.tasks=Get-Content -LiteralPath "$profile/mine-target-results.json" -Raw|ConvertFrom-Json}
     if($Inventory){$report.inventory=Get-Content -LiteralPath "$profile/inventory-results.json" -Raw|ConvertFrom-Json}
     if($Crafting){$report.crafting=Get-Content -LiteralPath "$profile/crafting-results.json" -Raw|ConvertFrom-Json;$report.combatIsolation=$combatIsolation}
-    if($Actions -and !$Scene -and !$Crafting){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
+    if($Actions -and !$Scene -and !$Crafting -and !$BenchmarkSpec){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
         $report.nativeCancellations=$nativeCancellations;$report.worldAfterCancel=$worldAfterCancel;$report.emptyTileRefusal=$empty.data.action;
         $report.actionFrameMode='Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.'}
     if($Landing){

@@ -142,6 +142,8 @@ internal static class ServerAiActionFixture
                 return;
             }
             update.Invoke(Main.instance,new object[]{new GameTime()});
+            if(ServerBenchmarkFixture.Enabled)
+                lock(ProbeSession.Reservation.Gate)ServerBenchmarkFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerAiTerrainFixture.Observe(ProbeSession.Actor);
             var current=ActorMining.Current;
             object[] Drops()=>Main.item.Where(i=>i.active&&i.type==ItemID.StoneBlock&&Vector2.Distance(i.Center,new(x*16+8,y*16+8))<160)

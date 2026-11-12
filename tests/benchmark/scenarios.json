@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "ore_cluster_basic",
+      "description": "Three copper blocks in reach from one safe stance",
+      "opening": "把这片铜矿全部挖掉。",
+      "solutionLua": "copper.lua",
+      "setup": {"targets": [[2,-2],[3,-2],[4,-2]]},
+      "checks": {"initialReach": "all", "minSuccessfulNavigation": 0, "minStanceDeltaPixels": 0}
+    },
+    {
+      "id": "ore_cluster_approach",
+      "description": "Approach three copper blocks over a flat corridor",
+      "opening": "把指定区域的铜矿全部挖掉。",
+      "solutionLua": "copper.lua",
+      "setup": {"targets": [[10,-2],[11,-2],[12,-2]]},
+      "checks": {"initialReach": "none", "minSuccessfulNavigation": 1, "minStanceDeltaPixels": 0}
+    },
+    {
+      "id": "ore_cluster_multi_stance",
+      "description": "Seven copper blocks across multiple work stances",
+      "opening": "把这片区域的铜矿全部挖掉。",
+      "solutionLua": "copper.lua",
+      "setup": {"targets": [[2,-2],[3,-2],[4,-2],[5,-2],[6,-2],[7,-2],[8,-2]]},
+      "checks": {"initialReach": "partial", "minSuccessfulNavigation": 1, "minStanceDeltaPixels": 16}
+    }
+  ],
+  "setup": {
+    "arena": [-24,-16,26,4],
+    "floorType": 1,
+    "targetType": 7,
+    "itemType": 3509,
+    "selectedSlot": 0
+  },
+  "budget": {"actions": 1, "calls": 4, "seconds": 58},
+  "metrics": ["gameTicks","wallSeconds","luaCalls","atomicActions","navigationChildren","miningChildren"]
+}
