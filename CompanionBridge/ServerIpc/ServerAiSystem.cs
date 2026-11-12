@@ -20,6 +20,10 @@ public sealed class ServerAiSystem : ModSystem
     private static bool callbacks;
     private AiReadOnlyServer server;
     private bool spawnPending;
+    private AiAtomicActions actions;
+    private ServerTorchMaintenance torches;
+    internal static bool AgentActive=>current?.actions?.HasActive==true;
+    internal static ServerTileLighting Lighting {get;private set;}
     internal static void LoadRuntime(Mod owner)
     {
         if (!Main.dedServ || !Enabled) return;
@@ -72,15 +76,26 @@ public sealed class ServerAiSystem : ModSystem
             Program.LaunchParameters.TryGetValue("-companionbridgeport", out var humanArg);
             Program.LaunchParameters.TryGetValue("-companionaiport", out var aiArg);
             int port = AiReadOnlyServer.ParsePort(aiArg ?? Environment.GetEnvironmentVariable("COMPANION_AI_PORT"), TcpControlServer.ParseLaunchPort(humanArg));
-            server = new(port, new AiAtomicActions(new ServerAiNativeActions()));
+            var native=new ServerAiNativeActions();
+            actions=new(native);
+            try{Lighting=new();}
+            catch(Exception e){Mod.Logger.Error("Dedicated tile lighting unavailable.",e);}
+            // Copied-world tests opt in so their staged inventory/placement
+            // probes continue to exercise only the actions under test.
+            if(!ServerAiActionFixture.Enabled||Program.LaunchParameters.ContainsKey("-companiontorchtest"))
+            {
+                torches=new(native);
+                actions.MaintenanceBusy=()=>torches.Busy;
+            }
+            server = new(port,actions);
             server.Start();
             spawnPending = true;
             Mod.Logger.Info($"AI IPC listening on 127.0.0.1:{port}; selection/navigation/use/mining enabled; awaiting server reservation.");
         }
         catch (Exception e) { server?.Dispose(); server = null; Mod.Logger.Error("AI IPC unavailable; human paths remain available.", e); }
     }
-    public override void PostUpdatePlayers() => Pump();
-    private void Pump()
+    public override void PostUpdatePlayers() => Pump(simulationUpdate:true);
+    private void Pump(bool simulationUpdate=false)
     {
         if (server == null) return;
         if (!Program.IsMainThread) throw new InvalidOperationException("AI IPC pump must run on engine game thread.");
@@ -93,8 +108,19 @@ public sealed class ServerAiSystem : ModSystem
                 catch (Exception e) { EngineRuntime.SignalFault("G8.1 initial actor creation failed: " + e.Message); Mod.Logger.Error("AI creation stopped.", e);WorldCharacterSelfTest.StartFailed(e); }
             }
             WorldCharacterSelfTest.Tick();
-            if(Capture()!=null)AiMapRuntime.Tick();
+            var actor=Capture();
+            if(actor!=null)AiMapRuntime.Tick();
             server.Tick(Capture, Select, ServerAiQueries.Read, Say);
+            if(simulationUpdate&&torches!=null&&(!ServerTorchFixture.Hold||torches.Busy))
+            {
+                try{torches.Tick(actor,actions.HasActive);}
+                catch(Exception e)
+                {
+                    Mod.Logger.Error("Autonomous torch maintenance stopped.",e);
+                    try{torches.Recover();}
+                    catch(Exception cleanup){ProbeSession.Quarantine("Torch input cleanup unconfirmed: "+cleanup.Message);}
+                }
+            }
         }
     }
     private static AiReadOnlyProtocol.Identity Capture()
@@ -137,7 +163,21 @@ public sealed class ServerAiSystem : ModSystem
         ProbeSession.Log("ai-chat",new{authorSlot=p.whoAmI,expected.World,expected.Generation,text});
         return new{status="published",authorSlot=p.whoAmI,worldSessionId=expected.World,actorGeneration=expected.Generation,gameUpdate=Main.GameUpdateCount};
     }
-    private void Stop() { spawnPending = false; server?.Dispose(); server = null; ServerAiActionFixture.Reset(); ServerAiNaturalFixture.Reset(); }
+    private void Stop()
+    {
+        spawnPending=false;
+        try
+        {
+            if(torches?.Busy==true)
+                lock(EngineRuntime.Reservation.Gate)torches.Stop();
+        }
+        catch(Exception e){Mod.Logger.Error("Torch maintenance shutdown unconfirmed.",e);}
+        finally
+        {
+            server?.Dispose();server=null;actions=null;torches=null;Lighting=null;
+            ServerAiActionFixture.Reset();ServerAiNaturalFixture.Reset();
+        }
+    }
     public override void OnWorldUnload() => Stop();
     public override void Unload() { Stop(); if (ReferenceEquals(current, this)) current = null; }
 }

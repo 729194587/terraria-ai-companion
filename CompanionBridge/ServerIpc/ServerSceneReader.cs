@@ -140,13 +140,13 @@ internal static class ServerSceneReader
         var regionalGeometry=new Lazy<object>(()=>SceneRegion.Encode(cells,c=>SceneGeometry.Geometry(c).ToString()));
         var response=new Dictionary<string,object>{
             ["schemaVersion"]=scope.Region?3:2,["sceneId"]=sceneId,["gameUpdate"]=tick,
-            ["lighting"]=new{available=false,source="dedicated_server",reason="native_light_buffer_not_verified"},
+            ["lighting"]=ServerAiSystem.Lighting?.Observe(p)??new{available=false,source="dedicated_server",reason="tile_light_map_unavailable"},
             ["bounds"]=new{minX=ox,minY=oy,maxX=ox+width-1,maxY=oy+height-1},["tileSize"]=16,
             ["actor"]=new{slot=p.whoAmI,boundsWorldPixels=actor,feetY=p.Bottom.Y,velocity=new StateVector(p.velocity.X,p.velocity.Y),p.dead,
                 navigationProfileSupported=GameNavigation.Ordinary(p),mapTile=new{x=ox+actorX,y=oy+actorY},
                 bodyTileBounds=BodyTileBounds.FromPixels(p.position.X,p.position.Y,p.width,p.height)},
             ["coverage"]=new{scannedTiles=1305,unknownCells=unknown,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0},
-            ["limits"]="observation-scoped IDs; no visibility/lighting, contents, persistent map or custom Mod hook interpretation; truncation is per collection, never empty=absent",
+            ["limits"]="observation-scoped IDs; no visibility, contents, persistent map or custom Mod hook interpretation; truncation is per collection, never empty=absent",
             ["includedLayers"]=layers.Included};
         if(scope.Region)
         {
@@ -155,7 +155,7 @@ internal static class ServerSceneReader
                 unknownByReason=unknownReasons,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,
                 geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0,samplingTruncated=samplingStopped,
                 knowledge=SceneRegion.Encode(cells,c=>new SceneKnowledge(c.Facts.Knowledge,c.Facts.CollisionKnowledge,c.Navigation!='?'))};
-            response["limits"]="current server Tile facts, not camera/visibility/lighting; region has no action targets or reachability proof; L0/native collision must approve execution; query_map is separate last-known history";
+            response["limits"]="current server Tile facts, not camera visibility; region has no action targets or reachability proof; L0/native collision must approve execution; query_map is separate last-known history";
             layers.Add(response,"map",()=>new{originX=ox,originY=oy,terrain=regionalGeometry.Value,
                 actor=new{x=ox+actorX,y=oy+actorY},markers=SceneGeometry.Limit(entityMarkers.Select(m=>new{x=ox+m.Item1,y=oy+m.Item2,glyph=m.Item3.ToString()}),128)});
             layers.Add(response,"geometry",()=>new{originX=ox,originY=oy,grid=regionalGeometry.Value});

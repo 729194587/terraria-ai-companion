@@ -29,11 +29,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
         if(!Owned(expected))throw new InvalidOperationException("Native action binding unavailable.");
     }
-    private static bool Released(Player p)=>!p.controlLeft&&!p.controlRight&&!p.controlUp&&!p.controlDown
+    internal static bool Released(Player p)=>!p.controlLeft&&!p.controlRight&&!p.controlUp&&!p.controlDown
         &&!p.controlJump&&!p.controlUseItem&&!p.controlUseTile&&!p.channel;
     public string Validate(string operation,JsonElement args)
         => AtomicParameters.ValidateServerAction(operation, args);
     public object Start(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId)=>StartCore(identity,operation,args,actionId,false);
+    internal object StartMaintenancePlacement(AiReadOnlyProtocol.Identity id,Microsoft.Xna.Framework.Point at)
+        =>StartCore(id,"place_tile",JsonSerializer.SerializeToElement(new{x=at.X,y=at.Y}),"auto-torch",true);
     private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child,bool continuous=false,
         NavigationKnowledge knowledge=null)
     {

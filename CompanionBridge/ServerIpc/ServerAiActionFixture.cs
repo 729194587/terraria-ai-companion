@@ -141,6 +141,8 @@ internal static class ServerAiActionFixture
                 File.WriteAllText(Path.Combine(Main.SavePath,"task-freeze-ready.json"),JsonSerializer.Serialize(new{gameUpdate=Main.GameUpdateCount}));
                 return;
             }
+            lock(ProbeSession.Reservation.Gate)ServerTorchFixture.Tick(ProbeSession.Actor);
+            if(ServerTorchFixture.Paused)return;
             update.Invoke(Main.instance,new object[]{new GameTime()});
             if(ServerBenchmarkFixture.Enabled)
                 lock(ProbeSession.Reservation.Gate)ServerBenchmarkFixture.Tick(ProbeSession.Actor);

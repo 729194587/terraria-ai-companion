@@ -53,6 +53,8 @@ internal sealed class AiAtomicActions
     private readonly Queue<string> terminalEntries = new();
     private Entry active;
     private long sequence;
+    internal bool HasActive=>active!=null;
+    internal Func<bool> MaintenanceBusy {get;set;}
     internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = null; }
     internal void Forget(Guid connection) { if (active?.Owner == connection) active.Cancel = true; }
     private static bool Matches(Entry e, AiReadOnlyProtocol.Identity current) => current != null
@@ -191,6 +193,7 @@ internal sealed class AiAtomicActions
         if (e.Cancel || e.Disconnected.IsCancellationRequested) { Stop(e, "cancelled", "connection_cancelled", current); return; }
         if (clock() >= e.Deadline) { Stop(e, "timeout", "execution_deadline", current); return; }
         if (e.Phase == "accepted") { e.Phase = "running"; e.Reason = "awaiting_native_execution"; return; }
+        if(MaintenanceBusy?.Invoke()==true)return;
         if (e.Operation != "select_hotbar_slot")
         {
             try

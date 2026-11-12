@@ -356,7 +356,8 @@ DEFS.update({
 })
 SCENE_BASE = {
     **QUERY_METADATA, 'sceneId': S, 'gameUpdate': TICK, 'bounds': ref('TileBounds'), 'tileSize': const(16),
-    'lighting': obj({'available': const(False), 'source': S, 'reason': S}),
+    'lighting': any_of(obj({'available': const(False), 'source': S, 'reason': S}),
+                      obj({'available': const(True), 'source': S, 'brightness': N, 'gameUpdate': TICK})),
     'actor': obj({'slot': I, 'boundsWorldPixels': ref('WorldRect'), 'feetY': PIXEL,
                   'velocity': ref('Velocity'), 'dead': B, 'navigationProfileSupported': B,
                   'mapTile': ref('TilePoint'), 'bodyTileBounds': ref('TileBounds')}),

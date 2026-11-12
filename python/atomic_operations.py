@@ -221,7 +221,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
             else:
                 f['parameters']['properties'].pop('cluster', None)
         if name == 'observe_scene':
-            f['description'] += ('新版data.lighting.available=false表示专用服暂无可信原生亮度。'
+            f['description'] += ('data.lighting 在 available=true 时提供角色中心的原生 Tile 光照估计。'
                 'hazards.entities.items可带observedGameUpdate、observationRef、velocity和threat。'
                 'observationRef仅本次场景有效。threat是在12游戏更新内按恒速和弹幕extraUpdates推算的包围盒接触，'
                 '未评估地形、AI、输入和伤害规则。先按推断接触时间排序，再按距离。'

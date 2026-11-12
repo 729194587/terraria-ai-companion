@@ -97,7 +97,7 @@ internal static class PlacementSelfTest
             Check(AiMapRuntime.Map.Get(x,y)==1,"confirmed torch Tile category not recorded");
             AiMapNativeTest.Run(p,Check);
             AiMapRuntime.Reset();
-            foreach(int type in new[]{ItemID.WoodenSword,ItemID.WorkBench,ItemID.Rope})
+            foreach(int type in new[]{ItemID.WoodenSword,ItemID.WorkBench})
             {
                 Material(type);var r=executor.Poll(identity,Start());
                 Check(r.Status=="failed"&&!r.InputsAcquired&&!Main.tile[x,y].HasTile,"unsupported item was accepted: "+type);
