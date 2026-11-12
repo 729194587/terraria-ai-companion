@@ -111,13 +111,13 @@ internal sealed class ServerTorchMaintenance
             restore=Swap(id,p,hotbar,source);
         if(restore!=null&&restore.Status=="running")
         {
-            ActorInventory.Step(restore);
+            ActorInventory.Step(restore,confirmOnlyMovedSlots:true);
             if(restore.Status=="running")return;
         }
         if(result!=null||swap?.MutationAttempted==true)
         {
             var evidence=new{x=target.X,y=target.Y,id.GameUpdate,source,hotbar,initialStack,
-                selectedBefore=selected,selectedAfter=p.selectedItem,restoreStatus=restore?.Status,
+                selectedBefore=selected,selectedAfter=p.selectedItem,restoreStatus=restore?.Status,restoreReason=restore?.Reason,
                 remaining=p.inventory[source].type==ItemID.Torch?p.inventory[source].stack:0,result};
             ProbeSession.Log("auto-torch-result",evidence);
             ServerTorchFixture.Record(evidence);

@@ -58,7 +58,7 @@ internal static class ActorInventory
         return new(){Identity=id,Operation=operation,Arguments=args.Clone(),Source=args.GetProperty("sourceSlot").GetInt32(),
             Destination=operation=="hold_inventory_item"?CompanionBridge.HotbarSlots.ToInventorySlot(args.GetProperty("hotbarKey").GetInt32()):args.GetProperty("destinationSlot").GetInt32()};
     }
-    internal static void Step(Context c)
+    internal static void Step(Context c,bool confirmOnlyMovedSlots=false)
     {
         if(c.Status!="running")return;
         ServerAiNativeActions.Require(c.Identity);
@@ -69,7 +69,12 @@ internal static class ActorInventory
             try
             {
                 var confirmed=Tokens(c,p);
-                bool valid=confirmed.SequenceEqual(c.AfterTokens)&&p.selectedItem==c.Selected&&ServerAiNativeActions.Owned(c.Identity);
+                // Maintenance restoration can coexist with natural pickups
+                // in unrelated slots between mutation and confirmation.
+                bool sameSlots=confirmOnlyMovedSlots
+                    ?confirmed[c.Source]==c.AfterTokens[c.Source]&&confirmed[c.Destination]==c.AfterTokens[c.Destination]
+                    :confirmed.SequenceEqual(c.AfterTokens);
+                bool valid=sameSlots&&p.selectedItem==c.Selected&&ServerAiNativeActions.Owned(c.Identity);
                 c.ConfirmedTick=Main.GameUpdateCount;
                 Finish(c,valid?"completed":"unknown",valid?"inventory_change_verified_next_update":"inventory_changed_before_confirmation");
             }
