@@ -124,9 +124,10 @@ def server_definitions(bridge, supported=None):
     capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
     definitions = atomic.server_tools(supported, scene_region='server_ai_scene_region_v1' in capabilities,
                                       general_operations='server_ai_general_operations_v1' in capabilities,
-                                      mining_opening='server_ai_mining_opening_v1' in capabilities)
+                                      mining_opening='server_ai_mining_opening_v1' in capabilities,
+                                      excavation='server_ai_excavation_v1' in capabilities)
     if program_tasks.available(bridge):
-        definitions += program_tasks.definitions()
+        definitions += program_tasks.definitions(excavation='server_ai_excavation_v1' in capabilities)
     return definitions
 
 

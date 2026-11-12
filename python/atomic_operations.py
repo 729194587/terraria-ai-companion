@@ -127,7 +127,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          {"target": {"type": "object", "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1000000}, "y": {"type": "number", "minimum": 0, "maximum": 1000000}}, "required": ["x", "y"], "additionalProperties": False}}),
     tool("navigate_to", "服务器自主导航。只传预期落脚面的世界像素 x、y（Y 向下）。游戏侧自行选择走、跳、安全下落、挖掘和搭路。安全着地停稳且脚底覆盖目的地才完成。unknown 后停止。",
          {key: {"type": "number", "minimum": 0, "maximum": 1000000} for key in ("x", "y")}, ["x", "y"]),
-    tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE}),
+    tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE, "cluster": {"type": "boolean"}}),
     tool("mine_tile", "原生挖掘指定 Tile。服务器 AI 从整个主背包自动选择合适工具，必要时临时切换快捷栏，按 Terraria 原生范围和工具规则判定。客户端控制使用当前手持镐。动作在当前位置执行，以实际移除为准，10秒上限。",
          {"x": {**TILE["x"], "description": "目标格的绝对 Tile X 坐标"},
           "y": {**TILE["y"], "description": "目标格的绝对 Tile Y 坐标"}}, ["x", "y"]),
@@ -202,7 +202,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene(
     'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
 
 
-def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False):
+def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False, excavation=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
     definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported]
     for definition in definitions:
@@ -215,6 +215,11 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
             f['description'] = LEGACY_SERVER_OPERATION_DESCRIPTIONS[name]
         if name == 'mine_target' and mining_opening:
             f['description'] += '服务器可在局部范围内串行挖开阻挡格，等待原生落脚并重新规划；开路有明确预算，可能已移除部分地形。查看 task.progress 的 clearedTiles、opening 和 search。'
+        if name == 'mine_target':
+            if excavation:
+                f['description'] += '设置 cluster=true 采集种子所在的同种四连通矿簇，上限18格。逐格结果见 task.result.evidence.targets。'
+            else:
+                f['parameters']['properties'].pop('cluster', None)
         if name == 'observe_scene':
             f['description'] += ('新版data.lighting.available=false表示专用服暂无可信原生亮度。'
                 'hazards.entities.items可带observedGameUpdate、observationRef、velocity和threat。'
@@ -248,6 +253,8 @@ def validate_backend(bridge, name, arguments):
     if 'server_ai_atomic_v1' in getattr(bridge, 'hello', {}).get('capabilities', ()):
         if name == 'use_item' and arguments:
             raise PreDispatchRejected('targeted_use_not_supported', status='targeted_use_not_supported')
+    if name == 'mine_target' and 'cluster' in arguments and 'server_ai_excavation_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_excavation_v1; no excavation task submitted')
 
 
 def not_admitted_result(name, reason):
@@ -333,7 +340,7 @@ def validate(name, arguments):
     arguments = check(arguments, SCHEMAS[name], name)
     if issues:
         raise ArgumentValidationError(name, issues, truncated)
-    if name == 'mine_target' and not (set(arguments) == {'target'} or set(arguments) == {'x', 'y'}):
+    if name == 'mine_target' and set(arguments) - {'cluster'} not in ({'target'}, {'x', 'y'}):
         raise ValueError('mine_target requires either target or absolute x/y')
     if name == 'observe_scene':
         region = arguments.get('scale') == 'region'
@@ -522,6 +529,9 @@ def verified_server_mine_task(action, evidence):
     task = evidence.get('task')
     if not isinstance(task, dict):
         return False
+    arguments = action.get('targetTask')
+    if isinstance(arguments, dict) and arguments.get('cluster') is True:
+        return verified_excavation_task(action, task, arguments.get('target', arguments))
     last = task.get('lastResult') or {}
     if not isinstance(last, dict):
         return False
@@ -539,6 +549,52 @@ def verified_server_mine_task(action, evidence):
             and isinstance(action.get('targetTask'), dict)
             and all(type(goal.get(k)) is int and proof.get(k.upper()) == goal[k] for k in ('x', 'y'))
             and ('typeId' not in goal or proof.get('TileType') == goal['typeId']))
+
+
+def verified_excavation_task(action, task, goal):
+    if not (isinstance(goal, dict) and task.get('taskId') == action.get('actionId')
+            and task.get('taskName') == 'mine_target' and task.get('status') == 'completed'
+            and task.get('phase') == 'terminal' and task.get('currentChild') is None
+            and task.get('worldSessionId') == action.get('worldSessionId')
+            and task.get('actorGeneration') == action.get('generation') and task.get('actorSlot') == action.get('actorSlot')):
+        return False
+    result = task.get('result')
+    if not (isinstance(result, dict) and result.get('status') == 'completed'
+            and result.get('inputsReleased') is True and result.get('effectVerified') is True):
+        return False
+    batch = result.get('evidence')
+    if not isinstance(batch, dict) or batch.get('outcome') != 'completed':
+        return False
+    seed = (goal.get('x'), goal.get('y'))
+    ore = batch.get('typeId')
+    if (not all(type(value) is int for value in seed) or seed != (batch.get('seedX'), batch.get('seedY'))
+            or type(ore) is not int or ('typeId' in goal and ore != goal['typeId'])):
+        return False
+    targets = batch.get('targets')
+    if not isinstance(targets, list) or not 1 <= len(targets) <= 18:
+        return False
+    cells = set()
+    for target in targets:
+        if not isinstance(target, dict) or target.get('status') != 'verified' or target.get('typeId') != ore:
+            return False
+        cell = (target.get('x'), target.get('y'))
+        proof = target.get('proof')
+        if (not all(type(value) is int for value in cell) or cell in cells or not isinstance(proof, dict)
+                or (proof.get('X'), proof.get('Y'), proof.get('Type')) != (*cell, ore)
+                or not all(type(proof.get(k)) is int and proof[k] > 0 for k in ('Update', 'Strikes'))):
+            return False
+        cells.add(cell)
+    if seed not in cells:
+        return False
+    frontier = [seed]
+    cells.remove(seed)
+    while frontier:
+        x, y = frontier.pop()
+        for neighbor in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            if neighbor in cells:
+                cells.remove(neighbor)
+                frontier.append(neighbor)
+    return not cells
 
 
 def verified_server_craft(action, evidence):

@@ -105,7 +105,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
         if(PlanningPending||PlanningFailure!=null)return null;
         var plan=selected;
         ReleasePlanning();
-        return plan==null?null:edits.Arm(plan.Actions[0]);
+        return plan==null?null:edits.ArmPlan(plan.Actions);
     }
 
     public bool PreferEdit(int remainingTiles)

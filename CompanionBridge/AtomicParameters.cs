@@ -207,8 +207,14 @@ internal static class AtomicParameters
             case "place_object": case "place_rope": goto case "place_tile";
             case "mine_target":
             {
-                if(!keys.Contains("target")){Fields("x","y");Integer("x",0,100000);Integer("y",0,100000);break;}
-                Fields("target");
+                bool hasCluster=args.TryGetProperty("cluster",out var cluster);
+                if(hasCluster&&cluster.ValueKind is not (JsonValueKind.True or JsonValueKind.False))throw new FormatException("Expected boolean cluster.");
+                if(!keys.Contains("target"))
+                {
+                    Fields(hasCluster?new[]{"x","y","cluster"}:new[]{"x","y"});
+                    Integer("x",0,100000);Integer("y",0,100000);break;
+                }
+                Fields(hasCluster?new[]{"target","cluster"}:new[]{"target"});
                 var mineTarget=args.GetProperty("target");
                 string[] mineTargetKeys={"kind","x","y","typeId","worldSessionId","actorGeneration","actorSlot","observedGameUpdate","observedAtUnixMs","targetToken"};
                 if(mineTarget.ValueKind!=JsonValueKind.Object||!mineTarget.EnumerateObject().Select(f=>f.Name).OrderBy(k=>k).SequenceEqual(mineTargetKeys.OrderBy(k=>k)))throw new FormatException("Invalid observed mine target");

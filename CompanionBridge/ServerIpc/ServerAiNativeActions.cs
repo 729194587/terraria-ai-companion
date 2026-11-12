@@ -51,7 +51,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 if(child)throw new InvalidOperationException("Nested root task denied");
                 var executor=new ChildExecutor(this,continuous:true);
                 CompanionTask task=operation=="mine_target"
-                    ?new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
+                    ?args.TryGetProperty("cluster",out var cluster)&&cluster.GetBoolean()
+                        ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge)
+                        :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
                     :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},AutonomousNavigationTask.TripUpdates);
             }

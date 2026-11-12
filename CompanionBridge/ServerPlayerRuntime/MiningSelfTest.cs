@@ -318,6 +318,8 @@ internal static class MiningSelfTest
             Check(ActorMining.Current.Reason==ActorMining.Failure.ItemChanged&&ReferenceEquals(p.inventory[0],replacement),"Replacement tool was used or overwritten.");p.inventory[0]=pick;
             Start();ActorMining.Current.Ticks=600;Frame();Check(ActorMining.Current.Phase==ActionPhase.TimedOut&&!p.controlUseItem,"Deadline did not stop.");
             evidence.Add(TreeMiningSelfTest.Run(p,world,generation,x,y,Frame,CheckIsolation));
+            evidence.Add(ExcavationSelfTest.Run(p,world,generation,x,y,Frame,Check));
+            evidence.Add(ExcavationSelfTest.RunWithMovement(p,world,generation,x,y,Check));
             ActorItemUse.Select(p,world,generation,0);Target(TileID.Stone);
             Start();ActorMining.Current.Generation--;int animation=p.itemAnimation;Frame();
             Check(ActorMining.Current.Reason==ActorMining.Failure.BindingChanged&&p.itemAnimation==animation&&!ProbeSession.Quarantined,"Old incarnation wrote the Player.");

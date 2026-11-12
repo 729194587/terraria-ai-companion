@@ -154,6 +154,7 @@ internal interface ILocalEditSource
     char Cell(int x,int y);
     TerrainCell Environment(int x,int y)=>new(Cell(x,y),default);
     LocalEditQuote Mine(PhysicsState pose,int x,int y,LocalTerrainView view);
+    float? PriceMiningRun(PhysicsState pose,IReadOnlyList<LocalEditAction> cuts,LocalTerrainView view)=>null;
     bool Place(PhysicsState pose,int x,int y,LocalMaterial material,LocalTerrainView view);
     IReadOnlyList<LocalMaterial> Materials {get;}
 }
@@ -220,6 +221,9 @@ internal sealed class LocalEditEvaluation : IDisposable
             {
                 float destination=pose.Px+direction*16;
                 bool rejected=false;
+                int firstCut=actions.Count;
+                var beforeCut=view.Fork();
+                float separateMining=0;
                 foreach(var (x,y) in LocalEditGeometry.Across(pose,destination))
                 {
                     if(view.Environment(x,y).Liquid.Amount>0){LiquidBoundary=true;unsafeTail=rejected=true;break;}
@@ -232,9 +236,12 @@ internal sealed class LocalEditEvaluation : IDisposable
                         unsafeTail=true;rejected=true;break;
                     }
                     actions.Add(new(LocalEditKind.Mine,pose,pose,x,y,quote.Slot,quote.Type));
-                    mining+=quote.Updates;changes++;
+                    separateMining+=quote.Updates;changes++;
                 }
                 if(rejected)break;
+                int cutCount=actions.Count-firstCut;
+                mining+=(cutCount>1?source.PriceMiningRun(pose,actions.GetRange(firstCut,cutCount),beforeCut):null)??separateMining;
+                if(cutCount>1)yield return 0;
                 var next=pose with{Px=destination};
                 if(!LocalEditGeometry.LandingBand(next,Landing))
                 {

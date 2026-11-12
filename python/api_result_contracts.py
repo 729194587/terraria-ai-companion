@@ -627,7 +627,8 @@ TARGETS = {
                         'equip_item', 'unequip_item'),
     'targetTask': ('navigate_to', 'mine_target'),
 }
-MINE_ARGUMENTS = any_of(obj(TILE_XY), obj({'target': ref('MineToken')}))
+MINE_ARGUMENTS = any_of(obj({**TILE_XY, 'cluster': B}, optional=('cluster',)),
+                        obj({'target': ref('MineToken'), 'cluster': B}, optional=('cluster',)))
 
 
 def target_schema(key, names):
@@ -648,7 +649,7 @@ DEFS['EndEvidence'] = any_of(
 DEFS['StopRequest'] = obj({'status': TERMINAL_STATUS, 'reason': S})
 
 TASK_NAMES = ('navigate_to', 'mine_target')
-TASK_CHILDREN = ('navigate_to_landing_region', 'mine_tile', 'place_tile')
+TASK_CHILDREN = ('navigate_to_landing_region', 'mine_tile', 'place_tile', 'excavate_tiles')
 TASK_EVIDENCE = {
     'navigate_to': obj({'target': ref('WorldPoint'), 'x': PIXEL, 'y': PIXEL, 'feetY': PIXEL,
                         **fields(booleans='arrived grounded safeSupport settled')}),
@@ -692,7 +693,20 @@ DEFS['TaskProgress'] = obj({
     'opening': nullable(obj({'drops': array(obj({'fromFeetY': PIXEL, 'toFeetY': PIXEL,
                                                  'playerLeftX': PIXEL, 'gameUpdate': TICK}))})),
 })
-TASK_LEAF_EVIDENCE = (ref('MiningEvidence'), ref('NavigationEvidence'), ref('PlacementEvidence'))
+DEFS['ExcavationProof'] = obj({'X': TILE_COORD, 'Y': TILE_COORD, **fields(integers='Type Update Strikes')})
+DEFS['MiningRunEvidence'] = obj({**fields(integers='requested actualUpdates strikes toolType', numbers='estimatedUpdates'),
+                                 'verified': array(ref('ExcavationProof'))})
+DEFS['ExcavationEvidence'] = obj({
+    'outcome': enum('running', 'completed', 'partial', 'interrupted', 'failed', 'unknown'),
+    'seedX': TILE_COORD, 'seedY': TILE_COORD, 'typeId': I,
+    'targets': array(obj({**TILE_XY, 'typeId': I, 'status': enum('pending', 'verified', 'changed'),
+                          'proof': nullable(ref('ExcavationProof'))})),
+})
+DEFS['ExcavationProgress'] = obj({
+    'stage': S, **fields(integers='completedChildren settledChildren omittedChildren', booleans='childrenTruncated'),
+    'children': array(ref('GameTaskView')), 'excavation': ref('ExcavationEvidence'),
+})
+TASK_LEAF_EVIDENCE = (ref('MiningEvidence'), ref('NavigationEvidence'), ref('PlacementEvidence'), ref('MiningRunEvidence'))
 
 
 def native_preflight(*operations):
@@ -702,7 +716,8 @@ def native_preflight(*operations):
 
 DEFS['TaskReceipt'] = obj({
     'status': TERMINAL_STATUS, 'reason': S, 'reasonDetail': nullable(S),
-    'evidence': any_of(*TASK_LEAF_EVIDENCE, TASK_EVIDENCE['navigate_to'], native_preflight(*TASK_CHILDREN), NULL),
+    'evidence': any_of(*TASK_LEAF_EVIDENCE, TASK_EVIDENCE['navigate_to'], ref('ExcavationEvidence'),
+                       native_preflight(*TASK_CHILDREN), NULL),
     **fields(booleans='inputsReleased effectVerified inputsAcquired'),
 })
 GAME_TASK_BASE = {
@@ -712,7 +727,8 @@ GAME_TASK_BASE = {
 DEFS['GameTaskView'] = obj({
     **GAME_TASK_BASE, 'taskName': enum(*TASK_NAMES, *TASK_CHILDREN), **IDENTITY,
     'parentTaskId': nullable(S), 'observedGameUpdate': TICK, 'deadlineGameUpdate': TICK,
-    'currentChild': nullable(ref('GameTaskView')), 'progress': nullable(ref('TaskProgress')),
+    'currentChild': nullable(ref('GameTaskView')),
+    'progress': nullable(any_of(ref('TaskProgress'), ref('ExcavationProgress'), ref('MiningRunEvidence'))),
     'lastResult': nullable(ref('TaskReceipt')), 'result': nullable(ref('TaskReceipt')),
 })
 DEFS['AcceptedGameTask'] = obj({
@@ -831,9 +847,17 @@ NATIVE_PLACEMENT = dict(nativePlacementEvents=const(1), uncertainNativeEffect=FA
 TASK_COMPLETION_PROOF = {
     'navigate_to': matches(taskName=const('navigate_to'), status=const('completed'), currentChild=NULL,
                            result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence=ARRIVED)),
-    'mine_target': matches(taskName=const('mine_target'), status=const('completed'), phase=const('terminal'),
-                           lastResult=matches(status=const('completed'), inputsReleased=TRUE,
-                                              effectVerified=TRUE, evidence=MINED)),
+    'mine_target': {
+        **matches(taskName=const('mine_target'), status=const('completed'), phase=const('terminal')),
+        'anyOf': [
+            matches(lastResult=matches(status=const('completed'), inputsReleased=TRUE, effectVerified=TRUE, evidence=MINED)),
+            matches(currentChild=NULL, result=matches(status=const('completed'), inputsReleased=TRUE, effectVerified=TRUE,
+                evidence=matches(outcome=const('completed'), targets={
+                    'type': 'array', 'minItems': 1, 'maxItems': 18,
+                    'items': matches(status=const('verified'), proof=ref('ExcavationProof')),
+                }))),
+        ],
+    },
 }
 SUCCESSFUL_PROOF = {
     'select_hotbar_slot': matches(selectionApplied=TRUE),

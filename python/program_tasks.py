@@ -39,7 +39,7 @@ def validate(name, args):
     return args
 
 
-def definitions():
+def definitions(*, excavation=False):
     rows = []
     for name in sorted(NAMES):
         properties = {'taskId': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'}}
@@ -51,6 +51,8 @@ def definitions():
             'resume_task': '仅对危险中断且已安全释放的任务显式重新提交；新身份，不自动重试，游戏侧重新验证环境/目标/工具。'}[name]
         if name == 'submit_task':
             properties = {'operation': {'type': 'string', 'enum': ['mine_target']}, 'arguments': copy.deepcopy(atomic.SCHEMAS['mine_target'])}
+            if not excavation:
+                properties['arguments']['properties'].pop('cluster', None)
             required = ['operation', 'arguments']
         elif name == 'await_task':
             properties['milliseconds'] = {'type': 'integer', 'minimum': 1, 'maximum': 30000, 'default': 1000}
@@ -103,6 +105,10 @@ class TaskCoordinator:
             self.on_ready()
 
     async def submit(self, args, origin=None):
+        try:
+            atomic.validate_backend(self.bridge, args['operation'], args['arguments'])
+        except atomic.PreDispatchRejected as error:
+            return atomic.not_admitted_result('submit_task', str(error))
         async with self.admission:
             if self.closed or self.blocked() or getattr(self.bridge, '_lua_poisoned', False):
                 return atomic.not_admitted_result('submit_task', 'active_task_conflict_or_unresolved')
@@ -187,7 +193,8 @@ class TaskCoordinator:
             return {'status': 'unknown', 'taskId': args['taskId'], 'reason': 'unknown_task', 'retryAllowed': False}
         if name == 'resume_task':
             result = record['view'].get('result') or {}
-            if (result.get('valid') is not True or result.get('status') != 'cancelled'
+            if (record['args']['arguments'].get('cluster') is True
+                    or result.get('valid') is not True or result.get('status') != 'cancelled'
                     or not str(result.get('reason', '')).startswith('task_interrupt_')
                     or (result.get('endEvidence') or {}).get('inputsReleased') is not True):
                 return atomic.not_admitted_result('resume_task', 'task_not_safely_resumable')

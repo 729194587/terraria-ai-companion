@@ -62,7 +62,7 @@ class Recovery:
     def key(name, args):
         target = args.get('target')
         if name == 'mine_target' and isinstance(target, dict) and {'x', 'y'} <= target.keys():
-            args = {'x': target['x'], 'y': target['y']}
+            args = {'x': target['x'], 'y': target['y'], **({'cluster': True} if args.get('cluster') is True else {})}
         return name, json.dumps(args, sort_keys=True, separators=(',', ':'))
 
     def blocked(self, name, args):

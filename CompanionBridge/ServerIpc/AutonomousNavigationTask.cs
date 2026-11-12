@@ -6,7 +6,7 @@ using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
 
 namespace CompanionBridge.ServerIpc;
 
-internal sealed record NavigationStep(string Operation,JsonElement Arguments);
+internal sealed record NavigationStep(string Operation,JsonElement Arguments,CompanionTask Batch=null);
 
 internal interface INavigationWorld
 {
@@ -103,15 +103,29 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
         {
             var r=RunChild(child,frame,600);if(r==null)return Running();
             acquired|=r.InputsAcquired;
+            if(r.Evidence is MiningRunReceipt run)
+                RecordRun(run);
+            if(r.Reason=="excavation_needs_replan"&&r.InputsReleased&&world.ReplanAfterChange)
+            {
+                if(++invalidatedEdits>=MaxConsecutiveInvalidations)return Describe(new Result("timeout","navigation_edit_replan_budget_exhausted",r.Evidence,true,InputsAcquired:acquired));
+                child=null;openingMode=false;
+                if(r.Evidence is MiningRunReceipt {verified.Length:>0})
+                {phase="settling";settleDeadline=frame.GameUpdate+SettleUpdates;}
+                else phase="observe";
+                return Running();
+            }
             if(r.Status=="failed"&&r.InputsReleased&&r.Reason=="navigation_water_placement_changed"&&world.ReplanAfterChange)
             {
                 if(++invalidatedEdits>=MaxConsecutiveInvalidations)return Describe(new Result("timeout","navigation_edit_replan_budget_exhausted",null,true,InputsAcquired:acquired));
                 openingMode=false;phase="observe";return Running();
             }
             if(r.Status!="completed")return Describe(r);
-            progressWatch.Observe(NavigationActivity.VerifiedEffect);
-            clearedTiles++;
-            if(phase=="opening_tile")dugTiles++;else placedTiles++;
+            if(r.Evidence is not MiningRunReceipt)
+            {
+                progressWatch.Observe(NavigationActivity.VerifiedEffect);
+                clearedTiles++;
+                if(phase=="opening_tile")dugTiles++;else placedTiles++;
+            }
             invalidatedEdits=0;
             phase="settling";child=null;settleDeadline=frame.GameUpdate+SettleUpdates;
             return Running();
@@ -158,6 +172,12 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
         if(world.PlanningFailure is {} planningFailure)return Describe(planningFailure);
         if(world.PlanningPending)return Running();
         if(opening==null)return Describe(Failed(world.NoRouteReason));
+        if(opening.Batch!=null)
+        {
+            phase="opening_tile";child=opening.Batch;
+            RunChild(child,frame,605);
+            return Running();
+        }
         if(opening.Operation=="mine_tile")return StartChild(frame,opening.Operation,opening.Arguments,"opening_tile",600);
         if(opening.Operation=="place_tile")return StartChild(frame,opening.Operation,opening.Arguments,"placing_support",600);
         openingMoves++;
@@ -177,6 +197,18 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
             &&evidence.TryGetProperty("failureKind",out var kind)
             &&kind.GetString() is "no_route" or "no_progress";
     }
+    private void RecordRun(MiningRunReceipt run)
+    {
+        clearedTiles+=run.verified.Length;
+        dugTiles+=run.verified.Length;
+        foreach(var _ in run.verified)progressWatch.Observe(NavigationActivity.VerifiedEffect);
+    }
     internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)
-    {world.ReleasePlanning();return Describe(base.Stop(frame,status,reason));}
+    {
+        world.ReleasePlanning();
+        bool opening=phase=="opening_tile"&&CurrentChild!=null;
+        var stopped=base.Stop(frame,status,reason);
+        if(opening&&lastResult?.Evidence is MiningRunReceipt run)RecordRun(run);
+        return Describe(stopped);
+    }
 }
