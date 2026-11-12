@@ -37,12 +37,14 @@ internal sealed record MovementSnapshot
         jumps=extraJumps.ToArray();hooks=grapples.ToArray();BlockExtraJumps=blockExtraJumps;
         Wings=wings;Rockets=rockets;Mount=mount;GrappleCount=grappleCount;GrappleListComplete=grappleListComplete;Environment=environment;
     }
-    internal bool SamePlanningAssumptions(MovementSnapshot other,bool expectedExtraJump=false)=>other!=null
+    internal bool SamePlanningAssumptions(MovementSnapshot other,bool expectedExtraJump=false,bool canWade=false)=>other!=null
         &&(jumps.SequenceEqual(other.jumps)||expectedExtraJump&&jumps.Length==other.jumps.Length
             &&jumps.Zip(other.jumps,(a,b)=>a.FullName==b.FullName&&a.Order==b.Order&&a.Enabled==b.Enabled
                 &&(a.FullName==ExtraJumpModel.Cloud.FullName||a==b)).All(s=>s))&&BlockExtraJumps==other.BlockExtraJumps
         &&Wings.FunctionalSlot==other.Wings.FunctionalSlot&&Wings.RegisteredSlots==other.Wings.RegisteredSlots&&Wings.BaseStats==other.Wings.BaseStats
         &&Rockets.Boots==other.Rockets.Boots&&Mount==other.Mount
         &&GrappleCount==other.GrappleCount&&GrappleListComplete==other.GrappleListComplete&&hooks.SequenceEqual(other.hooks)
-        &&Environment==other.Environment;
+        // Ordinary wet/dry is an expected physics-state transition. Special
+        // liquid, rope and equipment changes still invalidate planning.
+        &&(Environment==other.Environment||canWade&&(Environment with{Wet=other.Environment.Wet})==other.Environment);
 }

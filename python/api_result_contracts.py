@@ -441,7 +441,7 @@ DEFS['SceneRegional'] = scene_variant(True)
 # inspect_tile and observe_scene. Anonymous object member names stay as written.
 def wire_pose():
     return obj({name[0].upper() + name[1:]: schema for name, schema in PHYSICS_FIELDS.items()}
-               | {'Air': nullable(ref('WireAirResources'))})
+               | {'Air': nullable(ref('WireAirResources')), 'Wet': B}, optional=('Wet',))
 
 
 DEFS.update({

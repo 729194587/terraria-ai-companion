@@ -142,12 +142,7 @@ internal sealed class SurfaceGraph
                 {
                     var w=source.MotionAt(pose);
                     // Same native contact and settling rules as execution.
-                    valid=PhysicsSimulator.Settled(pose,w);
-                    if(valid)
-                    {
-                        var next=PhysicsSimulator.Step(pose,default,physics,w);
-                        valid=PhysicsSimulator.Settled(next,w)&&Math.Abs(next.Px-px)<.01f&&Math.Abs(next.Py-pose.Py)<.01f;
-                    }
+                    valid=StableStance(pose,physics,w);
                 }
                 if(valid)
                 {
@@ -194,17 +189,24 @@ internal sealed class SurfaceGraph
                     {
                         var pose=new PhysicsState(px,goal.SurfaceY-42,0,0,true);
                         var w=source.MotionAt(pose);
-                        if(PhysicsSimulator.Settled(pose,w))
-                        {
-                            var next=PhysicsSimulator.Step(pose,default,ph,w);
-                            if(next==pose)node=new(++nextId,x,y,new(px,px,goal.SurfaceY),x*16,x*16+16,
-                                shape=='='?SurfaceKind.Platform:shape=='h'?SurfaceKind.Half:shape is 'a' or 'b'?SurfaceKind.PlatformSlope:
-                                shape is '1' or '2' or '3' or '4'?SurfaceKind.Slope:SurfaceKind.Solid,Stamp(x-3,y-5,x+3,y+2),true,true);
-                        }
+                        if(StableStance(pose,ph,w))node=new(++nextId,x,y,new(px,px,goal.SurfaceY),x*16,x*16+16,
+                            shape=='='?SurfaceKind.Platform:shape=='h'?SurfaceKind.Half:shape is 'a' or 'b'?SurfaceKind.PlatformSlope:
+                            shape is '1' or '2' or '3' or '4'?SurfaceKind.Slope:SurfaceKind.Solid,Stamp(x-3,y-5,x+3,y+2),true,true);
                     }
                     yield return node;
                 }
             }
+    }
+
+    private static bool StableStance(PhysicsState pose,PhysicsParameters ph,IMotionWorld world)
+    {
+        if(!PhysicsSimulator.Settled(pose,world))return false;
+        try
+        {
+            var next=PhysicsSimulator.Step(pose,default,ph,world);
+            return PhysicsSimulator.Settled(next,world)&&Math.Abs(next.Px-pose.Px)<.01f&&Math.Abs(next.Py-pose.Py)<.01f;
+        }
+        catch(UnsafeMotionException){return false;}
     }
 
     internal bool KeySample(SurfaceNode n,PhysicsState start,LandingRegion goal)
@@ -259,7 +261,22 @@ internal sealed class SurfaceGraph
         }
         int l=(int)Math.Floor(Math.Min(a.X,b.X)/16)-3,r=(int)Math.Ceiling((Math.Max(a.X,b.X)+20)/16)+3;
         int t=(int)Math.Floor((Math.Min(a.Region.SurfaceY,b.Region.SurfaceY)-42-160)/16),bottom=(int)Math.Ceiling(Math.Max(a.Region.SurfaceY,b.Region.SurfaceY)/16)+2;
-        return new(a,b,kind,a.Region,b.Region,Math.Max(1,dx/ph.MaxRun)+Math.Abs(dy)/ph.MaxRun+(kind==SurfaceMotion.Jump?20:0),Stamp(l,t,r,bottom));
+        float wetDistance=0;
+        if(ph.CanWade&&kind==SurfaceMotion.Walk)
+        {
+            // Rank crossings by estimated updates. Native simulation verifies
+            // the connection and prices it from its actual input frame count.
+            float from=Math.Min(a.X,b.X),to=Math.Max(a.X,b.X);
+            for(float px=from;px<to;px+=8)
+            {
+                float feet=a.Region.SurfaceY+(b.Region.SurfaceY-a.Region.SurfaceY)*Math.Abs(px-a.X)/Math.Max(1,dx);
+                int x=FallSafety.Row(px+10),y=FallSafety.Row(feet-8);
+                if(cells.TryGetValue((x,y),out var cell)&&cell.Liquid.Kind==LiquidKind.Water)
+                    wetDistance+=Math.Min(8,to-px);
+            }
+        }
+        return new(a,b,kind,a.Region,b.Region,Math.Max(1,(dx+wetDistance)/ph.MaxRun)
+            +Math.Abs(dy)/ph.MaxRun+(kind==SurfaceMotion.Jump?20:0),Stamp(l,t,r,bottom));
     }
 }
 
@@ -395,13 +412,13 @@ internal sealed class SurfaceNavigator : IDisposable
                 // outgoing maneuver directly rather than walking away merely
                 // to visit that node's representative coordinate.
                 while(connection+1<path.Count&&path[connection].Landing.Contains(start)
-                    &&path[connection+1].Launch.Contains(start))connection++;
+                    &&(path[connection+1].Launch??path[connection+1].From.Region).Contains(start))connection++;
                 var next=path[connection];
                 // Use the FINAL region when this node overlaps it. Otherwise
                 // preserve its whole valid stance interval for braking.
                 waypoint=complete&&connection==path.Count-1?goal:next.Landing;
                 if(connection+1<path.Count&&path[connection+1].Motion==SurfaceMotion.Jump)
-                    waypoint=path[connection+1].Launch;
+                    waypoint=path[connection+1].Launch??next.Landing;
                 if(waypoint.Contains(start)){denied.Add(next.To.Id);continue;}
                 using var physical=new StateSpacePlanner.Search(start,Math.Clamp(start.Px,waypoint.MinPlayerLeftX,waypoint.MaxPlayerLeftX),
                     waypoint,ph,world,rejectEdge:reject,detourCheckpoint:detour,historicalPreference:preference,learning:learning,

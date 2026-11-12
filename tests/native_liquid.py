@@ -33,8 +33,7 @@ async def verify_puddle(args):
         assert action.get("completed") and action["endEvidence"]["inputsReleased"], action
         evidence = action["task"]["lastResult"]["evidence"]
         assert all(evidence[k] for k in ("arrived", "grounded", "safeSupport", "settled")), evidence
-        assert evidence["navigation"]["CompletedJumps"] >= 1, evidence
-        print("Native navigate_to jumped over the puddle and verified arrival", flush=True)
+        print("Native navigate_to crossed the puddle and verified arrival", flush=True)
 
         (args.profile / "liquid-request").write_text("wet")
         for _ in range(100):
@@ -47,9 +46,9 @@ async def verify_puddle(args):
         result = await LuaRuntime(bridge).execute(source, limits=Limits(seconds=30, calls=1, actions=1))
         (args.profile / "liquid-wet-receipt.json").write_text(json.dumps(result, indent=2))
         action = result.get("value") or result.get("lastAction") or {}
-        assert action.get("status") == "failed" and action.get("reason") == "unsupported_navigation_profile", action
+        assert action.get("completed") and action["endEvidence"]["effectVerified"], action
         assert action["endEvidence"]["inputsReleased"], action
-        print("Native wet starting pose refused by dry navigation", flush=True)
+        print("Native wet starting pose reached the dry destination", flush=True)
     finally:
         bridge.close()
 
@@ -79,6 +78,8 @@ async def verify_edits(args, mode):
           f"dug={progress['dugTiles']} placed={progress['placedTiles']}, trace={args.profile}", flush=True)
     assert action["endEvidence"]["inputsReleased"], action
     assert not any(r["lavaWet"] or (mode != "flood" and r["wet"]) for r in rows), rows[-3:]
+    if mode == "hazard":
+        assert rows and len({r["statLife"] for r in rows}) == 1, rows[-3:]
     if mode in ("bridge", "detour", "mine"):
         assert action["completed"], action
         if mode == "bridge":
@@ -102,11 +103,58 @@ async def verify_edits(args, mode):
         assert any(d["choice"] == "local_edits" for d in progress["planning"]["history"]), progress
 
 
+async def verify_wading(args, mode):
+    ready = args.profile / "liquid-edit-ready.json"
+    ready.unlink(missing_ok=True)
+    request = args.profile / "liquid-request"
+    temporary = request.with_suffix(".tmp")
+    temporary.write_text(mode)
+    temporary.replace(request)
+    scene = await wait_file(ready)
+    bridge = ServerAiBridge(args.port)
+    try:
+        before = await asyncio.to_thread(bridge._request, "state")
+        result = await LuaRuntime(bridge).execute(
+            "return api('navigate_to',{x=%s,y=%s})" % (scene["x"], scene["y"]),
+            limits=Limits(seconds=60, calls=1, actions=1))
+        after = await asyncio.to_thread(bridge._request, "state")
+    finally:
+        bridge.close()
+    (args.profile / f"liquid-edit-{mode}-receipt.json").write_text(json.dumps(
+        dict(scene=scene, before=before, after=after, result=result), indent=2))
+    await asyncio.sleep(.15)
+    rows = [json.loads(line) for line in (args.profile / f"liquid-edit-{mode}.jsonl").read_text().splitlines()
+            if line.endswith("}")]
+    wet = [row for row in rows if row["wet"]]
+    action = result.get("value") or result.get("lastAction") or {}
+    print(f"Native {mode}: {action['status']} {action['reason']}, wet samples={len(wet)}, "
+          f"descent={max(row['y'] for row in rows)-scene['startY']:.1f}px, trace={args.profile}", flush=True)
+    assert action["completed"] and action["endEvidence"]["inputsReleased"] and action["endEvidence"]["effectVerified"], action
+    final = action["task"]["result"]["evidence"]
+    assert final["settled"] and final["grounded"] and final["safeSupport"] and abs(final["feetY"] - scene["y"]) <= .5, final
+    assert abs(after["data"]["position"]["x"] + 10 - scene["x"]) <= 16, after
+    assert wet and not rows[0]["wet"] and not rows[-1]["wet"], rows[-3:]
+    assert len({row["statLife"] for row in rows}) == 1 and not any(
+        row["lavaWet"] or row["honeyWet"] or row["shimmerWet"] for row in rows), rows[-3:]
+    progress = action["task"]["progress"]
+    assert not progress["dugTiles"] and not progress["placedTiles"], (progress["dugTiles"], progress["placedTiles"])
+    assert all(child["status"] == "completed" for child in progress["children"]), [
+        (child["status"], child["reason"]) for child in progress["children"]]
+    if mode == "wade_deep":
+        assert max(row["y"] for row in wet) >= scene["startY"] + 31 and any(row["vy"] < -1 for row in wet), wet
+    if mode == "wade_long":
+        assert wet[-1]["x"] - wet[0]["x"] >= 16 * 15, wet
+        assert all(child["result"]["evidence"]["navigation"]["RecoveryCount"] == 0
+                   for child in progress["children"])
+
+
 async def verify(args):
     await wait_file(args.profile / "action-fixture.json", 90)
-    for mode in args.scenes or ("puddle", "bridge", "detour", "mine", "hazard", "flood"):
+    for mode in args.scenes or ("puddle", "bridge", "detour", "mine", "hazard", "flood", "wade_one", "wade_deep", "wade_long"):
         if mode == "puddle":
             await verify_puddle(args)
+        elif mode.startswith("wade_"):
+            await verify_wading(args, mode)
         else:
             await verify_edits(args, mode)
 
@@ -115,5 +163,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--scenes", nargs="+", choices=("puddle", "bridge", "detour", "mine", "hazard", "flood"))
+    parser.add_argument("--scenes", nargs="+", choices=("puddle", "bridge", "detour", "mine", "hazard", "flood", "wade_one", "wade_deep", "wade_long"))
     asyncio.run(verify(parser.parse_args()))

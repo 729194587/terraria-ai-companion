@@ -44,7 +44,7 @@ internal sealed class NativeNavigation
         }
         Reject(p.mount.Active, "mount_active");
         Reject(p.gravDir != 1, "unsupported_gravity");
-        Reject(p.wet, "wet");
+        Reject(p.wet&&!ph.CanWade&&!p.honeyWet&&!p.lavaWet&&!p.shimmerWet, "unsupported_water_profile");
         Reject(p.pulley, "pulley");
         Reject(p.grapCount != 0, "grappling");
         Reject(p.webbed, "webbed");
@@ -64,9 +64,9 @@ internal sealed class NativeNavigation
         Reject(airRequested&&(p.slowFall||p.empressBrooch||p.chilled),"unmodeled_air_effect");
         Reject(ph.Air!=null&&!ph.Air.Valid(AirMotionModel.Resources(movement)),"invalid_air_resources");
         Reject(ph.Air!=null&&!ph.Matches(PhysicsParameters.Basic)&&!ph.Matches(PhysicsParameters.Swiftness),"unsupported_air_physics");
-        Reject(p.honeyWet&&!p.wet,"honey_wet");
-        Reject(p.lavaWet&&!p.wet,"lava_wet");
-        Reject(p.shimmerWet&&!p.wet,"shimmer_wet");
+        Reject(p.honeyWet,"honey_wet");
+        Reject(p.lavaWet,"lava_wet");
+        Reject(p.shimmerWet,"shimmer_wet");
         Reject(p.itemAnimation != 0, "item_animation");
         Reject(p.width != PhysicsSimulator.PlayerW || p.height != PhysicsSimulator.PlayerH, "unsupported_body_size");
         Reject(!float.IsFinite(p.velocity.X)||!float.IsFinite(p.velocity.Y), "invalid_velocity");
@@ -80,8 +80,16 @@ internal sealed class NativeNavigation
         // Angel's native air tweak changes accRunSpeed before this boundary.
         // Keep one planning profile; Step applies that verified air-only value.
         float speed=air?.Kind==AirKind.Wings&&Math.Abs(p.accRunSpeed-6.25f)<.001f?3:p.accRunSpeed;
-        return new(p.runAcceleration,p.maxRunSpeed,speed,p.runSlowdown,p.gravity,p.maxFallSpeed,Player.jumpSpeed,Player.jumpHeight,
-            AirMotionModel.Strategy(m)==AirKind.None?ExtraJumpModel.Select(m):null,air,FallProfile(p));
+        var observed=new PhysicsParameters(p.runAcceleration,p.maxRunSpeed,speed,p.runSlowdown,p.gravity,p.maxFallSpeed,
+            Player.jumpSpeed,Player.jumpHeight,AirMotionModel.Strategy(m)==AirKind.None?ExtraJumpModel.Select(m):null,air,FallProfile(p));
+        var basic=PhysicsParameters.Basic;
+        bool stockDry=Math.Abs(observed.Gravity-basic.Gravity)<.001f&&Math.Abs(observed.MaxFall-basic.MaxFall)<.001f
+            &&Math.Abs(observed.JumpSpeed-basic.JumpSpeed)<.001f&&observed.JumpHeight==basic.JumpHeight;
+        bool wade=observed.Air==null&&observed.ExtraJump==null&&!p.ignoreWater&&!p.waterWalk&&!p.waterWalk2
+            &&!p.trident&&!p.merman&&!p.accFlipper&&!p.canFloatInWater
+            &&(stockDry||observed.UsesWaterProfile);
+        return wade?observed with{CanWade=true,Gravity=basic.Gravity,MaxFall=basic.MaxFall,
+            JumpSpeed=basic.JumpSpeed,JumpHeight=basic.JumpHeight}:observed;
     }
 
     internal static FallSafety FallProfile(Player p)=>new(p.extraFall,p.noFallDmg||p.equippedWings!=null);

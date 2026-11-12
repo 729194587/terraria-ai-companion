@@ -93,6 +93,11 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
     public PhysicsState Move(PhysicsState start, float vx, float vy, float gravity)
         => MoveCore(start,vx,vy,gravity,stepAssist:true);
 
+    public bool WaterContact(PhysicsState state)=>NativeLiquidRisk.WaterContact(state);
+
+    public PhysicsState MoveInWater(PhysicsState start,float vx,float vy,float gravity)
+        =>MoveCore(start,vx,vy,gravity,stepAssist:true,water:true);
+
     public bool NegatesFallDamage(PhysicsState state)
     {
         int row=FallSafety.Row(state.Py+PhysicsSimulator.PlayerH+1);
@@ -104,7 +109,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
 
     // A stationary downward probe asks whether native collision holds this
     // exact pose. Step assist could move the probe onto a different surface.
-    private PhysicsState MoveCore(PhysicsState start,float vx,float vy,float gravity,bool stepAssist)
+    private PhysicsState MoveCore(PhysicsState start,float vx,float vy,float gravity,bool stepAssist,bool water=false)
     {
         if(stepAssist)LastHorizontalContact=null;
         // Native helpers inspect neighbouring tiles. Reject unloaded/custom tiles
@@ -143,6 +148,15 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
                 int type=Main.tile[x,y].TileType;
                 return (shape,TileLoader.GetTile(type)?.FullName??"Terraria/"+TileID.Search.GetName(type));
             });
+            // Player.WaterCollision clips the full velocity, then halves only
+            // unclipped displacement. Stored velocity is not halved.
+            if(water)
+            {
+                var displacement=new Vector2(clipped.X==vel.X?clipped.X*.5f:clipped.X,
+                    clipped.Y==vel.Y?clipped.Y*.5f:clipped.Y);
+                pos+=displacement;
+                return new(pos.X,pos.Y,clipped.X,clipped.Y,vel.Y>=0&&clipped.Y==0);
+            }
             var slope = Collision.SlopeCollision(pos + clipped, clipped, 20, 42, gravity, false);
             bool grounded = vel.Y >= 0 && (slope.W == 0 || (vel.Y > 0 && Math.Abs(slope.W - vel.Y) > 0.01f));
             return new(slope.X, slope.Y, slope.Z, slope.W, grounded);
@@ -160,7 +174,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
     internal static PhysicsState Observe(Player player)
     {
         var state=new PhysicsState(player.position.X,player.position.Y,player.velocity.X,player.velocity.Y,
-            false,player.jump,player.releaseJump);
+            false,player.jump,player.releaseJump,Wet:player.wet);
         var movement=NativeMovementReader.Capture(player);
         var model=ExtraJumpModel.Select(movement);
         if(AirMotionModel.Select(movement)!=null)state=state with{Air=AirMotionModel.Resources(movement)};
