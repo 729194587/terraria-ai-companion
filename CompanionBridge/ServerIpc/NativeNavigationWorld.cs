@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using Terraria;
 using CompanionBridge.Motion;
+using VirtualPlayerEngineProbe;
 
 namespace CompanionBridge.ServerIpc;
 
@@ -100,7 +101,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
 
     public NavigationStep FindOpening(int remainingTiles)
     {
-        if(!ready)Evaluate(remainingTiles,true);
+        Evaluate(remainingTiles,ready?forced:true);
         if(PlanningPending||PlanningFailure!=null)return null;
         var plan=selected;
         ReleasePlanning();
@@ -119,7 +120,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
     {
         unchecked
         {
-            long hash=17;
+            long hash=ActorMining.CapabilityStamp(player);
             foreach(var item in player.inventory.Take(50))
             {
                 foreach(int value in new[]{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item),item.type,item.prefix,item.stack,

@@ -42,6 +42,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     private (int X,int Y,int Slot,Item Item,string Shape,long Revision)? openingTile;
     private bool expectedDrop;
     private string armedInventory;
+    private int armedMiningCapability;
     private static string ItemStamp(Item item)=>$"{item.type}/{item.prefix}/{item.pick}/{item.axe}/{item.tileBoost}/{item.useTime}/{item.useAnimation}/{item.createTile}/{item.placeStyle}/{item.stack}";
     private readonly List<object> drops=new();
     internal string SearchFailure { get; private set; }
@@ -234,10 +235,10 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             ||!SafeExcavation(x,y,view)
             ||Math.Abs(x-Grid(openingOrigin.Px+10))>MaxWidthTiles||y<Grid(openingOrigin.Py)
             ||y>=(int)Math.Round(Feet(openingOrigin)/16)+MaxDepthTiles)return null;
-        var failure=ActorMining.ChooseTool(Player,identity.World,identity.Generation,x,y,false,out int slot);
-        if(failure!=ActorMining.Failure.None||Player.inventory[slot].pick<=0
-            ||!ActorMining.QueryReach(Player,identity.World,identity.Generation,Player.inventory[slot],x,y,pose.Px,pose.Py))return null;
-        return new(slot,Main.tile[x,y].TileType,ActorMining.EstimateUpdates(Player,slot,x,y));
+        var failure=ActorMining.ChooseTool(Player,identity.World,identity.Generation,x,y,true,out int slot,out float updates,
+            workPosition:new(pose.Px,pose.Py));
+        return failure==ActorMining.Failure.None&&Player.inventory[slot].pick>0
+            ?new(slot,Main.tile[x,y].TileType,updates):null;
     }
     public bool Place(PhysicsState pose,int x,int y,LocalMaterial material,LocalTerrainView view)
     {
@@ -304,6 +305,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         SceneMineTargets.Watch(action.X,action.Y);cutPose=now.State;
         openingTile=(action.X,action.Y,action.Slot,Player.inventory[action.Slot],SceneMineTargets.NavigationShape(action.X,action.Y),SceneMineTargets.Revision(action.X,action.Y));
         armedInventory=ItemStamp(Player.inventory[action.Slot]);
+        armedMiningCapability=ActorMining.CapabilityStamp(Player);
         expectedDrop=landing.HasValue;expectedLanding=landing??now.State;
         return new("mine_tile",JsonSerializer.SerializeToElement(new{x=action.X,y=action.Y,plannedToolSlot=action.Slot}));
     }
@@ -323,16 +325,17 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
                 ||ty<Grid(openingOrigin.Py)||ty>=(int)Math.Round(Feet(openingOrigin)/TileSize)+MaxDepthTiles
                 ||!SafeExcavation(tx,ty,view))
             {SearchDetail+=$"; protected, hazardous or unsupported blocker ({tx},{ty})";return null;}
-            var failure=ActorMining.ChooseTool(p,identity.World,identity.Generation,tx,ty,true,out int toolSlot);
+            var failure=ActorMining.ChooseTool(p,identity.World,identity.Generation,tx,ty,true,out int toolSlot,out float updates);
             if(failure!=ActorMining.Failure.None||p.inventory[toolSlot].pick<=0)
             {SearchDetail+=$"; blocker ({tx},{ty}): {AiActionReasons.Mining("failed",failure.ToString())}";return null;}
-            Cost+=Math.Max(1,p.inventory[toolSlot].useTime)+20;
+            Cost+=updates;
             if(nextSlot<0)nextSlot=toolSlot;
         }
         var first=blocks[0];
         SceneMineTargets.Watch(first.X,first.Y);
         cutPose=ServerAiNavigation.Observe(p).State;
         openingTile=(first.X,first.Y,nextSlot,p.inventory[nextSlot],SceneMineTargets.NavigationShape(first.X,first.Y),SceneMineTargets.Revision(first.X,first.Y));
+        armedMiningCapability=ActorMining.CapabilityStamp(p);
         return new("mine_tile",JsonSerializer.SerializeToElement(new{x=first.X,y=first.Y,plannedToolSlot=nextSlot}));
     }
 
@@ -402,6 +405,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             ||!ReferenceEquals(Player.inventory[cut.Slot],cut.Item)
             ||SceneMineTargets.NavigationShape(cut.X,cut.Y)!=cut.Shape||SceneMineTargets.Revision(cut.X,cut.Y)!=cut.Revision)
             return "mining_opening_tile_changed";
+        if(armedMiningCapability!=ActorMining.CapabilityStamp(Player))return "navigation_mining_capability_changed";
         if(!SafeExcavation(cut.X,cut.Y,new(Environment))||!OpeningSettled())return "mining_opening_pose_or_safety_changed";
         var pose=ServerAiNavigation.Observe(Player).State;
         if(expectedLanding==null||Math.Abs(pose.Px-cutPose.Px)>.1f||Math.Abs(pose.Py-cutPose.Py)>.1f

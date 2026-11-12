@@ -189,7 +189,18 @@ public static class ServerAiPackageTests
         Check(!taskIL.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.Name is "AiReadOnlyServer" or "AiReadOnlyProtocol" or "AiAtomicActions"),"task runtime never re-enters top-level IPC/action dispatch");
         Check(Calls(Type("ChildExecutor").Methods.Single(m=>m.Name=="Start"),"StartCore"),"children start internal native contexts directly");
         Check(Calls(Type("TaskSlot").Methods.Single(m=>m.Name=="Tick"),"get_GameUpdate"),"task slot gates advancement on actual game update identity");
-        Check(Calls(Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="CanMine"),"QueryReach")&&Calls(Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="FindApproach"),"QueryReach"),"actual stance and candidate intervals use the native mining range query");
+        var actorMining=Type("ActorMining");
+        var chooseTool=actorMining.Methods.Single(m=>m.Name=="ChooseTool");
+        Check(Calls(Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="CanMine"),"ChooseTool")
+            &&Calls(chooseTool,"QueryReach")&&Calls(Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="FindApproach"),"QueryReach"),
+            "actual stance and candidate intervals use the native mining range query");
+        var edits=Type("NativeNavigationEdits");
+        Check(Calls(chooseTool,"EstimateUpdates")&&Calls(actorMining.Methods.Single(m=>m.Name=="Start"),"ChooseTool")
+            &&Calls(edits.Methods.Single(m=>m.Name=="Mine"),"ChooseTool")&&Calls(edits.Methods.Single(m=>m.Name=="PlanCut"),"ChooseTool"),
+            "ordinary mining and both navigation clearance paths use the same cost model");
+        Check(Calls(Type("NativeNavigationWorld").Methods.Single(m=>m.Name=="InventoryStamp"),"CapabilityStamp")
+            &&Calls(edits.Methods.Single(m=>m.Name=="RevalidateOpening"),"CapabilityStamp"),
+            "planning and armed cuts invalidate on mining capability changes");
         var queryReach=Type("ActorMining").Methods.Single(m=>m.Name=="QueryReach");
         Check(Calls(queryReach,"Capture")&&queryReach.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="inRange"),"reach projection keeps actor binding and audited native delegate");
         var taskResult=Type("ServerAiNativeActions").Methods.Single(m=>m.Name=="TaskResult");

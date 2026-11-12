@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using CompanionBridge.Motion;
+using CompanionBridge.ServerIpc;
 using Terraria;
 using Terraria.ID;
 using Terraria.Localization;
@@ -50,6 +52,8 @@ internal static class MiningSelfTest
                 if(type!=TileID.Sand)WorldGen.SquareTileFrame(x,y);p.hitTile.ClearThisTile(x,y);
             }
             p.inventory[0].SetDefaults(ItemID.CopperPickaxe);p.selectedItem=0;
+            // The fresh character also carries a starter pick in slot 1.
+            p.inventory[1]=new Item();
             var human=Main.player[0];var humanItems=human.inventory.Select(i=>(i.type,i.stack)).ToArray();
             int local=Main.myPlayer,tx=Player.tileTargetX,ty=Player.tileTargetY;bool mouse=Main.blockMouse;
             void CheckIsolation()=>Check(Main.myPlayer==local&&Main.blockMouse==mouse&&Player.tileTargetX==tx&&Player.tileTargetY==ty
@@ -63,6 +67,88 @@ internal static class MiningSelfTest
                 Check(threw&&ProbeSession.Quarantined&&!ActorMining.Running&&!p.controlUseItem&&p.itemAnimation==0
                     &&ProbeSession.Reservation.IsReserved(p.whoAmI)&&ReferenceEquals(Main.player[p.whoAmI],p),"Native exception did not release/quarantine/retain reservation.");
                 File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",checks,nativeExceptionQuarantine=true,exceptionInsidePickTile=true,processTerminationRequired=true}));return;
+            }
+
+            var savedFirst=p.inventory[0];var savedSecond=p.inventory[1];float savedPickSpeed=p.pickSpeed;
+            var savedArmor=(p.head,p.body,p.legs,p.setBonus);
+            try
+            {
+                p.pickSpeed=1f;
+                p.inventory[0]=new Item(ItemID.NightmarePickaxe);
+                p.inventory[1]=new Item(ItemID.BonePickaxe);
+                void Measure(int type,int slot)
+                {
+                    Target(type);
+                    var item=p.inventory[slot];
+                    float estimate=ActorMining.EstimateUpdates(p,slot,x,y);
+                    ActorMining.Start(p,world,generation,x,y,plannedSlot:slot);
+                    for(int tick=0;ActorMining.Running&&tick<610;tick++)Frame();
+                    var run=ActorMining.Current;
+                    Check(run.Phase==ActionPhase.Completed&&estimate==run.Ticks,
+                        $"Cost mismatch for item {item.type}, tile {type}, pickSpeed {p.pickSpeed}: {estimate} predicted, {run.Ticks} observed, {ActorMining.Summary()}");
+                    evidence.Add(new{miningCost=true,item=item.type,tile=type,p.pickSpeed,estimate,run.Ticks,run.Strikes});
+                }
+
+                Target(TileID.Stone);
+                float powerful=ActorMining.EstimateUpdates(p,0,x,y),fast=ActorMining.EstimateUpdates(p,1,x,y);
+                Check(p.inventory[0].pick>p.inventory[1].pick&&fast<powerful
+                    &&ActorMining.ChooseTool(p,world,generation,x,y,true,out int winner,out float quote)==ActorMining.Failure.None
+                    &&winner==1&&quote==fast,"Fast pick should win on stone despite lower power.");
+                var identity=new AiReadOnlyProtocol.Identity(p,world,generation,p.whoAmI,new{});
+                var pose=NativeMotionWorld.Observe(p);
+                var edits=new NativeNavigationEdits(identity,pose);
+                LocalEditQuote ClearanceQuote()=>edits.Mine(pose,x,y,new(edits.Environment));
+                Check(ClearanceQuote() is {Slot:1} clearance&&clearance.Updates==fast,
+                    "Navigation clearance must quote the same winning tool and cost.");
+                Measure(TileID.Stone,0);
+                Measure(TileID.Stone,1);
+                Measure(TileID.Grass,1);
+                Target(TileID.Ebonstone);
+                Check(ActorMining.ChooseTool(p,world,generation,x,y,true,out winner,out _)==ActorMining.Failure.None&&winner==0,
+                    "Ebonstone should require the higher-power tool.");
+                Measure(TileID.Ebonstone,0);
+
+                Target(TileID.Stone);
+                int unbuffed=ActorMining.CapabilityStamp(p);
+                p.AddBuff(BuffID.Mining,600,quiet:true);
+                NativeSurvival.Run(p,()=>p.UpdateBuffs(p.whoAmI));
+                Check(p.pickSpeed<1f&&ActorMining.EstimateUpdates(p,1,x,y)<fast
+                    &&ActorMining.CapabilityStamp(p)!=unbuffed,"Native Mining buff should lower cost and invalidate the old capability.");
+                Check(ClearanceQuote() is {Slot:1} buffedClearance&&buffedClearance.Updates==ActorMining.EstimateUpdates(p,1,x,y),
+                    "Navigation clearance must reflect the current Mining buff.");
+                Measure(TileID.Stone,1);
+                p.ClearBuff(BuffID.Mining);
+                p.pickSpeed=1f;
+                Check(ActorMining.CapabilityStamp(p)==unbuffed,"Removing Mining should restore the unbuffed capability.");
+
+                // Supply the equipped visual slots used by the native armor set check.
+                p.head=new Item(ItemID.MiningHelmet).headSlot;
+                p.body=new Item(ItemID.MiningShirt).bodySlot;
+                p.legs=new Item(ItemID.MiningPants).legSlot;
+                NativeSurvival.Run(p,()=>p.UpdateArmorSets(p.whoAmI));
+                Target(TileID.Stone);
+                Check(p.pickSpeed<1f&&ActorMining.EstimateUpdates(p,1,x,y)<fast
+                    &&ActorMining.CapabilityStamp(p)!=unbuffed,"Native mining armor should lower cost and invalidate the old capability.");
+                Measure(TileID.Stone,1);
+                (p.head,p.body,p.legs,p.setBonus)=savedArmor;
+                p.pickSpeed=1f;
+
+                Check(p.inventory[1].Prefix(PrefixID.Light)&&ActorMining.CapabilityStamp(p)!=unbuffed,
+                    "A tool prefix change must invalidate old mining quotes.");
+                Measure(TileID.Stone,1);
+                int prefixed=ActorMining.CapabilityStamp(p);
+                p.inventory[1]=new Item(ItemID.CopperPickaxe);
+                Check(ActorMining.CapabilityStamp(p)!=prefixed,"Changing picks must invalidate old mining quotes.");
+                Measure(TileID.Stone,1);
+            }
+            finally
+            {
+                p.ClearBuff(BuffID.Mining);
+                p.pickSpeed=savedPickSpeed;
+                (p.head,p.body,p.legs,p.setBonus)=savedArmor;
+                p.inventory[0]=savedFirst;
+                p.inventory[1]=savedSecond;
+                Target(TileID.Stone);
             }
             bool stale=false;try{ActorMining.Start(p,world,generation-1,x,y);}catch(InvalidOperationException){stale=true;}
             Check(stale,"Queued stale incarnation accepted.");

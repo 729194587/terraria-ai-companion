@@ -1,10 +1,12 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using Microsoft.Xna.Framework;
 using Mono.Cecil;
 using MonoMod.Utils;
 using Terraria;
 using Terraria.ID;
+using Terraria.ModLoader;
 using Terraria.ObjectData;
 
 namespace VirtualPlayerEngineProbe;
@@ -95,18 +97,20 @@ internal static class ActorMining
     private static bool SupportedTool(Item i)=>!i.IsAir&&i.hammer==0&&!i.channel&&i.shoot<=0
         &&(i.pick>0&&i.axe==0||i.type==ItemID.CopperAxe&&i.axe>0&&i.pick==0);
     private static bool TreeTarget(int type)=>Main.tileAxe[type]&&TileID.Sets.IsATreeTrunk[type];
-    internal static Failure ChooseTool(Player p,string world,long generation,int x,int y,bool requireReach,out int slot,int? plannedSlot=null)
+    internal static Failure ChooseTool(Player p,string world,long generation,int x,int y,bool requireReach,
+        out int slot,out float updates,int? plannedSlot=null,Vector2? workPosition=null)
     {
         slot=-1;
+        updates=float.PositiveInfinity;
         var tile=Main.tile[x,y];
         int type=tile.TileType;
         bool tree=TreeTarget(type);
-        if(tile.IsActuated||Main.tileHammer[type]||Main.tileAxe[type]&&!tree||TileID.Sets.Falling[type])
+        if(tile.IsActuated||type==TileID.MysticSnakeRope||Main.tileHammer[type]||Main.tileAxe[type]&&!tree||TileID.Sets.Falling[type])
             return Failure.UnsupportedTarget;
         if(!WorldGen.CanKillTile(x,y))return Failure.TargetProtected;
 
         bool hasTool=false, hasPower=false;
-        int bestDamage=0;
+        var position=workPosition??p.position;
         // Main inventory, including hotbar. Coin, ammo and mouse slots are separate.
         for(int i=0;i<Math.Min(50,p.inventory.Length);i++)
         {
@@ -114,15 +118,14 @@ internal static class ActorMining
             Item item=p.inventory[i];
             if(!SupportedTool(item)||(tree?item.axe<=0:item.pick<=0))continue;
             hasTool=true;
-            // The pinned GetPickaxeDamage body does not use its HitTile buffer index.
-            int damage=tree?item.axe:pickDamage(p,x,y,item.pick,0,tile);
-            if(damage<=0)continue;
+            float cost=EstimateUpdates(p,i,x,y);
+            if(!float.IsFinite(cost))continue;
             hasPower=true;
-            if(requireReach&&!QueryReach(p,world,generation,item,x,y,p.position.X,p.position.Y))continue;
-            if(damage>bestDamage||damage==bestDamage&&i==p.selectedItem)
+            if(requireReach&&!QueryReach(p,world,generation,item,x,y,position.X,position.Y))continue;
+            if(cost<updates||cost==updates&&i==p.selectedItem)
             {
                 slot=i;
-                bestDamage=damage;
+                updates=cost;
             }
         }
         return slot>=0?Failure.None:!hasTool?Failure.InvalidTool:!hasPower?Failure.NoPickPower:Failure.OutOfRange;
@@ -130,10 +133,87 @@ internal static class ActorMining
     internal static float EstimateUpdates(Player player,int slot,int x,int y)
     {
         var item=player.inventory[slot];var tile=Main.tile[x,y];
-        int damage=pickDamage(player,x,y,item.pick,0,tile);
-        // Pure pinned native damage query, same tool as ChooseTool/Start. This
-        // deliberately estimates cycles rather than simulating HitTile state.
-        return damage<=0?float.PositiveInfinity:Math.Max(1,item.useTime)*(float)Math.Ceiling(100d/damage)+1;
+        bool tree=TreeTarget(tile.TileType);
+        int damage;
+        if(tree)
+        {
+            // The supported Copper Axe follows the vanilla axe branch.
+            damage=(int)(item.axe*(tile.TileType==TileID.Cactus?3:1)*1.2f);
+            if(Main.getGoodWorld)damage=(int)(damage*1.3);
+        }
+        else
+        {
+            // The pinned GetPickaxeDamage body does not use its HitTile buffer index.
+            damage=pickDamage(player,x,y,item.pick,0,tile);
+            if(Main.getGoodWorld)damage*=2;
+        }
+        if(damage<=0)return float.PositiveInfinity;
+        int strikes=(int)Math.Ceiling(100d/damage);
+        if(tile.TileType==TileID.Grass)
+        {
+            // The first hit strips grass. PickTile suppresses the hit only
+            // when it would reach 100; smaller hits carry into the exposed dirt.
+            int progress=damage<100?damage:0;
+            int dirtDamage=item.pick*(Main.getGoodWorld?4:2);
+            strikes=1+(int)Math.Ceiling((100d-progress)/dirtDamage);
+        }
+        var timing=Timing(player,item);
+        return timing.CompletionUpdates(strikes);
+    }
+
+    private static MiningTiming Timing(Player player,Item item)=>new(
+        CombinedHooks.TotalUseTime(item.useTime*(item.pick>0?player.pickSpeed:1f),player,item),
+        CombinedHooks.TotalAnimationTime(item.useAnimation,player,item),
+        Math.Max(0,(int)(item.reuseDelay/CombinedHooks.TotalUseSpeedMultiplier(player,item))));
+
+    private readonly record struct MiningTiming(int Cooldown,int Animation,int ReuseDelay)
+    {
+        internal float CompletionUpdates(int strikes)
+        {
+            // The first press can strike on its own update. A new press follows
+            // the update that brings animation to zero, when striking is gated off.
+            int hit=1, animationStart=1;
+            for(int strike=1;strike<strikes;strike++)
+            {
+                hit+=Cooldown;
+                if(hit<animationStart+Animation)continue;
+                if(ReuseDelay>0)
+                {
+                    // ApplyReuseDelay replaces both timers at the animation boundary.
+                    hit=animationStart+=Animation+ReuseDelay+1;
+                    continue;
+                }
+                int cycle=Animation+1;
+                animationStart+=(hit-animationStart)/cycle*cycle;
+                if(hit==animationStart+Animation)hit=animationStart+=cycle;
+            }
+            int animationLeft=animationStart+Animation-hit;
+            // The atomic action completes only after the native timers drain.
+            return hit+(ReuseDelay>0?animationLeft+ReuseDelay:Math.Max(animationLeft,Cooldown));
+        }
+    }
+
+    internal static int CapabilityStamp(Player player)
+    {
+        var stamp=new HashCode();
+        stamp.Add(player.pickSpeed);
+        stamp.Add(player.selectedItem);
+        stamp.Add(Healthy(player));
+        stamp.Add(Main.getGoodWorld);
+        for(int slot=0;slot<Math.Min(50,player.inventory.Length);slot++)
+        {
+            var item=player.inventory[slot];
+            if(!SupportedTool(item))continue;
+            stamp.Add(slot);
+            stamp.Add(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item));
+            stamp.Add(item.type);
+            stamp.Add(item.prefix);
+            stamp.Add(item.pick);
+            stamp.Add(item.axe);
+            stamp.Add(item.tileBoost);
+            stamp.Add(Timing(player,item));
+        }
+        return stamp.ToHashCode();
     }
     private static bool Same(Context c)
     {
@@ -210,7 +290,7 @@ internal static class ActorMining
             }
             var t=Main.tile[x,y];int type=t.TileType;
             c.TileType=c.ExpectedType=type;c.FrameX=t.TileFrameX;c.FrameY=t.TileFrameY;c.Slope=(byte)t.Slope;c.Half=t.IsHalfBlock;c.Actuated=t.IsActuated;c.TargetCaptured=true;
-            var failure=ChooseTool(p,world,generation,x,y,true,out int source,plannedSlot);
+            var failure=ChooseTool(p,world,generation,x,y,true,out int source,out _,plannedSlot);
             if(failure!=Failure.None){Reject(failure,$"Mining preflight refused target ({x},{y}): {failure}.");return;}
             c.Furniture=FurnitureAt(x,y);
             c.Item=p.inventory[source];c.Type=c.Item.type;c.Prefix=c.Item.prefix;c.Pick=c.Item.pick;c.Axe=c.Item.axe;

@@ -35,7 +35,7 @@ internal static class TreeMiningSelfTest
             &&Main.tile[x,y].HasTile&&refusal.Status=="failed"&&!refusal.EffectVerified&&Released(),"axe damaged an ordinary block");
         p.inventory[0]=savedPick;var savedAxe=p.inventory[2];p.inventory[2]=new Item();
         Block(TileID.Trees);ActorItemUse.Select(p,world,generation,0);Start(x,y);
-        Check(ActorMining.Current.Reason==ActorMining.Failure.UnsupportedTarget&&ActorMining.Current.Ticks==0
+        Check(ActorMining.Current.Reason==ActorMining.Failure.InvalidTool&&ActorMining.Current.Ticks==0
             &&Main.tile[x,y].HasTile&&Released(),"pickaxe accepted a tree");
         p.inventory[2]=savedAxe;ActorItemUse.Select(p,world,generation,2);
         var invalid=executor.Poll(identity,Start(-1,y));
