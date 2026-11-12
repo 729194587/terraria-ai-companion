@@ -452,7 +452,8 @@ DEFS.update({
         **fields(numbers='AccRun MaxRun AccRunSpeed RunSlowdown Gravity MaxFall JumpSpeed', integers='JumpHeight'),
         'ExtraJump': nullable(obj(fields(strings='FullName', numbers='DurationMultiplier'))),
         'Air': nullable(obj({'Kind': AIR_KIND})),
-    }),
+        'Fall': obj(fields(integers='ExtraFall', booleans='Immune')),
+    }, optional=('Fall',)),
     'MovementSnapshot': obj({
         **fields(integers='GrappleCount', booleans='BlockExtraJumps GrappleListComplete', strings='Scope'),
         'ExtraJumps': array(obj(fields(strings='FullName', integers='Order', booleans='Enabled Available Active'))),

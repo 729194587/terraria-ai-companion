@@ -122,7 +122,7 @@ internal sealed record AirMotionModel(AirKind Kind)
                     if(timer.Elapsed.TotalMilliseconds>=budgetMs)return best??plan;
                     var input=i<at+4?candidate:plan.Frames[i].Input;
                     var next=PhysicsSimulator.Step(s,input,ph,world);
-                    if(!world.SafeSweep(s,next,out _)||next.Py-Math.Max(actual.Py,plan.Frames[0].State.Py)>StateSpacePlanner.MaxDropPixels){safe=false;break;}
+                    if(!world.SafeSweep(s,next,out _)||next.Py-actual.Py>FallSafety.LookaheadPixels){safe=false;break;}
                     frames.Add(new(input,next));s=next;
                 }
                 if(!safe||frames.Count<2||!PhysicsSimulator.Settled(s,world)||!PhysicsSimulator.Settled(frames[^2].State,world)

@@ -13,7 +13,7 @@ internal interface ISurfaceTerrain
     IMotionWorld MotionAt(PhysicsState pose);
 }
 
-internal readonly record struct SurfaceCell(char Shape,long Signature,TileLiquid Liquid=default);
+internal readonly record struct SurfaceCell(char Shape,long Signature,TileLiquid Liquid=default,bool NegatesFallDamage=false);
 internal enum SurfaceKind { Solid, Platform, Half, Slope, PlatformSlope }
 internal enum SurfaceMotion { Walk, Jump, Drop }
 internal sealed record SurfaceNode(int Id,int TileX,int TileY,LandingRegion Region,
@@ -37,7 +37,7 @@ internal sealed record SurfaceGraphSnapshot(string Exit,int Radius,int TileReads
 // samples on ordinary flat spans. A tile alone never certifies a stance.
 internal sealed class SurfaceGraph
 {
-    internal const int InitialRadius=24,MaximumRadius=128,MaximumNodes=8192;
+    internal const int InitialRadius=24,MaximumRadius=128,MaximumNodes=40000;
     private readonly Dictionary<(int X,int Y),SurfaceCell> cells=new();
     private readonly Dictionary<(int X,int Y),List<SurfaceNode>> surfaces=new();
     private int nextId;
@@ -73,12 +73,12 @@ internal sealed class SurfaceGraph
 
     // Each yield is one bounded piece of work (one tile read or stance probe).
     // Re-read coverage on a new plan; preserve nodes with unchanged dependencies.
-    internal IEnumerable<int> Refresh(ISurfaceTerrain source,int cx,int cy,int radius,PhysicsParameters physics=null)
+    internal IEnumerable<int> Refresh(ISurfaceTerrain source,int cx,int cy,int radius,PhysicsParameters physics=null,int downwardRows=0)
     {
         physics??=PhysicsParameters.Basic;
         if(physics.Air!=null)physics=physics with{Air=null}; // Static stances have no Actor resources.
         int height=Math.Min(64,Math.Max(16,radius/2));
-        int l=cx-radius,r=cx+radius,t=cy-height,b=cy+height;
+        int l=cx-radius,r=cx+radius,t=cy-height,b=cy+Math.Max(height,downwardRows);
         var dirty=new HashSet<(int X,int Y)>();
         ChangedTiles=0;RetainedNodes=0;Truncated=false;
         // A later, explicitly requested refresh must not mistake the last
@@ -107,8 +107,17 @@ internal sealed class SurfaceGraph
         }
         foreach(var key in dirty){surfaces.Remove(key);yield return 0;}
         RetainedNodes=surfaces.Values.Sum(v=>v.Count);
+        if(RetainedNodes>=MaximumNodes*3/4)
+        {
+            // Under pressure, give the next local window room before keeping
+            // distant samples from a previously expanded window.
+            foreach(var key in surfaces.Keys.Where(k=>k.X<l||k.X>r||k.Y<t||k.Y>b).ToArray())
+            {RetainedNodes-=surfaces[key].Count;surfaces.Remove(key);yield return 0;}
+        }
         int count=RetainedNodes;
-        for(int x=l;x<=r;x++)for(int y=t;y<=b;y++)
+        // Keep the origin represented even when a dense outer rim fills the cache.
+        foreach(int x in Enumerable.Range(l,r-l+1).OrderBy(x=>Math.Abs(x-cx)))
+        for(int y=t;y<=b;y++)
         {
             if(surfaces.ContainsKey((x,y)))continue;
             char shape=Shape(x,y);
@@ -216,7 +225,15 @@ internal sealed class SurfaceGraph
         float dx=Math.Abs(a.X-b.X),dy=b.Region.SurfaceY-a.Region.SurfaceY;
         float extraRise=ph.ExtraJump==null?0:ph.JumpSpeed*ph.ExtraJump.HoldFrames(ph)+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity);
         if(ph.Air!=null)extraRise+=ph.JumpSpeed*16;
-        if(a.Id==b.Id||dx>(ph.ExtraJump==null&&ph.Air==null?144:256)||dy>StateSpacePlanner.MaxDropPixels||dy<-(ph.JumpSpeed*ph.JumpHeight+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity)+16+extraRise))return null;
+        if(a.Id==b.Id||dx>(ph.ExtraJump==null&&ph.Air==null?144:256)||dy>FallSafety.LookaheadPixels
+            ||dy<-(ph.JumpSpeed*ph.JumpHeight+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity)+16+extraRise))return null;
+        if(dy>16&&!ph.Fall.Safe(a.Region.SurfaceY-PhysicsSimulator.PlayerH,b.Region.SurfaceY-PhysicsSimulator.PlayerH))
+        {
+            int row=FallSafety.Row(b.Region.SurfaceY+1);
+            if(!Enumerable.Range(FallSafety.Row(b.Region.MinPlayerLeftX),
+                FallSafety.Row(b.Region.MaxPlayerLeftX+PhysicsSimulator.PlayerW)-FallSafety.Row(b.Region.MinPlayerLeftX)+1)
+                .Any(x=>cells.TryGetValue((x,row),out var cell)&&cell.NegatesFallDamage))return null;
+        }
         if(dx<2&&Math.Abs(dy)<1)return null;
         SurfaceMotion kind=dy>16?SurfaceMotion.Drop:Math.Abs(dy)<=16?SurfaceMotion.Walk:SurfaceMotion.Jump;
         if(kind==SurfaceMotion.Walk)
@@ -297,27 +314,24 @@ internal sealed class SurfaceNavigator : IDisposable
         var denied=new HashSet<int>(); // search-local exclusions, NOT execution failure memory
         var uncertain=new HashSet<int>();
         bool localBudget=false;
+        int topRows=0,bottomRows=0;
         for(radius=SurfaceGraph.InitialRadius;radius<=SurfaceGraph.MaximumRadius;radius=Math.Min(SurfaceGraph.MaximumRadius,radius*2))
         {
-            using(var refresh=graph.Refresh(terrain,cx,cy,radius,ph).GetEnumerator())
+            topRows=Math.Min(64,Math.Max(16,radius/2));
+            bool goalInColumns=Math.Abs((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/32-cx)<=radius;
+            // A nearby X with a low destination needs vertical coverage before
+            // accepting an upper ledge prefix merely because it is closer in X.
+            int towardGoal=goalInColumns?Math.Clamp((int)Math.Ceiling(goal.SurfaceY/16)-cy,0,FallSafety.LookaheadPixels/16):0;
+            bottomRows=Math.Max(topRows,towardGoal);
+            using(var refresh=graph.Refresh(terrain,cx,cy,radius,ph,bottomRows).GetEnumerator())
                 while(refresh.MoveNext())
                 {
                     reads+=refresh.Current;
                     if(YieldWork())yield return Waiting();
                 }
-            if(graph.Truncated)
-            {
-                // Searching an incomplete graph cannot discharge this resource
-                // limit. End this search once, without conflating it with a
-                // time slice or expanding/rebuilding the same dense coverage.
-                exit="surface_node_budget";Finished=true;
-                yield return new(new(),0,timer.Elapsed.TotalMilliseconds,FailureReason:exit,Kind:"surface_graph",SearchExit:exit);
-                yield break;
-            }
-            var selected=graph.Nodes.Where(n=>Math.Abs(n.TileX-cx)<=radius&&Math.Abs(n.TileY-cy)<=Math.Min(64,Math.Max(16,radius/2))
+            var selected=graph.Nodes.Where(n=>Math.Abs(n.TileX-cx)<=radius&&n.TileY>=cy-topRows&&n.TileY<=cy+bottomRows
                 &&graph.KeySample(n,start,goal)).ToList();
-            if(Math.Abs((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/32-cx)<=radius
-                &&Math.Abs(goal.SurfaceY/16-cy)<=Math.Min(64,Math.Max(16,radius/2)))
+            if(goalInColumns&&goal.SurfaceY/16>=cy-topRows&&goal.SurfaceY/16<=cy+bottomRows)
                 foreach(var stance in graph.GoalStances(terrain,goal,ph))
                 {if(stance!=null)selected.Add(stance);if(YieldWork())yield return Waiting();}
             var nodes=selected.ToArray();
@@ -426,15 +440,15 @@ internal sealed class SurfaceNavigator : IDisposable
                 if(!reconsider)denied.Add(next.To.Id);
                 if(YieldWork())yield return Waiting();
             }
-            if(radius==SurfaceGraph.MaximumRadius)break;
+            if(graph.Truncated||radius==SurfaceGraph.MaximumRadius)break;
             rangeExpansions++;
         }
         bool unknown=false;
         for(int x=cx-radius;x<=cx+radius&&!unknown;x++)
-            for(int y=cy-Math.Min(64,radius/2);y<=cy+Math.Min(64,radius/2);y++)
+            for(int y=cy-topRows;y<=cy+bottomRows;y++)
             {if(graph.Shape(x,y)=='?')unknown=true;if(YieldWork())yield return Waiting();}
-        exit=localBudget?"surface_local_budget":unknown?"unknown_terrain":"no_route_in_coverage";Finished=true;
-        yield return new(new(),0,timer.Elapsed.TotalMilliseconds,FailureReason:exit,TimeBudgetReached:localBudget,Kind:"surface_graph",SearchExit:exit);
+        exit=graph.Truncated?"surface_node_budget":localBudget?"surface_local_budget":unknown?"unknown_terrain":"no_route_in_coverage";Finished=true;
+        yield return new(new(),0,timer.Elapsed.TotalMilliseconds,FailureReason:exit,TimeBudgetReached:localBudget||graph.Truncated,Kind:"surface_graph",SearchExit:exit);
     }
 
     // Locate usable take-off space inside a stance interval. A low roof can

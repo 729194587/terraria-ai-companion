@@ -290,6 +290,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         internal NavigationKnowledge Knowledge=>knowledge;
         internal ChildExecutor(ServerAiNativeActions owner,bool continuous){this.owner=owner;this.continuous=continuous;}
         public string Validate(string op,JsonElement args)=>owner.Validate(op,args);
+        public ulong ProgressVersion(object handle)=>handle is Handle {Context:ServerAiNavigation.Run run}?run.ProgressVersion:0;
         public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>owner.StartCore(id,op,args,taskId,true,continuous,knowledge);
         public Result Poll(AiReadOnlyProtocol.Identity id,object value)
         {

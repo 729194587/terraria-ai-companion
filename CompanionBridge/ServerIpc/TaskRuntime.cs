@@ -8,7 +8,7 @@ namespace CompanionBridge.ServerIpc;
 internal sealed class TaskRecord
 {
     internal readonly string Id,Name,ParentId;
-    internal readonly ulong Deadline;
+    internal ulong Deadline;
     internal string Status="running",Phase="accepted",Reason="accepted";
     internal bool Started;
     internal Result Result;
@@ -20,6 +20,7 @@ internal abstract class CompanionTask
     internal virtual object Progress=>null;
     internal virtual object CurrentChild=>null;
     internal virtual object LastResult=>null;
+    internal virtual ulong ProgressVersion=>0;
     internal abstract string Name{get;}
     internal virtual Result Prepare(AiReadOnlyProtocol.Identity frame)=>null;
     internal virtual void Start(AiReadOnlyProtocol.Identity frame){}
@@ -35,8 +36,20 @@ internal sealed class TaskSlot
     internal readonly CompanionTask Task;
     private readonly AiReadOnlyProtocol.Identity identity;
     private ulong lastTick;
+    private ulong observedProgress;
+    private readonly ulong leaseUpdates;
     internal TaskSlot(CompanionTask task,string id,string parent,AiReadOnlyProtocol.Identity identity,ulong budget)
-    {Task=task;this.identity=identity;lastTick=identity.GameUpdate;Record=new(id,task.Name,parent,checked(identity.GameUpdate+budget));}
+    {
+        Task=task;this.identity=identity;lastTick=identity.GameUpdate;
+        Record=new(id,task.Name,parent,checked(identity.GameUpdate+budget));
+        leaseUpdates=task.Name is "navigate_to" or "navigate_to_landing_region"?budget:0;
+    }
+    private void RenewOnProgress(ulong tick)
+    {
+        if(leaseUpdates==0||Task.ProgressVersion<=observedProgress)return;
+        observedProgress=Task.ProgressVersion;
+        Record.Deadline=checked(tick+leaseUpdates);
+    }
     internal static bool Same(AiReadOnlyProtocol.Identity a,AiReadOnlyProtocol.Identity b)=>b!=null&&ReferenceEquals(a.Actor,b.Actor)&&a.World==b.World&&a.Generation==b.Generation&&a.Slot==b.Slot;
     internal Result Tick(AiReadOnlyProtocol.Identity frame)
     {
@@ -45,9 +58,11 @@ internal sealed class TaskSlot
         if(!frame.CanAct)return Stop(frame,"cancelled","actor_not_alive");
         if(frame.GameUpdate<=lastTick)return CompanionTask.Running();
         lastTick=frame.GameUpdate;
-        if(frame.GameUpdate>=Record.Deadline)return Stop(frame,"timeout","task_game_update_deadline");
         try
         {
+            RenewOnProgress(frame.GameUpdate);
+            if(frame.GameUpdate>=Record.Deadline)
+                return Stop(frame,"timeout",leaseUpdates==0?"task_game_update_deadline":"navigation_progress_lease_expired");
             if(!Record.Started)
             {
                 var rejection=Task.Prepare(frame);if(rejection!=null)return Finish(rejection);
@@ -56,6 +71,7 @@ internal sealed class TaskSlot
                 return CompanionTask.Running();
             }
             var result=Task.Tick(frame);Record.Phase=Task.Phase;Record.Reason=result.Reason;
+            RenewOnProgress(frame.GameUpdate);
             return result.Status=="running"?result:Finish(result);
         }
         catch(Exception e)
@@ -91,6 +107,8 @@ internal sealed class TaskSlot
 internal abstract class AbstractCompanionTask : CompanionTask
 {
     private TaskSlot child;
+    private ulong settledProgress;
+    protected ulong ChildProgress=>settledProgress+(child?.Task.ProgressVersion??0);
     protected readonly List<object> children=new();
     protected Result lastResult;
     protected int completedChildren;
@@ -111,6 +129,7 @@ internal abstract class AbstractCompanionTask : CompanionTask
     }
     private void RecordChild()
     {
+        settledProgress+=child.Task.ProgressVersion;
         settledChildren++;
         if(children.Count>=ChildHistoryCapacity)children.RemoveAt(0);
         children.Add(child.View());child=null;
@@ -134,6 +153,7 @@ internal sealed class NativeActionTask : CompanionTask
     {this.executor=executor;this.operation=operation;this.args=args.Clone();this.id=id;}
     internal string RequestId=>id;
     internal bool Started=>attempted;
+    internal override ulong ProgressVersion=>handle==null?0:executor.ProgressVersion(handle);
     internal override string Name=>operation;
     internal override void Start(AiReadOnlyProtocol.Identity frame){attempted=true;handle=executor.Start(frame,operation,args,id);}
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)=>executor.Poll(frame,handle);

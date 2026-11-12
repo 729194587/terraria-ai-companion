@@ -23,7 +23,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
             Add(tile.TileType);Add(tile.HasTile?1:0);Add(tile.IsActuated?1:0);
             Add((int)tile.Slope);Add(tile.IsHalfBlock?1:0);Add(tile.TileFrameX);Add(tile.TileFrameY);
             Add(cell.Liquid.Stamp);
-            return new(cell.Shape,h,cell.Liquid);
+            return new(cell.Shape,h,cell.Liquid,tile.HasUnactuatedTile&&TileID.Sets.NegatesFallDamage[tile.TileType]);
         }
     }
     private const int CollisionMargin = 32;
@@ -39,8 +39,9 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
 
     public long TerrainSignature(PhysicsState start,Prediction edge=null)
     {
-        // Search signatures cover the complete native prediction window.
-        // Executed-edge signatures cover every predicted frame and collision margin.
+        // Rolling search signatures cover the ordinary local window. Deep
+        // descents probe actual tiles, and verified-edge signatures include
+        // every predicted frame and collision margin.
         float left=start.Px,top=start.Py,right=left+20,bottom=top+42;
         if(edge!=null)
             foreach(var frame in edge.Frames)
@@ -69,7 +70,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
         for (int x = (int)Math.Floor(left / 16); x < (int)Math.Ceiling(right / 16); x++)
             for (int y = (int)Math.Floor(top / 16); y < (int)Math.Ceiling(bottom / 16); y++)
             {
-                if (x < _left || x >= _left + 45 || y < _top || y >= _top + 29)
+                if (x < _left || x >= _left + 45 || y < _top || y >= _top + 17 + FallSafety.LookaheadPixels/16 + 5)
                     throw new UnsafeMotionException($"outside local prediction window at ({x},{y})");
                 char cell = TerrainReader.ReadCell(x, y);
                 if (cell == '?' || (hazards && cell == '!'))
@@ -91,6 +92,15 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
 
     public PhysicsState Move(PhysicsState start, float vx, float vy, float gravity)
         => MoveCore(start,vx,vy,gravity,stepAssist:true);
+
+    public bool NegatesFallDamage(PhysicsState state)
+    {
+        int row=FallSafety.Row(state.Py+PhysicsSimulator.PlayerH+1);
+        for(int x=FallSafety.Row(state.Px);x<=FallSafety.Row(state.Px+PhysicsSimulator.PlayerW);x++)
+            if(TerrainReader.Loaded(x,row)&&Main.tile[x,row].HasUnactuatedTile
+                &&TileID.Sets.NegatesFallDamage[Main.tile[x,row].TileType])return true;
+        return false;
+    }
 
     // A stationary downward probe asks whether native collision holds this
     // exact pose. Step assist could move the probe onto a different surface.

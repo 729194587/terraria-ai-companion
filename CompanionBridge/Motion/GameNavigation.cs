@@ -81,8 +81,10 @@ internal sealed class NativeNavigation
         // Keep one planning profile; Step applies that verified air-only value.
         float speed=air?.Kind==AirKind.Wings&&Math.Abs(p.accRunSpeed-6.25f)<.001f?3:p.accRunSpeed;
         return new(p.runAcceleration,p.maxRunSpeed,speed,p.runSlowdown,p.gravity,p.maxFallSpeed,Player.jumpSpeed,Player.jumpHeight,
-            AirMotionModel.Strategy(m)==AirKind.None?ExtraJumpModel.Select(m):null,air);
+            AirMotionModel.Strategy(m)==AirKind.None?ExtraJumpModel.Select(m):null,air,FallProfile(p));
     }
+
+    internal static FallSafety FallProfile(Player p)=>new(p.extraFall,p.noFallDmg||p.equippedWings!=null);
 
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
         LandingRegion region = null)
@@ -123,6 +125,7 @@ internal sealed class NativeNavigation
         }
         _planRevision=_profile.Revision;
         _world = new NativeMotionWorld(state,_captureContacts);
+        Task.LiveFallStart=Controller.LiveFallStart=p.fallStart;
         long started = Stopwatch.GetTimestamp();
         var input = _navigation
             ? region != null ? Task.Before(session, generation, region, state, ph, _world)
@@ -173,6 +176,7 @@ internal static class GameNavigation
     internal static NavigationTask Task => instance.Task;
     internal static NavigationSnapshot Snapshot => instance.Snapshot;
     internal static bool Ordinary(Player p) => instance.Ordinary(p);
+    internal static FallSafety FallProfile(Player p)=>NativeNavigation.FallProfile(p);
     internal static PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null, LandingRegion region = null)
         => instance.Before(p, session, direction, generation, targetX, region);
     internal static void After(Player p) => instance.After(p);

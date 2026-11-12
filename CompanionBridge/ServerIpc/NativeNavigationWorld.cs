@@ -177,7 +177,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
                 if(route.SearchExit is "surface_node_budget" or "unknown_terrain" or "unsupported_model")
                 {
                     string reason=route.SearchExit=="surface_node_budget"?"navigation_surface_node_budget":route.SearchExit=="unknown_terrain"?"native_navigation_terrain_unknown":"unsupported_navigation_profile";
-                    PlanningFailure=new(route.SearchExit=="unknown_terrain"?"unknown":"failed",reason,null,true);
+                    PlanningFailure=new(route.SearchExit=="unknown_terrain"?"unknown":route.SearchExit=="surface_node_budget"?"timeout":"failed",reason,null,true);
                     PlanningPending=false;return;
                 }
             }

@@ -93,20 +93,35 @@ public static class VerticalNavigationTests
         char Shaft(int x,int y)=>x is 99 or 102||y>=100?'#':x is 100 or 101&&y==96?'=':'.';
         var shaftWorld=new World{Tile=Shaft};
         var neutral=PhysicsSimulator.Predict(ground,0,12,PhysicsParameters.Basic,shaftWorld,
-            rollingJump:true,maxDropPixels:StateSpacePlanner.MaxDropPixels);
+            rollingJump:true);
         Check(neutral.Safe&&neutral.Frames.All(f=>f.Input.Direction==0)
             &&neutral.Landing.Px==ground.Px&&neutral.Landing.Py==1494,
             "Neutral ascent proves safe support and braking at a different height");
-        Check(!PhysicsSimulator.Predict(ground,0,12,PhysicsParameters.Basic,new World{Tile=Floor},
-            maxDropPixels:StateSpacePlanner.MaxDropPixels).Safe,"Neutral same-floor hop cannot create a search cycle");
+        Check(!PhysicsSimulator.Predict(ground,0,12,PhysicsParameters.Basic,new World{Tile=Floor}).Safe,"Neutral same-floor hop cannot create a search cycle");
         Scenario("same-x-shaft-up",Shaft,ground,new[]{new LandingRegion(1604,1608,1536)},true);
         Scenario("shaft-low-ceiling",(x,y)=>y==93?'#':Shaft(x,y),ground,
             new[]{new LandingRegion(1604,1608,1536)},false);
         Scenario("beyond-jump-height",(x,y)=>x>=106&&y==88?'=':Floor(x,y),ground,
             new[]{new LandingRegion(1696,1792,1408)},false);
         Scenario("no-target-support",Floor,ground,new[]{new LandingRegion(1664,1744,1536)},false);
-        Scenario("descent-80-rejected",(x,y)=>x<=102&&y==95?'=':Floor(x,y),ground with{Py=1478},
-            new[]{new LandingRegion(1696,1760,1600)},false);
+        Scenario("descent-208",(x,y)=>x<=102&&y==87?'=':Floor(x,y),ground with{Py=1350},
+            new[]{new LandingRegion(1696,1760,1600)},true);
+        Check(new FallSafety(0,false).Safe(100,125*16+15)&&!new FallSafety(0,false).Safe(100,126*16),
+            "Native fall threshold rounds the player's top to a tile row");
+        Check(new FallSafety(10,false).Safe(100,135*16)&&!new FallSafety(10,false).Safe(100,136*16)
+            &&new FallSafety(0,true).Safe(100,148*16),"Fall protection and extraFall are distinct");
+        var deepStart=ground with{Py=73*16-42};
+        var deepWorld=new World{Tile=(x,y)=>x<=102&&y==73?'=':Floor(x,y)};
+        var protectedProfile=PhysicsParameters.Basic with{Fall=new(10,false)};
+        var ordinary=PhysicsSimulator.Predict(deepStart,1,0,PhysicsParameters.Basic,deepWorld,walkFrames:36);
+        Check(!ordinary.Safe&&ordinary.Reason.Contains("fall damage"),"A 27-tile landing exceeds ordinary fall tolerance");
+        var descent=PhysicsSimulator.Predict(deepStart,1,0,protectedProfile,deepWorld,walkFrames:36);
+        Check(descent.Safe&&descent.Landing.Py==ground.Py,"extraFall permits a planned 27-tile descent");
+        var executor=new LocalMotionController{LiveFallStart=FallSafety.Row(deepStart.Py)};
+        executor.Begin(402,1,1);executor.LoadPlan(descent);
+        Check(executor.Before(402,1,deepStart,PhysicsParameters.Basic,deepWorld,1)==default
+            &&executor.FailureKind==MotionFailureKind.RouteDeviation,
+            "Losing fall protection before departure releases input instead of replaying the descent");
         foreach(char danger in new[]{'!','?'})
             Scenario("target-"+danger,(x,y)=>x>=104&&y>=96?danger:Floor(x,y),ground,
                 new[]{new LandingRegion(1696,1744,1536)},false);

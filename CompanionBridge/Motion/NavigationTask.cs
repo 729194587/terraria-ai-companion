@@ -6,6 +6,8 @@ namespace CompanionBridge.Motion;
 // hosted on the existing game thread and bound to one control generation.
 internal sealed class NavigationTask
 {
+    internal int? LiveFallStart { set=>_executor.LiveFallStart=value; }
+    internal ulong ProgressVersion { get; private set; }
     internal Func<PhysicsState,PhysicsParameters,IMotionWorld,bool> TryGrapple { get; set; }
     private readonly LocalMotionController _executor = new();
     private readonly bool _enableSafeGroundWalk;
@@ -117,6 +119,7 @@ internal sealed class NavigationTask
             _region = region;
             _direction = targetX >= state.Px ? 1 : -1;
             _actions = _jumps = _stalled = _plans = _searches = _fastWalks = 0; _furthest = Progress(state);
+            ProgressVersion=0;
             _trip.Begin(state,Distance(state));
             Snapshot = new(session, "running", "plan", "navigation started", 0, 0, null, null, 0,
                 Generation: generation, TargetX: targetX, TargetRegion: region);
@@ -235,12 +238,11 @@ internal sealed class NavigationTask
                     if(_route.SearchExit=="surface_node_budget")
                         return Fail("navigation_surface_node_budget");
                     bool sliceExhausted=_route.TimeBudgetReached||_route.SearchExit is "expansion_budget" or "local_state_budget";
-                    if(Continuous&&sliceExhausted)
+                    if(Continuous&&sliceExhausted&&(_pendingSearch is {Finished:false}||_surfaceSearch is {Finished:false}))
                     {
                         // Retain exact frontier/candidate cursor. Its start, terrain
                         // and physics are revalidated before the next game-thread slice.
                         _deferredSearches++;
-                        if(_pendingSearch?.Finished==true||_surfaceSearch?.Finished==true)DiscardSearch();
                         Snapshot=Snapshot with{Status="running",Reason="local search deferred"};
                         return default;
                     }
@@ -248,7 +250,7 @@ internal sealed class NavigationTask
                     if(_route.SearchExit=="unknown_terrain")
                     {Unconfirmed("navigation_unknown_terrain");return default;}
                     return Fail(_route.TimeBudgetReached ? "navigation_search_timeout"
-                        : _route.SearchExit == "expansion_budget" ? "navigation_search_expansion_budget"
+                        : _route.SearchExit is "expansion_budget" or "local_state_budget" ? "navigation_search_expansion_budget"
                         : _trip.RepeatRejections>priorRepeatRejections ? "navigation_trip_repeated_state"
                         : _route.Rejections?.ContainsKey("recently failed local edge") == true ? "navigation_recovery_blocked: " + _route.FailureReason
                         : "no safe local route: " + _route.FailureReason,_route.BlockingTiles);
@@ -330,6 +332,7 @@ internal sealed class NavigationTask
         bool progress=_trip.Checkpoint(state,Distance(state),continuous:Continuous);
         if(progress)
         {
+            ProgressVersion++;
             _watchdog.Observe(NavigationActivity.VerifiedCheckpoint);
             if(Continuous&&verifiedAction)_consecutiveRecoveries=0;
         }
@@ -413,7 +416,7 @@ internal sealed class NavigationTask
             int hold=old.ExtraJumpFrame>=0||old.AirStartFrame>=0?old.InitialHold:old.Frames.FindAll(f=>f.Input.Jump).Count;
             int stride=old.Jump?24:old.Frames.FindAll(f=>f.Input.Direction!=0).Count;
             var fresh=PhysicsSimulator.Predict(state,old.Frames[0].Input.Direction,hold,ph,world,
-                walkFrames:stride,rollingJump:true,maxDropPixels:StateSpacePlanner.MaxDropPixels,extraJumpFrame:old.ExtraJumpFrame,airStartFrame:old.AirStartFrame,airHoldFrames:old.AirHoldFrames);
+                walkFrames:stride,rollingJump:true,extraJumpFrame:old.ExtraJumpFrame,airStartFrame:old.AirStartFrame,airHoldFrames:old.AirHoldFrames);
             if(fresh.Safe&&old.ExecuteFrames<=fresh.Frames.Count)
             {
                 var end=fresh.Frames[old.ExecuteFrames-1].State;

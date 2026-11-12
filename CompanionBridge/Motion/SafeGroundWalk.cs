@@ -18,8 +18,7 @@ internal static class SafeGroundWalk
         foreach(int stride in strides)
         {
             // Includes the original complete braking/stable-support proof.
-            var edge=PhysicsSimulator.Predict(start,direction,0,ph,world,walkFrames:stride,
-                maxDropPixels:StateSpacePlanner.MaxDropPixels);
+            var edge=PhysicsSimulator.Predict(start,direction,0,ph,world,walkFrames:stride);
             if(!edge.Safe||edge.Jump||edge.Frames.Count==0)continue;
             bool flat=true;
             foreach(var frame in edge.Frames)

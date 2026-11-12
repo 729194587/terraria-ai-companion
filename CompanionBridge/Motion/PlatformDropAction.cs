@@ -5,7 +5,6 @@ namespace CompanionBridge.Motion;
 // A bounded native Down-input action, not a new planner or a position/velocity edit.
 internal sealed class PlatformDropAction
 {
-    internal const int MaxDropPixels = 64;
     internal string Status { get; private set; } = "idle";
     internal string Reason { get; private set; }
     internal bool Down { get; private set; }
@@ -14,7 +13,7 @@ internal sealed class PlatformDropAction
     private float _x;
     private int _life, _settled;
     private bool _departed;
-    internal void Begin(PhysicsState start, int life, bool supported, Func<int,int,char> cell)
+    internal void Begin(PhysicsState start, int life, bool supported, Func<int,int,char> cell,FallSafety fall=default)
     {
         Status = "running"; Reason = "started"; Down = false; _departed = false; _settled = 0;
         _x = start.Px; _life = life; StartFeetY = start.Py + PhysicsSimulator.PlayerH;
@@ -32,15 +31,18 @@ internal sealed class PlatformDropAction
             if(c=='=') support+=Math.Min(_x+PhysicsSimulator.PlayerW,(x+1)*16)-Math.Max(_x,x*16);
         }
         if(support <= MotionSupport.MinimumSupportPixels) { Fail("drop_requires_horizontal_platform"); return; }
-        for(int offset=16;offset<=MaxDropPixels;offset+=16)
+        for(int offset=16;offset<=FallSafety.LookaheadPixels;offset+=16)
         {
             float surface = row*16+offset;
             var target = start with { Py=surface-PhysicsSimulator.PlayerH };
             if (!CorridorClear(start.Py,surface,cell)) break;
             if (MotionSupport.SafeFlatLanding(target,cell))
-            { TargetSurfaceY=surface; Down=true; return; }
+            {
+                if(!fall.Safe(start.Py,target.Py)){Fail("drop_exceeds_native_fall_threshold");return;}
+                TargetSurfaceY=surface; Down=true; return;
+            }
         }
-        Fail("no_safe_drop_landing_within_64_pixels");
+        Fail("no_safe_drop_landing_in_observed_corridor");
     }
     private bool CorridorClear(float top, float surface, Func<int,int,char> cell)
     {
@@ -49,23 +51,24 @@ internal sealed class PlatformDropAction
                 if(cell(x,y) is not ('.' or '=')) return false;
         return true;
     }
-    internal void Before(PhysicsState state, int life, Func<int,int,char> cell)
+    internal void Before(PhysicsState state, int life, Func<int,int,char> cell,FallSafety fall=default,int? fallStart=null)
     {
         if(Status!="running") return;
         if(life<_life) { Fail("life_decreased"); return; }
         _life=life;
         if(Math.Abs(state.Px-_x)>1) { Fail("drop_horizontal_drift"); return; }
         var target=state with { Px=_x, Py=TargetSurfaceY-PhysicsSimulator.PlayerH, Vx=0,Vy=0,Grounded=true };
-        if(!MotionSupport.SafeFlatLanding(target,cell) || !CorridorClear(Math.Min(state.Py,StartFeetY-PhysicsSimulator.PlayerH),TargetSurfaceY,cell))
+        if(!fall.Safe(fallStart??FallSafety.Row(StartFeetY-PhysicsSimulator.PlayerH),target.Py)
+            ||!MotionSupport.SafeFlatLanding(target,cell) || !CorridorClear(Math.Min(state.Py,StartFeetY-PhysicsSimulator.PlayerH),TargetSurfaceY,cell))
         { Fail("drop_landing_or_corridor_changed"); return; }
         float feet=state.Py+PhysicsSimulator.PlayerH;
         _departed |= feet>StartFeetY+4;
         Down=!_departed; // Release after clearing the original platform; don't fall through the next one.
         if(feet>TargetSurfaceY+LandingRegion.FeetTolerance) Fail("drop_overshot_target_surface");
     }
-    internal void After(PhysicsState state, int life, Func<int,int,char> cell)
+    internal void After(PhysicsState state, int life, Func<int,int,char> cell,FallSafety fall=default,int? fallStart=null)
     {
-        Before(state,life,cell);
+        Before(state,life,cell,fall,fallStart);
         if(Status!="running") return;
         bool landed=_departed && !Down && state.Grounded && Math.Abs(state.Vx)<=0.1f && Math.Abs(state.Vy)<=0.1f
             && Math.Abs(state.Py+PhysicsSimulator.PlayerH-TargetSurfaceY)<=LandingRegion.FeetTolerance

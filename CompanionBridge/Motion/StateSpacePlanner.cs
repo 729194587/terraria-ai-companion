@@ -16,7 +16,8 @@ internal sealed record Route(List<Prediction> Actions, int Expansions, double Mi
 
 internal static class StateSpacePlanner
 {
-    internal const float MaxDropPixels = 64;
+    internal const int MaximumStates = 40000;
+    internal const int StandardVerticalSpan = 128;
     internal static float SearchEstimate(PhysicsState s, float goal, int sign,
         LandingRegion region, PhysicsParameters ph) => region != null ? (region.Contains(s) ? 0 : 1)
         : Math.Max(0, sign * (goal - s.Px)) / ph.MaxRun;
@@ -121,7 +122,7 @@ internal static class StateSpacePlanner
                 // bounded simulation, sweep/drop/landing checks and stable tail as
                 // other actions, but release direction rather than accelerate again.
                 var brake = PhysicsSimulator.Predict(start, 0, 0, ph, world,
-                    walkFrames: 0, maxDropPixels: MaxDropPixels);
+                    walkFrames: 0);
                 if (brake.Safe && (region != null ? region.Arrived(brake.Landing, world)
                         : sign * (targetX - brake.Landing.Px) <= 12)
                     && Math.Abs(brake.Landing.Vx) <= 0.1f)
@@ -177,7 +178,7 @@ internal static class StateSpacePlanner
                 if (came[cur].G != queued.G) continue; // Superseded exact-state label.
                 if (Reached(cur))
                 { best = cur; reachedGoal = true; break; }
-                if(came.Count>=8192)
+                if(came.Count>=MaximumStates)
                 {
                     Finished=true;
                     yield return Result("local_state_budget");
@@ -222,7 +223,7 @@ internal static class StateSpacePlanner
                                 budgetMs=sliceMilliseconds;maxExpansions=sliceNodes;
                             }
                             var edge = learning==null
-                                ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,maxDropPixels:MaxDropPixels,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold)
+                                ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold)
                                 :learning.Predict(cur,dir,hold,stride,ph,world,extraFrame,airStart,airHold);
                             if (!edge.Safe)
                             {
@@ -243,7 +244,11 @@ internal static class StateSpacePlanner
                             if (rejectEdge?.Invoke(cur, edge) == true)
                             { Reject("recently failed local edge"); continue; }
                             var next = edge.Landing;
-                            if (Math.Abs(next.Px - start.Px) > (ph.ExtraJump!=null||ph.Air!=null?288:192) || Math.Abs(next.Py - start.Py) > (ph.ExtraJump!=null||ph.Air!=null?208:128))
+                            float verticalSpan=ph.ExtraJump!=null||ph.Air!=null?208:StandardVerticalSpan;
+                            bool descentHandoff=next.Py-start.Py>verticalSpan&&next.Py-cur.Py>16
+                                &&region!=null&&region.SurfaceY>cur.Py+PhysicsSimulator.PlayerH;
+                            if (Math.Abs(next.Px - start.Px) > (ph.ExtraJump!=null||ph.Air!=null?288:192)
+                                || Math.Abs(next.Py - start.Py)>verticalSpan&&!descentHandoff)
                             { Reject("outside route span"); continue; }
                             // Prefer walking when it makes comparable progress. Braking at
                             // every walk boundary previously made flat-ground jumps cheaper.
@@ -265,7 +270,9 @@ internal static class StateSpacePlanner
                             {
                                 complete = next; completeCost = ng;
                             }
-                            open.Enqueue((next, ng), ng + H(next)+(learning?.Preference(next)??0));
+                            // A verified descent can cross the vertical search
+                            // window once. Continue from its real landing next plan.
+                            if(!descentHandoff)open.Enqueue((next, ng), ng + H(next)+(learning?.Preference(next)??0));
                             // Cost-aware partial fallback: choosing only the farthest landing
                             // discards the walk/jump costs whenever the budget is exhausted.
                             // Region pixel distance only ranks safe partial checkpoints;

@@ -72,7 +72,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         {SearchFailure="navigation_edit_window_exceeded";SearchDetail+="; excavation window exceeded";return null;}
         var world=new NativeMotionWorld(pose);
         if(targetFeet>Feet(pose)&&LocalEditGeometry.LowerWalkLanding(pose,NativeNavigation.Parameters(Player),world,
-            targetCenter,targetFeet,DropBudget(pose)) is {} lower)
+            targetCenter,targetFeet,FallSafety.LookaheadPixels) is {} lower)
         {
             SearchDetail+=$"; native collision predicts lower landing at left={lower.Px:F1}, feet={Feet(lower):F1}";
             return new("navigate_to_landing_region",JsonSerializer.SerializeToElement(new
@@ -187,9 +187,6 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             ||TerrainReader.ReadDryCell(x,y+1)=='#';
     }
 
-    private float DropBudget(PhysicsState pose)=>Math.Min(StateSpacePlanner.MaxDropPixels,
-        Feet(openingOrigin)+MaxDepthTiles*TileSize-Feet(pose));
-
     internal PhysicsState? LandingAfterCut(PhysicsState pose,(int X,int Y)[] removed)
     {
         char After(int tx,int ty)
@@ -197,7 +194,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             char cell=TerrainReader.ReadDryCell(tx,ty);
             return cell is '?' or '!'?cell:removed.Contains((tx,ty))?'.':cell;
         }
-        return LocalEditGeometry.FallLanding(pose,After,NativeNavigation.Parameters(Player),DropBudget(pose));
+        return LocalEditGeometry.FallLanding(pose,After,NativeNavigation.Parameters(Player),FallSafety.LookaheadPixels);
     }
 
     internal void BeginLocalPlanning(PhysicsState pose)

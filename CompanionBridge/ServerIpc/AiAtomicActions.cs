@@ -20,6 +20,7 @@ internal sealed class AiAtomicActions
         NativeResult Cancel(AiReadOnlyProtocol.Identity identity, object handle);
         NativeResult CancelWithReason(AiReadOnlyProtocol.Identity identity,object handle,string status,string reason)=>Cancel(identity,handle);
         NativeResult BindingLost(object handle)=>new("unknown","actor_binding_changed",null,false);
+        ulong ProgressVersion(object handle)=>0;
         void Shutdown();
     }
     private readonly IExecutor executor;
@@ -127,7 +128,7 @@ internal sealed class AiAtomicActions
         long remaining = root.GetProperty("expiresAtUnixMs").GetInt64() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (remaining <= 0) return new(Error: "request_expired");
         if (remaining > 2000) return new(Error: "invalid_deadline");
-        int duration = operation switch { "mine_target" or "navigate_to"=>55000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
+        int duration = operation switch { "navigate_to"=>180000, "mine_target"=>55000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
         while (entries.Count >= RegistryCapacity && terminalEntries.TryDequeue(out var oldest))
             if (entries.TryGetValue(oldest, out var terminal) && terminal.Status != "running") entries.Remove(oldest);
         if (entries.Count >= RegistryCapacity) return new(Error: "action_registry_full");

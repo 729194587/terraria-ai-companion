@@ -224,7 +224,7 @@ internal static class ServerMineTaskFixture
                     var from=new SurfaceNode(-1,left,floor,new(start.Px,start.Px,start.Py+42),start.Px,start.Px+20,SurfaceKind.Solid,0,true,true);
                     var to=new SurfaceNode(-2,left+5,floor,goal,(left+5)*16,(left+6)*16,half?SurfaceKind.Half:SurfaceKind.Solid,0,true,true);
                     var edge=graph.Candidate(from,to,physics);
-                    var walk=PhysicsSimulator.Predict(start,1,0,physics,source,walkFrames:40,maxDropPixels:StateSpacePlanner.MaxDropPixels);
+                    var walk=PhysicsSimulator.Predict(start,1,0,physics,source,walkFrames:40);
                     var probe=down?start:to.Rest((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2);
                     var jumpWorld=new NativeMotionWorld(probe);var jumped=probe;float rise=0;
                     for(int frame=0;frame<12;frame++)
@@ -271,6 +271,34 @@ internal static class ServerMineTaskFixture
                 {
                     for(int tx=left+3;tx<=left+22;tx++)Main.tile[tx,floor].ClearTile();
                     destinationY=(floor+1)*16;
+                }
+                if(kind.StartsWith("navigation_safety_",StringComparison.Ordinal))
+                {
+                    int depth=kind=="navigation_safety_drop13"?13:kind=="navigation_safety_immune"?36:
+                        kind is "navigation_safety_drop27" or "navigation_safety_extra"?27:0;
+                    bool dense=kind=="navigation_safety_dense",longTrip=kind=="navigation_safety_long";
+                    int right=longTrip?552:32,top=dense?32:10,bottom=dense?32:depth+4;
+                    for(int dx=-32;dx<=right;dx++)
+                    for(int dy=-top;dy<=bottom;dy++)
+                    {
+                        var tile=Main.tile[left+dx,floor+dy];tile.ClearEverything();
+                        int surface=dx<=2?0:depth;
+                        if(dense&&dy!=0)
+                        {
+                            if(Math.Abs(dy)%4!=0)continue;
+                            tile.HasTile=true;tile.TileType=TileID.Stone;tile.Slope=SlopeType.SlopeDownRight;
+                        }
+                        else if(dy>=surface){tile.HasTile=true;tile.TileType=TileID.Stone;}
+                    }
+                    for(int i=0;i<p.armor.Length;i++)p.armor[i]=new Item();
+                    if(kind=="navigation_safety_extra")p.armor[2]=new Item(ItemID.MoonLordLegs);
+                    if(kind=="navigation_safety_immune")p.armor[3]=new Item(ItemID.LuckyHorseshoe);
+                    p.inventory[1]=new Item();
+                    p.statLife=p.statLifeMax2;
+                    p.fallStart=FallSafety.Row(p.position.Y);
+                    destinationX=(left+(longTrip?530:dense?18:7))*16+8;
+                    destinationY=(floor+depth)*16;
+                    stepEvidence=new{depth,startX=p.position.X,startFeetY=floor*16,startLife=p.statLife};
                 }
                 if(kind=="navigation_place")
                 {

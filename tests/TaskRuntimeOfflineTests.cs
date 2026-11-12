@@ -6,6 +6,14 @@ using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
 
 public static class TaskRuntimeOfflineTests
 {
+    private sealed class LeaseTask(string name) : CompanionTask
+    {
+        internal ulong Version;
+        internal override string Name=>name;
+        internal override ulong ProgressVersion=>Version;
+        internal override Result Tick(AiReadOnlyProtocol.Identity frame)=>Running();
+        internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)=>new(status,reason,null,true);
+    }
     private static int checks;
     private static void Check(bool ok,string text){if(!ok)throw new Exception(text);checks++;}
     private sealed class World : IMineTargetWorld
@@ -75,6 +83,24 @@ public static class TaskRuntimeOfflineTests
     }
     public static void Run()
     {
+        foreach(var name in new[]{"navigate_to","navigate_to_landing_region","mine_target"})
+        {
+            var task=new LeaseTask(name);
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var slot=new TaskSlot(task,name,null,frame,5);
+            slot.Tick(frame with{GameUpdate=1});
+            task.Version++;
+            var progress=slot.Tick(frame with{GameUpdate=5});
+            if(name=="mine_target")
+                Check(progress.Status=="timeout"&&progress.Reason=="task_game_update_deadline","mining retains its fixed deadline");
+            else
+            {
+                Check(progress.Status=="running"&&slot.Record.Deadline==10,"verified progress renews root and movement leases");
+                Check(slot.Tick(frame with{GameUpdate=9}).Status=="running","planning may consume the remaining lease");
+                var expired=slot.Tick(frame with{GameUpdate=10});
+                Check(expired.Status=="timeout"&&expired.Reason=="navigation_progress_lease_expired","unchanged progress does not renew");
+            }
+        }
         foreach(bool cancel in new[]{false,true})
         {
             var world=new World{PreferChanges=true,PlaceSupport=true};var native=new Native();

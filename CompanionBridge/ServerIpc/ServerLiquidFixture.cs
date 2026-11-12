@@ -60,8 +60,8 @@ internal static class ServerLiquidFixture
         var world=new NativeMotionWorld(start);
         var checks=new Dictionary<string,bool>();
         var ph=PhysicsParameters.Basic;
-        var walk=PhysicsSimulator.Predict(start,1,0,ph,world,walkFrames:48,maxDropPixels:96);
-        var jump=PhysicsSimulator.Predict(start,1,15,ph,world,maxDropPixels:96);
+        var walk=PhysicsSimulator.Predict(start,1,0,ph,world,walkFrames:48);
+        var jump=PhysicsSimulator.Predict(start,1,15,ph,world);
         checks["wetWalkRejected"]=!walk.Safe&&walk.Reason.Contains("wet contact");
         checks["dryJumpSafe"]=jump.Safe&&jump.Landing.Px+20>(x+6)*16
             &&Math.Abs(jump.Landing.Py+42-floor*16)<.01f;

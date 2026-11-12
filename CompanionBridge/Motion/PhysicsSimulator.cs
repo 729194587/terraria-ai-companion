@@ -6,7 +6,8 @@ using System.Collections.Generic;
 namespace CompanionBridge.Motion;
 
 internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRunSpeed,
-    float RunSlowdown, float Gravity, float MaxFall, float JumpSpeed, int JumpHeight,ExtraJumpModel ExtraJump=null,AirMotionModel Air=null)
+    float RunSlowdown, float Gravity, float MaxFall, float JumpSpeed, int JumpHeight,ExtraJumpModel ExtraJump=null,AirMotionModel Air=null,
+    FallSafety Fall=default)
 {
     // Player.Update initializes 10, then unconditionally adds 0.01 at IL_020d–021a
     // before our input hook. Match the effective value, not the reset constant.
@@ -24,6 +25,17 @@ internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRu
         &&Math.Abs(JumpSpeed-other.JumpSpeed)<.001f&&JumpHeight==other.JumpHeight
         &&Math.Abs(MaxFall-other.MaxFall)<.001f;
 
+}
+
+// Terraria 1.4.4.9 Player.Update uses the tile row of the body's top,
+// not feet or velocity, and damages only above 25 + extraFall rows.
+internal readonly record struct FallSafety(int ExtraFall,bool Immune)
+{
+    // Terrain observation / simulation horizon. Immunity does not certify a landing.
+    internal const int LookaheadPixels=48*16;
+    internal static int Row(float top)=>(int)(top/16f);
+    internal bool Safe(int fallStart,float landingTop)=>Immune||(long)Row(landingTop)-fallStart<=25L+ExtraFall;
+    internal bool Safe(float startTop,float landingTop)=>Safe(Row(startTop),landingTop);
 }
 
 internal readonly record struct PhysicsState(float Px, float Py, float Vx, float Vy,
@@ -71,6 +83,7 @@ internal interface IMotionWorld
     PhysicsState Move(PhysicsState start, float vx, float vy, float gravity);
     bool SafeSweep(PhysicsState start, PhysicsState end, out string reason);
     bool SafeLanding(PhysicsState state);
+    bool NegatesFallDamage(PhysicsState state)=>false;
     // Opt in only when the world can verify a flat solid or one-way platform top.
     bool SafeFlatLanding(PhysicsState state) => false;
     string LandingRejection(PhysicsState state) => SafeLanding(state) ? null : "unsafe foot support or body clearance";
@@ -184,7 +197,7 @@ internal static class PhysicsSimulator
     // moving prefix and replans, so an open flat surface does not become stop/start.
     internal static Prediction Predict(PhysicsState start, int direction, int hold,
         PhysicsParameters ph, IMotionWorld world, int walkFrames = WalkFrames, bool rollingJump = false,
-        float maxDropPixels = 16,int extraJumpFrame=-1,int airStartFrame=-1,int airHoldFrames=0)
+        int extraJumpFrame=-1,int airStartFrame=-1,int airHoldFrames=0)
     {
         var frames = new List<PredictedFrame>();
         bool brakingOnly = direction == 0 && hold == 0 && walkFrames == 0;
@@ -193,7 +206,7 @@ internal static class PhysicsSimulator
         int stable = 0;
         int movingLandingFrames = 0;
         bool landingChecked = false, extendLanding = false;
-        float lastGroundY = start.Py;
+        int fallStart=FallSafety.Row(start.Py);
         for (int f = 0; f < (airStartFrame>=0?180:extraJumpFrame>=0?140:MaxFrames); f++)
         {
             bool moving = hold > 0 ? !airborne || !s.Grounded
@@ -215,11 +228,11 @@ internal static class PhysicsSimulator
             if (hold == 0 && Math.Abs(next.Px - s.Px) < 0.01f && Math.Abs(next.Vx) < 0.01f && f < walkFrames)
                 return new(false, "walking blocked", frames, next, 0, false, world.LastHorizontalContact);
             airborne |= !next.Grounded;
-            if (hold > 0 && next.Py - start.Py > maxDropPixels)
-                return new(false, $"jump descent exceeds {maxDropPixels:0}px limit", frames, next, 0, true);
-            if (hold == 0 && next.Py - lastGroundY > maxDropPixels)
-                return new(false, $"walking drop exceeds {maxDropPixels:0}px limit", frames, next, 0, false);
-            if (next.Grounded) lastGroundY = next.Py;
+            if(s.Grounded||s.JumpFramesLeft>0)fallStart=FallSafety.Row(s.Py);
+            if(next.Py-start.Py>FallSafety.LookaheadPixels)
+                return new(false,"descent leaves the local collision horizon",frames,next,0,hold>0);
+            if(next.Grounded&&!ph.Fall.Safe(fallStart,next.Py)&&!world.NegatesFallDamage(next))
+                return new(false,"landing would exceed the native fall damage threshold",frames,next,0,hold>0);
             frames.Add(new(input, next));
             if (rollingJump && hold > 0 && movingLandingFrames == 0)
             {

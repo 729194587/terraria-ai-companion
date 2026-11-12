@@ -31,6 +31,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal NavigationKnowledge Knowledge;
         internal ServerGrappleClimb Climb;
         internal bool GrappleAttempted;
+        internal ulong ProgressVersion;
     }
     private readonly NativeNavigation navigation;
     internal ServerAiNavigation()
@@ -204,10 +205,15 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                     NetworkStateSync.Tick(p);
                     return;
                 }
-                navigation.After(p);run.Snapshot=navigation.Snapshot;
+                navigation.After(p);run.Snapshot=navigation.Snapshot;run.ProgressVersion=navigation.Task.ProgressVersion;
                 if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown",run.Snapshot.Reason=="navigation_unknown_terrain"
                     ?"native_navigation_terrain_unknown":"native_navigation_landing_unconfirmed");}
-                else if(run.Snapshot.Status=="failed"){run.ReasonDetail=run.Snapshot.SearchFailureReason is {} detail && (run.Snapshot.Reason is "navigation_search_timeout" or "navigation_search_expansion_budget")?detail:run.Snapshot.Reason;Stop("failed",AiActionReasons.Navigation(run.Snapshot.Reason));}
+                else if(run.Snapshot.Status=="failed")
+                {
+                    bool budget=run.Snapshot.Reason is "navigation_surface_node_budget" or "navigation_search_timeout" or "navigation_search_expansion_budget";
+                    run.ReasonDetail=budget?run.Snapshot.SearchFailureReason??run.Snapshot.Reason:run.Snapshot.Reason;
+                    Stop(budget?"timeout":"failed",AiActionReasons.Navigation(run.Snapshot.Reason));
+                }
                 else if(run.Snapshot.Status=="arrived")
                 {
                     var observed=Observe(p);
@@ -217,6 +223,8 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                         &&(run.Target>=run.StartX?1:-1)*(run.Target-p.position.X)<=12;
                     Stop(arrived?"completed":"unknown",arrived?"native_navigation_arrival_verified":"arrival_not_settled");
                 }
+                else if(navigation.Task.Continuous&&run.Snapshot.ActualMovingUpdates>=1800&&run.ProgressVersion>0&&Observe(p).Settled)
+                    Stop("cancelled","native_navigation_work_checkpoint");
                 else if(!navigation.Task.Continuous&&run.Updates>=1800)Stop("timeout","navigation_frame_budget");
                 if(Running)NetworkStateSync.Tick(p);else NetworkStateSync.Full(p);
             }

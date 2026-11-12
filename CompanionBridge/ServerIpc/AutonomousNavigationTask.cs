@@ -40,6 +40,7 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
     protected CompanionTask child;
     internal const int LocalCutTileLimit=18, MaxConsecutiveInvalidations=8;
     internal const ulong TripUpdates=2700;
+    private const ulong MovementLeaseUpdates=1800;
     private const ulong SettleUpdates=90;
     protected string phase="preflight";
     private int clearedTiles, dugTiles, placedTiles, openingMoves, invalidatedEdits, sequence;
@@ -59,6 +60,7 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
     internal AutonomousNavigationTask(string id,INavigationWorld world,AiAtomicActions.IExecutor native):base(id){this.world=world;this.native=native;}
     internal override string Name=>"navigate_to";
     internal override string Phase=>phase;
+    internal override ulong ProgressVersion=>ChildProgress+(ulong)progressWatch.VerifiedEffects;
     internal override object Progress=>new{stage=phase,completedChildren,settledChildren,
         children=children.ToArray(),childrenTruncated=settledChildren>children.Count,omittedChildren=settledChildren-children.Count,
         target=world.Target,clearedTiles,dugTiles,placedTiles,openingMoves,openingMode,search=world.SearchDetail,
@@ -85,9 +87,11 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
         }
         if(phase=="navigating")
         {
-            var r=RunChild(child,frame,1800);if(r==null)return Running();
+            var r=RunChild(child,frame,MovementLeaseUpdates);if(r==null)return Running();
             acquired|=r.InputsAcquired;
             child=null;
+            if(r.Status=="cancelled"&&r.Reason=="native_navigation_work_checkpoint"&&r.InputsReleased&&world.ReplanAfterChange)
+            {invalidatedEdits=0;openingMode=false;phase="observe";return Running();}
             if(r.Status=="completed")invalidatedEdits=0;
             if(r.Status=="completed"&&world.ReplanAfterChange)
             {openingMode=false;phase="observe";return Running();}
@@ -164,7 +168,7 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
             if(world.PlanningPending)return Running();
             if(phase!="reobserve"&&!prefer&&world.FindApproach() is {} approach)
             {
-                return StartChild(frame,"navigate_to_landing_region",approach,"navigating",TripUpdates);
+                return StartChild(frame,"navigate_to_landing_region",approach,"navigating",MovementLeaseUpdates);
             }
             openingMode=true;
         }
