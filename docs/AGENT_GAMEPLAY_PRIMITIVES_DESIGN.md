@@ -1,12 +1,12 @@
 # Agent Gameplay Primitives 设计
 
-**状态：** 架构设计，待分阶段实现与 Dedicated Server 验证  
+**状态：** P0–P3 已实现并完成 Dedicated Server 定向验证；P4 设计定稿，待实现  
 **目标后端：** Dedicated Server 上的独立 Server AI Player  
-**代码基线：** `codex/unified-autonomous-navigation`，`c074a083ddbccf85d7777a5c7ef7af765808d05d`
+**代码基线：** `codex/unified-autonomous-navigation`，P3 提交 `12e1f1b1960e520bb96945fe00f0b71b030d5f88`
 
 ## 1. 目标与范围
 
-为 Server AI 补齐玩家日常操作中已有 Terraria 原生规则支持的基础能力，当前重点是背包与世界容器交互。
+为 Server AI 补齐玩家日常操作中的原生基础能力。P0–P3 已覆盖背包与容器；P4 聚焦明确的掉落物收集任务与通用放置。
 
 设计原则：
 
@@ -27,10 +27,11 @@
 - `NativeSurvival.Run` 对 AI 生存更新建立隔离边界，并检查 `Main.myPlayer`、`Main.mouseItem`、`Main.ActivePlayerFileData` 和 `Main.player` 等全局状态未被改变。
 - 共享客户端 `AtomicOperations.Interact` 包含门、箱子、开关和拉杆逻辑，但它使用 `Main.LocalPlayer`，且 Dedicated Server 分支明确返回 `unsupported_interaction_net_mode`。它不是 Server AI 可直接调用的服务端容器实现。
 - `ServerAiNativeActions` 当前没有 `interact_tile` 执行分支；Python Server AI 契约将其列为未开放。
-- `place_object` 当前只支持经过验证的原版 Work Bench；尚未验证通用箱子放置及 Chest 记录注册。
+- 容器 P0–P3 已完成打开/观察/关闭、精确存取、五项批量操作和原生排序，并有 Dedicated Server 双客户端协议实测。
+- `place_tile` 已支持一类普通原生方块，`place_object` 对外仍仅支持 Work Bench；底层 `ActorObjectPlacement.CanPlace` 已能读取 Item.createTile、placeStyle 和 TileObjectData，但箱子注册、墙壁和特殊放置尚未通用化。
 - 现有制作系统不直接从箱子、银行或虚空保险库读取材料。
 
-因此，本工作不是重写背包、拾取或客户端交互，而是为 Dedicated Server 建立独立的服务端容器能力，并逐步接入 Server AI 契约。
+P4 不重写已经正常工作的容器、物品使用或原生自动拾取；在既有的 Server AI 行为和任务系统上补齐 Agent 可直接调用的意图。
 
 ## 3. 能力范围
 
@@ -74,30 +75,54 @@
 
 批量操作表达一个原生游戏意图，不应由 Agent 模拟大量鼠标点击来拼接。
 
-### 3.3 世界掉落物
+### 3.3 P4-A：主动收集掉落物 `collect_drops`
 
-继续复用现有原生拾取流程和 NativeItemOwnership，不另写直接向背包加物品的拾取实现。
+**现有事实：** `scan_entities` 可读取活动掉落物（类型、数量、位置等）；`NativeSurvival` 已接入 `Player.GrabItems`、物品归属及网络同步。此前挖铁矿真实测试已经捡到铁矿石 ×2。剩余一块铁矿因导航超时没有拾取，不能据此判定拾取机制缺失。
 
-后续单独补齐：
+P4-A 提供**明确的收集任务**，把「观察 → 决定拾取站位 → 导航 → 原生拾取 → 再观察并确认」封装成 Agent 可直接使用的目标。不是新建自定义拾取物品、直接增加背包或重做导航器。
 
-- 为掉落物观察增加可失效的实例身份，不能仅依赖可复用的 `Main.item` 数组槽位。
-- Agent 接近目标，由原生拾取流程完成吸引和拾取。
-- 通过背包变化及掉落物实例变化核验结果。
-- 掉落物合并、消失、被其他玩家拾取或槽位复用时，旧身份失效并要求重新观察。
+建议 API：任务 `collect_drops`，允许不带物品种类的调用；可选参数为扫描范围 `radiusPixels`、过滤的 `typeIds`，必要时允许从新鲜观察中指定单个目标。最终通过现有 `submit_task` / `query_task` / `await_task` / `cancel_task` 和能力握手暴露，参数按现有 Task Schema 风格实现。
 
-### 3.4 多格物体放置
+行为契约：
 
-通用箱子放置不属于普通 `place_tile`，也不能通过简单放开当前 Work Bench 白名单完成。
+1. 从当前玩家附近的**真实活动掉落物**中选择目标；默认收集所有当前可正常拾取的物品，不要求预先知道掉落种类。每次任务有明确的扫描范围和终止条件，不无限追逐新生成的物品。
+2. 路线目标是**满足 Terraria 原生拾取条件的可达玩家站位或区域**，不强迫站到掉落物坐标，也不要求物品恰好与玩家中心重合。拾取范围、物品归属、背包容量、ModItem 拾取许可均以 Terraria 原生逻辑为准。
+3. 使用现有 Server AI 导航任务推进，角色接近后让原生 `Player.GrabItems` 拾取；不调用直接写入背包或绕过引擎拾取规则的方法。
+4. 观察目标时使用 World/Actor 身份和足以识别当前掉落物实例的快照；不能仅以可复用的 `Main.item` 槽位号当作永久身份。物品移动、合并、消失或槽位复用后重新观察，不按过时坐标继续追逐。
+5. 任务记录已核实的收集效果、物品及数量、仍存在但未取得的目标及原因。硬币可按原生面额/价值核验；生命、魔力等非背包型拾取按其真实原生效果核验，不虚报为背包新增。
+6. 超时、导航失败或目标不可达时报告已完成部分和未完成部分；不将「未能接近」误报为「无法拾取」。遇到一个不可达目标不应陷入无穷重试，也不必强迫任务丢弃此前已经获得的物品。
+7. 与现有任务取消、输入释放、Actor 失效和 unknown 结果语义保持一致；中断后不自动重放可能已有副作用的步骤。
 
-箱子放置必须同时核验：
+### 3.4 P4-B：通用物品放置 `place_item`
 
-- TileObjectData 定义的完整占地、样式和支撑规则。
-- Terraria 原生物品放置及 Mod Hook 规则。
-- Tile 放置成功且 Chest 存储记录正确创建、注册并关联到对应坐标。
-- 物品消耗数量正确。
-- Dedicated Server 网络同步和其他客户端观察结果一致。
+目标是**只要某件物品在当前 Terraria/tModLoader 原生规则下属于可放置物品，Agent 原则上也能使用它进行同类放置**。不对家具、箱子等物品维护逐项白名单，也不把药水、武器、装备等非放置用途强行归入此 API。
 
-通用箱子放置在容器读写稳定后单独扩展，不作为容器读写的前置条件。
+建议统一接口：`place_item({x, y})`。`x/y` 为玩家瞄准的世界 Tile 坐标；当前选中物品仍沿用现有热键栏与物品持用语义。游戏侧根据物品的原生属性、放置数据和实际调用链，决定是普通 Tile、平台、背景墙、多格物体、箱子、火把、绳索还是其他原生放置分支。多格物体的目标锚点和实际占地应在回执中明确，不能把旧 `place_object` 的工作台锚点语义无条件假定适用于所有对象。
+
+优先扩展现有链路：
+
+- `ActorItemUse`：原生 `Player.ItemCheck` 单次使用周期、物品及动画生命周期；
+- `ActorPlacement`：`Player.PlaceThing_Tiles` 和受 Actor 绑定的坐标作用域；
+- `ActorObjectPlacement`：`TileObjectData` 的占地、方向/样式、支撑与事件核验；
+- 壁面放置等目前未接入的原生调用链：沿既有模式加入服务端适配，而不是绕开原生玩家放置过程。
+
+支持原则：
+
+1. **原生行为优先、类型驱动**：由 `Item.createTile`、`createWall`、`TileObjectData`、原生使用逻辑以及 tModLoader Hook 判定放置能力。普通方块、平台、墙壁、火把、工作站、家具、门、箱子及遵循常规机制的 Mod 物品均属于目标覆盖范围。
+2. **不以硬编码白名单代替原生规则**：少数确实使用独立原生机制的物品只对其具体机制适配；未支持的调用链应给出准确原因，而不是把整个物品类别永久判为不可放置。
+3. **原生世界效果**：保留真实交互范围、方向/样式、支撑、碰撞、替换、钩子与消耗规则。实际执行以 Actor 为所有者，不直接伪造世界状态或库存扣料。
+4. **箱子是一项重点验收样例**：必须创建正确的 Chest 存储记录，关联 Tile 锚点，后续 `open_container` 和 `inspect_container` 能正常操作；不仅检查 Tile 图片存在。
+5. **效果验证**：核验放置后的 Tile/墙壁/多格占地、必要的附属世界记录和库存消耗，同时同步到其他客户端。原生放置失败只报告失败；已可能产生世界效果但无法核实的情况返回 unknown。
+6. **向后兼容**：现有 `place_tile`、`place_object` 和 `place_rope` 可以继续服务既有调用者，但 `place_item` 是面向 Agent 的统一放置入口。不要求 Agent 自己判断应该调用哪一类放置 API。
+7. **边界明确但不人为缩小世界**：不要求一次实现所有不可归类的特殊道具、液体倒出或生成实体的行为；这些若由引擎定义为其他「使用」语义，属于后续物品使用扩展，而不是 `place_item` 的失败。
+
+### 3.5 P4 任务组织
+
+P4-A（收集）和 P4-B（放置）各自独立验收，不互相作为前置依赖。实现时先复用已有机制和能力契约，避免为两项任务重建独立的世界观察、移动或输入系统。
+
+Numen 的 `task/move/ItemReach`、`Destination` 可借鉴「原生拾取可达区域」的**目标建模**；`task/build/BuildPlacer` 与 `tools/interact/UseApi` 可借鉴「优先走游戏原生使用/放置通路」的原则。Minecraft 的拾取距离、碰撞几何和方块放置协议不能搬到 Terraria。
+
+TerraPlayerBot 的 `BotPickupPolicy` / `BotPickupRegression` 可参考物品归属、拾取许可与同步测试；`BotWorldActions` 可参考箱子注册的观察结果，但其中直接调用 `WorldGen.PlaceChest` 和手动消耗物品的方案不是本项目通用放置的默认实现。
 
 ## 4. 原生实现策略
 
@@ -235,13 +260,40 @@ TerraPlayerBot 的上下文切换方式可作为研究参考，但不构成我�
 - 使旧 Token 失效，并刷新或清空槽位缓存。
 - 验证排序不造成物品丢失、复制或错误装备选择。
 
-### P4：掉落物身份与通用箱子放置
+### P4-A：`collect_drops` 主动收集
 
-- 为掉落物建立实例级观察身份，复用原生拾取并核验进入背包的结果。
-- 独立扩展经过验证的箱子多格放置和 Chest 记录注册。
-- 不把这两项作为容器读写的前置条件。
+- 对接已有 `scan_entities`、Server AI 导航及原生 `GrabItems`；提供明确的收集任务入口。
+- 以原生拾取可达区域作为移动目标，处理掉落物位置变化、合并、消失和槽位复用。
+- 记录实际收集的物品/数量与失败原因；导航超时、背包满和拾取许可拒绝要可区分。
+- 验证单个指定目标、附近全部目标、混合掉落、部分成功与正常取消。
+
+### P4-B：`place_item` 通用放置
+
+- 通用化现有 `ActorItemUse` / `ActorPlacement` / `ActorObjectPlacement`，对接原生墙壁及特殊放置分支。
+- 不因旧版只验证工作台，就以物品白名单限制可放置范围；由原生 Item/TileObjectData/Mod Hook 规则判断。
+- 优先覆盖并实测普通方块、平台、墙壁、火把、多格家具、原版箱子及至少一种遵循常规放置机制的 Mod 物品。
+- 箱子放置必须验证 Chest 注册及随后正常开箱、查看、存取。
+- 验证世界效果、物品消耗、结果同步及原生拒绝行为。保持既有放置 API 可用。
 
 ## 9. 验收标准
+
+### P4-A：掉落物任务
+
+- Dedicated Server 上可不指定物品类型收集附近掉落物；可选择指定类型。
+- 真实掉落物的移动、原生拾取及库存/状态效果由服务端核实，多客户端观察一致。
+- 目标位于玩家不能直接站入的位置时，仍能按原生拾取可达范围规划站位。
+- 背包满、掉落物消失或合并、被其他玩家拾取、不可达及导航超时均返回正确的部分效果和原因。
+- 已拾取的物品不因某个目标失败而回滚，停止后无残留移动输入。
+
+### P4-B：通用放置
+
+- Dedicated Server 上普通方块、平台、背景墙、火把、多格家具、箱子及一个普通 Mod 可放置物品分别实测。
+- 放置由原生玩家物品使用路径触发；放置结果、物品消耗、Mod Hook 行为与 Terraria 一致。
+- 箱子具有有效 Chest 注册，能被 P0–P2 容器 API 操作。
+- 放置失败、支撑不满足、占地冲突、特殊物品不支持、取消和不确定副作用均准确回执。
+- 两个协议客户端接收到正确的世界和库存同步；回归旧 `place_tile`、`place_object`、`place_rope`。
+
+### P0–P3：容器回归
 
 容器能力至少覆盖：
 
@@ -270,5 +322,5 @@ TerraPlayerBot 的上下文切换方式可作为研究参考，但不构成我�
 - [Server AI 动作接口](SERVER_AI_ACTIONS.md)
 - [Server AI 能力契约](SERVER_AI_CAPABILITIES.md)
 - [Server AI 多格物体放置](SERVER_AI_OBJECT_PLACEMENT.md)
-- Numen 容器交互参考：Dwinovo/minecraft-numen，审计基线 commit `143ba409a62c99bf1e985b6047bcad0f00e9313e`。
-- TerraPlayerBot 参考：TerraPlayerBot 项目源码；重点检查 `BotCompanionActions`、`BotInventoryInteraction`、`BotCompatibility`、`BotWorldActions` 和 `BotCompanionRegression`。这些实现仅作为研究参考，需按当前 Terraria/tModLoader 版本及 Dedicated Server 行为重新验证。
+- Numen 参考：Dwinovo/minecraft-numen，审计基线 commit `143ba409a62c99bf1e985b6047bcad0f00e9313e`；P4 重点参考 `ItemReach`、`Destination`、`BuildPlacer`、`UseApi` 的设计思路，游戏规则以 Terraria 为准。
+- TerraPlayerBot 参考：重点检查 `BotPickupPolicy`、`BotPickupRegression`、`BotWorldActions`、`BotCompatibility`；仅研究行为与验收方式，不照搬未经验证的原生上下文切换或手动改世界方案。
