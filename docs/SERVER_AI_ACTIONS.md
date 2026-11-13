@@ -129,3 +129,20 @@ tModLoader 2026.09.3.1 的四个 `ChestUI` 入口使用 `Main.myPlayer`。
 物品时使用 `completed` 和 `effectStatus=none`。原生异常或未确认状态返回 `unknown`。
 
 使用上面的双客户端脚本，加上 `--batches` 运行 P2。
+
+### Dedicated Server 背包和箱子排序 P3
+
+`server_ai_sorting_v1` 提供 `sort_inventory({})` 和 `sort_container({containerToken})`。
+当前箱子需要新鲜 Token。排序后重新观察槽位，旧快照中的槽位 Token 已失效。
+
+tModLoader 2026.09.3.1 中，`ItemSorting.SortInventory` 先执行原生钱币和弹药整理，
+再排序普通槽位。底层 `ItemSorting.Sort(Item[], int[])` 根据玩家伤害加成设置物品分类优先级，
+使用 `ItemLoader.TryStackItems` 合并堆叠，并调用 UI 高亮。原生 `SortChest` 从
+`Main.myPlayer` 选取箱子后调用同一个底层方法，箱子槽位同步只在客户端分支执行。
+
+服务端按已核验 DLL 的 IL 调用点注入绑定 Player，并在 AI 排序期间略过 UI 高亮。
+背包调用原生排序入口，箱子将已核验的原版箱子物品数组传给底层排序。服务端同步变更槽，
+并在下一次游戏更新复核实例、基础字段和数量。钱币按面额总值核验；可能触发原生溢出掉落的输入会拒绝。
+功能只在已核验的 2026.09.3.1 引擎配置下公布。
+
+使用双客户端验证脚本的 `--sorting` 模式复现。

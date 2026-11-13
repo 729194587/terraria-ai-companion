@@ -161,8 +161,8 @@ class ResultRegistryTests(unittest.TestCase):
         containers = atomic.CONTAINER_OPERATIONS | {'inspect_container'}
         self.assertTrue(containers.isdisjoint(definitions))
         p0 = bridge(FULL | {'server_ai_containers_v1'})
-        enabled = bridge(FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_v1', 'server_ai_container_batch_v1'})
-        self.assertTrue((atomic.CONTAINER_TRANSFERS | atomic.CONTAINER_BATCHES).isdisjoint(p0.supported_atomic_operations))
+        enabled = bridge(FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_v1', 'server_ai_container_batch_v1', 'server_ai_sorting_v1'})
+        self.assertTrue((atomic.CONTAINER_TRANSFERS | atomic.CONTAINER_BATCHES | atomic.SORT_OPERATIONS).isdisjoint(p0.supported_atomic_operations))
         for name in containers:
             self.assertEqual('not_exposed', api_help(b, {'name': name})['status'])
             help_result = api_help(enabled, {'name': name})

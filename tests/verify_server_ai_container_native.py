@@ -104,7 +104,7 @@ def wait_for(predicate, seconds=20):
     raise TimeoutError("Native test condition timed out")
 
 
-async def verify(profile, bridge, first, second, *, transfers=False, batches=False):
+async def verify(profile, bridge, first, second, *, transfers=False, batches=False, sorting=False):
     ready = json.loads((profile / "container-ready.json").read_text())
     x, y, index, other = (ready[key] for key in ("x", "y", "index", "other"))
     actor = bridge.binding["slot"]
@@ -173,6 +173,9 @@ async def verify(profile, bridge, first, second, *, transfers=False, batches=Fal
     assert baseline["actorChest"] == index
     report["baseline"] = baseline
 
+    if sorting:
+        await verify_sorting(bridge, (first, second), report, api, inspect, fixture, index)
+        return report
     if batches:
         await verify_batches(bridge, (first, second), report, api, inspect, open_at, close, sync, fixture, x, index)
         return report
@@ -460,6 +463,71 @@ async def verify_batches(bridge, clients, report, api, inspect, open_at, close, 
     await batch("quick_stack_container", None, effect="unknown")
 
 
+async def verify_sorting(bridge, clients, report, api, inspect, fixture, index):
+    from collections import Counter
+
+    async def bag_token(slot):
+        result = await dispatch(bridge, "inspect_inventory", {"mode": "slots", "slots": [slot]})
+        return result["data"]["inventory"][0]["inventoryToken"]
+
+    def totals(rows):
+        counts = Counter()
+        for item in rows:
+            if not item["type"] or not item["stack"]:
+                continue
+            if 71 <= item["type"] <= 74:
+                counts["coinValue"] += item["stack"] * 100 ** (item["type"] - 71)
+            else:
+                counts[item["type"], item["prefix"]] += item["stack"]
+        return counts
+
+    async def check(name, arguments, key, other_key):
+        before = fixture("snapshot")
+        result = await api(name, arguments)
+        after = fixture("snapshot")
+        assert after["clients"] == report["baseline"]["clients"]
+        assert before["selectedItem"] == after["selectedItem"]
+        assert before[other_key] == after[other_key]
+        assert totals(before[key]) == totals(after[key])
+        changes = [slot for slot, (left, right) in enumerate(zip(before[key], after[key])) if left != right]
+        assert changes == [row["slot"] for row in result["evidence"]["changedSlots"]], result
+        packet, owner = (5, bridge.binding["slot"]) if key == "sortInventory" else (32, index)
+        for client in clients:
+            for slot in changes:
+                item = after[key][slot]
+                client.expect_item(packet, owner, slot, (item["type"], item["prefix"], item["stack"]))
+        report.setdefault("sortSync", []).append({"operation": name, "slots": changes, "receivedBy": [c.slot for c in clients]})
+        return before[key], after[key]
+
+    fixture("seed-sort")
+    old_bag = await bag_token(0)
+    before, after = await check("sort_inventory", {}, "sortInventory", "sortChest")
+    assert after[0] == before[0] and after[14] == before[14]
+    assert sum(item["stack"] for item in after[54:58] if item["type"] == 40) == 4
+    assert any(item["type"] == 72 and item["stack"] == 1 for item in after[50:54])
+    assert any(item["instance"] == before[28]["instance"] and item["stack"] == 7 and item["state"] == 8 for item in after)
+    assert await bag_token(0) != old_bag
+    stale = await dispatch(bridge, "transfer_inventory_item", {
+        "sourceSlot": 0, "destinationSlot": 49, "count": 1,
+        "sourceToken": old_bag, "destinationToken": await bag_token(49)})
+    assert stale["status"] == "failed" and stale["reason"] == "stale_inventory_snapshot"
+    report["staleInventoryToken"] = stale
+
+    token = (await inspect())["containerToken"]
+    before, after = await check("sort_container", {"containerToken": token}, "sortChest", "sortInventory")
+    assert after[8] == before[8]
+    assert any(item["instance"] == before[15]["instance"] and item["stack"] == 16 for item in after[:8])
+    assert any(item["instance"] == before[29]["instance"] and item["state"] == 17 for item in after[:8])
+    await api("sort_container", {"containerToken": token}, status="failed", reason="stale_container_token")
+    await api("sort_container", {"containerToken": (await inspect())["containerToken"]})
+    fixture("seed-sort-throw")
+    try:
+        await api("sort_container", {"containerToken": (await inspect())["containerToken"]},
+                  status="unknown", reason="native_sort_exception")
+    finally:
+        fixture("clear-sort-fixture")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", type=Path, default=Path("D:/steam/steamapps/common/tModLoader"))
@@ -468,6 +536,7 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--transfers", action="store_true")
     mode.add_argument("--batches", action="store_true")
+    mode.add_argument("--sorting", action="store_true")
     parser.add_argument("--port", default=27941, type=int)
     parser.add_argument("--ipc-port", default=27942, type=int)
     args = parser.parse_args()
@@ -498,7 +567,8 @@ def main():
              "-modpath", str(mods), "-companionserverai", "-companionaiport", str(args.ipc_port),
              "-companionaiipctest", "-companioncontainertest"]
             + (["-companioncontainertransfertest"] if args.transfers else [])
-            + (["-companioncontainerbatchtest"] if args.batches else []),
+            + (["-companioncontainerbatchtest"] if args.batches else [])
+            + (["-companioncontainersorttest"] if args.sorting else []),
             cwd=args.engine, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -511,7 +581,7 @@ def main():
             clients.append(Client(args.port, "ChestObserverA"))
             clients.append(Client(args.port, "ChestObserverB"))
             bridge = ServerAiBridge(port=args.ipc_port)
-            report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches))
+            report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches, sorting=args.sorting))
             if "openAtWorldUnload" in report:
                 (profile / "g81-test-stop").touch()
                 for client in clients:

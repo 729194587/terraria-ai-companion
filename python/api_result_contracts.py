@@ -605,6 +605,11 @@ DEFS.update({
         'before': nullable(ref('InventorySnapshot')), 'after': nullable(ref('InventorySnapshot')),
         'mutationGameUpdate': TICK, 'confirmedAtGameUpdate': TICK, 'nativeError': nullable(S),
     }),
+    'SortEvidence': obj({
+        **fields(booleans='mutationAttempted sortVerified'),
+        'mutationGameUpdate': TICK, 'observedGameUpdate': TICK, 'chestIndex': nullable(COUNT),
+        'changedSlots': array(obj(fields(integers='slot typeId stack prefix', booleans='favorited', strings='instanceId'))),
+    }),
     'ContainerBatchEvidence': obj({
         'mutationAttempted': B, 'mutationGameUpdate': TICK, 'observedGameUpdate': TICK,
         'effectStatus': enum('complete', 'partial', 'none', 'unknown'), 'movedCount': nullable(COUNT),
@@ -786,6 +791,7 @@ ACTION_EVIDENCE = {
     'transfer_inventory_item': 'InventoryEvidence',
     'swap_inventory_slots': 'InventoryEvidence',
     'hold_inventory_item': 'InventoryEvidence',
+    **dict.fromkeys(sorted(atomic.SORT_OPERATIONS), 'SortEvidence'),
     **dict.fromkeys(sorted(atomic.CONTAINER_BATCHES), 'ContainerBatchEvidence'),
     **dict.fromkeys(sorted(atomic.CONTAINER_TRANSFERS), 'ContainerTransferEvidence'),
     'open_container': 'ContainerEvidence',
@@ -931,6 +937,7 @@ SUCCESSFUL_PROOF = {
         'then': matches(attached=TRUE),
         'else': matches(attached=FALSE, grounded=TRUE, safeSupport=TRUE),
     },
+    **dict.fromkeys(sorted(atomic.SORT_OPERATIONS), matches(mutationAttempted=TRUE, sortVerified=TRUE)),
     **dict.fromkeys(sorted(atomic.CONTAINER_BATCHES), matches(
         mutationAttempted=TRUE, effectStatus=enum('complete', 'none'), movedCount=COUNT,
         blocked={'maxItems': 0})),

@@ -21,6 +21,9 @@ internal static class ServerContainerFixture
     internal static bool BatchEnabled => Program.LaunchParameters.ContainsKey("-companioncontainerbatchtest")
         && Program.LaunchParameters.ContainsKey("-companionaiipctest");
 
+    internal static bool SortEnabled => Program.LaunchParameters.ContainsKey("-companioncontainersorttest")
+        && Program.LaunchParameters.ContainsKey("-companionaiipctest");
+
     internal static void Reset() => ready = false;
 
     internal static void Tick(AiReadOnlyProtocol.Identity identity)
@@ -71,10 +74,41 @@ internal static class ServerContainerFixture
         if (command == "move-back") player.position.X = x * 16;
         if (command == "invalidate") player.ghost = true;
         if (command == "restore-actor") player.ghost = false;
-        if (TransferEnabled || BatchEnabled)
+        if (TransferEnabled || BatchEnabled || SortEnabled)
         {
             switch (command)
             {
+                case "seed-sort":
+                    for (int slot = 0; slot < 59; slot++) player.inventory[slot] = new Item();
+                    for (int slot = 0; slot < 40; slot++) Main.chest[index].item[slot] = new Item();
+                    int modType = ModContent.ItemType<InventoryDiagnosticItem>();
+                    player.inventory[0] = new Item(ItemID.WoodenSword);
+                    player.inventory[14] = new Item(ItemID.DirtBlock, 8) { favorited = true };
+                    player.inventory[20] = new Item(ItemID.Wood, 12);
+                    player.inventory[24] = new Item(ItemID.Wood, 4);
+                    player.inventory[28] = new Item(modType, 3);
+                    player.inventory[29] = new Item(modType, 4);
+                    ((InventoryDiagnosticItem)player.inventory[28].ModItem).State = 7;
+                    player.inventory[33] = new Item(ItemID.WoodenArrow, 4);
+                    player.inventory[50] = new Item(ItemID.CopperCoin, 90);
+                    player.inventory[51] = new Item(ItemID.CopperCoin, 12);
+                    Main.chest[index].item[8] = new Item(ItemID.StoneBlock, 4) { favorited = true };
+                    Main.chest[index].item[15] = new Item(ItemID.Wood, 12);
+                    Main.chest[index].item[25] = new Item(ItemID.Wood, 4);
+                    Main.chest[index].item[29] = new Item(modType, 5);
+                    ((InventoryDiagnosticItem)Main.chest[index].item[29].ModItem).State = 17;
+                    break;
+                case "seed-sort-throw":
+                    for (int slot = 0; slot < 40; slot++) Main.chest[index].item[slot] = new Item();
+                    int throwingType = ModContent.ItemType<InventoryDiagnosticItem>();
+                    Main.chest[index].item[12] = new Item(throwingType, 2);
+                    Main.chest[index].item[13] = new Item(throwingType, 2);
+                    ((InventoryDiagnosticItem)Main.chest[index].item[12].ModItem).Mode = "permission_throw";
+                    break;
+                case "clear-sort-fixture":
+                    for (int slot = 0; slot < 59; slot++) player.inventory[slot] = new Item();
+                    for (int slot = 0; slot < 40; slot++) Main.chest[index].item[slot] = new Item();
+                    break;
                 case "seed-batch":
                     for (int slot = 0; slot < 59; slot++) player.inventory[slot] = new Item();
                     for (int slot = 0; slot < 40; slot++) Main.chest[index].item[slot] = new Item();
@@ -159,9 +193,15 @@ internal static class ServerContainerFixture
             batchInventory = BatchEnabled ? player.inventory.Select(item => new { item.type, item.stack, item.prefix, item.favorited }).ToArray() : null,
             batchChests = BatchEnabled ? new[]{index, Chest.FindChest(x + 16, y), Chest.FindChest(x + 20, y), Chest.FindChest(x + 8, y), Chest.FindChest(x + 42, y)}.Where(slot => slot >= 0 && Main.chest[slot] != null)
                 .Select(slot => new { index = slot, slots = Main.chest[slot].item.Select(item => new { item.type, item.stack, item.prefix }).ToArray() }).ToArray() : null,
+            sortInventory = SortEnabled ? player.inventory.Select(DescribeSort).ToArray() : null,
+            sortChest = SortEnabled && Main.chest[index] != null ? Main.chest[index].item.Select(DescribeSort).ToArray() : null,
+            selectedItem = player.selectedItem,
             modStackCalls = (Main.chest[index]?.item[1].ModItem as InventoryDiagnosticItem)?.State
         }));
     }
+
+    private static object DescribeSort(Item item) => new { item.type, item.stack, item.prefix, item.favorited,
+        instance = ActorInventory.Instance(item), state = (item.ModItem as InventoryDiagnosticItem)?.State };
 
     private static int Place(int x, int y, ushort type, int frameX, int slot = -1)
     {

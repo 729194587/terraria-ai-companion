@@ -100,6 +100,8 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("quick_stack_container", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到当前箱子的已有同类物品。需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("loot_all", "服务器AI。按拾取规则从当前箱子批量取出，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("deposit_all", "服务器AI。批量存入普通背包10..49中未收藏物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("sort_inventory", "服务器AI。使用原生背包排序，包括钱币和弹药整理。排序后重新读取背包槽位。"),
+    tool("sort_container", "服务器AI。使用原生算法整理当前箱子，需新鲜容器Token。排序后重新读取箱子槽位。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("restock", "服务器AI。从当前箱子补充背包已有的可堆叠非钱币物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("close_container", "仅关闭AI当前打开的原版箱子。传最近一次inspect_container返回的containerToken，有效期30秒。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("inspect_inventory", "mode必填：selected仅当前选中槽；hotbar检查0..9；slots配slots检查指定内部索引（0..58，最多16项）；item按精确contentKey或本地名称搜索全部player.inventory槽（含快捷栏/钱币/弹药/58号槽），slots结果仅为匹配位置。full检查全部player.inventory、原版装备/社交栏、染料、misc装备/染料和全部Buff槽（仅返回活跃Buff）。均返回inventoryScope与inspectedSlots（实际检查的player.inventory内部索引，非匹配位置）；inventoryScope.arrays列出实际检查的各数组槽。full不独立读取银行/仓库、箱子、Main.mouseItem或Mod自定义槽位/状态；58号槽仅按player.inventory实际内容返回。局部模式不代表完整背包；hotbarKey为游戏按键。客户端inventoryToken仅供既有背包动作防旧快照校验。",
@@ -437,7 +439,8 @@ def verified_server_object(action, evidence):
 
 CONTAINER_TRANSFERS = frozenset(('deposit_container_item', 'withdraw_container_item'))
 CONTAINER_BATCHES = frozenset(('quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'))
-CONTAINER_OPERATIONS = frozenset(('open_container', 'close_container')) | CONTAINER_TRANSFERS | CONTAINER_BATCHES
+SORT_OPERATIONS = frozenset(('sort_inventory', 'sort_container'))
+CONTAINER_OPERATIONS = frozenset(('open_container', 'close_container')) | CONTAINER_TRANSFERS | CONTAINER_BATCHES | SORT_OPERATIONS
 INVENTORY_OPERATIONS = frozenset(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
 EQUIPMENT_OPERATIONS = frozenset(('equip_item', 'unequip_item'))
 
@@ -740,6 +743,23 @@ def verified_container_batch(action, evidence, end):
             and action.get('status') == ('failed' if blocked else 'completed'))
 
 
+def verified_sort(action, evidence, end):
+    inventory = action.get('operation') == 'sort_inventory'
+    slots = evidence.get('changedSlots')
+    index = evidence.get('chestIndex')
+    observed, mutated = evidence.get('observedGameUpdate'), evidence.get('mutationGameUpdate')
+    return (isinstance(end, dict) and end.get('inputsAcquired') is False
+            and evidence.get('sortVerified') is True and evidence.get('mutationAttempted') is True
+            and type(mutated) is int and type(observed) is int and 0 <= mutated < observed == end.get('gameUpdate')
+            and (index is None if inventory else type(index) is int and index >= 0)
+            and isinstance(slots, list) and len(slots) <= (59 if inventory else 40)
+            and all(isinstance(row, dict) and type(row.get('slot')) is int
+                    and 0 <= row['slot'] < (59 if inventory else 40)
+                    and type(row.get('stack')) is int and row['stack'] >= 0
+                    and isinstance(row.get('instanceId'), str) for row in slots)
+            and len({row['slot'] for row in slots}) == len(slots))
+
+
 async def terminal(bridge, action, generation):
     deadline = asyncio.get_running_loop().time() + 1.0
     while action.get('endEvidenceStatus') == 'pending' and asyncio.get_running_loop().time() < deadline:
@@ -785,6 +805,7 @@ async def terminal(bridge, action, generation):
     if action.get('operation') in CONTAINER_BATCHES:
         container_verified = verified_container_batch(action, native_evidence, end)
     native_verified = {
+        **dict.fromkeys(SORT_OPERATIONS, verified_sort(action, native_evidence, end)),
         **dict.fromkeys(CONTAINER_BATCHES, container_verified),
         **dict.fromkeys(CONTAINER_TRANSFERS, container_verified),
         'move_input': (native_evidence.get('requestedInputs') == action.get('requestedInputs')
@@ -863,7 +884,7 @@ async def terminal(bridge, action, generation):
             or end['worldSessionId'] != action.get('worldSessionId')
             or not valid_phase):
         out.update(valid=False, status='unknown', completed=False, reason='missing_game_thread_release_evidence', terminalActionStatus=action['status'])
-        if action.get('operation') in (CONTAINER_TRANSFERS | CONTAINER_BATCHES):
+        if action.get('operation') in (CONTAINER_TRANSFERS | CONTAINER_BATCHES | SORT_OPERATIONS):
             out.update(effectVerified=False, evidence=None)
     return out
 
@@ -937,6 +958,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
         return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
+    if name in SORT_OPERATIONS and 'server_ai_sorting_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_sorting_v1')
     if name in CONTAINER_BATCHES and 'server_ai_container_batch_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_container_batch_v1')
     if name in CONTAINER_TRANSFERS and 'server_ai_container_transfer_v1' not in bridge.hello.get('capabilities', []):
