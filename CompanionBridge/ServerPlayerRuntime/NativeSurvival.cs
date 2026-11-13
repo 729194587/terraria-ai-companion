@@ -127,6 +127,7 @@ internal static class NativeSurvival
             if(!p.dead&&!p.ghost)npcCollision.Invoke(p,null); // Original local-only update region was skipped for this AI.
             if(p.dead&&p.respawnTimer<=0&&p.difficulty!=2)
             {
+                ActorContainer.Retire(p);
                 ActorMining.Retire(p);ActorItemUse.Retire(p);ActorControl.Retire(p);p.FindSpawn();
                 p.Spawn(PlayerSpawnContext.ReviveFromDeath);
                 if(!Owns(p)||p.dead)throw new InvalidOperationException("Native respawn failed ownership/state validation.");

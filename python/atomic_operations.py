@@ -37,6 +37,11 @@ TYPE_IDS = {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum
 INVENTORY_SLOT = {"type": "integer", "minimum": 0, "maximum": 49}
 EQUIPMENT_SLOT = {"type": "string", "minLength": 1, "maxLength": 256}
 INVENTORY_TOKEN = {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"}
+CONTAINER_TRANSFER_ARGS = {
+    "inventorySlot": INVENTORY_SLOT, "containerSlot": {"type": "integer", "minimum": 0, "maximum": 39},
+    "count": {"type": "integer", "minimum": 1, "maximum": 9999},
+    **dict.fromkeys(("inventoryToken", "containerToken", "slotToken"), INVENTORY_TOKEN),
+}
 INVENTORY_GUARDS = {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN,
                     "destinationToken": INVENTORY_TOKEN}
 SCENE_LAYERS = ["map", "geometry", "objects", "hazards", "landingRegions", "placementCandidates", "objectPlacementCandidates"]
@@ -89,6 +94,8 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
           "maxResults": {"type": "integer", "minimum": 1, "maximum": 256}}, ['minX', 'minY', 'maxX', 'maxY', 'tileTypes']),
     tool("open_container", "仅服务器AI。指定原版箱子任一格的Tile坐标。需在原生范围内且箱子未锁、无人占用；已有打开的箱子时先关闭。带机关的原版箱子可能触发机关。", TILE, ["x", "y"]),
     tool("inspect_container", "仅观察AI当前打开的原版箱子。返回锚点、类型、Chest索引及40个槽位，签发新的容器和槽位Token。未打开或上下文失效时返回不可用。"),
+    tool("deposit_container_item", "仅服务器AI。从指定普通背包槽存入当前箱子的指定槽。传最新 inspect_inventory(mode=slots) 和 inspect_container 的三种Token。目标容量不足时，只搬入可容纳数量，回执failed且effectStatus=partial。", CONTAINER_TRANSFER_ARGS, list(CONTAINER_TRANSFER_ARGS)),
+    tool("withdraw_container_item", "仅服务器AI。从当前箱子的指定槽取到指定普通背包槽。传最新 inspect_inventory(mode=slots) 和 inspect_container 的三种Token。目标容量不足时，只取出可容纳数量，回执failed且effectStatus=partial。", CONTAINER_TRANSFER_ARGS, list(CONTAINER_TRANSFER_ARGS)),
     tool("close_container", "仅关闭AI当前打开的原版箱子。传最近一次inspect_container返回的containerToken，有效期30秒。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("inspect_inventory", "mode必填：selected仅当前选中槽；hotbar检查0..9；slots配slots检查指定内部索引（0..58，最多16项）；item按精确contentKey或本地名称搜索全部player.inventory槽（含快捷栏/钱币/弹药/58号槽），slots结果仅为匹配位置。full检查全部player.inventory、原版装备/社交栏、染料、misc装备/染料和全部Buff槽（仅返回活跃Buff）。均返回inventoryScope与inspectedSlots（实际检查的player.inventory内部索引，非匹配位置）；inventoryScope.arrays列出实际检查的各数组槽。full不独立读取银行/仓库、箱子、Main.mouseItem或Mod自定义槽位/状态；58号槽仅按player.inventory实际内容返回。局部模式不代表完整背包；hotbarKey为游戏按键。客户端inventoryToken仅供既有背包动作防旧快照校验。",
          {"mode": {"type": "string", "enum": ['selected', 'hotbar', 'item', 'full', 'slots']},
@@ -423,7 +430,8 @@ def verified_server_object(action, evidence):
             and evidence.get('footprint') == dict(x=target.get('x'), y=target.get('y'), width=2, height=1))
 
 
-CONTAINER_OPERATIONS = frozenset(('open_container', 'close_container'))
+CONTAINER_TRANSFERS = frozenset(('deposit_container_item', 'withdraw_container_item'))
+CONTAINER_OPERATIONS = frozenset(('open_container', 'close_container')) | CONTAINER_TRANSFERS
 INVENTORY_OPERATIONS = frozenset(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
 EQUIPMENT_OPERATIONS = frozenset(('equip_item', 'unequip_item'))
 
@@ -676,6 +684,36 @@ def verified_server_landing(action, evidence):
     return low <= x <= high and abs(y + 42 - surface) <= 0.5 and abs(vx) <= 0.1 and abs(vy) <= 0.1
 
 
+def verified_container_transfer(action, evidence, end):
+    goal = action.get('targetContainer')
+    before, after = evidence.get('before'), evidence.get('after')
+    if not all(isinstance(row, dict) for row in (goal, before, after, end)):
+        return False
+    integers = ('requestedCount', 'movedCount', 'remainingCount', 'mutationGameUpdate', 'observedGameUpdate', 'chestIndex')
+    if not all(type(evidence.get(key)) is int for key in integers):
+        return False
+    count, moved = evidence['requestedCount'], evidence['movedCount']
+    if (evidence.get('mutationAttempted') is not True or end.get('inputsAcquired') is not False
+            or evidence['chestIndex'] < 0 or not 0 < moved <= count or count != goal.get('count')
+            or evidence['remainingCount'] != count - moved
+            or not 0 <= evidence['mutationGameUpdate'] < evidence['observedGameUpdate'] == end.get('gameUpdate')
+            or any(evidence.get(slot) != goal.get(slot) for slot in ('inventorySlot', 'containerSlot'))):
+        return False
+    for pair, side, delta in ((before, 'source', 0), (before, 'destination', 0),
+                              (after, 'source', -moved), (after, 'destination', moved)):
+        slot, original = pair.get(side), before.get(side)
+        if not all(isinstance(row, dict) and type(row.get('stack')) is int for row in (slot, original)):
+            return False
+        if slot['stack'] < 0 or slot['stack'] != original['stack'] + delta:
+            return False
+    if moved == count:
+        return (action.get('status') == 'completed' and evidence.get('effectStatus') == 'complete'
+                and evidence.get('blockedSlot') is None)
+    blocked = 'containerSlot' if action.get('operation') == 'deposit_container_item' else 'inventorySlot'
+    return (action.get('status') == 'failed' and evidence.get('effectStatus') == 'partial'
+            and evidence.get('blockedSlot') == goal.get(blocked))
+
+
 async def terminal(bridge, action, generation):
     deadline = asyncio.get_running_loop().time() + 1.0
     while action.get('endEvidenceStatus') == 'pending' and asyncio.get_running_loop().time() < deadline:
@@ -714,7 +752,12 @@ async def terminal(bridge, action, generation):
                                   for key in ('mutationGameUpdate', 'observedGameUpdate', 'chestIndex'))
                           and 0 <= native_evidence['mutationGameUpdate'] < native_evidence['observedGameUpdate']
                           and isinstance(end, dict) and native_evidence['observedGameUpdate'] == end.get('gameUpdate'))
+    if action.get('operation') in CONTAINER_TRANSFERS:
+        effect = native_evidence.get('effectStatus')
+        if action.get('status') == 'completed' or effect == 'partial':
+            container_verified = verified_container_transfer(action, native_evidence, end)
     native_verified = {
+        **dict.fromkeys(CONTAINER_TRANSFERS, container_verified),
         'move_input': (native_evidence.get('requestedInputs') == action.get('requestedInputs')
                        and isinstance(action.get('requestedInputs'), dict)
                        and type(native_evidence.get('updatesExecuted')) is int
@@ -780,6 +823,7 @@ async def terminal(bridge, action, generation):
                   and end.get('actorGeneration') == action.get('generation')
                   and end.get('actorSlot') == action.get('actorSlot')
                   and (action.get('status') != 'completed'
+                       and not (action.get('operation') in CONTAINER_TRANSFERS and native_evidence.get('effectStatus') == 'partial')
                        or end.get('effectVerified') is True and native_verified))
     server_ai_end = server_ai_end or native_end
     valid_phase = server_ai_end if 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []) else (
@@ -790,6 +834,8 @@ async def terminal(bridge, action, generation):
             or end['worldSessionId'] != action.get('worldSessionId')
             or not valid_phase):
         out.update(valid=False, status='unknown', completed=False, reason='missing_game_thread_release_evidence', terminalActionStatus=action['status'])
+        if action.get('operation') in CONTAINER_TRANSFERS:
+            out.update(effectVerified=False, evidence=None)
     return out
 
 
@@ -862,6 +908,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
         return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
+    if name in CONTAINER_TRANSFERS and 'server_ai_container_transfer_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_container_transfer_v1')
     if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_containers_v1')
     if name == 'inspect_container':

@@ -43,6 +43,7 @@ internal static class ProbeSession
 
     internal static void Reset()
     {
+        ActorContainer.Reset();
         ActorControl.Reset();
         ActorItemUse.Reset();ActorMining.Reset();
         ActorGeneration = 0;

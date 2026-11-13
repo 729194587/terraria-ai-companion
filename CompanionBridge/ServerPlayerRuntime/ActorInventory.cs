@@ -16,8 +16,20 @@ internal static class ActorInventory
 {
     private sealed class Identity { internal readonly string Value=Guid.NewGuid().ToString("N"); }
     private static readonly ConditionalWeakTable<Item,Identity> identities=new();
-    private sealed record Core(int Type,int Stack,int Prefix,int MaxStack,bool Favorite);
-    private static Core Read(Item i)=>i.IsAir?new(0,0,0,0,false):new(i.type,i.stack,i.prefix,i.maxStack,i.favorited);
+    internal sealed record Core(int Type,int Stack,int Prefix,int MaxStack,bool Favorite);
+    internal static Core Read(Item i)=>i.IsAir?new(0,0,0,0,false):new(i.type,i.stack,i.prefix,i.maxStack,i.favorited);
+    internal static Core WithCount(Core value, int stack, bool favorite) =>
+        stack == 0 ? new(0, 0, 0, 0, false) : value with { Stack = stack, Favorite = favorite };
+
+    internal static int Move(Item source, ref Item destination, int count)
+    {
+        int moved = count;
+        if (destination.IsAir) destination = ItemLoader.TransferWithLimit(source, count);
+        else ItemLoader.StackItems(destination, source, out moved, numToTransfer: count);
+        if (source.IsAir && source.stack >= 0) source.TurnToAir();
+        return moved;
+    }
+
     internal sealed class Context
     {
         internal AiReadOnlyProtocol.Identity Identity;
@@ -117,13 +129,10 @@ internal static class ActorInventory
             int moved=count;
             if(transfer)
             {
-                if(destination.IsAir)p.inventory[c.Destination]=ItemLoader.TransferWithLimit(source,count);
-                else ItemLoader.StackItems(destination,source,out moved,numToTransfer:count);
-                if(source.IsAir&&source.stack>=0)source.TurnToAir();
+                moved=Move(source,ref p.inventory[c.Destination],count);
             }
             else if(c.Source!=c.Destination)Utils.Swap(ref p.inventory[c.Source],ref p.inventory[c.Destination]);
             if(hold){ServerAiNativeActions.Require(c.Identity);p.selectedItem=c.Destination;}
-            Core WithCount(Core value,int stack,bool favorite)=>stack==0?new(0,0,0,0,false):value with{Stack=stack,Favorite=favorite};
             var expectedS=transfer?WithCount(s,s.Stack-count,d.Type==0?s.Favorite:false):c.Source==c.Destination?s:d;
             var expectedD=transfer?WithCount(d.Type==0?s:d,d.Stack+count,d.Type==0?count==s.Stack&&s.Favorite:d.Favorite||s.Favorite):s;
             string[] after=Tokens(c,p);

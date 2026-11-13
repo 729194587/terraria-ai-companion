@@ -605,6 +605,15 @@ DEFS.update({
         'before': nullable(ref('InventorySnapshot')), 'after': nullable(ref('InventorySnapshot')),
         'mutationGameUpdate': TICK, 'confirmedAtGameUpdate': TICK, 'nativeError': nullable(S),
     }),
+    'ContainerTransferSlot': obj({**fields(integers='typeId stack prefix maxStack', booleans='favorited')}),
+    'ContainerTransferPair': obj({'source': ref('ContainerTransferSlot'), 'destination': ref('ContainerTransferSlot')}),
+    'ContainerTransferEvidence': obj({
+        **fields(integers='inventorySlot containerSlot requestedCount', booleans='mutationAttempted'),
+        **dict.fromkeys(('movedCount', 'remainingCount', 'blockedSlot', 'chestIndex'), nullable(COUNT)),
+        'before': nullable(ref('ContainerTransferPair')), 'after': nullable(ref('ContainerTransferPair')),
+        'effectStatus': enum('complete', 'partial', 'none', 'unknown'),
+        'mutationGameUpdate': TICK, 'observedGameUpdate': TICK,
+    }),
     'ContainerEvidence': obj({
         **fields(integers='chestIndex', booleans='mutationAttempted containerVerified'),
         **dict.fromkeys(('x', 'y', 'typeId'), nullable(I)),
@@ -639,7 +648,7 @@ DEFS['MoveArguments'] = atomic.SCHEMAS['move_input']
 TARGETS = {
     'targetRegion': ('navigate_to_landing_region',),
     'targetTile': ('place_tile', 'place_object', 'place_rope'),
-    'targetContainer': ('open_container', 'close_container'),
+    'targetContainer': tuple(sorted(atomic.CONTAINER_OPERATIONS)),
     'targetRecipe': ('craft_recipe',),
     'targetInventory': ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
@@ -771,6 +780,7 @@ ACTION_EVIDENCE = {
     'transfer_inventory_item': 'InventoryEvidence',
     'swap_inventory_slots': 'InventoryEvidence',
     'hold_inventory_item': 'InventoryEvidence',
+    **dict.fromkeys(sorted(atomic.CONTAINER_TRANSFERS), 'ContainerTransferEvidence'),
     'open_container': 'ContainerEvidence',
     'close_container': 'ContainerEvidence',
     'equip_item': 'EquipmentEvidence',
@@ -914,6 +924,9 @@ SUCCESSFUL_PROOF = {
         'then': matches(attached=TRUE),
         'else': matches(attached=FALSE, grounded=TRUE, safeSupport=TRUE),
     },
+    **dict.fromkeys(sorted(atomic.CONTAINER_TRANSFERS), matches(
+        mutationAttempted=TRUE, effectStatus=const('complete'), movedCount={'minimum': 1},
+        remainingCount=const(0), blockedSlot=NULL, before=ref('ContainerTransferPair'), after=ref('ContainerTransferPair'))),
     'open_container': matches(mutationAttempted=TRUE, containerVerified=TRUE, chestIndex=COUNT,
                               x=TILE_COORD, y=TILE_COORD, typeId=enum(21, 467)),
     'close_container': matches(mutationAttempted=TRUE, containerVerified=TRUE, chestIndex=const(-1)),
@@ -975,6 +988,16 @@ def action_variants(name):
         'if': matches(status=enum('failed', 'timeout')),
         'then': matches(cancelled=FALSE),
     })
+    if name in atomic.CONTAINER_TRANSFERS:
+        admitted['allOf'].append({
+            'if': matches(evidence=matches(effectStatus=const('partial'))),
+            'then': matches(status=const('failed'), valid=TRUE, completed=FALSE, effectVerified=TRUE,
+                            endEvidenceStatus=const('known'),
+                            endEvidence=matches(effectVerified=TRUE, inputsReleased=TRUE),
+                            evidence=matches(mutationAttempted=TRUE, movedCount={'minimum': 1},
+                                             remainingCount={'minimum': 1}, blockedSlot=COUNT,
+                                             before=ref('ContainerTransferPair'), after=ref('ContainerTransferPair'))),
+        })
     minimal = obj({
         'operation': const(name), 'valid': const(False), 'status': enum('unknown', 'failed'),
         'completed': const(False), 'reason': S, 'dispatchState': enum('unknown', 'not_admitted'),

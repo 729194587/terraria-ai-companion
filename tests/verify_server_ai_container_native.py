@@ -67,6 +67,25 @@ class Client:
                 return body
         raise TimeoutError(f"Missing packet {packet}")
 
+    @staticmethod
+    def item(body):
+        values = []
+        value = shift = 0
+        for byte in body:
+            value |= (byte & 127) << shift
+            if byte < 128:
+                values.append(value)
+                if len(values) == 3:
+                    break
+                value = shift = 0
+            else:
+                shift += 7
+        return tuple(values)  # type, prefix, stack
+
+    def expect_item(self, packet, owner, slot, item):
+        header = struct.pack("<Bh" if packet == 5 else "<hB", owner, slot)
+        self.wait(packet, lambda body: body.startswith(header) and self.item(body[3:]) == item)
+
     def expect_chest(self, actor, index):
         self.wait(80, lambda body: struct.unpack("<Bh", body) == (actor, index))
 
@@ -85,7 +104,7 @@ def wait_for(predicate, seconds=20):
     raise TimeoutError("Native test condition timed out")
 
 
-async def verify(profile, bridge, first, second):
+async def verify(profile, bridge, first, second, *, transfers=False):
     ready = json.loads((profile / "container-ready.json").read_text())
     x, y, index, other = (ready[key] for key in ("x", "y", "index", "other"))
     actor = bridge.binding["slot"]
@@ -154,6 +173,10 @@ async def verify(profile, bridge, first, second):
     assert baseline["actorChest"] == index
     report["baseline"] = baseline
 
+    if transfers:
+        await verify_transfers(bridge, (first, second), report, api, inspect, open_at, close, sync, fixture, x, y, index)
+        return report
+
     old = await inspect()
     new = await inspect()
     assert (new["x"], new["y"], new["typeId"], new["chestIndex"]) == (x, y, 21, index)
@@ -202,7 +225,134 @@ async def verify(profile, bridge, first, second):
     fixture("invalidate")
     sync(-1)
     await api("inspect_container", status="unavailable")
+    fixture("restore-actor")
+    await open_at(x + 4)
+    sync(other)
+    report["openAtWorldUnload"] = other
     return report
+
+
+async def verify_transfers(bridge, clients, report, api, inspect, open_at, close, sync, fixture, x, y, index):
+    actor = bridge.binding["slot"]
+    baseline = report["baseline"]["clients"]
+
+    async def bag(slot):
+        result = await dispatch(bridge, "inspect_inventory", {"mode": "slots", "slots": [slot]})
+        return result["data"]["inventory"][0]
+
+    async def args(inventory_slot, container_slot, count):
+        inventory = await bag(inventory_slot)
+        container = await inspect()
+        return dict(inventorySlot=inventory_slot, containerSlot=container_slot, count=count,
+                    inventoryToken=inventory["inventoryToken"], containerToken=container["containerToken"],
+                    slotToken=container["slots"][container_slot]["slotToken"])
+
+    def packets(inventory_slot, container_slot, inventory_count, container_count, item_type=9):
+        for client in clients:
+            client.expect_item(5, actor, inventory_slot, (item_type if inventory_count else 0, 0, inventory_count))
+            client.expect_item(32, index, container_slot, (item_type if container_count else 0, 0, container_count))
+        report.setdefault("itemSync", []).append(dict(inventorySlot=inventory_slot, containerSlot=container_slot,
+            inventoryCount=inventory_count, containerCount=container_count, receivedBy=[client.slot for client in clients]))
+
+    async def move(deposit, request, *, moved, reason=None):
+        name = "deposit_container_item" if deposit else "withdraw_container_item"
+        result = await api(name, request, status="completed" if moved == request["count"] else "failed", reason=reason)
+        evidence = result["evidence"]
+        assert evidence["movedCount"] == moved and evidence["remainingCount"] == request["count"] - moved, result
+        if moved:
+            assert result["effectVerified"] is True
+            assert evidence["effectStatus"] == ("complete" if moved == request["count"] else "partial")
+            before, after = evidence["before"], evidence["after"]
+            assert before["source"]["stack"] + before["destination"]["stack"] == after["source"]["stack"] + after["destination"]["stack"]
+        else:
+            assert evidence["effectStatus"] == "none"
+        return evidence
+
+    fixture("seed-transfer")
+    initial = await args(10, 1, 12)
+    await move(True, initial, moved=12)
+    packets(10, 1, 18, 12)
+    await move(True, initial, moved=0, reason="stale_container_token")
+    await move(False, await args(11, 1, 5), moved=5)
+    packets(11, 1, 5, 7)
+    await move(True, await args(10, 2, 5), moved=2, reason="container_transfer_partial_capacity")
+    packets(10, 2, 16, 9999)
+    await move(True, await args(10, 3, 2), moved=0, reason="container_destination_full")
+    await move(False, await args(12, 1, 2), moved=0, reason="container_destination_full")
+    await move(False, await args(11, 1, 8), moved=0, reason="container_source_count_insufficient_or_invalid")
+    await move(False, await args(11, 1, 7), moved=7)
+    packets(11, 1, 12, 0)
+    assert (await bag(10))["stack"] == 16 and (await bag(11))["stack"] == 12
+
+    await move(True, await args(10, 1, 4), moved=4)
+    packets(10, 1, 12, 4)
+    fixture("partial-bag")
+    await move(False, await args(12, 1, 4), moved=2, reason="container_transfer_partial_capacity")
+    packets(12, 1, 9999, 2)
+    fixture("fill")
+    await move(True, await args(10, 1, 2), moved=0, reason="container_destination_full")
+    await move(False, await args(11, 1, 2), moved=0, reason="container_destination_full")
+    fixture("seed-transfer")
+    expired = await args(10, 1, 1)
+    fixture("expire")
+    await move(True, expired, moved=0, reason="stale_container_token")
+    stale_inventory = {**await args(10, 1, 1), "inventoryToken": "0" * 64}
+    await move(True, stale_inventory, moved=0, reason="stale_inventory_snapshot")
+    stale_slot = {**await args(10, 1, 1), "slotToken": "0" * 64}
+    await move(True, stale_slot, moved=0, reason="stale_container_slot")
+
+    prior = await args(10, 1, 1)
+    await close(prior["containerToken"])
+    sync(-1)
+    await move(True, prior, moved=0, reason="stale_container_token")
+    await open_at(x)
+    sync(index)
+    prior = await args(10, 1, 1)
+    fixture("move-away")
+    sync(-1)
+    await move(True, prior, moved=0, reason="stale_container_token")
+    fixture("move-back")
+    await open_at(x)
+    sync(index)
+    prior = await args(10, 1, 1)
+    fixture("replace")
+    sync(-1)
+    await open_at(x)
+    sync(index)
+    await move(True, prior, moved=0, reason="stale_container_token")
+
+    fixture("seed-mod")
+    await move(True, await args(10, 1, 4), moved=0, reason="container_stacking_denied")
+    fixture("allow-mod")
+    item_type = (await bag(10))["typeId"]
+    await move(True, await args(10, 1, 4), moved=4)
+    packets(10, 1, 16, 6, item_type)
+    assert fixture("snapshot")["modStackCalls"] == 1
+    fixture("throw-mod")
+    uncertain = await api("deposit_container_item", await args(10, 1, 1), status="unknown",
+                          reason="container_transfer_native_exception")
+    assert uncertain["evidence"]["movedCount"] is None and uncertain["effectVerified"] is False
+    assert fixture("snapshot")["clients"] == baseline
+
+    prior = await args(10, 1, 1)
+    fixture("generation")
+    sync(-1)
+    rebound = ServerAiBridge(port=bridge.sock.getpeername()[1])
+    try:
+        assert rebound.binding["generation"] > bridge.binding["generation"]
+        result = await dispatch(rebound, "inspect_container", {})
+        assert result["data"]["status"] == "unavailable"
+        rejected = await dispatch(rebound, "deposit_container_item", prior)
+        assert rejected["reason"] == "stale_container_token"
+        reopened = await dispatch(rebound, "open_container", {"x": x, "y": y})
+        assert reopened["completed"]
+        sync(index)
+    finally:
+        rebound.close()
+    report["generationCleanup"] = {"oldGeneration": bridge.binding["generation"], "actorChest": index}
+    fixture("retire")
+    sync(-1)
+    report["retireWhileOpen"] = {"closeReceivedBy": [client.slot for client in clients]}
 
 
 def main():
@@ -210,6 +360,7 @@ def main():
     parser.add_argument("--engine", type=Path, default=Path("D:/steam/steamapps/common/tModLoader"))
     parser.add_argument("--world", required=True, type=Path)
     parser.add_argument("--package", required=True, type=Path)
+    parser.add_argument("--transfers", action="store_true")
     parser.add_argument("--port", default=27941, type=int)
     parser.add_argument("--ipc-port", default=27942, type=int)
     args = parser.parse_args()
@@ -238,7 +389,8 @@ def main():
             [str(args.engine / "dotnet/dotnet.exe"), "exec", "--additionalprobingpath", str(args.engine / "Libraries"), "tModLoader.dll", "-server",
              "-world", str(world), "-port", str(args.port), "-tmlsavedirectory", str(profile),
              "-modpath", str(mods), "-companionserverai", "-companionaiport", str(args.ipc_port),
-             "-companionaiipctest", "-companioncontainertest"],
+             "-companionaiipctest", "-companioncontainertest"]
+            + (["-companioncontainertransfertest"] if args.transfers else []),
             cwd=args.engine, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -251,11 +403,12 @@ def main():
             clients.append(Client(args.port, "ChestObserverA"))
             clients.append(Client(args.port, "ChestObserverB"))
             bridge = ServerAiBridge(port=args.ipc_port)
-            report = asyncio.run(verify(profile, bridge, *clients))
-            report["result"] = "passed"
-            report["engineVersion"] = "2026.9.3.1"
-            (profile / "container-results.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-            print(f"Passed with two joined wire clients. Evidence: {profile / 'container-results.json'}")
+            report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers))
+            if "openAtWorldUnload" in report:
+                (profile / "g81-test-stop").touch()
+                for client in clients:
+                    client.expect_chest(report["actorSlot"], -1)
+                report["worldUnloadCloseReceivedBy"] = [client.slot for client in clients]
         finally:
             if bridge:
                 bridge.close()
@@ -268,6 +421,14 @@ def main():
                 process.kill()
                 process.wait()
 
+
+    if process.returncode != 0:
+        raise RuntimeError(f"Dedicated server shutdown failed: {process.returncode}")
+    report["result"] = "passed"
+    report["engineVersion"] = "2026.9.3.1"
+    report["serverExitCode"] = process.returncode
+    (profile / "container-results.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"Passed with two joined wire clients. Evidence: {profile / 'container-results.json'}")
 
 if __name__ == "__main__":
     main()

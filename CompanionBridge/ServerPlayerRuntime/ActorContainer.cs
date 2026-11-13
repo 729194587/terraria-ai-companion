@@ -9,7 +9,7 @@ using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
 
 namespace VirtualPlayerEngineProbe;
 
-internal static class ActorContainer
+internal static partial class ActorContainer
 {
     private sealed record Target(int Index, Chest Record, int X, int Y, int Type, int FrameX);
     private sealed class Session(AiReadOnlyProtocol.Identity identity, Target target)
@@ -21,6 +21,14 @@ internal static class ActorContainer
     }
 
     private static Session opened;
+
+    // Runtime reset is after retirement or before a new reservation is armed.
+    internal static void Reset() => opened = null;
+
+    internal static void ExpireForDiagnostic()
+    {
+        if (ServerContainerFixture.TransferEnabled && opened != null) opened.ObservedAt -= 30_000;
+    }
 
     private static bool Vanilla(Tile tile) => tile.HasTile && tile.TileType is TileID.Containers or TileID.Containers2;
 
@@ -89,8 +97,17 @@ internal static class ActorContainer
     internal static void Tick(AiReadOnlyProtocol.Identity identity)
     {
         if (opened == null) return;
-        if (identity == null || !ServerAiNativeActions.Owned(identity)) return;
-        if (!Matches(opened, identity)) { opened = null; return; }
+        if (identity == null || !ServerAiNativeActions.Owned(identity))
+        {
+            opened.Token = null;
+            return; // Keep the owned context available for native retirement.
+        }
+        if (!Matches(opened, identity))
+        {
+            if (ReferenceEquals(opened.Identity.Actor, identity.Actor)) Close((Player)identity.Actor);
+            else opened = null;
+            return;
+        }
         if (Check(opened, identity) != null) Close((Player)identity.Actor);
     }
 
@@ -100,6 +117,13 @@ internal static class ActorContainer
         NetworkStateSync.Require(player, inactiveAllowed: true);
         Close(player);
     }
+
+    private static string SlotToken(AiReadOnlyProtocol.Identity identity, Item item, string token, int slot) =>
+        ActorInventory.Token(identity, item, $"container:{token}:{slot}");
+
+    private static bool Fresh(Session session, AiReadOnlyProtocol.Identity identity, string token) =>
+        Check(session, identity) == null && session.Token == token
+        && Environment.TickCount64 - session.ObservedAt < 30_000;
 
     internal static object Inspect(AiReadOnlyProtocol.Identity identity)
     {
@@ -114,7 +138,7 @@ internal static class ActorContainer
             prefix = item.IsAir ? 0 : item.prefix, maxStack = item.IsAir ? 0 : item.maxStack,
             favorited = !item.IsAir && item.favorited, name = item.IsAir ? "" : item.Name,
             instanceId = ActorInventory.Instance(item),
-            slotToken = ActorInventory.Token(identity, item, $"container:{token}:{slot}")
+            slotToken = SlotToken(identity, item, token, slot)
         }).ToArray();
         session.ObservedAt = Environment.TickCount64;
         session.Token = token;
@@ -163,8 +187,7 @@ internal static class ActorContainer
             }
             else
             {
-                if (Check(opened, identity) != null || opened.Token != arguments.GetProperty("containerToken").GetString()
-                    || Environment.TickCount64 - opened.ObservedAt >= 30_000)
+                if (!Fresh(opened, identity, arguments.GetProperty("containerToken").GetString()))
                     return result = Report("failed", "stale_container_token");
                 target = opened.Target;
             }

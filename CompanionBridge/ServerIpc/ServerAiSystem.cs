@@ -188,6 +188,7 @@ public sealed class ServerAiSystem : ModSystem
         finally
         {
             server?.Dispose();server=null;actions=null;torches=null;Lighting=null;
+            ServerContainerFixture.Reset();
             ServerAiActionFixture.Reset();ServerAiNaturalFixture.Reset();
         }
     }

@@ -158,9 +158,11 @@ class ResultRegistryTests(unittest.TestCase):
 
                     walk(schema)
                     self.assertEqual(set(schema.get('$defs', {})), reachable)
-        containers = {'open_container', 'inspect_container', 'close_container'}
+        containers = atomic.CONTAINER_OPERATIONS | {'inspect_container'}
         self.assertTrue(containers.isdisjoint(definitions))
-        enabled = bridge(FULL | {'server_ai_containers_v1'})
+        p0 = bridge(FULL | {'server_ai_containers_v1'})
+        enabled = bridge(FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_v1'})
+        self.assertTrue(atomic.CONTAINER_TRANSFERS.isdisjoint(p0.supported_atomic_operations))
         for name in containers:
             self.assertEqual('not_exposed', api_help(b, {'name': name})['status'])
             help_result = api_help(enabled, {'name': name})

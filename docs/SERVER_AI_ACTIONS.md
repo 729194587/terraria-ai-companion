@@ -87,3 +87,23 @@ Dedicated Server 默认在游戏更新中检查自主补光。每 120 个游戏�
 ```powershell
 & .local/lua-venv/Scripts/python.exe -B tests/verify_server_ai_container_native.py --world <test.wld> --package <CompanionBridge.tmod>
 ```
+
+### Dedicated Server 容器 P1
+
+`server_ai_container_transfer_v1` 提供 `deposit_container_item` 和 `withdraw_container_item`。
+两个操作都接收 `inventorySlot`（0–49）、`containerSlot`（0–39）、`count`（1–9999）
+及两个槽和当前容器的 Token。存取只涉及指定的两个槽。源数量不足或目标没有容量时返回
+`failed`。目标只有部分容量时，回执为 `failed`，并以 `evidence.effectStatus=partial`
+和 `movedCount`、`remainingCount`、`blockedSlot` 表达已核验的部分效果。
+异常、身份变化或核验失败可返回 `unknown`。再次变更前重新观察两侧。
+
+存取与 ActorInventory 共用 tModLoader 的 `ItemLoader.TransferWithLimit` 和
+`ItemLoader.StackItems`，并在堆叠前执行 `ItemLoader.CanStack`。服务端先核验数量守恒和
+槽位状态，再用原生 `SyncEquipment`（5）及 `SyncChestItem`（32）同步，并在后续游戏更新复核。
+Token 只覆盖原生基础字段及实例身份，ModItem 的自定义状态由原生钩子处理。
+
+Actor 退役在释放保留槽前清除开箱状态，原生重生在增加 Generation 前执行同样的清理。
+同一对象出现新绑定时，旧箱子状态会关闭。身份无法确认时旧 Token 立即失效，保留上下文供
+合法退役路径处理。世界卸载调用 Actor 退役，运行时重置清除残留会话引用。
+
+使用上面的双客户端脚本，加上 `--transfers` 运行 P1。

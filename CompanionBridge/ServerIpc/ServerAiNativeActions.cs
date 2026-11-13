@@ -76,6 +76,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 if(rope.Start(identity,args,out var run) is {} reason)return Reject(reason);
                 context=run;ActorControl.Driver=rope;
             }
+            else if (operation is "deposit_container_item" or "withdraw_container_item") context = new ActorContainer.Transfer(identity, operation, args);
             else if (operation is "open_container" or "close_container") context = new ActorContainer.Action(identity, operation, args);
             else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
             else if(ActorEquipment.IsOperation(operation))context=new ActorEquipment.Context(identity,operation,args);
@@ -137,6 +138,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if (h.Context is ActorContainer.Transfer transfer) return transfer.Poll();
         if (h.Context is ActorContainer.Action container) return container.Poll();
         var p=(Player)h.Identity.Actor;
         if(AiAtomicActions.IsTask(h.Operation))
@@ -236,6 +238,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if (h.Context is ActorContainer.Transfer transfer) return transfer.Poll(cancel: true);
         if (h.Context is ActorContainer.Action container) return container.Poll(cancel: true);
         if(AiAtomicActions.IsTask(h.Operation))return CancelWithReason(identity,value,"cancelled","explicit_stop");
         if(h.Context is ActorEquipment.Context equipment)
