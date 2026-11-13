@@ -158,7 +158,15 @@ class ResultRegistryTests(unittest.TestCase):
 
                     walk(schema)
                     self.assertEqual(set(schema.get('$defs', {})), reachable)
-        self.assertEqual(set(definitions), registered_names())
+        containers = {'open_container', 'inspect_container', 'close_container'}
+        self.assertTrue(containers.isdisjoint(definitions))
+        enabled = bridge(FULL | {'server_ai_containers_v1'})
+        for name in containers:
+            self.assertEqual('not_exposed', api_help(b, {'name': name})['status'])
+            help_result = api_help(enabled, {'name': name})
+            self.assertEqual('ok', help_result['status'])
+            Draft202012Validator.check_schema(help_result['returnsSchema'])
+        self.assertEqual(set(definitions) | containers | {'combat_attack', 'query_combat'}, registered_names())
         self.assertEqual({'future_api'}, missing_for(set(definitions) | {'future_api'}))
         self.assertNotIn('Action_mine_tile', schema_for('stop_action', capabilities=BASE)['$defs'])
         copy = schema_for('observe_scene', capabilities=FULL)

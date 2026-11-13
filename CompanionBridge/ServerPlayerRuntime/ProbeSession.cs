@@ -217,6 +217,7 @@ internal static class ProbeSession
                 Log("teardown-quarantined", new { reason, same, occupied });
                 throw new InvalidOperationException("STOP: occupied/transitioning slot quarantined; native clearWorld/unload must not continue.");
             }
+            ActorContainer.Retire(owned);
             ActorMining.Retire(owned);ActorItemUse.Retire(owned);
             ActorControl.Retire(owned);
             WorldCharacterPersistence.BeforeRetire(owned);

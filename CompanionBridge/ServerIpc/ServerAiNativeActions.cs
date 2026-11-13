@@ -36,6 +36,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         &&!NativeCombatWorld.Running&&!ActorControl.Running&&!ActorItemUse.Running&&!ActorMining.Running
         &&identity.Actor is Player p&&Released(p)&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0;
     public bool SupportsCombat=>true;
+    public bool SupportsContainers=>true;
     public string ValidateCombatAdmission(AiReadOnlyProtocol.Identity identity,string target)=>NativeCombatWorld.Preflight(identity,target);
     public string Validate(string operation,JsonElement args)
         => AtomicParameters.ValidateServerAction(operation, args);
@@ -75,6 +76,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 if(rope.Start(identity,args,out var run) is {} reason)return Reject(reason);
                 context=run;ActorControl.Driver=rope;
             }
+            else if (operation is "open_container" or "close_container") context = new ActorContainer.Action(identity, operation, args);
             else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
             else if(ActorEquipment.IsOperation(operation))context=new ActorEquipment.Context(identity,operation,args);
             else if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
@@ -135,6 +137,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if (h.Context is ActorContainer.Action container) return container.Poll();
         var p=(Player)h.Identity.Actor;
         if(AiAtomicActions.IsTask(h.Operation))
         {
@@ -233,6 +236,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if (h.Context is ActorContainer.Action container) return container.Poll(cancel: true);
         if(AiAtomicActions.IsTask(h.Operation))return CancelWithReason(identity,value,"cancelled","explicit_stop");
         if(h.Context is ActorEquipment.Context equipment)
         {

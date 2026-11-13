@@ -60,3 +60,30 @@ Dedicated Server 默认在游戏更新中检查自主补光。每 120 个游戏�
 - [原子操作契约](ATOMIC_OPERATIONS.md)
 - [导航](NAVIGATION.md)
 - [多人权威确认](MULTIPLAYER_ATOMIC_CONFIRMATION.md)
+
+### Dedicated Server 容器 P0
+
+`server_ai_containers_v1` 提供 `open_container({x,y})`、`inspect_container({})` 和
+`close_container({containerToken})`。坐标可以是 Containers（21）或 Containers2（467）的任一占地格。
+打开前检查完整的 2×2 框架、锁定状态、原生多格触及范围、Chest 记录及占用情况。
+观察返回锚点、类型、索引、名称和全部 40 个槽位。每次成功观察签发新 Token，旧 Token 随即失效。
+关闭需要最近一次观察的 Token，有效期为 30 秒。离开范围、箱子失效或 Actor 失效时，服务端清理开箱状态。
+容器替换按 Chest 对象身份检测，索引和坐标相同也不能沿用旧 Token。
+
+在 tModLoader 2026.09.3.1（引擎 DLL SHA-256
+`BF2CA4D53512D064FAE664170A0D21ECC5E2ED51B5E917D871EC78CC449263E9`）中，
+`Player.TileInteractionsUse` 归一化箱子锚点，发送 `RequestChestOpen`（31）。
+`MessageBuffer.GetData` 通过 `Chest.FindChest` 和 `Chest.UsingChest` 检查占用，向请求者发送
+`SyncChestItem`（32）及 `SyncPlayerChest`（33），再写入服务端玩家的 `chest`，
+向其他客户端发 `SyncPlayerChestIndex`（80）。关闭时客户端用 33 提交 `chest=-1`。
+`Player.OpenChest` 会写本地 UI 全局状态。AI 适配层复用原生占用和多格触及判定，
+在游戏线程设置绑定 Player 的箱子上下文，并用 80 同步开关。原生 `SyncOnePlayer` 也包含 80。
+带机关箱沿用原生开箱布线行为。动作回执在后续游戏更新核对 Player 上下文。
+
+定向复现使用复制的世界和两个完成入服握手的协议客户端。脚本检查两端收到的 80、
+真人客户端的服务器箱子状态、两个箱子类型、锁定、超距、记录缺失、同索引替换、
+销毁和 Actor 失效，并用实际帮助契约校验 Python 动作和观察结果。
+
+```powershell
+& .local/lua-venv/Scripts/python.exe -B tests/verify_server_ai_container_native.py --world <test.wld> --package <CompanionBridge.tmod>
+```

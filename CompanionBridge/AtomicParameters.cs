@@ -56,7 +56,7 @@ internal static class AtomicParameters
         {
             switch (op)
             {
-                case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
+                case "inspect_container": case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
                 case "observe_scene":
                     if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers","scale","width","height"}).Any())throw new FormatException("Unexpected scene parameter.");
                     foreach(string key in keys.Where(k=>k is "maxObjects" or "maxRegions" or "maxPlacements" or "maxHazards"))Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
@@ -144,6 +144,8 @@ internal static class AtomicParameters
         }
         switch (op)
         {
+            case "open_container": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
+            case "close_container": Fields("containerToken"); Token("containerToken"); break;
             case "transfer_inventory_item": case "swap_inventory_slots": case "hold_inventory_item":
                 if (op == "transfer_inventory_item") { Fields("sourceSlot","destinationSlot","sourceToken","destinationToken","count"); Integer("count",1,9999); }
                 else if (op == "hold_inventory_item") { Fields("sourceSlot","hotbarKey","sourceToken","destinationToken"); Integer("hotbarKey",0,9); }

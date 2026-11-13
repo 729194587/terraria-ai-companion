@@ -17,6 +17,7 @@ internal sealed class AiAtomicActions
 {
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
     internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"})
+        .Concat(SupportsContainers ? new[]{"server_ai_containers_v1"} : Array.Empty<string>())
         .Concat(SupportsCombat?new[]{"server_ai_combat_v1"}:Array.Empty<string>()).ToArray();
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
@@ -29,6 +30,7 @@ internal sealed class AiAtomicActions
         NativeResult BindingLost(object handle)=>new("unknown","actor_binding_changed",null,false);
         ulong ProgressVersion(object handle)=>0;
         bool SupportsCombat=>false;
+        bool SupportsContainers=>false;
         bool CanTransferBody(AiReadOnlyProtocol.Identity identity)=>false;
         string ValidateCombatAdmission(AiReadOnlyProtocol.Identity identity,string target)=>null;
         void Shutdown();
@@ -68,6 +70,7 @@ internal sealed class AiAtomicActions
     internal bool HasActive=>active!=null;
     internal bool BodyBlocked(AiReadOnlyProtocol.Identity current)=>Matches(blockedBody,current);
     internal bool SupportsCombat=>executor?.SupportsCombat==true;
+    internal bool SupportsContainers=>executor?.SupportsContainers==true;
     private bool CombatActive=>active?.Operation==CombatProtocol.Operation;
     internal Func<bool> MaintenanceBusy {get;set;}
     internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = lastCombat = blockedBody = null; suppressedRef=cancelledCombatRef=null; }
@@ -123,6 +126,7 @@ internal sealed class AiAtomicActions
         targetTile = e.Operation is "place_tile" or "place_object" or "place_rope" ? (JsonElement?)e.Arguments : null,
         targetInventory = e.Operation is "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" ? (JsonElement?)e.Arguments : null,
         targetTask = IsTask(e.Operation) ? (JsonElement?)e.Arguments : null,
+        targetContainer = e.Operation is "open_container" or "close_container" ? (JsonElement?)e.Arguments : null,
         targetRecipe = e.Operation == "craft_recipe" ? (JsonElement?)e.Arguments : null,
         requestedInputs = e.Operation is "move_input" or "move_on_rope" ? (JsonElement?)e.Arguments : null,
         targetRegion = e.Operation == "navigate_to_landing_region" ? (JsonElement?)e.Arguments : null,
@@ -153,7 +157,9 @@ internal sealed class AiAtomicActions
         if(BodyBlocked(current))return new(Error:"body_release_unconfirmed");
         if(active!=null&&!combat)return new(Error:"action_busy");
         bool selecting = operation == "select_hotbar_slot";
-        if (!selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to")))) return new(Error: "unsupported_operation");
+        bool container = operation is "open_container" or "close_container";
+        if (container && !SupportsContainers) return new(Error: "unsupported_operation");
+        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to")))) return new(Error: "unsupported_operation");
         var arguments = root.GetProperty("arguments");
         int key = 0;
         if (selecting)

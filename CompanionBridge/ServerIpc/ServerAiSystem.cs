@@ -109,6 +109,8 @@ public sealed class ServerAiSystem : ModSystem
             }
             WorldCharacterSelfTest.Tick();
             var actor=Capture();
+            ActorContainer.Tick(actor);
+            ServerContainerFixture.Tick(actor);
             if(actor!=null)AiMapRuntime.Tick();
             bool reflex=simulationUpdate&&actor!=null&&(!ServerAiActionFixture.Enabled||ServerCombatFixture.Enabled);
             bool threatened=false;

@@ -243,6 +243,16 @@ OBSERVATIONS = {
         'functionalEquipmentSlots': array(ref('EquipmentSlot')),
     }), ref('ObservationUnavailable')),
     'inspect_inventory': observation(INVENTORY),
+    'inspect_container': observation(any_of(
+        obj({'status': const('unavailable'), 'reason': S, 'container': NULL}),
+        obj({'status': const('open'), 'reason': NULL, 'container': obj({
+            **TILE_XY, 'typeId': enum(21, 467), 'chestIndex': COUNT, 'name': S,
+            'containerToken': atomic.INVENTORY_TOKEN,
+            'slots': {'type': 'array', 'minItems': 40, 'maxItems': 40, 'items': obj({
+                **fields(integers='slot typeId stack prefix maxStack', strings='name instanceId', booleans='favorited'),
+                'slotToken': atomic.INVENTORY_TOKEN,
+            })},
+        })}))),
     'observe_terrain': observation(TERRAIN),
     'inspect_tile': observation(any_of(
         obj({**INSPECT_TILE, 'preflight': NULL, 'preflightStatus': const('unknown_target')}),
@@ -595,6 +605,11 @@ DEFS.update({
         'before': nullable(ref('InventorySnapshot')), 'after': nullable(ref('InventorySnapshot')),
         'mutationGameUpdate': TICK, 'confirmedAtGameUpdate': TICK, 'nativeError': nullable(S),
     }),
+    'ContainerEvidence': obj({
+        **fields(integers='chestIndex', booleans='mutationAttempted containerVerified'),
+        **dict.fromkeys(('x', 'y', 'typeId'), nullable(I)),
+        'mutationGameUpdate': TICK, 'observedGameUpdate': TICK,
+    }),
     'EquipmentEvidence': obj({
         **fields(integers='backpackSlot', booleans='mutationAttempted equipmentVerified'),
         'targetSlotId': S, 'before': nullable(ref('EquipmentSnapshot')), 'after': nullable(ref('EquipmentSnapshot')),
@@ -624,6 +639,7 @@ DEFS['MoveArguments'] = atomic.SCHEMAS['move_input']
 TARGETS = {
     'targetRegion': ('navigate_to_landing_region',),
     'targetTile': ('place_tile', 'place_object', 'place_rope'),
+    'targetContainer': ('open_container', 'close_container'),
     'targetRecipe': ('craft_recipe',),
     'targetInventory': ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
@@ -755,6 +771,8 @@ ACTION_EVIDENCE = {
     'transfer_inventory_item': 'InventoryEvidence',
     'swap_inventory_slots': 'InventoryEvidence',
     'hold_inventory_item': 'InventoryEvidence',
+    'open_container': 'ContainerEvidence',
+    'close_container': 'ContainerEvidence',
     'equip_item': 'EquipmentEvidence',
     'unequip_item': 'EquipmentEvidence',
     'move_input': 'MoveEvidence',
@@ -808,7 +826,7 @@ RAW_TASK_ACTION = {
     **ACTION_CORE, 'operation': enum('mine_target', 'combat_attack'), 'status': ACTION_STATUS, 'generation': I, 'durationMs': I,
     'requestedInputs': NULL, 'executionState': S, 'task': GAME_TASK,
     'evidence': any_of(ref('GameTaskEvidence'), native_preflight('mine_target', 'combat_attack'), NULL),
-    **{key: target_schema(key, ('mine_target', 'combat_attack')) for key in TARGETS},
+    **{key: target_schema(key, ('mine_target', 'combat_attack')) for key in TARGETS if key != 'targetContainer'},
 }
 DEFS['RawProgramTaskAction'] = obj(RAW_TASK_ACTION)
 
@@ -896,6 +914,9 @@ SUCCESSFUL_PROOF = {
         'then': matches(attached=TRUE),
         'else': matches(attached=FALSE, grounded=TRUE, safeSupport=TRUE),
     },
+    'open_container': matches(mutationAttempted=TRUE, containerVerified=TRUE, chestIndex=COUNT,
+                              x=TILE_COORD, y=TILE_COORD, typeId=enum(21, 467)),
+    'close_container': matches(mutationAttempted=TRUE, containerVerified=TRUE, chestIndex=const(-1)),
     'craft_recipe': matches(mutationAttempted=TRUE, inventoryVerified=TRUE,
                             producedCount={'minimum': 1}, outputTypeId={'minimum': 1},
                             outputCountPerCraft={'minimum': 1}),
@@ -934,7 +955,8 @@ def completed_receipt(name):
 def action_variants(name):
     evidence = ref(ACTION_EVIDENCE[name])
     operation_fields = {
-        **{key: target_schema(key, (name,)) for key in TARGETS},
+        **{key: target_schema(key, (name,)) for key in TARGETS
+           if key != 'targetContainer' or name in atomic.CONTAINER_OPERATIONS},
         'task': GAME_TASK if name in TASK_NAMES else NULL,
         'operation': const(name),
         'evidence': nullable(evidence) if name == 'select_hotbar_slot' else any_of(evidence, native_preflight(name), NULL),

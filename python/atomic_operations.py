@@ -87,6 +87,9 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          {**{k: {"type": "integer", "minimum": 0, "maximum": 100000} for k in ('minX', 'minY', 'maxX', 'maxY')},
           "tileTypes": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535}, "minItems": 1, "maxItems": 32, "uniqueItems": True},
           "maxResults": {"type": "integer", "minimum": 1, "maximum": 256}}, ['minX', 'minY', 'maxX', 'maxY', 'tileTypes']),
+    tool("open_container", "仅服务器AI。指定原版箱子任一格的Tile坐标。需在原生范围内且箱子未锁、无人占用；已有打开的箱子时先关闭。带机关的原版箱子可能触发机关。", TILE, ["x", "y"]),
+    tool("inspect_container", "仅观察AI当前打开的原版箱子。返回锚点、类型、Chest索引及40个槽位，签发新的容器和槽位Token。未打开或上下文失效时返回不可用。"),
+    tool("close_container", "仅关闭AI当前打开的原版箱子。传最近一次inspect_container返回的containerToken，有效期30秒。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("inspect_inventory", "mode必填：selected仅当前选中槽；hotbar检查0..9；slots配slots检查指定内部索引（0..58，最多16项）；item按精确contentKey或本地名称搜索全部player.inventory槽（含快捷栏/钱币/弹药/58号槽），slots结果仅为匹配位置。full检查全部player.inventory、原版装备/社交栏、染料、misc装备/染料和全部Buff槽（仅返回活跃Buff）。均返回inventoryScope与inspectedSlots（实际检查的player.inventory内部索引，非匹配位置）；inventoryScope.arrays列出实际检查的各数组槽。full不独立读取银行/仓库、箱子、Main.mouseItem或Mod自定义槽位/状态；58号槽仅按player.inventory实际内容返回。局部模式不代表完整背包；hotbarKey为游戏按键。客户端inventoryToken仅供既有背包动作防旧快照校验。",
          {"mode": {"type": "string", "enum": ['selected', 'hotbar', 'item', 'full', 'slots']},
           "item": {"type": "string", "minLength": 1, "maxLength": 150},
@@ -160,6 +163,9 @@ SERVER_DESCRIPTIONS = {
     'swap_inventory_slots': '服务器AI：新鲜两槽token，交换0..49完整物品实例；不合并，后续游戏更新核验；unknown不回滚、不自动重试。',
     'hold_inventory_item': '服务器AI：完整交换sourceSlot与hotbarKey(游戏键1..9,0)，目标物品回源槽，再选中；同槽只选择，不自动使用；核验两槽与后续更新。unknown不回滚、不自动重试。',
     'get_player_state': '读取绑定服务器AI的实际位置/速度/生命及motion；无参数。返回{valid,player,motion,binding,...}，player.position是碰撞框左上角世界像素，velocity为像素/游戏更新，Y向下；motion.grounded与supported独立，supported只是导航profile适用性，不保证支撑/路径安全。',
+    'open_container': '检查completed及endEvidence，再用inspect_container读取箱子。不会打开其他玩家的箱子界面。',
+    'inspect_container': 'data.status为open时，data.container含箱子身份和40个槽位。只保留最新容器Token，有效期30秒。槽位Token覆盖实例及基础字段，自定义物品状态未知。data.status为unavailable时检查reason。',
+    'close_container': '使用最新观察的data.container.containerToken。关闭或换箱后旧Token失效。检查completed及endEvidence。',
     'inspect_inventory': '只读AI真实背包，必须显式mode；局部查询不代表完整背包。返回{valid,available,data,...}，data.inventoryScope/inspectedSlots标明实际检查范围，item匹配slots不等于搜索范围。hotbarKey是游戏键1..9,0；新版本server_ai_inventory_v1提供绑定World/Actor/Generation/槽位、物品实例与基础字段的inventoryToken；操作前用slots/selected/hotbar读取两槽新鲜token。full附functionalEquipmentSlots及装备targetToken；full/item不提供普通背包槽token，全部Mod自定义状态未知；token不调用保存钩子，不能识别仅自定义状态变化。',
     'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。data.terrain含originX/originY/rows和独立液体层liquids。液体项含绝对Tile坐标x/y、type、原生数量amount（1–255），未知格的缺项不代表干燥。data.state含centerWorldPixels；data还含bounds、legend、scannedCount、unknownCount和complete。格为Tile（16像素）。supported只是profile适用性。',
     'use_item': '当前快捷栏物品执行一次原生使用周期，参数仅{}。支持可无坐标单次使用的原版物品及 ModItem，使用条件由 ItemCheck 和 Mod Hook 判定。需要瞄准、弹药、持续按住或放置坐标的物品需使用相应入口。3秒上限。cycleVerified 证明使用周期，consumptionObserved 表示持用物品堆叠减少；具体治疗、Buff、命中等效果需另行观察。',
@@ -241,7 +247,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
             f['description'] += '已确认可恢复失败仍返回failed及实际位置/速度/支撑/释放证据；只有宿主continuationAllowed=true且continuationScope=observe_scene_then_move_input时，才可重新observe_scene后尝试一次有界move_input，不能按reason文字自行放行或重试导航。'
     return definitions
 
-READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
+READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
 READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
@@ -396,7 +402,7 @@ def result(action, generation):
             'inputsAcquired': end.get('inputsAcquired'), 'inputsReleased': end.get('inputsReleased'),
             'effectVerified': end.get('effectVerified'), 'stopRequest': action.get('stopRequest'),
             'operation': action.get('operation'), 'actionId': action['actionId'],
-            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'), 'targetRecipe': action.get('targetRecipe'), 'targetInventory': action.get('targetInventory'), 'targetTask': action.get('targetTask'),
+            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'), 'targetRecipe': action.get('targetRecipe'), 'targetInventory': action.get('targetInventory'), 'targetContainer': action.get('targetContainer'), 'targetTask': action.get('targetTask'),
             'task': action.get('task'), 'evidence': action.get('evidence'), 'endEvidence': action.get('endEvidence'),
             'endEvidenceStatus': action.get('endEvidenceStatus'), 'controlGeneration': generation,
             'completed': action['status'] == 'completed', 'cancelled': action['status'] == 'cancelled'}
@@ -417,6 +423,7 @@ def verified_server_object(action, evidence):
             and evidence.get('footprint') == dict(x=target.get('x'), y=target.get('y'), width=2, height=1))
 
 
+CONTAINER_OPERATIONS = frozenset(('open_container', 'close_container'))
 INVENTORY_OPERATIONS = frozenset(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
 EQUIPMENT_OPERATIONS = frozenset(('equip_item', 'unequip_item'))
 
@@ -619,7 +626,7 @@ def verified_server_craft(action, evidence):
 
 def same_action(expected, current):
     return isinstance(current, dict) and all(current.get(key) == expected.get(key) for key in
-        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'requestedInputs', 'targetInventory', 'targetTask', 'actorId', 'actorSlot'))
+        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'requestedInputs', 'targetInventory', 'targetContainer', 'targetTask', 'actorId', 'actorSlot'))
 
 
 def verify_landing_start(action, arguments, *, server_ai=False):
@@ -701,6 +708,12 @@ async def terminal(bridge, action, generation):
     combat_result = combat.get('result') or {}
     combat_proof = combat_result.get('evidence') or {}
     combat_hit = combat_proof.get('lastHit') or {}
+    container_verified = (native_evidence.get('containerVerified') is True
+                          and native_evidence.get('mutationAttempted') is True
+                          and all(type(native_evidence.get(key)) is int
+                                  for key in ('mutationGameUpdate', 'observedGameUpdate', 'chestIndex'))
+                          and 0 <= native_evidence['mutationGameUpdate'] < native_evidence['observedGameUpdate']
+                          and isinstance(end, dict) and native_evidence['observedGameUpdate'] == end.get('gameUpdate'))
     native_verified = {
         'move_input': (native_evidence.get('requestedInputs') == action.get('requestedInputs')
                        and isinstance(action.get('requestedInputs'), dict)
@@ -712,6 +725,13 @@ async def terminal(bridge, action, generation):
         'navigate_to_x': native_evidence.get('arrived') is True,
         'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
+        'open_container': (container_verified and native_evidence['chestIndex'] >= 0
+                           and native_evidence.get('typeId') in (21, 467)
+                           and isinstance(action.get('targetContainer'), dict)
+                           and all(type(native_evidence.get(key)) is int
+                                   and action['targetContainer'].get(key) in (native_evidence[key], native_evidence[key] + 1)
+                                   for key in ('x', 'y'))),
+        'close_container': container_verified and native_evidence['chestIndex'] == -1,
         'craft_recipe': verified_server_craft(action, native_evidence),
         'mine_target': verified_server_mine_task(action, native_evidence),
         'combat_attack': (combat.get('taskName') == 'combat_attack' and combat.get('taskId') == action.get('actionId')
@@ -750,7 +770,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS)
+                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -842,6 +862,14 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
         return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
+    if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_containers_v1')
+    if name == 'inspect_container':
+        reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
+        envelope = reply.get('data')
+        if not isinstance(envelope, dict):
+            raise BridgeError('Missing server AI container envelope')
+        return {'valid': envelope.get('available') is True, **envelope}
     if name == 'query_map':
         if 'server_ai_map_v1' not in bridge.hello.get('capabilities', []):
             raise PreDispatchRejected('AI map unavailable', status='unsupported_operation')
@@ -934,6 +962,12 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             placement_invalid = True
             if action.get('targetInventory') != arguments:
                 raise BridgeError('Inventory target missing or different in start receipt')
+            placement_invalid = False
+            placement_identity = dict(action)
+        if name in CONTAINER_OPERATIONS:
+            placement_invalid = True
+            if action.get('targetContainer') != arguments:
+                raise BridgeError('Container target missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
         if name in ('mine_target', 'navigate_to'):

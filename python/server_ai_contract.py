@@ -31,7 +31,8 @@ CATEGORIES = (
     ('制作', ('query_recipes', 'craft_recipe'), 'Limited', '普通原版配方及已支持环境/制作站；按当前supported判定。'),
     ('背包变更', ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'),
      'Limited', '仅AI自身背包内有界搬运/交换/持用；需新鲜槽位令牌和效果/输入释放核验。'),
-    ('世界交互', ('interact_tile',), 'Limited', '门/箱柜/开关操作不在服务器接口内。'),
+    ('容器', ('open_container', 'inspect_container', 'close_container'), 'Limited', '仅绑定AI在原生范围内打开、观察及关闭原版箱子。'),
+    ('世界交互', ('interact_tile',), 'Limited', '客户端原子交互。'),
     ('等待与取消', ('wait', 'stop_action'), 'Supported', '宿主等待与当前AI动作取消；不推进游戏时间。'),
     ('装备运动', (), 'Not exposed', '翅膀/钩爪/坐骑适配、飞行控制与自动恢复均不可直接调用。'),
 )
@@ -148,7 +149,8 @@ def callable_categories(bridge, names):
 def help_example(name, schema):
     # Templates use named inputs for game coordinates and tokens. Read examples
     # with a known safe default are executable as written.
-    arguments = {'inspect_inventory': 'mode="selected"', 'observe_scene': 'layers={"objects"}',
+    arguments = {'open_container': 'x=100,y=200', 'close_container': 'containerToken=token',
+                 'inspect_inventory': 'mode="selected"', 'observe_scene': 'layers={"objects"}',
                  'query_map': 'mode="overview"', 'mine_target': 'target=target',
                  'submit_task': 'operation="mine_target",arguments={target=target}'}.get(name)
     if arguments is None:
