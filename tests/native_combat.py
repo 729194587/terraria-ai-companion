@@ -85,17 +85,18 @@ async def verify(args):
         else:
             raise AssertionError(state)
         enemy = await scene('reflex')
+        assert enemy['aiStyle'] >= 0 and enemy['knockBackResist'] > 0, enemy
+        results['reflexSpawn'] = enemy
         reflex = await wait_for(lambda a: a['targetTask']['entityRef'] == enemy['entityRef'])
         interrupted = await asyncio.to_thread(bridge.task_request, 'action', ordinary)
         assert interrupted['status'] == 'cancelled' and interrupted['reason'] == 'task_interrupt_combat', interrupted
         assert interrupted['endEvidence']['inputsReleased'], interrupted
         results['interrupted'] = interrupted
         reflex_id = reflex['actionId']
-        reflex = await wait_for(lambda a: a['actionId'] == reflex_id and a['status'] == 'running'
-                                and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
-        assert reflex['task']['progress']['source'] == 'reflex'
-        results['reflex'] = await manager.invoke('cancel_task', {'taskId': reflex_id})
-        assert results['reflex']['status'] == 'cancelled' and results['reflex']['result']['inputsReleased']
+        results['reflex'] = await manager.invoke('await_task', {'taskId': reflex_id, 'milliseconds': 30000})
+        reflex_proof = completed(results['reflex'])
+        assert reflex_proof['source'] == 'reflex' and reflex_proof['threat']
+        assert interrupted['endEvidence']['gameUpdate'] < reflex_proof['lastHit']['GameUpdate']
         assert (await asyncio.to_thread(bridge.task_request, 'action', ordinary))['status'] == 'cancelled'
         enemy = await scene('agent')
         cancelled = await manager.invoke('submit_task', {'operation': 'combat_attack',
@@ -104,6 +105,18 @@ async def verify(args):
         await wait_for(lambda a: a['actionId'] == active and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
         results['cancelled'] = await manager.invoke('cancel_task', {'taskId': active})
         assert results['cancelled']['status'] == 'cancelled' and results['cancelled']['result']['inputsReleased']
+        for mode in ('external', 'despawn'):
+            enemy = await scene('agent')
+            submitted = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                             'arguments': {'entityRef': enemy['entityRef']}})
+            active = submitted['taskId']
+            await wait_for(lambda a: a['actionId'] == active and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
+            removed = await scene(mode)
+            assert not removed['active'], removed
+            result = await manager.invoke('await_task', {'taskId': active, 'milliseconds': 5000})
+            results[mode] = result
+            assert result['status'] == 'failed' and result['result']['reason'] == 'combat_target_invalidated', result
+            assert result['result']['inputsReleased'] and result['result']['effectVerified'] is False
     finally:
         (profile / 'combat-results.json').write_text(json.dumps(results, indent=2))
         await manager.close()

@@ -35,8 +35,34 @@ public static class ServerAiToolPatchTests
         if(!pose.Body.Instructions.Contains(original[2])||original[2].OpCode!=OpCodes.Ret
             ||!pose.Body.Instructions.Any(i=>i.OpCode==OpCodes.Brtrue&&ReferenceEquals(i.Operand,original[3])))
             throw new InvalidOperationException("Combat pose must preserve the native dedicated-server return outside the owned scope.");
-        try{ItemUsePatches.Patch(pose,"combat-pose",predicate);}
-        catch(InvalidOperationException){Console.WriteLine("Combat pose guard: pinned IL and duplicate rejection passed.");return;}
-        throw new InvalidOperationException("Duplicate combat pose patch was admitted.");
+        RequireRejected(()=>ItemUsePatches.Patch(pose,"combat-pose",predicate));
+
+        var hit=player.Methods.Single(m=>m.Name=="ProcessHitAgainstNPC");
+        var strike=hit.Body.Instructions.Single(i=>i.Offset==0x0529);
+        var native=(MethodReference)strike.Operand;
+        var wrapper=new MethodReference("StrikeWithEvidence",native.ReturnType,player);
+        wrapper.Parameters.Add(new ParameterDefinition(native.DeclaringType));
+        foreach(var parameter in native.Parameters)wrapper.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
+        wrapper.Parameters.Add(new ParameterDefinition(player));
+        var originalNext=strike.Next;
+        ItemUsePatches.Patch(hit,"combat-strike",wrapper);
+        if(strike.Previous.OpCode!=OpCodes.Ldarg_0||strike.OpCode!=OpCodes.Call||!ReferenceEquals(strike.Operand,wrapper)
+            ||!ReferenceEquals(strike.Next,originalNext))
+            throw new InvalidOperationException("Combat strike must preserve the native result stack before post-hit hooks.");
+        RequireRejected(()=>ItemUsePatches.Patch(hit,"combat-strike",wrapper));
+        var cooldown=player.Methods.Single(m=>m.Name=="UpdateMeleeHitCooldowns");
+        var loop=cooldown.Body.Instructions.Single(i=>i.Offset==0x000d);
+        ItemUsePatches.Patch(cooldown,"combat-cooldown",predicate);
+        if(!cooldown.Body.Instructions.Any(i=>i.OpCode==OpCodes.Brtrue&&ReferenceEquals(i.Operand,loop)))
+            throw new InvalidOperationException("Owned combat must reach native melee cooldown decrement.");
+        RequireRejected(()=>ItemUsePatches.Patch(cooldown,"combat-cooldown",predicate));
+        Console.WriteLine("Combat pose, strike and cooldown guards: pinned IL and duplicate rejection passed.");
+    }
+
+    private static void RequireRejected(Action patch)
+    {
+        try{patch();}
+        catch(InvalidOperationException){return;}
+        throw new InvalidOperationException("Duplicate combat patch was admitted.");
     }
 }

@@ -96,6 +96,11 @@ internal static class ActorItemUse
         install(()=>IL_Player.ItemCheck_Inner+=inner,()=>IL_Player.ItemCheck_Inner-=inner);
         install(()=>IL_Player.ItemCheck_OwnerOnlyCode+=melee,()=>IL_Player.ItemCheck_OwnerOnlyCode-=melee);
         install(()=>IL_Player.ItemCheck_ApplyUseStyle_Inner+=combatPose,()=>IL_Player.ItemCheck_ApplyUseStyle_Inner-=combatPose);
+        ILContext.Manipulator combatStrike=il=>ItemUsePatches.Patch(il.Method,"combat-strike",
+            il.Module.ImportReference(typeof(NativeCombatWorld).GetMethod(nameof(NativeCombatWorld.StrikeWithEvidence))));
+        install(()=>IL_Player.ProcessHitAgainstNPC+=combatStrike,()=>IL_Player.ProcessHitAgainstNPC-=combatStrike);
+        ILContext.Manipulator combatCooldown=il=>ItemUsePatches.Patch(il.Method,"combat-cooldown",il.Module.ImportReference(combat));
+        install(()=>IL_Player.UpdateMeleeHitCooldowns+=combatCooldown,()=>IL_Player.UpdateMeleeHitCooldowns-=combatCooldown);
         install(()=>On_Player.ItemCheck_ApplyUseStyle_Inner+=ApplyUseStyle,()=>On_Player.ItemCheck_ApplyUseStyle_Inner-=ApplyUseStyle);
         install(()=>On_Player.ItemCheckWrapped+=Update,()=>On_Player.ItemCheckWrapped-=Update);
         install(()=>On_Player.ItemCheck_Shoot+=Shoot,()=>On_Player.ItemCheck_Shoot-=Shoot);

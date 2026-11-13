@@ -54,6 +54,11 @@ public static class CombatOfflineTests
         var id = new Identity(new object(),"world",1,254,null);
         var frame = id with{GameUpdate=1};
         var next = id with{GameUpdate=2};
+        Check(CombatStrikeEvidence.Observe(true,6,-3,9,false,2) is {Defeated:true,LifeBefore:6,LifeAfter:-3},"lethal strike survives deactivation");
+        Check(CombatStrikeEvidence.Observe(true,6,0,6,true,2) is {Defeated:false},"death veto cannot prove defeat");
+        Check(CombatStrikeEvidence.Observe(true,6,0,0,false,2)==null,"zero native damage cannot prove external kill");
+        Check(CombatStrikeEvidence.Observe(false,6,0,6,false,2)==null,"replacement cannot produce strike evidence");
+        Check(CombatStrikeEvidence.Observe(true,0,-1,1,false,2)==null,"already dead target has no new evidence");
         var cycle = new CombatInputCycle();
         cycle.Movement(1);
         Check(cycle.BeginItemCheck(1)&&!cycle.BeginItemCheck(1),"one item check per update");
@@ -77,7 +82,9 @@ public static class CombatOfflineTests
             &&world.Releases==1,"attributed native defeat with release");
         foreach(var (observation, hit, expected) in new[] {
             (new CombatObservation(false,true,true,30),new CombatHit(4,0,4,true,1),"combat_target_replaced"),
-            (new CombatObservation(true,false,false,0),(CombatHit)null,"combat_target_invalidated") })
+            (new CombatObservation(true,false,false,0),(CombatHit)null,"combat_target_invalidated"),
+            (new CombatObservation(true,false,false,-3),new CombatHit(10,4,6,false,1),"combat_target_invalidated"),
+            (new CombatObservation(true,false,false,4),(CombatHit)null,"combat_target_invalidated") })
         {
             world = new(){Observation=observation,LastHit=hit};task=Task(world);task.Tick(frame);
             Check(task.Tick(next) is {Status:"failed",EffectVerified:false} r && r.Reason==expected&&world.Releases==1,expected);

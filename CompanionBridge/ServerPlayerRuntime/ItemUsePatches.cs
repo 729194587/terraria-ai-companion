@@ -31,7 +31,26 @@ public static class ItemUsePatches
         MethodReference miningOnly=null,MethodReference combatOnly=null)
     {
         Require(!m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.FullName==predicate.FullName));
-        if(operation=="combat-pose")
+        if(operation=="combat-cooldown")
+        {
+            Require(m.Name.Contains("UpdateMeleeHitCooldowns")&&m.Body.ExceptionHandlers.Count==0
+                &&Field(At(m,0),"myPlayer")&&Field(At(m,0x0006),"whoAmI")
+                &&Target(At(m,0x000b))==At(m,0x002e)&&Field(At(m,0x0012),"meleeNPCHitCooldown"));
+            Guard(m,0,0x000d,predicate);
+        }
+        else if(operation=="combat-strike")
+        {
+            var strike=At(m,0x0529);
+            Require(m.Name.Contains("ProcessHitAgainstNPC")&&m.Body.ExceptionHandlers.Count==0
+                &&Call(At(m,0x0501),"ModifyPlayerHitNPCWithItem")
+                &&strike?.OpCode==OpCodes.Callvirt&&Call(strike,"StrikeNPC")
+                &&At(m,0x052e)?.OpCode==OpCodes.Stloc_S&&Call(At(m,0x0537),"OnPlayerHitNPCWithItem")
+                &&!m.Body.Instructions.Any(i=>Target(i)==strike));
+            m.Body.GetILProcessor().InsertBefore(strike,Instruction.Create(OpCodes.Ldarg_0));
+            strike.OpCode=OpCodes.Call;
+            strike.Operand=predicate;
+        }
+        else if(operation=="combat-pose")
         {
             Require(m.Name.Contains("ItemCheck_ApplyUseStyle_Inner")&&m.Body.ExceptionHandlers.Count==0
                 &&Field(At(m,0x0000),"dedServ")&&Target(At(m,0x0005))==At(m,0x0008)

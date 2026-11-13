@@ -8,6 +8,13 @@ internal sealed record CombatHit(int LifeBefore, int LifeAfter, int DamageDone, 
 internal sealed record CombatObservation(bool SameSpawn, bool Active, bool Eligible, int Life);
 internal sealed record CombatWeapon(int Slot, int TypeId, string Name);
 
+internal static class CombatStrikeEvidence
+{
+    internal static CombatHit Observe(bool sameSpawn, int before, int after, int damageDone, bool active, ulong tick)
+        => sameSpawn && before > 0 && after < before && damageDone > 0
+            ? new(before,after,damageDone,after<=0 && !active,tick) : null;
+}
+
 internal sealed class CombatInputCycle
 {
     private ulong? lastCheck, lastMovement, lastSwing, lastCombined;

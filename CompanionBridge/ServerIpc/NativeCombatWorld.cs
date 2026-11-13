@@ -22,8 +22,6 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private Guid spawnToken;
     private Item item;
     private int slot;
-    private int lifeBeforeCheck;
-    private int? pendingHitLife;
     private readonly CombatInputCycle inputs = new();
     private Exception fault;
     private ServerAiNavigation.Run approach;
@@ -159,9 +157,14 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         if (approach?.Status is "failed" or "timeout") return "combat_approach_failed";
         bool swingRange=CanSwing();
         float horizontal=Math.Abs(player.Center.X-npc.Center.X);
+        // A jumping enemy can leave the swing envelope after the planner
+        // settles. Reassess on subsequent ticks while it is airborne.
+        if (!swingRange && Math.Abs(npc.velocity.Y)>0.1f
+            && horizontal <= (player.width+npc.width)/2f+SwingGap)
+            return null;
         if (approach?.Status == "completed" && !swingRange
             && Math.Abs(npc.Center.X - approach.Target - player.width / 2f) <= (player.width + npc.width) / 2 + 4)
-            return "combat_target_unreachable_from_approach";
+            return null; // Wait for the target to move into reach or the task deadline.
         float halfWidth=(player.width+npc.width)/2f;
         if (swingRange && approach?.Status != "running" && horizontal <= halfWidth + 12 && missedSwings < 2)
         {
@@ -227,8 +230,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         try
         {
             checking = this;
-            lifeBeforeCheck = npc.life;
-            pendingHitLife = null;
+            var previousHit=LastHit;
             if (press || player.itemAnimation > 0)
             {
                 player.direction = npc.Center.X < player.Center.X ? -1 : 1;
@@ -239,14 +241,10 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             // supplies its equivalent on the up frame, never on a down frame.
             if (!press) player.releaseUseItem = true;
             player.ItemCheck();
-            // Observe the target before returning to world simulation. On
-            // some lethal paths the post-hit hook has no usable receipt.
-            if (pendingHitLife is {} before && SameSpawn(Main.npc[Target.Slot]) && npc.life < before)
-                RecordHit(before,before-npc.life);
             if (press && player.itemAnimation > 0 && Owned())
             {
                 player.releaseUseItem=false;
-                if (npc.life == lifeBeforeCheck) missedSwings++;
+                if (ReferenceEquals(LastHit,previousHit)) missedSwings++;
                 NetMessage.SendData(MessageID.PlayerControls, -1, -1, null, player.whoAmI);
                 NetMessage.SendData(MessageID.ShotAnimationAndSound, -1, -1, null, player.whoAmI);
             }
@@ -271,24 +269,22 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     internal static bool? CanHit(Player p, NPC target) =>
         AllowsItem(p) && !checking.SameSpawn(target) ? false : null;
 
-    internal static void BeforeHit(Player p,NPC target)
+    // This is the single native strike call in ProcessHitAgainstNPC, after
+    // hit modifiers and before tML's post-hit callbacks.
+    public static int StrikeWithEvidence(NPC target,NPC.HitInfo hit,bool fromNet,bool noPlayerInteraction,Player p)
     {
-        if(AllowsItem(p)&&checking.SameSpawn(target))checking.pendingHitLife=target.life;
-    }
-
-    internal static void OnHit(Player p, NPC target, int damageDone)
-    {
-        if (!AllowsItem(p) || !checking.SameSpawn(target) || damageDone <= 0) return;
-        var c=checking;
-        int before=c.pendingHitLife??c.lifeBeforeCheck;
-        if(target.life<before)c.RecordHit(before,damageDone);
-    }
-
-    private void RecordHit(int before,int damageDone)
-    {
-        pendingHitLife=null;
-        missedSwings=0;
-        LastHit=new(before,npc.life,damageDone,npc.life<=0,Main.GameUpdateCount);
+        var combat=checking;
+        if(!AllowsItem(p))return target.StrikeNPC(hit,fromNet,noPlayerInteraction);
+        if(!combat.SameSpawn(Main.npc[combat.Target.Slot])||!combat.SameSpawn(target)||!Enemy(target,p))return 0;
+        int before=target.life;
+        int damage=target.StrikeNPC(hit,fromNet,noPlayerInteraction);
+        if(combat.Owned() && CombatStrikeEvidence.Observe(combat.SameSpawn(Main.npc[combat.Target.Slot]),
+            before,target.life,damage,target.active,Main.GameUpdateCount) is {} receipt)
+        {
+            combat.LastHit=receipt;
+            combat.missedSwings=0;
+        }
+        return damage;
     }
 
     public bool Release()
