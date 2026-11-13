@@ -67,8 +67,9 @@ internal static class ServerCollectFixture
                     tile.HasTile = command == "seed-step";
                     tile.TileType = TileID.Dirt;
                 }
-            Spawn(player, ItemID.Wood, 7, x + (command == "seed-timeout" ? 58 : 10), floor - (command == "seed-step" ? 1 : 0));
-            Spawn(player, ItemID.StoneBlock, 5, x + 15, floor - (command == "seed-step" ? 1 : 0));
+            if (command != "seed-stone")
+                Spawn(player, ItemID.Wood, 7, x + (command == "seed-timeout" ? 58 : 10), floor - (command == "seed-step" ? 1 : 0));
+            Spawn(player, ItemID.StoneBlock, 5, x + (command == "seed-stone" ? 10 : 15), floor - (command == "seed-step" ? 1 : 0));
             NetworkStateSync.Full(player);
         }
         if (command == "merge-drop")
@@ -87,6 +88,23 @@ internal static class ServerCollectFixture
             var item = Main.item.First(i => i.active && i.type == ItemID.Wood);
             item.position.X += 80;
             NetMessage.SendData(MessageID.SyncItem, -1, -1, null, Array.IndexOf(Main.item, item));
+        }
+        if (command == "reinitialize-drop")
+        {
+            int slot = Array.FindIndex(Main.item, item => item.active && item.type == ItemID.Wood);
+            var item = Main.item[slot];
+            var position = item.position;
+            int type = item.type, prefix = item.prefix, stack = item.stack;
+            item.SetDefaults(type);
+            item.position = position;
+            item.prefix = prefix;
+            item.stack = stack;
+            item.active = true;
+            item.keepTime = 1800;
+            item.playerIndexTheItemIsReservedFor = player.whoAmI;
+            if (!ReferenceEquals(Main.item[slot], item) || item.type != type)
+                throw new InvalidOperationException("Drop fixture must reinitialize the same object in the same slot.");
+            NetMessage.SendData(MessageID.SyncItem, -1, -1, null, slot);
         }
         if (command == "remove-drop")
         {

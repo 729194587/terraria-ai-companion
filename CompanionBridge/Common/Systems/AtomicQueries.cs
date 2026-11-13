@@ -130,7 +130,7 @@ internal static class AtomicQueries
                 && Vector2.Distance(center, row.Item.Center) <= radius)
             .OrderBy(row => Vector2.DistanceSquared(center, row.Item.Center)).ThenBy(row => row.Slot);
 
-    internal static object ScanEntities(Player p, JsonElement args, Func<NPC,string> entityRef, bool authoritative = false, Func<Item,string> dropRef = null)
+    internal static object ScanEntities(Player p, JsonElement args, Func<NPC,string> entityRef, bool authoritative = false, Func<int,Item,string> dropRef = null)
     {
         string category = args.GetProperty("category").GetString();
         float radius = args.GetProperty("radius").GetSingle();
@@ -160,7 +160,7 @@ internal static class AtomicQueries
         if (category is "all" or "item") foreach (var (slot, item) in ScanDrops(p.Center, radius, types))
             Add(item,"item",slot,item.type,item.Name,"dropped_item","Active item; not proof of pickup eligibility",
                 dropRef == null ? (object)new {item.type,item.stack,contentKey=Key("item",item.type)}
-                    : new {item.type,item.stack,contentKey=Key("item",item.type),entityRef=dropRef(item)});
+                    : new {item.type,item.stack,contentKey=Key("item",item.type),entityRef=dropRef(slot,item)});
         return new { items=list.OrderBy(e=>e.Distance).ThenBy(e=>e.Kind,StringComparer.Ordinal).ThenBy(e=>e.Slot).Take(limit).Select(e=>e.Value).ToArray(),
             matchedCount=list.Count, returnedCount=Math.Min(list.Count,limit),truncated=list.Count>limit,radiusPixels=radius,
             sort="distance_from_player_center_then_kind_slot; filters before truncation",

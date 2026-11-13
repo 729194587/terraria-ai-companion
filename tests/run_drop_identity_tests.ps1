@@ -9,7 +9,7 @@ $TModLoaderPath = $selectedEngine.Path
 $repo = Split-Path $PSScriptRoot -Parent
 $fna = Join-Path $TModLoaderPath 'Libraries/FNA/1.0.0/FNA.dll'
 Add-Type -Path $fna
-$refs = @(Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName) + @($fna)
+$refs = @(Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName)
 
 # 1. Drop identity lifecycle (engine substitute, production identity rules).
 Add-Type -Path @(
@@ -23,5 +23,5 @@ Add-Type -Path @(
 Add-Type -Path @(
     (Join-Path $repo 'CompanionBridge/ServerIpc/DropStanceSearch.cs'),
     (Join-Path $PSScriptRoot 'CollectStanceBoundsTests.cs')
-) -ReferencedAssemblies $refs
+) -ReferencedAssemblies ($refs + @($fna)) -CompilerOptions '/nowarn:1701'
 [CollectStanceBoundsTests]::Run()

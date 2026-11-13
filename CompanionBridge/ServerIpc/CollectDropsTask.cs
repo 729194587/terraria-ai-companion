@@ -52,7 +52,7 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         var types = args.TryGetProperty("typeIds", out var t) ? t.EnumerateArray().Select(v => v.GetInt32()).ToHashSet() : null;
         string reference = args.TryGetProperty("entityRef", out var e) ? e.GetString() : null;
         var observed = AtomicQueries.ScanDrops(player.Center, radius, types)
-            .Select(row => new ServerDrops.Drop(row.Slot, row.Item, ServerDrops.Reference(frame, row.Item), row.Item.type, row.Item.prefix))
+            .Select(row => new ServerDrops.Drop(row.Slot, row.Item, ServerDrops.Reference(frame, row.Slot, row.Item), row.Item.type, row.Item.prefix))
             .Where(drop => reference == null || drop.Reference == reference).Take(TargetLimit + 1).ToArray();
         if (reference != null && observed.Length == 0) return Failed("drop_reference_unavailable");
         truncated = observed.Length > TargetLimit;
@@ -152,7 +152,8 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         {
             var item = candidate.Drop.Item;
             if (PickupBlock(item) is {} blocked) { candidate.Reason = blocked; continue; }
-            if (Reach(player.Hitbox, item))
+            bool inReach = Reach(player.Hitbox, item);
+            if (Reach(player.Hitbox, item, 12) || inReach && !GameNavigation.Ordinary(player))
             {
                 target = candidate;
                 waitUntil = frame.GameUpdate + 75;
@@ -160,8 +161,18 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
             }
             if (candidate.Attempts >= 4) { candidate.Reason = "drop_moved_repeatedly"; continue; }
             if (!GameNavigation.Ordinary(player)) { candidate.Reason = "unsupported_navigation_profile"; continue; }
-            var region = Approach(candidate);
-            if (region == null) { candidate.Reason = "no_safe_pickup_stance"; continue; }
+            var region = Approach(candidate, out bool searched);
+            if (inReach && (region == null || region.Contains(NativeMotionWorld.Observe(player))))
+            {
+                target = candidate;
+                waitUntil = frame.GameUpdate + 75;
+                return Running();
+            }
+            if (region == null)
+            {
+                candidate.Reason = searched ? "no_safe_pickup_stance" : "pickup_stance_search_budget_exhausted";
+                continue;
+            }
             candidate.Attempts++;
             target = candidate;
             planned = item.Hitbox;
@@ -192,18 +203,19 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
     // The native pull rectangle from Player.GrabItems: the Actor hitbox inflated
     // by GetItemGrabRange on every side, intersected with the item hitbox. This is
     // the same test the game runs, so no private reach enlargement is applied.
-    private bool Reach(Rectangle hitbox, Item item)
+    private bool Reach(Rectangle hitbox, Item item, int margin = 0)
     {
-        int range = Math.Max(0, player.GetItemGrabRange(item));
-        hitbox.Inflate(range, range);
-        return hitbox.Intersects(item.Hitbox);
+        int range = Math.Max(0, Math.Max(0, player.GetItemGrabRange(item)) - margin);
+        var box = item.Hitbox;
+        return (long)hitbox.Left - range < box.Right && (long)hitbox.Right + range > box.Left
+            && (long)hitbox.Top - range < box.Bottom && (long)hitbox.Bottom + range > box.Top;
     }
 
     // World-pixel bounds of the stance search for one drop. This is the native grab
     // rectangle: the item hitbox grown by the full GetItemGrabRange, clipped to the
     // world. The range is never reduced to keep the search small; only the sample
     // count below is budgeted. See DropStanceSearch for the pure geometry.
-    private LandingRegion Approach(Target candidate)
+    private LandingRegion Approach(Target candidate, out bool searched)
     {
         var item = candidate.Drop.Item;
         var observed = NativeMotionWorld.Observe(player);
@@ -212,45 +224,35 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         LandingRegion best = null;
         float distance = float.PositiveInfinity;
         var bounds = DropStanceSearch.Bounds(box, player.width, player.height, range, Main.maxTilesX, Main.maxTilesY);
-        if (bounds.Width == 0 || bounds.Height == 0) return null;
-        int min = bounds.Left, max = bounds.Right, top = bounds.Top, bottom = bounds.Bottom;
-        int actorFeet = (int)(player.position.Y + player.height);
-        var rows = new List<int>();
-        for (int feet = (top + 7) / 8 * 8; feet <= bottom; feet += 8) rows.Add(feet);
-        // Nearer foot levels first, so a truncated budget still keeps the stances
-        // that need the shortest trip.
-        rows.Sort((a, b) => Math.Abs(a - actorFeet).CompareTo(Math.Abs(b - actorFeet)));
-        int probes = 0;
-        foreach (int feet in rows)
+        var inner = DropStanceSearch.Bounds(box, player.width, player.height, Math.Max(0, range - 12), Main.maxTilesX, Main.maxTilesY);
+        var contact = DropStanceSearch.Bounds(box, player.width, player.height, 0, Main.maxTilesX, Main.maxTilesY);
+        NativeMotionWorld world = null;
+        int worldX = 0, worldFeet = 0;
+        void Consider(int left, int right, int feet, int edgePenalty)
         {
-            if (probes >= ApproachProbeBudget) break;
-            int? start = null;
-            int previous = min - 1;
-            NativeMotionWorld world = null;
-            int worldX = 0;
-            void Consider(int right)
-            {
-                if (!start.HasValue) return;
-                var band = new LandingRegion(start.Value, right, feet);
-                start = null;
-                if (candidate.RejectedStances.Contains((band.MinPlayerLeftX, band.SurfaceY))) return;
-                float score = band.Distance(observed) + Math.Max(0, 12 - (band.MaxPlayerLeftX - band.MinPlayerLeftX)) * 2;
-                if (score < distance) { best = band; distance = score; }
-            }
-            for (int x = min; x <= max && probes < ApproachProbeBudget; x += 8)
-            {
-                probes++;
-                if (x != previous + 1) Consider(previous);
-                var pose = new PhysicsState(x, feet - player.height, 0, 0, true, 0, true);
-                if (world == null || x - worldX > 240)
-                { world = new NativeMotionWorld(pose); worldX = x; }
-                if (world.SafeLanding(pose)) start ??= x;
-                else Consider(previous);
-                previous = x;
-            }
-            // A band still open at the end of the row ends at the last probe.
-            Consider(previous);
+            if (left > right || candidate.RejectedStances.Contains((left, feet))) return;
+            var band = new LandingRegion(left, right, feet);
+            float score = band.Distance(observed) + Math.Max(0, 12 - (right - left)) * 2 + edgePenalty;
+            if (score < distance) { best = band; distance = score; }
         }
+        searched = DropStanceSearch.Scan(bounds, (int)player.position.X, (int)player.Bottom.Y, ApproachProbeBudget,
+            (x, feet) =>
+            {
+                var pose = new PhysicsState(x, feet - player.height, 0, 0, true, 0, true);
+                if (world == null || feet != worldFeet || x - worldX > 240)
+                { world = new NativeMotionWorld(pose); worldX = x; worldFeet = feet; }
+                return world.SafeLanding(pose);
+            },
+            found =>
+            {
+                // Edge stances can trigger the magnet but may leave the drop
+                // outside actual pickup contact. Prefer interior stances when found.
+                Consider(found.Left, found.Right, found.Feet, 128);
+                if (found.Feet >= inner.Top && found.Feet <= inner.Bottom)
+                    Consider(Math.Max(found.Left, inner.Left), Math.Min(found.Right, inner.Right), found.Feet, 64);
+                if (found.Feet >= contact.Top && found.Feet <= contact.Bottom)
+                    Consider(Math.Max(found.Left, contact.Left), Math.Min(found.Right, contact.Right), found.Feet, 0);
+            });
         return best;
     }
 

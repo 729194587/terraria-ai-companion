@@ -570,6 +570,8 @@ async def verify_collect(profile, bridge, clients):
             fixture(intervene)
         result = await call("await_task", {**task, "milliseconds": 28000})
         (profile / "collect-latest.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        if result["status"] != status:
+            fixture("snapshot")
         assert result["status"] == status, (label, result["status"], result.get("result", {}).get("reason"))
         queried = await call("query_task", task)
         assert queried["result"] == result["result"]
@@ -595,6 +597,24 @@ async def verify_collect(profile, bridge, clients):
     fixture("seed")
     result = await run("type_filter", {"typeIds": [9]})
     assert result["collected"] == [{"typeId": 9, "count": 7}], result
+    fixture("seed")
+    async def observe_wood():
+        observation = await dispatch(bridge, "scan_entities", {"category": "item", "radius": 320, "typeIds": [9]})
+        return observation["data"]["items"][0]
+
+    before = await observe_wood()
+    fixture("reinitialize-drop")
+    after = await observe_wood()
+    assert before["slot"] == after["slot"] and before["typeId"] == after["typeId"]
+    old_ref, new_ref = (row["details"]["entityRef"] for row in (before, after))
+    assert old_ref != new_ref, (before, after)
+    task = await start({"entityRef": old_ref})
+    result = await call("await_task", {**task, "milliseconds": 5000})
+    assert result["status"] == "failed" and result["result"]["reason"] == "drop_reference_unavailable", result
+    report["cases"]["reinitialized_stale_ref"] = result
+    result = await run("reinitialized_fresh_ref", {"entityRef": new_ref})
+    assert result["collected"] == [{"typeId": 9, "count": 7}], result
+    fixture("seed-stone")
     observation = await dispatch(bridge, "scan_entities", {"category": "item", "radius": 320, "typeIds": [3]})
     ref = observation["data"]["items"][0]["details"]["entityRef"]
     result = await run("specific_target", {"entityRef": ref})

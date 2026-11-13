@@ -20,10 +20,10 @@ internal static class ServerDrops
     // that exact object still occupies the slot. A slot reused by a brand-new Item
     // instance is already safe: the new object has no stamp and Reference mints a
     // fresh one. The reinitialisation hooks cover the other case below.
-    internal static string Reference(AiReadOnlyProtocol.Identity id, Item item)
+    internal static string Reference(AiReadOnlyProtocol.Identity id, int slot, Item item)
     {
         var stamp = stamps.GetValue(item, _ => new Stamp());
-        return $"{id.World}:{id.Generation}:{id.Slot}:{stamp.Value}";
+        return $"{id.World}:{id.Generation}:{id.Slot}:{slot}:{stamp.Value}";
     }
 
     // Liveness tracks the observed object instance plus the metadata seen at
@@ -40,13 +40,11 @@ internal static class ServerDrops
             && drop.Item.active && !drop.Item.IsAir && drop.Item.type == drop.Type && drop.Item.prefix == drop.Prefix
             && drop.Reference != null
             && stamps.TryGetValue(drop.Item, out var stamp)
-            && drop.Reference.EndsWith(stamp.Value, StringComparison.Ordinal);
+            && drop.Reference.EndsWith($":{drop.Slot}:{stamp.Value}", StringComparison.Ordinal);
     }
 
-    // A brand-new Item never carries a stamp, but Item.Clone copies through
-    // MemberwiseClone and an in-place SetDefaults keeps the same instance. Both
-    // reuse the previous identity unless it is dropped here, which is what stops an
-    // old entityRef from naming the drop that replaced it.
+    // Clones have a separate weak-table key. Reset the stamp on lifecycle
+    // hooks that can reinitialize the original object in place.
     internal static void ResetIdentity(Item item)
     {
         if (item != null) stamps.Remove(item);
@@ -85,9 +83,7 @@ internal static class ServerDrops
     private static long CoinValue(int type) => type switch { 71 => 1, 72 => 100, 73 => 10000, _ => 1000000 };
 }
 
-// A drop slot is reused by a brand-new Item instance, but Item.Clone and explicit
-// reinitialisation copy or reset an existing instance. Both paths must drop the
-// previous identity so an old entityRef cannot name the replacement drop.
+// Native defaults and spawn can start a new incarnation of the same object.
 public sealed class DropIdentityGlobalItem : GlobalItem
 {
     public override void SetDefaults(Item entity) => ServerDrops.ResetIdentity(entity);

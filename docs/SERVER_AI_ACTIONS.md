@@ -157,17 +157,17 @@ tModLoader 2026.09.3.1 中，`ItemSorting.SortInventory` 先执行原生钱币�
 
 当前 tModLoader 的 `Player.Update` 调用 `GrabItems`。收集任务按
 `GetItemGrabRange`、玩家碰撞框和安全落脚面计算候选区域，复用落脚区域导航。
-站位搜索覆盖完整的原生拾取矩形：物品碰撞框按 `GetItemGrabRange` 的返回值向
-四周扩展，再裁剪到世界边界；不设 96 像素等人为上限。计算量由每次接近的探测
-预算（`ApproachProbeBudget`，按 8 像素网格对齐）和候选目标数量控制，而不是
-缩小原生拾取范围。原生拾取仍检查归属、延时、吸附、库存空间和 Mod 钩子。
+站位搜索以完整的原生拾取矩形为边界，再裁剪到世界边界。脚底高度按 8 像素对齐，
+横向逐像素检查并合并连续的安全落脚点。每次接近最多探测 6144 个站位。
+优先选择能与掉落物直接接触的站位，其次考虑原生吸附范围内的站位。
+用完预算且未找到候选时，剩余目标的原因是 `pickup_stance_search_budget_exhausted`。
+原生拾取仍检查归属、延时、吸附、库存空间和 Mod 钩子。
 任务仅在原生 `PickupItem` 返回的地面数量变化与绑定 AI 的背包或虚空袋增量
 一致时计数。服务器沿用原有掉落物和玩家同步路径。
 
-`entityRef` 绑定到被观察的 `Item` 实例，而不是槽位或物品类型。槽位被新的
-`Item` 实例复用时，旧引用立即失效。`Item.Clone` 走 `MemberwiseClone` 且不
-触发 `SetDefaults`/`OnSpawn`；原地 `SetDefaults` 会保留同一实例。这两种复用
-都会丢弃旧标识，因此旧 `entityRef` 不会错误引用替换后的掉落物。
+`entityRef` 包含 Actor 绑定、掉落槽位和当前 `Item` 实例标识。Clone 使用不同的
+对象键，`SetDefaults` 和 `OnSpawn` 会使原地复用的对象获得新标识。槽位更换对象
+或同一对象转移到其他槽位后，旧引用无法选中该掉落物。
 
 回执包含 `collected`、`remaining`、`unavailable` 和 `outcome`。
 未确认的消失只记作不可用。部分成功保留已核验数量；取消会释放导航输入。

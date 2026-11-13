@@ -1,6 +1,7 @@
 // Pure stance-search bounds for the ACTUAL DropStanceSearch.Bounds.
 // No Terraria world is involved, so this runs in any harness that can see the type.
 using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using CompanionBridge.ServerIpc;
 
@@ -26,9 +27,9 @@ public static class CollectStanceBoundsTests
         //    been identical to the 96 case.
         var wide = DropStanceSearch.Bounds(item, 20, 42, 400, WorldTilesX, WorldTilesY);
         var narrow = DropStanceSearch.Bounds(item, 20, 42, 96, WorldTilesX, WorldTilesY);
-        Check(wide.Width > narrow.Width, "a 400px grab range searches wider than a 96px range");
-        Check(wide.Height > narrow.Height, "a 400px grab range searches taller than a 96px range");
-        Check(narrow.Width == item.Width + 20 + 96 - 2, "the 96px case still matches the native rectangle");
+        Check(wide.Right - wide.Left > narrow.Right - narrow.Left, "a 400px grab range searches wider than a 96px range");
+        Check(wide.Bottom - wide.Top > narrow.Bottom - narrow.Top, "a 400px grab range searches taller than a 96px range");
+        Check(narrow.Right - narrow.Left == item.Width + 20 + 2 * 96 - 2, "the 96px case still matches the native rectangle");
 
         // 2. The search must reach at least the full native range on each side, so a
         //    stance at the very edge of the pull rectangle is still considered.
@@ -59,7 +60,28 @@ public static class CollectStanceBoundsTests
         // 5. An out-of-range or empty rectangle reports no searchable area rather
         //    than a negative one.
         var empty = DropStanceSearch.Bounds(item, 20, 42, 0, 2, 2);
-        Check(empty.Width == 0 || empty.Height == 0, "an unusable world region yields no stance area");
+        Check(empty.Left > empty.Right || empty.Top > empty.Bottom, "an unusable world region yields no stance area");
+
+        var bands = new List<DropStanceSearch.Band>();
+        bool complete = DropStanceSearch.Scan(new(1, 20, 80, 80), 10, 80, 20,
+            (x, _) => x != 9, bands.Add);
+        Check(complete && bands.Count == 2 && bands[0] == new DropStanceSearch.Band(1, 8, 80)
+            && bands[1] == new DropStanceSearch.Band(10, 20, 80), "adjacent safe pixels form bands separated by a single unsafe pixel");
+
+        bands.Clear();
+        complete = DropStanceSearch.Scan(wide, item.Left, 1600, 6144,
+            (x, feet) => x == item.Left + 250 && feet == 1600, bands.Add);
+        Check(!complete && bands.Contains(new(item.Left + 250, item.Left + 250, 1600)),
+            "a stance beyond 96px can be probed at its actual coordinate");
+
+        bands.Clear();
+        int probes = 0;
+        complete = DropStanceSearch.Scan(new(1, 20, 80, 88), 20, 80, 5,
+            (x, feet) => { probes++; return feet == 88; }, bands.Add);
+        Check(!complete && bands.Count == 0 && probes == 5, "exhaustion with unsearched safe ground is not an exhaustive miss");
+        complete = DropStanceSearch.Scan(new(1, 1, 80, 80), 1, 80, 1, (_, _) => true, bands.Add);
+        Check(complete && bands.Count == 1 && bands[0] == new DropStanceSearch.Band(1, 1, 80),
+            "one inclusive pixel and one foot level can produce a stance");
 
         Console.WriteLine($"Collect stance bounds: {checks} checks; native range preserved, world clipping intact.");
     }

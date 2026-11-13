@@ -21,7 +21,7 @@ public static class DropIdentityOfflineTests
     private static ServerDrops.Drop Observe(int slot)
     {
         var item = Main.item[slot];
-        return new(slot, item, ServerDrops.Reference(Id, item), item.type, item.prefix);
+        return new(slot, item, ServerDrops.Reference(Id, slot, item), item.type, item.prefix);
     }
 
     public static void Run()
@@ -37,7 +37,7 @@ public static class DropIdentityOfflineTests
         Main.item[3] = new Item { type = 9, stack = 7 };
         var first = Observe(3);
         Check(ServerDrops.Live(first), "a live observed drop keeps its reference");
-        Check(ServerDrops.Reference(Id, first.Item) == first.Reference, "re-observing the same object yields the same reference");
+        Check(ServerDrops.Reference(Id, first.Slot, first.Item) == first.Reference, "re-observing the same object yields the same reference");
         Check(first.Reference.StartsWith("world:1:254:", StringComparison.Ordinal), "reference is scoped to world, generation and actor slot");
 
         // 2. Slot reuse: a different Item object in the same slot must not satisfy
@@ -50,11 +50,12 @@ public static class DropIdentityOfflineTests
 
         // 3. Reinitialisation of the SAME object through SetDefaults must drop the
         //    old identity, because the object now represents a new drop.
-        Main.item[4] = new Item { type = 9, stack = 5 };
+        Main.item[4] = new Item { type = 9, stack = 5, prefix = 2 };
         var beforeReset = Observe(4);
         var sameObject = Main.item[4];
         sameObject.SetDefaults(9);
         sameObject.stack = 5;
+        sameObject.prefix = 2;
         Check(ReferenceEquals(Main.item[4], sameObject), "reinitialisation keeps the same Item instance");
         Check(!ServerDrops.Live(beforeReset), "reinitialising the same object invalidates the previous reference");
         var afterReset = Observe(4);
@@ -64,7 +65,6 @@ public static class DropIdentityOfflineTests
         // 4. OnSpawn is the other native reinitialisation signal and must reset too.
         Main.item[5] = new Item { type = 3, stack = 2 };
         var beforeSpawn = Observe(5);
-        Main.item[5].SetDefaults(3);
         ItemLoader.OnSpawn(Main.item[5], null);
         Main.item[5].stack = 2;
         Check(!ServerDrops.Live(beforeSpawn), "OnSpawn reinitialisation invalidates the previous reference");
@@ -114,13 +114,15 @@ public static class DropIdentityOfflineTests
         var otherWorld = new AiReadOnlyProtocol.Identity(Id.Actor, "world-2", 1, 254);
         var otherGeneration = new AiReadOnlyProtocol.Identity(Id.Actor, "world", 2, 254);
         var otherSlot = new AiReadOnlyProtocol.Identity(Id.Actor, "world", 1, 7);
-        Check(ServerDrops.Reference(otherWorld, local.Item) != local.Reference, "another world produces a different reference");
-        Check(ServerDrops.Reference(otherGeneration, local.Item) != local.Reference, "another generation produces a different reference");
-        Check(ServerDrops.Reference(otherSlot, local.Item) != local.Reference, "another actor slot produces a different reference");
-        // A reference minted under another binding must not validate against this one.
-        var foreign = new ServerDrops.Drop(0, local.Item, ServerDrops.Reference(otherWorld, local.Item), 9, -1);
-        Check(!ServerDrops.Live(foreign), "a reference from another world binding is not live here");
-        Check(ServerDrops.Live(local), "the slot's own observation stays live");
+        Check(ServerDrops.Reference(otherWorld, local.Slot, local.Item) != local.Reference, "another world produces a different reference");
+        Check(ServerDrops.Reference(otherGeneration, local.Slot, local.Item) != local.Reference, "another generation produces a different reference");
+        Check(ServerDrops.Reference(otherSlot, local.Slot, local.Item) != local.Reference, "another actor slot produces a different reference");
+        Main.item[0] = new Item();
+        Main.item[2] = local.Item;
+        Check(!ServerDrops.Live(local), "moving the same object to a different slot invalidates the old observation");
+        Check(Observe(2).Reference != local.Reference, "a different drop slot cannot resolve the old reference");
+        Main.item[0] = local.Item;
+        Main.item[2] = new Item();
 
         // 9. A replacement that happens to reuse the slot must never inherit the
         //    old reference merely because the type, prefix and stack match.

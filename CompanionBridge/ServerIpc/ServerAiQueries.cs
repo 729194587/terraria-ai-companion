@@ -86,7 +86,7 @@ internal static class ServerAiQueries
             data = AtomicQueries.ScanTiles(p, arguments);
         }
         else if (operation == "scan_entities") data = AtomicQueries.ScanEntities(p, arguments,
-            n => NativeCombatWorld.Reference(expected,n), true, item => ServerDrops.Reference(expected,item));
+            n => NativeCombatWorld.Reference(expected,n), true, (slot, item) => ServerDrops.Reference(expected,slot,item));
         else
         {
             // No human Controls/WorldSession/Main.myPlayer-based token may leak into this backend.

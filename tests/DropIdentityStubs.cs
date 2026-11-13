@@ -65,9 +65,9 @@ namespace Terraria.ModLoader
     public static class ItemLoader
     {
         internal static Action<Terraria.Item> DefaultsHook;
-        internal static Action<Terraria.Item> SpawnHook;
+        internal static Action<Terraria.Item, Terraria.DataStructures.IEntitySource> SpawnHook;
         public static void SetDefaults(Terraria.Item item, bool createModItem = true) => DefaultsHook?.Invoke(item);
-        public static void OnSpawn(Terraria.Item item, Terraria.DataStructures.IEntitySource source) => SpawnHook?.Invoke(item);
+        public static void OnSpawn(Terraria.Item item, Terraria.DataStructures.IEntitySource source) => SpawnHook?.Invoke(item, source);
     }
 }
 
