@@ -2,7 +2,7 @@
 
 **状态：** 架构设计，待实现与原生验证  
 **目标后端：** Dedicated Server 上的独立 Server AI Player  
-**代码基线：** \`codex/unified-autonomous-navigation\`，\`466c1fe46816302a5c19fd534a81298b68793396\`
+**代码基线：** `codex/unified-autonomous-navigation`，`466c1fe46816302a5c19fd534a81298b68793396`
 
 ## 1. 目标与范围
 
