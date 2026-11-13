@@ -108,9 +108,15 @@ internal static class ServerCollectFixture
                 throw new InvalidOperationException("Drop fixture must reinitialize the same object in the same slot.");
             NetMessage.SendData(MessageID.SyncItem, -1, -1, null, slot);
         }
-        if (command == "release-grab-delay")
+        // The reference cases isolate admission and native contact pickup.
+        // The mixed-step and movement cases exercise navigation separately.
+        if (command == "allow-contact-pickup")
             foreach (var item in Main.item.Where(item => item.active && item.playerIndexTheItemIsReservedFor == player.whoAmI))
+            {
+                item.position = player.Center - new Vector2(item.width / 2f, item.height / 2f);
+                item.velocity = Vector2.Zero;
                 item.noGrabDelay = 0;
+            }
         if (command == "remove-drop")
         {
             int slot = Array.FindIndex(Main.item, i => i.active && i.type == ItemID.StoneBlock);

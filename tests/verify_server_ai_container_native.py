@@ -616,12 +616,12 @@ async def verify_collect(profile, bridge, clients):
     result = await call("await_task", {**task, "milliseconds": 5000})
     assert result["status"] == "failed" and result["result"]["reason"] == "drop_reference_unavailable", result
     record("reinitialized_stale_ref", result)
-    result = await run("reinitialized_fresh_ref", {"entityRef": new_ref}, intervene="release-grab-delay")
+    result = await run("reinitialized_fresh_ref", {"entityRef": new_ref}, intervene="allow-contact-pickup")
     assert result["collected"] == [{"typeId": 9, "count": 7}], result
     fixture("seed-stone")
     observation = await dispatch(bridge, "scan_entities", {"category": "item", "radius": 320, "typeIds": [3]})
     ref = observation["data"]["items"][0]["details"]["entityRef"]
-    result = await run("specific_target", {"entityRef": ref}, intervene="release-grab-delay")
+    result = await run("specific_target", {"entityRef": ref}, intervene="allow-contact-pickup")
     assert result["collected"] == [{"typeId": 3, "count": 5}], result
 
     fixture("seed")
