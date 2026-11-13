@@ -44,6 +44,7 @@ internal static class ServerCollectFixture
         var path = Path.Combine(Main.SavePath, "container-request");
         if (!File.Exists(path)) return;
         string command = File.ReadAllText(path);
+        if (command == "allow-contact-pickup" && ServerDrops.Current == null) return;
         File.Delete(path);
         if (command.StartsWith("seed", StringComparison.Ordinal))
         {
