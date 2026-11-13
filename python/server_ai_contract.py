@@ -31,7 +31,7 @@ CATEGORIES = (
     ('制作', ('query_recipes', 'craft_recipe'), 'Limited', '普通原版配方及已支持环境/制作站；按当前supported判定。'),
     ('背包变更', ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'),
      'Limited', '仅AI自身背包内有界搬运/交换/持用；需新鲜槽位令牌和效果/输入释放核验。'),
-    ('容器', ('open_container', 'inspect_container', 'close_container', 'deposit_container_item', 'withdraw_container_item'), 'Limited', '绑定AI在原生范围内操作原版箱子。存取只涉及指定的两个槽，部分效果查看实际数量和剩余数量。'),
+    ('容器', ('open_container', 'inspect_container', 'close_container', 'deposit_container_item', 'withdraw_container_item', 'quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'), 'Limited', '绑定AI在原生范围内操作原版箱子。存取只涉及指定的两个槽，部分效果查看实际数量和剩余数量。'),
     ('世界交互', ('interact_tile',), 'Limited', '客户端原子交互。'),
     ('等待与取消', ('wait', 'stop_action'), 'Supported', '宿主等待与当前AI动作取消；不推进游戏时间。'),
     ('装备运动', (), 'Not exposed', '翅膀/钩爪/坐骑适配、飞行控制与自动恢复均不可直接调用。'),
@@ -194,6 +194,8 @@ def help_result_contract(name):
         return returns, 'valid/available表示是否取得当前观察；同时检查具体数据的状态、时效、覆盖和截断。'
     statuses = ('只有valid、completed和已知结束证据才支持动作完成；'
                 '核对操作专属effect，unknown停止变更，不自动重试。失败可能使宿主直接终止Lua。')
+    if name in atomic.CONTAINER_BATCHES:
+        statuses += 'moves列出每次已核验的搬运。blocked列出剩余源槽及原因。部分效果返回failed和effectStatus=partial。无符合条件的物品时completed且effectStatus=none。每次最多128次槽位搬运。'
     if name in atomic.CONTAINER_TRANSFERS:
         statuses += '容量部分满足时返回failed且evidence.effectStatus=partial，并提供movedCount、remainingCount和blockedSlot。再次操作前重新观察两侧。'
     if name == 'stop_action':

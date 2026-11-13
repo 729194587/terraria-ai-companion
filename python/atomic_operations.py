@@ -96,6 +96,11 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("inspect_container", "仅观察AI当前打开的原版箱子。返回锚点、类型、Chest索引及40个槽位，签发新的容器和槽位Token。未打开或上下文失效时返回不可用。"),
     tool("deposit_container_item", "仅服务器AI。从指定普通背包槽存入当前箱子的指定槽。传最新 inspect_inventory(mode=slots) 和 inspect_container 的三种Token。目标容量不足时，只搬入可容纳数量，回执failed且effectStatus=partial。", CONTAINER_TRANSFER_ARGS, list(CONTAINER_TRANSFER_ARGS)),
     tool("withdraw_container_item", "仅服务器AI。从当前箱子的指定槽取到指定普通背包槽。传最新 inspect_inventory(mode=slots) 和 inspect_container 的三种Token。目标容量不足时，只取出可容纳数量，回执failed且effectStatus=partial。", CONTAINER_TRANSFER_ARGS, list(CONTAINER_TRANSFER_ARGS)),
+    tool("quick_stack_nearby", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到600像素内已有同类物品且无人占用的原版箱子。"),
+    tool("quick_stack_container", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到当前箱子的已有同类物品。需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("loot_all", "服务器AI。按拾取规则从当前箱子批量取出，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("deposit_all", "服务器AI。批量存入普通背包10..49中未收藏物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("restock", "服务器AI。从当前箱子补充背包已有的可堆叠非钱币物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("close_container", "仅关闭AI当前打开的原版箱子。传最近一次inspect_container返回的containerToken，有效期30秒。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("inspect_inventory", "mode必填：selected仅当前选中槽；hotbar检查0..9；slots配slots检查指定内部索引（0..58，最多16项）；item按精确contentKey或本地名称搜索全部player.inventory槽（含快捷栏/钱币/弹药/58号槽），slots结果仅为匹配位置。full检查全部player.inventory、原版装备/社交栏、染料、misc装备/染料和全部Buff槽（仅返回活跃Buff）。均返回inventoryScope与inspectedSlots（实际检查的player.inventory内部索引，非匹配位置）；inventoryScope.arrays列出实际检查的各数组槽。full不独立读取银行/仓库、箱子、Main.mouseItem或Mod自定义槽位/状态；58号槽仅按player.inventory实际内容返回。局部模式不代表完整背包；hotbarKey为游戏按键。客户端inventoryToken仅供既有背包动作防旧快照校验。",
          {"mode": {"type": "string", "enum": ['selected', 'hotbar', 'item', 'full', 'slots']},
@@ -431,7 +436,8 @@ def verified_server_object(action, evidence):
 
 
 CONTAINER_TRANSFERS = frozenset(('deposit_container_item', 'withdraw_container_item'))
-CONTAINER_OPERATIONS = frozenset(('open_container', 'close_container')) | CONTAINER_TRANSFERS
+CONTAINER_BATCHES = frozenset(('quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'))
+CONTAINER_OPERATIONS = frozenset(('open_container', 'close_container')) | CONTAINER_TRANSFERS | CONTAINER_BATCHES
 INVENTORY_OPERATIONS = frozenset(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
 EQUIPMENT_OPERATIONS = frozenset(('equip_item', 'unequip_item'))
 
@@ -714,6 +720,26 @@ def verified_container_transfer(action, evidence, end):
             and evidence.get('blockedSlot') == goal.get(blocked))
 
 
+def verified_container_batch(action, evidence, end):
+    moves, blocked = evidence.get('moves'), evidence.get('blocked')
+    if (not isinstance(end, dict) or end.get('inputsAcquired') is not False
+            or evidence.get('mutationAttempted') is not True
+            or not all(type(evidence.get(key)) is int for key in ('mutationGameUpdate', 'observedGameUpdate', 'movedCount'))
+            or not 0 <= evidence['mutationGameUpdate'] < evidence['observedGameUpdate'] == end.get('gameUpdate')
+            or not isinstance(moves, list) or len(moves) > 128 or not isinstance(blocked, list)):
+        return False
+    if not all(isinstance(move, dict) and all(type(move.get(key)) is int for key in
+               ('inventorySlot', 'chestIndex', 'containerSlot', 'typeId', 'prefix', 'count'))
+               and 0 <= move['inventorySlot'] < 58 and 0 <= move['containerSlot'] < 40
+               and move['chestIndex'] >= 0 and move['typeId'] > 0 and move['count'] > 0 for move in moves):
+        return False
+    if sum(move['count'] for move in moves) != evidence['movedCount']:
+        return False
+    expected = 'partial' if moves and blocked else 'complete' if moves else 'none'
+    return (evidence.get('effectStatus') == expected
+            and action.get('status') == ('failed' if blocked else 'completed'))
+
+
 async def terminal(bridge, action, generation):
     deadline = asyncio.get_running_loop().time() + 1.0
     while action.get('endEvidenceStatus') == 'pending' and asyncio.get_running_loop().time() < deadline:
@@ -756,7 +782,10 @@ async def terminal(bridge, action, generation):
         effect = native_evidence.get('effectStatus')
         if action.get('status') == 'completed' or effect == 'partial':
             container_verified = verified_container_transfer(action, native_evidence, end)
+    if action.get('operation') in CONTAINER_BATCHES:
+        container_verified = verified_container_batch(action, native_evidence, end)
     native_verified = {
+        **dict.fromkeys(CONTAINER_BATCHES, container_verified),
         **dict.fromkeys(CONTAINER_TRANSFERS, container_verified),
         'move_input': (native_evidence.get('requestedInputs') == action.get('requestedInputs')
                        and isinstance(action.get('requestedInputs'), dict)
@@ -768,13 +797,13 @@ async def terminal(bridge, action, generation):
         'navigate_to_x': native_evidence.get('arrived') is True,
         'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
-        'open_container': (container_verified and native_evidence['chestIndex'] >= 0
+        'open_container': (container_verified and native_evidence.get('chestIndex', -2) >= 0
                            and native_evidence.get('typeId') in (21, 467)
                            and isinstance(action.get('targetContainer'), dict)
                            and all(type(native_evidence.get(key)) is int
                                    and action['targetContainer'].get(key) in (native_evidence[key], native_evidence[key] + 1)
                                    for key in ('x', 'y'))),
-        'close_container': container_verified and native_evidence['chestIndex'] == -1,
+        'close_container': container_verified and native_evidence.get('chestIndex', -2) == -1,
         'craft_recipe': verified_server_craft(action, native_evidence),
         'mine_target': verified_server_mine_task(action, native_evidence),
         'combat_attack': (combat.get('taskName') == 'combat_attack' and combat.get('taskId') == action.get('actionId')
@@ -823,7 +852,7 @@ async def terminal(bridge, action, generation):
                   and end.get('actorGeneration') == action.get('generation')
                   and end.get('actorSlot') == action.get('actorSlot')
                   and (action.get('status') != 'completed'
-                       and not (action.get('operation') in CONTAINER_TRANSFERS and native_evidence.get('effectStatus') == 'partial')
+                       and not (action.get('operation') in (CONTAINER_TRANSFERS | CONTAINER_BATCHES) and native_evidence.get('effectStatus') == 'partial')
                        or end.get('effectVerified') is True and native_verified))
     server_ai_end = server_ai_end or native_end
     valid_phase = server_ai_end if 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []) else (
@@ -834,7 +863,7 @@ async def terminal(bridge, action, generation):
             or end['worldSessionId'] != action.get('worldSessionId')
             or not valid_phase):
         out.update(valid=False, status='unknown', completed=False, reason='missing_game_thread_release_evidence', terminalActionStatus=action['status'])
-        if action.get('operation') in CONTAINER_TRANSFERS:
+        if action.get('operation') in (CONTAINER_TRANSFERS | CONTAINER_BATCHES):
             out.update(effectVerified=False, evidence=None)
     return out
 
@@ -908,6 +937,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
         return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
+    if name in CONTAINER_BATCHES and 'server_ai_container_batch_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_container_batch_v1')
     if name in CONTAINER_TRANSFERS and 'server_ai_container_transfer_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_container_transfer_v1')
     if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):

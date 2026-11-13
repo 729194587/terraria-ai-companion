@@ -605,6 +605,12 @@ DEFS.update({
         'before': nullable(ref('InventorySnapshot')), 'after': nullable(ref('InventorySnapshot')),
         'mutationGameUpdate': TICK, 'confirmedAtGameUpdate': TICK, 'nativeError': nullable(S),
     }),
+    'ContainerBatchEvidence': obj({
+        'mutationAttempted': B, 'mutationGameUpdate': TICK, 'observedGameUpdate': TICK,
+        'effectStatus': enum('complete', 'partial', 'none', 'unknown'), 'movedCount': nullable(COUNT),
+        'moves': array(obj(fields(integers='inventorySlot chestIndex containerSlot typeId prefix count'))),
+        'blocked': array(obj(fields(integers='slot remaining', strings='reason'))),
+    }),
     'ContainerTransferSlot': obj({**fields(integers='typeId stack prefix maxStack', booleans='favorited')}),
     'ContainerTransferPair': obj({'source': ref('ContainerTransferSlot'), 'destination': ref('ContainerTransferSlot')}),
     'ContainerTransferEvidence': obj({
@@ -780,6 +786,7 @@ ACTION_EVIDENCE = {
     'transfer_inventory_item': 'InventoryEvidence',
     'swap_inventory_slots': 'InventoryEvidence',
     'hold_inventory_item': 'InventoryEvidence',
+    **dict.fromkeys(sorted(atomic.CONTAINER_BATCHES), 'ContainerBatchEvidence'),
     **dict.fromkeys(sorted(atomic.CONTAINER_TRANSFERS), 'ContainerTransferEvidence'),
     'open_container': 'ContainerEvidence',
     'close_container': 'ContainerEvidence',
@@ -924,6 +931,9 @@ SUCCESSFUL_PROOF = {
         'then': matches(attached=TRUE),
         'else': matches(attached=FALSE, grounded=TRUE, safeSupport=TRUE),
     },
+    **dict.fromkeys(sorted(atomic.CONTAINER_BATCHES), matches(
+        mutationAttempted=TRUE, effectStatus=enum('complete', 'none'), movedCount=COUNT,
+        blocked={'maxItems': 0})),
     **dict.fromkeys(sorted(atomic.CONTAINER_TRANSFERS), matches(
         mutationAttempted=TRUE, effectStatus=const('complete'), movedCount={'minimum': 1},
         remainingCount=const(0), blockedSlot=NULL, before=ref('ContainerTransferPair'), after=ref('ContainerTransferPair'))),
@@ -988,6 +998,15 @@ def action_variants(name):
         'if': matches(status=enum('failed', 'timeout')),
         'then': matches(cancelled=FALSE),
     })
+    if name in atomic.CONTAINER_BATCHES:
+        admitted['allOf'].append({
+            'if': matches(evidence=matches(effectStatus=const('partial'))),
+            'then': matches(status=const('failed'), valid=TRUE, completed=FALSE, effectVerified=TRUE,
+                            endEvidenceStatus=const('known'),
+                            endEvidence=matches(effectVerified=TRUE, inputsReleased=TRUE),
+                            evidence=matches(movedCount={'minimum': 1}, moves={'minItems': 1},
+                                             blocked={'minItems': 1})),
+        })
     if name in atomic.CONTAINER_TRANSFERS:
         admitted['allOf'].append({
             'if': matches(evidence=matches(effectStatus=const('partial'))),

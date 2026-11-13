@@ -149,6 +149,9 @@ internal static class AtomicParameters
                 Fields("inventorySlot", "containerSlot", "count", "inventoryToken", "containerToken", "slotToken");
                 Integer("inventorySlot", 0, 49); Integer("containerSlot", 0, 39); Integer("count", 1, 9999);
                 Token("inventoryToken"); Token("containerToken"); Token("slotToken"); break;
+            case "quick_stack_nearby": Fields(); break;
+            case "quick_stack_container": case "loot_all": case "deposit_all": case "restock":
+                Fields("containerToken"); Token("containerToken"); break;
             case "close_container": Fields("containerToken"); Token("containerToken"); break;
             case "transfer_inventory_item": case "swap_inventory_slots": case "hold_inventory_item":
                 if (op == "transfer_inventory_item") { Fields("sourceSlot","destinationSlot","sourceToken","destinationToken","count"); Integer("count",1,9999); }

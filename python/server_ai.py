@@ -60,6 +60,8 @@ def operations_for_capabilities(capabilities):
         operations.update(('equip_item', 'unequip_item'))
     if {'server_ai_actions_v1', 'server_ai_containers_v1'} <= caps:
         operations.update(('open_container', 'close_container'))
+        if 'server_ai_container_batch_v1' in caps:
+            operations.update(('quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'))
         if 'server_ai_container_transfer_v1' in caps:
             operations.update(('deposit_container_item', 'withdraw_container_item'))
     return frozenset(operations)

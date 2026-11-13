@@ -107,3 +107,25 @@ Actor 退役在释放保留槽前清除开箱状态，原生重生在增加 Gene
 合法退役路径处理。世界卸载调用 Actor 退役，运行时重置清除残留会话引用。
 
 使用上面的双客户端脚本，加上 `--transfers` 运行 P1。
+
+### Dedicated Server 容器 P2
+
+`server_ai_container_batch_v1` 提供 `quick_stack_nearby`、`quick_stack_container`、`loot_all`、
+`deposit_all` 和 `restock`。当前箱子的四项操作需要新鲜 `containerToken`。附近快堆使用
+原生的箱子中心距离（小于 600 像素）、未锁定、无人占用及已有同类物品的规则，并限定
+Containers / Containers2。快堆跳过收藏、快捷栏和钱币。批量存入保护快捷栏及收藏，
+只扫描普通背包 10–49；钱币按原面额堆叠。取出适用原生的拾取延时、唯一物品及弹药槽过滤。
+补充优先填已有同类堆叠，符合条件的弹药也可填空槽。
+
+tModLoader 2026.09.3.1 的四个 `ChestUI` 入口使用 `Main.myPlayer`。
+`Player.QuickStackAllChests` 的服务端分支调用 `Chest.PutItemInNearbyChest`，直接遍历并写入
+世界箱子，还会处理虚空袋。服务器适配层复用 `ItemLoader.CanStack`、`StackItems` 和
+`TransferWithLimit`，按绑定 Actor 和原版箱子范围执行。专用钱币栏和虚空袋不参与存入。
+
+单次至多 128 次槽位搬运。服务端核对槽位前后状态、原生转移数量及绑定身份，
+发送 `SyncEquipment` 和 `SyncChestItem`，再于后续游戏更新确认。变更槽的背包 Token
+及相关容器 Token 失效。回执 `moves` 列出箱子和槽位的实际转移量，`blocked` 列出剩余
+源槽和原因。已核验的部分效果使用 `failed` 和 `effectStatus=partial`。没有符合条件的
+物品时使用 `completed` 和 `effectStatus=none`。原生异常或未确认状态返回 `unknown`。
+
+使用上面的双客户端脚本，加上 `--batches` 运行 P2。

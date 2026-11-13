@@ -18,6 +18,9 @@ internal static class ServerContainerFixture
     internal static bool TransferEnabled => Program.LaunchParameters.ContainsKey("-companioncontainertransfertest")
         && Program.LaunchParameters.ContainsKey("-companionaiipctest");
 
+    internal static bool BatchEnabled => Program.LaunchParameters.ContainsKey("-companioncontainerbatchtest")
+        && Program.LaunchParameters.ContainsKey("-companionaiipctest");
+
     internal static void Reset() => ready = false;
 
     internal static void Tick(AiReadOnlyProtocol.Identity identity)
@@ -43,6 +46,11 @@ internal static class ServerContainerFixture
             int other = Place(x + 4, y, TileID.Containers2, 0);
             Place(x + 8, y, TileID.Containers, 72);
             Place(x + 20, y, TileID.Containers, 0);
+            if (BatchEnabled)
+            {
+                Place(x + 16, y, TileID.Containers, 0);
+                Place(x + 42, y, TileID.Containers, 0);
+            }
             ready = true;
             File.WriteAllText(Path.Combine(Main.SavePath, "container-ready.json"), JsonSerializer.Serialize(new { x, y, index, other }));
         }
@@ -63,10 +71,45 @@ internal static class ServerContainerFixture
         if (command == "move-back") player.position.X = x * 16;
         if (command == "invalidate") player.ghost = true;
         if (command == "restore-actor") player.ghost = false;
-        if (TransferEnabled)
+        if (TransferEnabled || BatchEnabled)
         {
             switch (command)
             {
+                case "seed-batch":
+                    for (int slot = 0; slot < 59; slot++) player.inventory[slot] = new Item();
+                    for (int slot = 0; slot < 40; slot++) Main.chest[index].item[slot] = new Item();
+                    break;
+                case "seed-nearby":
+                    player.inventory[0] = new Item(ItemID.Wood, 2);
+                    player.inventory[10] = new Item(ItemID.Wood, 11);
+                    player.inventory[11] = new Item(ItemID.Wood, 3) { favorited = true };
+                    player.inventory[12] = new Item(ItemID.CopperCoin, 4);
+                    player.inventory[13] = new Item(ItemID.StoneBlock, 13);
+                    Main.chest[index].item[0] = new Item(ItemID.Wood, 9997);
+                    Main.chest[index].item[1] = new Item(ItemID.Wood, 9998);
+                    Main.chest[Chest.FindChest(x + 16, y)].item[1] = new Item(ItemID.StoneBlock, 5);
+                    foreach (int offset in new[]{8, 20, 42})
+                        Main.chest[Chest.FindChest(x + offset, y)].item[1] = new Item(ItemID.StoneBlock, 5);
+                    break;
+                case "batch-fill-bag":
+                    for (int slot = 0; slot < 50; slot++) player.inventory[slot] = new Item(ItemID.StoneBlock, 9999);
+                    player.inventory[10] = new Item(ItemID.Wood, 9997);
+                    Main.chest[index].item[0] = new Item(ItemID.Wood, 9);
+                    break;
+                case "batch-fill-chest":
+                    for (int slot = 0; slot < 40; slot++) Main.chest[index].item[slot] = new Item(ItemID.StoneBlock, 9999);
+                    Main.chest[index].item[0] = new Item(ItemID.Wood, 9997);
+                    player.inventory[10] = new Item(ItemID.Wood, 9);
+                    break;
+                case "batch-roundtrip":
+                    Main.chest[index].item[0] = new Item(ItemID.Lens, 7);
+                    break;
+                case "batch-restock":
+                    player.inventory[9] = new Item(ItemID.Wood, 9996) { favorited = true };
+                    player.inventory[12] = new Item(ItemID.Wood, 9997);
+                    Main.chest[index].item[0] = new Item(ItemID.Wood, 9);
+                    Main.chest[index].item[1] = new Item(ItemID.StoneBlock, 3);
+                    break;
                 case "seed-transfer":
                     player.inventory[10] = new Item(ItemID.Wood, 30);
                     player.inventory[11] = new Item();
@@ -113,6 +156,9 @@ internal static class ServerContainerFixture
         File.WriteAllText(Path.Combine(Main.SavePath, "container-state.json"), JsonSerializer.Serialize(new
         {
             command, clients, actorChest = player.chest, gameUpdate = Main.GameUpdateCount,
+            batchInventory = BatchEnabled ? player.inventory.Select(item => new { item.type, item.stack, item.prefix, item.favorited }).ToArray() : null,
+            batchChests = BatchEnabled ? new[]{index, Chest.FindChest(x + 16, y), Chest.FindChest(x + 20, y), Chest.FindChest(x + 8, y), Chest.FindChest(x + 42, y)}.Where(slot => slot >= 0 && Main.chest[slot] != null)
+                .Select(slot => new { index = slot, slots = Main.chest[slot].item.Select(item => new { item.type, item.stack, item.prefix }).ToArray() }).ToArray() : null,
             modStackCalls = (Main.chest[index]?.item[1].ModItem as InventoryDiagnosticItem)?.State
         }));
     }

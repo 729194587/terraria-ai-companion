@@ -129,10 +129,6 @@ internal static partial class ActorContainer
             int planned = Math.Min(count, capacity);
             ref Item destinationSlot = ref (deposit ? ref chest[containerSlot] : ref inventory[inventorySlot]);
             moved = ActorInventory.Move(source, ref destinationSlot, planned);
-            var expectedSource = ActorInventory.WithCount(before.Source, before.Source.Stack - planned, empty && before.Source.Favorite);
-            var expectedDestination = ActorInventory.WithCount(empty ? before.Source : before.Destination,
-                before.Destination.Stack + planned, empty ? planned == before.Source.Stack && before.Source.Favorite
-                    : before.Source.Favorite || before.Destination.Favorite);
             if (!OwnsTarget() || !ReferenceEquals(player.inventory, inventory) || !ReferenceEquals(session.Target.Record.item, chest))
                 return terminal = Report("unknown", "container_binding_changed_during_transfer");
             after = new(ActorInventory.Read(deposit ? inventory[inventorySlot] : chest[containerSlot]),
@@ -141,8 +137,7 @@ internal static partial class ActorContainer
             afterChest = ChestTokens();
             bool OtherSlotsMatch(string[] original, string[] current, int changed) =>
                 original.Length == current.Length && original.Where((value, slot) => slot != changed && value != current[slot]).Any() == false;
-            if (moved != planned || after.Source != expectedSource || after.Destination != expectedDestination
-                || (deposit ? inventory[inventorySlot] : chest[containerSlot]).stack < 0
+            if (moved != planned || !ActorInventory.MatchesMove(before.Source, before.Destination, source, destinationSlot, planned)
                 || player.selectedItem != selected || !OtherSlotsMatch(inventoryBefore, afterInventory, inventorySlot)
                 || !OtherSlotsMatch(chestBefore, afterChest, containerSlot)
                 || !ReferenceEquals(source, deposit ? inventory[inventorySlot] : chest[containerSlot])

@@ -44,7 +44,20 @@ internal static class ActorInventory
         internal bool SourceBaselineEstablished,DestinationBaselineEstablished;
     }
     internal static bool IsOperation(string op)=>op is "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item";
-    internal static string Token(AiReadOnlyProtocol.Identity id,Item item,int slot)=>Token(id,item,slot.ToString());
+    private static readonly ConditionalWeakTable<object,long[]> slotRevisions = new();
+    internal static void InvalidateSlot(AiReadOnlyProtocol.Identity id, int slot) =>
+        slotRevisions.GetValue(id.Actor, _ => new long[59])[slot]++;
+    internal static string Token(AiReadOnlyProtocol.Identity id, Item item, int slot) =>
+        Token(id, item, $"inventory:{slot}:{slotRevisions.GetValue(id.Actor, _ => new long[59])[slot]}");
+
+    internal static bool MatchesMove(Core source, Core destination, Item afterSource, Item afterDestination, int count)
+    {
+        bool empty = destination.Type == 0;
+        return afterSource.stack >= 0 && afterDestination.stack >= 0
+            && Read(afterSource) == WithCount(source, source.Stack - count, empty && source.Favorite)
+            && Read(afterDestination) == WithCount(empty ? source : destination, destination.Stack + count,
+                empty ? count == source.Stack && source.Favorite : source.Favorite || destination.Favorite);
+    }
     internal static string Token(AiReadOnlyProtocol.Identity id,Item item,string slot)
     {
         var c=Read(item);

@@ -104,7 +104,7 @@ def wait_for(predicate, seconds=20):
     raise TimeoutError("Native test condition timed out")
 
 
-async def verify(profile, bridge, first, second, *, transfers=False):
+async def verify(profile, bridge, first, second, *, transfers=False, batches=False):
     ready = json.loads((profile / "container-ready.json").read_text())
     x, y, index, other = (ready[key] for key in ("x", "y", "index", "other"))
     actor = bridge.binding["slot"]
@@ -173,6 +173,9 @@ async def verify(profile, bridge, first, second, *, transfers=False):
     assert baseline["actorChest"] == index
     report["baseline"] = baseline
 
+    if batches:
+        await verify_batches(bridge, (first, second), report, api, inspect, open_at, close, sync, fixture, x, index)
+        return report
     if transfers:
         await verify_transfers(bridge, (first, second), report, api, inspect, open_at, close, sync, fixture, x, y, index)
         return report
@@ -355,12 +358,116 @@ async def verify_transfers(bridge, clients, report, api, inspect, open_at, close
     report["retireWhileOpen"] = {"closeReceivedBy": [client.slot for client in clients]}
 
 
+async def verify_batches(bridge, clients, report, api, inspect, open_at, close, sync, fixture, x, index):
+    from collections import Counter
+    actor = bridge.binding["slot"]
+    baseline = report["baseline"]["clients"]
+
+    def total(state):
+        counts = Counter()
+        for item in state["batchInventory"] + [item for chest in state["batchChests"] for item in chest["slots"]]:
+            if item["type"] and item["stack"]:
+                counts[item["type"], item["prefix"]] += item["stack"]
+        return counts
+
+    async def batch(name, count, *, effect="complete", token=None):
+        arguments = {} if name == "quick_stack_nearby" else {
+            "containerToken": token or (await inspect())["containerToken"]}
+        before = fixture("snapshot")
+        status = "unknown" if effect == "unknown" else "failed" if effect in ("partial", "blocked") else "completed"
+        result = await api(name, arguments, status=status)
+        evidence = result["evidence"]
+        assert evidence["effectStatus"] == ("none" if effect == "blocked" else effect), result
+        assert evidence["movedCount"] == count, result
+        after = fixture("snapshot")
+        assert after["clients"] == baseline
+        if effect == "unknown":
+            return after
+        assert total(before) == total(after), result
+        bag_slots = {move["inventorySlot"] for move in evidence["moves"]}
+        chest_slots = {(move["chestIndex"], move["containerSlot"]) for move in evidence["moves"]}
+        chests = {chest["index"]: chest["slots"] for chest in after["batchChests"]}
+        expected = []
+        for slot in sorted(bag_slots):
+            expected.append((5, actor, slot, after["batchInventory"][slot]))
+        for chest, slot in sorted(chest_slots):
+            expected.append((32, chest, slot, chests[chest][slot]))
+        for client in clients:
+            for packet, owner, slot, item in expected:
+                client.expect_item(packet, owner, slot, (item["type"], item["prefix"], item["stack"]))
+        report.setdefault("batchSync", []).append({"operation": name, "slots": len(expected),
+                                                    "receivedBy": [client.slot for client in clients]})
+        return after
+
+    fixture("seed-batch")
+    await batch("deposit_all", 0, effect="none")
+    await batch("loot_all", 0, effect="none")
+    fixture("seed-nearby")
+    token = (await inspect())["containerToken"]
+    after = await batch("quick_stack_container", 11, token=token)
+    assert [item["stack"] for item in after["batchChests"][0]["slots"][:3]] == [9999, 9999, 8]
+    assert [after["batchInventory"][slot]["stack"] for slot in (0, 11, 12, 13)] == [2, 3, 4, 13]
+    await api("deposit_all", {"containerToken": token}, status="failed", reason="stale_container_token")
+    await close((await inspect())["containerToken"])
+    sync(-1)
+
+    fixture("seed-nearby")
+    after = await batch("quick_stack_nearby", 24)
+    assert after["batchChests"][1]["slots"][1]["stack"] == 18
+    assert [chest["slots"][1]["stack"] for chest in after["batchChests"][2:]] == [5, 5, 5]
+    await open_at(x)
+    sync(index)
+    fixture("seed-batch")
+    fixture("seed-nearby")
+    after = await batch("deposit_all", 28)
+    assert after["batchInventory"][0]["stack"] == 2 and after["batchInventory"][11]["favorited"]
+
+    fixture("seed-batch")
+    fixture("batch-fill-chest")
+    await batch("deposit_all", 2, effect="partial")
+    await batch("quick_stack_container", 0, effect="blocked")
+    fixture("seed-batch")
+    fixture("batch-fill-bag")
+    await batch("loot_all", 2, effect="partial")
+    await batch("loot_all", 0, effect="blocked")
+    fixture("seed-batch")
+    fixture("batch-restock")
+    after = await batch("restock", 5, effect="partial")
+    assert after["batchInventory"][9]["favorited"] and after["batchChests"][0]["slots"][1]["stack"] == 3
+    async def bag_token(slot):
+        view = await dispatch(bridge, "inspect_inventory", {"mode": "slots", "slots": [slot]})
+        return view["data"]["inventory"][0]["inventoryToken"]
+
+    await batch("loot_all", 7)
+    fixture("seed-batch")
+    fixture("batch-roundtrip")
+    old_empty = await bag_token(49)
+    await batch("loot_all", 7)
+    await batch("deposit_all", 7)
+    assert (await bag_token(49)) != old_empty
+    fixture("seed-batch")
+    fixture("seed-mod")
+    await batch("quick_stack_container", 20)
+    assert fixture("snapshot")["modStackCalls"] == 0
+    fixture("seed-batch")
+    fixture("seed-mod")
+    fixture("allow-mod")
+    await batch("quick_stack_container", 20)
+    assert fixture("snapshot")["modStackCalls"] == 1
+    fixture("seed-batch")
+    fixture("seed-mod")
+    fixture("throw-mod")
+    await batch("quick_stack_container", None, effect="unknown")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", type=Path, default=Path("D:/steam/steamapps/common/tModLoader"))
     parser.add_argument("--world", required=True, type=Path)
     parser.add_argument("--package", required=True, type=Path)
-    parser.add_argument("--transfers", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--transfers", action="store_true")
+    mode.add_argument("--batches", action="store_true")
     parser.add_argument("--port", default=27941, type=int)
     parser.add_argument("--ipc-port", default=27942, type=int)
     args = parser.parse_args()
@@ -390,7 +497,8 @@ def main():
              "-world", str(world), "-port", str(args.port), "-tmlsavedirectory", str(profile),
              "-modpath", str(mods), "-companionserverai", "-companionaiport", str(args.ipc_port),
              "-companionaiipctest", "-companioncontainertest"]
-            + (["-companioncontainertransfertest"] if args.transfers else []),
+            + (["-companioncontainertransfertest"] if args.transfers else [])
+            + (["-companioncontainerbatchtest"] if args.batches else []),
             cwd=args.engine, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -403,7 +511,7 @@ def main():
             clients.append(Client(args.port, "ChestObserverA"))
             clients.append(Client(args.port, "ChestObserverB"))
             bridge = ServerAiBridge(port=args.ipc_port)
-            report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers))
+            report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches))
             if "openAtWorldUnload" in report:
                 (profile / "g81-test-stop").touch()
                 for client in clients:

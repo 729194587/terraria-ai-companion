@@ -17,7 +17,7 @@ internal sealed class AiAtomicActions
 {
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
     internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"})
-        .Concat(SupportsContainers ? new[]{"server_ai_containers_v1","server_ai_container_transfer_v1"} : Array.Empty<string>())
+        .Concat(SupportsContainers ? new[]{"server_ai_containers_v1","server_ai_container_transfer_v1","server_ai_container_batch_v1"} : Array.Empty<string>())
         .Concat(SupportsCombat?new[]{"server_ai_combat_v1"}:Array.Empty<string>()).ToArray();
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
@@ -78,7 +78,8 @@ internal sealed class AiAtomicActions
     private static bool Matches(Entry e, AiReadOnlyProtocol.Identity current) => e!=null && current != null
         && ReferenceEquals(e.Actor, current.Actor) && e.World == current.World && e.Generation == current.Generation && e.Slot == current.Slot;
     private static bool IsContainerOperation(string operation) =>
-        operation is "open_container" or "close_container" or "deposit_container_item" or "withdraw_container_item";
+        operation is "open_container" or "close_container" or "deposit_container_item" or "withdraw_container_item"
+        or "quick_stack_nearby" or "quick_stack_container" or "loot_all" or "deposit_all" or "restock";
     internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to" or CombatProtocol.Operation;
     internal object CombatState(AiReadOnlyProtocol.Identity current) =>
         new{action=Matches(lastCombat,current)?Snapshot(lastCombat):null};

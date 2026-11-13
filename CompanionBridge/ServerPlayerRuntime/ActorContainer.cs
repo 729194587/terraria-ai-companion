@@ -32,7 +32,7 @@ internal static partial class ActorContainer
 
     private static bool Vanilla(Tile tile) => tile.HasTile && tile.TileType is TileID.Containers or TileID.Containers2;
 
-    private static string Resolve(Player player, int x, int y, out Target target)
+    private static string Resolve(Player player, int x, int y, out Target target, bool requireReach = true)
     {
         target = null;
         if (!WorldGen.InWorld(x, y, 1)) return "invalid_target";
@@ -54,7 +54,7 @@ internal static partial class ActorContainer
                 return "invalid_container_footprint";
         }
         if (Chest.IsLocked(x, y)) return "container_locked";
-        if (!player.IsInInteractionRangeToMultiTileHitbox(x, y)) return "out_of_native_interaction_range";
+        if (requireReach && !player.IsInInteractionRangeToMultiTileHitbox(x, y)) return "out_of_native_interaction_range";
         int index = Chest.FindChest(x, y);
         if (index < 0 || Main.chest[index] is not { item.Length: 40 } chest || chest.item.Any(item => item == null))
             return "container_record_missing";
