@@ -16,6 +16,10 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
     internal const ulong Budget = 1500;
     private const int TargetLimit = 16;
     private const ulong ApproachBudget = 240;
+    // Bounds stance probes per approach. The search rectangle is the native grab
+    // range; only the sample count is capped, so cost stays predictable without
+    // narrowing where the Actor may stand to pick an item up.
+    private const int ApproachProbeBudget = 6144;
     private sealed class Target(ServerDrops.Drop drop)
     {
         internal readonly ServerDrops.Drop Drop = drop;
@@ -148,7 +152,7 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         {
             var item = candidate.Drop.Item;
             if (PickupBlock(item) is {} blocked) { candidate.Reason = blocked; continue; }
-            if (PickupReach(player.Hitbox, item))
+            if (Reach(player.Hitbox, item))
             {
                 target = candidate;
                 waitUntil = frame.GameUpdate + 75;
@@ -185,50 +189,67 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         return null;
     }
 
+    // The native pull rectangle from Player.GrabItems: the Actor hitbox inflated
+    // by GetItemGrabRange on every side, intersected with the item hitbox. This is
+    // the same test the game runs, so no private reach enlargement is applied.
     private bool Reach(Rectangle hitbox, Item item)
     {
-        int range = player.GetItemGrabRange(item);
+        int range = Math.Max(0, player.GetItemGrabRange(item));
         hitbox.Inflate(range, range);
         return hitbox.Intersects(item.Hitbox);
     }
 
-    // Prefer a stance inside the pull region with enough clearance for the
-    // native magnet to finish across tile edges and item resting offsets.
-    private bool PickupReach(Rectangle hitbox, Item item)
-    {
-        int range = Math.Max(0, player.GetItemGrabRange(item) - 12);
-        hitbox.Inflate(range, range);
-        return hitbox.Intersects(item.Hitbox);
-    }
-
+    // World-pixel bounds of the stance search for one drop. This is the native grab
+    // rectangle: the item hitbox grown by the full GetItemGrabRange, clipped to the
+    // world. The range is never reduced to keep the search small; only the sample
+    // count below is budgeted. See DropStanceSearch for the pure geometry.
     private LandingRegion Approach(Target candidate)
     {
         var item = candidate.Drop.Item;
         var observed = NativeMotionWorld.Observe(player);
         var box = item.Hitbox;
-        var world = new NativeMotionWorld(new PhysicsState(box.X, box.Y - player.height, 0, 0, true, 0, true));
-        int range = Math.Clamp(player.GetItemGrabRange(item) - 12, 0, 96);
+        int range = Math.Max(0, player.GetItemGrabRange(item));
         LandingRegion best = null;
         float distance = float.PositiveInfinity;
-        int min = box.Left - player.width - range + 1, max = box.Right + range - 1;
-        int top = Math.Max(16, box.Top - range);
-        for (int feet = (top + 7) / 8 * 8; feet <= box.Bottom + range + player.height; feet += 8)
+        var bounds = DropStanceSearch.Bounds(box, player.width, player.height, range, Main.maxTilesX, Main.maxTilesY);
+        if (bounds.Width == 0 || bounds.Height == 0) return null;
+        int min = bounds.Left, max = bounds.Right, top = bounds.Top, bottom = bounds.Bottom;
+        int actorFeet = (int)(player.position.Y + player.height);
+        var rows = new List<int>();
+        for (int feet = (top + 7) / 8 * 8; feet <= bottom; feet += 8) rows.Add(feet);
+        // Nearer foot levels first, so a truncated budget still keeps the stances
+        // that need the shortest trip.
+        rows.Sort((a, b) => Math.Abs(a - actorFeet).CompareTo(Math.Abs(b - actorFeet)));
+        int probes = 0;
+        foreach (int feet in rows)
         {
+            if (probes >= ApproachProbeBudget) break;
             int? start = null;
-            for (int x = min; x <= max + 1; x++)
+            int previous = min - 1;
+            NativeMotionWorld world = null;
+            int worldX = 0;
+            void Consider(int right)
             {
-                var pose = new PhysicsState(x, feet - player.height, 0, 0, true, 0, true);
-                if (x <= max && WorldGen.InWorld(x / 16, feet / 16, 2)
-                    && PickupReach(new Rectangle(x, feet - player.height, player.width, player.height), item)
-                    && world.SafeLanding(pose))
-                { start ??= x; continue; }
-                if (!start.HasValue) continue;
-                var band = new LandingRegion(start.Value, x - 1, feet);
+                if (!start.HasValue) return;
+                var band = new LandingRegion(start.Value, right, feet);
                 start = null;
-                if (candidate.RejectedStances.Contains((band.MinPlayerLeftX, band.SurfaceY))) continue;
+                if (candidate.RejectedStances.Contains((band.MinPlayerLeftX, band.SurfaceY))) return;
                 float score = band.Distance(observed) + Math.Max(0, 12 - (band.MaxPlayerLeftX - band.MinPlayerLeftX)) * 2;
                 if (score < distance) { best = band; distance = score; }
             }
+            for (int x = min; x <= max && probes < ApproachProbeBudget; x += 8)
+            {
+                probes++;
+                if (x != previous + 1) Consider(previous);
+                var pose = new PhysicsState(x, feet - player.height, 0, 0, true, 0, true);
+                if (world == null || x - worldX > 240)
+                { world = new NativeMotionWorld(pose); worldX = x; }
+                if (world.SafeLanding(pose)) start ??= x;
+                else Consider(previous);
+                previous = x;
+            }
+            // A band still open at the end of the row ends at the last probe.
+            Consider(previous);
         }
         return best;
     }
