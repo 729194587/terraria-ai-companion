@@ -570,7 +570,7 @@ async def verify_collect(profile, bridge, clients):
     async def run(label, arguments, *, status="completed", intervene=None):
         task = await start(arguments)
         if intervene:
-            await asyncio.sleep(.4)
+            await asyncio.sleep(.1 if intervene == "allow-contact-pickup" else .4)
             fixture(intervene)
         result = await call("await_task", {**task, "milliseconds": 28000})
         (profile / "collect-latest.json").write_text(json.dumps(result, indent=2), encoding="utf-8")

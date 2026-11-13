@@ -111,10 +111,12 @@ internal static class ServerCollectFixture
         // The reference cases isolate admission and native contact pickup.
         // The mixed-step and movement cases exercise navigation separately.
         if (command == "allow-contact-pickup")
-            foreach (var item in Main.item.Where(item => item.active && item.playerIndexTheItemIsReservedFor == player.whoAmI))
+            foreach (var item in Main.item.Where(item => item.active && item.type is ItemID.Wood or ItemID.StoneBlock))
             {
                 item.position = player.Center - new Vector2(item.width / 2f, item.height / 2f);
                 item.velocity = Vector2.Zero;
+                item.keepTime = 1800;
+                item.playerIndexTheItemIsReservedFor = player.whoAmI;
                 item.noGrabDelay = 0;
             }
         if (command == "remove-drop")
