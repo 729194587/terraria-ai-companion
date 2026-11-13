@@ -111,6 +111,7 @@ public sealed class ServerAiSystem : ModSystem
             var actor=Capture();
             ActorContainer.Tick(actor);
             ServerContainerFixture.Tick(actor);
+            ServerCollectFixture.Tick(actor);
             if(actor!=null)AiMapRuntime.Tick();
             bool reflex=simulationUpdate&&actor!=null&&(!ServerAiActionFixture.Enabled||ServerCombatFixture.Enabled);
             bool threatened=false;
@@ -189,6 +190,7 @@ public sealed class ServerAiSystem : ModSystem
         {
             server?.Dispose();server=null;actions=null;torches=null;Lighting=null;
             ServerContainerFixture.Reset();
+            ServerCollectFixture.Reset();
             ServerAiActionFixture.Reset();ServerAiNaturalFixture.Reset();
         }
     }

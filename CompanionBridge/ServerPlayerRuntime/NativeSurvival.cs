@@ -31,7 +31,17 @@ internal static class NativeSurvival
     {
         MethodInfo predicate=typeof(NativeSurvival).GetMethod(nameof(Owns));
         ILContext.Manipulator Patch(string operation)=>il=>SurvivalPatches.Patch(il.Method,operation,il.Module.ImportReference(predicate));
-        var pickup=Patch("pickup");var lethal=Patch("lethal");var dodge=Patch("dodge");
+        ILContext.Manipulator pickup = il =>
+        {
+            SurvivalPatches.Patch(il.Method, "pickup", il.Module.ImportReference(predicate));
+            if (VirtualPlayerEngineProbe.Engine.Selected == "2026.09.3.1")
+                SurvivalPatches.PickupFilter(il.Method, il.Module.ImportReference(
+                    typeof(CompanionBridge.ServerIpc.ServerDrops).GetMethod("Allows")));
+        };
+        if (VirtualPlayerEngineProbe.Engine.Selected == "2026.09.3.1")
+            install(() => On_Player.PickupItem += CompanionBridge.ServerIpc.ServerDrops.Pickup,
+                () => On_Player.PickupItem -= CompanionBridge.ServerIpc.ServerDrops.Pickup);
+        var lethal=Patch("lethal");var dodge=Patch("dodge");
         var drops=Patch("death-drops");var spawn=Patch("spawn");var coins=Patch("coin-mouse");
         install(()=>IL_Player.GrabItems+=pickup,()=>IL_Player.GrabItems-=pickup);
         install(()=>IL_Player.Hurt_HurtInfo_bool+=lethal,()=>IL_Player.Hurt_HurtInfo_bool-=lethal);

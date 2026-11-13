@@ -123,7 +123,14 @@ internal static class AtomicQueries
             coordinates = "tile cells; inclusive bounds; 16 pixels per cell; +X right,+Y down" };
     }
 
-    internal static object ScanEntities(Player p, JsonElement args, Func<NPC,string> entityRef, bool authoritative = false)
+    internal static IEnumerable<(int Slot, Item Item)> ScanDrops(Vector2 center, float radius, HashSet<int> types) =>
+        Main.item.Select((item, slot) => (Slot: slot, Item: item))
+            .Where(row => row.Item is { active: true } && !row.Item.IsAir
+                && (types == null || types.Contains(row.Item.type))
+                && Vector2.Distance(center, row.Item.Center) <= radius)
+            .OrderBy(row => Vector2.DistanceSquared(center, row.Item.Center)).ThenBy(row => row.Slot);
+
+    internal static object ScanEntities(Player p, JsonElement args, Func<NPC,string> entityRef, bool authoritative = false, Func<Item,string> dropRef = null)
     {
         string category = args.GetProperty("category").GetString();
         float radius = args.GetProperty("radius").GetSingle();
@@ -150,12 +157,10 @@ internal static class AtomicQueries
         }
         if (category is "all" or "player") foreach (var other in Main.player) if (other.active && other.whoAmI != p.whoAmI)
             Add(other,"player",other.whoAmI,null,other.name,"other_player","PvP hostility not evaluated",new {other.dead,other.statLife,other.team});
-        if (category is "all" or "item") for (int i=0;i<Main.item.Length;i++)
-        {
-            var item=Main.item[i]; if (item.active && !item.IsAir)
-                Add(item,"item",i,item.type,item.Name,"dropped_item","Active item; not proof of pickup eligibility",
-                    new {item.type,item.stack,contentKey=Key("item",item.type)});
-        }
+        if (category is "all" or "item") foreach (var (slot, item) in ScanDrops(p.Center, radius, types))
+            Add(item,"item",slot,item.type,item.Name,"dropped_item","Active item; not proof of pickup eligibility",
+                dropRef == null ? (object)new {item.type,item.stack,contentKey=Key("item",item.type)}
+                    : new {item.type,item.stack,contentKey=Key("item",item.type),entityRef=dropRef(item)});
         return new { items=list.OrderBy(e=>e.Distance).ThenBy(e=>e.Kind,StringComparer.Ordinal).ThenBy(e=>e.Slot).Take(limit).Select(e=>e.Value).ToArray(),
             matchedCount=list.Count, returnedCount=Math.Min(list.Count,limit),truncated=list.Count>limit,radiusPixels=radius,
             sort="distance_from_player_center_then_kind_slot; filters before truncation",

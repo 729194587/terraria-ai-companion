@@ -130,7 +130,8 @@ def server_definitions(bridge, supported=None):
                                       excavation='server_ai_excavation_v1' in capabilities)
     if program_tasks.available(bridge):
         definitions += program_tasks.definitions(excavation='server_ai_excavation_v1' in capabilities,
-                                                 combat='server_ai_combat_v1' in capabilities)
+                                                 combat='server_ai_combat_v1' in capabilities,
+                                                 collection='collect_drops' in supported)
     return definitions
 
 

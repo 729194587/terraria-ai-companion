@@ -13,7 +13,7 @@ from control import BridgeError, NotAdmittedError
 from lua_action_results import action_results
 
 NAMES = frozenset({'submit_task', 'query_task', 'await_task', 'cancel_task', 'resume_task'})
-OPERATIONS = ('mine_target', 'combat_attack')
+OPERATIONS = ('mine_target', 'combat_attack', 'collect_drops')
 
 
 def available(bridge):
@@ -27,7 +27,7 @@ def validate(name, args):
         raise ValueError('Task arguments must be an object')
     if name == 'submit_task':
         if set(args) != {'operation', 'arguments'} or args['operation'] not in OPERATIONS:
-            raise ValueError('submit_task requires mine_target or combat_attack and its arguments')
+            raise ValueError('submit_task requires a supported task operation and its arguments')
         return {**args, 'arguments': atomic.validate(args['operation'], args['arguments'])}
     allowed = {'taskId', 'milliseconds'} if name == 'await_task' else {'taskId'}
     if set(args) - allowed or 'taskId' not in args or not isinstance(args['taskId'], str) or not re.fullmatch('[0-9a-f]{32}', args['taskId']):
@@ -40,7 +40,7 @@ def validate(name, args):
     return args
 
 
-def definitions(*, excavation=False, combat=False):
+def definitions(*, excavation=False, combat=False, collection=False):
     rows = []
     for name in sorted(NAMES):
         properties = {'taskId': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'}}
@@ -51,11 +51,18 @@ def definitions(*, excavation=False, combat=False):
             'cancel_task': '显式取消指定任务；仅可信终态和释放证据证明停止。',
             'resume_task': '仅对危险中断且已安全释放的任务显式重新提交；新身份，不自动重试，游戏侧重新验证环境/目标/工具。'}[name]
         if name == 'submit_task':
-            operations = list(OPERATIONS if combat else OPERATIONS[:1])
+            operations = ['mine_target']
+            if combat:
+                operations.append('combat_attack')
+            if collection:
+                operations.append('collect_drops')
             mining = copy.deepcopy(atomic.SCHEMAS['mine_target'])
             if not excavation:
                 mining['properties'].pop('cluster', None)
-            arguments = {'anyOf': [mining, copy.deepcopy(atomic.SCHEMAS['combat_attack'])]} if combat else mining
+            variants = [mining, *(copy.deepcopy(atomic.SCHEMAS[op]) for op in operations[1:])]
+            arguments = {'anyOf': variants} if len(variants) > 1 else mining
+            if collection:
+                description += ' collect_drops 默认收集320像素内各类掉落物。参数 radiusPixels 为16..960，typeIds 与 entityRef 互斥；entityRef 取自 scan_entities 的掉落物 details。终态查看 collected、remaining 和 unavailable。'
             properties = {'operation': {'type': 'string', 'enum': operations}, 'arguments': arguments}
             if combat:
                 description += ' combat_attack 使用 scan_entities 的 entityRef；query_combat 也可发现游戏侧自卫任务。'
@@ -112,6 +119,8 @@ class TaskCoordinator:
 
     async def submit(self, args, origin=None):
         operation = args['operation']
+        if operation == 'collect_drops' and operation not in getattr(self.bridge, 'supported_atomic_operations', ()):
+            return atomic.not_admitted_result('submit_task', 'collection_capability_unavailable')
         try:
             atomic.validate_backend(self.bridge, args['operation'], args['arguments'])
         except atomic.PreDispatchRejected as error:

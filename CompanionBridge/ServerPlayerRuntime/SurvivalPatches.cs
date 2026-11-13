@@ -29,6 +29,18 @@ public static class SurvivalPatches
         il.InsertBefore(entry,guard);il.InsertBefore(entry,Instruction.Create(OpCodes.Call,owns));
         il.InsertBefore(entry,Instruction.Create(OpCodes.Brtrue,target));
     }
+    internal static void PickupFilter(MethodDefinition m, MethodReference allows)
+    {
+        var entry = At(m, 0x1a);
+        var skip = At(m, 0x2a8);
+        Require(entry?.OpCode == OpCodes.Ldloc_1 && skip != null && At(m, 0x15)?.OpCode.Code == Code.Brfalse, "pickup filter");
+        var il = m.Body.GetILProcessor();
+        il.InsertBefore(entry, Instruction.Create(OpCodes.Ldarg_0));
+        il.InsertBefore(entry, Instruction.Create(OpCodes.Ldloc_1));
+        il.InsertBefore(entry, Instruction.Create(OpCodes.Call, allows));
+        il.InsertBefore(entry, Instruction.Create(OpCodes.Brfalse, skip));
+    }
+
     public static void Patch(MethodDefinition m,string operation,MethodReference owns)
     {
         Require(!m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.FullName==owns.FullName),operation+" duplicate");

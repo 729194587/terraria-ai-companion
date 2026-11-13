@@ -100,6 +100,12 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("quick_stack_container", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到当前箱子的已有同类物品。需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("loot_all", "服务器AI。按拾取规则从当前箱子批量取出，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("deposit_all", "服务器AI。批量存入普通背包10..49中未收藏物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("collect_drops", "通过 submit_task 收集本轮观察到的附近掉落物。默认320像素，最多16个。可用 typeIds 筛选，或用 scan_entities 返回的掉落物 entityRef 指定目标。", {
+        "radiusPixels": {"type": "integer", "minimum": 16, "maximum": 960, "default": 320},
+        "typeIds": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": True,
+                    "items": {"type": "integer", "minimum": 1, "maximum": 65535}},
+        "entityRef": {"type": "string", "minLength": 1, "maxLength": 128},
+    }),
     tool("sort_inventory", "服务器AI。使用原生背包排序，包括钱币和弹药整理。排序后重新读取背包槽位。"),
     tool("sort_container", "服务器AI。使用原生算法整理当前箱子，需新鲜容器Token。排序后重新读取箱子槽位。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("restock", "服务器AI。从当前箱子补充背包已有的可堆叠非钱币物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
@@ -226,7 +232,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene(
 
 def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False, excavation=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
-    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] != 'combat_attack']
+    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'collect_drops')]
     for definition in definitions:
         f = definition['function']
         name = f['name']
@@ -385,6 +391,8 @@ def validate(name, arguments):
         width, height = arguments['maxX'] - arguments['minX'] + 1, arguments['maxY'] - arguments['minY'] + 1
         if width <= 0 or height <= 0 or width * height > 4096:
             raise ValueError(f'scan_tiles.bounds: inclusive area {width} x {height} = {width * height}; require ordered bounds and area <=4096 tiles. Use observe_terrain bounds (45 x 29) or split into bounded scans')
+    if name == 'collect_drops' and 'entityRef' in arguments and 'typeIds' in arguments:
+        raise ValueError('collect_drops entityRef and typeIds are mutually exclusive')
     if name == 'inspect_inventory' and (('item' in arguments) != (arguments.get('mode') == 'item')):
         raise ValueError('item is required only for mode=item')
     if name == 'inspect_inventory' and (('slots' in arguments) != (arguments.get('mode') == 'slots')):
@@ -804,7 +812,14 @@ async def terminal(bridge, action, generation):
             container_verified = verified_container_transfer(action, native_evidence, end)
     if action.get('operation') in CONTAINER_BATCHES:
         container_verified = verified_container_batch(action, native_evidence, end)
+    pickup = combat_result.get('evidence')
     native_verified = {
+        'collect_drops': (combat.get('taskName') == 'collect_drops' and combat.get('taskId') == action.get('actionId')
+                          and combat == action.get('task') and combat.get('status') == 'completed'
+                          and combat_result.get('effectVerified') is True and combat_result.get('inputsReleased') is True
+                          and isinstance(pickup, dict) and pickup.get('remaining') == []
+                          and pickup.get('unavailable') == [] and pickup.get('truncated') is False
+                          and pickup.get('outcome') in ('collected', 'none')),
         **dict.fromkeys(SORT_OPERATIONS, verified_sort(action, native_evidence, end)),
         **dict.fromkeys(CONTAINER_BATCHES, container_verified),
         **dict.fromkeys(CONTAINER_TRANSFERS, container_verified),
@@ -863,7 +878,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'collect_drops', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -929,6 +944,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             lifecycle.update(copy.deepcopy(fields))
     arguments = validate(name, arguments)
     validate_backend(bridge, name, arguments)
+    if name == 'collect_drops':
+        raise PreDispatchRejected('Use submit_task for collect_drops')
     if name == 'navigate_to' and 'server_ai_navigation_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_navigation_v1; no navigation task submitted')
     if name == 'mine_target' and 'server_ai_tasks_v1' not in bridge.hello.get('capabilities', []):

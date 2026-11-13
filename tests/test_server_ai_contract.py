@@ -168,7 +168,7 @@ class ResultRegistryTests(unittest.TestCase):
             help_result = api_help(enabled, {'name': name})
             self.assertEqual('ok', help_result['status'])
             Draft202012Validator.check_schema(help_result['returnsSchema'])
-        self.assertEqual(set(definitions) | containers | {'combat_attack', 'query_combat'}, registered_names())
+        self.assertEqual(set(definitions) | containers | {'combat_attack', 'query_combat', 'collect_drops'}, registered_names())
         self.assertEqual({'future_api'}, missing_for(set(definitions) | {'future_api'}))
         self.assertNotIn('Action_mine_tile', schema_for('stop_action', capabilities=BASE)['$defs'])
         copy = schema_for('observe_scene', capabilities=FULL)

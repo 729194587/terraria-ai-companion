@@ -214,6 +214,25 @@ internal static class AtomicParameters
             case "drop_through_platform": Fields(); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
             case "place_object": case "place_rope": goto case "place_tile";
+            case "collect_drops":
+                if (keys.Except(new[]{"radiusPixels","typeIds","entityRef"}).Any()) throw new FormatException("Unexpected collect_drops parameter.");
+                if (keys.Contains("radiusPixels")) Integer("radiusPixels", 16, 960);
+                if (keys.Contains("entityRef"))
+                {
+                    var reference = args.GetProperty("entityRef");
+                    if (reference.ValueKind != JsonValueKind.String || CharacterCount(reference) is < 1 or > 128 || keys.Contains("typeIds"))
+                        throw new FormatException("Invalid drop reference.");
+                }
+                if (keys.Contains("typeIds"))
+                {
+                    var types = args.GetProperty("typeIds"); var unique = new HashSet<int>();
+                    if (types.ValueKind != JsonValueKind.Array || types.GetArrayLength() is < 1 or > 16)
+                        throw new FormatException("Invalid drop types.");
+                    foreach (var type in types.EnumerateArray())
+                        if (!type.TryGetInt32(out int value) || value is < 1 or > 65535 || !unique.Add(value))
+                            throw new FormatException("Invalid drop type.");
+                }
+                break;
             case "mine_target":
             {
                 bool hasCluster=args.TryGetProperty("cluster",out var cluster);

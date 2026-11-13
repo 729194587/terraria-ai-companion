@@ -146,3 +146,22 @@ tModLoader 2026.09.3.1 中，`ItemSorting.SortInventory` 先执行原生钱币�
 功能只在已核验的 2026.09.3.1 引擎配置下公布。
 
 使用双客户端验证脚本的 `--sorting` 模式复现。
+
+### Dedicated Server 主动收集掉落物 P4-A
+
+通过 `submit_task` 提交 `collect_drops`，使用 `query_task`、`await_task` 和
+`cancel_task` 查看、等待和取消。默认半径 320 像素，可设为 16–960；可传
+`typeIds` 或 `scan_entities` 掉落物的 `details.entityRef`。任务最多处理启动时
+最近的 16 个目标。引用绑定世界、Actor 代次及掉落实例；移位会重新规划，
+同一存活实例合并后读取其最新数量。
+
+当前 tModLoader 的 `Player.Update` 调用 `GrabItems`。收集任务按
+`GetItemGrabRange`、玩家碰撞框和安全落脚面计算候选区域，复用落脚区域导航。
+原生拾取仍检查归属、延时、吸附、库存空间和 Mod 钩子。任务仅在原生
+`PickupItem` 返回的地面数量变化与绑定 AI 的背包或虚空袋增量一致时计数。
+服务器沿用原有掉落物和玩家同步路径。
+
+回执包含 `collected`、`remaining`、`unavailable` 和 `outcome`。
+未确认的消失只记作不可用。部分成功保留已核验数量；取消会释放导航输入。
+任务使用现有安全导航能力，可尝试其他落脚区域；候选站位和每次导航均有界。
+在现有双客户端脚本中使用 `--collect` 复现。

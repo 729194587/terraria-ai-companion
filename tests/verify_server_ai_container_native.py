@@ -528,6 +528,105 @@ async def verify_sorting(bridge, clients, report, api, inspect, fixture, index):
         fixture("clear-sort-fixture")
 
 
+async def verify_collect(profile, bridge, clients):
+    from program_tasks import TaskCoordinator, validate as validate_task
+    tasks = TaskCoordinator(bridge)
+    report = {"clients": [client.slot for client in clients], "cases": {}}
+
+    def fixture(command):
+        response = profile / "container-state.json"
+        response.unlink(missing_ok=True)
+        request = profile / "container-request.tmp"
+        request.write_text(command)
+        request.replace(profile / "container-request")
+        def read():
+            try:
+                data = json.loads(response.read_text())
+                return data if data["command"] == command else None
+            except (FileNotFoundError, json.JSONDecodeError):
+                return None
+        return wait_for(read)
+
+    async def call(name, args):
+        result = await tasks.invoke(name, validate_task(name, args))
+        detail = api_help(bridge, {"name": name})
+        assert detail["status"] == "ok", detail
+        try:
+            validate(result, detail["returnsSchema"])
+        except Exception:
+            (profile / "collect-invalid-receipt.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+            raise
+        return result
+
+    async def start(arguments):
+        result = await call("submit_task", {"operation": "collect_drops", "arguments": arguments})
+        assert result["status"] == "running", result
+        return {"taskId": result["taskId"]}
+
+    async def run(label, arguments, *, status="completed", intervene=None):
+        task = await start(arguments)
+        if intervene:
+            await asyncio.sleep(.4)
+            fixture(intervene)
+        result = await call("await_task", {**task, "milliseconds": 28000})
+        (profile / "collect-latest.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        assert result["status"] == status, (label, result["status"], result.get("result", {}).get("reason"))
+        queried = await call("query_task", task)
+        assert queried["result"] == result["result"]
+        report["cases"][label] = result
+        return result["result"]["task"]["result"]["evidence"]
+
+    initial = fixture("seed-step")
+    result = await run("mixed_step", {})
+    assert {row["typeId"]: row["count"] for row in result["collected"]} == {9: 7, 3: 5}, result
+    after = fixture("snapshot")
+    assert after["clients"] == initial["clients"]
+    assert not any(item["type"] in (3, 9) for item in after["items"])
+    for client in clients:
+        pending = {item["slot"] for item in initial["items"] if item["type"] in (3, 9)}
+        while pending:
+            body = client.wait(21, lambda body: struct.unpack_from("<h", body)[0] in pending and body[18:23] == bytes(5))
+            pending.remove(struct.unpack_from("<h", body)[0])
+        for item in after["inventory"]:
+            if item["type"] in (3, 9):
+                client.expect_item(5, bridge.binding["slot"], item["slot"], (item["type"], 0, item["stack"]))
+    report["sync"] = {"receivedBy": report["clients"], "actorInventory": after["inventory"]}
+
+    fixture("seed")
+    result = await run("type_filter", {"typeIds": [9]})
+    assert result["collected"] == [{"typeId": 9, "count": 7}], result
+    observation = await dispatch(bridge, "scan_entities", {"category": "item", "radius": 320, "typeIds": [3]})
+    ref = observation["data"]["items"][0]["details"]["entityRef"]
+    result = await run("specific_target", {"entityRef": ref})
+    assert result["collected"] == [{"typeId": 3, "count": 5}], result
+
+    fixture("seed")
+    result = await run("moving", {"typeIds": [9]}, intervene="move-drop")
+    assert result["collected"] == [{"typeId": 9, "count": 7}], result
+    fixture("seed")
+    result = await run("disappearing", {}, status="failed", intervene="remove-drop")
+    assert result["outcome"] == "partial" and len(result["unavailable"]) == 1, result
+    fixture("seed")
+    result = await run("merged", {"typeIds": [9]}, intervene="merge-drop")
+    assert result["collected"] == [{"typeId": 9, "count": 10}], result
+    fixture("seed-full")
+    result = await run("full", {}, status="failed")
+    assert all(row["reason"] == "inventory_full" for row in result["remaining"]), result
+    fixture("seed-partial")
+    result = await run("partial_capacity", {}, status="failed")
+    assert result["collected"] == [{"typeId": 9, "count": 3}] and result["outcome"] == "partial", result
+    fixture("seed-timeout")
+    result = await run("navigation_timeout", {"radiusPixels": 960, "typeIds": [9]}, status="timeout")
+    assert result["remaining"][0]["reason"] == "navigation_timeout", result
+    fixture("seed")
+    task = await start({})
+    await asyncio.sleep(.25)
+    result = await call("cancel_task", task)
+    assert result["status"] == "cancelled" and result["result"]["inputsReleased"], result
+    report["cases"]["cancelled"] = result
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", type=Path, default=Path("D:/steam/steamapps/common/tModLoader"))
@@ -537,6 +636,7 @@ def main():
     mode.add_argument("--transfers", action="store_true")
     mode.add_argument("--batches", action="store_true")
     mode.add_argument("--sorting", action="store_true")
+    mode.add_argument("--collect", action="store_true")
     parser.add_argument("--port", default=27941, type=int)
     parser.add_argument("--ipc-port", default=27942, type=int)
     args = parser.parse_args()
@@ -557,7 +657,7 @@ def main():
     shutil.copyfile(args.package, mods / "CompanionBridge.tmod")
     world = profile / "test.wld"
     shutil.copyfile(args.world, world)
-    (profile / "isolated-container-fixture").touch()
+    (profile / ("isolated-collect-fixture" if args.collect else "isolated-container-fixture")).touch()
     clients = []
     bridge = None
     with (profile / "server.log").open("w") as log:
@@ -568,7 +668,8 @@ def main():
              "-companionaiipctest", "-companioncontainertest"]
             + (["-companioncontainertransfertest"] if args.transfers else [])
             + (["-companioncontainerbatchtest"] if args.batches else [])
-            + (["-companioncontainersorttest"] if args.sorting else []),
+            + (["-companioncontainersorttest"] if args.sorting else [])
+            + (["-companioncollecttest"] if args.collect else []),
             cwd=args.engine, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -581,7 +682,10 @@ def main():
             clients.append(Client(args.port, "ChestObserverA"))
             clients.append(Client(args.port, "ChestObserverB"))
             bridge = ServerAiBridge(port=args.ipc_port)
-            report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches, sorting=args.sorting))
+            if args.collect:
+                report = asyncio.run(verify_collect(profile, bridge, clients))
+            else:
+                report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches, sorting=args.sorting))
             if "openAtWorldUnload" in report:
                 (profile / "g81-test-stop").touch()
                 for client in clients:

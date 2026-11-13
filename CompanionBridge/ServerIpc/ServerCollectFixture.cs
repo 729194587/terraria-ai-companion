@@ -1,0 +1,118 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.DataStructures;
+using Terraria.ID;
+using VirtualPlayerEngineProbe;
+
+namespace CompanionBridge.ServerIpc;
+
+internal static class ServerCollectFixture
+{
+    private static bool ready;
+    private static int x, floor;
+    private static readonly System.Reflection.MethodInfo combine = typeof(Item).GetMethod("CombineWithNearbyItems",
+        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+    internal static void Reset() => ready = false;
+
+    internal static void Tick(AiReadOnlyProtocol.Identity identity)
+    {
+        if (identity == null || !Program.LaunchParameters.ContainsKey("-companionaiipctest")
+            || !Program.LaunchParameters.ContainsKey("-companioncollecttest")
+            || !File.Exists(Path.Combine(Main.SavePath, "isolated-collect-fixture"))) return;
+        var player = (Player)identity.Actor;
+        if (!ready)
+        {
+            x = Main.spawnTileX;
+            floor = Main.spawnTileY + 8;
+            for (int tx = x - 30; tx <= x + 67; tx++)
+            for (int ty = floor - 14; ty <= floor + 5; ty++)
+            {
+                var tile = Main.tile[tx, ty];
+                tile.ClearEverything();
+                if (ty >= floor) { tile.HasTile = true; tile.TileType = TileID.Dirt; }
+            }
+            ready = true;
+            File.WriteAllText(Path.Combine(Main.SavePath, "container-ready.json"), "{}");
+        }
+        foreach (var npc in Main.npc)
+            if (npc.active && !npc.friendly && Vector2.DistanceSquared(npc.Center, player.Center) <= 400 * 400)
+                npc.active = false;
+        var path = Path.Combine(Main.SavePath, "container-request");
+        if (!File.Exists(path)) return;
+        string command = File.ReadAllText(path);
+        File.Delete(path);
+        if (command.StartsWith("seed", StringComparison.Ordinal))
+        {
+            for (int slot = 0; slot < Main.item.Length; slot++)
+                if (Main.item[slot].active)
+                {
+                    Main.item[slot] = new Item();
+                    NetMessage.SendData(MessageID.SyncItem, -1, -1, null, slot);
+                }
+            for (int i = 0; i < 59; i++) player.inventory[i] = new Item();
+            player.position = new Vector2(x * 16, floor * 16 - player.height);
+            player.velocity = Vector2.Zero;
+            if (command == "seed-full")
+                for (int i = 0; i < 50; i++) player.inventory[i] = new Item(ItemID.DirtBlock, 9999);
+            if (command == "seed-partial") player.inventory[49] = new Item(ItemID.Wood, 9996);
+            if (command == "seed-partial")
+                for (int i = 0; i < 49; i++) player.inventory[i] = new Item(ItemID.DirtBlock, 9999);
+            for (int tx = x + 8; tx <= x + 16; tx++)
+                {
+                    var tile = Main.tile[tx, floor - 1];
+                    tile.HasTile = command == "seed-step";
+                    tile.TileType = TileID.Dirt;
+                }
+            Spawn(player, ItemID.Wood, 7, x + (command == "seed-timeout" ? 58 : 10), floor - (command == "seed-step" ? 1 : 0));
+            Spawn(player, ItemID.StoneBlock, 5, x + 15, floor - (command == "seed-step" ? 1 : 0));
+            NetworkStateSync.Full(player);
+        }
+        if (command == "merge-drop")
+        {
+            int slot = Array.FindIndex(Main.item, i => i.active && i.type == ItemID.Wood);
+            var item = Main.item[slot];
+            int added = Item.NewItem(new EntitySource_Misc("collect_merge_fixture"), item.Hitbox, ItemID.Wood, 3);
+            Main.item[added].position = item.position;
+            Main.item[added].playerIndexTheItemIsReservedFor = player.whoAmI;
+            Main.item[added].keepTime = 1800;
+            combine.Invoke(item, new object[] { slot });
+            NetMessage.SendData(MessageID.SyncItem, -1, -1, null, slot);
+        }
+        if (command == "move-drop")
+        {
+            var item = Main.item.First(i => i.active && i.type == ItemID.Wood);
+            item.position.X += 80;
+            NetMessage.SendData(MessageID.SyncItem, -1, -1, null, Array.IndexOf(Main.item, item));
+        }
+        if (command == "remove-drop")
+        {
+            int slot = Array.FindIndex(Main.item, i => i.active && i.type == ItemID.StoneBlock);
+            if (slot >= 0) { Main.item[slot] = new Item(); NetMessage.SendData(MessageID.SyncItem, -1, -1, null, slot); }
+        }
+        File.WriteAllText(Path.Combine(Main.SavePath, "container-state.json"), JsonSerializer.Serialize(new
+        {
+            command, x = player.Center.X, y = player.Center.Y,
+            items = Main.item.Select((item, slot) => new { item, slot }).Where(row => row.item.active)
+                .Select(row => new { row.slot, type = row.item.type, stack = row.item.stack, owner = row.item.playerIndexTheItemIsReservedFor, grabbed = row.item.beingGrabbed }).ToArray(),
+            inventory = player.inventory.Select((item, slot) => new { slot, item.type, item.stack }).ToArray(),
+            clients = Netplay.Clients.Where(client => client.State == 10).Select(client => new {
+                slot = client.Id, items = Main.player[client.Id].inventory.Select(item => new { item.type, item.stack }).ToArray()
+            }).ToArray()
+        }));
+    }
+
+    private static void Spawn(Player player, int type, int stack, int tx, int ty)
+    {
+        int slot = Item.NewItem(new EntitySource_Misc("collect_fixture"), new Rectangle(tx * 16, ty * 16 - 20, 1, 1), type, stack);
+        var item = Main.item[slot];
+        item.velocity = Vector2.Zero;
+        item.noGrabDelay = 0;
+        item.keepTime = 1800;
+        item.playerIndexTheItemIsReservedFor = player.whoAmI;
+        NetMessage.SendData(MessageID.SyncItem, -1, -1, null, slot);
+    }
+}

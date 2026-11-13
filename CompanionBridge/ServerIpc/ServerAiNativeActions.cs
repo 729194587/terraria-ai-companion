@@ -38,6 +38,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsCombat=>true;
     public bool SupportsContainers=>true;
     public bool SupportsSorting=>ActorSorting.Available;
+    public bool SupportsCollection => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
     public string ValidateCombatAdmission(AiReadOnlyProtocol.Identity identity,string target)=>NativeCombatWorld.Preflight(identity,target);
     public string Validate(string operation,JsonElement args)
         => AtomicParameters.ValidateServerAction(operation, args);
@@ -67,8 +68,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     ?args.TryGetProperty("cluster",out var cluster)&&cluster.GetBoolean()
                         ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge)
                         :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
+                    :operation=="collect_drops" ? new CollectDropsTask(actionId,args,executor)
                     :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
-                ulong budget=operation==CombatProtocol.Operation?CombatController.Budget:AutonomousNavigationTask.TripUpdates;
+                ulong budget=operation==CombatProtocol.Operation?CombatController.Budget:operation=="collect_drops"?CollectDropsTask.Budget:AutonomousNavigationTask.TripUpdates;
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},budget);
             }
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
@@ -334,6 +336,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         try { if(active!=null&&Owned(active.Identity))Cancel(active.Identity,active); }
         catch(Exception e){ProbeSession.Quarantine("Native action shutdown unconfirmed: "+e.Message);}
-        finally { if(ReferenceEquals(ActorControl.Driver,navigation)||ReferenceEquals(ActorControl.Driver,directInput))ActorControl.Driver=null; }
+        finally
+        {
+            ServerDrops.Current = null;
+            if(ReferenceEquals(ActorControl.Driver,navigation)||ReferenceEquals(ActorControl.Driver,directInput))ActorControl.Driver=null;
+        }
     }
 }
