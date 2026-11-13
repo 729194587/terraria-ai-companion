@@ -68,8 +68,9 @@ internal static class ServerCollectFixture
                     tile.TileType = TileID.Dirt;
                 }
             if (command != "seed-stone")
-                Spawn(player, ItemID.Wood, 7, x + (command == "seed-timeout" ? 58 : 10), floor - (command == "seed-step" ? 1 : 0));
-            Spawn(player, ItemID.StoneBlock, 5, x + (command == "seed-stone" ? 10 : 15), floor - (command == "seed-step" ? 1 : 0));
+                Spawn(player, ItemID.Wood, 7, x + (command == "seed-timeout" ? 58 : command == "seed-identity" ? 3 : 10), floor - (command == "seed-step" ? 1 : 0), command == "seed-identity" ? 600 : 0);
+            if (command != "seed-identity")
+                Spawn(player, ItemID.StoneBlock, 5, x + (command == "seed-stone" ? 3 : 15), floor - (command == "seed-step" ? 1 : 0), command == "seed-stone" ? 600 : 0);
             NetworkStateSync.Full(player);
         }
         if (command == "merge-drop")
@@ -100,12 +101,16 @@ internal static class ServerCollectFixture
             item.prefix = prefix;
             item.stack = stack;
             item.active = true;
+            item.noGrabDelay = 600;
             item.keepTime = 1800;
             item.playerIndexTheItemIsReservedFor = player.whoAmI;
             if (!ReferenceEquals(Main.item[slot], item) || item.type != type)
                 throw new InvalidOperationException("Drop fixture must reinitialize the same object in the same slot.");
             NetMessage.SendData(MessageID.SyncItem, -1, -1, null, slot);
         }
+        if (command == "release-grab-delay")
+            foreach (var item in Main.item.Where(item => item.active && item.playerIndexTheItemIsReservedFor == player.whoAmI))
+                item.noGrabDelay = 0;
         if (command == "remove-drop")
         {
             int slot = Array.FindIndex(Main.item, i => i.active && i.type == ItemID.StoneBlock);
@@ -123,12 +128,12 @@ internal static class ServerCollectFixture
         }));
     }
 
-    private static void Spawn(Player player, int type, int stack, int tx, int ty)
+    private static void Spawn(Player player, int type, int stack, int tx, int ty, int grabDelay = 0)
     {
         int slot = Item.NewItem(new EntitySource_Misc("collect_fixture"), new Rectangle(tx * 16, ty * 16 - 20, 1, 1), type, stack);
         var item = Main.item[slot];
         item.velocity = Vector2.Zero;
-        item.noGrabDelay = 0;
+        item.noGrabDelay = grabDelay;
         item.keepTime = 1800;
         item.playerIndexTheItemIsReservedFor = player.whoAmI;
         NetMessage.SendData(MessageID.SyncItem, -1, -1, null, slot);

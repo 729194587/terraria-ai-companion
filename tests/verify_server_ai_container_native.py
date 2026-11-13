@@ -533,6 +533,10 @@ async def verify_collect(profile, bridge, clients):
     tasks = TaskCoordinator(bridge)
     report = {"clients": [client.slot for client in clients], "cases": {}}
 
+    def record(label, result):
+        report["cases"][label] = result
+        (profile / "collect-case-receipts.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+
     def fixture(command):
         response = profile / "container-state.json"
         response.unlink(missing_ok=True)
@@ -575,7 +579,7 @@ async def verify_collect(profile, bridge, clients):
         assert result["status"] == status, (label, result["status"], result.get("result", {}).get("reason"))
         queried = await call("query_task", task)
         assert queried["result"] == result["result"]
-        report["cases"][label] = result
+        record(label, result)
         return result["result"]["task"]["result"]["evidence"]
 
     initial = fixture("seed-step")
@@ -597,7 +601,7 @@ async def verify_collect(profile, bridge, clients):
     fixture("seed")
     result = await run("type_filter", {"typeIds": [9]})
     assert result["collected"] == [{"typeId": 9, "count": 7}], result
-    fixture("seed")
+    fixture("seed-identity")
     async def observe_wood():
         observation = await dispatch(bridge, "scan_entities", {"category": "item", "radius": 320, "typeIds": [9]})
         return observation["data"]["items"][0]
@@ -611,13 +615,13 @@ async def verify_collect(profile, bridge, clients):
     task = await start({"entityRef": old_ref})
     result = await call("await_task", {**task, "milliseconds": 5000})
     assert result["status"] == "failed" and result["result"]["reason"] == "drop_reference_unavailable", result
-    report["cases"]["reinitialized_stale_ref"] = result
-    result = await run("reinitialized_fresh_ref", {"entityRef": new_ref})
+    record("reinitialized_stale_ref", result)
+    result = await run("reinitialized_fresh_ref", {"entityRef": new_ref}, intervene="release-grab-delay")
     assert result["collected"] == [{"typeId": 9, "count": 7}], result
     fixture("seed-stone")
     observation = await dispatch(bridge, "scan_entities", {"category": "item", "radius": 320, "typeIds": [3]})
     ref = observation["data"]["items"][0]["details"]["entityRef"]
-    result = await run("specific_target", {"entityRef": ref})
+    result = await run("specific_target", {"entityRef": ref}, intervene="release-grab-delay")
     assert result["collected"] == [{"typeId": 3, "count": 5}], result
 
     fixture("seed")
@@ -643,7 +647,7 @@ async def verify_collect(profile, bridge, clients):
     await asyncio.sleep(.25)
     result = await call("cancel_task", task)
     assert result["status"] == "cancelled" and result["result"]["inputsReleased"], result
-    report["cases"]["cancelled"] = result
+    record("cancelled", result)
     return report
 
 
