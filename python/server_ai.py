@@ -14,6 +14,7 @@ import agent_trace as tracing
 
 
 MAP_READS = frozenset(("query_map",))
+COMBAT_READS = frozenset(("query_combat",))
 CRAFT_READS = frozenset(("query_recipes",))
 SCENE_OPERATIONS = frozenset(("observe_scene",))
 PERCEPTION_OPERATIONS = frozenset(("observe_terrain", "scan_tiles", "scan_entities", "inspect_tile", "resolve_content"))
@@ -29,6 +30,7 @@ def operations_for_capabilities(capabilities):
         ('server_ai_reads_v1', {'get_player_state', 'inspect_inventory'}),
         ('server_ai_perception_v1', PERCEPTION_OPERATIONS),
         ('server_ai_map_v1', MAP_READS),
+        ('server_ai_combat_v1', COMBAT_READS),
         ('server_ai_crafting_v1', CRAFT_READS),
         ('server_ai_scene_v1', SCENE_OPERATIONS),
     ):
@@ -40,6 +42,7 @@ def operations_for_capabilities(capabilities):
             ('server_ai_direct_input_v1', 'move_input'),
             ('server_ai_tasks_v1', 'mine_target'),
             ('server_ai_navigation_v1', 'navigate_to'),
+            ('server_ai_combat_v1', 'combat_attack'),
             ('server_ai_crafting_v1', 'craft_recipe'),
             ('server_ai_place_object_workbench_v1', 'place_object'),
             ('server_ai_place_tile_v1', 'place_tile'),
@@ -196,7 +199,7 @@ class ServerAiBridge:
                     raise
             if cmd == "query_atomic":
                 operation = parameters.get("operation")
-                if operation not in {"get_player_state", "inspect_inventory"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS or operation not in self.supported_atomic_operations:
+                if operation not in {"get_player_state", "inspect_inventory"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS | COMBAT_READS or operation not in self.supported_atomic_operations:
                     raise BridgeError("Query unsupported by server AI backend", status="unsupported_operation")
                 reply = self._request("query", operation=operation, arguments=parameters.get("arguments", {}))
                 data = reply.get("data")
@@ -210,7 +213,7 @@ class ServerAiBridge:
                         or not isinstance(data.get("data"), dict)):
                     self.close()
                     raise BridgeError("AI query evidence identity/shape mismatch")
-                if operation in PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS and data.get("available") is True and (
+                if operation in PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS | COMBAT_READS and data.get("available") is True and (
                         type(data.get("observedAtUnixMs")) is not int or data["observedAtUnixMs"] <= 0
                         or data.get("clock") != "server_utc_at_projection"):
                     self.close()
@@ -223,7 +226,7 @@ class ServerAiBridge:
                 return self._movement(self._request("action", actionId=self._action_id)["data"]["action"])
             if cmd == "start_atomic":
                 operation = parameters.get("operation")
-                if operation not in self.supported_atomic_operations - ({"wait", "stop_action", "get_player_state", "inspect_inventory"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS):
+                if operation not in self.supported_atomic_operations - ({"wait", "stop_action", "get_player_state", "inspect_inventory", "combat_attack"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS | COMBAT_READS):
                     raise BridgeError("Operation unsupported by server AI backend", status="unsupported_operation")
                 if parameters.get("expectedGeneration") != self.binding["generation"]:
                     raise BridgeError("AI generation changed", status="stale_binding")
@@ -248,7 +251,9 @@ class ServerAiBridge:
 
         No reconnect/replay or new execution state here. C# checks connection ownership.
         """
-        if op not in ('start', 'action', 'cancel') or (op == 'start' and parameters.get('operation') != 'mine_target'):
+        if op not in ('start', 'action', 'cancel') or (op == 'start' and (
+                parameters.get('operation') not in ('mine_target', 'combat_attack')
+                or parameters['operation'] not in self.supported_atomic_operations)):
             raise ValueError('Unsupported task request')
         if not {'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_tasks_v1', 'server_ai_program_tasks_v1'} <= set(self.hello.get('capabilities', ())):
             raise BridgeError('Task capability unavailable')

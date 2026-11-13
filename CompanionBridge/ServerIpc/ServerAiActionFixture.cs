@@ -105,9 +105,10 @@ internal static class ServerAiActionFixture
                 var p=ProbeSession.Actor;NetworkStateSync.Require(p);
                 if(isolate&&!combatIsolated&&(ActorControl.Running||ActorItemUse.Running||ActorMining.Running))
                     throw new InvalidOperationException("Cannot isolate combat during an active action");
-                var removed=Main.npc.Where(n=>n.active&&!n.townNPC&&(isolate||!ReferenceEquals(n,perceptionNpc)))
+                ServerCombatFixture.Tick(p);
+                var removed=Main.npc.Where(n=>n.active&&!n.townNPC&&!ServerCombatFixture.Keeps(n)&&(isolate||!ReferenceEquals(n,perceptionNpc)))
                     .Select(n=>new{slot=n.whoAmI,n.type,n.damage,n.aiStyle,n.noGravity,x=n.position.X,y=n.position.Y}).ToArray();
-                foreach(var npc in Main.npc)if(npc.active&&!npc.townNPC)
+                foreach(var npc in Main.npc)if(npc.active&&!npc.townNPC&&!ServerCombatFixture.Keeps(npc))
                 {
                     if(isolate||!ReferenceEquals(npc,perceptionNpc))npc.active=false;
                     else

@@ -227,7 +227,7 @@ internal static class AtomicParameters
                 break;
             }
             case "mine_tile": case "place_tile": case "interact_tile": case "mine_wall": case "place_wall": case "hammer_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
-            case "attack_entity": Fields("entityRef"); if (args.GetProperty("entityRef").ValueKind != JsonValueKind.String || CharacterCount(args.GetProperty("entityRef")) is < 1 or > 150) throw new FormatException("Invalid entityRef."); break;
+            case "combat_attack": case "attack_entity": Fields("entityRef"); if (args.GetProperty("entityRef").ValueKind != JsonValueKind.String || CharacterCount(args.GetProperty("entityRef")) is < 1 or > 150) throw new FormatException("Invalid entityRef."); break;
             case "use_item":
                 if (keys.Count == 0) break;
                 Fields("target"); var target = args.GetProperty("target");

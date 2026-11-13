@@ -8,6 +8,7 @@ using Terraria.ModLoader;
 using Terraria.GameContent;
 using Terraria.ObjectData;
 using CompanionBridge.Motion;
+using CompanionBridge.ServerIpc;
 
 namespace CompanionBridge.Common.Systems;
 
@@ -16,12 +17,25 @@ public sealed class AtomicNpcIdentity : GlobalNPC
 {
     public override bool InstancePerEntity => true;
     internal Guid Token = Guid.NewGuid();
+    public override void OnSpawn(NPC npc, Terraria.DataStructures.IEntitySource source) => Token = Guid.NewGuid();
     public override GlobalNPC Clone(NPC from, NPC to)
     {
         var clone = (AtomicNpcIdentity)base.Clone(from, to);
         clone.Token = Guid.NewGuid();
         return clone;
     }
+}
+
+public sealed class ServerCombatPlayer : ModPlayer
+{
+    public override bool? CanHitNPCWithItem(Item item, NPC target)
+        => NativeCombatWorld.CanHit(Player, target);
+
+    public override void OnHitNPCWithItem(Item item, NPC target, NPC.HitInfo hit, int damageDone)
+        => NativeCombatWorld.OnHit(Player, target, damageDone);
+
+    public override void ModifyHitNPCWithItem(Item item, NPC target, ref NPC.HitModifiers modifiers)
+        => NativeCombatWorld.BeforeHit(Player, target);
 }
 
 internal static class AtomicOperations

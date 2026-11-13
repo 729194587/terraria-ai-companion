@@ -27,10 +27,18 @@ public static class ItemUsePatches
         il.InsertBefore(entry,guard);il.InsertBefore(entry,Instruction.Create(OpCodes.Call,predicate));
         il.InsertBefore(entry,Instruction.Create(OpCodes.Brtrue,target));
     }
-    public static void Patch(MethodDefinition m,string operation,MethodReference predicate,MethodReference miningDispatch=null,MethodReference miningOnly=null)
+    public static void Patch(MethodDefinition m,string operation,MethodReference predicate,MethodReference miningDispatch=null,
+        MethodReference miningOnly=null,MethodReference combatOnly=null)
     {
         Require(!m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.FullName==predicate.FullName));
-        if(operation=="inner")
+        if(operation=="combat-pose")
+        {
+            Require(m.Name.Contains("ItemCheck_ApplyUseStyle_Inner")&&m.Body.ExceptionHandlers.Count==0
+                &&Field(At(m,0x0000),"dedServ")&&Target(At(m,0x0005))==At(m,0x0008)
+                &&At(m,0x0007)?.OpCode==OpCodes.Ret&&Field(At(m,0x0009),"useStyle"));
+            Guard(m,0x0000,0x0008,predicate);
+        }
+        else if(operation=="inner")
         {
             Require(m.Name.Contains("ItemCheck_Inner")&&m.Body.ExceptionHandlers.Count==0
                 &&At(m,0x071d)?.OpCode==OpCodes.Ldarg_0&&Field(At(m,0x0723),"myPlayer")&&Target(At(m,0x0728))==At(m,0x0752)
@@ -56,6 +64,14 @@ public static class ItemUsePatches
             Guard(m,0x017d,0x01a7,predicate);
             Guard(m,0x01e8,0x044d,miningDispatch??predicate);
             if(miningOnly!=null)Guard(m,0x044d,0x0570,miningOnly); // G7 cannot cut neighboring tiles or attack.
+            if(combatOnly!=null)
+            {
+                Require(Call(At(m,0x0511),"ItemCheck_CutTiles")&&Call(At(m,0x0543),"ItemCheck_CutTiles")
+                    &&Call(At(m,0x055b),"ItemCheck_MeleeHitPVP")&&Call(At(m,0x056b),"ItemCheck_EmitHammushProjectiles"));
+                Guard(m,0x04e8,0x0516,combatOnly);
+                Guard(m,0x0534,0x0548,combatOnly);
+                Guard(m,0x0554,0x0570,combatOnly);
+            }
         }
         else throw new ArgumentException(operation);
     }

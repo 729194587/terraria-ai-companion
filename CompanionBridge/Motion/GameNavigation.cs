@@ -32,9 +32,9 @@ internal sealed class NativeNavigation
 
     private PhysicsState State(Player p) => NativeMotionWorld.Observe(p);
 
-    internal bool Ordinary(Player p) => OrdinaryRejection(p,NativeMovementReader.Capture(p)) == null;
+    internal bool Ordinary(Player p,bool combatSwing=false) => OrdinaryRejection(p,NativeMovementReader.Capture(p),combatSwing) == null;
 
-    private string OrdinaryRejection(Player p,MovementSnapshot movement)
+    private string OrdinaryRejection(Player p,MovementSnapshot movement,bool combatSwing=false)
     {
         var ph = Parameters(p);
         List<string> reasons = null;
@@ -67,7 +67,7 @@ internal sealed class NativeNavigation
         Reject(p.honeyWet,"honey_wet");
         Reject(p.lavaWet,"lava_wet");
         Reject(p.shimmerWet,"shimmer_wet");
-        Reject(p.itemAnimation != 0, "item_animation");
+        Reject(p.itemAnimation != 0 && !combatSwing, "item_animation");
         Reject(p.width != PhysicsSimulator.PlayerW || p.height != PhysicsSimulator.PlayerH, "unsupported_body_size");
         Reject(!float.IsFinite(p.velocity.X)||!float.IsFinite(p.velocity.Y), "invalid_velocity");
         Reject(!ph.IsSupportedGroundPhysics, $"unsupported_physics: {ph}");
@@ -95,7 +95,7 @@ internal sealed class NativeNavigation
     internal static FallSafety FallProfile(Player p)=>new(p.extraFall,p.noFallDmg||p.equippedWings!=null);
 
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
-        LandingRegion region = null)
+        LandingRegion region = null, bool combatSwing = false)
     {
         _paired = false;
         _navigation = targetX.HasValue || region != null;
@@ -112,7 +112,7 @@ internal sealed class NativeNavigation
         }
         var ph=Parameters(p);
         var movement=NativeMovementReader.Capture(p);
-        string rejection = OrdinaryRejection(p,movement);
+        string rejection = OrdinaryRejection(p,movement,combatSwing);
         int swiftnessIndex=p.FindBuffIndex(BuffID.Swiftness);
         _profile=_mobility.Sample(ph,p.width,p.height,p.HasBuff(BuffID.Swiftness),
             rejection==null?Array.Empty<string>():new[]{rejection},Main.GameUpdateCount,session,generation,
@@ -123,7 +123,7 @@ internal sealed class NativeNavigation
         if(!_profile.Supported)return Fail("unsupported navigation state: "+string.Join("; ",_profile.UnsupportedEffects));
         if (_session != session || _generation != generation) _life = p.statLife;
         _session = session; _generation = generation;
-        if (p.statLife < _life) return Fail("life decreased");
+        if (!combatSwing && p.statLife < _life) return Fail("life decreased");
         _life = p.statLife;
         var state = State(p);
         if(_planRevision!=_profile.Revision)
@@ -150,11 +150,11 @@ internal sealed class NativeNavigation
         return input;
     }
 
-    internal void After(Player p)
+    internal void After(Player p, bool combatSwing = false)
     {
         if (!_paired) return;
         _paired = false;
-        if (p.statLife < _life || p.dead) { Fail("life decreased/dead"); return; }
+        if ((!combatSwing && p.statLife < _life) || p.dead) { Fail("life decreased/dead"); return; }
         if (_navigation) { Task.After(State(p), _world, inputsReleased: !p.controlLeft && !p.controlRight && !p.controlJump
             && !p.controlDown && !p.controlUp && !p.controlUseItem && !p.controlUseTile); Diagnostics.Observe(Snapshot); }
         else Controller.After(State(p), _world);
@@ -183,7 +183,7 @@ internal static class GameNavigation
     internal static LocalMotionController Controller => instance.Controller;
     internal static NavigationTask Task => instance.Task;
     internal static NavigationSnapshot Snapshot => instance.Snapshot;
-    internal static bool Ordinary(Player p) => instance.Ordinary(p);
+    internal static bool Ordinary(Player p,bool combatSwing=false) => instance.Ordinary(p,combatSwing);
     internal static FallSafety FallProfile(Player p)=>NativeNavigation.FallProfile(p);
     internal static PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null, LandingRegion region = null)
         => instance.Before(p, session, direction, generation, targetX, region);

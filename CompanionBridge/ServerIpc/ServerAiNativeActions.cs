@@ -31,6 +31,12 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     }
     internal static bool Released(Player p)=>!p.controlLeft&&!p.controlRight&&!p.controlUp&&!p.controlDown
         &&!p.controlJump&&!p.controlUseItem&&!p.controlUseTile&&!p.channel;
+    public bool CanTransferBody(AiReadOnlyProtocol.Identity identity)=>BodyIdle(identity);
+    internal static bool BodyIdle(AiReadOnlyProtocol.Identity identity)=>Owned(identity)&&identity.CanAct
+        &&!NativeCombatWorld.Running&&!ActorControl.Running&&!ActorItemUse.Running&&!ActorMining.Running
+        &&identity.Actor is Player p&&Released(p)&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0;
+    public bool SupportsCombat=>true;
+    public string ValidateCombatAdmission(AiReadOnlyProtocol.Identity identity,string target)=>NativeCombatWorld.Preflight(identity,target);
     public string Validate(string operation,JsonElement args)
         => AtomicParameters.ValidateServerAction(operation, args);
     public object Start(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId)=>StartCore(identity,operation,args,actionId,false);
@@ -42,7 +48,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
             new{operation,mutationAttempted=false,effectStatus="not_started"},true,InputsAcquired:false,ReasonDetail:detail));
-        if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
+        if(NativeCombatWorld.Running||ActorControl.Running||ActorItemUse.Running||ActorMining.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
             return Reject("actor_busy");
         if(p.dead||p.ghost||p.gravDir!=1||p.mount.Active)return Reject("unsupported_actor_state");
         try
@@ -52,12 +58,16 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             {
                 if(child)throw new InvalidOperationException("Nested root task denied");
                 var executor=new ChildExecutor(this,continuous:true);
-                CompanionTask task=operation=="mine_target"
+                CompanionTask task=operation==CombatProtocol.Operation
+                    ?new CombatController(new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString()),
+                        args.TryGetProperty("threat",out var threat)?"reflex":"agent",threat.ValueKind==JsonValueKind.String?threat.GetString():null)
+                    :operation=="mine_target"
                     ?args.TryGetProperty("cluster",out var cluster)&&cluster.GetBoolean()
                         ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge)
                         :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
                     :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
-                context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},AutonomousNavigationTask.TripUpdates);
+                ulong budget=operation==CombatProtocol.Operation?CombatController.Budget:AutonomousNavigationTask.TripUpdates;
+                context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},budget);
             }
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
             else if(operation=="move_on_rope")
@@ -280,7 +290,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public Result BindingLost(object value)
     {
         var h=(Handle)value;
-        if(!AiAtomicActions.IsTask(h.Operation))return new("unknown","actor_binding_changed",null,false);
+        if(!AiAtomicActions.IsTask(h.Operation)||h.Rejection!=null)return new("unknown","actor_binding_changed",null,false);
         var task=(TaskSlot)h.Context;var result=task.Abandon();return result with{Evidence=new{task=task.View()}};
     }
     // Native contexts only: no AiAtomicActions.Handle/registry/IPC start per child.

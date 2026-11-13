@@ -128,6 +128,8 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("navigate_to", "服务器自主导航。只传预期落脚面的世界像素 x、y（Y 向下）。游戏侧自行选择走、跳、安全下落、挖掘和搭路。安全着地停稳且脚底覆盖目的地才完成。unknown 后停止。",
          {key: {"type": "number", "minimum": 0, "maximum": 1000000} for key in ("x", "y")}, ["x", "y"]),
     tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE, "cluster": {"type": "boolean"}}),
+    tool("combat_attack", "通过 submit_task 提交单目标普通近战。使用 scan_entities 返回的 entityRef 和当前选中武器。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
+    tool("query_combat", "读取绑定角色当前或最近一次战斗。返回 action（含可查询或取消的 actionId），空闲且无战斗记录时为 null。", {}),
     tool("mine_tile", "原生挖掘指定 Tile。服务器 AI 从整个主背包自动选择合适工具，必要时临时切换快捷栏，按 Terraria 原生范围和工具规则判定。客户端控制使用当前手持镐。动作在当前位置执行，以实际移除为准，10秒上限。",
          {"x": {**TILE["x"], "description": "目标格的绝对 Tile X 坐标"},
           "y": {**TILE["y"], "description": "目标格的绝对 Tile Y 坐标"}}, ["x", "y"]),
@@ -204,7 +206,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene(
 
 def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False, excavation=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
-    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported]
+    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] != 'combat_attack']
     for definition in definitions:
         f = definition['function']
         name = f['name']
@@ -240,7 +242,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
     return definitions
 
 READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration'}
+READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -255,6 +257,8 @@ def validate_backend(bridge, name, arguments):
             raise PreDispatchRejected('targeted_use_not_supported', status='targeted_use_not_supported')
     if name == 'mine_target' and 'cluster' in arguments and 'server_ai_excavation_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_excavation_v1; no excavation task submitted')
+    if name in ('combat_attack', 'query_combat') and 'server_ai_combat_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_combat_v1')
 
 
 def not_admitted_result(name, reason):
@@ -692,6 +696,11 @@ async def terminal(bridge, action, generation):
                           and end.get('selectedSlot') == action.get('evidence', {}).get('targetSlot')))
     native_evidence = action.get('evidence') or {}
     native_evidence = native_evidence if isinstance(native_evidence, dict) else {}
+    combat = native_evidence.get('task')
+    combat = combat if isinstance(combat, dict) else {}
+    combat_result = combat.get('result') or {}
+    combat_proof = combat_result.get('evidence') or {}
+    combat_hit = combat_proof.get('lastHit') or {}
     native_verified = {
         'move_input': (native_evidence.get('requestedInputs') == action.get('requestedInputs')
                        and isinstance(action.get('requestedInputs'), dict)
@@ -705,6 +714,13 @@ async def terminal(bridge, action, generation):
         'use_item': native_evidence.get('cycleVerified') is True,
         'craft_recipe': verified_server_craft(action, native_evidence),
         'mine_target': verified_server_mine_task(action, native_evidence),
+        'combat_attack': (combat.get('taskName') == 'combat_attack' and combat.get('taskId') == action.get('actionId')
+                          and combat.get('status') == 'completed' and combat == action.get('task')
+                          and combat_result.get('inputsReleased') is True and combat_result.get('effectVerified') is True
+                          and (combat_proof.get('target') or {}).get('EntityRef') == (action.get('targetTask') or {}).get('entityRef')
+                          and combat_hit.get('Defeated') is True and type(combat_hit.get('LifeAfter')) is int
+                          and combat_hit['LifeAfter'] <= 0 < combat_hit.get('LifeBefore', 0)
+                          and combat_proof.get('life') == combat_hit['LifeAfter']),
         **{op: verified_server_inventory(action, native_evidence) for op in INVENTORY_OPERATIONS},
         **{op: verified_server_equipment(action, native_evidence) for op in EQUIPMENT_OPERATIONS},
         'place_tile': (isinstance(action.get('targetTile'), dict)
@@ -734,7 +750,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS)
+                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True

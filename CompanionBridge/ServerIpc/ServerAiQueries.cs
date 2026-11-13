@@ -78,7 +78,7 @@ internal static class ServerAiQueries
             data = AtomicQueries.ScanTiles(p, arguments);
         }
         else if (operation == "scan_entities") data = AtomicQueries.ScanEntities(p, arguments,
-            n => expected.World + ":" + expected.Generation + ":npc:" + n.whoAmI + ":" + n.GetGlobalNPC<AtomicNpcIdentity>().Token, true);
+            n => NativeCombatWorld.Reference(expected,n), true);
         else
         {
             // No human Controls/WorldSession/Main.myPlayer-based token may leak into this backend.

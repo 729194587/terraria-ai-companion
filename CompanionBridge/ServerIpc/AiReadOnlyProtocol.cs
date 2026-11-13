@@ -22,6 +22,11 @@ internal sealed class AiReadOnlyProtocol
     internal void ObserveReplyTurn(Guid connection,string line)=>replyFences.GetOrAdd(connection,_=>new()).Observe(line);
     internal void RevokeReplies(Guid connection){if(replyFences.TryGetValue(connection,out var f))f.Revoke();}
     internal AiReadOnlyProtocol(AiAtomicActions actions = null) { this.actions = actions; }
+    internal string ActorId(Identity current)
+    {
+        if (!ReferenceEquals(actor, current.Actor)) { actor = current.Actor; actorId = Guid.NewGuid().ToString("N"); }
+        return actorId;
+    }
     internal void Clear() { foreach(var f in replyFences.Values)f.Revoke();replyFences.Clear();leases.Clear(); speech.Clear(); actor = null; actorId = null; actions?.Clear(); }
     internal void Forget(Guid connection) { RevokeReplies(connection);replyFences.TryRemove(connection,out _);leases.Remove(connection); foreach(var key in speech.Keys.Where(k=>k.Item1==connection).ToArray())speech.Remove(key); actions?.Forget(connection); }
 
@@ -58,7 +63,7 @@ internal sealed class AiReadOnlyProtocol
                 if(!Guid.TryParseExact(messageId,"N",out _)||string.IsNullOrWhiteSpace(text)||text.Length>400
                     ||text.IndexOfAny(new[]{'\r','\n','\0'})>=0)throw new FormatException();
             }
-            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map"))
+            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat"))
                 return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             if (op == "bind" && root.TryGetProperty("binding", out _)) throw new FormatException();
             // Reject malformed bindings before invoking the engine adapter.
@@ -89,8 +94,7 @@ internal sealed class AiReadOnlyProtocol
                 return JsonSerializer.Serialize(Reply(false, error: "identity_unavailable"));
             if (op == "bind")
             {
-                if (!ReferenceEquals(actor, current.Actor)) { actor = current.Actor; actorId = Guid.NewGuid().ToString("N"); }
-                var binding = new Binding(actorId, current.World, current.Generation, current.Slot);
+                var binding = new Binding(ActorId(current), current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
                 var capabilities=actions?.Capabilities.ToList();
                 if(query!=null){capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_scene_region_v1");capabilities?.Add("server_ai_crafting_v1");capabilities?.Add("server_ai_map_v1");}
@@ -123,6 +127,14 @@ internal sealed class AiReadOnlyProtocol
             {
                 var arguments = root.GetProperty("arguments");
                 if (arguments.ValueKind != JsonValueKind.Object) throw new FormatException();
+                if(root.GetProperty("operation").GetString()=="query_combat")
+                {
+                    if(actions?.SupportsCombat!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
+                    if(arguments.EnumerateObject().Any())throw new FormatException();
+                    return JsonSerializer.Serialize(Reply(true,new{available=true,worldSessionId=current.World,actorGeneration=current.Generation,
+                        actorSlot=current.Slot,gameUpdate=current.GameUpdate,observedAtUnixMs=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        clock="server_utc_at_projection",data=actions.CombatState(current)},lease.Binding));
+                }
                 try { return JsonSerializer.Serialize(Reply(true, query(current, root.GetProperty("operation").GetString(), arguments), lease.Binding)); }
                 catch (AtomicParameterException) { return JsonSerializer.Serialize(Reply(false, binding: lease.Binding, error: "invalid_request")); }
                 catch { return JsonSerializer.Serialize(Reply(false, error: "engine_unavailable")); }

@@ -3,6 +3,7 @@ using System.Linq;
 using MonoMod.Cil;
 using Terraria;
 using Terraria.ID;
+using CompanionBridge.ServerIpc;
 
 namespace VirtualPlayerEngineProbe;
 
@@ -77,7 +78,7 @@ internal static class ActorItemUse
         // Release an old input; the next natural ItemCheck supplies one press.
         p.controlUseItem=false;p.releaseUseItem=true;
     }
-    public static bool Allowed(Player p)=>ActorMining.Allowed(p)||(executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
+    public static bool Allowed(Player p)=>NativeCombatWorld.AllowsItem(p)||ActorMining.Allowed(p)||(executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
         &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&(executing.Placement!=null?ActorPlacement.SupportedFor(executing.Placement,executing.Item)||executing.Placement.Placed&&executing.Item.IsAir:(executing.Item.type==executing.Type||executing.Consumed&&executing.Item.IsAir)));
     internal static bool Placing(Player p)=>executing?.Placement!=null&&Allowed(p);
     public static bool SkipMelee(Player p)=>ActorMining.Allowed(p)||ActorPlacement.Allowed(p);
@@ -85,16 +86,23 @@ internal static class ActorItemUse
     internal static void Install(Action<Action,Action> install)
     {
         var predicate=typeof(ActorItemUse).GetMethod(nameof(Allowed));
+        var combat=typeof(NativeCombatWorld).GetMethod(nameof(NativeCombatWorld.AllowsItem));
         ILContext.Manipulator inner=il=>ItemUsePatches.Patch(il.Method,"inner",il.Module.ImportReference(predicate));
         ILContext.Manipulator melee=il=>ItemUsePatches.Patch(il.Method,"melee",il.Module.ImportReference(predicate),
             il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipCursor))),
-            il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipMelee))));
+            il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipMelee))),il.Module.ImportReference(combat));
+        ILContext.Manipulator combatPose=il=>ItemUsePatches.Patch(il.Method,"combat-pose",
+            il.Module.ImportReference(combat));
         install(()=>IL_Player.ItemCheck_Inner+=inner,()=>IL_Player.ItemCheck_Inner-=inner);
         install(()=>IL_Player.ItemCheck_OwnerOnlyCode+=melee,()=>IL_Player.ItemCheck_OwnerOnlyCode-=melee);
+        install(()=>IL_Player.ItemCheck_ApplyUseStyle_Inner+=combatPose,()=>IL_Player.ItemCheck_ApplyUseStyle_Inner-=combatPose);
+        install(()=>On_Player.ItemCheck_ApplyUseStyle_Inner+=ApplyUseStyle,()=>On_Player.ItemCheck_ApplyUseStyle_Inner-=ApplyUseStyle);
         install(()=>On_Player.ItemCheckWrapped+=Update,()=>On_Player.ItemCheckWrapped-=Update);
         install(()=>On_Player.ItemCheck_Shoot+=Shoot,()=>On_Player.ItemCheck_Shoot-=Shoot);
         install(()=>On_Player.SmartSelectLookup+=SmartSelect,()=>On_Player.SmartSelectLookup-=SmartSelect);
     }
+    private static void ApplyUseStyle(On_Player.orig_ItemCheck_ApplyUseStyle_Inner orig,Player p,float height,Item item,Microsoft.Xna.Framework.Rectangle frame)
+        =>orig(p,height,item,NativeCombatWorld.SwingFrame(p,item,frame));
     private static void Shoot(On_Player.orig_ItemCheck_Shoot orig,Player p,int slot,Item item,int damage)
     {
         // A Mod hook can change shoot/ammo requirements after preflight.
@@ -108,6 +116,7 @@ internal static class ActorItemUse
         if(!ReferenceEquals(p,ProbeSession.Actor)){orig(p,index);return;}
         // Never run the UI wrapper for an AI, even when idle or quarantined.
         if(!NativeSurvival.Owns(p))return;
+        if(NativeCombatWorld.UpdateItem(p))return;
         if(ActorMining.Running){ActorMining.Update(p);return;}
         var c=Current;
         if(!Running||!ReferenceEquals(c.Actor,p))return;

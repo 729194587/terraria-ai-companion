@@ -31,6 +31,8 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal NavigationKnowledge Knowledge;
         internal ServerGrappleClimb Climb;
         internal bool GrappleAttempted;
+        internal bool Combat;
+        internal int CombatLife;
         internal ulong ProgressVersion;
     }
     private readonly NativeNavigation navigation;
@@ -60,11 +62,13 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     public bool Matches(Player p) => Current!=null && ReferenceEquals(Current.Identity.Actor,p);
     internal Run Start(AiReadOnlyProtocol.Identity identity,float target,string actionId=null)
         =>Start(identity,target,null,actionId);
+    internal Run StartCombat(AiReadOnlyProtocol.Identity identity,float target,string actionId)
+        =>Start(identity,target,null,actionId,combat:true);
     internal Run Start(AiReadOnlyProtocol.Identity identity,LandingRegion region,string actionId=null,bool continuous=false,bool preferFlatRegion=false,
         NavigationKnowledge knowledge=null)
         =>Start(identity,region.MinPlayerLeftX,region,actionId,continuous,preferFlatRegion,knowledge);
     private Run Start(AiReadOnlyProtocol.Identity identity,float target,LandingRegion region,string actionId,bool continuous=false,bool preferFlatRegion=false,
-        NavigationKnowledge knowledge=null)
+        NavigationKnowledge knowledge=null,bool combat=false)
     {
         var p=(Player)identity.Actor;
         ServerAiNativeActions.Require(identity);
@@ -76,7 +80,8 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         navigation.Task.Continuous=continuous;
         navigation.Task.PreferFlatRegion=preferFlatRegion;
         Current=new Run{Identity=identity,ActionId=actionId,Target=target,Region=region,StartX=p.position.X,
-            Session=checked(++session),Generation=checked((int)identity.Generation),Knowledge=knowledge};
+            Session=checked(++session),Generation=checked((int)identity.Generation),Knowledge=knowledge,Combat=combat,CombatLife=p.statLife};
+        ActorControl.Driver=this;
         navigation.Task.TryGrapple=continuous&&region!=null?TryGrapple:null;
         return Current;
     }
@@ -102,7 +107,8 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         navigation.Task.ObservationUpdate=checked((long)Main.GameUpdateCount);
         var input=Current.Climb is {} climb
             ?climb.Before(p,navigation,Current.Session,Current.Generation,nativePull:false)
-            :navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,Current.Region==null?Current.Target:null,Current.Region);
+            :navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,
+                Current.Region==null?Current.Target:null,Current.Region,combatSwing:Current.Combat);
         Apply(p,input);
     }
     internal bool BeforeGrappleMovement(Player p)
@@ -117,7 +123,9 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     private void Apply(Player p,PhysicsInput input)
     {
         p.controlLeft=input.Direction<0;p.controlRight=input.Direction>0;p.controlJump=input.Jump;
-        p.controlDown=p.controlUp=p.controlUseItem=p.controlUseTile=false;
+        p.controlDown=p.controlUp=false;
+        if(Current.Combat) NativeCombatWorld.Moved(p,input);
+        else p.controlUseItem=p.controlUseTile=false;
         ServerAiTerrainFixture.RecordInput(p);
         injected=true;
     }
@@ -125,7 +133,8 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     {
         if(Current==null||!ServerAiNativeActions.Owned(Current.Identity))return false;
         var p=(Player)Current.Identity.Actor;
-        p.controlLeft=p.controlRight=p.controlJump=p.controlDown=p.controlUp=p.controlUseItem=p.controlUseTile=false;
+        p.controlLeft=p.controlRight=p.controlJump=p.controlDown=p.controlUp=false;
+        if(!Current.Combat) p.controlUseItem=p.controlUseTile=false;
         if(brake)p.velocity.X=0; // Same explicit-stop convention as G4; never move position or vertical velocity.
         return true;
     }
@@ -151,7 +160,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
             catch(Exception e){Current.ReasonDetail=e.Message;status="unknown";reason="navigation_state_unavailable";}
         }
         Current.Status=status;Current.Reason=reason;Current.Snapshot=navigation.Snapshot;
-        navigation.Cancel();Release(true);
+        navigation.Cancel();Release(!Current.Combat);
         if(ServerAiNativeActions.Owned(Current.Identity))
         {
             try
@@ -183,12 +192,27 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
             {
                 if(executing||slot!=p.whoAmI||run.Tick.HasValue&&Main.GameUpdateCount<=run.Tick.Value)
                     throw new InvalidOperationException("Duplicate/reentrant navigation update.");
+                // The AI's NPC collision runs after this driver returns. A hit
+                // there invalidates the predicted pose before the next frame.
+                if(run.Combat&&p.statLife<run.CombatLife)
+                {
+                    Stop("cancelled","combat_approach_hurt");
+                    orig(p,slot);
+                    return;
+                }
                 ActorControl.Healthy(p);run.Tick=Main.GameUpdateCount;run.Updates++;
                 executing=true;injected=false;
+                run.CombatLife=p.statLife;
                 orig(p,slot); // One original natural update, never a manual Player.Update.
                 if(!ServerAiNativeActions.Owned(run.Identity)){Stop("unknown","navigation_binding_changed");return;}
                 if(!Running)return; // Native death/retirement may have stopped the driver.
                 if(!injected)throw new InvalidOperationException("Audited G4 movement boundary not reached.");
+                if(run.Combat&&p.statLife<run.CombatLife)
+                {
+                    Stop("cancelled","combat_approach_hurt");
+                    NetworkStateSync.Full(p);
+                    return;
+                }
                 if(run.Climb is {} climb)
                 {
                     climb.After(run.Identity,run.Session,run.Generation);
@@ -205,7 +229,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                     NetworkStateSync.Tick(p);
                     return;
                 }
-                navigation.After(p);run.Snapshot=navigation.Snapshot;run.ProgressVersion=navigation.Task.ProgressVersion;
+                navigation.After(p,combatSwing:run.Combat);run.Snapshot=navigation.Snapshot;run.ProgressVersion=navigation.Task.ProgressVersion;
                 if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown",run.Snapshot.Reason=="navigation_unknown_terrain"
                     ?"native_navigation_terrain_unknown":"native_navigation_landing_unconfirmed");}
                 else if(run.Snapshot.Status=="failed")

@@ -6,11 +6,18 @@ using System.Linq;
 
 namespace CompanionBridge.ServerIpc;
 
+internal static class CombatProtocol
+{
+    internal const string Operation = "combat_attack";
+    internal const string Interrupt = "task_interrupt_combat";
+}
+
 // A bounded server execution adapter, not a scheduler. No Terraria access here.
 internal sealed class AiAtomicActions
 {
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
-    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"}).ToArray();
+    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"})
+        .Concat(SupportsCombat?new[]{"server_ai_combat_v1"}:Array.Empty<string>()).ToArray();
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
     {
@@ -21,6 +28,9 @@ internal sealed class AiAtomicActions
         NativeResult CancelWithReason(AiReadOnlyProtocol.Identity identity,object handle,string status,string reason)=>Cancel(identity,handle);
         NativeResult BindingLost(object handle)=>new("unknown","actor_binding_changed",null,false);
         ulong ProgressVersion(object handle)=>0;
+        bool SupportsCombat=>false;
+        bool CanTransferBody(AiReadOnlyProtocol.Identity identity)=>false;
+        string ValidateCombatAdmission(AiReadOnlyProtocol.Identity identity,string target)=>null;
         void Shutdown();
     }
     private readonly IExecutor executor;
@@ -51,15 +61,50 @@ internal sealed class AiAtomicActions
     // Retained IDs reject duplicates; evicted IDs query as unknown_action.
     private const int RegistryCapacity = 1024;
     private readonly Queue<string> terminalEntries = new();
-    private Entry active;
+    private Entry active, lastCombat, blockedBody;
+    private string suppressedRef, cancelledCombatRef;
+    private ulong suppressUntil;
     private long sequence;
     internal bool HasActive=>active!=null;
+    internal bool BodyBlocked(AiReadOnlyProtocol.Identity current)=>Matches(blockedBody,current);
+    internal bool SupportsCombat=>executor?.SupportsCombat==true;
+    private bool CombatActive=>active?.Operation==CombatProtocol.Operation;
     internal Func<bool> MaintenanceBusy {get;set;}
-    internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = null; }
+    internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = lastCombat = blockedBody = null; suppressedRef=cancelledCombatRef=null; }
     internal void Forget(Guid connection) { if (active?.Owner == connection) active.Cancel = true; }
-    private static bool Matches(Entry e, AiReadOnlyProtocol.Identity current) => current != null
+    private static bool Matches(Entry e, AiReadOnlyProtocol.Identity current) => e!=null && current != null
         && ReferenceEquals(e.Actor, current.Actor) && e.World == current.World && e.Generation == current.Generation && e.Slot == current.Slot;
-    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to";
+    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to" or CombatProtocol.Operation;
+    internal object CombatState(AiReadOnlyProtocol.Identity current) =>
+        new{action=Matches(lastCombat,current)?Snapshot(lastCombat):null};
+
+    private string CombatConflict(AiReadOnlyProtocol.Identity current, string target)
+    {
+        if (BodyBlocked(current)) return "body_release_unconfirmed";
+        if (MaintenanceBusy?.Invoke()==true) return "action_busy";
+        if (active==null) return executor.CanTransferBody(current)?null:"actor_busy";
+        if (CombatActive || !Matches(active,current) || active.Cancel || active.Disconnected.IsCancellationRequested)
+            return "action_busy";
+        string invalid=executor.ValidateCombatAdmission(current,target);
+        if(invalid!=null)return invalid;
+        var previous=active;
+        Stop(previous,"cancelled",CombatProtocol.Interrupt,current);
+        if(previous.Status=="unknown" || previous.End==null || !executor.CanTransferBody(current))
+        {
+            blockedBody=previous;
+            return "body_release_unconfirmed";
+        }
+        return null;
+    }
+
+    internal void Reflex(AiReadOnlyProtocol.Identity current,string actorId,string entityRef,string threat)
+    {
+        if(!SupportsCombat||current?.CanAct!=true)return;
+        if(entityRef==null||CombatActive||entityRef==cancelledCombatRef||entityRef==suppressedRef&&current.GameUpdate<suppressUntil)return;
+        if(CombatConflict(current,entityRef)!=null)return;
+        Admit(Guid.Empty,Guid.NewGuid().ToString("N"),actorId,current,CombatProtocol.Operation,
+            JsonSerializer.SerializeToElement(new{entityRef,threat}),35000,default);
+    }
     private static object TaskState(Entry e)
     {
         if(!IsTask(e.Operation))return null;
@@ -95,17 +140,20 @@ internal sealed class AiAtomicActions
         if (!Guid.TryParseExact(id, "N", out _)) return new(Error: "invalid_action_id");
         if (op != "start")
         {
-            if (!entries.TryGetValue(id, out var known) || known.Owner != owner) return new(Error: "unknown_action");
+            if (!entries.TryGetValue(id, out var known) || !Matches(known,current)
+                || (known.Owner != owner && known.Owner != Guid.Empty)) return new(Error: "unknown_action");
             if (op == "cancel" && known.Status == "running") Stop(known, "cancelled", "explicit_cancel", current);
             return new(new { action = Snapshot(known) });
         }
         // A retained ID may already have effects. Reject replay without claiming no admission.
         if (entries.ContainsKey(id)) return new(Error: "duplicate_action", DispatchState: "unknown");
-        if (active != null) return new(Error: "action_busy");
         if (!current.CanAct) return new(Error: "actor_not_alive");
         string operation = root.GetProperty("operation").GetString();
+        bool combat=operation==CombatProtocol.Operation;
+        if(BodyBlocked(current))return new(Error:"body_release_unconfirmed");
+        if(active!=null&&!combat)return new(Error:"action_busy");
         bool selecting = operation == "select_hotbar_slot";
-        if (!selecting && (executor == null || operation is not ("move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to"))) return new(Error: "unsupported_operation");
+        if (!selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to")))) return new(Error: "unsupported_operation");
         var arguments = root.GetProperty("arguments");
         int key = 0;
         if (selecting)
@@ -130,15 +178,24 @@ internal sealed class AiAtomicActions
         long remaining = root.GetProperty("expiresAtUnixMs").GetInt64() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (remaining <= 0) return new(Error: "request_expired");
         if (remaining > 2000) return new(Error: "invalid_deadline");
-        int duration = operation switch { "navigate_to"=>180000, "mine_target"=>55000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
+        int duration = operation switch { CombatProtocol.Operation=>35000, "navigate_to"=>180000, "mine_target"=>55000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
+        if(combat&&CombatConflict(current,arguments.GetProperty("entityRef").GetString()) is {} conflict)
+            return new(Error:conflict);
+        return Admit(owner,id,binding.actor,current,operation,arguments,duration,disconnected, key, selecting?remaining:duration);
+    }
+
+    private Reply Admit(Guid owner,string id,string actorId,AiReadOnlyProtocol.Identity current,string operation,
+        JsonElement arguments,int duration,CancellationToken disconnected,int key=0,long? lease=null)
+    {
         while (entries.Count >= RegistryCapacity && terminalEntries.TryDequeue(out var oldest))
             if (entries.TryGetValue(oldest, out var terminal) && terminal.Status != "running") entries.Remove(oldest);
         if (entries.Count >= RegistryCapacity) return new(Error: "action_registry_full");
-        active = new Entry { Owner = owner, Id = id, World = current.World, Actor = current.Actor, ActorId = binding.actor,
+        active = new Entry { Owner = owner, Id = id, World = current.World, Actor = current.Actor, ActorId = actorId,
             Generation = current.Generation, Slot = current.Slot, Before = current.SelectedSlot,
             Operation = operation, Arguments = arguments.Clone(), Duration = duration,
-            Key = key, Target = HotbarSlots.ToInventorySlot(key), Deadline = clock() + (selecting ? remaining : duration), Disconnected = disconnected };
+            Key = key, Target = HotbarSlots.ToInventorySlot(key), Deadline = clock() + (lease ?? duration), Disconnected = disconnected };
         entries.Add(id, active);
+        if(CombatActive)lastCombat=active;
         return new(new { action = Snapshot(active) });
     }
     private void End(Entry e, string status, string reason, AiReadOnlyProtocol.Identity current, bool known)
@@ -156,6 +213,17 @@ internal sealed class AiAtomicActions
             inputsAcquired = e.Handle != null && e.Result?.InputsAcquired != false, inputsReleased = e.Handle == null || e.Result?.InputsReleased == true,
             effectVerified = e.Result?.EffectVerified == true, operation = e.Operation, observationSequence = sequence };
         if (ReferenceEquals(active, e)) active = null;
+        if(e.Operation==CombatProtocol.Operation)
+        {
+            if(status=="unknown")blockedBody=e;
+            if(current!=null)
+            {
+                suppressedRef=e.Arguments.GetProperty("entityRef").GetString();
+                suppressUntil=current.GameUpdate+60;
+                if(e.StopReason=="explicit_cancel")cancelledCombatRef=suppressedRef;
+            }
+        }
+        else if(SupportsCombat&&status=="unknown"&&(e.StopReason==CombatProtocol.Interrupt||!known))blockedBody=e;
         terminalEntries.Enqueue(e.Id);
     }
     private void Stop(Entry e, string status, string reason, AiReadOnlyProtocol.Identity current)
@@ -175,6 +243,7 @@ internal sealed class AiAtomicActions
             { End(e, "unknown", "native_effect_unconfirmed", current, true); return; }
             // The stop trigger is metadata. A reliable native terminal wins all races.
             status = e.Result.Status; reason = e.Result.Reason;
+            if(status=="cancelled"&&e.StopReason==CombatProtocol.Interrupt)reason=e.StopReason;
         }
         End(e, status, reason, current, true);
     }
@@ -200,6 +269,7 @@ internal sealed class AiAtomicActions
             {
                 if (e.Handle == null) { e.Attempted = true; e.Handle = executor.Start(current, e.Operation, e.Arguments, e.Id); return; }
                 e.Result = executor.Poll(current, e.Handle);
+                e.Reason=e.Result.Reason;
                 if (e.Result.Status == "running") return;
                 bool verified = e.Result.Status != "completed" || e.Result.EffectVerified;
                 string reason = !e.Result.InputsReleased ? "native_inputs_not_released"

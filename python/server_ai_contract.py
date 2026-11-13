@@ -24,7 +24,7 @@ CATEGORIES = (
     ('直接身体输入', ('move_input',), 'Limited', '原生方向/跳跃多更新输入；不是目标导航或装备运动适配。'),
     ('目标导航', ('navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'drop_through_platform', 'move_on_rope'),
      'Limited', '局部导航按各自profile；绳索操作受原版绳柱及原生接触条件限制。'),
-    ('物品与战斗', ('use_item', 'attack_entity'), 'Limited', '原生物品使用周期；具体效果需另行观察。'),
+    ('物品与战斗', ('use_item', 'query_combat', 'attack_entity'), 'Limited', '普通近战通过 submit_task 提交；query_combat 可发现游戏侧自卫任务。'),
     ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '服务器挖掘从主背包自动选工具；复合挖掘可先接近指定格，掉落入包需另行核验。'),
     ('建造', ('place_tile', 'place_object', 'place_wall', 'hammer_tile', 'place_rope'),
      'Limited', '原生放置受材料、样式、占地和目标坐标限制。'),
@@ -92,7 +92,7 @@ def capability_manifest(bridge, supported=None):
         categories.append(row)
     if program_tasks.available(bridge) and 'mine_target' in supported:
         categories.append(dict(category='Program任务协作',status='Limited',callableApis=sorted(program_tasks.NAMES),
-            notExposed=[],boundary='宿主提交/查询/等待/取消；仅既有mine_target；C#唯一执行权威，未知不重放，无自动恢复。'))
+            notExposed=[],boundary='宿主提交、查询、等待与取消。由游戏侧执行，unknown 不重放，危险中断后由 Agent 显式决定是否重新提交。'))
     return dict(schemaVersion=1, source='ServerAiBridge bind handshake + backend whitelist',
                 scope='当前连接/服务器AI；不是原生游戏全部功能或实机验收承诺',
                 levels={'Supported': '所列有界接口开放', 'Limited': '部分能力开放，限制见各API',
@@ -127,7 +127,8 @@ def server_definitions(bridge, supported=None):
                                       mining_opening='server_ai_mining_opening_v1' in capabilities,
                                       excavation='server_ai_excavation_v1' in capabilities)
     if program_tasks.available(bridge):
-        definitions += program_tasks.definitions(excavation='server_ai_excavation_v1' in capabilities)
+        definitions += program_tasks.definitions(excavation='server_ai_excavation_v1' in capabilities,
+                                                 combat='server_ai_combat_v1' in capabilities)
     return definitions
 
 
@@ -272,7 +273,7 @@ def server_contract(bridge, tool, *, compact=False):
     supported = exposed_operations(bridge)
     task_reference = ''
     if program_tasks.available(bridge):
-        task_reference = ('\nProgram/Task 协作：submit_task仅支持mine_target，返回稳定taskId与受理状态；'
+        task_reference = ('\nProgram/Task 协作：submit_task返回稳定taskId与受理状态；'
             'query_task/await_task/cancel_task需明确taskId，等待到期不取消任务。'
             '查进展时读取 query_task 的 Help，区分 action.task.currentChild、progress.children、lastResult 和根任务结果。'
             '摘要标记 summaryOnly/resultSummaryOnly 为 true 时，用原 taskId 调用 query_task 获取完整回执。'
@@ -280,6 +281,9 @@ def server_contract(bridge, tool, *, compact=False):
             '活动或unknown任务阻止新身体变更，替换前显式取消并确认终态。'
             '危险由游戏Tick安全中断，resume_task只对可信危险中断显式重新受理，重新验证目标/工具/环境；不自动恢复。'
             'Task完成不等于Goal完成；Program/Run失败不改写Task，最终模型失败不重放动作。')
+        if 'query_combat' in supported:
+            task_reference += ('combat_attack 与服务端自卫共享战斗优先级，可安全终止普通身体任务。'
+                               '用 query_combat 获取自卫任务的 actionId，再用 query_task 或 cancel_task。')
     if compact:
         manifest_text = '\n'.join(f"- {row['category']}：{', '.join(row['apis'])}"
                                   for row in callable_categories(bridge, supported))

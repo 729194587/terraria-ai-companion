@@ -110,10 +110,21 @@ public sealed class ServerAiSystem : ModSystem
             WorldCharacterSelfTest.Tick();
             var actor=Capture();
             if(actor!=null)AiMapRuntime.Tick();
-            server.Tick(Capture, Select, ServerAiQueries.Read, Say);
+            bool reflex=simulationUpdate&&actor!=null&&(!ServerAiActionFixture.Enabled||ServerCombatFixture.Enabled);
+            bool threatened=false;
+            server.Tick(Capture, Select, ServerAiQueries.Read, Say, reflex?() =>
+            {
+                try
+                {
+                    var threat=NativeCombatWorld.Threat(actor);
+                    threatened=threat.HasValue;
+                    server.Reflex(actor,threat?.entityRef,threat?.threat);
+                }
+                catch(Exception e){Mod.Logger.Error("Combat threat evaluation failed.",e);}
+            }:null);
             if(simulationUpdate&&torches!=null&&(!ServerTorchFixture.Hold||torches.Busy))
             {
-                try{torches.Tick(actor,actions.HasActive);}
+                try{torches.Tick(actor,actions.HasActive||threatened||actions.BodyBlocked(actor));}
                 catch(Exception e)
                 {
                     Mod.Logger.Error("Autonomous torch maintenance stopped.",e);

@@ -437,7 +437,7 @@ class LuaRuntime:
                         if (hint := recovery.observe(name, args, terminal_result)) is not None:
                             terminal_result = {**terminal_result, 'recovery': record_recovery(hint)}
                     if terminal_result is not None and on_result is not None:
-                        on_result('mine_target', args if synchronous_task else {}, terminal_result)
+                        on_result(result.get('operation', 'mine_target'), args if synchronous_task else {}, terminal_result)
                     if synchronous_task and terminal_result is not None:
                         out['lastAction'] = bounded_action(terminal_result)
                         out['actionState'] = 'released' if safe_terminal(terminal_result) else 'unknown'

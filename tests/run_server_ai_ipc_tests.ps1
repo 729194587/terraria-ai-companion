@@ -17,12 +17,14 @@ $sources+=@(Join-Path $repo 'tests/ServerAiNativeActionOfflineTests.cs')
 $sources+=@(Join-Path $repo 'tests/ServerAiChatProtocolTests.cs')
 $sources+=@(Join-Path $repo 'CompanionBridge/ServerIpc/AiActionReasons.cs')
 $sources+=@('CompanionBridge/Motion/NavigationProgressWatchdog.cs','CompanionBridge/ServerIpc/TaskRuntime.cs','CompanionBridge/ServerIpc/ExcavationReceipt.cs','CompanionBridge/ServerIpc/AutonomousNavigationTask.cs','CompanionBridge/ServerIpc/MineTargetTask.cs','tests/TaskRuntimeOfflineTests.cs') | ForEach-Object {Join-Path $repo $_}
+$sources+=@('CompanionBridge/ServerIpc/CombatController.cs','tests/CombatOfflineTests.cs') | ForEach-Object {Join-Path $repo $_}
 Add-Type -Path $sources -ReferencedAssemblies $references
 [ServerAiIpcOfflineTests]::Run()
 [ServerAiAtomicOfflineTests]::Run()
 [ServerAiReadProtocolTests]::Run()
 [ServerAiNativeActionOfflineTests]::Run()
 [TaskRuntimeOfflineTests]::Run()
+[CombatOfflineTests]::Run()
 [ServerAiChatProtocolTests]::Run()
 if($PackagePath){
     $version=(Select-String -LiteralPath (Join-Path $repo 'CompanionBridge/build.txt') -Pattern '^version\s*=\s*(\S+)$').Matches[0].Groups[1].Value
