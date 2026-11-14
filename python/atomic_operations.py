@@ -827,8 +827,10 @@ async def terminal(bridge, action, generation):
                           and combat == action.get('task') and combat.get('status') == 'completed'
                           and combat_result.get('effectVerified') is True and combat_result.get('inputsReleased') is True
                           and isinstance(pickup, dict) and pickup.get('remaining') == []
-                          and pickup.get('unavailable') == [] and pickup.get('truncated') is False
-                          and pickup.get('outcome') in ('collected', 'none')),
+                          and pickup.get('unavailable') == [] and pickup.get('pickupUnconfirmed') is False
+                          and ((pickup.get('truncated') is False and pickup.get('outcome') in ('collected', 'none'))
+                               or (pickup.get('truncated') is True and pickup.get('outcome') == 'partial'
+                                   and pickup.get('canContinue') is True))),
         **dict.fromkeys(SORT_OPERATIONS, verified_sort(action, native_evidence, end)),
         **dict.fromkeys(CONTAINER_BATCHES, container_verified),
         **dict.fromkeys(CONTAINER_TRANSFERS, container_verified),

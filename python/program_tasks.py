@@ -65,7 +65,7 @@ def definitions(*, excavation=False, combat=False, collection=False, placement=F
             variants = [mining, *(copy.deepcopy(atomic.SCHEMAS[op]) for op in operations[1:])]
             arguments = {'anyOf': variants} if len(variants) > 1 else mining
             if collection:
-                description += ' collect_drops 默认收集320像素内各类掉落物。参数 radiusPixels 为16..960，typeIds 与 entityRef 互斥；entityRef 取自 scan_entities 的掉落物 details。终态查看 collected、remaining 和 unavailable。'
+                description += ' collect_drops 默认收集320像素内各类掉落物。参数 radiusPixels 为16..960，typeIds 与 entityRef 互斥；entityRef 取自 scan_entities。查看 collected、remaining 和 unavailable。批次完成后 canContinue=true 可重新扫描继续收集，nextTarget 提供仍有效的候补目标。'
             properties = {'operation': {'type': 'string', 'enum': operations}, 'arguments': arguments}
             if combat:
                 description += ' combat_attack 使用 scan_entities 的 entityRef；query_combat 也可发现游戏侧自卫任务。'

@@ -125,6 +125,20 @@ class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ResultRegistryTests(unittest.TestCase):
+    def test_completed_drop_batch_can_report_more_targets(self):
+        from api_result_contracts import TASK_COMPLETION_PROOF
+
+        check = Draft202012Validator(TASK_COMPLETION_PROOF['collect_drops'])
+        evidence = dict(remaining=[], unavailable=[], pickupUnconfirmed=False,
+                        truncated=True, outcome='partial', canContinue=True)
+        task = dict(taskName='collect_drops', status='completed', phase='terminal',
+                    result=dict(inputsReleased=True, effectVerified=True, evidence=evidence))
+        self.assertTrue(check.is_valid(task))
+        evidence['remaining'] = [{'reason': 'inventory_full'}]
+        self.assertFalse(check.is_valid(task))
+        evidence.update(remaining=[], canContinue=False)
+        self.assertFalse(check.is_valid(task))
+
     def test_place_item_completion_requires_chest_storage_and_single_consumption(self):
         from api_result_contracts import TASK_COMPLETION_PROOF
 

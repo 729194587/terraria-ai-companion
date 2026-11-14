@@ -175,7 +175,8 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
         var opening=world.FindOpening(LocalCutTileLimit);
         if(world.PlanningFailure is {} planningFailure)return Describe(planningFailure);
         if(world.PlanningPending)return Running();
-        if(opening==null)return Describe(Failed(world.NoRouteReason));
+        if(opening==null)return Describe(AiActionReasons.NavigationSearchIncomplete(world.NoRouteReason)
+            ?new Result("timeout",world.NoRouteReason,null,true,InputsAcquired:acquired):Failed(world.NoRouteReason));
         if(opening.Batch!=null)
         {
             phase="opening_tile";child=opening.Batch;

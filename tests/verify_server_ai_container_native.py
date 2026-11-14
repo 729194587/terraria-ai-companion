@@ -571,7 +571,7 @@ async def verify_collect(profile, bridge, clients, engine_log):
         return {"taskId": result["taskId"]}
 
     async def run(label, arguments, *, status="completed", intervene=None):
-        gated = intervene in ("allow-contact-pickup", "move-drop")
+        gated = intervene in ("allow-contact-pickup", "move-drop", "merge-drop", "remove-drop")
         pending = queue_fixture(intervene) if gated else None
         task = await start(arguments)
         if intervene:
@@ -675,6 +675,23 @@ async def verify_collect(profile, bridge, clients, engine_log):
     result = await call("cancel_task", task)
     assert result["status"] == "cancelled" and result["result"]["inputsReleased"], result
     record("cancelled", result)
+    fixture("seed-batch")
+    result = await run("batch_limit", {}, intervene="allow-contact-pickup")
+    assert sum(row["count"] for row in result["collected"]) == 16 and result["remaining"] == [], result
+    assert result["outcome"] == "partial" and result["canContinue"] and result["nextTarget"], result
+    last = await run("batch_continuation", {"entityRef": result["nextTarget"]["entityRef"]},
+                     intervene="allow-contact-pickup")
+    assert sum(row["count"] for row in last["collected"]) == 1 and not last["canContinue"], last
+    fixture("seed")
+    proof = fixture("hazards")["hazardProof"]
+    assert proof == dict(blocked=None, visible="task_interrupt_nearby_hostile", untargeted=None,
+                         contact="task_interrupt_nearby_hostile", health="task_interrupt_health_decreased"), proof
+    report["hazards"] = proof
+    coords = fixture("seed-mixed-tool")
+    mined = await dispatch(bridge, "mine_tile", {"x": coords["mineX"], "y": coords["mineY"]})
+    assert mined["status"] == "completed" and mined["evidence"]["toolKind"] == "pickaxe", mined
+    assert mined["evidence"]["pick"] > 0 and mined["evidence"]["axe"] > 0, mined
+    report["mixedTool"] = mined
     return report
 
 

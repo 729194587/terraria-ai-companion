@@ -159,6 +159,15 @@ internal static class StateSpacePlanner
                 string failure = actions.Count == 0 ? string.Join("; ", rejected.OrderByDescending(p => p.Value)
                     .Take(3).Select(p => $"{p.Key} ({p.Value} candidates)")) : null;
                 if (actions.Count == 0 && string.IsNullOrEmpty(failure)) failure = "no improving supported checkpoint in local action/span search";
+                if(actions.Count==0&&searchExit=="local_frontier_exhausted")
+                {
+                    if(rejected.Keys.Any(reason=>reason.Contains("unknown terrain",StringComparison.OrdinalIgnoreCase)
+                        ||reason.EndsWith(": ?",StringComparison.Ordinal)))
+                        searchExit="unknown_terrain";
+                    else if(rejected.Keys.Any(reason=>reason=="outside route span"
+                        ||reason.Contains("outside local prediction window",StringComparison.Ordinal)))
+                        searchExit="local_coverage_exhausted";
+                }
                 if (actions.Count == 0) failure = searchExit + "; " + failure;
                 return new(actions, expansions - sliceStart, watch.Elapsed.TotalMilliseconds, failure, resultReached, searchExit=="time_budget",
                     actions.Count==0&&searchExit=="local_frontier_exhausted"?rootBlocks:null,

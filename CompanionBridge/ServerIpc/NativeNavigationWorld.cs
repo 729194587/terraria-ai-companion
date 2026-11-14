@@ -3,6 +3,8 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Text.Json;
 using Terraria;
+using Terraria.ModLoader;
+using Microsoft.Xna.Framework;
 using CompanionBridge.Motion;
 using VirtualPlayerEngineProbe;
 
@@ -67,8 +69,20 @@ internal sealed class NativeNavigationWorld : INavigationWorld
         if(player.lavaWet)return "task_interrupt_lava_contact";
         // Bounded native safety check, on the game thread; no model/TCP wait.
         foreach(var npc in Main.npc)
-            if(npc.active&&!npc.friendly&&npc.damage>0&&Microsoft.Xna.Framework.Vector2.DistanceSquared(npc.Center,player.Center)<=160*160)
-                return "task_interrupt_nearby_hostile";
+        {
+            if(!npc.active||npc.life<=0||npc.friendly||npc.townNPC||npc.damage<=0)continue;
+            var offset=player.Center-npc.Center;
+            bool contact=npc.Hitbox.Intersects(player.Hitbox);
+            if(!contact)
+            {
+                float distanceSquared=offset.LengthSquared();
+                if(distanceSquared>160*160||!npc.HasValidTarget||npc.target!=player.whoAmI)continue;
+                if(!npc.noTileCollide&&!Collision.CanHitLine(npc.position,npc.width,npc.height,player.position,player.width,player.height))continue;
+                if(distanceSquared>64*64&&Vector2.Dot(npc.velocity-player.velocity,offset)<=0)continue;
+            }
+            int cooldown=-1;
+            if(NPCLoader.CanHitPlayer(npc,player,ref cooldown))return "task_interrupt_nearby_hostile";
+        }
         return null;
     }
 

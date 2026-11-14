@@ -234,7 +234,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                     ?"native_navigation_terrain_unknown":"native_navigation_landing_unconfirmed");}
                 else if(run.Snapshot.Status=="failed")
                 {
-                    bool budget=run.Snapshot.Reason is "navigation_surface_node_budget" or "navigation_search_timeout" or "navigation_search_expansion_budget";
+                    bool budget=AiActionReasons.NavigationSearchIncomplete(run.Snapshot.Reason);
                     run.ReasonDetail=budget?run.Snapshot.SearchFailureReason??run.Snapshot.Reason:run.Snapshot.Reason;
                     Stop(budget?"timeout":"failed",AiActionReasons.Navigation(run.Snapshot.Reason));
                 }

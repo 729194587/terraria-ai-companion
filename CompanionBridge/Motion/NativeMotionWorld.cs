@@ -73,8 +73,8 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
                 if (x < _left || x >= _left + 45 || y < _top || y >= _top + 17 + FallSafety.LookaheadPixels/16 + 5)
                     throw new UnsafeMotionException($"outside local prediction window at ({x},{y})");
                 char cell = TerrainReader.ReadCell(x, y);
-                if (cell == '?' || (hazards && cell == '!'))
-                    throw new UnsafeMotionException($"unknown/hazard terrain at ({x},{y})");
+                if (cell == '?') throw new UnsafeMotionException($"unknown terrain at ({x},{y})");
+                if (hazards && cell == '!') throw new UnsafeMotionException($"hazard terrain at ({x},{y})");
             }
     }
 

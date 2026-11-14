@@ -255,7 +255,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         bool furnitureAbsent=ActorMining.FurnitureAbsent(mine);
         string phase=mine.Phase switch{ActionPhase.Running=>"running",ActionPhase.Completed=>destroyed&&furnitureAbsent?"completed":"unknown",ActionPhase.Cancelled=>"cancelled",ActionPhase.TimedOut=>"timeout",ActionPhase.Stale=>"unknown",_=>"failed"};
         return new(phase,AiActionReasons.Mining(phase,mine.Reason.ToString()),new{nativeActionId=mine.Id,mine.X,mine.Y,TileType=mine.InvalidTarget==null?(int?)mine.TileType:null,mine.ExpectedType,mine.Ticks,invalidTarget=mine.InvalidTarget,
-            mine.Swings,mine.Strikes,mine.PeakDamage,mine.Transforms,toolKind=mine.Axe>0?"axe":"pickaxe",pick=mine.Pick,axe=mine.Axe,nativeDestroyed=mine.Destroyed,targetAbsent=destroyed,
+            mine.Swings,mine.Strikes,mine.PeakDamage,mine.Transforms,toolKind=ActorMining.TreeTarget(mine.TileType)?"axe":"pickaxe",pick=mine.Pick,axe=mine.Axe,nativeDestroyed=mine.Destroyed,targetAbsent=destroyed,
             furnitureCells=mine.Furniture.Length,furnitureAbsent=mine.Furniture.Length>0&&furnitureAbsent,
             targetChanged=mine.ExternalChange||(!mine.Destroyed&&mine.TargetCaptured&&!ActorMining.TargetUnchanged(mine)),
             targetUnchanged=!mine.ExternalChange&&mine.Transforms==0&&!mine.Destroyed&&ActorMining.TargetUnchanged(mine),

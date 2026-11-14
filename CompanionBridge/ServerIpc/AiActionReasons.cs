@@ -7,11 +7,16 @@ internal static class AiActionReasons
     internal static string Navigation(string reason) => reason is
         "navigation_trip_update_budget" or "navigation_trip_search_budget" or "navigation_trip_repeated_state" or
         "navigation_stalled" or "navigation_action_limit" or "navigation_search_timeout" or "navigation_search_expansion_budget" or
-        "navigation_surface_node_budget"
+        "navigation_surface_node_budget" or "navigation_local_coverage_exhausted"
         ? reason : "native_navigation_failed";
 
+    internal static bool NavigationSearchIncomplete(string reason)=>reason is
+        "navigation_trip_search_budget" or "navigation_search_timeout" or "navigation_search_expansion_budget"
+        or "navigation_surface_node_budget" or "navigation_local_coverage_exhausted"
+        or "navigation_edit_window_exceeded" or "navigation_edit_budget_exhausted";
+
     // Only deterministic planner/profile refusal and confirmed no-progress can hand off.
-    // Search/frame/action budgets, engine exceptions, health loss and prediction mismatch stay hard stops.
+    // Search limits do not establish an obstruction and must not trigger excavation.
     internal static string NavigationRecoveryKind(string reason) => reason == "navigation_stalled" ? "no_progress"
         : reason?.StartsWith("no safe local route: ",System.StringComparison.Ordinal)==true ? "no_route"
         : reason?.StartsWith("unsupported navigation state: ",System.StringComparison.Ordinal)==true ? "profile_refused"

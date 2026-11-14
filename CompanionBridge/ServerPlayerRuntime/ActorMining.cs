@@ -110,9 +110,9 @@ internal static class ActorMining
         finally{rangeContext=null;}
     }
     private static bool SupportedTool(Item i)=>!i.IsAir&&i.hammer==0&&!i.channel&&i.shoot<=0
-        &&(i.pick>0&&i.axe==0||i.type==ItemID.CopperAxe&&i.axe>0&&i.pick==0);
+        &&(i.pick>0||i.axe>0);
     internal static bool SupportedPick(Item item)=>item.pick>0&&SupportedTool(item);
-    private static bool TreeTarget(int type)=>Main.tileAxe[type]&&TileID.Sets.IsATreeTrunk[type];
+    internal static bool TreeTarget(int type)=>Main.tileAxe[type]&&TileID.Sets.IsATreeTrunk[type];
     internal static Failure ChooseTool(Player p,string world,long generation,int x,int y,bool requireReach,
         out int slot,out float updates,int? plannedSlot=null,Vector2? workPosition=null)
     {
@@ -156,7 +156,7 @@ internal static class ActorMining
         int damage;
         if(tree)
         {
-            // The supported Copper Axe follows the vanilla axe branch.
+            // Tree targets use the native axe branch, including combined tools.
             damage=(int)(item.axe*(tile.TileType==TileID.Cactus?3:1)*1.2f);
             if(Main.getGoodWorld)damage=(int)(damage*1.3);
         }
@@ -252,7 +252,7 @@ internal static class ActorMining
     {
         var t=Main.tile[c.X,c.Y];return t.HasTile&&t.TileType==c.ExpectedType
             &&(byte)t.Slope==c.Slope&&t.IsHalfBlock==c.Half&&t.IsActuated==c.Actuated
-            &&(c.Axe==0&&!Main.tileFrameImportant[c.TileType]||t.TileFrameX==c.FrameX&&t.TileFrameY==c.FrameY);
+            &&(!TreeTarget(c.TileType)&&!Main.tileFrameImportant[c.TileType]||t.TileFrameX==c.FrameX&&t.TileFrameY==c.FrameY);
     }
     internal static FurnitureCell[] FurnitureAt(int x,int y)
     {
@@ -393,11 +393,11 @@ internal static class ActorMining
     private static int Damage(On_HitTile.orig_AddDamage orig,HitTile hits,int id,int damage,bool update)
     {
         int total=orig(hits,id,damage,update);var c=executing;
-        if((picking||striking&&c?.Axe>0)&&c!=null&&Allowed(c.Actor)&&ReferenceEquals(hits,c.Actor.hitTile)&&update)
+        if(c!=null&&(picking||striking&&TreeTarget(c.TileType))&&Allowed(c.Actor)&&ReferenceEquals(hits,c.Actor.hitTile)&&update)
         {
             // Axe damage is computed in ActuallyUseMiningTool AFTER CanKillTile;
             // unlike picks it never passes through PickTile/transform prediction.
-            if(c.Axe>0)c.ProposedDamage=damage;
+            if(!picking)c.ProposedDamage=damage;
             c.Damage=total;c.PeakDamage=Math.Max(c.PeakDamage,total);
             if(damage>0&&total<100)NetMessage.SendData(MessageID.SyncTilePicking,-1,-1,null,c.Actor.whoAmI,c.X,c.Y,Math.Min(damage,255));
         }
@@ -407,7 +407,7 @@ internal static class ActorMining
     {
         if(!fail&&!effectOnly)CompanionBridge.ServerIpc.SceneMineTargets.Changed(x,y);
         var c=Current;bool watched=Running&&!c.KillingTarget&&c.X==x&&c.Y==y;
-        bool nativePick=watched&&ReferenceEquals(c,executing)&&(picking||striking&&c.Axe>0)&&Allowed(c.Actor)&&!c.ExternalChange&&Same(c)&&c.ProposedDamage>0;
+        bool nativePick=watched&&ReferenceEquals(c,executing)&&(picking||striking&&TreeTarget(c.TileType))&&Allowed(c.Actor)&&!c.ExternalChange&&Same(c)&&c.ProposedDamage>0;
         bool own=nativePick&&c.Damage>=100&&!fail&&!effectOnly;
         bool grassHit=nativePick&&c.ExpectedType==TileID.Grass&&fail&&!effectOnly&&!noItem;
         // Also detects removal + replacement with the same type between updates.

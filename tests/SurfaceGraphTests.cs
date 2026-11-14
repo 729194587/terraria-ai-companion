@@ -248,6 +248,10 @@ public static class SurfaceGraphTests
             Check(PhysicsSimulator.Settled(start,t),"disconnected island has a genuine stable starting stance");
             var route=Search(new(),t,start,LandingRegion.AtDestination(2200,1600),out var snap);
             Check(route.Actions.Count==0&&snap.Exit=="no_route_in_coverage","known isolated support has no connection in current model/coverage");
+            var outside=LandingRegion.AtDestination(1600+(SurfaceGraph.MaximumRadius+4)*16,1600);
+            route=Search(new(),t,start,outside,out snap);
+            Check(route.Actions.Count==0&&snap.Exit=="local_coverage_exhausted",
+                "a goal outside the maximum window is incomplete even when the sampled ground has no outgoing edge");
         }
         Console.WriteLine($"Surface graph: {checks} checks passed");
     }

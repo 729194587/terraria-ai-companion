@@ -41,6 +41,8 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
     private LandingRegion plannedRegion;
     private ulong waitUntil;
     private bool truncated, usedInputs;
+    private ServerDrops.Drop nextTarget;
+    private bool BatchCollected => targets.Count > 0 && targets.All(row => row.Reason == "collected");
     internal override string Name => "collect_drops";
     internal override string Phase => settleUntil.HasValue ? "settling_after_approach"
         : navigation != null ? "approaching_drop" : target != null ? "waiting_for_pickup" : "selecting_drop";
@@ -59,6 +61,7 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
             .Where(drop => reference == null || drop.Reference == reference).Take(TargetLimit + 1).ToArray();
         if (reference != null && observed.Length == 0) return Failed("drop_reference_unavailable");
         truncated = observed.Length > TargetLimit;
+        if (truncated) nextTarget = observed[TargetLimit];
         targets.AddRange(observed.Take(TargetLimit).Select(drop => new Target(drop)));
         return null;
     }
@@ -85,6 +88,9 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         }).ToArray(),
         unavailable = targets.Where(row => row.Reason == "drop_unavailable").Select(row => row.Drop.Reference).ToArray(),
         truncated,
+        canContinue = truncated && BatchCollected && !uncertain,
+        nextTarget = ServerDrops.Live(nextTarget) ? new { entityRef = nextTarget.Reference,
+            typeId = nextTarget.Type, count = nextTarget.Item.stack, x = nextTarget.Item.Center.X, y = nextTarget.Item.Center.Y } : null,
         pickupUnconfirmed = uncertain,
         outcome = collected.Count > 0 && (truncated || targets.Any(row => row.Reason != "collected")) ? "partial"
             : collected.Count > 0 ? "collected" : "none"
@@ -203,7 +209,8 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         }
 
         if (targets.Count == 0) return End("completed", "no_matching_drops");
-        if (!truncated && targets.All(row => row.Reason == "collected")) return End("completed", "drops_collected");
+        if (BatchCollected)
+            return End("completed", truncated ? "drop_batch_collected" : "drops_collected");
         if (collected.Count == 0 && targets.Any(row => row.Reason == "navigation_timeout"))
             return End("timeout", "navigation_timeout");
         return End("failed", collected.Count > 0 ? "drops_partially_collected" : "drops_not_collected");

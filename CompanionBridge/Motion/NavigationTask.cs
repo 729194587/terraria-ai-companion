@@ -140,7 +140,7 @@ internal sealed class NavigationTask
         BeginCore(session, generation, targetX, region, state);
         if (_session != session || _generation != generation || Terminal) return default;
         _updates++; _failures.Validate(world,ph,Clock);
-        long terrain=0;
+        long terrain=!Continuous&&region==null&&world is ISurfaceTerrain?world.TerrainSignature(state):0;
         if(Continuous)
         {
             // Re-read the previous fixed window before moving the observation
@@ -193,7 +193,7 @@ internal sealed class NavigationTask
                 if(_route==null)
                 {
                     _watchdog.Observe(NavigationActivity.Search);
-                    if(Continuous&&region!=null)
+                    if(Continuous&&region!=null||region==null&&world is ISurfaceTerrain)
                     {
                         _knowledge.Search.Scope(terrain,ph,Clock);
                         if((_pendingSearch==null&&_surfaceSearch==null)||_searchStart!=state||_searchPhysics!=ph||_searchTerrain!=terrain
@@ -203,7 +203,7 @@ internal sealed class NavigationTask
                             _searchStart=state;_searchPhysics=ph;_searchTerrain=terrain;
                             _searchFailures=_failures.Version;
                             if(surface)_surfaceSearch=new(_knowledge.Surfaces,state,region,ph,world,(ISurfaceTerrain)world,_knowledge.Search,RejectRemembered,_trip.Detour,_historicalPreference);
-                            else _pendingSearch=new(state,targetX,region,ph,world,rejectEdge:RejectRemembered,
+                            else _pendingSearch=new(state,targetX,region,ph,world,goalDirection:region==null?_direction:null,rejectEdge:RejectRemembered,
                                     detourCheckpoint:_trip.Detour,historicalPreference:_historicalPreference,learning:_knowledge.Search);
                         }
                         if(_surfaceSearch!=null)
@@ -238,7 +238,7 @@ internal sealed class NavigationTask
                     if(_route.SearchExit=="surface_node_budget")
                         return Fail("navigation_surface_node_budget");
                     bool sliceExhausted=_route.TimeBudgetReached||_route.SearchExit is "expansion_budget" or "local_state_budget";
-                    if(Continuous&&sliceExhausted&&(_pendingSearch is {Finished:false}||_surfaceSearch is {Finished:false}))
+                    if(sliceExhausted&&(_pendingSearch is {Finished:false}||_surfaceSearch is {Finished:false}))
                     {
                         // Retain exact frontier/candidate cursor. Its start, terrain
                         // and physics are revalidated before the next game-thread slice.
@@ -249,6 +249,7 @@ internal sealed class NavigationTask
                     DiscardSearch();
                     if(_route.SearchExit=="unknown_terrain")
                     {Unconfirmed("navigation_unknown_terrain");return default;}
+                    if(_route.SearchExit=="local_coverage_exhausted")return Fail("navigation_local_coverage_exhausted");
                     return Fail(_route.TimeBudgetReached ? "navigation_search_timeout"
                         : _route.SearchExit is "expansion_budget" or "local_state_budget" ? "navigation_search_expansion_budget"
                         : _trip.RepeatRejections>priorRepeatRejections ? "navigation_trip_repeated_state"

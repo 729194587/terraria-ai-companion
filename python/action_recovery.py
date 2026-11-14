@@ -12,6 +12,11 @@ POSITION_ACTIONS = {'move_input', 'move_on_rope', 'navigate_to',
 INVENTORY_ACTIONS = {'select_hotbar_slot', 'hold_inventory_item', 'swap_inventory_slots',
                      'transfer_inventory_item', 'equip_item', 'unequip_item'}
 TERRAIN_ACTIONS = {'mine_tile', 'mine_target', 'place_tile', 'place_rope', 'place_object'}
+SEARCH_LIMITS = {
+    'navigation_trip_search_budget', 'navigation_search_timeout', 'navigation_search_expansion_budget',
+    'navigation_surface_node_budget', 'navigation_local_coverage_exhausted',
+    'navigation_edit_window_exceeded', 'navigation_edit_budget_exhausted',
+}
 
 
 def guidance(operation, reason, *, detail=None):
@@ -23,6 +28,8 @@ def guidance(operation, reason, *, detail=None):
         kind, next_step = 'unsupported', '检查该能力的 Help 和当前角色状态，改用已开放且适用的操作。'
     elif 'out_of_range' in reason:
         kind, next_step = 'out_of_range', '重新观察角色和目标位置，先安全接近并确认位移，再尝试该目标。'
+    elif reason in SEARCH_LIMITS:
+        kind, next_step = 'search_incomplete', '重新观察地形，选择更近且已知安全的落脚点作为下一段目标。'
     elif reason in STANCE_FAILURES:
         kind, next_step = 'no_stance', '重新观察目标周围，选择另一侧或不同高度的安全接近点，或改选可安全到达的目标。'
     elif reason == 'no_progress':

@@ -464,7 +464,10 @@ internal sealed class SurfaceNavigator : IDisposable
         for(int x=cx-radius;x<=cx+radius&&!unknown;x++)
             for(int y=cy-topRows;y<=cy+bottomRows;y++)
             {if(graph.Shape(x,y)=='?')unknown=true;if(YieldWork())yield return Waiting();}
-        exit=graph.Truncated?"surface_node_budget":localBudget?"surface_local_budget":unknown?"unknown_terrain":"no_route_in_coverage";Finished=true;
+        bool goalCovered=goal.MinPlayerLeftX>=(cx-radius)*16&&goal.MaxPlayerLeftX<=(cx+radius+1)*16
+            &&goal.SurfaceY>=(cy-topRows)*16&&goal.SurfaceY<=(cy+bottomRows)*16;
+        exit=graph.Truncated?"surface_node_budget":localBudget?"surface_local_budget":unknown?"unknown_terrain"
+            :!goalCovered?"local_coverage_exhausted":"no_route_in_coverage";Finished=true;
         yield return new(new(),0,timer.Elapsed.TotalMilliseconds,FailureReason:exit,TimeBudgetReached:localBudget||graph.Truncated,Kind:"surface_graph",SearchExit:exit);
     }
 

@@ -702,7 +702,9 @@ DEFS['CollectionEvidence'] = obj({
     'collected': array(obj({'typeId': I, 'count': COUNT})),
     'remaining': array(obj({'entityRef': S, 'typeId': I, 'count': COUNT, 'x': N, 'y': N, 'reason': S})),
     'unavailable': array(S), 'truncated': B, 'pickupUnconfirmed': B, 'outcome': enum('collected', 'partial', 'none'),
-})
+    'canContinue': B,
+    'nextTarget': nullable(obj({'entityRef': S, 'typeId': I, 'count': COUNT, 'x': PIXEL, 'y': PIXEL})),
+}, optional=('canContinue', 'nextTarget'))
 DEFS['CombatProgress'] = obj({
     'source': enum('agent', 'reflex'), 'threat': nullable(S), 'life': nullable(I),
     'target': nullable(obj(fields(integers='Slot TypeId', strings='EntityRef'))),
@@ -923,8 +925,11 @@ TASK_COMPLETION_PROOF = {
             'then': matches(chestVerified=TRUE),
         })),
     'collect_drops': matches(taskName=const('collect_drops'), status=const('completed'), phase=const('terminal'),
-        result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence=matches(
-            remaining={'maxItems': 0}, unavailable={'maxItems': 0}, truncated=FALSE, outcome=enum('collected', 'none')))),
+        result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence={
+            **matches(remaining={'maxItems': 0}, unavailable={'maxItems': 0}, pickupUnconfirmed=FALSE),
+            'anyOf': [matches(truncated=FALSE, outcome=enum('collected', 'none')),
+                      matches(truncated=TRUE, outcome=const('partial'), canContinue=TRUE)],
+        })),
     'combat_attack': matches(taskName=const('combat_attack'), status=const('completed'), phase=const('terminal'),
         result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence=matches(
             lastHit=matches(Defeated=TRUE, LifeBefore={'minimum': 1}, LifeAfter={'maximum': 0}, DamageDone={'minimum': 1})))),
