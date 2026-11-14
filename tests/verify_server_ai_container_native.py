@@ -692,6 +692,14 @@ async def verify_collect(profile, bridge, clients, engine_log):
     assert mined["status"] == "completed" and mined["evidence"]["toolKind"] == "pickaxe", mined
     assert mined["evidence"]["pick"] > 0 and mined["evidence"]["axe"] > 0, mined
     report["mixedTool"] = mined
+    fixture("seed-region")
+    sweep = await run("shared_pickup_region", {})
+    assert {row["typeId"]: row["count"] for row in sweep["collected"]} == {9: 7, 3: 5}, sweep
+    task_id = report["cases"]["shared_pickup_region"]["taskId"]
+    approaches = [line for line in engine_log.read_text(encoding="utf-8").splitlines()
+                  if f"{task_id}/approach-" in line and '"eventName":"task-native-start"' in line]
+    assert len(approaches) == 1, approaches
+    report["sharedRegionApproaches"] = len(approaches)
     return report
 
 

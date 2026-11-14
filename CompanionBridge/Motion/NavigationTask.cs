@@ -19,6 +19,13 @@ internal sealed class NavigationTask
     private PhysicsParameters _searchPhysics;
     private long _searchTerrain;
     private int _searchFailures;
+    private StateSpacePlanner.Search _aheadSearch;
+    private Route _aheadRoute;
+    private PhysicsState _aheadStart;
+    private long _aheadTerrain;
+    private long _aheadWindow;
+    private int _aheadSlices;
+    private int _aheadEdge=-1;
     private IMotionWorld _observedWorld;
     private PhysicsState _observedTerrainPose;
     private long _observedTerrain;
@@ -34,6 +41,7 @@ internal sealed class NavigationTask
         _knowledge=knowledge??new();
     }
     private void DiscardSearch(){_pendingSearch?.Dispose();_pendingSearch=null;_surfaceSearch?.Dispose();_surfaceSearch=null;}
+    private void DiscardAhead(){_aheadSearch?.Dispose();_aheadSearch=null;_aheadRoute=null;_aheadEdge=-1;}
 
     internal bool Continuous { get; set; }
     internal bool PreferFlatRegion { get; set; }
@@ -83,7 +91,7 @@ internal sealed class NavigationTask
         if (retire && _session != 0) { _cancelledSession=_session; _cancelledGeneration=_generation; }
         _recovering=_neutralIssued=_resumePending=_motionIssued=false;
         if(!_sharedKnowledge)_knowledge.Clear();
-        DiscardSearch();_watchdog.Reset();_failedEdge=null;
+        DiscardSearch();DiscardAhead();_watchdog.Reset();_failedEdge=null;
         _observedWorld=null;
         _deferredSearches=_consecutiveRecoveries=0;
         _recoveries=_recoveryReplans=_updates=0; _recoveryReason=null; _recoveryPosition=null; _recoveryInputsReleased=null;
@@ -98,7 +106,7 @@ internal sealed class NavigationTask
     {
         Snapshot = Snapshot with { Status = "failed", Reason = reason,BlockingTiles=blockingTiles };
         _executing = false; _recovering=_resumePending=false;
-        _executor.Cancel();DiscardSearch();
+        _executor.Cancel();DiscardSearch();DiscardAhead();
         return default;
     }
 
@@ -272,6 +280,9 @@ internal sealed class NavigationTask
         Publish();
         if (_executor.FailureKind == MotionFailureKind.RouteDeviation)
         { BeginRecovery(state, _executor.Snapshot.Reason); _neutralIssued=_recovering; return default; }
+        if(Continuous&&_region!=null&&_routeIndex==_route.Actions.Count-1&&!_route.ReachedGoal
+            &&world is ISurfaceTerrain&&_routePhysics==ph)
+            PlanAhead(ph,world);
         _motionStart=state;_motionIssued=true;
         return input;
     }
@@ -390,7 +401,7 @@ internal sealed class NavigationTask
     {
         Snapshot=Snapshot with{Status="unknown",Reason=reason,ActualLanding=null};
         _confirming=false;_executing=false;_recovering=_resumePending=false;
-        _executor.Cancel();DiscardSearch();
+        _executor.Cancel();DiscardSearch();DiscardAhead();
     }
 
     internal void DeferPlanningOverrun(PhysicsState state)
@@ -410,7 +421,19 @@ internal sealed class NavigationTask
 
     private bool TryContinue(PhysicsState state,PhysicsParameters ph,IMotionWorld world)
     {
-        if(_route==null||_routeIndex==0||_routeIndex>=_route.Actions.Count)return false;
+        if(_route==null||_routeIndex==0)return false;
+        bool ahead=_routeIndex>=_route.Actions.Count;
+        if(ahead)
+        {
+            var route=_aheadRoute;
+            bool current=route!=null&&state==_aheadStart&&ph==_routePhysics
+                &&_aheadTerrain==world.TerrainSignature(state,route.Actions[0])
+                &&!RejectRemembered(state,route.Actions[0]);
+            DiscardAhead();
+            if(!current)return false;
+            _route=route;
+            _routeIndex=0;
+        }
         var old=Edge;
         if(_routePhysics==ph&&!RejectRemembered(state,old)&&PhysicsSimulator.SupportedCheckpoint(state,world))
         {
@@ -426,11 +449,42 @@ internal sealed class NavigationTask
                     &&Math.Abs(end.Vy-old.Landing.Vy)<.01f)
                 {
                     _route.Actions[_routeIndex]=fresh with{ExecuteFrames=old.ExecuteFrames,Landing=end};
+                    if(ahead)_continuedEdges++;
                     return true;
                 }
             }
         }
         _invalidatedRoutes++;return false;
+    }
+
+    private void PlanAhead(PhysicsParameters ph,IMotionWorld world)
+    {
+        var endpoint=Edge.Landing;
+        if(_region.Contains(endpoint)||!PhysicsSimulator.SupportedCheckpoint(endpoint,world))return;
+        if(_aheadEdge==_routeIndex&&_aheadSearch==null)return;
+        var aheadWorld=((ISurfaceTerrain)world).MotionAt(endpoint);
+        long window=aheadWorld.TerrainSignature(endpoint);
+        if(_aheadEdge!=_routeIndex||_aheadWindow!=window)
+        {
+            DiscardAhead();
+            _aheadEdge=_routeIndex;
+            _aheadStart=endpoint;
+            _aheadWindow=window;
+            _aheadSlices=0;
+            _aheadSearch=new(endpoint,Math.Clamp(endpoint.Px,_region.MinPlayerLeftX,_region.MaxPlayerLeftX),
+                _region,ph,aheadWorld,rejectEdge:RejectRemembered,detourCheckpoint:_trip.Detour);
+        }
+        if(_aheadSearch==null)return;
+        var result=_aheadSearch.Advance(maxExpansions:4,budgetMs:Math.Min(1,_searchBudgetMilliseconds));
+        // Keep graph-guided detours in charge of choosing intermediate checkpoints.
+        // A speculative local route is useful only when it reaches the final goal.
+        if(result.ReachedGoal&&result.Actions.Count>0)
+        {
+            _aheadTerrain=world.TerrainSignature(endpoint,result.Actions[0]);
+            _aheadRoute=result;
+        }
+        if(_aheadSearch.Finished||result.ReachedGoal||++_aheadSlices>=8)
+        {_aheadSearch.Dispose();_aheadSearch=null;}
     }
     private float Distance(PhysicsState state)=>_region?.Distance(state)??Math.Max(0,_direction*(_targetX-state.Px));
 
@@ -439,6 +493,7 @@ internal sealed class NavigationTask
         if(Terminal)return;
         _mobilityRevision=revision;
         DiscardSearch();
+        DiscardAhead();
         _knowledge.ObservePhysics(physics);
         if(_recovering){_rememberFailedEdge=false;return;}
         if(_route!=null&&(_executing||_routeIndex<_route.Actions.Count))
@@ -453,6 +508,7 @@ internal sealed class NavigationTask
 
     private void BeginRecovery(PhysicsState state, string reason,bool grapple=false)
     {
+        DiscardAhead();
         if ((Continuous?_consecutiveRecoveries:_recoveries) >= RecoveryLimit) { Fail("navigation_recovery_limit"); return; }
         _recoveries++;_consecutiveRecoveries++;
         _rememberFailedEdge=!grapple&&(!Continuous||Snapshot.Frame>0);

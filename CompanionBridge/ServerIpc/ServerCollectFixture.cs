@@ -79,7 +79,8 @@ internal static class ServerCollectFixture
             else if (command != "seed-stone")
                 Spawn(player, ItemID.Wood, 7, x + (command == "seed-timeout" ? 58 : command == "seed-identity" ? 3 : 10), floor - (command == "seed-step" ? 1 : 0), command == "seed-identity" ? 600 : 0);
             if (command is not ("seed-identity" or "seed-batch"))
-                Spawn(player, ItemID.StoneBlock, 5, x + (command == "seed-stone" ? 3 : 15), floor - (command == "seed-step" ? 1 : 0), command == "seed-stone" ? 600 : 0);
+                Spawn(player, ItemID.StoneBlock, 5, x + (command == "seed-stone" ? 3 : command == "seed-region" ? 10 : 15),
+                    floor - (command == "seed-step" ? 1 : 0), command == "seed-stone" ? 600 : 0);
             NetworkStateSync.Full(player);
         }
         if (command == "merge-drop")

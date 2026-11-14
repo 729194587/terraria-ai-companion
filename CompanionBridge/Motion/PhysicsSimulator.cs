@@ -36,12 +36,15 @@ internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRu
 
 // Terraria 1.4.4.9 Player.Update uses the tile row of the body's top,
 // not feet or velocity, and damages only above 25 + extraFall rows.
-internal readonly record struct FallSafety(int ExtraFall,bool Immune)
+internal readonly record struct FallSafety(int ExtraFall,bool Immune,int Life=0)
 {
     // Terrain observation / simulation horizon. Immunity does not certify a landing.
     internal const int LookaheadPixels=48*16;
     internal static int Row(float top)=>(int)(top/16f);
-    internal bool Safe(int fallStart,float landingTop)=>Immune||(long)Row(landingTop)-fallStart<=25L+ExtraFall;
+    internal long RawDamage(int fallStart,float landingTop)=>Immune?0:
+        Math.Max(0L,(long)Row(landingTop)-fallStart-25L-ExtraFall)*10;
+    internal bool Safe(int fallStart,float landingTop)=>RawDamage(fallStart,landingTop)==0;
+    internal bool CouldBeLethal(long rawDamage)=>rawDamage>0&&Life>0&&rawDamage>=Life;
     internal bool Safe(float startTop,float landingTop)=>Safe(Row(startTop),landingTop);
 }
 
@@ -246,8 +249,9 @@ internal static class PhysicsSimulator
             if(s.Grounded||s.JumpFramesLeft>0||s.Wet)fallStart=FallSafety.Row(s.Py);
             if(next.Py-start.Py>FallSafety.LookaheadPixels)
                 return new(false,"descent leaves the local collision horizon",frames,next,0,hold>0);
-            if(next.Grounded&&!ph.Fall.Safe(fallStart,next.Py)&&!world.NegatesFallDamage(next))
-                return new(false,"landing would exceed the native fall damage threshold",frames,next,0,hold>0);
+            if(next.Grounded&&ph.Fall.RawDamage(fallStart,next.Py) is >0 and var damage&&!world.NegatesFallDamage(next))
+                return new(false,$"landing would exceed the native fall damage threshold: raw damage={damage}, life={ph.Fall.Life}, potentially lethal={ph.Fall.CouldBeLethal(damage)}",
+                    frames,next,0,hold>0);
             frames.Add(new(input, next));
             if (rollingJump && hold > 0 && movingLandingFrames == 0)
             {

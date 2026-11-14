@@ -13,6 +13,31 @@ internal static class DropStanceSearch
     // the full Player.GetItemGrabRange on every side, then clipped to the world.
     internal readonly record struct Limits(int Left, int Right, int Top, int Bottom);
     internal readonly record struct Band(int Left, int Right, int Feet);
+    internal readonly record struct CoveredBand(int Left, int Right, int Count);
+
+    internal static IEnumerable<CoveredBand> CoverageBands(int left,int right,int feet,Limits[] coverage)
+    {
+        if(left>right)yield break;
+        var changes=new SortedDictionary<int,int> { [left]=0,[right+1]=0 };
+        foreach(var bounds in coverage)
+        {
+            if(feet<bounds.Top||feet>bounds.Bottom)continue;
+            int start=Math.Max(left,bounds.Left), end=Math.Min(right,bounds.Right);
+            if(start>end)continue;
+            changes[start]=changes.GetValueOrDefault(start)+1;
+            changes[end+1]=changes.GetValueOrDefault(end+1)-1;
+        }
+        int previous=left,count=0;
+        foreach(var change in changes)
+        {
+            if(change.Value!=0||change.Key==right+1)
+            {
+                if(change.Key>previous)yield return new(previous,change.Key-1,count);
+                previous=change.Key;
+            }
+            count+=change.Value;
+        }
+    }
 
     internal static Limits Bounds(Rectangle itemHitbox, int playerWidth, int playerHeight,
         int grabRange, int maxTilesX, int maxTilesY)

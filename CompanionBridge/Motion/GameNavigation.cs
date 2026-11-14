@@ -92,7 +92,7 @@ internal sealed class NativeNavigation
             JumpSpeed=basic.JumpSpeed,JumpHeight=basic.JumpHeight}:observed;
     }
 
-    internal static FallSafety FallProfile(Player p)=>new(p.extraFall,p.noFallDmg||p.equippedWings!=null);
+    internal static FallSafety FallProfile(Player p)=>new(p.extraFall,p.noFallDmg||p.equippedWings!=null,p.statLife);
 
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
         LandingRegion region = null, bool combatSwing = false)

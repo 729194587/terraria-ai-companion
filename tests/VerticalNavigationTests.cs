@@ -110,6 +110,10 @@ public static class VerticalNavigationTests
             "Native fall threshold rounds the player's top to a tile row");
         Check(new FallSafety(10,false).Safe(100,135*16)&&!new FallSafety(10,false).Safe(100,136*16)
             &&new FallSafety(0,true).Safe(100,148*16),"Fall protection and extraFall are distinct");
+        var vulnerable=new FallSafety(0,false,20);
+        Check(vulnerable.RawDamage(100,126*16)==10&&!vulnerable.CouldBeLethal(10)
+            &&vulnerable.CouldBeLethal(vulnerable.RawDamage(100,127*16)),
+            "native raw damage and current life distinguish survivable and potentially lethal descents");
         var deepStart=ground with{Py=73*16-42};
         var deepWorld=new World{Tile=(x,y)=>x<=102&&y==73?'=':Floor(x,y)};
         var protectedProfile=PhysicsParameters.Basic with{Fall=new(10,false)};

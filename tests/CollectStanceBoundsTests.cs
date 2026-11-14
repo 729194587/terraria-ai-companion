@@ -2,6 +2,7 @@
 // No Terraria world is involved, so this runs in any harness that can see the type.
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Xna.Framework;
 using CompanionBridge.ServerIpc;
 
@@ -82,6 +83,11 @@ public static class CollectStanceBoundsTests
         complete = DropStanceSearch.Scan(new(1, 1, 80, 80), 1, 80, 1, (_, _) => true, bands.Add);
         Check(complete && bands.Count == 1 && bands[0] == new DropStanceSearch.Band(1, 1, 80),
             "one inclusive pixel and one foot level can produce a stance");
+
+        var shared=DropStanceSearch.CoverageBands(10,30,80,new DropStanceSearch.Limits[]{
+            new(10,22,80,80),new(18,30,80,88),new(10,30,88,96)}).ToArray();
+        Check(shared.SequenceEqual(new DropStanceSearch.CoveredBand[]{new(10,17,1),new(18,22,2),new(23,30,1)}),
+            "only the intersection of native reach rectangles covers both targets");
 
         Console.WriteLine($"Collect stance bounds: {checks} checks; native range preserved, world clipping intact.");
     }

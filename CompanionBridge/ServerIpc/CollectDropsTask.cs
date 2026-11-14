@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using Microsoft.Xna.Framework;
 using Terraria;
+using Terraria.ModLoader;
 using CompanionBridge.Motion;
 using CompanionBridge.Common.Systems;
 using VirtualPlayerEngineProbe;
@@ -21,11 +22,14 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
     // range; only the sample count is capped, so cost stays predictable without
     // narrowing where the Actor may stand to pick an item up.
     private const int ApproachProbeBudget = 6144;
+    private const int RegionSeeds = 3;
     private sealed class Target(ServerDrops.Drop drop)
     {
         internal readonly ServerDrops.Drop Drop = drop;
         internal string Reason;
         internal int Attempts;
+        internal ulong? BlockedSince;
+        internal string TemporaryBlock;
         internal readonly HashSet<(float X, float Y)> RejectedStances = new();
     }
     private readonly List<Target> targets = new();
@@ -84,7 +88,7 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         collected = collected.OrderBy(row => row.Key).Select(row => new { typeId = row.Key, count = row.Value }).ToArray(),
         remaining = targets.Where(row => ServerDrops.Live(row.Drop)).Select(row => new {
             entityRef = row.Drop.Reference, typeId = row.Drop.Type, count = row.Drop.Item.stack,
-            x = row.Drop.Item.Center.X, y = row.Drop.Item.Center.Y, reason = row.Reason ?? "pending"
+            x = row.Drop.Item.Center.X, y = row.Drop.Item.Center.Y, reason = row.Reason ?? row.TemporaryBlock ?? "pending"
         }).ToArray(),
         unavailable = targets.Where(row => row.Reason == "drop_unavailable").Select(row => row.Drop.Reference).ToArray(),
         truncated,
@@ -113,17 +117,20 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         if (settleUntil is {} deadline)
         {
             if (!ServerAiNativeActions.Released(player)) return End("unknown", "task_inputs_not_released");
-            var observed = ServerAiNavigation.Observe(player);
-            if (!observed.Settled)
+            var landing = ServerAiNavigation.Observe(player);
+            if (!landing.Settled)
                 return frame.GameUpdate >= deadline ? End("unknown", "native_navigation_landing_unconfirmed") : Running();
             settleUntil = null;
-            LogApproachTransition("settled", observed);
+            LogApproachTransition("settled", landing);
             return Running();
         }
 
         if (navigation != null)
         {
-            bool moved = target.Reason != null || Distance(planned, target.Drop.Item.Hitbox) > 24;
+            if(target.Reason==null && PickupBlock(target.Drop.Item) is {} blocked)
+                target.Reason=blocked;
+            bool moved = target.Reason != null || Distance(planned, target.Drop.Item.Hitbox) > 24
+                || TemporaryPickupBlock(target.Drop.Item)!=null;
             if (moved)
             {
                 var stopped = base.Stop(frame, "cancelled", "drop_target_changed");
@@ -169,22 +176,48 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
             target = null;
         }
 
+        bool waitingForEligibility = false;
+        var eligible = new List<Target>();
         foreach (var candidate in targets.Where(row => row.Reason == null)
                      .OrderBy(row => Vector2.DistanceSquared(player.Center, row.Drop.Item.Center)))
         {
             var item = candidate.Drop.Item;
             if (PickupBlock(item) is {} blocked) { candidate.Reason = blocked; continue; }
+            candidate.TemporaryBlock = TemporaryPickupBlock(item);
+            if (candidate.TemporaryBlock != null)
+            {
+                candidate.BlockedSince ??= frame.GameUpdate;
+                if (frame.GameUpdate - candidate.BlockedSince.Value >= 75) candidate.Reason = candidate.TemporaryBlock;
+                else waitingForEligibility = true;
+                continue;
+            }
+            candidate.BlockedSince = null;
+            eligible.Add(candidate);
+        }
+        if (eligible.Count == 0 && waitingForEligibility) return Running();
+        bool canNavigate = eligible.Count > 0 && GameNavigation.Ordinary(player);
+        Target chosen = null;
+        LandingRegion chosenRegion = null;
+        float bestScore = float.PositiveInfinity;
+        int searchedSeeds = 0;
+        var observed = canNavigate ? NativeMotionWorld.Observe(player) : default;
+        var coverage = canNavigate ? eligible.Select(row => Bounds(row.Drop.Item, 12)).ToArray()
+            : Array.Empty<DropStanceSearch.Limits>();
+        foreach (var candidate in eligible)
+        {
+            var item = candidate.Drop.Item;
             bool inReach = Reach(player.Hitbox, item);
-            if (Reach(player.Hitbox, item, 12) || inReach && !GameNavigation.Ordinary(player))
+            if (Reach(player.Hitbox, item, 12) || inReach && !canNavigate)
             {
                 target = candidate;
                 waitUntil = frame.GameUpdate + 75;
                 return Running();
             }
             if (candidate.Attempts >= 4) { candidate.Reason = "drop_moved_repeatedly"; continue; }
-            if (!GameNavigation.Ordinary(player)) { candidate.Reason = "unsupported_navigation_profile"; continue; }
-            var region = Approach(candidate, out bool searched);
-            if (inReach && (region == null || region.Contains(NativeMotionWorld.Observe(player))))
+            if (!canNavigate) { candidate.Reason = "unsupported_navigation_profile"; continue; }
+            if (searchedSeeds++ == RegionSeeds) break;
+            var region = Approach(candidate, observed, coverage, out bool searched, out float score);
+            if (inReach && (region == null || region.Contains(observed)))
             {
                 target = candidate;
                 waitUntil = frame.GameUpdate + 75;
@@ -195,22 +228,30 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
                 candidate.Reason = searched ? "no_safe_pickup_stance" : "pickup_stance_search_budget_exhausted";
                 continue;
             }
-            candidate.Attempts++;
-            target = candidate;
-            planned = item.Hitbox;
-            plannedRegion = region;
+            if (score >= bestScore) continue;
+            chosen = candidate;
+            chosenRegion = region;
+            bestScore = score;
+        }
+        if (chosen != null)
+        {
+            chosen.Attempts++;
+            target = chosen;
+            planned = chosen.Drop.Item.Hitbox;
+            plannedRegion = chosenRegion;
             usedInputs = true;
             navigationUntil = frame.GameUpdate + ApproachBudget;
             navigation = new(executor, "navigate_to_landing_region", JsonSerializer.SerializeToElement(new
             {
-                minPlayerLeftX = region.MinPlayerLeftX, maxPlayerLeftX = region.MaxPlayerLeftX, surfaceY = region.SurfaceY
-            }), taskId + "/approach-" + candidate.Drop.Slot + "-" + candidate.Attempts);
+                minPlayerLeftX = chosenRegion.MinPlayerLeftX, maxPlayerLeftX = chosenRegion.MaxPlayerLeftX, surfaceY = chosenRegion.SurfaceY
+            }), taskId + "/approach-" + chosen.Drop.Slot + "-" + chosen.Attempts);
             return Running();
         }
 
         if (targets.Count == 0) return End("completed", "no_matching_drops");
         if (BatchCollected)
             return End("completed", truncated ? "drop_batch_collected" : "drops_collected");
+        if (waitingForEligibility || eligible.Any(row => row.Reason == null)) return Running();
         if (collected.Count == 0 && targets.Any(row => row.Reason == "navigation_timeout"))
             return End("timeout", "navigation_timeout");
         return End("failed", collected.Count > 0 ? "drops_partially_collected" : "drops_not_collected");
@@ -230,10 +271,15 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
 
     private string PickupBlock(Item item)
     {
-        if (!player.CanAcceptItemIntoInventory(item)) return "pickup_prevented";
+        if (!player.CanAcceptItemIntoInventory(item) || !ItemLoader.CanPickup(item, player)) return "pickup_prevented";
         if (!player.ItemSpace(item).CanTakeItem) return "inventory_full";
         return null;
     }
+
+    private string TemporaryPickupBlock(Item item) => item.noGrabDelay > 0 ? "pickup_cooldown"
+        : item.shimmerTime != 0 ? "pickup_shimmering"
+        : item.playerIndexTheItemIsReservedFor != player.whoAmI
+            && item.playerIndexTheItemIsReservedFor != Main.maxPlayers ? "reserved_for_other_player" : null;
 
     // The native pull rectangle from Player.GrabItems: the Actor hitbox inflated
     // by GetItemGrabRange on every side, intersected with the item hitbox. This is
@@ -250,10 +296,13 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
     // rectangle: the item hitbox grown by the full GetItemGrabRange, clipped to the
     // world. The range is never reduced to keep the search small; only the sample
     // count below is budgeted. See DropStanceSearch for the pure geometry.
-    private LandingRegion Approach(Target candidate, out bool searched)
+    private DropStanceSearch.Limits Bounds(Item item, int margin) => DropStanceSearch.Bounds(
+        item.Hitbox, player.width, player.height, Math.Max(0, player.GetItemGrabRange(item) - margin), Main.maxTilesX, Main.maxTilesY);
+
+    private LandingRegion Approach(Target candidate, PhysicsState observed, DropStanceSearch.Limits[] coverage,
+        out bool searched, out float score)
     {
         var item = candidate.Drop.Item;
-        var observed = NativeMotionWorld.Observe(player);
         var box = item.Hitbox;
         int range = Math.Max(0, player.GetItemGrabRange(item));
         LandingRegion best = null;
@@ -265,10 +314,14 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         int worldX = 0, worldFeet = 0;
         void Consider(int left, int right, int feet, int edgePenalty)
         {
-            if (left > right || candidate.RejectedStances.Contains((left, feet))) return;
-            var band = new LandingRegion(left, right, feet);
-            float score = band.Distance(observed) + Math.Max(0, 12 - (right - left)) * 2 + edgePenalty;
-            if (score < distance) { best = band; distance = score; }
+            foreach (var segment in DropStanceSearch.CoverageBands(left,right,feet,coverage))
+            {
+                var band = new LandingRegion(segment.Left,segment.Right,feet);
+                if (candidate.RejectedStances.Contains((segment.Left,feet))) continue;
+                float cost = band.Distance(observed) + Math.Max(0,12-(segment.Right-segment.Left))*2
+                    + edgePenalty - Math.Max(0,segment.Count-1)*64;
+                if (cost < distance) { best = band; distance = cost; }
+            }
         }
         searched = DropStanceSearch.Scan(bounds, (int)player.position.X, (int)player.Bottom.Y, ApproachProbeBudget,
             (x, feet) =>
@@ -288,6 +341,7 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
                 if (found.Feet >= contact.Top && found.Feet <= contact.Bottom)
                     Consider(Math.Max(found.Left, contact.Left), Math.Min(found.Right, contact.Right), found.Feet, 0);
             });
+        score = distance;
         return best;
     }
 
