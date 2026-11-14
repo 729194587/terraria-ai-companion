@@ -12,6 +12,8 @@ public static class PlacementPatchOfflineTests
 {
     public static int X(object player)=>0;
     public static void Y(int y,object player){}
+    public static bool Replacement(object player)=>false;
+    public static void FillWalls(object player){}
     public static void Run(string engine)
     {
         string dll=System.IO.Path.Combine(engine,"tModLoader.dll");
@@ -52,6 +54,25 @@ public static class PlacementPatchOfflineTests
         Check(instructions.Count(i=>i.OpCode==OpCodes.Call&&i.Operand==ropeGetter)==7,"seven native rope target reads replaced");
         Check(instructions.Count(i=>i.OpCode==OpCodes.Call&&i.Operand==setter)==1,"native retarget store replaced with scoped setter");
         Check(!instructions.Any(i=>i.Operand is FieldReference f&&f.Name is "tileTargetX" or "tileTargetY"),"no native rope global coordinate access remains in the patched helper");
-        Console.WriteLine($"Native placement scoped-target IL: {checks} checks across {PlacementPatches.Reads.Count+1} pinned methods; no world/client/model.");
+        using var source=AssemblyDefinition.ReadAssembly(dll);
+        var walls=source.MainModule.Types.Single(t=>t.FullName=="Terraria.Player").Methods.Single(m=>m.Name=="PlaceThing_Walls");
+        var placeCall=walls.Body.Instructions.Single(i=>i.Offset==0x02f1);
+        var wallGetter=walls.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(X)));
+        var replacement=walls.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(Replacement)));
+        var fill=walls.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(FillWalls)));
+        PlacementPatches.Patch(walls,wallGetter,wallGetter,replacement,fill);
+        Check(walls.Body.Instructions.Count(i=>i.Operand==wallGetter)==34,"wall target reads are scoped");
+        Check(walls.Body.Instructions.Count(i=>i.Operand==fill)==1&&walls.Body.Instructions.Count(i=>i.Operand==replacement)==1,
+            "wall auto-fill and replacement are scoped");
+        Check(placeCall.Operand is MethodReference call&&call.Name=="PlaceWall","native wall placement remains in place");
+        using var wallDmd=new DynamicMethodDefinition(runtime.GetType("Terraria.Player").GetMethod("PlaceThing_Walls",
+            BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic));
+        using var wallIl=new ILContext(wallDmd.Definition);
+        wallIl.Invoke(c=>PlacementPatches.Patch(c.Method,c.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(X))),
+            c.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(X))),
+            c.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(Replacement))),
+            c.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(FillWalls)))));
+        Check(wallDmd.Generate()!=null,"actual wall IL generates an executable method");
+        Console.WriteLine($"Native placement scoped-target IL: {checks} checks across {PlacementPatches.Reads.Count+2} pinned methods; no world/client/model.");
     }
 }

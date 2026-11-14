@@ -67,10 +67,13 @@ internal static class ActorItemUse
     {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation);}}
     internal static void StartPlacement(Player p,string world,long generation,int x,int y,bool objectPlacement=false,ActorRope.Target rope=null)
     {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,x,y,objectPlacement,rope);}}
-    private static void StartCore(Player p,string world,long generation,int? x=null,int? y=null,bool objectPlacement=false,ActorRope.Target rope=null)
+    internal static void StartPlacement(Player p,string world,long generation,ActorPlacement.Context placement)
+    {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,prepared:placement);}}
+    private static void StartCore(Player p,string world,long generation,int? x=null,int? y=null,bool objectPlacement=false,ActorRope.Target rope=null,
+        ActorPlacement.Context prepared=null)
     {
         Capture(p,world,generation);Idle(p);
-        var placement=x.HasValue?ActorPlacement.Create(p,x.Value,y.Value,objectPlacement,rope):null;
+        var placement=prepared??(x.HasValue?ActorPlacement.Create(p,x.Value,y.Value,objectPlacement,rope):null);
         if(p.selectedItem<0||p.selectedItem>9||(placement==null?!Supported(p.HeldItem):!ActorPlacement.SupportedFor(placement,p.HeldItem))||p.HeldItem.IsAir)
             throw new InvalidOperationException("Select an item in hotbar 1–10 that can use a single press without a world target.");
         if(p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)throw new InvalidOperationException("AI cannot use an item in this state.");
@@ -153,7 +156,12 @@ internal static class ActorItemUse
             c.ToolPeak=Math.Max(c.ToolPeak,p.toolTime);c.UsesPeak=Math.Max(c.UsesPeak,p.ItemUsesThisAnimation);
             if(p.itemAnimation>before)c.Starts++;
             if(c.Ticks==1&&c.AnimationPeak>0||c.Ticks>1&&(p.itemAnimation==0||c.Ticks%6==0))Sync(p);
-            if(c.Ticks==1&&c.AnimationPeak==0){c.Phase="rejected";c.Reason=c.Placement?.Rope!=null?"native_rope_placement_refused":"native_use_refused";}
+            if(c.Ticks==1&&c.AnimationPeak==0)
+            {
+                if(c.Placement is {Unified:true} placement&&(placement.Placed||placement.ConsumedCount!=0||placement.UncertainNativeEffect))
+                {c.Phase="unknown";c.Reason="native_placement_effect_unconfirmed";}
+                else {c.Phase="rejected";c.Reason=c.Placement?.Rope!=null?"native_rope_placement_refused":"native_use_refused";}
+            }
             else if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0&&!p.channel)
             {if(c.Placement!=null)ActorPlacement.Complete(c);else {c.Phase="completed";c.Reason="native_item_cycle_verified";}}
             if(c.Phase!="running")

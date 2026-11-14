@@ -13,7 +13,7 @@ from control import BridgeError, NotAdmittedError
 from lua_action_results import action_results
 
 NAMES = frozenset({'submit_task', 'query_task', 'await_task', 'cancel_task', 'resume_task'})
-OPERATIONS = ('mine_target', 'combat_attack', 'collect_drops')
+OPERATIONS = ('mine_target', 'combat_attack', 'collect_drops', 'place_item')
 
 
 def available(bridge):
@@ -40,7 +40,7 @@ def validate(name, args):
     return args
 
 
-def definitions(*, excavation=False, combat=False, collection=False):
+def definitions(*, excavation=False, combat=False, collection=False, placement=False):
     rows = []
     for name in sorted(NAMES):
         properties = {'taskId': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'}}
@@ -56,6 +56,9 @@ def definitions(*, excavation=False, combat=False, collection=False):
                 operations.append('combat_attack')
             if collection:
                 operations.append('collect_drops')
+            if placement:
+                operations.append('place_item')
+                description += ' place_item 使用当前选中的快捷栏物品在绝对 Tile 坐标 x/y 放置。终态回执核验占地、消耗和箱子存储记录。'
             mining = copy.deepcopy(atomic.SCHEMAS['mine_target'])
             if not excavation:
                 mining['properties'].pop('cluster', None)
@@ -119,8 +122,8 @@ class TaskCoordinator:
 
     async def submit(self, args, origin=None):
         operation = args['operation']
-        if operation == 'collect_drops' and operation not in getattr(self.bridge, 'supported_atomic_operations', ()):
-            return atomic.not_admitted_result('submit_task', 'collection_capability_unavailable')
+        if operation in ('collect_drops', 'place_item') and operation not in getattr(self.bridge, 'supported_atomic_operations', ()):
+            return atomic.not_admitted_result('submit_task', 'collection_capability_unavailable' if operation == 'collect_drops' else 'placement_capability_unavailable')
         try:
             atomic.validate_backend(self.bridge, args['operation'], args['arguments'])
         except atomic.PreDispatchRejected as error:

@@ -162,6 +162,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("place_wall", "选中原版消耗型墙物品，在80像素内无墙格原生放置；正确墙类型和消耗一件共同核验，多人需服务器确认；自动补邻墙或自动涂漆不支持，10秒上限。", TILE, ['x', 'y']),
     tool("hammer_tile", "选中纯锤对80像素内原版普通方块/平台原生锤击；目标无背景墙，实际形状变化才成功，多人需服务器确认。不支持家具/破坏型锤目标。10秒上限。", TILE, ['x', 'y']),
     tool("interact_tile", "80像素内原版门、未锁宝箱、开关、拉杆基础交互；多格任一占用格可指定；宝箱核验打开/关闭，开关及拉杆核验Frame切换，不证明下游电路效果。多人需同版本服务器确认。", TILE, ["x", "y"]),
+    tool("place_item", "通过 submit_task 使用当前选中的快捷栏物品在 Tile 坐标 x/y 执行原生放置。", TILE, ["x", "y"]),
     tool("place_object", PLACE_OBJECT_DESCRIPTION, TILE, ["x", "y"]),
     tool("place_rope", "服务器 AI 放置一节原版绳索。x/y 为绝对 Tile 坐标，空格直接放置，已有原版绳索则向下延伸一节。自动使用自身快捷栏绳索，点击格与实际落点均须在范围内。回执核验实际落点、绳索类型和一件库存消耗。", TILE, ["x", "y"]),
     tool("move_on_rope", "服务器 AI 沿对齐的干燥原版连续绳柱原生上下移动。ropeX 为 Tile 列，targetFeetY 为脚底世界像素 Y，向下增大。起点须静止，绳索位于头顶探测格。hold 确认在绳上停稳，land 沿下端脱离并确认正下方实体地面落脚。单次最多384像素及maxUpdates帧。",
@@ -232,7 +233,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene(
 
 def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False, excavation=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
-    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'collect_drops')]
+    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'collect_drops', 'place_item')]
     for definition in definitions:
         f = definition['function']
         name = f['name']
@@ -814,6 +815,14 @@ async def terminal(bridge, action, generation):
         container_verified = verified_container_batch(action, native_evidence, end)
     pickup = combat_result.get('evidence')
     native_verified = {
+        'place_item': (combat.get('taskName') == 'place_item' and combat.get('taskId') == action.get('actionId')
+                       and combat == action.get('task') and combat.get('status') == 'completed'
+                       and combat_result.get('effectVerified') is True and combat_result.get('inputsReleased') is True
+                       and isinstance(pickup, dict) and pickup.get('requested') == action.get('targetTask')
+                       and pickup.get('placedByActor') is True and pickup.get('targetPresent') is True
+                       and pickup.get('targetChanged') is False and pickup.get('uncertainNativeEffect') is False
+                       and pickup.get('nativePlacementEvents') == 1 and pickup.get('consumedCount') == 1
+                       and (pickup.get('kind') != 'chest' or pickup.get('chestVerified') is True)),
         'collect_drops': (combat.get('taskName') == 'collect_drops' and combat.get('taskId') == action.get('actionId')
                           and combat == action.get('task') and combat.get('status') == 'completed'
                           and combat_result.get('effectVerified') is True and combat_result.get('inputsReleased') is True
@@ -878,7 +887,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'collect_drops', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'collect_drops', 'place_item', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -944,8 +953,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             lifecycle.update(copy.deepcopy(fields))
     arguments = validate(name, arguments)
     validate_backend(bridge, name, arguments)
-    if name == 'collect_drops':
-        raise PreDispatchRejected('Use submit_task for collect_drops')
+    if name in ('collect_drops', 'place_item'):
+        raise PreDispatchRejected(f'Use submit_task for {name}')
     if name == 'navigate_to' and 'server_ai_navigation_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_navigation_v1; no navigation task submitted')
     if name == 'mine_target' and 'server_ai_tasks_v1' not in bridge.hello.get('capabilities', []):

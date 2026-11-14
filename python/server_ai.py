@@ -44,6 +44,7 @@ def operations_for_capabilities(capabilities):
             ('server_ai_direct_input_v1', 'move_input'),
             ('server_ai_tasks_v1', 'mine_target'),
             ('server_ai_collect_drops_v1', 'collect_drops'),
+            ('server_ai_place_item_v1', 'place_item'),
             ('server_ai_navigation_v1', 'navigate_to'),
             ('server_ai_combat_v1', 'combat_attack'),
             ('server_ai_crafting_v1', 'craft_recipe'),
@@ -237,7 +238,7 @@ class ServerAiBridge:
                 return self._movement(self._request("action", actionId=self._action_id)["data"]["action"])
             if cmd == "start_atomic":
                 operation = parameters.get("operation")
-                if operation not in self.supported_atomic_operations - ({"wait", "stop_action", "get_player_state", "inspect_inventory", "combat_attack", "collect_drops"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS | COMBAT_READS | CONTAINER_READS):
+                if operation not in self.supported_atomic_operations - ({"wait", "stop_action", "get_player_state", "inspect_inventory", "combat_attack", "collect_drops", "place_item"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS | COMBAT_READS | CONTAINER_READS):
                     raise BridgeError("Operation unsupported by server AI backend", status="unsupported_operation")
                 if parameters.get("expectedGeneration") != self.binding["generation"]:
                     raise BridgeError("AI generation changed", status="stale_binding")
@@ -263,7 +264,7 @@ class ServerAiBridge:
         No reconnect/replay or new execution state here. C# checks connection ownership.
         """
         if op not in ('start', 'action', 'cancel') or (op == 'start' and (
-                parameters.get('operation') not in ('mine_target', 'combat_attack', 'collect_drops')
+                parameters.get('operation') not in ('mine_target', 'combat_attack', 'collect_drops', 'place_item')
                 or parameters['operation'] not in self.supported_atomic_operations)):
             raise ValueError('Unsupported task request')
         if not {'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_tasks_v1', 'server_ai_program_tasks_v1'} <= set(self.hello.get('capabilities', ())):

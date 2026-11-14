@@ -125,6 +125,22 @@ class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ResultRegistryTests(unittest.TestCase):
+    def test_place_item_completion_requires_chest_storage_and_single_consumption(self):
+        from api_result_contracts import TASK_COMPLETION_PROOF
+
+        check = Draft202012Validator(TASK_COMPLETION_PROOF['place_item'])
+        proof = dict(taskName='place_item', status='completed', phase='terminal', result=dict(
+            inputsReleased=True, effectVerified=True, evidence=dict(kind='chest', chestVerified=True,
+                placedByActor=True, targetPresent=True, targetChanged=False, consumedCount=1,
+                nativePlacementEvents=1, uncertainNativeEffect=False)))
+        self.assertTrue(check.is_valid(proof))
+        proof['result']['evidence']['chestVerified'] = False
+        self.assertFalse(check.is_valid(proof))
+        proof['result']['evidence'].update(kind='wall', consumedCount=0)
+        self.assertFalse(check.is_valid(proof))
+        proof['result']['evidence']['consumedCount'] = 1
+        self.assertTrue(check.is_valid(proof))
+
     def test_open_capabilities_and_self_contained_schemas(self):
         for caps in (BASE, BASE | {'server_ai_scene_v1'}, FULL - {'server_ai_program_tasks_v1'}, FULL):
             b = bridge(caps)
@@ -168,7 +184,7 @@ class ResultRegistryTests(unittest.TestCase):
             help_result = api_help(enabled, {'name': name})
             self.assertEqual('ok', help_result['status'])
             Draft202012Validator.check_schema(help_result['returnsSchema'])
-        self.assertEqual(set(definitions) | containers | {'combat_attack', 'query_combat', 'collect_drops'}, registered_names())
+        self.assertEqual(set(definitions) | containers | {'combat_attack', 'query_combat', 'collect_drops', 'place_item'}, registered_names())
         self.assertEqual({'future_api'}, missing_for(set(definitions) | {'future_api'}))
         self.assertNotIn('Action_mine_tile', schema_for('stop_action', capabilities=BASE)['$defs'])
         copy = schema_for('observe_scene', capabilities=FULL)
@@ -184,6 +200,24 @@ class ResultRegistryTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
+    def test_place_item_is_capability_gated_and_only_callable_as_task(self):
+        import program_tasks
+
+        def definitions(caps):
+            return {row['function']['name']: row['function'] for row in server_definitions(bridge(caps))}
+
+        disabled = definitions(FULL)
+        enabled = definitions(FULL | {'server_ai_place_item_v1'})
+        self.assertNotIn('place_item', enabled)
+        self.assertNotIn('place_item', disabled['submit_task']['parameters']['properties']['operation']['enum'])
+        self.assertIn('place_item', enabled['submit_task']['parameters']['properties']['operation']['enum'])
+        self.assertEqual(program_tasks.validate('submit_task', {
+            'operation': 'place_item', 'arguments': {'x': 25, 'y': 40},
+        })['arguments'], {'x': 25, 'y': 40})
+        with self.assertRaises(ValueError):
+            program_tasks.validate('submit_task', {'operation': 'place_item',
+                'arguments': {'x': 25, 'y': 40, 'slot': 2}})
+
     def test_equipment_and_rope_contract_follows_capability_whitelist(self):
         extra = {'server_ai_equipment_v1', 'server_ai_place_rope_v1', 'server_ai_move_on_rope_v1'}
         operations = {'equip_item', 'unequip_item', 'place_rope', 'move_on_rope'}

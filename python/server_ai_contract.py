@@ -93,8 +93,9 @@ def capability_manifest(bridge, supported=None):
             row['relatedActionApis'] = [op for op in related if op in supported and op not in atomic.READS]
         categories.append(row)
     if program_tasks.available(bridge) and 'mine_target' in supported:
+        placement = ' 支持通过 submit_task 提交 place_item。' if 'place_item' in supported else ''
         categories.append(dict(category='Program任务协作',status='Limited',callableApis=sorted(program_tasks.NAMES),
-            notExposed=[],boundary='宿主提交、查询、等待与取消。由游戏侧执行，unknown 不重放，危险中断后由 Agent 显式决定是否重新提交。'))
+            notExposed=[],boundary='宿主提交、查询、等待与取消。由游戏侧执行，unknown 不重放，危险中断后由 Agent 显式决定是否重新提交。' + placement))
     return dict(schemaVersion=1, source='ServerAiBridge bind handshake + backend whitelist',
                 scope='当前连接/服务器AI；不是原生游戏全部功能或实机验收承诺',
                 levels={'Supported': '所列有界接口开放', 'Limited': '部分能力开放，限制见各API',
@@ -131,7 +132,8 @@ def server_definitions(bridge, supported=None):
     if program_tasks.available(bridge):
         definitions += program_tasks.definitions(excavation='server_ai_excavation_v1' in capabilities,
                                                  combat='server_ai_combat_v1' in capabilities,
-                                                 collection='collect_drops' in supported)
+                                                 collection='collect_drops' in supported,
+                                                 placement='place_item' in supported)
     return definitions
 
 

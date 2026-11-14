@@ -427,7 +427,11 @@ def scene_variant(regional):
             'objects': {'objectCounts': obj(SCENE_COUNTS)},
             'placementCandidates': {'placementMaterial': obj({
                 **fields(integers='itemType stack createTile', booleans='supported'), 'hotbarKey': HOTBAR,
-            })},
+                'placeItem': obj({
+                    'kind': nullable(enum('tile', 'object', 'wall', 'chest', 'rope')),
+                    **fields(integers='createWall style width height originX originY'),
+                }),
+            }, optional=('placeItem',))},
             'objectPlacementCandidates': {'objectPlacementMaterial': obj(fields(
                 integers='itemType stack', booleans='supported definitionSupported', strings='anchorMeaning'))},
         }
@@ -663,7 +667,7 @@ TARGETS = {
     'targetRecipe': ('craft_recipe',),
     'targetInventory': ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
-    'targetTask': ('navigate_to', 'mine_target', 'combat_attack', 'collect_drops'),
+    'targetTask': ('navigate_to', 'mine_target', 'combat_attack', 'collect_drops', 'place_item'),
 }
 MINE_ARGUMENTS = any_of(obj({**TILE_XY, 'cluster': B}, optional=('cluster',)),
                         obj({'target': ref('MineToken'), 'cluster': B}, optional=('cluster',)))
@@ -687,7 +691,7 @@ DEFS['EndEvidence'] = any_of(
 )
 DEFS['StopRequest'] = obj({'status': TERMINAL_STATUS, 'reason': S})
 
-TASK_NAMES = ('navigate_to', 'mine_target', 'combat_attack', 'collect_drops')
+TASK_NAMES = ('navigate_to', 'mine_target', 'combat_attack', 'collect_drops', 'place_item')
 TASK_CHILDREN = ('navigate_to_landing_region', 'mine_tile', 'place_tile', 'excavate_tiles')
 TASK_EVIDENCE = {
     'navigate_to': obj({'target': ref('WorldPoint'), 'x': PIXEL, 'y': PIXEL, 'feetY': PIXEL,
@@ -757,7 +761,14 @@ DEFS['ExcavationProgress'] = obj({
     'stage': S, **fields(integers='completedChildren settledChildren omittedChildren', booleans='childrenTruncated'),
     'children': array(ref('GameTaskView')), 'excavation': ref('ExcavationEvidence'),
 })
-TASK_LEAF_EVIDENCE = (ref('MiningEvidence'), ref('NavigationEvidence'), ref('PlacementEvidence'), ref('MiningRunEvidence'))
+DEFS['PlaceItemEvidence'] = obj({
+    'kind': enum('tile', 'object', 'wall', 'chest', 'rope'),
+    'requested': obj(TILE_XY), 'anchor': obj(TILE_XY), 'footprint': ref('TileRect'),
+    **{key: nullable(I) for key in ('tileType', 'wallType', 'alternate', 'direction', 'chestIndex')},
+    **fields(integers='style itemType initialStack remainingStack consumedCount nativePlacementEvents',
+             booleans='chestVerified targetPresent placedByActor targetChanged uncertainNativeEffect'),
+})
+TASK_LEAF_EVIDENCE = (ref('PlaceItemEvidence'), ref('MiningEvidence'), ref('NavigationEvidence'), ref('PlacementEvidence'), ref('MiningRunEvidence'))
 
 
 def native_preflight(*operations):
@@ -812,6 +823,7 @@ ACTION_EVIDENCE = {
     'mine_target': 'GameTaskEvidence',
     'combat_attack': 'GameTaskEvidence',
     'collect_drops': 'GameTaskEvidence',
+    'place_item': 'GameTaskEvidence',
     'mine_tile': 'MiningEvidence',
     'place_tile': 'PlacementEvidence',
     'place_object': 'PlacementEvidence',
@@ -853,10 +865,10 @@ DEFS['ActionReceipt'] = obj({
     'effectVerified': nullable(B),
 }, optional=(*RECEIPT_FLAGS, 'targetContainer'), closed=False)
 RAW_TASK_ACTION = {
-    **ACTION_CORE, 'operation': enum('mine_target', 'combat_attack', 'collect_drops'), 'status': ACTION_STATUS, 'generation': I, 'durationMs': I,
+    **ACTION_CORE, 'operation': enum('mine_target', 'combat_attack', 'collect_drops', 'place_item'), 'status': ACTION_STATUS, 'generation': I, 'durationMs': I,
     'requestedInputs': NULL, 'executionState': S, 'task': GAME_TASK,
-    'evidence': any_of(ref('GameTaskEvidence'), native_preflight('mine_target', 'combat_attack', 'collect_drops'), NULL),
-    **{key: target_schema(key, ('mine_target', 'combat_attack', 'collect_drops')) for key in TARGETS if key != 'targetContainer'},
+    'evidence': any_of(ref('GameTaskEvidence'), native_preflight('mine_target', 'combat_attack', 'collect_drops', 'place_item'), NULL),
+    **{key: target_schema(key, ('mine_target', 'combat_attack', 'collect_drops', 'place_item')) for key in TARGETS if key != 'targetContainer'},
 }
 DEFS['RawProgramTaskAction'] = obj({**RAW_TASK_ACTION, 'targetContainer': NULL}, optional=('targetContainer',))
 
@@ -904,6 +916,12 @@ ARRIVED = matches(arrived=TRUE, grounded=TRUE, safeSupport=TRUE, settled=TRUE)
 PLACED = dict(placedByActor=TRUE, targetPresent=TRUE, targetChanged=FALSE, consumedCount=const(1))
 NATIVE_PLACEMENT = dict(nativePlacementEvents=const(1), uncertainNativeEffect=FALSE)
 TASK_COMPLETION_PROOF = {
+    'place_item': matches(taskName=const('place_item'), status=const('completed'), phase=const('terminal'),
+        result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence={
+            **matches(**PLACED, **NATIVE_PLACEMENT),
+            'if': matches(kind=const('chest')),
+            'then': matches(chestVerified=TRUE),
+        })),
     'collect_drops': matches(taskName=const('collect_drops'), status=const('completed'), phase=const('terminal'),
         result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence=matches(
             remaining={'maxItems': 0}, unavailable={'maxItems': 0}, truncated=FALSE, outcome=enum('collected', 'none')))),
@@ -1049,19 +1067,19 @@ def action_ref(name):
 DEFS.update({'Action_' + name: action_variants(name) for name in ACTION_EVIDENCE})
 DEFS['ProgramTaskUnknownOutcome'] = obj({
     'valid': const(False), 'status': const('unknown'), 'completed': const(False),
-    'operation': enum('mine_target', 'combat_attack', 'collect_drops'), 'actionId': S, 'reason': S, 'retryAllowed': const(False), **STOP_CONTINUATION,
+    'operation': enum('mine_target', 'combat_attack', 'collect_drops', 'place_item'), 'actionId': S, 'reason': S, 'retryAllowed': const(False), **STOP_CONTINUATION,
 }, optional=STOP_CONTINUATION)
 DEFS['ProgramTaskOrigin'] = obj({
     'chatId': nullable(any_of(I, S)), 'programId': S, 'runId': nullable(S),
     'mcp_session_id': S, 'mcp_request_id': any_of(I, S), 'mcp_tool_name': S,
 }, optional=('mcp_session_id', 'mcp_request_id', 'mcp_tool_name'))
 PROGRAM_TASK_BASE = {
-    'taskId': S, 'operation': enum('mine_target', 'combat_attack', 'collect_drops'),
+    'taskId': S, 'operation': enum('mine_target', 'combat_attack', 'collect_drops', 'place_item'),
     'status': enum('submitting', 'running', 'completed', 'failed', 'cancelled', 'timeout', 'unknown'),
     'valid': B, 'completed': B, 'dispatchState': enum('unknown', 'admitted', 'not_admitted'),
     'origin': nullable(ref('ProgramTaskOrigin')), 'retryAllowed': const(False),
     'action': ref('RawProgramTaskAction'),
-    'result': any_of(action_ref('mine_target'), action_ref('combat_attack'), action_ref('collect_drops'), ref('ProgramTaskUnknownOutcome')), 'resultSequence': I,
+    'result': any_of(action_ref('mine_target'), action_ref('combat_attack'), action_ref('collect_drops'), action_ref('place_item'), ref('ProgramTaskUnknownOutcome')), 'resultSequence': I,
 }
 PROGRAM_TASK_OPTIONAL = ('action', 'result', 'resultSequence')
 DEFS['ProgramTaskView'] = obj(PROGRAM_TASK_BASE, optional=PROGRAM_TASK_OPTIONAL)

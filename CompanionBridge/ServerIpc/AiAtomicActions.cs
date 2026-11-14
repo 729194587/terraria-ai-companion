@@ -18,6 +18,7 @@ internal sealed class AiAtomicActions
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
     internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"})
         .Concat(SupportsContainers ? new[]{"server_ai_containers_v1","server_ai_container_transfer_v1","server_ai_container_batch_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsPlacement ? new[]{"server_ai_place_item_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsCollection ? new[]{"server_ai_collect_drops_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsSorting ? new[]{"server_ai_sorting_v1"} : Array.Empty<string>())
         .Concat(SupportsCombat?new[]{"server_ai_combat_v1"}:Array.Empty<string>()).ToArray();
@@ -35,6 +36,7 @@ internal sealed class AiAtomicActions
         bool SupportsContainers=>false;
         bool SupportsSorting=>false;
         bool SupportsCollection=>false;
+        bool SupportsPlacement=>false;
         bool CanTransferBody(AiReadOnlyProtocol.Identity identity)=>false;
         string ValidateCombatAdmission(AiReadOnlyProtocol.Identity identity,string target)=>null;
         void Shutdown();
@@ -84,7 +86,7 @@ internal sealed class AiAtomicActions
     private static bool IsContainerOperation(string operation) =>
         operation is "open_container" or "close_container" or "deposit_container_item" or "withdraw_container_item"
         or "sort_inventory" or "sort_container" or "quick_stack_nearby" or "quick_stack_container" or "loot_all" or "deposit_all" or "restock";
-    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to" or "collect_drops" or CombatProtocol.Operation;
+    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to" or "collect_drops" or "place_item" or CombatProtocol.Operation;
     internal object CombatState(AiReadOnlyProtocol.Identity current) =>
         new{action=Matches(lastCombat,current)?Snapshot(lastCombat):null};
 
@@ -168,8 +170,9 @@ internal sealed class AiAtomicActions
         if (operation is ("sort_inventory" or "sort_container") && executor?.SupportsSorting != true)
             return new(Error: "unsupported_operation");
         if (container && !SupportsContainers) return new(Error: "unsupported_operation");
+        if (operation == "place_item" && executor?.SupportsPlacement != true) return new(Error: "unsupported_operation");
         if (operation == "collect_drops" && executor?.SupportsCollection != true) return new(Error: "unsupported_operation");
-        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops")))) return new(Error: "unsupported_operation");
+        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "place_item")))) return new(Error: "unsupported_operation");
         var arguments = root.GetProperty("arguments");
         int key = 0;
         if (selecting)
@@ -194,7 +197,7 @@ internal sealed class AiAtomicActions
         long remaining = root.GetProperty("expiresAtUnixMs").GetInt64() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (remaining <= 0) return new(Error: "request_expired");
         if (remaining > 2000) return new(Error: "invalid_deadline");
-        int duration = operation switch { CombatProtocol.Operation=>35000, "navigate_to"=>180000, "mine_target"=>55000, "collect_drops"=>35000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
+        int duration = operation switch { CombatProtocol.Operation=>35000, "navigate_to"=>180000, "mine_target"=>55000, "collect_drops"=>35000, "place_item"=>12000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
         if(combat&&CombatConflict(current,arguments.GetProperty("entityRef").GetString()) is {} conflict)
             return new(Error:conflict);
         return Admit(owner,id,binding.actor,current,operation,arguments,duration,disconnected, key, selecting?remaining:duration);

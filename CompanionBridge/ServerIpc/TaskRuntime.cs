@@ -149,12 +149,12 @@ internal sealed class NativeActionTask : CompanionTask
     private readonly System.Text.Json.JsonElement args;
     private object handle;
     private bool attempted;
-    internal NativeActionTask(AiAtomicActions.IExecutor executor,string operation,System.Text.Json.JsonElement args,string id)
-    {this.executor=executor;this.operation=operation;this.args=args.Clone();this.id=id;}
+    internal NativeActionTask(AiAtomicActions.IExecutor executor,string operation,System.Text.Json.JsonElement args,string id,string taskName=null)
+    {this.executor=executor;this.operation=operation;this.args=args.Clone();this.id=id;Name=taskName??operation;}
     internal string RequestId=>id;
     internal bool Started=>attempted;
     internal override ulong ProgressVersion=>handle==null?0:executor.ProgressVersion(handle);
-    internal override string Name=>operation;
+    internal override string Name{get;}
     internal override void Start(AiReadOnlyProtocol.Identity frame){attempted=true;handle=executor.Start(frame,operation,args,id);}
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)=>executor.Poll(frame,handle);
     internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)=>handle!=null?executor.Cancel(frame,handle):new(attempted?"unknown":status,attempted?"native_start_unconfirmed":reason,null,!attempted,InputsAcquired:attempted);

@@ -204,7 +204,18 @@ internal static class ServerSceneReader
         });
         layers.Add(response,"placementCandidates",()=>
         {
-            response["placementMaterial"]=new{itemType=p.HeldItem.type,p.HeldItem.stack,p.HeldItem.createTile,hotbarKey=HotbarSlots.KeyForInventorySlot(p.selectedItem),supported=ActorPlacement.Supported(p.HeldItem)};
+            var item=p.HeldItem;
+            var material=new Dictionary<string,object>{
+                ["itemType"]=item.type,["stack"]=item.stack,["createTile"]=item.createTile,
+                ["hotbarKey"]=HotbarSlots.KeyForInventorySlot(p.selectedItem),["supported"]=ActorPlacement.Supported(item)};
+            if(ActorPlacement.UnifiedAvailable)
+            {
+                string kind=ActorPlacement.UnifiedKind(item);
+                var shape=kind is "object" or "chest"?ActorObjectPlacement.Definition(item):null;
+                material["placeItem"]=new{kind,createWall=item.createWall,style=item.placeStyle,
+                    width=shape?.Width??1,height=shape?.Height??1,originX=shape?.OriginX??0,originY=shape?.OriginY??0};
+            }
+            response["placementMaterial"]=material;
             return SceneGeometry.LimitPlacements(SceneGeometry.Placements(cells,ox,oy,actor,bodies),placementCap);
         });
         layers.Add(response,"objectPlacementCandidates",()=>

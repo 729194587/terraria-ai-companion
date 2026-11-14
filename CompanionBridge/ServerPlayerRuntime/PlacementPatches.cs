@@ -31,7 +31,8 @@ public static class PlacementPatches
         string name=m.Name.StartsWith(prefix,StringComparison.Ordinal)?m.Name.Substring(prefix.Length):m.Name;
         bool instance=m.HasThis&&m.DeclaringType.FullName=="Terraria.Player"&&m.Name==name;
         bool lifted=!m.HasThis&&m.Name==prefix+name&&m.Parameters.Count>0&&m.Parameters[0].ParameterType.FullName=="Terraria.Player";
-        Require(Reads.TryGetValue(name,out int count)&&(instance||lifted)
+        int count=name=="PlaceThing_Walls"?34:Reads.GetValueOrDefault(name);
+        Require(count>0&&(instance||lifted)
             &&m.HasBody&&m.Body.ExceptionHandlers.Count==(name=="PlaceThing_Tiles_PlaceIt_StaffOfRegrowthCheck"?2:0)&&m.Body.Instructions.Count(Target)==count
             &&m.Body.Instructions.Where(Target).All(i=>i.OpCode==OpCodes.Ldsfld),m.FullName);
         bool Call(int offset,string name)=>m.Body.Instructions.Any(i=>i.Offset==offset&&i.Operand is MethodReference r&&r.Name==name);
@@ -39,14 +40,28 @@ public static class PlacementPatches
             &&Call(0x033a,"PlaceThing_Tiles_BlockPlacementForAssortedThings")
             &&Call(0x012d,"get_TileReplacementEnabled"),m.FullName+" dispatch anchors");
         if(name=="PlaceThing_Tiles_PlaceIt")Require(Call(0x006e,"Place")&&Call(0x00e8,"PlaceTile")&&Call(0x0114,"ApplyItemTime")&&Call(0x0231,"PlaceInWorld"),m.FullName+" placement anchors");
+        if(name=="PlaceThing_Walls")Require(Call(0x02c1,"get_TileReplacementEnabled")
+            &&Call(0x02f1,"PlaceWall")&&Call(0x0341,"PlaceInWorld")&&Call(0x039e,"PlaceThing_Walls_FillEmptySpace"),m.FullName+" wall placement anchors");
     }
-    public static void Patch(MethodDefinition m,MethodReference getX,MethodReference getY,MethodReference replacement=null)
+    public static void Patch(MethodDefinition m,MethodReference getX,MethodReference getY,MethodReference replacement=null,
+        MethodReference fillWalls=null,MethodReference postPlacement=null)
     {
         Validate(m);var il=m.Body.GetILProcessor();
         if(replacement!=null)
         {
-            var gate=m.Body.Instructions.Single(i=>i.Offset==0x012d);
+            var gate=m.Body.Instructions.Single(i=>i.Offset==(fillWalls==null?0x012d:0x02c1));
             gate.OpCode=OpCodes.Call;gate.Operand=replacement;
+        }
+        if(fillWalls!=null)
+        {
+            var call=m.Body.Instructions.Single(i=>i.Offset==0x039e);
+            call.OpCode=OpCodes.Call;call.Operand=fillWalls;
+        }
+        if(postPlacement!=null)
+        {
+            var call=m.Body.Instructions.Single(i=>i.Offset==0x0135&&i.Operand is MethodReference method
+                &&method.Name=="CallPostPlacementPlayerHook");
+            call.Operand=postPlacement;
         }
         foreach(var i in m.Body.Instructions.Where(Target).ToArray())
         {

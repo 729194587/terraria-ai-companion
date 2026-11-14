@@ -118,7 +118,29 @@ internal static class ActorObjectPlacement
             }
         return $"{root.TileFrameX}:{root.TileFrameY}";
     }
-    internal static bool Present(ActorPlacement.Context c)=>c.ObjectFrames!=null&&c.ObjectFrames==ReadFrames(c);
+    internal static bool Present(ActorPlacement.Context c)=>c.ObjectFrames!=null&&c.ObjectFrames==ReadFrames(c)
+        &&(!c.Unified||!c.IsChest||c.Chest!=null&&ReferenceEquals(Main.chest[c.ChestIndex],c.Chest)
+            &&c.Chest.x==c.X-c.Shape.OriginX&&c.Chest.y==c.Y-c.Shape.OriginY&&c.Chest.item?.Length==40);
+
+    internal static void FinishNativePlacement(ActorPlacement.Context c)
+    {
+        int left=c.X-c.Shape.OriginX,top=c.Y-c.Shape.OriginY;
+        if(c.IsChest)
+        {
+            // The native TileObjectData post-placement hook registers storage on the server.
+            c.ChestIndex=Chest.FindChest(left,top);
+            if(c.ChestIndex>=0)c.Chest=Main.chest[c.ChestIndex];
+            if(!Present(c))c.UncertainNativeEffect=true;
+            else
+            {
+                int action=c.TileType switch {TileID.Containers=>0,TileID.Containers2=>4,TileID.Dressers=>2,
+                    _=>TileID.Sets.BasicDresser[c.TileType]?102:100};
+                int packetX=TileID.Sets.BasicDresser[c.TileType]?left+1:left;
+                NetMessage.SendData(MessageID.ChestUpdates,-1,-1,null,action,packetX,top+1,c.Style,c.ChestIndex,c.TileType);
+            }
+        }
+        NetMessage.SendTileSquare(-1,left,top,c.Shape.Width,c.Shape.Height);
+    }
 
     internal static bool Placed(On_TileObject.orig_Place orig,TileObject data)
     {
@@ -129,7 +151,11 @@ internal static class ActorObjectPlacement
             ||data.xCoord+shape.OriginX!=c.X||data.yCoord+shape.OriginY!=c.Y)
         {c.UncertainNativeEffect=true;return false;}
         if(EmptyError(ActorItemUse.Current.Actor,c.X,c.Y,shape)!=null)return false;
+        if(c.Unified&&c.IsChest&&Chest.FindChest(data.xCoord,data.yCoord)>=0)return false;
         c.Shape=shape;
+        c.ActualStyle=data.style;
+        c.Alternate=data.alternate;
+        c.Direction=ActorItemUse.Current.Actor.direction;
         c.SupportSnapshot=SupportSnapshot(c);
         string before=FootprintState(c);
         c.NativeEvents++;
@@ -140,7 +166,7 @@ internal static class ActorObjectPlacement
             c.ObjectFrames=ReadFrames(c);
             c.Placed=result&&c.ObjectFrames!=null;
             c.UncertainNativeEffect|=result!=c.Placed||!result&&FootprintState(c)!=before;
-            if(c.Placed)NetMessage.SendTileSquare(-1,data.xCoord,data.yCoord,shape.Width,shape.Height);
+            if(c.Placed&&!c.Unified)NetMessage.SendTileSquare(-1,data.xCoord,data.yCoord,shape.Width,shape.Height);
             return result;
         }
         catch{c.UncertainNativeEffect=true;throw;}
@@ -157,6 +183,7 @@ internal static class ActorObjectPlacement
     internal static string Validate(ActorItemUse.Context use)
     {
         var c=use.Placement;
+        if(c.PostHookRejected)return "native_post_placement_hook_rejected";
         if(c.ExternalChange||c.Placed&&!Present(c)||c.SupportSnapshot!=SupportSnapshot(c))
         {c.ExternalChange=true;return "object_target_changed";}
         if(!c.Placed&&EmptyError(use.Actor,c.X,c.Y,c.Shape) is {} invalid)return invalid;
@@ -172,6 +199,7 @@ internal static class ActorObjectPlacement
     internal static string CancellationUncertainty(ActorItemUse.Context use)
     {
         var c=use.Placement;
+        if(c.PostHookRejected)return "native_post_placement_hook_rejected";
         if(c.UncertainNativeEffect)return "native_object_effect_unconfirmed";
         string invalid=Validate(use);if(invalid!=null)return invalid;
         if(c.NativeEvents==0&&!c.Placed&&c.ConsumedCount==0)return null;

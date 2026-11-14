@@ -39,6 +39,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsContainers=>true;
     public bool SupportsSorting=>ActorSorting.Available;
     public bool SupportsCollection => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsPlacement => ActorPlacement.UnifiedAvailable;
     public string ValidateCombatAdmission(AiReadOnlyProtocol.Identity identity,string target)=>NativeCombatWorld.Preflight(identity,target);
     public string Validate(string operation,JsonElement args)
         => AtomicParameters.ValidateServerAction(operation, args);
@@ -69,8 +70,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                         ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge)
                         :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
                     :operation=="collect_drops" ? new CollectDropsTask(actionId,args,executor)
+                    :operation=="place_item" ? new NativeActionTask(executor,"place_item_native",args,actionId,operation)
                     :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
-                ulong budget=operation==CombatProtocol.Operation?CombatController.Budget:operation=="collect_drops"?CollectDropsTask.Budget:AutonomousNavigationTask.TripUpdates;
+                ulong budget=operation switch {CombatProtocol.Operation=>CombatController.Budget,"collect_drops"=>CollectDropsTask.Budget,
+                    "place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},budget);
             }
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
@@ -110,6 +113,14 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,operation=="place_object");
                 if(child&&operation=="place_tile"&&args.TryGetProperty("waterBridgeDirection",out var direction))
                     ActorItemUse.Current.Placement.WaterBridgeDirection=direction.GetInt32();
+                context=ActorItemUse.Current;
+            }
+            else if(child&&operation=="place_item_native")
+            {
+                int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
+                string error=ActorPlacement.PrepareUnified(p,x,y,out var placement);
+                if(error!=null)return new Handle(identity,operation,null,new("failed",error,null,true,InputsAcquired:false));
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,placement);
                 context=ActorItemUse.Current;
             }
             else if(operation=="use_item")
@@ -201,15 +212,25 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 effectStatus="native_navigation_observed"},Released(p),c.Status=="completed"&&physical.Settled
                     &&(c.Region==null||c.Region.Arrived(physical.State,new NativeMotionWorld(physical.State))),InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);
         }
-        if(h.Operation is "place_tile" or "place_object" or "place_rope")
+        if(h.Operation is "place_tile" or "place_object" or "place_rope" or "place_item_native")
         {
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ActorItemUse.Context)h.Context;var tile=c.Placement;
-            bool present=tile.Object?ActorObjectPlacement.Present(tile):Main.tile[tile.X,tile.Y].HasTile&&Main.tile[tile.X,tile.Y].TileType==tile.TileType
-                &&(tile.Rope==null||!Main.tile[tile.X,tile.Y].IsActuated);
+            bool present=ActorPlacement.Present(tile);
             bool verified=c.Phase=="completed"&&tile.Placed&&!tile.ExternalChange&&present&&tile.NativeEvents==1&&!tile.UncertainNativeEffect&&tile.ConsumedCount==1
                 &&(!tile.Object||ActorObjectPlacement.Validate(c)==null);
             string placementPhase=c.Phase=="rejected"?"failed":c.Phase=="stale"||c.Phase=="completed"&&!verified?"unknown":c.Phase;
+            if(tile.Unified)
+                return new(placementPhase,c.Phase=="completed"&&!verified?"native_placement_terminal_unconfirmed":c.Reason,
+                    new {kind=tile.Kind,requested=new{x=tile.Rope?.X??tile.X,y=tile.Rope?.Y??tile.Y},
+                        anchor=new{x=tile.X,y=tile.Y},footprint=tile.Object?ActorObjectPlacement.Bounds(tile):new{x=tile.X,y=tile.Y,width=1,height=1},
+                        tileType=tile.TileType<0?(int?)null:tile.TileType,wallType=tile.WallType>0?(int?)tile.WallType:null,
+                        style=tile.ActualStyle??tile.Style,alternate=tile.Object?(int?)tile.Alternate:null,direction=tile.Object?(int?)tile.Direction:null,
+                        chestIndex=tile.ChestIndex>=0?(int?)tile.ChestIndex:null,chestVerified=tile.IsChest&&present,
+                        itemType=c.Type,initialStack=c.InitialStack,remainingStack=p.inventory[c.Slot].stack,consumedCount=tile.ConsumedCount,
+                        nativePlacementEvents=tile.NativeEvents,targetPresent=present,placedByActor=tile.Placed,
+                        targetChanged=tile.ExternalChange,uncertainNativeEffect=tile.UncertainNativeEffect},
+                    Released(p)&&p.releaseUseItem&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0,verified,InputsAcquired:c.Ticks>0);
             return new(placementPhase,c.Phase=="completed"&&!verified?"native_placement_terminal_unconfirmed":c.Reason,
                 new{x=tile.X,y=tile.Y,typeId=tile.TileType,itemType=c.Type,c.InitialStack,remainingStack=p.inventory[c.Slot].stack,
                     c.Ticks,c.Starts,c.AnimationPeak,tile.Attempts,nativePlacementEvents=tile.NativeEvents,uncertainNativeEffect=tile.UncertainNativeEffect,consumedCount=tile.ConsumedCount,placedByActor=tile.Placed,
@@ -266,7 +287,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(c.Status=="running"){c.Status="cancelled";c.Reason="explicit_stop";}
             return new(c.Status,c.Reason,ActorCrafting.Evidence(c),Released((Player)h.Identity.Actor),c.Status=="completed",InputsAcquired:false);
         }
-        if(h.Operation=="place_object")
+        if(h.Operation is "place_object" or "place_item_native")
         {
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
             ActorItemUse.Stop((Player)h.Identity.Actor,h.Identity.World,h.Identity.Generation);
