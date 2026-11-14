@@ -45,6 +45,7 @@ internal static class ServerCollectFixture
         if (!File.Exists(path)) return;
         string command = File.ReadAllText(path);
         if (command == "allow-contact-pickup" && ServerDrops.Current == null) return;
+        if (command == "move-drop" && (ServerDrops.Current?.Phase != "approaching_drop" || player.velocity.Y >= -0.1f)) return;
         File.Delete(path);
         if (command.StartsWith("seed", StringComparison.Ordinal))
         {
@@ -89,6 +90,8 @@ internal static class ServerCollectFixture
         {
             var item = Main.item.First(i => i.active && i.type == ItemID.Wood);
             item.position.X += 80;
+            item.keepTime = 1800;
+            item.playerIndexTheItemIsReservedFor = player.whoAmI;
             NetMessage.SendData(MessageID.SyncItem, -1, -1, null, Array.IndexOf(Main.item, item));
         }
         if (command == "reinitialize-drop")
@@ -127,7 +130,8 @@ internal static class ServerCollectFixture
         }
         File.WriteAllText(Path.Combine(Main.SavePath, "container-state.json"), JsonSerializer.Serialize(new
         {
-            command, x = player.Center.X, y = player.Center.Y,
+            command, x = player.Center.X, y = player.Center.Y, vx = player.velocity.X, vy = player.velocity.Y,
+            inputsReleased = ServerAiNativeActions.Released(player),
             items = Main.item.Select((item, slot) => new { item, slot }).Where(row => row.item.active)
                 .Select(row => new { row.slot, type = row.item.type, stack = row.item.stack, owner = row.item.playerIndexTheItemIsReservedFor, grabbed = row.item.beingGrabbed }).ToArray(),
             inventory = player.inventory.Select((item, slot) => new { slot, item.type, item.stack }).ToArray(),

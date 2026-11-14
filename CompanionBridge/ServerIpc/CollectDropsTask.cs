@@ -16,6 +16,7 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
     internal const ulong Budget = 1500;
     private const int TargetLimit = 16;
     private const ulong ApproachBudget = 240;
+    private const ulong SettleBudget = 120;
     // Bounds stance probes per approach. The search rectangle is the native grab
     // range; only the sample count is capped, so cost stays predictable without
     // narrowing where the Actor may stand to pick an item up.
@@ -34,13 +35,15 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
     private Target target;
     private bool uncertain;
     private ulong navigationUntil;
+    private ulong? settleUntil;
     private NativeActionTask navigation;
     private Rectangle planned;
     private LandingRegion plannedRegion;
     private ulong waitUntil;
     private bool truncated, usedInputs;
     internal override string Name => "collect_drops";
-    internal override string Phase => navigation != null ? "approaching_drop" : target != null ? "waiting_for_pickup" : "selecting_drop";
+    internal override string Phase => settleUntil.HasValue ? "settling_after_approach"
+        : navigation != null ? "approaching_drop" : target != null ? "waiting_for_pickup" : "selecting_drop";
     internal override object Progress => Evidence();
     internal override object LastResult => lastResult == null ? null : TaskSlot.Receipt(lastResult with { Evidence = null });
 
@@ -101,6 +104,17 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
         foreach (var row in targets)
             if (row.Reason == null && !ServerDrops.Live(row.Drop)) row.Reason = "drop_unavailable";
 
+        if (settleUntil is {} deadline)
+        {
+            if (!ServerAiNativeActions.Released(player)) return End("unknown", "task_inputs_not_released");
+            var observed = ServerAiNavigation.Observe(player);
+            if (!observed.Settled)
+                return frame.GameUpdate >= deadline ? End("unknown", "native_navigation_landing_unconfirmed") : Running();
+            settleUntil = null;
+            LogApproachTransition("settled", observed);
+            return Running();
+        }
+
         if (navigation != null)
         {
             bool moved = target.Reason != null || Distance(planned, target.Drop.Item.Hitbox) > 24;
@@ -108,18 +122,20 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
             {
                 var stopped = base.Stop(frame, "cancelled", "drop_target_changed");
                 navigation = null;
-                if (stopped.Status == "unknown") return End("unknown", stopped.Reason);
+                if (stopped.Status == "unknown" || !stopped.InputsReleased) return End("unknown", stopped.Reason);
                 if (target.Attempts >= 4 && target.Reason == null) target.Reason = "drop_moved_repeatedly";
                 target = null;
+                BeginSettling(frame, "drop_target_changed");
                 return Running();
             }
             if (frame.GameUpdate >= navigationUntil)
             {
                 var stopped = base.Stop(frame, "timeout", "navigation_timeout");
                 navigation = null;
-                if (stopped.Status == "unknown") return End("unknown", stopped.Reason);
+                if (stopped.Status == "unknown" || !stopped.InputsReleased) return End("unknown", stopped.Reason);
                 target.Reason = "navigation_timeout";
                 target = null;
+                BeginSettling(frame, "navigation_timeout");
                 return Running();
             }
             var child = RunChild(navigation, frame, ApproachBudget);
@@ -192,6 +208,18 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
             return End("timeout", "navigation_timeout");
         return End("failed", collected.Count > 0 ? "drops_partially_collected" : "drops_not_collected");
     }
+
+    private void BeginSettling(AiReadOnlyProtocol.Identity frame, string reason)
+    {
+        settleUntil = frame.GameUpdate + SettleBudget;
+        LogApproachTransition(reason, ServerAiNavigation.Observe(player));
+    }
+
+    private void LogApproachTransition(string reason, ServerAiNavigation.LandingObservation observed)
+        => ProbeSession.Log("collect-approach-transition", new { taskId, reason,
+            x = observed.State.Px, y = observed.State.Py, vx = observed.State.Vx, vy = observed.State.Vy,
+            grounded = observed.State.Grounded, observed.SafeSupport, observed.Settled,
+            inputsReleased = ServerAiNativeActions.Released(player) });
 
     private string PickupBlock(Item item)
     {

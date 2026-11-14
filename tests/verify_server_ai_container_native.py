@@ -528,7 +528,7 @@ async def verify_sorting(bridge, clients, report, api, inspect, fixture, index):
         fixture("clear-sort-fixture")
 
 
-async def verify_collect(profile, bridge, clients):
+async def verify_collect(profile, bridge, clients, engine_log):
     from program_tasks import TaskCoordinator, validate as validate_task
     tasks = TaskCoordinator(bridge)
     report = {"clients": [client.slot for client in clients], "cases": {}}
@@ -537,7 +537,7 @@ async def verify_collect(profile, bridge, clients):
         report["cases"][label] = result
         (profile / "collect-case-receipts.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
 
-    def fixture(command):
+    def queue_fixture(command):
         response = profile / "container-state.json"
         response.unlink(missing_ok=True)
         request = profile / "container-request.tmp"
@@ -549,7 +549,10 @@ async def verify_collect(profile, bridge, clients):
                 return data if data["command"] == command else None
             except (FileNotFoundError, json.JSONDecodeError):
                 return None
-        return wait_for(read)
+        return lambda: wait_for(read)
+
+    def fixture(command):
+        return queue_fixture(command)()
 
     async def call(name, args):
         result = await tasks.invoke(name, validate_task(name, args))
@@ -568,11 +571,18 @@ async def verify_collect(profile, bridge, clients):
         return {"taskId": result["taskId"]}
 
     async def run(label, arguments, *, status="completed", intervene=None):
+        gated = intervene in ("allow-contact-pickup", "move-drop")
+        pending = queue_fixture(intervene) if gated else None
         task = await start(arguments)
         if intervene:
-            if intervene != "allow-contact-pickup":
+            if gated:
+                intervention = await asyncio.to_thread(pending)
+            else:
                 await asyncio.sleep(.4)
-            fixture(intervene)
+                intervention = fixture(intervene)
+            if intervene == "move-drop":
+                assert intervention["vy"] < -0.1, intervention
+                report["movingIntervention"] = {key: intervention[key] for key in ("x", "y", "vx", "vy", "inputsReleased")}
         result = await call("await_task", {**task, "milliseconds": 28000})
         (profile / "collect-latest.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         if result["status"] != status:
@@ -628,6 +638,22 @@ async def verify_collect(profile, bridge, clients):
     fixture("seed")
     result = await run("moving", {"typeIds": [9]}, intervene="move-drop")
     assert result["collected"] == [{"typeId": 9, "count": 7}], result
+    assert fixture("snapshot")["inputsReleased"]
+    task_id = report["cases"]["moving"]["taskId"]
+    events = [json.loads(line[line.index("{"):]) for line in engine_log.read_text(encoding="utf-8").splitlines()
+              if task_id in line and ('"eventName":"collect-approach-transition"' in line
+                                      or '"eventName":"task-native-start"' in line)]
+    interrupted = next(e for e in events if e["detail"].get("reason") == "drop_target_changed"
+                       and e["detail"]["vy"] < -0.1)
+    settled = next(e for e in events if e["gameUpdate"] > interrupted["gameUpdate"]
+                   and e["detail"].get("reason") == "settled")
+    restarted = next(e for e in events if e["gameUpdate"] > interrupted["gameUpdate"]
+                     and e["eventName"] == "task-native-start")
+    assert interrupted["detail"]["inputsReleased"] and not interrupted["detail"]["grounded"], interrupted
+    assert settled["detail"]["Settled"] and settled["detail"]["inputsReleased"], settled
+    assert settled["gameUpdate"] < restarted["gameUpdate"], (settled, restarted)
+    report["movingNavigation"] = [{"gameUpdate": e["gameUpdate"], **e["detail"]}
+                                  for e in (interrupted, settled, restarted)]
     fixture("seed")
     result = await run("disappearing", {}, status="failed", intervene="remove-drop")
     assert result["outcome"] == "partial" and len(result["unavailable"]) == 1, result
@@ -708,7 +734,7 @@ def main():
             clients.append(Client(args.port, "ChestObserverB"))
             bridge = ServerAiBridge(port=args.ipc_port)
             if args.collect:
-                report = asyncio.run(verify_collect(profile, bridge, clients))
+                report = asyncio.run(verify_collect(profile, bridge, clients, args.engine / "tModLoader-Logs/server.log"))
             else:
                 report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches, sorting=args.sorting))
             if "openAtWorldUnload" in report:
