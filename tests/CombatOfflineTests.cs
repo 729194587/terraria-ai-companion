@@ -17,6 +17,7 @@ public static class CombatOfflineTests
         internal CombatObservation Observation = new(true,true,true,10);
         internal int Starts, Releases, Steps, Abandons;
         internal bool Throw, Released = true;
+        internal string StepFailure;
         public string Prepare() => null;
         public void Acquire() => Starts++;
         public CombatObservation Observe() => Observation;
@@ -25,7 +26,7 @@ public static class CombatOfflineTests
             phase = "approach";
             Steps++;
             if (Throw) throw new InvalidOperationException("native fault");
-            return null;
+            return StepFailure;
         }
         internal bool HasNext;
         public string Retarget(Identity frame,IReadOnlySet<string> skipped)
@@ -102,6 +103,12 @@ public static class CombatOfflineTests
         world=new();task=Task(world);task.Tick(frame);
         Check(task.Tick(id with{GameUpdate=20}) is {Status:"timeout",Reason:"task_game_update_deadline",InputsReleased:true,EffectVerified:false}
             &&world.Releases==1,"deadline releases combat ownership");
+        foreach(var (reason,status) in new[]{("combat_firing_navigation_timeout","timeout"),("combat_native_unconfirmed","unknown")})
+        {
+            world=new(){StepFailure=reason};task=Task(world);task.Tick(frame);
+            Check(task.Tick(next) is {InputsReleased:true,EffectVerified:false} nav&&nav.Status==status
+                &&nav.Reason==reason&&world.Releases==1,"incomplete firing route is not a verified obstruction");
+        }
         world=new(){Released=false};task=Task(world);task.Tick(frame);
         Check(task.Stop(next,"cancelled","explicit_cancel") is {Status:"unknown",InputsReleased:false},"unconfirmed cleanup");
         world=new();task=Task(world);task.Tick(frame);

@@ -241,6 +241,29 @@ async def verify(args):
             final = sample['projectileHits'][-1]
             assert final['tick'] == proof['lastHit']['GameUpdate'] and final['life'] == proof['lastHit']['LifeAfter'], sample
 
+        clearance = await scene('ranged-clearance')
+        assert clearance['centered'] and not clearance['edge'] and clearance['legacy'] and clearance['restored'], clearance
+        results['rangedClearance'] = clearance
+        for mode in ('bow-wall', 'bow-high', 'bow-sealed'):
+            enemy = await scene(mode)
+            assert enemy['initialAim'] == (mode == 'bow-high'), enemy
+            launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                           'arguments': {'entityRef': enemy['entityRef']}})
+            result = await manager.invoke('await_task', {'taskId': launch['taskId'], 'milliseconds': 30000})
+            sample = await scene('audit')
+            results[mode] = {'result': result, 'audit': sample, 'spawn': enemy}
+            if mode == 'bow-sealed':
+                assert result['status'] == 'failed' and result['result']['reason'] == 'combat_shot_blocked', result
+                assert result['result']['inputsReleased'] and not sample['shots'] and sample['ammo'] == enemy['ammo'], sample
+                continue
+            proof = completed(result)
+            assert proof['target']['EntityRef'] == enemy['entityRef'] and sample['attackReleased'], sample
+            first = sample['shots'][0]
+            if mode == 'bow-wall':
+                assert abs(first['x'] - enemy['startX']) > 16 and first['y'] < enemy['startY'] - 16, (first, enemy)
+            else:
+                assert first['ty'] < first['y'] - 48 and first['vy'] < 0, first
+
         for mode in ('ranged-replace', 'ranged-cancel'):
             enemy = await scene('bow-one')
             launch = await manager.invoke('submit_task', {'operation': 'combat_attack',

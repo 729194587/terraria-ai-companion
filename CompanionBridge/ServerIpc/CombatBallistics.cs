@@ -14,7 +14,22 @@ namespace CompanionBridge.ServerIpc;
 internal static class CombatBallistics
 {
     internal readonly record struct Round(int Projectile,int Ammo,float Speed);
-    private static readonly Dictionary<int,int> updates = new();
+    internal readonly record struct CollisionProfile(int Width,int Height,int Updates,bool FallThrough,Vector2 Center);
+    private static readonly Dictionary<int,CollisionProfile> profiles = new();
+
+    internal static CollisionProfile Profile(int type)
+    {
+        if(profiles.TryGetValue(type,out var profile))return profile;
+        var sample=new Projectile();sample.SetDefaults(type);
+        // For the two admitted dry projectile types HandleMovement reaches
+        // its default width/height and centered, platform-fall-through path.
+        int width=sample.width,height=sample.height;
+        bool fallThrough=true;
+        var center=new Vector2(.5f);
+        if(!ProjectileLoader.TileCollideStyle(sample,ref width,ref height,ref fallThrough,ref center))
+            throw new InvalidOperationException("Expected a tile-colliding ordinary projectile.");
+        return profiles[type]=new(width,height,sample.extraUpdates+1,fallThrough,center);
+    }
     internal static bool Supported(Item item) =>
         (item.type is ItemID.WoodenBow or ItemID.BorealWoodBow or ItemID.PalmWoodBow or ItemID.RichMahoganyBow
             or ItemID.EbonwoodBow or ItemID.ShadewoodBow or ItemID.CopperBow or ItemID.TinBow
@@ -38,16 +53,16 @@ internal static class CombatBallistics
         return null;
     }
 
+    internal static Vector2 Muzzle(Player p)=>p.RotatedRelativePoint(p.MountedCenter);
     internal static bool Aim(Player p,NPC target,Item weapon,Round round,out Vector2 aim)
+        =>Aim(Muzzle(p),target,weapon,round,out aim);
+
+    internal static bool Aim(Vector2 origin,NPC target,Item weapon,Round round,out Vector2 aim)
     {
-        var origin=p.RotatedRelativePoint(p.MountedCenter);
         aim=target.Center;
         if(Vector2.DistanceSquared(origin,aim)>Range(weapon)*Range(weapon))return false;
-        if(!updates.TryGetValue(round.Projectile,out int perTick))
-        {
-            var sample=new Projectile();sample.SetDefaults(round.Projectile);
-            updates[round.Projectile]=perTick=sample.extraUpdates+1;
-        }
+        var profile=Profile(round.Projectile);
+        int perTick=profile.Updates;
         bool arrow=round.Projectile==ProjectileID.WoodenArrowFriendly;
         // AI style 1 wooden arrows start falling after 14 projectile updates.
         // Sample the low arc first. Use the actual ammo-adjusted speed, and
@@ -68,7 +83,7 @@ internal static class CombatBallistics
             {
                 if(arrow&&n>=15)velocity.Y=Math.Min(16,velocity.Y+.1f);
                 var next=position+velocity;
-                if(!ClearStep(position,velocity)){clear=false;break;}
+                if(!ClearStep(position,velocity,profile)){clear=false;break;}
                 position=next;
             }
             if(!clear||Math.Abs(position.X-future.X)>target.width*.5f||Math.Abs(position.Y-future.Y)>target.height*.5f)continue;
@@ -77,13 +92,26 @@ internal static class CombatBallistics
         }
         return false;
     }
-    private static bool ClearStep(Vector2 center,Vector2 velocity)
+    internal static bool ClearStep(Vector2 center,Vector2 velocity,CollisionProfile profile)
     {
-        // TileCollision is the native swept test. Preserve its shared
-        // scratch flags so a planning query cannot affect player physics.
-        var flags=(Collision.up,Collision.down,Collision.stair,Collision.stairFall,Collision.sloping);
-        try{return Collision.TileCollision(center-new Vector2(2),velocity,4,4)==velocity;}
-        finally{(Collision.up,Collision.down,Collision.stair,Collision.stairFall,Collision.sloping)=flags;}
+        var flags=(Collision.up,Collision.down,Collision.stair,Collision.stairFall,Collision.sloping,
+            Collision.honey,Collision.shimmer,Collision.landMine);
+        var position=center-new Vector2(profile.Width,profile.Height)*profile.Center;
+        try
+        {
+            if(Collision.TileCollision(position,velocity,profile.Width,profile.Height,profile.FallThrough,profile.FallThrough)!=velocity)
+                return false;
+            var slope=Collision.SlopeCollision(position,velocity,profile.Width,profile.Height,0,true);
+            if(new Vector2(slope.X,slope.Y)!=position||new Vector2(slope.Z,slope.W)!=velocity)return false;
+            // Water/honey/shimmer motion is outside the dry ballistic profile.
+            return !Collision.WetCollision(position,profile.Width,profile.Height)
+                &&!Collision.WetCollision(position+velocity,profile.Width,profile.Height);
+        }
+        finally
+        {
+            (Collision.up,Collision.down,Collision.stair,Collision.stairFall,Collision.sloping,
+                Collision.honey,Collision.shimmer,Collision.landMine)=flags;
+        }
     }
 
 }

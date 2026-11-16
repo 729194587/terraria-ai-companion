@@ -157,6 +157,31 @@ internal static class ServerCombatFixture
                     attackReleased=!p.controlUseItem&&p.releaseUseItem}));
             return;
         }
+        if(mode=="ranged-clearance")
+        {
+            int slitX=(int)(p.Center.X/16)+12,y=(int)(p.Center.Y/16)-6;
+            for(int dx=-2;dx<=2;dx++)
+                for(int dy=-2;dy<=2;dy++)Main.tile[slitX+dx,y+dy].ClearEverything();
+            for(int dx=0;dx<=1;dx++)
+            {
+                var top=Main.tile[slitX+dx,y-1];top.HasTile=true;top.TileType=TileID.Stone;
+                var bottom=Main.tile[slitX+dx,y+1];bottom.HasTile=true;bottom.TileType=TileID.Stone;
+            }
+            var arrow=CombatBallistics.Profile(ProjectileID.WoodenArrowFriendly);
+            var bullet=CombatBallistics.Profile(ProjectileID.Bullet);
+            var flags=(Collision.up,Collision.down,Collision.stair,Collision.stairFall,Collision.sloping,
+                Collision.honey,Collision.shimmer,Collision.landMine);
+            // Enter a one-tile slit at its center and at a near-edge height
+            // where the retired 4x4 footprint fit, but the actual arrow clips.
+            bool Sweep(int dy,CombatBallistics.CollisionProfile profile)=>CombatBallistics.ClearStep(
+                new Vector2(slitX*16-6,y*16+dy),new Vector2(12,0),profile);
+            bool centered=Sweep(8,arrow),edge=Sweep(3,arrow),legacy=Sweep(3,arrow with{Width=4,Height=4});
+            bool restored=flags==(Collision.up,Collision.down,Collision.stair,Collision.stairFall,Collision.sloping,
+                Collision.honey,Collision.shimmer,Collision.landMine);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                JsonSerializer.Serialize(new{arrow.Width,arrow.Height,bulletWidth=bullet.Width,bulletHeight=bullet.Height,centered,edge,legacy,restored}));
+            return;
+        }
         if(mode=="defense-join")
         {
             var added=SpawnDefense(p,24,45);
@@ -241,7 +266,7 @@ internal static class ServerCombatFixture
             tile.ClearEverything();
             if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
         }
-        if(mode is "bow" or "gun" or "bow-reflex" or "bow-empty" or "bow-one")
+        if(mode is "bow" or "gun" or "bow-reflex" or "bow-empty" or "bow-one" or "bow-wall" or "bow-high" or "bow-sealed")
         {
             bool gun=mode=="gun",reflex=mode=="bow-reflex";
             p.HeldItem.SetDefaults(gun?ItemID.Minishark:ItemID.WoodenBow);
@@ -252,11 +277,30 @@ internal static class ServerCombatFixture
             bool single=mode=="bow-one";
             if(single){p.inventory[54].stack=1;p.inventory[53].TurnToAir();}
             target=SpawnDefense(p,reflex?-95:single?-320:-200,gun?70:32,threatening:reflex);
+            void Wall(int tx,int ty)
+            {var tile=Main.tile[tx,ty];tile.HasTile=true;tile.TileType=TileID.Stone;}
+            if(mode=="bow-wall")
+            {
+                int wall=(int)(p.Center.X/16)-4;
+                for(int dx=-1;dx<=0;dx++)
+                    for(int dy=1;dy<=3;dy++)Wall(wall+dx,floor-dy);
+            }
+            if(mode=="bow-high"){target.noGravity=true;target.position.Y-=80;}
+            if(mode=="bow-sealed")
+            {
+                int tx=(int)(target.Center.X/16);
+                target.Center=new Vector2(tx*16+8,target.Center.Y);
+                for(int dx=-2;dx<=2;dx++)
+                    for(int dy=1;dy<=3;dy++)
+                        if(Math.Abs(dx)==2||dy==3)Wall(tx+dx,floor-dy);
+            }
+            bool initialAim=CombatBallistics.ReadRound(p,p.HeldItem,out var round)==null
+                &&CombatBallistics.Aim(p,target,p.HeldItem,round,out _);
             if(gun){target.noGravity=true;target.velocity=new Vector2(.6f,-.25f);}
             if(mode=="bow")SpawnDefense(p,-105,40,threatening:false);
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
                 JsonSerializer.Serialize(new{slot=target.whoAmI,entityRef=NativeCombatWorld.Reference(Bound(p),target),
-                    ammo=p.inventory[54].stack,spareAmmo=p.inventory[53].stack,ammoType=p.inventory[54].type,weapon=p.HeldItem.type}));
+                    ammo=p.inventory[54].stack,spareAmmo=p.inventory[53].stack,ammoType=p.inventory[54].type,weapon=p.HeldItem.type,initialAim,startX=p.Center.X,startY=p.Center.Y}));
             return;
         }
         if(mode=="defense")

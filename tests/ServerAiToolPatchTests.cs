@@ -73,6 +73,9 @@ public static class ServerAiToolPatchTests
         var update=projectile.Methods.Single(m=>m.Name=="Update");
         var damage=projectile.Methods.Single(m=>m.Name=="Damage");
         var spawn=projectile.Methods.Single(m=>m.Name=="NewProjectile"&&m.Parameters.Count==12);
+        var movement=projectile.Methods.Single(m=>m.Name=="HandleMovement");
+        if(!Calls(movement,0x0b54,"TileCollideStyle")||!Calls(movement,0x1408,"TileCollision")
+            ||!Calls(movement,0x1435,"SlopeCollision"))throw new InvalidOperationException("Native projectile collision path changed.");
         if(!Calls(shoot,0x0098,"PickAmmo")||!Calls(shoot,0x02e8,"get_MouseWorld")
             ||!Calls(update,0x0499,"AI")||!Calls(update,0x1575,"Damage")||!Calls(update,0x1d18,"Kill")
             ||!Calls(spawn,0x0710,"OnSpawn")||!Calls(spawn,0x073d,"SendData")

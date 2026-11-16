@@ -64,6 +64,8 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         =>Start(identity,target,null,actionId);
     internal Run StartCombat(AiReadOnlyProtocol.Identity identity,float target,string actionId)
         =>Start(identity,target,null,actionId,combat:true);
+    internal Run StartCombat(AiReadOnlyProtocol.Identity identity,LandingRegion region,string actionId)
+        =>Start(identity,region.MinPlayerLeftX,region,actionId,combat:true);
     internal Run Start(AiReadOnlyProtocol.Identity identity,LandingRegion region,string actionId=null,bool continuous=false,bool preferFlatRegion=false,
         NavigationKnowledge knowledge=null)
         =>Start(identity,region.MinPlayerLeftX,region,actionId,continuous,preferFlatRegion,knowledge);

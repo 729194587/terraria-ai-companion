@@ -34,6 +34,8 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private bool Ranged=>CombatBallistics.Supported(item);
     private CombatBallistics.Round? firing;
     private bool ammoChanged,inShoot;
+    private const int MaxFiringPositions=8;
+    private readonly List<LandingRegion> attemptedFiringPositions=new();
 
     public CombatTarget Target { get; private set; }
     public CombatWeapon Weapon { get; private set; }
@@ -138,7 +140,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         spawn=next.GetGlobalNPC<AtomicNpcIdentity>();
         spawnToken=spawn.Token;
         Target=new(next.whoAmI,next.type,reference);
-        LastHit=null;targetEpoch++;
+        LastHit=null;targetEpoch++;attemptedFiringPositions.Clear();
         missedSwings=0;
     }
 
@@ -215,8 +217,8 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             if (approach.ReasonDetail != null) throw new InvalidOperationException(approach.ReasonDetail);
             return "combat_native_unconfirmed";
         }
-        if (approach?.Status is "failed" or "timeout") return "combat_approach_failed";
         if(Ranged)return StepRanged(out phase);
+        if (approach?.Status is "failed" or "timeout") return "combat_approach_failed";
         bool swingRange=CanSwing();
         float horizontal=Math.Abs(player.Center.X-npc.Center.X);
         // A jumping enemy can leave the swing envelope after the planner
@@ -272,21 +274,61 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         }
         if(CombatBallistics.Aim(player,npc,item,round,out _))
         {
-            if(approach?.Status=="running")navigation.Stop("cancelled","combat_firing_position");
+            if(approach?.Status=="running"&&ServerAiNavigation.Observe(player).Settled)
+                navigation.Stop("cancelled","combat_firing_position");
             if(approach?.Status=="unknown")return "combat_native_unconfirmed";
             phase="attack";return null;
         }
         phase="approach";
-        if(approach?.Status=="running"||!ServerAiNavigation.Observe(player).Settled)return null;
-        float horizontal=Math.Abs(player.Center.X-npc.Center.X);
-        float standOff=Math.Clamp(horizontal*.5f,48,CombatBallistics.Range(item)*.65f);
-        if(horizontal<=standOff)return "combat_shot_blocked";
-        int side=player.Center.X<npc.Center.X?-1:1;
-        float goal=Math.Clamp(npc.Center.X+side*standOff-player.width*.5f,32,Main.maxTilesX*16-64);
-        if(approach?.Status=="completed"&&Math.Abs(goal-approach.Target)<1)return "combat_shot_blocked";
+        if(approach?.Status=="timeout")return "combat_firing_navigation_timeout";
+        if(approach?.Status=="failed"&&AiActionReasons.NavigationRecoveryKind(approach.Snapshot?.Reason)!="no_route")
+            return "combat_approach_failed";
+        if(approach?.Status=="running")return null;
+        var observed=ServerAiNavigation.Observe(player);
+        if(!observed.Settled)return null;
+        var goal=FindFiringPosition(observed.State,round);
+        if(goal==null)return "combat_shot_blocked";
+        if(attemptedFiringPositions.Count>=MaxFiringPositions)return "combat_firing_navigation_timeout";
+        attemptedFiringPositions.Add(goal);
         approach=navigation.StartCombat(identity,goal,actionId);
-        plannedAt=Main.GameUpdateCount;
         return null;
+    }
+
+    private LandingRegion FindFiringPosition(PhysicsState start,CombatBallistics.Round round)
+    {
+        var muzzleOffset=CombatBallistics.Muzzle(player)-player.position;
+        int npcX=(int)(npc.Center.X/16), npcY=(int)(npc.Bottom.Y/16);
+        int radius=(int)(CombatBallistics.Range(item)/16);
+        int footRow=(int)((start.Py+player.height)/16);
+        int minY=Math.Max(3,Math.Min(npcY,footRow)-8);
+        int maxY=Math.Min(Main.maxTilesY-4,Math.Max(npcY,footRow)+8);
+        // Intersect with native weapon range: do not expand the search to
+        // arbitrary heights when the two actors are far apart vertically.
+        minY=Math.Max(minY,npcY-radius);maxY=Math.Min(maxY,npcY+radius);
+        LandingRegion best=null;
+        float bestScore=float.PositiveInfinity;
+        for(int x=Math.Max(3,npcX-radius);x<=Math.Min(Main.maxTilesX-4,npcX+radius);x++)
+        for(int y=minY;y<=maxY;y++)
+        {
+            var support=Main.tile[x,y];
+            if(!support.HasUnactuatedTile||(!Main.tileSolid[support.TileType]&&!Main.tileSolidTop[support.TileType]))continue;
+            for(int half=0;half<=(support.IsHalfBlock||support.Slope!=SlopeType.Solid?1:0);half++)
+            for(int offset=0;offset<=8;offset+=8)
+            {
+                float feet=y*16+half*8, px=x*16+offset+4-player.width*.5f;
+                var pose=new PhysicsState(px,feet-player.height,0,0,true,0,true);
+                if(Math.Abs(px-start.Px)<8&&Math.Abs(pose.Py-start.Py)<1)continue;
+                if(attemptedFiringPositions.Exists(r=>r.MinPlayerLeftX==px-2&&r.SurfaceY==feet))continue;
+                // Favor nearby stances, with enough separation to shoot.
+                // Both sides and elevated/low support are always candidates.
+                float score=Math.Abs(px-start.Px)+1.5f*Math.Abs(pose.Py-start.Py)
+                    +Math.Max(0,48-Math.Abs(px+player.width*.5f-npc.Center.X));
+                if(score>=bestScore||!new NativeMotionWorld(pose).SafeLanding(pose)
+                    ||!CombatBallistics.Aim(new Vector2(pose.Px,pose.Py)+muzzleOffset,npc,item,round,out _))continue;
+                bestScore=score;best=new LandingRegion(px-2,px+2,feet);
+            }
+        }
+        return best;
     }
 
     private bool ValidWeapon() => player.selectedItem == slot && ReferenceEquals(player.HeldItem, item)

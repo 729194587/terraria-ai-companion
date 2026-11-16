@@ -96,6 +96,7 @@ internal sealed class CombatController(ICombatWorld world, string source, string
 
         string failure = world.Step(out phase);
         if (failure == null) return Running();
+        if (failure=="combat_firing_navigation_timeout")return Stop(frame,"timeout",failure);
         if (source=="reflex" && failure is ("combat_target_out_of_range" or "combat_approach_failed" or "combat_shot_blocked"))
             return ContinueDefense(frame,failure);
         return Stop(frame, failure == "combat_native_unconfirmed" ? "unknown" : "failed", failure);
