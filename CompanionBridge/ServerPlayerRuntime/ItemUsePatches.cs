@@ -116,9 +116,10 @@ public static class ItemUsePatches
             if(miningOnly!=null)Guard(m,0x044d,0x0570,miningOnly); // G7 cannot cut neighboring tiles or attack.
             if(combatOnly!=null)
             {
-                Require(Call(At(m,0x0511),"ItemCheck_CutTiles")&&Call(At(m,0x0543),"ItemCheck_CutTiles")
+                Require(Field(At(m,0x04c2),"myPlayer")&&Target(At(m,0x04cd))==At(m,0x04e8)
+                    &&Call(At(m,0x04e1),"ItemCheck_CatchCritters")&&Call(At(m,0x0511),"ItemCheck_CutTiles")&&Call(At(m,0x0543),"ItemCheck_CutTiles")
                     &&Call(At(m,0x055b),"ItemCheck_MeleeHitPVP")&&Call(At(m,0x056b),"ItemCheck_EmitHammushProjectiles"));
-                Guard(m,0x04e8,0x0516,combatOnly);
+                Guard(m,0x04c2,0x0516,combatOnly);
                 Guard(m,0x0534,0x0548,combatOnly);
                 Guard(m,0x0554,0x0570,combatOnly);
             }

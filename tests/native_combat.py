@@ -48,6 +48,12 @@ async def verify(args):
         assert view['result']['endEvidence']['inputsReleased'], view
         return proof
 
+    async def audit(proof):
+        sample = await scene('audit')
+        assert sample['frames'] == proof['itemChecks'] and sample['hits'] > 0 and sample['hitViolations'] == 0, (sample, proof)
+        assert sample['inputScopeReleased'] and sample['attackReleased'], sample
+        return sample
+
     try:
         enemy = await scene('agent')
         program = 'return api("submit_task",{operation="combat_attack",arguments={entityRef=' + json.dumps(enemy['entityRef']) + '}})'
@@ -67,6 +73,7 @@ async def verify(args):
         agent = await manager.invoke('await_task', {'taskId': task, 'milliseconds': 30000})
         results['agent'] = agent
         proof = completed(agent)
+        results['agentNative'] = await audit(proof)
         assert proof['combinedUpdates'] > 0, proof
         task_view = agent['result']['task']
         assert 0 < proof['itemChecks'] <= task_view['observedGameUpdate'] - (task_view['deadlineGameUpdate'] - 1800)
@@ -95,8 +102,13 @@ async def verify(args):
         reflex_id = reflex['actionId']
         results['reflex'] = await manager.invoke('await_task', {'taskId': reflex_id, 'milliseconds': 30000})
         reflex_proof = completed(results['reflex'])
+        results['reflexNative'] = await audit(reflex_proof)
         assert reflex_proof['source'] == 'reflex' and reflex_proof['threat']
         assert interrupted['endEvidence']['gameUpdate'] < reflex_proof['lastHit']['GameUpdate']
+        kills = [json.loads(line) for line in (profile / 'combat-deaths.jsonl').read_text().splitlines()]
+        for hit in (proof['lastHit'], reflex_proof['lastHit']):
+            call_stack = next(kill['stack'] for kill in kills if kill['gameUpdate'] == hit['GameUpdate'])
+            assert 'StrikeWithEvidence' in call_stack and 'Terraria.Player::ItemCheckWrapped' in call_stack, call_stack
         assert (await asyncio.to_thread(bridge.task_request, 'action', ordinary))['status'] == 'cancelled'
         enemy = await scene('agent')
         cancelled = await manager.invoke('submit_task', {'operation': 'combat_attack',
@@ -105,17 +117,25 @@ async def verify(args):
         await wait_for(lambda a: a['actionId'] == active and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
         results['cancelled'] = await manager.invoke('cancel_task', {'taskId': active})
         assert results['cancelled']['status'] == 'cancelled' and results['cancelled']['result']['inputsReleased']
-        for mode in ('external', 'despawn'):
+        for mode in ('external', 'despawn', 'replace', 'fault'):
             enemy = await scene('agent')
             submitted = await manager.invoke('submit_task', {'operation': 'combat_attack',
                                                              'arguments': {'entityRef': enemy['entityRef']}})
             active = submitted['taskId']
             await wait_for(lambda a: a['actionId'] == active and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
             removed = await scene(mode)
-            assert not removed['active'], removed
+            if mode == 'replace':
+                assert removed['active'] and removed['slot'] == enemy['slot'] and removed['entityRef'] != enemy['entityRef'], removed
+            elif mode != 'fault':
+                assert not removed['active'], removed
             result = await manager.invoke('await_task', {'taskId': active, 'milliseconds': 5000})
             results[mode] = result
-            assert result['status'] == 'failed' and result['result']['reason'] == 'combat_target_invalidated', result
+            expected = {'replace': 'combat_target_replaced', 'fault': 'task_exception'}.get(mode, 'combat_target_invalidated')
+            assert result['status'] == ('unknown' if mode == 'fault' else 'failed') and result['result']['reason'] == expected, result
+            if mode == 'fault':
+                assert 'Intentional native combat input fault.' in result['result']['task']['result']['reasonDetail'], result
+                results['faultNative'] = await scene('audit')
+                assert results['faultNative']['inputScopeReleased'] and results['faultNative']['attackReleased']
             assert result['result']['inputsReleased'] and result['result']['effectVerified'] is False
     finally:
         (profile / 'combat-results.json').write_text(json.dumps(results, indent=2))

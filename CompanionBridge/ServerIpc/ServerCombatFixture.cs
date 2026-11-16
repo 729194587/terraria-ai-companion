@@ -13,6 +13,41 @@ internal static class ServerCombatFixture
 {
     internal static bool Enabled => ServerAiActionFixture.Enabled && Program.LaunchParameters.ContainsKey("-companioncombattest");
     private static NPC target;
+    private static ulong? lastFrame,lastHit;
+    private static int frames,hits,hitViolations;
+    private static bool faultNextPress;
+
+    internal static void Install(Action<Action,Action> install)
+    {
+        if(Program.LaunchParameters.ContainsKey("-companioncombattest"))
+            install(()=>On_Player.ItemCheck+=ObserveItemFrame,()=>On_Player.ItemCheck-=ObserveItemFrame);
+    }
+
+    private static void ObserveItemFrame(On_Player.orig_ItemCheck orig,Player p)
+    {
+        if(!Enabled||!NativeCombatWorld.AllowsItem(p)){orig(p);return;}
+        ulong tick=Main.GameUpdateCount;
+        if(lastFrame==tick||!NativeItemInput.Active(p)||Main.myPlayer!=p.whoAmI||Main.netMode!=NetmodeID.Server)
+            throw new InvalidOperationException("Combat fixture observed duplicate or unscoped native ItemCheck.");
+        lastFrame=tick;frames++;
+        if(faultNextPress&&p.controlUseItem)
+        {
+            faultNextPress=false;
+            // tML catches ModPlayer callback faults; inject at the native
+            // boundary so this diagnostic exercises the wrapper unwind.
+            throw new InvalidOperationException("Intentional native combat input fault.");
+        }
+        orig(p);
+    }
+
+    internal static void ObserveHit(Player p,NPC npc)
+    {
+        if(!Enabled||!NativeCombatWorld.AllowsItem(p))return;
+        ulong tick=Main.GameUpdateCount;
+        if(lastHit==tick||lastFrame!=tick||!ReferenceEquals(npc,target)||!NativeItemInput.Active(p))
+            hitViolations++;
+        lastHit=tick;hits++;
+    }
     internal static bool Keeps(NPC npc) => Enabled && ReferenceEquals(npc,target);
     internal static void RecordDeath(NPC npc)
     {
@@ -33,8 +68,35 @@ internal static class ServerCombatFixture
             if(npc.active&&npc.townNPC)npc.active=false;
         var request=Path.Combine(Main.SavePath,"combat-request");
         if(!File.Exists(request))return;
-        string mode=File.ReadAllText(request).Trim();
-        File.Delete(request);
+        string mode;
+        try
+        {
+            mode=File.ReadAllText(request).Trim();
+            File.Delete(request);
+        }
+        catch(IOException){return;} // Windows can briefly lock the atomically renamed request.
+        if(mode is "audit" or "fault")
+        {
+            if(mode=="fault")faultNextPress=true;
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                JsonSerializer.Serialize(new{mode,frames,hits,hitViolations,inputScopeReleased=!NativeItemInput.Active(p)&&Main.myPlayer!=p.whoAmI,
+                    attackReleased=!p.controlUseItem&&p.releaseUseItem}));
+            return;
+        }
+        if(mode=="replace")
+        {
+            var old=target.whoAmI;
+            var bottom=target.Bottom;
+            target.active=false;
+            int replacement=NPC.NewNPC(p.GetSource_Misc("isolated_combat_replacement"),(int)bottom.X,(int)bottom.Y,
+                target.type,Start:old,Target:255);
+            target=Main.npc[replacement];
+            target.Bottom=bottom;target.aiStyle=-1;target.target=255;
+            var bound=new AiReadOnlyProtocol.Identity(p,ProbeSession.WorldSession,ProbeSession.ActorGeneration,p.whoAmI,null);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                JsonSerializer.Serialize(new{mode,slot=replacement,target.active,entityRef=NativeCombatWorld.Reference(bound,target)}));
+            return;
+        }
         if(mode is "external" or "despawn")
         {
             if(target?.active!=true)throw new InvalidOperationException("Combat fixture target is unavailable.");
@@ -44,6 +106,7 @@ internal static class ServerCombatFixture
                 JsonSerializer.Serialize(new{mode,target.active,target.life,gameUpdate=Main.GameUpdateCount}));
             return;
         }
+        lastFrame=lastHit=null;frames=hits=hitViolations=0;faultNextPress=false;
         if(mode=="agent"&&p.HeldItem.type==ItemID.WoodenSword)
         {
             p.HeldItem.SetDefaults(ItemID.PlatinumBroadsword);

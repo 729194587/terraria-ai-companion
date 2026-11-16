@@ -210,15 +210,15 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         combat.inputs.Movement(Main.GameUpdateCount);
     }
 
-    internal static bool UpdateItem(Player p)
+    internal static bool UpdateItem(Player p, Action<NativeItemInput.Intent> runNative)
     {
         var combat = current;
         if (combat == null || !ReferenceEquals(combat.player, p)) return false;
-        combat.CheckItem();
+        combat.CheckItem(runNative);
         return true;
     }
 
-    private void CheckItem()
+    private void CheckItem(Action<NativeItemInput.Intent> runNative)
     {
         ulong tick = Main.GameUpdateCount;
         if (checking != null || fault != null || !ServerAiNativeActions.Owned(identity)
@@ -236,11 +236,10 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
                 player.direction = npc.Center.X < player.Center.X ? -1 : 1;
                 inputs.Swing(tick);
             }
-            player.controlUseItem = press;
             // The native local-input path owns the release latch. The AI
             // supplies its equivalent on the up frame, never on a down frame.
             if (!press) player.releaseUseItem = true;
-            player.ItemCheck();
+            runNative(new(npc.Center, press));
             if (press && player.itemAnimation > 0 && Owned())
             {
                 player.releaseUseItem=false;
@@ -249,7 +248,11 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
                 NetMessage.SendData(MessageID.ShotAnimationAndSound, -1, -1, null, player.whoAmI);
             }
         }
-        catch(Exception e) { fault = e; }
+        catch(Exception e)
+        {
+            fault = e;
+            if (Owned()) player.releaseUseItem = true;
+        }
         finally
         {
             checking = null;
@@ -266,16 +269,20 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     internal static Rectangle SwingFrame(Player p, Item held, Rectangle frame) =>
         AllowsItem(p) ? new Rectangle(0, 0, held.width, held.height) : frame;
 
-    internal static bool? CanHit(Player p, NPC target) =>
-        AllowsItem(p) && !checking.SameSpawn(target) ? false : null;
+    private static bool InInputScope(Player p) => checking is {} c && ReferenceEquals(c.player,p) && NativeItemInput.Active(p);
+
+    internal static bool? CanHit(Player p, Item held, NPC target) => InInputScope(p)
+        && (!AllowsItem(p) || !ReferenceEquals(held,checking.item) || !checking.ValidWeapon()
+            || !checking.SameSpawn(target) || !checking.SameSpawn(Main.npc[checking.Target.Slot]))
+        ? false : null;
 
     // This is the single native strike call in ProcessHitAgainstNPC, after
     // hit modifiers and before tML's post-hit callbacks.
     public static int StrikeWithEvidence(NPC target,NPC.HitInfo hit,bool fromNet,bool noPlayerInteraction,Player p)
     {
         var combat=checking;
-        if(!AllowsItem(p))return target.StrikeNPC(hit,fromNet,noPlayerInteraction);
-        if(!combat.SameSpawn(Main.npc[combat.Target.Slot])||!combat.SameSpawn(target)||!Enemy(target,p))return 0;
+        if(!InInputScope(p))return target.StrikeNPC(hit,fromNet,noPlayerInteraction);
+        if(!AllowsItem(p)||!combat.ValidWeapon()||!combat.SameSpawn(Main.npc[combat.Target.Slot])||!combat.SameSpawn(target)||!Enemy(target,p))return 0;
         int before=target.life;
         int damage=target.StrikeNPC(hit,fromNet,noPlayerInteraction);
         if(combat.Owned() && CombatStrikeEvidence.Observe(combat.SameSpawn(Main.npc[combat.Target.Slot]),

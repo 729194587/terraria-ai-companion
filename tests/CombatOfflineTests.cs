@@ -91,6 +91,9 @@ public static class CombatOfflineTests
         }
         world=new(){Throw=true};task=Task(world);task.Tick(frame);
         Check(task.Tick(next) is {Status:"unknown",InputsReleased:true,EffectVerified:false}&&world.Releases==1,"exception releases and remains unknown");
+        world=new();task=Task(world);task.Tick(frame);
+        Check(task.Tick(id with{GameUpdate=20}) is {Status:"timeout",Reason:"task_game_update_deadline",InputsReleased:true,EffectVerified:false}
+            &&world.Releases==1,"deadline releases combat ownership");
         world=new(){Released=false};task=Task(world);task.Tick(frame);
         Check(task.Stop(next,"cancelled","explicit_cancel") is {Status:"unknown",InputsReleased:false},"unconfirmed cleanup");
         world=new();task=Task(world);task.Tick(frame);

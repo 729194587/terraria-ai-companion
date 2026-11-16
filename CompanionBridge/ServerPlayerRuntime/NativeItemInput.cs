@@ -26,6 +26,7 @@ internal static class NativeItemInput
             il.Module.ImportReference(typeof(NativeItemInput).GetMethod(nameof(SkipClientUi))));
         install(()=>IL_Player.ItemCheckWrapped+=wrapper,()=>IL_Player.ItemCheckWrapped-=wrapper);
         install(()=>On_Player.ItemCheckWrapped+=Update,()=>On_Player.ItemCheckWrapped-=Update);
+        ServerCombatFixture.Install(install);
     }
 
     internal static void Update(On_Player.orig_ItemCheckWrapped orig,Player p,int index)
@@ -36,8 +37,8 @@ internal static class NativeItemInput
         if(!ReferenceEquals(p,ProbeSession.Actor)){orig(p,index);return;}
         if(!NativeSurvival.Owns(p))return;
         if(index!=p.whoAmI)throw new InvalidOperationException("Native item update slot differs from bound actor.");
-        if(NativeCombatWorld.UpdateItem(p))return;
         void RunFrame(Intent input)=>Run(orig,p,index,input);
+        if(NativeCombatWorld.UpdateItem(p,RunFrame))return;
         if(ActorMining.Running)ActorMining.Update(p,RunFrame);
         else ActorItemUse.Update(p,RunFrame);
     }
