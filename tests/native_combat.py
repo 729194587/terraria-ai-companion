@@ -55,7 +55,7 @@ async def verify(args):
         return sample
 
     try:
-        enemy = await scene('agent')
+        enemy = await scene('agent-multi')
         program = 'return api("submit_task",{operation="combat_attack",arguments={entityRef=' + json.dumps(enemy['entityRef']) + '}})'
         submitted = await lua.execute(program)
         assert submitted['status'] == 'completed' and submitted['value']['status'] == 'running', submitted
@@ -117,6 +117,41 @@ async def verify(args):
         await wait_for(lambda a: a['actionId'] == active and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
         results['cancelled'] = await manager.invoke('cancel_task', {'taskId': active})
         assert results['cancelled']['status'] == 'cancelled' and results['cancelled']['result']['inputsReleased']
+        async def durable_fight(spawn):
+            submitted = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                             'arguments': {'entityRef': spawn['entityRef']}})
+            assert submitted['status'] == 'running', submitted
+            fight = await manager.invoke('await_task', {'taskId': submitted['taskId'], 'milliseconds': 30000})
+            receipt = completed(fight)
+            assert receipt['target']['EntityRef'] == spawn['entityRef'] and receipt['target']['Slot'] == spawn['slot']
+            sampled = await audit(receipt)
+            trace = sampled['hitTrace']
+            assert len(trace) == sampled['hits'] >= 2, sampled
+            life, previous_tick, previous_press = spawn['life'], spawn['spawnGameUpdate'] - 1, 0
+            for hit in trace:
+                assert hit['entityRef'] == spawn['entityRef'] and hit['whoAmI'] == spawn['slot'], hit
+                assert hit['nativeWrapper'] and hit['nativeDamage'] and hit['tick'] > previous_tick, hit
+                assert hit['press'] > previous_press and hit['damageDone'] > 0, hit
+                assert life - hit['life'] == hit['damageDone'], (life, hit)
+                life, previous_tick, previous_press = hit['life'], hit['tick'], hit['press']
+            assert all(hit['life'] > 0 for hit in trace[:-1])
+            assert receipt['lastHit']['GameUpdate'] == trace[-1]['tick']
+            assert receipt['lastHit']['LifeBefore'] == trace[-2]['life']
+            assert receipt['lastHit']['LifeAfter'] == trace[-1]['life']
+            assert receipt['lastHit']['DamageDone'] == trace[-1]['damageDone']
+            return {'spawn': spawn, 'receipt': receipt, 'audit': sampled, 'taskId': submitted['taskId']}
+
+        a = await scene('durable')
+        results['multiHit'] = await durable_fight(a)
+        b = await scene('reuse')
+        assert b['slot'] == a['slot'] and b['entityRef'] != a['entityRef'] and b['cooldownAtSpawn'] > 0, (a, b)
+        results['slotReuse'] = await durable_fight(b)
+        audit_b = results['slotReuse']['audit']
+        assert audit_b['firstCooldown'] > 0 and audit_b['hitTrace'][0]['cooldown'] <= 0, audit_b
+        assert audit_b['hitTrace'][0]['tick'] > results['multiHit']['receipt']['lastHit']['GameUpdate']
+        old = await manager.invoke('await_task', {'taskId': results['multiHit']['taskId'], 'milliseconds': 1000})
+        assert completed(old) == results['multiHit']['receipt']
+
         for mode in ('external', 'despawn', 'replace', 'fault'):
             enemy = await scene('agent')
             submitted = await manager.invoke('submit_task', {'operation': 'combat_attack',

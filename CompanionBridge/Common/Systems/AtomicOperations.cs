@@ -30,7 +30,7 @@ public sealed class AtomicNpcIdentity : GlobalNPC
 public sealed class ServerCombatPlayer : ModPlayer
 {
     public override void OnHitNPCWithItem(Item item,NPC target,NPC.HitInfo hit,int damageDone)
-        => ServerCombatFixture.ObserveHit(Player,target);
+        => ServerCombatFixture.ObserveHit(Player,target,damageDone);
 
     public override bool? CanHitNPCWithItem(Item item, NPC target)
         => NativeCombatWorld.CanHit(Player, item, target);

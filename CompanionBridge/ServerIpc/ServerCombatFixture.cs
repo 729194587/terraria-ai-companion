@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
 using VirtualPlayerEngineProbe;
+
+using Identity = CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity;
 
 namespace CompanionBridge.ServerIpc;
 
@@ -16,6 +20,13 @@ internal static class ServerCombatFixture
     private static ulong? lastFrame,lastHit;
     private static int frames,hits,hitViolations;
     private static bool faultNextPress;
+    private static int presses;
+    private static int? firstCooldown;
+    private static readonly List<object> hitTrace=new();
+    private static Identity Bound(Player p)=>new(p,ProbeSession.WorldSession,ProbeSession.ActorGeneration,p.whoAmI,null);
+    private static int Cooldown(Player p,int slot)=>
+        ((int[])typeof(Player).GetField("meleeNPCHitCooldown",BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public)
+            .GetValue(p))[slot];
 
     internal static void Install(Action<Action,Action> install)
     {
@@ -30,6 +41,8 @@ internal static class ServerCombatFixture
         if(lastFrame==tick||!NativeItemInput.Active(p)||Main.myPlayer!=p.whoAmI||Main.netMode!=NetmodeID.Server)
             throw new InvalidOperationException("Combat fixture observed duplicate or unscoped native ItemCheck.");
         lastFrame=tick;frames++;
+        if(frames==1)firstCooldown=Cooldown(p,target.whoAmI);
+        if(p.controlUseItem)presses++;
         if(faultNextPress&&p.controlUseItem)
         {
             faultNextPress=false;
@@ -40,13 +53,17 @@ internal static class ServerCombatFixture
         orig(p);
     }
 
-    internal static void ObserveHit(Player p,NPC npc)
+    internal static void ObserveHit(Player p,NPC npc,int damageDone)
     {
         if(!Enabled||!NativeCombatWorld.AllowsItem(p))return;
         ulong tick=Main.GameUpdateCount;
         if(lastHit==tick||lastFrame!=tick||!ReferenceEquals(npc,target)||!NativeItemInput.Active(p))
             hitViolations++;
         lastHit=tick;hits++;
+        var stack=new System.Diagnostics.StackTrace().ToString();
+        hitTrace.Add(new{tick,press=presses,npc.whoAmI,npc.life,damageDone,entityRef=NativeCombatWorld.Reference(Bound(p),npc),
+            cooldown=Cooldown(p,npc.whoAmI),nativeWrapper=stack.Contains("Terraria.Player::ItemCheckWrapped"),
+            nativeDamage=stack.Contains("ProcessHitAgainstNPC")});
     }
     internal static bool Keeps(NPC npc) => Enabled && ReferenceEquals(npc,target);
     internal static void RecordDeath(NPC npc)
@@ -79,7 +96,7 @@ internal static class ServerCombatFixture
         {
             if(mode=="fault")faultNextPress=true;
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
-                JsonSerializer.Serialize(new{mode,frames,hits,hitViolations,inputScopeReleased=!NativeItemInput.Active(p)&&Main.myPlayer!=p.whoAmI,
+                JsonSerializer.Serialize(new{mode,frames,hits,hitViolations,firstCooldown,hitTrace,inputScopeReleased=!NativeItemInput.Active(p)&&Main.myPlayer!=p.whoAmI,
                     attackReleased=!p.controlUseItem&&p.releaseUseItem}));
             return;
         }
@@ -106,8 +123,19 @@ internal static class ServerCombatFixture
                 JsonSerializer.Serialize(new{mode,target.active,target.life,gameUpdate=Main.GameUpdateCount}));
             return;
         }
-        lastFrame=lastHit=null;frames=hits=hitViolations=0;faultNextPress=false;
-        if(mode=="agent"&&p.HeldItem.type==ItemID.WoodenSword)
+        bool durable=mode is "agent-multi" or "durable" or "reuse";
+        bool distant=mode is "agent" or "agent-multi";
+        bool stationary=durable||distant;
+        int startSlot=mode=="reflex"?10:0;
+        if(mode=="reuse")
+        {
+            if(target==null||target.active||target.life>0)
+                throw new InvalidOperationException("Reuse requires the preceding defeated NPC.");
+            startSlot=target.whoAmI;
+        }
+        lastFrame=lastHit=null;frames=hits=hitViolations=presses=0;faultNextPress=false;
+        firstCooldown=null;hitTrace.Clear();
+        if(distant&&p.HeldItem.type==ItemID.WoodenSword)
         {
             p.HeldItem.SetDefaults(ItemID.PlatinumBroadsword);
             p.statLife=p.statLifeMax2;
@@ -123,14 +151,14 @@ internal static class ServerCombatFixture
             tile.ClearEverything();
             if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
         }
-        int x=(int)p.Center.X+(mode=="agent"?-180:-24);
+        int x=(int)p.Center.X+(distant?-180:-24);
         // Keep the reflex spawn on a different slot from the preceding kill,
         // whose native per-slot melee cooldown can still be active.
         int slot=NPC.NewNPC(p.GetSource_Misc("isolated_combat_fixture"),x,floor*16,NPCID.GreenSlime,
-            Start:mode=="reflex"?10:0,
-            Target:mode=="agent"?255:p.whoAmI);
+            Start:startSlot,
+            Target:stationary?255:p.whoAmI);
         target=Main.npc[slot];
-        if(mode=="agent")
+        if(stationary)
         {
             target.aiStyle=-1;
             target.knockBackResist=0;
@@ -143,10 +171,11 @@ internal static class ServerCombatFixture
             target.ai[0]=-160;
         }
         target.Bottom=new Vector2(x,floor*16);
-        target.target=mode=="agent"?255:p.whoAmI;
+        target.target=stationary?255:p.whoAmI;
+        if(durable)target.life=target.lifeMax=90; // Fixture only; the actual hits and cooldown remain native.
         var identity=new AiReadOnlyProtocol.Identity(p,ProbeSession.WorldSession,ProbeSession.ActorGeneration,p.whoAmI,null);
         File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
             entityRef=NativeCombatWorld.Reference(identity,target),life=target.life,slot,mode,
-            target.aiStyle,target.knockBackResist,spawnGameUpdate=Main.GameUpdateCount}));
+            target.aiStyle,target.knockBackResist,cooldownAtSpawn=Cooldown(p,slot),spawnGameUpdate=Main.GameUpdateCount}));
     }
 }
