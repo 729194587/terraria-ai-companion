@@ -35,7 +35,8 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private CombatBallistics.Round? firing;
     private bool ammoChanged,inShoot;
     private const int MaxFiringPositions=8;
-    private readonly List<LandingRegion> attemptedFiringPositions=new();
+    private sealed record FiringAttempt(LandingRegion Goal,bool Left,ServerAiNavigation.Run Run);
+    private readonly List<FiringAttempt> attemptedFiringPositions=new();
 
     public CombatTarget Target { get; private set; }
     public CombatWeapon Weapon { get; private set; }
@@ -264,6 +265,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private string StepRanged(out string phase)
     {
         phase="aim";
+        if(approach?.Status=="timeout")return "combat_firing_navigation_timeout";
         var failure=CombatBallistics.ReadRound(player,item,out var round);
         if(failure!=null)
         {
@@ -280,33 +282,41 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             phase="attack";return null;
         }
         phase="approach";
-        if(approach?.Status=="timeout")return "combat_firing_navigation_timeout";
         if(approach?.Status=="failed"&&AiActionReasons.NavigationRecoveryKind(approach.Snapshot?.Reason)!="no_route")
             return "combat_approach_failed";
         if(approach?.Status=="running")return null;
         var observed=ServerAiNavigation.Observe(player);
         if(!observed.Settled)return null;
-        var goal=FindFiringPosition(observed.State,round);
-        if(goal==null)return "combat_shot_blocked";
+        var (goal,left,failureToFind)=FindFiringPosition(observed.State,round);
+        if(goal==null)return failureToFind;
         if(attemptedFiringPositions.Count>=MaxFiringPositions)return "combat_firing_navigation_timeout";
-        attemptedFiringPositions.Add(goal);
         approach=navigation.StartCombat(identity,goal,actionId);
+        attemptedFiringPositions.Add(new(goal,left,approach));
         return null;
     }
 
-    private LandingRegion FindFiringPosition(PhysicsState start,CombatBallistics.Round round)
+    private static bool ConfirmedNoRoute(FiringAttempt attempt,PhysicsState start)
+    {
+        var run=attempt.Run;
+        // A route failure from a different pose cannot prove that the
+        // position is still unreachable after moving to another candidate.
+        return run.Status=="failed"&&AiActionReasons.NavigationRecoveryKind(run.Snapshot?.Reason)=="no_route"
+            &&run.FinalObservation is {Settled:true} final
+            &&Math.Abs(final.State.Px-start.Px)<=1&&Math.Abs(final.State.Py-start.Py)<=.5f;
+    }
+
+    private (LandingRegion Goal,bool Left,string Failure) FindFiringPosition(PhysicsState start,CombatBallistics.Round round)
     {
         var muzzleOffset=CombatBallistics.Muzzle(player)-player.position;
-        int npcX=(int)(npc.Center.X/16), npcY=(int)(npc.Bottom.Y/16);
+        float targetX=npc.Center.X;
+        int npcX=(int)(targetX/16),npcY=(int)(npc.Bottom.Y/16);
         int radius=(int)(CombatBallistics.Range(item)/16);
         int footRow=(int)((start.Py+player.height)/16);
-        int minY=Math.Max(3,Math.Min(npcY,footRow)-8);
-        int maxY=Math.Min(Main.maxTilesY-4,Math.Max(npcY,footRow)+8);
-        // Intersect with native weapon range: do not expand the search to
-        // arbitrary heights when the two actors are far apart vertically.
-        minY=Math.Max(minY,npcY-radius);maxY=Math.Min(maxY,npcY+radius);
-        LandingRegion best=null;
-        float bestScore=float.PositiveInfinity;
+        int minY=Math.Max(3,Math.Max(Math.Min(npcY,footRow)-8,npcY-radius));
+        int maxY=Math.Min(Main.maxTilesY-4,Math.Min(Math.Max(npcY,footRow)+8,npcY+radius));
+        LandingRegion bestLeft=null,bestRight=null;
+        float leftScore=float.PositiveInfinity,rightScore=float.PositiveInfinity;
+        bool anyValid=false,allNoRoute=true;
         for(int x=Math.Max(3,npcX-radius);x<=Math.Min(Main.maxTilesX-4,npcX+radius);x++)
         for(int y=minY;y<=maxY;y++)
         {
@@ -315,20 +325,36 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             for(int half=0;half<=(support.IsHalfBlock||support.Slope!=SlopeType.Solid?1:0);half++)
             for(int offset=0;offset<=8;offset+=8)
             {
-                float feet=y*16+half*8, px=x*16+offset+4-player.width*.5f;
+                float feet=y*16+half*8, center=x*16+offset+4, px=center-player.width*.5f;
                 var pose=new PhysicsState(px,feet-player.height,0,0,true,0,true);
                 if(Math.Abs(px-start.Px)<8&&Math.Abs(pose.Py-start.Py)<1)continue;
-                if(attemptedFiringPositions.Exists(r=>r.MinPlayerLeftX==px-2&&r.SurfaceY==feet))continue;
-                // Favor nearby stances, with enough separation to shoot.
-                // Both sides and elevated/low support are always candidates.
-                float score=Math.Abs(px-start.Px)+1.5f*Math.Abs(pose.Py-start.Py)
-                    +Math.Max(0,48-Math.Abs(px+player.width*.5f-npc.Center.X));
-                if(score>=bestScore||!new NativeMotionWorld(pose).SafeLanding(pose)
+                bool left=center<targetX;
+                var attempt=attemptedFiringPositions.Find(a=>a.Goal.MinPlayerLeftX==px-2&&a.Goal.SurfaceY==feet);
+                float score=Math.Abs(px-start.Px)+1.5f*Math.Abs(pose.Py-start.Py)+Math.Max(0,48-Math.Abs(center-targetX));
+                if(attempt==null&&score>=(left?leftScore:rightScore))continue;
+                if(!new NativeMotionWorld(pose).SafeLanding(pose)
                     ||!CombatBallistics.Aim(new Vector2(pose.Px,pose.Py)+muzzleOffset,npc,item,round,out _))continue;
-                bestScore=score;best=new LandingRegion(px-2,px+2,feet);
+                anyValid=true;
+                if(attempt!=null)
+                {
+                    allNoRoute&=ConfirmedNoRoute(attempt,start);
+                    continue;
+                }
+                var region=new LandingRegion(px-2,px+2,feet);
+                if(left){leftScore=score;bestLeft=region;}
+                else{rightScore=score;bestRight=region;}
             }
         }
-        return best;
+        if(bestLeft==null&&bestRight==null)
+            return (null,false,!anyValid?"combat_shot_blocked"
+                :allNoRoute?"combat_firing_navigation_no_route":"combat_firing_navigation_timeout");
+        int leftAttempts=attemptedFiringPositions.FindAll(a=>a.Left).Count;
+        int rightAttempts=attemptedFiringPositions.Count-leftAttempts;
+        // Alternate sides when both have candidates. A cheaper cluster
+        // on one side cannot consume the other side's opportunity.
+        bool chooseLeft=bestRight==null||bestLeft!=null
+            &&(leftAttempts<rightAttempts||leftAttempts==rightAttempts&&player.Center.X<targetX);
+        return chooseLeft?(bestLeft,true,null):(bestRight,false,null);
     }
 
     private bool ValidWeapon() => player.selectedItem == slot && ReferenceEquals(player.HeldItem, item)

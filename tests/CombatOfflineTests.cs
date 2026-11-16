@@ -103,11 +103,12 @@ public static class CombatOfflineTests
         world=new();task=Task(world);task.Tick(frame);
         Check(task.Tick(id with{GameUpdate=20}) is {Status:"timeout",Reason:"task_game_update_deadline",InputsReleased:true,EffectVerified:false}
             &&world.Releases==1,"deadline releases combat ownership");
-        foreach(var (reason,status) in new[]{("combat_firing_navigation_timeout","timeout"),("combat_native_unconfirmed","unknown")})
+        foreach(var (reason,status) in new[]{("combat_firing_navigation_timeout","timeout"),("combat_native_unconfirmed","unknown"),
+            ("combat_firing_navigation_no_route","failed"),("combat_shot_blocked","failed")})
         {
             world=new(){StepFailure=reason};task=Task(world);task.Tick(frame);
             Check(task.Tick(next) is {InputsReleased:true,EffectVerified:false} nav&&nav.Status==status
-                &&nav.Reason==reason&&world.Releases==1,"incomplete firing route is not a verified obstruction");
+                &&nav.Reason==reason&&world.Releases==1,"firing route terminal reason and release are preserved");
         }
         world=new(){Released=false};task=Task(world);task.Tick(frame);
         Check(task.Stop(next,"cancelled","explicit_cancel") is {Status:"unknown",InputsReleased:false},"unconfirmed cleanup");

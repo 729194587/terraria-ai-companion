@@ -792,7 +792,8 @@ def verified_server_combat(action, task, result, proof):
             previous_kill_tick = strike['GameUpdate']
             kills.add(reference)
         elif reason not in ('combat_target_replaced', 'combat_target_invalidated',
-                             'combat_target_out_of_range', 'combat_approach_failed', 'combat_shot_blocked'):
+                             'combat_target_out_of_range', 'combat_approach_failed', 'combat_shot_blocked',
+                             'combat_firing_navigation_no_route'):
             return False
     return (encounters[0]['Target']['EntityRef'] == requested.get('entityRef')
             and encounters[-1]['Target'] == target and encounters[-1].get('LastHit') == hit)

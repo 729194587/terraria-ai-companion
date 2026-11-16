@@ -266,7 +266,7 @@ internal static class ServerCombatFixture
             tile.ClearEverything();
             if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
         }
-        if(mode is "bow" or "gun" or "bow-reflex" or "bow-empty" or "bow-one" or "bow-wall" or "bow-high" or "bow-sealed")
+        if(mode is "bow" or "gun" or "bow-reflex" or "bow-empty" or "bow-one" or "bow-wall" or "bow-high" or "bow-sealed" or "bow-opposite" or "bow-no-route")
         {
             bool gun=mode=="gun",reflex=mode=="bow-reflex";
             p.HeldItem.SetDefaults(gun?ItemID.Minishark:ItemID.WoodenBow);
@@ -293,6 +293,25 @@ internal static class ServerCombatFixture
                 for(int dx=-2;dx<=2;dx++)
                     for(int dy=1;dy<=3;dy++)
                         if(Math.Abs(dx)==2||dy==3)Wall(tx+dx,floor-dy);
+            }
+            if(mode is "bow-opposite" or "bow-no-route")
+            {
+                int tx=(int)(target.Center.X/16);
+                target.Center=new Vector2(tx*16+8,target.Center.Y);
+                // Two-tile-high shelter: projectiles can enter only from the
+                // left, and the player cannot stand inside it.
+                for(int dx=-2;dx<=2;dx++)Wall(tx+dx,floor-3);
+                for(int dy=1;dy<=2;dy++)Wall(tx+2,floor-dy);
+                if(mode=="bow-no-route")
+                {
+                    // Leave only a few viable shooting stances between the
+                    // shelter mouth and a high wall; trap the player separately.
+                    for(int dy=1;dy<=12;dy++)Wall(tx-5,floor-dy);
+                    int px=(int)(p.Center.X/16);
+                    for(int dx=-2;dx<=2;dx++)
+                    for(int dy=1;dy<=4;dy++)
+                        if(Math.Abs(dx)==2||dy==4)Wall(px+dx,floor-dy);
+                }
             }
             bool initialAim=CombatBallistics.ReadRound(p,p.HeldItem,out var round)==null
                 &&CombatBallistics.Aim(p,target,p.HeldItem,round,out _);

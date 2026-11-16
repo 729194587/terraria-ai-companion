@@ -244,7 +244,7 @@ async def verify(args):
         clearance = await scene('ranged-clearance')
         assert clearance['centered'] and not clearance['edge'] and clearance['legacy'] and clearance['restored'], clearance
         results['rangedClearance'] = clearance
-        for mode in ('bow-wall', 'bow-high', 'bow-sealed'):
+        for mode in ('bow-wall', 'bow-high', 'bow-sealed', 'bow-opposite', 'bow-no-route'):
             enemy = await scene(mode)
             assert enemy['initialAim'] == (mode == 'bow-high'), enemy
             launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
@@ -252,8 +252,9 @@ async def verify(args):
             result = await manager.invoke('await_task', {'taskId': launch['taskId'], 'milliseconds': 30000})
             sample = await scene('audit')
             results[mode] = {'result': result, 'audit': sample, 'spawn': enemy}
-            if mode == 'bow-sealed':
-                assert result['status'] == 'failed' and result['result']['reason'] == 'combat_shot_blocked', result
+            if mode in ('bow-sealed', 'bow-no-route'):
+                reason = 'combat_shot_blocked' if mode == 'bow-sealed' else 'combat_firing_navigation_no_route'
+                assert result['status'] == 'failed' and result['result']['reason'] == reason, result
                 assert result['result']['inputsReleased'] and not sample['shots'] and sample['ammo'] == enemy['ammo'], sample
                 continue
             proof = completed(result)
@@ -261,6 +262,9 @@ async def verify(args):
             first = sample['shots'][0]
             if mode == 'bow-wall':
                 assert abs(first['x'] - enemy['startX']) > 16 and first['y'] < enemy['startY'] - 16, (first, enemy)
+            elif mode == 'bow-opposite':
+                assert first['x'] < first['tx'] < enemy['startX'] and first['vx'] > 0, (first, enemy)
+                assert sample['projectileHits'], sample
             else:
                 assert first['ty'] < first['y'] - 48 and first['vy'] < 0, first
 

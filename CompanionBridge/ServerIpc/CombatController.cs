@@ -97,7 +97,7 @@ internal sealed class CombatController(ICombatWorld world, string source, string
         string failure = world.Step(out phase);
         if (failure == null) return Running();
         if (failure=="combat_firing_navigation_timeout")return Stop(frame,"timeout",failure);
-        if (source=="reflex" && failure is ("combat_target_out_of_range" or "combat_approach_failed" or "combat_shot_blocked"))
+        if (source=="reflex" && failure is ("combat_target_out_of_range" or "combat_approach_failed" or "combat_shot_blocked" or "combat_firing_navigation_no_route"))
             return ContinueDefense(frame,failure);
         return Stop(frame, failure == "combat_native_unconfirmed" ? "unknown" : "failed", failure);
     }
@@ -107,7 +107,7 @@ internal sealed class CombatController(ICombatWorld world, string source, string
         encounters.Add(new(world.Target,outcome,world.LastHit));
         // Exclude only targets whose approach failed; a temporarily invalid target
         // may become a real threat again while another target is being handled.
-        if(outcome is "combat_target_out_of_range" or "combat_approach_failed" or "combat_shot_blocked")skipped.Add(TargetRef);
+        if(outcome is "combat_target_out_of_range" or "combat_approach_failed" or "combat_shot_blocked" or "combat_firing_navigation_no_route")skipped.Add(TargetRef);
         var next=world.Retarget(frame,skipped);
         if(next==null)
         {
