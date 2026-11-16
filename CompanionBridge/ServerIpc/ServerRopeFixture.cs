@@ -87,7 +87,7 @@ internal static class ServerRopeFixture
         if(!Enabled||ActorItemUse.Current?.Placement?.Rope==null)return;
         var human=Main.player[0];
         bool actorScoped=Main.myPlayer==ActorItemUse.Current.Actor.whoAmI;
-        bool unscoped=!ActorPlacement.InputActive(human);
+        bool unscoped=!NativeItemInput.Active(human);
         File.AppendAllText(Path.Combine(Main.SavePath,"rope-scope.jsonl"),
             JsonSerializer.Serialize(new {mode,x,y,actorScoped,unscoped})+System.Environment.NewLine);
     }

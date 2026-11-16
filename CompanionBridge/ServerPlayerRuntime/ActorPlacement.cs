@@ -27,7 +27,6 @@ internal static class ActorPlacement
         internal bool IsChest=>TileType>=0&&StorageTile(TileType);
         internal string Kind=>WallType>0?"wall":Rope!=null?"rope":IsChest?"chest":Object?"object":"tile";
     }
-    [ThreadStatic] private static Player scope;
     internal static bool UnifiedAvailable=>VirtualPlayerEngineProbe.Engine?.Selected=="2026.09.3.1";
     private static bool WallMaterial(Item i)=>!i.IsAir&&i.consumable&&!i.channel&&i.createTile<0
         &&i.createWall>0&&i.createWall<WallLoader.WallCount&&i.tileWand<0;
@@ -102,52 +101,21 @@ internal static class ActorPlacement
         install(()=>On_WorldGen.KillTile+=Killed,()=>On_WorldGen.KillTile-=Killed);
     }
 
-    internal static bool InputActive(Player p)=>ReferenceEquals(scope,p);
-    internal static void CheckItem(ActorItemUse.Context use)
-    {
-        var p=use.Actor;
-        var c=use.Placement;
-        if(scope!=null||!Program.IsMainThread||!ActorItemUse.Placing(p))
-            throw new InvalidOperationException("Native placement input has no exclusive Actor scope.");
+    internal static NativeItemInput.Intent Input(Context c,bool press)
+        =>NativeItemInput.Intent.AtTile(c.Rope?.X??c.X,c.Rope?.Y??c.Y,press);
 
-        int local=Main.myPlayer, mouseX=Main.mouseX, mouseY=Main.mouseY;
-        int lastX=Main.lastMouseX,lastY=Main.lastMouseY;
-        int targetX=Player.tileTargetX,targetY=Player.tileTargetY;
-        var screen=Main.screenPosition;
-        var mouseItem=Main.mouseItem;
-        bool blockMouse=Main.blockMouse, mouseInterface=p.mouseInterface;
-        bool left=Main.mouseLeft,leftRelease=Main.mouseLeftRelease,right=Main.mouseRight,rightRelease=Main.mouseRightRelease;
-        int x=c.Rope?.X??c.X,y=c.Rope?.Y??c.Y;
-        var aim=new Vector2(x*16+8,y*16+8);
-        int eventsBefore=c.NativeEvents;
-        var before=ReadTarget(c);
-        try
-        {
-            scope=p;
-            Main.myPlayer=p.whoAmI;
-            Main.screenPosition=p.Center-new Vector2(Main.screenWidth,Main.screenHeight)*.5f;
-            Main.mouseX=Main.lastMouseX=(int)(aim.X-Main.screenPosition.X);
-            Main.mouseY=Main.lastMouseY=(int)(aim.Y-Main.screenPosition.Y);
-            Main.mouseItem=new Item();
-            Main.blockMouse=p.mouseInterface=false;
-            Main.mouseLeft=p.controlUseItem;Main.mouseLeftRelease=p.releaseUseItem;
-            Main.mouseRight=false;Main.mouseRightRelease=true;
-            Player.tileTargetX=x;Player.tileTargetY=y;
-            if(p.controlUseItem)c.Attempts++;
-            p.ItemCheck();
-        }
-        finally
-        {
-            Player.tileTargetX=targetX;Player.tileTargetY=targetY;
-            Main.mouseX=mouseX;Main.mouseY=mouseY;
-            Main.lastMouseX=lastX;Main.lastMouseY=lastY;
-            Main.screenPosition=screen;
-            Main.mouseItem=mouseItem;Main.blockMouse=blockMouse;p.mouseInterface=mouseInterface;
-            Main.mouseLeft=left;Main.mouseLeftRelease=leftRelease;
-            Main.mouseRight=right;Main.mouseRightRelease=rightRelease;
-            Main.myPlayer=local;
-            scope=null;
-        }
+    internal readonly record struct Observation(int Events,(bool Active,ushort Tile,ushort Wall,short FrameX,short FrameY) Target);
+
+    internal static Observation BeforeCheck(Context c,bool press)
+    {
+        if(press)c.Attempts++;
+        return new(c.NativeEvents,ReadTarget(c));
+    }
+
+    internal static void AfterCheck(ActorItemUse.Context use,int beforeStack,Observation observation)
+    {
+        var c=use.Placement;
+        var (eventsBefore,before)=observation;
         if(c.NativeEvents==eventsBefore&&before!=ReadTarget(c))
         {
             c.UncertainNativeEffect=true;
@@ -159,6 +127,8 @@ internal static class ActorPlacement
             if(c.ObjectFrames==null)c.UncertainNativeEffect=true;
             ActorObjectPlacement.FinishNativePlacement(c);
         }
+        int delta=beforeStack-use.Item.stack;
+        if(delta!=0){c.ConsumedCount+=delta;use.Consumed=true;}
     }
     private static (bool active,ushort tile,ushort wall,short frameX,short frameY) ReadTarget(Context c)
     {
@@ -186,7 +156,7 @@ internal static class ActorPlacement
     {
         var c=Watching(x,y);
         var active=ActorItemUse.Current?.Placement;
-        bool own=c?.Object==false&&Own(c)&&x==c.X&&y==c.Y&&type==c.TileType&&plr==scope.whoAmI&&!forced&&!Main.tile[x,y].HasTile;
+        bool own=c?.Object==false&&Own(c)&&x==c.X&&y==c.Y&&type==c.TileType&&plr==ActorItemUse.Current.Actor.whoAmI&&!forced&&!Main.tile[x,y].HasTile;
         bool result=orig(x,y,type,mute,forced,plr,style);
         if(result&&c==null&&active!=null&&Own(active)&&!active.NativeObjectPlacement&&WorldGen.InWorld(x,y))
         {
@@ -211,8 +181,8 @@ internal static class ActorPlacement
         orig(x,y,fail,effectOnly,noItem);
         if(ownClear&&!fail&&!effectOnly&&occupied&&!Main.tile[x,y].HasTile)c.NativeClearEvents++;
     }
-    internal static bool Own(Context c)=>scope!=null&&ReferenceEquals(scope,ActorItemUse.Current?.Actor)
-        &&ReferenceEquals(c,ActorItemUse.Current.Placement);
+    internal static bool Own(Context c)=>ActorItemUse.Current is {} use&&ReferenceEquals(c,use.Placement)
+        &&NativeItemInput.Active(use.Actor)&&ActorItemUse.Placing(use.Actor);
     internal static bool SupportedFor(Context c,Item item)=>c?.WallType>0?WallMaterial(item):c?.Rope!=null?ActorRope.Supported(item)
         :c?.Object==true?ActorObjectPlacement.CanPlace(item):Supported(item);
     internal static bool Present(Context c)=>c.WallType>0?Main.tile[c.X,c.Y].WallType==c.WallType:
@@ -254,11 +224,6 @@ internal static class ActorPlacement
         if(c.NativeEvents==0&&!c.Placed&&c.ConsumedCount==0)return null;
         return Validate(use)??(c.NativeEvents==1&&c.Placed&&c.ConsumedCount==1
             ?null:"native_placement_effect_unconfirmed");
-    }
-    internal static void AfterCheck(ActorItemUse.Context use,int beforeStack)
-    {
-        var c=use.Placement;int delta=beforeStack-use.Item.stack;
-        if(delta!=0){c.ConsumedCount+=delta;use.Consumed=true;}
     }
     internal static void Complete(ActorItemUse.Context use)
     {

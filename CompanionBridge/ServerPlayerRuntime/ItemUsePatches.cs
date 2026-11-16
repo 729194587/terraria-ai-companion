@@ -31,7 +31,23 @@ public static class ItemUsePatches
         MethodReference miningOnly=null,MethodReference combatOnly=null)
     {
         Require(!m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.FullName==predicate.FullName));
-        if(operation=="combat-cooldown")
+        if(operation=="wrapper")
+        {
+            // MonoMod's live IL clone is static with an explicit Player argument.
+            Require(m.Name.Contains("ItemCheckWrapped")&&m.ReturnType.MetadataType==MetadataType.Void
+                &&(m.HasThis?m.Parameters.Count==1:m.Parameters.Count==2&&m.Parameters[0].ParameterType.FullName=="Terraria.Player")
+                &&m.Parameters.Last().ParameterType.MetadataType==MetadataType.Int32
+                &&Call(At(m,0x0071),"SetUP")&&At(m,0x0076)?.OpCode==OpCodes.Ldarg_0
+                &&Call(At(m,0x0090),"ItemCheck")&&Call(At(m,0x0098),"ItemCheck")
+                &&At(m,0x00b1)?.OpCode==OpCodes.Ldc_I4_0&&Call(At(m,0x00b2),"FindRecipes")
+                &&Call(At(m,0x00b7),"SetDOWN")&&Field(At(m,0x00d1),"itemAnimation"));
+            // Keep native item execution and frame bookkeeping; don't enter client UI
+            // or mutate recipe availability while Main.myPlayer is the server actor.
+            Guard(m,0,0x0076,predicate);
+            Guard(m,0x00b1,0x00d0,predicate);
+            Guard(m,0x00b7,0x00d0,predicate);
+        }
+        else if(operation=="combat-cooldown")
         {
             Require(m.Name.Contains("UpdateMeleeHitCooldowns")&&m.Body.ExceptionHandlers.Count==0
                 &&Field(At(m,0),"myPlayer")&&Field(At(m,0x0006),"whoAmI")

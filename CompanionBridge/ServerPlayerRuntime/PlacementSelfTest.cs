@@ -196,7 +196,7 @@ public sealed class PlacementDiagnosticTile : GlobalTile
         if(Environment.GetCommandLineArgs().Contains("-placementselftest"))
         {
             var human=Main.player[0];
-            if(ActorPlacement.InputActive(human)||Main.myPlayer!=ActorItemUse.Current.Actor.whoAmI)
+            if(NativeItemInput.Active(human)||Main.myPlayer!=ActorItemUse.Current.Actor.whoAmI)
                 throw new InvalidOperationException("AI scope contaminated another Player's placement target");
             PlacementSelfTest.HumanScopeChecks++;
         }

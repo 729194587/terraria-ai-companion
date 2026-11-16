@@ -2,9 +2,12 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Reflection;
 using System.Runtime.Loader;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
+using MonoMod.Cil;
+using MonoMod.Utils;
 using VirtualPlayerEngineProbe;
 
 public static class ServerAiToolPatchTests
@@ -17,6 +20,8 @@ public static class ServerAiToolPatchTests
             ?AssemblyLoadContext.Default.LoadFromAssemblyPath(path):null;
         try{Run(args[0]);return 0;}catch(Exception e){Console.Error.WriteLine(e);return 1;}
     }
+    public static bool SkipClientUi(object player)=>false;
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void Run(string engine)
     {
@@ -26,6 +31,23 @@ public static class ServerAiToolPatchTests
         CraftingPatchOfflineTests.Run(engine);
         using var module=ModuleDefinition.ReadModule(Path.Combine(engine,"tModLoader.dll"));
         var player=module.GetType("Terraria.Player");
+        var wrapped=AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(engine,"tModLoader.dll"))
+            .GetType("Terraria.Player").GetMethod("ItemCheckWrapped",BindingFlags.Instance|BindingFlags.NonPublic,
+                null,new[]{typeof(int)},null);
+        using(var dmd=new DynamicMethodDefinition(wrapped))
+        using(var il=new ILContext(dmd.Definition))
+        {
+            il.Invoke(c=> {
+                var skip=c.Module.ImportReference(typeof(ServerAiToolPatchTests).GetMethod(nameof(SkipClientUi)));
+                var nativeCalls=c.Body.Instructions.Where(i=>i.Operand is MethodReference r&&r.Name=="ItemCheck").ToArray();
+                ItemUsePatches.Patch(c.Method,"wrapper",skip);
+                if(nativeCalls.Length!=2||nativeCalls.Any(i=>i.OpCode!=OpCodes.Call||!c.Body.Instructions.Contains(i)))
+                    throw new InvalidOperationException("Wrapper must retain both exclusive native ItemCheck branches.");
+                RequireRejected(()=>ItemUsePatches.Patch(c.Method,"wrapper",skip));
+            });
+            dmd.Generate();
+        }
+        Console.WriteLine("ItemCheckWrapped: live IL clone retains native calls and accepts only one UI guard patch.");
         var pose=player.Methods.Single(m=>m.Name=="ItemCheck_ApplyUseStyle_Inner");
         var predicate=new MethodReference("OwnedCombat",module.TypeSystem.Boolean,player);
         predicate.Parameters.Add(new ParameterDefinition(player));
@@ -62,6 +84,6 @@ public static class ServerAiToolPatchTests
     {
         try{patch();}
         catch(InvalidOperationException){return;}
-        throw new InvalidOperationException("Duplicate combat patch was admitted.");
+        throw new InvalidOperationException("Duplicate IL patch was admitted.");
     }
 }

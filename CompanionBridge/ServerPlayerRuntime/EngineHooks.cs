@@ -87,6 +87,7 @@ public sealed class VirtualPlayerEngineProbe
         ActorMining.Install(Install);
         ActorPlacement.Install(Install);
         ActorItemUse.Install(Install);
+        NativeItemInput.Install(Install);
         ActorGrapple.Install(Install);
         ActorSorting.Install(Install);
         ActorCrafting.Initialize();
