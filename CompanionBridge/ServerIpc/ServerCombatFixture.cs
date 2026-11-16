@@ -7,6 +7,7 @@ using System.Text.Json;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
+using Terraria.Localization;
 using VirtualPlayerEngineProbe;
 
 using Identity = CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity;
@@ -22,18 +23,56 @@ internal static class ServerCombatFixture
     private static ulong? lastFrame,lastHit;
     private static int frames,hits,hitViolations;
     private static bool faultNextPress;
-    private static int presses;
+    private static int presses,spawnPackets,ammoPackets;
     private static int? firstCooldown;
     private static readonly List<object> hitTrace=new();
+    private static readonly List<object> shots=new(),projectileHits=new(),flightTrace=new();
+    internal static void ObserveProjectileSpawn(Projectile projectile,NativeCombatWorld.Shot shot)
+    {
+        if(!Enabled)return;
+        var stack=new System.Diagnostics.StackTrace().ToString();
+        shots.Add(new{tick=Main.GameUpdateCount,shot.Owner,shot.Identity,shot.Weapon,shot.Ammo,shot.Verified,
+            shot.Type,shot.Slot,x=projectile.Center.X,y=projectile.Center.Y,tx=Main.npc[shot.Target.Slot].Center.X,ty=Main.npc[shot.Target.Slot].Center.Y,
+            targetVx=Main.npc[shot.Target.Slot].velocity.X,targetVy=Main.npc[shot.Target.Slot].velocity.Y,target=shot.Target.EntityRef,vx=projectile.velocity.X,vy=projectile.velocity.Y,
+            nativeShoot=stack.Contains("ItemCheck_Shoot"),nativeWrapper=stack.Contains("Terraria.Player::ItemCheckWrapped")});
+    }
+    internal static void ObserveProjectileHit(Projectile p,NPC n,int damage,NativeCombatWorld.Shot shot)
+    {
+        if(!Enabled)return;
+        var stack=new System.Diagnostics.StackTrace().ToString();
+        projectileHits.Add(new{tick=Main.GameUpdateCount,p.identity,p.owner,n.life,damage,launched=shot.Launched,
+            target=NativeCombatWorld.Reference(Bound(ProbeSession.Actor),n),
+            nativeDamage=stack.Contains("Projectile::Damage")||stack.Contains("Projectile:Damage")||stack.Contains("Projectile.Damage")||stack.Contains("NativeSurvival.ProjectileDamage")});
+    }
     private static Identity Bound(Player p)=>new(p,ProbeSession.WorldSession,ProbeSession.ActorGeneration,p.whoAmI,null);
     private static int Cooldown(Player p,int slot)=>
         ((int[])typeof(Player).GetField("meleeNPCHitCooldown",BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public)
             .GetValue(p))[slot];
 
+    internal static void ObserveFlight(Projectile p,NativeCombatWorld.Shot shot)
+    {
+        if(!Enabled||shots.Count!=1||flightTrace.Count>=60)return;
+        flightTrace.Add(new{tick=Main.GameUpdateCount,p.active,x=p.Center.X,y=p.Center.Y,
+            vx=p.velocity.X,vy=p.velocity.Y,p.damage,ai=p.ai[0],targetX=target.Center.X,targetY=target.Center.Y});
+    }
+
     internal static void Install(Action<Action,Action> install)
     {
-        if(Program.LaunchParameters.ContainsKey("-companioncombattest"))
-            install(()=>On_Player.ItemCheck+=ObserveItemFrame,()=>On_Player.ItemCheck-=ObserveItemFrame);
+        if(!Program.LaunchParameters.ContainsKey("-companioncombattest"))return;
+        install(()=>On_Player.ItemCheck+=ObserveItemFrame,()=>On_Player.ItemCheck-=ObserveItemFrame);
+        install(()=>On_NetMessage.SendData+=ObservePackets,()=>On_NetMessage.SendData-=ObservePackets);
+    }
+
+    private static void ObservePackets(On_NetMessage.orig_SendData orig,int msg,int remote,int ignore,NetworkText text,
+        int number,float a,float b,float c,int d,int e,int f)
+    {
+        orig(msg,remote,ignore,text,number,a,b,c,d,e,f);
+        var p=ProbeSession.Actor;
+        if(p==null||!Enabled||!NativeCombatWorld.AllowsItem(p))return;
+        if(msg==MessageID.SyncProjectile&&NativeItemInput.Active(p)
+            &&Main.projectile[number].TryGetGlobalProjectile<CombatProjectile>(out var trace)&&trace.Flight is {Verified:true})
+            spawnPackets++;
+        if(msg==MessageID.SyncEquipment&&number==p.whoAmI&&a==54)ammoPackets++;
     }
 
     private static void ObserveItemFrame(On_Player.orig_ItemCheck orig,Player p)
@@ -88,7 +127,7 @@ internal static class ServerCombatFixture
         return n;
     }
 
-    private static object DefenseIdentity(Player p,NPC n)=>new{slot=n.whoAmI,entityRef=NativeCombatWorld.Reference(Bound(p),n)};
+    private static object DefenseIdentity(Player p,NPC n)=>new{slot=n.whoAmI,n.life,entityRef=NativeCombatWorld.Reference(Bound(p),n)};
 
     internal static void Tick(Player p)
     {
@@ -96,7 +135,8 @@ internal static class ServerCombatFixture
         // The copied world can contain town NPCs whose attacks would decide
         // the fight. Keep the arena isolated from ambient friendly projectiles.
         foreach(var projectile in Main.projectile)
-            if(projectile.active&&projectile.friendly)projectile.active=false;
+            if(projectile.active&&projectile.friendly&&(!projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
+                ||trace.Flight is not {Verified:true}))projectile.active=false;
         foreach(var npc in Main.npc)
             if(npc.active&&npc.townNPC)npc.active=false;
         var request=Path.Combine(Main.SavePath,"combat-request");
@@ -112,7 +152,7 @@ internal static class ServerCombatFixture
         {
             if(mode=="fault")faultNextPress=true;
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
-                JsonSerializer.Serialize(new{mode,frames,hits,hitViolations,firstCooldown,hitTrace,
+                JsonSerializer.Serialize(new{mode,gameUpdate=Main.GameUpdateCount,frames,hits,hitViolations,firstCooldown,hitTrace,shots,projectileHits,flightTrace,spawnPackets,ammoPackets,ammo=p.inventory[54].stack,spareAmmo=p.inventory[53].stack,
                     survivors=defenseTargets.Where(n=>n.active).Select(n=>DefenseIdentity(p,n)),inputScopeReleased=!NativeItemInput.Active(p)&&Main.myPlayer!=p.whoAmI,
                     attackReleased=!p.controlUseItem&&p.releaseUseItem}));
             return;
@@ -131,6 +171,20 @@ internal static class ServerCombatFixture
             target.StrikeNPC(new NPC.HitInfo{Damage=target.life});
             target=SpawnDefense(p,-24,45,start:oldSlot);
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(DefenseIdentity(p,target)));
+            return;
+        }
+        if(mode=="ranged-replace")
+        {
+            var old=target;
+            int oldSlot=old.whoAmI;
+            var bottom=old.Bottom;
+            bool live=Main.projectile.Any(projectile=>projectile.active&&projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
+                &&trace.Flight?.Target.Slot==oldSlot);
+            old.active=false;
+            target=SpawnDefense(p,-300,32,threatening:false,start:oldSlot);
+            target.Bottom=bottom;
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                slot=target.whoAmI,entityRef=NativeCombatWorld.Reference(Bound(p),target),target.life,live}));
             return;
         }
         if(mode=="replace")
@@ -169,9 +223,9 @@ internal static class ServerCombatFixture
                 throw new InvalidOperationException("Reuse requires the preceding defeated NPC.");
             startSlot=target.whoAmI;
         }
-        lastFrame=lastHit=null;frames=hits=hitViolations=presses=0;faultNextPress=false;
-        firstCooldown=null;hitTrace.Clear();
-        if(distant&&p.HeldItem.type==ItemID.WoodenSword)
+        lastFrame=lastHit=null;frames=hits=hitViolations=presses=spawnPackets=ammoPackets=0;faultNextPress=false;
+        firstCooldown=null;hitTrace.Clear();shots.Clear();projectileHits.Clear();flightTrace.Clear();
+        if(distant&&(p.HeldItem.type==ItemID.WoodenSword||CombatBallistics.Supported(p.HeldItem)))
         {
             p.HeldItem.SetDefaults(ItemID.PlatinumBroadsword);
             p.statLife=p.statLifeMax2;
@@ -187,6 +241,24 @@ internal static class ServerCombatFixture
             tile.ClearEverything();
             if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
         }
+        if(mode is "bow" or "gun" or "bow-reflex" or "bow-empty" or "bow-one")
+        {
+            bool gun=mode=="gun",reflex=mode=="bow-reflex";
+            p.HeldItem.SetDefaults(gun?ItemID.Minishark:ItemID.WoodenBow);
+            p.inventory[54].SetDefaults(gun?ItemID.MusketBall:ItemID.WoodenArrow);
+            p.inventory[54].stack=24;
+            p.inventory[53].SetDefaults(p.inventory[54].type);p.inventory[53].stack=4;
+            if(mode=="bow-empty"){p.inventory[54].TurnToAir();p.inventory[53].TurnToAir();}
+            bool single=mode=="bow-one";
+            if(single){p.inventory[54].stack=1;p.inventory[53].TurnToAir();}
+            target=SpawnDefense(p,reflex?-95:single?-320:-200,gun?70:32,threatening:reflex);
+            if(gun){target.noGravity=true;target.velocity=new Vector2(.6f,-.25f);}
+            if(mode=="bow")SpawnDefense(p,-105,40,threatening:false);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                JsonSerializer.Serialize(new{slot=target.whoAmI,entityRef=NativeCombatWorld.Reference(Bound(p),target),
+                    ammo=p.inventory[54].stack,spareAmmo=p.inventory[53].stack,ammoType=p.inventory[54].type,weapon=p.HeldItem.type}));
+            return;
+        }
         if(mode=="defense")
         {
             // These fixtures exercise targeting threats; isolate contact knockback
@@ -198,7 +270,8 @@ internal static class ServerCombatFixture
                 JsonSerializer.Serialize(new{first=DefenseIdentity(p,target),second=DefenseIdentity(p,second)}));
             return;
         }
-        int x=(int)p.Center.X+(distant?-180:-24);
+        // Leave enough room for residual native movement after explicit cancellation.
+        int x=(int)p.Center.X+(distant?-180:durable?-32:-24);
         // Keep the reflex spawn on a different slot from the preceding kill,
         // whose native per-slot melee cooldown can still be active.
         int slot=NPC.NewNPC(p.GetSource_Misc("isolated_combat_fixture"),x,floor*16,NPCID.GreenSlime,

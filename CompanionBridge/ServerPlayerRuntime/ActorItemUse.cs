@@ -116,6 +116,7 @@ internal static class ActorItemUse
         // A Mod hook can change shoot/ammo requirements after preflight.
         // Stop before the native PickAmmo path for an actor without a cursor.
         if(!NativeSurvival.Owns(p))orig(p,slot,item,damage);
+        else NativeCombatWorld.Shoot(orig,p,slot,item,damage);
     }
     private static void SmartSelect(On_Player.orig_SmartSelectLookup orig,Player p)
     {if(!NativeSurvival.Owns(p))orig(p);}

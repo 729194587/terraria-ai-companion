@@ -201,6 +201,77 @@ async def verify(args):
         old = await manager.invoke('await_task', {'taskId': results['multiHit']['taskId'], 'milliseconds': 1000})
         assert completed(old) == results['multiHit']['receipt']
 
+        for mode in ('bow', 'gun', 'bow-reflex', 'bow-empty'):
+            enemy = await scene(mode)
+            if mode == 'bow-reflex':
+                action = await wait_for(lambda a: a['targetTask']['entityRef'] == enemy['entityRef'])
+                task_id = action['actionId']
+            else:
+                launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                               'arguments': {'entityRef': enemy['entityRef']}})
+                task_id = launch['taskId']
+            result = await manager.invoke('await_task', {'taskId': task_id, 'milliseconds': 30000})
+            sample = await scene('audit')
+            results[mode] = {'result': result, 'audit': sample}
+            if mode == 'bow-empty':
+                assert result['status'] == 'failed' and result['result']['reason'] == 'combat_ammo_unavailable', result
+                assert not sample['shots'] and not sample['projectileHits']
+                continue
+            proof = completed(result)
+            assert proof['target']['EntityRef'] == enemy['entityRef']
+            assert proof['source'] == ('reflex' if mode == 'bow-reflex' else 'agent')
+            assert sample['inputScopeReleased'] and sample['attackReleased'] and sample['frames'] == proof['itemChecks']
+            shots = {shot['tick']: shot for shot in sample['shots']}
+            assert len(shots) == len(sample['shots']) >= 2, sample
+            assert len({shot['tick'] for shot in shots.values()}) == len(shots), sample
+            assert all(shot['Verified'] and shot['nativeShoot'] and shot['nativeWrapper']
+                       and shot['Ammo'] == enemy['ammoType'] and shot['Weapon'] == enemy['weapon']
+                       and shot['target'] == enemy['entityRef'] for shot in shots.values()), sample
+            assert 0 < enemy['ammo'] - sample['ammo'] <= len(shots) and sample['spareAmmo'] == enemy['spareAmmo'], sample
+            assert sample['spawnPackets'] == len(shots) and sample['ammoPackets'] >= enemy['ammo'] - sample['ammo'], sample
+            if mode == 'bow':
+                assert len(sample['survivors']) == 1 and sample['survivors'][0]['life'] == 40, sample
+                first = next(iter(shots.values()))
+                assert first['vy'] * abs((first['tx'] - first['x']) / first['vx']) < first['ty'] - first['y'], first
+            if mode == 'gun':
+                assert any(shot['targetVx'] or shot['targetVy'] for shot in shots.values()), sample
+            assert all(hit['target'] == enemy['entityRef'] and hit['nativeDamage']
+                       and hit['tick'] > hit['launched'] and hit['identity'] == shots[hit['launched']]['Identity'] and hit['damage'] > 0
+                       for hit in sample['projectileHits']), sample
+            final = sample['projectileHits'][-1]
+            assert final['tick'] == proof['lastHit']['GameUpdate'] and final['life'] == proof['lastHit']['LifeAfter'], sample
+
+        for mode in ('ranged-replace', 'ranged-cancel'):
+            enemy = await scene('bow-one')
+            launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                           'arguments': {'entityRef': enemy['entityRef']}})
+            task_id = launch['taskId']
+            for _ in range(30):
+                sample = await scene('audit')
+                if sample['shots']:
+                    break
+            assert len(sample['shots']) == 1 and not sample['projectileHits'], sample
+            shot = sample['shots'][0]
+            if mode == 'ranged-replace':
+                replacement = await scene(mode)
+                assert replacement['live'] and replacement['slot'] == enemy['slot'] and replacement['entityRef'] != enemy['entityRef']
+                watched = replacement['entityRef']
+                result = await manager.invoke('await_task', {'taskId': task_id, 'milliseconds': 5000})
+                assert result['status'] == 'failed' and result['result']['reason'] == 'combat_target_replaced', result
+            else:
+                watched = enemy['entityRef']
+                result = await manager.invoke('cancel_task', {'taskId': task_id})
+                assert result['status'] == 'cancelled', result
+            assert result['result']['inputsReleased'] and not result['result']['effectVerified'], result
+            for _ in range(60):
+                sample = await scene('audit')
+                if sample['gameUpdate'] >= shot['tick'] + 65:
+                    break
+                await asyncio.sleep(.03)
+            assert sample['gameUpdate'] >= shot['tick'] + 65 and not sample['projectileHits'], sample
+            assert any(n['entityRef'] == watched and n['life'] == 32 for n in sample['survivors']), sample
+            results[mode] = {'result': result, 'audit': sample}
+
         for mode in ('external', 'despawn', 'replace', 'fault'):
             enemy = await scene('agent')
             submitted = await manager.invoke('submit_task', {'operation': 'combat_attack',

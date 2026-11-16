@@ -151,7 +151,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("navigate_to", "服务器自主导航。只传预期落脚面的世界像素 x、y（Y 向下）。游戏侧自行选择走、跳、安全下落、挖掘和搭路。安全着地停稳且脚底覆盖目的地才完成。unknown 后停止。",
          {key: {"type": "number", "minimum": 0, "maximum": 1000000} for key in ("x", "y")}, ["x", "y"]),
     tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE, "cluster": {"type": "boolean"}}),
-    tool("combat_attack", "通过 submit_task 提交单目标普通近战。使用 scan_entities 返回的 entityRef 和当前选中武器。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
+    tool("combat_attack", "通过 submit_task 提交单目标战斗。使用 scan_entities 返回的 entityRef 和当前选中的受支持武器。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
     tool("query_combat", "读取绑定角色当前或最近一次战斗。返回 action（含可查询或取消的 actionId），空闲且无战斗记录时为 null。", {}),
     tool("mine_tile", "原生挖掘指定 Tile。服务器 AI 从整个主背包自动选择合适工具，必要时临时切换快捷栏，按 Terraria 原生范围和工具规则判定。客户端控制使用当前手持镐。动作在当前位置执行，以实际移除为准，10秒上限。",
          {"x": {**TILE["x"], "description": "目标格的绝对 Tile X 坐标"},
@@ -792,7 +792,7 @@ def verified_server_combat(action, task, result, proof):
             previous_kill_tick = strike['GameUpdate']
             kills.add(reference)
         elif reason not in ('combat_target_replaced', 'combat_target_invalidated',
-                             'combat_target_out_of_range', 'combat_approach_failed'):
+                             'combat_target_out_of_range', 'combat_approach_failed', 'combat_shot_blocked'):
             return False
     return (encounters[0]['Target']['EntityRef'] == requested.get('entityRef')
             and encounters[-1]['Target'] == target and encounters[-1].get('LastHit') == hit)

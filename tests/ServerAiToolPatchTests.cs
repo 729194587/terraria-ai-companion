@@ -66,6 +66,19 @@ public static class ServerAiToolPatchTests
         if(!mining.Body.Instructions.Any(i=>i.Operand==ui&&i.Next.Operand==strikeGates))
             throw new InvalidOperationException("Dedicated AI must skip only the native cursor icon block before the tool timing gates.");
         Console.WriteLine("Native tool routing and cursor icon guards passed.");
+        var projectile=module.GetType("Terraria.Projectile");
+        bool Calls(MethodDefinition m,int offset,string name)=>m.Body.Instructions.Any(i=>i.Offset==offset
+            &&i.Operand is MethodReference call&&call.Name==name);
+        var shoot=player.Methods.Single(m=>m.Name=="ItemCheck_Shoot");
+        var update=projectile.Methods.Single(m=>m.Name=="Update");
+        var damage=projectile.Methods.Single(m=>m.Name=="Damage");
+        var spawn=projectile.Methods.Single(m=>m.Name=="NewProjectile"&&m.Parameters.Count==12);
+        if(!Calls(shoot,0x0098,"PickAmmo")||!Calls(shoot,0x02e8,"get_MouseWorld")
+            ||!Calls(update,0x0499,"AI")||!Calls(update,0x1575,"Damage")||!Calls(update,0x1d18,"Kill")
+            ||!Calls(spawn,0x0710,"OnSpawn")||!Calls(spawn,0x073d,"SendData")
+            ||!Calls(damage,0x0b74,"CanHitNPCWithProj")||!Calls(damage,0x3210,"StrikeNPC")||!Calls(damage,0x421b,"OnHitNPCWithProj"))
+            throw new InvalidOperationException("Native ranged shooting, update or damage contract changed.");
+        Console.WriteLine("Native ranged shoot/ammo, projectile update and hit callback IL passed.");
         var pose=player.Methods.Single(m=>m.Name=="ItemCheck_ApplyUseStyle_Inner");
         var predicate=new MethodReference("OwnedCombat",module.TypeSystem.Boolean,player);
         predicate.Parameters.Add(new ParameterDefinition(player));

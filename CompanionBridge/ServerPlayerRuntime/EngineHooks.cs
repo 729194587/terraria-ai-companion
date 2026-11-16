@@ -88,6 +88,7 @@ public sealed class VirtualPlayerEngineProbe
         ActorPlacement.Install(Install);
         ActorItemUse.Install(Install);
         NativeItemInput.Install(Install);
+        CompanionBridge.ServerIpc.CombatProjectile.Install(Install);
         ActorGrapple.Install(Install);
         ActorSorting.Install(Install);
         ActorCrafting.Initialize();

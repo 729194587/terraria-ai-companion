@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
+using Terraria.DataStructures;
 using CompanionBridge.Common.Systems;
 using CompanionBridge.Motion;
 using VirtualPlayerEngineProbe;
@@ -29,6 +30,10 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private ulong plannedAt;
     private int missedSwings;
     private bool drainSwing;
+    private int targetEpoch;
+    private bool Ranged=>CombatBallistics.Supported(item);
+    private CombatBallistics.Round? firing;
+    private bool ammoChanged,inShoot;
 
     public CombatTarget Target { get; private set; }
     public CombatWeapon Weapon { get; private set; }
@@ -47,11 +52,16 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         && !n.friendly && !n.townNPC && !n.boss && n.realLife < 0 && !NPCID.Sets.ShouldBeCountedAsBoss[n.type]
         && n.CanBeChasedBy(p);
 
-    private static bool WeaponSupported(Item i) => ActorItemUse.Supported(i) && i.type < ItemID.Count
-        && i.useStyle == ItemUseStyleID.Swing && i.CountsAsClass(Terraria.ModLoader.DamageClass.Melee)
-        && !i.noMelee && !i.noUseGraphic && !i.consumable && i.damage > 0
+    private static bool WeaponSupported(Item i) => !i.IsAir && i.type < ItemID.Count
+        && !i.consumable && !i.channel && i.damage > 0 && i.createTile < 0 && i.createWall < 0
         && i.pick == 0 && i.axe == 0 && i.hammer == 0 && i.mana == 0 && i.mountType < 0
-        && i.useTime > 0 && i.useAnimation > 0;
+        && i.useTime > 0 && i.useAnimation > 0
+        && (CombatBallistics.Supported(i) && i.CountsAsClass(Terraria.ModLoader.DamageClass.Ranged)
+            || ActorItemUse.Supported(i) && i.useStyle == ItemUseStyleID.Swing
+                && i.CountsAsClass(Terraria.ModLoader.DamageClass.Melee) && !i.noMelee && !i.noUseGraphic);
+
+    private static string AmmoRefusal(Player p,Item held)=>CombatBallistics.Supported(held)
+        ? CombatBallistics.ReadRound(p,held,out _) : null;
 
     private static bool InRange(Player p, NPC n, int range) =>
         Vector2.DistanceSquared(p.Center, n.Center) <= range * range;
@@ -77,7 +87,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         var p = (Player)identity.Actor;
         if (Resolve(identity, entityRef) == null) return "combat_target_unavailable";
         if (p.selectedItem is < 0 or > 9 || !WeaponSupported(p.HeldItem)) return "combat_weapon_unsupported";
-        return !GameNavigation.Ordinary(p) || p.noItems || p.CCed ? "combat_actor_state_unsupported" : null;
+        return !GameNavigation.Ordinary(p) || p.noItems || p.CCed ? "combat_actor_state_unsupported" : AmmoRefusal(p,p.HeldItem);
     }
 
     internal static void RecordHurt(Player p, int sourceNpc)
@@ -104,7 +114,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         if (identity?.CanAct != true || !ServerAiNativeActions.Owned(identity)) return null;
         var p = (Player)identity.Actor;
         if (p.selectedItem is < 0 or > 9 || !WeaponSupported(p.HeldItem) || !GameNavigation.Ordinary(p,combatSwing)
-            || p.noItems || p.CCed) return null;
+            || p.noItems || p.CCed || !combatSwing && AmmoRefusal(p,p.HeldItem)!=null) return null;
         (string entityRef,string threat)? nearest=null;
         float best = float.PositiveInfinity;
         for (int i = 0; i < Main.maxNPCs; i++)
@@ -128,7 +138,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         spawn=next.GetGlobalNPC<AtomicNpcIdentity>();
         spawnToken=spawn.Token;
         Target=new(next.whoAmI,next.type,reference);
-        LastHit=null;
+        LastHit=null;targetEpoch++;
         missedSwings=0;
     }
 
@@ -143,6 +153,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         if (player.selectedItem is < 0 or > 9 || !WeaponSupported(player.HeldItem)) return "combat_weapon_unsupported";
         if (!GameNavigation.Ordinary(player) || player.noItems || player.CCed) return "combat_actor_state_unsupported";
         if (!ServerAiNativeActions.BodyIdle(identity)) return "actor_busy";
+        if(AmmoRefusal(player,player.HeldItem) is {} ammoFailure)return ammoFailure;
         slot = player.selectedItem;
         item = player.HeldItem;
         Weapon = new(slot, item.type, item.Name);
@@ -205,6 +216,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             return "combat_native_unconfirmed";
         }
         if (approach?.Status is "failed" or "timeout") return "combat_approach_failed";
+        if(Ranged)return StepRanged(out phase);
         bool swingRange=CanSwing();
         float horizontal=Math.Abs(player.Center.X-npc.Center.X);
         // A jumping enemy can leave the swing envelope after the planner
@@ -247,6 +259,36 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         return null;
     }
 
+    private string StepRanged(out string phase)
+    {
+        phase="aim";
+        var failure=CombatBallistics.ReadRound(player,item,out var round);
+        if(failure!=null)
+        {
+            if(failure=="combat_ammo_unavailable"&&Array.Exists(Main.projectile,p=>p.active
+                &&p.TryGetGlobalProjectile<CombatProjectile>(out var trace)&&trace.Flight is {} shot&&shot.Pending(this,p)&&Main.GameUpdateCount-shot.Launched<=90))
+            {phase="projectile_in_flight";return null;}
+            return failure;
+        }
+        if(CombatBallistics.Aim(player,npc,item,round,out _))
+        {
+            if(approach?.Status=="running")navigation.Stop("cancelled","combat_firing_position");
+            if(approach?.Status=="unknown")return "combat_native_unconfirmed";
+            phase="attack";return null;
+        }
+        phase="approach";
+        if(approach?.Status=="running"||!ServerAiNavigation.Observe(player).Settled)return null;
+        float horizontal=Math.Abs(player.Center.X-npc.Center.X);
+        float standOff=Math.Clamp(horizontal*.5f,48,CombatBallistics.Range(item)*.65f);
+        if(horizontal<=standOff)return "combat_shot_blocked";
+        int side=player.Center.X<npc.Center.X?-1:1;
+        float goal=Math.Clamp(npc.Center.X+side*standOff-player.width*.5f,32,Main.maxTilesX*16-64);
+        if(approach?.Status=="completed"&&Math.Abs(goal-approach.Target)<1)return "combat_shot_blocked";
+        approach=navigation.StartCombat(identity,goal,actionId);
+        plannedAt=Main.GameUpdateCount;
+        return null;
+    }
+
     private bool ValidWeapon() => player.selectedItem == slot && ReferenceEquals(player.HeldItem, item)
         && item.type == Weapon.TypeId && WeaponSupported(item);
 
@@ -276,11 +318,22 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             || !SameSpawn(Main.npc[Target.Slot]) || !StillEligible(npc) || !ValidWeapon()
             || !inputs.BeginItemCheck(tick)) return;
         if(player.itemAnimation==0)drainSwing=false;
-        bool press = player.itemAnimation == 0 && player.itemTime == 0 && player.reuseDelay == 0
-            && player.releaseUseItem && CanSwing();
         try
         {
             checking = this;
+            Vector2 aim=npc.Center;
+            bool ready=player.itemTime==0&&player.reuseDelay==0;
+            bool press;
+            if(Ranged)
+            {
+                firing=null;ammoChanged=false;
+                bool canPress=player.itemTime<=1&&player.reuseDelay==0
+                    &&(player.itemAnimation>0||player.releaseUseItem||item.autoReuse);
+                if(!drainSwing&&canPress&&CombatBallistics.ReadRound(player,item,out var round)==null
+                    &&CombatBallistics.Aim(player,npc,item,round,out aim))firing=round;
+                press=firing.HasValue;
+            }
+            else press=player.itemAnimation==0&&ready&&player.releaseUseItem&&CanSwing();
             var previousHit=LastHit;
             if (press || player.itemAnimation > 0)
             {
@@ -290,11 +343,12 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             // The native local-input path owns the release latch. The AI
             // supplies its equivalent on the up frame, never on a down frame.
             if (!press) player.releaseUseItem = true;
-            runNative(new(npc.Center, press));
+            runNative(new(aim, press));
+            if(ammoChanged&&Owned())NetworkStateSync.Full(player);
             if (press && player.itemAnimation > 0 && Owned())
             {
                 player.releaseUseItem=false;
-                if (ReferenceEquals(LastHit,previousHit)) missedSwings++;
+                if (!Ranged&&ReferenceEquals(LastHit,previousHit)) missedSwings++;
                 NetMessage.SendData(MessageID.PlayerControls, -1, -1, null, player.whoAmI);
                 NetMessage.SendData(MessageID.ShotAnimationAndSound, -1, -1, null, player.whoAmI);
             }
@@ -306,7 +360,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         }
         finally
         {
-            checking = null;
+            firing=null;ammoChanged=false;checking = null;
             if (Owned()) player.controlUseItem = false;
         }
     }
@@ -318,12 +372,12 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     // pose needs native item dimensions, while the server still computes its
     // own native melee hitbox.
     internal static Rectangle SwingFrame(Player p, Item held, Rectangle frame) =>
-        AllowsItem(p) ? new Rectangle(0, 0, held.width, held.height) : frame;
+        AllowsItem(p) && !checking.Ranged ? new Rectangle(0, 0, held.width, held.height) : frame;
 
     private static bool InInputScope(Player p) => checking is {} c && ReferenceEquals(c.player,p) && NativeItemInput.Active(p);
 
     internal static bool? CanHit(Player p, Item held, NPC target) => InInputScope(p)
-        && (checking.drainSwing || !AllowsItem(p) || !ReferenceEquals(held,checking.item) || !checking.ValidWeapon()
+        && (checking.Ranged || checking.drainSwing || !AllowsItem(p) || !ReferenceEquals(held,checking.item) || !checking.ValidWeapon()
             || !checking.SameSpawn(target) || !checking.SameSpawn(Main.npc[checking.Target.Slot]))
         ? false : null;
 
@@ -333,7 +387,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     {
         var combat=checking;
         if(!InInputScope(p))return target.StrikeNPC(hit,fromNet,noPlayerInteraction);
-        if(combat.drainSwing||!AllowsItem(p)||!combat.ValidWeapon()||!combat.SameSpawn(Main.npc[combat.Target.Slot])||!combat.SameSpawn(target)||!Enemy(target,p))return 0;
+        if(combat.Ranged||combat.drainSwing||!AllowsItem(p)||!combat.ValidWeapon()||!combat.SameSpawn(Main.npc[combat.Target.Slot])||!combat.SameSpawn(target)||!Enemy(target,p))return 0;
         int before=target.life;
         int damage=target.StrikeNPC(hit,fromNet,noPlayerInteraction);
         if(combat.Owned() && CombatStrikeEvidence.Observe(combat.SameSpawn(Main.npc[combat.Target.Slot]),
@@ -343,6 +397,51 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             combat.missedSwings=0;
         }
         return damage;
+    }
+
+    internal static void Shoot(On_Player.orig_ItemCheck_Shoot orig,Player p,int slot,Item held,int damage)
+    {
+        var combat=checking;
+        if(!InInputScope(p)||!AllowsItem(p)||combat.inShoot||combat.firing is not {} round||p.whoAmI!=slot
+            ||!ReferenceEquals(held,combat.item)||!combat.ValidWeapon()||!combat.StillEligible(combat.npc)
+            ||!combat.SameSpawn(Main.npc[combat.Target.Slot]))return;
+        var ammo=p.ChooseAmmo(held);
+        if(ammo==null||ammo.type!=round.Ammo)return;
+        int stack=ammo.stack;
+        try{combat.inShoot=true;orig(p,slot,held,damage);}
+        finally{combat.inShoot=false;combat.ammoChanged|=ammo.stack!=stack;}
+    }
+
+    internal static Shot CaptureShot(Projectile p,EntitySource_ItemUse_WithAmmo source)
+    {
+        var combat=checking;
+        if(combat==null||!combat.inShoot||!InInputScope(combat.player)||!AllowsItem(combat.player)||combat.firing is not {} round
+            ||p.owner!=combat.player.whoAmI||!ReferenceEquals(source.Entity,combat.player)
+            ||!ReferenceEquals(source.Item,combat.item))return null;
+        bool verified=p.type==round.Projectile&&source.AmmoItemIdUsed==round.Ammo&&combat.SameSpawn(Main.npc[combat.Target.Slot]);
+        return new(combat,combat.targetEpoch,combat.Target,combat.Weapon.TypeId,source.AmmoItemIdUsed,
+            p.whoAmI,p.owner,p.identity,p.type,Main.GameUpdateCount,verified);
+    }
+
+    internal sealed record Shot(NativeCombatWorld Combat,int Epoch,CombatTarget Target,int Weapon,int Ammo,
+        int Slot,int Owner,int Identity,int Type,ulong Launched,bool Verified)
+    {
+        internal bool Owns(Projectile p)=>p.whoAmI==Slot&&p.owner==Owner&&p.identity==Identity&&p.type==Type
+            &&ReferenceEquals(Main.projectile[Slot],p)&&Combat.Owned();
+        internal bool Pending(NativeCombatWorld combat,Projectile p)=>Verified&&Combat.fault==null&&ReferenceEquals(combat,Combat)
+            &&ReferenceEquals(current,Combat)&&Epoch==Combat.targetEpoch&&Owns(p);
+        internal void ObserveFault(Projectile p,Exception exception)
+        {if(Pending(Combat,p))Combat.fault=exception;}
+        private bool SameTarget(Projectile p,NPC target)=>Pending(Combat,p)&&target.whoAmI==Target.Slot
+            &&Combat.SameSpawn(target)&&Combat.SameSpawn(Main.npc[Target.Slot]);
+        internal bool CanHit(Projectile p,NPC target)=>SameTarget(p,target)&&Combat.StillEligible(target);
+        internal bool ObserveHit(Projectile p,NPC target,int before,int damage)
+        {
+            if(!SameTarget(p,target)||CombatStrikeEvidence.Observe(true,before,target.life,damage,target.active,Main.GameUpdateCount) is not {} hit)
+                return false;
+            Combat.LastHit=hit;
+            return true;
+        }
     }
 
     public bool Release()
