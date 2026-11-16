@@ -11,6 +11,14 @@ public static class MiningPatches
 {
     private static Instruction At(MethodDefinition m,int offset)=>m.Body.Instructions.SingleOrDefault(i=>i.Offset==offset);
     private static bool Call(MethodDefinition m,int offset,string name)=>At(m,offset)?.Operand is MethodReference r&&r.Name==name;
+    private static bool ClientOnly(MethodDefinition m,int offset,int resume)
+    {
+        var load=At(m,offset);
+        return load?.OpCode==OpCodes.Ldsfld&&load.Operand is FieldReference f&&f.Name=="netMode"
+            &&load.Next?.OpCode==OpCodes.Ldc_I4_1
+            &&load.Next.Next?.OpCode.Code is Code.Bne_Un or Code.Bne_Un_S
+            &&ReferenceEquals(load.Next.Next.Operand,At(m,resume));
+    }
     private static void Require(bool ok){if(!ok)throw new InvalidOperationException("Unsupported G7 mining IL; installation refused.");}
     public static void Validate(TypeDefinition player)
     {
@@ -35,6 +43,11 @@ public static class MiningPatches
             &&At(tool,0x02ee)?.OpCode==OpCodes.Ldc_I4_S&&Convert.ToInt32(At(tool,0x02ee).Operand)==100
             &&Call(tool,0x03ba,"IsBottomOfTreeTrunkNoRoots")&&Call(tool,0x03c7,"KillTile")
             &&Call(tool,0x040f,"KillTile")&&Call(tool,0x043d,"Prune")&&Call(tool,0x0453,"ApplyItemTime"));
+        // Server breaks tiles directly. These client requests are not needed
+        // alongside our observed SyncTilePicking/TileSquare publication.
+        Require(ClientOnly(tool,0x0178,0x01c5)&&ClientOnly(tool,0x01a5,0x01c5)
+            &&ClientOnly(tool,0x03cc,0x03ec)&&ClientOnly(tool,0x0414,0x0434)
+            &&ClientOnly(pick,0x0088,0x02a8)&&ClientOnly(pick,0x02f0,0x030f)&&ClientOnly(pick,0x0321,0x0358));
         Require(transform.Parameters.Count==7&&transform.Body.ExceptionHandlers.Count==0
             &&Call(transform,0x0005,"AddDamage")&&At(transform,0x0004)?.OpCode==OpCodes.Ldc_I4_0
             &&At(transform,0x0019)?.OpCode==OpCodes.Ldc_I4_2&&At(transform,0x00d2)?.OpCode==OpCodes.Ldc_I4_1

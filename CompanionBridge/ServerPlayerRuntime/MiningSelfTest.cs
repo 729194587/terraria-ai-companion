@@ -18,7 +18,7 @@ internal static class MiningSelfTest
 {
     private static bool ran;
     internal static bool DenyTile,ThrowInPick;
-    private static int hitPackets,tilePackets,dropPackets;
+    private static int hitPackets,tilePackets,dropPackets,clientRequests;
     private static bool watchFirstPress;
     private static readonly List<bool> firstPressControls=new();
     private static void Packets(On_NetMessage.orig_SendData orig,int msg,int remote,int ignore,NetworkText text,int number,float x,float y,float extra,int n5,int n6,int n7)
@@ -28,6 +28,7 @@ internal static class MiningSelfTest
         if(msg==MessageID.SyncTilePicking&&number==ProbeSession.Actor?.whoAmI)hitPackets++;
         if(msg==MessageID.TileSquare)tilePackets++;
         if(msg==MessageID.SyncItem)dropPackets++;
+        if(msg==MessageID.TileManipulation||msg==MessageID.ChestUpdates)clientRequests++;
     }
     internal static void RunIfRequested()
     {
@@ -36,8 +37,27 @@ internal static class MiningSelfTest
         string report=Path.Combine(Main.SavePath,"mining-native-result.json");int checks=0;
         var evidence=new List<object>();
         void Check(bool ok,string message){if(!ok)throw new InvalidOperationException(message);checks++;}
+        int itemFrames=0,tools=0;
+        void ObserveItem(On_Player.orig_ItemCheck orig,Player player)
+        {
+            if(ActorMining.Running&&ReferenceEquals(player,ProbeSession.Actor))
+            {
+                if(!NativeItemInput.Active(player)||Main.myPlayer!=player.whoAmI||Main.netMode!=NetmodeID.Server)
+                    throw new InvalidOperationException("Mining ItemCheck did not run under the server actor's virtual input.");
+                itemFrames++;
+            }
+            orig(player);
+        }
+        void ObserveTool(On_Player.orig_ItemCheck_UseMiningTools_ActuallyUseMiningTool orig,
+            Player player,Item item,out bool hitWall,int x,int y)
+        {
+            if(NativeItemInput.Active(player)&&ActorMining.InInputScope(player))tools++;
+            orig(player,item,out hitWall,x,y);
+        }
         try
         {
+            On_Player.ItemCheck+=ObserveItem;
+            On_Player.ItemCheck_UseMiningTools_ActuallyUseMiningTool+=ObserveTool;
             On_NetMessage.SendData+=Packets;
             Main.gameMenu=false;ProbeSession.Spawn();var p=ProbeSession.Actor;
             string world=ProbeSession.WorldSession;long generation=ProbeSession.ActorGeneration;
@@ -56,8 +76,12 @@ internal static class MiningSelfTest
             p.inventory[1]=new Item();
             var human=Main.player[0];var humanItems=human.inventory.Select(i=>(i.type,i.stack)).ToArray();
             int local=Main.myPlayer,tx=Player.tileTargetX,ty=Player.tileTargetY;bool mouse=Main.blockMouse;
+            var pointer=(Main.screenPosition,Main.mouseX,Main.mouseY,Main.lastMouseX,Main.lastMouseY,Main.mouseItem,
+                Main.mouseLeft,Main.mouseLeftRelease,Main.mouseRight,Main.mouseRightRelease,p.mouseInterface);
             void CheckIsolation()=>Check(Main.myPlayer==local&&Main.blockMouse==mouse&&Player.tileTargetX==tx&&Player.tileTargetY==ty
-                &&ReferenceEquals(human,Main.player[0])&&humanItems.SequenceEqual(human.inventory.Select(i=>(i.type,i.stack))),"Human/global state changed during explicit item frames.");
+                &&pointer==(Main.screenPosition,Main.mouseX,Main.mouseY,Main.lastMouseX,Main.lastMouseY,Main.mouseItem,
+                    Main.mouseLeft,Main.mouseLeftRelease,Main.mouseRight,Main.mouseRightRelease,p.mouseInterface)
+                &&!NativeItemInput.Active(p)&&ReferenceEquals(human,Main.player[0])&&humanItems.SequenceEqual(human.inventory.Select(i=>(i.type,i.stack))),"Human/global state changed during explicit item frames.");
             Target(TileID.Stone);
             void Start()=>ActorMining.Start(p,world,generation,x,y);
             if(failure)
@@ -66,7 +90,8 @@ internal static class MiningSelfTest
                 try{Frame();}catch{threw=true;}finally{ThrowInPick=false;}
                 Check(threw&&ProbeSession.Quarantined&&!ActorMining.Running&&!p.controlUseItem&&p.itemAnimation==0
                     &&ProbeSession.Reservation.IsReserved(p.whoAmI)&&ReferenceEquals(Main.player[p.whoAmI],p),"Native exception did not release/quarantine/retain reservation.");
-                File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",checks,nativeExceptionQuarantine=true,exceptionInsidePickTile=true,processTerminationRequired=true}));return;
+                CheckIsolation();
+                File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",checks,virtualInputRestored=true,nativeExceptionQuarantine=true,exceptionInsidePickTile=true,processTerminationRequired=true}));return;
             }
 
             var savedFirst=p.inventory[0];var savedSecond=p.inventory[1];float savedPickSpeed=p.pickSpeed;
@@ -192,6 +217,9 @@ internal static class MiningSelfTest
                 var support=Main.tile[x-1,y+1];support.HasTile=true;support.TileType=TileID.Grass;
                 WorldGen.SquareTileFrame(x-1,y);Check(grass.HasTile,"Diagnostic grass fixture lacks native support.");
                 int[] bag=p.inventory.Select(i=>i.stack).ToArray();int drops=Main.item.Count(i=>i.active&&i.type==ItemID.StoneBlock);
+                var visualItem=typeof(Player).GetField("lastVisualizedSelectedItem",BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic);
+                var oldVisual=visualItem.GetValue(p);
+                var initial=(hitPackets,tilePackets,dropPackets,clientRequests,itemFrames,tools);
                 Start();bool walk=false,use=false,slot=false,save=false;
                 try{ActorControl.Start(p,generation,world);}catch(InvalidOperationException){walk=true;}
                 try{ActorItemUse.Start(p,world,generation);}catch(InvalidOperationException){use=true;}
@@ -208,7 +236,10 @@ internal static class MiningSelfTest
                         typeof(NetworkStateSync).GetField("fullTick",BindingFlags.Static|BindingFlags.NonPublic).SetValue(null,unchecked(Main.GameUpdateCount-300UL));
                         watchFirstPress=true;firstPressControls.Clear();
                     }
+                    int previousFrames=itemFrames,previousTools=tools;
                     Frame();var a=ActorMining.Current;
+                    if(itemFrames!=previousFrames+1||tools-previousTools>1)
+                        throw new InvalidOperationException("A mining update executed zero or multiple native item frames or repeated a strike.");
                     if(i==0)
                     {
                         NetworkStateSync.Tick(p);NetworkStateSync.Full(p);watchFirstPress=false;
@@ -225,8 +256,13 @@ internal static class MiningSelfTest
                 Check(!p.controlUseItem&&p.itemAnimation==0&&p.itemTime==0,"Completion left inputs/timers active.");
                 Check(bag.SequenceEqual(p.inventory.Select(i=>i.stack)),"Item-only frames unexpectedly changed inventory without Player.Update/GrabItems.");
                 Check(Main.item.Count(i=>i.active&&i.type==ItemID.StoneBlock)>drops,"No real world stone drop was created.");
-                Check(hitPackets>0&&tilePackets>0&&dropPackets>0,"Native progress/tile/drop publication was not observed.");
-                return new{actionId=c.Id,c.X,c.Y,c.TileType,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.AnimationPeak,c.Destroyed,progressBeforeDestruction=progress,worldDrop=true,hitPackets,tilePackets,dropPackets,firstTickControls};
+                int frameCount=itemFrames-initial.itemFrames,strikeCalls=tools-initial.tools;
+                Check(frameCount==c.Ticks&&strikeCalls==c.Strikes&&!ReferenceEquals(oldVisual,visualItem.GetValue(p)),
+                    "Missing original wrapper completion or unexpected native strike count.");
+                int hitDelta=hitPackets-initial.hitPackets,tileDelta=tilePackets-initial.tilePackets,dropDelta=dropPackets-initial.dropPackets;
+                Check(hitDelta==c.Strikes-1&&tileDelta==1&&dropDelta>0&&clientRequests==initial.clientRequests,
+                    $"Unexpected stone publication: hits={hitDelta}, tiles={tileDelta}, drops={dropDelta}, client requests={clientRequests-initial.clientRequests}.");
+                return new{actionId=c.Id,c.X,c.Y,c.TileType,c.Ticks,c.Swings,c.Strikes,c.PeakDamage,c.AnimationPeak,c.Destroyed,progressBeforeDestruction=progress,worldDrop=true,frameCount,strikeCalls,hitDelta,tileDelta,dropDelta,hitPackets,tilePackets,dropPackets,firstTickControls};
             }
             evidence.Add(Mine(TileID.Stone));
             // e2d6c35 chained fixture: an NPC hit moved the actor across the
@@ -317,6 +353,18 @@ internal static class MiningSelfTest
             Target(TileID.Stone);Start();Frame();var replacement=pick.Clone();p.inventory[0]=replacement;Frame();
             Check(ActorMining.Current.Reason==ActorMining.Failure.ItemChanged&&ReferenceEquals(p.inventory[0],replacement),"Replacement tool was used or overwritten.");p.inventory[0]=pick;
             Start();ActorMining.Current.Ticks=600;Frame();Check(ActorMining.Current.Phase==ActionPhase.TimedOut&&!p.controlUseItem,"Deadline did not stop.");
+            // Native frame-important placement fixture followed by the real pick path.
+            for(int dx=0;dx<=1;dx++)
+            {
+                Main.tile[x+dx,y].ClearEverything();var floor=Main.tile[x+dx,y+1];
+                floor.HasTile=true;floor.TileType=TileID.Stone;
+            }
+            Check(TileObject.CanPlace(x,y,TileID.WorkBenches,0,1,out var bench)&&TileObject.Place(bench),
+                "Native workbench fixture placement failed.");
+            Start();
+            for(int i=0;ActorMining.Running&&i<610;i++)Frame();
+            Check(ActorMining.Current.Phase==ActionPhase.Completed&&ActorMining.Current.Furniture.Length==2
+                &&!Main.tile[x,y].HasTile&&!Main.tile[x+1,y].HasTile,"Workbench footprint was not cleared/verified by native mining.");
             evidence.Add(TreeMiningSelfTest.Run(p,world,generation,x,y,Frame,CheckIsolation));
             evidence.Add(ExcavationSelfTest.Run(p,world,generation,x,y,Frame,Check));
             evidence.Add(ExcavationSelfTest.RunWithMovement(p,world,generation,x,y,Check));
@@ -335,7 +383,9 @@ internal static class MiningSelfTest
                 cadence="explicit real ItemCheckWrapped in native survival scope, before world frames; not a realtime cadence test"}));
         }
         catch(Exception e){File.WriteAllText(report,JsonSerializer.Serialize(new{result="failed",checks,evidence,error=e.ToString()}));VirtualPlayerEngineProbe.Instance?.Logger.Error("G7 diagnostic failed",e);}
-        finally{watchFirstPress=false;firstPressControls.Clear();On_NetMessage.SendData-=Packets;if(!failure)Netplay.Disconnect=true;}
+        finally{watchFirstPress=false;firstPressControls.Clear();On_Player.ItemCheck-=ObserveItem;
+            On_Player.ItemCheck_UseMiningTools_ActuallyUseMiningTool-=ObserveTool;
+            On_NetMessage.SendData-=Packets;if(!failure)Netplay.Disconnect=true;}
     }
 }
 

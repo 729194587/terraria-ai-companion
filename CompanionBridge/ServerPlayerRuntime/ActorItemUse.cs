@@ -84,8 +84,8 @@ internal static class ActorItemUse
     public static bool Allowed(Player p)=>NativeCombatWorld.AllowsItem(p)||ActorMining.Allowed(p)||(executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
         &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&(executing.Placement!=null?ActorPlacement.SupportedFor(executing.Placement,executing.Item)||executing.Placement.Placed&&executing.Item.IsAir:(executing.Item.type==executing.Type||executing.Consumed&&executing.Item.IsAir)));
     internal static bool Placing(Player p)=>executing?.Placement!=null&&Allowed(p);
-    public static bool SkipMelee(Player p)=>ActorMining.Allowed(p)||Placing(p);
-    public static bool SkipCursor(Player p){if(ActorMining.Allowed(p))ActorMining.Strike(p);return !Placing(p)&&Allowed(p);}
+    public static bool SkipMelee(Player p)=>ActorMining.InInputScope(p)||Placing(p);
+    public static bool SkipCursor(Player p)=>!ActorMining.InInputScope(p)&&!Placing(p)&&Allowed(p);
     internal static void Install(Action<Action,Action> install)
     {
         var predicate=typeof(ActorItemUse).GetMethod(nameof(Allowed));
@@ -93,7 +93,8 @@ internal static class ActorItemUse
         ILContext.Manipulator inner=il=>ItemUsePatches.Patch(il.Method,"inner",il.Module.ImportReference(predicate));
         ILContext.Manipulator melee=il=>ItemUsePatches.Patch(il.Method,"melee",il.Module.ImportReference(predicate),
             il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipCursor))),
-            il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipMelee))),il.Module.ImportReference(combat));
+            il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipMelee))),il.Module.ImportReference(combat),
+            il.Module.ImportReference(typeof(ActorMining).GetMethod(nameof(ActorMining.InInputScope))));
         ILContext.Manipulator combatPose=il=>ItemUsePatches.Patch(il.Method,"combat-pose",
             il.Module.ImportReference(combat));
         install(()=>IL_Player.ItemCheck_Inner+=inner,()=>IL_Player.ItemCheck_Inner-=inner);

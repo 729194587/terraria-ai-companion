@@ -36,10 +36,10 @@ internal static class NativeItemInput
         if(!ReferenceEquals(p,ProbeSession.Actor)){orig(p,index);return;}
         if(!NativeSurvival.Owns(p))return;
         if(index!=p.whoAmI)throw new InvalidOperationException("Native item update slot differs from bound actor.");
-        // Mining and combat keep their existing execution routes.
         if(NativeCombatWorld.UpdateItem(p))return;
-        if(ActorMining.Running){ActorMining.Update(p);return;}
-        ActorItemUse.Update(p,input=>Run(orig,p,index,input));
+        void RunFrame(Intent input)=>Run(orig,p,index,input);
+        if(ActorMining.Running)ActorMining.Update(p,RunFrame);
+        else ActorItemUse.Update(p,RunFrame);
     }
 
     private static void Run(On_Player.orig_ItemCheckWrapped orig,Player p,int index,Intent input)

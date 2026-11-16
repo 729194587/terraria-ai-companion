@@ -48,6 +48,24 @@ public static class ServerAiToolPatchTests
             dmd.Generate();
         }
         Console.WriteLine("ItemCheckWrapped: live IL clone retains native calls and accepts only one UI guard patch.");
+        var mining=player.Methods.Single(m=>m.Name=="ItemCheck_UseMiningTools");
+        var owner=player.Methods.Single(m=>m.Name=="ItemCheck_OwnerOnlyCode");
+        var miningEntry=owner.Body.Instructions.Single(i=>i.Offset==0x01ef);
+        var cursorEnd=owner.Body.Instructions.Single(i=>i.Offset==0x044d);
+        var nativeMiningCall=owner.Body.Instructions.Single(i=>i.Offset==0x01f1);
+        var ui=module.ImportReference(typeof(ServerAiToolPatchTests).GetMethod(nameof(SkipClientUi)));
+        var scope=new MethodReference("MiningScope",module.TypeSystem.Boolean,player);
+        scope.Parameters.Add(new ParameterDefinition(player));
+        ItemUsePatches.Patch(owner,"melee",ui,miningOnly:ui,miningScope:scope);
+        if(nativeMiningCall.Operand is not MethodReference miningCall||miningCall.FullName!=mining.FullName
+            ||!owner.Body.Instructions.Any(i=>i.Operand==scope&&i.Next.Operand==miningEntry)
+            ||!owner.Body.Instructions.Any(i=>i.Operand==scope&&i.Next.Operand is Instruction target&&target.Next?.Operand==ui&&ReferenceEquals(target.Next.Next.Next,cursorEnd)))
+            throw new InvalidOperationException("AI mining must branch into the existing native call and skip the rest of the cursor block.");
+        var strikeGates=mining.Body.Instructions.Single(i=>i.Offset==0x0109);
+        ItemUsePatches.Patch(mining,"mining-ui",ui);
+        if(!mining.Body.Instructions.Any(i=>i.Operand==ui&&i.Next.Operand==strikeGates))
+            throw new InvalidOperationException("Dedicated AI must skip only the native cursor icon block before the tool timing gates.");
+        Console.WriteLine("Native tool routing and cursor icon guards passed.");
         var pose=player.Methods.Single(m=>m.Name=="ItemCheck_ApplyUseStyle_Inner");
         var predicate=new MethodReference("OwnedCombat",module.TypeSystem.Boolean,player);
         predicate.Parameters.Add(new ParameterDefinition(player));

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using Microsoft.Xna.Framework;
 using Mono.Cecil;
+using MonoMod.Cil;
 using MonoMod.Utils;
 using Terraria;
 using Terraria.ID;
@@ -28,7 +29,7 @@ internal static class ActorMining
         internal int Slot,Type,Prefix,Pick,Axe, X,Y,TileType,ExpectedType,FrameX,FrameY,Ticks,Swings,Strikes,Damage,PeakDamage,AnimationPeak,ProposedDamage,Transforms;
         internal byte Slope;internal bool Half,Actuated,Destroyed,ExternalChange,TargetCaptured;
         internal object InvalidTarget;
-        internal int OriginalSlot, SourceSlot;
+        internal int OriginalSlot, SourceSlot, LastStrikeTick;
         internal Item Displaced;
         internal bool SelectionChanged,KillingTarget;
         internal FurnitureCell[] Furniture=Array.Empty<FurnitureCell>();
@@ -45,22 +46,19 @@ internal static class ActorMining
         internal bool Draining;
         internal ExcavationCell Target=>Cells[Index];
     }
-    private delegate void NativeTool(Player p,Item item,ref bool hitWall,int x,int y);
-    private static NativeTool tool;
     private static Func<Player,int,int,int,int,Tile,int> pickDamage;
     private static Func<Player,Item,bool> inRange;
     [ThreadStatic] private static Context rangeContext;
     internal static Context Current;
     private static Context executing;
-    private static bool striking,picking;
+    private static bool usingTools,striking,picking;
     internal static bool Running=>Current?.Phase==ActionPhase.Running;
-    internal static void Reset(){Current=executing=rangeContext=null;striking=picking=false;}
+    internal static void Reset(){Current=executing=rangeContext=null;usingTools=striking=picking=false;}
     internal static void Install(Action<Action,Action> install)
     {
         using(var a=AssemblyDefinition.ReadAssembly(typeof(Player).Assembly.Location))
             MiningPatches.Validate(a.MainModule.Types.Single(t=>t.FullName=="Terraria.Player"));
         const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public;
-        tool=(NativeTool)typeof(Player).GetMethod("ItemCheck_UseMiningTools_ActuallyUseMiningTool",flags).CreateDelegate(typeof(NativeTool));
         pickDamage=typeof(Player).GetMethod("GetPickaxeDamage",flags).CreateDelegate<Func<Player,int,int,int,int,Tile,int>>();
         using(var dmd=new DynamicMethodDefinition(typeof(Player).GetMethod("IsTargetTileInItemRange",flags)))
         {
@@ -68,6 +66,11 @@ internal static class ActorMining
                 dmd.Definition.Module.ImportReference(typeof(ActorMining).GetMethod(nameof(RangeY))));
             inRange=(Func<Player,Item,bool>)dmd.Generate().CreateDelegate(typeof(Func<Player,Item,bool>));
         }
+        ILContext.Manipulator ui=il=>ItemUsePatches.Patch(il.Method,"mining-ui",
+            il.Module.ImportReference(typeof(ActorMining).GetMethod(nameof(InInputScope))));
+        install(()=>IL_Player.ItemCheck_UseMiningTools+=ui,()=>IL_Player.ItemCheck_UseMiningTools-=ui);
+        install(()=>On_Player.ItemCheck_UseMiningTools+=UseMiningTools,()=>On_Player.ItemCheck_UseMiningTools-=UseMiningTools);
+        install(()=>On_Player.ItemCheck_UseMiningTools_ActuallyUseMiningTool+=ObserveTool,()=>On_Player.ItemCheck_UseMiningTools_ActuallyUseMiningTool-=ObserveTool);
         install(()=>On_HitTile.AddDamage+=Damage,()=>On_HitTile.AddDamage-=Damage);
         install(()=>On_Player.PickTile+=Pick,()=>On_Player.PickTile-=Pick);
         install(()=>On_Player.DoesPickTargetTransformOnKill+=TransformPrediction,()=>On_Player.DoesPickTargetTransformOnKill-=TransformPrediction);
@@ -109,7 +112,7 @@ internal static class ActorMining
         }
         finally{rangeContext=null;}
     }
-    private static bool SupportedTool(Item i)=>!i.IsAir&&i.hammer==0&&!i.channel&&i.shoot<=0
+    private static bool SupportedTool(Item i)=>!i.IsAir&&i.type!=ItemID.GravediggerShovel&&i.hammer==0&&!i.channel&&i.shoot<=0
         &&(i.pick>0||i.axe>0);
     internal static bool SupportedPick(Item item)=>item.pick>0&&SupportedTool(item);
     internal static bool TreeTarget(int type)=>Main.tileAxe[type]&&TileID.Sets.IsATreeTrunk[type];
@@ -361,17 +364,27 @@ internal static class ActorMining
     }
     public static bool Allowed(Player p)=>executing!=null&&ReferenceEquals(executing.Actor,p)&&Bound(executing)
         &&NativeSurvival.Owns(p)&&!p.dead&&Held(executing);
-    // Called exactly at G6's owner tool stage, after native toolTime bookkeeping.
-    internal static void Strike(Player p)
+    public static bool InInputScope(Player p)=>executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeItemInput.Active(p);
+    private static void UseMiningTools(On_Player.orig_ItemCheck_UseMiningTools orig,Player p,Item item)
     {
-        var c=executing;if(!Allowed(p)||c.Destroyed||c.ExternalChange||!Same(c))return;
-        if(p.toolTime!=0||p.itemAnimation<=0||!p.controlUseItem)return;
-        if(!Healthy(p)||!InRange(c))return;
-        c.Strikes++;c.Damage=c.ProposedDamage=0;bool wall=false;
-        try{striking=true;tool(p,c.Item,ref wall,c.X,c.Y);}
+        if(!InInputScope(p)){orig(p,item);return;}
+        if(usingTools)throw new InvalidOperationException("Reentrant native mining tools update.");
+        if(!Allowed(p)||!ReferenceEquals(item,executing.Item))return;
+        try{usingTools=true;orig(p,item);}finally{usingTools=false;}
+    }
+    private static void ObserveTool(On_Player.orig_ItemCheck_UseMiningTools_ActuallyUseMiningTool orig,
+        Player p,Item item,out bool hitWall,int x,int y)
+    {
+        if(!InInputScope(p)){orig(p,item,out hitWall,x,y);return;}
+        var c=executing;
+        if(!usingTools||striking||c.LastStrikeTick==c.Ticks||!ReferenceEquals(item,c.Item)||x!=c.X||y!=c.Y)
+            throw new InvalidOperationException("Native mining tool call does not match the current target frame.");
+        if(!Allowed(p)||!Healthy(p)||c.Destroyed||c.ExternalChange||!Same(c)){hitWall=false;return;}
+        c.LastStrikeTick=c.Ticks;
+        c.Strikes++;c.Damage=c.ProposedDamage=0;
+        try{striking=true;orig(p,item,out hitWall,x,y);}
         finally{striking=false;}
-        // Only the explicitly observed native Grass -> Dirt transition below
-        // may keep the same atomic target. Everything else remains a failure.
+        // Only an observed native Grass -> Dirt transition may retain target identity.
         if(!c.Destroyed&&!Same(c))c.ExternalChange=true;
     }
     private static void ClearProgress(Player p,int x,int y)
@@ -379,8 +392,9 @@ internal static class ActorMining
     private static void Pick(On_Player.orig_PickTile orig,Player p,int x,int y,int power)
     {
         var c=executing;
-        if(!striking||c==null||!Allowed(p)||x!=c.X||y!=c.Y||power!=c.Pick){orig(p,x,y,power);return;}
-        if(picking)throw new InvalidOperationException("Reentrant native AI PickTile rejected.");
+        if(!InInputScope(p)){orig(p,x,y,power);return;}
+        if(!striking||picking||!Allowed(p)||x!=c.X||y!=c.Y||power!=c.Pick)
+            throw new InvalidOperationException("Native AI PickTile does not match the current tool strike.");
         try{picking=true;orig(p,x,y,power);}finally{picking=false;}
     }
     private static bool TransformPrediction(On_Player.orig_DoesPickTargetTransformOnKill orig,Player p,HitTile hits,int damage,int x,int y,int power,int buffer,Tile tile)
@@ -436,7 +450,7 @@ internal static class ActorMining
         if(Running&&Current.X==x&&Current.Y==y)Current.ExternalChange=true;
         return orig(x,y,type,mute,forced,plr,style);
     }
-    internal static void Update(Player p)
+    internal static void Update(Player p,Action<NativeItemInput.Intent> runNative)
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
         var c=Current;if(!Running||!ReferenceEquals(c.Actor,p))return;
@@ -461,11 +475,11 @@ internal static class ActorMining
                 ||CapabilityStamp(p)!=batch.Capability||!batch.Safe(batch.Target)||!InRange(c)))
                 batch.Draining=true;
             if(++c.Ticks>MaxUpdates){End(c,ActionPhase.TimedOut,Failure.Deadline);return;}
-            executing=c;p.controlUseItem=!c.Destroyed&&batch?.Draining!=true;
+            executing=c;bool press=!c.Destroyed&&batch?.Draining!=true;
             // Re-press at the end of each native animation, including non-autoReuse picks.
             if(p.itemAnimation==0)p.releaseUseItem=true;
             int before=p.itemAnimation;int strikes=c.Strikes;
-            p.ItemCheck();
+            runNative(NativeItemInput.Intent.AtTile(c.X,c.Y,press));
             if(!Bound(c)||!NativeSurvival.Owns(p))throw new InvalidOperationException("Mining binding changed inside native ItemCheck.");
             if(c.Phase!=ActionPhase.Running)return;
             c.AnimationPeak=Math.Max(c.AnimationPeak,p.itemAnimation);if(p.itemAnimation>before)c.Swings++;
@@ -513,7 +527,7 @@ internal static class ActorMining
         catch(Exception e){End(c,ActionPhase.Failed,Failure.NativeException,(e.InnerException??e).Message);throw;}
         finally
         {
-            executing=null;striking=picking=false;
+            executing=null;usingTools=striking=picking=false;
             // Mining is a held native intent until destruction/cancellation.
             // Keep the same input for periodic and full snapshots this tick.
             if(Bound(c))p.controlUseItem=c.Phase==ActionPhase.Running&&c.Batch?.Draining!=true&&(!c.Destroyed||c.Ticks==1&&c.AnimationPeak>0);

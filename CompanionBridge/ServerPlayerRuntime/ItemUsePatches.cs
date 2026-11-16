@@ -28,7 +28,7 @@ public static class ItemUsePatches
         il.InsertBefore(entry,Instruction.Create(OpCodes.Brtrue,target));
     }
     public static void Patch(MethodDefinition m,string operation,MethodReference predicate,MethodReference miningDispatch=null,
-        MethodReference miningOnly=null,MethodReference combatOnly=null)
+        MethodReference miningOnly=null,MethodReference combatOnly=null,MethodReference miningScope=null)
     {
         Require(!m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.FullName==predicate.FullName));
         if(operation=="wrapper")
@@ -46,6 +46,14 @@ public static class ItemUsePatches
             Guard(m,0,0x0076,predicate);
             Guard(m,0x00b1,0x00d0,predicate);
             Guard(m,0x00b7,0x00d0,predicate);
+        }
+        else if(operation=="mining-ui")
+        {
+            Require(m.Name.Contains("ItemCheck_UseMiningTools")&&m.Body.ExceptionHandlers.Count==0
+                &&Call(At(m,0x00f0),"get_GamepadDisableCursorItemIcon")
+                &&Target(At(m,0x00f5))==At(m,0x0109)&&Field(At(m,0x00f9),"cursorItemIconEnabled")
+                &&Call(At(m,0x0104),"ItemIconCacheUpdate")&&At(m,0x0109)?.OpCode==OpCodes.Ldc_I4_0);
+            Guard(m,0x00f0,0x0109,predicate);
         }
         else if(operation=="combat-cooldown")
         {
@@ -94,10 +102,17 @@ public static class ItemUsePatches
                 &&At(m,0x01a7)?.OpCode==OpCodes.Ldarg_0&&At(m,0x01e8)?.OpCode==OpCodes.Ldarg_0
                 &&Field(At(m,0x01b6),"toolTime"));
             if(miningOnly!=null)Require(Call(At(m,0x0543),"ItemCheck_CutTiles")&&At(m,0x0570)?.OpCode==OpCodes.Ret);
-            // Air-swing experiment: retain native melee; skip cursor-driven tools,
-            // placement and accessory projectiles. No global tile target substitution.
+            if(miningScope!=null)Require(Call(At(m,0x01ea),"ItemCheck_TryDestroyingDrones")
+                &&At(m,0x01ef)?.OpCode==OpCodes.Ldarg_0&&Call(At(m,0x01f1),"ItemCheck_UseMiningTools")
+                &&At(m,0x01f6)?.OpCode==OpCodes.Ldarg_0&&Call(At(m,0x01f8),"ItemCheck_UseTeleportRod"));
+            // Mining uses only the native mining call in this cursor block.
             Guard(m,0x017d,0x01a7,predicate);
             Guard(m,0x01e8,0x044d,miningDispatch??predicate);
+            if(miningScope!=null)
+            {
+                Guard(m,0x01e8,0x01ef,miningScope);
+                Guard(m,0x01f6,0x044d,miningScope);
+            }
             if(miningOnly!=null)Guard(m,0x044d,0x0570,miningOnly); // G7 cannot cut neighboring tiles or attack.
             if(combatOnly!=null)
             {
