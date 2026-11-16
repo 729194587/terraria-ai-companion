@@ -115,9 +115,13 @@ public static class ServerAiPackageTests
         Check(!objectPlacement.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.Operand is MethodReference r&&r.Name is "set_HasTile" or "PlaceObject" or "PlaceTile" or "ConsumeItem"),"object executor only observes native placement, no Tile/inventory mutation");
         Check(Calls(objectPlacement.Methods.Single(m=>m.Name=="Definition"&&m.Parameters.Count==1),"GetTileData")&&Calls(objectPlacement.Methods.Single(m=>m.Name=="ReadFrames"),"get_TileFrameX"),"object placement reads selected native definition and verifies every frame");
         Check(Calls(Type("ActorItemUse").Methods.Single(m=>m.Name=="Update"),"AfterCheck")
-            &&Calls(Type("ActorItemUse").Methods.Single(m=>m.Name=="SkipCursor"),"Dispatch"),"placement uses original ItemCheck owner stage and observes its consumption");
-        Check(Calls(placement.Methods.Single(m=>m.Name=="Coordinate"),"get_IsMainThread")
-            &&Calls(placement.Methods.Single(m=>m.Name=="Coordinate"),"Allowed"),"placement coordinate scope requires simulation thread and owned item execution");
+            &&Calls(Type("ActorPlacement").Methods.Single(m=>m.Name=="CheckItem"),"ItemCheck"),"placement uses original ItemCheck owner stage and observes its consumption");
+        var pointer=placement.Methods.Single(m=>m.Name=="CheckItem");
+        Check(Calls(pointer,"get_IsMainThread")&&Calls(pointer,"Placing")
+            &&pointer.Body.ExceptionHandlers.Any(h=>h.HandlerType==ExceptionHandlerType.Finally),
+            "placement mouse scope requires simulation thread and owned item execution and restores in finally");
+        Check(!placementIL.Any(i=>i.Operand is MethodReference r&&r.Name.StartsWith("PlaceThing_",StringComparison.Ordinal)),
+            "placement dispatch does not call or patch individual native placement branches");
         var nativeStart=actions.Methods.Single(m=>m.Name=="StartCore");
         Check(nativeStart.Body.Instructions.Count(i=>i.Operand is MethodReference r&&r.Name=="Start"&&r.DeclaringType.Name is "ServerAiNavigation" or "ActorMining" or "ActorItemUse")==4,"both navigation goals delegate to G4 boundary; use/mining retain G6/G7");
         Check(Calls(nativeStart,"StartPlacement"),"server placement dispatch uses existing item-use lifecycle");

@@ -152,7 +152,7 @@ async def verify(args):
         assert before["empty"] and before["stack"] == 5 and before["inputReleased"], before
 
         scope = [json.loads(line) for line in (profile / "rope-scope.jsonl").read_text().splitlines()]
-        assert scope and all(r["unchanged"] and r["unscoped"] for r in scope), scope
+        assert scope and all(r["actorScoped"] and r["unscoped"] for r in scope), scope
         assert {(r["x"], r["y"]) for r in scope if r["mode"] == "plain"} == {(x, y + i) for i in range(3)}, scope
         assert [(r["x"], r["y"]) for r in scope if r["mode"] == "upward"] == [(x, row) for row in targets], scope
 

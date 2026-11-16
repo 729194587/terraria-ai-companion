@@ -10,7 +10,6 @@ namespace CompanionBridge.ServerIpc;
 internal static class ServerRopeFixture
 {
     private static string mode;
-    private static (int Local,int MouseX,int MouseY,int X,int Y) cursor;
     private static bool injected;
     private static bool Enabled=>ServerAiActionFixture.Enabled&&!Netplay.HasClients
         &&Program.LaunchParameters.ContainsKey("-companionropetest");
@@ -77,7 +76,6 @@ internal static class ServerRopeFixture
             "upward"=>16,"build_and_climb"=>10,"vine" or "silk" or "web"=>1,_=>5
         };
         PlacementSelfTest.DenyTile=mode=="refuse";
-        cursor=(Main.myPlayer,Main.mouseX,Main.mouseY,Player.tileTargetX,Player.tileTargetY);
         // Native PlaceThing_Tiles tests the fractional upper bound before any
         // rope retarget. Ceiling gives the first integer row inside that bound.
         int minReachY=(int)System.Math.Ceiling(p.position.Y/16-Player.tileRangeY-p.inventory[4].tileBoost-p.blockRange);
@@ -88,9 +86,9 @@ internal static class ServerRopeFixture
     {
         if(!Enabled||ActorItemUse.Current?.Placement?.Rope==null)return;
         var human=Main.player[0];
-        bool unchanged=cursor==(Main.myPlayer,Main.mouseX,Main.mouseY,Player.tileTargetX,Player.tileTargetY);
-        bool unscoped=ActorPlacement.TargetX(human)==Player.tileTargetX&&ActorPlacement.TargetY(human)==Player.tileTargetY;
+        bool actorScoped=Main.myPlayer==ActorItemUse.Current.Actor.whoAmI;
+        bool unscoped=!ActorPlacement.InputActive(human);
         File.AppendAllText(Path.Combine(Main.SavePath,"rope-scope.jsonl"),
-            JsonSerializer.Serialize(new {mode,x,y,unchanged,unscoped})+System.Environment.NewLine);
+            JsonSerializer.Serialize(new {mode,x,y,actorScoped,unscoped})+System.Environment.NewLine);
     }
 }

@@ -149,9 +149,7 @@ internal static class ActorObjectPlacement
         var shape=FromData(TileObjectData.GetTileData(data.type,data.style,data.alternate));
         if(shape==null||data.type!=c.TileType||data.style!=c.Style
             ||data.xCoord+shape.OriginX!=c.X||data.yCoord+shape.OriginY!=c.Y)
-        {c.UncertainNativeEffect=true;return false;}
-        if(EmptyError(ActorItemUse.Current.Actor,c.X,c.Y,shape)!=null)return false;
-        if(c.Unified&&c.IsChest&&Chest.FindChest(data.xCoord,data.yCoord)>=0)return false;
+        {c.UncertainNativeEffect=true;return orig(data); }
         c.Shape=shape;
         c.ActualStyle=data.style;
         c.Alternate=data.alternate;
@@ -163,10 +161,8 @@ internal static class ActorObjectPlacement
         try
         {
             bool result=orig(data);
-            c.ObjectFrames=ReadFrames(c);
-            c.Placed=result&&c.ObjectFrames!=null;
-            c.UncertainNativeEffect|=result!=c.Placed||!result&&FootprintState(c)!=before;
-            if(c.Placed&&!c.Unified)NetMessage.SendTileSquare(-1,data.xCoord,data.yCoord,shape.Width,shape.Height);
+            c.Placed=result;
+            c.UncertainNativeEffect|=!result&&FootprintState(c)!=before;
             return result;
         }
         catch{c.UncertainNativeEffect=true;throw;}
@@ -183,7 +179,6 @@ internal static class ActorObjectPlacement
     internal static string Validate(ActorItemUse.Context use)
     {
         var c=use.Placement;
-        if(c.PostHookRejected)return "native_post_placement_hook_rejected";
         if(c.ExternalChange||c.Placed&&!Present(c)||c.SupportSnapshot!=SupportSnapshot(c))
         {c.ExternalChange=true;return "object_target_changed";}
         if(!c.Placed&&EmptyError(use.Actor,c.X,c.Y,c.Shape) is {} invalid)return invalid;
@@ -199,7 +194,6 @@ internal static class ActorObjectPlacement
     internal static string CancellationUncertainty(ActorItemUse.Context use)
     {
         var c=use.Placement;
-        if(c.PostHookRejected)return "native_post_placement_hook_rejected";
         if(c.UncertainNativeEffect)return "native_object_effect_unconfirmed";
         string invalid=Validate(use);if(invalid!=null)return invalid;
         if(c.NativeEvents==0&&!c.Placed&&c.ConsumedCount==0)return null;

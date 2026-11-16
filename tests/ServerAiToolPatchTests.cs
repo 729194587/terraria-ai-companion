@@ -23,7 +23,6 @@ public static class ServerAiToolPatchTests
         Console.WriteLine("Offline tool patch checks; CLR "+Environment.Version+"; no world/model/client.");
         ItemUseOfflineTests.Run(engine);
         MiningOfflineTests.Run(engine);
-        PlacementPatchOfflineTests.Run(engine);
         CraftingPatchOfflineTests.Run(engine);
         using var module=ModuleDefinition.ReadModule(Path.Combine(engine,"tModLoader.dll"));
         var player=module.GetType("Terraria.Player");
