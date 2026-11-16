@@ -30,9 +30,12 @@ internal static class NativeItemInput
 
     internal static void Update(On_Player.orig_ItemCheckWrapped orig,Player p,int index)
     {
+        // Native item callbacks can synchronously enter this hook for any Player.
+        // No nested original may run while the outer call owns the global cursor.
+        if(actor!=null)throw new InvalidOperationException("Reentrant native item update during an AI input scope.");
         if(!ReferenceEquals(p,ProbeSession.Actor)){orig(p,index);return;}
         if(!NativeSurvival.Owns(p))return;
-        if(actor!=null||index!=p.whoAmI)throw new InvalidOperationException("Invalid or reentrant AI item update.");
+        if(index!=p.whoAmI)throw new InvalidOperationException("Native item update slot differs from bound actor.");
         // Mining and combat keep their existing execution routes.
         if(NativeCombatWorld.UpdateItem(p))return;
         if(ActorMining.Running){ActorMining.Update(p);return;}

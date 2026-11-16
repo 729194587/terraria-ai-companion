@@ -15,7 +15,8 @@ namespace VirtualPlayerEngineProbe;
 internal static class ItemUseSelfTest
 {
     private static bool ran;
-    internal static bool Deny,Throw;
+    internal static bool Deny;
+    internal static Action Reenter;
     private static Player controlActor;
     private static readonly List<bool> controls=new();
     private static void ObserveControls(On_NetMessage.orig_SendData orig,int msg,int remote,int ignore,NetworkText text,int number,float a,float b,float c,int d,int e,int f)
@@ -49,13 +50,35 @@ internal static class ItemUseSelfTest
             p.inventory[3].SetDefaults(ItemID.CopperAxe);
             if(failure)
             {
-                ActorItemUse.Select(p,world,gen,0);ActorItemUse.Start(p,world,gen);Throw=true;
-                bool isolated=false;try{Frame();}catch{isolated=true;}finally{Throw=false;}
-                Check(isolated&&ProbeSession.Quarantined&&!ActorItemUse.Running&&!p.controlUseItem&&p.itemAnimation==0
+                ActorItemUse.Select(p,world,gen,0);ActorItemUse.Start(p,world,gen);
+                bool attempted=false;int humanNativeCalls=0;
+                void ObserveItemCheck(On_Player.orig_ItemCheck orig,Player player)
+                {
+                    if(ReferenceEquals(player,human))humanNativeCalls++;
+                    orig(player);
+                }
+                Reenter=()=>{
+                    Check(NativeItemInput.Active(p)&&Main.myPlayer==p.whoAmI&&!ReferenceEquals(p,human),
+                        "Cross-player probe did not run inside the AI input scope.");
+                    attempted=true;
+                    wrapped.Invoke(human,new object[]{0});
+                };
+                Exception error=null;
+                On_Player.ItemCheck+=ObserveItemCheck;
+                try{Frame();}catch(Exception e){error=e.GetBaseException();}
+                finally{On_Player.ItemCheck-=ObserveItemCheck;Reenter=null;}
+                Check(attempted&&humanNativeCalls==0
+                    &&error is InvalidOperationException{Message:"Reentrant native item update during an AI input scope."},
+                    "Nested human wrapper reached native item execution or was not rejected by the scope guard.");
+                Check(ProbeSession.Quarantined&&!ActorItemUse.Running&&!p.controlUseItem&&p.releaseUseItem&&p.itemAnimation==0
                     &&ReferenceEquals(Main.player[p.whoAmI],p)&&ProbeSession.Reservation.IsReserved(p.whoAmI)&&p.inventory[0].stack==1,
-                    "Native hook exception did not retain/quarantine AI and release inputs.");
-                Check(PointerRestored(),"Native item exception did not restore virtual input state.");
+                    "Reentry exception did not retain/quarantine AI and release inputs.");
+                Check(PointerRestored(),"Reentry exception did not restore virtual input state.");
+                bool humanAfter=false;
+                NativeItemInput.Update((player,index)=>humanAfter=ReferenceEquals(player,human)&&index==0,human,0);
+                Check(humanAfter&&PointerRestored(),"Normal human dispatch did not resume after reentry unwound.");
                 File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",nativeExceptionQuarantine=true,
+                    crossPlayerReentryRejected=true,humanNativeCalls,virtualInputRestored=true,humanAfter,
                     processTerminationRequired=true,hostAndPlay="not executed",remoteMultiplayer="not executed"}));
                 return; // Quarantine intentionally forbids in-process unload/recovery.
             }
@@ -158,7 +181,7 @@ public sealed class ItemUseDiagnosticHook : GlobalItem
     {
         if(NativeSurvival.Owns(player))
         {
-            if(ItemUseSelfTest.Throw)throw new InvalidOperationException("G6 intentional native hook failure");
+            ItemUseSelfTest.Reenter?.Invoke();
             if(ItemUseSelfTest.Deny)return false;
         }
         return true;
