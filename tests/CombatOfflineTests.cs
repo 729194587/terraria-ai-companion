@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using CompanionBridge.ServerIpc;
 using Identity = CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity;
@@ -8,7 +9,7 @@ public static class CombatOfflineTests
 {
     private sealed class World : ICombatWorld
     {
-        public CombatTarget Target => new(2, 1, "spawn-a");
+        public CombatTarget Target {get;set;} = new(2, 1, "spawn-a");
         public CombatWeapon Weapon => new(0, 1, "Sword");
         public CombatHit LastHit { get; set; }
         public int ItemChecks => 0;
@@ -24,6 +25,13 @@ public static class CombatOfflineTests
             phase = "approach";
             Steps++;
             if (Throw) throw new InvalidOperationException("native fault");
+            return null;
+        }
+        internal bool HasNext;
+        public string Retarget(Identity frame,IReadOnlySet<string> skipped)
+        {
+            if(!HasNext)return "combat_threats_cleared";
+            HasNext=false;Target=new(2,1,"spawn-b");LastHit=null;Observation=new(true,true,true,15);
             return null;
         }
         public bool Release() { Releases++; return Released; }
@@ -100,6 +108,19 @@ public static class CombatOfflineTests
         Check(task.Stop(next,"cancelled","explicit_cancel") is {Status:"cancelled",InputsReleased:true}&&world.Releases==1,"explicit cancel");
         world=new();task=Task(world);task.Tick(frame);
         Check(task.Tick(next with{Generation=2}).Status=="unknown"&&world.Abandons==1&&world.Releases==0,"stale actor gets no writes");
+
+        world=new(){HasNext=true};task=new(new CombatController(world,"reflex","native_threat"),"defense",null,id,20);
+        task.Tick(frame);
+        Check(task.Tick(next).Status=="running"&&world.Target.EntityRef=="spawn-a","valid reflex target retained");
+        world.LastHit=new(10,0,10,true,2);world.Observation=new(true,false,false,0);
+        Check(task.Tick(id with{GameUpdate=3}).Status=="running"&&world.Target.EntityRef=="spawn-b"
+            &&world.LastHit==null&&world.Releases==0&&world.Starts==1,"reflex switches spawn without releasing body or transferring kill proof");
+        world.Observation=new(true,false,false,0);
+        var defense=task.Tick(id with{GameUpdate=4});
+        var encounters=JsonSerializer.SerializeToElement(defense.Evidence).GetProperty("encounters");
+        Check(defense is {Status:"completed",Reason:"combat_threats_cleared",InputsReleased:true}&&world.Releases==1
+            &&encounters.GetArrayLength()==2&&encounters[0].GetProperty("LastHit").GetProperty("Defeated").GetBoolean()
+            &&encounters[1].GetProperty("LastHit").ValueKind==JsonValueKind.Null,"external removal clears last threat without inventing a kill");
 
         foreach(bool released in new[]{true,false})
         {

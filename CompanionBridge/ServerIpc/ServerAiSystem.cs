@@ -78,6 +78,7 @@ public sealed class ServerAiSystem : ModSystem
             int port = AiReadOnlyServer.ParsePort(aiArg ?? Environment.GetEnvironmentVariable("COMPANION_AI_PORT"), TcpControlServer.ParseLaunchPort(humanArg));
             var native=new ServerAiNativeActions();
             actions=new(native);
+            native.ReflexTargetAllowed=actions.ReflexTargetAllowed;
             try{Lighting=new();}
             catch(Exception e){Mod.Logger.Error("Dedicated tile lighting unavailable.",e);}
             // Copied-world tests opt in so their staged inventory/placement
@@ -119,7 +120,7 @@ public sealed class ServerAiSystem : ModSystem
             {
                 try
                 {
-                    var threat=NativeCombatWorld.Threat(actor);
+                    var threat=NativeCombatWorld.Threat(actor,r=>actions.ReflexTargetAllowed(actor,r));
                     threatened=threat.HasValue;
                     server.Reflex(actor,threat?.entityRef,threat?.threat);
                 }

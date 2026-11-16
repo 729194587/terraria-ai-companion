@@ -752,6 +752,52 @@ def verified_container_batch(action, evidence, end):
             and action.get('status') == ('failed' if blocked else 'completed'))
 
 
+def verified_server_combat(action, task, result, proof):
+    if (task.get('taskName') != 'combat_attack' or task.get('taskId') != action.get('actionId')
+            or task.get('status') != 'completed' or task != action.get('task')
+            or result.get('inputsReleased') is not True or result.get('effectVerified') is not True):
+        return False
+
+    def defeated(hit):
+        return (isinstance(hit, dict) and hit.get('Defeated') is True
+                and type(hit.get('LifeAfter')) is int and type(hit.get('LifeBefore')) is int
+                and hit['LifeAfter'] <= 0 < hit['LifeBefore'])
+
+    requested = action.get('targetTask') or {}
+    target = proof.get('target') or {}
+    hit = proof.get('lastHit')
+    if proof.get('source') != 'reflex' or result.get('reason') != 'combat_threats_cleared':
+        return (target.get('EntityRef') == requested.get('entityRef')
+                and defeated(hit) and proof.get('life') == hit['LifeAfter'])
+
+    encounters = proof.get('encounters')
+    if (not requested.get('threat') or requested['threat'] != proof.get('threat')
+            or not isinstance(encounters, list) or not encounters):
+        return False
+    kills = set()
+    previous_kill_tick = -1
+    for encounter in encounters:
+        if not isinstance(encounter, dict) or not isinstance(encounter.get('Target'), dict):
+            return False
+        reference = encounter['Target'].get('EntityRef')
+        if not isinstance(reference, str) or not reference:
+            return False
+        reason = encounter.get('Reason')
+        if reason == 'combat_target_defeated':
+            strike = encounter.get('LastHit')
+            if (not defeated(strike) or type(strike.get('DamageDone')) is not int or strike['DamageDone'] <= 0
+                    or type(strike.get('GameUpdate')) is not int or strike['GameUpdate'] <= previous_kill_tick
+                    or reference in kills):
+                return False
+            previous_kill_tick = strike['GameUpdate']
+            kills.add(reference)
+        elif reason not in ('combat_target_replaced', 'combat_target_invalidated',
+                             'combat_target_out_of_range', 'combat_approach_failed'):
+            return False
+    return (encounters[0]['Target']['EntityRef'] == requested.get('entityRef')
+            and encounters[-1]['Target'] == target and encounters[-1].get('LastHit') == hit)
+
+
 def verified_sort(action, evidence, end):
     inventory = action.get('operation') == 'sort_inventory'
     slots = evidence.get('changedSlots')
@@ -800,7 +846,6 @@ async def terminal(bridge, action, generation):
     combat = combat if isinstance(combat, dict) else {}
     combat_result = combat.get('result') or {}
     combat_proof = combat_result.get('evidence') or {}
-    combat_hit = combat_proof.get('lastHit') or {}
     container_verified = (native_evidence.get('containerVerified') is True
                           and native_evidence.get('mutationAttempted') is True
                           and all(type(native_evidence.get(key)) is int
@@ -853,13 +898,7 @@ async def terminal(bridge, action, generation):
         'close_container': container_verified and native_evidence.get('chestIndex', -2) == -1,
         'craft_recipe': verified_server_craft(action, native_evidence),
         'mine_target': verified_server_mine_task(action, native_evidence),
-        'combat_attack': (combat.get('taskName') == 'combat_attack' and combat.get('taskId') == action.get('actionId')
-                          and combat.get('status') == 'completed' and combat == action.get('task')
-                          and combat_result.get('inputsReleased') is True and combat_result.get('effectVerified') is True
-                          and (combat_proof.get('target') or {}).get('EntityRef') == (action.get('targetTask') or {}).get('entityRef')
-                          and combat_hit.get('Defeated') is True and type(combat_hit.get('LifeAfter')) is int
-                          and combat_hit['LifeAfter'] <= 0 < combat_hit.get('LifeBefore', 0)
-                          and combat_proof.get('life') == combat_hit['LifeAfter']),
+        'combat_attack': verified_server_combat(action, combat, combat_result, combat_proof),
         **{op: verified_server_inventory(action, native_evidence) for op in INVENTORY_OPERATIONS},
         **{op: verified_server_equipment(action, native_evidence) for op in EQUIPMENT_OPERATIONS},
         'place_tile': (isinstance(action.get('targetTile'), dict)

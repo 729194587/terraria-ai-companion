@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
@@ -9,7 +10,7 @@ using Identity = CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity;
 
 namespace CompanionBridge.ServerIpc;
 
-internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation navigation, string actionId, string entityRef) : ICombatWorld
+internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation navigation, string actionId, string entityRef, Func<Identity,string,bool> reflexAllowed = null) : ICombatWorld
 {
     private const int ThreatRange = 112, AcquireRange = 640, SwingGap = 34;
     private static NativeCombatWorld current;
@@ -27,6 +28,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private ServerAiNavigation.Run approach;
     private ulong plannedAt;
     private int missedSwings;
+    private bool drainSwing;
 
     public CombatTarget Target { get; private set; }
     public CombatWeapon Weapon { get; private set; }
@@ -86,28 +88,48 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         recentHurt = (p, world, generation, Reference(world, generation, Main.npc[sourceNpc]), Main.GameUpdateCount);
     }
 
-    internal static (string entityRef, string threat)? Threat(Identity identity)
+    private static string ThreatReason(Identity frame,Player p,NPC n,string reference)
+    {
+        if(!Enemy(n,p))return null;
+        var hurt=recentHurt;
+        bool recent=ReferenceEquals(hurt.actor,p)&&hurt.world==frame.World&&hurt.generation==frame.Generation
+            &&frame.GameUpdate>=hurt.tick&&frame.GameUpdate-hurt.tick<=45;
+        if(recent&&reference==hurt.entityRef&&InRange(p,n,192)&&Visible(p,n))return "recent_native_npc_damage";
+        return n.HasValidTarget&&n.target==p.whoAmI&&InRange(p,n,ThreatRange)&&Visible(p,n)
+            ? "npc_targeting_actor_in_range" : null;
+    }
+
+    internal static (string entityRef, string threat)? Threat(Identity identity,Func<string,bool> allowed=null,bool combatSwing=false)
     {
         if (identity?.CanAct != true || !ServerAiNativeActions.Owned(identity)) return null;
         var p = (Player)identity.Actor;
-        if (p.selectedItem is < 0 or > 9 || !WeaponSupported(p.HeldItem) || !GameNavigation.Ordinary(p)
+        if (p.selectedItem is < 0 or > 9 || !WeaponSupported(p.HeldItem) || !GameNavigation.Ordinary(p,combatSwing)
             || p.noItems || p.CCed) return null;
-        var hurt = recentHurt;
-        bool recent = ReferenceEquals(hurt.actor, p) && hurt.world == identity.World && hurt.generation == identity.Generation
-            && identity.GameUpdate >= hurt.tick && identity.GameUpdate - hurt.tick <= 45;
-        NPC nearest = null;
+        (string entityRef,string threat)? nearest=null;
         float best = float.PositiveInfinity;
         for (int i = 0; i < Main.maxNPCs; i++)
         {
             var n = Main.npc[i];
-            if (!Enemy(n, p)) continue;
-            if (recent && InRange(p, n, 192) && hurt.entityRef == Reference(identity, n) && Visible(p, n))
-                return (hurt.entityRef, "recent_native_npc_damage");
-            if (!n.HasValidTarget || n.target != p.whoAmI || !InRange(p, n, ThreatRange) || !Visible(p, n)) continue;
-            float distance = Vector2.DistanceSquared(p.Center, n.Center);
-            if (distance < best) { best = distance; nearest = n; }
+            if (!Enemy(n,p)) continue;
+            string reference=Reference(identity,n);
+            if(allowed?.Invoke(reference)==false)continue;
+            var reason=ThreatReason(identity,p,n,reference);
+            if(reason==null)continue;
+            if(reason=="recent_native_npc_damage")return (reference,reason);
+            float distance=Vector2.DistanceSquared(p.Center,n.Center);
+            if(distance<best){best=distance;nearest=(reference,reason);}
         }
-        return nearest == null ? null : (Reference(identity, nearest), "npc_targeting_actor_in_range");
+        return nearest;
+    }
+
+    private void BindTarget(NPC next,string reference)
+    {
+        npc=next;
+        spawn=next.GetGlobalNPC<AtomicNpcIdentity>();
+        spawnToken=spawn.Token;
+        Target=new(next.whoAmI,next.type,reference);
+        LastHit=null;
+        missedSwings=0;
     }
 
     public string Prepare()
@@ -115,9 +137,9 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         ServerAiNativeActions.Require(identity);
         npc = Resolve(identity, entityRef);
         if (npc == null) return "combat_target_unavailable";
-        spawn = npc.GetGlobalNPC<AtomicNpcIdentity>();
-        spawnToken = spawn.Token;
-        Target = new(npc.whoAmI, npc.type, entityRef);
+        if(reflexAllowed!=null&&ThreatReason(identity with{GameUpdate=Main.GameUpdateCount},player,npc,entityRef)==null)
+            return "combat_target_unavailable";
+        BindTarget(npc,entityRef);
         if (player.selectedItem is < 0 or > 9 || !WeaponSupported(player.HeldItem)) return "combat_weapon_unsupported";
         if (!GameNavigation.Ordinary(player) || player.noItems || player.CCed) return "combat_actor_state_unsupported";
         if (!ServerAiNativeActions.BodyIdle(identity)) return "actor_busy";
@@ -140,7 +162,35 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     {
         if (fault != null) throw new InvalidOperationException("Combat ItemCheck: " + fault.Message, fault);
         var n = Main.npc[Target.Slot];
-        return SameSpawn(n) ? new(true, n.active, Enemy(n, player), n.life) : new(false, false, false, 0);
+        return SameSpawn(n) ? new(true, n.active, StillEligible(n), n.life) : new(false, false, false, 0);
+    }
+
+    private bool StillEligible(NPC n)=>reflexAllowed==null?Enemy(n,player):
+        ThreatReason(identity with{GameUpdate=Main.GameUpdateCount},player,n,Target.EntityRef)!=null;
+
+    public string Retarget(Identity frame,IReadOnlySet<string> skipped)
+    {
+        ServerAiNativeActions.Require(frame);
+        if(!ValidWeapon())return "combat_weapon_changed";
+        if(!GameNavigation.Ordinary(player,combatSwing:true)||player.noItems||player.CCed)
+            return "combat_actor_state_unsupported";
+        if(approach?.Status=="unknown"||approach?.Reason=="native_navigation_exception")
+            return "combat_native_unconfirmed";
+        bool Allowed(string reference)=>reflexAllowed(frame,reference);
+        var candidate=Threat(frame,r=>!skipped.Contains(r)&&Allowed(r),combatSwing:true);
+        if(candidate==null)
+            return skipped.Count>0&&Threat(frame,Allowed,combatSwing:true)!=null
+                ? "combat_threat_unreachable" : "combat_threats_cleared";
+        var next=Resolve(frame,candidate.Value.entityRef);
+        if(next==null)return "combat_native_unconfirmed";
+        if(approach?.Status=="running")navigation.Stop("cancelled","combat_retarget");
+        if(approach?.Status=="unknown")return "combat_native_unconfirmed";
+        approach=null;
+        // Drain the existing native swing without using it against the new NPC.
+        // A new press is still gated by the original animation and item timers.
+        drainSwing=player.itemAnimation>0;
+        BindTarget(next,candidate.Value.entityRef);
+        return null;
     }
 
     public string Step(out string phase)
@@ -223,8 +273,9 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         ulong tick = Main.GameUpdateCount;
         if (checking != null || fault != null || !ServerAiNativeActions.Owned(identity)
             || !NativeSurvival.Owns(player) || player.dead || player.ghost || player.noItems || player.CCed
-            || !SameSpawn(Main.npc[Target.Slot]) || !Enemy(npc, player) || !ValidWeapon()
+            || !SameSpawn(Main.npc[Target.Slot]) || !StillEligible(npc) || !ValidWeapon()
             || !inputs.BeginItemCheck(tick)) return;
+        if(player.itemAnimation==0)drainSwing=false;
         bool press = player.itemAnimation == 0 && player.itemTime == 0 && player.reuseDelay == 0
             && player.releaseUseItem && CanSwing();
         try
@@ -272,7 +323,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private static bool InInputScope(Player p) => checking is {} c && ReferenceEquals(c.player,p) && NativeItemInput.Active(p);
 
     internal static bool? CanHit(Player p, Item held, NPC target) => InInputScope(p)
-        && (!AllowsItem(p) || !ReferenceEquals(held,checking.item) || !checking.ValidWeapon()
+        && (checking.drainSwing || !AllowsItem(p) || !ReferenceEquals(held,checking.item) || !checking.ValidWeapon()
             || !checking.SameSpawn(target) || !checking.SameSpawn(Main.npc[checking.Target.Slot]))
         ? false : null;
 
@@ -282,7 +333,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     {
         var combat=checking;
         if(!InInputScope(p))return target.StrikeNPC(hit,fromNet,noPlayerInteraction);
-        if(!AllowsItem(p)||!combat.ValidWeapon()||!combat.SameSpawn(Main.npc[combat.Target.Slot])||!combat.SameSpawn(target)||!Enemy(target,p))return 0;
+        if(combat.drainSwing||!AllowsItem(p)||!combat.ValidWeapon()||!combat.SameSpawn(Main.npc[combat.Target.Slot])||!combat.SameSpawn(target)||!Enemy(target,p))return 0;
         int before=target.life;
         int damage=target.StrikeNPC(hit,fromNet,noPlayerInteraction);
         if(combat.Owned() && CombatStrikeEvidence.Observe(combat.SameSpawn(Main.npc[combat.Target.Slot]),

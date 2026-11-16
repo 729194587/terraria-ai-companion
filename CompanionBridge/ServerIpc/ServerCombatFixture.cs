@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Xna.Framework;
@@ -17,6 +18,7 @@ internal static class ServerCombatFixture
 {
     internal static bool Enabled => ServerAiActionFixture.Enabled && Program.LaunchParameters.ContainsKey("-companioncombattest");
     private static NPC target;
+    private static readonly HashSet<NPC> defenseTargets=new();
     private static ulong? lastFrame,lastHit;
     private static int frames,hits,hitViolations;
     private static bool faultNextPress;
@@ -57,7 +59,7 @@ internal static class ServerCombatFixture
     {
         if(!Enabled||!NativeCombatWorld.AllowsItem(p))return;
         ulong tick=Main.GameUpdateCount;
-        if(lastHit==tick||lastFrame!=tick||!ReferenceEquals(npc,target)||!NativeItemInput.Active(p))
+        if(lastHit==tick||lastFrame!=tick||!Keeps(npc)||!NativeItemInput.Active(p))
             hitViolations++;
         lastHit=tick;hits++;
         var stack=new System.Diagnostics.StackTrace().ToString();
@@ -65,7 +67,7 @@ internal static class ServerCombatFixture
             cooldown=Cooldown(p,npc.whoAmI),nativeWrapper=stack.Contains("Terraria.Player::ItemCheckWrapped"),
             nativeDamage=stack.Contains("ProcessHitAgainstNPC")});
     }
-    internal static bool Keeps(NPC npc) => Enabled && ReferenceEquals(npc,target);
+    internal static bool Keeps(NPC npc) => Enabled && (ReferenceEquals(npc,target)||defenseTargets.Contains(npc));
     internal static void RecordDeath(NPC npc)
     {
         if(!Keeps(npc))return;
@@ -73,6 +75,20 @@ internal static class ServerCombatFixture
             JsonSerializer.Serialize(new{gameUpdate=Main.GameUpdateCount,npc.whoAmI,npc.life,
                 stack=new System.Diagnostics.StackTrace().ToString()})+Environment.NewLine);
     }
+
+    private static NPC SpawnDefense(Player p,int dx,int life,bool threatening=true,int start=0)
+    {
+        int floor=Main.spawnTileY+8,x=(int)p.Center.X+dx;
+        int slot=NPC.NewNPC(p.GetSource_Misc("isolated_defense_fixture"),x,floor*16,NPCID.GreenSlime,
+            Start:start,Target:threatening?p.whoAmI:255);
+        var n=Main.npc[slot];
+        n.Bottom=new Vector2(x,floor*16);
+        n.target=threatening?p.whoAmI:255;n.aiStyle=-1;n.knockBackResist=0;n.life=n.lifeMax=life;n.timeLeft=1800;
+        defenseTargets.Add(n);
+        return n;
+    }
+
+    private static object DefenseIdentity(Player p,NPC n)=>new{slot=n.whoAmI,entityRef=NativeCombatWorld.Reference(Bound(p),n)};
 
     internal static void Tick(Player p)
     {
@@ -96,8 +112,25 @@ internal static class ServerCombatFixture
         {
             if(mode=="fault")faultNextPress=true;
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
-                JsonSerializer.Serialize(new{mode,frames,hits,hitViolations,firstCooldown,hitTrace,inputScopeReleased=!NativeItemInput.Active(p)&&Main.myPlayer!=p.whoAmI,
+                JsonSerializer.Serialize(new{mode,frames,hits,hitViolations,firstCooldown,hitTrace,
+                    survivors=defenseTargets.Where(n=>n.active).Select(n=>DefenseIdentity(p,n)),inputScopeReleased=!NativeItemInput.Active(p)&&Main.myPlayer!=p.whoAmI,
                     attackReleased=!p.controlUseItem&&p.releaseUseItem}));
+            return;
+        }
+        if(mode=="defense-join")
+        {
+            var added=SpawnDefense(p,24,45);
+            var bystander=SpawnDefense(p,-96,45,threatening:false);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                JsonSerializer.Serialize(new{added=DefenseIdentity(p,added),bystander=DefenseIdentity(p,bystander)}));
+            return;
+        }
+        if(mode=="defense-replace")
+        {
+            int oldSlot=target.whoAmI;
+            target.StrikeNPC(new NPC.HitInfo{Damage=target.life});
+            target=SpawnDefense(p,-24,45,start:oldSlot);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(DefenseIdentity(p,target)));
             return;
         }
         if(mode=="replace")
@@ -123,6 +156,9 @@ internal static class ServerCombatFixture
                 JsonSerializer.Serialize(new{mode,target.active,target.life,gameUpdate=Main.GameUpdateCount}));
             return;
         }
+        if(defenseTargets.Count>0){p.immune=false;p.immuneTime=0;}
+        foreach(var n in defenseTargets)n.active=false;
+        defenseTargets.Clear();
         bool durable=mode is "agent-multi" or "durable" or "reuse";
         bool distant=mode is "agent" or "agent-multi";
         bool stationary=durable||distant;
@@ -151,6 +187,17 @@ internal static class ServerCombatFixture
             tile.ClearEverything();
             if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
         }
+        if(mode=="defense")
+        {
+            // These fixtures exercise targeting threats; isolate contact knockback
+            // so static NPCs cannot leave the threat radius by pushing the actor.
+            p.immune=true;p.immuneTime=600;
+            target=SpawnDefense(p,-26,90);
+            var second=SpawnDefense(p,-52,45);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                JsonSerializer.Serialize(new{first=DefenseIdentity(p,target),second=DefenseIdentity(p,second)}));
+            return;
+        }
         int x=(int)p.Center.X+(distant?-180:-24);
         // Keep the reflex spawn on a different slot from the preceding kill,
         // whose native per-slot melee cooldown can still be active.
@@ -172,7 +219,7 @@ internal static class ServerCombatFixture
         }
         target.Bottom=new Vector2(x,floor*16);
         target.target=stationary?255:p.whoAmI;
-        if(durable)target.life=target.lifeMax=90; // Fixture only; the actual hits and cooldown remain native.
+        if(durable)target.life=target.lifeMax=mode=="agent-multi"?270:90; // Fixture only; the actual hits and cooldown remain native.
         var identity=new AiReadOnlyProtocol.Identity(p,ProbeSession.WorldSession,ProbeSession.ActorGeneration,p.whoAmI,null);
         File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
             entityRef=NativeCombatWorld.Reference(identity,target),life=target.life,slot,mode,

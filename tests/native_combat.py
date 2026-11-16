@@ -110,6 +110,55 @@ async def verify(args):
             call_stack = next(kill['stack'] for kill in kills if kill['gameUpdate'] == hit['GameUpdate'])
             assert 'StrikeWithEvidence' in call_stack and 'Terraria.Player::ItemCheckWrapped' in call_stack, call_stack
         assert (await asyncio.to_thread(bridge.task_request, 'action', ordinary))['status'] == 'cancelled'
+        async def defense_start():
+            pair = await scene('defense')
+            first = pair['first']['entityRef']
+            action = await wait_for(lambda a: a['targetTask']['entityRef'] == first
+                                    and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
+            return pair, action['actionId']
+
+        async def defense_finish(action_id, expected, allowed_survivor=None):
+            result = await manager.invoke('await_task', {'taskId': action_id, 'milliseconds': 30000})
+            assert result['completed'] and result['valid'], (result['status'], result['action']['task'])
+            Draft202012Validator(schema_for('await_task')).validate(result)
+            proof = result['result']['task']['result']['evidence']
+            assert result['result']['reason'] == 'combat_threats_cleared' and result['result']['inputsReleased']
+            assert result['action']['actionId'] == action_id, result
+            encounters = proof['encounters']
+            assert {entry['Target']['EntityRef'] for entry in encounters} == set(expected), encounters
+            sample = await audit(proof)
+            for encounter in encounters:
+                reference = encounter['Target']['EntityRef']
+                assert encounter['Reason'] == expected[reference], encounter
+                rows = [row for row in sample['hitTrace'] if row['entityRef'] == reference]
+                if encounter['Reason'] == 'combat_target_defeated':
+                    assert rows and encounter['LastHit']['Defeated'], (encounter, rows)
+                    assert rows[-1]['tick'] == encounter['LastHit']['GameUpdate'] and rows[-1]['life'] <= 0
+                else:
+                    assert encounter['LastHit'] is None or not encounter['LastHit']['Defeated']
+            assert {n['entityRef'] for n in sample['survivors']} == ({allowed_survivor} if allowed_survivor else set()), sample
+            assert len({hit['tick'] for hit in sample['hitTrace']}) == len(sample['hitTrace']), sample
+            return {'result': result, 'audit': sample}
+
+        pair, action_id = await defense_start()
+        joined = await scene('defense-join')
+        first, second = (pair[key]['entityRef'] for key in ('first', 'second'))
+        third, bystander = (joined[key]['entityRef'] for key in ('added', 'bystander'))
+        results['continuousDefense'] = await defense_finish(action_id,
+            dict.fromkeys((first, second, third), 'combat_target_defeated'), allowed_survivor=bystander)
+        encounters = results['continuousDefense']['result']['result']['task']['result']['evidence']['encounters']
+        assert encounters[0]['Target']['EntityRef'] == first, encounters
+        assert await observe() is not None and (await observe())['actionId'] == action_id
+
+        pair, action_id = await defense_start()
+        replacement = await scene('defense-replace')
+        first, second = (pair[key]['entityRef'] for key in ('first', 'second'))
+        new_ref = replacement['entityRef']
+        assert replacement['slot'] == pair['first']['slot'] and new_ref != first, (pair, replacement)
+        results['defenseReuse'] = await defense_finish(action_id, {
+            first: 'combat_target_replaced', second: 'combat_target_defeated', new_ref: 'combat_target_defeated',
+        })
+
         enemy = await scene('agent')
         cancelled = await manager.invoke('submit_task', {'operation': 'combat_attack',
                                                          'arguments': {'entityRef': enemy['entityRef']}})

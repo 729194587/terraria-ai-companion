@@ -705,13 +705,16 @@ DEFS['CollectionEvidence'] = obj({
     'canContinue': B,
     'nextTarget': nullable(obj({'entityRef': S, 'typeId': I, 'count': COUNT, 'x': PIXEL, 'y': PIXEL})),
 }, optional=('canContinue', 'nextTarget'))
+COMBAT_TARGET = obj(fields(integers='Slot TypeId', strings='EntityRef'))
+COMBAT_HIT = obj({**fields(integers='LifeBefore LifeAfter DamageDone', booleans='Defeated'), 'GameUpdate': TICK})
 DEFS['CombatProgress'] = obj({
     'source': enum('agent', 'reflex'), 'threat': nullable(S), 'life': nullable(I),
-    'target': nullable(obj(fields(integers='Slot TypeId', strings='EntityRef'))),
+    'target': nullable(COMBAT_TARGET),
     'weapon': nullable(obj(fields(integers='Slot TypeId', strings='Name'))),
-    'lastHit': nullable(obj({**fields(integers='LifeBefore LifeAfter DamageDone', booleans='Defeated'), 'GameUpdate': TICK})),
+    'lastHit': nullable(COMBAT_HIT),
     'itemChecks': COUNT, 'combinedUpdates': COUNT,
-})
+    'encounters': array(obj({'Target': COMBAT_TARGET, 'Reason': S, 'LastHit': nullable(COMBAT_HIT)})),
+}, optional=('encounters',))
 DEFS['LocalPlanCost'] = obj(fields(numbers='Movement Mining Placement Materials Alteration Remaining'))
 DEFS['LocalEditPlan'] = obj({
     'Actions': array(obj({
@@ -931,8 +934,12 @@ TASK_COMPLETION_PROOF = {
                       matches(truncated=TRUE, outcome=const('partial'), canContinue=TRUE)],
         })),
     'combat_attack': matches(taskName=const('combat_attack'), status=const('completed'), phase=const('terminal'),
-        result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence=matches(
-            lastHit=matches(Defeated=TRUE, LifeBefore={'minimum': 1}, LifeAfter={'maximum': 0}, DamageDone={'minimum': 1})))),
+        result={**matches(inputsReleased=TRUE, effectVerified=TRUE), 'anyOf': [
+            matches(evidence=matches(lastHit=matches(
+                Defeated=TRUE, LifeBefore={'minimum': 1}, LifeAfter={'maximum': 0}, DamageDone={'minimum': 1}))),
+            matches(reason=const('combat_threats_cleared'), evidence=matches(
+                source=const('reflex'), encounters={'minItems': 1})),
+        ]}),
     'navigate_to': matches(taskName=const('navigate_to'), status=const('completed'), currentChild=NULL,
                            result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence=ARRIVED)),
     'mine_target': {

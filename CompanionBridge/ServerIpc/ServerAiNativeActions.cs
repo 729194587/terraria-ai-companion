@@ -35,6 +35,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     internal static bool BodyIdle(AiReadOnlyProtocol.Identity identity)=>Owned(identity)&&identity.CanAct
         &&!NativeCombatWorld.Running&&!ActorControl.Running&&!ActorItemUse.Running&&!ActorMining.Running
         &&identity.Actor is Player p&&Released(p)&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0;
+    internal Func<AiReadOnlyProtocol.Identity,string,bool> ReflexTargetAllowed {get;set;}
+    public string CurrentCombatTarget(object handle)=>
+        handle is Handle {Context:TaskSlot {Task:CombatController combat}}?combat.TargetRef:null;
     public bool SupportsCombat=>true;
     public bool SupportsContainers=>true;
     public bool SupportsSorting=>ActorSorting.Available;
@@ -63,7 +66,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 if(child)throw new InvalidOperationException("Nested root task denied");
                 var executor=new ChildExecutor(this,continuous:true);
                 CompanionTask task=operation==CombatProtocol.Operation
-                    ?new CombatController(new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString()),
+                    ?new CombatController(new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),
+                        args.TryGetProperty("threat",out _)?ReflexTargetAllowed??((_,_)=>true):null),
                         args.TryGetProperty("threat",out var threat)?"reflex":"agent",threat.ValueKind==JsonValueKind.String?threat.GetString():null)
                     :operation=="mine_target"
                     ?args.TryGetProperty("cluster",out var cluster)&&cluster.GetBoolean()
