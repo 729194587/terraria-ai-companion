@@ -31,9 +31,11 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private int missedSwings;
     private bool drainSwing;
     private int targetEpoch;
-    private bool Ranged=>CombatBallistics.Supported(item);
+    private CombatBallistics.Kind? ShotKind=>CombatBallistics.Family(item);
+    private bool Ranged=>ShotKind!=null;
     private CombatBallistics.Round? firing;
-    private bool ammoChanged,inShoot;
+    private bool ammoChanged,manaChanged,inShoot;
+    internal int ManaAtLaunch { get; private set; }
     private const int MaxFiringPositions=8;
     private sealed record FiringAttempt(LandingRegion Goal,bool Left,ServerAiNavigation.Run Run);
     private readonly List<FiringAttempt> attemptedFiringPositions=new();
@@ -57,13 +59,16 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
 
     private static bool WeaponSupported(Item i) => !i.IsAir && i.type < ItemID.Count
         && !i.consumable && !i.channel && i.damage > 0 && i.createTile < 0 && i.createWall < 0
-        && i.pick == 0 && i.axe == 0 && i.hammer == 0 && i.mana == 0 && i.mountType < 0
+        && i.pick == 0 && i.axe == 0 && i.hammer == 0 && i.mountType < 0
         && i.useTime > 0 && i.useAnimation > 0
-        && (CombatBallistics.Supported(i) && i.CountsAsClass(Terraria.ModLoader.DamageClass.Ranged)
+        && (CombatBallistics.Family(i)==CombatBallistics.Kind.Ranged
+                && i.CountsAsClass(Terraria.ModLoader.DamageClass.Ranged)
+            || CombatBallistics.Family(i)==CombatBallistics.Kind.Magic
+                && i.CountsAsClass(Terraria.ModLoader.DamageClass.Magic)
             || ActorItemUse.Supported(i) && i.useStyle == ItemUseStyleID.Swing
                 && i.CountsAsClass(Terraria.ModLoader.DamageClass.Melee) && !i.noMelee && !i.noUseGraphic);
 
-    private static string AmmoRefusal(Player p,Item held)=>CombatBallistics.Supported(held)
+    private static string ShotRefusal(Player p,Item held)=>CombatBallistics.Supported(held)
         ? CombatBallistics.ReadRound(p,held,out _) : null;
 
     private static bool InRange(Player p, NPC n, int range) =>
@@ -90,7 +95,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         var p = (Player)identity.Actor;
         if (Resolve(identity, entityRef) == null) return "combat_target_unavailable";
         if (p.selectedItem is < 0 or > 9 || !WeaponSupported(p.HeldItem)) return "combat_weapon_unsupported";
-        return !GameNavigation.Ordinary(p) || p.noItems || p.CCed ? "combat_actor_state_unsupported" : AmmoRefusal(p,p.HeldItem);
+        return !GameNavigation.Ordinary(p) || p.noItems || p.CCed ? "combat_actor_state_unsupported" : ShotRefusal(p,p.HeldItem);
     }
 
     internal static void RecordHurt(Player p, int sourceNpc)
@@ -117,7 +122,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         if (identity?.CanAct != true || !ServerAiNativeActions.Owned(identity)) return null;
         var p = (Player)identity.Actor;
         if (p.selectedItem is < 0 or > 9 || !WeaponSupported(p.HeldItem) || !GameNavigation.Ordinary(p,combatSwing)
-            || p.noItems || p.CCed || !combatSwing && AmmoRefusal(p,p.HeldItem)!=null) return null;
+            || p.noItems || p.CCed || !combatSwing && ShotRefusal(p,p.HeldItem)!=null) return null;
         (string entityRef,string threat)? nearest=null;
         float best = float.PositiveInfinity;
         for (int i = 0; i < Main.maxNPCs; i++)
@@ -156,7 +161,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         if (player.selectedItem is < 0 or > 9 || !WeaponSupported(player.HeldItem)) return "combat_weapon_unsupported";
         if (!GameNavigation.Ordinary(player) || player.noItems || player.CCed) return "combat_actor_state_unsupported";
         if (!ServerAiNativeActions.BodyIdle(identity)) return "actor_busy";
-        if(AmmoRefusal(player,player.HeldItem) is {} ammoFailure)return ammoFailure;
+        if(ShotRefusal(player,player.HeldItem) is {} shotFailure)return shotFailure;
         slot = player.selectedItem;
         item = player.HeldItem;
         Weapon = new(slot, item.type, item.Name);
@@ -269,6 +274,13 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         var failure=CombatBallistics.ReadRound(player,item,out var round);
         if(failure!=null)
         {
+            if(failure=="combat_mana_unavailable")
+            {
+                phase="waiting_mana";
+                return Array.Exists(Main.projectile,p=>p.active
+                    &&p.TryGetGlobalProjectile<CombatProjectile>(out var trace)&&trace.Flight is {} shot&&shot.Pending(this,p)
+                    &&Main.GameUpdateCount-shot.Launched<=90)?null:"combat_mana_unavailable";
+            }
             if(failure=="combat_ammo_unavailable"&&Array.Exists(Main.projectile,p=>p.active
                 &&p.TryGetGlobalProjectile<CombatProjectile>(out var trace)&&trace.Flight is {} shot&&shot.Pending(this,p)&&Main.GameUpdateCount-shot.Launched<=90))
             {phase="projectile_in_flight";return null;}
@@ -394,7 +406,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             bool press;
             if(Ranged)
             {
-                firing=null;ammoChanged=false;
+                firing=null;ammoChanged=false;manaChanged=false;
                 bool canPress=player.itemTime<=1&&player.reuseDelay==0
                     &&(player.itemAnimation>0||player.releaseUseItem||item.autoReuse);
                 if(!drainSwing&&canPress&&CombatBallistics.ReadRound(player,item,out var round)==null
@@ -412,7 +424,11 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             // supplies its equivalent on the up frame, never on a down frame.
             if (!press) player.releaseUseItem = true;
             runNative(new(aim, press));
-            if(ammoChanged&&Owned())NetworkStateSync.Full(player);
+            if((ammoChanged||manaChanged)&&Owned())
+            {
+                if(manaChanged)NetMessage.SendData(MessageID.PlayerLifeMana,-1,-1,null,player.whoAmI);
+                NetworkStateSync.Full(player);
+            }
             if (press && player.itemAnimation > 0 && Owned())
             {
                 player.releaseUseItem=false;
@@ -428,7 +444,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         }
         finally
         {
-            firing=null;ammoChanged=false;checking = null;
+            firing=null;ammoChanged=manaChanged=false;checking = null;
             if (Owned()) player.controlUseItem = false;
         }
     }
@@ -473,25 +489,42 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         if(!InInputScope(p)||!AllowsItem(p)||combat.inShoot||combat.firing is not {} round||p.whoAmI!=slot
             ||!ReferenceEquals(held,combat.item)||!combat.ValidWeapon()||!combat.StillEligible(combat.npc)
             ||!combat.SameSpawn(Main.npc[combat.Target.Slot]))return;
-        var ammo=p.ChooseAmmo(held);
-        if(ammo==null||ammo.type!=round.Ammo)return;
-        int stack=ammo.stack;
+        bool magic=CombatBallistics.Family(held)==CombatBallistics.Kind.Magic;
+        Item ammo=null;int stack=0,mana=p.statMana;
+        if(magic)combat.ManaAtLaunch=mana;
+        if(magic)
+        {
+            if(p.GetManaCost(held)>p.statMana)return;
+        }
+        else
+        {
+            ammo=p.ChooseAmmo(held);
+            if(ammo==null||ammo.type!=round.Ammo)return;
+            stack=ammo.stack;
+        }
         try{combat.inShoot=true;orig(p,slot,held,damage);}
-        finally{combat.inShoot=false;combat.ammoChanged|=ammo.stack!=stack;}
+        finally
+        {
+            combat.inShoot=false;
+            if(magic)combat.manaChanged|=p.statMana!=mana;
+            else combat.ammoChanged|=ammo.stack!=stack;
+        }
     }
 
-    internal static Shot CaptureShot(Projectile p,EntitySource_ItemUse_WithAmmo source)
+    internal static Shot CaptureShot(Projectile p,EntitySource_ItemUse source)
     {
         var combat=checking;
         if(combat==null||!combat.inShoot||!InInputScope(combat.player)||!AllowsItem(combat.player)||combat.firing is not {} round
             ||p.owner!=combat.player.whoAmI||!ReferenceEquals(source.Entity,combat.player)
             ||!ReferenceEquals(source.Item,combat.item))return null;
-        bool verified=p.type==round.Projectile&&source.AmmoItemIdUsed==round.Ammo&&combat.SameSpawn(Main.npc[combat.Target.Slot]);
-        return new(combat,combat.targetEpoch,combat.Target,combat.Weapon.TypeId,source.AmmoItemIdUsed,
+        int ammo=source is EntitySource_ItemUse_WithAmmo withAmmo?withAmmo.AmmoItemIdUsed:AmmoID.None;
+        bool magic=CombatBallistics.Family(combat.item)==CombatBallistics.Kind.Magic;
+        bool verified=p.type==round.Projectile&&ammo==round.Ammo&&combat.SameSpawn(Main.npc[combat.Target.Slot]);
+        return new(combat,combat.targetEpoch,combat.Target,combat.Weapon.TypeId,ammo,magic,
             p.whoAmI,p.owner,p.identity,p.type,Main.GameUpdateCount,verified);
     }
 
-    internal sealed record Shot(NativeCombatWorld Combat,int Epoch,CombatTarget Target,int Weapon,int Ammo,
+    internal sealed record Shot(NativeCombatWorld Combat,int Epoch,CombatTarget Target,int Weapon,int Ammo,bool Magic,
         int Slot,int Owner,int Identity,int Type,ulong Launched,bool Verified)
     {
         internal bool Owns(Projectile p)=>p.whoAmI==Slot&&p.owner==Owner&&p.identity==Identity&&p.type==Type

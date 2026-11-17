@@ -48,6 +48,36 @@ async def verify(args):
         assert view['result']['endEvidence']['inputsReleased'], view
         return proof
 
+    async def defense_start(mode='defense'):
+        pair = await scene(mode)
+        first = pair['first']['entityRef']
+        action = await wait_for(lambda a: a['targetTask']['entityRef'] == first
+                                and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
+        return pair, action['actionId']
+
+    async def defense_finish(action_id, expected, allowed_survivor=None):
+        result = await manager.invoke('await_task', {'taskId': action_id, 'milliseconds': 30000})
+        assert result['completed'] and result['valid'], (result['status'], result['action']['task'])
+        Draft202012Validator(schema_for('await_task')).validate(result)
+        proof = result['result']['task']['result']['evidence']
+        assert result['result']['reason'] == 'combat_threats_cleared' and result['result']['inputsReleased']
+        assert result['action']['actionId'] == action_id, result
+        encounters = proof['encounters']
+        assert {entry['Target']['EntityRef'] for entry in encounters} == set(expected), encounters
+        sample = await audit(proof)
+        for encounter in encounters:
+            reference = encounter['Target']['EntityRef']
+            assert encounter['Reason'] == expected[reference], encounter
+            rows = [row for row in sample['hitTrace'] if row['entityRef'] == reference]
+            if encounter['Reason'] == 'combat_target_defeated':
+                assert rows and encounter['LastHit']['Defeated'], (encounter, rows)
+                assert rows[-1]['tick'] == encounter['LastHit']['GameUpdate'] and rows[-1]['life'] <= 0
+            else:
+                assert encounter['LastHit'] is None or not encounter['LastHit']['Defeated']
+        assert {n['entityRef'] for n in sample['survivors']} == ({allowed_survivor} if allowed_survivor else set()), sample
+        assert len({hit['tick'] for hit in sample['hitTrace']}) == len(sample['hitTrace']), sample
+        return {'result': result, 'audit': sample}
+
     async def audit(proof):
         sample = await scene('audit')
         assert sample['frames'] == proof['itemChecks'] and sample['hits'] > 0 and sample['hitViolations'] == 0, (sample, proof)
@@ -110,36 +140,6 @@ async def verify(args):
             call_stack = next(kill['stack'] for kill in kills if kill['gameUpdate'] == hit['GameUpdate'])
             assert 'StrikeWithEvidence' in call_stack and 'Terraria.Player::ItemCheckWrapped' in call_stack, call_stack
         assert (await asyncio.to_thread(bridge.task_request, 'action', ordinary))['status'] == 'cancelled'
-        async def defense_start():
-            pair = await scene('defense')
-            first = pair['first']['entityRef']
-            action = await wait_for(lambda a: a['targetTask']['entityRef'] == first
-                                    and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
-            return pair, action['actionId']
-
-        async def defense_finish(action_id, expected, allowed_survivor=None):
-            result = await manager.invoke('await_task', {'taskId': action_id, 'milliseconds': 30000})
-            assert result['completed'] and result['valid'], (result['status'], result['action']['task'])
-            Draft202012Validator(schema_for('await_task')).validate(result)
-            proof = result['result']['task']['result']['evidence']
-            assert result['result']['reason'] == 'combat_threats_cleared' and result['result']['inputsReleased']
-            assert result['action']['actionId'] == action_id, result
-            encounters = proof['encounters']
-            assert {entry['Target']['EntityRef'] for entry in encounters} == set(expected), encounters
-            sample = await audit(proof)
-            for encounter in encounters:
-                reference = encounter['Target']['EntityRef']
-                assert encounter['Reason'] == expected[reference], encounter
-                rows = [row for row in sample['hitTrace'] if row['entityRef'] == reference]
-                if encounter['Reason'] == 'combat_target_defeated':
-                    assert rows and encounter['LastHit']['Defeated'], (encounter, rows)
-                    assert rows[-1]['tick'] == encounter['LastHit']['GameUpdate'] and rows[-1]['life'] <= 0
-                else:
-                    assert encounter['LastHit'] is None or not encounter['LastHit']['Defeated']
-            assert {n['entityRef'] for n in sample['survivors']} == ({allowed_survivor} if allowed_survivor else set()), sample
-            assert len({hit['tick'] for hit in sample['hitTrace']}) == len(sample['hitTrace']), sample
-            return {'result': result, 'audit': sample}
-
         pair, action_id = await defense_start()
         joined = await scene('defense-join')
         first, second = (pair[key]['entityRef'] for key in ('first', 'second'))
@@ -240,6 +240,95 @@ async def verify(args):
                        for hit in sample['projectileHits']), sample
             final = sample['projectileHits'][-1]
             assert final['tick'] == proof['lastHit']['GameUpdate'] and final['life'] == proof['lastHit']['LifeAfter'], sample
+
+        # Native magic: the held staff supplies the projectile; no ammo is
+        # consumed. The launch record must carry zero ammo and the cast state.
+        # magic-multi supplies the multi-cast regression: a durable NPC needs
+        # several independent native casts in distinct frames.
+        for mode in ('spark', 'amethyst', 'magic-reflex', 'no-mana', 'magic-multi'):
+            enemy = await scene(mode)
+            if mode == 'magic-reflex':
+                action = await wait_for(lambda a: a['targetTask']['entityRef'] == enemy['entityRef'])
+                task_id = action['actionId']
+            else:
+                launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                               'arguments': {'entityRef': enemy['entityRef']}})
+                task_id = launch['taskId']
+            result = await manager.invoke('await_task', {'taskId': task_id, 'milliseconds': 30000})
+            sample = await scene('audit')
+            results[mode] = {'result': result, 'audit': sample}
+            if mode == 'no-mana':
+                assert result['status'] == 'failed' and result['result']['reason'] == 'combat_mana_unavailable', result
+                assert not sample['shots'] and not sample['projectileHits'] and sample['mana'] == 0, sample
+                assert result['result']['inputsReleased']
+                continue
+            proof = completed(result)
+            assert proof['target']['EntityRef'] == enemy['entityRef']
+            assert sample['inputScopeReleased'] and sample['attackReleased']
+            assert len(sample['shots']) >= 1
+            for shot in sample['shots']:
+                assert shot['Verified'] and shot['Magic'] and shot['nativeShoot'] and shot['nativeWrapper'], shot
+                assert shot['Ammo'] == 0 and shot['Weapon'] == enemy['weapon'] and shot['target'] == enemy['entityRef'], shot
+                assert shot['mana'] > 0 and shot['damage'] > 0, shot
+            assert 0 <= enemy['mana'] - sample['mana'] <= enemy['manaCost'] * len(sample['shots']) + 2, (enemy, sample)
+            assert sample['manaPackets'] >= 1, sample
+            assert all(hit['nativeDamage'] and hit['target'] == enemy['entityRef'] and hit['damage'] > 0
+                       for hit in sample['projectileHits']), sample
+            assert sample['projectileHits'][-1]['tick'] == proof['lastHit']['GameUpdate'], sample
+            if mode == 'magic-multi':
+                # A durable target needs several native casts in distinct frames,
+                # all from the same task and the same target incarnation.
+                assert len(sample['shots']) >= 2, sample
+                assert len({shot['tick'] for shot in sample['shots']}) == len(sample['shots']), sample
+                assert all(shot['Identity'] == sample['shots'][0]['Identity'] for shot in sample['shots']), sample
+                # NetworkStateSync coalesces at most one equipment/mana packet
+                # per cast frame; verify payment without assuming retransmits.
+                assert sample['manaPackets'] >= 1, sample
+                assert enemy['mana'] - sample['mana'] >= enemy['manaCost'], (enemy, sample)
+            if mode == 'amethyst':
+                first = sample['shots'][0]
+                assert first['vy'] * abs((first['tx'] - first['x']) / first['vx']) < first['ty'] - first['y'], first
+
+        # Magical reflex defense starts with a threat and stays on the same
+        # task while a second nearby threat is introduced.
+        pair, action_id = await defense_start('magic-defense')
+        first = pair['first']['entityRef']
+        joined = await scene('magic-defense-join')
+        second, bystander = joined['added']['entityRef'], joined['bystander']['entityRef']
+        results['magicDefense'] = await defense_finish(action_id, {first: 'combat_target_defeated',
+                                                                   second: 'combat_target_defeated'}, bystander)
+
+        # Magical old projectiles have no authority after the target changes.
+        for mode in ('magic-replace', 'magic-cancel'):
+            enemy = await scene('spark')
+            launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                           'arguments': {'entityRef': enemy['entityRef']}})
+            task_id = launch['taskId']
+            for _ in range(40):
+                sample = await scene('audit')
+                if sample['shots']:
+                    break
+            assert sample['shots'] and sample['shots'][0]['Magic'], sample
+            shot = sample['shots'][0]
+            if mode == 'magic-replace':
+                replacement = await scene(mode)
+                assert replacement['live'] and replacement['slot'] == enemy['slot']
+                assert replacement['entityRef'] != enemy['entityRef']
+                watched = replacement['entityRef']
+                result = await manager.invoke('await_task', {'taskId': task_id, 'milliseconds': 5000})
+                assert result['status'] == 'failed' and result['result']['reason'] == 'combat_target_replaced'
+            else:
+                watched = enemy['entityRef']
+                result = await manager.invoke('cancel_task', {'taskId': task_id})
+                assert result['status'] == 'cancelled'
+            assert result['result']['inputsReleased'] and not result['result']['effectVerified']
+            for _ in range(60):
+                sample = await scene('audit')
+                if sample['gameUpdate'] >= shot['tick'] + 65:
+                    break
+                await asyncio.sleep(.03)
+            assert not sample['projectileHits'], sample
+            results[mode] = {'result': result, 'audit': sample}
 
         clearance = await scene('ranged-clearance')
         assert clearance['centered'] and not clearance['edge'] and clearance['legacy'] and clearance['restored'], clearance

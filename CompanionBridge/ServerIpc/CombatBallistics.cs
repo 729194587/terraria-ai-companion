@@ -10,10 +10,12 @@ using VirtualPlayerEngineProbe;
 namespace CompanionBridge.ServerIpc;
 
 // Deliberately limited to ordinary one-projectile vanilla weapons and simple
-// ammo flight profiles. PickAmmo supplies the effective launch speed and type.
+// ranged/magic flight profiles. PickAmmo supplies the effective ammo launch;
+// magic uses the native held item without consuming ammo.
 internal static class CombatBallistics
 {
     internal readonly record struct Round(int Projectile,int Ammo,float Speed);
+    internal enum Kind { Ranged, Magic }
     internal readonly record struct CollisionProfile(int Width,int Height,int Updates,bool FallThrough,Vector2 Center);
     private static readonly Dictionary<int,CollisionProfile> profiles = new();
 
@@ -30,7 +32,23 @@ internal static class CombatBallistics
             throw new InvalidOperationException("Expected a tile-colliding ordinary projectile.");
         return profiles[type]=new(width,height,sample.extraUpdates+1,fallThrough,center);
     }
-    internal static bool Supported(Item item) =>
+    internal static Kind? Family(Item item) =>
+        Raw(item) ? Kind.Ranged : MagicFamily(item) ? Kind.Magic : null;
+    internal static bool Supported(Item item)=>Family(item)!=null;
+    internal static bool IsMagic(Item item)=>Family(item)==Kind.Magic;
+    internal static bool MagicShot(int type)=>type is ProjectileID.WandOfSparkingSpark or ProjectileID.AmethystBolt
+        or ProjectileID.TopazBolt or ProjectileID.SapphireBolt or ProjectileID.EmeraldBolt
+        or ProjectileID.RubyBolt or ProjectileID.DiamondBolt or ProjectileID.AmberBolt;
+    // Keep the admission check cheap and tied to the native cast: the staff
+    // must request one of the direct bolt projectiles in MagicShot. Wand and
+    // gem staff SetDefaults differ in use style, so useStyle is not a stable
+    // discriminator here.
+    internal static bool MagicFamily(Item item)=>(item.type is ItemID.WandofSparking or ItemID.AmethystStaff
+        or ItemID.TopazStaff or ItemID.SapphireStaff or ItemID.EmeraldStaff or ItemID.RubyStaff
+        or ItemID.DiamondStaff or ItemID.AmberStaff)&&item.mana>0&&item.useAmmo==AmmoID.None
+        &&MagicShot(item.shoot)
+        &&!item.channel&&item.shoot>0&&item.shootSpeed>0&&item.noMelee;
+    private static bool Raw(Item item) =>
         (item.type is ItemID.WoodenBow or ItemID.BorealWoodBow or ItemID.PalmWoodBow or ItemID.RichMahoganyBow
             or ItemID.EbonwoodBow or ItemID.ShadewoodBow or ItemID.CopperBow or ItemID.TinBow
             or ItemID.IronBow or ItemID.LeadBow or ItemID.SilverBow or ItemID.TungstenBow
@@ -39,11 +57,26 @@ internal static class CombatBallistics
             or ItemID.Minishark or ItemID.Revolver)
         && (item.useAmmo==AmmoID.Arrow||item.useAmmo==AmmoID.Bullet) && !item.channel && item.shoot>0
         && item.noMelee && item.useStyle==ItemUseStyleID.Shoot;
-    internal static float Range(Item weapon)=>weapon.useAmmo==AmmoID.Arrow?400f:480f;
+    internal static float Range(Item weapon)=>weapon.type==ItemID.WandofSparking?260f
+        :Family(weapon)==Kind.Magic?720f
+        :weapon.useAmmo==AmmoID.Arrow?400f:480f;
+
 
     internal static string ReadRound(Player p,Item weapon,out Round round)
     {
         round=default;
+        if(IsMagic(weapon))
+        {
+            int cost=p.GetManaCost(weapon);
+            if(cost<0||p.statMana<cost)return "combat_mana_unavailable";
+            if(weapon.shoot<=0||weapon.shoot>=ProjectileID.Count||!float.IsFinite(weapon.shootSpeed)||weapon.shootSpeed<=0)
+                return "combat_spell_unsupported";
+            // A later registry may remap ProjectileID constants. Tie the
+            // admitted staff to the direct vanilla bolt it is known to emit.
+            if(!MagicShot(weapon.shoot))return "combat_spell_unsupported";
+            round=new(weapon.shoot,AmmoID.None,weapon.shootSpeed);
+            return null;
+        }
         if(!p.PickAmmo(weapon,out int projectile,out float speed,out _,out _,out int ammo,dontConsume:true))
             return "combat_ammo_unavailable";
         if((weapon.useAmmo==AmmoID.Arrow?projectile!=ProjectileID.WoodenArrowFriendly:projectile!=ProjectileID.Bullet)
@@ -64,10 +97,13 @@ internal static class CombatBallistics
         var profile=Profile(round.Projectile);
         int perTick=profile.Updates;
         bool arrow=round.Projectile==ProjectileID.WoodenArrowFriendly;
+        // Spark travel is much shorter than the staff range. Its native velocity
+        // stays untouched; sample the shorter arc.
+        int limit=weapon.type==ItemID.WandofSparking?24:45;
         // AI style 1 wooden arrows start falling after 14 projectile updates.
         // Sample the low arc first. Use the actual ammo-adjusted speed, and
         // inspect the entire predicted arc rather than a straight aim ray.
-        for(int step=1;step<=45*perTick;step++)
+        for(int step=1;step<=limit*perTick;step++)
         {
             float ticks=(float)step/perTick;
             var future=target.Center+target.velocity*ticks;
@@ -126,7 +162,9 @@ public sealed class CombatProjectile : GlobalProjectile
     public override void OnSpawn(Projectile projectile,IEntitySource source)
     {
         lifeBefore=0;
-        Flight=source is EntitySource_ItemUse_WithAmmo use ? NativeCombatWorld.CaptureShot(projectile,use) : null;
+        // Magic no longer carries an ammo source, but the native item-use
+        // source still proves the projectile came from the held spell.
+        Flight=source is EntitySource_ItemUse use ? NativeCombatWorld.CaptureShot(projectile,use) : null;
         if(Flight is {} shot)ServerCombatFixture.ObserveProjectileSpawn(projectile,shot);
     }
     public override bool? CanHitNPC(Projectile projectile,NPC target)=>

@@ -70,6 +70,7 @@ public static class ServerAiToolPatchTests
         bool Calls(MethodDefinition m,int offset,string name)=>m.Body.Instructions.Any(i=>i.Offset==offset
             &&i.Operand is MethodReference call&&call.Name==name);
         var shoot=player.Methods.Single(m=>m.Name=="ItemCheck_Shoot");
+        var payMana=player.Methods.Single(m=>m.Name=="ItemCheck_PayMana");
         var update=projectile.Methods.Single(m=>m.Name=="Update");
         var damage=projectile.Methods.Single(m=>m.Name=="Damage");
         var spawn=projectile.Methods.Single(m=>m.Name=="NewProjectile"&&m.Parameters.Count==12);
@@ -81,6 +82,9 @@ public static class ServerAiToolPatchTests
             ||!Calls(spawn,0x0710,"OnSpawn")||!Calls(spawn,0x073d,"SendData")
             ||!Calls(damage,0x0b74,"CanHitNPCWithProj")||!Calls(damage,0x3210,"StrikeNPC")||!Calls(damage,0x421b,"OnHitNPCWithProj"))
             throw new InvalidOperationException("Native ranged shooting, update or damage contract changed.");
+        if(!payMana.Body.Instructions.Any(i=>i.Operand is MethodReference c
+            &&c.DeclaringType.FullName=="Terraria.Player"&&c.Name=="CheckMana"))
+            throw new InvalidOperationException("Native magic mana payment changed; ItemCheck_PayMana must still call CheckMana.");
         Console.WriteLine("Native ranged shoot/ammo, projectile update and hit callback IL passed.");
         var pose=player.Methods.Single(m=>m.Name=="ItemCheck_ApplyUseStyle_Inner");
         var predicate=new MethodReference("OwnedCombat",module.TypeSystem.Boolean,player);

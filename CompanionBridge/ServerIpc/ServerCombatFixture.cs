@@ -23,7 +23,7 @@ internal static class ServerCombatFixture
     private static ulong? lastFrame,lastHit;
     private static int frames,hits,hitViolations;
     private static bool faultNextPress;
-    private static int presses,spawnPackets,ammoPackets;
+    private static int presses,spawnPackets,ammoPackets,manaPackets;
     private static int? firstCooldown;
     private static readonly List<object> hitTrace=new();
     private static readonly List<object> shots=new(),projectileHits=new(),flightTrace=new();
@@ -31,9 +31,10 @@ internal static class ServerCombatFixture
     {
         if(!Enabled)return;
         var stack=new System.Diagnostics.StackTrace().ToString();
-        shots.Add(new{tick=Main.GameUpdateCount,shot.Owner,shot.Identity,shot.Weapon,shot.Ammo,shot.Verified,
+        shots.Add(new{tick=Main.GameUpdateCount,shot.Owner,shot.Identity,shot.Weapon,shot.Ammo,shot.Magic,shot.Verified,
             shot.Type,shot.Slot,x=projectile.Center.X,y=projectile.Center.Y,tx=Main.npc[shot.Target.Slot].Center.X,ty=Main.npc[shot.Target.Slot].Center.Y,
             targetVx=Main.npc[shot.Target.Slot].velocity.X,targetVy=Main.npc[shot.Target.Slot].velocity.Y,target=shot.Target.EntityRef,vx=projectile.velocity.X,vy=projectile.velocity.Y,
+            mana=shot.Combat.ManaAtLaunch,damage=projectile.damage,
             nativeShoot=stack.Contains("ItemCheck_Shoot"),nativeWrapper=stack.Contains("Terraria.Player::ItemCheckWrapped")});
     }
     internal static void ObserveProjectileHit(Projectile p,NPC n,int damage,NativeCombatWorld.Shot shot)
@@ -73,6 +74,7 @@ internal static class ServerCombatFixture
             &&Main.projectile[number].TryGetGlobalProjectile<CombatProjectile>(out var trace)&&trace.Flight is {Verified:true})
             spawnPackets++;
         if(msg==MessageID.SyncEquipment&&number==p.whoAmI&&a==54)ammoPackets++;
+        if(msg==MessageID.PlayerLifeMana&&number==p.whoAmI)manaPackets++;
     }
 
     private static void ObserveItemFrame(On_Player.orig_ItemCheck orig,Player p)
@@ -152,7 +154,8 @@ internal static class ServerCombatFixture
         {
             if(mode=="fault")faultNextPress=true;
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
-                JsonSerializer.Serialize(new{mode,gameUpdate=Main.GameUpdateCount,frames,hits,hitViolations,firstCooldown,hitTrace,shots,projectileHits,flightTrace,spawnPackets,ammoPackets,ammo=p.inventory[54].stack,spareAmmo=p.inventory[53].stack,
+                JsonSerializer.Serialize(new{mode,gameUpdate=Main.GameUpdateCount,frames,hits,hitViolations,firstCooldown,hitTrace,shots,projectileHits,flightTrace,spawnPackets,ammoPackets,manaPackets,mana=p.statMana,
+                    ammo=p.inventory[54].stack,spareAmmo=p.inventory[53].stack,
                     survivors=defenseTargets.Where(n=>n.active).Select(n=>DefenseIdentity(p,n)),inputScopeReleased=!NativeItemInput.Active(p)&&Main.myPlayer!=p.whoAmI,
                     attackReleased=!p.controlUseItem&&p.releaseUseItem}));
             return;
@@ -212,6 +215,44 @@ internal static class ServerCombatFixture
                 slot=target.whoAmI,entityRef=NativeCombatWorld.Reference(Bound(p),target),target.life,live}));
             return;
         }
+        if(mode is "magic-replace" or "magic-cancel")
+        {
+            var old=target;
+            int oldSlot=old.whoAmI;
+            var bottom=old.Bottom;
+            bool live=Main.projectile.Any(projectile=>projectile.active&&projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
+                &&trace.Flight?.Target.Slot==oldSlot&&trace.Flight.Magic);
+            if(mode=="magic-replace")
+            {
+                old.active=false;
+                target=SpawnDefense(p,-300,32,threatening:false,start:oldSlot);
+                target.Bottom=bottom;
+                File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                    slot=target.whoAmI,entityRef=NativeCombatWorld.Reference(Bound(p),target),target.life,live}));
+            }
+            else File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{live}));
+            return;
+        }
+        if(mode is "magic-defense" or "magic-defense-join")
+        {
+            p.immune=true;p.immuneTime=600;
+            p.HeldItem.SetDefaults(ItemID.WandofSparking);
+            p.statManaMax=p.statManaMax2=100;p.statMana=80;p.manaFlower=false;
+            if(mode=="magic-defense")
+            {
+                target=SpawnDefense(p,-26,150);
+                File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                    JsonSerializer.Serialize(new{first=DefenseIdentity(p,target)}));
+            }
+            else
+            {
+                var added=SpawnDefense(p,90,50);
+                var bystander=SpawnDefense(p,-160,50,threatening:false);
+                File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                    JsonSerializer.Serialize(new{added=DefenseIdentity(p,added),bystander=DefenseIdentity(p,bystander)}));
+            }
+            return;
+        }
         if(mode=="replace")
         {
             var old=target.whoAmI;
@@ -238,8 +279,8 @@ internal static class ServerCombatFixture
         if(defenseTargets.Count>0){p.immune=false;p.immuneTime=0;}
         foreach(var n in defenseTargets)n.active=false;
         defenseTargets.Clear();
-        bool durable=mode is "agent-multi" or "durable" or "reuse";
-        bool distant=mode is "agent" or "agent-multi";
+        bool durable=mode is "agent-multi" or "durable" or "reuse" or "magic-multi";
+        bool distant=mode is "agent" or "agent-multi" or "magic-multi";
         bool stationary=durable||distant;
         int startSlot=mode=="reflex"?10:0;
         if(mode=="reuse")
@@ -248,12 +289,17 @@ internal static class ServerCombatFixture
                 throw new InvalidOperationException("Reuse requires the preceding defeated NPC.");
             startSlot=target.whoAmI;
         }
-        lastFrame=lastHit=null;frames=hits=hitViolations=presses=spawnPackets=ammoPackets=0;faultNextPress=false;
+        lastFrame=lastHit=null;frames=hits=hitViolations=presses=spawnPackets=ammoPackets=manaPackets=0;faultNextPress=false;
         firstCooldown=null;hitTrace.Clear();shots.Clear();projectileHits.Clear();flightTrace.Clear();
         if(distant&&(p.HeldItem.type==ItemID.WoodenSword||CombatBallistics.Supported(p.HeldItem)))
         {
             p.HeldItem.SetDefaults(ItemID.PlatinumBroadsword);
             p.statLife=p.statLifeMax2;
+        }
+        if(mode=="magic-multi")
+        {
+            p.HeldItem.SetDefaults(ItemID.AmethystStaff);
+            p.statManaMax=p.statManaMax2=400;p.statMana=400;p.manaFlower=false;
         }
         if(target?.active==true)target.active=false;
         int floor=Main.spawnTileY+8;
@@ -322,6 +368,26 @@ internal static class ServerCombatFixture
                     ammo=p.inventory[54].stack,spareAmmo=p.inventory[53].stack,ammoType=p.inventory[54].type,weapon=p.HeldItem.type,initialAim,startX=p.Center.X,startY=p.Center.Y}));
             return;
         }
+        if(mode is "spark" or "amethyst" or "no-mana" or "magic-reflex")
+        {
+            bool reflex=mode=="magic-reflex",noMana=mode=="no-mana",amethyst=mode=="amethyst";
+            p.HeldItem.SetDefaults(amethyst?ItemID.AmethystStaff:ItemID.WandofSparking);
+            p.inventory[54].TurnToAir();p.inventory[53].TurnToAir();
+            p.statManaMax=p.statManaMax2=100;
+            p.statMana=noMana?0:80;
+            p.manaCost=1f;
+            p.manaFlower=false;
+            target=SpawnDefense(p,reflex?-95:-170,amethyst?55:50,threatening:reflex);
+            target.noGravity=true;
+            if(amethyst)target.velocity=new Vector2(-.4f,-.12f);
+            bool initialAim=CombatBallistics.ReadRound(p,p.HeldItem,out var round)==null
+                &&CombatBallistics.Aim(p,target,p.HeldItem,round,out _);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                JsonSerializer.Serialize(new{slot=target.whoAmI,entityRef=NativeCombatWorld.Reference(Bound(p),target),
+                    weapon=p.HeldItem.type,weaponName=p.HeldItem.Name,shoot=p.HeldItem.shoot,mana=p.statMana,manaMax=p.statManaMax2,
+                    manaCost=p.GetManaCost(p.HeldItem),initialAim,startX=p.Center.X,startY=p.Center.Y}));
+            return;
+        }
         if(mode=="defense")
         {
             // These fixtures exercise targeting threats; isolate contact knockback
@@ -355,10 +421,11 @@ internal static class ServerCombatFixture
         }
         target.Bottom=new Vector2(x,floor*16);
         target.target=stationary?255:p.whoAmI;
-        if(durable)target.life=target.lifeMax=mode=="agent-multi"?270:90; // Fixture only; the actual hits and cooldown remain native.
+        if(durable)target.life=target.lifeMax=mode is "agent-multi" or "magic-multi"?270:90; // Fixture only; the actual hits and cooldown remain native.
         var identity=new AiReadOnlyProtocol.Identity(p,ProbeSession.WorldSession,ProbeSession.ActorGeneration,p.whoAmI,null);
         File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
             entityRef=NativeCombatWorld.Reference(identity,target),life=target.life,slot,mode,
+            weapon=p.HeldItem.type,mana=p.statMana,manaMax=p.statManaMax2,manaCost=p.GetManaCost(p.HeldItem),
             target.aiStyle,target.knockBackResist,cooldownAtSpawn=Cooldown(p,slot),spawnGameUpdate=Main.GameUpdateCount}));
     }
 }
