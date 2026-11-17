@@ -34,7 +34,9 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private CombatBallistics.Kind? ShotKind=>CombatBallistics.Family(item);
     private bool Ranged=>ShotKind!=null;
     private CombatBallistics.Round? firing;
-    private bool ammoChanged,manaChanged,inShoot;
+    private bool ammoChanged,inShoot;
+    // Mana still held at the native shoot step, i.e. after ItemCheck_PayMana
+    // has already funded the cast (possibly through QuickMana).
     internal int ManaAtLaunch { get; private set; }
     private const int MaxFiringPositions=8;
     private sealed record FiringAttempt(LandingRegion Goal,bool Left,ServerAiNavigation.Run Run);
@@ -406,7 +408,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             bool press;
             if(Ranged)
             {
-                firing=null;ammoChanged=false;manaChanged=false;
+                firing=null;ammoChanged=false;
                 bool canPress=player.itemTime<=1&&player.reuseDelay==0
                     &&(player.itemAnimation>0||player.releaseUseItem||item.autoReuse);
                 if(!drainSwing&&canPress&&CombatBallistics.ReadRound(player,item,out var round)==null
@@ -423,7 +425,12 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             // The native local-input path owns the release latch. The AI
             // supplies its equivalent on the up frame, never on a down frame.
             if (!press) player.releaseUseItem = true;
+            // Mana moves inside the complete native ItemCheck: ItemCheck_PayMana
+            // (including QuickMana potions) runs before ItemCheck_Shoot. Observe
+            // the whole frame instead of the shooting sub-step.
+            int manaBefore=player.statMana;
             runNative(new(aim, press));
+            bool manaChanged=player.statMana!=manaBefore;
             if((ammoChanged||manaChanged)&&Owned())
             {
                 if(manaChanged)NetMessage.SendData(MessageID.PlayerLifeMana,-1,-1,null,player.whoAmI);
@@ -444,7 +451,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         }
         finally
         {
-            firing=null;ammoChanged=manaChanged=false;checking = null;
+            firing=null;ammoChanged=false;checking = null;
             if (Owned()) player.controlUseItem = false;
         }
     }
@@ -490,13 +497,12 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             ||!ReferenceEquals(held,combat.item)||!combat.ValidWeapon()||!combat.StillEligible(combat.npc)
             ||!combat.SameSpawn(Main.npc[combat.Target.Slot]))return;
         bool magic=CombatBallistics.Family(held)==CombatBallistics.Kind.Magic;
-        Item ammo=null;int stack=0,mana=p.statMana;
-        if(magic)combat.ManaAtLaunch=mana;
-        if(magic)
-        {
-            if(p.GetManaCost(held)>p.statMana)return;
-        }
-        else
+        Item ammo=null;int stack=0;
+        // ItemCheck_PayMana -> CheckMana already paid (or financed through
+        // QuickMana) before this shoot step. Re-testing the remaining mana
+        // would drop a cast the native rules just authorised.
+        if(magic)combat.ManaAtLaunch=p.statMana;
+        if(!magic)
         {
             ammo=p.ChooseAmmo(held);
             if(ammo==null||ammo.type!=round.Ammo)return;
@@ -506,8 +512,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         finally
         {
             combat.inShoot=false;
-            if(magic)combat.manaChanged|=p.statMana!=mana;
-            else combat.ammoChanged|=ammo.stack!=stack;
+            if(!magic)combat.ammoChanged|=ammo.stack!=stack;
         }
     }
 

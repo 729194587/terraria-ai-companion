@@ -67,8 +67,7 @@ internal static class CombatBallistics
         round=default;
         if(IsMagic(weapon))
         {
-            int cost=p.GetManaCost(weapon);
-            if(cost<0||p.statMana<cost)return "combat_mana_unavailable";
+            if(!ManaAffordable(p,weapon))return "combat_mana_unavailable";
             if(weapon.shoot<=0||weapon.shoot>=ProjectileID.Count||!float.IsFinite(weapon.shootSpeed)||weapon.shootSpeed<=0)
                 return "combat_spell_unsupported";
             // A later registry may remap ProjectileID constants. Tie the
@@ -84,6 +83,19 @@ internal static class CombatBallistics
             return "combat_ammo_unsupported";
         round=new(projectile,ammo,speed);
         return null;
+    }
+
+    // ItemCheck_PayMana -> CheckMana owns the payment decision, including
+    // QuickMana potions behind Mana Flower. Preflight only refuses when the
+    // native path provably cannot finance the cast, so an AI decision never
+    // suppresses that native recovery.
+    internal static bool ManaAffordable(Player p,Item weapon)
+    {
+        int cost=p.GetManaCost(weapon);
+        if(cost<0)return false;
+        if(p.statMana>=cost)return true;
+        return p.manaFlower&&p.statMana<p.statManaMax2&&!p.cursed&&!p.CCed&&!p.dead
+            &&p.QuickMana_GetItemToUse()!=null;
     }
 
     internal static Vector2 Muzzle(Player p)=>p.RotatedRelativePoint(p.MountedCenter);

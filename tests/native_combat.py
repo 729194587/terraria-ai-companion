@@ -55,7 +55,7 @@ async def verify(args):
                                 and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
         return pair, action['actionId']
 
-    async def defense_finish(action_id, expected, allowed_survivor=None):
+    async def defense_finish(action_id, expected, allowed_survivor=None, magic=False):
         result = await manager.invoke('await_task', {'taskId': action_id, 'milliseconds': 30000})
         assert result['completed'] and result['valid'], (result['status'], result['action']['task'])
         Draft202012Validator(schema_for('await_task')).validate(result)
@@ -64,23 +64,37 @@ async def verify(args):
         assert result['action']['actionId'] == action_id, result
         encounters = proof['encounters']
         assert {entry['Target']['EntityRef'] for entry in encounters} == set(expected), encounters
-        sample = await audit(proof)
+        sample = await audit(proof, magic)
         for encounter in encounters:
             reference = encounter['Target']['EntityRef']
             assert encounter['Reason'] == expected[reference], encounter
-            rows = [row for row in sample['hitTrace'] if row['entityRef'] == reference]
+            # Magic encounters are proved by verified projectile hits; melee
+            # encounters by the native strike trace.
+            key = 'projectileHits' if magic else 'hitTrace'
+            field = 'target' if magic else 'entityRef'
+            rows = [row for row in sample[key] if row[field] == reference]
             if encounter['Reason'] == 'combat_target_defeated':
                 assert rows and encounter['LastHit']['Defeated'], (encounter, rows)
-                assert rows[-1]['tick'] == encounter['LastHit']['GameUpdate'] and rows[-1]['life'] <= 0
+                if magic:
+                    assert rows[-1]['tick'] > rows[-1]['launched']
+                else:
+                    assert rows[-1]['tick'] == encounter['LastHit']['GameUpdate'] and rows[-1]['life'] <= 0
             else:
                 assert encounter['LastHit'] is None or not encounter['LastHit']['Defeated']
         assert {n['entityRef'] for n in sample['survivors']} == ({allowed_survivor} if allowed_survivor else set()), sample
-        assert len({hit['tick'] for hit in sample['hitTrace']}) == len(sample['hitTrace']), sample
+        if not magic:
+            assert len({hit['tick'] for hit in sample['hitTrace']}) == len(sample['hitTrace']), sample
+        if magic:
+            assert sample['manaPaidWithoutShot'] == 0, sample
         return {'result': result, 'audit': sample}
 
-    async def audit(proof):
+    async def audit(proof, magic=False):
         sample = await scene('audit')
-        assert sample['frames'] == proof['itemChecks'] and sample['hits'] > 0 and sample['hitViolations'] == 0, (sample, proof)
+        assert sample['frames'] == proof['itemChecks'] and sample['hitViolations'] == 0, (sample, proof)
+        if magic:
+            assert sample['projectileHits'], (sample, proof)
+        else:
+            assert sample['hits'] > 0, (sample, proof)
         assert sample['inputScopeReleased'] and sample['attackReleased'], sample
         return sample
 
@@ -269,8 +283,19 @@ async def verify(args):
             for shot in sample['shots']:
                 assert shot['Verified'] and shot['Magic'] and shot['nativeShoot'] and shot['nativeWrapper'], shot
                 assert shot['Ammo'] == 0 and shot['Weapon'] == enemy['weapon'] and shot['target'] == enemy['entityRef'], shot
-                assert shot['mana'] > 0 and shot['damage'] > 0, shot
-            assert 0 <= enemy['mana'] - sample['mana'] <= enemy['manaCost'] * len(sample['shots']) + 2, (enemy, sample)
+                # 'mana' is measured after ItemCheck_PayMana; the cast that
+                # spends the last point legitimately leaves zero.
+                assert shot['mana'] >= 0 and shot['damage'] > 0, shot
+            # Every native debit in the run must own a projectile spawn in the
+            # same frame, and the whole-frame ledger must agree.
+            assert sample['manaPaidWithoutShot'] == 0, sample
+            for row in sample['manaTrace']:
+                if row['debit'] > 0:
+                    assert row['shots'] >= 1, (row, sample)
+            # Native mana regeneration runs between frames, so compare the
+            # per-frame ledger rather than the final pool.
+            charged = sum(row['debit'] for row in sample['manaTrace'])
+            assert charged <= enemy['manaCost'] * len(sample['shots']) + 2, (enemy, sample)
             assert sample['manaPackets'] >= 1, sample
             assert all(hit['nativeDamage'] and hit['target'] == enemy['entityRef'] and hit['damage'] > 0
                        for hit in sample['projectileHits']), sample
@@ -284,10 +309,81 @@ async def verify(args):
                 # NetworkStateSync coalesces at most one equipment/mana packet
                 # per cast frame; verify payment without assuming retransmits.
                 assert sample['manaPackets'] >= 1, sample
-                assert enemy['mana'] - sample['mana'] >= enemy['manaCost'], (enemy, sample)
+                assert charged >= enemy['manaCost'], (enemy, sample)
             if mode == 'amethyst':
                 first = sample['shots'][0]
                 assert first['vy'] * abs((first['tx'] - first['x']) / first['vx']) < first['ty'] - first['y'], first
+
+        # Mana exactly equal to the native cast cost. ItemCheck_PayMana empties
+        # the pool; a post-payment re-check would silently drop the shot, so a
+        # debit with no projectile fails here.
+        enemy = await scene('mana-exact')
+        launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                       'arguments': {'entityRef': enemy['entityRef']}})
+        exact = await manager.invoke('await_task', {'taskId': launch['taskId'], 'milliseconds': 30000})
+        sample = await scene('audit')
+        results['manaExact'] = {'spawn': enemy, 'result': exact, 'audit': sample}
+        assert enemy['mana'] == enemy['manaCost'] > 0, enemy
+        assert sample['manaPaidWithoutShot'] == 0, sample
+        assert sample['shots'], sample
+        first = sample['shots'][0]
+        assert first['Verified'] and first['mana'] == 0 and first['damage'] > 0, first
+        assert [(row['debit'], row['shots']) for row in sample['manaTrace']] == [(enemy['manaCost'], 1)], sample
+        assert len(sample['shots']) == 1, sample
+        assert completed(exact)['target']['EntityRef'] == enemy['entityRef'], exact
+        assert exact['result']['inputsReleased'], exact
+
+        # Every admitted staff must rally the native shot path with its own
+        # projectile; a debit without a spawn is rejected above for each run.
+        staff_modes = ('staff-spark', 'staff-amethyst', 'staff-topaz', 'staff-sapphire',
+                       'staff-emerald', 'staff-ruby', 'staff-diamond', 'staff-amber')
+        for mode in staff_modes:
+            enemy = await scene(mode)
+            launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                           'arguments': {'entityRef': enemy['entityRef']}})
+            result = await manager.invoke('await_task', {'taskId': launch['taskId'], 'milliseconds': 30000})
+            sample = await scene('audit')
+            results[mode] = {'spawn': enemy, 'result': result, 'audit': sample}
+            assert sample['manaPaidWithoutShot'] == 0, sample
+            assert sample['shots'], (mode, sample)
+            assert all(shot['Verified'] and shot['Magic'] and shot['Type'] == enemy['shoot']
+                       and shot['Weapon'] == enemy['weapon'] and shot['Ammo'] == 0
+                       for shot in sample['shots']), (mode, sample)
+            assert any(row['debit'] > 0 and row['shots'] >= 1 for row in sample['manaTrace']), (mode, sample)
+            assert sample['manaPackets'] >= 1 and sample['attackReleased'], (mode, sample)
+            proof = completed(result)
+            assert proof['target']['EntityRef'] == enemy['entityRef'], (mode, proof)
+
+        # Native QuickMana: no mana for the cast, but Mana Flower plus a potion
+        # must still fire. The AI pre-check may not refuse what the engine funds.
+        enemy = await scene('mana-flower')
+        assert enemy['mana'] < enemy['manaCost'] and enemy['potionDelay'] == 0, enemy
+        launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                       'arguments': {'entityRef': enemy['entityRef']}})
+        flower = await manager.invoke('await_task', {'taskId': launch['taskId'], 'milliseconds': 30000})
+        sample = await scene('audit')
+        results['manaFlower'] = {'spawn': enemy, 'result': flower, 'audit': sample}
+        assert flower['status'] == 'completed' and flower['result']['reason'] == 'combat_target_defeated', flower
+        assert sample['manaPaidWithoutShot'] == 0 and sample['shots'], sample
+        assert sample['potions'] < enemy['potions'], sample
+        assert sample['manaFlower'] and sample['manaPackets'] >= 1, sample
+        assert any(row['flower'] and row['manaAfter'] > row['manaBefore'] and row['shots'] >= 1
+                   for row in sample['manaTrace']), sample
+
+        # Mana Flower without any mana potion cannot finance QuickMana. The
+        # cast must be refused rather than faked, with no potion or payment.
+        enemy = await scene('mana-flower-dry')
+        launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                                       'arguments': {'entityRef': enemy['entityRef']}})
+        blocked = await manager.invoke('await_task', {'taskId': launch['taskId'], 'milliseconds': 30000})
+        sample = await scene('audit')
+        results['manaFlowerDry'] = {'spawn': enemy, 'result': blocked, 'audit': sample}
+        assert blocked['status'] == 'failed' and blocked['result']['reason'] == 'combat_mana_unavailable', blocked
+        assert not sample['shots'] and not sample['projectileHits'], sample
+        assert sample['potions'] == enemy['potions'], sample
+        assert not any(row['flower'] for row in sample['manaTrace']), sample
+        assert sample['manaPaidWithoutShot'] == 0, sample
+        assert blocked['result']['inputsReleased'] and not blocked['result']['effectVerified'], blocked
 
         # Magical reflex defense starts with a threat and stays on the same
         # task while a second nearby threat is introduced.
@@ -296,7 +392,7 @@ async def verify(args):
         joined = await scene('magic-defense-join')
         second, bystander = joined['added']['entityRef'], joined['bystander']['entityRef']
         results['magicDefense'] = await defense_finish(action_id, {first: 'combat_target_defeated',
-                                                                   second: 'combat_target_defeated'}, bystander)
+                                                                   second: 'combat_target_defeated'}, bystander, magic=True)
 
         # Magical old projectiles have no authority after the target changes.
         for mode in ('magic-replace', 'magic-cancel'):
