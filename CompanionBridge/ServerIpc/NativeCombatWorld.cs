@@ -18,6 +18,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private static NativeCombatWorld checking;
     private static (Player actor, string world, long generation, string entityRef, ulong tick) recentHurt;
     private readonly Player player = (Player)identity.Actor;
+    private Identity ActorBinding => identity;
     private bool Owned() => ServerAiNativeActions.Owned(identity);
     private NPC npc;
     private AtomicNpcIdentity spawn;
@@ -604,17 +605,18 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         bool magic=CombatBallistics.Family(combat.item)==CombatBallistics.Kind.Magic;
         bool verified=p.type==round.Projectile&&ammo==round.Ammo&&combat.SameSpawn(Main.npc[combat.Target.Slot]);
         if (verified && combat.Summoning) combat.observedRootIdentity=p.identity;
-        return new(combat,combat.targetEpoch,combat.Target,combat.Weapon.TypeId,ammo,magic,
+        return new(combat.ActorBinding,combat,combat.targetEpoch,combat.Target,combat.Weapon.TypeId,ammo,magic,
             p.whoAmI,p.owner,p.identity,p.type,Main.GameUpdateCount,verified);
     }
 
-    internal sealed record Shot(NativeCombatWorld Combat,int Epoch,CombatTarget Target,int Weapon,int Ammo,bool Magic,
+    internal sealed record Shot(AiReadOnlyProtocol.Identity Binding,NativeCombatWorld Combat,int Epoch,CombatTarget Target,int Weapon,int Ammo,bool Magic,
         int Slot,int Owner,int Identity,int Type,ulong Launched,bool Verified,int? ParentIdentity=null)
     {
         internal bool PersistentRoot => (Weapon,Type) is (ItemID.SlimeStaff,ProjectileID.BabySlime)
             or (ItemID.StaffoftheFrostHydra,ProjectileID.FrostHydra);
-        // A persistent body can serve a later action. Only the current target may
-        // receive contact damage. Children keep their epoch from their own spawn.
+        internal bool SummonAttack => PersistentRoot || ParentIdentity.HasValue;
+        // A root can collect evidence for the current task. A child takes a
+        // snapshot of that assignment at birth, including the absence of one.
         internal Shot ForCurrentTarget()
         {
             var task=current;
@@ -635,14 +637,15 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
                 if (parentConfirmed) assignment.Combat.verifiedChildren++;
                 else assignment.Combat.unconfirmedChildren++;
             }
-            var shot=assignment ?? (this with {Epoch=-1});
-            return shot with { Slot=child.whoAmI, Identity=child.identity, Type=child.type,
+            return this with { Combat=assignment?.Combat, Target=assignment?.Target, Epoch=assignment?.Epoch ?? 0,
+                Slot=child.whoAmI, Identity=child.identity, Type=child.type,
                 Launched=Main.GameUpdateCount, ParentIdentity=parentConfirmed ? Identity : null, Verified=parentConfirmed };
         }
 
         internal bool Owns(Projectile p)=>p.whoAmI==Slot&&p.owner==Owner&&p.identity==Identity&&p.type==Type
-            &&ReferenceEquals(Main.projectile[Slot],p)&&Combat.Owned()&&Combat.player.active&&!Combat.player.dead&&!Combat.player.ghost;
-        internal bool Pending(NativeCombatWorld combat,Projectile p)=>Verified&&Combat.fault==null&&ReferenceEquals(combat,Combat)
+            &&ReferenceEquals(Main.projectile[Slot],p)&&ServerAiNativeActions.Owned(Binding)
+            &&Binding.Actor is Player {active:true,dead:false,ghost:false};
+        internal bool Pending(NativeCombatWorld combat,Projectile p)=>Verified&&Combat!=null&&Combat.fault==null&&ReferenceEquals(combat,Combat)
             &&ReferenceEquals(current,Combat)&&Epoch==Combat.targetEpoch&&Owns(p);
         internal void ObserveFault(Projectile p,Exception exception)
         {if(Pending(Combat,p))Combat.fault=exception;}

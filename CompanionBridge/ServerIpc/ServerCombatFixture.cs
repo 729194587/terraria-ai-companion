@@ -32,15 +32,40 @@ internal static class ServerCombatFixture
     private static int? firstCooldown;
     private static readonly List<object> hitTrace=new();
     private static readonly List<object> shots=new(),projectileHits=new(),flightTrace=new();
+    private static readonly List<object> summonDamage=new();
+    private static bool parkIce;
+    private static NativeCombatWorld.Shot parked;
+
+    internal static void ObserveSummonHit(Projectile projectile,NPC npc,int damage,NativeCombatWorld.Shot shot,bool credited)
+    {
+        if(!Enabled)return;
+        summonDamage.Add(new{tick=Main.GameUpdateCount,projectile.type,shot.Launched,shot.Identity,damage,npc.life,credited,
+            target=NativeCombatWorld.Reference(Bound(ProbeSession.Actor),npc)});
+    }
+
+    // Hold the issued ice bolt at the first update across a task handoff. Its
+    // spawn, trajectory, collision and damage all still use the native paths.
+    private static void HoldIce(On_Projectile.orig_Update orig,Projectile p,int index)
+    {
+        if(parkIce && p.active && p.TryGetGlobalProjectile<CombatProjectile>(out var trace)
+            && trace.Flight is {Verified:true, ParentIdentity:not null, Combat:not null} bolt)
+        {
+            parked ??= bolt;
+            if(ReferenceEquals(parked,bolt))return;
+        }
+        orig(p,index);
+    }
+
     internal static void ObserveProjectileSpawn(Projectile projectile,NativeCombatWorld.Shot shot)
     {
         if(!Enabled)return;
         var stack=new System.Diagnostics.StackTrace().ToString();
         if (shot.Verified) verifiedShots++;
+        var aim=shot.Target==null ? null : Main.npc[shot.Target.Slot];
         shots.Add(new{tick=Main.GameUpdateCount,shot.Owner,shot.Identity,shot.Weapon,shot.Ammo,shot.Magic,shot.Verified,
-            shot.Type,shot.Slot,shot.PersistentRoot,x=projectile.Center.X,y=projectile.Center.Y,tx=Main.npc[shot.Target.Slot].Center.X,ty=Main.npc[shot.Target.Slot].Center.Y,
-            targetVx=Main.npc[shot.Target.Slot].velocity.X,targetVy=Main.npc[shot.Target.Slot].velocity.Y,target=shot.Target.EntityRef,vx=projectile.velocity.X,vy=projectile.velocity.Y,
-            mana=shot.Combat.ManaAtLaunch,damage=projectile.damage,
+            shot.Type,shot.Slot,shot.PersistentRoot,x=projectile.Center.X,y=projectile.Center.Y,tx=aim?.Center.X,ty=aim?.Center.Y,
+            targetVx=aim?.velocity.X,targetVy=aim?.velocity.Y,target=shot.Target?.EntityRef,vx=projectile.velocity.X,vy=projectile.velocity.Y,
+            mana=shot.Combat?.ManaAtLaunch,damage=projectile.damage,
             nativeShoot=stack.Contains("ItemCheck_Shoot"),nativeWrapper=stack.Contains("Terraria.Player::ItemCheckWrapped")});
     }
     internal static void ObserveProjectileHit(Projectile p,NPC n,int damage,NativeCombatWorld.Shot shot)
@@ -66,6 +91,7 @@ internal static class ServerCombatFixture
     internal static void Install(Action<Action,Action> install)
     {
         if(!Program.LaunchParameters.ContainsKey("-companioncombattest"))return;
+        install(()=>On_Projectile.Update+=HoldIce,()=>On_Projectile.Update-=HoldIce);
         install(()=>On_Player.ItemCheck+=ObserveItemFrame,()=>On_Player.ItemCheck-=ObserveItemFrame);
         install(()=>On_NetMessage.SendData+=ObservePackets,()=>On_NetMessage.SendData-=ObservePackets);
     }
@@ -226,7 +252,7 @@ internal static class ServerCombatFixture
                     p.dead,generation=ProbeSession.ActorGeneration,summonSyncPackets,focus=p.MinionAttackTargetNPC,babySlime=p.HasBuff(BuffID.BabySlime),p.maxMinions,p.maxTurrets,
                     summons=Main.projectile.Where(q=>q.active && q.TryGetGlobalProjectile<CombatProjectile>(out var trace)
                         && trace.Flight is {PersistentRoot:true}).Select(q=>new {q.type,q.identity,q.whoAmI,q.owner,q.minionSlots,q.sentry,authorized=q.GetGlobalProjectile<CombatProjectile>().Flight.Owns(q)}),
-                    manaTrace=manaTrace.ToArray(),manaPaidWithoutShot,potionPackets,
+                    summonDamage,parkedIce=parked?.Launched,manaTrace=manaTrace.ToArray(),manaPaidWithoutShot,potionPackets,
                     potions=FixturePotions(p),potionDelay=p.potionDelay,manaFlower=p.manaFlower}));
             return;
         }
@@ -277,7 +303,7 @@ internal static class ServerCombatFixture
             int oldSlot=old.whoAmI;
             var bottom=old.Bottom;
             bool live=Main.projectile.Any(projectile=>projectile.active&&projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
-                &&trace.Flight?.Target.Slot==oldSlot);
+                &&trace.Flight?.Target?.Slot==oldSlot);
             old.active=false;
             target=SpawnDefense(p,-300,32,threatening:false,start:oldSlot);
             target.Bottom=bottom;
@@ -291,7 +317,7 @@ internal static class ServerCombatFixture
             int oldSlot=old.whoAmI;
             var bottom=old.Bottom;
             bool live=Main.projectile.Any(projectile=>projectile.active&&projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
-                &&trace.Flight?.Target.Slot==oldSlot&&trace.Flight.Magic);
+                &&trace.Flight?.Target?.Slot==oldSlot&&trace.Flight.Magic);
             if(mode=="magic-replace")
             {
                 old.active=false;
@@ -301,6 +327,30 @@ internal static class ServerCombatFixture
                     slot=target.whoAmI,entityRef=NativeCombatWorld.Reference(Bound(p),target),target.life,live}));
             }
             else File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{live}));
+            return;
+        }
+        if(mode=="release-ice")
+        {
+            parkIce=false;
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),"{}");
+            return;
+        }
+        if(mode=="autonomous-target")
+        {
+            if(target!=null)target.active=false;
+            target=SpawnDefense(p,-165,1800,threatening:false);
+            IgnoreSpellDots(target);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                JsonSerializer.Serialize(DefenseIdentity(p,target)));
+            return;
+        }
+        if(mode=="clear-fixture-summons")
+        {
+            p.ClearBuff(BuffID.BabySlime);
+            foreach(var q in Main.ActiveProjectiles)
+                if(q.TryGetGlobalProjectile<CombatProjectile>(out var trace) && trace.Flight is {SummonAttack:true})
+                    q.Kill();
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),"{}");
             return;
         }
         if(mode=="summon-defense-join")
@@ -385,6 +435,7 @@ internal static class ServerCombatFixture
         }
         lastFrame=lastHit=null;frames=hits=hitViolations=presses=spawnPackets=ammoPackets=manaPackets=0;faultNextPress=false;
         manaPaidWithoutShot=verifiedShots=potionPackets=summonSyncPackets=0;
+        parkIce=mode=="summon-inflight";parked=null;summonDamage.Clear();
         firstCooldown=null;hitTrace.Clear();shots.Clear();projectileHits.Clear();flightTrace.Clear();manaTrace.Clear();
         // Accessory effects are rebuilt each frame, so clear the fixture slot
         // before a mode opts into Mana Flower.
@@ -423,7 +474,7 @@ internal static class ServerCombatFixture
                     JsonSerializer.Serialize(new{first=DefenseIdentity(p,target)}));
                 return;
             }
-            target=SpawnDefense(p,-145,mode.EndsWith("cancel") ? 1800 : 16,threatening:false);
+            target=SpawnDefense(p,-145,mode.EndsWith("cancel") ? 1800 : parkIce ? 8 : slime ? 60 : 240,threatening:false);
             IgnoreSpellDots(target);
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new {
                 entityRef=NativeCombatWorld.Reference(Bound(p),target),target.whoAmI,p.HeldItem.shoot,

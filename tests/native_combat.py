@@ -82,7 +82,13 @@ async def verify(args):
                 assert rows[-1]['life'] == encounter['LastHit']['LifeAfter'] <= 0, (encounter, rows[-1])
             else:
                 assert encounter['LastHit'] is None or not encounter['LastHit']['Defeated']
-        assert {n['entityRef'] for n in sample['survivors']} == ({allowed_survivor} if allowed_survivor else set()), sample
+        survivors = {n['entityRef'] for n in sample['survivors']}
+        allowed = {allowed_survivor} if allowed_survivor else set()
+        if proof.get('summon'):
+            # A bystander can take native damage; it must never enter the receipt.
+            assert survivors <= allowed and all(hit['target'] in expected for hit in sample['projectileHits']), sample
+        else:
+            assert survivors == allowed, sample
         if not magic:
             assert len({hit['tick'] for hit in sample['hitTrace']}) == len(sample['hitTrace']), sample
         if magic:
@@ -105,6 +111,23 @@ async def verify(args):
                                           'arguments': {'entityRef': enemy['entityRef']}})
             assert 'taskId' in launch, launch
             return launch['taskId']
+
+        async def autonomous(family, task, terminal):
+            enemy = await scene('autonomous-target')
+            for _ in range(150):
+                sample = await scene('audit')
+                impacts = [hit for hit in sample['summonDamage'] if hit['target'] == enemy['entityRef']]
+                if impacts:
+                    break
+                await asyncio.sleep(.03)
+            assert impacts and not any(hit['credited'] for hit in impacts), sample
+            assert impacts[0]['life'] < enemy['life'] and impacts[0]['damage'] > 0, impacts
+            if family == 'hydra':
+                assert any(q['tick'] == impacts[0]['Launched'] and q['Type'] == impacts[0]['type']
+                           and q['target'] is None for q in sample['shots']), sample
+            again = await manager.invoke('await_task', {'taskId':task,'milliseconds':1000})
+            assert again['status'] == terminal['status'] and again['result']['task'] == terminal['result']['task'], again
+            return {'spawn':enemy, 'hit':impacts[0]}
 
         for family in ('slime', 'hydra'):
             enemy = await scene(f'summon-{family}-cancel')
@@ -129,7 +152,7 @@ async def verify(args):
             else:
                 assert sample['maxTurrets'] == 1 and all(h['type'] != enemy['shoot'] for h in sample['projectileHits']), sample
             results[family+'Cast'] = sample
-            await asyncio.sleep(1)
+            results[family+'AfterCancel'] = await autonomous(family, task, result)
             later = await scene('audit')
             assert sample['projectileHits'] == later['projectileHits'] and roots[0] in later['summons'], later
             enemy = await scene(f'summon-{family}-reuse')
@@ -150,6 +173,10 @@ async def verify(args):
             assert impact['ProjectileType'] == final['type'] and impact['Owner'] == roots[0]['owner'], impact
             assert impact['ParentIdentity'] == (None if family == 'slime' else roots[0]['identity']), impact
             results[family+'Reuse'] = {'result': result, 'audit': sample}
+
+            results[family+'AfterCompletion'] = await autonomous(family, task, result)
+            if family == 'slime':
+                await scene('clear-fixture-summons')
 
         pair, task_id = await defense_start('summon-defense')
         joined = await scene('summon-defense-join')
@@ -174,10 +201,50 @@ async def verify(args):
         assert all(hit['target'] != replacement['entityRef'] for hit in sample['projectileHits']), sample
         results['summonReplace'] = result
 
+        # Same NPC and owner in both actions. Only the issuing task and
+        # projectile birth distinguish the lethal bolt from a new task's hit.
+        await scene('clear-fixture-summons')
+        enemy = await scene('summon-inflight')
+        first_task = await attack(enemy)
+        for _ in range(150):
+            sample = await scene('audit')
+            if sample['parkedIce'] is not None:
+                break
+            await asyncio.sleep(.03)
+        launch_tick = sample['parkedIce']
+        assert launch_tick is not None and not sample['summonDamage'], sample
+        cancelled = await manager.invoke('cancel_task', {'taskId':first_task})
+        assert cancelled['status'] == 'cancelled', cancelled
+        second_task = await attack(enemy)
+        await wait_for(lambda a: a['actionId'] == second_task and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
+        await scene('release-ice')
+        terminal = await manager.invoke('await_task', {'taskId':second_task,'milliseconds':5000})
+        sample = await scene('audit')
+        assert terminal['result']['reason'] == 'combat_target_invalidated' and not terminal['result']['effectVerified'], terminal
+        assert any(h['Launched'] == launch_tick and h['life'] <= 0 and not h['credited']
+                   and h['target'] == enemy['entityRef'] for h in sample['summonDamage']), sample
+        assert not sample['projectileHits'], sample
+        results['oldIce'] = {'result':terminal,'hits':sample['summonDamage']}
+        if not lifecycle:
+            await scene('clear-fixture-summons')
+
         if lifecycle:
+            # Exercise revocation with both a contact minion and a firing sentry.
+            slime_enemy = await scene('summon-slime-cancel')
+            slime_task = await attack(slime_enemy)
+            for _ in range(100):
+                sample = await scene('audit')
+                if any(h['type'] == slime_enemy['shoot'] and h['credited'] for h in sample['summonDamage']):
+                    break
+                await asyncio.sleep(.03)
+            assert any(h['type'] == slime_enemy['shoot'] and h['credited'] for h in sample['summonDamage']), sample
+            stopped = await manager.invoke('cancel_task', {'taskId':slime_task})
+            assert stopped['status'] == 'cancelled', stopped
             enemy = await scene('summon-hydra-cancel')
             task = await attack(enemy)
             await wait_for(lambda a: a['actionId'] == task and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
+            before = await scene('audit')
+            assert {q['type'] for q in before['summons'] if q['authorized']} == {slime_enemy['shoot'], enemy['shoot']}, before
             if lifecycle == 'disconnect':
                 bridge.close()
                 # Audit through the fixture filesystem after closing the owner connection.
@@ -201,7 +268,7 @@ async def verify(args):
             assert later['inputScopeReleased'] and later['attackReleased'], later
             assert not any(q['authorized'] for q in later['summons']), later
             assert first['projectileHits'] == later['projectileHits'], later
-            assert all(q['life'] == boundary['life'] for q in later['survivors']), later
+            assert len(later['survivors']) == 1 and later['survivors'][0]['life'] == boundary['life'], later
             results[lifecycle] = {'boundary': boundary, 'audit': later}
 
     try:

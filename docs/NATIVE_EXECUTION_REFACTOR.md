@@ -171,9 +171,15 @@ P4-B 已经使用虚拟鼠标和原生 `Player.ItemCheck()`。
 `combat_attack` 与被动防御共用原生输入。每项任务可尝试一次部署，同武器已有可信本体时直接复用，即使当前魔力不足以施放。召唤槽、哨兵容量、Buff、原生替换与消失规则由引擎执行。当前策略维护一个同型本体；多槽配装、全自动补召、其他仆从与哨兵、鞭、模组武器、Boss 和多段 NPC 均在本阶段支持范围外。
 
 - **施放与命中。** `NativeCombatWorld.cs` 经 `NativeItemInput`、`ItemCheckWrapped` 和 `ItemCheck_Shoot` 施放。`progress.summon` 分别记录输入尝试、进入原生发射、已观察到的本体身份、仆从 Buff 及子弹幕来源计数。部署情况只描述已采样的状态。击败仍要求同一 NPC 实例的原生致死命中与终态确认；`lastHit.Summon` 增加弹幕类型、所有者、弹幕身份、父身份、生成帧和目标 epoch。字段由 `CombatController.cs` 和 Python 结果 Schema 共同定义。
-- **服务器权限。** `CombatBallistics.cs` 在核验本体或子弹幕的原生 `Projectile.Update` 内借用 owner 身份。寒霜九头蛇本体是无接触伤害的 sentry；引擎在本体 AI 中检查 `Main.myPlayer == owner`，再用 `GetProjectileSource_FromThis()` 发射冰弹。仆从接触伤害使用本帧的任务目标，冰弹固定使用自己生成时的目标 epoch。本体的原生聚焦目标和全局玩家索引在退出作用域时恢复。缺少父来源证明的同期冰弹计入未确认观察，不授予伤害归因。
-- **生命周期。** 取消或 IPC 断开后释放输入，保留原生召唤物；任务结束后不再授权其对 NPC 造成任务伤害。后续任务可重新使用同一绑定下的可信本体。实测死亡后史莱姆与 Buff 消失，观察期内哨兵仍存在且失去授权。注入 generation 变化时两个本体仍存在，旧身份均无法继续行使权限。实际 IPC 断开与 Actor 代次变更分别验证。
+- **服务器权限。** `CombatBallistics.cs` 在核验本体或子弹幕的原生 `Projectile.Update` 内借用 owner 身份。寒霜九头蛇本体是无接触伤害的 sentry；引擎在本体 AI 中检查 `Main.myPlayer == owner`，再用 `GetProjectileSource_FromThis()` 发射冰弹。仆从接触伤害按命中帧的任务目标核验证据，冰弹的任务归属固定在生成帧。本体的原生聚焦目标和全局玩家索引在退出作用域时恢复。缺少父来源证明的同期冰弹计入未确认观察，不授予伤害归因。
+- **生命周期。** 取消或 IPC 断开后释放输入，保留原生召唤物。任务外的原生攻击行为见下方 R2-D.1.1。后续任务可重新使用同一绑定下的可信本体。实测死亡后史莱姆与 Buff 消失，观察期内哨兵仍存在且失去授权。注入 generation 变化时两个本体仍存在，旧身份均无法继续行使权限。实际 IPC 断开与 Actor 代次变更分别验证。
 - **定向验证。** `tests/native_combat.py` 通过 Lua/IPC 战斗入口或任务协调器验证原生扣费、实体、同步包调用、满容量复用、后续击杀、取消、双目标防御、NPC 槽复用，以及近战、弓枪和魔法回归。独立生命周期场景在运行 `tests/verify_server_ai_direct_input_native.ps1 -Combat` 前分别设置 `COMPANION_COMBAT_CASE` 为 `summon-death`、`summon-generation`、`summon-disconnect`。本次通过的构建包 SHA-256 为 `49C590BE6B01A5FF2F8653A796FDC534F0AD4CA66F6AA002DD1310AD5982BC23`。远端客户端的渲染、收包和 UI 显示仍待实测。
+
+### R2-D.1.1 任务外自主攻击
+
+基于 `4986016`。Baby Slime 与 Frost Hydra 的冰弹持有生成时的 Actor 绑定和原生弹幕身份。在绑定仍有效时，NPC 命中交由 Terraria 判定。活动任务仅在更新期间临时指定焦点，命中回执仍须匹配任务、NPC 实例和目标 epoch。任务外生成的冰弹没有任务归属；已发射的冰弹保留生成时的归属。取消、正常结束和 IPC 断开均不遣散召唤物。角色死亡或 generation 改变后停止授予旧身份原生权限。
+
+**隔离 Dedicated Server 实验**（tModLoader `2026.09.3.1`）。在取消和正常完成后分别生成新的 1800 HP NPC，观察到 Baby Slime 的接触伤害和 Frost Hydra 新冰弹造成的实际掉血；再次查询原任务得到相同的终态回执。已有本体随后可复用。跨任务用例在诊断 fixture 中将旧任务的原生冰弹延迟至新任务开始，再恢复原生更新。冰弹击杀同一 NPC，新任务返回 `combat_target_invalidated`，`effectVerified=false`。同一构建通过了目标 epoch、NPC 槽位复用及既有近战、弓枪、魔法战斗回归。包 SHA-256 为 `99FB1858CE11C1F68A4E90A15AD655C8ADF2CB94427AF30034D2274F7300BA91`。本次未进行真人客户端或全量回归验证。
 
 ## 5. 不属于本次重构范围的内容
 
