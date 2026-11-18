@@ -84,10 +84,8 @@ public sealed class ServerAiSystem : ModSystem
             // Copied-world tests opt in so their staged inventory/placement
             // probes continue to exercise only the actions under test.
             if(!ServerAiActionFixture.Enabled||Program.LaunchParameters.ContainsKey("-companiontorchtest"))
-            {
                 torches=new(native);
-                actions.MaintenanceBusy=()=>torches.Busy;
-            }
+            actions.MaintenanceBusy=()=>torches?.Busy==true || NativeCombatWorld.Maintaining;
             server = new(port,actions);
             server.Start();
             spawnPending = true;
@@ -126,9 +124,11 @@ public sealed class ServerAiSystem : ModSystem
                 }
                 catch(Exception e){Mod.Logger.Error("Combat threat evaluation failed.",e);}
             }:null);
+            if(simulationUpdate)
+                NativeCombatWorld.TickMaintenance(actor,actions.HasActive||actions.BodyBlocked(actor)||torches?.Busy==true||threatened);
             if(simulationUpdate&&torches!=null&&(!ServerTorchFixture.Hold||torches.Busy))
             {
-                try{torches.Tick(actor,actions.HasActive||threatened||actions.BodyBlocked(actor));}
+                try{torches.Tick(actor,NativeCombatWorld.Maintaining||actions.HasActive||threatened||actions.BodyBlocked(actor));}
                 catch(Exception e)
                 {
                     Mod.Logger.Error("Autonomous torch maintenance stopped.",e);

@@ -538,6 +538,18 @@ internal static class ActorMining
         NetworkStateSync.Require(p);NetMessage.SendData(MessageID.PlayerControls,-1,-1,null,p.whoAmI);
         NetMessage.SendData(MessageID.ShotAnimationAndSound,-1,-1,null,p.whoAmI);
     }
+    private static bool CanRestoreSwap(Context c,Player p)=>c.Displaced!=null
+        && ReferenceEquals(p.inventory[c.Slot],c.Item) && ReferenceEquals(p.inventory[c.SourceSlot],c.Displaced);
+
+    // Combat admission may inspect the exact hotbar item this mining run will restore.
+    // Execution must still verify the physical slot after ownership transfers.
+    internal static Item AfterRelease(Player p,string world,long generation,int slot)
+    {
+        var c=Current;
+        return Running && ReferenceEquals(c.Actor,p) && c.World==world && c.Generation==generation
+            && c.Slot==slot && CanRestoreSwap(c,p)?c.Displaced:p.inventory[slot];
+    }
+
     private static void End(Context c,ActionPhase phase,Failure reason,string detail="")
     {
         c.Phase=phase;c.Reason=reason;c.Detail=detail;
@@ -550,8 +562,7 @@ internal static class ActorMining
             if(c.SelectionChanged)
             {
                 // Swap back only the same two entries. Never overwrite an unrelated inventory change.
-                if(c.Displaced!=null&&ReferenceEquals(p.inventory[c.Slot],c.Item)
-                    &&ReferenceEquals(p.inventory[c.SourceSlot],c.Displaced))
+                if(CanRestoreSwap(c,p))
                     Utils.Swap(ref p.inventory[c.Slot],ref p.inventory[c.SourceSlot]);
                 if(p.selectedItem==c.Slot)p.selectedItem=c.OriginalSlot;
                 NetworkStateSync.Full(p);

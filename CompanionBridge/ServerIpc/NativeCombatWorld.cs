@@ -11,7 +11,7 @@ using Identity = CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity;
 
 namespace CompanionBridge.ServerIpc;
 
-internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation navigation, string actionId, string entityRef, Func<Identity,string,bool> reflexAllowed = null) : ICombatWorld
+internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavigation navigation, string actionId, string entityRef, Func<Identity,string,bool> reflexAllowed = null,AiAtomicActions.CombatAdmission admission=null) : ICombatWorld
 {
     private const int ThreatRange = 112, AcquireRange = 640, SwingGap = 34;
     private static NativeCombatWorld current;
@@ -96,6 +96,154 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             || ActorItemUse.Supported(i) && i.useStyle == ItemUseStyleID.Swing
                 && i.CountsAsClass(Terraria.ModLoader.DamageClass.Melee) && !i.noMelee && !i.noUseGraphic);
 
+    private sealed record WeaponRole(int Key,int Type);
+    private static Identity configuredActor;
+    private static WeaponRole primary,secondary,summonRole;
+    private bool waitingSwitch;
+    private int pendingSlot=-1;
+    private ulong pendingSince;
+    private static long version;
+    private sealed record Refusal(string reason,ulong gameUpdate,string entityRef);
+    private static Refusal lastRefusal;
+    internal static void ClearLoadout()
+    {
+        configuredActor=null;
+        if(Maintaining)current.EndMaintenance(false);
+        primary=secondary=summonRole=null;
+        ResetMaintenance();
+        lastRefusal=null;
+        version=0;
+    }
+
+    internal static Func<bool> CapturePrimary(Identity frame)
+    {
+        if(!Configured(frame))return null;
+        var revision=version;
+        var p=(Player)frame.Actor;
+        Item Instance(WeaponRole role,bool beforeRelease)=>role==null?null:
+            beforeRelease?ActorMining.AfterRelease(p,frame.World,frame.Generation,HotbarSlots.ToInventorySlot(role.Key)):
+            p.inventory[HotbarSlots.ToInventorySlot(role.Key)];
+        var first=Instance(primary,true);
+        var second=Instance(secondary,true);
+        return ()=>MatchesLoadout(frame) && version==revision && ReferenceEquals(first,Instance(primary,false))
+            && ReferenceEquals(second,Instance(secondary,false));
+    }
+
+    private static bool MatchesLoadout(Identity frame) => configuredActor!=null
+        && ReferenceEquals(frame.Actor,configuredActor.Actor) && frame.World==configuredActor.World
+        && frame.Generation==configuredActor.Generation && frame.Slot==configuredActor.Slot;
+    private static bool Configured(Identity frame)=>MatchesLoadout(frame)&&(primary!=null||secondary!=null||summonRole!=null);
+    private static bool SupportedRole(Item weapon)=>WeaponSupported(weapon) && SummonRoot(weapon)==0;
+
+    internal static string LoadoutFamily(Item item)
+    {
+        if(!WeaponSupported(item))return null;
+        if(SummonRoot(item)!=0)return "summon";
+        return CombatBallistics.Family(item) switch { CombatBallistics.Kind.Ranged=>"ranged",
+            CombatBallistics.Kind.Magic=>"magic", _=>"melee" };
+    }
+
+    internal static string Configure(Identity frame,System.Text.Json.JsonElement args)
+    {
+        string ReadRole(string name,out WeaponRole next)
+        {
+            next=null;
+            if(!args.TryGetProperty(name,out var role))return null;
+            int key=role.GetProperty("hotbarKey").GetInt32(),index=HotbarSlots.ToInventorySlot(key);
+            var weapon=((Player)frame.Actor).inventory[index];
+            if(ActorInventory.Token(frame,weapon,index)!=role.GetProperty("inventoryToken").GetString())
+                return "stale_inventory_token";
+            if(weapon.type!=role.GetProperty("expectedTypeId").GetInt32() || !(name=="summon"?WeaponSupported(weapon)&&SummonRoot(weapon)!=0:SupportedRole(weapon)))
+                return $"combat_{name}_unsupported";
+            next=new(key,weapon.type);
+            return null;
+        }
+        if(ReadRole("primary",out var first) is {} error)return error;
+        if(ReadRole("secondary",out var second) is {} invalid)return invalid;
+        if(ReadRole("summon",out var staff) is {} summonError)return summonError;
+        if(first!=null && first.Key==second?.Key || staff!=null && (staff.Key==first?.Key || staff.Key==second?.Key))
+            return "combat_duplicate_weapon_slot";
+        version=MatchesLoadout(frame)?version+1:1;
+        lastRefusal=null;
+        configuredActor=frame;
+        primary=first;
+        secondary=second;
+        summonRole=staff;
+        ResetMaintenance();
+        return null;
+    }
+
+    private readonly record struct Candidate(int Slot,Item Item,string Error);
+    private static Candidate Inspect(Player player,WeaponRole role,string name,Identity handoff=null)
+    {
+        int slot=HotbarSlots.ToInventorySlot(role.Key);
+        var item=handoff==null?player.inventory[slot]:ActorMining.AfterRelease(player,handoff.World,handoff.Generation,slot);
+        bool supported=name=="summon"?WeaponSupported(item)&&SummonRoot(item)!=0:SupportedRole(item);
+        string error=item.type!=role.Type || !supported?$"combat_{name}_unavailable":
+            name=="summon"?SummonRefusal(player,item):ShotRefusal(player,item);
+        return new(slot,item,error);
+    }
+
+    internal static object Loadout(Identity frame)
+    {
+        bool bound=MatchesLoadout(frame);
+        object Describe(WeaponRole role,string name)
+        {
+            if(!bound || role==null)return null;
+            var choice=Inspect((Player)frame.Actor,role,name);
+            return new {hotbarKey=role.Key,expectedTypeId=role.Type,actualTypeId=choice.Item.type,
+                available=choice.Error==null,reason=choice.Error};
+        }
+        return new {version=bound?version:0,lastRefusal=bound?lastRefusal:null,
+            primary=Describe(primary,"primary"),secondary=Describe(secondary,"secondary"),summon=Describe(summonRole,"summon"),
+            maintenance=bound && summonRole!=null?MaintenanceState():null};
+    }
+
+    private static bool Effective(Player player,NPC enemy,Candidate candidate,bool retaining)
+    {
+        if(CombatBallistics.Supported(candidate.Item))
+            return Vector2.Distance(CombatBallistics.Muzzle(player),enemy.Center)<=CombatBallistics.Range(candidate.Item)-(retaining?0:8)
+                && CombatBallistics.ReadRound(player,candidate.Item,out var round)==null
+                && CombatBallistics.Aim(player,enemy,candidate.Item,round,out _);
+        // Keep the current stance through a one-tile band around melee reach.
+        int margin=retaining?8:-8;
+        return Math.Abs(player.Center.X-enemy.Center.X)<=(player.width+enemy.width)/2+SwingGap+margin
+            && Math.Abs(player.Center.Y-enemy.Center.Y)<=(player.height+enemy.height)/2+10 && Visible(player,enemy);
+    }
+
+    private static Candidate Choose(Identity frame,NPC enemy,int currentSlot=-1,bool handoff=false)
+    {
+        var p=(Player)frame.Actor;
+        if(!Configured(frame))
+        {
+            var held=p.HeldItem;
+            return new(p.selectedItem,held,p.selectedItem is <0 or >9 || !WeaponSupported(held)
+                ?"combat_weapon_unsupported":ShotRefusal(p,held));
+        }
+        if(primary==null && secondary==null)return new(-1,null,"combat_attack_weapon_unconfigured");
+        if(primary==null)return Inspect(p,secondary,"secondary",handoff?frame:null);
+        var first=Inspect(p,primary,"primary",handoff?frame:null);
+        if(secondary==null)return first;
+        var second=Inspect(p,secondary,"secondary",handoff?frame:null);
+        if(second.Error!=null)return first;
+        if(first.Error!=null)return second;
+        bool primaryRanged=CombatBallistics.Supported(first.Item),secondaryRanged=CombatBallistics.Supported(second.Item);
+        if(primaryRanged!=secondaryRanged)
+        {
+            var melee=primaryRanged?second:first;
+            var shot=primaryRanged?first:second;
+            if(Effective(p,enemy,melee,currentSlot==melee.Slot))return melee;
+            if(Effective(p,enemy,shot,currentSlot==shot.Slot))return shot;
+            return first;
+        }
+        if(Effective(p,enemy,first,currentSlot==first.Slot))return first;
+        return Effective(p,enemy,second,currentSlot==second.Slot)?second:first;
+    }
+
+    private static bool MiningSwing(Identity frame) => Configured(frame)
+        && ActorMining.Running && ActorMining.Current is {} mining && ReferenceEquals(mining.Actor,frame.Actor)
+        && mining.World==frame.World && mining.Generation==frame.Generation;
+
     private static string ShotRefusal(Player p,Item held)
     {
         int root=SummonRoot(held);
@@ -126,9 +274,9 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     {
         if (!ServerAiNativeActions.Owned(identity)) return "actor_binding_changed";
         var p = (Player)identity.Actor;
-        if (Resolve(identity, entityRef) == null) return "combat_target_unavailable";
-        if (p.selectedItem is < 0 or > 9 || !WeaponSupported(p.HeldItem)) return "combat_weapon_unsupported";
-        return !GameNavigation.Ordinary(p) || p.noItems || p.CCed ? "combat_actor_state_unsupported" : ShotRefusal(p,p.HeldItem);
+        var enemy=Resolve(identity,entityRef);
+        if (enemy == null) return "combat_target_unavailable";
+        return !GameNavigation.Ordinary(p,MiningSwing(identity)) || p.noItems || p.CCed ? "combat_actor_state_unsupported" : Choose(identity,enemy,handoff:true).Error;
     }
 
     internal static void RecordHurt(Player p, int sourceNpc)
@@ -154,8 +302,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     {
         if (identity?.CanAct != true || !ServerAiNativeActions.Owned(identity)) return null;
         var p = (Player)identity.Actor;
-        if (p.selectedItem is < 0 or > 9 || !WeaponSupported(p.HeldItem) || !GameNavigation.Ordinary(p,combatSwing)
-            || p.noItems || p.CCed || !combatSwing && ShotRefusal(p,p.HeldItem)!=null) return null;
+        if (!GameNavigation.Ordinary(p,combatSwing || MiningSwing(identity)) || p.noItems || p.CCed) return null;
         (string entityRef,string threat)? nearest=null;
         float best = float.PositiveInfinity;
         for (int i = 0; i < Main.maxNPCs; i++)
@@ -166,6 +313,11 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             if(allowed?.Invoke(reference)==false)continue;
             var reason=ThreatReason(identity,p,n,reference);
             if(reason==null)continue;
+            if(!combatSwing && Choose(identity,n,handoff:true).Error is {} refusal)
+            {
+                if(MatchesLoadout(identity))lastRefusal=new(refusal,identity.GameUpdate,reference);
+                return null;
+            }
             if(reason=="recent_native_npc_damage")return (reference,reason);
             float distance=Vector2.DistanceSquared(p.Center,n.Center);
             if(distance<best){best=distance;nearest=(reference,reason);}
@@ -179,7 +331,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         spawn=next.GetGlobalNPC<AtomicNpcIdentity>();
         spawnToken=spawn.Token;
         Target=new(next.whoAmI,next.type,reference);
-        LastHit=null;targetEpoch++;attemptedFiringPositions.Clear();
+        lastMelee=lastSummon=LastHit=null;pendingSlot=-1;targetEpoch++;attemptedFiringPositions.Clear();
         missedSwings=0;
     }
 
@@ -191,12 +343,14 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         if(reflexAllowed!=null&&ThreatReason(identity with{GameUpdate=Main.GameUpdateCount},player,npc,entityRef)==null)
             return "combat_target_unavailable";
         BindTarget(npc,entityRef);
-        if (player.selectedItem is < 0 or > 9 || !WeaponSupported(player.HeldItem)) return "combat_weapon_unsupported";
+        if(admission?.SameWeapon?.Invoke()==false)return "combat_weapon_changed";
+        var choice=Choose(identity,npc);
+        if(choice.Error!=null)return choice.Error;
+        slot=choice.Slot;
+        item=choice.Item;
         if (!GameNavigation.Ordinary(player) || player.noItems || player.CCed) return "combat_actor_state_unsupported";
         if (!ServerAiNativeActions.BodyIdle(identity)) return "actor_busy";
-        if(ShotRefusal(player,player.HeldItem) is {} shotFailure)return shotFailure;
-        slot = player.selectedItem;
-        item = player.HeldItem;
+
         Weapon = new(slot, item.type, item.Name);
         return null;
     }
@@ -204,7 +358,65 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     public void Acquire()
     {
         if (current != null) throw new InvalidOperationException("Combat input already owned.");
+        if(!Owned() || !ServerAiNativeActions.BodyIdle(identity) || !ReferenceEquals(player.inventory[slot],item))
+            throw new InvalidOperationException("Combat weapon handoff changed.");
+        int previousSlot=player.selectedItem;
+        if(player.selectedItem!=slot)ActorItemUse.Select(player,identity.World,identity.Generation,slot);
+        if(!ValidWeapon())throw new InvalidOperationException("Combat weapon selection unconfirmed.");
+        RecordSelection(previousSlot);
         current = this;
+    }
+
+    private void RecordSelection(int previousSlot)
+    {
+        if(!Configured(identity))return;
+        string role=primary?.Key==HotbarSlots.KeyForInventorySlot(slot)?"primary":"secondary";
+        Weapon=Weapon with {Selection=new(role,version,previousSlot,Main.GameUpdateCount,
+            admission?.Update??Main.GameUpdateCount,admission?.InterruptedAction)};
+    }
+
+    private string ReassessWeapon(out bool waiting)
+    {
+        waiting=waitingSwitch=false;
+        if(!MatchesLoadout(identity) || secondary==null || primary==null)return null;
+        if(admission?.SameWeapon?.Invoke()==false)return "combat_weapon_changed";
+        var choice=Choose(identity,npc,slot);
+        if(choice.Error!=null || choice.Slot==slot)
+        {
+            pendingSlot=-1;
+            return null; // Current weapon handles resource exhaustion and pending shots.
+        }
+        if(pendingSlot!=choice.Slot)
+        {
+            pendingSlot=choice.Slot;
+            pendingSince=Main.GameUpdateCount;
+        }
+        // Geometry can alternate between adjacent ticks at the last clear ballistic arc.
+        // Resource loss is definitive and only waits for the native item cycle.
+        if(Main.GameUpdateCount-pendingSince<3 && ShotRefusal(player,item)==null)
+        {
+            waiting=waitingSwitch=true;
+            return null;
+        }
+        if(player.itemAnimation!=0 || player.itemTime!=0 || player.reuseDelay!=0 || player.channel)
+        {
+            waiting=waitingSwitch=true;
+            return null;
+        }
+        if(approach?.Status=="running")navigation.Stop("cancelled","combat_weapon_switch");
+        if(approach?.Status=="unknown")return "combat_native_unconfirmed";
+        approach=null;
+        int previous=slot;
+        ActorItemUse.Select(player,identity.World,identity.Generation,choice.Slot);
+        slot=choice.Slot;
+        item=choice.Item;
+        Weapon=new(slot,item.type,item.Name);
+        if(!ValidWeapon())return "combat_native_unconfirmed";
+        RecordSelection(previous);
+        pendingSlot=-1;
+        missedSwings=0;
+        attemptedFiringPositions.Clear();
+        return null;
     }
 
     private bool SameSpawn(NPC n) => Target != null && ReferenceEquals(npc, n) && n.type == Target.TypeId
@@ -256,6 +468,8 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             if (approach.ReasonDetail != null) throw new InvalidOperationException(approach.ReasonDetail);
             return "combat_native_unconfirmed";
         }
+        if(ReassessWeapon(out var waiting) is {} failure)return failure;
+        if(waiting){phase="switch_weapon";return null;}
         if (Summoning)
         {
             int rootType=SummonRoot(item);
@@ -452,13 +666,13 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         ulong tick = Main.GameUpdateCount;
         if (checking != null || fault != null || !ServerAiNativeActions.Owned(identity)
             || !NativeSurvival.Owns(player) || player.dead || player.ghost || player.noItems || player.CCed
-            || !SameSpawn(Main.npc[Target.Slot]) || !StillEligible(npc) || !ValidWeapon()
+            || !ItemContextValid() || !ValidWeapon()
             || !inputs.BeginItemCheck(tick)) return;
         if(player.itemAnimation==0)drainSwing=false;
         try
         {
             checking = this;
-            Vector2 aim=npc.Center;
+            Vector2 aim=maintenance?player.Center:npc.Center;
             bool ready=player.itemTime==0&&player.reuseDelay==0;
             bool press;
             if(Ranged)
@@ -469,23 +683,23 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
                 if (Summoning)
                 {
                     int root=SummonRoot(item);
-                    if (canPress && !drainSwing && !summonAttempted && FindSummon(player,root)==null
+                    if (canPress && (!maintenance || !maintenanceYield && SafeToCast(player) && SummonRefusal(player,item)==null) && !drainSwing && !summonAttempted && FindSummon(player,root)==null
                         && CombatBallistics.ManaAffordable(player,item))
                     {
-                        aim = root == ProjectileID.FrostHydra ? player.Center : npc.Center;
+                        aim = maintenance || root == ProjectileID.FrostHydra ? player.Center : npc.Center;
                         firing = new(root,AmmoID.None,0);
                         summonAttempted=true;
                     }
                 }
-                else if(!drainSwing&&canPress&&CombatBallistics.ReadRound(player,item,out var round)==null
+                else if(!waitingSwitch&&!drainSwing&&canPress&&CombatBallistics.ReadRound(player,item,out var round)==null
                     &&CombatBallistics.Aim(player,npc,item,round,out aim))firing=round;
                 press=firing.HasValue;
             }
-            else press=player.itemAnimation==0&&ready&&player.releaseUseItem&&CanSwing();
+            else press=!waitingSwitch&&player.itemAnimation==0&&ready&&player.releaseUseItem&&CanSwing();
             var previousHit=LastHit;
             if (press || player.itemAnimation > 0)
             {
-                player.direction = npc.Center.X < player.Center.X ? -1 : 1;
+                if(!maintenance)player.direction = npc.Center.X < player.Center.X ? -1 : 1;
                 inputs.Swing(tick);
             }
             // The native local-input path owns the release latch. The AI
@@ -562,7 +776,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         if(combat.Owned() && CombatStrikeEvidence.Observe(combat.SameSpawn(Main.npc[combat.Target.Slot]),
             before,target.life,damage,target.active,Main.GameUpdateCount) is {} receipt)
         {
-            combat.LastHit=receipt;
+            combat.lastMelee=combat.LastHit=receipt with {MeleeWeaponType=combat.Weapon.TypeId};
             combat.missedSwings=0;
         }
         return damage;
@@ -572,8 +786,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     {
         var combat=checking;
         if(!InInputScope(p)||!AllowsItem(p)||combat.inShoot||combat.firing is not {} round||p.whoAmI!=slot
-            ||!ReferenceEquals(held,combat.item)||!combat.ValidWeapon()||!combat.StillEligible(combat.npc)
-            ||!combat.SameSpawn(Main.npc[combat.Target.Slot]))return;
+            ||!ReferenceEquals(held,combat.item)||!combat.ValidWeapon()||!combat.ItemContextValid())return;
         bool magic=CombatBallistics.Family(held)==CombatBallistics.Kind.Magic;
         Item ammo=null;int stack=0;
         // ItemCheck_PayMana -> CheckMana already paid (or financed through
@@ -603,7 +816,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             ||!ReferenceEquals(source.Item,combat.item))return null;
         int ammo=source is EntitySource_ItemUse_WithAmmo withAmmo?withAmmo.AmmoItemIdUsed:AmmoID.None;
         bool magic=CombatBallistics.Family(combat.item)==CombatBallistics.Kind.Magic;
-        bool verified=p.type==round.Projectile&&ammo==round.Ammo&&combat.SameSpawn(Main.npc[combat.Target.Slot]);
+        bool verified=p.type==round.Projectile&&ammo==round.Ammo&&combat.ItemContextValid();
         if (verified && combat.Summoning) combat.observedRootIdentity=p.identity;
         return new(combat.ActorBinding,combat,combat.targetEpoch,combat.Target,combat.Weapon.TypeId,ammo,magic,
             p.whoAmI,p.owner,p.identity,p.type,Main.GameUpdateCount,verified);
@@ -620,9 +833,9 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         internal Shot ForCurrentTarget()
         {
             var task=current;
-            if (!PersistentRoot || task == null || task.fault != null || !Combat.Owned()
+            if (!PersistentRoot || task?.Target == null || task.fault != null || !Combat.Owned()
                 || !ReferenceEquals(task.player,Combat.player) || !task.ValidWeapon()
-                || task.item.type != Weapon || !task.Owned()) return null;
+                || !(task.item.type==Weapon || MatchesLoadout(task.ActorBinding) && summonRole?.Type==Weapon) || !task.Owned()) return null;
             if (!task.SameSpawn(Main.npc[task.Target.Slot]) || !task.StillEligible(task.npc)) return null;
             return ReferenceEquals(task,Combat) && Epoch==task.targetEpoch ? this
                 : this with { Combat=task, Epoch=task.targetEpoch, Target=task.Target };
@@ -646,7 +859,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             &&ReferenceEquals(Main.projectile[Slot],p)&&ServerAiNativeActions.Owned(Binding)
             &&Binding.Actor is Player {active:true,dead:false,ghost:false};
         internal bool Pending(NativeCombatWorld combat,Projectile p)=>Verified&&Combat!=null&&Combat.fault==null&&ReferenceEquals(combat,Combat)
-            &&ReferenceEquals(current,Combat)&&Epoch==Combat.targetEpoch&&Owns(p);
+            &&ReferenceEquals(current,Combat)&&Epoch==Combat.targetEpoch&&Owns(p)&&Combat.ValidWeapon();
         internal void ObserveFault(Projectile p,Exception exception)
         {if(Pending(Combat,p))Combat.fault=exception;}
         private bool SameTarget(Projectile p,NPC target)=>Pending(Combat,p)&&target.whoAmI==Target.Slot
@@ -657,8 +870,9 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             if(!SameTarget(p,target)||CombatStrikeEvidence.Observe(true,before,target.life,damage,target.active,Main.GameUpdateCount) is not {} hit)
                 return false;
             Combat.LastHit=PersistentRoot || ParentIdentity.HasValue
-                ? hit with { Summon=new(Owner,Type,Identity,ParentIdentity,Launched,Epoch) }
-                : hit;
+                ? hit with { Summon=new(Owner,Type,Identity,ParentIdentity,Launched,Epoch){WeaponType=Weapon} }
+                : hit with {Projectile=new(Weapon,Ammo,Type,Owner,Identity,Epoch,Launched)};
+            if(SummonAttack)Combat.lastSummon=Combat.LastHit;
             return true;
         }
     }

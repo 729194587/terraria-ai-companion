@@ -159,19 +159,20 @@ def inventory_scope(*modes):
 
 
 INVENTORY_FIELDS = {**QUERY_METADATA, 'inspectedSlots': array(I)}
+COMBAT_CANDIDATES = array(obj({'slot':I, 'family':enum('melee','ranged','magic','summon')}))
 INVENTORY = any_of(
     obj({**INVENTORY_FIELDS, **PLAYER_FIELDS, 'inventoryScope': inventory_scope('full'),
          **dict.fromkeys(('inventory', 'equipment', 'dyes', 'miscEquipment', 'miscDyes'), array(FULL_SLOT)),
          'buffs': array(obj({'slot': I, 'typeId': I, 'timeTicks': I, 'contentKey': nullable(S)})),
-         'buffScope': S, 'scope': S, 'functionalEquipmentSlots': array(ref('EquipmentSlot'))}),
+         'buffScope': S, 'scope': S, 'functionalEquipmentSlots': array(ref('EquipmentSlot')), 'combatCandidates':COMBAT_CANDIDATES},optional=('combatCandidates',)),
     obj({**INVENTORY_FIELDS, **ITEM_ID, 'status': const('ok'), 'inventoryScope': inventory_scope('item'),
          'count': COUNT, 'slots': array(obj({**SLOT_FIELDS, 'stack': I})), 'scope': S}),
     obj({**INVENTORY_FIELDS, 'status': enum('unknown_item', 'ambiguous_item'), 'inventoryScope': inventory_scope('item'),
          'candidates': array(obj(ITEM_ID)), 'truncated': B}),
     obj({**INVENTORY_FIELDS, 'status': const('ok'), 'inventoryScope': inventory_scope('selected', 'hotbar', 'slots'),
-         'selectedSlot': I, 'selectedHotbarKey': HOTBAR, 'inventory': array(ref('CompactItem'))}),
+         'selectedSlot': I, 'selectedHotbarKey': HOTBAR, 'inventory': array(ref('CompactItem')),'combatCandidates':COMBAT_CANDIDATES},optional=('combatCandidates',)),
     obj({**INVENTORY_FIELDS, 'status': const('inventory_slot_out_of_range'), 'inventoryScope': inventory_scope('slots'),
-         'inventory': array(ref('CompactItem'))}),
+         'inventory': array(ref('CompactItem')),'combatCandidates':COMBAT_CANDIDATES},optional=('combatCandidates',)),
 )
 
 PHYSICS_FIELDS = {**dict.fromkeys(('px', 'py'), PIXEL), **dict.fromkeys(('vx', 'vy'), SPEED), 'airPhase': AIR_PHASE,
@@ -665,7 +666,7 @@ TARGETS = {
     'targetTile': ('place_tile', 'place_object', 'place_rope'),
     'targetContainer': tuple(sorted(atomic.CONTAINER_OPERATIONS)),
     'targetRecipe': ('craft_recipe',),
-    'targetInventory': ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
+    'targetInventory': ('configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
     'targetTask': ('navigate_to', 'mine_target', 'combat_attack', 'collect_drops', 'place_item'),
 }
@@ -707,19 +708,24 @@ DEFS['CollectionEvidence'] = obj({
 }, optional=('canContinue', 'nextTarget'))
 COMBAT_TARGET = obj(fields(integers='Slot TypeId', strings='EntityRef'))
 COMBAT_HIT = obj({**fields(integers='LifeBefore LifeAfter DamageDone', booleans='Defeated'), 'GameUpdate': TICK,
-                  'Summon': obj({**fields(integers='Owner ProjectileType ProjectileIdentity TargetEpoch'),
-                                 'ParentIdentity': nullable(I), 'SpawnUpdate': TICK})}, optional=('Summon',))
+                  'MeleeWeaponType':I, 'Summon': obj({**fields(integers='Owner ProjectileType ProjectileIdentity TargetEpoch WeaponType'),
+                                 'ParentIdentity': nullable(I), 'SpawnUpdate': TICK},optional=('WeaponType',)), 'Projectile':obj(fields(integers='Weapon Ammo Type Owner Identity Epoch Launched'))}, optional=('Summon','Projectile','MeleeWeaponType'))
+COMBAT_CONTRIBUTIONS = obj({'Melee':nullable(COMBAT_HIT),'Summon':nullable(COMBAT_HIT)})
 DEFS['CombatProgress'] = obj({
     'source': enum('agent', 'reflex'), 'threat': nullable(S), 'life': nullable(I),
     'target': nullable(COMBAT_TARGET),
-    'weapon': nullable(obj(fields(integers='Slot TypeId', strings='Name'))),
+    'weapon': nullable(obj({**fields(integers='Slot TypeId', strings='Name'), 'Selection':obj({
+        **fields(integers='Version PreviousSlot SelectedUpdate AdmittedUpdate', strings='Role'),
+        'InterruptedAction':nullable(S)})}, optional=('Selection',))),
     'lastHit': nullable(COMBAT_HIT),
     'itemChecks': COUNT, 'combinedUpdates': COUNT,
-    'encounters': array(obj({'Target': COMBAT_TARGET, 'Reason': S, 'LastHit': nullable(COMBAT_HIT)})),
+    'encounters': array(obj({'Target': COMBAT_TARGET, 'Reason': S, 'LastHit': nullable(COMBAT_HIT),
+                             'Contributions':COMBAT_CONTRIBUTIONS},optional=('Contributions',))),
     'summon': obj({**fields(booleans='InputAttempted NativeShootObserved',
                            integers='RootType VerifiedChildren UnconfirmedChildren'),
                    'ObservedRootIdentity': nullable(I), 'BuffObserved': nullable(B)}),
-}, optional=('encounters', 'summon'))
+    'contributions':COMBAT_CONTRIBUTIONS,
+}, optional=('encounters', 'summon','contributions'))
 DEFS['LocalPlanCost'] = obj(fields(numbers='Movement Mining Placement Materials Alteration Remaining'))
 DEFS['LocalEditPlan'] = obj({
     'Actions': array(obj({
@@ -812,7 +818,13 @@ DEFS['AcceptedGameTask'] = obj({
 DEFS['GameTaskEvidence'] = obj({'task': ref('GameTaskView')})
 GAME_TASK = any_of(ref('GameTaskView'), ref('AcceptedGameTask'), NULL)
 
+COMBAT_ROLE_STATE = nullable(obj({'hotbarKey':HOTBAR, 'expectedTypeId':I, 'actualTypeId':I,
+                                 'available':B, 'reason':nullable(S)}))
+DEFS['CombatLoadout'] = obj({'version':COUNT,'lastRefusal':nullable(obj({'reason':S,'gameUpdate':TICK,'entityRef':S})),
+                             'primary':COMBAT_ROLE_STATE,'secondary':COMBAT_ROLE_STATE,'summon':COMBAT_ROLE_STATE,
+                             'maintenance':nullable(obj({'status':S,'confirmedCasts':COUNT}))},optional=('secondary','summon','maintenance'))
 ACTION_EVIDENCE = {
+    'configure_combat_loadout': 'CombatLoadout',
     'craft_recipe': 'CraftEvidence',
     'transfer_inventory_item': 'InventoryEvidence',
     'swap_inventory_slots': 'InventoryEvidence',
@@ -960,6 +972,7 @@ TASK_COMPLETION_PROOF = {
     },
 }
 SUCCESSFUL_PROOF = {
+    'configure_combat_loadout': ref('CombatLoadout'),
     'select_hotbar_slot': matches(selectionApplied=TRUE),
     'move_input': matches(inputReleased=TRUE),
     'navigate_to_x': matches(arrived=TRUE),
@@ -1126,6 +1139,7 @@ def stop_schema(operations, program_tasks=True):
 REGISTRY = {
     **{name: any_of(schema, PRE_DISPATCH) for name, schema in OBSERVATIONS.items()},
     'observe_scene': any_of(observation(ref('SceneLocal')), PRE_DISPATCH),
+    'query_combat_loadout': any_of(observation(ref('CombatLoadout')), PRE_DISPATCH),
     'query_combat': any_of(observation(obj({'action': nullable(ref('RawProgramTaskAction'))})), PRE_DISPATCH),
     'wait': any_of(obj({
         'valid': const(True), 'status': const('completed'),

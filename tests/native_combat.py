@@ -273,6 +273,277 @@ async def verify(args):
 
     try:
         case = os.environ.get('COMPANION_COMBAT_CASE')
+        if case == 'summon-maintenance':
+            async def loadout_until(status, after=0):
+                for _ in range(180):
+                    reply = await asyncio.to_thread(bridge.command,'query_atomic',operation='query_combat_loadout',arguments={})
+                    sample = reply['data']
+                    if sample['data']['maintenance']['status']==status and sample['gameUpdate']>=after:
+                        return sample
+                    await asyncio.sleep(.06)
+                raise AssertionError(sample)
+
+            async def close_enemy(enemy=None):
+                if enemy is None:
+                    enemy = await scene('maint-threat')
+                defense = await wait_for(lambda a:a['targetTask']['entityRef']==enemy['entityRef'])
+                result = await manager.invoke('await_task',{'taskId':defense['actionId'],'milliseconds':30000})
+                proof = completed(result)
+                assert proof['source']=='reflex' and proof['weapon']['Slot']==0, proof
+                return enemy['entityRef'],proof,await scene('audit')
+
+            await scene('maint-capacity')
+            configure_program = """
+local rows=api('inspect_inventory',{mode='slots',slots={0,3}}).data.inventory
+local function role(row)
+    return {hotbarKey=row.hotbarKey,expectedTypeId=row.typeId,inventoryToken=row.inventoryToken}
+end
+return api('configure_combat_loadout',{primary=role(rows[1]),summon=role(rows[2])})
+"""
+            setup = await lua.execute(configure_program)
+            assert setup['status']=='completed' and setup['value']['completed'], setup
+            Draft202012Validator(schema_for('configure_combat_loadout')).validate(setup['value'])
+            results['setup'] = setup['value']
+            capacity = await loadout_until('summon_capacity_unavailable')
+            assert capacity['data']['summon']['reason']=='summon_capacity_unavailable'
+            results['capacity'] = capacity
+            await scene('maint-mana')
+            mana = await loadout_until('combat_mana_unavailable')
+            assert mana['data']['summon']['reason']=='combat_mana_unavailable'
+            results['mana'] = mana
+
+            enemy,proof,without = await close_enemy()
+            results['urgent'] = {'target':enemy,'proof':proof,'audit':without}
+            assert without['hitTrace'] and not without['shots'] and not without['summons']
+            await scene('maint-safe')
+            active = await loadout_until('summon_already_active')
+            later = await loadout_until('summon_already_active',active['gameUpdate']+120)
+            assert later['data']['maintenance']['confirmedCasts']==1
+            before = await scene('audit')
+            results['safe'] = {'start':active,'later':later,'audit':before}
+            assert len(before['summons'])==1 and before['summons'][0]['authorized'] and before['selectedItem']==0
+            assert len(before['shots'])==1 and before['shots'][0]['nativeShoot'] and before['shots'][0]['PersistentRoot']
+            assert sum(row['shots'] for row in before['manaTrace'] if row['debit']>0)==1
+
+            enemy,proof,after = await close_enemy()
+            results['combined'] = {'target':enemy,'proof':proof,'audit':after}
+            melee,summon = proof['contributions']['Melee'],proof['contributions']['Summon']
+            sword,staff = setup['value']['evidence']['primary']['actualTypeId'],setup['value']['evidence']['summon']['actualTypeId']
+            assert melee['MeleeWeaponType']==sword and summon['Summon']['WeaponType']==staff
+            assert summon['Summon']['ProjectileIdentity']==before['summons'][0]['identity']
+            assert any(h['entityRef']==enemy and h['nativeDamage'] and h['weapon']==sword
+                       and h['tick']==melee['GameUpdate'] for h in after['hitTrace'])
+            assert any(h['target']==enemy and h['held']==sword and h['Weapon']==staff and h['nativeDamage']
+                       and h['tick']==summon['GameUpdate'] for h in after['projectileHits'])
+            assert len(after['shots'])==1 and after['inputScopeReleased'] and after['attackReleased']
+            assert proof['encounters'][-1]['Contributions']==proof['contributions']
+
+            await scene('maint-recast')
+            arrival = await wait_file(profile/'recast-ambush.json')
+            enemy,proof,after = await close_enemy(arrival)
+            results['recast'] = {'arrival':arrival,'proof':proof,'audit':after}
+            assert arrival['itemAnimation']>0 and arrival['selectedItem']==3
+            second = after['shots'][-1]
+            assert len(after['shots'])==2 and second['PersistentRoot'] and second['tick']>before['shots'][0]['tick']
+            selection = proof['weapon']['Selection']
+            assert second['tick']<=arrival['tick']<selection['SelectedUpdate']
+            assert proof['contributions']['Melee']['MeleeWeaponType']==sword
+            summon_hit = proof['contributions']['Summon']['Summon']
+            assert summon_hit['ProjectileIdentity']==second['Identity'] and summon_hit['SpawnUpdate']==second['tick']
+
+            await scene('maint-hydra')
+            hydra_setup = await lua.execute(configure_program)
+            assert hydra_setup['value']['completed'], hydra_setup
+            await loadout_until('summon_already_active')
+            enemy,proof,after = await close_enemy()
+            results['hydra'] = {'target':enemy,'proof':proof,'audit':after}
+            hydra = proof['contributions']['Summon']['Summon']
+            assert hydra['WeaponType']==hydra_setup['value']['evidence']['summon']['actualTypeId']
+            assert hydra['ParentIdentity']==after['summons'][0]['identity'] and after['summons'][0]['sentry']
+            assert proof['contributions']['Melee']['MeleeWeaponType']==sword
+            assert any(h['target']==enemy and h['identity']==hydra['ProjectileIdentity'] and h['held']==sword
+                       and h['nativeDamage'] for h in after['projectileHits'])
+            return
+        if case == 'dual-weapons':
+            await scene('dual-setup')
+            configured = await lua.execute("""
+local inventory=api('inspect_inventory',{mode='slots',slots={0,2}}).data.inventory
+local function role(row)
+    return {hotbarKey=row.hotbarKey,expectedTypeId=row.typeId,inventoryToken=row.inventoryToken}
+end
+return api('configure_combat_loadout',{primary=role(inventory[1]),secondary=role(inventory[2])})
+""")
+            config = configured['value']
+            assert config['completed'], configured
+            Draft202012Validator(schema_for('configure_combat_loadout')).validate(config)
+            results['configuration'] = config
+            sword = config['evidence']['primary']['expectedTypeId']
+            bow = config['evidence']['secondary']['expectedTypeId']
+            for mode in ('dual-flight','dual-empty','dual-active','dual-reflex','dual-range'):
+                target = await scene(mode)
+                ref = target['entityRef']
+                if mode=='dual-reflex':
+                    defense = await wait_for(lambda a:a['targetTask']['entityRef']==ref)
+                    task_id = defense['actionId']
+                else:
+                    submitted = await manager.invoke('submit_task', {'operation':'combat_attack','arguments':{'entityRef':ref}})
+                    task_id = submitted['taskId']
+                result = await manager.invoke('await_task',{'taskId':task_id,'milliseconds':30000})
+                sample = await scene('audit')
+                results[mode] = {'target':target,'action':result,'audit':sample}
+                proof = completed(result)
+                assert proof['target']['EntityRef']==ref and proof['weapon']['TypeId']==sword, proof
+                assert proof['source']==('reflex' if mode=='dual-reflex' else 'agent')
+                assert sample['hitViolations']==0 and sample['inputScopeReleased']
+                if mode=='dual-empty':
+                    assert not sample['shots'] and any(h['weapon']==sword and h['nativeDamage'] for h in sample['hitTrace'])
+                elif mode=='dual-flight':
+                    hit = proof['lastHit']
+                    flight = hit['Projectile']
+                    selected = proof['weapon']['Selection']['SelectedUpdate']
+                    assert flight['Weapon']==bow and flight['Launched']<selected<hit['GameUpdate'], (flight,selected,hit)
+                    raw = sample['projectileHits'][-1]
+                    assert raw['held']==sword and raw['target']==ref and raw['identity']==flight['Identity'] and raw['nativeDamage'], raw
+                else:
+                    assert sample['shots'][0]['Weapon']==bow and sample['shots'][0]['nativeShoot']
+                    assert any(h['entityRef']==ref and h['weapon']==sword and h['nativeDamage'] for h in sample['hitTrace'])
+                    edge = sample['edgeSamples']
+                    assert len(edge)>=85 and len({r['distance'] for r in edge})>=2
+                    assert all(r['selectedItem']==2 for r in edge), edge
+                    if mode=='dual-range':
+                        assert {r['clear'] for r in edge}=={False,True}, edge
+            return
+        if case == 'loadout-trip':
+            await scene('loadout-trip')
+            async def program(source):
+                view = await lua.execute(source)
+                assert view['status']=='completed', view
+                return view['value']
+
+            # Use observed inventory and live help only; the client gets no fixture slots or item IDs.
+            chosen = await program("""
+local q=api('inspect_inventory',{mode='full'})
+local bar=api('inspect_inventory',{mode='hotbar'}).data.inventory
+local free={}
+for _,row in ipairs(bar) do if row.empty then table.insert(free,row.slot) end end
+local candidates=q.data.combatCandidates
+assert(#candidates==3 and #free>=3)
+for i,c in ipairs(candidates) do
+    local dest=free[i]
+    local pair=api('inspect_inventory',{mode='slots',slots={c.slot,dest}}).data.inventory
+    local source,target
+    for _,row in ipairs(pair) do
+        if row.slot==c.slot then source=row else target=row end
+    end
+    assert(target.empty)
+    assert(api('swap_inventory_slots',{sourceSlot=c.slot,destinationSlot=dest,sourceToken=source.inventoryToken,
+        destinationToken=target.inventoryToken}).completed)
+end
+return candidates
+""")
+            assert {r['family'] for r in chosen}=={'melee','ranged','summon'}
+            example = await program("return api('help',{name='configure_combat_loadout'}).example")
+            config = await program(example)
+            assert config['completed'], config
+            ready = await program("return api('query_combat_loadout',{})")
+            roles = ready['data']
+            assert roles['summon']['reason']=='combat_mana_unavailable' and roles['secondary']['available']
+            results['setup'] = {'candidates':chosen,'configuration':config,'observed':ready}
+            # Hand mining the configured sword slot: its tool is still in the backpack.
+            assert (await program("return api('select_hotbar_slot',{slot="+str(roles['primary']['hotbarKey'])+"})"))['completed']
+            tile = await scene('arm-mining-ambush')
+            start = await program('return api("submit_task",{operation="mine_target",arguments={x=%d,y=%d}})' %
+                                  (tile['x'],tile['y']))
+            arrival = await wait_file(profile/'ambush.json')
+            assert arrival['Swings']>0 and arrival['SourceSlot']>=10 and arrival['displaced']==roles['primary']['actualTypeId']
+            defense = await wait_for(lambda a:a['targetTask']['entityRef']==arrival['entityRef'])
+            interrupted = await asyncio.to_thread(bridge.task_request,'action',start['taskId'])
+            assert interrupted['reason']=='task_interrupt_combat' and interrupted['endEvidence']['inputsReleased']
+            done = await manager.invoke('await_task',{'taskId':defense['actionId'],'milliseconds':30000})
+            proof = completed(done)
+            results['fight'] = {'arrival':arrival,'interrupted':interrupted,'combat':done}
+            assert proof['source']=='reflex' and proof['weapon']['TypeId']==roles['primary']['actualTypeId']
+            for _ in range(220):
+                after = await program("return api('query_combat_loadout',{})")
+                if after['data']['maintenance']['status']=='summon_already_active':
+                    break
+                await asyncio.sleep(.03)
+            sample = await scene('audit')
+            results['after'] = {'query':after,'audit':sample}
+            assert after['data']['maintenance']['confirmedCasts']==1 and len(sample['summons'])==1
+            assert proof['weapon']['Selection']['InterruptedAction']==start['taskId']
+            assert any(h['Weapon']==roles['secondary']['actualTypeId'] and h['nativeShoot'] for h in sample['shots'])
+            assert any(h['entityRef']==arrival['entityRef'] and h['weapon']==roles['primary']['actualTypeId']
+                       and h['nativeDamage'] for h in sample['hitTrace'])
+            roots = [h for h in sample['shots'] if h['PersistentRoot']]
+            assert len(roots)==1 and roots[0]['tick']>done['result']['endEvidence']['gameUpdate']
+            return
+        if case == 'mining-ambush':
+            prepared = await lua.execute("""
+local q=api('inspect_inventory',{mode='slots',slots={0,9}})
+local a,b=q.data.inventory[1],q.data.inventory[2]
+local moved=api('swap_inventory_slots',{sourceSlot=0,destinationSlot=9,sourceToken=a.inventoryToken,destinationToken=b.inventoryToken})
+assert(moved.completed)
+local sword=api('inspect_inventory',{mode='slots',slots={9}}).data.inventory[1]
+local held=api('select_hotbar_slot',{slot=2})
+assert(held.completed)
+local configured=api('configure_combat_loadout',{primary={hotbarKey=0,expectedTypeId=sword.typeId,inventoryToken=sword.inventoryToken}})
+return {configured,api('query_combat_loadout',{})}
+""")
+            results['prepared'] = prepared
+            assert prepared['status'] == 'completed', prepared
+            configured, observed = prepared['value']
+            assert configured['completed'] and observed['data']['primary']['available'], prepared
+            for name, receipt in (('configure_combat_loadout',configured),('query_combat_loadout',observed)):
+                Draft202012Validator(schema_for(name)).validate(receipt)
+            sword = observed['data']['primary']['actualTypeId']
+            tile = await scene('arm-mining-ambush')
+            mining = await manager.invoke('submit_task', {'operation':'mine_target','arguments':tile})
+            results['mining'] = mining
+            spawn = await wait_file(profile/'ambush.json', 20)
+            results['spawn'] = spawn
+            assert spawn['Swings'] > 0 and spawn['itemAnimation'] > 0 and spawn['selectedItem'] == 1, spawn
+            reflex = await wait_for(lambda a:a['targetTask']['entityRef']==spawn['entityRef'])
+            interrupted = await asyncio.to_thread(bridge.task_request,'action',mining['taskId'])
+            results['interrupted'] = interrupted
+            assert interrupted['reason']=='task_interrupt_combat' and interrupted['endEvidence']['inputsReleased'], interrupted
+            result = await manager.invoke('await_task', {'taskId':reflex['actionId'],'milliseconds':30000})
+            results['reflex'] = result
+            proof = completed(result)
+            sample = await audit(proof)
+            results['audit'] = sample
+            assert proof['source']=='reflex' and proof['weapon']['Slot']==9 and proof['weapon']['TypeId']==sword
+            hit = sample['hitTrace'][0]
+            assert hit['nativeDamage'] and hit['weapon']==sword and hit['selectedItem']==9 and hit['entityRef']==spawn['entityRef']
+            assert spawn['spawn']<=interrupted['endEvidence']['gameUpdate']<=sample['firstPress']<=hit['tick']
+            held = await lua.execute("return api('select_hotbar_slot',{slot=2})")
+            assert held['value']['completed'], held
+            enemy = await scene('agent')
+            launch = await manager.invoke('submit_task',{'operation':'combat_attack','arguments':{'entityRef':enemy['entityRef']}})
+            active = await manager.invoke('await_task',{'taskId':launch['taskId'],'milliseconds':30000})
+            results['active'] = active
+            direct = completed(active)
+            assert direct['source']=='agent' and direct['weapon']['Slot']==9 and direct['weapon']['TypeId']==sword
+            selection = proof['weapon']['Selection']
+            assert selection['Role']=='primary' and selection['PreviousSlot']==1 and selection['InterruptedAction']==mining['taskId']
+            assert spawn['spawn']<=selection['AdmittedUpdate']<=selection['SelectedUpdate']<=sample['firstPress']
+            assert direct['weapon']['Selection']['PreviousSlot']==1
+            (profile/'ambush.json').unlink()
+            tile = await scene('arm-invalid-primary')
+            mining = await manager.invoke('submit_task', {'operation':'mine_target','arguments':tile})
+            invalid_spawn = await wait_file(profile/'ambush.json',20)
+            finished = await manager.invoke('await_task',{'taskId':mining['taskId'],'milliseconds':30000})
+            results['unarmedMining'] = finished
+            assert finished['completed'] and finished['result']['inputsReleased'], finished
+            query = await lua.execute("return api('query_combat_loadout',{})")
+            unavailable = query['value']['data']
+            results['unavailable'] = unavailable
+            assert unavailable['primary']['reason']=='combat_primary_unavailable'
+            assert unavailable['lastRefusal']['entityRef']==invalid_spawn['entityRef']
+            assert (await observe())['actionId']==launch['taskId']
+            cleared = await lua.execute("return api('configure_combat_loadout',{})")
+            assert cleared['value']['completed'] and cleared['value']['evidence'].get('primary') is None, cleared
+            return
         if case in ('summons', 'summon-death', 'summon-generation', 'summon-disconnect'):
             await verify_summons(case.split('-')[1] if '-' in case else None)
             return

@@ -27,7 +27,7 @@ internal static class ServerAiQueries
     private static JsonElement Snapshot(Player p) => JsonSerializer.SerializeToElement(ObservationReader.ReadPlayer(p, "server_ai_player"), Json);
     internal static object Read(AiReadOnlyProtocol.Identity expected, string operation, JsonElement arguments)
     {
-        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "inspect_container")) throw new FormatException("Unsupported server AI query.");
+        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat_loadout" or "inspect_container")) throw new FormatException("Unsupported server AI query.");
         AtomicParameters.Validate(operation, arguments, true);
         Require(expected);
         bool regional=operation=="observe_scene"&&arguments.TryGetProperty("scale",out var scale)&&scale.GetString()=="region";
@@ -35,9 +35,9 @@ internal static class ServerAiQueries
         long allocated=regional?GC.GetAllocatedBytesForCurrentThread():0;
         var p = (Player)expected.Actor;
         object data;
-        if (operation == "inspect_container")
+        if (operation is "inspect_container" or "query_combat_loadout")
         {
-            data = ActorContainer.Inspect(expected);
+            data = operation=="inspect_container"?ActorContainer.Inspect(expected):NativeCombatWorld.Loadout(expected);
             Require(expected);
             return new { available = true, worldSessionId = expected.World, gameUpdate = Main.GameUpdateCount,
                 actorGeneration = expected.Generation, actorSlot = expected.Slot,
@@ -101,6 +101,14 @@ internal static class ServerAiQueries
                 !terrain.Supported?"unsupported_player_profile":null;
             projected["miningSupportImpact"]=JsonSerializer.SerializeToElement(MiningSupportImpact.Read(pose,
                 arguments.GetProperty("x").GetInt32(),arguments.GetProperty("y").GetInt32(),TerrainReader.ReadDryCell,unsupported),Json);
+        }
+        if(operation=="inspect_inventory" && projected.ContainsKey("inventory"))
+        {
+            var inspected=(JsonElement)projected["inspectedSlots"];
+            projected["combatCandidates"]=inspected.EnumerateArray().Select(value=>value.GetInt32())
+                .Where(slot=>slot is >=0 and <50)
+                .Select(slot=>new {slot,family=NativeCombatWorld.LoadoutFamily(p.inventory[slot])})
+                .Where(row=>row.family!=null).ToArray();
         }
         projected["source"] = "server_ai_player";
         if(operation=="get_player_state" || operation=="inspect_inventory" && arguments.GetProperty("mode").GetString()=="full")

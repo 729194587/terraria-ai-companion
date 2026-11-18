@@ -15,7 +15,7 @@ import agent_trace as tracing
 
 CONTAINER_READS = frozenset(("inspect_container",))
 MAP_READS = frozenset(("query_map",))
-COMBAT_READS = frozenset(("query_combat",))
+COMBAT_READS = frozenset(("query_combat","query_combat_loadout"))
 CRAFT_READS = frozenset(("query_recipes",))
 SCENE_OPERATIONS = frozenset(("observe_scene",))
 PERCEPTION_OPERATIONS = frozenset(("observe_terrain", "scan_tiles", "scan_entities", "inspect_tile", "resolve_content"))
@@ -32,7 +32,8 @@ def operations_for_capabilities(capabilities):
         ('server_ai_perception_v1', PERCEPTION_OPERATIONS),
         ('server_ai_map_v1', MAP_READS),
         ('server_ai_containers_v1', CONTAINER_READS),
-        ('server_ai_combat_v1', COMBAT_READS),
+        ('server_ai_combat_v1', {'query_combat'}),
+        ('server_ai_combat_primary_v1', {'query_combat_loadout'}),
         ('server_ai_crafting_v1', CRAFT_READS),
         ('server_ai_scene_v1', SCENE_OPERATIONS),
     ):
@@ -47,6 +48,7 @@ def operations_for_capabilities(capabilities):
             ('server_ai_place_item_v1', 'place_item'),
             ('server_ai_navigation_v1', 'navigate_to'),
             ('server_ai_combat_v1', 'combat_attack'),
+            ('server_ai_combat_primary_v1', 'configure_combat_loadout'),
             ('server_ai_crafting_v1', 'craft_recipe'),
             ('server_ai_place_object_workbench_v1', 'place_object'),
             ('server_ai_place_tile_v1', 'place_tile'),

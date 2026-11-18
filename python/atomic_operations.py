@@ -60,6 +60,10 @@ SCENE_TEXT_CONTRACT = (
 MINE_TARGET_DESCRIPTION = "服务器复合挖掘（server_ai_tasks_v1）。传 observe_scene 矿物对象的 target，或传明确的绝对 Tile 坐标 x/y，两种形式互斥。观察目标须通过身份、30秒及600游戏更新时效和目标变化检查。与 mine_tile 共用主背包自动选工具、临时切换快捷栏及原生触及和工具判定。已在安全站位且够得着时直接挖掘，否则先尝试沿现有地形接近，抵达后重验目标和站位。最终核验指定格，可连带拆除该格所属家具。按 evidence.task.lastResult 和子动作释放证据核验，掉落入包需另行观察。unknown 停止。"
 PLACE_OBJECT_DESCRIPTION = "服务器 AI 放置快捷栏选中的多格对象。x/y 是绝对 Tile 锚点，按选中物品的 createTile、placeStyle 和原生 TileObjectData 解析占地和 Anchor。由原生范围、碰撞和 Mod Hook 判定；依赖全局光标的特殊对象不支持。核验放置事件、整组帧、消耗和释放后才完成。取消可能已有副作用，unknown 停止。10秒上限。"
 
+COMBAT_ROLE = {"type":"object","properties":{
+        "hotbarKey":{"type":"integer","minimum":0,"maximum":9}, "expectedTypeId":{"type":"integer","minimum":1,"maximum":2147483647}, "inventoryToken":INVENTORY_TOKEN},
+        "required":["hotbarKey","expectedTypeId","inventoryToken"],"additionalProperties":False}
+
 TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地下视野采用遮挡/近身/可见原版火把近似。",
     {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
     {"resultType":{"type":"integer","minimum":1},"availableOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":24},"offset":{"type":"integer","minimum":0,"maximum":100000}}),
@@ -151,7 +155,9 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("navigate_to", "服务器自主导航。只传预期落脚面的世界像素 x、y（Y 向下）。游戏侧自行选择走、跳、安全下落、挖掘和搭路。安全着地停稳且脚底覆盖目的地才完成。unknown 后停止。",
          {key: {"type": "number", "minimum": 0, "maximum": 1000000} for key in ("x", "y")}, ["x", "y"]),
     tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE, "cluster": {"type": "boolean"}}),
-    tool("combat_attack", "通过 submit_task 提交单目标战斗。使用 scan_entities 返回的 entityRef 和当前选中的受支持武器。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
+    tool("configure_combat_loadout", "配置服务器 AI 的主副武器。primary 和 secondary 各自使用快捷键 1..9、0、预期 typeId 和新鲜 inventoryToken。完整替换配置，省略角色即清除该角色；配置不换手。", {"primary": COMBAT_ROLE, "secondary": COMBAT_ROLE, "summon": COMBAT_ROLE}),
+    tool("query_combat_loadout", "读取主副武器的快捷栏物品、可用性与最近一次自卫选武器失败原因。", {}),
+    tool("combat_attack", "通过 submit_task 提交单目标战斗。使用 scan_entities 返回的 entityRef。已配置主武器时自动切换；未配置时使用当前选中的受支持武器。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
     tool("query_combat", "读取绑定角色当前或最近一次战斗。返回 action（含可查询或取消的 actionId），空闲且无战斗记录时为 null。", {}),
     tool("mine_tile", "原生挖掘指定 Tile。服务器 AI 从整个主背包自动选择合适工具，必要时临时切换快捷栏，按 Terraria 原生范围和工具规则判定。客户端控制使用当前手持镐。动作在当前位置执行，以实际移除为准，10秒上限。",
          {"x": {**TILE["x"], "description": "目标格的绝对 Tile X 坐标"},
@@ -231,15 +237,25 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene(
     'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
 
 
-def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False, excavation=False):
+def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
     definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'collect_drops', 'place_item')]
     for definition in definitions:
         f = definition['function']
         name = f['name']
+        if name == 'configure_combat_loadout' and not summon_loadout:
+            f['parameters']['properties'].pop('summon')
+        if name == 'configure_combat_loadout' and summon_loadout:
+            f['description'] += ' summon 槽可放史莱姆法杖或寒霜九头蛇法杖；安全空闲时自动补召，临敌优先主副武器。'
+        if name == 'configure_combat_loadout' and not dual_weapons:
+            f['parameters']['properties'].pop('secondary')
+            f['description'] = '配置普通近战主武器 primary；传空参数清除配置。'
         if name == 'use_item':
             f['parameters'] = {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}
         f['description'] = SERVER_DESCRIPTIONS.get(name, f['description'])
+        if combat_inventory and name == 'inspect_inventory':
+            f['description'] += (' full/hotbar/slots/selected 的 data.combatCandidates 按内部 slot 列出本次检查中可配置的武器与 family；'
+                                 'melee/ranged/magic 用于主副手，summon 用于召唤槽。类型匹配后用 query_combat_loadout 查实际资源。')
         if not general_operations and name in LEGACY_SERVER_OPERATION_DESCRIPTIONS:
             f['description'] = LEGACY_SERVER_OPERATION_DESCRIPTIONS[name]
         if name == 'mine_target' and mining_opening:
@@ -269,7 +285,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
     return definitions
 
 READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat'}
+READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -282,6 +298,10 @@ def validate_backend(bridge, name, arguments):
     if 'server_ai_atomic_v1' in getattr(bridge, 'hello', {}).get('capabilities', ()):
         if name == 'use_item' and arguments:
             raise PreDispatchRejected('targeted_use_not_supported', status='targeted_use_not_supported')
+    if name == 'configure_combat_loadout' and 'summon' in arguments and 'server_ai_combat_summon_loadout_v1' not in getattr(bridge,'hello',{}).get('capabilities',()):
+        raise PreDispatchRejected('Requires server_ai_combat_summon_loadout_v1')
+    if name == 'configure_combat_loadout' and 'secondary' in arguments and 'server_ai_combat_secondary_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_combat_secondary_v1')
     if name == 'mine_target' and 'cluster' in arguments and 'server_ai_excavation_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_excavation_v1; no excavation task submitted')
     if name in ('combat_attack', 'query_combat') and 'server_ai_combat_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
@@ -371,6 +391,10 @@ def validate(name, arguments):
     arguments = check(arguments, SCHEMAS[name], name)
     if issues:
         raise ArgumentValidationError(name, issues, truncated)
+    if name == 'configure_combat_loadout':
+        keys = [role['hotbarKey'] for role in arguments.values()]
+        if len(set(keys)) != len(keys):
+            raise ValueError('weapon roles must use different hotbar keys')
     if name == 'mine_target' and set(arguments) - {'cluster'} not in ({'target'}, {'x', 'y'}):
         raise ValueError('mine_target requires either target or absolute x/y')
     if name == 'observe_scene':
@@ -452,6 +476,31 @@ SORT_OPERATIONS = frozenset(('sort_inventory', 'sort_container'))
 CONTAINER_OPERATIONS = frozenset(('open_container', 'close_container')) | CONTAINER_TRANSFERS | CONTAINER_BATCHES | SORT_OPERATIONS
 INVENTORY_OPERATIONS = frozenset(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
 EQUIPMENT_OPERATIONS = frozenset(('equip_item', 'unequip_item'))
+
+
+def verified_loadout(action, evidence):
+    goal = action.get('targetInventory')
+    if not isinstance(goal, dict) or type(evidence.get('version')) is not int or evidence['version'] < 1:
+        return False
+    if 'primary' not in evidence or set(goal) - {'primary','secondary','summon'}:
+        return False
+    for role in ('primary','secondary','summon'):
+        expected, actual = goal.get(role), evidence.get(role)
+        if expected is None and actual is None:
+            continue
+        if not isinstance(expected, dict) or not isinstance(actual, dict):
+            return False
+        if actual.get('available') is not True:
+            resource_failures = ('combat_ammo_unavailable','combat_mana_unavailable','combat_ammo_unsupported')
+            if role == 'summon':
+                resource_failures += ('summon_already_active','summon_capacity_unavailable')
+            if actual.get('available') is not False or actual.get('reason') not in resource_failures:
+                return False
+        if (any(type(actual.get(key)) is not int for key in ('hotbarKey','expectedTypeId','actualTypeId'))
+                or expected.get('hotbarKey') != actual['hotbarKey']
+                or actual['actualTypeId'] != actual['expectedTypeId'] or actual['expectedTypeId'] != expected.get('expectedTypeId')):
+            return False
+    return True
 
 
 def verified_server_equipment(action, evidence):
@@ -901,6 +950,7 @@ async def terminal(bridge, action, generation):
         'mine_target': verified_server_mine_task(action, native_evidence),
         'combat_attack': verified_server_combat(action, combat, combat_result, combat_proof),
         **{op: verified_server_inventory(action, native_evidence) for op in INVENTORY_OPERATIONS},
+        'configure_combat_loadout': verified_loadout(action, native_evidence),
         **{op: verified_server_equipment(action, native_evidence) for op in EQUIPMENT_OPERATIONS},
         'place_tile': (isinstance(action.get('targetTile'), dict)
                        and set(action['targetTile']) == {'x', 'y'}
@@ -929,7 +979,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'collect_drops', 'place_item', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'collect_drops', 'place_item', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -1081,6 +1131,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         required_capability = ('server_ai_inventory_v1' if 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []) and name in INVENTORY_OPERATIONS else 'inventory_operations_v1')
     if name == 'inspect_inventory' and 'server_ai_reads_v1' in bridge.hello.get('capabilities', []):
         required_capability = 'server_ai_reads_v1'
+    if name in ('configure_combat_loadout','query_combat_loadout'):
+        required_capability = 'server_ai_combat_primary_v1'
     if name in EQUIPMENT_OPERATIONS:
         required_capability = 'server_ai_equipment_v1'
     if required_capability and required_capability not in bridge.hello.get('capabilities', []):
@@ -1128,7 +1180,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Direct inputs missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if name in INVENTORY_OPERATIONS | EQUIPMENT_OPERATIONS and 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []):
+        if name in INVENTORY_OPERATIONS | EQUIPMENT_OPERATIONS | {"configure_combat_loadout"} and 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []):
             placement_invalid = True
             if action.get('targetInventory') != arguments:
                 raise BridgeError('Inventory target missing or different in start receipt')

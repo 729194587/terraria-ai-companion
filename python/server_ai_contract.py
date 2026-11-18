@@ -24,7 +24,7 @@ CATEGORIES = (
     ('直接身体输入', ('move_input',), 'Limited', '原生方向/跳跃多更新输入；不是目标导航或装备运动适配。'),
     ('目标导航', ('navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'drop_through_platform', 'move_on_rope'),
      'Limited', '局部导航按各自profile；绳索操作受原版绳柱及原生接触条件限制。'),
-    ('物品与战斗', ('use_item', 'query_combat', 'attack_entity'), 'Limited', '普通近战通过 submit_task 提交；query_combat 可发现游戏侧自卫任务。'),
+    ('物品与战斗', ('use_item', 'configure_combat_loadout', 'query_combat_loadout', 'query_combat', 'attack_entity'), 'Limited', '主动攻击通过 submit_task 提交 combat_attack；query_combat 可发现游戏侧自卫任务。'),
     ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '服务器挖掘从主背包自动选工具；复合挖掘可先接近指定格，掉落入包需另行核验。'),
     ('建造', ('place_tile', 'place_object', 'place_wall', 'hammer_tile', 'place_rope'),
      'Limited', '原生放置受材料、样式、占地和目标坐标限制。'),
@@ -125,7 +125,9 @@ def server_definitions(bridge, supported=None):
     if supported is None:
         supported = exposed_operations(bridge)
     capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
-    definitions = atomic.server_tools(supported, scene_region='server_ai_scene_region_v1' in capabilities,
+    definitions = atomic.server_tools(supported, combat_inventory="server_ai_combat_inventory_v1" in capabilities,
+                                      summon_loadout="server_ai_combat_summon_loadout_v1" in capabilities,
+                                      dual_weapons="server_ai_combat_secondary_v1" in capabilities, scene_region='server_ai_scene_region_v1' in capabilities,
                                       general_operations='server_ai_general_operations_v1' in capabilities,
                                       mining_opening='server_ai_mining_opening_v1' in capabilities,
                                       excavation='server_ai_excavation_v1' in capabilities)
@@ -150,7 +152,28 @@ def callable_categories(bridge, names):
     return categories
 
 
-def help_example(name, schema):
+def help_example(name, schema, capabilities=()):
+    if name == 'configure_combat_loadout':
+        if 'server_ai_combat_inventory_v1' in capabilities and {'primary','secondary','summon'} <= schema['properties'].keys():
+            return '''local q=api("inspect_inventory",{mode="hotbar"})
+if not q.valid then return q end
+local roles={melee="primary",ranged="secondary",magic="secondary",summon="summon"}
+local config={}
+for _,candidate in ipairs(q.data.combatCandidates) do
+    local role=roles[candidate.family]
+    if config[role] then return {chooseSlotFor=role} end
+    for _,row in ipairs(q.data.inventory) do
+        if row.slot==candidate.slot then
+            config[role]={hotbarKey=row.hotbarKey,expectedTypeId=row.typeId,inventoryToken=row.inventoryToken}
+        end
+    end
+end
+if not (config.primary and config.secondary and config.summon) then return {missingRole=true} end
+return api("configure_combat_loadout",config)'''
+        return '''local q=api("inspect_inventory",{mode="selected"})
+if not q.valid then return q end
+local row=q.data.inventory[1]
+return api("configure_combat_loadout",{primary={hotbarKey=row.hotbarKey,expectedTypeId=row.typeId,inventoryToken=row.inventoryToken}})'''
     # Templates use named inputs for game coordinates and tokens. Read examples
     # with a known safe default are executable as written.
     arguments = {'open_container': 'x=100,y=200', 'close_container': 'containerToken=token',
@@ -163,6 +186,8 @@ def help_example(name, schema):
 
 
 def help_result_contract(name):
+    if name=='configure_combat_loadout':
+        return ('动作回执，evidence 含版本与各武器槽。','每次完整替换配置，省略的角色会清除；空表清空全部。示例按所需配装执行。先用 query_combat_loadout 查看已有角色，保留的角色也要重新取 token。')
     if name == 'wait':
         return ('{valid,status,elapsedMilliseconds,clock,effectStatus}',
                 'completed表示宿主计时结束；clock为host_monotonic，effectStatus为not_applicable。')
@@ -233,7 +258,7 @@ def api_help(bridge, arguments):
             'description': definition['description'], 'parameters': definition['parameters'],
             'returns': returns, 'returnsSchema': returns_schema,
             'statusSemantics': status_semantics, 'limits': row['limits'],
-            'example': help_example(name, definition['parameters'])}
+            'example': help_example(name, definition['parameters'],bridge.hello.get('capabilities',()))}
 
 
 def helper_reference(supported):
@@ -294,6 +319,17 @@ def server_contract(bridge, tool, *, compact=False):
         if 'query_combat' in supported:
             task_reference += ('combat_attack 与服务端自卫共享战斗优先级，可安全终止普通身体任务。'
                                '用 query_combat 获取自卫任务的 actionId，再用 query_task 或 cancel_task。')
+    if 'configure_combat_loadout' in supported:
+        task_reference += ' 主动攻击和自卫都会自动拔出已配置的近战主武器；可先整理快捷栏，用新鲜的 inventoryToken、hotbarKey 和 expectedTypeId 调用 configure_combat_loadout，再拿起工具。'
+    if 'server_ai_combat_secondary_v1' in getattr(bridge,'hello',{}).get('capabilities',()):
+        task_reference += ' 可同时设置 primary、secondary（不同快捷键）；支持的剑、弓枪与法器按距离、射界和资源自动切换。'
+    if 'server_ai_combat_summon_loadout_v1' in getattr(bridge,'hello',{}).get('capabilities',()):
+        task_reference += ' summon 配置仆从或哨兵法杖；query_combat_loadout 可查已存在、容量、法力和补召回执。'
+    if 'server_ai_combat_inventory_v1' in getattr(bridge,'hello',{}).get('capabilities',()):
+        task_reference += (' 挖矿前先查 query_combat_loadout；需要配装时读 inspect_inventory(full) 的 data.combatCandidates，按 slot 对照 inventory。'
+                           '背包武器用 swap_inventory_slots 放入选好的快捷栏（两端用 slots 新鲜 token），再读 hotbar。'
+                           'configure_combat_loadout 整份替换；用 row.typeId 填 expectedTypeId。help 的三槽示例适用于已各放好一件武器。'
+                           '挖矿收到 task_interrupt_combat 后查 query_combat，待释放后观察并决定是否重新提交挖矿。')
     if compact:
         manifest_text = '\n'.join(f"- {row['category']}：{', '.join(row['apis'])}"
                                   for row in callable_categories(bridge, supported))

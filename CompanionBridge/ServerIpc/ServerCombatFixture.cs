@@ -19,6 +19,14 @@ internal static class ServerCombatFixture
 {
     internal static bool Enabled => ServerAiActionFixture.Enabled && Program.LaunchParameters.ContainsKey("-companioncombattest");
     private static NPC target;
+    private static Projectile occupyingMinion;
+    private static bool suppressManaRegen,recastAmbush;
+    private static bool ambushArmed,loadoutTrip;
+    private static ulong? firstPress;
+    private static string dualMode;
+    private static ulong? edgeStarted;
+    private static int farEdge;
+    private static readonly List<object> edgeSamples=new();
     private static readonly HashSet<NPC> defenseTargets=new();
     private static ulong? lastFrame,lastHit;
     private static int frames,hits,hitViolations;
@@ -73,7 +81,7 @@ internal static class ServerCombatFixture
         if(!Enabled)return;
         var stack=new System.Diagnostics.StackTrace().ToString();
         projectileHits.Add(new{tick=Main.GameUpdateCount,p.identity,p.owner,p.type,n.life,damage,launched=shot.Launched,
-            target=NativeCombatWorld.Reference(Bound(ProbeSession.Actor),n),
+            target=NativeCombatWorld.Reference(Bound(ProbeSession.Actor),n),held=ProbeSession.Actor.HeldItem.type,shot.Weapon,
             nativeDamage=stack.Contains("Projectile::Damage")||stack.Contains("Projectile:Damage")||stack.Contains("Projectile.Damage")||stack.Contains("NativeSurvival.ProjectileDamage")});
     }
     private static Identity Bound(Player p)=>new(p,ProbeSession.WorldSession,ProbeSession.ActorGeneration,p.whoAmI,null);
@@ -83,7 +91,7 @@ internal static class ServerCombatFixture
 
     internal static void ObserveFlight(Projectile p,NativeCombatWorld.Shot shot)
     {
-        if(!Enabled||shots.Count!=1||flightTrace.Count>=60)return;
+        if(!Enabled||target==null||shots.Count!=1||flightTrace.Count>=60)return;
         flightTrace.Add(new{tick=Main.GameUpdateCount,p.active,x=p.Center.X,y=p.Center.Y,
             vx=p.velocity.X,vy=p.velocity.Y,p.damage,ai=p.ai[0],targetX=target.Center.X,targetY=target.Center.Y});
     }
@@ -121,8 +129,14 @@ internal static class ServerCombatFixture
         if(lastFrame==tick||!NativeItemInput.Active(p)||Main.myPlayer!=p.whoAmI||Main.netMode!=NetmodeID.Server)
             throw new InvalidOperationException("Combat fixture observed duplicate or unscoped native ItemCheck.");
         lastFrame=tick;frames++;
-        if(frames==1)firstCooldown=Cooldown(p,target.whoAmI);
-        if(p.controlUseItem)presses++;
+        if(edgeStarted.HasValue && tick-edgeStarted.Value<96)
+        {
+            var bow=p.inventory[2];
+            bool clear=CombatBallistics.ReadRound(p,bow,out var round)==null && CombatBallistics.Aim(p,target,bow,round,out _);
+            edgeSamples.Add(new{tick,p.selectedItem,distance=Math.Abs(p.Center.X-target.Center.X),clear});
+        }
+        if(frames==1 && target!=null)firstCooldown=Cooldown(p,target.whoAmI);
+        if(p.controlUseItem){presses++;firstPress??=tick;}
         if(faultNextPress&&p.controlUseItem)
         {
             faultNextPress=false;
@@ -159,7 +173,7 @@ internal static class ServerCombatFixture
             hitViolations++;
         lastHit=tick;hits++;
         var stack=new System.Diagnostics.StackTrace().ToString();
-        hitTrace.Add(new{tick,press=presses,npc.whoAmI,npc.life,damageDone,entityRef=NativeCombatWorld.Reference(Bound(p),npc),
+        hitTrace.Add(new{tick,weapon=p.HeldItem.type,p.selectedItem,press=presses,npc.whoAmI,npc.life,damageDone,entityRef=NativeCombatWorld.Reference(Bound(p),npc),
             cooldown=Cooldown(p,npc.whoAmI),nativeWrapper=stack.Contains("Terraria.Player::ItemCheckWrapped"),
             nativeDamage=stack.Contains("ProcessHitAgainstNPC")});
     }
@@ -228,10 +242,57 @@ internal static class ServerCombatFixture
         // The copied world can contain town NPCs whose attacks would decide
         // the fight. Keep the arena isolated from ambient friendly projectiles.
         foreach(var projectile in Main.projectile)
-            if(projectile.active&&projectile.friendly&&(!projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
+            if(!ReferenceEquals(projectile,occupyingMinion)&&projectile.active&&projectile.friendly&&(!projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
                 ||trace.Flight is not {Verified:true}))projectile.active=false;
         foreach(var npc in Main.npc)
             if(npc.active&&npc.townNPC)npc.active=false;
+        if(dualMode is "dual-active" or "dual-reflex" or "dual-range" && target?.active==true && shots.Count>0)
+        {
+            edgeStarted??=Main.GameUpdateCount;
+            ulong elapsed=Main.GameUpdateCount-edgeStarted.Value;
+            if(dualMode=="dual-range" && farEdge==0)
+            {
+                var bow=p.inventory[2];
+                if(CombatBallistics.ReadRound(p,bow,out var round)!=null)throw new InvalidOperationException("Range fixture missing arrows.");
+                for(int probe=(int)CombatBallistics.Range(bow);probe>150;probe--)
+                {
+                    target.Center=new Vector2(p.Center.X-probe,target.Center.Y);
+                    if(CombatBallistics.Aim(p,target,bow,round,out _)){farEdge=probe;break;}
+                }
+                if(farEdge==0)throw new InvalidOperationException("No ballistic boundary found.");
+            }
+            int dx=dualMode=="dual-range" && elapsed<96?farEdge+(elapsed%2==0?3:-3):elapsed<96?(p.width+target.width)/2+34+(elapsed%2==0?3:-3):27;
+            target.Bottom=new Vector2(p.Center.X-dx,(Main.spawnTileY+8)*16);
+        }
+        if(ambushArmed && ActorMining.Running && ActorMining.Current.Swings>0 && p.itemAnimation>0 && p.HeldItem.pick>0)
+        {
+            ambushArmed=false;
+            int spawnX=(int)p.Center.X-64,y=(Main.spawnTileY+8)*16;
+            int ambushSlot=NPC.NewNPC(p.GetSource_Misc("isolated_mining_ambush"),spawnX,y,NPCID.GreenSlime,Target:p.whoAmI);
+            target=Main.npc[ambushSlot];
+            target.Bottom=new Vector2(spawnX,y);
+            if(loadoutTrip)
+            {
+                target.aiStyle=-1;target.life=target.lifeMax=120;target.knockBackResist=0;
+                dualMode="dual-reflex";
+                suppressManaRegen=false;ManaPool(p,100,100);
+            }
+            target.target=p.whoAmI;
+            target.ai[0]=-160;
+            File.WriteAllText(Path.Combine(Main.SavePath,"ambush.json"),JsonSerializer.Serialize(new{
+                entityRef=NativeCombatWorld.Reference(Bound(p),target),spawn=Main.GameUpdateCount,
+                pick=p.HeldItem.type,p.selectedItem,p.itemAnimation,ActorMining.Current.Swings,ActorMining.Current.SourceSlot,displaced=ActorMining.Current.Displaced?.type}));
+        }
+        if(recastAmbush && NativeCombatWorld.Maintaining && p.itemAnimation>0 && p.HeldItem.type==ItemID.SlimeStaff
+            && Main.projectile.Any(q=>q.active && q.owner==p.whoAmI && q.type==ProjectileID.BabySlime))
+        {
+            recastAmbush=false;
+            p.immune=true;p.immuneTime=1800;
+            target=SpawnDefense(p,-30,240);
+            File.WriteAllText(Path.Combine(Main.SavePath,"recast-ambush.json"),JsonSerializer.Serialize(new{
+                tick=Main.GameUpdateCount,p.itemAnimation,p.selectedItem,entityRef=NativeCombatWorld.Reference(Bound(p),target)}));
+        }
+        if(suppressManaRegen)p.manaRegenDelay=300;
         var request=Path.Combine(Main.SavePath,"combat-request");
         if(!File.Exists(request))return;
         string mode;
@@ -241,11 +302,77 @@ internal static class ServerCombatFixture
             File.Delete(request);
         }
         catch(IOException){return;} // Windows can briefly lock the atomically renamed request.
+        if(mode=="loadout-trip")
+        {
+            // The test client must discover each item and choose its hotbar destination.
+            Utils.Swap(ref p.inventory[0],ref p.inventory[16]);
+            Utils.Swap(ref p.inventory[1],ref p.inventory[23]);
+            p.inventory[14].SetDefaults(ItemID.WoodenBow);
+            p.inventory[19].SetDefaults(ItemID.SlimeStaff);
+            p.inventory[54].SetDefaults(ItemID.WoodenArrow);p.inventory[54].stack=60;
+            suppressManaRegen=true;ManaPool(p,100,0);loadoutTrip=true;
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),"{}");
+            return;
+        }
+        if(mode is "arm-mining-ambush" or "arm-invalid-primary")
+        {
+            if(mode=="arm-invalid-primary")p.inventory[9].SetDefaults(ItemID.Torch);
+            ambushArmed=true;
+            int mineX=(int)(p.Center.X/16)+3,y=Main.spawnTileY+7;
+            var tile=Main.tile[mineX,y];tile.HasTile=true;tile.TileType=TileID.Stone;
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{x=mineX,y}));
+            return;
+        }
+        if(mode=="maint-capacity")
+        {
+            p.inventory[0].SetDefaults(ItemID.WoodenSword);
+            p.inventory[3].SetDefaults(ItemID.SlimeStaff);
+            ManaPool(p,100,0);
+            suppressManaRegen=true;
+            p.AddBuff(BuffID.ImpMinion,3600);
+            int occupied=Projectile.NewProjectile(p.GetSource_Misc("summon_capacity_fixture"),p.Center,Vector2.Zero,
+                ContentSamples.ItemsByType[ItemID.ImpStaff].shoot,1,0,p.whoAmI);
+            occupyingMinion=Main.projectile[occupied];
+        }
+        else if(mode=="maint-mana")
+        {
+            p.ClearBuff(BuffID.ImpMinion);
+            occupyingMinion.Kill();occupyingMinion=null;
+            p.statMana=0;
+        }
+        else if(mode=="maint-safe")
+        {
+            p.immune=false;p.immuneTime=0;
+            suppressManaRegen=false;
+            ManaPool(p,100,100);
+        }
+        else if(mode is "maint-recast" or "maint-hydra")
+        {
+            p.immune=false;p.immuneTime=0;
+            p.ClearBuff(BuffID.BabySlime);
+            foreach(var q in Main.ActiveProjectiles)
+                if(q.owner==p.whoAmI && q.type==ProjectileID.BabySlime)q.Kill();
+            ManaPool(p,100,100);
+            recastAmbush=mode=="maint-recast";
+            if(mode=="maint-hydra")p.inventory[3].SetDefaults(ItemID.StaffoftheFrostHydra);
+        }
+        else if(mode=="maint-threat")
+        {
+            ManaPool(p,100,100);
+            p.immune=true;p.immuneTime=1800;
+            target=SpawnDefense(p,-30,240);
+        }
+        if(mode.StartsWith("maint-"))
+        {
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                mode,tick=Main.GameUpdateCount,p.statMana,entityRef=target==null?null:NativeCombatWorld.Reference(Bound(p),target)}));
+            return;
+        }
         if(mode is "audit" or "fault")
         {
             if(mode=="fault")faultNextPress=true;
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
-                JsonSerializer.Serialize(new{mode,gameUpdate=Main.GameUpdateCount,frames,hits,hitViolations,firstCooldown,hitTrace,shots,projectileHits,flightTrace,spawnPackets,ammoPackets,manaPackets,mana=p.statMana,
+                JsonSerializer.Serialize(new{mode,gameUpdate=Main.GameUpdateCount,firstPress,p.selectedItem,edgeSamples,frames,hits,hitViolations,firstCooldown,hitTrace,shots,projectileHits,flightTrace,spawnPackets,ammoPackets,manaPackets,mana=p.statMana,
                     ammo=p.inventory[54].stack,spareAmmo=p.inventory[53].stack,
                     survivors=defenseTargets.Where(n=>n.active).Select(n=>DefenseIdentity(p,n)),inputScopeReleased=!NativeItemInput.Active(p)&&Main.myPlayer!=p.whoAmI,
                     attackReleased=!p.controlUseItem&&p.releaseUseItem,
@@ -433,7 +560,7 @@ internal static class ServerCombatFixture
                 throw new InvalidOperationException("Reuse requires the preceding defeated NPC.");
             startSlot=target.whoAmI;
         }
-        lastFrame=lastHit=null;frames=hits=hitViolations=presses=spawnPackets=ammoPackets=manaPackets=0;faultNextPress=false;
+        firstPress=lastFrame=lastHit=null;frames=hits=hitViolations=presses=spawnPackets=ammoPackets=manaPackets=0;faultNextPress=false;
         manaPaidWithoutShot=verifiedShots=potionPackets=summonSyncPackets=0;
         parkIce=mode=="summon-inflight";parked=null;summonDamage.Clear();
         firstCooldown=null;hitTrace.Clear();shots.Clear();projectileHits.Clear();flightTrace.Clear();manaTrace.Clear();
@@ -460,6 +587,31 @@ internal static class ServerCombatFixture
             var tile=Main.tile[tx,ty];
             tile.ClearEverything();
             if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
+        }
+        dualMode=mode;
+        edgeStarted=null;
+        farEdge=0;
+        edgeSamples.Clear();
+        if(mode=="dual-setup")
+        {
+            p.inventory[0].SetDefaults(ItemID.PlatinumBroadsword);
+            p.inventory[2].SetDefaults(ItemID.WoodenBow);
+            p.inventory[54].SetDefaults(ItemID.WoodenArrow);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{mode}));
+            return;
+        }
+        if(mode is "dual-active" or "dual-reflex" or "dual-empty" or "dual-flight" or "dual-range")
+        {
+            p.inventory[54].SetDefaults(ItemID.WoodenArrow);
+            p.inventory[54].stack=mode=="dual-flight"?1:99;
+            if(mode=="dual-empty")p.inventory[54].TurnToAir();
+            bool reflex=mode=="dual-reflex";
+            int distance=reflex?100:mode=="dual-flight"?320:170;
+            target=SpawnDefense(p,-distance,mode=="dual-empty"?18:160,threatening:reflex);
+            if(mode=="dual-flight")target.life=1;
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                entityRef=NativeCombatWorld.Reference(Bound(p),target),distance,mode}));
+            return;
         }
         if(mode.StartsWith("summon-"))
         {

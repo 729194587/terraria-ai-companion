@@ -214,6 +214,22 @@ class ResultRegistryTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
+    def test_combat_configuration_in_prompt_and_help(self):
+        legacy = bridge(FULL | {'server_ai_combat_v1','server_ai_combat_primary_v1'})
+        modern = bridge(set(legacy.hello['capabilities']) | {'server_ai_combat_secondary_v1',
+                        'server_ai_combat_summon_loadout_v1','server_ai_combat_inventory_v1'})
+        for compact in (False,True):
+            guide,_ = server_contract(modern,compact=compact)
+            for term in ('combatCandidates','task_interrupt_combat','configure_combat_loadout','整份替换'):
+                self.assertIn(term,guide)
+        info = api_help(modern,{'name':'configure_combat_loadout'})
+        self.assertEqual(set(info['parameters']['properties']),{'primary','secondary','summon'})
+        self.assertIn('expectedTypeId=row.typeId',info['example'])
+        self.assertIn('combatCandidates',api_help(modern,{'name':'inspect_inventory'})['description'])
+        previous = api_help(legacy,{'name':'configure_combat_loadout'})
+        self.assertNotIn('combatCandidates',previous['example'])
+        self.assertNotEqual(previous['example'],'return api("configure_combat_loadout",{})')
+
     def test_place_item_is_capability_gated_and_only_callable_as_task(self):
         import program_tasks
 

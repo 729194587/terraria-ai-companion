@@ -159,7 +159,7 @@ internal sealed class ServerTorchMaintenance
         &&ServerAiNativeActions.Released(p)&&!ActorItemUse.Running&&!ActorControl.Running&&!ActorMining.Running&&!Threatened(p)
         &&NativeMotionWorld.Observe(p).Grounded;
 
-    private static bool Threatened(Player p)=>p.immune
+    internal static bool Threatened(Player p)=>p.immune
         ||Main.npc.Any(n=>n.active&&!n.friendly&&n.damage>0&&Vector2.DistanceSquared(n.Center,p.Center)<320*320&&Visible(n.Center,p.Center))
         ||Main.projectile.Any(q=>q.active&&q.hostile&&q.damage>0&&Vector2.DistanceSquared(q.Center,p.Center)<240*240);
 

@@ -6,23 +6,40 @@ using Identity = CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity;
 namespace CompanionBridge.ServerIpc;
 
 internal sealed record CombatTarget(int Slot, int TypeId, string EntityRef);
-internal sealed record SummonImpact(int Owner,int ProjectileType,int ProjectileIdentity,int? ParentIdentity,ulong SpawnUpdate,int TargetEpoch);
+internal sealed record SummonImpact(int Owner,int ProjectileType,int ProjectileIdentity,int? ParentIdentity,ulong SpawnUpdate,int TargetEpoch)
+{
+    public int WeaponType {get;init;}
+}
+internal sealed record ProjectileImpact(int Weapon,int Ammo,int Type,int Owner,int Identity,int Epoch,ulong Launched);
 internal sealed record CombatHit(int LifeBefore, int LifeAfter, int DamageDone, bool Defeated, ulong GameUpdate)
 {
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public SummonImpact Summon { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public int? MeleeWeaponType {get;init;}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public ProjectileImpact Projectile {get;init;}
 }
 internal sealed record CombatObservation(bool SameSpawn, bool Active, bool Eligible, int Life);
-internal sealed record CombatEncounter(CombatTarget Target, string Reason, CombatHit LastHit);
-internal sealed record CombatWeapon(int Slot, int TypeId, string Name);
+internal sealed record CombatEncounter(CombatTarget Target, string Reason, CombatHit LastHit,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatContributions Contributions=null);
+internal sealed record CombatSelection(string Role,long Version,int PreviousSlot,ulong SelectedUpdate,
+    ulong AdmittedUpdate,string InterruptedAction);
+internal sealed record CombatWeapon(int Slot, int TypeId, string Name)
+{
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public CombatSelection Selection {get; init;}
+}
 
 internal sealed record CombatSummonObservation(bool InputAttempted, bool NativeShootObserved, int RootType,
     int? ObservedRootIdentity, bool? BuffObserved, int VerifiedChildren, int UnconfirmedChildren);
 
+internal sealed record CombatContributions(CombatHit Melee,CombatHit Summon);
 internal sealed record CombatProgress(string source,string threat,CombatTarget target,CombatWeapon weapon,int? life,
     CombatHit lastHit,int itemChecks,int combinedUpdates,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatEncounter[] encounters,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatSummonObservation summon);
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatSummonObservation summon,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatContributions contributions);
 
 internal static class CombatStrikeEvidence
 {
@@ -62,6 +79,7 @@ internal interface ICombatWorld
     CombatWeapon Weapon { get; }
     CombatHit LastHit { get; }
     CombatSummonObservation Summon => null;
+    CombatContributions Contributions => null;
     int ItemChecks { get; }
     int CombinedUpdates { get; }
     string Prepare();
@@ -85,7 +103,7 @@ internal sealed class CombatController(ICombatWorld world, string source, string
     internal override string Name => CombatProtocol.Operation;
     internal override string Phase => phase;
     internal override object Progress => new CombatProgress(source,threat,world.Target,world.Weapon,life,world.LastHit,
-        world.ItemChecks,world.CombinedUpdates,source=="reflex" ? encounters.ToArray() : null,world.Summon);
+        world.ItemChecks,world.CombinedUpdates,source=="reflex" ? encounters.ToArray() : null,world.Summon,world.Contributions);
     internal override Result Prepare(Identity frame) => world.Prepare() is {} reason ? Failed(reason) : null;
     internal override void Start(Identity frame)
     {
@@ -116,7 +134,7 @@ internal sealed class CombatController(ICombatWorld world, string source, string
 
     private Result ContinueDefense(Identity frame,string outcome)
     {
-        encounters.Add(new(world.Target,outcome,world.LastHit));
+        encounters.Add(new(world.Target,outcome,world.LastHit,world.Contributions));
         // Exclude only targets whose approach failed; a temporarily invalid target
         // may become a real threat again while another target is being handled.
         if(outcome is "combat_target_out_of_range" or "combat_approach_failed" or "combat_shot_blocked" or "combat_firing_navigation_no_route")skipped.Add(TargetRef);

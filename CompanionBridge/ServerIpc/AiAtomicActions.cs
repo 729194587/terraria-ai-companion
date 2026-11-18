@@ -21,7 +21,9 @@ internal sealed class AiAtomicActions
         .Concat(executor.SupportsPlacement ? new[]{"server_ai_place_item_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsCollection ? new[]{"server_ai_collect_drops_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsSorting ? new[]{"server_ai_sorting_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsLoadout ? new[]{"server_ai_combat_primary_v1","server_ai_combat_secondary_v1","server_ai_combat_summon_loadout_v1","server_ai_combat_inventory_v1"} : Array.Empty<string>())
         .Concat(SupportsCombat?new[]{"server_ai_combat_v1"}:Array.Empty<string>()).ToArray();
+    internal sealed record CombatAdmission(ulong Update,string InterruptedAction,Func<bool> SameWeapon);
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
     {
@@ -33,6 +35,10 @@ internal sealed class AiAtomicActions
         NativeResult BindingLost(object handle)=>new("unknown","actor_binding_changed",null,false);
         ulong ProgressVersion(object handle)=>0;
         bool SupportsCombat=>false;
+        bool SupportsLoadout=>false;
+        Func<bool> CapturePrimary(AiReadOnlyProtocol.Identity frame)=>null;
+        object StartCombat(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,CombatAdmission admission)
+            =>Start(frame,CombatProtocol.Operation,args,id);
         bool SupportsContainers=>false;
         bool SupportsSorting=>false;
         bool SupportsCollection=>false;
@@ -60,6 +66,7 @@ internal sealed class AiAtomicActions
         internal JsonElement Arguments;
         internal int Duration;
         internal object Handle;
+        internal CombatAdmission Combat;
         internal NativeResult Result;
         internal string ReasonDetail;
         internal string StopStatus, StopReason;
@@ -91,10 +98,12 @@ internal sealed class AiAtomicActions
     internal object CombatState(AiReadOnlyProtocol.Identity current) =>
         new{action=Matches(lastCombat,current)?Snapshot(lastCombat):null};
 
-    private string CombatConflict(AiReadOnlyProtocol.Identity current, string target)
+    private string CombatConflict(AiReadOnlyProtocol.Identity current, string target,out CombatAdmission admission)
     {
+        admission=null;
         if (BodyBlocked(current)) return "body_release_unconfirmed";
         if (MaintenanceBusy?.Invoke()==true) return "action_busy";
+        admission=new(current.GameUpdate,active?.Id,executor.CapturePrimary(current));
         if (active==null) return executor.CanTransferBody(current)?null:"actor_busy";
         if (CombatActive || !Matches(active,current) || active.Cancel || active.Disconnected.IsCancellationRequested)
             return "action_busy";
@@ -118,9 +127,9 @@ internal sealed class AiAtomicActions
         if(!SupportsCombat||current?.CanAct!=true)return;
         if(entityRef==null||CombatActive||!ReflexTargetAllowed(current,entityRef)
             ||Matches(reflexBackoff,current)&&current.GameUpdate<reflexBackoffUntil)return;
-        if(CombatConflict(current,entityRef)!=null)return;
+        if(CombatConflict(current,entityRef,out var admission)!=null)return;
         Admit(Guid.Empty,Guid.NewGuid().ToString("N"),actorId,current,CombatProtocol.Operation,
-            JsonSerializer.SerializeToElement(new{entityRef,threat}),35000,default);
+            JsonSerializer.SerializeToElement(new{entityRef,threat}),35000,default,admission:admission);
     }
     private static object TaskState(Entry e)
     {
@@ -138,7 +147,7 @@ internal sealed class AiAtomicActions
         actionId = e.Id, operation = e.Operation, session = e.Owner.ToString("N"), generation = e.Generation,
         worldSessionId = e.World, actorId = e.ActorId, actorSlot = e.Slot, durationMs = e.Duration,
         targetTile = e.Operation is "place_tile" or "place_object" or "place_rope" ? (JsonElement?)e.Arguments : null,
-        targetInventory = e.Operation is "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" ? (JsonElement?)e.Arguments : null,
+        targetInventory = e.Operation is "configure_combat_loadout" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" ? (JsonElement?)e.Arguments : null,
         targetTask = IsTask(e.Operation) ? (JsonElement?)e.Arguments : null,
         targetContainer = IsContainerOperation(e.Operation) ? (JsonElement?)e.Arguments : null,
         targetRecipe = e.Operation == "craft_recipe" ? (JsonElement?)e.Arguments : null,
@@ -175,9 +184,10 @@ internal sealed class AiAtomicActions
         if (operation is ("sort_inventory" or "sort_container") && executor?.SupportsSorting != true)
             return new(Error: "unsupported_operation");
         if (container && !SupportsContainers) return new(Error: "unsupported_operation");
+        if(operation=="configure_combat_loadout" && executor?.SupportsLoadout!=true)return new(Error:"unsupported_operation");
         if (operation == "place_item" && executor?.SupportsPlacement != true) return new(Error: "unsupported_operation");
         if (operation == "collect_drops" && executor?.SupportsCollection != true) return new(Error: "unsupported_operation");
-        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "place_item")))) return new(Error: "unsupported_operation");
+        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "place_item" or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
         var arguments = root.GetProperty("arguments");
         int key = 0;
         if (selecting)
@@ -203,20 +213,21 @@ internal sealed class AiAtomicActions
         if (remaining <= 0) return new(Error: "request_expired");
         if (remaining > 2000) return new(Error: "invalid_deadline");
         int duration = operation switch { CombatProtocol.Operation=>35000, "navigate_to"=>180000, "mine_target"=>55000, "collect_drops"=>35000, "place_item"=>12000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
-        if(combat&&CombatConflict(current,arguments.GetProperty("entityRef").GetString()) is {} conflict)
+        CombatAdmission admission=null;
+        if(combat&&CombatConflict(current,arguments.GetProperty("entityRef").GetString(),out admission) is {} conflict)
             return new(Error:conflict);
-        return Admit(owner,id,binding.actor,current,operation,arguments,duration,disconnected, key, selecting?remaining:duration);
+        return Admit(owner,id,binding.actor,current,operation,arguments,duration,disconnected, key, selecting?remaining:duration,admission);
     }
 
     private Reply Admit(Guid owner,string id,string actorId,AiReadOnlyProtocol.Identity current,string operation,
-        JsonElement arguments,int duration,CancellationToken disconnected,int key=0,long? lease=null)
+        JsonElement arguments,int duration,CancellationToken disconnected,int key=0,long? lease=null,CombatAdmission admission=null)
     {
         while (entries.Count >= RegistryCapacity && terminalEntries.TryDequeue(out var oldest))
             if (entries.TryGetValue(oldest, out var terminal) && terminal.Status != "running") entries.Remove(oldest);
         if (entries.Count >= RegistryCapacity) return new(Error: "action_registry_full");
         active = new Entry { Owner = owner, Id = id, World = current.World, Actor = current.Actor, ActorId = actorId,
             Generation = current.Generation, Slot = current.Slot, Before = current.SelectedSlot,
-            Operation = operation, Arguments = arguments.Clone(), Duration = duration,
+            Combat = admission, Operation = operation, Arguments = arguments.Clone(), Duration = duration,
             Key = key, Target = HotbarSlots.ToInventorySlot(key), Deadline = clock() + (lease ?? duration), Disconnected = disconnected };
         entries.Add(id, active);
         if(CombatActive)lastCombat=active;
@@ -296,7 +307,8 @@ internal sealed class AiAtomicActions
         {
             try
             {
-                if (e.Handle == null) { e.Attempted = true; e.Handle = executor.Start(current, e.Operation, e.Arguments, e.Id); return; }
+                if (e.Handle == null) { e.Attempted = true; e.Handle = e.Combat==null?executor.Start(current,e.Operation,e.Arguments,e.Id)
+                    :executor.StartCombat(current,e.Arguments,e.Id,e.Combat); return; }
                 e.Result = executor.Poll(current, e.Handle);
                 e.Reason=e.Result.Reason;
                 if (e.Result.Status == "running") return;

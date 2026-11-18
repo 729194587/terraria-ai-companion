@@ -146,6 +146,64 @@ class TypedResultTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.valid(name, fixtures[name])
 
+    def test_primary_combat_configuration(self):
+        names = {'configure_combat_loadout', 'query_combat_loadout'}
+        def exposed(caps):
+            return {row['function']['name'] for row in server_definitions(bridge(caps))}
+        legacy = FULL | {'server_ai_combat_v1'}
+        self.assertFalse(names & exposed(legacy))
+        self.assertTrue(names <= exposed(legacy | {'server_ai_combat_primary_v1'}))
+
+        role = {'hotbarKey': 0, 'expectedTypeId': 24, 'inventoryToken': 'a'*64}
+        for invalid in ({'unknown': role}, {'primary': {**role,'hotbarKey': 10}},
+                        {'primary': {**role,'inventoryToken': 'stale'}}):
+            with self.assertRaises(atomic.ArgumentValidationError):
+                atomic.validate('configure_combat_loadout', invalid)
+        action = {'targetInventory': {'primary': role}}
+        evidence = {'version': 1, 'primary': {'hotbarKey': 0, 'expectedTypeId': 24,
+                    'actualTypeId': 24, 'available': True, 'reason': None}, 'lastRefusal': None}
+        self.assertTrue(atomic.verified_loadout(action, evidence))
+        self.assertFalse(atomic.verified_loadout(action, {**evidence, 'primary': {**evidence['primary'],'actualTypeId': 8}}))
+        self.assertFalse(atomic.verified_loadout({'targetInventory': {}}, {'version': 2}))
+        self.assertTrue(atomic.verified_loadout({'targetInventory': {}}, {'version': 2,'primary': None}))
+
+    def test_secondary_combat_configuration(self):
+        primary_only = bridge(FULL | {'server_ai_combat_v1','server_ai_combat_primary_v1'})
+        dual = bridge(set(primary_only.hello['capabilities']) | {'server_ai_combat_secondary_v1'})
+        def roles(backend):
+            return next(row['function']['parameters']['properties'] for row in server_definitions(backend)
+                        if row['function']['name']=='configure_combat_loadout')
+        self.assertEqual(set(roles(primary_only)), {'primary'})
+        self.assertEqual(set(roles(dual)), {'primary','secondary'})
+        bow = {'hotbarKey':3,'expectedTypeId':39,'inventoryToken':'a'*64}
+        args = {'secondary':bow}
+        with self.assertRaises(atomic.PreDispatchRejected):
+            atomic.validate_backend(primary_only,'configure_combat_loadout',args)
+        with self.assertRaises(ValueError):
+            atomic.validate('configure_combat_loadout',dict(primary=bow,secondary=bow))
+        proof = {'version':1,'primary':None,'secondary':{'hotbarKey':3,'expectedTypeId':39,'actualTypeId':39,
+                 'available':False,'reason':'combat_ammo_unavailable'}}
+        self.assertTrue(atomic.verified_loadout({'targetInventory':args},proof))
+        self.assertFalse(atomic.verified_loadout({'targetInventory':args},{**proof,'secondary':None}))
+        self.assertFalse(atomic.verified_loadout({'targetInventory':{}},proof))
+
+    def test_summon_loadout_configuration(self):
+        dual = FULL | {'server_ai_combat_primary_v1','server_ai_combat_secondary_v1'}
+        backend = bridge(dual | {'server_ai_combat_summon_loadout_v1'})
+        role = {'hotbarKey':4,'expectedTypeId':1309,'inventoryToken':'a'*64}
+        arguments = {'summon':role}
+        self.assertIn('summon',next(r['function']['parameters']['properties'] for r in server_definitions(backend)
+                                    if r['function']['name']=='configure_combat_loadout'))
+        with self.assertRaises(atomic.PreDispatchRejected):
+            atomic.validate_backend(bridge(dual),'configure_combat_loadout',arguments)
+        with self.assertRaises(ValueError):
+            atomic.validate('configure_combat_loadout',dict(primary=role,summon=role))
+        for reason in ('summon_capacity_unavailable','combat_mana_unavailable','summon_already_active'):
+            confirmed = {'hotbarKey':4,'expectedTypeId':1309,'actualTypeId':1309,'available':False,'reason':reason}
+            self.assertTrue(atomic.verified_loadout({'targetInventory':arguments},
+                                                    {'version':1,'primary':None,'summon':confirmed}))
+        self.assertFalse(atomic.verified_loadout({'targetInventory':arguments},{'version':1,'primary':None}))
+
     def test_observation_variants_and_field_types(self):
         self.valid('get_player_state', {'valid': False, 'available': False, 'reason': 'unavailable'})
         state = deepcopy(self.observations['get_player_state'])

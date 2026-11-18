@@ -39,6 +39,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public string CurrentCombatTarget(object handle)=>
         handle is Handle {Context:TaskSlot {Task:CombatController combat}}?combat.TargetRef:null;
     public bool SupportsCombat=>true;
+    public bool SupportsLoadout=>true;
+    public Func<bool> CapturePrimary(AiReadOnlyProtocol.Identity frame)=>NativeCombatWorld.CapturePrimary(frame);
+    public object StartCombat(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.CombatAdmission admission)
+        =>StartCore(frame,CombatProtocol.Operation,args,id,false,admission:admission);
     public bool SupportsContainers=>true;
     public bool SupportsSorting=>ActorSorting.Available;
     public bool SupportsCollection => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
@@ -50,7 +54,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     internal object StartMaintenancePlacement(AiReadOnlyProtocol.Identity id,Microsoft.Xna.Framework.Point at)
         =>StartCore(id,"place_tile",JsonSerializer.SerializeToElement(new{x=at.X,y=at.Y}),"auto-torch",true);
     private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child,bool continuous=false,
-        NavigationKnowledge knowledge=null)
+        NavigationKnowledge knowledge=null,AiAtomicActions.CombatAdmission admission=null)
     {
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
@@ -61,13 +65,20 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         try
         {
             object context;
+            if(operation=="configure_combat_loadout")
+            {
+                string reason=NativeCombatWorld.Configure(identity,args);
+                if(reason!=null)return Reject(reason);
+                return new Handle(identity,operation,null,new("completed","combat_loadout_configured",
+                    NativeCombatWorld.Loadout(identity),true,true,InputsAcquired:false));
+            }
             if(AiAtomicActions.IsTask(operation))
             {
                 if(child)throw new InvalidOperationException("Nested root task denied");
                 var executor=new ChildExecutor(this,continuous:true);
                 CompanionTask task=operation==CombatProtocol.Operation
                     ?new CombatController(new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),
-                        args.TryGetProperty("threat",out _)?ReflexTargetAllowed??((_,_)=>true):null),
+                        args.TryGetProperty("threat",out _)?ReflexTargetAllowed??((_,_)=>true):null,admission),
                         args.TryGetProperty("threat",out var threat)?"reflex":"agent",threat.ValueKind==JsonValueKind.String?threat.GetString():null)
                     :operation=="mine_target"
                     ?args.TryGetProperty("cluster",out var cluster)&&cluster.GetBoolean()
@@ -363,6 +374,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         catch(Exception e){ProbeSession.Quarantine("Native action shutdown unconfirmed: "+e.Message);}
         finally
         {
+            NativeCombatWorld.ClearLoadout();
             ServerDrops.Current = null;
             if(ReferenceEquals(ActorControl.Driver,navigation)||ReferenceEquals(ActorControl.Driver,directInput))ActorControl.Driver=null;
         }
