@@ -33,7 +33,7 @@ CATEGORIES = (
      'Limited', '仅AI自身背包内有界搬运/交换/持用；需新鲜槽位令牌和效果/输入释放核验。'),
     ('排序', ('sort_inventory', 'sort_container'), 'Limited', '原生排序，操作后重新观察相关槽位。'),
     ('容器', ('open_container', 'inspect_container', 'close_container', 'deposit_container_item', 'withdraw_container_item', 'quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'), 'Limited', '绑定AI在原生范围内操作原版箱子。存取只涉及指定的两个槽，部分效果查看实际数量和剩余数量。'),
-    ('世界交互', ('interact_tile',), 'Limited', '客户端原子交互。'),
+    ('世界交互', ('open_door','close_door','interact_tile'), 'Limited', '观察门格后显式开关普通木门，服务端导航会开启前方可及的门并重新规划。'),
     ('等待与取消', ('wait', 'stop_action'), 'Supported', '宿主等待与当前AI动作取消；不推进游戏时间。'),
     ('装备运动', (), 'Not exposed', '翅膀/钩爪/坐骑适配、飞行控制与自动恢复均不可直接调用。'),
 )

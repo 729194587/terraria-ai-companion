@@ -53,7 +53,7 @@ internal static class ServerAiDirectInputFixture
         string requestText;
         try{requestText=File.ReadAllText(request);File.Delete(request);}catch(IOException){return;}
         using var doc=JsonDocument.Parse(requestText);scene=doc.RootElement.GetProperty("scene").GetString();
-        if(scene is not ("flat" or "wall" or "platform" or "edge" or "air" or "profile_refused"))throw new ArgumentException("Unknown direct-input fixture scene.");
+        if(scene is not ("flat" or "wall" or "platform" or "edge" or "air" or "profile_refused" or "door" or "blocked_door"))throw new ArgumentException("Unknown direct-input fixture scene.");
         int left=Main.spawnTileX,floor=Main.spawnTileY+8;
         for(int tx=left-36;tx<=left+36;tx++)for(int ty=floor-24;ty<=floor+18;ty++)
         {
@@ -63,6 +63,18 @@ internal static class ServerAiDirectInputFixture
             {tile.HasTile=true;tile.TileType=TileID.Dirt;}
             if((scene=="platform"||scene=="edge"&&tx<=left+2)&&ty==floor)
             {tile.HasTile=true;tile.TileType=TileID.Platforms;tile.TileFrameY=0;tile.TileFrameX=0;}
+        }
+        if(scene is "door" or "blocked_door")
+        {
+            int x=left+3;
+            var lintel=Main.tile[x,floor-4];lintel.HasTile=true;lintel.TileType=TileID.Dirt;
+            if(!TileObject.CanPlace(x,floor-1,TileID.ClosedDoor,0,1,out var data)||!TileObject.Place(data))
+                throw new InvalidOperationException("Could not place diagnostic door");
+            if(scene=="blocked_door")
+                foreach(int side in new[]{-1,1})
+                {
+                    var block=Main.tile[x+side,floor-3];block.HasTile=true;block.TileType=TileID.Dirt;
+                }
         }
         p.position=new(left*16,floor*16-p.height-(scene=="air"?300:0));p.velocity=new(0,0);
         p.jump=0;p.releaseJump=true;p.statLife=100;p.dead=false;

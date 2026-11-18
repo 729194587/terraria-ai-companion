@@ -32,6 +32,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal ServerGrappleClimb Climb;
         internal bool GrappleAttempted;
         internal BossEvasion Evasion;
+        internal readonly System.Collections.Generic.HashSet<(int,int)> OpenedDoors=new();
         internal bool Combat;
         internal int CombatLife;
         internal ulong ProgressVersion;
@@ -212,6 +213,19 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                     return;
                 }
                 ActorControl.Healthy(p);run.Tick=Main.GameUpdateCount;run.Updates++;
+                float goal=run.Region==null?run.Target:Math.Clamp(p.position.X,run.Region.MinPlayerLeftX,run.Region.MaxPlayerLeftX);
+                if(!run.Combat && ServerDoor.Ahead(p,goal,out int dx,out int dy))
+                {
+                    int top=dy-Main.tile[dx,dy].TileFrameY/18;
+                    string failure=run.OpenedDoors.Add((dx,top))?ServerDoor.Set(p,dx,dy,true,out _):"door_closed_again";
+                    if(failure!=null)
+                    {
+                        Stop(failure=="door_state_unconfirmed"?"unknown":"failed",failure);
+                        orig(p,slot);return;
+                    }
+                    navigation.Cancel();
+                    run.Session=checked(++session);
+                }
                 executing=true;injected=false;
                 run.CombatLife=p.statLife;
                 orig(p,slot); // One original natural update, never a manual Player.Update.

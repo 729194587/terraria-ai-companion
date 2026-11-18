@@ -40,6 +40,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         handle is Handle {Context:TaskSlot {Task:CombatController combat}}?combat.TargetRef:null;
     public bool SupportsBossEncounter=>true;
     public bool SupportsCombat=>true;
+    public bool SupportsDoors=>true;
     public bool SupportsLoadout=>true;
     public Func<bool> CapturePrimary(AiReadOnlyProtocol.Identity frame)=>NativeCombatWorld.CapturePrimary(frame);
     public object StartCombat(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.CombatAdmission admission)
@@ -66,6 +67,12 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         try
         {
             object context;
+            if(operation is "open_door" or "close_door")
+            {
+                string reason=ServerDoor.Set(p,args.GetProperty("x").GetInt32(),args.GetProperty("y").GetInt32(),operation=="open_door",out var proof);
+                return new Handle(identity,operation,null,new(reason==null?"completed":reason=="door_state_unconfirmed"?"unknown":"failed",
+                    reason??"door_state_verified",proof,true,reason==null,InputsAcquired:false));
+            }
             if(operation=="configure_combat_loadout")
             {
                 string reason=NativeCombatWorld.Configure(identity,args);

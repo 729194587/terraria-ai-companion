@@ -151,7 +151,7 @@ P4-B 已经使用虚拟鼠标和原生 `Player.ItemCheck()`。
   R0     原生物品输入上下文抽取         待审查/设计
   R1     挖掘与砍树改用原生 ItemCheck   已确认待重构
   R2     扩展原生战斗武器支持           已确认待重构
-  R3     增加原生门交互                 已确认待审查
+  R3     增加原生门交互                 普通木门已通过隔离专服验收
   R4     审查并优化抓钩执行             待审查
   R5     增加右键物品使用               已确认待审查
   R6     清理放置重复预检查             待审查
@@ -212,6 +212,19 @@ DynamicMethod 克隆。 - 与原生机制重复的状态维护。
 ### R2-E Boss 与多段 NPC（E0–E4 的隔离实测及逐 Boss 胜负见专题）
 
 [专服自主 Boss 战斗设计](R2_E_BOSS_ENCOUNTERS.md)记录了单目标战斗审计、TerraBot 对照、Encounter 根任务与共享执行器的边界，以及隔离专服的分阶段验收条件。
+
+### R3 普通木门与导航（2026-11-19）
+
+专服握手声明 `server_ai_doors_v1` 时，Lua 可通过 `open_door({x,y})` 和 `close_door({x,y})` 指定普通木门占用的绝对 Tile。检查角色中心到目标格中心的 80 像素距离。游戏线程调用 WorldGen.OpenDoor 或非强制 CloseDoor，检查门轴三格及展开门扇，广播变更区域。已处于请求状态时返回 changed=false。
+
+水平导航及目的地导航遇到行进方向上可及的关门时，先尝试向前开启，受阻后最多试一次反向。开门成功即丢弃旧路线，重新规划至原目标。两侧都堵住时返回 door_blocked。导航的到达回执仍核验角色站位和脚下支撑。测试用门后固定目的地代表队友所在位置，本轮未接入真人客户端。
+
+隔离专服 2026.09.3.1 的 15 条动作回执记录了重复开门、左右开关、按展开门扇关门、越距拒绝、从开门距离外接近，以及 navigate_to_x 和 navigate_to 的通过与受阻终态。目的地任务实际在 X=33711.996 停稳，脚底覆盖指定 X=33728。两侧受阻时角色留在起点 X=33616。原始回执位于 .local/direct-input-native-63d02d2165014053a94b8bcf9da2e9ff/door-results.json。复现命令：
+
+```powershell
+pwsh -NoProfile -File scripts/build-companion.ps1 -OutputPath .local/r3-build
+pwsh -NoProfile -File tests/verify_server_ai_direct_input_native.ps1 -TestScript native_door.py -PackagePath .local/r3-build/Mods/CompanionBridge.tmod
+```
 
 ## 7. 每阶段验收标准
 

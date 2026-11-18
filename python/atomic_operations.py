@@ -169,6 +169,8 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("mine_wall", "选中纯锤原生挖背景墙；80像素内，前景必须为空；实际墙消失才成功。多人需同版本服务器确认；10秒上限，可取消。", TILE, ['x', 'y']),
     tool("place_wall", "选中原版消耗型墙物品，在80像素内无墙格原生放置；正确墙类型和消耗一件共同核验，多人需服务器确认；自动补邻墙或自动涂漆不支持，10秒上限。", TILE, ['x', 'y']),
     tool("hammer_tile", "选中纯锤对80像素内原版普通方块/平台原生锤击；目标无背景墙，实际形状变化才成功，多人需服务器确认。不支持家具/破坏型锤目标。10秒上限。", TILE, ['x', 'y']),
+    tool("open_door", "打开80像素内已观察的普通木门。x/y 为门占用的绝对 Tile。已打开时核验现状。", TILE, ["x","y"]),
+    tool("close_door", "关闭80像素内已观察的普通木门。门口受阻时返回失败。", TILE, ["x","y"]),
     tool("interact_tile", "80像素内原版门、未锁宝箱、开关、拉杆基础交互；多格任一占用格可指定；宝箱核验打开/关闭，开关及拉杆核验Frame切换，不证明下游电路效果。多人需同版本服务器确认。", TILE, ["x", "y"]),
     tool("place_item", "通过 submit_task 使用当前选中的快捷栏物品在 Tile 坐标 x/y 执行原生放置。", TILE, ["x", "y"]),
     tool("place_object", PLACE_OBJECT_DESCRIPTION, TILE, ["x", "y"]),
@@ -1004,6 +1006,12 @@ async def terminal(bridge, action, generation):
                        and native_evidence.get('targetPresent') is True
                        and native_evidence.get('targetChanged') is False
                        and type(native_evidence.get('consumedCount')) is int and native_evidence['consumedCount'] == 1),
+        **{op: (isinstance(action.get('targetTile'),dict)
+                and all(type(native_evidence.get(k)) is int and native_evidence[k]==action['targetTile'].get(k) for k in ('x','y'))
+                and native_evidence.get('afterOpen') is (op=='open_door')
+                and type(native_evidence.get('beforeOpen')) is bool
+                and native_evidence.get('changed') is (native_evidence['beforeOpen']!=native_evidence['afterOpen']))
+           for op in ('open_door','close_door')},
         'place_rope': verified_server_rope(action, native_evidence),
         'move_on_rope': verified_server_rope_motion(action, native_evidence),
         'place_object': (isinstance(action.get('targetTile'), dict)
@@ -1030,7 +1038,7 @@ async def terminal(bridge, action, generation):
         and isinstance(end,dict) and retreat.get('update')==end.get('gameUpdate')))
     native_end = (retreat_verified and isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -1106,6 +1114,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_crafting_v1; no crafting RPC started')
     if name == 'place_object' and 'server_ai_place_object_workbench_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_place_object_workbench_v1; no object placement RPC started')
+    if name in ('open_door','close_door') and 'server_ai_doors_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_doors_v1')
     if name == 'place_rope' and 'server_ai_place_rope_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_place_rope_v1; no rope placement RPC started')
     if name == 'observe_scene' and 'server_ai_scene_v1' not in bridge.hello.get('capabilities', []):
@@ -1259,7 +1269,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             placement_identity = dict(action)
         if (name == 'place_tile' and 'server_ai_place_tile_v1' in bridge.hello.get('capabilities', [])
                 or name == 'place_object' and 'server_ai_place_object_workbench_v1' in bridge.hello.get('capabilities', [])
-                or name == 'place_rope'):
+                or name in ('place_rope','open_door','close_door')):
             placement_invalid = True
             if (action.get('targetTile') != arguments
                     or any(type(value) is not int for value in action['targetTile'].values())):

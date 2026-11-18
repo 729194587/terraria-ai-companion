@@ -214,6 +214,15 @@ class ResultRegistryTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
+    def test_doors_require_handshake(self):
+        old = bridge(FULL - {'server_ai_doors_v1'})
+        modern = bridge(set(old.hello['capabilities']) | {'server_ai_doors_v1'})
+        for name in ('open_door', 'close_door'):
+            self.assertEqual('not_exposed', api_help(old, {'name': name})['status'])
+            help_row = api_help(modern, {'name': name})
+            self.assertEqual('ok', help_row['status'])
+            self.assertEqual({'x', 'y'}, set(help_row['parameters']['required']))
+
     def test_boss_strategy_requires_new_handshake(self):
         import program_tasks
         old=bridge(FULL | {'server_ai_boss_encounter_v1','server_ai_boss_members_v1'})

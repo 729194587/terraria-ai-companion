@@ -663,7 +663,7 @@ DEFS.update({
 DEFS['MoveArguments'] = atomic.SCHEMAS['move_input']
 TARGETS = {
     'targetRegion': ('navigate_to_landing_region',),
-    'targetTile': ('place_tile', 'place_object', 'place_rope'),
+    'targetTile': ('open_door','close_door','place_tile', 'place_object', 'place_rope'),
     'targetContainer': tuple(sorted(atomic.CONTAINER_OPERATIONS)),
     'targetRecipe': ('craft_recipe',),
     'targetInventory': ('configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
@@ -839,7 +839,9 @@ COMBAT_ROLE_STATE = nullable(obj({'hotbarKey':HOTBAR, 'expectedTypeId':I, 'actua
 DEFS['CombatLoadout'] = obj({'version':COUNT,'lastRefusal':nullable(obj({'reason':S,'gameUpdate':TICK,'entityRef':S})),
                              'primary':COMBAT_ROLE_STATE,'secondary':COMBAT_ROLE_STATE,'summon':COMBAT_ROLE_STATE,
                              'maintenance':nullable(obj({'status':S,'confirmedCasts':COUNT}))},optional=('secondary','summon','maintenance'))
+DEFS['DoorEvidence']=obj({**TILE_XY, **fields(integers='hinge top', booleans='beforeOpen afterOpen changed')})
 ACTION_EVIDENCE = {
+    'open_door':'DoorEvidence','close_door':'DoorEvidence',
     'configure_combat_loadout': 'CombatLoadout',
     'craft_recipe': 'CraftEvidence',
     'transfer_inventory_item': 'InventoryEvidence',
@@ -992,6 +994,7 @@ TASK_COMPLETION_PROOF = {
     },
 }
 SUCCESSFUL_PROOF = {
+    'open_door': matches(afterOpen=TRUE), 'close_door': matches(afterOpen=FALSE),
     'configure_combat_loadout': ref('CombatLoadout'),
     'select_hotbar_slot': matches(selectionApplied=TRUE),
     'move_input': matches(inputReleased=TRUE),

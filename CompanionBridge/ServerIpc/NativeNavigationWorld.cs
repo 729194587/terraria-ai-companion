@@ -124,6 +124,12 @@ internal sealed class NativeNavigationWorld : INavigationWorld
 
     public bool PreferEdit(int remainingTiles)
     {
+        // Let the movement child handle an ordinary doorway before pricing terrain edits.
+        if(ServerDoor.Ahead(player,Math.Clamp(player.position.X,destination.MinPlayerLeftX,destination.MaxPlayerLeftX),out _,out _))
+        {
+            ReleasePlanning();
+            return false;
+        }
         Evaluate(remainingTiles,false);
         return ready&&selected!=null;
     }
