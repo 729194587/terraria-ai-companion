@@ -1,14 +1,28 @@
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
 using Identity = CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity;
 
 namespace CompanionBridge.ServerIpc;
 
 internal sealed record CombatTarget(int Slot, int TypeId, string EntityRef);
-internal sealed record CombatHit(int LifeBefore, int LifeAfter, int DamageDone, bool Defeated, ulong GameUpdate);
+internal sealed record SummonImpact(int Owner,int ProjectileType,int ProjectileIdentity,int? ParentIdentity,ulong SpawnUpdate,int TargetEpoch);
+internal sealed record CombatHit(int LifeBefore, int LifeAfter, int DamageDone, bool Defeated, ulong GameUpdate)
+{
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public SummonImpact Summon { get; init; }
+}
 internal sealed record CombatObservation(bool SameSpawn, bool Active, bool Eligible, int Life);
 internal sealed record CombatEncounter(CombatTarget Target, string Reason, CombatHit LastHit);
 internal sealed record CombatWeapon(int Slot, int TypeId, string Name);
+
+internal sealed record CombatSummonObservation(bool InputAttempted, bool NativeShootObserved, int RootType,
+    int? ObservedRootIdentity, bool? BuffObserved, int VerifiedChildren, int UnconfirmedChildren);
+
+internal sealed record CombatProgress(string source,string threat,CombatTarget target,CombatWeapon weapon,int? life,
+    CombatHit lastHit,int itemChecks,int combinedUpdates,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatEncounter[] encounters,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatSummonObservation summon);
 
 internal static class CombatStrikeEvidence
 {
@@ -47,6 +61,7 @@ internal interface ICombatWorld
     CombatTarget Target { get; }
     CombatWeapon Weapon { get; }
     CombatHit LastHit { get; }
+    CombatSummonObservation Summon => null;
     int ItemChecks { get; }
     int CombinedUpdates { get; }
     string Prepare();
@@ -69,11 +84,8 @@ internal sealed class CombatController(ICombatWorld world, string source, string
     internal string TargetRef => world.Target?.EntityRef;
     internal override string Name => CombatProtocol.Operation;
     internal override string Phase => phase;
-    internal override object Progress => source=="reflex"
-        ? new { source, threat, target=world.Target, weapon=world.Weapon, life, lastHit=world.LastHit,
-            itemChecks=world.ItemChecks, combinedUpdates=world.CombinedUpdates, encounters=encounters.ToArray() }
-        : new { source, threat, target=world.Target, weapon=world.Weapon, life, lastHit=world.LastHit,
-            itemChecks=world.ItemChecks, combinedUpdates=world.CombinedUpdates };
+    internal override object Progress => new CombatProgress(source,threat,world.Target,world.Weapon,life,world.LastHit,
+        world.ItemChecks,world.CombinedUpdates,source=="reflex" ? encounters.ToArray() : null,world.Summon);
     internal override Result Prepare(Identity frame) => world.Prepare() is {} reason ? Failed(reason) : null;
     internal override void Start(Identity frame)
     {

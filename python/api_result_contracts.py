@@ -706,7 +706,9 @@ DEFS['CollectionEvidence'] = obj({
     'nextTarget': nullable(obj({'entityRef': S, 'typeId': I, 'count': COUNT, 'x': PIXEL, 'y': PIXEL})),
 }, optional=('canContinue', 'nextTarget'))
 COMBAT_TARGET = obj(fields(integers='Slot TypeId', strings='EntityRef'))
-COMBAT_HIT = obj({**fields(integers='LifeBefore LifeAfter DamageDone', booleans='Defeated'), 'GameUpdate': TICK})
+COMBAT_HIT = obj({**fields(integers='LifeBefore LifeAfter DamageDone', booleans='Defeated'), 'GameUpdate': TICK,
+                  'Summon': obj({**fields(integers='Owner ProjectileType ProjectileIdentity TargetEpoch'),
+                                 'ParentIdentity': nullable(I), 'SpawnUpdate': TICK})}, optional=('Summon',))
 DEFS['CombatProgress'] = obj({
     'source': enum('agent', 'reflex'), 'threat': nullable(S), 'life': nullable(I),
     'target': nullable(COMBAT_TARGET),
@@ -714,7 +716,10 @@ DEFS['CombatProgress'] = obj({
     'lastHit': nullable(COMBAT_HIT),
     'itemChecks': COUNT, 'combinedUpdates': COUNT,
     'encounters': array(obj({'Target': COMBAT_TARGET, 'Reason': S, 'LastHit': nullable(COMBAT_HIT)})),
-}, optional=('encounters',))
+    'summon': obj({**fields(booleans='InputAttempted NativeShootObserved',
+                           integers='RootType VerifiedChildren UnconfirmedChildren'),
+                   'ObservedRootIdentity': nullable(I), 'BuffObserved': nullable(B)}),
+}, optional=('encounters', 'summon'))
 DEFS['LocalPlanCost'] = obj(fields(numbers='Movement Mining Placement Materials Alteration Remaining'))
 DEFS['LocalEditPlan'] = obj({
     'Actions': array(obj({

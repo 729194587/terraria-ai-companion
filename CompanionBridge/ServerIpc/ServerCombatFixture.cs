@@ -28,7 +28,7 @@ internal static class ServerCombatFixture
     // whether that frame emitted a verified shot, so a debit without a
     // projectile can never hide behind end-of-run totals.
     private static readonly List<object> manaTrace=new();
-    private static int manaPaidWithoutShot, verifiedShots, potionPackets;
+    private static int manaPaidWithoutShot, verifiedShots, potionPackets, summonSyncPackets;
     private static int? firstCooldown;
     private static readonly List<object> hitTrace=new();
     private static readonly List<object> shots=new(),projectileHits=new(),flightTrace=new();
@@ -38,7 +38,7 @@ internal static class ServerCombatFixture
         var stack=new System.Diagnostics.StackTrace().ToString();
         if (shot.Verified) verifiedShots++;
         shots.Add(new{tick=Main.GameUpdateCount,shot.Owner,shot.Identity,shot.Weapon,shot.Ammo,shot.Magic,shot.Verified,
-            shot.Type,shot.Slot,x=projectile.Center.X,y=projectile.Center.Y,tx=Main.npc[shot.Target.Slot].Center.X,ty=Main.npc[shot.Target.Slot].Center.Y,
+            shot.Type,shot.Slot,shot.PersistentRoot,x=projectile.Center.X,y=projectile.Center.Y,tx=Main.npc[shot.Target.Slot].Center.X,ty=Main.npc[shot.Target.Slot].Center.Y,
             targetVx=Main.npc[shot.Target.Slot].velocity.X,targetVy=Main.npc[shot.Target.Slot].velocity.Y,target=shot.Target.EntityRef,vx=projectile.velocity.X,vy=projectile.velocity.Y,
             mana=shot.Combat.ManaAtLaunch,damage=projectile.damage,
             nativeShoot=stack.Contains("ItemCheck_Shoot"),nativeWrapper=stack.Contains("Terraria.Player::ItemCheckWrapped")});
@@ -47,7 +47,7 @@ internal static class ServerCombatFixture
     {
         if(!Enabled)return;
         var stack=new System.Diagnostics.StackTrace().ToString();
-        projectileHits.Add(new{tick=Main.GameUpdateCount,p.identity,p.owner,n.life,damage,launched=shot.Launched,
+        projectileHits.Add(new{tick=Main.GameUpdateCount,p.identity,p.owner,p.type,n.life,damage,launched=shot.Launched,
             target=NativeCombatWorld.Reference(Bound(ProbeSession.Actor),n),
             nativeDamage=stack.Contains("Projectile::Damage")||stack.Contains("Projectile:Damage")||stack.Contains("Projectile.Damage")||stack.Contains("NativeSurvival.ProjectileDamage")});
     }
@@ -75,7 +75,11 @@ internal static class ServerCombatFixture
     {
         orig(msg,remote,ignore,text,number,a,b,c,d,e,f);
         var p=ProbeSession.Actor;
-        if(p==null||!Enabled||!NativeCombatWorld.AllowsItem(p))return;
+        if(p==null||!Enabled)return;
+        if(msg==MessageID.SyncProjectile && Main.projectile[number].TryGetGlobalProjectile<CombatProjectile>(out var summon)
+            && summon.Flight is {Verified:true} flight && (flight.PersistentRoot || flight.ParentIdentity.HasValue)
+            && flight.Owns(Main.projectile[number])) summonSyncPackets++;
+        if(!NativeCombatWorld.AllowsItem(p))return;
         if(msg==MessageID.SyncProjectile&&NativeItemInput.Active(p)
             &&Main.projectile[number].TryGetGlobalProjectile<CombatProjectile>(out var trace)&&trace.Flight is {Verified:true})
             spawnPackets++;
@@ -219,6 +223,9 @@ internal static class ServerCombatFixture
                     ammo=p.inventory[54].stack,spareAmmo=p.inventory[53].stack,
                     survivors=defenseTargets.Where(n=>n.active).Select(n=>DefenseIdentity(p,n)),inputScopeReleased=!NativeItemInput.Active(p)&&Main.myPlayer!=p.whoAmI,
                     attackReleased=!p.controlUseItem&&p.releaseUseItem,
+                    p.dead,generation=ProbeSession.ActorGeneration,summonSyncPackets,focus=p.MinionAttackTargetNPC,babySlime=p.HasBuff(BuffID.BabySlime),p.maxMinions,p.maxTurrets,
+                    summons=Main.projectile.Where(q=>q.active && q.TryGetGlobalProjectile<CombatProjectile>(out var trace)
+                        && trace.Flight is {PersistentRoot:true}).Select(q=>new {q.type,q.identity,q.whoAmI,q.owner,q.minionSlots,q.sentry,authorized=q.GetGlobalProjectile<CombatProjectile>().Flight.Owns(q)}),
                     manaTrace=manaTrace.ToArray(),manaPaidWithoutShot,potionPackets,
                     potions=FixturePotions(p),potionDelay=p.potionDelay,manaFlower=p.manaFlower}));
             return;
@@ -296,6 +303,14 @@ internal static class ServerCombatFixture
             else File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{live}));
             return;
         }
+        if(mode=="summon-defense-join")
+        {
+            var added=SpawnDefense(p,85,60);
+            var bystander=SpawnDefense(p,-180,60,threatening:false);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                added=DefenseIdentity(p,added),bystander=DefenseIdentity(p,bystander)}));
+            return;
+        }
         if(mode is "magic-defense" or "magic-defense-join")
         {
             p.immune=true;p.immuneTime=600;
@@ -320,6 +335,16 @@ internal static class ServerCombatFixture
                 File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
                     JsonSerializer.Serialize(new{added=DefenseIdentity(p,added),bystander=DefenseIdentity(p,bystander)}));
             }
+            return;
+        }
+        if(mode is "summon-death" or "summon-generation")
+        {
+            long before=ProbeSession.ActorGeneration;
+            if(mode=="summon-generation") ProbeSession.ActorGeneration++;
+            else NativeSurvival.Run(p,()=>p.KillMe(Terraria.DataStructures.PlayerDeathReason.ByCustomReason(
+                NetworkText.FromLiteral("Isolated summon lifecycle test")),9999,0));
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                before,generation=ProbeSession.ActorGeneration,p.dead,target.life}));
             return;
         }
         if(mode=="replace")
@@ -359,12 +384,12 @@ internal static class ServerCombatFixture
             startSlot=target.whoAmI;
         }
         lastFrame=lastHit=null;frames=hits=hitViolations=presses=spawnPackets=ammoPackets=manaPackets=0;faultNextPress=false;
-        manaPaidWithoutShot=verifiedShots=potionPackets=0;
+        manaPaidWithoutShot=verifiedShots=potionPackets=summonSyncPackets=0;
         firstCooldown=null;hitTrace.Clear();shots.Clear();projectileHits.Clear();flightTrace.Clear();manaTrace.Clear();
         // Accessory effects are rebuilt each frame, so clear the fixture slot
         // before a mode opts into Mana Flower.
         p.armor[3].TurnToAir();
-        if(distant&&(p.HeldItem.type==ItemID.WoodenSword||CombatBallistics.Supported(p.HeldItem)))
+        if(distant&&(p.HeldItem.type is ItemID.WoodenSword or ItemID.StaffoftheFrostHydra||CombatBallistics.Supported(p.HeldItem)))
         {
             p.HeldItem.SetDefaults(ItemID.PlatinumBroadsword);
             p.statLife=p.statLifeMax2;
@@ -384,6 +409,26 @@ internal static class ServerCombatFixture
             var tile=Main.tile[tx,ty];
             tile.ClearEverything();
             if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
+        }
+        if(mode.StartsWith("summon-"))
+        {
+            bool slime=mode.Contains("slime");
+            p.HeldItem.SetDefaults(slime ? ItemID.SlimeStaff : ItemID.StaffoftheFrostHydra);
+            ManaPool(p,100,mode.EndsWith("reuse") ? 0 : 100);
+            if(mode=="summon-defense")
+            {
+                p.immune=true;p.immuneTime=600;
+                target=SpawnDefense(p,-75,320);
+                File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
+                    JsonSerializer.Serialize(new{first=DefenseIdentity(p,target)}));
+                return;
+            }
+            target=SpawnDefense(p,-145,mode.EndsWith("cancel") ? 1800 : 16,threatening:false);
+            IgnoreSpellDots(target);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new {
+                entityRef=NativeCombatWorld.Reference(Bound(p),target),target.whoAmI,p.HeldItem.shoot,
+                manaCost=p.GetManaCost(p.HeldItem),mana=p.statMana}));
+            return;
         }
         if(mode is "bow" or "gun" or "bow-reflex" or "bow-empty" or "bow-one" or "bow-wall" or "bow-high" or "bow-sealed" or "bow-opposite" or "bow-no-route")
         {

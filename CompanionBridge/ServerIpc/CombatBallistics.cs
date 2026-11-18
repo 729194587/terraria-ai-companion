@@ -171,24 +171,33 @@ public sealed class CombatProjectile : GlobalProjectile
     public override bool InstancePerEntity=>true;
     internal NativeCombatWorld.Shot Flight;
     private int lifeBefore;
+    private NativeCombatWorld.Shot hitSource;
+    private static Projectile updating;
+    private NativeCombatWorld.Shot assignment;
+    private NativeCombatWorld.Shot HitSource => Flight is {PersistentRoot:true} ? assignment : Flight;
     public override void OnSpawn(Projectile projectile,IEntitySource source)
     {
         lifeBefore=0;
         // Magic no longer carries an ammo source, but the native item-use
         // source still proves the projectile came from the held spell.
         Flight=source is EntitySource_ItemUse use ? NativeCombatWorld.CaptureShot(projectile,use) : null;
+        if (Flight==null && updating is {} parent && parent.TryGetGlobalProjectile<CombatProjectile>(out var trace))
+        {
+            bool confirmed=source is EntitySource_Parent origin && ReferenceEquals(origin.Entity,parent);
+            Flight=trace.Flight?.Child(parent,projectile,trace.assignment,confirmed);
+        }
         if(Flight is {} shot)ServerCombatFixture.ObserveProjectileSpawn(projectile,shot);
     }
     public override bool? CanHitNPC(Projectile projectile,NPC target)=>
-        Flight==null||Flight.CanHit(projectile,target)?null:false;
+        Flight==null||HitSource?.CanHit(projectile,target)==true?null:false;
     public override bool? CanCutTiles(Projectile projectile)=>Flight==null?null:false;
     public override bool CanHitPvp(Projectile projectile,Player target)=>Flight==null;
     public override void ModifyHitNPC(Projectile projectile,NPC target,ref NPC.HitModifiers modifiers)
-    {lifeBefore=Flight?.CanHit(projectile,target)==true?target.life:0;}
+    {hitSource=HitSource; lifeBefore=hitSource?.CanHit(projectile,target)==true?target.life:0;}
     public override void OnHitNPC(Projectile projectile,NPC target,NPC.HitInfo hit,int damageDone)
     {
-        if(lifeBefore>0&&Flight?.ObserveHit(projectile,target,lifeBefore,damageDone)==true)
-            ServerCombatFixture.ObserveProjectileHit(projectile,target,damageDone,Flight);
+        if(lifeBefore>0&&hitSource?.ObserveHit(projectile,target,lifeBefore,damageDone)==true)
+            ServerCombatFixture.ObserveProjectileHit(projectile,target,damageDone,hitSource);
         lifeBefore=0;
     }
 
@@ -197,14 +206,32 @@ public sealed class CombatProjectile : GlobalProjectile
 
     private static void Update(On_Projectile.orig_Update orig,Projectile p,int index)
     {
-        if(!Main.dedServ||Main.netMode!=NetmodeID.Server||!p.active||!p.friendly||p.hostile
-            ||!p.TryGetGlobalProjectile<CombatProjectile>(out var trace)||trace.Flight is not {Verified:true} flight||!flight.Owns(p))
+        if (updating != null) throw new InvalidOperationException("Reentrant projectile update during AI owner scope.");
+        if(!Main.dedServ||Main.netMode!=NetmodeID.Server||!p.active||p.hostile
+            ||!p.TryGetGlobalProjectile<CombatProjectile>(out var trace)||trace.Flight is not {Verified:true} flight
+            || (!p.friendly && !(flight.PersistentRoot && p.sentry)) || !flight.Owns(p))
         {orig(p,index);return;}
         // Native Update encloses AI, Damage and Kill. Supply owner authority
         // only to a validated shot, with no client netMode or packet replay.
         int local=Main.myPlayer;
-        try{Main.myPlayer=p.owner;orig(p,index);}
+        var actor=Main.player[p.owner];
+        int previousTarget=actor.MinionAttackTargetNPC;
+        try
+        {
+            updating=p;
+            trace.assignment=flight.PersistentRoot ? flight.ForCurrentTarget() : null;
+            if (trace.assignment is {} active) actor.MinionAttackTargetNPC=active.Target.Slot;
+            Main.myPlayer=p.owner;
+            orig(p,index);
+        }
         catch(Exception e){flight.ObserveFault(p,e);throw;}
-        finally{Main.myPlayer=local;ServerCombatFixture.ObserveFlight(p,flight);}
+        finally
+        {
+            Main.myPlayer=local;
+            if (trace.assignment!=null) actor.MinionAttackTargetNPC=previousTarget;
+            trace.assignment=null;
+            updating=null;
+            ServerCombatFixture.ObserveFlight(p,flight);
+        }
     }
 }

@@ -32,7 +32,31 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
     private bool drainSwing;
     private int targetEpoch;
     private CombatBallistics.Kind? ShotKind=>CombatBallistics.Family(item);
-    private bool Ranged=>ShotKind!=null;
+    private bool Summoning => SummonRoot(item) != 0;
+    private bool Ranged=>ShotKind!=null || Summoning;
+    private bool summonAttempted, summonShootObserved;
+    private bool? observedBuff;
+    private int? observedRootIdentity;
+    private int verifiedChildren, unconfirmedChildren;
+    public CombatSummonObservation Summon => Summoning ? new(summonAttempted,summonShootObserved,
+        SummonRoot(item),observedRootIdentity,observedBuff,verifiedChildren,unconfirmedChildren) : null;
+
+    private static int SummonRoot(Item held) => held?.type switch
+    {
+        ItemID.SlimeStaff when held.shoot == ProjectileID.BabySlime => ProjectileID.BabySlime,
+        ItemID.StaffoftheFrostHydra when held.shoot == ProjectileID.FrostHydra => ProjectileID.FrostHydra,
+        _ => 0
+    };
+
+    private static Shot FindSummon(Player actor, int type)
+    {
+        foreach (var projectile in Main.ActiveProjectiles)
+            if (projectile.type == type && projectile.owner == actor.whoAmI &&
+                projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace) &&
+                trace.Flight is { Verified: true, PersistentRoot: true } root && root.Owns(projectile))
+                return root;
+        return null;
+    }
     private CombatBallistics.Round? firing;
     private bool ammoChanged,inShoot;
     // Mana still held at the native shoot step, i.e. after ItemCheck_PayMana
@@ -63,15 +87,21 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         && !i.consumable && !i.channel && i.damage > 0 && i.createTile < 0 && i.createWall < 0
         && i.pick == 0 && i.axe == 0 && i.hammer == 0 && i.mountType < 0
         && i.useTime > 0 && i.useAnimation > 0
-        && (CombatBallistics.Family(i)==CombatBallistics.Kind.Ranged
+        && (SummonRoot(i) != 0 && i.CountsAsClass(Terraria.ModLoader.DamageClass.Summon)
+            || CombatBallistics.Family(i)==CombatBallistics.Kind.Ranged
                 && i.CountsAsClass(Terraria.ModLoader.DamageClass.Ranged)
             || CombatBallistics.Family(i)==CombatBallistics.Kind.Magic
                 && i.CountsAsClass(Terraria.ModLoader.DamageClass.Magic)
             || ActorItemUse.Supported(i) && i.useStyle == ItemUseStyleID.Swing
                 && i.CountsAsClass(Terraria.ModLoader.DamageClass.Melee) && !i.noMelee && !i.noUseGraphic);
 
-    private static string ShotRefusal(Player p,Item held)=>CombatBallistics.Supported(held)
-        ? CombatBallistics.ReadRound(p,held,out _) : null;
+    private static string ShotRefusal(Player p,Item held)
+    {
+        int root=SummonRoot(held);
+        if (root != 0)
+            return FindSummon(p,root) != null || CombatBallistics.ManaAffordable(p,held) ? null : "combat_mana_unavailable";
+        return CombatBallistics.Supported(held) ? CombatBallistics.ReadRound(p,held,out _) : null;
+    }
 
     private static bool InRange(Player p, NPC n, int range) =>
         Vector2.DistanceSquared(p.Center, n.Center) <= range * range;
@@ -224,6 +254,20 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         {
             if (approach.ReasonDetail != null) throw new InvalidOperationException(approach.ReasonDetail);
             return "combat_native_unconfirmed";
+        }
+        if (Summoning)
+        {
+            int rootType=SummonRoot(item);
+            if (rootType==ProjectileID.BabySlime) observedBuff=player.HasBuff(BuffID.BabySlime);
+            if (FindSummon(player,rootType) is {} root)
+            {
+                observedRootIdentity=root.Identity;
+                phase="summon_active";
+                return null;
+            }
+            phase="summon_cast";
+            if (summonAttempted && player.itemAnimation == 0) return "combat_native_unconfirmed";
+            return summonAttempted ? null : ShotRefusal(player,item);
         }
         if(Ranged)return StepRanged(out phase);
         if (approach?.Status is "failed" or "timeout") return "combat_approach_failed";
@@ -421,7 +465,18 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
                 firing=null;ammoChanged=false;
                 bool canPress=player.itemTime<=1&&player.reuseDelay==0
                     &&(player.itemAnimation>0||player.releaseUseItem||item.autoReuse);
-                if(!drainSwing&&canPress&&CombatBallistics.ReadRound(player,item,out var round)==null
+                if (Summoning)
+                {
+                    int root=SummonRoot(item);
+                    if (canPress && !drainSwing && !summonAttempted && FindSummon(player,root)==null
+                        && CombatBallistics.ManaAffordable(player,item))
+                    {
+                        aim = root == ProjectileID.FrostHydra ? player.Center : npc.Center;
+                        firing = new(root,AmmoID.None,0);
+                        summonAttempted=true;
+                    }
+                }
+                else if(!drainSwing&&canPress&&CombatBallistics.ReadRound(player,item,out var round)==null
                     &&CombatBallistics.Aim(player,npc,item,round,out aim))firing=round;
                 press=firing.HasValue;
             }
@@ -440,7 +495,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             // the whole frame instead of the shooting sub-step.
             int manaBefore=player.statMana;
             manaItems.Clear();
-            if (press && ShotKind == CombatBallistics.Kind.Magic && player.manaFlower)
+            if (press && (Summoning || ShotKind == CombatBallistics.Kind.Magic) && player.manaFlower)
             {
                 TrackManaItems(player.inventory, PlayerItemSlotID.Inventory0);
                 if (player.useVoidBag()) TrackManaItems(player.bank4.item, PlayerItemSlotID.Bank4_0);
@@ -523,8 +578,9 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         // ItemCheck_PayMana -> CheckMana already paid (or financed through
         // QuickMana) before this shoot step. Re-testing the remaining mana
         // would drop a cast the native rules just authorised.
-        if(magic)combat.ManaAtLaunch=p.statMana;
-        if(!magic)
+        if(combat.Summoning) combat.summonShootObserved=true;
+        if(magic || combat.Summoning)combat.ManaAtLaunch=p.statMana;
+        if(!magic && !combat.Summoning)
         {
             ammo=p.ChooseAmmo(held);
             if(ammo==null||ammo.type!=round.Ammo)return;
@@ -534,7 +590,7 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         finally
         {
             combat.inShoot=false;
-            if(!magic)combat.ammoChanged|=ammo.stack!=stack;
+            if(!magic && !combat.Summoning)combat.ammoChanged|=ammo.stack!=stack;
         }
     }
 
@@ -547,15 +603,45 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         int ammo=source is EntitySource_ItemUse_WithAmmo withAmmo?withAmmo.AmmoItemIdUsed:AmmoID.None;
         bool magic=CombatBallistics.Family(combat.item)==CombatBallistics.Kind.Magic;
         bool verified=p.type==round.Projectile&&ammo==round.Ammo&&combat.SameSpawn(Main.npc[combat.Target.Slot]);
+        if (verified && combat.Summoning) combat.observedRootIdentity=p.identity;
         return new(combat,combat.targetEpoch,combat.Target,combat.Weapon.TypeId,ammo,magic,
             p.whoAmI,p.owner,p.identity,p.type,Main.GameUpdateCount,verified);
     }
 
     internal sealed record Shot(NativeCombatWorld Combat,int Epoch,CombatTarget Target,int Weapon,int Ammo,bool Magic,
-        int Slot,int Owner,int Identity,int Type,ulong Launched,bool Verified)
+        int Slot,int Owner,int Identity,int Type,ulong Launched,bool Verified,int? ParentIdentity=null)
     {
+        internal bool PersistentRoot => (Weapon,Type) is (ItemID.SlimeStaff,ProjectileID.BabySlime)
+            or (ItemID.StaffoftheFrostHydra,ProjectileID.FrostHydra);
+        // A persistent body can serve a later action. Only the current target may
+        // receive contact damage. Children keep their epoch from their own spawn.
+        internal Shot ForCurrentTarget()
+        {
+            var task=current;
+            if (!PersistentRoot || task == null || task.fault != null || !Combat.Owned()
+                || !ReferenceEquals(task.player,Combat.player) || !task.ValidWeapon()
+                || task.item.type != Weapon || !task.Owned()) return null;
+            if (!task.SameSpawn(Main.npc[task.Target.Slot]) || !task.StillEligible(task.npc)) return null;
+            return ReferenceEquals(task,Combat) && Epoch==task.targetEpoch ? this
+                : this with { Combat=task, Epoch=task.targetEpoch, Target=task.Target };
+        }
+
+        internal Shot Child(Projectile parent, Projectile child, Shot assignment, bool parentConfirmed)
+        {
+            if (!Verified || Type!=ProjectileID.FrostHydra || !PersistentRoot || !Owns(parent)
+                || child.owner!=Owner || child.type!=ProjectileID.FrostBlastFriendly) return null;
+            if (assignment != null)
+            {
+                if (parentConfirmed) assignment.Combat.verifiedChildren++;
+                else assignment.Combat.unconfirmedChildren++;
+            }
+            var shot=assignment ?? (this with {Epoch=-1});
+            return shot with { Slot=child.whoAmI, Identity=child.identity, Type=child.type,
+                Launched=Main.GameUpdateCount, ParentIdentity=parentConfirmed ? Identity : null, Verified=parentConfirmed };
+        }
+
         internal bool Owns(Projectile p)=>p.whoAmI==Slot&&p.owner==Owner&&p.identity==Identity&&p.type==Type
-            &&ReferenceEquals(Main.projectile[Slot],p)&&Combat.Owned();
+            &&ReferenceEquals(Main.projectile[Slot],p)&&Combat.Owned()&&Combat.player.active&&!Combat.player.dead&&!Combat.player.ghost;
         internal bool Pending(NativeCombatWorld combat,Projectile p)=>Verified&&Combat.fault==null&&ReferenceEquals(combat,Combat)
             &&ReferenceEquals(current,Combat)&&Epoch==Combat.targetEpoch&&Owns(p);
         internal void ObserveFault(Projectile p,Exception exception)
@@ -567,7 +653,9 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         {
             if(!SameTarget(p,target)||CombatStrikeEvidence.Observe(true,before,target.life,damage,target.active,Main.GameUpdateCount) is not {} hit)
                 return false;
-            Combat.LastHit=hit;
+            Combat.LastHit=PersistentRoot || ParentIdentity.HasValue
+                ? hit with { Summon=new(Owner,Type,Identity,ParentIdentity,Launched,Epoch) }
+                : hit;
             return true;
         }
     }

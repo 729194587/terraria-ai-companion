@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import json
+import os
 from pathlib import Path
 from jsonschema import Draft202012Validator
 
@@ -98,7 +99,116 @@ async def verify(args):
         assert sample['inputScopeReleased'] and sample['attackReleased'], sample
         return sample
 
+    async def verify_summons(lifecycle=None):
+        async def attack(enemy):
+            launch = await manager.invoke('submit_task', {'operation': 'combat_attack',
+                                          'arguments': {'entityRef': enemy['entityRef']}})
+            assert 'taskId' in launch, launch
+            return launch['taskId']
+
+        for family in ('slime', 'hydra'):
+            enemy = await scene(f'summon-{family}-cancel')
+            task = await attack(enemy)
+            for _ in range(100):
+                sample = await scene('audit')
+                if sample['projectileHits']:
+                    break
+                await asyncio.sleep(.04)
+            assert sample['projectileHits'], sample
+            result = await manager.invoke('cancel_task', {'taskId': task})
+            assert result['status'] == 'cancelled' and result['result']['inputsReleased'], result
+            sample = await scene('audit')
+            roots = [q for q in sample['summons'] if q['type'] == enemy['shoot']]
+            assert sample['summonSyncPackets'] > 0 and sample['focus'] == -1, sample
+            assert len(roots) == 1 and roots[0]['sentry'] == (family == 'hydra'), sample
+            assert sample['attackReleased'] and sample['inputScopeReleased'], sample
+            assert any(row['debit'] == enemy['manaCost'] and row['shots'] == 1 for row in sample['manaTrace']), sample
+            assert len([q for q in sample['shots'] if q['PersistentRoot']]) == 1, sample
+            if family == 'slime':
+                assert sample['babySlime'] and roots[0]['minionSlots'] == sample['maxMinions'] == 1, sample
+            else:
+                assert sample['maxTurrets'] == 1 and all(h['type'] != enemy['shoot'] for h in sample['projectileHits']), sample
+            results[family+'Cast'] = sample
+            await asyncio.sleep(1)
+            later = await scene('audit')
+            assert sample['projectileHits'] == later['projectileHits'] and roots[0] in later['summons'], later
+            enemy = await scene(f'summon-{family}-reuse')
+            task = await attack(enemy)
+            result = await manager.invoke('await_task', {'taskId':task,'milliseconds':30000})
+            proof = completed(result)
+            sample = await scene('audit')
+            assert roots[0] in sample['summons'] and not any(q['PersistentRoot'] for q in sample['shots']), sample
+            final = sample['projectileHits'][-1]
+            assert final['target'] == enemy['entityRef'] and final['tick'] == proof['lastHit']['GameUpdate'], sample
+            assert final['life'] == proof['lastHit']['LifeAfter'] <= 0 and final['nativeDamage'], sample
+            observation = proof['summon']
+            assert not observation['InputAttempted'] and not observation['NativeShootObserved'], observation
+            assert observation['ObservedRootIdentity'] == roots[0]['identity'] and observation['UnconfirmedChildren'] == 0, observation
+            if family == 'hydra':
+                assert observation['VerifiedChildren'] > 0 and observation['BuffObserved'] is None, observation
+            impact = proof['lastHit']['Summon']
+            assert impact['ProjectileType'] == final['type'] and impact['Owner'] == roots[0]['owner'], impact
+            assert impact['ParentIdentity'] == (None if family == 'slime' else roots[0]['identity']), impact
+            results[family+'Reuse'] = {'result': result, 'audit': sample}
+
+        pair, task_id = await defense_start('summon-defense')
+        joined = await scene('summon-defense-join')
+        expected = {enemy['entityRef']: 'combat_target_defeated' for enemy in (pair['first'], joined['added'])}
+        defense = await defense_finish(task_id, expected, joined['bystander']['entityRef'], magic=True)
+        encounters = defense['result']['result']['task']['result']['evidence']['encounters']
+        impacts = [enc['LastHit']['Summon'] for enc in encounters]
+        assert [impact['TargetEpoch'] for impact in impacts] == [1, 2], impacts
+        assert all(impact['ParentIdentity'] == roots[0]['identity'] for impact in impacts), impacts
+        assert all(shot['Type'] != enemy['shoot'] for shot in defense['audit']['shots']), defense
+        results['summonDefense'] = defense
+
+        # Replace the targeted NPC in place while a persistent attacker is live.
+        enemy = await scene('summon-hydra-cancel')
+        task = await attack(enemy)
+        await wait_for(lambda a: a['actionId'] == task and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
+        replacement = await scene('replace')
+        assert replacement['slot'] == enemy['whoAmI'] and replacement['entityRef'] != enemy['entityRef'], replacement
+        result = await manager.invoke('await_task', {'taskId':task,'milliseconds':5000})
+        assert result['result']['reason'] == 'combat_target_replaced' and not result['result']['effectVerified'], result
+        sample = await scene('audit')
+        assert all(hit['target'] != replacement['entityRef'] for hit in sample['projectileHits']), sample
+        results['summonReplace'] = result
+
+        if lifecycle:
+            enemy = await scene('summon-hydra-cancel')
+            task = await attack(enemy)
+            await wait_for(lambda a: a['actionId'] == task and (a['task'].get('progress') or {}).get('itemChecks', 0) > 0)
+            if lifecycle == 'disconnect':
+                bridge.close()
+                # Audit through the fixture filesystem after closing the owner connection.
+                for _ in range(50):
+                    first = await scene('audit')
+                    await asyncio.sleep(.12)
+                    later = await scene('audit')
+                    if later['frames'] == first['frames']:
+                        break
+                await asyncio.sleep(1.2)
+                later = await scene('audit')
+                assert first['frames'] == later['frames'] and first['projectileHits'] == later['projectileHits'], later
+                assert later['attackReleased'] and later['inputScopeReleased'] and later['summons'], later
+                results[lifecycle] = later
+                return
+            boundary = await scene('summon-' + lifecycle)
+            assert boundary['dead'] if lifecycle == 'death' else boundary['generation'] > boundary['before'], boundary
+            first = await scene('audit')
+            await asyncio.sleep(1)
+            later = await scene('audit')
+            assert later['inputScopeReleased'] and later['attackReleased'], later
+            assert not any(q['authorized'] for q in later['summons']), later
+            assert first['projectileHits'] == later['projectileHits'], later
+            assert all(q['life'] == boundary['life'] for q in later['survivors']), later
+            results[lifecycle] = {'boundary': boundary, 'audit': later}
+
     try:
+        case = os.environ.get('COMPANION_COMBAT_CASE')
+        if case in ('summons', 'summon-death', 'summon-generation', 'summon-disconnect'):
+            await verify_summons(case.split('-')[1] if '-' in case else None)
+            return
         enemy = await scene('agent-multi')
         program = 'return api("submit_task",{operation="combat_attack",arguments={entityRef=' + json.dumps(enemy['entityRef']) + '}})'
         submitted = await lua.execute(program)
@@ -241,7 +351,9 @@ async def verify(args):
             assert all(shot['Verified'] and shot['nativeShoot'] and shot['nativeWrapper']
                        and shot['Ammo'] == enemy['ammoType'] and shot['Weapon'] == enemy['weapon']
                        and shot['target'] == enemy['entityRef'] for shot in shots.values()), sample
-            assert 0 < enemy['ammo'] - sample['ammo'] <= len(shots) and sample['spareAmmo'] == enemy['spareAmmo'], sample
+            # Minishark may conserve every round in a short encounter.
+            minimum_spent = 0 if mode == 'gun' else 1
+            assert minimum_spent <= enemy['ammo'] - sample['ammo'] <= len(shots) and sample['spareAmmo'] == enemy['spareAmmo'], sample
             assert sample['spawnPackets'] == len(shots) and sample['ammoPackets'] >= enemy['ammo'] - sample['ammo'], sample
             if mode == 'bow':
                 assert len(sample['survivors']) == 1 and sample['survivors'][0]['life'] == 40, sample
@@ -484,6 +596,8 @@ async def verify(args):
             assert any(n['entityRef'] == watched and n['life'] == 32 for n in sample['survivors']), sample
             results[mode] = {'result': result, 'audit': sample}
 
+        await verify_summons()
+
         for mode in ('external', 'despawn', 'replace', 'fault'):
             enemy = await scene('agent')
             submitted = await manager.invoke('submit_task', {'operation': 'combat_attack',
@@ -504,6 +618,7 @@ async def verify(args):
                 results['faultNative'] = await scene('audit')
                 assert results['faultNative']['inputScopeReleased'] and results['faultNative']['attackReleased']
             assert result['result']['inputsReleased'] and result['result']['effectVerified'] is False
+
     finally:
         (profile / 'combat-results.json').write_text(json.dumps(results, indent=2))
         await manager.close()
