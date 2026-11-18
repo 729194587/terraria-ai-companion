@@ -51,7 +51,7 @@ internal readonly record struct FallSafety(int ExtraFall,bool Immune,int Life=0)
 internal readonly record struct PhysicsState(float Px, float Py, float Vx, float Vy,
     bool Grounded, int JumpFramesLeft = 0, bool ReleaseJump = true,
     bool ExtraAvailable=false,bool ExtraActive=false,bool ExtraUsed=false,AirResources Air=null,AirPhase AirPhase=AirPhase.None,bool Wet=false);
-internal readonly record struct PhysicsInput(int Direction, bool Jump);
+internal readonly record struct PhysicsInput(int Direction, bool Jump, bool Down=false);
 internal readonly record struct PredictedFrame(PhysicsInput Input, PhysicsState State);
 internal sealed record Prediction(bool Safe, string Reason, List<PredictedFrame> Frames,
     PhysicsState Landing, int ExecuteFrames, bool Jump,
@@ -91,6 +91,8 @@ internal interface IMotionWorld
     long TerrainSignature(PhysicsState start,Prediction edge=null)=>0;
     NavigationBlockingTile[] LastHorizontalContact => null;
     PhysicsState Move(PhysicsState start, float vx, float vy, float gravity);
+    PhysicsState MoveThroughPlatform(PhysicsState start,float vx,float vy,float gravity)
+        =>throw new UnsafeMotionException("platform descent unsupported by this world");
     bool WaterContact(PhysicsState state)=>false;
     PhysicsState MoveInWater(PhysicsState start,float vx,float vy,float gravity)=>Move(start,vx,vy,gravity);
     bool SafeSweep(PhysicsState start, PhysicsState end, out string reason);
@@ -121,6 +123,7 @@ internal static class PhysicsSimulator
     {
         bool wet=world.WaterContact(s);
         if((wet||s.Wet)&&!ph.CanWade)throw new UnsafeMotionException("unsupported water movement profile");
+        if(input.Down && (s.Wet || wet))throw new UnsafeMotionException("wet platform descent unsupported");
         float gravity=s.Wet?PhysicsParameters.WaterGravity:ph.Gravity;
         float maxFall=s.Wet?PhysicsParameters.WaterMaxFall:ph.MaxFall;
         float jumpSpeed=s.Wet?PhysicsParameters.WaterJumpSpeed:ph.JumpSpeed;
@@ -204,7 +207,7 @@ internal static class PhysicsSimulator
             (vy,resources,phase)=ph.Air.Step(s,input,ph,vy,jfl,launched);
         }
         else vy = Math.Min(vy + gravity, maxFall);
-        var moved = wet?world.MoveInWater(s,vx,vy,gravity):world.Move(s,vx,vy,gravity);
+        var moved = input.Down?world.MoveThroughPlatform(s,vx,vy,gravity):wet?world.MoveInWater(s,vx,vy,gravity):world.Move(s,vx,vy,gravity);
         if (vy < 0 && Math.Abs(moved.Vy - vy) > 0.01f) jfl = 0;
         return moved with { JumpFramesLeft = jfl, ReleaseJump = !input.Jump,
             ExtraAvailable=available,ExtraActive=active,ExtraUsed=used,Air=resources,AirPhase=phase,Wet=wet };
@@ -215,12 +218,12 @@ internal static class PhysicsSimulator
     // moving prefix and replans, so an open flat surface does not become stop/start.
     internal static Prediction Predict(PhysicsState start, int direction, int hold,
         PhysicsParameters ph, IMotionWorld world, int walkFrames = WalkFrames, bool rollingJump = false,
-        int extraJumpFrame=-1,int airStartFrame=-1,int airHoldFrames=0)
+        int extraJumpFrame=-1,int airStartFrame=-1,int airHoldFrames=0,bool allowStationaryHop=false,bool drop=false)
     {
         var frames = new List<PredictedFrame>();
         bool brakingOnly = direction == 0 && hold == 0 && walkFrames == 0;
         var s = start;
-        bool airborne = false;
+        bool airborne = false,airborneBelow=false;
         int stable = 0;
         int movingLandingFrames = 0;
         bool landingChecked = false, extendLanding = false;
@@ -232,7 +235,7 @@ internal static class PhysicsSimulator
             bool extraHold=extraJumpFrame>=0&&f>=extraJumpFrame&&f<=extraJumpFrame+(ph.ExtraJump?.HoldFrames(ph)??0);
             bool airHold=airStartFrame>=0&&f>=airStartFrame&&f<airStartFrame+airHoldFrames;
             bool glide=airStartFrame>=0&&ph.Air?.Kind==AirKind.Wings&&s.Air?.WingTime<=0&&s.Vy>0&&!s.Grounded;
-            var input = new PhysicsInput(moving ? direction : 0, f < hold||extraHold||airHold||glide);
+            var input = new PhysicsInput(moving ? direction : 0, f < hold||extraHold||airHold||glide,drop && s.Py<=start.Py+4 && !airborneBelow);
             if(f==extraJumpFrame&&(ph.ExtraJump==null||s.Grounded||!s.ReleaseJump||!s.ExtraAvailable||s.ExtraUsed||s.Vy==0))
                 return new(false,"extra jump launch unavailable",frames,s,0,true,ExtraJumpFrame:extraJumpFrame,InitialHold:hold);
             PhysicsState next;
@@ -246,6 +249,7 @@ internal static class PhysicsSimulator
             if (hold == 0 && Math.Abs(next.Px - s.Px) < 0.01f && Math.Abs(next.Vx) < 0.01f && f < walkFrames)
                 return new(false, "walking blocked", frames, next, 0, false, world.LastHorizontalContact);
             airborne |= !next.Grounded;
+            airborneBelow |= next.Py>start.Py+4;
             if(s.Grounded||s.JumpFramesLeft>0||s.Wet)fallStart=FallSafety.Row(s.Py);
             if(next.Py-start.Py>FallSafety.LookaheadPixels)
                 return new(false,"descent leaves the local collision horizon",frames,next,0,hold>0);
@@ -281,9 +285,9 @@ internal static class PhysicsSimulator
                 // horizontal travel. Require a different supported height; a
                 // hop returning to the same floor must not create search cycles.
                 bool progress = direction == 0 && hold > 0
-                    ? start.Py - s.Py >= 4
+                    ? allowStationaryHop || start.Py - s.Py >= 4
                     : direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4);
-                bool safe = (brakingOnly || progress)
+                bool safe = (!drop || airborneBelow && s.Py-start.Py is >=16 and <=96) && (brakingOnly || progress)
                     && world.SafeLanding(s)&&(extraJumpFrame<0||f>=extraJumpFrame)&&(airStartFrame<0||f>=airStartFrame);
                 if(airStartFrame>=0)safe&=frames.Exists(p=>p.State.AirPhase is AirPhase.Flying or AirPhase.Gliding or AirPhase.RocketPulse);
                 int execute = movingLandingFrames > 0 ? movingLandingFrames : frames.Count;

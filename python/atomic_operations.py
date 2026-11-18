@@ -156,7 +156,9 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          {key: {"type": "number", "minimum": 0, "maximum": 1000000} for key in ("x", "y")}, ["x", "y"]),
     tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE, "cluster": {"type": "boolean"}}),
     tool("configure_combat_loadout", "配置服务器 AI 的主副武器。primary 和 secondary 各自使用快捷键 1..9、0、预期 typeId 和新鲜 inventoryToken。完整替换配置，省略角色即清除该角色；配置不换手。", {"primary": COMBAT_ROLE, "secondary": COMBAT_ROLE, "summon": COMBAT_ROLE}),
+    tool("discover_bosses", "发现 640 像素内的 Boss 种子、策略及拒绝原因。用 admissible 行的 entityRef 提交 boss_encounter。", {}),
     tool("query_combat_loadout", "读取主副武器的快捷栏物品、可用性与最近一次自卫选武器失败原因。", {}),
+    tool("boss_encounter", "通过 submit_task 挑战单根克苏鲁之眼，需要配置主或副武器。可指定墙钟秒数（默认 300）。", {"entityRef": {"type":"string","minLength":1,"maxLength":150}, "durationSeconds":{"type":"integer","minimum":1,"maximum":600}}, ["entityRef"]),
     tool("combat_attack", "通过 submit_task 提交单目标战斗。使用 scan_entities 返回的 entityRef。已配置主武器时自动切换；未配置时使用当前选中的受支持武器。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
     tool("query_combat", "读取绑定角色当前或最近一次战斗。返回 action（含可查询或取消的 actionId），空闲且无战斗记录时为 null。", {}),
     tool("mine_tile", "原生挖掘指定 Tile。服务器 AI 从整个主背包自动选择合适工具，必要时临时切换快捷栏，按 Terraria 原生范围和工具规则判定。客户端控制使用当前手持镐。动作在当前位置执行，以实际移除为准，10秒上限。",
@@ -239,7 +241,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene(
 
 def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
-    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'collect_drops', 'place_item')]
+    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'place_item')]
     for definition in definitions:
         f = definition['function']
         name = f['name']
@@ -285,7 +287,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
     return definitions
 
 READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout'}
+READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -304,6 +306,8 @@ def validate_backend(bridge, name, arguments):
         raise PreDispatchRejected('Requires server_ai_combat_secondary_v1')
     if name == 'mine_target' and 'cluster' in arguments and 'server_ai_excavation_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_excavation_v1; no excavation task submitted')
+    if name == 'boss_encounter' and 'server_ai_boss_encounter_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_boss_encounter_v1')
     if name in ('combat_attack', 'query_combat') and 'server_ai_combat_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_combat_v1')
 
@@ -801,6 +805,32 @@ def verified_container_batch(action, evidence, end):
             and action.get('status') == ('failed' if blocked else 'completed'))
 
 
+def verified_boss_deaths(proof, *, members_required=False):
+    """E1 receipts predate member evidence; E2 must account for its required cohort."""
+    if 'seed' not in proof:
+        return not members_required and 'deathProof' not in proof
+    seed = proof.get('seed')
+    deaths = proof.get('deathProof')
+    if not isinstance(seed, dict) or not isinstance(deaths, list) or not deaths:
+        return False
+    members = []
+    updates = []
+    for row in deaths:
+        if not isinstance(row, dict) or not isinstance(row.get('member'), dict) or type(row.get('update')) is not int:
+            return False
+        members.append(row['member'])
+        updates.append(row['update'])
+    if (seed not in members or any(not isinstance(m.get('EntityRef'), str) for m in members)
+            or len({m['EntityRef'] for m in members}) != len(members)
+            or min(updates) < proof['startedUpdate'] or max(updates) != proof['rootDeathUpdate']):
+        return False
+    if seed.get('TypeId') in (125, 126):
+        return len(members)==2 and {m.get('TypeId') for m in members}=={125,126}
+    if seed.get('TypeId')==13:
+        return all(m.get('TypeId') in (13,14,15) for m in members)
+    return members==[seed]
+
+
 def verified_server_combat(action, task, result, proof):
     if (task.get('taskName') != 'combat_attack' or task.get('taskId') != action.get('actionId')
             or task.get('status') != 'completed' or task != action.get('task')
@@ -948,6 +978,19 @@ async def terminal(bridge, action, generation):
         'close_container': container_verified and native_evidence.get('chestIndex', -2) == -1,
         'craft_recipe': verified_server_craft(action, native_evidence),
         'mine_target': verified_server_mine_task(action, native_evidence),
+        'boss_encounter': (combat.get('taskName') == 'boss_encounter' and combat == action.get('task')
+                           and combat.get('taskId') == combat_proof.get('encounterId') == action.get('actionId')
+                           and combat_result.get('reason') == 'boss_root_defeated'
+                           and combat_result.get('inputsReleased') is True and combat_result.get('effectVerified') is True
+                           and (combat_proof.get('seed',combat_proof.get('target')) or {}).get('EntityRef') == (action.get('targetTask') or {}).get('entityRef')
+                           and type(combat_proof.get('life')) is int and combat_proof['life'] <= 0
+                           and combat.get('status') == 'completed' and combat_proof.get('source') == 'boss'
+                           and type(combat_proof.get('rootDeathUpdate')) is int
+                           and type(combat_proof.get('startedUpdate')) is int
+                           and isinstance(end, dict) and type(end.get('gameUpdate')) is int
+                           and combat_proof['startedUpdate'] <= combat_proof['rootDeathUpdate'] <= end['gameUpdate']
+                           and verified_boss_deaths(combat_proof, members_required=
+                               'server_ai_boss_members_v1' in getattr(bridge,'hello',{}).get('capabilities',()))),
         'combat_attack': verified_server_combat(action, combat, combat_result, combat_proof),
         **{op: verified_server_inventory(action, native_evidence) for op in INVENTORY_OPERATIONS},
         'configure_combat_loadout': verified_loadout(action, native_evidence),
@@ -977,9 +1020,17 @@ async def terminal(bridge, action, generation):
                       and native_evidence.get('targetAbsent') is True
                       and native_evidence.get('targetChanged') is False),
     }.get(action.get('operation'), False)
-    native_end = (isinstance(end, dict)
+    retreat= combat_proof.get('retreatProof') or {}
+    retreat_verified=(action.get('reason')!='boss_retreat_verified' or (
+        action.get('status')=='cancelled' and combat_proof.get('retreatVerified') is True
+        and retreat.get('attackReleased') is True and retreat.get('settled') is True
+        and all(type(retreat.get(k)) in (int,float) for k in ('left','right','feetX','feetY','bottom'))
+        and retreat['left']<=retreat['feetX']<=retreat['right'] and abs(retreat['bottom']-retreat['feetY'])<=.5
+        and retreat.get('npcClearRadius')==320 and retreat.get('projectileClearRadius')==160
+        and isinstance(end,dict) and retreat.get('update')==end.get('gameUpdate')))
+    native_end = (retreat_verified and isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'collect_drops', 'place_item', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -1131,6 +1182,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         required_capability = ('server_ai_inventory_v1' if 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []) and name in INVENTORY_OPERATIONS else 'inventory_operations_v1')
     if name == 'inspect_inventory' and 'server_ai_reads_v1' in bridge.hello.get('capabilities', []):
         required_capability = 'server_ai_reads_v1'
+    if name=='discover_bosses':
+        required_capability='server_ai_boss_strategy_v1'
     if name in ('configure_combat_loadout','query_combat_loadout'):
         required_capability = 'server_ai_combat_primary_v1'
     if name in EQUIPMENT_OPERATIONS:

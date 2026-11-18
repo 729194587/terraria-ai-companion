@@ -31,6 +31,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal NavigationKnowledge Knowledge;
         internal ServerGrappleClimb Climb;
         internal bool GrappleAttempted;
+        internal BossEvasion Evasion;
         internal bool Combat;
         internal int CombatLife;
         internal ulong ProgressVersion;
@@ -107,6 +108,13 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         if(!executing||!Matches(p)||!NativeSurvival.Owns(p))throw new InvalidOperationException("No owned navigation update scope.");
         ServerAiNativeActions.Require(Current.Identity);
         navigation.Task.ObservationUpdate=checked((long)Main.GameUpdateCount);
+        if(Current.Evasion is {} evasion)
+        {
+            long start=ServerCombatFixture.PlannerStart();
+            Apply(p,evasion.Before(p));
+            ServerCombatFixture.PlannerEnd(start);
+            return;
+        }
         var input=Current.Climb is {} climb
             ?climb.Before(p,navigation,Current.Session,Current.Generation,nativePull:false)
             :navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,
@@ -125,9 +133,10 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     private void Apply(Player p,PhysicsInput input)
     {
         p.controlLeft=input.Direction<0;p.controlRight=input.Direction>0;p.controlJump=input.Jump;
-        p.controlDown=p.controlUp=false;
+        p.controlDown=input.Down;p.controlUp=false;
         if(Current.Combat) NativeCombatWorld.Moved(p,input);
         else p.controlUseItem=p.controlUseTile=false;
+        ServerCombatFixture.EvasionInput(p);
         ServerAiTerrainFixture.RecordInput(p);
         injected=true;
     }
@@ -231,6 +240,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                     NetworkStateSync.Tick(p);
                     return;
                 }
+                if(run.Evasion!=null){run.Evasion.After(p);NetworkStateSync.Tick(p);return;}
                 navigation.After(p,combatSwing:run.Combat);run.Snapshot=navigation.Snapshot;run.ProgressVersion=navigation.Task.ProgressVersion;
                 if(run.Snapshot.Status=="unknown"){run.ReasonDetail=run.Snapshot.Reason;Stop("unknown",run.Snapshot.Reason=="navigation_unknown_terrain"
                     ?"native_navigation_terrain_unknown":"native_navigation_landing_unconfirmed");}

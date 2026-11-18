@@ -15,7 +15,7 @@ import agent_trace as tracing
 
 CONTAINER_READS = frozenset(("inspect_container",))
 MAP_READS = frozenset(("query_map",))
-COMBAT_READS = frozenset(("query_combat","query_combat_loadout"))
+COMBAT_READS = frozenset(("query_combat","query_combat_loadout","discover_bosses"))
 CRAFT_READS = frozenset(("query_recipes",))
 SCENE_OPERATIONS = frozenset(("observe_scene",))
 PERCEPTION_OPERATIONS = frozenset(("observe_terrain", "scan_tiles", "scan_entities", "inspect_tile", "resolve_content"))
@@ -33,6 +33,7 @@ def operations_for_capabilities(capabilities):
         ('server_ai_map_v1', MAP_READS),
         ('server_ai_containers_v1', CONTAINER_READS),
         ('server_ai_combat_v1', {'query_combat'}),
+        ('server_ai_boss_strategy_v1', {'discover_bosses'}),
         ('server_ai_combat_primary_v1', {'query_combat_loadout'}),
         ('server_ai_crafting_v1', CRAFT_READS),
         ('server_ai_scene_v1', SCENE_OPERATIONS),
@@ -48,6 +49,7 @@ def operations_for_capabilities(capabilities):
             ('server_ai_place_item_v1', 'place_item'),
             ('server_ai_navigation_v1', 'navigate_to'),
             ('server_ai_combat_v1', 'combat_attack'),
+            ('server_ai_boss_encounter_v1', 'boss_encounter'),
             ('server_ai_combat_primary_v1', 'configure_combat_loadout'),
             ('server_ai_crafting_v1', 'craft_recipe'),
             ('server_ai_place_object_workbench_v1', 'place_object'),
@@ -156,6 +158,8 @@ class ServerAiBridge:
         if not reply.get("ok"):
             # Older peers incorrectly label duplicate IDs as not_admitted. The original
             # action may have executed; this error never proves absence of effects.
+            if op=='retreat' and reply.get('error') in ('invalid_destination','boss_retreat_unsafe_destination','boss_not_started','boss_retreat_unavailable'):
+                raise NotAdmittedError(reply['error'],status=reply['error'])
             if op == 'start' and reply.get('dispatchState') == 'not_admitted' and reply.get('error') != 'duplicate_action':
                 raise NotAdmittedError(reply.get('error', 'AI start rejected'), status=reply.get('error'))
             if (reply.get("error") in ("stale_binding", "identity_unavailable")
@@ -240,7 +244,7 @@ class ServerAiBridge:
                 return self._movement(self._request("action", actionId=self._action_id)["data"]["action"])
             if cmd == "start_atomic":
                 operation = parameters.get("operation")
-                if operation not in self.supported_atomic_operations - ({"wait", "stop_action", "get_player_state", "inspect_inventory", "combat_attack", "collect_drops", "place_item"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS | COMBAT_READS | CONTAINER_READS):
+                if operation not in self.supported_atomic_operations - ({"wait", "stop_action", "get_player_state", "inspect_inventory", "combat_attack", "boss_encounter", "collect_drops", "place_item"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS | COMBAT_READS | CONTAINER_READS):
                     raise BridgeError("Operation unsupported by server AI backend", status="unsupported_operation")
                 if parameters.get("expectedGeneration") != self.binding["generation"]:
                     raise BridgeError("AI generation changed", status="stale_binding")
@@ -265,8 +269,9 @@ class ServerAiBridge:
 
         No reconnect/replay or new execution state here. C# checks connection ownership.
         """
-        if op not in ('start', 'action', 'cancel') or (op == 'start' and (
-                parameters.get('operation') not in ('mine_target', 'combat_attack', 'collect_drops', 'place_item')
+        if op=='retreat' and 'server_ai_boss_strategy_v1' not in self.hello.get('capabilities',()):raise ValueError('Retreat unavailable')
+        if op not in ('start', 'action', 'cancel','retreat') or (op == 'start' and (
+                parameters.get('operation') not in ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item')
                 or parameters['operation'] not in self.supported_atomic_operations)):
             raise ValueError('Unsupported task request')
         if not {'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_tasks_v1', 'server_ai_program_tasks_v1'} <= set(self.hello.get('capabilities', ())):

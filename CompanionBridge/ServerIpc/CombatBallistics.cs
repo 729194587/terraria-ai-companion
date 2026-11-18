@@ -171,6 +171,8 @@ public sealed class CombatProjectile : GlobalProjectile
     public override bool InstancePerEntity=>true;
     internal NativeCombatWorld.Shot Flight;
     private int lifeBefore;
+    private int memberBefore;
+    private NPC carrier;
     private NativeCombatWorld.Shot hitSource;
     private static Projectile updating;
     private NativeCombatWorld.Shot assignment;
@@ -191,16 +193,16 @@ public sealed class CombatProjectile : GlobalProjectile
     public override bool? CanHitNPC(Projectile projectile,NPC target)
     {
         if (Flight==null) return null;
-        if (Flight.SummonAttack) return Flight.Verified && Flight.Owns(projectile) ? null : false;
-        return Flight.CanHit(projectile,target) ? null : false;
+        if (Flight.SummonAttack && HitSource?.Allowed==null) return Flight.Verified && Flight.Owns(projectile) ? null : false;
+        return HitSource?.CanHit(projectile,target)==true ? null : false;
     }
     public override bool? CanCutTiles(Projectile projectile)=>Flight==null?null:false;
     public override bool CanHitPvp(Projectile projectile,Player target)=>Flight==null;
     public override void ModifyHitNPC(Projectile projectile,NPC target,ref NPC.HitModifiers modifiers)
-    {hitSource=HitSource; lifeBefore=hitSource?.CanHit(projectile,target)==true?target.life:0;}
+    {hitSource=HitSource; carrier=hitSource?.Carrier(target); memberBefore=target.life; lifeBefore=hitSource?.CanHit(projectile,target)==true?carrier.life:0;}
     public override void OnHitNPC(Projectile projectile,NPC target,NPC.HitInfo hit,int damageDone)
     {
-        bool credited=lifeBefore>0 && hitSource?.ObserveHit(projectile,target,lifeBefore,damageDone)==true;
+        bool credited=lifeBefore>0 && hitSource?.ObserveHit(projectile,target,carrier,memberBefore,lifeBefore,damageDone)==true;
         if(credited) ServerCombatFixture.ObserveProjectileHit(projectile,target,damageDone,hitSource);
         if(Flight is {SummonAttack:true}) ServerCombatFixture.ObserveSummonHit(projectile,target,damageDone,Flight,credited);
         lifeBefore=0;

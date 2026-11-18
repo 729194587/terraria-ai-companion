@@ -56,7 +56,7 @@ internal static class AtomicParameters
         {
             switch (op)
             {
-                case "query_combat_loadout": case "inspect_container": case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
+                case "discover_bosses": case "query_combat_loadout": case "inspect_container": case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
                 case "observe_scene":
                     if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers","scale","width","height"}).Any())throw new FormatException("Unexpected scene parameter.");
                     foreach(string key in keys.Where(k=>k is "maxObjects" or "maxRegions" or "maxPlacements" or "maxHazards"))Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
@@ -267,7 +267,11 @@ internal static class AtomicParameters
                 break;
             }
             case "mine_tile": case "place_tile": case "interact_tile": case "mine_wall": case "place_wall": case "hammer_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
-            case "combat_attack": case "attack_entity": Fields("entityRef"); if (args.GetProperty("entityRef").ValueKind != JsonValueKind.String || CharacterCount(args.GetProperty("entityRef")) is < 1 or > 150) throw new FormatException("Invalid entityRef."); break;
+            case "boss_encounter": case "combat_attack": case "attack_entity":
+                if(op=="boss_encounter" && keys.Contains("durationSeconds"))
+                { Fields("entityRef","durationSeconds"); Integer("durationSeconds",1,600); }
+                else Fields("entityRef");
+                if (args.GetProperty("entityRef").ValueKind != JsonValueKind.String || CharacterCount(args.GetProperty("entityRef")) is < 1 or > 150) throw new FormatException("Invalid entityRef."); break;
             case "use_item":
                 if (keys.Count == 0) break;
                 Fields("target"); var target = args.GetProperty("target");

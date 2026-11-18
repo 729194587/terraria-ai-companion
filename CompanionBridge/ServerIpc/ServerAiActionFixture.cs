@@ -89,6 +89,14 @@ internal static class ServerAiActionFixture
                         initialLife=p.statLife,initialAppleStack=2,perceptionNpcSlot=perceptionNpc?.whoAmI,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));
                 }
             }
+            // The ordinary action fixture retires ambient NPCs. The Boss probe needs
+            // complete native NPC updates, including newly spawned parts and adds.
+            if(Program.LaunchParameters.TryGetValue("-companionbossprobe",out string bossCase))
+            {
+                update.Invoke(Main.instance,new object[]{new GameTime()});
+                BossProbeScenario.Advance(ProbeSession.Actor,bossCase);
+                return;
+            }
             lock(ProbeSession.Reservation.Gate)ServerAiDirectInputFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerMineTaskFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerInventoryFixture.Tick(ProbeSession.Actor);
@@ -143,8 +151,11 @@ internal static class ServerAiActionFixture
                 return;
             }
             lock(ProbeSession.Reservation.Gate)ServerTorchFixture.Tick(ProbeSession.Actor);
-            if(ServerTorchFixture.Paused)return;
+            if(ServerTorchFixture.Paused || ServerCombatFixture.ArenaPaused())return;
+            ServerCombatFixture.BeginFrame();
             update.Invoke(Main.instance,new object[]{new GameTime()});
+            ServerCombatFixture.EndFrame(ProbeSession.Actor);
+            ServerCombatFixture.ArenaAfter(ProbeSession.Actor);
             if(ServerBenchmarkFixture.Enabled)
                 lock(ProbeSession.Reservation.Gate)ServerBenchmarkFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerAiTerrainFixture.Observe(ProbeSession.Actor);

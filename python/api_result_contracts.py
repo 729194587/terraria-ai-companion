@@ -668,7 +668,7 @@ TARGETS = {
     'targetRecipe': ('craft_recipe',),
     'targetInventory': ('configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
-    'targetTask': ('navigate_to', 'mine_target', 'combat_attack', 'collect_drops', 'place_item'),
+    'targetTask': ('navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item'),
 }
 MINE_ARGUMENTS = any_of(obj({**TILE_XY, 'cluster': B}, optional=('cluster',)),
                         obj({'target': ref('MineToken'), 'cluster': B}, optional=('cluster',)))
@@ -692,7 +692,7 @@ DEFS['EndEvidence'] = any_of(
 )
 DEFS['StopRequest'] = obj({'status': TERMINAL_STATUS, 'reason': S})
 
-TASK_NAMES = ('navigate_to', 'mine_target', 'combat_attack', 'collect_drops', 'place_item')
+TASK_NAMES = ('navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item')
 TASK_CHILDREN = ('navigate_to_landing_region', 'mine_tile', 'place_tile', 'excavate_tiles')
 TASK_EVIDENCE = {
     'navigate_to': obj({'target': ref('WorldPoint'), 'x': PIXEL, 'y': PIXEL, 'feetY': PIXEL,
@@ -726,6 +726,22 @@ DEFS['CombatProgress'] = obj({
                    'ObservedRootIdentity': nullable(I), 'BuffObserved': nullable(B)}),
     'contributions':COMBAT_CONTRIBUTIONS,
 }, optional=('encounters', 'summon','contributions'))
+DEFS['BossEncounterProgress'] = obj({
+    'encounterId': S, 'source': const('boss'), 'target': nullable(COMBAT_TARGET),
+    'weapon': DEFS['CombatProgress']['properties']['weapon'], 'life': nullable(I), 'lastHit': nullable(COMBAT_HIT),
+    'itemChecks': COUNT, 'combinedUpdates': COUNT, 'startedUpdate': TICK, 'rootDeathUpdate': nullable(TICK),
+    'seed': nullable(COMBAT_TARGET), 'memberCount': COUNT, 'headCount': COUNT,
+    'deathProof': array(obj({'member': COMBAT_TARGET,'update': TICK})),
+    'retreatProof': nullable(obj({**fields(numbers='feetX feetY left right bottom',booleans='settled attackReleased',
+                                          integers='npcClearRadius projectileClearRadius update')})),
+    'predictionFallbackSamples': COUNT, 'customTrajectorySamples': COUNT, 'peakMemberCount': COUNT,'retreatVerified': B, 'evasion': nullable(S), 'evasionDecisions': COUNT, 'noSafeRoute': COUNT,
+    'predictionUpdates': COUNT, 'threatsTruncated': COUNT, 'worstPoseErrorPx': N,
+    'verifiedHits': COUNT, 'verifiedDamage': COUNT,
+    'impacts': array(obj({'sequence': COUNT, 'aim': COMBAT_TARGET, 'member': COMBAT_TARGET,
+                         'carrier': COMBAT_TARGET, 'currentTarget': COMBAT_TARGET, 'heldType': I,
+                         'epoch': I, 'amount': COUNT, 'memberBefore': I, 'memberAfter': I, 'hit': COMBAT_HIT})),
+}, optional=('seed','memberCount','headCount','verifiedHits','verifiedDamage','impacts','deathProof','retreatProof','predictionFallbackSamples','customTrajectorySamples','peakMemberCount','retreatVerified','evasion','evasionDecisions',
+             'noSafeRoute','predictionUpdates','threatsTruncated','worstPoseErrorPx'))
 DEFS['LocalPlanCost'] = obj(fields(numbers='Movement Mining Placement Materials Alteration Remaining'))
 DEFS['LocalEditPlan'] = obj({
     'Actions': array(obj({
@@ -794,7 +810,7 @@ def native_preflight(*operations):
 
 DEFS['TaskReceipt'] = obj({
     'status': TERMINAL_STATUS, 'reason': S, 'reasonDetail': nullable(S),
-    'evidence': any_of(*TASK_LEAF_EVIDENCE, TASK_EVIDENCE['navigate_to'], ref('ExcavationEvidence'), ref('CombatProgress'), ref('CollectionEvidence'),
+    'evidence': any_of(*TASK_LEAF_EVIDENCE, TASK_EVIDENCE['navigate_to'], ref('ExcavationEvidence'), ref('CombatProgress'), ref('BossEncounterProgress'), ref('CollectionEvidence'),
                        native_preflight(*TASK_CHILDREN), NULL),
     **fields(booleans='inputsReleased effectVerified inputsAcquired'),
 })
@@ -806,7 +822,7 @@ DEFS['GameTaskView'] = obj({
     **GAME_TASK_BASE, 'taskName': enum(*TASK_NAMES, *TASK_CHILDREN), **IDENTITY,
     'parentTaskId': nullable(S), 'observedGameUpdate': TICK, 'deadlineGameUpdate': TICK,
     'currentChild': nullable(ref('GameTaskView')),
-    'progress': nullable(any_of(ref('TaskProgress'), ref('ExcavationProgress'), ref('MiningRunEvidence'), ref('CombatProgress'), ref('CollectionEvidence'))),
+    'progress': nullable(any_of(ref('TaskProgress'), ref('ExcavationProgress'), ref('MiningRunEvidence'), ref('CombatProgress'), ref('BossEncounterProgress'), ref('CollectionEvidence'))),
     'lastResult': nullable(ref('TaskReceipt')), 'result': nullable(ref('TaskReceipt')),
 })
 DEFS['AcceptedGameTask'] = obj({
@@ -844,6 +860,7 @@ ACTION_EVIDENCE = {
     'navigate_to': 'GameTaskEvidence',
     'mine_target': 'GameTaskEvidence',
     'combat_attack': 'GameTaskEvidence',
+    'boss_encounter': 'GameTaskEvidence',
     'collect_drops': 'GameTaskEvidence',
     'place_item': 'GameTaskEvidence',
     'mine_tile': 'MiningEvidence',
@@ -887,10 +904,10 @@ DEFS['ActionReceipt'] = obj({
     'effectVerified': nullable(B),
 }, optional=(*RECEIPT_FLAGS, 'targetContainer'), closed=False)
 RAW_TASK_ACTION = {
-    **ACTION_CORE, 'operation': enum('mine_target', 'combat_attack', 'collect_drops', 'place_item'), 'status': ACTION_STATUS, 'generation': I, 'durationMs': I,
+    **ACTION_CORE, 'operation': enum('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item'), 'status': ACTION_STATUS, 'generation': I, 'durationMs': I,
     'requestedInputs': NULL, 'executionState': S, 'task': GAME_TASK,
-    'evidence': any_of(ref('GameTaskEvidence'), native_preflight('mine_target', 'combat_attack', 'collect_drops', 'place_item'), NULL),
-    **{key: target_schema(key, ('mine_target', 'combat_attack', 'collect_drops', 'place_item')) for key in TARGETS if key != 'targetContainer'},
+    'evidence': any_of(ref('GameTaskEvidence'), native_preflight('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item'), NULL),
+    **{key: target_schema(key, ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item')) for key in TARGETS if key != 'targetContainer'},
 }
 DEFS['RawProgramTaskAction'] = obj({**RAW_TASK_ACTION, 'targetContainer': NULL}, optional=('targetContainer',))
 
@@ -950,6 +967,9 @@ TASK_COMPLETION_PROOF = {
             'anyOf': [matches(truncated=FALSE, outcome=enum('collected', 'none')),
                       matches(truncated=TRUE, outcome=const('partial'), canContinue=TRUE)],
         })),
+    'boss_encounter': matches(taskName=const('boss_encounter'), status=const('completed'), phase=const('terminal'),
+        result=matches(inputsReleased=TRUE, effectVerified=TRUE, reason=const('boss_root_defeated'),
+                       evidence=matches(source=const('boss'), rootDeathUpdate=TICK, life={'maximum': 0}))),
     'combat_attack': matches(taskName=const('combat_attack'), status=const('completed'), phase=const('terminal'),
         result={**matches(inputsReleased=TRUE, effectVerified=TRUE), 'anyOf': [
             matches(evidence=matches(lastHit=matches(
@@ -1097,19 +1117,19 @@ def action_ref(name):
 DEFS.update({'Action_' + name: action_variants(name) for name in ACTION_EVIDENCE})
 DEFS['ProgramTaskUnknownOutcome'] = obj({
     'valid': const(False), 'status': const('unknown'), 'completed': const(False),
-    'operation': enum('mine_target', 'combat_attack', 'collect_drops', 'place_item'), 'actionId': S, 'reason': S, 'retryAllowed': const(False), **STOP_CONTINUATION,
+    'operation': enum('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item'), 'actionId': S, 'reason': S, 'retryAllowed': const(False), **STOP_CONTINUATION,
 }, optional=STOP_CONTINUATION)
 DEFS['ProgramTaskOrigin'] = obj({
     'chatId': nullable(any_of(I, S)), 'programId': S, 'runId': nullable(S),
     'mcp_session_id': S, 'mcp_request_id': any_of(I, S), 'mcp_tool_name': S,
 }, optional=('mcp_session_id', 'mcp_request_id', 'mcp_tool_name'))
 PROGRAM_TASK_BASE = {
-    'taskId': S, 'operation': enum('mine_target', 'combat_attack', 'collect_drops', 'place_item'),
+    'taskId': S, 'operation': enum('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item'),
     'status': enum('submitting', 'running', 'completed', 'failed', 'cancelled', 'timeout', 'unknown'),
     'valid': B, 'completed': B, 'dispatchState': enum('unknown', 'admitted', 'not_admitted'),
     'origin': nullable(ref('ProgramTaskOrigin')), 'retryAllowed': const(False),
     'action': ref('RawProgramTaskAction'),
-    'result': any_of(action_ref('mine_target'), action_ref('combat_attack'), action_ref('collect_drops'), action_ref('place_item'), ref('ProgramTaskUnknownOutcome')), 'resultSequence': I,
+    'result': any_of(action_ref('mine_target'), action_ref('combat_attack'), action_ref('boss_encounter'), action_ref('collect_drops'), action_ref('place_item'), ref('ProgramTaskUnknownOutcome')), 'resultSequence': I,
 }
 PROGRAM_TASK_OPTIONAL = ('action', 'result', 'resultSequence')
 DEFS['ProgramTaskView'] = obj(PROGRAM_TASK_BASE, optional=PROGRAM_TASK_OPTIONAL)
@@ -1132,13 +1152,15 @@ def stop_schema(operations, program_tasks=True):
             optional=(*CONTINUATION, 'recovery')),
     ]
     if program_tasks:
-        branches.extend((ref('ProgramTaskUnknownOutcome'), refusal('mine_target', 'combat_attack')))
+        branches.extend((ref('ProgramTaskUnknownOutcome'), refusal('mine_target', 'combat_attack', 'boss_encounter')))
     return any_of(*branches, *(action_ref(name) for name in ACTION_EVIDENCE if name in operations))
 
 
 REGISTRY = {
     **{name: any_of(schema, PRE_DISPATCH) for name, schema in OBSERVATIONS.items()},
     'observe_scene': any_of(observation(ref('SceneLocal')), PRE_DISPATCH),
+    'discover_bosses': any_of(observation(obj({'radiusPixels': I, 'extensionConflicts': COUNT,
+        'candidates': array(obj({'entityRef': S,'typeId': I,'name': S,'strategy': S,'admissible': B,'reason': nullable(S)}))})), PRE_DISPATCH),
     'query_combat_loadout': any_of(observation(ref('CombatLoadout')), PRE_DISPATCH),
     'query_combat': any_of(observation(obj({'action': nullable(ref('RawProgramTaskAction'))})), PRE_DISPATCH),
     'wait': any_of(obj({

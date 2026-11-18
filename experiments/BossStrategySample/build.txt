@@ -1,0 +1,3 @@
+displayName = Boss Strategy Sample
+author = Companion contributors
+version = 0.1

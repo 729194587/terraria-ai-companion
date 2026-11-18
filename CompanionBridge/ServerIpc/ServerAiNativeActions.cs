@@ -38,6 +38,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     internal Func<AiReadOnlyProtocol.Identity,string,bool> ReflexTargetAllowed {get;set;}
     public string CurrentCombatTarget(object handle)=>
         handle is Handle {Context:TaskSlot {Task:CombatController combat}}?combat.TargetRef:null;
+    public bool SupportsBossEncounter=>true;
     public bool SupportsCombat=>true;
     public bool SupportsLoadout=>true;
     public Func<bool> CapturePrimary(AiReadOnlyProtocol.Identity frame)=>NativeCombatWorld.CapturePrimary(frame);
@@ -80,6 +81,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     ?new CombatController(new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),
                         args.TryGetProperty("threat",out _)?ReflexTargetAllowed??((_,_)=>true):null,admission),
                         args.TryGetProperty("threat",out var threat)?"reflex":"agent",threat.ValueKind==JsonValueKind.String?threat.GetString():null)
+                    :operation==CombatProtocol.Boss
+                    ?new BossEncounterTask(actionId,new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),bossEncounter:true),navigation)
                     :operation=="mine_target"
                     ?args.TryGetProperty("cluster",out var cluster)&&cluster.GetBoolean()
                         ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge)
@@ -87,7 +90,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     :operation=="collect_drops" ? new CollectDropsTask(actionId,args,executor)
                     :operation=="place_item" ? new NativeActionTask(executor,"place_item_native",args,actionId,operation)
                     :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
-                ulong budget=operation switch {CombatProtocol.Operation=>CombatController.Budget,"collect_drops"=>CollectDropsTask.Budget,
+                ulong budget=operation switch {CombatProtocol.Boss=>BossEncounterTask.Budget,CombatProtocol.Operation=>CombatController.Budget,"collect_drops"=>CollectDropsTask.Budget,
                     "place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},budget);
             }
@@ -320,6 +323,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     }
     private static Result EquipmentResult(AiReadOnlyProtocol.Identity id,ActorEquipment.Context c)
         => new(c.Status,c.Reason,c.Evidence(),Owned(id)&&Released((Player)id.Actor),c.Status=="completed",InputsAcquired:false,ReasonDetail:c.Error);
+    public string Retreat(AiReadOnlyProtocol.Identity frame,object handle,int x,int y)=>
+        handle is Handle {Context:TaskSlot {Task:BossEncounterTask boss}} h && TaskSlot.Same(frame,h.Identity)
+            ?boss.RequestRetreat(frame,x,y):"boss_not_started";
+
     public Result CancelWithReason(AiReadOnlyProtocol.Identity identity,object value,string status,string reason)
     {
         var h=(Handle)value;Require(h.Identity);
@@ -336,7 +343,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             result=result with{Status="unknown",Reason="task_inputs_not_released",InputsReleased=false,EffectVerified=false};
         else result=result with{InputsReleased=result.InputsReleased&&released};
         if(result.Status!="running")
-        {task.Record.Result=result;task.Record.Status=result.Status;task.Record.Phase="terminal";task.Record.Reason=result.Reason;}
+        {if(task.Task is BossEncounterTask)ServerCombatFixture.WholeTerminal(task.Record.Id,result.Status,result.Reason);
+         task.Record.Result=result;task.Record.Status=result.Status;task.Record.Phase="terminal";task.Record.Reason=result.Reason;}
         return result with{Evidence=new{task=task.View()}};
     }
     public Result BindingLost(object value)

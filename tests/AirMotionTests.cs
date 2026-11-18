@@ -9,7 +9,8 @@ public static class AirMotionTests
     {
         int checks=0;void Check(bool ok,string why){if(!ok)throw new Exception(why);checks++;}
         MovementSnapshot Snapshot(int wing=1,float time=100,int boots=0,int delay=0,int visualDelay=0)=>new(Array.Empty<ExtraJumpSnapshot>(),false,
-            new(wing,time,100,59,wing==1?AirMotionModel.AngelStats:null),new(boots,7,7,delay,visualDelay),new(false,-1,null,54),0,true,Array.Empty<GrappleSnapshot>(),new(false,0,false,false,false,false));
+            new(wing,time,100,59,AirMotionModel.AngelStats),new(boots,7,7,delay,visualDelay),new(false,-1,null,54),0,true,Array.Empty<GrappleSnapshot>(),new(false,0,false,false,false,false));
+        Check(AirMotionModel.Select(Snapshot(wing:2))==AirMotionModel.Angel,"native Angel Wings slot matches pinned stats");
         foreach(float time in new[]{0f,1f,100f})foreach(int boots in new[]{0,1})
         {
             var m=Snapshot(time:time,boots:boots);

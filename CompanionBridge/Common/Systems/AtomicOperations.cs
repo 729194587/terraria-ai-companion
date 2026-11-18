@@ -17,12 +17,39 @@ public sealed class AtomicNpcIdentity : GlobalNPC
 {
     public override bool InstancePerEntity => true;
     internal Guid Token = Guid.NewGuid();
-    public override void OnSpawn(NPC npc, Terraria.DataStructures.IEntitySource source) => Token = Guid.NewGuid();
-    public override void OnKill(NPC npc) => ServerCombatFixture.RecordDeath(npc);
+    internal Guid Family;
+    internal ulong SpawnUpdate;
+    internal bool AmbiguousTwinSpawn;
+    internal (Type Source,string Context,Entity Parent) TwinOrigin;
+    public override void OnSpawn(NPC npc, Terraria.DataStructures.IEntitySource source)
+    {
+        Token = Guid.NewGuid();
+        SpawnUpdate=Main.GameUpdateCount;
+        Family=Token;
+        if(source is Terraria.DataStructures.EntitySource_Parent {Entity:NPC parent})
+        {
+            var origin=parent.GetGlobalNPC<AtomicNpcIdentity>();
+            if(npc.type is NPCID.EaterofWorldsBody or NPCID.EaterofWorldsTail or NPCID.TheDestroyerBody or NPCID.TheDestroyerTail)
+                Family=origin.Family==Guid.Empty?origin.Token:origin.Family;
+            else if(npc.ModNPC!=null || npc.type is NPCID.SkeletronHand or NPCID.MoonLordHead or NPCID.MoonLordHand)
+                Family=origin.Token;
+        }
+        if(Main.dedServ && npc.type is NPCID.Retinazer or NPCID.Spazmatism)
+        {
+            TwinOrigin=(source?.GetType(),source?.Context,(source as Terraria.DataStructures.EntitySource_Parent)?.Entity);
+            foreach(var other in Main.ActiveNPCs)
+                if(other!=npc && other.type==npc.type)
+                    AmbiguousTwinSpawn=other.GetGlobalNPC<AtomicNpcIdentity>().AmbiguousTwinSpawn=true;
+        }
+    }
+    public override void OnKill(NPC npc) { NativeCombatWorld.ObserveDeath(npc); ServerCombatFixture.RecordDeath(npc); }
     public override GlobalNPC Clone(NPC from, NPC to)
     {
         var clone = (AtomicNpcIdentity)base.Clone(from, to);
         clone.Token = Guid.NewGuid();
+        clone.Family=Guid.Empty;
+        clone.AmbiguousTwinSpawn=false;
+        clone.TwinOrigin=default;
         return clone;
     }
 }

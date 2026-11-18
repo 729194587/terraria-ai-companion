@@ -214,6 +214,48 @@ class ResultRegistryTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
+    def test_boss_strategy_requires_new_handshake(self):
+        import program_tasks
+        old=bridge(FULL | {'server_ai_boss_encounter_v1','server_ai_boss_members_v1'})
+        modern=bridge(set(old.hello['capabilities']) | {'server_ai_boss_strategy_v1'})
+        self.assertEqual('not_exposed',api_help(old,{'name':'discover_bosses'})['status'])
+        self.assertNotIn('retreatTo',api_help(old,{'name':'cancel_task'})['parameters']['properties'])
+        for compact in (False,True):
+            prompt,_=server_contract(old,compact=compact)
+            self.assertNotIn('discover_bosses',prompt)
+            self.assertNotIn('retreatTo',prompt)
+        self.assertIn('retreatTo',api_help(modern,{'name':'cancel_task'})['parameters']['properties'])
+        self.assertEqual('ok',api_help(modern,{'name':'discover_bosses'})['status'])
+        self.assertIn('discover_bosses',api_help(modern,{'name':'submit_task'})['description'])
+        with self.assertRaises(ValueError):
+            program_tasks.validate('cancel_task',{'taskId':'a'*32,'retreatTo':{'feetX':True,'feetY':35}})
+
+    def test_boss_members_help_and_terminal_evidence(self):
+        caps=FULL | {'server_ai_boss_encounter_v1'}
+        self.assertNotIn('毁灭者头',api_help(bridge(caps),{'name':'submit_task'})['description'])
+        self.assertIn('毁灭者头',api_help(bridge(caps | {'server_ai_boss_members_v1'}),{'name':'submit_task'})['description'])
+        red={'TypeId':125,'EntityRef':'red'}
+        green={'TypeId':126,'EntityRef':'green'}
+        proof={'seed':red,'startedUpdate':2,'rootDeathUpdate':15,'deathProof':[{'member':red,'update':12}]}
+        self.assertFalse(atomic.verified_boss_deaths(proof))
+        proof['deathProof'].append({'member':green,'update':15})
+        self.assertTrue(atomic.verified_boss_deaths(proof))
+        proof['deathProof'][1]['member']=red
+        self.assertFalse(atomic.verified_boss_deaths(proof))
+        self.assertFalse(atomic.verified_boss_deaths({},members_required=True))
+
+    def test_boss_encounter_requires_capability_and_task_entry(self):
+        import program_tasks
+        for enabled in (False, True):
+            caps = FULL | ({'server_ai_boss_encounter_v1'} if enabled else set())
+            definitions = {d['function']['name']: d['function'] for d in server_definitions(bridge(caps))}
+            self.assertNotIn('boss_encounter', definitions)
+            operations = definitions['submit_task']['parameters']['properties']['operation']['enum']
+            self.assertEqual(enabled, 'boss_encounter' in operations)
+        with self.assertRaises(ValueError):
+            program_tasks.validate('submit_task', {'operation': 'boss_encounter',
+                                   'arguments': {'entityRef': 'root', 'durationSeconds': 601}})
+
     def test_combat_configuration_in_prompt_and_help(self):
         legacy = bridge(FULL | {'server_ai_combat_v1','server_ai_combat_primary_v1'})
         modern = bridge(set(legacy.hello['capabilities']) | {'server_ai_combat_secondary_v1',

@@ -1,0 +1,10 @@
+NPCs: {
+	Linked.DisplayName: Linked
+	Root.DisplayName: Root
+	Segment.DisplayName: Segment
+}
+
+Projectiles: {
+	Arc.DisplayName: Arc
+	Conflicted.DisplayName: Conflicted
+}

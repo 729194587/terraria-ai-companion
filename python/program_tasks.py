@@ -13,7 +13,7 @@ from control import BridgeError, NotAdmittedError
 from lua_action_results import action_results
 
 NAMES = frozenset({'submit_task', 'query_task', 'await_task', 'cancel_task', 'resume_task'})
-OPERATIONS = ('mine_target', 'combat_attack', 'collect_drops', 'place_item')
+OPERATIONS = ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item')
 
 
 def available(bridge):
@@ -29,6 +29,12 @@ def validate(name, args):
         if set(args) != {'operation', 'arguments'} or args['operation'] not in OPERATIONS:
             raise ValueError('submit_task requires a supported task operation and its arguments')
         return {**args, 'arguments': atomic.validate(args['operation'], args['arguments'])}
+    if name=='cancel_task' and 'retreatTo' in args:
+        dest=args['retreatTo']
+        if not isinstance(dest,dict) or set(dest)!={'feetX','feetY'} or any(type(v) is not int or not 0<=v<=2**31-1 for v in dest.values()):
+            raise ValueError('retreatTo requires nonnegative integer feetX/feetY world pixels')
+        validate(name,{k:v for k,v in args.items() if k!='retreatTo'})
+        return args
     allowed = {'taskId', 'milliseconds'} if name == 'await_task' else {'taskId'}
     if set(args) - allowed or 'taskId' not in args or not isinstance(args['taskId'], str) or not re.fullmatch('[0-9a-f]{32}', args['taskId']):
         raise ValueError('An explicit taskId (32 lowercase hex characters) is required')
@@ -40,7 +46,7 @@ def validate(name, args):
     return args
 
 
-def definitions(*, excavation=False, combat=False, collection=False, placement=False):
+def definitions(*, excavation=False, combat=False, boss=False, members=False, strategy=False, collection=False, placement=False):
     rows = []
     for name in sorted(NAMES):
         properties = {'taskId': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'}}
@@ -54,6 +60,13 @@ def definitions(*, excavation=False, combat=False, collection=False, placement=F
             operations = ['mine_target']
             if combat:
                 operations.append('combat_attack')
+            if boss:
+                operations.append('boss_encounter')
+                roots = '克苏鲁之眼、吞噬者头、毁灭者头、双子、骷髅王头、月总核心' if members else '克苏鲁之眼'
+                if strategy:
+                    description+=' boss_encounter 先配武器，再用 discover_bosses 的 admissible 和 reason 选择原版或扩展根的 entityRef。受理后专服自主交战；通过 query_task 查看 verifiedHits、verifiedDamage 和 deathProof。'
+                else:
+                    description += f' boss_encounter 支持{roots}。先配武器，再传 scan_entities 根实体行的 details.entityRef。受理后专服自主交战，可查询或取消。'
             if collection:
                 operations.append('collect_drops')
             if placement:
@@ -70,6 +83,10 @@ def definitions(*, excavation=False, combat=False, collection=False, placement=F
             if combat:
                 description += ' combat_attack 使用 scan_entities 的 entityRef；query_combat 也可发现游戏侧自卫任务。'
             required = ['operation', 'arguments']
+        elif name=='cancel_task' and strategy:
+            properties['retreatTo']={'type':'object','properties':{k:{'type':'integer','minimum':0,'maximum':2147483647} for k in ('feetX','feetY')},
+                                    'additionalProperties':False,'required':['feetX','feetY']}
+            description+=' Boss 可选 retreatTo，以世界像素指定已观察的安全落点脚底坐标。受理后查询同一任务，boss_retreat_verified 表示到达并脱离。'
         elif name == 'await_task':
             properties['milliseconds'] = {'type': 'integer', 'minimum': 1, 'maximum': 30000, 'default': 1000}
         rows.append({'type': 'function', 'function': {'name': name, 'description': description,
@@ -131,7 +148,7 @@ class TaskCoordinator:
         async with self.admission:
             conflict = any(r['view']['status'] in ('submitting', 'unknown') or
                            r['view']['status'] == 'running' and
-                           (operation != 'combat_attack' or r['view']['operation'] == 'combat_attack')
+                           (operation != 'combat_attack' or r['view']['operation'] in ('combat_attack', 'boss_encounter'))
                            for r in self.records.values())
             if self.closed or conflict or getattr(self.bridge, '_lua_poisoned', False):
                 return atomic.not_admitted_result('submit_task', 'active_task_conflict_or_unresolved')
@@ -254,6 +271,9 @@ class TaskCoordinator:
         if name == 'submit_task':
             return await self.submit(args, origin)
         record = self.records.get(args['taskId'])
+        if 'retreatTo' in args and ('server_ai_boss_strategy_v1' not in self.bridge.hello.get('capabilities',())
+                or not record or record['view']['operation']!='boss_encounter'):
+            raise atomic.PreDispatchRejected('Retreat requires this connection’s active boss encounter')
         if record is None:
             return await self._reflex(name, args)
         if name == 'resume_task':
@@ -277,7 +297,13 @@ class TaskCoordinator:
         elif not record['done'].is_set():
             async with record['lock']:
                 try:
-                    await self._observe(record, cancel=name == 'cancel_task')
+                    if 'retreatTo' in args:
+                        reply=await asyncio.to_thread(self.bridge.task_request,'retreat',args['taskId'],arguments=args['retreatTo'])
+                        if not atomic.same_action(record['identity'],reply):raise BridgeError('Retreat task identity changed')
+                        record['view']['action']=reply
+                    else:await self._observe(record, cancel=name == 'cancel_task')
+                except NotAdmittedError as error:
+                    raise atomic.PreDispatchRejected(str(error)) from error
                 except (BridgeError, OSError, ValueError, KeyError, TypeError) as error:
                     self._unknown(record, error)
         return copy.deepcopy(record['view'])

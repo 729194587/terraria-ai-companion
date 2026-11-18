@@ -15,7 +15,7 @@ using Identity = CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity;
 namespace CompanionBridge.ServerIpc;
 
 // Only the isolated, copied-world harness can seed a target. All attacks run in natural frames.
-internal static class ServerCombatFixture
+internal static partial class ServerCombatFixture
 {
     internal static bool Enabled => ServerAiActionFixture.Enabled && Program.LaunchParameters.ContainsKey("-companioncombattest");
     private static NPC target;
@@ -177,7 +177,8 @@ internal static class ServerCombatFixture
             cooldown=Cooldown(p,npc.whoAmI),nativeWrapper=stack.Contains("Terraria.Player::ItemCheckWrapped"),
             nativeDamage=stack.Contains("ProcessHitAgainstNPC")});
     }
-    internal static bool Keeps(NPC npc) => Enabled && (ReferenceEquals(npc,target)||defenseTargets.Contains(npc));
+    internal static bool Keeps(NPC npc) => Enabled && (whole || ReferenceEquals(npc,target)||defenseTargets.Contains(npc)
+        || memberCase!=null && npc.type is >=13 and <=15 or 35 or 36 or 125 or 126 or >=134 and <=136 or >=396 and <=400);
 
     // ResetEffects rebuilds statManaMax2 from statManaMax every frame, so the
     // fixture must seed the base pool rather than only the derived maximum.
@@ -241,6 +242,11 @@ internal static class ServerCombatFixture
         if(!Enabled)return;
         // The copied world can contain town NPCs whose attacks would decide
         // the fight. Keep the arena isolated from ambient friendly projectiles.
+        if(memberCase!=null)AdvanceMemberFixture(p);
+        if(whole)WholeTick(p);
+        else if(pattern!=null)AdvanceEvasion(p);
+        else if(target?.type==NPCID.EyeofCthulhu && target.active && !p.dead)
+        {p.immune=true;p.immuneTime=60;}
         foreach(var projectile in Main.projectile)
             if(!ReferenceEquals(projectile,occupyingMinion)&&projectile.active&&projectile.friendly&&(!projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
                 ||trace.Flight is not {Verified:true}))projectile.active=false;
@@ -302,6 +308,35 @@ internal static class ServerCombatFixture
             File.Delete(request);
         }
         catch(IOException){return;} // Windows can briefly lock the atomically renamed request.
+        if(mode.StartsWith("evasion-")){EvasionScene(p,mode);return;}
+        if(mode.StartsWith("whole-")){WholeScene(p,mode);return;}
+        if(mode.StartsWith("members-")){MemberRequest(p,mode);return;}
+        if(mode=="boss-setup")
+        {
+            p.inventory[2].SetDefaults(ItemID.WoodenBow);
+            p.inventory[54].SetDefaults(ItemID.WoodenArrow);p.inventory[54].stack=999;
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),"{}");
+            return;
+        }
+        if(mode is "boss-seed" or "boss-short")
+        {
+            Main.dayTime=false;Main.time=1200;
+            var rootSlot=NPC.NewNPC(p.GetSource_Misc("isolated_single_root"),(int)p.Center.X-150,(int)p.Center.Y-25,
+                NPCID.EyeofCthulhu,Target:p.whoAmI);
+            target=Main.npc[rootSlot];
+            if(mode=="boss-short")target.life=1;
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(DefenseIdentity(p,target)));
+            return;
+        }
+        if(mode=="boss-audit")
+        {
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                tick=Main.GameUpdateCount,frames,firstPress,hits,hitViolations,hitTrace,projectileHits,
+                released=ServerAiNativeActions.Released(p),running=NativeCombatWorld.Running,
+                scopeReleased=!NativeItemInput.Active(p),p.dead,p.position.X,p.position.Y,p.selectedItem,
+                generation=ProbeSession.ActorGeneration,target.life,target.active}));
+            return;
+        }
         if(mode=="loadout-trip")
         {
             // The test client must discover each item and choose its hotbar destination.

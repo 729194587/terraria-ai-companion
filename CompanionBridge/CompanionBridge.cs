@@ -10,6 +10,7 @@ namespace CompanionBridge;
 
 public sealed class CompanionBridge : Mod
 {
+    public override object Call(params object[] args)=>ServerIpc.BossExtensions.Register(args);
     public override void HandlePacket(BinaryReader reader, int whoAmI) => AtomicMultiplayer.Receive(reader, whoAmI);
     internal static ModKeybind ToggleAutoMoveKeybind { get; private set; }
     internal static ControlState Controls { get; } = new();
@@ -67,6 +68,7 @@ public sealed class CompanionBridge : Mod
     public override void Unload()
     {
         ServerIpc.ServerAiSystem.UnloadRuntime();
+        ServerIpc.BossExtensions.Reset();
         StopControl();
         Server?.Dispose();
         Server = null;

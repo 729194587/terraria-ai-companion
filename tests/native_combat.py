@@ -273,6 +273,10 @@ async def verify(args):
 
     try:
         case = os.environ.get('COMPANION_COMBAT_CASE')
+        if case and case.startswith('boss-'):
+            from native_boss_encounter import verify_encounter
+            await verify_encounter(case[5:], bridge, lua, manager, scene, results, profile)
+            return
         if case == 'summon-maintenance':
             async def loadout_until(status, after=0):
                 for _ in range(180):

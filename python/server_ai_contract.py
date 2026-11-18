@@ -24,7 +24,7 @@ CATEGORIES = (
     ('直接身体输入', ('move_input',), 'Limited', '原生方向/跳跃多更新输入；不是目标导航或装备运动适配。'),
     ('目标导航', ('navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'drop_through_platform', 'move_on_rope'),
      'Limited', '局部导航按各自profile；绳索操作受原版绳柱及原生接触条件限制。'),
-    ('物品与战斗', ('use_item', 'configure_combat_loadout', 'query_combat_loadout', 'query_combat', 'attack_entity'), 'Limited', '主动攻击通过 submit_task 提交 combat_attack；query_combat 可发现游戏侧自卫任务。'),
+    ('物品与战斗', ('use_item', 'configure_combat_loadout', 'query_combat_loadout', 'query_combat', 'discover_bosses','attack_entity'), 'Limited', '主动攻击通过 submit_task 提交 combat_attack；query_combat 可发现游戏侧自卫任务。'),
     ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '服务器挖掘从主背包自动选工具；复合挖掘可先接近指定格，掉落入包需另行核验。'),
     ('建造', ('place_tile', 'place_object', 'place_wall', 'hammer_tile', 'place_rope'),
      'Limited', '原生放置受材料、样式、占地和目标坐标限制。'),
@@ -76,6 +76,7 @@ def capability_manifest(bridge, supported=None):
     supported = exposed_operations(bridge) if supported is None else set(supported)
     categories = []
     for name, operations, level, boundary in CATEGORIES:
+        operations = [op for op in operations if op!='discover_bosses' or op in supported]
         exposed = [op for op in operations if op in supported]
         row = dict(category=name, status=level if exposed else 'Not exposed', callableApis=exposed,
                    notExposed=[op for op in operations if op not in supported])
@@ -133,6 +134,9 @@ def server_definitions(bridge, supported=None):
                                       excavation='server_ai_excavation_v1' in capabilities)
     if program_tasks.available(bridge):
         definitions += program_tasks.definitions(excavation='server_ai_excavation_v1' in capabilities,
+                                                 boss='server_ai_boss_encounter_v1' in capabilities,
+                                                 strategy='server_ai_boss_strategy_v1' in capabilities,
+                                                 members='server_ai_boss_members_v1' in capabilities,
                                                  combat='server_ai_combat_v1' in capabilities,
                                                  collection='collect_drops' in supported,
                                                  placement='place_item' in supported)
@@ -168,7 +172,7 @@ for _,candidate in ipairs(q.data.combatCandidates) do
         end
     end
 end
-if not (config.primary and config.secondary and config.summon) then return {missingRole=true} end
+if not (config.primary or config.secondary) then return {missingAttackWeapon=true} end
 return api("configure_combat_loadout",config)'''
         return '''local q=api("inspect_inventory",{mode="selected"})
 if not q.valid then return q end
@@ -316,6 +320,13 @@ def server_contract(bridge, tool, *, compact=False):
             '活动或unknown任务阻止新身体变更，替换前显式取消并确认终态。'
             '危险由游戏Tick安全中断，resume_task只对可信危险中断显式重新受理，重新验证目标/工具/环境；不自动恢复。'
             'Task完成不等于Goal完成；Program/Run失败不改写Task，最终模型失败不重放动作。')
+        if 'discover_bosses' in supported:
+            task_reference+=' 用 inspect_inventory 的 combatCandidates 配置 configure_combat_loadout，query_combat_loadout 核对。discover_bosses 取 admissible 候选的 entityRef，submit_task 提交 boss_encounter；query_task 查看进展。cancel_task 停止，附 retreatTo={feetX,feetY} 导航撤退。'
+        if 'boss_encounter' in supported and 'discover_bosses' not in supported:
+            task_reference += (' 挑战克苏鲁之眼前配置主或副武器；把 scan_entities 返回的根实体行的 details.entityRef 传给 '
+                               'submit_task(operation="boss_encounter")。专服持续执行，按 taskId 查询或取消。')
+        if 'boss_encounter' in supported and 'server_ai_boss_members_v1' in bridge.hello.get('capabilities', ()):
+            task_reference += ' 多成员战斗自动换部位，seed 标识请求实例，target 是当前部位。配对不明时返回原因；verifiedDamage 是已确认的累计伤害。'
         if 'query_combat' in supported:
             task_reference += ('combat_attack 与服务端自卫共享战斗优先级，可安全终止普通身体任务。'
                                '用 query_combat 获取自卫任务的 actionId，再用 query_task 或 cancel_task。')

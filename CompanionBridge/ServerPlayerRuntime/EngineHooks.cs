@@ -25,6 +25,20 @@ public sealed class VirtualPlayerEngineProbe
     private static string fault;
     internal static string Fault => Volatile.Read(ref fault);
 
+    // Only the copied-world E4 launcher supplies the exact reviewed sample package hash.
+    private static bool IsIsolatedBossSample(Mod mod)
+    {
+        if(mod.Name!="BossStrategySample" || !Main.dedServ ||
+            !Program.LaunchParameters.ContainsKey("-companioncombattest") ||
+            !CompanionBridge.ServerIpc.ServerAiActionFixture.Enabled ||
+            !Program.LaunchParameters.TryGetValue("-companionbosssamplehash",out var expected) ||
+            !Program.LaunchParameters.TryGetValue("-modpath",out var modPath))return false;
+        var directory=Path.Combine(Main.SavePath,"Mods");
+        if(!string.Equals(Path.GetFullPath(directory),Path.GetFullPath(modPath),StringComparison.OrdinalIgnoreCase))return false;
+        using var input=File.OpenRead(Path.Combine(directory,"BossStrategySample.tmod"));
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(input))==expected;
+    }
+
     public void Load(Mod owner)
     {
         Instance = owner;
@@ -40,7 +54,7 @@ public sealed class VirtualPlayerEngineProbe
         {
             Engine = EngineProfiles.Verify(owner);
             Instance.Logger.Info($"Engine fingerprint confirmed: Terraria 1.4.4.9 / tML {Engine.Selected}; {Engine.EngineHash}");
-            if (ModLoader.Mods.Any(m => m != Instance && m.Name != "ModLoader"))
+            if (ModLoader.Mods.Any(m => m != Instance && m.Name != "ModLoader" && !IsIsolatedBossSample(m)))
                 throw new InvalidOperationException("G1 isolation requires this probe and tModLoader only.");
             NetworkStateSync.Reset();
             ProbeAnnouncements.ResetNotices();

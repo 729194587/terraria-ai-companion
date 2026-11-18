@@ -209,6 +209,10 @@ P4-B 已经使用虚拟鼠标和原生 `Player.ItemCheck()`。
 可以通过原生玩家行为入口完成的独立执行循环。 - 不再需要的 IL 注入和
 DynamicMethod 克隆。 - 与原生机制重复的状态维护。
 
+### R2-E Boss 与多段 NPC（E0–E4 的隔离实测及逐 Boss 胜负见专题）
+
+[专服自主 Boss 战斗设计](R2_E_BOSS_ENCOUNTERS.md)记录了单目标战斗审计、TerraBot 对照、Encounter 根任务与共享执行器的边界，以及隔离专服的分阶段验收条件。
+
 ## 7. 每阶段验收标准
 
 1.  确认目标 Terraria/tModLoader 版本中的真实原生执行入口。

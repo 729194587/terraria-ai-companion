@@ -166,6 +166,7 @@ internal static class NativeSurvival
         if(!Owns(p))throw new InvalidOperationException("Hurt callback changed AI ownership.");
         if(p.statLife!=life)
         {
+            if(p.statLife<life)CompanionBridge.ServerIpc.ServerCombatFixture.EvasionHurt(info,life-p.statLife);
             if(p.statLife<life)CompanionBridge.ServerIpc.NativeCombatWorld.RecordHurt(p,info.DamageSource.SourceNPCIndex);
             Hurts++;NetMessage.SendPlayerHurt(p.whoAmI,info,-1);
             NetMessage.SendData(MessageID.PlayerLifeMana,-1,-1,null,p.whoAmI);

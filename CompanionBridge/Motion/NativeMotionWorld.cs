@@ -93,6 +93,9 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
     public PhysicsState Move(PhysicsState start, float vx, float vy, float gravity)
         => MoveCore(start,vx,vy,gravity,stepAssist:true);
 
+    public PhysicsState MoveThroughPlatform(PhysicsState start,float vx,float vy,float gravity)
+        =>MoveCore(start,vx,vy,gravity,stepAssist:true,drop:true);
+
     public bool WaterContact(PhysicsState state)=>NativeLiquidRisk.WaterContact(state);
 
     public PhysicsState MoveInWater(PhysicsState start,float vx,float vy,float gravity)
@@ -109,7 +112,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
 
     // A stationary downward probe asks whether native collision holds this
     // exact pose. Step assist could move the probe onto a different surface.
-    private PhysicsState MoveCore(PhysicsState start,float vx,float vy,float gravity,bool stepAssist,bool water=false)
+    private PhysicsState MoveCore(PhysicsState start,float vx,float vy,float gravity,bool stepAssist,bool water=false,bool drop=false)
     {
         if(stepAssist)LastHorizontalContact=null;
         // Native helpers inspect neighbouring tiles. Reject unloaded/custom tiles
@@ -137,7 +140,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
                 if (vel.Y >= gravity)
                     Collision.StepUp(ref pos, ref vel, 20, 42, ref stepSpeed, ref gfxOffY);
             }
-            var clipped = Collision.TileCollision(pos, vel, 20, 42, false, false, 1);
+            var clipped = Collision.TileCollision(pos, vel, 20, 42, drop, drop, 1);
             if(stepAssist&&_captureContacts)LastHorizontalContact=NavigationContact.Horizontal(pos.X,pos.Y,vel.X,clipped.X,(x,y)=>
             {
                 // This face lies inside the neighbourhood already checked above.
@@ -157,7 +160,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
                 pos+=displacement;
                 return new(pos.X,pos.Y,clipped.X,clipped.Y,vel.Y>=0&&clipped.Y==0);
             }
-            var slope = Collision.SlopeCollision(pos + clipped, clipped, 20, 42, gravity, false);
+            var slope = Collision.SlopeCollision(pos + clipped, clipped, 20, 42, gravity, drop);
             bool grounded = vel.Y >= 0 && (slope.W == 0 || (vel.Y > 0 && Math.Abs(slope.W - vel.Y) > 0.01f));
             return new(slope.X, slope.Y, slope.Z, slope.W, grounded);
         }
