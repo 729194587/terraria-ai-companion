@@ -77,8 +77,8 @@ async def verify(args):
                 assert rows and encounter['LastHit']['Defeated'], (encounter, rows)
                 if magic:
                     assert rows[-1]['tick'] > rows[-1]['launched']
-                else:
-                    assert rows[-1]['tick'] == encounter['LastHit']['GameUpdate'] and rows[-1]['life'] <= 0
+                assert rows[-1]['tick'] == encounter['LastHit']['GameUpdate'], (encounter, rows[-1])
+                assert rows[-1]['life'] == encounter['LastHit']['LifeAfter'] <= 0, (encounter, rows[-1])
             else:
                 assert encounter['LastHit'] is None or not encounter['LastHit']['Defeated']
         assert {n['entityRef'] for n in sample['survivors']} == ({allowed_survivor} if allowed_survivor else set()), sample
@@ -306,9 +306,7 @@ async def verify(args):
                 assert len(sample['shots']) >= 2, sample
                 assert len({shot['tick'] for shot in sample['shots']}) == len(sample['shots']), sample
                 assert all(shot['Identity'] == sample['shots'][0]['Identity'] for shot in sample['shots']), sample
-                # NetworkStateSync coalesces at most one equipment/mana packet
-                # per cast frame; verify payment without assuming retransmits.
-                assert sample['manaPackets'] >= 1, sample
+                assert sample['potionPackets'] == 0 and sample['ammoPackets'] == 0, sample
                 assert charged >= enemy['manaCost'], (enemy, sample)
             if mode == 'amethyst':
                 first = sample['shots'][0]
@@ -367,8 +365,10 @@ async def verify(args):
         assert sample['manaPaidWithoutShot'] == 0 and sample['shots'], sample
         assert sample['potions'] < enemy['potions'], sample
         assert sample['manaFlower'] and sample['manaPackets'] >= 1, sample
-        assert any(row['flower'] and row['manaAfter'] > row['manaBefore'] and row['shots'] >= 1
-                   for row in sample['manaTrace']), sample
+        potion_frames = [row for row in sample['manaTrace'] if row['potionsUsed'] > 0]
+        assert sum(row['potionsUsed'] for row in potion_frames) == enemy['potions'] - sample['potions'], sample
+        assert all(row['flower'] and row['shots'] >= 1 for row in potion_frames), sample
+        assert sample['potionPackets'] >= len(potion_frames), sample
 
         # Mana Flower without any mana potion cannot finance QuickMana. The
         # cast must be refused rather than faked, with no potion or payment.

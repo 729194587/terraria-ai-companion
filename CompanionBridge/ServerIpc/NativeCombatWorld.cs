@@ -392,6 +392,16 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
         return true;
     }
 
+    // QuickMana can consume from either the inventory or an open Void Bag.
+    private readonly List<(Item[] items, int index, int networkSlot, int stack, int type)> manaItems = new();
+
+    private void TrackManaItems(Item[] items, int firstSlot)
+    {
+        for (int i = 0; i < items.Length; i++)
+            if (items[i].healMana > 0 && items[i].stack > 0)
+                manaItems.Add((items, i, firstSlot + i, items[i].stack, items[i].type));
+    }
+
     private void CheckItem(Action<NativeItemInput.Intent> runNative)
     {
         ulong tick = Main.GameUpdateCount;
@@ -429,12 +439,24 @@ internal sealed class NativeCombatWorld(Identity identity, ServerAiNavigation na
             // (including QuickMana potions) runs before ItemCheck_Shoot. Observe
             // the whole frame instead of the shooting sub-step.
             int manaBefore=player.statMana;
+            manaItems.Clear();
+            if (press && ShotKind == CombatBallistics.Kind.Magic && player.manaFlower)
+            {
+                TrackManaItems(player.inventory, PlayerItemSlotID.Inventory0);
+                if (player.useVoidBag()) TrackManaItems(player.bank4.item, PlayerItemSlotID.Bank4_0);
+            }
             runNative(new(aim, press));
             bool manaChanged=player.statMana!=manaBefore;
-            if((ammoChanged||manaChanged)&&Owned())
+            if (Owned())
             {
-                if(manaChanged)NetMessage.SendData(MessageID.PlayerLifeMana,-1,-1,null,player.whoAmI);
-                NetworkStateSync.Full(player);
+                if (manaChanged) NetMessage.SendData(MessageID.PlayerMana, -1, -1, null, player.whoAmI);
+                foreach (var slot in manaItems)
+                {
+                    var after = slot.items[slot.index];
+                    if (after.stack != slot.stack || after.type != slot.type)
+                        NetMessage.SendData(MessageID.SyncEquipment, -1, -1, null, player.whoAmI, slot.networkSlot);
+                }
+                if (ammoChanged) NetworkStateSync.Full(player);
             }
             if (press && player.itemAnimation > 0 && Owned())
             {

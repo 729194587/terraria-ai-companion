@@ -26,8 +26,8 @@ class MagicManaTimingTests(unittest.TestCase):
         self.assertLess(before, native)
         self.assertLess(native, after)
         tail = check[after:]
-        self.assertIn('MessageID.PlayerLifeMana', tail)
-        self.assertIn('NetworkStateSync.Full(player)', tail)
+        self.assertIn('MessageID.PlayerMana', tail)
+        self.assertIn('if (ammoChanged) NetworkStateSync.Full(player)', tail)
         # Payment stays exclusively in native code.
         self.assertNotIn('player.CheckMana', COMBAT)
         self.assertNotIn('statMana-=', COMBAT)

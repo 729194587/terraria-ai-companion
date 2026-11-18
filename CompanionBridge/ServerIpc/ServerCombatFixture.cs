@@ -28,7 +28,7 @@ internal static class ServerCombatFixture
     // whether that frame emitted a verified shot, so a debit without a
     // projectile can never hide behind end-of-run totals.
     private static readonly List<object> manaTrace=new();
-    private static int manaPaidWithoutShot;
+    private static int manaPaidWithoutShot, verifiedShots, potionPackets;
     private static int? firstCooldown;
     private static readonly List<object> hitTrace=new();
     private static readonly List<object> shots=new(),projectileHits=new(),flightTrace=new();
@@ -36,6 +36,7 @@ internal static class ServerCombatFixture
     {
         if(!Enabled)return;
         var stack=new System.Diagnostics.StackTrace().ToString();
+        if (shot.Verified) verifiedShots++;
         shots.Add(new{tick=Main.GameUpdateCount,shot.Owner,shot.Identity,shot.Weapon,shot.Ammo,shot.Magic,shot.Verified,
             shot.Type,shot.Slot,x=projectile.Center.X,y=projectile.Center.Y,tx=Main.npc[shot.Target.Slot].Center.X,ty=Main.npc[shot.Target.Slot].Center.Y,
             targetVx=Main.npc[shot.Target.Slot].velocity.X,targetVy=Main.npc[shot.Target.Slot].velocity.Y,target=shot.Target.EntityRef,vx=projectile.velocity.X,vy=projectile.velocity.Y,
@@ -79,7 +80,8 @@ internal static class ServerCombatFixture
             &&Main.projectile[number].TryGetGlobalProjectile<CombatProjectile>(out var trace)&&trace.Flight is {Verified:true})
             spawnPackets++;
         if(msg==MessageID.SyncEquipment&&number==p.whoAmI&&a==54)ammoPackets++;
-        if(msg==MessageID.PlayerLifeMana&&number==p.whoAmI)manaPackets++;
+        if(msg==MessageID.SyncEquipment&&number==p.whoAmI&&a==50)potionPackets++;
+        if(msg==MessageID.PlayerMana&&number==p.whoAmI)manaPackets++;
     }
 
     private static void ObserveItemFrame(On_Player.orig_ItemCheck orig,Player p)
@@ -99,21 +101,25 @@ internal static class ServerCombatFixture
             throw new InvalidOperationException("Intentional native combat input fault.");
         }
         int manaBefore=p.statMana;
-        int shotsBefore=shots.Count;
+        int shotsBefore=verifiedShots;
+        int potionsBefore=FixturePotions(p);
         orig(p);
         int manaAfter=p.statMana;
-        int launched=shots.Count-shotsBefore;
+        int launched=verifiedShots-shotsBefore;
+        int potionsUsed=potionsBefore-FixturePotions(p);
         // Whole-frame mana ledger: payment, QuickMana recovery and the shot all
         // happen inside this one native ItemCheck, so a debit without a
         // projectile is recorded here even when later payment offsets it.
-        if(manaBefore!=manaAfter)
+        if(manaBefore!=manaAfter||potionsUsed>0)
         {
-            manaTrace.Add(new{tick,manaBefore,manaAfter,debit=Math.Max(0,manaBefore-manaAfter),shots=launched,
+            manaTrace.Add(new{tick,manaBefore,manaAfter,debit=Math.Max(0,manaBefore-manaAfter),shots=launched,potionsUsed,
                 pressed=p.controlUseItem,flower=p.manaFlower,potionDelay=p.potionDelay,
                 manaCost=p.GetManaCost(p.HeldItem)});
-            if(manaAfter<manaBefore&&launched==0)manaPaidWithoutShot++;
+            if((manaAfter<manaBefore||potionsUsed>0)&&launched==0)manaPaidWithoutShot++;
         }
     }
+
+    private static int FixturePotions(Player p) => p.inventory[50].type==ItemID.ManaPotion ? p.inventory[50].stack : 0;
 
     internal static void ObserveHit(Player p,NPC npc,int damageDone)
     {
@@ -213,8 +219,8 @@ internal static class ServerCombatFixture
                     ammo=p.inventory[54].stack,spareAmmo=p.inventory[53].stack,
                     survivors=defenseTargets.Where(n=>n.active).Select(n=>DefenseIdentity(p,n)),inputScopeReleased=!NativeItemInput.Active(p)&&Main.myPlayer!=p.whoAmI,
                     attackReleased=!p.controlUseItem&&p.releaseUseItem,
-                    manaTrace=manaTrace.ToArray(),manaPaidWithoutShot,
-                    potions=p.inventory[50].stack,potionDelay=p.potionDelay,manaFlower=p.manaFlower}));
+                    manaTrace=manaTrace.ToArray(),manaPaidWithoutShot,potionPackets,
+                    potions=FixturePotions(p),potionDelay=p.potionDelay,manaFlower=p.manaFlower}));
             return;
         }
         if(mode=="ranged-clearance")
@@ -353,7 +359,7 @@ internal static class ServerCombatFixture
             startSlot=target.whoAmI;
         }
         lastFrame=lastHit=null;frames=hits=hitViolations=presses=spawnPackets=ammoPackets=manaPackets=0;faultNextPress=false;
-        manaPaidWithoutShot=0;
+        manaPaidWithoutShot=verifiedShots=potionPackets=0;
         firstCooldown=null;hitTrace.Clear();shots.Clear();projectileHits.Clear();flightTrace.Clear();manaTrace.Clear();
         // Accessory effects are rebuilt each frame, so clear the fixture slot
         // before a mode opts into Mana Flower.
@@ -509,7 +515,7 @@ internal static class ServerCombatFixture
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),
                 JsonSerializer.Serialize(new{slot=target.whoAmI,entityRef=NativeCombatWorld.Reference(Bound(p),target),
                     weapon=p.HeldItem.type,mana=p.statMana,manaMax=p.statManaMax2,manaCost=cost,potionDelay=p.potionDelay,
-                    potions=p.inventory[50].stack,flower=p.manaFlower}));
+                    potions=FixturePotions(p),flower=p.manaFlower}));
             return;
         }
         if(Staff(mode) is {} staffType)
