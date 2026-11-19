@@ -128,6 +128,8 @@ internal static class ServerAiActionFixture
                 File.WriteAllText(Path.Combine(Main.SavePath, "housing-refs.json"),
                     JsonSerializer.Serialize(new { stale, merchant }));
             }
+            if (Program.LaunchParameters.ContainsKey("-companiong3shoptest"))
+                lock (ProbeSession.Reservation.Gate) G3ShopFixture.Tick(ProbeSession.Actor);
             // The ordinary action fixture retires ambient NPCs. The Boss probe needs
             // complete native NPC updates, including newly spawned parts and adds.
             if(Program.LaunchParameters.TryGetValue("-companionbossprobe",out string bossCase))

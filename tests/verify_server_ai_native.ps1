@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -40,7 +40,7 @@ if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destinati
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
 [IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')
 if($NpcHome){$Housing=$true}
-if($BuildPlace -or $Housing){$Actions=$true}
+if($BuildPlace -or $Housing -or $G3Shop){$Actions=$true}
 if($Actions){[IO.File]::WriteAllText("$profile/isolated-action-fixture",'Explicit test fixture in this copied world only.')}
 if($BenchmarkSpec){[IO.File]::WriteAllText("$profile/isolated-benchmark-fixture",'One benchmark attempt in a copied world.')}
 $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dotnet.exe'))
@@ -56,6 +56,7 @@ if($Tasks -or $AutonomousNavigation -or $NavigationSafety){$info.ArgumentList.Ad
 if($Inventory){$info.ArgumentList.Add("-companioninventorytest")}
 if($Crafting){$info.ArgumentList.Add("-companioncrafttest")}
 if($Scene){$info.ArgumentList.Add("-companionscenetest")}
+if($G3Shop){$info.ArgumentList.Add('-companiong3shoptest')}
 if($NpcHome){$info.ArgumentList.Add('-companionnpchometest')}
 if($Housing){$info.ArgumentList.Add('-companionhousingtest')}
 if($Placement -or $BuildPlace){$info.ArgumentList.Add("-companionplacementtest")}
@@ -99,14 +100,14 @@ try {
     $mismatchedBinding=@{actor=$bound.binding.actor;world=$bound.binding.world;generation=([long]$bound.binding.generation+1);slot=$bound.binding.slot}
     $bindingMismatch=Request @{v=1;id='native-binding-mismatch';op='state';binding=$mismatchedBinding}
     if($bindingMismatch.ok -or $bindingMismatch.error -ne 'stale_binding'){throw 'Mismatched request binding was not rejected'}
-    if($BuildPlace -or $Housing){
-        if('server_ai_build_place_v1' -notin $bound.data.capabilities){throw 'Missing build_place capability'}
-        $probe=if($Housing){'tests/native_housing.py'}else{'tests/native_build_place.py'}
+    if($BuildPlace -or $Housing -or $G3Shop){
+        if(!$G3Shop -and 'server_ai_build_place_v1' -notin $bound.data.capabilities){throw 'Missing build_place capability'}
+        $probe=if($G3Shop){'tests/native_g3_shop.py'}elseif($Housing){'tests/native_housing.py'}else{'tests/native_build_place.py'}
         [string[]]$probeArgs=if($NpcHome){@('--npc-home')}else{@()}
         & $PythonExecutable (Join-Path $repo $probe) --port $IpcPort --profile $profile @probeArgs
-        if($LASTEXITCODE -ne 0){throw "Native build_place verification failed in $profile"}
+        if($LASTEXITCODE -ne 0){throw "Native verification failed in $profile"}
         $client.Dispose();$client=$null
-        [IO.File]::WriteAllText("$profile/g81-test-stop",'Isolated build_place complete.')
+        [IO.File]::WriteAllText("$profile/g81-test-stop",'Isolated test complete.')
         if(!$process.WaitForExit(30000)){throw 'Diagnostic server did not exit'}
         if($process.ExitCode -ne 0){throw "Diagnostic server exited $($process.ExitCode)"}
         return

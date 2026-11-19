@@ -458,6 +458,29 @@ Skill 应说明规则与策略，实际价格、商品、住所和 NPC 状态始
 
 特别验证 Local Client Only 钩子与 Dedicated Server 的边界。
 
+#### G3-A 第一项实验：普通商人出售一支火把（2026-11-19）
+
+**验证环境。** Terraria 1.4.4.9 / tModLoader 2026.09.3.1 Stable，使用仓库引擎 profile 校验 DLL 指纹。隔离 Dedicated Server 加载 CompanionBridge；fixture 在复制世界中预置商人、绑定 AI Player 和一枚存于第一银行的金币。测试程序通过实际 IPC 的 `observe_scene` 取得已在场商人的槽位和 `entityRef`，由仅在该 fixture 开启的游戏线程探针执行交易。探针同时检查 Actor、NPC 实例身份、原生 `CanTalk` 和 80 像素内的实验距离。
+
+**目标程序集 IL 与运行时注册表。**
+
+| 环节 | 核实结果 |
+| --- | --- |
+| 商店与商品 | `NPCShopDatabase.GetShopName`、`AllShops` 和 `TryGetNPCShop` 定位到 `Terraria/Merchant/Shop`。本次加载了 37 条注册项；记录中逐项保存物品 ID、禁用标记和条件键。普通火把（ItemID 8）已启用、条件数为零，与 `RegisterMerchant` IL_0092–0098 一致。注册项数量不能当作当前可售数量。 |
+| 条件与动态内容 | `NPCShop.FillShop` 会执行 `Entry.ConditionsMet()`、克隆商品并调用 `Entry.OnShopOpen`，随后 `Chest.SetupShop(string,NPC)` 调用 `NPCLoader.ModifyActiveShop`。本版 `TimeDay` 的谓词读取 `Main.dayTime`，`InSnow` 的谓词读取 `Main.LocalPlayer.ZoneSnow`。探针对后者使用绑定 AI 的 `ZoneSnow`。本次昼间、AI 不在雪地，两个条件分别为 true、false；其余未审计条件记为 null。不能从单个昼间条件推断具有多个条件的商品可售。 |
+| 定价与付款 | `ShopHelper.GetShoppingSettings(p,merchant)` 通过 `ProcessMood` 取得购物调整系数；在绑定 AI 上临时应用后调用 `p.GetItemExpectedPrice`，并在 finally 恢复原购物设置。原生 UI 在 `ItemSlot.HandleShopSlot` 的 IL_00ca/00da 计算买价并付款。`BuyItem` 调用 `CanAfford`、`PayCurrency`，原生支付范围可达四个银行。探针先用随身可支付槽 0–53 核对余额。 |
+| 购买与交付 | 客户端入口读取 `Main.LocalPlayer` 和 `Main.mouseItem`，并维护买回记录。服务端探针只取已核实的火把条目，在该商品克隆上运行开店回调，以绑定 AI 调用 `PlayerLoader.CanBuyItem`、`Player.BuyItem`、购买创建回调和 `PlayerLoader.PostBuyItem`，再以 `Player.GetItem` 入包。购买钩子收到单商品商店上下文。完整客户端列表、动态 Mod 商店钩子、买回、自定义货币和出售仍待单独验证。 |
+
+**隔离专服结果。** 火把基础价值 50 铜，本次购物系数约 0.89，原生报价 **44 铜币**。以下三项均在游戏线程分别采集操作前后快照，覆盖全部随身槽和四个银行槽的类型、数量、前缀、收藏标记。
+
+| 场景 | 实测读回 |
+| --- | --- |
+| 随身余额不足 | 随身 0 铜，第一银行有 1 金币。按 44 铜报价返回 `insufficient_carried_funds`，背包和四个银行逐槽相同。 |
+| 成功购买一件 | 独立的 fixture 准备步骤提供 2 银币。购买前后随身价值 **200 → 156 铜**，火把 **0 → 1**，其他物品总量及银行槽均不变。再次通过绑定 IPC 的 `state` 独立读回 1 银、56 铜及 1 支火把。 |
+| 商人引用过期 | 同一世界和代次内替换商人实例，确认复用同一 NPC 槽。携带仍足以再买一支火把的余额，使用先前实际观察到的引用返回 `stale_entity_ref`，未生成报价，背包和四个银行逐槽相同。 |
+
+复现时先构建至 `.local/g3-a-shop`，再运行 `tests/verify_server_ai_native.ps1 -G3Shop -PackagePath .local/g3-a-shop/Mods/CompanionBridge.tmod`。新 profile 内的 `g3-shop-result.json` 保存商店注册项、报价及逐槽快照，`g3-shop-ipc-readback.json` 保存独立读回。G3-B 可复用已验证的原生支付和交付路径；生产报价令牌、完整商品条件适配、结果未知后的恢复及模型可调用的购买 API 仍属后续工作。
+
 ### G3-B：NPC Interaction & Economy
 
 先交付 Vanilla Merchant：

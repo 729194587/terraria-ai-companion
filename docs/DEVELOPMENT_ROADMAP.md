@@ -22,9 +22,9 @@
 
 本阶段先测试、后实现。只有真实测试发现明确阻塞点，才针对该根因提出最小实现任务；若流程已成功，则整理回归证据，不新增重复功能。
 
-## 当前实现阶段：G2 Building & Housing
+## 当前阶段：G3-A 商店原生路径验证
 
-当前按 [G2 实现规范](G2_BUILDING_HOUSING_IMPLEMENTATION.md) 推进通用建筑蓝图、差异检查、原生施工、住宅检查和 NPC 住所分配。Skills 暂缓；NPC 对话、商店与经济系统留在 G3。
+G2 已在隔离专服完成建房、验房与向导入住，真实模型 Host & Play 另行验收。G3-A 已验证普通商人单件火把的原生报价、支付、入包和拒绝条件；生产商店接口留在 G3-B。详见 [G2 验证记录](G2_BUILDING_HOUSING_IMPLEMENTATION.md) 和 [世界交互架构 §9](TERRARIA_WORLD_INTERACTION_DESIGN.md)。
 
 ## 后续架构方向：World Interaction
 

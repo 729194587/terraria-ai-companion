@@ -1,0 +1,84 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using Terraria;
+using Terraria.ID;
+using VirtualPlayerEngineProbe;
+
+namespace CompanionBridge.ServerIpc;
+
+// Invoked only by the marked, isolated, no-client action fixture on the game thread.
+internal static class G3ShopFixture
+{
+    private static AiReadOnlyProtocol.Identity Identity(Player p) =>
+        new(p, ProbeSession.WorldSession, ProbeSession.ActorGeneration, p.whoAmI, null,
+            p.selectedItem, Main.GameUpdateCount);
+
+    private static object[] Slots(Item[] items) => items.Select((item, slot) =>
+        (object)new { slot, item.type, item.stack, item.prefix, item.favorited }).ToArray();
+
+    private static object Snapshot(Player p) => new {
+        carried = Slots(p.inventory),
+        banks = new[] { Slots(p.bank.item), Slots(p.bank2.item), Slots(p.bank3.item), Slots(p.bank4.item) }
+    };
+
+    private static int Spawn(Player p) => NPC.NewNPC(p.GetSource_Misc("G3ShopFixture"),
+        (int)p.Center.X + 32, (int)p.Bottom.Y - 2, NPCID.Merchant);
+
+    internal static void Tick(Player p)
+    {
+        string PathFor(string name) => Path.Combine(Main.SavePath, "g3-shop-" + name);
+        if (!File.Exists(PathFor("ready.json")))
+        {
+            int slot = Spawn(p);
+            if (slot >= Main.maxNPCs) throw new InvalidOperationException("No shop fixture NPC slot");
+            // A protected bank balance distinguishes carried-only admission from native bank fallback.
+            p.bank.item[0].SetDefaults(ItemID.GoldCoin);
+            File.WriteAllText(PathFor("ready.json"), JsonSerializer.Serialize(new { slot }));
+            return;
+        }
+        if (!File.Exists(PathFor("request.json")) || File.Exists(PathFor("started"))) return;
+        File.WriteAllText(PathFor("started"), "Do not replay a transaction after an exception.");
+        try
+        {
+            var id = Identity(p);
+            using var request = JsonDocument.Parse(File.ReadAllText(PathFor("request.json")));
+            int slot = request.RootElement.GetProperty("slot").GetInt32();
+            var merchant = Main.npc[slot];
+            string observed = request.RootElement.GetProperty("entityRef").GetString();
+            string current = NativeCombatWorld.Reference(id, merchant);
+            if (current != observed || !merchant.active || merchant.type != NPCID.Merchant)
+                throw new InvalidOperationException("Observed merchant changed before test");
+            var catalog = G3ShopProbe.Catalog(p, merchant);
+            object Try(string reference, bool purchase)
+            {
+                object before = Snapshot(p);
+                object result = G3ShopProbe.Run(p, merchant, current, reference, purchase);
+                return new { before, result, after = Snapshot(p) };
+            }
+            var quote = Try(observed, false);
+            var insufficient = Try(observed, true);
+            // Test endowment only, outside the measured purchase and refusal intervals.
+            if (!p.inventory[50].IsAir) throw new InvalidOperationException("Fixture coin slot is occupied");
+            p.inventory[50].SetDefaults(ItemID.SilverCoin);
+            p.inventory[50].stack = 2;
+            var purchase = Try(observed, true);
+            merchant.active = false;
+            if (Spawn(p) != slot) throw new InvalidOperationException("Fixture did not reuse merchant slot");
+            merchant = Main.npc[slot];
+            current = NativeCombatWorld.Reference(id, merchant);
+            if (current == observed) throw new InvalidOperationException("Merchant identity was not refreshed");
+            var stale = Try(observed, true);
+            var evidence = new { id.World, id.Generation, id.Slot, merchantSlot = slot,
+                observed, replacement = current, catalog, quote, insufficient, purchase, stale };
+            File.WriteAllText(PathFor("result.tmp"), JsonSerializer.Serialize(evidence));
+            File.Move(PathFor("result.tmp"), PathFor("result.json"));
+        }
+        catch (Exception e)
+        {
+            File.WriteAllText(PathFor("error.txt"), e.ToString());
+            throw;
+        }
+    }
+}
