@@ -42,6 +42,15 @@ public static class ServerAiNativeActionOfflineTests
     }
     public static void Run()
     {
+        {
+            var f = new Fixture();
+            string id = Guid.NewGuid().ToString("N");
+            var args = new { blueprint = new { origin = new { x=100, y=100 },
+                tiles = new[] { new { x=0, y=0, itemType=9 } } } };
+            var rejected = f.Send("start", id, "build_place", args: args);
+            Check(rejected.GetProperty("error").GetString()=="unsupported_operation" && f.Native.Starts==0,
+                "an executor without building capability refuses a build before native start");
+        }
         foreach (string trigger in new[]{"cancel","timeout"})
         foreach (string terminal in new[]{"completed","failed","timeout","cancelled","unknown","running"})
         foreach (bool released in new[]{true,false})

@@ -81,6 +81,9 @@ internal static class BuildingBlueprint
         return type > 0 && ContentSamples.ItemsByType.TryGetValue(type, out var item) && item.ModItem == null ? item : null;
     }
 
+    internal static bool ValidEnvelope(JsonElement args) => args.ValueKind==JsonValueKind.Object && args.EnumerateObject().Count()==1 &&
+        args.TryGetProperty("blueprint",out var bp) && bp.ValueKind==JsonValueKind.Object && CompactBytes(bp)<=3072;
+
     internal static IReadOnlyList<Target> Parse(JsonElement args)
     {
         Fields(args, "blueprint");

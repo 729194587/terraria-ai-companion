@@ -267,6 +267,18 @@
 
 定向验证使用 `tests/test_build_diff.py`、`ServerAiReadProtocolTests.Run()` 与 `tests/verify_server_ai_native.ps1 -BuildDiff`。在目标版本的隔离 Dedicated Server 中，经原始 IPC 和 Lua Worker 比较了 8×8 范围内的 28 个前景目标、36 个背景目标和 1 个工作台，返回 65 项。工作台占地 2×1，预算计 1 件；重复前景目标被拒绝。Lua 执行两次查询、零动作。该场景只验收差异查询；房屋施工、住宅有效性、向导入住及真实模型表现仍待后续验证。
 
+### build_place 已验证范围（2026-11-19）
+
+`server_ai_build_place_v1` 开放 `submit_task` 的 `build_place` 操作，参数为与差异查询相同的 `blueprint`。施工复用 Blueprint 解析、逐项目标观察、材料账本、带库存令牌的持用操作与 `place_item_native` 子动作。任务依次处理前景、背景、家具；暂缺支撑的目标可以在其他目标放置后重新观察。每个目标最多发起一次放置。施工接近仅使用原生移动，无法接近时记录未完成原因。提交相同蓝图会建立新任务，重新判断每个目标。
+
+在目标版本隔离 Dedicated Server 上运行 `tests/verify_server_ai_native.ps1 -BuildPlace`：
+
+- **部分施工**：两项目标中一格放置成功、消耗一块木材，另一格保留原有泥土。终态 `failed / build_partial`，证据 `outcome=partial`。
+- **取消后续建**：四格石块施工中，实测一格完成后取消，终态确认输入释放。通过 `submit_task` 重新提交同一蓝图，`await_task` 核验一项 `matched`、三项 `placed`，两次施工合计消耗四块。
+- **完工后重提**：四项均为 `matched`，材料余量保持不变。
+
+以上实测使用前景方块，覆盖逐项原生效果、部分施工、取消和重提。住宅施工、各类家具及背景墙组合施工、复杂地形接近和真实模型建房仍待验证。
+
 ## 6. Deliverables
 
 1. 通用 Building Blueprint、\`build_diff\`、\`build_place\`。

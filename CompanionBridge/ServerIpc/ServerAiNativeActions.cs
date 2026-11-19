@@ -57,10 +57,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsContainers=>true;
     public bool SupportsSorting=>ActorSorting.Available;
     public bool SupportsCollection => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsBuildPlace => SupportsPlacement;
     public bool SupportsPlacement => ActorPlacement.UnifiedAvailable;
     public string ValidateCombatAdmission(AiReadOnlyProtocol.Identity identity,string target)=>NativeCombatWorld.Preflight(identity,target);
     public string Validate(string operation,JsonElement args)
-        => AtomicParameters.ValidateServerAction(operation, args);
+        => operation=="build_place" ? BuildingBlueprint.ValidEnvelope(args) ? null : "invalid_arguments" : AtomicParameters.ValidateServerAction(operation, args);
     public object Start(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId)=>StartCore(identity,operation,args,actionId,false);
     internal object StartMaintenancePlacement(AiReadOnlyProtocol.Identity id,Microsoft.Xna.Framework.Point at)
         =>StartCore(id,"place_tile",JsonSerializer.SerializeToElement(new{x=at.X,y=at.Y}),"auto-torch",true);
@@ -124,10 +125,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                         ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge)
                         :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
                     :operation=="collect_drops" ? new CollectDropsTask(actionId,args,executor)
+                    :operation=="build_place" ? new BuildPlaceTask(actionId,args,executor)
                     :operation=="place_item" ? new NativeActionTask(executor,"place_item_native",args,actionId,operation)
                     :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
                 ulong budget=operation switch {CombatProtocol.Boss=>BossEncounterTask.Budget,CombatProtocol.Operation=>CombatController.Budget,"collect_drops"=>CollectDropsTask.Budget,
-                    "place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
+                    "build_place"=>10800,"place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},budget);
             }
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
@@ -143,7 +145,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
             else if(ActorEquipment.IsOperation(operation))context=new ActorEquipment.Context(identity,operation,args);
             else if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
-            else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId);ActorControl.Driver=navigation;}
+            else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId,
+                movementOnly:child && args.TryGetProperty("movementOnly",out var movementOnly) && movementOnly.GetBoolean());ActorControl.Driver=navigation;}
             else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge);ActorControl.Driver=navigation;}
             else if(operation=="place_rope")
             {
@@ -172,6 +175,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             else if(child&&operation=="place_item_native")
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
+                if(args.TryGetProperty("expectedType",out var expected) && (p.selectedItem is <0 or >9 || p.HeldItem.type!=expected.GetInt32()))return Reject("held_material_changed");
                 string error=ActorPlacement.PrepareUnified(p,x,y,out var placement);
                 if(error!=null)return new Handle(identity,operation,null,new("failed",error,null,true,InputsAcquired:false));
                 ActorItemUse.StartPlacement(p,identity.World,identity.Generation,placement);
@@ -277,12 +281,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ActorItemUse.Context)h.Context;var tile=c.Placement;
             bool present=ActorPlacement.Present(tile);
-            bool verified=c.Phase=="completed"&&tile.Placed&&!tile.ExternalChange&&present&&tile.NativeEvents==1&&!tile.UncertainNativeEffect&&tile.ConsumedCount==1
+            bool placementVerified=tile.Placed&&!tile.ExternalChange&&present&&tile.NativeEvents==1&&!tile.UncertainNativeEffect&&tile.ConsumedCount==1
                 &&(!tile.Object||ActorObjectPlacement.Validate(c)==null);
+            bool verified=c.Phase=="completed" && placementVerified;
             string placementPhase=c.Phase=="rejected"?"failed":c.Phase=="stale"||c.Phase=="completed"&&!verified?"unknown":c.Phase;
             if(tile.Unified)
                 return new(placementPhase,c.Phase=="completed"&&!verified?"native_placement_terminal_unconfirmed":c.Reason,
-                    new {kind=tile.Kind,requested=new{x=tile.Rope?.X??tile.X,y=tile.Rope?.Y??tile.Y},
+                    new {placementVerified,kind=tile.Kind,requested=new{x=tile.Rope?.X??tile.X,y=tile.Rope?.Y??tile.Y},
                         anchor=new{x=tile.X,y=tile.Y},footprint=tile.Object?ActorObjectPlacement.Bounds(tile):new{x=tile.X,y=tile.Y,width=1,height=1},
                         tileType=tile.TileType<0?(int?)null:tile.TileType,wallType=tile.WallType>0?(int?)tile.WallType:null,
                         style=tile.ActualStyle??tile.Style,alternate=tile.Object?(int?)tile.Alternate:null,direction=tile.Object?(int?)tile.Direction:null,

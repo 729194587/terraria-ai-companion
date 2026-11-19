@@ -139,7 +139,7 @@ def server_definitions(bridge, supported=None):
                                                  members='server_ai_boss_members_v1' in capabilities,
                                                  combat='server_ai_combat_v1' in capabilities, weapon_button='server_ai_weapon_button_v1' in capabilities,
                                                  collection='collect_drops' in supported,
-                                                 placement='place_item' in supported)
+                                                 placement='place_item' in supported, building='build_place' in supported)
     return definitions
 
 

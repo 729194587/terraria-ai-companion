@@ -209,6 +209,7 @@ BLUEPRINT = {
 TOOLS.append(tool("build_diff", "只读比较蓝图和当前世界。origin 为绝对 Tile 坐标，条目 x/y 为有符号相对坐标，objects 按锚点指定。"
                   "每项指定 itemType 或 contentKey。合计 1..256 项，宽高各最多 64 格，蓝图紧凑 UTF-8 JSON 最多 3072 字节。",
                   {"blueprint": BLUEPRINT}, ["blueprint"]))
+TOOLS.append(tool("build_place", "通过 submit_task 按蓝图施工，已匹配项跳过。", {"blueprint": BLUEPRINT}, ["blueprint"]))
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 
 # Model-only server projection. Execution validation and the shared TOOLS stay unchanged.
@@ -269,7 +270,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene(
 
 def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
-    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'place_item')]
+    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place')]
     for definition in definitions:
         f = definition['function']
         name = f['name']
@@ -325,6 +326,8 @@ NATIVE_OPERATIONS = frozenset(SCHEMAS) - HOST_OPERATIONS
 
 def validate_backend(bridge, name, arguments):
     """Backend narrowing supplements, and never replaces, shared validation."""
+    if name == 'build_place' and 'server_ai_build_place_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_build_place_v1')
     if name == 'build_diff' and 'server_ai_build_diff_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_build_diff_v1')
     if 'server_ai_atomic_v1' in getattr(bridge, 'hello', {}).get('capabilities', ()):
@@ -358,6 +361,43 @@ class ArgumentValidationError(ValueError):
         self.diagnostics = issues
         self.diagnostics_truncated = truncated
         super().__init__('; '.join(issue['message'] for issue in issues)[:512])
+
+
+def verified_build_entries(arguments, evidence):
+    if not isinstance(evidence, dict) or evidence.get('outcome') != 'completed':
+        return False
+    try:
+        blueprint = validate('build_place', arguments)['blueprint']
+    except ValueError:
+        return False
+    origin = blueprint['origin']
+    expected = {(layer, origin['x'] + entry['x'], origin['y'] + entry['y']): entry
+                for layer in BLUEPRINT_LAYERS for entry in blueprint.get(layer, [])}
+    rows = evidence.get('entries')
+    if not isinstance(rows, list) or len(rows) != len(expected):
+        return False
+    for row in rows:
+        if not isinstance(row, dict) or type(row.get('layer')) != str or any(type(row.get(k)) != int for k in TILE):
+            return False
+        entry = expected.pop((row['layer'], row['x'], row['y']), None)
+        if (entry is None or type(row.get('itemType')) is not int or row['itemType'] <= 0
+                or 'itemType' in entry and row['itemType'] != entry['itemType']):
+            return False
+        proof = row.get('nativeEvidence')
+        if row.get('status') == 'matched' and proof is None:
+            continue
+        if (row.get('status') != 'placed' or not isinstance(proof, dict)
+                or proof.get('requested') != {k: row[k] for k in TILE}
+                or proof.get('itemType') != row['itemType'] or proof.get('placedByActor') is not True
+                or proof.get('targetPresent') is not True or proof.get('targetChanged') is not False
+                or proof.get('uncertainNativeEffect') is not False or proof.get('nativePlacementEvents') != 1
+                or type(proof.get('nativePlacementEvents')) is not int or type(proof.get('consumedCount')) is not int
+                or proof.get('consumedCount') != 1 or (proof.get('kind') == 'chest' and proof.get('chestVerified') is not True)):
+            return False
+    counts = evidence.get('completedByLayer')
+    return (isinstance(counts, dict) and set(counts) == set(BLUEPRINT_LAYERS)
+            and all(type(counts[layer]) is int and counts[layer] == len(blueprint.get(layer, []))
+                    for layer in BLUEPRINT_LAYERS))
 
 
 def _validate_blueprint(blueprint):
@@ -450,7 +490,7 @@ def validate(name, arguments):
     arguments = check(arguments, SCHEMAS[name], name)
     if issues:
         raise ArgumentValidationError(name, issues, truncated)
-    if name == "build_diff":
+    if name in ("build_diff", "build_place"):
         _validate_blueprint(arguments["blueprint"])
     if name == 'configure_combat_loadout':
         keys = [role['hotbarKey'] for role in arguments.values()]
@@ -997,6 +1037,11 @@ async def terminal(bridge, action, generation):
         container_verified = verified_container_batch(action, native_evidence, end)
     pickup = combat_result.get('evidence')
     native_verified = {
+        'build_place': (combat.get('taskName') == 'build_place' and combat.get('taskId') == action.get('actionId')
+                        and combat == action.get('task') and combat.get('status') == 'completed'
+                        and combat.get('phase') == 'terminal' and combat_result.get('effectVerified') is True
+                        and combat_result.get('inputsReleased') is True
+                        and verified_build_entries(action.get('targetTask'), pickup)),
         'place_item': (combat.get('taskName') == 'place_item' and combat.get('taskId') == action.get('actionId')
                        and combat == action.get('task') and combat.get('status') == 'completed'
                        and combat_result.get('effectVerified') is True and combat_result.get('inputsReleased') is True
@@ -1111,7 +1156,7 @@ async def terminal(bridge, action, generation):
         and isinstance(end,dict) and retreat.get('update')==end.get('gameUpdate')))
     native_end = (retreat_verified and isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('dismiss_summon','set_team','teleport_to_teammate','open_inventory_item','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('dismiss_summon','set_team','teleport_to_teammate','open_inventory_item','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -1177,7 +1222,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             lifecycle.update(copy.deepcopy(fields))
     arguments = validate(name, arguments)
     validate_backend(bridge, name, arguments)
-    if name in ('collect_drops', 'place_item'):
+    if name in ('collect_drops', 'place_item', 'build_place'):
         raise PreDispatchRejected(f'Use submit_task for {name}')
     if name == 'navigate_to' and 'server_ai_navigation_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_navigation_v1; no navigation task submitted')

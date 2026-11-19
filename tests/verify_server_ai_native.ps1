@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -39,6 +39,7 @@ $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
 [IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')
+if($BuildPlace){$Actions=$true}
 if($Actions){[IO.File]::WriteAllText("$profile/isolated-action-fixture",'Explicit test fixture in this copied world only.')}
 if($BenchmarkSpec){[IO.File]::WriteAllText("$profile/isolated-benchmark-fixture",'One benchmark attempt in a copied world.')}
 $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dotnet.exe'))
@@ -54,7 +55,7 @@ if($Tasks -or $AutonomousNavigation -or $NavigationSafety){$info.ArgumentList.Ad
 if($Inventory){$info.ArgumentList.Add("-companioninventorytest")}
 if($Crafting){$info.ArgumentList.Add("-companioncrafttest")}
 if($Scene){$info.ArgumentList.Add("-companionscenetest")}
-if($Placement){$info.ArgumentList.Add("-companionplacementtest")}
+if($Placement -or $BuildPlace){$info.ArgumentList.Add("-companionplacementtest")}
 if($Perception){$info.ArgumentList.Add("-companionperceptiontest")}
 if($Semantic){$info.ArgumentList.Add("-companionsemantictest")}
 if($Terrain){$info.ArgumentList.Add("-companionterraintest")}
@@ -95,6 +96,16 @@ try {
     $mismatchedBinding=@{actor=$bound.binding.actor;world=$bound.binding.world;generation=([long]$bound.binding.generation+1);slot=$bound.binding.slot}
     $bindingMismatch=Request @{v=1;id='native-binding-mismatch';op='state';binding=$mismatchedBinding}
     if($bindingMismatch.ok -or $bindingMismatch.error -ne 'stale_binding'){throw 'Mismatched request binding was not rejected'}
+    if($BuildPlace){
+        if('server_ai_build_place_v1' -notin $bound.data.capabilities){throw 'Missing build_place capability'}
+        & $PythonExecutable (Join-Path $repo 'tests/native_build_place.py') --port $IpcPort --profile $profile
+        if($LASTEXITCODE -ne 0){throw "Native build_place verification failed in $profile"}
+        $client.Dispose();$client=$null
+        [IO.File]::WriteAllText("$profile/g81-test-stop",'Isolated build_place complete.')
+        if(!$process.WaitForExit(30000)){throw 'Diagnostic server did not exit'}
+        if($process.ExitCode -ne 0){throw "Diagnostic server exited $($process.ExitCode)"}
+        return
+    }
     if($BuildDiff){
         if('server_ai_build_diff_v1' -notin $bound.data.capabilities){throw 'Missing build_diff capability'}
         $origin=@{x=[int][math]::Floor($state.data.position.x/16); y=[int][math]::Floor($state.data.position.y/16)}

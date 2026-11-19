@@ -13,7 +13,7 @@ from control import BridgeError, NotAdmittedError
 from lua_action_results import action_results
 
 NAMES = frozenset({'submit_task', 'query_task', 'await_task', 'cancel_task', 'resume_task'})
-OPERATIONS = ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item')
+OPERATIONS = ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place')
 
 
 def available(bridge):
@@ -46,7 +46,7 @@ def validate(name, args):
     return args
 
 
-def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=False, boss=False, members=False, strategy=False, collection=False, placement=False):
+def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=False, boss=False, members=False, strategy=False, collection=False, placement=False, building=False):
     rows = []
     for name in sorted(NAMES):
         properties = {'taskId': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'}}
@@ -72,6 +72,9 @@ def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=
             if placement:
                 operations.append('place_item')
                 description += ' place_item 使用当前选中的快捷栏物品在绝对 Tile 坐标 x/y 放置。终态回执核验占地、消耗和箱子存储记录。'
+            if building:
+                operations.append('build_place')
+                description += ' build_place 仅接收 blueprint，与 build_diff 共用输入。施工只沿可证安全的纯移动路径接近目标，无法通行则报告阻塞。检查逐项结果和输入释放。已匹配项跳过；部分施工或取消后先重新观察，再显式提交。unknown 不重放。'
             mining = copy.deepcopy(atomic.SCHEMAS['mine_target'])
             if not excavation:
                 mining['properties'].pop('cluster', None)
@@ -147,7 +150,7 @@ class TaskCoordinator:
 
     async def submit(self, args, origin=None):
         operation = args['operation']
-        if operation in ('collect_drops', 'place_item') and operation not in getattr(self.bridge, 'supported_atomic_operations', ()):
+        if operation in ('collect_drops', 'place_item', 'build_place') and operation not in getattr(self.bridge, 'supported_atomic_operations', ()):
             return atomic.not_admitted_result('submit_task', 'collection_capability_unavailable' if operation == 'collect_drops' else 'placement_capability_unavailable')
         try:
             atomic.validate_backend(self.bridge, args['operation'], args['arguments'])

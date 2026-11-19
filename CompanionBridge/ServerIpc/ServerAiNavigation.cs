@@ -33,7 +33,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal bool GrappleAttempted;
         internal BossEvasion Evasion;
         internal readonly System.Collections.Generic.HashSet<(int,int)> OpenedDoors=new();
-        internal bool Combat;
+        internal bool Combat, MovementOnly;
         internal int CombatLife;
         internal ulong ProgressVersion;
     }
@@ -62,8 +62,8 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     internal Run Current;
     public bool Running => Current?.Status=="running";
     public bool Matches(Player p) => Current!=null && ReferenceEquals(Current.Identity.Actor,p);
-    internal Run Start(AiReadOnlyProtocol.Identity identity,float target,string actionId=null)
-        =>Start(identity,target,null,actionId);
+    internal Run Start(AiReadOnlyProtocol.Identity identity,float target,string actionId=null,bool movementOnly=false)
+        =>Start(identity,target,null,actionId,movementOnly:movementOnly);
     internal Run StartCombat(AiReadOnlyProtocol.Identity identity,float target,string actionId)
         =>Start(identity,target,null,actionId,combat:true);
     internal Run StartCombat(AiReadOnlyProtocol.Identity identity,LandingRegion region,string actionId)
@@ -72,7 +72,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         NavigationKnowledge knowledge=null)
         =>Start(identity,region.MinPlayerLeftX,region,actionId,continuous,preferFlatRegion,knowledge);
     private Run Start(AiReadOnlyProtocol.Identity identity,float target,LandingRegion region,string actionId,bool continuous=false,bool preferFlatRegion=false,
-        NavigationKnowledge knowledge=null,bool combat=false)
+        NavigationKnowledge knowledge=null,bool combat=false,bool movementOnly=false)
     {
         var p=(Player)identity.Actor;
         ServerAiNativeActions.Require(identity);
@@ -84,7 +84,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         navigation.Task.Continuous=continuous;
         navigation.Task.PreferFlatRegion=preferFlatRegion;
         Current=new Run{Identity=identity,ActionId=actionId,Target=target,Region=region,StartX=p.position.X,
-            Session=checked(++session),Generation=checked((int)identity.Generation),Knowledge=knowledge,Combat=combat,CombatLife=p.statLife};
+            Session=checked(++session),Generation=checked((int)identity.Generation),Knowledge=knowledge,Combat=combat,MovementOnly=movementOnly,CombatLife=p.statLife};
         ActorControl.Driver=this;
         navigation.Task.TryGrapple=continuous&&region!=null?TryGrapple:null;
         return Current;
@@ -216,6 +216,11 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                 float goal=run.Region==null?run.Target:Math.Clamp(p.position.X,run.Region.MinPlayerLeftX,run.Region.MaxPlayerLeftX);
                 if(!run.Combat && ServerDoor.Ahead(p,goal,out int dx,out int dy))
                 {
+                    if(run.MovementOnly)
+                    {
+                        Stop("failed","closed_door_blocks_movement");
+                        orig(p,slot);return;
+                    }
                     int top=dy-Main.tile[dx,dy].TileFrameY/18;
                     string failure=run.OpenedDoors.Add((dx,top))?ServerDoor.Set(p,dx,dy,true,out _):"door_closed_again";
                     if(failure!=null)

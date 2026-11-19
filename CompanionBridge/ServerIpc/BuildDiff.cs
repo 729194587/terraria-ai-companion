@@ -19,10 +19,7 @@ internal static class BuildDiff
         foreach (var target in targets)
         {
             var (layer,x,y,item,supported,shape,left,top,width,height) = target;
-            bool known = left >= 5 && top >= 5 && left+width <= Main.maxTilesX-5 && top+height <= Main.maxTilesY-5;
-            bool inReach = known && supported && ActorRope.InReach(player,item,(int)x,(int)y);
-            string status = !supported ? "unsupported_content" : !known ? "unknown_or_not_loaded" :
-                Inspect(player,item,layer,(int)x,(int)y,shape);
+            string status = Observe(player,target,out bool inReach);
             if (status == "already_matches") matched++;
             else if (supported)
             {
@@ -44,6 +41,14 @@ internal static class BuildDiff
             entries.Add(new { layer,x,y,itemType=item?.type,left,top,width,height,inReach,status,plannedSupportCandidate });
         }
         return new { entries, matched, pending=entries.Count-matched, placeable, materials=ledger.Summary() };
+    }
+
+    internal static string Observe(Player player, BuildingBlueprint.Target target, out bool inReach)
+    {
+        var (layer,x,y,item,supported,shape,left,top,width,height) = target;
+        bool known = left >= 5 && top >= 5 && left+width <= Main.maxTilesX-5 && top+height <= Main.maxTilesY-5;
+        inReach = known && supported && ActorRope.InReach(player,item,x,y);
+        return !supported ? "unsupported_content" : !known ? "unknown_or_not_loaded" : Inspect(player,item,layer,x,y,shape);
     }
 
     private static bool HasPlannedSupport(BuildingBlueprint.Target target, IReadOnlyList<BuildingBlueprint.Target> targets)
