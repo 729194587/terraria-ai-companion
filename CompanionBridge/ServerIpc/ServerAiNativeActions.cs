@@ -57,6 +57,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsContainers=>true;
     public bool SupportsSorting=>ActorSorting.Available;
     public bool SupportsCollection => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsMerchantSale => MerchantShop.SaleSupported;
     public bool SupportsMerchantPurchase => MerchantShop.Supported;
     public bool SupportsHousingAssignment => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
     public bool SupportsBuildPlace => SupportsPlacement;
@@ -96,6 +97,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     absent?"summon_buff_absent":"summon_buff_unconfirmed",new{itemType=type,buffType=staff.buffType,wasActive=active,absent},
                     true,absent,InputsAcquired:false));
             }
+            if(operation=="sell_npc_item") return new Handle(identity,operation,null,MerchantShop.Sell(identity,args));
             if(operation=="buy_npc_item") return new Handle(identity,operation,null,MerchantShop.Buy(identity,args));
             if(operation=="assign_npc_home") return new Handle(identity,operation,null,NpcHousing.Assign(identity,args));
             if(operation=="set_team")return new Handle(identity,operation,null,ServerRegroup.SetTeam(identity,args.GetProperty("team").GetInt32()));

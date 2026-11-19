@@ -32,3 +32,18 @@ class MerchantShopTests(unittest.TestCase):
                        dict(afterCopper=155), dict(afterCount=2), dict(banksUnchanged=False)):
             with self.subTest(change=change):
                 self.assertFalse(atomic.verified_purchase(target, dict(receipt, **change)))
+
+    def test_sale_requires_own_capability_and_exact_source_and_payment(self):
+        caps = {'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_merchant_purchase_v1'}
+        sales = {'quote_npc_sale', 'sell_npc_item'}
+        self.assertFalse(sales & operations_for_capabilities(caps))
+        self.assertTrue(sales <= operations_for_capabilities(caps | {'server_ai_merchant_sale_v1'}))
+        target = dict(entityRef='merchant', sourceSlot=10, sourceToken='a' * 64, quoteToken='b' * 64)
+        proof = dict(**target, quantity=1, itemType=8, unitPrice=11, beforeCopper=156, afterCopper=167,
+                     beforeCount=1, afterCount=0, beforeStack=1, afterStack=0, banksUnchanged=True)
+        self.assertTrue(atomic.verified_sale(target, proof))
+        for change in (dict(sourceSlot=9), dict(sourceToken='c' * 64), dict(entityRef='other'),
+                       dict(quoteToken='c' * 64), dict(afterStack=1), dict(afterCount=1),
+                       dict(afterCopper=166), dict(banksUnchanged=False)):
+            with self.subTest(change=change):
+                self.assertFalse(atomic.verified_sale(target, dict(proof, **change)))

@@ -510,7 +510,19 @@ Skill 应说明规则与策略，实际价格、商品、住所和 NPC 状态始
 | 报价到期，或重复使用已成交的令牌 | 均为 `stale_quote`，背包与四个银行逐槽相同 |
 | 同一 NPC 槽换成新商人后使用旧引用 | `stale_entity_ref`，背包与四个银行逐槽相同 |
 
-复现入口为 `tests/verify_server_ai_native.ps1 -MerchantLua -PackagePath .local/g3b-e2e/Mods/CompanionBridge.tmod`。新 profile 中的 `merchant-lua.jsonl` 保存 Lua 调用、回执及独立快照。此项覆盖确定性 Lua 程序；真实模型 Host & Play 和出售物品仍待验收。
+新 profile 中的 `merchant-lua.jsonl` 保存 Lua 调用、回执及独立快照。购买和出售的联合复现入口见下节。
+
+#### 普通商人出售一件物品
+
+**目标版本 IL。** tModLoader 2026.09.3.1 的 `ItemSlot.SellOrTrash` 检查收藏标记、钱币类型和 `PlayerLoader.CanSellItem`，随后调用 `Player.SellItem`（IL_007b）。成功分支调用 `Chest.AddItemToShop`（IL_0097）、清空源槽（IL_00a1），再调用 `PlayerLoader.PostSellItem`（IL_00d6）。`SellItem` 根据绑定玩家的购物设置调用 `GetItemExpectedPrice`。普通卖价取第一个输出整除 5，正价值商品最低 1 铜，钱币发到随身槽 0–53。原生客户端同次开店内还可能按 `shopSellbackHelper` 记录退款。
+
+**Lua 接口。** 握手能力为 `server_ai_merchant_sale_v1`。从 `inspect_inventory({mode="slots",slots={slot}})` 取得当前 `inventoryToken`，传给 `quote_npc_sale({entityRef=ref,sourceSlot=slot,sourceToken=inventoryToken})`。可出售时返回一件的预计实收铜币 `unitPrice` 和 `quoteToken`。在相同参数上加该报价令牌调用 `sell_npc_item`。买卖共用每个 IPC 租约的一份一次性报价，刷新任一报价都会替换旧报价。执行时重验商人、背包、槽位实例、价格与收款空间。收款开始后，若源槽、总数量、随身钱币或银行证据不符，返回 `unknown`。
+
+服务器将每次交易视作一次独立访问。出售只处理主背包 0–49 内的一件原版物品；沿用原生收款、单次访问的商店容器和出售钩子，并通过 `ItemLoader.TransferWithLimit` 移走指定槽的一件。收藏品、钱币、无售价物品、已有客户端退款额度或未适配的出售钩子均不开放交易。卖回物不会作为可再次购买的库存出现。
+
+**隔离专服读回。** 同一普通商人卖出火把时收取 44 铜。AI 将这支火把换到另一背包槽，拿旧槽位令牌提交原出售报价，收到 `stale_source_token`。用新槽位重新报价并出售后，火把从 1 支变为 0 支，随身 156 铜变为 167 铜，实收与报价同为 11 铜。四个银行逐槽相同，银行中的 1 金保留。另一次用有效出售报价替换同槽商人后，旧引用收到 `stale_entity_ref`。两种拒绝均在变更前返回，背包与四个银行的独立逐槽快照一致。
+
+复现时先运行 `scripts/build-companion.ps1 -OutputPath .local/g3b-sale`，再运行 `tests/verify_server_ai_native.ps1 -MerchantLua -PackagePath .local/g3b-sale/Mods/CompanionBridge.tmod`。验收使用确定性 Lua Worker；真实模型 Host & Play 另行验收。
 
 ### G4：Town Development
 

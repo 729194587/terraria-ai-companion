@@ -245,6 +245,9 @@ SHOP_LISTING = obj({'itemType': I, 'available': nullable(B), 'reason': nullable(
 OBSERVATIONS = {
     'inspect_npc_shop': observation(obj({**QUERY_METADATA, 'entityRef': S, 'shopName': S, 'carriedCopper': COUNT,
                                          'entries': array(SHOP_LISTING)})),
+    'quote_npc_sale': observation(obj({**QUERY_METADATA, **atomic.SALE_SOURCE, 'itemType': I, 'quantity': const(1),
+                                      'unitPrice': COUNT, 'currency': const('copper'), 'canSell': B, 'reason': nullable(S),
+                                      'quoteToken': nullable(atomic.SHOP_TOKEN), 'expiresAtGameUpdate': nullable(TICK)})),
     'quote_npc_purchase': observation(obj({**QUERY_METADATA, 'entityRef': S, 'itemType': I, 'quantity': const(1),
                                            'unitPrice': nullable(COUNT), 'carriedCopper': COUNT, 'canPurchase': B,
                                            'currency': enum('copper','unknown'), 'stock': enum('unlimited','unknown'),
@@ -707,7 +710,7 @@ TARGETS = {
     'targetRecipe': ('craft_recipe',),
     'targetInventory': ('dismiss_summon','open_inventory_item','configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
-    'targetTask': ('buy_npc_item','assign_npc_home','set_team','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'),
+    'targetTask': ('sell_npc_item','buy_npc_item','assign_npc_home','set_team','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'),
 }
 MINE_ARGUMENTS = any_of(obj({**TILE_XY, 'cluster': B}, optional=('cluster',)),
                         obj({'target': ref('MineToken'), 'cluster': B}, optional=('cluster',)))
@@ -893,6 +896,11 @@ COMBAT_ROLE_STATE = nullable(obj({'hotbarKey':HOTBAR, 'expectedTypeId':I, 'actua
 DEFS['CombatLoadout'] = obj({'version':COUNT,'lastRefusal':nullable(obj({'reason':S,'gameUpdate':TICK,'entityRef':S})),
                              'primary':COMBAT_ROLE_STATE,'secondary':COMBAT_ROLE_STATE,'summon':COMBAT_ROLE_STATE,
                              'maintenance':nullable(obj({'status':S,'confirmedCasts':COUNT}))},optional=('secondary','summon','maintenance'))
+DEFS['ShopSaleEvidence'] = any_of(
+    obj({**atomic.SALE_SOURCE, 'quoteToken': atomic.SHOP_TOKEN, 'itemType': I, 'quantity': const(1), 'unitPrice': COUNT,
+         'beforeCopper': COUNT, 'afterCopper': COUNT, 'beforeCount': COUNT, 'afterCount': COUNT,
+         'beforeStack': COUNT, 'afterStack': COUNT, 'banksUnchanged': B}),
+    obj({'entityRef': S, 'mutationAttempted': const(False)}))
 DEFS['ShopPurchaseEvidence'] = any_of(
     obj({'entityRef': S, 'quoteToken': atomic.SHOP_TOKEN, 'itemType': I, 'quantity': const(1), 'unitPrice': COUNT,
          'beforeCopper': COUNT, 'afterCopper': COUNT, 'beforeCount': COUNT, 'afterCount': COUNT, 'banksUnchanged': B}),
@@ -910,6 +918,7 @@ DEFS['ItemOpeningEvidence']=obj({**fields(integers='sourceSlot typeId beforeStac
 ACTION_EVIDENCE = {
     'dismiss_summon':'DismissSummonEvidence',
     'open_inventory_item':'ItemOpeningEvidence',
+    'sell_npc_item': 'ShopSaleEvidence',
     'buy_npc_item': 'ShopPurchaseEvidence',
     'assign_npc_home': 'NpcHomeEvidence',
     'set_team':'TeamEvidence','teleport_to_teammate':'WormholeEvidence',
@@ -1073,6 +1082,7 @@ TASK_COMPLETION_PROOF = {
     },
 }
 SUCCESSFUL_PROOF = {
+    'sell_npc_item': matches(quantity=const(1), banksUnchanged=TRUE, unitPrice={'minimum':1}),
     'buy_npc_item': matches(quantity=const(1), banksUnchanged=TRUE, unitPrice={'minimum':1}),
     'assign_npc_home': matches(after=matches(active=TRUE, townNPC=TRUE, homeless=const(False), managerHasRoom=TRUE)),
     'set_team': matches(team=COUNT),'teleport_to_teammate': matches(before={'minimum':1},after=COUNT),

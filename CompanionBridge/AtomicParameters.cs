@@ -122,6 +122,8 @@ internal static class AtomicParameters
                     foreach (var type in types.EnumerateArray())
                         if (!type.TryGetInt32(out int id) || id < 0 || id > 65535 || !seen.Add(id)) throw new FormatException("Invalid/duplicate tile type.");
                     break;
+                case "quote_npc_sale":
+                    Fields("entityRef","sourceSlot","sourceToken"); EntityRef(); Integer("sourceSlot",0,49); Token("sourceToken"); break;
                 case "quote_npc_purchase":
                     if (keys.Contains("quantity")) { Fields("entityRef","itemType","quantity"); Integer("quantity",1,1); }
                     else Fields("entityRef","itemType");
@@ -239,6 +241,8 @@ internal static class AtomicParameters
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
             case "open_inventory_item": Fields("sourceSlot","sourceToken"); Integer("sourceSlot",0,49); Token("sourceToken"); break;
             case "dismiss_summon": Fields("itemType"); Integer("itemType",1,int.MaxValue); break;
+            case "sell_npc_item":
+                Fields("entityRef","sourceSlot","sourceToken","quoteToken"); EntityRef(); Integer("sourceSlot",0,49); Token("sourceToken"); Token("quoteToken"); break;
             case "buy_npc_item":
                 if (keys.Contains("quantity")) { Fields("entityRef","quoteToken","quantity"); Integer("quantity",1,1); }
                 else Fields("entityRef","quoteToken");

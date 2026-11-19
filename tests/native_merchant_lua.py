@@ -18,7 +18,8 @@ async def verify(port, profile):
     bridge = ServerAiBridge(port)
     runtime = LuaRuntime(bridge, evidence_root=profile / "merchant-lua")
     validators = {name: Draft202012Validator(schema_for(name))
-                  for name in ("inspect_npc_shop", "quote_npc_purchase", "buy_npc_item")}
+                  for name in ("inspect_npc_shop", "quote_npc_purchase", "buy_npc_item",
+                               "quote_npc_sale", "sell_npc_item")}
     trace = (profile / "merchant-lua.jsonl").open("w", encoding="utf-8")
 
     async def fixture(op):
@@ -60,6 +61,30 @@ async def verify(port, profile):
         assert result["evidence"]["mutationAttempted"] is False, result
         assert before == (await fixture("snapshot"))["inventory"], reason
 
+    async def sale_quote(ref, slot):
+        out, _ = await lua("""
+local row=api("inspect_inventory",{mode="slots",slots={SLOT}}).data.inventory[1]
+local q=api("quote_npc_sale",{entityRef=REF,sourceSlot=row.slot,sourceToken=row.inventoryToken})
+assert(q.valid and q.data.canSell)
+return q.data
+""".replace("SLOT", str(slot)).replace("REF", json.dumps(ref)), 2, 0)
+        assert out["status"] == "completed", out
+        return out["value"]
+
+    async def sell(q, refusal=None):
+        before = (await fixture("snapshot"))["inventory"]
+        params = ','.join(k+'='+json.dumps(q[k]) for k in ("entityRef","sourceSlot","sourceToken","quoteToken"))
+        _, result = await lua('return api("sell_npc_item",{'+params+'})', 1, 1)
+        after = (await fixture("snapshot"))["inventory"]
+        if refusal:
+            assert result["status"] == "failed" and result["reason"] == refusal, result
+            assert result["evidence"]["mutationAttempted"] is False and before == after
+        else:
+            assert result["completed"] and result["evidence"]["unitPrice"] == q["unitPrice"], result
+            a, b = contents(before["carried"]), contents(after["carried"])
+            assert a[TORCH] == b[TORCH]+1 and copper(b)-copper(a) == q["unitPrice"] > 0
+            assert before["banks"] == after["banks"]
+
     try:
         out, _ = await lua("""
 local scene=api("observe_scene",{layers={"objects"}})
@@ -98,6 +123,19 @@ return {unitPrice=q.data.unitPrice,quoteToken=q.data.quoteToken}
         assert a[TORCH]+1 == b[TORCH] and copper(a)-copper(b) == paid > 0
         assert before["banks"] == after["banks"]
         await rejected(ref, out["value"]["quoteToken"], "stale_quote")
+        slot = next(r["slot"] for r in after["carried"] if r["type"] == TORCH)
+        dest = next(r["slot"] for r in after["carried"] if 10 <= r["slot"] < 50 and not r["stack"])
+        stale_slot = await sale_quote(ref,slot)
+        moved, _ = await lua("""
+local rows=api("inspect_inventory",{mode="slots",slots={SRC,DST}}).data.inventory
+local tokens={}
+for _,r in ipairs(rows) do tokens[r.slot]=r.inventoryToken end
+return api("swap_inventory_slots",{sourceSlot=SRC,destinationSlot=DST,sourceToken=tokens[SRC],destinationToken=tokens[DST]})
+""".replace("SRC", str(slot)).replace("DST", str(dest)), 2, 1)
+        assert moved["value"]["completed"], moved
+        await sell(stale_slot, "stale_source_token")
+        sale = await sale_quote(ref,dest)
+        await sell(sale)
         old = await quote(ref)
         deadline = time.monotonic()+35
         while time.monotonic() < deadline:
@@ -113,7 +151,16 @@ return {unitPrice=q.data.unitPrice,quoteToken=q.data.quoteToken}
         assert replacement["entityRef"] != ref
         assert replacement["entityRef"].rsplit(":",1)[0] == ref.rsplit(":",1)[0]
         await rejected(ref, live["quoteToken"], "stale_entity_ref")
-        print(f"Merchant Lua checks passed. Paid {paid} copper; trace {trace.name}")
+        fresh = replacement["entityRef"]
+        fresh_buy = await quote(fresh)
+        _, bought = await lua('return api("buy_npc_item",'+args(fresh,'quoteToken='+json.dumps(fresh_buy["quoteToken"]))+')',1,1)
+        assert bought["completed"], bought
+        slots = (await fixture("snapshot"))["inventory"]["carried"]
+        new_slot = next(r["slot"] for r in slots if r["type"] == TORCH)
+        stale_merchant = await sale_quote(fresh,new_slot)
+        assert fresh != (await fixture("replace"))["entityRef"]
+        await sell(stale_merchant, "stale_entity_ref")
+        print(f"Merchant Lua checks passed. Paid {paid} copper, received {sale['unitPrice']} copper; trace {trace.name}")
     finally:
         trace.close()
         bridge.close()

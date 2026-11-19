@@ -24,7 +24,7 @@
 
 ## 当前阶段：G3-B 普通商人交易
 
-G2 已在隔离专服完成建房、验房与向导入住。G3-B 已通过公开 Lua 接口查价并购买一支火把，核对了随身钱币、物品数量和三种拒绝场景。出售物品及真实模型 Host & Play 仍待验收。详见 [G2 验证记录](G2_BUILDING_HOUSING_IMPLEMENTATION.md) 和 [世界交互架构 §9](TERRARIA_WORLD_INTERACTION_DESIGN.md)。
+G2 已在隔离专服完成建房、验房与向导入住。G3-B 已通过公开 Lua 接口向普通商人买入并卖回一支火把，买价 44 铜、卖价 11 铜。专服已核对物品、实收钱币、银行状态和过期引用、槽位令牌的拒绝结果。真实模型 Host & Play 另行验收。详见 [G2 验证记录](G2_BUILDING_HOUSING_IMPLEMENTATION.md) 和 [世界交互架构 §9](TERRARIA_WORLD_INTERACTION_DESIGN.md)。
 
 ## 后续架构方向：World Interaction
 

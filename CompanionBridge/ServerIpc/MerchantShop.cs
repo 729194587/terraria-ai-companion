@@ -12,7 +12,7 @@ using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
 
 namespace CompanionBridge.ServerIpc;
 
-internal static class MerchantShop
+internal static partial class MerchantShop
 {
     // Pinned tML Entry.OnShopOpen invokes this private delegate. Fail closed on layout changes.
     private static readonly FieldInfo Hooks = typeof(NPCShop.Entry).GetField("shopOpenedHooks", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -98,6 +98,9 @@ internal static class MerchantShop
     private static string Inventory(Identity id, Player p) =>
         string.Concat(p.inventory.Select((item, slot) => ActorInventory.Token(id,item,slot)));
 
+    private static string[] BankTokens(Identity id, Player p) => new[]{p.bank,p.bank2,p.bank3,p.bank4}.SelectMany((bank,b) =>
+        bank.item.Select((item,s) => ActorInventory.Token(id,item,$"bank:{b}:{s}"))).ToArray();
+
     private static int Unique(Listing[] listings, int type)
     {
         var index = Array.FindIndex(listings, l => l.itemType == type && l.available == true);
@@ -148,15 +151,13 @@ internal static class MerchantShop
             q.Inventory != Inventory(id,p)) return Reject("stale_quote");
         long Copper() => MerchantPayment.Coins(p.inventory,54);
         int Count() => p.inventory.Take(58).Where(i => i.type == q.Type).Sum(i => i.stack);
-        string[] Banks() => new[]{p.bank,p.bank2,p.bank3,p.bank4}.SelectMany((bank,b) =>
-            bank.item.Select((item,s) => ActorInventory.Token(id,item,$"bank:{b}:{s}"))).ToArray();
         long beforeCopper = Copper();
         var (entries, offers) = Catalog(p,merchant,beforeCopper);
         int index = Unique(entries,q.Type);
         if (index < 0 || entries[index].unitPrice != q.Price || JsonSerializer.Serialize(entries) != q.Catalog)
             return Reject("stale_quote");
         if (!entries[index].canPurchase) return Reject(entries[index].reason);
-        var banks = Banks();
+        var banks = BankTokens(id,p);
         int beforeCount = Count();
         var offer = offers[index];
         bool paymentStarted = false;
@@ -171,7 +172,7 @@ internal static class MerchantShop
         finally { p.currentShoppingSettings = original; }
         long afterCopper = Copper();
         int afterCount = Count();
-        bool banksUnchanged = banks.SequenceEqual(Banks());
+        bool banksUnchanged = banks.SequenceEqual(BankTokens(id,p));
         bool ok = error == null && beforeCopper - afterCopper == q.Price && afterCount == beforeCount + 1 &&
             banksUnchanged && ServerAiNativeActions.Owned(id) && ReferenceEquals(Main.npc[merchant.whoAmI],merchant) &&
             merchant.active && NativeCombatWorld.Reference(id,merchant) == entityRef;

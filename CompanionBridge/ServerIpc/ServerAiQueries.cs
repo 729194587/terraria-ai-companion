@@ -27,7 +27,7 @@ internal static class ServerAiQueries
     private static JsonElement Snapshot(Player p) => JsonSerializer.SerializeToElement(ObservationReader.ReadPlayer(p, "server_ai_player"), Json);
     internal static object Read(AiReadOnlyProtocol.Identity expected, string operation, JsonElement arguments)
     {
-        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat_loadout" or "list_teammates" or "discover_bosses" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase")) throw new FormatException("Unsupported server AI query.");
+        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat_loadout" or "list_teammates" or "discover_bosses" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase" or "quote_npc_sale")) throw new FormatException("Unsupported server AI query.");
         if (operation != "build_diff") AtomicParameters.Validate(operation, arguments, true);
         Require(expected);
         bool regional=operation=="observe_scene"&&arguments.TryGetProperty("scale",out var scale)&&scale.GetString()=="region";
@@ -44,6 +44,7 @@ internal static class ServerAiQueries
                 observedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), clock = "server_utc_at_projection", data };
         }
         if (operation == "build_diff") data = BuildDiff.Read(p, arguments);
+        else if (operation == "quote_npc_sale") data = MerchantShop.QuoteSale(expected, arguments);
         else if (operation is "inspect_npc_shop" or "quote_npc_purchase") data = MerchantShop.Read(expected, arguments, operation == "quote_npc_purchase");
         else if (operation == "inspect_npc_housing") data = NpcHousing.Read(expected, arguments.GetProperty("entityRef").GetString());
         else if (operation == "inspect_housing") data = HousingInspection.Read(arguments.GetProperty("x").GetInt32(), arguments.GetProperty("y").GetInt32());

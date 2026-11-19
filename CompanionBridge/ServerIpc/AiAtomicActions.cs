@@ -24,6 +24,7 @@ internal sealed class AiAtomicActions
         .Concat(executor.SupportsDismissSummon ? new[]{"server_ai_dismiss_summon_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsDoors ? new[]{"server_ai_doors_v1"} : Array.Empty<string>())
         .Concat(SupportsContainers ? new[]{"server_ai_containers_v1","server_ai_container_transfer_v1","server_ai_container_batch_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsMerchantSale ? new[]{"server_ai_merchant_sale_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsMerchantPurchase ? new[]{"server_ai_merchant_purchase_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsHousingAssignment ? new[]{"server_ai_housing_assignment_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsBuildPlace ? new[]{"server_ai_build_place_v1"} : Array.Empty<string>())
@@ -64,6 +65,7 @@ internal sealed class AiAtomicActions
         bool SupportsCollection=>false;
         bool SupportsPlacement=>false;
         bool SupportsMerchantPurchase=>false;
+        bool SupportsMerchantSale=>false;
         bool SupportsHousingAssignment=>false;
         bool SupportsBuildPlace=>false;
         bool CanTransferBody(AiReadOnlyProtocol.Identity identity)=>false;
@@ -174,7 +176,7 @@ internal sealed class AiAtomicActions
         worldSessionId = e.World, actorId = e.ActorId, actorSlot = e.Slot, durationMs = e.Duration,
         targetTile = e.Operation is "open_door" or "close_door" or "place_tile" or "place_object" or "place_rope" ? (JsonElement?)e.Arguments : null,
         targetInventory = e.Operation is "dismiss_summon" or "open_inventory_item" or "configure_combat_loadout" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" ? (JsonElement?)e.Arguments : null,
-        targetTask = IsTask(e.Operation) || e.Operation is "buy_npc_item" or "assign_npc_home" or "set_team" or "teleport_to_teammate" ? (JsonElement?)e.Arguments : null,
+        targetTask = IsTask(e.Operation) || e.Operation is "sell_npc_item" or "buy_npc_item" or "assign_npc_home" or "set_team" or "teleport_to_teammate" ? (JsonElement?)e.Arguments : null,
         targetContainer = IsContainerOperation(e.Operation) ? (JsonElement?)e.Arguments : null,
         targetRecipe = e.Operation == "craft_recipe" ? (JsonElement?)e.Arguments : null,
         requestedInputs = e.Operation is "move_input" or "move_on_rope" ? (JsonElement?)e.Arguments : null,
@@ -228,12 +230,13 @@ internal sealed class AiAtomicActions
         if(operation=="dismiss_summon" && executor?.SupportsDismissSummon!=true)return new(Error:"unsupported_operation");
         if(operation is ("open_door" or "close_door") && executor?.SupportsDoors!=true)return new(Error:"unsupported_operation");
         if(operation=="configure_combat_loadout" && executor?.SupportsLoadout!=true)return new(Error:"unsupported_operation");
+        if (operation == "sell_npc_item" && executor?.SupportsMerchantSale != true) return new(Error: "unsupported_operation");
         if (operation == "buy_npc_item" && executor?.SupportsMerchantPurchase != true) return new(Error: "unsupported_operation");
         if (operation == "assign_npc_home" && executor?.SupportsHousingAssignment != true) return new(Error: "unsupported_operation");
         if (operation == "build_place" && executor?.SupportsBuildPlace != true) return new(Error: "unsupported_operation");
         if (operation == "place_item" && executor?.SupportsPlacement != true) return new(Error: "unsupported_operation");
         if (operation == "collect_drops" && executor?.SupportsCollection != true) return new(Error: "unsupported_operation");
-        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("buy_npc_item" or "assign_npc_home" or "dismiss_summon" or "set_team" or "teleport_to_teammate" or "open_inventory_item" or "open_door" or "close_door" or "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "build_place" or "place_item" or CombatProtocol.Boss or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
+        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("sell_npc_item" or "buy_npc_item" or "assign_npc_home" or "dismiss_summon" or "set_team" or "teleport_to_teammate" or "open_inventory_item" or "open_door" or "close_door" or "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "build_place" or "place_item" or CombatProtocol.Boss or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
         int key = 0;
         if (selecting)
         {
@@ -273,7 +276,7 @@ internal sealed class AiAtomicActions
         active = new Entry { Owner = owner, Id = id, World = current.World, Actor = current.Actor, ActorId = actorId,
             Generation = current.Generation, Slot = current.Slot, Before = current.SelectedSlot,
             Combat = admission, Operation = operation, Arguments = arguments.Clone(), Duration = duration,
-            PurchaseLease = operation == "buy_npc_item" ? current.RequestLease : null,
+            PurchaseLease = operation is "buy_npc_item" or "sell_npc_item" ? current.RequestLease : null,
             Key = key, Target = HotbarSlots.ToInventorySlot(key), Deadline = clock() + (lease ?? duration), Disconnected = disconnected };
         entries.Add(id, active);
         if(CombatActive)lastCombat=active;
