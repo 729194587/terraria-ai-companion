@@ -41,6 +41,7 @@ namespace Terraria
     public class Projectile:Entity{public bool hostile=true;public int damage=30,type=1,extraUpdates;}
     public static class Main
     {
+        public static int[,] tile=new int[256,256];
         public static bool[] tileCut=new bool[1000];
         public static ulong GameUpdateCount=42;
         public static Player[] player;
@@ -62,7 +63,7 @@ namespace Terraria.ID
         public const int Torches=4,Copper=7,Tin=166,Iron=6,Lead=167,Silver=9,Tungsten=168,Gold=8,Platinum=169,
             Demonite=22,Crimtane=204,Meteorite=37,Hellstone=58,Cobalt=107,Palladium=221,Mythril=108,Orichalcum=222,
             Adamantite=111,Titanium=223,Chlorophyte=211,Containers=21,Containers2=467,Dressers=88,OpenDoor=11,ClosedDoor=10,
-            WorkBenches=18,HoneyBlock=229,Cobweb=51,Asphalt=234,SlimeBlock=196,FrozenSlimeBlock=197,Count=693;
+            Chairs=15,WorkBenches=18,HoneyBlock=229,Cobweb=51,Asphalt=234,SlimeBlock=196,FrozenSlimeBlock=197,Count=693;
         public static Search Search=new();
         public static class Sets{public static bool[] IceSkateSlippery=new bool[1000],IsATreeTrunk=new bool[1000],BreakableWhenPlacing=new bool[1000];}
     }
@@ -72,8 +73,11 @@ namespace Terraria.ID
 }
 namespace Terraria.ObjectData
 {
-    public static class TileObjectData
+    public sealed class TileObjectData
     {
+        public int Width=2,Height=1;
+        public (int X,int Y) Origin;
+        public static TileObjectData GetTileData(int tile)=>new();
         public static (int X,int Y) TopLeft(int x,int y)
         {
             SceneReaderFixture.Anchors++;

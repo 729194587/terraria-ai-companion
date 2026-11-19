@@ -31,6 +31,20 @@ async def verify(port, profile):
         results.append(result)
         return result
 
+    def observe_door(left, top, opened):
+        view = bridge.command('query_atomic', operation='observe_scene', arguments={'layers': ['objects']})
+        matches = [o for o in view['data']['data']['objects']['items'] if o['kind'] == 'door'
+                   and o['details']['anchorTile'] == dict(x=left, y=top)]
+        assert len(matches) == 1, matches
+        door = matches[0]
+        results.append(door)
+        shape = door['furniture']
+        width = 2 if opened else 1
+        assert door['complete'] and door['observedTileCount'] == width * 3, door
+        assert shape['category'] == 'door' and shape['doorState'] == ('open' if opened else 'closed'), door
+        assert shape['footprint'] == dict(x=left, y=top, width=width, height=3), door
+        assert shape['placementAnchor'] == dict(x=left+shape['origin']['x'], y=top+shape['origin']['y']), door
+
     try:
         start = await scene('door')
         x = int(start['startX']) // 16 + 3
@@ -39,6 +53,7 @@ async def verify(port, profile):
         for op, changed in [('open_door', True), ('open_door', False), ('close_door', True)]:
             r = await action(op, door)
             assert r['completed'] and r['evidence']['changed'] is changed, r
+            observe_door(x, y-1, op == 'open_door')
         goal = int(start['startX']) + 7*16
         r = await action('navigate_to_x', {'targetX':goal})
         assert r['completed'] and r['evidence']['x'] > (x+1)*16 and r['evidence']['settled'], r
@@ -46,6 +61,7 @@ async def verify(port, profile):
         assert r['completed'] and r['evidence']['beforeOpen'], r
         # From inside, the door swings left. Address the free leaf, not the hinge.
         assert (await action('open_door', door))['completed']
+        observe_door(x-1, y-1, True)
         r = await action('close_door', dict(x=x-1,y=y))
         assert r['completed'] and r['evidence']['hinge']==x, r
         r = await action('open_door', dict(x=x+30,y=y))

@@ -38,7 +38,7 @@
 - \`ServerAiQueries\` / \`AiReadOnlyProtocol\` 是只读查询入口；\`ServerAiNativeActions\` 是原生动作入口。
 - \`python/server_ai.py\` 根据 bind Capability Handshake 投影模型可用工具；共享 Schema 中存在的操作不等于 Server AI 已开放。
 
-### 2.2 当前明确缺口
+### 2.2 实施前的明确缺口（代码基线 b00a9e4）
 
 - 没有通用 Blueprint、\`build_diff\` 或批量施工 Task。
 - 当前 \`objectPlacementCandidates\` 仍是 Work Bench 专用候选；不能把它当作通用家具候选。
@@ -278,6 +278,20 @@
 - **完工后重提**：四项均为 `matched`，材料余量保持不变。
 
 以上实测使用前景方块，覆盖逐项原生效果、部分施工、取消和重提。住宅施工、各类家具及背景墙组合施工、复杂地形接近和真实模型建房仍待验证。
+
+### 8×8 住宅施工与验房（2026-11-19）
+
+`server_ai_housing_inspect_v1` 开放只读 `inspect_housing({x,y})`，输入为室内世界 Tile。当前按原版向导类型检查。读取 `data.status`、`failureStage` 与 `nativeReason` 判断房间；查询成功只表示取得观察。结构失败后家具及评分阶段字段为 null。评分通过时 `homeTile` 表示原生候选住所格，NPC 分配另行验证。
+
+隔离 Dedicated Server 使用 `tests/verify_server_ai_native.ps1 -Housing`。fixture 提供材料、原生范围装备和室外施工站台。通过分阶段提交 `build_place` 放置 25 个木块、36 格木背景墙、门、工作台、火把和椅子。65 项均取得原生放置完成回执。对同一室内位置 (2104,214) 的结果如下：
+
+| 施工阶段 | 原生验房结果 |
+| --- | --- |
+| 木框、门、工作台，尚未铺墙 | invalid，结构原因 HoleInWallIsTooBig |
+| 铺墙并添加火把，尚缺椅子 | invalid，家具检查显示门、光源、桌面满足，椅子缺失 |
+| 添加椅子 | valid，评分 65，候选住所格 (2104,218) |
+
+`observe_scene` 的 objects 层保留原有内容键，四类家具新增 `furniture`，包括类别、占地、Origin 偏移、放置锚点及门的开闭状态。住宅中读回关门 1×3、火把 1×1、工作台 2×1、椅子 1×2；独立专服门测试观察了左右两种 2×3 开门占地。有效房间后立即查询实心格，回执为 solid_query_tile，边界、家具、占用和评分字段均为 null。
 
 ## 6. Deliverables
 

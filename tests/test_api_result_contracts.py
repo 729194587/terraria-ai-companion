@@ -243,6 +243,29 @@ class TypedResultTests(unittest.TestCase):
         scan['data']['items'][-1]['typeId'] = None
         self.invalid('scan_entities', scan)
 
+    def test_scene_furniture_contract(self):
+        for kind, category, state in [('door', 'door', 'open'), ('door', 'door', 'closed'),
+                                      ('workbench', 'workbench', None), ('chair', 'chair', None),
+                                      ('light_source', 'torch', None)]:
+            with self.subTest(kind=kind, state=state):
+                point = {'x': 10, 'y': 20}
+                rect = {**point, 'width': 1, 'height': 1}
+                details = {'anchorTile': point, 'observedTargetTile': point}
+                if kind == 'light_source':
+                    details = {'anchorTile': point, 'frameX': 0, 'frameY': 0, 'actuated': False}
+                item = dict(kind=kind, id='o1', typeId=1, contentKey='Terraria/Test',
+                            observedBounds=rect, observedTileCount=1, complete=True, details=details)
+                result = deepcopy(self.observations['observe_scene'])
+                result['data']['objects']['items'] = [item]
+                self.valid('observe_scene', result)
+                shape = item['furniture'] = dict(category=category, footprint=rect, origin={'x': 0, 'y': 0},
+                                                 placementAnchor=point)
+                if state:
+                    shape['doorState'] = state
+                self.valid('observe_scene', result)
+                del shape['placementAnchor']
+                self.invalid('observe_scene', result)
+
     def test_scene_capability_layers_and_regional_encoding(self):
         local = deepcopy(self.observations['observe_scene'])
         regional = deepcopy(self.observations['observe_scene_region'])

@@ -54,6 +54,7 @@ internal static class ServerSceneReader
             if(c.Knowledge!="read")unknown++;
             if(c.Knowledge!="read")unknownReasons[c.Knowledge]=unknownReasons.GetValueOrDefault(c.Knowledge)+1;
             if(c.CollisionKnowledge!="known")uninterpreted++;
+            SceneFurniture furniture=null;
             string kind=null;int? ax=null,ay=null;sources.Clear();
             if(c.LiquidAmount>0)sources.Add(c.LiquidType switch{0=>"water",1=>"lava",2=>"honey",3=>"shimmer",_=>"unknown_liquid"});
             if(c.HasTile&&!c.Actuated)
@@ -69,17 +70,29 @@ internal static class ServerSceneReader
                 else if(Ores.Contains(t))kind="ore_component";
                 else if(t is TileID.Containers or TileID.Containers2 or TileID.Dressers)kind="chest";
                 else if(t is TileID.OpenDoor or TileID.ClosedDoor)kind="door";
+                else if(t==TileID.Chairs)kind="chair";
                 else if(t==TileID.WorkBenches)kind="workbench";
                 else if(t==TileID.Torches)kind="light_source";
-                if(layers.Has("objects")&&kind is ("chest" or "door" or "workbench"))
-                {var a=TileObjectData.TopLeft(x+ox,y+oy);ax=a.X;ay=a.Y;}
+                if(layers.Has("objects")&&kind is ("chest" or "door" or "workbench" or "chair"))
+                {
+                    var left=TileObjectData.TopLeft(x+ox,y+oy);
+                    ax=left.X;ay=left.Y;
+                    if(kind!="chest" && TileObjectData.GetTileData(Main.tile[x+ox,y+oy]) is {} shape)
+                    {
+                        furniture=new(kind,new(left.X,left.Y,shape.Width,shape.Height),new(shape.Origin.X,shape.Origin.Y),
+                            new(left.X+shape.Origin.X,left.Y+shape.Origin.Y),
+                            kind=="door"?(t==TileID.OpenDoor?"open":"closed"):null);
+                    }
+                }
+                else if(layers.Has("objects")&&kind=="light_source")
+                    furniture=new("torch",new(x+ox,y+oy,1,1),new(0,0),new(x+ox,y+oy));
             }
             char nav=TerrainReader.ReadCell(x+ox,y+oy);
             if(nav=='?')unknownNavigation++;
             if(sources.Contains("unsupported_motion_surface"))nav='!';
             bool placementFacts=layers.Has("objectPlacementCandidates")&&c.TileType is int placementType&&placementType>=0&&placementType<TileID.Count;
             cells[x,y]=new(c,nav,kind,(layers.Has("objects")||layers.Has("hazards"))&&c.TileType is int material&&(kind!=null||sources.Count>0)?Key(material):null,ax,ay,sources.ToArray(),
-                placementFacts&&Main.tileCut[c.TileType.Value],placementFacts&&TileID.Sets.BreakableWhenPlacing[c.TileType.Value]);
+                placementFacts&&Main.tileCut[c.TileType.Value],placementFacts&&TileID.Sets.BreakableWhenPlacing[c.TileType.Value],furniture);
         }
         var actor=new WorldRect(p.position.X,p.position.Y,p.width,p.height);
         bool Intersects(Entity e)=>e.position.X<(ox+width)*16&&e.position.X+e.width>ox*16&&e.position.Y<(oy+height)*16&&e.position.Y+e.height>oy*16;

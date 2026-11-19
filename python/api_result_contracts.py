@@ -280,6 +280,14 @@ OBSERVATIONS = {
         **QUERY_METADATA, **COLLECTION, 'items': array(RECIPE), 'offset': COUNT, 'unsupportedCount': COUNT,
         'registryRecipeCount': COUNT, 'availableOnly': B, 'storageReason': nullable(S), 'scope': S, 'quantities': S,
     })),
+    'inspect_housing': observation(obj({
+        **QUERY_METADATA, 'queryTile': ref('TilePoint'), 'npcType': I, 'checkVersion': const('server_ai_housing_inspect_v1'),
+        'status': enum('valid', 'invalid', 'unknown'), 'failureStage': nullable(S), 'reason': nullable(S),
+        'structureValid': B, 'nativeReason': S, 'bounds': nullable(ref('TileBounds')),
+        'stinkbug': nullable(B), 'echoStinkbug': nullable(B),
+        'furnitureValid': nullable(B), 'furniture': nullable(obj(fields(booleans='door light table chair'))),
+        'score': nullable(I), 'occupied': nullable(B), 'evil': nullable(B), 'homeTile': nullable(ref('TilePoint')),
+    })),
     'build_diff': observation(obj({
         **QUERY_METADATA,
         'entries': array(obj({'layer': enum('tiles', 'walls', 'objects'), **TILE_XY,
@@ -330,13 +338,22 @@ ENTITY_OBJECT = {
 def scene_object(regional):
     targets = {} if regional else {'target': ref('MineToken')}
     tile_details = obj({'anchorTile': ref('TilePoint'), 'observedTargetTile': ref('TilePoint')})
+    def furniture(category):
+        shape = {'category': const(category), 'origin': ref('TilePoint'),
+                 'placementAnchor': ref('TilePoint'), 'footprint': ref('TileRect')}
+        if category == 'door':
+            shape['doorState'] = enum('open', 'closed')
+        return obj(shape)
+
     return any_of(
         obj({**SCENE_OBJECT_FIELDS, **targets, 'kind': const('ore_component'), 'details': tile_details},
             optional=('target',)),
-        obj({**SCENE_OBJECT_FIELDS, 'kind': enum('tree_component', 'chest', 'door', 'workbench'),
+        obj({**SCENE_OBJECT_FIELDS, 'kind': enum('tree_component', 'chest'),
              'details': tile_details}),
-        obj({**SCENE_OBJECT_FIELDS, 'kind': const('light_source'),
-             'details': obj({'anchorTile': ref('TilePoint'), 'frameX': I, 'frameY': I, 'actuated': B})}),
+        *(obj({**SCENE_OBJECT_FIELDS, 'kind': const(kind), 'details': tile_details,
+               'furniture': furniture(kind)}, optional=('furniture',)) for kind in ('door', 'workbench', 'chair')),
+        obj({**SCENE_OBJECT_FIELDS, 'kind': const('light_source'), 'furniture': furniture('torch'),
+             'details': obj({'anchorTile': ref('TilePoint'), 'frameX': I, 'frameY': I, 'actuated': B})}, optional=('furniture',)),
         *(obj({**SCENE_OBJECT_FIELDS, 'kind': const(kind),
                'details': obj({'boundsWorldPixels': ref('WorldRect'), 'velocity': ref('Velocity'), 'detail': detail})})
           for kind, detail in ENTITY_OBJECT.items()),

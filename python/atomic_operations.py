@@ -50,12 +50,13 @@ SCENE_TEXT_CONTRACT = (
     "actor.bodyTileBounds为宿主按实际碰撞框计算的Tile范围，minX/minY/maxX/maxY均为包含端点；右/下边缘恰在Tile分界线时不包含边缘外的格。actor.mapTile是中心格，不是身体左上角；范围未裁剪至观察窗口，也不表示其中格为空或安全。"
     "observe_scene schemaVersion=2：固定图例/对象分组解释由本契约统一给出；三类候选的validation提升到集合级，matchedCount=0时省略validation。"
     "geometry图符：.=不阻挡（不等于可落脚），#=完整实心，h=半砖，1..4=实心斜坡，平平台为单字符=，a/b=斜平台，A=虚化Tile，?=未知碰撞/世界边界。"
-    "map另有T=树干组件、O=矿脉、C=箱柜、D=门、W=工作台、t=火把光源物体、$=掉落、N=NPC、P=其他玩家、*=敌对弹幕、@=AI；~=水、L=岩浆、H=蜂蜜、S=微光、!=接触/NPC危险、B=巨石、M=运动模型排除。"
+    "map另有T=树干组件、O=矿脉、C=箱柜、D=门、W=工作台、c=椅子、t=火把光源物体、$=掉落、N=NPC、P=其他玩家、*=敌对弹幕、@=AI；~=水、L=岩浆、H=蜂蜜、S=微光、!=接触/NPC危险、B=巨石、M=运动模型排除。"
     "叠加优先级是未知>Tile危险>Actor/实体/对象>几何；图符不能恢复被覆盖的geometry，重叠危险须看结构化sources，边缘实体标记可能钳位；墙不阻挡。"
-    "对象范围为原版树干、19种原版矿、箱柜/门/工作台、原版Torches各样式及相交活跃实体，未分类不等于不存在。"
+    "对象范围为原版树干、19种原版矿、箱柜/门/工作台/椅子、原版Torches各样式及相交活跃实体，未分类不等于不存在。"
+    "门、椅子、工作台和火把可含furniture：category分类，footprint为世界Tile占地，origin是占地内原生原点偏移，placementAnchor是对应绝对Tile坐标，doorState区分open/closed。contentKey标识Tile类型。旧回执可能缺少furniture。"
     "light_source逐火把返回typeId/contentKey、observedBounds与details.anchorTile（真实Tile坐标），details保留frameX/frameY/actuated；分类不保证点亮或照明，不覆盖其他灯具/Mod光源。objects先返回非光源，再返回光源，组内按距离排序；objectCounts.observed/returned与集合截断共同说明省略，map标记不受上限影响。"
     "tree_component是相连观察树干，可能拆分一棵或合并相邻树，complete始终false，不是整树计数；ore_component按同类型四邻接，边界/未知使其不完整。"
-    "箱柜/门/工作台按注册锚点分组，未验证完整家具占地或内容；动态实体按当前相交碰撞框观察，槽位/objects.id不是跨观察持久身份。"
+    "箱柜/门/工作台/椅子按左上角分组；有furniture时complete表示占地各格均已观察到，视野裁剪时仍保留完整footprint；动态实体按当前相交碰撞框观察，槽位/objects.id不是跨观察持久身份。"
     "所有候选仅为几何预筛选，不保证路径/可达或原生放置权限，行动后仍需真实回执和新鲜观察。"
 )
 MINE_TARGET_DESCRIPTION = "服务器复合挖掘（server_ai_tasks_v1）。传 observe_scene 矿物对象的 target，或传明确的绝对 Tile 坐标 x/y，两种形式互斥。观察目标须通过身份、30秒及600游戏更新时效和目标变化检查。与 mine_tile 共用主背包自动选工具、临时切换快捷栏及原生触及和工具判定。已在安全站位且够得着时直接挖掘，否则先尝试沿现有地形接近，抵达后重验目标和站位。最终核验指定格，可连带拆除该格所属家具。按 evidence.task.lastResult 和子动作释放证据核验，掉落入包需另行观察。unknown 停止。"
@@ -88,6 +89,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("wait", "可取消的宿主真实时间等待，milliseconds为1..10000。不会推进游戏时间、持有按键或确认游戏效果；受Lua总时限和工具次数预算约束。",
          {"milliseconds": {"type": "integer", "minimum": 1, "maximum": 10000}}, ["milliseconds"]),
     tool("observe_terrain", "复用get_terrain读取45×29局部碰撞及同次玩家状态；Tile为16像素。"),
+    tool("inspect_housing", "以室内绝对 Tile 坐标执行只读原生验房。住宅判定见 data.status。", TILE, ["x", "y"]),
     tool("inspect_tile", "读取指定Tile类型、Frame、形状、液体、墙/线/颜色，附内容键及距离/工具等preflight局部前提（不保证可达或可执行）；服务器可附data.miningSupportImpact：只读比较当前姿态移除单格前后的支撑，检查available/reasons/current/afterRemoval/supportDeltaPixels；不预测下落落点、不保证返程或挖掘许可，缺字段表示未提供；越界或未加载显式未知。", TILE, ["x", "y"]),
     tool("scan_entities", "按世界像素半径扫描客户端已知NPC、掉落物、其他玩家；先按typeIds/npcFilter筛选，再按玩家中心距离排序截断；npcFilter须category=npc，typeIds须npc/item。NPC entityRef仅当前世界实例有效；截断不等于没有。",
          {"category": {"type": "string", "enum": ["all", "npc", "item", "player"]}, "radius": {"type": "number", "minimum": 1, "maximum": 1600},
@@ -316,7 +318,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
     return definitions
 
 READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'build_diff', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
+READS |= {'inspect_housing', 'build_diff', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -328,6 +330,8 @@ def validate_backend(bridge, name, arguments):
     """Backend narrowing supplements, and never replaces, shared validation."""
     if name == 'build_place' and 'server_ai_build_place_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_build_place_v1')
+    if name == 'inspect_housing' and 'server_ai_housing_inspect_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_housing_inspect_v1')
     if name == 'build_diff' and 'server_ai_build_diff_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_build_diff_v1')
     if 'server_ai_atomic_v1' in getattr(bridge, 'hello', {}).get('capabilities', ()):
@@ -1267,7 +1271,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_container_transfer_v1')
     if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_containers_v1')
-    if name in ('build_diff', 'inspect_container'):
+    if name in ('inspect_housing', 'build_diff', 'inspect_container'):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):

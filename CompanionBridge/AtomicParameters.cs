@@ -117,6 +117,7 @@ internal static class AtomicParameters
                     foreach (var type in types.EnumerateArray())
                         if (!type.TryGetInt32(out int id) || id < 0 || id > 65535 || !seen.Add(id)) throw new FormatException("Invalid/duplicate tile type.");
                     break;
+                case "inspect_housing":
                 case "inspect_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
                 case "scan_entities":
                     if (keys.Contains("maxResults")) { Integer("maxResults",1,128); keys.Remove("maxResults"); }

@@ -67,6 +67,22 @@ internal static class ServerAiActionFixture
                         p.inventory[5].SetDefaults(ItemID.StoneBlock);p.inventory[5].stack=4;
                         p.inventory[6].SetDefaults(ItemID.DirtBlock);p.inventory[6].stack=4;
                     }
+                    if(Program.LaunchParameters.ContainsKey("-companionhousingtest"))
+                    {
+                        int[] items={ItemID.Wood,ItemID.WoodWall,ItemID.WoodenDoor,ItemID.Torch,ItemID.WorkBench,ItemID.WoodenChair};
+                        for(int i=0;i<items.Length;i++)
+                        {
+                            p.inventory[4+i].SetDefaults(items[i]);
+                            p.inventory[4+i].stack=i<2?64:1;
+                        }
+                        // Exterior platform and native reach accessories; no fixture tile inside the residence.
+                        var staging=Main.tile[left-1,floor-3];
+                        staging.HasTile=true;staging.TileType=TileID.Platforms;
+                        p.position=new(left*16-p.width,(floor-3)*16-p.height);
+                        p.armor[3].SetDefaults(ItemID.ArchitectGizmoPack);
+                        p.armor[4].SetDefaults(ItemID.Toolbelt);
+                        p.inventory[10].SetDefaults(ItemID.Toolbox);
+                    }
                     if(Program.LaunchParameters.ContainsKey("-companionlandingtest"))ServerAiLandingFixture.Run(p);
                     if(Program.LaunchParameters.ContainsKey("-companionsemantictest"))
                     {
