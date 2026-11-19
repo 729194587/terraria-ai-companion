@@ -238,7 +238,10 @@ def observation(data):
     return any_of(extend(ref('ObservationEnvelope'), {'data': data}), ref('ObservationUnavailable'))
 
 
+NPC_HOME_STATE = {**fields(strings='entityRef', integers='type slot homeTileX homeTileY',
+                           booleans='active townNPC homeless managerHasRoom'), 'managerHomeTile': nullable(ref('TilePoint'))}
 OBSERVATIONS = {
+    'inspect_npc_housing': observation(obj({**QUERY_METADATA, **NPC_HOME_STATE})),
     'get_player_state': any_of(extend(ref('ObservationEnvelope'), {
         **QUERY_METADATA, 'player': ref('Player'), 'motion': ref('Motion'),
         'functionalEquipmentSlots': array(ref('EquipmentSlot')),
@@ -695,7 +698,7 @@ TARGETS = {
     'targetRecipe': ('craft_recipe',),
     'targetInventory': ('dismiss_summon','open_inventory_item','configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
-    'targetTask': ('set_team','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'),
+    'targetTask': ('assign_npc_home','set_team','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'),
 }
 MINE_ARGUMENTS = any_of(obj({**TILE_XY, 'cluster': B}, optional=('cluster',)),
                         obj({'target': ref('MineToken'), 'cluster': B}, optional=('cluster',)))
@@ -881,6 +884,11 @@ COMBAT_ROLE_STATE = nullable(obj({'hotbarKey':HOTBAR, 'expectedTypeId':I, 'actua
 DEFS['CombatLoadout'] = obj({'version':COUNT,'lastRefusal':nullable(obj({'reason':S,'gameUpdate':TICK,'entityRef':S})),
                              'primary':COMBAT_ROLE_STATE,'secondary':COMBAT_ROLE_STATE,'summon':COMBAT_ROLE_STATE,
                              'maintenance':nullable(obj({'status':S,'confirmedCasts':COUNT}))},optional=('secondary','summon','maintenance'))
+DEFS['NpcHomeEvidence'] = any_of(
+    obj({'entityRef': S, 'queryTile': ref('TilePoint'), 'homeTile': ref('TilePoint'),
+         'before': obj(NPC_HOME_STATE), 'after': nullable(obj(NPC_HOME_STATE))}),
+    obj({'entityRef': S, 'queryTile': ref('TilePoint'), 'before': nullable(obj(NPC_HOME_STATE)),
+         'mutationAttempted': const(False)}))
 DEFS['TeamEvidence']=obj(fields(integers='beforeTeam team'))
 DEFS['WormholeEvidence']=obj({'teammateRef':S, **fields(integers='team before after',numbers='actorX actorY targetX targetY')})
 DEFS['DismissSummonEvidence']=obj(fields(integers='itemType buffType', booleans='wasActive absent'))
@@ -889,6 +897,7 @@ DEFS['ItemOpeningEvidence']=obj({**fields(integers='sourceSlot typeId beforeStac
 ACTION_EVIDENCE = {
     'dismiss_summon':'DismissSummonEvidence',
     'open_inventory_item':'ItemOpeningEvidence',
+    'assign_npc_home': 'NpcHomeEvidence',
     'set_team':'TeamEvidence','teleport_to_teammate':'WormholeEvidence',
     'open_door':'DoorEvidence','close_door':'DoorEvidence',
     'configure_combat_loadout': 'CombatLoadout',
@@ -1050,6 +1059,7 @@ TASK_COMPLETION_PROOF = {
     },
 }
 SUCCESSFUL_PROOF = {
+    'assign_npc_home': matches(after=matches(active=TRUE, townNPC=TRUE, homeless=const(False), managerHasRoom=TRUE)),
     'set_team': matches(team=COUNT),'teleport_to_teammate': matches(before={'minimum':1},after=COUNT),
     'dismiss_summon': matches(absent=TRUE),
     'open_inventory_item': matches(drops={'minItems':1}),

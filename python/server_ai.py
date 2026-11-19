@@ -14,7 +14,7 @@ import agent_trace as tracing
 
 
 CONTAINER_READS = frozenset(("inspect_container",))
-HOUSING_READS = frozenset(("inspect_housing",))
+HOUSING_READS = frozenset(("inspect_housing", "inspect_npc_housing"))
 BUILD_READS = frozenset(("build_diff",))
 MAP_READS = frozenset(("query_map",))
 COMBAT_READS = frozenset(("query_combat","query_combat_loadout","list_teammates","discover_bosses"))
@@ -33,7 +33,8 @@ def operations_for_capabilities(capabilities):
         ('server_ai_reads_v1', {'get_player_state', 'inspect_inventory'}),
         ('server_ai_perception_v1', PERCEPTION_OPERATIONS),
         ('server_ai_build_diff_v1', BUILD_READS),
-        ('server_ai_housing_inspect_v1', HOUSING_READS),
+        ('server_ai_npc_housing_v1', {'inspect_npc_housing'}),
+        ('server_ai_housing_inspect_v1', {'inspect_housing'}),
         ('server_ai_map_v1', MAP_READS),
         ('server_ai_containers_v1', CONTAINER_READS),
         ('server_ai_combat_v1', {'query_combat'}),
@@ -61,6 +62,7 @@ def operations_for_capabilities(capabilities):
             ('server_ai_place_object_workbench_v1', 'place_object'),
             ('server_ai_place_tile_v1', 'place_tile'),
             ('server_ai_open_item_v1', 'open_inventory_item'),
+            ('server_ai_housing_assignment_v1', 'assign_npc_home'),
             ('server_ai_regroup_v1', 'set_team'),
             ('server_ai_regroup_v1', 'teleport_to_teammate'),
             ('server_ai_dismiss_summon_v1', 'dismiss_summon'),

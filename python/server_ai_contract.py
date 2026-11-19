@@ -26,7 +26,7 @@ CATEGORIES = (
      'Limited', '局部导航按各自profile；绳索操作受原版绳柱及原生接触条件限制。'),
     ('物品与战斗', ('dismiss_summon','set_team','list_teammates','teleport_to_teammate','use_item', 'configure_combat_loadout', 'query_combat_loadout', 'query_combat', 'discover_bosses','attack_entity'), 'Limited', '主动攻击通过 submit_task 提交 combat_attack；query_combat 可发现游戏侧自卫任务。'),
     ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '服务器挖掘从主背包自动选工具；复合挖掘可先接近指定格，掉落入包需另行核验。'),
-    ('建造', ('inspect_housing', 'build_diff', 'place_tile', 'place_object', 'place_wall', 'hammer_tile', 'place_rope'),
+    ('建造', ('inspect_npc_housing', 'assign_npc_home', 'inspect_housing', 'build_diff', 'place_tile', 'place_object', 'place_wall', 'hammer_tile', 'place_rope'),
      'Limited', '原生放置受材料、样式、占地和目标坐标限制。'),
     ('制作', ('query_recipes', 'craft_recipe'), 'Limited', '普通原版配方及已支持环境/制作站；按当前supported判定。'),
     ('背包变更', ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'),
@@ -183,6 +183,8 @@ return api("configure_combat_loadout",{primary={hotbarKey=row.hotbarKey,expected
     arguments = {'open_container': 'x=100,y=200', 'close_container': 'containerToken=token',
                  'inspect_inventory': 'mode="selected"', 'observe_scene': 'layers={"objects"}',
                  'inspect_housing': 'x=100,y=200',
+                 'inspect_npc_housing': 'entityRef=<从 NPC 观察取得>',
+                 'assign_npc_home': 'entityRef=<从 NPC 观察取得>,x=100,y=200',
                  'build_diff': 'blueprint={origin={x=100,y=200},tiles={{x=0,y=0,itemType=9}}}',
                  'query_map': 'mode="overview"', 'mine_target': 'target=target',
                  'submit_task': 'operation="mine_target",arguments={target=target}'}.get(name)

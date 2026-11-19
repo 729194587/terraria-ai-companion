@@ -13,10 +13,13 @@ internal static class HousingInspection
         (bool)(typeof(WorldGen).GetField(name, BindingFlags.Static | BindingFlags.NonPublic)
             ?.GetValue(null) ?? throw new MissingFieldException(typeof(WorldGen).FullName, name));
 
-    internal static object Read(int x, int y)
+    internal static object Read(int x, int y) => Read(x, y, NPCID.Guide, out _, out _);
+
+    internal static object Read(int x, int y, int npcType, out Microsoft.Xna.Framework.Point? candidate, out bool roomOccupied)
     {
+        candidate = null;
+        roomOccupied = false;
         if (!WorldGen.InWorld(x, y, 0)) throw new FormatException("Housing query tile outside world.");
-        const int npcType = NPCID.Guide;
         bool structureValid = WorldGen.StartRoomCheck(x, y);
         var nativeReason = WorldGen.roomCheckFailureReason;
         var bounds = !structureValid ? null : new { minX = WorldGen.roomX1, maxX = WorldGen.roomX2, minY = WorldGen.roomY1, maxY = WorldGen.roomY2 };
@@ -50,8 +53,10 @@ internal static class HousingInspection
         WorldGen.ScoreRoom(-1, npcType);
         score = WorldGen.hiScore;
         occupied = Flag("roomOccupied");
+        roomOccupied = occupied == true;
         evil = occupied == true ? null : Flag("roomEvil");
         if (score <= 0) return Result("invalid", "score", occupied == true ? "occupied" : evil == true ? "evil" : "no_home_tile");
+        candidate = new Microsoft.Xna.Framework.Point(WorldGen.bestX, WorldGen.bestY);
         homeTile = new { x = WorldGen.bestX, y = WorldGen.bestY };
         return Result("valid", null, null);
     }

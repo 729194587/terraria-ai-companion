@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 
 
-def verify(port, profile):
+def verify(port, profile, npc_home=False):
     assert (profile / "isolated-action-fixture").exists()
     ready = profile / "action-fixture.json"
     deadline = time.monotonic() + 15
@@ -97,6 +97,12 @@ def verify(port, profile):
             matches = [o for o in scene["objects"]["items"] if (o.get("furniture") or {}).get("category")==category
                        and o["furniture"]["footprint"]==dict(x=ox+x,y=oy+y,width=w,height=h)]
             assert len(matches)==1, (category,scene)
+        if npc_home:
+            import asyncio
+            from native_npc_home import verify_assignment
+            guide, = [o["details"]["detail"]["entityRef"] for o in scene["objects"]["items"]
+                      if o["contentKey"] == "Terraria/Guide"]
+            asyncio.run(verify_assignment(port, profile, guide, final))
     print(f"Housing scenarios passed in {profile}")
 
 
@@ -104,5 +110,6 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--port",type=int,required=True)
     parser.add_argument("--profile",type=Path,required=True)
+    parser.add_argument("--npc-home", action="store_true")
     args=parser.parse_args()
-    verify(args.port,args.profile)
+    verify(args.port,args.profile,args.npc_home)

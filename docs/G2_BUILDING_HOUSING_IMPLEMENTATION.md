@@ -293,6 +293,14 @@
 
 `observe_scene` 的 objects 层保留原有内容键，四类家具新增 `furniture`，包括类别、占地、Origin 偏移、放置锚点及门的开闭状态。住宅中读回关门 1×3、火把 1×1、工作台 2×1、椅子 1×2；独立专服门测试观察了左右两种 2×3 开门占地。有效房间后立即查询实心格，回执为 solid_query_tile，边界、家具、占用和评分字段均为 null。
 
+### 现有向导入住与拒绝场景（2026-11-19）
+
+绑定能力 `server_ai_npc_housing_v1` 开放 `inspect_npc_housing({entityRef})`，同时读取 NPC 实例的 `homeless/homeTileX/homeTileY` 与 `WorldGen.TownManager.HasRoom(type,out Point)`。能力 `server_ai_housing_assignment_v1` 开放 `assign_npc_home({entityRef,x,y})`。使用新鲜实体引用与室内 Tile；游戏线程在写入前按该实体的类型重新验房、检查占用与同类型实例唯一性。当前适配范围为具有普通住房规则的原版居民，详见 `NpcHousing.OrdinaryResident`。目标版本的 `FindAHomelessNPC` 以优先类型过滤，因此其他类型的无家居民可共存。原生调用之后如不能证明同一实体与管理器的住所读回都一致，返回 unknown。
+
+定向验证命令为 `tests/verify_server_ai_native.ps1 -NpcHome -PackagePath <本次构建包>`。在隔离 Dedicated Server 中通过 `build_place` 完成上述 8×8 住宅后，室内格 (2104,214) 验房有效。已有向导从无家、管理器无登记，变为同一实体 homeless=false；NPC 和管理器读回的住所格均为 (2104,218)。商人的住所记录保持原值。
+
+随后向导申请实心格，返回 `invalid_room`；商人申请向导已住的房间，返回 `room_occupied`；使用同一世界、同一代次和同一槽位的前一个商人实例引用，返回 `stale_entity_ref`。三个拒绝均在写入前发生；每次拒绝前后独立读取了向导、商人的实例状态和管理器记录，逐项一致。该场景已验证专服权威状态。远端客户端显示、跨重启持久化和真实模型 Host & Play 尚待独立验证。
+
 ## 6. Deliverables
 
 1. 通用 Building Blueprint、\`build_diff\`、\`build_place\`。

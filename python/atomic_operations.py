@@ -89,6 +89,8 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("wait", "可取消的宿主真实时间等待，milliseconds为1..10000。不会推进游戏时间、持有按键或确认游戏效果；受Lua总时限和工具次数预算约束。",
          {"milliseconds": {"type": "integer", "minimum": 1, "maximum": 10000}}, ["milliseconds"]),
     tool("observe_terrain", "复用get_terrain读取45×29局部碰撞及同次玩家状态；Tile为16像素。"),
+    tool("inspect_npc_housing", "读取新鲜 NPC 引用对应的原生住所和房间管理器登记。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
+    tool("assign_npc_home", "把指定现有城镇 NPC 分配到用室内 Tile 坐标指定的有效空房。使用新鲜 entityRef；核对 NPC 和管理器的住所读回。", {**TILE, "entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["x","y","entityRef"]),
     tool("inspect_housing", "以室内绝对 Tile 坐标执行只读原生验房。住宅判定见 data.status。", TILE, ["x", "y"]),
     tool("inspect_tile", "读取指定Tile类型、Frame、形状、液体、墙/线/颜色，附内容键及距离/工具等preflight局部前提（不保证可达或可执行）；服务器可附data.miningSupportImpact：只读比较当前姿态移除单格前后的支撑，检查available/reasons/current/afterRemoval/supportDeltaPixels；不预测下落落点、不保证返程或挖掘许可，缺字段表示未提供；越界或未加载显式未知。", TILE, ["x", "y"]),
     tool("scan_entities", "按世界像素半径扫描客户端已知NPC、掉落物、其他玩家；先按typeIds/npcFilter筛选，再按玩家中心距离排序截断；npcFilter须category=npc，typeIds须npc/item。NPC entityRef仅当前世界实例有效；截断不等于没有。",
@@ -318,7 +320,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
     return definitions
 
 READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'inspect_housing', 'build_diff', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
+READS |= {'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -330,6 +332,9 @@ def validate_backend(bridge, name, arguments):
     """Backend narrowing supplements, and never replaces, shared validation."""
     if name == 'build_place' and 'server_ai_build_place_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_build_place_v1')
+    housing_cap = {'inspect_npc_housing': 'server_ai_npc_housing_v1', 'assign_npc_home': 'server_ai_housing_assignment_v1'}.get(name)
+    if housing_cap and housing_cap not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected(f'Requires {housing_cap}')
     if name == 'inspect_housing' and 'server_ai_housing_inspect_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_housing_inspect_v1')
     if name == 'build_diff' and 'server_ai_build_diff_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
@@ -365,6 +370,25 @@ class ArgumentValidationError(ValueError):
         self.diagnostics = issues
         self.diagnostics_truncated = truncated
         super().__init__('; '.join(issue['message'] for issue in issues)[:512])
+
+
+def verified_npc_home(target, evidence):
+    if not isinstance(target, dict) or not isinstance(evidence, dict):
+        return False
+    ref = target.get('entityRef')
+    before, after = evidence.get('before'), evidence.get('after')
+    home = evidence.get('homeTile')
+    if (not isinstance(ref, str) or not ref or evidence.get('entityRef') != ref
+            or evidence.get('queryTile') != {k: target.get(k) for k in ('x', 'y')}
+            or not isinstance(before, dict) or not isinstance(after, dict)
+            or not isinstance(home, dict) or any(type(home.get(k)) is not int for k in ('x', 'y'))):
+        return False
+    return (before.get('entityRef') == after.get('entityRef') == ref
+            and all(type(after.get(k)) is int and before.get(k) == after[k] for k in ('slot', 'type'))
+            and after.get('active') is True and after.get('townNPC') is True
+            and after.get('homeless') is False and after.get('managerHasRoom') is True
+            and after.get('managerHomeTile') == home
+            and (after.get('homeTileX'), after.get('homeTileY')) == (home['x'], home['y']))
 
 
 def verified_build_entries(arguments, evidence):
@@ -1106,6 +1130,7 @@ async def terminal(bridge, action, generation):
                                 and type(native_evidence.get('typeId')) is int and native_evidence['typeId']>0
                                 and isinstance(native_evidence.get('drops'),list) and bool(native_evidence['drops'])
                                 and all(isinstance(d,dict) and all(type(d.get(k)) is int and d[k]>0 for k in ('typeId','stack')) for d in native_evidence['drops'])),
+        'assign_npc_home': verified_npc_home(action.get('targetTask'), native_evidence),
         'set_team': (isinstance(action.get('targetTask'),dict) and type(native_evidence.get('team')) is int
                      and native_evidence['team']==action['targetTask'].get('team')),
         'teleport_to_teammate': (isinstance(action.get('targetTask'),dict) and isinstance(native_evidence.get('teammateRef'),str)
@@ -1160,7 +1185,7 @@ async def terminal(bridge, action, generation):
         and isinstance(end,dict) and retreat.get('update')==end.get('gameUpdate')))
     native_end = (retreat_verified and isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('dismiss_summon','set_team','teleport_to_teammate','open_inventory_item','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('assign_npc_home','dismiss_summon','set_team','teleport_to_teammate','open_inventory_item','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -1271,7 +1296,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_container_transfer_v1')
     if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_containers_v1')
-    if name in ('inspect_housing', 'build_diff', 'inspect_container'):
+    if name in ('inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):
@@ -1381,7 +1406,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Container target missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if name in ('set_team','teleport_to_teammate','mine_target', 'navigate_to'):
+        if name in ('assign_npc_home','set_team','teleport_to_teammate','mine_target', 'navigate_to'):
             placement_invalid = True
             if action.get('targetTask') != arguments:
                 raise BridgeError('Task target missing or changed in start receipt')

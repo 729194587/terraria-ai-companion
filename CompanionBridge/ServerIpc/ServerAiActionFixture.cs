@@ -82,6 +82,7 @@ internal static class ServerAiActionFixture
                         p.armor[3].SetDefaults(ItemID.ArchitectGizmoPack);
                         p.armor[4].SetDefaults(ItemID.Toolbelt);
                         p.inventory[10].SetDefaults(ItemID.Toolbox);
+
                     }
                     if(Program.LaunchParameters.ContainsKey("-companionlandingtest"))ServerAiLandingFixture.Run(p);
                     if(Program.LaunchParameters.ContainsKey("-companionsemantictest"))
@@ -104,6 +105,28 @@ internal static class ServerAiActionFixture
                     File.WriteAllText(Path.Combine(Main.SavePath,"action-fixture.json"),JsonSerializer.Serialize(new{targetX=p.position.X+64,mineX=x,mineY=y,
                         initialLife=p.statLife,initialAppleStack=2,perceptionNpcSlot=perceptionNpc?.whoAmI,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));
                 }
+            }
+            if (Program.LaunchParameters.ContainsKey("-companionnpchometest") &&
+                File.Exists(Path.Combine(Main.SavePath, "housing-refs-request")) &&
+                !File.Exists(Path.Combine(Main.SavePath, "housing-refs.json")))
+            {
+                var p = ProbeSession.Actor;
+                int left=x-8, floor=y+2;
+                // Exercise slot reuse with two native spawns in the copied world.
+                var identity = new AiReadOnlyProtocol.Identity(p, ProbeSession.WorldSession,
+                    ProbeSession.ActorGeneration, p.whoAmI, null, p.selectedItem, Main.GameUpdateCount);
+                int SpawnMerchant() => NPC.NewNPC(p.GetSource_Misc("HousingSlotReuse"),
+                    (left+16)*16, floor*16-32, NPCID.Merchant);
+                int oldSlot = SpawnMerchant();
+                if (oldSlot >= Main.maxNPCs) throw new InvalidOperationException("No fixture NPC slot");
+                string stale = NativeCombatWorld.Reference(identity, Main.npc[oldSlot]);
+                Main.npc[oldSlot].active = false;
+                int liveSlot = SpawnMerchant();
+                if (liveSlot != oldSlot) throw new InvalidOperationException("Fixture did not reuse NPC slot");
+                string merchant = NativeCombatWorld.Reference(identity, Main.npc[liveSlot]);
+                if (merchant == stale) throw new InvalidOperationException("NPC spawn identity did not change");
+                File.WriteAllText(Path.Combine(Main.SavePath, "housing-refs.json"),
+                    JsonSerializer.Serialize(new { stale, merchant }));
             }
             // The ordinary action fixture retires ambient NPCs. The Boss probe needs
             // complete native NPC updates, including newly spawned parts and adds.
