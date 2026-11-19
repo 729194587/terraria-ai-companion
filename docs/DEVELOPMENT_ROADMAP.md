@@ -22,7 +22,11 @@
 
 本阶段先测试、后实现。只有真实测试发现明确阻塞点，才针对该根因提出最小实现任务；若流程已成功，则整理回归证据，不新增重复功能。
 
-## 下一阶段架构方向：World Interaction
+## 当前实现阶段：G2 Building & Housing
+
+当前按 [G2 实现规范](G2_BUILDING_HOUSING_IMPLEMENTATION.md) 推进通用建筑蓝图、差异检查、原生施工、住宅检查和 NPC 住所分配。Skills 暂缓；NPC 对话、商店与经济系统留在 G3。
+
+## 后续架构方向：World Interaction
 
 项目后续重点从单个角色的生存/战斗操作扩展到世界建设和利用：
 
