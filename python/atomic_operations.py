@@ -66,6 +66,9 @@ COMBAT_ROLE = {"type":"object","properties":{
         "hotbarKey":{"type":"integer","minimum":0,"maximum":9}, "expectedTypeId":{"type":"integer","minimum":1,"maximum":2147483647}, "inventoryToken":INVENTORY_TOKEN},
         "required":["hotbarKey","expectedTypeId","inventoryToken"],"additionalProperties":False}
 
+MERCHANT_REF = {"type": "string", "minLength": 1, "maxLength": 150}
+SHOP_TOKEN = {"type": "string", "pattern": "^[0-9a-f]{64}$", "minLength": 64, "maxLength": 64}
+
 TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地下视野采用遮挡/近身/可见原版火把近似。",
     {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
     {"resultType":{"type":"integer","minimum":1},"availableOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":24},"offset":{"type":"integer","minimum":0,"maximum":100000}}),
@@ -89,6 +92,9 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("wait", "可取消的宿主真实时间等待，milliseconds为1..10000。不会推进游戏时间、持有按键或确认游戏效果；受Lua总时限和工具次数预算约束。",
          {"milliseconds": {"type": "integer", "minimum": 1, "maximum": 10000}}, ["milliseconds"]),
     tool("observe_terrain", "复用get_terrain读取45×29局部碰撞及同次玩家状态；Tile为16像素。"),
+    tool("inspect_npc_shop", "读取有交互资格的普通商人商品列表。未知条件或未支持的商品应按返回状态处理。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
+    tool("quote_npc_purchase", "按绑定 AI 的当前购物状态报价，返回短时购买令牌、单价与支付能力。数量为一件。", {"entityRef": MERCHANT_REF, "itemType": {"type": "integer", "minimum": 1, "maximum": 2147483647}, "quantity": {"type": "integer", "minimum": 1, "maximum": 1}}, ["entityRef", "itemType"]),
+    tool("buy_npc_item", "使用同一商人的新鲜报价令牌购买一件商品。核验随身钱币与入包数量；过期后须重新查询报价。", {"entityRef": MERCHANT_REF, "quoteToken": SHOP_TOKEN}, ["entityRef", "quoteToken"]),
     tool("inspect_npc_housing", "读取新鲜 NPC 引用对应的原生住所和房间管理器登记。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
     tool("assign_npc_home", "把指定现有城镇 NPC 分配到用室内 Tile 坐标指定的有效空房。使用新鲜 entityRef；核对 NPC 和管理器的住所读回。", {**TILE, "entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["x","y","entityRef"]),
     tool("inspect_housing", "以室内绝对 Tile 坐标执行只读原生验房。住宅判定见 data.status。", TILE, ["x", "y"]),
@@ -320,7 +326,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
     return definitions
 
 READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
+READS |= {'inspect_npc_shop', 'quote_npc_purchase', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -332,6 +338,10 @@ def validate_backend(bridge, name, arguments):
     """Backend narrowing supplements, and never replaces, shared validation."""
     if name == 'build_place' and 'server_ai_build_place_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_build_place_v1')
+    if name in ('inspect_npc_shop', 'quote_npc_purchase', 'buy_npc_item'):
+        cap = 'server_ai_merchant_purchase_v1' if name == 'buy_npc_item' else 'server_ai_merchant_shop_v1'
+        if cap not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+            raise PreDispatchRejected(f'Requires {cap}')
     housing_cap = {'inspect_npc_housing': 'server_ai_npc_housing_v1', 'assign_npc_home': 'server_ai_housing_assignment_v1'}.get(name)
     if housing_cap and housing_cap not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected(f'Requires {housing_cap}')
@@ -370,6 +380,18 @@ class ArgumentValidationError(ValueError):
         self.diagnostics = issues
         self.diagnostics_truncated = truncated
         super().__init__('; '.join(issue['message'] for issue in issues)[:512])
+
+
+def verified_purchase(target, proof):
+    if not isinstance(target, dict) or not isinstance(proof, dict):
+        return False
+    fields = ('itemType', 'quantity', 'unitPrice', 'beforeCopper', 'afterCopper', 'beforeCount', 'afterCount')
+    return (isinstance(target.get('entityRef'), str) and target['entityRef'] == proof.get('entityRef')
+            and isinstance(target.get('quoteToken'), str) and target['quoteToken'] == proof.get('quoteToken')
+            and all(type(proof.get(k)) is int and proof[k] >= 0 for k in fields)
+            and proof['itemType'] > 0 and proof['quantity'] == 1 and proof['unitPrice'] > 0
+            and proof['beforeCopper'] - proof['afterCopper'] == proof['unitPrice']
+            and proof['afterCount'] - proof['beforeCount'] == 1 and proof.get('banksUnchanged') is True)
 
 
 def verified_npc_home(target, evidence):
@@ -1130,6 +1152,7 @@ async def terminal(bridge, action, generation):
                                 and type(native_evidence.get('typeId')) is int and native_evidence['typeId']>0
                                 and isinstance(native_evidence.get('drops'),list) and bool(native_evidence['drops'])
                                 and all(isinstance(d,dict) and all(type(d.get(k)) is int and d[k]>0 for k in ('typeId','stack')) for d in native_evidence['drops'])),
+        'buy_npc_item': verified_purchase(action.get('targetTask'), native_evidence),
         'assign_npc_home': verified_npc_home(action.get('targetTask'), native_evidence),
         'set_team': (isinstance(action.get('targetTask'),dict) and type(native_evidence.get('team')) is int
                      and native_evidence['team']==action['targetTask'].get('team')),
@@ -1185,7 +1208,7 @@ async def terminal(bridge, action, generation):
         and isinstance(end,dict) and retreat.get('update')==end.get('gameUpdate')))
     native_end = (retreat_verified and isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('assign_npc_home','dismiss_summon','set_team','teleport_to_teammate','open_inventory_item','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('buy_npc_item','assign_npc_home','dismiss_summon','set_team','teleport_to_teammate','open_inventory_item','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -1296,7 +1319,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_container_transfer_v1')
     if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_containers_v1')
-    if name in ('inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
+    if name in ('inspect_npc_shop', 'quote_npc_purchase', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):
@@ -1406,7 +1429,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Container target missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if name in ('assign_npc_home','set_team','teleport_to_teammate','mine_target', 'navigate_to'):
+        if name in ('buy_npc_item','assign_npc_home','set_team','teleport_to_teammate','mine_target', 'navigate_to'):
             placement_invalid = True
             if action.get('targetTask') != arguments:
                 raise BridgeError('Task target missing or changed in start receipt')

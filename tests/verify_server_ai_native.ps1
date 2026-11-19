@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -28,7 +28,7 @@ if(!$WorldPath){$WorldPath=Join-Path $repo '.local/virtual-player-control-host/W
 $WorldPath=(Resolve-Path -LiteralPath $WorldPath).Path
 $package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$selectedEngine.Package}
 Assert-CompanionPackage -Package $package -Engine $selectedEngine
-if(!$PythonExecutable){$PythonExecutable=if($Atomic -or $NpcHome){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
+if(!$PythonExecutable){$PythonExecutable=if($Atomic -or $NpcHome -or $MerchantLua){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
 if(!(Test-Path -LiteralPath $package)){throw 'Build CompanionBridge first.'}
 $profile=if($BenchmarkSpec){[IO.Path]::GetFullPath($BenchmarkProfile)}else{Join-Path $repo ('.local/companion-'+$(if($Atomic){'g82'}else{'g81'})+'-native-'+[guid]::NewGuid().ToString('N'))}
 New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds" | Out-Null
@@ -39,6 +39,7 @@ $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
 [IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')
+if($MerchantLua){$G3Shop=$true}
 if($NpcHome){$Housing=$true}
 if($BuildPlace -or $Housing -or $G3Shop){$Actions=$true}
 if($Actions){[IO.File]::WriteAllText("$profile/isolated-action-fixture",'Explicit test fixture in this copied world only.')}
@@ -56,6 +57,7 @@ if($Tasks -or $AutonomousNavigation -or $NavigationSafety){$info.ArgumentList.Ad
 if($Inventory){$info.ArgumentList.Add("-companioninventorytest")}
 if($Crafting){$info.ArgumentList.Add("-companioncrafttest")}
 if($Scene){$info.ArgumentList.Add("-companionscenetest")}
+if($MerchantLua){$info.ArgumentList.Add('-companionmerchantluatest')}
 if($G3Shop){$info.ArgumentList.Add('-companiong3shoptest')}
 if($NpcHome){$info.ArgumentList.Add('-companionnpchometest')}
 if($Housing){$info.ArgumentList.Add('-companionhousingtest')}
@@ -102,7 +104,7 @@ try {
     if($bindingMismatch.ok -or $bindingMismatch.error -ne 'stale_binding'){throw 'Mismatched request binding was not rejected'}
     if($BuildPlace -or $Housing -or $G3Shop){
         if(!$G3Shop -and 'server_ai_build_place_v1' -notin $bound.data.capabilities){throw 'Missing build_place capability'}
-        $probe=if($G3Shop){'tests/native_g3_shop.py'}elseif($Housing){'tests/native_housing.py'}else{'tests/native_build_place.py'}
+        $probe=if($MerchantLua){'tests/native_merchant_lua.py'}elseif($G3Shop){'tests/native_g3_shop.py'}elseif($Housing){'tests/native_housing.py'}else{'tests/native_build_place.py'}
         [string[]]$probeArgs=if($NpcHome){@('--npc-home')}else{@()}
         & $PythonExecutable (Join-Path $repo $probe) --port $IpcPort --profile $profile @probeArgs
         if($LASTEXITCODE -ne 0){throw "Native verification failed in $profile"}

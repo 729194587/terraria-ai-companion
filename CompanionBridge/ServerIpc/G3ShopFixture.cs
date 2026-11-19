@@ -31,11 +31,56 @@ internal static class G3ShopFixture
         string PathFor(string name) => Path.Combine(Main.SavePath, "g3-shop-" + name);
         if (!File.Exists(PathFor("ready.json")))
         {
+            if (Program.LaunchParameters.ContainsKey("-companionmerchantluatest"))
+            {
+                // Keep the actors in the same small stall while the quote ages.
+                // NPC movement, CanTalk, item use and transaction preflight stay native.
+                int left = (int)p.position.X / 16 - 1;
+                int floor = Main.spawnTileY + 8;
+                for (int x=left; x<=left+5; x++)
+                    for (int y=floor-4; y<floor; y++)
+                        if (x==left || x==left+5 || y==floor-4)
+                        {
+                            var tile = Main.tile[x,y];
+                            tile.HasTile = true;
+                            tile.TileType = TileID.WoodBlock;
+                        }
+            }
             int slot = Spawn(p);
             if (slot >= Main.maxNPCs) throw new InvalidOperationException("No shop fixture NPC slot");
             // A protected bank balance distinguishes carried-only admission from native bank fallback.
             p.bank.item[0].SetDefaults(ItemID.GoldCoin);
             File.WriteAllText(PathFor("ready.json"), JsonSerializer.Serialize(new { slot }));
+            return;
+        }
+        if (Program.LaunchParameters.ContainsKey("-companionmerchantluatest"))
+        {
+            // Lua uses the production IPC path. This fixture only funds the actor,
+            // replaces an NPC instance, or snapshots the resulting inventories.
+            if (!File.Exists(PathFor("control.json"))) return;
+            using var control = JsonDocument.Parse(File.ReadAllText(PathFor("control.json")));
+            File.Delete(PathFor("control.json"));
+            string op = control.RootElement.GetProperty("op").GetString();
+            using var ready = JsonDocument.Parse(File.ReadAllText(PathFor("ready.json")));
+            int slot = ready.RootElement.GetProperty("slot").GetInt32();
+            if (op == "fund")
+            {
+                if (!p.inventory[50].IsAir) throw new InvalidOperationException("Fixture coin slot is occupied");
+                p.inventory[50].SetDefaults(ItemID.SilverCoin);
+                p.inventory[50].stack = 2;
+            }
+            else if (op == "replace")
+            {
+                if (!Main.npc[slot].active || Main.npc[slot].type != NPCID.Merchant)
+                    throw new InvalidOperationException("Fixture merchant missing");
+                Main.npc[slot].active = false;
+                if (Spawn(p) != slot) throw new InvalidOperationException("Fixture did not reuse merchant slot");
+            }
+            else if (op != "snapshot") throw new InvalidOperationException("Unexpected fixture command");
+            var answer = new { id = control.RootElement.GetProperty("id").GetString(), inventory = Snapshot(p),
+                entityRef = NativeCombatWorld.Reference(Identity(p), Main.npc[slot]) };
+            File.WriteAllText(PathFor("control-result.tmp"), JsonSerializer.Serialize(answer));
+            File.Move(PathFor("control-result.tmp"), PathFor("control-result.json"), true);
             return;
         }
         if (!File.Exists(PathFor("request.json")) || File.Exists(PathFor("started"))) return;

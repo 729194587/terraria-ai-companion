@@ -122,6 +122,11 @@ internal static class AtomicParameters
                     foreach (var type in types.EnumerateArray())
                         if (!type.TryGetInt32(out int id) || id < 0 || id > 65535 || !seen.Add(id)) throw new FormatException("Invalid/duplicate tile type.");
                     break;
+                case "quote_npc_purchase":
+                    if (keys.Contains("quantity")) { Fields("entityRef","itemType","quantity"); Integer("quantity",1,1); }
+                    else Fields("entityRef","itemType");
+                    EntityRef(); Integer("itemType",1,int.MaxValue); break;
+                case "inspect_npc_shop":
                 case "inspect_npc_housing": Fields("entityRef"); EntityRef(); break;
                 case "inspect_housing":
                 case "inspect_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
@@ -234,6 +239,10 @@ internal static class AtomicParameters
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
             case "open_inventory_item": Fields("sourceSlot","sourceToken"); Integer("sourceSlot",0,49); Token("sourceToken"); break;
             case "dismiss_summon": Fields("itemType"); Integer("itemType",1,int.MaxValue); break;
+            case "buy_npc_item":
+                if (keys.Contains("quantity")) { Fields("entityRef","quoteToken","quantity"); Integer("quantity",1,1); }
+                else Fields("entityRef","quoteToken");
+                EntityRef(); Token("quoteToken"); break;
             case "assign_npc_home": Fields("entityRef","x","y"); EntityRef(); Integer("x",0,100000); Integer("y",0,100000); break;
             case "set_team": Fields("team"); Integer("team",0,5); break;
             case "teleport_to_teammate": Fields("teammateRef"); if(!Guid.TryParseExact(args.GetProperty("teammateRef").GetString(),"N",out _))throw new FormatException("Invalid teammate reference."); break;

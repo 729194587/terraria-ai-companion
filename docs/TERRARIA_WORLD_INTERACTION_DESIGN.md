@@ -495,6 +495,23 @@ Skill 应说明规则与策略，实际价格、商品、住所和 NPC 状态始
 
 之后再增加其他商店和特殊服务适配器。
 
+#### 普通商人购买的 Lua 专服验收（2026-11-19）
+
+从 `observe_scene` 取得普通商人的 `entityRef`，在交互范围内调用 `inspect_npc_shop({entityRef=ref})`。条目按 `itemType` 返回条件是否满足、实际单价（铜）、货币、库存类型和当前能否购买。当前支持无条件、白天及绑定玩家的雪地条件；其他未适配条件返回未知，不能据此报价。此阶段支持普通钱币、无限库存、每次一件。
+
+`quote_npc_purchase({entityRef=ref,itemType=8,quantity=1})` 返回火把的实际单价和一次性 `quoteToken`。同一 IPC 租约的新报价替换旧报价，600 个游戏更新或 10 秒单调时钟时间先到即失效。`buy_npc_item({entityRef=ref,quoteToken=token})` 重新核对绑定玩家、商人实例、距离、背包、商品条件与价格，沿用 G3-A 的原生支付和交付路径。支付开始后若无法确认效果，返回 `unknown`。
+
+在 tModLoader 2026.09.3.1 隔离专服通过 Lua Worker 观察到以下结果。测试场景提供商人、随身测试钱币及银行内的 1 金，交易和拒绝均走公开 Lua 接口。
+
+| 场景 | 动作回执与独立逐槽读回 |
+| --- | --- |
+| 查价后购买火把 | 单价 44 铜，随身钱币 200 → 156 铜，火把 0 → 1，四个银行逐槽相同 |
+| 随身余额为零、银行有钱 | `insufficient_carried_funds`，背包与四个银行逐槽相同 |
+| 报价到期，或重复使用已成交的令牌 | 均为 `stale_quote`，背包与四个银行逐槽相同 |
+| 同一 NPC 槽换成新商人后使用旧引用 | `stale_entity_ref`，背包与四个银行逐槽相同 |
+
+复现入口为 `tests/verify_server_ai_native.ps1 -MerchantLua -PackagePath .local/g3b-e2e/Mods/CompanionBridge.tmod`。新 profile 中的 `merchant-lua.jsonl` 保存 Lua 调用、回执及独立快照。此项覆盖确定性 Lua 程序；真实模型 Host & Play 和出售物品仍待验收。
+
 ### G4：Town Development
 
 在前述能力稳定后，再考虑 NPC 幸福度优化、Pylon 网络、城镇布局、储物/生产规划和长期基地维护。

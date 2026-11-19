@@ -16,12 +16,6 @@ namespace CompanionBridge.ServerIpc;
 // Use its actor payment/creation primitives with GetItem for inventory delivery.
 internal static class G3ShopProbe
 {
-    private static long Coins(Item[] items, int count) => items.Take(count).Sum(i => (long)i.stack * (i.type switch
-    {
-        ItemID.CopperCoin => 1, ItemID.SilverCoin => 100, ItemID.GoldCoin => 10000,
-        ItemID.PlatinumCoin => 1000000, _ => 0
-    }));
-
     // Read the definitions without executing arbitrary registered predicates. These two
     // translations mirror the pinned Condition delegates (Main.dayTime / LocalPlayer.ZoneSnow).
     internal static object Catalog(Player p, NPC merchant)
@@ -85,27 +79,15 @@ internal static class G3ShopProbe
             if (!purchase) return Reply("completed", "price_quoted");
 
             // PayCurrency skips carried slots 54..58 and also considers four banks.
-            long carried = Coins(p.inventory, 54);
+            long carried = MerchantPayment.Coins(p.inventory, 54);
             if (carried < price) return Reply("failed", "insufficient_carried_funds");
-            long[] Banks() => new[] { p.bank, p.bank2, p.bank3, p.bank4 }.Select(b => Coins(b.item, b.item.Length)).ToArray();
+            long[] Banks() => new[] { p.bank, p.bank2, p.bank3, p.bank4 }.Select(b => MerchantPayment.Coins(b.item, b.item.Length)).ToArray();
             int Torches() => p.inventory.Take(50).Where(i => i.type == ItemID.Torch).Sum(i => i.stack);
             var banks = Banks();
             int before = Torches();
-            var received = offer.Clone();
-            received.stack = 1;
-            received.isAShopItem = false;
-            var space = p.ItemSpace(received);
-            if (!space.CanTakeItem || space.ItemIsGoingToVoidVault) return Reply("failed", "inventory_full");
-            // Single-entry context is specific to this isolated probe.
-            var offers = new[] { offer };
-            if (!PlayerLoader.CanBuyItem(p, merchant, offers, offer)) return Reply("failed", "purchase_vetoed");
-            paymentStarted = true;
-            if (!p.BuyItem(price, offer.shopSpecialCurrency)) return Reply("unknown", "payment_unconfirmed");
-            received.OnCreated(new BuyItemCreationContext(new Item(), merchant));
-            // ItemSlot passes the purchased item on the cursor, not the shop's display item.
-            PlayerLoader.PostBuyItem(p, merchant, offers, received);
-            var left = p.GetItem(p.whoAmI, received, GetItemSettings.InventoryEntityToPlayerInventorySettings);
-            bool verified = left.IsAir && Torches() == before + 1 && Coins(p.inventory, 54) == carried - price &&
+            string error = MerchantPayment.Deliver(p, merchant, offer, price, ref paymentStarted);
+            if (error != null) return Reply(paymentStarted ? "unknown" : "failed", error);
+            bool verified = Torches() == before + 1 && MerchantPayment.Coins(p.inventory, 54) == carried - price &&
                 banks.SequenceEqual(Banks()) && ServerAiNativeActions.Owned(identity) && merchant.active &&
                 ReferenceEquals(Main.npc[merchant.whoAmI], merchant) && NativeCombatWorld.Reference(identity, merchant) == requestedRef;
             return verified ? Reply("completed", "purchase_verified") : Reply("unknown", "purchase_unconfirmed");

@@ -6,14 +6,23 @@ using System.Linq;
 
 namespace CompanionBridge.ServerIpc;
 
+internal sealed class ShopReadException(string reason) : Exception(reason) { }
 internal sealed class StaleNpcReferenceException : Exception { }
 
 // Transport-independent. Only the simulation thread may call Handle/Clear.
 internal sealed class AiReadOnlyProtocol
 {
-    internal sealed record Identity(object Actor, string World, long Generation, int Slot, object State, int SelectedSlot = -1, ulong GameUpdate = 0, bool CanAct = true);
+    internal sealed record Identity(object Actor, string World, long Generation, int Slot, object State, int SelectedSlot = -1, ulong GameUpdate = 0, bool CanAct = true)
+    {
+        [System.Text.Json.Serialization.JsonIgnore]
+        internal Lease RequestLease { get; init; }
+    }
     internal sealed record Binding(string actor, string world, long generation, int slot);
-    private sealed record Lease(Identity Identity, Binding Binding);
+    internal sealed record Lease(Identity Identity, Binding Binding)
+    {
+        // Engine payload is opaque to the transport. At most one quote per bound connection.
+        internal object MerchantQuote;
+    }
     private readonly Dictionary<Guid, Lease> leases = new();
     private object actor;
     private string actorId;
@@ -29,8 +38,8 @@ internal sealed class AiReadOnlyProtocol
         if (!ReferenceEquals(actor, current.Actor)) { actor = current.Actor; actorId = Guid.NewGuid().ToString("N"); }
         return actorId;
     }
-    internal void Clear() { foreach(var f in replyFences.Values)f.Revoke();replyFences.Clear();leases.Clear(); speech.Clear(); actor = null; actorId = null; actions?.Clear(); }
-    internal void Forget(Guid connection) { RevokeReplies(connection);replyFences.TryRemove(connection,out _);leases.Remove(connection); foreach(var key in speech.Keys.Where(k=>k.Item1==connection).ToArray())speech.Remove(key); actions?.Forget(connection); }
+    internal void Clear() { foreach(var f in replyFences.Values)f.Revoke();replyFences.Clear();foreach (var lease in leases.Values) lease.MerchantQuote = null; leases.Clear(); speech.Clear(); actor = null; actorId = null; actions?.Clear(); }
+    internal void Forget(Guid connection) { RevokeReplies(connection);replyFences.TryRemove(connection,out _);if (leases.Remove(connection,out var lease)) lease.MerchantQuote = null; foreach(var key in speech.Keys.Where(k=>k.Item1==connection).ToArray())speech.Remove(key); actions?.Forget(connection); }
 
     internal string Handle(Guid connection, string line, Func<Identity> capture, CancellationToken disconnected = default,
         Func<Identity,string,JsonElement,object> query = null, Func<Identity,string,object> say = null)
@@ -65,7 +74,7 @@ internal sealed class AiReadOnlyProtocol
                 if(!Guid.TryParseExact(messageId,"N",out _)||string.IsNullOrWhiteSpace(text)||text.Length>400
                     ||text.IndexOfAny(new[]{'\r','\n','\0'})>=0)throw new FormatException();
             }
-            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat" or "query_combat_loadout" or "list_teammates" or "discover_bosses" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing"))
+            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat" or "query_combat_loadout" or "list_teammates" or "discover_bosses" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase"))
                 return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             if (op == "bind" && root.TryGetProperty("binding", out _)) throw new FormatException();
             // Reject malformed bindings before invoking the engine adapter.
@@ -99,13 +108,14 @@ internal sealed class AiReadOnlyProtocol
                 var binding = new Binding(ActorId(current), current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
                 var capabilities=actions?.Capabilities.ToList();
-                if(query!=null){capabilities ??= new(); capabilities.Add("server_ai_build_diff_v1");capabilities.Add("server_ai_housing_inspect_v1");capabilities.Add("server_ai_npc_housing_v1");capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_scene_region_v1");capabilities?.Add("server_ai_crafting_v1");capabilities?.Add("server_ai_map_v1");}
+                if(query!=null){capabilities ??= new(); capabilities.Add("server_ai_build_diff_v1");capabilities.Add("server_ai_housing_inspect_v1");capabilities.Add("server_ai_npc_housing_v1");if (actions?.SupportsMerchantShop == true) capabilities.Add("server_ai_merchant_shop_v1");capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_scene_region_v1");capabilities?.Add("server_ai_crafting_v1");capabilities?.Add("server_ai_map_v1");}
                 if(say!=null)capabilities?.Add("server_ai_chat_v2");
                 return JsonSerializer.Serialize(Reply(true, data: capabilities==null?null:new { capabilities }, binding: binding));
             }
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)
                 return JsonSerializer.Serialize(Reply(false, error: "stale_binding"));
+            current = current with { RequestLease = lease };
             var replyFence=replyFences.GetOrAdd(connection,_=>new());
             if(turning)
                 return JsonSerializer.Serialize(replyFence.Advance(replyTurn)?Reply(true,new{replyTurn},lease.Binding):Reply(false,error:"superseded"));
@@ -131,6 +141,8 @@ internal sealed class AiReadOnlyProtocol
                 if (arguments.ValueKind != JsonValueKind.Object) throw new FormatException();
                 if (root.GetProperty("operation").GetString() == "inspect_container" && actions?.SupportsContainers != true)
                     return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+                if (root.GetProperty("operation").GetString() is ("inspect_npc_shop" or "quote_npc_purchase") && actions?.SupportsMerchantShop != true)
+                    return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="list_teammates" && actions?.Capabilities.Contains("server_ai_regroup_v1")!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="discover_bosses" && actions?.Capabilities.Contains("server_ai_boss_strategy_v1")!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="query_combat")
@@ -142,6 +154,7 @@ internal sealed class AiReadOnlyProtocol
                         clock="server_utc_at_projection",data=actions.CombatState(current)},lease.Binding));
                 }
                 try { return JsonSerializer.Serialize(Reply(true, query(current, root.GetProperty("operation").GetString(), arguments), lease.Binding)); }
+                catch (ShopReadException e) { return JsonSerializer.Serialize(Reply(false, binding: lease.Binding, error: e.Message)); }
                 catch (StaleNpcReferenceException) { return JsonSerializer.Serialize(Reply(false, binding: lease.Binding, error: "stale_entity_ref")); }
                 catch (AtomicParameterException) { return JsonSerializer.Serialize(Reply(false, binding: lease.Binding, error: "invalid_request")); }
                 catch { return JsonSerializer.Serialize(Reply(false, error: "engine_unavailable")); }
