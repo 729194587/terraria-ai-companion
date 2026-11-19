@@ -11,6 +11,7 @@
 | [路线图](DEVELOPMENT_ROADMAP.md) | 当前能力与尚待解决的方向 |
 | [工程原则](ENGINEERING.md) | 长期有效的安全与设计约束 |
 | [API 契约](API_CONTRACT.md) | 模型工具入口、Schema、能力投影和结果语义 |
+| [G1 Gameplay E2E Baseline](G1_GAMEPLAY_INTEGRATION_MVP.md) | 用真实模型验证现有 Agent 是否能自主完成木材采集、工作台制作与放置；先测试后实现 |
 
 ## Agent 与运行时
 
