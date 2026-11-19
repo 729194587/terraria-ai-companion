@@ -63,7 +63,7 @@ internal sealed class AiReadOnlyProtocol
                 if(!Guid.TryParseExact(messageId,"N",out _)||string.IsNullOrWhiteSpace(text)||text.Length>400
                     ||text.IndexOfAny(new[]{'\r','\n','\0'})>=0)throw new FormatException();
             }
-            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat" or "query_combat_loadout" or "discover_bosses" or "inspect_container"))
+            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat" or "query_combat_loadout" or "list_teammates" or "discover_bosses" or "inspect_container"))
                 return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             if (op == "bind" && root.TryGetProperty("binding", out _)) throw new FormatException();
             // Reject malformed bindings before invoking the engine adapter.
@@ -129,6 +129,7 @@ internal sealed class AiReadOnlyProtocol
                 if (arguments.ValueKind != JsonValueKind.Object) throw new FormatException();
                 if (root.GetProperty("operation").GetString() == "inspect_container" && actions?.SupportsContainers != true)
                     return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+                if(root.GetProperty("operation").GetString()=="list_teammates" && actions?.Capabilities.Contains("server_ai_regroup_v1")!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="discover_bosses" && actions?.Capabilities.Contains("server_ai_boss_strategy_v1")!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="query_combat")
                 {

@@ -91,6 +91,8 @@ return api('submit_task',{operation='boss_encounter',arguments={entityRef=roots[
         proof = view['result']['task']['result']['evidence']
         assert proof['encounterId'] == task['taskId'] and proof['lastHit']['Defeated']
         return
+    if mode.startswith('regroup-'):
+        args['regroupTeammateRef']='a'*32
     if mode == 'timeout':
         args['durationSeconds'] = 5
     task_id = uuid.uuid4().hex
@@ -117,6 +119,42 @@ return api('submit_task',{operation='boss_encounter',arguments={entityRef=roots[
         raise AssertionError('Expected native hits missing')
     results['beforeStop'] = sample
     results['secondsSinceStart'] = time.monotonic()-started
+    if mode.startswith('regroup-'):
+        await scene('summon-death')
+        await asyncio.sleep(.25)
+        waiting = bridge.task_request('action', task_id)
+        assert waiting['task']['phase']=='waiting_for_respawn', waiting
+        sample = await scene('boss-audit')
+        assert sample['dead'] and sample['released'] and not sample['running'], sample
+        if mode=='regroup-cancel':
+            end = bridge.task_request('cancel', task_id)
+            assert end['status']=='cancelled' and end['endEvidence']['inputsReleased'], end
+        else:
+            deadline=time.monotonic()+100
+            while time.monotonic()<deadline:
+                sample = await scene('boss-audit')
+                if not sample['dead']:break
+                await asyncio.sleep(.35)
+            from control import BridgeError
+            from server_ai import ServerAiBridge
+            port=bridge.sock.getpeername()[1]
+            try:
+                bridge.task_request('action', task_id)
+            except BridgeError as error:
+                assert 'stale_binding' in str(error),error
+            else:
+                raise AssertionError('Old connection should expire on natural respawn')
+            assert bridge._retired_binding and not bridge._closed
+            observer=ServerAiBridge(port)
+            try:
+                end=observer.command('query_atomic',operation='query_combat',arguments={})['data']['data']['action']
+                assert end['actionId']!=task_id and end['generation']==ack['generation']+1, end
+                assert end['task']['result']['evidence']['previousTaskId']==task_id, end
+            finally:
+                observer.close()
+            assert not sample['dead'] and end['reason'] in ('boss_original_root_gone','teammate_session_unavailable'), end
+        results.update(waiting=waiting,terminal=end)
+        return
     if mode == 'long':
         active = bridge.task_request('action', task_id)
         results['running'] = active

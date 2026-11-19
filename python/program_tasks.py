@@ -46,7 +46,7 @@ def validate(name, args):
     return args
 
 
-def definitions(*, excavation=False, combat=False, boss=False, members=False, strategy=False, collection=False, placement=False):
+def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=False, boss=False, members=False, strategy=False, collection=False, placement=False):
     rows = []
     for name in sorted(NAMES):
         properties = {'taskId': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'}}
@@ -76,6 +76,14 @@ def definitions(*, excavation=False, combat=False, boss=False, members=False, st
             if not excavation:
                 mining['properties'].pop('cluster', None)
             variants = [mining, *(copy.deepcopy(atomic.SCHEMAS[op]) for op in operations[1:])]
+            if combat and not weapon_button:
+                variants[operations.index('combat_attack')]['properties'].pop('button',None)
+            if boss:
+                boss_schema=variants[operations.index('boss_encounter')]
+                if regroup:
+                    description+=' 可指定 regroupTeammateRef，在自然复活后使用虫洞药水归队并重新交战。先用 list_teammates 确认同队引用。'
+                else:
+                    boss_schema['properties'].pop('regroupTeammateRef',None)
             arguments = {'anyOf': variants} if len(variants) > 1 else mining
             if collection:
                 description += ' collect_drops 默认收集320像素内各类掉落物。参数 radiusPixels 为16..960，typeIds 与 entityRef 互斥；entityRef 取自 scan_entities。查看 collected、remaining 和 unavailable。批次完成后 canContinue=true 可重新扫描继续收集，nextTarget 提供仍有效的候补目标。'
@@ -220,9 +228,9 @@ class TaskCoordinator:
             if error.status == 'unknown_action':
                 return unknown
             raise
-        if first.get('operation') != 'combat_attack' or first.get('session') != '0' * 32:
+        if first.get('operation') not in ('combat_attack','boss_encounter') or first.get('session') != '0' * 32:
             return unknown
-        view = {'taskId': task_id, 'operation': 'combat_attack', 'status': first['status'], 'valid': True,
+        view = {'taskId': task_id, 'operation': first['operation'], 'status': first['status'], 'valid': True,
                 'completed': False, 'dispatchState': 'admitted', 'origin': None, 'retryAllowed': False, 'action': first}
         action = first
         try:
@@ -269,6 +277,8 @@ class TaskCoordinator:
             raise atomic.PreDispatchRejected('Program task coordination unsupported')
         args = validate(name, args)
         if name == 'submit_task':
+            if args['operation']=='combat_attack' and 'button' in args['arguments'] and 'server_ai_weapon_button_v1' not in self.bridge.hello.get('capabilities',()):
+                raise atomic.PreDispatchRejected('Requires server_ai_weapon_button_v1')
             return await self.submit(args, origin)
         record = self.records.get(args['taskId'])
         if 'retreatTo' in args and ('server_ai_boss_strategy_v1' not in self.bridge.hello.get('capabilities',())

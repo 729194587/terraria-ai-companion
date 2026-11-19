@@ -1,6 +1,9 @@
 Mods: {
 	CompanionBridge: {
-		Keybinds.ToggleAutoMove.DisplayName: 切换自动向右移动
+		Keybinds: {
+			WatchAI.DisplayName: 观战 AI / 返回玩家视角
+			ToggleAutoMove.DisplayName: 切换自动向右移动
+		}
 
 		Items: {
 			InventoryDiagnosticItem: {

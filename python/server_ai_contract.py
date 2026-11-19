@@ -24,7 +24,7 @@ CATEGORIES = (
     ('直接身体输入', ('move_input',), 'Limited', '原生方向/跳跃多更新输入；不是目标导航或装备运动适配。'),
     ('目标导航', ('navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'drop_through_platform', 'move_on_rope'),
      'Limited', '局部导航按各自profile；绳索操作受原版绳柱及原生接触条件限制。'),
-    ('物品与战斗', ('use_item', 'configure_combat_loadout', 'query_combat_loadout', 'query_combat', 'discover_bosses','attack_entity'), 'Limited', '主动攻击通过 submit_task 提交 combat_attack；query_combat 可发现游戏侧自卫任务。'),
+    ('物品与战斗', ('dismiss_summon','set_team','list_teammates','teleport_to_teammate','use_item', 'configure_combat_loadout', 'query_combat_loadout', 'query_combat', 'discover_bosses','attack_entity'), 'Limited', '主动攻击通过 submit_task 提交 combat_attack；query_combat 可发现游戏侧自卫任务。'),
     ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '服务器挖掘从主背包自动选工具；复合挖掘可先接近指定格，掉落入包需另行核验。'),
     ('建造', ('place_tile', 'place_object', 'place_wall', 'hammer_tile', 'place_rope'),
      'Limited', '原生放置受材料、样式、占地和目标坐标限制。'),
@@ -76,7 +76,7 @@ def capability_manifest(bridge, supported=None):
     supported = exposed_operations(bridge) if supported is None else set(supported)
     categories = []
     for name, operations, level, boundary in CATEGORIES:
-        operations = [op for op in operations if op!='discover_bosses' or op in supported]
+        operations = [op for op in operations if op not in ('set_team','list_teammates','teleport_to_teammate','discover_bosses') or op in supported]
         exposed = [op for op in operations if op in supported]
         row = dict(category=name, status=level if exposed else 'Not exposed', callableApis=exposed,
                    notExposed=[op for op in operations if op not in supported])
@@ -133,11 +133,11 @@ def server_definitions(bridge, supported=None):
                                       mining_opening='server_ai_mining_opening_v1' in capabilities,
                                       excavation='server_ai_excavation_v1' in capabilities)
     if program_tasks.available(bridge):
-        definitions += program_tasks.definitions(excavation='server_ai_excavation_v1' in capabilities,
+        definitions += program_tasks.definitions(regroup='server_ai_regroup_v1' in capabilities, excavation='server_ai_excavation_v1' in capabilities,
                                                  boss='server_ai_boss_encounter_v1' in capabilities,
                                                  strategy='server_ai_boss_strategy_v1' in capabilities,
                                                  members='server_ai_boss_members_v1' in capabilities,
-                                                 combat='server_ai_combat_v1' in capabilities,
+                                                 combat='server_ai_combat_v1' in capabilities, weapon_button='server_ai_weapon_button_v1' in capabilities,
                                                  collection='collect_drops' in supported,
                                                  placement='place_item' in supported)
     return definitions
@@ -300,7 +300,7 @@ log(message)最多32条、每条512 UTF-8字节，不占API次数；log/value是
 
 
 ROLE_PRINCIPLES = '''你通过玩家本地主动聊天与其对话并控制独立服务器AI Player。普通聊天和知识问答直接回答；游戏状态问题按需只读观察。无需!ai前缀，旧!ai兼容；用玩家语言简短回复，最多400字符。宿主以AI身份广播回复；始终以绑定AI的状态行动。
-行动优先：玩家明确委托且目标能安全推进时，本轮实际执行，再依据回执回复。直接获取所需观察，在已有授权、能力和预算内自主选择合理目标、执行并核验；无需先给行动计划或让玩家逐步指定坐标。通常把观察、决策、动作和复查放进一段有界Lua程序。存在关键歧义且观察无法解决时再询问；缺少安全路径、能力、有效观察或预算时，报告实测进度和停止原因。
+行动优先：玩家明确委托且目标能安全推进时，本轮实际执行，再依据回执回复。直接获取所需观察，在已有授权、能力和预算内自主选择合理目标、执行并核验；无需先给行动计划或让玩家逐步指定坐标。只要能预先说清如何根据观察结果选择下一步，就在同一次 execute_lua 中编写观察、条件判断、动作和必要核验。坐标或槽位可以在程序运行时从观察中取得。例如玩家要求走到某物旁，程序找到目标且能选出安全站位就直接导航并检查回执；目标缺失或无法判断站位时，返回实际观察和原因。存在关键歧义且观察无法解决时再询问；缺少安全路径、能力、有效观察或预算时，报告实测进度和停止原因。
 每次工具决策只调用一个工具。复杂玩法行动前按需从available_skills索引选择相关攻略，用read_skill读取，再自行编写execute_lua。简单行动直接使用execute_lua；已在上下文中的同一篇攻略无需重复加载。攻略提供策略和示例，权限、能力与终态仍由玩家授权和运行时契约决定。
 请求附带runtimeInventory、runtimeLua及按能力提供的runtimeTasks，分别给出本轮背包摘要、剩余预算和任务状态。缺失、不可用或过期的事实按需查询，不能把历史快照当成实时状态。已知失败按实际原因和宿主续行范围决定下一步；无进展或unknown停止变更。
 能力以Manifest/API契约为准，不枚举Lua环境或试错API参数来探测。

@@ -20,6 +20,7 @@ internal abstract class CompanionTask
     internal virtual object Progress=>null;
     internal virtual object CurrentChild=>null;
     internal virtual object LastResult=>null;
+    internal virtual bool CanWaitForRespawn(AiReadOnlyProtocol.Identity frame)=>false;
     internal virtual ulong ProgressVersion=>0;
     internal abstract string Name{get;}
     internal virtual Result Prepare(AiReadOnlyProtocol.Identity frame)=>null;
@@ -55,7 +56,7 @@ internal sealed class TaskSlot
     {
         if(Record.Result!=null)return Record.Result;
         if(!Same(identity,frame))return Abandon();
-        if(!frame.CanAct)return Stop(frame,"cancelled","actor_not_alive");
+        if(!frame.CanAct && !(Record.Started && Task.CanWaitForRespawn(frame)))return Stop(frame,"cancelled","actor_not_alive");
         if(frame.GameUpdate<=lastTick)return CompanionTask.Running();
         lastTick=frame.GameUpdate;
         try

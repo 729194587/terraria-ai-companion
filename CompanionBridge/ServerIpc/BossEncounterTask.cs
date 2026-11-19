@@ -7,11 +7,32 @@ using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
 namespace CompanionBridge.ServerIpc;
 
 // One body lease spans all member changes and flight assignments.
-internal sealed class BossEncounterTask(string encounterId, NativeCombatWorld world,ServerAiNavigation navigation) : CompanionTask
+internal sealed class BossEncounterTask(string encounterId, NativeCombatWorld world,ServerAiNavigation navigation,string teammateRef=null,AiAtomicActions.RespawnPlan rejoin=null) : CompanionTask
 {
     internal const ulong Budget=36000;
     private const ulong NoHitWindow=1800;
     private ulong started;
+    private bool awaitingRespawn;
+    private long respawnsAtDeath;
+    internal AiAtomicActions.RespawnPlan AfterRespawn(Identity fresh)
+    {
+        if(!awaitingRespawn || VirtualPlayerEngineProbe.NativeSurvival.Respawns!=respawnsAtDeath+1)return null;
+        var previous=world.ActorBinding;
+        var members=world.Members;
+        var root=Main.npc[members.Seed.Slot];
+        bool SameRoot()=>root.active && root.life>0 && members.Contains(root);
+        string reference=SameRoot()?NativeCombatWorld.Reference(fresh,root):members.Seed.EntityRef;
+        return new(encounterId,reference,frame=>{
+            if(!SameRoot() || members.Refresh()!=null || members.Victory.HasValue)return Failed("boss_original_root_gone");
+            if(NativeCombatWorld.RevalidateLoadout(previous,frame) is {} reason)return Failed(reason);
+            return ServerRegroup.Teleport(frame,teammateRef);
+        });
+    }
+    private object regroupProof;
+    private int rejoined;
+    private string regroupReason;
+    internal override bool CanWaitForRespawn(Identity frame)=>teammateRef!=null && acquired && destination==null
+        && frame.Actor is Player p && VirtualPlayerEngineProbe.NativeSurvival.ManagedDead(p);
     private int? life;
     private string phase="bind_root";
     private bool acquired;
@@ -62,14 +83,25 @@ internal sealed class BossEncounterTask(string encounterId, NativeCombatWorld wo
     }
     internal override string Name=>CombatProtocol.Boss;
     internal override string Phase=>phase;
-    internal override object Progress=>new {encounterId,source="boss",target=world.Target,weapon=world.Weapon,
+    internal override object Progress=>new {encounterId,rejoined,regroupReason,regroupProof,previousTaskId=rejoin?.PreviousTaskId,source="boss",target=world.Target,weapon=world.Weapon,
         predictionUpdates=BossEvasion.Horizon,threatsTruncated=world.Evasion.Truncated,worstPoseErrorPx=world.Evasion.WorstPoseError,
         retreatProof,predictionFallbackSamples=world.Evasion.FallbackSamples,peakMemberCount=world.Members?.PeakCount??0,customTrajectorySamples=world.Evasion.CustomTrajectorySamples,retreatVerified=escaped,evasion=world.Evasion.Reason,evasionDecisions=world.Evasion.Decisions,noSafeRoute=world.Evasion.NoRoute,
         life,lastHit=world.LastHit,itemChecks=world.ItemChecks,combinedUpdates=world.CombinedUpdates,
         startedUpdate=started,rootDeathUpdate=world.Members?.Victory,seed=world.Members?.Seed,memberCount=world.Members?.LiveCount??0,
         headCount=world.Members?.Heads??0,verifiedHits=world.VerifiedHits,verifiedDamage=world.VerifiedDamage,
         impacts=world.RecentImpacts,deathProof=world.Members?.DeathProof??System.Array.Empty<object>()};
-    internal override Result Prepare(Identity frame)=>world.Prepare() is {} reason?Failed(reason):null;
+    internal override Result Prepare(Identity frame)
+    {
+        if(rejoin!=null)
+        {
+            var transfer=rejoin.Prepare(frame);
+            regroupReason=transfer.Reason;
+            if(!transfer.EffectVerified)return new(transfer.Status,transfer.Reason,Progress,true,InputsAcquired:false);
+            regroupProof=transfer.Evidence;
+            rejoined=1;
+        }
+        return world.Prepare() is {} reason?new("failed",reason,Progress,true,InputsAcquired:false):null;
+    }
     internal override void Start(Identity frame)
     {
         started=frame.GameUpdate;
@@ -78,6 +110,17 @@ internal sealed class BossEncounterTask(string encounterId, NativeCombatWorld wo
     }
     internal override Result Tick(Identity frame)
     {
+        if(!frame.CanAct)
+        {
+            if(!awaitingRespawn)
+            {
+                if(!world.Release())return Stop(frame,"unknown","boss_attack_release_unconfirmed");
+                respawnsAtDeath=VirtualPlayerEngineProbe.NativeSurvival.Respawns;
+                awaitingRespawn=true;
+            }
+            phase="waiting_for_respawn";
+            return Running();
+        }
         if(destination!=null)return Retreat(frame);
         var error=world.UpdateMembers(out bool waiting);
         if(error!=null)return Stop(frame,"unknown",error);

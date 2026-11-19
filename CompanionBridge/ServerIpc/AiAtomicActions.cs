@@ -19,6 +19,8 @@ internal sealed class AiAtomicActions
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
     internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"})
         .Concat(executor.SupportsOpening ? new[]{"server_ai_open_item_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsRegroup ? new[]{"server_ai_regroup_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsDismissSummon ? new[]{"server_ai_dismiss_summon_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsDoors ? new[]{"server_ai_doors_v1"} : Array.Empty<string>())
         .Concat(SupportsContainers ? new[]{"server_ai_containers_v1","server_ai_container_transfer_v1","server_ai_container_batch_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsPlacement ? new[]{"server_ai_place_item_v1"} : Array.Empty<string>())
@@ -26,7 +28,8 @@ internal sealed class AiAtomicActions
         .Concat(executor.SupportsSorting ? new[]{"server_ai_sorting_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsLoadout ? new[]{"server_ai_combat_primary_v1","server_ai_combat_secondary_v1","server_ai_combat_summon_loadout_v1","server_ai_combat_inventory_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsBossEncounter ? new[]{"server_ai_boss_encounter_v1","server_ai_boss_members_v1","server_ai_boss_strategy_v1"} : Array.Empty<string>())
-        .Concat(SupportsCombat?new[]{"server_ai_combat_v1"}:Array.Empty<string>()).ToArray();
+        .Concat(SupportsCombat?new[]{"server_ai_combat_v1","server_ai_weapon_button_v1"}:Array.Empty<string>()).ToArray();
+    internal sealed record RespawnPlan(string PreviousTaskId,string EntityRef, Func<AiReadOnlyProtocol.Identity, NativeResult> Prepare);
     internal sealed record CombatAdmission(ulong Update,string InterruptedAction,Func<bool> SameWeapon);
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
@@ -42,7 +45,12 @@ internal sealed class AiAtomicActions
         bool SupportsBossEncounter=>false;
         bool SupportsCombat=>false;
         bool SupportsOpening=>false;
+        bool SupportsDismissSummon=>false;
         bool SupportsDoors=>false;
+        bool SupportsRegroup=>false;
+        RespawnPlan AfterRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>null;
+        object StartRejoin(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,RespawnPlan plan)=>throw new NotSupportedException();
+        bool WaitingForRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>false;
         bool SupportsLoadout=>false;
         Func<bool> CapturePrimary(AiReadOnlyProtocol.Identity frame)=>null;
         object StartCombat(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,CombatAdmission admission)
@@ -75,6 +83,8 @@ internal sealed class AiAtomicActions
         internal int Duration;
         internal object Handle;
         internal CombatAdmission Combat;
+        internal RespawnPlan Rejoin;
+        internal AiReadOnlyProtocol.Identity ReleasedLife;
         internal NativeResult Result;
         internal string ReasonDetail;
         internal string StopStatus, StopReason;
@@ -155,8 +165,8 @@ internal sealed class AiAtomicActions
         actionId = e.Id, operation = e.Operation, session = e.Owner.ToString("N"), generation = e.Generation,
         worldSessionId = e.World, actorId = e.ActorId, actorSlot = e.Slot, durationMs = e.Duration,
         targetTile = e.Operation is "open_door" or "close_door" or "place_tile" or "place_object" or "place_rope" ? (JsonElement?)e.Arguments : null,
-        targetInventory = e.Operation is "open_inventory_item" or "configure_combat_loadout" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" ? (JsonElement?)e.Arguments : null,
-        targetTask = IsTask(e.Operation) ? (JsonElement?)e.Arguments : null,
+        targetInventory = e.Operation is "dismiss_summon" or "open_inventory_item" or "configure_combat_loadout" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" ? (JsonElement?)e.Arguments : null,
+        targetTask = IsTask(e.Operation) || e.Operation is "set_team" or "teleport_to_teammate" ? (JsonElement?)e.Arguments : null,
         targetContainer = IsContainerOperation(e.Operation) ? (JsonElement?)e.Arguments : null,
         targetRecipe = e.Operation == "craft_recipe" ? (JsonElement?)e.Arguments : null,
         requestedInputs = e.Operation is "move_input" or "move_on_rope" ? (JsonElement?)e.Arguments : null,
@@ -205,12 +215,14 @@ internal sealed class AiAtomicActions
             return new(Error: "unsupported_operation");
         if (container && !SupportsContainers) return new(Error: "unsupported_operation");
         if(operation=="open_inventory_item" && executor?.SupportsOpening!=true)return new(Error:"unsupported_operation");
+        var arguments = root.GetProperty("arguments");
+        if((operation is "set_team" or "teleport_to_teammate" || operation==CombatProtocol.Boss && arguments.TryGetProperty("regroupTeammateRef",out _)) && executor?.SupportsRegroup!=true)return new(Error:"unsupported_operation");
+        if(operation=="dismiss_summon" && executor?.SupportsDismissSummon!=true)return new(Error:"unsupported_operation");
         if(operation is ("open_door" or "close_door") && executor?.SupportsDoors!=true)return new(Error:"unsupported_operation");
         if(operation=="configure_combat_loadout" && executor?.SupportsLoadout!=true)return new(Error:"unsupported_operation");
         if (operation == "place_item" && executor?.SupportsPlacement != true) return new(Error: "unsupported_operation");
         if (operation == "collect_drops" && executor?.SupportsCollection != true) return new(Error: "unsupported_operation");
-        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("open_inventory_item" or "open_door" or "close_door" or "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "place_item" or CombatProtocol.Boss or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
-        var arguments = root.GetProperty("arguments");
+        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("dismiss_summon" or "set_team" or "teleport_to_teammate" or "open_inventory_item" or "open_door" or "close_door" or "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "place_item" or CombatProtocol.Boss or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
         int key = 0;
         if (selecting)
         {
@@ -317,10 +329,25 @@ internal sealed class AiAtomicActions
         try { current = capture(); } catch { current = null; }
         if (!Matches(e, current))
         {
+            if(e.ReleasedLife is {} old && current?.CanAct==true && ReferenceEquals(old.Actor,current.Actor)
+                && old.World==current.World && old.Slot==current.Slot && current.Generation==old.Generation+1
+                && !e.Cancel && !e.Disconnected.IsCancellationRequested && clock()<e.Deadline
+                && executor.AfterRespawn(e.Handle,current) is {} plan)
+            {
+                // Retire the old lease at its last verified release. Only a fresh server-owned ID may act.
+                End(e,"cancelled","life_ended",old,true);
+                var args=JsonSerializer.SerializeToElement(new { entityRef=plan.EntityRef,
+                    regroupTeammateRef=e.Arguments.GetProperty("regroupTeammateRef").GetString() });
+                int remaining=(int)Math.Clamp(e.Deadline-clock(),1,e.Duration);
+                var next=Admit(Guid.Empty,Guid.NewGuid().ToString("N"),e.ActorId,current,CombatProtocol.Boss,args,
+                    remaining,e.Disconnected);
+                if(next.Error==null)active.Rejoin=plan;
+                return;
+            }
             if(IsTask(e.Operation)&&e.Handle!=null){try{e.Result=executor.BindingLost(e.Handle);}catch{}}
             End(e,"unknown","actor_binding_changed",current,false);return;
         }
-        if (!current.CanAct) { Stop(e, "cancelled", "actor_not_alive", current); return; }
+        if (!current.CanAct && executor?.WaitingForRespawn(e.Handle,current)!=true) { Stop(e, "cancelled", "actor_not_alive", current); return; }
         if (e.Cancel || e.Disconnected.IsCancellationRequested) { Stop(e, "cancelled", "connection_cancelled", current); return; }
         if (clock() >= e.Deadline) { Stop(e, "timeout", "execution_deadline", current); return; }
         if (e.Phase == "accepted") { e.Phase = "running"; e.Reason = "awaiting_native_execution"; return; }
@@ -329,9 +356,11 @@ internal sealed class AiAtomicActions
         {
             try
             {
-                if (e.Handle == null) { e.Attempted = true; e.Handle = e.Combat==null?executor.Start(current,e.Operation,e.Arguments,e.Id)
+                if (e.Handle == null) { e.Attempted = true; e.Handle = e.Rejoin!=null?executor.StartRejoin(current,e.Arguments,e.Id,e.Rejoin):e.Combat==null?executor.Start(current,e.Operation,e.Arguments,e.Id)
                     :executor.StartCombat(current,e.Arguments,e.Id,e.Combat); return; }
                 e.Result = executor.Poll(current, e.Handle);
+                if(!current.CanAct && e.Result.Status=="running" && e.Result.InputsReleased)
+                    e.ReleasedLife=current;
                 e.Reason=e.Result.Reason;
                 if (e.Result.Status == "running") return;
                 bool verified = e.Result.Status != "completed" || e.Result.EffectVerified;

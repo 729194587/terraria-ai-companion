@@ -572,7 +572,9 @@ DEFS.update({
     'UseEvidence': obj({
         **fields(integers='itemType Ticks Starts AnimationPeak TimePeak ToolPeak UsesPeak InitialStack stack',
                  booleans='consumptionObserved cycleVerified'),
-        'effectStatus': desc(enum('unconfirmed', 'not_started'), 'A verified use cycle does not prove a hit.'),
+        'rootType': I, 'observedRootIdentity': nullable(I), 'buffType': I, 'buff': B,
+        'slotsBefore': N, 'slotsAfter': N, 'maxSlots': I,
+        'effectStatus': desc(enum('unconfirmed', 'not_started','native_summon_verified'), 'A verified use cycle does not prove a hit.'),
     }),
     'SelectionEvidence': obj(fields(integers='requestedHotbarKey targetSlot beforeSlot',
                                     booleans='mutationAttempted selectionApplied')),
@@ -666,13 +668,13 @@ TARGETS = {
     'targetTile': ('open_door','close_door','place_tile', 'place_object', 'place_rope'),
     'targetContainer': tuple(sorted(atomic.CONTAINER_OPERATIONS)),
     'targetRecipe': ('craft_recipe',),
-    'targetInventory': ('open_inventory_item','configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
+    'targetInventory': ('dismiss_summon','open_inventory_item','configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
-    'targetTask': ('navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item'),
+    'targetTask': ('set_team','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item'),
 }
 MINE_ARGUMENTS = any_of(obj({**TILE_XY, 'cluster': B}, optional=('cluster',)),
                         obj({'target': ref('MineToken'), 'cluster': B}, optional=('cluster',)))
-COMBAT_ARGUMENTS = obj({'entityRef': S, 'threat': S}, optional=('threat',))
+COMBAT_ARGUMENTS = obj({'entityRef': S, 'threat': S, 'button': enum('left','right')}, optional=('threat','button'))
 
 
 def target_schema(key, names):
@@ -727,7 +729,7 @@ DEFS['CombatProgress'] = obj({
     'contributions':COMBAT_CONTRIBUTIONS,
 }, optional=('encounters', 'summon','contributions'))
 DEFS['BossEncounterProgress'] = obj({
-    'encounterId': S, 'source': const('boss'), 'target': nullable(COMBAT_TARGET),
+    'rejoined':COUNT,'regroupReason':nullable(S),'regroupProof':nullable(ref('WormholeEvidence')),'previousTaskId':nullable(S),'encounterId': S, 'source': const('boss'), 'target': nullable(COMBAT_TARGET),
     'weapon': DEFS['CombatProgress']['properties']['weapon'], 'life': nullable(I), 'lastHit': nullable(COMBAT_HIT),
     'itemChecks': COUNT, 'combinedUpdates': COUNT, 'startedUpdate': TICK, 'rootDeathUpdate': nullable(TICK),
     'seed': nullable(COMBAT_TARGET), 'memberCount': COUNT, 'headCount': COUNT,
@@ -740,7 +742,7 @@ DEFS['BossEncounterProgress'] = obj({
     'impacts': array(obj({'sequence': COUNT, 'aim': COMBAT_TARGET, 'member': COMBAT_TARGET,
                          'carrier': COMBAT_TARGET, 'currentTarget': COMBAT_TARGET, 'heldType': I,
                          'epoch': I, 'amount': COUNT, 'memberBefore': I, 'memberAfter': I, 'hit': COMBAT_HIT})),
-}, optional=('seed','memberCount','headCount','verifiedHits','verifiedDamage','impacts','deathProof','retreatProof','predictionFallbackSamples','customTrajectorySamples','peakMemberCount','retreatVerified','evasion','evasionDecisions',
+}, optional=('rejoined','regroupReason','regroupProof','previousTaskId','seed','memberCount','headCount','verifiedHits','verifiedDamage','impacts','deathProof','retreatProof','predictionFallbackSamples','customTrajectorySamples','peakMemberCount','retreatVerified','evasion','evasionDecisions',
              'noSafeRoute','predictionUpdates','threatsTruncated','worstPoseErrorPx'))
 DEFS['LocalPlanCost'] = obj(fields(numbers='Movement Mining Placement Materials Alteration Remaining'))
 DEFS['LocalEditPlan'] = obj({
@@ -839,10 +841,15 @@ COMBAT_ROLE_STATE = nullable(obj({'hotbarKey':HOTBAR, 'expectedTypeId':I, 'actua
 DEFS['CombatLoadout'] = obj({'version':COUNT,'lastRefusal':nullable(obj({'reason':S,'gameUpdate':TICK,'entityRef':S})),
                              'primary':COMBAT_ROLE_STATE,'secondary':COMBAT_ROLE_STATE,'summon':COMBAT_ROLE_STATE,
                              'maintenance':nullable(obj({'status':S,'confirmedCasts':COUNT}))},optional=('secondary','summon','maintenance'))
+DEFS['TeamEvidence']=obj(fields(integers='beforeTeam team'))
+DEFS['WormholeEvidence']=obj({'teammateRef':S, **fields(integers='team before after',numbers='actorX actorY targetX targetY')})
+DEFS['DismissSummonEvidence']=obj(fields(integers='itemType buffType', booleans='wasActive absent'))
 DEFS['DoorEvidence']=obj({**TILE_XY, **fields(integers='hinge top', booleans='beforeOpen afterOpen changed')})
 DEFS['ItemOpeningEvidence']=obj({**fields(integers='sourceSlot typeId beforeStack afterStack'), 'drops':array(obj({'typeId':I,'stack':I}))})
 ACTION_EVIDENCE = {
+    'dismiss_summon':'DismissSummonEvidence',
     'open_inventory_item':'ItemOpeningEvidence',
+    'set_team':'TeamEvidence','teleport_to_teammate':'WormholeEvidence',
     'open_door':'DoorEvidence','close_door':'DoorEvidence',
     'configure_combat_loadout': 'CombatLoadout',
     'craft_recipe': 'CraftEvidence',
@@ -996,6 +1003,8 @@ TASK_COMPLETION_PROOF = {
     },
 }
 SUCCESSFUL_PROOF = {
+    'set_team': matches(team=COUNT),'teleport_to_teammate': matches(before={'minimum':1},after=COUNT),
+    'dismiss_summon': matches(absent=TRUE),
     'open_inventory_item': matches(drops={'minItems':1}),
     'open_door': matches(afterOpen=TRUE), 'close_door': matches(afterOpen=FALSE),
     'configure_combat_loadout': ref('CombatLoadout'),
@@ -1165,6 +1174,7 @@ def stop_schema(operations, program_tasks=True):
 REGISTRY = {
     **{name: any_of(schema, PRE_DISPATCH) for name, schema in OBSERVATIONS.items()},
     'observe_scene': any_of(observation(ref('SceneLocal')), PRE_DISPATCH),
+    'list_teammates': any_of(observation(obj({'actorTeam':I,'players':array(obj({'teammateRef':S,'team':I,'name':S,'reason':nullable(S)}))})), PRE_DISPATCH),
     'discover_bosses': any_of(observation(obj({'radiusPixels': I, 'extensionConflicts': COUNT,
         'candidates': array(obj({'entityRef': S,'typeId': I,'name': S,'strategy': S,'admissible': B,'reason': nullable(S)}))})), PRE_DISPATCH),
     'query_combat_loadout': any_of(observation(ref('CombatLoadout')), PRE_DISPATCH),

@@ -56,13 +56,13 @@ internal sealed class BossEvasion
             if(TerrainReader.ReadCell(x,row)!='=')return false;
         return true;
     }
-    internal bool Needed(Player p,NPC enemy,bool ranged)
+    internal bool Needed(Player p,NPC enemy,bool ranged,bool bossEncounter)
     {
         canDrop=p.velocity.Y==0 && Math.Abs(p.Bottom.Y-MathF.Round(p.Bottom.Y/16)*16)<.5f && PlatformAt(p,0);
         platforms=canDrop;
         for(int offset=1;offset<=6 && !platforms;offset++)platforms=PlatformAt(p,-offset);
         target=enemy.Center+enemy.velocity*8;
-        kite=ranged && platforms && Vector2.Distance(enemy.Center,p.Center)<260;
+        kite=bossEncounter && ranged && platforms && Vector2.Distance(enemy.Center,p.Center)<260;
         threats.Clear();
         void Add(Vector2 c,Vector2 v,int w,int h,Projectile beam=null,float gravity=0)
         {
@@ -93,8 +93,10 @@ internal sealed class BossEvasion
                 q.type==ProjectileID.PhantasmalDeathray?q:null,BossExtensions.Gravity(q.type));
             }
         if(path!=null && cursor<path.Frames.Count)return true;
+        // Ordinary melee should still close to striking distance between imminent threats.
+        int reactionFrames=bossEncounter?Horizon:18;
         foreach(var threat in threats)
-            for(int f=1;f<=Horizon;f++)
+            for(int f=1;f<=reactionFrames;f++)
                 if(threat.Hits(p.Center+p.velocity*(f-1),p.Center+p.velocity*f,f))return true;
         if(kite)return true;
         Reason=null;

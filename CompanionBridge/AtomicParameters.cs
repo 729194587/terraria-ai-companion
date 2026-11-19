@@ -56,7 +56,7 @@ internal static class AtomicParameters
         {
             switch (op)
             {
-                case "discover_bosses": case "query_combat_loadout": case "inspect_container": case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
+                case "list_teammates": case "discover_bosses": case "query_combat_loadout": case "inspect_container": case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
                 case "observe_scene":
                     if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers","scale","width","height"}).Any())throw new FormatException("Unexpected scene parameter.");
                     foreach(string key in keys.Where(k=>k is "maxObjects" or "maxRegions" or "maxPlacements" or "maxHazards"))Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
@@ -226,6 +226,9 @@ internal static class AtomicParameters
             case "drop_through_platform": Fields(); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
             case "open_inventory_item": Fields("sourceSlot","sourceToken"); Integer("sourceSlot",0,49); Token("sourceToken"); break;
+            case "dismiss_summon": Fields("itemType"); Integer("itemType",1,int.MaxValue); break;
+            case "set_team": Fields("team"); Integer("team",0,5); break;
+            case "teleport_to_teammate": Fields("teammateRef"); if(!Guid.TryParseExact(args.GetProperty("teammateRef").GetString(),"N",out _))throw new FormatException("Invalid teammate reference."); break;
             case "open_door": case "close_door": case "place_item": case "place_object": case "place_rope": goto case "place_tile";
             case "collect_drops":
                 if (keys.Except(new[]{"radiusPixels","typeIds","entityRef"}).Any()) throw new FormatException("Unexpected collect_drops parameter.");
@@ -269,6 +272,8 @@ internal static class AtomicParameters
             }
             case "mine_tile": case "place_tile": case "interact_tile": case "mine_wall": case "place_wall": case "hammer_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
             case "boss_encounter": case "combat_attack": case "attack_entity":
+                if(op=="combat_attack" && keys.Remove("button") && args.GetProperty("button").GetString() is not ("left" or "right"))throw new FormatException("Invalid weapon button.");
+                if(op=="boss_encounter" && keys.Remove("regroupTeammateRef") && !Guid.TryParseExact(args.GetProperty("regroupTeammateRef").GetString(),"N",out _))throw new FormatException("Invalid regroup reference.");
                 if(op=="boss_encounter" && keys.Contains("durationSeconds"))
                 { Fields("entityRef","durationSeconds"); Integer("durationSeconds",1,600); }
                 else Fields("entityRef");

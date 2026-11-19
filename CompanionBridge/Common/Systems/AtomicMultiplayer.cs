@@ -51,11 +51,12 @@ public sealed class AtomicMultiplayer : ModSystem
         while(Incoming.TryDequeue(out _)) { }
     }
     internal static void Disconnect(int player) => Authority.Disconnect(player);
-    internal static void Receive(BinaryReader reader,int sender)
+    internal static void Receive(BinaryReader reader,int sender,Action<BinaryReader,int> spectator = null)
     {
         try
         {
             int length=reader.ReadUInt16();
+            if(length == ushort.MaxValue) { spectator?.Invoke(reader, sender); return; }
             if(length is <2 or >AuthorityCodec.MaxBytes || Incoming.Count>=256) return;
             byte[] bytes=reader.ReadBytes(length);
             if(bytes.Length!=length) return;

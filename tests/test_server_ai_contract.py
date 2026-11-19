@@ -198,7 +198,12 @@ class ResultRegistryTests(unittest.TestCase):
             help_result = api_help(enabled, {'name': name})
             self.assertEqual('ok', help_result['status'])
             Draft202012Validator.check_schema(help_result['returnsSchema'])
-        self.assertEqual(set(definitions) | containers | {'combat_attack', 'query_combat', 'collect_drops', 'place_item'}, registered_names())
+        combat = bridge(set(enabled.hello['capabilities']) | {
+            'server_ai_combat_v1', 'server_ai_weapon_button_v1', 'server_ai_combat_primary_v1',
+            'server_ai_boss_encounter_v1', 'server_ai_boss_strategy_v1', 'server_ai_open_item_v1',
+            'server_ai_regroup_v1', 'server_ai_dismiss_summon_v1', 'server_ai_doors_v1',
+            'server_ai_collect_drops_v1', 'server_ai_place_item_v1'})
+        self.assertEqual(set(definitions) | set(combat.supported_atomic_operations), registered_names())
         self.assertEqual({'future_api'}, missing_for(set(definitions) | {'future_api'}))
         self.assertNotIn('Action_mine_tile', schema_for('stop_action', capabilities=BASE)['$defs'])
         copy = schema_for('observe_scene', capabilities=FULL)
@@ -230,6 +235,16 @@ class ManifestTests(unittest.TestCase):
             help_row = api_help(modern, {'name': name})
             self.assertEqual('ok', help_row['status'])
             self.assertEqual({'x', 'y'}, set(help_row['parameters']['required']))
+
+    def test_regroup_capability_controls_atoms_and_boss_argument(self):
+        old = bridge(FULL | {'server_ai_boss_encounter_v1'})
+        modern = bridge(set(old.hello['capabilities']) | {'server_ai_regroup_v1'})
+        for name in ('list_teammates', 'set_team', 'teleport_to_teammate'):
+            self.assertEqual('not_exposed', api_help(old, {'name':name})['status'])
+            self.assertEqual('ok', api_help(modern, {'name':name})['status'])
+        for backend, allowed in ((old,False),(modern,True)):
+            parameters=api_help(backend, {'name':'submit_task'})['parameters']
+            self.assertEqual(allowed, 'regroupTeammateRef' in json.dumps(parameters))
 
     def test_boss_strategy_requires_new_handshake(self):
         import program_tasks
@@ -277,6 +292,10 @@ class ManifestTests(unittest.TestCase):
         legacy = bridge(FULL | {'server_ai_combat_v1','server_ai_combat_primary_v1'})
         modern = bridge(set(legacy.hello['capabilities']) | {'server_ai_combat_secondary_v1',
                         'server_ai_combat_summon_loadout_v1','server_ai_combat_inventory_v1'})
+        with_button=bridge(set(modern.hello['capabilities']) | {'server_ai_weapon_button_v1'})
+        for current,expected in ((modern,False),(with_button,True)):
+            variants=api_help(current,{'name':'submit_task'})['parameters']['properties']['arguments']['anyOf']
+            self.assertEqual(any('button' in v['properties'] for v in variants),expected)
         for compact in (False,True):
             guide,_ = server_contract(modern,compact=compact)
             for term in ('combatCandidates','task_interrupt_combat','configure_combat_loadout','整份替换'):

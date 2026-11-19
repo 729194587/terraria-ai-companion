@@ -19,6 +19,8 @@ internal static class NativeSurvival
     private static string managedWorld;
     private static long managedGeneration;
     private static Action<Projectile> hostileDamage;
+    [ThreadStatic] internal static Player UpdatingAbigail;
+    private static readonly Action<Player> updateAbigail = typeof(Player).GetMethod("UpdateAbigailStatus", BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public).CreateDelegate<Action<Player>>();
     private static readonly MethodInfo npcCollision=typeof(Player).GetMethod("Update_NPCCollision",BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public);
     private static readonly MethodInfo respawnTime=typeof(Player).GetMethod("GetRespawnTime",BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public);
     internal static int ExpectedRespawn(Player p,bool pvp=false)=>(int)respawnTime.Invoke(p,new object[]{pvp});
@@ -132,6 +134,12 @@ internal static class NativeSurvival
         {ActorControl.Update(orig,p,index);return;}
         try { Run(p,()=> {
             if(p.difficulty==2)throw new InvalidOperationException("Hardcore AI archives are unsupported; no human archive deletion is allowed.");
+            if (!p.dead && p.HasBuff(BuffID.AbigailMinion))
+            {
+                UpdatingAbigail=p;
+                try { updateAbigail(p); }
+                finally { UpdatingAbigail=null; }
+            }
             ActorControl.Update(orig,p,index);
             if(!Owns(p))throw new InvalidOperationException("Actor replaced during native update.");
             if(!p.dead&&!p.ghost)npcCollision.Invoke(p,null); // Original local-only update region was skipped for this AI.

@@ -115,10 +115,12 @@ internal static partial class ServerCombatFixture
         p.inventory[54].stack=999;origin=p.Center;
         foreach(var q in Main.ActiveProjectiles)if(q.owner==p.whoAmI)q.active=false;
         Main.dayTime=false;Main.time=1200;
-        target=Main.npc[NPC.NewNPC(p.GetSource_Misc("isolated_evasion"),(int)origin.X-180,(int)origin.Y,NPCID.EyeofCthulhu,Target:p.whoAmI)];
+        bool ordinary=parts.Length==4 && parts[3]=="ordinary";
+        target=Main.npc[NPC.NewNPC(p.GetSource_Misc("isolated_evasion"),(int)origin.X-180,(int)origin.Y,ordinary?NPCID.Zombie:NPCID.EyeofCthulhu,Target:p.whoAmI)];
         target.aiStyle=-1;target.noGravity=true;target.noTileCollide=true;target.knockBackResist=0;
         target.Center=origin+new Vector2(-180,0);target.velocity=Vector2.Zero;
         target.damage=target.defDamage=16;
+        if(ordinary){target.life=target.lifeMax=1000;p.selectedItem=2;}
         sample=lostLife=opportunities=conflicts=0;worst=plannerWorst=0;wounds.Clear();movementTick=null;samples.Clear();candidates.Clear();
         impacts=hitTrace.Count+projectileHits.Count;
         File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{

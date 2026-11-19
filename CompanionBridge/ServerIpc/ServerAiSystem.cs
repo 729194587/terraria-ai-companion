@@ -113,6 +113,8 @@ public sealed class ServerAiSystem : ModSystem
             ServerCollectFixture.Tick(actor);
             if(actor!=null)AiMapRuntime.Tick();
             bool reflex=simulationUpdate&&actor!=null&&(!ServerAiActionFixture.Enabled||ServerCombatFixture.Enabled);
+            if(reflex && !actions.HasActive && !actions.BodyBlocked(actor) && torches?.Busy!=true)
+                NativeCombatWorld.AutoEquip(actor);
             bool threatened=false;
             server.Tick(Capture, Select, ServerAiQueries.Read, Say, reflex?() =>
             {
@@ -138,7 +140,7 @@ public sealed class ServerAiSystem : ModSystem
             }
         }
     }
-    private static AiReadOnlyProtocol.Identity Capture()
+    internal static Player SpectatorActor()
     {
         if (!Main.dedServ || Main.netMode != NetmodeID.Server || Netplay.Disconnect || Main.gameMenu
             || ProbeSession.WorldSession == "none" || !EngineRuntime.Ready || EngineRuntime.Fault != null || ProbeSession.Quarantined||!WorldCharacterPersistence.Ready)
@@ -147,6 +149,12 @@ public sealed class ServerAiSystem : ModSystem
         var p = ProbeSession.Actor;
         if (p == null) return null;
         NetworkStateSync.Require(p); // Reuses exact object/slot/idle-connection/lifecycle checks; no LocalPlayer fallback.
+        return p;
+    }
+    private static AiReadOnlyProtocol.Identity Capture()
+    {
+        var p = SpectatorActor();
+        if (p == null) return null;
         var inventory = p.inventory.Select((item, slot) => new { slot, type = item.type, stack = item.stack, prefix = item.prefix, name = item.Name }).ToArray();
         object state = new {
             tick = Main.GameUpdateCount, name = p.name, active = p.active, dead = p.dead, ghost = p.ghost,

@@ -15,7 +15,7 @@ import agent_trace as tracing
 
 CONTAINER_READS = frozenset(("inspect_container",))
 MAP_READS = frozenset(("query_map",))
-COMBAT_READS = frozenset(("query_combat","query_combat_loadout","discover_bosses"))
+COMBAT_READS = frozenset(("query_combat","query_combat_loadout","list_teammates","discover_bosses"))
 CRAFT_READS = frozenset(("query_recipes",))
 SCENE_OPERATIONS = frozenset(("observe_scene",))
 PERCEPTION_OPERATIONS = frozenset(("observe_terrain", "scan_tiles", "scan_entities", "inspect_tile", "resolve_content"))
@@ -33,6 +33,7 @@ def operations_for_capabilities(capabilities):
         ('server_ai_map_v1', MAP_READS),
         ('server_ai_containers_v1', CONTAINER_READS),
         ('server_ai_combat_v1', {'query_combat'}),
+        ('server_ai_regroup_v1', {'list_teammates'}),
         ('server_ai_boss_strategy_v1', {'discover_bosses'}),
         ('server_ai_combat_primary_v1', {'query_combat_loadout'}),
         ('server_ai_crafting_v1', CRAFT_READS),
@@ -55,6 +56,9 @@ def operations_for_capabilities(capabilities):
             ('server_ai_place_object_workbench_v1', 'place_object'),
             ('server_ai_place_tile_v1', 'place_tile'),
             ('server_ai_open_item_v1', 'open_inventory_item'),
+            ('server_ai_regroup_v1', 'set_team'),
+            ('server_ai_regroup_v1', 'teleport_to_teammate'),
+            ('server_ai_dismiss_summon_v1', 'dismiss_summon'),
             ('server_ai_doors_v1', 'open_door'),
             ('server_ai_doors_v1', 'close_door'),
             ('server_ai_place_rope_v1', 'place_rope'),
@@ -84,6 +88,8 @@ class ServerAiBridge:
         self.timeout = timeout
         self.trace_connection_id = uuid.uuid4().hex
         self._lock = threading.RLock()
+        self._regroup_task = None
+        self._retired_binding = False
         self._closed = False
         self._action_id = None
         self._request_id = 0
@@ -133,6 +139,8 @@ class ServerAiBridge:
         with self._wire_lock:
             if _guard is not None and not _guard():
                 raise BridgeError('AI reply superseded before send',status='superseded')
+            if self._retired_binding:
+                raise BridgeError('Action identity/outcome unresolved: stale_binding')
             if self._closed:raise BridgeError('Server AI connection closed; action outcome may be unknown')
             self._request_id+=1;request_id=str(self._request_id)
             request={'v':1,'id':request_id,'op':op,**values}
@@ -165,6 +173,11 @@ class ServerAiBridge:
                 raise NotAdmittedError(reply['error'],status=reply['error'])
             if op == 'start' and reply.get('dispatchState') == 'not_admitted' and reply.get('error') != 'duplicate_action':
                 raise NotAdmittedError(reply.get('error', 'AI start rejected'), status=reply.get('error'))
+            if (op=='action' and reply.get('error')=='stale_binding'
+                    and values.get('actionId')==self._regroup_task and self._regroup_task is not None):
+                # Fence all future requests. Keep only the disconnect signal for the server-owned successor.
+                self._retired_binding=True
+                raise BridgeError("Action identity/outcome unresolved: stale_binding")
             if (reply.get("error") in ("stale_binding", "identity_unavailable")
                     or self._action_id is not None and reply.get("error") in ("engine_unavailable", "unknown_action")):
                 self.close()
@@ -281,6 +294,8 @@ class ServerAiBridge:
             raise BridgeError('Task capability unavailable')
         action = self._request(op, actionId=task_id, **parameters)['data']['action']
         self._validate_action(action, task_id)
+        if op=='start' and parameters.get('operation')=='boss_encounter' and 'regroupTeammateRef' in parameters['arguments']:
+            self._regroup_task=task_id
         return action
 
     def _validate_action(self, action, action_id):

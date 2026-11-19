@@ -182,7 +182,7 @@ public sealed class CombatProjectile : GlobalProjectile
         lifeBefore=0;
         // Magic no longer carries an ammo source, but the native item-use
         // source still proves the projectile came from the held spell.
-        Flight=source is EntitySource_ItemUse use ? NativeCombatWorld.CaptureShot(projectile,use) : null;
+        Flight=source is EntitySource_ItemUse use ? NativeCombatWorld.CaptureShot(projectile,use) : NativeCombatWorld.CaptureAbigail(projectile,source);
         if (Flight==null && updating is {} parent && parent.TryGetGlobalProjectile<CombatProjectile>(out var trace))
         {
             bool confirmed=source is EntitySource_Parent origin && ReferenceEquals(origin.Entity,parent);
@@ -216,24 +216,45 @@ public sealed class CombatProjectile : GlobalProjectile
         if (updating != null) throw new InvalidOperationException("Reentrant projectile update during AI owner scope.");
         if(!Main.dedServ||Main.netMode!=NetmodeID.Server||!p.active||p.hostile
             ||!p.TryGetGlobalProjectile<CombatProjectile>(out var trace)||trace.Flight is not {Verified:true} flight
-            || (!p.friendly && !(flight.PersistentRoot && p.sentry)) || !flight.Owns(p))
+            || (!p.friendly && !flight.SummonAttack && !flight.HeldCursor) || !flight.Owns(p))
         {orig(p,index);return;}
         // Native Update encloses AI, Damage and Kill. Supply owner authority
         // only to a validated shot, with no client netMode or packet replay.
         int local=Main.myPlayer;
         var actor=Main.player[p.owner];
+        var cursor=(Main.mouseX,Main.mouseY,Main.lastMouseX,Main.lastMouseY);
+        var pose=(actor.itemAnimation,actor.itemTime,actor.heldProj);
+        bool previousChannel=actor.channel, releaseOldFlight=false;
         int previousTarget=actor.MinionAttackTargetNPC;
         try
         {
             updating=p;
             trace.assignment=flight.PersistentRoot ? flight.ForCurrentTarget() : null;
             if (trace.assignment is {} active) actor.MinionAttackTargetNPC=active.Target.Slot;
+            if(flight.HeldCursor)
+            {
+                if(flight.CursorAim(p) is {} aim)
+                {
+                    Main.mouseX=Main.lastMouseX=(int)(aim.X-Main.screenPosition.X);
+                    Main.mouseY=Main.lastMouseY=(int)(aim.Y-Main.screenPosition.Y);
+                }
+                else {releaseOldFlight=true;actor.channel=false;} // Run the native release path.
+            }
             Main.myPlayer=p.owner;
             orig(p,index);
         }
         catch(Exception e){flight.ObserveFault(p,e);throw;}
         finally
         {
+            (Main.mouseX,Main.mouseY,Main.lastMouseX,Main.lastMouseY)=cursor;
+            // Returning native projectiles can set the owner's held pose even after this task
+            // released the body. Keep the return flight, discard its stale input/pose.
+            if(releaseOldFlight)
+            {
+                actor.channel=previousChannel;
+                (actor.itemAnimation,actor.itemTime,actor.heldProj)=pose;
+                if(actor.heldProj==p.whoAmI)actor.heldProj=-1;
+            }
             Main.myPlayer=local;
             if (trace.assignment!=null) actor.MinionAttackTargetNPC=previousTarget;
             trace.assignment=null;

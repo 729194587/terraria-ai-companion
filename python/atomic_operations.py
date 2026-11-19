@@ -156,10 +156,13 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          {key: {"type": "number", "minimum": 0, "maximum": 1000000} for key in ("x", "y")}, ["x", "y"]),
     tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE, "cluster": {"type": "boolean"}}),
     tool("configure_combat_loadout", "配置服务器 AI 的主副武器。primary 和 secondary 各自使用快捷键 1..9、0、预期 typeId 和新鲜 inventoryToken。完整替换配置，省略角色即清除该角色；配置不换手。", {"primary": COMBAT_ROLE, "secondary": COMBAT_ROLE, "summon": COMBAT_ROLE}),
+    tool("list_teammates", "查看 AI 的队伍和在线真人的队伍、当次上线引用和传送限制。", {}),
+    tool("set_team", "设置 AI 自己的队伍。0 离队，1..5 为游戏队伍编号。", {"team":{"type":"integer","minimum":0,"maximum":5}}, ["team"]),
+    tool("teleport_to_teammate", "消耗自己的虫洞药水，传送到指定的在线同队存活玩家。teammateRef 来自 list_teammates。", {"teammateRef":{"type":"string","pattern":"^[0-9a-f]{32}$"}}, ["teammateRef"]),
     tool("discover_bosses", "发现 640 像素内的 Boss 种子、策略及拒绝原因。用 admissible 行的 entityRef 提交 boss_encounter。", {}),
     tool("query_combat_loadout", "读取主副武器的快捷栏物品、可用性与最近一次自卫选武器失败原因。", {}),
-    tool("boss_encounter", "通过 submit_task 挑战单根克苏鲁之眼，需要配置主或副武器。可指定墙钟秒数（默认 300）。", {"entityRef": {"type":"string","minLength":1,"maxLength":150}, "durationSeconds":{"type":"integer","minimum":1,"maximum":600}}, ["entityRef"]),
-    tool("combat_attack", "通过 submit_task 提交单目标战斗。使用 scan_entities 返回的 entityRef。已配置主武器时自动切换；未配置时使用当前选中的受支持武器。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
+    tool("boss_encounter", "通过 submit_task 挑战单根克苏鲁之眼，需要配置主或副武器。可指定墙钟秒数（默认 300）。", {"entityRef": {"type":"string","minLength":1,"maxLength":150}, "regroupTeammateRef":{"type":"string","pattern":"^[0-9a-f]{32}$"}, "durationSeconds":{"type":"integer","minimum":1,"maximum":600}}, ["entityRef"]),
+    tool("combat_attack", "通过 submit_task 提交单目标战斗。使用 scan_entities 返回的 entityRef。已配置主武器时自动切换；未配置时使用手持武器。button 默认 left；right 请求原生副使用。", {"button":{"type":"string","enum":["left","right"]},"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
     tool("query_combat", "读取绑定角色当前或最近一次战斗。返回 action（含可查询或取消的 actionId），空闲且无战斗记录时为 null。", {}),
     tool("mine_tile", "原生挖掘指定 Tile。服务器 AI 从整个主背包自动选择合适工具，必要时临时切换快捷栏，按 Terraria 原生范围和工具规则判定。客户端控制使用当前手持镐。动作在当前位置执行，以实际移除为准，10秒上限。",
          {"x": {**TILE["x"], "description": "目标格的绝对 Tile X 坐标"},
@@ -170,6 +173,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("place_wall", "选中原版消耗型墙物品，在80像素内无墙格原生放置；正确墙类型和消耗一件共同核验，多人需服务器确认；自动补邻墙或自动涂漆不支持，10秒上限。", TILE, ['x', 'y']),
     tool("hammer_tile", "选中纯锤对80像素内原版普通方块/平台原生锤击；目标无背景墙，实际形状变化才成功，多人需服务器确认。不支持家具/破坏型锤目标。10秒上限。", TILE, ['x', 'y']),
     tool("open_inventory_item", "打开一件普通背包中的原版 Boss 宝藏袋或钓鱼板条箱。sourceToken 取自 inspect_inventory。返回已观察的生成掉落；拾取需另行核验。", {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN}, ["sourceSlot","sourceToken"]),
+    tool("dismiss_summon", "按召唤武器的类型 ID 解除绑定 AI 自己的对应随从增益。核验增益消失；已配置的自动补召仍可再次施法。", {"itemType":{"type":"integer","minimum":1,"maximum":2147483647}}, ["itemType"]),
     tool("open_door", "打开80像素内已观察的普通木门。x/y 为门占用的绝对 Tile。已打开时核验现状。", TILE, ["x","y"]),
     tool("close_door", "关闭80像素内已观察的普通木门。门口受阻时返回失败。", TILE, ["x","y"]),
     tool("interact_tile", "80像素内原版门、未锁宝箱、开关、拉杆基础交互；多格任一占用格可指定；宝箱核验打开/关闭，开关及拉杆核验Frame切换，不证明下游电路效果。多人需同版本服务器确认。", TILE, ["x", "y"]),
@@ -200,7 +204,7 @@ SERVER_DESCRIPTIONS = {
     'close_container': '使用最新观察的data.container.containerToken。关闭或换箱后旧Token失效。检查completed及endEvidence。',
     'inspect_inventory': '只读AI真实背包，必须显式mode；局部查询不代表完整背包。返回{valid,available,data,...}，data.inventoryScope/inspectedSlots标明实际检查范围，item匹配slots不等于搜索范围。hotbarKey是游戏键1..9,0；新版本server_ai_inventory_v1提供绑定World/Actor/Generation/槽位、物品实例与基础字段的inventoryToken；操作前用slots/selected/hotbar读取两槽新鲜token。full附functionalEquipmentSlots及装备targetToken；full/item不提供普通背包槽token，全部Mod自定义状态未知；token不调用保存钩子，不能识别仅自定义状态变化。',
     'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。data.terrain含originX/originY/rows和独立液体层liquids。液体项含绝对Tile坐标x/y、type、原生数量amount（1–255），未知格的缺项不代表干燥。data.state含centerWorldPixels；data还含bounds、legend、scannedCount、unknownCount和complete。格为Tile（16像素）。supported只是profile适用性。',
-    'use_item': '当前快捷栏物品执行一次原生使用周期，参数仅{}。支持可无坐标单次使用的原版物品及 ModItem，使用条件由 ItemCheck 和 Mod Hook 判定。需要瞄准、弹药、持续按住或放置坐标的物品需使用相应入口。3秒上限。cycleVerified 证明使用周期，consumptionObserved 表示持用物品堆叠减少；具体治疗、Buff、命中等效果需另行观察。',
+    'use_item': '当前快捷栏物品执行一次原生使用周期，参数仅{}。支持可无坐标单次使用的原版物品及 ModItem，使用条件由 ItemCheck 和 Mod Hook 判定。需要瞄准、弹药、持续按住或放置坐标的物品需使用相应入口。普通随从武器一次施法。仅当 native_summon_verified 且 slotsAfter 大于 slotsBefore 时可按需继续，达到 maxSlots 或容量不足即停；不替换已有随从。3秒上限。cycleVerified 证明使用周期，consumptionObserved 表示持用物品堆叠减少；具体治疗、Buff、命中等效果需另行观察。',
     'mine_tile': '原生挖掘指定 Tile。自动在整个主背包（含快捷栏）选择合适工具，必要时临时切换快捷栏，无需预选镐。由 Terraria 原生挖掘范围、工具和破坏许可判定。在当前位置执行，需要接近时用 mine_target。可指定家具有效组成格，已识别的多格家具核验整组移除。10秒上限，destroyedByActor、targetAbsent 和绑定输入释放证据齐备才完成。掉落入包需另行观察，unknown 停止。',
     'place_tile': '在空的绝对 Tile 格 x/y 用选中的快捷栏材料放置普通单格 Tile 或原版绳索。按 createTile、placeStyle 和原生放置范围、邻接及 Mod Hook 判定。点击已有绳段向下延伸用 place_rope；多格对象用 place_object。核验本 AI 的放置事件、目标格、consumedCount=1 和输入释放。取消可能已有副作用，unknown 停止。10秒上限。',
     'scan_entities': '以AI中心扫描世界像素半径radius（1..1600）内真实活跃NPC/掉落/其他玩家，排除AI自身；category与可选typeIds/npcFilter按Schema，先筛选再按距离排序截断。返回data.items及范围/计数/截断；entityRef绑定世界/AI代次/NPC实例，仅是观察标识，不保证视线、可达或可攻击。',
@@ -251,7 +255,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
         if name == 'configure_combat_loadout' and not summon_loadout:
             f['parameters']['properties'].pop('summon')
         if name == 'configure_combat_loadout' and summon_loadout:
-            f['description'] += ' summon 槽可放史莱姆法杖或寒霜九头蛇法杖；安全空闲时自动补召，临敌优先主副武器。'
+            f['description'] += ' summon 槽可放当前后端识别的随从或哨兵武器；安全空闲时自动补召，临敌优先主副武器。'
         if name == 'configure_combat_loadout' and not dual_weapons:
             f['parameters']['properties'].pop('secondary')
             f['description'] = '配置普通近战主武器 primary；传空参数清除配置。'
@@ -290,7 +294,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
     return definitions
 
 READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
+READS |= {'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -309,6 +313,8 @@ def validate_backend(bridge, name, arguments):
         raise PreDispatchRejected('Requires server_ai_combat_secondary_v1')
     if name == 'mine_target' and 'cluster' in arguments and 'server_ai_excavation_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_excavation_v1; no excavation task submitted')
+    if (name in ('list_teammates','set_team','teleport_to_teammate') or name=='boss_encounter' and 'regroupTeammateRef' in arguments) and 'server_ai_regroup_v1' not in getattr(bridge,'hello',{}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_regroup_v1')
     if name == 'boss_encounter' and 'server_ai_boss_encounter_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_boss_encounter_v1')
     if name in ('combat_attack', 'query_combat') and 'server_ai_combat_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
@@ -1003,6 +1009,17 @@ async def terminal(bridge, action, generation):
                                 and type(native_evidence.get('typeId')) is int and native_evidence['typeId']>0
                                 and isinstance(native_evidence.get('drops'),list) and bool(native_evidence['drops'])
                                 and all(isinstance(d,dict) and all(type(d.get(k)) is int and d[k]>0 for k in ('typeId','stack')) for d in native_evidence['drops'])),
+        'set_team': (isinstance(action.get('targetTask'),dict) and type(native_evidence.get('team')) is int
+                     and native_evidence['team']==action['targetTask'].get('team')),
+        'teleport_to_teammate': (isinstance(action.get('targetTask'),dict) and isinstance(native_evidence.get('teammateRef'),str)
+                                and native_evidence['teammateRef']==action['targetTask'].get('teammateRef')
+                                and type(native_evidence.get('team')) is int and 1<=native_evidence['team']<=5
+                                and all(type(native_evidence.get(k)) in (int,float) for k in ('actorX','actorY','targetX','targetY'))
+                                and native_evidence['actorX']==native_evidence['targetX'] and native_evidence['actorY']==native_evidence['targetY']
+                                and type(native_evidence.get('before')) is int and type(native_evidence.get('after')) is int
+                                and native_evidence['before']==native_evidence['after']+1 and native_evidence['after']>=0),
+        'dismiss_summon': (action.get('targetInventory')=={'itemType':native_evidence.get('itemType')} and native_evidence.get('absent') is True and type(native_evidence.get('buffType')) is int
+                           and native_evidence['buffType']>0 and type(native_evidence.get('wasActive')) is bool),
         'configure_combat_loadout': verified_loadout(action, native_evidence),
         **{op: verified_server_equipment(action, native_evidence) for op in EQUIPMENT_OPERATIONS},
         'place_tile': (isinstance(action.get('targetTile'), dict)
@@ -1046,7 +1063,7 @@ async def terminal(bridge, action, generation):
         and isinstance(end,dict) and retreat.get('update')==end.get('gameUpdate')))
     native_end = (retreat_verified and isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('open_inventory_item','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('dismiss_summon','set_team','teleport_to_teammate','open_inventory_item','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -1122,6 +1139,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_crafting_v1; no crafting RPC started')
     if name == 'place_object' and 'server_ai_place_object_workbench_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_place_object_workbench_v1; no object placement RPC started')
+    if name=='dismiss_summon' and 'server_ai_dismiss_summon_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_dismiss_summon_v1')
     if name=='open_inventory_item' and 'server_ai_open_item_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_open_item_v1')
     if name in ('open_door','close_door') and 'server_ai_doors_v1' not in bridge.hello.get('capabilities', []):
@@ -1253,7 +1272,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Direct inputs missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if name in INVENTORY_OPERATIONS | EQUIPMENT_OPERATIONS | {"configure_combat_loadout","open_inventory_item"} and 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []):
+        if name in INVENTORY_OPERATIONS | EQUIPMENT_OPERATIONS | {"dismiss_summon","configure_combat_loadout","open_inventory_item"} and 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []):
             placement_invalid = True
             if action.get('targetInventory') != arguments:
                 raise BridgeError('Inventory target missing or different in start receipt')
@@ -1265,7 +1284,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Container target missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if name in ('mine_target', 'navigate_to'):
+        if name in ('set_team','teleport_to_teammate','mine_target', 'navigate_to'):
             placement_invalid = True
             if action.get('targetTask') != arguments:
                 raise BridgeError('Task target missing or changed in start receipt')

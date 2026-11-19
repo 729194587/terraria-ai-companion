@@ -44,6 +44,9 @@ internal static partial class ServerCombatFixture
     private static bool parkIce;
     private static NativeCombatWorld.Shot parked;
 
+    private static bool manualSummonScene;
+    private static int yoyoType;
+    private static float yoyoTargetX;
     internal static void ObserveSummonHit(Projectile projectile,NPC npc,int damage,NativeCombatWorld.Shot shot,bool credited)
     {
         if(!Enabled)return;
@@ -242,13 +245,16 @@ internal static partial class ServerCombatFixture
         if(!Enabled)return;
         // The copied world can contain town NPCs whose attacks would decide
         // the fight. Keep the arena isolated from ambient friendly projectiles.
+        if(yoyoType!=0 && target?.active==true)
+            target.velocity.X=target.Center.X<yoyoTargetX-20?1.5f:target.Center.X>yoyoTargetX+20?-1.5f:
+                target.velocity.X==0?1.5f:target.velocity.X;
         if(memberCase!=null)AdvanceMemberFixture(p);
         if(whole)WholeTick(p);
         else if(pattern!=null)AdvanceEvasion(p);
         else if(target?.type==NPCID.EyeofCthulhu && target.active && !p.dead)
         {p.immune=true;p.immuneTime=60;}
         foreach(var projectile in Main.projectile)
-            if(!ReferenceEquals(projectile,occupyingMinion)&&projectile.active&&projectile.friendly&&(!projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
+            if(!manualSummonScene && !ReferenceEquals(projectile,occupyingMinion)&&projectile.active&&projectile.friendly&&(!projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
                 ||trace.Flight is not {Verified:true}))projectile.active=false;
         foreach(var npc in Main.npc)
             if(npc.active&&npc.townNPC)npc.active=false;
@@ -311,6 +317,86 @@ internal static partial class ServerCombatFixture
         if(mode.StartsWith("evasion-")){EvasionScene(p,mode);return;}
         if(mode.StartsWith("whole-")){WholeScene(p,mode);return;}
         if(mode.StartsWith("members-")){MemberRequest(p,mode);return;}
+        if(mode=="weapon-census")
+        {
+            var accepted=ContentSamples.ItemsByType.Where(kv=>kv.Key>0 && kv.Key<ItemID.Count &&
+                NativeCombatWorld.LoadoutFamily(kv.Value)!=null).Select(kv=>kv.Key);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(accepted));
+            return;
+        }
+        if(mode.StartsWith("trigger-") && int.TryParse(mode.Substring(8),out int weaponId))
+        {
+            if(target!=null)target.active=false;
+            p.selectedItem=0;p.inventory[0].SetDefaults(weaponId);
+            if(p.HeldItem.consumable)p.HeldItem.stack=1;
+            p.inventory[54].SetDefaults(p.HeldItem.useAmmo==AmmoID.Arrow?ItemID.WoodenArrow:ItemID.MusketBall);
+            p.inventory[54].stack=99;
+            ManaPool(p,400,400);
+            manualSummonScene=true;
+            target=SpawnDefense(p,32,12,false);
+            target.Bottom=p.Bottom+new Vector2(32,0);
+            projectileHits.Clear();shots.Clear();hitTrace.Clear();
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{entityRef=NativeCombatWorld.Reference(Bound(p),target)}));
+            return;
+        }
+        if(mode is "yoyo-wood" or "yoyo-rally")
+        {
+            if(target!=null)target.active=false;
+            p.inventory[0].SetDefaults(mode=="yoyo-wood"?ItemID.WoodYoyo:ItemID.Rally);
+            p.selectedItem=0;
+            yoyoType=p.HeldItem.shoot;
+            target=SpawnDefense(p,80,1000,false);
+            target.Bottom=p.Bottom+new Vector2(80,0);
+            yoyoTargetX=target.Center.X;
+            target.noTileCollide=true;target.noGravity=true;
+            target.velocity=new Vector2(1.5f,0);
+            flightTrace.Clear();projectileHits.Clear();shots.Clear();
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                entityRef=NativeCombatWorld.Reference(Bound(p),target),weapon=p.HeldItem.type,yoyoType}));
+            return;
+        }
+        if(mode is "yoyo-observe" or "yoyo-switch")
+        {
+            if(mode=="yoyo-switch")p.selectedItem=1;
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                live=Main.projectile.Count(q=>q.active && q.owner==p.whoAmI && q.type==yoyoType),
+                p.channel,p.heldProj,p.selectedItem,presses,frames,shots,actorX=p.Center.X,actorY=p.Center.Y,targetX=target.Center.X,targetY=target.Center.Y,p.itemAnimation,p.itemTime,p.releaseUseItem,projectileHits,flightTrace}));
+            return;
+        }
+        if(mode=="flower-slime")
+        {
+            target=SpawnDefense(p,40,120);
+            target.Bottom=p.Bottom+new Vector2(40,0);
+            summonDamage.Clear();
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),"{}");
+            return;
+        }
+        if(mode=="auto-loadout-setup")
+        {
+            manualSummonScene=true;
+            p.inventory[0].SetDefaults(ItemID.CopperShortsword);
+            p.inventory[6].SetDefaults(ItemID.AbigailsFlower);
+            p.selectedItem=0;
+            ManaPool(p,200,200);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),"{}");
+            return;
+        }
+        if(mode is "shortsword-defense" or "flower-test" or "imp-test" or "summon-observe")
+        {
+            if(mode!="summon-observe")
+            {
+                manualSummonScene=true;
+                if(mode=="shortsword-defense")p.inventory[0].SetDefaults(ItemID.CopperShortsword);
+                if(mode=="imp-test") p.inventory[8].SetDefaults(ItemID.ImpStaff);
+                p.AddBuff(BuffID.Bewitched,18000);
+                ManaPool(p,200,200);
+            }
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new {
+                p.maxMinions, p.slotsMinions, flower=p.HasBuff(BuffID.AbigailMinion), imp=p.HasBuff(BuffID.ImpMinion),
+                summonDamage, owner=p.whoAmI,held=p.HeldItem.type,shoot=p.HeldItem.shoot,projectiles=Main.projectile
+                    .Where(q=>q.active && q.owner==p.whoAmI).Select(q=>new {q.type,q.identity,q.minionSlots})}));
+            return;
+        }
         if(mode=="boss-setup")
         {
             p.inventory[2].SetDefaults(ItemID.WoodenBow);

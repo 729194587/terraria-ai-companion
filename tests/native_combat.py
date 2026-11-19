@@ -277,6 +277,169 @@ async def verify(args):
             from native_boss_encounter import verify_encounter
             await verify_encounter(case[5:], bridge, lua, manager, scene, results, profile)
             return
+        if case == 'ordinary-evasion':
+            await scene('boss-setup')
+            for pattern in ('charge', 'bolt'):
+                for arm in ('off', 'on'):
+                    enemy = await scene(f'evasion-{pattern}-{arm}-ordinary')
+                    task = await manager.invoke('submit_task', {'operation':'combat_attack','arguments':{'entityRef':enemy['entityRef']}})
+                    assert 'taskId' in task, task
+                    sample = await wait_file(profile / f'evasion-{pattern}-{arm}.json')
+                    stopped = await manager.invoke('cancel_task', {'taskId':task['taskId']})
+                    assert stopped['status']=='cancelled', stopped
+                    await scene('evasion-clear')
+                    results[f'{pattern}-{arm}']=sample
+                baseline, active = (results[f'{pattern}-{arm}'] for arm in ('off', 'on'))
+                assert active['lostLife'] < baseline['lostLife'], (pattern, active['wounds'], baseline['wounds'])
+                assert active['impacts'] and active['opportunities'] and active['conflicts']==0, pattern
+            return
+        if case == 'weapon-trigger':
+            await scene('dual-setup')
+            await asyncio.sleep(.8)
+            admitted=await scene('weapon-census')
+            (profile/'weapon-admission.json').write_text(json.dumps(admitted))
+            for blocked in (905,496,266,759):
+                assert blocked not in admitted,blocked
+            for spec in os.environ.get('COMPANION_TRIGGER_ITEMS','280,55,127,5282,964,4672,42,273,65,1569,160,3368,162,113,2366,3852,3852/right').split(','):
+                item,_,button=spec.partition('/')
+                enemy=await scene('trigger-'+item)
+                args={'entityRef':enemy['entityRef']}
+                if button:args['button']=button
+                launch=await manager.invoke('submit_task',{'operation':'combat_attack','arguments':args})
+                if 'taskId' not in launch:
+                    results[spec]=launch
+                    continue
+                reply=await manager.invoke('await_task',{'taskId':launch['taskId'],'milliseconds':8000})
+                results[spec]=reply
+                if not reply.get('completed'):
+                    await manager.invoke('cancel_task',{'taskId':launch['taskId']})
+                await asyncio.sleep(.25)
+            for spec,reply in results.items():
+                if spec=='42' and reply.get('result',{}).get('reason')=='combat_weapon_consumed':
+                    hit=reply['result']['task']['progress']['lastHit']
+                    assert hit['Projectile']['Weapon']==42 and hit['DamageDone']>0 and hit['LifeAfter']<hit['LifeBefore'],hit
+                    assert reply['result']['endEvidence']['inputsReleased']
+                    continue
+                assert reply.get('completed'), (spec,reply)
+                proof=completed(reply)
+                assert proof['weapon']['TypeId']==int(spec.split('/')[0]), proof
+                if spec.startswith('3852'):
+                    assert proof['lastHit']['Projectile']['Type']==(704 if spec.endswith('/right') else 712),proof
+            return
+        if case == 'yoyo-defense':
+            await scene('dual-setup')
+            await asyncio.sleep(.8)
+            for family in ('wood','rally'):
+                enemy = await scene('yoyo-'+family)
+                task = await manager.invoke('submit_task', {'operation':'combat_attack','arguments':{'entityRef':enemy['entityRef']}})
+                assert 'taskId' in task,task
+                for _ in range(80):
+                    sample = await scene('yoyo-observe')
+                    if sample['channel'] and sample['projectileHits'] and len(sample['flightTrace'])>=55:
+                        break
+                    await asyncio.sleep(.05)
+                else:
+                    raise AssertionError((sample,await observe()))
+                hit = sample['projectileHits'][0]
+                assert hit['Weapon']==enemy['weapon'] and hit['nativeDamage'] and hit['damage']>0 and hit['life']<1000, hit
+                tracking = [f for f in sample['flightTrace'] if abs(f['x']-f['targetX'])<24]
+                assert tracking and max(f['targetX'] for f in tracking)-min(f['targetX'] for f in tracking)>8, tracking
+                results[family] = {'enemy':enemy,'flight':sample}
+                if family=='wood':
+                    stopped=await manager.invoke('cancel_task',{'taskId':task['taskId']})
+                    assert stopped['status']=='cancelled', stopped
+                else:
+                    await scene('yoyo-switch')
+                for _ in range(50):
+                    after=await scene('yoyo-observe')
+                    if not after['live'] and not after['channel'] and after['heldProj']<0:
+                        break
+                    await asyncio.sleep(.05)
+                else:
+                    raise AssertionError(after)
+                if family=='rally':
+                    assert after['selectedItem']==1,after
+                results[family]['after']={k:after[k] for k in ('live','channel','heldProj','selectedItem','itemTime','itemAnimation')}
+                assert after['itemTime']==0 and after['itemAnimation']==0, after
+            return
+        if case == 'auto-loadout':
+            await scene('auto-loadout-setup')
+            async def loadout():
+                reply=await lua.execute("return api('query_combat_loadout')")
+                return reply['value']['data']
+            for _ in range(80):
+                kit=await loadout()
+                sample=await scene('summon-observe')
+                if sample['flower'] and sample['held']==3507 and (kit.get('maintenance') or {}).get('confirmedCasts',0)>0:
+                    break
+                await asyncio.sleep(.1)
+            else:
+                raise AssertionError((kit,sample))
+            assert kit['primary']['expectedTypeId']==3507 and kit['summon']['hotbarKey']==7, kit
+            results['automatic']=kit
+            dismissed=await lua.execute("return api('dismiss_summon',{itemType=5114})")
+            assert dismissed['value']['completed'], dismissed
+            await asyncio.sleep(1)
+            kit=await loadout()
+            assert kit['maintenance']['status']=='summon_paused' and not (await scene('summon-observe'))['flower'], kit
+            results['paused']=kit
+            manual=await lua.execute("local r=api('inspect_inventory',{mode='slots',slots={0}}).data.inventory[1]; return api('configure_combat_loadout',{primary={hotbarKey=r.hotbarKey,expectedTypeId=r.typeId,inventoryToken=r.inventoryToken}})")
+            assert manual['value']['completed'], manual
+            await asyncio.sleep(1)
+            kit=await loadout()
+            assert not kit.get('summon') and kit['primary']['expectedTypeId']==3507, kit
+            results['manual']=kit
+            return
+        if case == 'shortsword-defense':
+            await scene(case)
+            await lua.execute("return api('select_hotbar_slot',{slot=7})")
+            cast = await lua.execute("return api('use_item')")
+            assert cast['value']['completed'], cast
+            dismissed = await lua.execute("return api('dismiss_summon',{itemType=5114})")
+            results['dismiss'] = dismissed
+            assert dismissed['value']['completed'] and dismissed['value']['evidence']['wasActive'], dismissed
+            selected = await lua.execute("return api('select_hotbar_slot',{slot=1})")
+            assert selected['value']['completed'], selected
+            audit = await scene('summon-observe')
+            assert not audit['flower'] and audit['slotsMinions']==0 and not audit['projectiles'], audit
+            await scene('flower-slime')
+            for _ in range(120):
+                action = await observe()
+                progress = ((action or {}).get('task') or {}).get('progress') or {}
+                hit = progress.get('lastHit') or {}
+                if progress.get('source')=='reflex' and (hit.get('Projectile') or {}).get('Weapon')==3507:
+                    assert hit['LifeAfter']<hit['LifeBefore'] and hit['DamageDone']>0, hit
+                    results['defense'] = progress
+                    return
+                await asyncio.sleep(.08)
+            raise AssertionError(progress)
+        if case in ('flower-test', 'imp-test'):
+            await scene(case)
+            key = 7 if case == 'flower-test' else 9
+            selection = await lua.execute(f"return api('select_hotbar_slot',{{slot={key}}})")
+            assert selection['value']['completed'], selection
+            for i in range(2):
+                cast = await lua.execute("return api('use_item')")
+                results[f'cast{i}'] = cast
+                audit = await scene('summon-observe')
+                results[f'audit{i}'] = audit
+                assert (cast.get('value') or {}).get('reason') == 'native_summon_verified', (cast.get('lastAction'), audit)
+                assert audit['slotsMinions'] == i+1 and audit['flower' if key==7 else 'imp'], audit
+                if key == 7:
+                    assert sum(q['type']==963 for q in audit['projectiles']) == 1, audit
+            full = await lua.execute("return api('use_item')")
+            assert full['lastAction']['reason']=='summon_capacity_unavailable', full
+            if key == 7:
+                await scene('flower-slime')
+                for _ in range(80):
+                    audit = await scene('summon-observe')
+                    if any(hit['type']==963 and hit['damage']>0 and hit['life']<120 for hit in audit['summonDamage']):
+                        break
+                    await asyncio.sleep(.1)
+                else:
+                    raise AssertionError(audit)
+                results['damage'] = audit['summonDamage']
+            return
         if case == 'summon-maintenance':
             async def loadout_until(status, after=0):
                 for _ in range(180):

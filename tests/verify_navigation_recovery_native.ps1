@@ -1,6 +1,6 @@
 param([string]$TModLoaderPath,[string]$EngineProfile,
     [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes,[switch]$Mobility,[switch]$Probe,[switch]$Region,
-    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation,[switch]$ExtraJump,[switch]$Grapple,[switch]$Liquid,[switch]$Rope,[switch]$RopeMotion)
+    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation,[switch]$ExtraJump,[switch]$Grapple,[switch]$Liquid,[switch]$Rope,[switch]$RopeMotion,[string]$PythonExecutable)
 $ErrorActionPreference='Stop'
 if($ExtraJump){$Mobility=$true}
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
@@ -10,7 +10,10 @@ if($Environment -and !$Region){throw 'Environment probe requires Region mode.'}
 if($AutonomousNavigation -and ($Region -or $Mobility -or $Baseline -or $Probe)){throw 'Autonomous recovery uses the native recovery scenes.'}
 if($Region -and ($Mobility -or $Probe -or $Baseline -or $Scenes)){throw 'Region mode does not combine with mobility/recovery probes or scene selectors.'}
 $repo=Split-Path $PSScriptRoot -Parent
-$world=(Resolve-Path -LiteralPath $WorldPath).Path
+. (Join-Path $repo 'scripts/native-test-inputs.ps1')
+$world=Resolve-NativeTestInput -Repo $repo -Kind World -ExplicitPath $WorldPath
+$PythonExecutable=Resolve-NativeTestInput -Repo $repo -Kind Python -ExplicitPath $PythonExecutable
+if(!$PackagePath){$PackagePath=$selectedEngine.Package}
 $package=(Resolve-Path -LiteralPath $PackagePath).Path
 Assert-CompanionPackage -Package $package -Engine $selectedEngine
 
@@ -49,7 +52,7 @@ try {
     if($Baseline){$probeArgs+='--baseline'}
     if($Scenes){$probeArgs+=@('--scenes')+$Scenes}
     if($AutonomousNavigation){$probeArgs+='--autonomous'}
-    & "$repo/.local/lua-venv/Scripts/python.exe" @probeArgs
+    & $PythonExecutable @probeArgs
     if($LASTEXITCODE -ne 0){throw "Native recovery verification failed: $profile"}
     if($Mobility){
         $discovery=Get-Content -LiteralPath "$profile/movement-discovery.json" -Raw | ConvertFrom-Json

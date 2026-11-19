@@ -11,7 +11,7 @@ namespace CompanionBridge;
 public sealed class CompanionBridge : Mod
 {
     public override object Call(params object[] args)=>ServerIpc.BossExtensions.Register(args);
-    public override void HandlePacket(BinaryReader reader, int whoAmI) => AtomicMultiplayer.Receive(reader, whoAmI);
+    public override void HandlePacket(BinaryReader reader, int whoAmI) => AtomicMultiplayer.Receive(reader, whoAmI, SpectatorSystem.Receive);
     internal static ModKeybind ToggleAutoMoveKeybind { get; private set; }
     internal static ControlState Controls { get; } = new();
     internal static TcpControlServer Server { get; private set; }

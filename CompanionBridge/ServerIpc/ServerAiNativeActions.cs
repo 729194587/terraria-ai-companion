@@ -41,7 +41,15 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsBossEncounter=>true;
     public bool SupportsCombat=>true;
     public bool SupportsOpening=>ServerItemOpening.Available;
+    public bool SupportsDismissSummon=>true;
     public bool SupportsDoors=>true;
+    public bool SupportsRegroup=>SupportsCollection;
+    public AiAtomicActions.RespawnPlan AfterRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>
+        handle is Handle {Context:TaskSlot {Task:BossEncounterTask boss}} ? boss.AfterRespawn(frame) : null;
+    public object StartRejoin(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.RespawnPlan plan)
+        =>StartCore(frame,CombatProtocol.Boss,args,id,false,rejoin:plan);
+    public bool WaitingForRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>
+        handle is Handle {Context:TaskSlot slot} && slot.Record.Started && slot.Task.CanWaitForRespawn(frame);
     public bool SupportsLoadout=>true;
     public Func<bool> CapturePrimary(AiReadOnlyProtocol.Identity frame)=>NativeCombatWorld.CapturePrimary(frame);
     public object StartCombat(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.CombatAdmission admission)
@@ -57,7 +65,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     internal object StartMaintenancePlacement(AiReadOnlyProtocol.Identity id,Microsoft.Xna.Framework.Point at)
         =>StartCore(id,"place_tile",JsonSerializer.SerializeToElement(new{x=at.X,y=at.Y}),"auto-torch",true);
     private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child,bool continuous=false,
-        NavigationKnowledge knowledge=null,AiAtomicActions.CombatAdmission admission=null)
+        NavigationKnowledge knowledge=null,AiAtomicActions.CombatAdmission admission=null,AiAtomicActions.RespawnPlan rejoin=null)
     {
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
@@ -68,6 +76,25 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         try
         {
             object context;
+            if(operation=="dismiss_summon")
+            {
+                int type=args.GetProperty("itemType").GetInt32();
+                if(!Terraria.ID.ContentSamples.ItemsByType.TryGetValue(type,out var staff) ||
+                    !NativeCombatWorld.MinionStaff(staff))return Reject("not_minion_weapon");
+                bool active=p.HasBuff(staff.buffType);
+                if(active)
+                {
+                    p.ClearBuff(staff.buffType);
+                    NetMessage.SendData(Terraria.ID.MessageID.PlayerBuffs,-1,-1,null,p.whoAmI);
+                }
+                bool absent=!p.HasBuff(staff.buffType);
+                if(absent)NativeCombatWorld.PauseSummon(identity,type);
+                return new Handle(identity,operation,null,new(absent?"completed":"unknown",
+                    absent?"summon_buff_absent":"summon_buff_unconfirmed",new{itemType=type,buffType=staff.buffType,wasActive=active,absent},
+                    true,absent,InputsAcquired:false));
+            }
+            if(operation=="set_team")return new Handle(identity,operation,null,ServerRegroup.SetTeam(identity,args.GetProperty("team").GetInt32()));
+            if(operation=="teleport_to_teammate")return new Handle(identity,operation,null,ServerRegroup.Teleport(identity,args.GetProperty("teammateRef").GetString()));
             if(operation=="open_inventory_item")return new Handle(identity,operation,null,ServerItemOpening.Open(identity,args));
             if(operation is "open_door" or "close_door")
             {
@@ -88,10 +115,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 var executor=new ChildExecutor(this,continuous:true);
                 CompanionTask task=operation==CombatProtocol.Operation
                     ?new CombatController(new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),
-                        args.TryGetProperty("threat",out _)?ReflexTargetAllowed??((_,_)=>true):null,admission),
+                        args.TryGetProperty("threat",out _)?ReflexTargetAllowed??((_,_)=>true):null,admission,alternate:args.TryGetProperty("button",out var button) && button.GetString()=="right"),
                         args.TryGetProperty("threat",out var threat)?"reflex":"agent",threat.ValueKind==JsonValueKind.String?threat.GetString():null)
                     :operation==CombatProtocol.Boss
-                    ?new BossEncounterTask(actionId,new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),bossEncounter:true),navigation)
+                    ?new BossEncounterTask(actionId,new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),bossEncounter:true),navigation,args.TryGetProperty("regroupTeammateRef",out var teammate)?teammate.GetString():null,rejoin)
                     :operation=="mine_target"
                     ?args.TryGetProperty("cluster",out var cluster)&&cluster.GetBoolean()
                         ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge)
@@ -150,6 +177,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 ActorItemUse.StartPlacement(p,identity.World,identity.Generation,placement);
                 context=ActorItemUse.Current;
             }
+            else if(operation=="use_item" && NativeCombatWorld.MinionStaff(p.HeldItem))
+            {
+                if(NativeCombatWorld.SummonRefusal(p,p.HeldItem,true) is string error) return Reject(error);
+                context=NativeCombatWorld.StartSummon(identity);
+            }
             else if(operation=="use_item")
             {
                 if(p.selectedItem<0||p.selectedItem>9||!ActorItemUse.Supported(p.HeldItem))
@@ -181,6 +213,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if (h.Context is NativeCombatWorld summon) return summon.PollSummon();
         if (h.Context is ActorContainer.SortAction sort) return sort.Poll();
         if (h.Context is ActorContainer.Batch batch) return batch.Poll();
         if (h.Context is ActorContainer.Transfer transfer) return transfer.Poll();
@@ -293,6 +326,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if (h.Context is NativeCombatWorld summon) return summon.PollSummon(cancel:true);
         if (h.Context is ActorContainer.SortAction sort) return sort.Poll(cancel: true);
         if (h.Context is ActorContainer.Batch batch) return batch.Poll(cancel: true);
         if (h.Context is ActorContainer.Transfer transfer) return transfer.Poll(cancel: true);
@@ -391,6 +425,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         catch(Exception e){ProbeSession.Quarantine("Native action shutdown unconfirmed: "+e.Message);}
         finally
         {
+            ServerRegroup.Clear();
             NativeCombatWorld.ClearLoadout();
             ServerDrops.Current = null;
             if(ReferenceEquals(ActorControl.Driver,navigation)||ReferenceEquals(ActorControl.Driver,directInput))ActorControl.Driver=null;

@@ -1,6 +1,9 @@
 Mods: {
 	CompanionBridge: {
-		Keybinds.ToggleAutoMove.DisplayName: Toggle auto move right
+		Keybinds: {
+			WatchAI.DisplayName: Watch AI / return to player
+			ToggleAutoMove.DisplayName: Toggle auto move right
+		}
 
 		Items: {
 			InventoryDiagnosticItem: {

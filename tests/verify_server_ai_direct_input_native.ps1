@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile, [string]$WorldPath, [string]$PackagePath, [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py', [switch]$Scene, [switch]$Equipment, [switch]$Torch, [switch]$Combat,[string]$SamplePackage,[string]$PythonExecutable,
+param([string]$TModLoaderPath,[string]$EngineProfile, [string]$WorldPath,[string]$CharacterSeed, [string]$PackagePath, [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py', [switch]$Scene, [switch]$Equipment, [switch]$Torch, [switch]$Combat,[string]$SamplePackage,[string]$PythonExecutable,
     [ValidateSet('eater','destroyers','twins','two-twins','moon')] [string]$BossProbe)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
@@ -14,6 +14,7 @@ $package=(Resolve-Path -LiteralPath $PackagePath).Path
 Assert-CompanionPackage -Package $package -Engine $selectedEngine
 $profile=Join-Path $repo ('.local/direct-input-native-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds" | Out-Null
+if($CharacterSeed){Copy-Item -LiteralPath (Resolve-Path $CharacterSeed).Path -Destination "$profile/VirtualPlayerEngineProbe" -Recurse}
 Copy-Item -LiteralPath $world -Destination "$profile/Worlds/test.wld"
 $twld=[IO.Path]::ChangeExtension($world,'.twld')
 if(Test-Path -LiteralPath $twld){Copy-Item -LiteralPath $twld -Destination "$profile/Worlds/test.twld"}
