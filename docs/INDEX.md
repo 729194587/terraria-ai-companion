@@ -11,6 +11,7 @@
 | [路线图](DEVELOPMENT_ROADMAP.md) | 当前能力与尚待解决的方向 |
 | [工程原则](ENGINEERING.md) | 长期有效的安全与设计约束 |
 | [API 契约](API_CONTRACT.md) | 模型工具入口、Schema、能力投影和结果语义 |
+| [G1 Gameplay Integration MVP](G1_GAMEPLAY_INTEGRATION_MVP.md) | 新角色收集木材、制作并放置工作台的端到端玩法闭环 |
 
 ## Agent 与运行时
 
