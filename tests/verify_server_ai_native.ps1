@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -95,6 +95,30 @@ try {
     $mismatchedBinding=@{actor=$bound.binding.actor;world=$bound.binding.world;generation=([long]$bound.binding.generation+1);slot=$bound.binding.slot}
     $bindingMismatch=Request @{v=1;id='native-binding-mismatch';op='state';binding=$mismatchedBinding}
     if($bindingMismatch.ok -or $bindingMismatch.error -ne 'stale_binding'){throw 'Mismatched request binding was not rejected'}
+    if($BuildDiff){
+        if('server_ai_build_diff_v1' -notin $bound.data.capabilities){throw 'Missing build_diff capability'}
+        $origin=@{x=[int][math]::Floor($state.data.position.x/16); y=[int][math]::Floor($state.data.position.y/16)}
+        $tiles=@(foreach($y in 0..7){foreach($x in 0..7){
+            if($x -in 0,7 -or $y -in 0,7){@{x=$x;y=$y;itemType=9}}
+        }})
+        $walls=@(foreach($y in 1..6){foreach($x in 1..6){@{x=$x;y=$y;itemType=93}}})
+        $blueprint=@{origin=$origin;tiles=$tiles;walls=$walls;objects=@(@{x=3;y=6;itemType=36})}
+        $query=@{v=1;id='build-diff';op='query';operation='build_diff';binding=$bound.binding;arguments=@{blueprint=$blueprint}}
+        $comparison=Request $query
+        if(!$comparison.ok){throw ($comparison|ConvertTo-Json -Depth 12)}
+        $diff=$comparison.data.data
+        if($diff.entries.Count -ne 65 -or $diff.matched+$diff.pending -ne 65){throw 'Incomplete blueprint comparison'}
+        $bench=@($diff.entries|Where-Object layer -eq 'objects')
+        if($bench.Count -ne 1 -or $bench[0].width -ne 2 -or $bench[0].height -ne 1){throw 'Work bench native footprint mismatch'}
+        $cost=@($diff.materials|Where-Object itemType -eq 36)
+        if($bench[0].status -ne 'already_matches' -and ($cost.Count -ne 1 -or $cost[0].required -ne 1)){throw 'Work bench must cost one item'}
+        $comparison|ConvertTo-Json -Depth 16|Set-Content -LiteralPath "$profile/build-diff.json"
+        & $PythonExecutable (Join-Path $repo 'tests/native_build_diff.py') --port $IpcPort --profile $profile
+        if($LASTEXITCODE -ne 0){throw 'Lua build_diff native verification failed'}
+        $query.arguments.blueprint.tiles+=@($tiles[0])
+        $duplicate=Request $query
+        if($duplicate.ok -or $duplicate.error -ne 'invalid_request'){throw 'Duplicate blueprint target accepted or misclassified'}
+    }
     $action=Request @{v=1;id='native-mine';op='mine'}
     if($action.ok -or $action.error -ne 'unsupported_operation'){throw 'Action isolation failed'}
     $pythonText=& $PythonExecutable (Join-Path $repo 'scripts/ai_player_state.py') --port $IpcPort

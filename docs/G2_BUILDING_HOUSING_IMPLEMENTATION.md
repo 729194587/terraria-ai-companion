@@ -48,6 +48,10 @@
 - Server AI 没有住所分配 API。
 - 当前 \`skills/\` 仅有 \`mining_and_ores\`；本阶段不新增 Skill。
 
+### G2-A 基线检索（2026-11-19）
+
+按 G2-A 标识、建筑基线名称及中英文建房目标检索了仓库文档和本机 `.local`（含忽略文件的路径、日志、JSON/JSONL 和文本）。命中的 G2-A 是架构 §9 的前测要求，未找到同时具有真实模型目标、施工轨迹和原生验房结果的运行记录。首个施工阻塞点仍未知；实施后 E2E 应与前测分别标记。
+
 ### 2.3 主要代码入口
 
 - \`CompanionBridge/ServerPlayerRuntime/ActorPlacement.cs\`
@@ -80,7 +84,8 @@
 - 同一坐标允许同时有前景 Tile 和背景 Wall。
 - 多格 Object 是单个逻辑目标，材料消耗按物体件数计算，不能按占地格数计算。
 - 未知、未加载或超出检查范围的 Tile 必须保留为 unknown，不能当作空气。
-- Blueprint 大小、坐标、条目数和序列化体积必须有明确上限。
+- Blueprint 单体统一按紧凑 JSON 的 UTF-8 字节数计量，上限 3072 字节（含）。坐标与条目数仍须独立校验。以相对坐标对象 `{"x":1,"y":2,"itemType":9}` 示意，8×8 外框扣除三格门洞有 25 个前景目标，另有 36 个内墙目标和 4 个门/家具/照明目标。用数字物品 ID、三至四位数原点及上述字段，样例小于 2 KB，可容纳于该预算；这是编码容量示例。
+- Python 发送 `build_diff` 时须对**完整请求**使用 `json.dumps(request, ensure_ascii=False, separators=(",", ":"))`，按 UTF-8 编码后核对整包。既有 IPC 请求行上限保持 4096 字节（不含终止 LF）；Blueprint 和含身份字段、操作名等的完整请求分别校验，任一超限即在发送前拒绝。
 - 不支持液体注入/排除、Wire、Paint、Actuator、复杂家具状态或任意 ModItem 的部分，明确返回 unsupported，不猜测。
 
 ### 3.2 Read-only build_diff
@@ -130,19 +135,15 @@
 
 输入为房屋内部的一个 Tile 坐标；可选目标 NPC type 用于附加 NPC 住宅要求检查（若目标版本原生 API 支持）。
 
-使用 Terraria 原生 Housing 机制，优先验证：
+**本机程序集核验（静态 IL，2026-11-19）。** 使用安装目录内 Mono.Cecil 0.11.6 读取 `D:/steam/steamapps/common/tModLoader/tModLoader.dll`，产品版本 1.4.4.9+2026.09.3.1 Stable，SHA-256 `BF2CA4D53512D064FAE664170A0D21ECC5E2ED51B5E917D871EC78CC449263E9`。
 
-- \`WorldGen.StartRoomCheck(x, y)\`
-- \`WorldGen.roomCheckFailureReason\`
-- \`WorldGen.roomX1/roomX2/roomY1/roomY2\`
-- \`WorldGen.roomOccupied\`
-- \`WorldGen.roomTorch/roomTable/roomChair/roomDoor/roomEvil\`
-- \`WorldGen.RoomNeeds(npcType)\`（先核实目标版本的真实签名与语义）
+- 以 `WorldGen.MoveTownNPC(int x,int y,int n) -> bool` 的判定分支为依据。它调用 `StartRoomCheck(x,y) -> bool`，由该阶段产生边界和 `roomCheckFailureReason`；随后 `RoomNeeds(int npcType) -> bool` 写入光源、桌、椅、门标志。原方法传入的是静态 `prioritizedTownNPCType`，直到后续评分前才按非负槽位取目标 type。针对向导的查询须明确 NPC 类型来源。
+- 原方法另有臭虫饰品和特殊 NPC 条件分支。`ScoreRoom(int ignoreNPC,int npcTypeAskingToScoreRoom) -> void` 在此以 `(-1, type)` 调用（IL_01e3），由 `hiScore > 0` 判断评分通过；占用、邪恶程度和候选住所格来自评分阶段。分别报告结构、家具、评分、占用及原生失败阶段；未执行阶段的静态字段标为未知，禁止沿用前次值。
 
 关键约束：
 
 - 房间检查在游戏主线程同步执行。
-- \`WorldGen.StartRoomCheck\` 使用静态结果字段；同一次调用后立即复制所有结果，禁止跨帧/异步后读取，也禁止并发检查。
+- \`WorldGen.StartRoomCheck\` 及后续阶段使用静态结果字段；同一游戏线程检查内按阶段立即复制结果，禁止跨帧/异步后读取，也禁止并发检查。
 - 原生失败枚举转换为稳定字符串，并保留原始枚举名和检查版本。
 - 返回 \`valid/invalid/unknown\`，范围边界、房间占用、家具要素和原生失败原因。
 - 若原生检查未能给出明确结果，返回 unknown，不用模型推断替代。
@@ -161,9 +162,10 @@
 - 输入使用新鲜 NPC entityRef 和已通过 \`inspect_housing\` 的房间位置/检查 Token。
 - 仅允许有效、存活、可分配住宅的 Town NPC。
 - 重新验证 NPC 身份、房屋状态、房间占用和 Actor/World 绑定。
-- 通过目标版本原生 \`Main.TownManager.SetRoom\` / \`HasRoom\` 等接口分配；Codex 必须先确认 SetRoom 的 npcID 参数究竟是 NPC type 还是 NPC slot，不能猜测。
+- 原生写入口是 `WorldGen.moveRoom(x,y,n)`（小写 m）。客户端发送消息 60；服务器以 n 为槽位，从 `Main.npc[n].type` 设置优先类型，将该 NPC 标为 homeless 后调用 `SpawnTownNPC(x,y)`。后者用 `FindAHomelessNPC()` 选择实例，在已有 NPC 分支写入 `bestX/Y`、清除 homeless。写前须确认该选择能唯一落在目标向导。
+- `moveRoom` 丢弃 SpawnTownNPC 返回值，再将原槽位的 **NPC type** 和 homeTileX/Y 传给 `WorldGen.TownManager.SetRoom(type,x,y)`（IL_0046–0074）。直接写管理器会跳过 NPC 状态更新；原生调用返回也可能已有部分状态变化。
 - 不允许对无效房屋、已占用房屋或不支持住房的 NPC 分配。
-- 分配后重新读取 NPC 的 \`homeTileX/Y\`、\`homeless\` 和 TownRoomManager 状态；只有结果与请求位置一致才报告 completed。
+- 分配后重新读取 NPC 的 \`homeTileX/Y\`、\`homeless\` 和 TownRoomManager 状态；复核同一实体仍 active、homeless=false，住所等于该房间原生选出的 bestX/Y，且 `HasRoom(type,out Point)` 返回相同格，方可报告服务器侧 completed。室内输入格与住所格可不同。远端可见性仍须联机观察验证。
 - 若原生分配 API 仅修改本地/未同步或状态不明确，返回 unknown 并记录证据，不伪造成功。
 
 ### 3.6 Capability and API Contract
@@ -181,7 +183,7 @@
 
 建议能力旗标：
 
-- \`server_ai_build_v1\`：build_diff 与 build_place。
+- \`server_ai_build_diff_v1\`：只读 build_diff。\`server_ai_build_v1\`：build_place。
 - \`server_ai_housing_v1\`：inspect_housing 与 NPC 住所观察。
 - \`server_ai_housing_assignment_v1\`：assign_npc_home。
 
@@ -189,7 +191,7 @@
 
 ## 4. Implementation Steps
 
-1. 对照目标 tModLoader 2026.09.3.1 Stable 的实际程序集/源码，核实 Housing API 的签名、静态字段、调用线程和同步行为。特别确认 \`TownRoomManager.SetRoom\` 的 npcID 语义。
+1. 静态调用链见 §3.4–3.5。以隔离服务器补验失败副作用、目标实例选择和客户端住所同步。
 2. 先补齐通用 Blueprint 数据模型和解析/验证，不修改原生放置器。
 3. 实现 \`build_diff\`，并让它与后续施工任务共用目标解析、TileObjectData 和材料账本。
 4. 实现 \`build_place\` 异步任务，使用现有 Task Runtime / ChildExecutor / Navigation / ActorInventory / place_item 原生执行路径。
@@ -258,6 +260,12 @@
 - Host & Play / 真实模型结果单独报告；没有执行不得声称通过。
 - 任一 unknown 不得报告成功。
 - 任何新增 API 均有 capability gate、Schema、回执和定向测试。
+
+### Blueprint 与 build_diff 已验证范围（2026-11-19）
+
+本阶段单独发布只读能力 `server_ai_build_diff_v1`。蓝图按绝对 Tile 原点、相对条目和运行时解析的物体占地计量，合计 1–256 项，完整占地每轴最多 64 格。同一前景层的占地重叠会拒绝整个请求，背景墙可与前景共格。每个差异条目对应一个逻辑目标；`plannedSupportCandidate` 表示蓝图包含可能提供支撑的目标，该项仍保留当前支撑不足状态。
+
+定向验证使用 `tests/test_build_diff.py`、`ServerAiReadProtocolTests.Run()` 与 `tests/verify_server_ai_native.ps1 -BuildDiff`。在目标版本的隔离 Dedicated Server 中，经原始 IPC 和 Lua Worker 比较了 8×8 范围内的 28 个前景目标、36 个背景目标和 1 个工作台，返回 65 项。工作台占地 2×1，预算计 1 件；重复前景目标被拒绝。Lua 执行两次查询、零动作。该场景只验收差异查询；房屋施工、住宅有效性、向导入住及真实模型表现仍待后续验证。
 
 ## 6. Deliverables
 

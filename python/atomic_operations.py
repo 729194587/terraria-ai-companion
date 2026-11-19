@@ -1,6 +1,7 @@
 """LLM atomic operations. One Bridge session, game-thread actions and release receipts."""
 import asyncio
 import copy
+import json
 import math
 import re
 from time import perf_counter
@@ -188,6 +189,26 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          ["ropeX","targetFeetY","finish","maxUpdates"]),
     tool("place_tile", "用选中消耗品在80像素内空格放单格方块，支持当前画面缩放，仍限正常重力；Tile类型与物品消耗共同核验；不支持多格家具或ModItem。10秒上限。", TILE, ["x", "y"]),
     tool("stop_action", "取消当前Agent动作并等待游戏线程输入释放证据，不抢占手动控制。")]
+BLUEPRINT_LAYERS = ('tiles', 'walls', 'objects')
+BLUEPRINT_ENTRY = {
+    "type": "object", "additionalProperties": False, "required": ["x", "y"],
+    "properties": {
+        **{axis: {"type": "integer", "minimum": -100000, "maximum": 100000} for axis in TILE},
+        "itemType": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+        "contentKey": {"type": "string", "minLength": 1, "maxLength": 3072},
+    },
+    "oneOf": [{"required": ["itemType"]}, {"required": ["contentKey"]}],
+}
+BLUEPRINT = {
+    "type": "object", "additionalProperties": False, "required": ["origin"],
+    "properties": {
+        "origin": {"type": "object", "properties": TILE, "required": ["x", "y"], "additionalProperties": False},
+        **{layer: {"type": "array", "maxItems": 256, "items": BLUEPRINT_ENTRY} for layer in BLUEPRINT_LAYERS},
+    },
+}
+TOOLS.append(tool("build_diff", "只读比较蓝图和当前世界。origin 为绝对 Tile 坐标，条目 x/y 为有符号相对坐标，objects 按锚点指定。"
+                  "每项指定 itemType 或 contentKey。合计 1..256 项，宽高各最多 64 格，蓝图紧凑 UTF-8 JSON 最多 3072 字节。",
+                  {"blueprint": BLUEPRINT}, ["blueprint"]))
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 
 # Model-only server projection. Execution validation and the shared TOOLS stay unchanged.
@@ -294,7 +315,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
     return definitions
 
 READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
+READS |= {'build_diff', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -304,6 +325,8 @@ NATIVE_OPERATIONS = frozenset(SCHEMAS) - HOST_OPERATIONS
 
 def validate_backend(bridge, name, arguments):
     """Backend narrowing supplements, and never replaces, shared validation."""
+    if name == 'build_diff' and 'server_ai_build_diff_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_build_diff_v1')
     if 'server_ai_atomic_v1' in getattr(bridge, 'hello', {}).get('capabilities', ()):
         if name == 'use_item' and arguments:
             raise PreDispatchRejected('targeted_use_not_supported', status='targeted_use_not_supported')
@@ -335,6 +358,29 @@ class ArgumentValidationError(ValueError):
         self.diagnostics = issues
         self.diagnostics_truncated = truncated
         super().__init__('; '.join(issue['message'] for issue in issues)[:512])
+
+
+def _validate_blueprint(blueprint):
+    entries = [entry for layer in BLUEPRINT_LAYERS for entry in blueprint.get(layer, [])]
+    if not 1 <= len(entries) <= 256:
+        raise ValueError('blueprint requires 1..256 entries across layers')
+    for axis in TILE:
+        offsets = [entry[axis] for entry in entries]
+        low, high = min(offsets), max(offsets)
+        origin = blueprint['origin'][axis]
+        if high - low >= 64 or low + origin < 0 or high + origin > 100000:
+            raise ValueError('blueprint exceeds 64-tile span or absolute coordinate bounds')
+    occupied = set()
+    for layer in BLUEPRINT_LAYERS:
+        for entry in blueprint.get(layer, []):
+            if ('itemType' in entry) == ('contentKey' in entry) or not entry.get('contentKey', 'item').strip():
+                raise ValueError('blueprint entry requires exactly one itemType or nonblank contentKey')
+            target = (layer == 'walls', entry['x'], entry['y'])
+            if target in occupied:
+                raise ValueError('duplicate blueprint target')
+            occupied.add(target)
+    if len(json.dumps(blueprint, ensure_ascii=False, separators=(',', ':')).encode('utf-8')) > 3072:
+        raise ValueError('blueprint exceeds 3072 UTF-8 bytes')
 
 
 def validate(name, arguments):
@@ -404,6 +450,8 @@ def validate(name, arguments):
     arguments = check(arguments, SCHEMAS[name], name)
     if issues:
         raise ArgumentValidationError(name, issues, truncated)
+    if name == "build_diff":
+        _validate_blueprint(arguments["blueprint"])
     if name == 'configure_combat_loadout':
         keys = [role['hotbarKey'] for role in arguments.values()]
         if len(set(keys)) != len(keys):
@@ -1174,11 +1222,11 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_container_transfer_v1')
     if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_containers_v1')
-    if name == 'inspect_container':
+    if name in ('build_diff', 'inspect_container'):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):
-            raise BridgeError('Missing server AI container envelope')
+            raise BridgeError(f'Missing server AI {name} envelope')
         return {'valid': envelope.get('available') is True, **envelope}
     if name == 'query_map':
         if 'server_ai_map_v1' not in bridge.hello.get('capabilities', []):

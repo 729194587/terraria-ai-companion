@@ -280,6 +280,14 @@ OBSERVATIONS = {
         **QUERY_METADATA, **COLLECTION, 'items': array(RECIPE), 'offset': COUNT, 'unsupportedCount': COUNT,
         'registryRecipeCount': COUNT, 'availableOnly': B, 'storageReason': nullable(S), 'scope': S, 'quantities': S,
     })),
+    'build_diff': observation(obj({
+        **QUERY_METADATA,
+        'entries': array(obj({'layer': enum('tiles', 'walls', 'objects'), **TILE_XY,
+                              'itemType': nullable(I), 'left': I, 'top': I, 'width': I, 'height': I,
+                              'inReach': B, 'status': S, 'plannedSupportCandidate': B})),
+        'matched': COUNT, 'pending': COUNT, 'placeable': COUNT,
+        'materials': array(obj({'itemType': I, 'required': COUNT, 'available': COUNT, 'missing': COUNT})),
+    })),
     'query_map': observation(obj({
         **QUERY_METADATA, **fields(integers='schemaVersion originX originY cellSize width height',
                                    strings='worldUid characterId legend knowledge visibility'),
