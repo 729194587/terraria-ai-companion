@@ -152,9 +152,9 @@ P4-B 已经使用虚拟鼠标和原生 `Player.ItemCheck()`。
   R1     挖掘与砍树改用原生 ItemCheck   已确认待重构
   R2     扩展原生战斗武器支持           已确认待重构
   R3     增加原生门交互                 普通木门已通过隔离专服验收
-  R4     审查并优化抓钩执行             待审查
-  R5     增加右键物品使用               已确认待审查
-  R6     清理放置重复预检查             待审查
+  R4     审查并优化抓钩执行             已审查，保留显式 Actor 发钩路径
+  R5     增加右键物品使用               宝藏袋与板条箱已通过专服验收
+  R6     清理放置重复预检查             已完成隔离专服定向验收
 
 每个阶段独立实施、测试和验收。阶段之间允许根据实际代码依赖调整顺序。
 
@@ -225,6 +225,28 @@ DynamicMethod 克隆。 - 与原生机制重复的状态维护。
 pwsh -NoProfile -File scripts/build-companion.ps1 -OutputPath .local/r3-build
 pwsh -NoProfile -File tests/verify_server_ai_direct_input_native.ps1 -TestScript native_door.py -PackagePath .local/r3-build/Mods/CompanionBridge.tmod
 ```
+
+### R4 抓钩入口复核（2026-11-19）
+
+在固定的 2026.09.3.1 引擎上复核 Player.QuickGrapple 的 IL：末端 NewProjectile 确实以当前 Player.whoAmI 为 owner，但入口读取共享交互键状态，前置分支读取 Main.myPlayer，发射方向取决于 Main.mouseX、mouseY 和 screenPosition。整个方法没有接受显式世界瞄点的入口。继续使用 ActorGrapple.Fire 的原生物品选择、准入、发射 Hook 及 NewProjectile，并显式传入绑定 Actor 和目标方向。维持实例标记与生命周期清理。[现有执行路径与历史验证](PHASE4_5_GRAPPLE_NAVIGATION_IMPLEMENTATION.md)
+
+本轮复制世界定向复测使用 R3 构建。发钩 owner=254，专服本地槽为 255。ledge 记录发射、附着、脱钩、停稳到达；cancel 在空中牵引时取消并释放输入；same_reuse 在槽位、owner 和 identity 相同的替代弹幕出现后返回 unknown，保留替代实例。原始回执位于 .local/navigation-recovery-native-500166fadad54c6890ef7c11428b9354。本轮仅复核 2026.09.3.1 的普通单钩。
+
+### R5 在专服打开背包物品（2026-11-19）
+
+握手声明 `server_ai_open_item_v1` 时，用 inspect_inventory 的 slots 模式读取普通背包第 0–49 槽，再调用 `open_inventory_item({sourceSlot=slot,sourceToken=row.inventoryToken})`。每次打开一件原版 Boss 宝藏袋或钓鱼板条箱。装备右键和手持武器的副功能属于其他操作。
+
+2026.09.3.1 的 ItemSlot.RightClick 选择本地玩家，TryOpenContainer 的尾部写入鼠标释放标记、堆叠计时器并刷新 UI 配方。专服只执行与绑定角色有关的部分：按物品分类调用 Player.OpenBossBag 或 Player.OpenFishingCrate，然后运行原生右键钩子及消耗判定。完成要求原槽减少一件，并观察到本次调用中 EntitySource_ItemOpen 指向同一角色和容器类型的实际掉落。drops 表示生成的物品，拾取需要另外核验。发生部分效果或无法核验时返回 unknown。
+
+隔离专服通过五条动作回执。克苏鲁之眼宝藏袋从 2 减到 1，记录 5 组掉落；木板条箱从 1 减到 0，记录 4 组掉落。两次用旧令牌重试均被拒绝；普通石块被拒绝且槽位令牌保持不变。测试独立重读背包并验证回执 schema。证据目录为 .local/direct-input-native-ff8fea63b7d4473c99c74d7791a261bd。构建后运行 tests/verify_server_ai_direct_input_native.ps1，传入 -TestScript native_open_item.py 和 -PackagePath 指向待测包。
+
+### R6 放置预检复用（2026-11-19）
+
+place_tile、place_object 和统一 place_item 现在将已检查的目标、物件形状及支撑快照直接传给 ActorItemUse。此前在同一游戏线程请求内，受理和创建上下文各自扫描一次目标；多格物件还会再次解析备选形状。绳索沿用已经解析的目标。开始原生物品使用时仍检查 Actor 绑定、空闲状态和手持材料，之后在自然更新边界重验目标与材料。
+
+原生 ItemCheck 负责触及、放置规则和消耗。精确目标、物件占用、玩家碰撞以及支撑变化仍是请求范围和结果归属的保护条件。验收继续检查多格 Frame、容器注册、目标实际状态、材料减少一件和输入释放。
+
+tModLoader 2026.09.3.1 的三个复制世界通过 tests/verify_server_ai_placement_native.ps1 的默认、-Object、-Object -Failure 场景，分别完成 52、109、2 项检查。原始 placement-native-result.json 位于 .local/placement-native-validation- 加以下后缀的目录：6ca05b01c1a34950947c890892b4d13f、c85b6604f9124b148824e5cafd1e9744、9f46fd13040e41b09c3369e053bcaac8。
 
 ## 7. 每阶段验收标准
 

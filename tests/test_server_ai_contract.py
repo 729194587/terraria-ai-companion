@@ -214,6 +214,14 @@ class ResultRegistryTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
+    def test_opening_requires_capability_and_fresh_slot(self):
+        old = bridge(FULL - {'server_ai_open_item_v1'})
+        self.assertEqual('not_exposed', api_help(old, {'name':'open_inventory_item'})['status'])
+        modern = bridge(set(old.hello['capabilities']) | {'server_ai_open_item_v1'})
+        help_row = api_help(modern, {'name':'open_inventory_item'})
+        self.assertEqual('ok', help_row['status'])
+        self.assertEqual({'sourceSlot','sourceToken'}, set(help_row['parameters']['required']))
+
     def test_doors_require_handshake(self):
         old = bridge(FULL - {'server_ai_doors_v1'})
         modern = bridge(set(old.hello['capabilities']) | {'server_ai_doors_v1'})

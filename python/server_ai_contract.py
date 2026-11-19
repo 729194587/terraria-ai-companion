@@ -14,7 +14,7 @@ from server_ai import operations_for_capabilities
 # Supported means this bounded surface is exposed, never that every game goal succeeds.
 # Each known shared API belongs to a category even when it is not exposed by this backend.
 CATEGORIES = (
-    ('角色与背包', ('get_player_state', 'get_player_status', 'inspect_inventory', 'select_hotbar_slot'),
+    ('角色与背包', ('open_inventory_item','get_player_state', 'get_player_status', 'inspect_inventory', 'select_hotbar_slot'),
      'Limited', 'AI自身状态、背包和装备观察及快捷栏选择。'),
     ('功能装备变更', ('equip_item', 'unequip_item'),
      'Limited', '仅AI功能装备槽与普通背包；使用新鲜槽位令牌，按后续更新与动作回执核验。'),

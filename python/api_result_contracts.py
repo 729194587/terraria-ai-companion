@@ -666,7 +666,7 @@ TARGETS = {
     'targetTile': ('open_door','close_door','place_tile', 'place_object', 'place_rope'),
     'targetContainer': tuple(sorted(atomic.CONTAINER_OPERATIONS)),
     'targetRecipe': ('craft_recipe',),
-    'targetInventory': ('configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
+    'targetInventory': ('open_inventory_item','configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
     'targetTask': ('navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item'),
 }
@@ -840,7 +840,9 @@ DEFS['CombatLoadout'] = obj({'version':COUNT,'lastRefusal':nullable(obj({'reason
                              'primary':COMBAT_ROLE_STATE,'secondary':COMBAT_ROLE_STATE,'summon':COMBAT_ROLE_STATE,
                              'maintenance':nullable(obj({'status':S,'confirmedCasts':COUNT}))},optional=('secondary','summon','maintenance'))
 DEFS['DoorEvidence']=obj({**TILE_XY, **fields(integers='hinge top', booleans='beforeOpen afterOpen changed')})
+DEFS['ItemOpeningEvidence']=obj({**fields(integers='sourceSlot typeId beforeStack afterStack'), 'drops':array(obj({'typeId':I,'stack':I}))})
 ACTION_EVIDENCE = {
+    'open_inventory_item':'ItemOpeningEvidence',
     'open_door':'DoorEvidence','close_door':'DoorEvidence',
     'configure_combat_loadout': 'CombatLoadout',
     'craft_recipe': 'CraftEvidence',
@@ -994,6 +996,7 @@ TASK_COMPLETION_PROOF = {
     },
 }
 SUCCESSFUL_PROOF = {
+    'open_inventory_item': matches(drops={'minItems':1}),
     'open_door': matches(afterOpen=TRUE), 'close_door': matches(afterOpen=FALSE),
     'configure_combat_loadout': ref('CombatLoadout'),
     'select_hotbar_slot': matches(selectionApplied=TRUE),

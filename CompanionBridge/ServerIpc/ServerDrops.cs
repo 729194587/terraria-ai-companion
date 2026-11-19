@@ -87,5 +87,5 @@ internal static class ServerDrops
 public sealed class DropIdentityGlobalItem : GlobalItem
 {
     public override void SetDefaults(Item entity) => ServerDrops.ResetIdentity(entity);
-    public override void OnSpawn(Item item, IEntitySource source) => ServerDrops.ResetIdentity(item);
+    public override void OnSpawn(Item item, IEntitySource source) { ServerDrops.ResetIdentity(item); ServerItemOpening.Spawn(item,source); }
 }

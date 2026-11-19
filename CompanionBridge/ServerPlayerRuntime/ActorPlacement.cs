@@ -52,10 +52,17 @@ internal static class ActorPlacement
             return null;
         }
         bool obj=kind is "object" or "chest";
-        ActorRope.Target rope=null;
-        string error=kind=="rope"?ActorRope.Resolve(p,item,x,y,out rope):Preflight(p,x,y,obj);
-        if(error!=null)return error;
-        context=Create(p,x,y,obj,rope);
+        if(kind=="rope")
+        {
+            string error=ActorRope.Resolve(p,item,x,y,out var rope);
+            if(error!=null)return error;
+            context=FromRope(item,rope);
+        }
+        else
+        {
+            string error=Prepare(p,x,y,obj,out context);
+            if(error!=null)return error;
+        }
         context.Unified=true;
         return null;
     }
@@ -64,34 +71,38 @@ internal static class ActorPlacement
         // Rope is classified separately because its native placement can extend a column.
         &&i.createWall<0&&i.tileWand<0&&!Main.tileRope[i.createTile];
     internal static bool Supported(Item i)=>TileMaterial(i)&&!TileObjectData.CustomPlace(i.createTile,i.placeStyle);
-    internal static string Preflight(Player p,int x,int y,bool objectPlacement=false)
-        =>Preflight(p,x,y,objectPlacement,out _);
-    private static string Preflight(Player p,int x,int y,bool objectPlacement,out ActorRope.Target rope)
+    internal static Context FromRope(Item item,ActorRope.Target rope)=>new()
     {
-        rope=null;
-        if(objectPlacement)return ActorObjectPlacement.Preflight(p,x,y);
-        if(!WorldGen.InWorld(x,y,2))return "invalid_target";
-        if(Main.tile[x,y].HasTile)return "target_occupied";
-        bool ropeMaterial=ActorRope.Supported(p.HeldItem);
-        if(!ropeMaterial&&!Supported(p.HeldItem))return "unsupported_selected_placement_item";
-        if(p.gravDir!=1||p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)return "unsupported_placement_state";
-        // An empty requested cell keeps place_tile's exact-coordinate contract.
-        // Clicking an existing segment to extend it is handled by place_rope.
-        return ropeMaterial?ActorRope.Resolve(p,p.HeldItem,x,y,out rope):null;
-    }
-    internal static Context Create(Player p,int x,int y,bool objectPlacement=false,ActorRope.Target rope=null)
+        X=rope.X,Y=rope.EndY,Rope=rope,TileType=item.createTile,Prefix=item.prefix,Style=item.placeStyle
+    };
+
+    internal static string Prepare(Player p,int x,int y,bool objectPlacement,out Context context)
     {
+        context=null;
+        var item=p.HeldItem;
         ActorObjectPlacement.Shape shape=null;
-        if(rope==null)
+        if(objectPlacement)
         {
-            string error=objectPlacement?ActorObjectPlacement.Preflight(p,x,y,out shape):Preflight(p,x,y,false,out rope);
-            if(error!=null)throw new InvalidOperationException(error);
+            string error=ActorObjectPlacement.Preflight(p,x,y,out shape);
+            if(error!=null)return error;
         }
-        if(rope!=null)return new Context{X=rope.X,Y=rope.EndY,Rope=rope,
-            TileType=p.HeldItem.createTile,Prefix=p.HeldItem.prefix,Style=p.HeldItem.placeStyle};
-        var c=new Context{X=x,Y=y,TileType=p.HeldItem.createTile,Prefix=p.HeldItem.prefix,Style=p.HeldItem.placeStyle,Object=objectPlacement};
-        if(objectPlacement){c.Shape=shape;c.SupportSnapshot=ActorObjectPlacement.SupportSnapshot(c);}
-        return c;
+        else
+        {
+            if(!WorldGen.InWorld(x,y,2))return "invalid_target";
+            if(Main.tile[x,y].HasTile)return "target_occupied";
+            bool ropeMaterial=ActorRope.Supported(item);
+            if(!ropeMaterial&&!Supported(item))return "unsupported_selected_placement_item";
+            if(p.gravDir!=1||p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)return "unsupported_placement_state";
+            if(ropeMaterial)
+            {
+                string error=ActorRope.Resolve(p,item,x,y,out var rope);
+                if(error==null)context=FromRope(item,rope);
+                return error;
+            }
+        }
+        context=new(){X=x,Y=y,TileType=item.createTile,Prefix=item.prefix,Style=item.placeStyle,Object=objectPlacement,Shape=shape};
+        if(objectPlacement)context.SupportSnapshot=ActorObjectPlacement.SupportSnapshot(context);
+        return null;
     }
     internal static void Install(Action<Action,Action> install)
     {

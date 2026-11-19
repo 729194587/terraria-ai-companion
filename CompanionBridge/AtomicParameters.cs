@@ -225,6 +225,7 @@ internal static class AtomicParameters
                 break;
             case "drop_through_platform": Fields(); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
+            case "open_inventory_item": Fields("sourceSlot","sourceToken"); Integer("sourceSlot",0,49); Token("sourceToken"); break;
             case "open_door": case "close_door": case "place_item": case "place_object": case "place_rope": goto case "place_tile";
             case "collect_drops":
                 if (keys.Except(new[]{"radiusPixels","typeIds","entityRef"}).Any()) throw new FormatException("Unexpected collect_drops parameter.");

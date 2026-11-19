@@ -40,6 +40,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         handle is Handle {Context:TaskSlot {Task:CombatController combat}}?combat.TargetRef:null;
     public bool SupportsBossEncounter=>true;
     public bool SupportsCombat=>true;
+    public bool SupportsOpening=>ServerItemOpening.Available;
     public bool SupportsDoors=>true;
     public bool SupportsLoadout=>true;
     public Func<bool> CapturePrimary(AiReadOnlyProtocol.Identity frame)=>NativeCombatWorld.CapturePrimary(frame);
@@ -67,6 +68,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         try
         {
             object context;
+            if(operation=="open_inventory_item")return new Handle(identity,operation,null,ServerItemOpening.Open(identity,args));
             if(operation is "open_door" or "close_door")
             {
                 string reason=ServerDoor.Set(p,args.GetProperty("x").GetInt32(),args.GetProperty("y").GetInt32(),operation=="open_door",out var proof);
@@ -125,7 +127,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 string error=ActorRope.Resolve(p,p.inventory[slot],x,y,out var target);
                 if(error!=null)return Reject(error);
                 if(p.selectedItem!=slot)ActorItemUse.Select(p,identity.World,identity.Generation,slot);
-                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,rope:target);
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,ActorPlacement.FromRope(p.HeldItem,target));
                 context=ActorItemUse.Current;
             }
             else if(operation is "place_tile" or "place_object")
@@ -133,9 +135,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
                 if(child&&operation=="place_tile"&&args.TryGetProperty("plannedPlacementSlot",out var plannedSlot))
                     ActorItemUse.Select(p,identity.World,identity.Generation,plannedSlot.GetInt32());
-                string error=ActorPlacement.Preflight(p,x,y,operation=="place_object");
+                string error=ActorPlacement.Prepare(p,x,y,operation=="place_object",out var placement);
                 if(error!=null)return Reject(error,operation=="place_object"?ActorObjectPlacement.PreflightDetail(p,x,y,error):null);
-                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,operation=="place_object");
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,placement);
                 if(child&&operation=="place_tile"&&args.TryGetProperty("waterBridgeDirection",out var direction))
                     ActorItemUse.Current.Placement.WaterBridgeDirection=direction.GetInt32();
                 context=ActorItemUse.Current;

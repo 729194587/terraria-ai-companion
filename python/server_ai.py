@@ -54,6 +54,7 @@ def operations_for_capabilities(capabilities):
             ('server_ai_crafting_v1', 'craft_recipe'),
             ('server_ai_place_object_workbench_v1', 'place_object'),
             ('server_ai_place_tile_v1', 'place_tile'),
+            ('server_ai_open_item_v1', 'open_inventory_item'),
             ('server_ai_doors_v1', 'open_door'),
             ('server_ai_doors_v1', 'close_door'),
             ('server_ai_place_rope_v1', 'place_rope'),

@@ -65,15 +65,11 @@ internal static class ActorItemUse
     }
     internal static void Start(Player p,string world,long generation)
     {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation);}}
-    internal static void StartPlacement(Player p,string world,long generation,int x,int y,bool objectPlacement=false,ActorRope.Target rope=null)
-    {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,x,y,objectPlacement,rope);}}
     internal static void StartPlacement(Player p,string world,long generation,ActorPlacement.Context placement)
-    {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,prepared:placement);}}
-    private static void StartCore(Player p,string world,long generation,int? x=null,int? y=null,bool objectPlacement=false,ActorRope.Target rope=null,
-        ActorPlacement.Context prepared=null)
+    {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,placement);}}
+    private static void StartCore(Player p,string world,long generation,ActorPlacement.Context placement=null)
     {
         Capture(p,world,generation);Idle(p);
-        var placement=prepared??(x.HasValue?ActorPlacement.Create(p,x.Value,y.Value,objectPlacement,rope):null);
         if(p.selectedItem<0||p.selectedItem>9||(placement==null?!Supported(p.HeldItem):!ActorPlacement.SupportedFor(placement,p.HeldItem))||p.HeldItem.IsAir)
             throw new InvalidOperationException("Select an item in hotbar 1–10 that can use a single press without a world target.");
         if(p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)throw new InvalidOperationException("AI cannot use an item in this state.");

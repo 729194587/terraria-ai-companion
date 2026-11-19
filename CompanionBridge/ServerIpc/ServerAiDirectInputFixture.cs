@@ -53,7 +53,7 @@ internal static class ServerAiDirectInputFixture
         string requestText;
         try{requestText=File.ReadAllText(request);File.Delete(request);}catch(IOException){return;}
         using var doc=JsonDocument.Parse(requestText);scene=doc.RootElement.GetProperty("scene").GetString();
-        if(scene is not ("flat" or "wall" or "platform" or "edge" or "air" or "profile_refused" or "door" or "blocked_door"))throw new ArgumentException("Unknown direct-input fixture scene.");
+        if(scene is not ("flat" or "wall" or "platform" or "edge" or "air" or "profile_refused" or "door" or "blocked_door" or "open_items"))throw new ArgumentException("Unknown direct-input fixture scene.");
         int left=Main.spawnTileX,floor=Main.spawnTileY+8;
         for(int tx=left-36;tx<=left+36;tx++)for(int ty=floor-24;ty<=floor+18;ty++)
         {
@@ -63,6 +63,11 @@ internal static class ServerAiDirectInputFixture
             {tile.HasTile=true;tile.TileType=TileID.Dirt;}
             if((scene=="platform"||scene=="edge"&&tx<=left+2)&&ty==floor)
             {tile.HasTile=true;tile.TileType=TileID.Platforms;tile.TileFrameY=0;tile.TileFrameX=0;}
+        }
+        if(scene=="open_items")
+        {
+            p.inventory[20].SetDefaults(ItemID.EyeOfCthulhuBossBag);p.inventory[20].stack=2;
+            p.inventory[21].SetDefaults(ItemID.WoodenCrate);p.inventory[22].SetDefaults(ItemID.StoneBlock);
         }
         if(scene is "door" or "blocked_door")
         {
