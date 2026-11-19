@@ -12,6 +12,7 @@
 | [工程原则](ENGINEERING.md) | 长期有效的安全与设计约束 |
 | [API 契约](API_CONTRACT.md) | 模型工具入口、Schema、能力投影和结果语义 |
 | [G1 Gameplay E2E Baseline](G1_GAMEPLAY_INTEGRATION_MVP.md) | 用真实模型验证现有 Agent 是否能自主完成木材采集、工作台制作与放置；先测试后实现 |
+| [Terraria World Interaction](TERRARIA_WORLD_INTERACTION_DESIGN.md) | Building、Housing、NPC Interaction 与 Economy 的架构基线，含 Numen 参考、Terraria 1.4.4.9 规则及 tModLoader 原生机制 |
 
 ## Agent 与运行时
 
