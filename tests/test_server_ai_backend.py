@@ -567,6 +567,25 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         result = await atomic.dispatch(self.bridge, 'place_object', {'x': 10, 'y': 20})
         self.assertEqual('unknown', result['status'])
 
+    async def test_door_receipt_requires_general_objects_middle_anchor_and_release(self):
+        self.bridge.close()
+        self.host.actions = self.host.object_placement = True
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+        self.host.placement_override = dict(typeId=10, itemType=25,
+            footprint=dict(x=2071, y=207, width=1, height=3))
+        target = dict(x=2071, y=208)
+        async def place():
+            self.host.polls = 0
+            return (await atomic.dispatch(self.bridge, 'place_object', target))['status']
+        self.assertEqual('unknown', await place())
+        self.bridge.hello['capabilities'].append('server_ai_general_operations_v1')
+        self.assertEqual('completed', await place())
+        self.host.placement_override['footprint']['y'] += 1
+        self.assertEqual('unknown', await place())
+        self.host.placement_override['footprint']['y'] -= 1
+        self.host.mode = 'no_release'
+        self.assertEqual('unknown', await place())
+
     async def test_workbench_lua_uses_existing_dispatch_and_unknown_barrier(self):
         self.bridge.close()
         self.host.actions = self.host.object_placement = True

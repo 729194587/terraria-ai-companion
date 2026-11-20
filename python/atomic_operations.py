@@ -96,6 +96,10 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("observe_terrain", "复用get_terrain读取45×29局部碰撞及同次玩家状态；Tile为16像素。"),
     tool("inspect_npc_shop", "读取有交互资格的普通商人商品列表。未知条件或未支持的商品应按返回状态处理。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
     tool("quote_npc_purchase", "按绑定 AI 的当前购物状态报价，返回短时购买令牌、单价与支付能力。数量为一件。", {"entityRef": MERCHANT_REF, "itemType": {"type": "integer", "minimum": 1, "maximum": 2147483647}, "quantity": {"type": "integer", "minimum": 1, "maximum": 1}}, ["entityRef", "itemType"]),
+    tool("quote_nurse_heal", "读取附近护士的治疗量、诊金（铜）、可清除减益和短时报价。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
+    tool("heal_at_nurse", "使用同一护士的报价治疗绑定 AI 并清除可治疗减益，支付随身钱币。", {"entityRef": MERCHANT_REF,"quoteToken": SHOP_TOKEN}, ["entityRef","quoteToken"]),
+    tool("quote_reforge", "凭主背包槽令牌向哥布林工匠查询当前前缀和一次重铸的随身铜币费用。", SALE_SOURCE, list(SALE_SOURCE)),
+    tool("reforge_item", "使用同一工匠和槽位的新鲜报价进行一次原生随机重铸，可能抽回原前缀。", {**SALE_SOURCE, "quoteToken": SHOP_TOKEN}, [*SALE_SOURCE, "quoteToken"]),
     tool("quote_npc_sale", "使用主背包指定槽的新鲜 inventoryToken 查询向普通商人出售一件的预计铜币收入。", SALE_SOURCE, list(SALE_SOURCE)),
     tool("sell_npc_item", "使用同一商人和背包槽的有效出售报价卖出一件，核验实收钱币和库存。", {**SALE_SOURCE, "quoteToken": SHOP_TOKEN}, [*SALE_SOURCE, "quoteToken"]),
     tool("buy_npc_item", "使用同一商人的新鲜报价令牌购买一件商品。核验随身钱币与入包数量；过期后须重新查询报价。", {"entityRef": MERCHANT_REF, "quoteToken": SHOP_TOKEN}, ["entityRef", "quoteToken"]),
@@ -330,7 +334,7 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
     return definitions
 
 READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
+READS |= {'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -348,6 +352,10 @@ def validate_backend(bridge, name, arguments):
             raise PreDispatchRejected(f'Requires {cap}')
     if name in ('quote_npc_sale', 'sell_npc_item') and 'server_ai_merchant_sale_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_merchant_sale_v1')
+    if name in ('quote_nurse_heal','heal_at_nurse') and 'server_ai_nurse_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_nurse_v1')
+    if name in ('quote_reforge','reforge_item') and 'server_ai_reforge_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_reforge_v1')
     housing_cap = {'inspect_npc_housing': 'server_ai_npc_housing_v1', 'assign_npc_home': 'server_ai_housing_assignment_v1'}.get(name)
     if housing_cap and housing_cap not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected(f'Requires {housing_cap}')
@@ -398,6 +406,32 @@ def verified_purchase(target, proof):
             and proof['itemType'] > 0 and proof['quantity'] == 1 and proof['unitPrice'] > 0
             and proof['beforeCopper'] - proof['afterCopper'] == proof['unitPrice']
             and proof['afterCount'] - proof['beforeCount'] == 1 and proof.get('banksUnchanged') is True)
+
+
+def verified_reforge(target, proof):
+    if not isinstance(target, dict) or not isinstance(proof, dict):
+        return False
+    if any(key not in target or target[key] != proof.get(key)
+           for key in ('entityRef', 'sourceSlot', 'sourceToken', 'quoteToken')):
+        return False
+    fields = ('itemType','beforePrefix','afterPrefix','beforeCopper','afterCopper','priceCopper')
+    return (all(type(proof.get(k)) is int and proof[k] >= 0 for k in fields)
+            and proof['itemType'] > 0 and proof['afterPrefix'] > 0
+            and proof['beforeCopper'] - proof['afterCopper'] == proof['priceCopper']
+            and all(proof.get(k) is True for k in ('rolled','itemVerified','banksUnchanged')))
+
+
+def verified_treatment(target, proof):
+    if not isinstance(target, dict) or not isinstance(proof, dict):
+        return False
+    return (all(isinstance(target.get(k), str) and target[k] == proof.get(k) for k in ('entityRef', 'quoteToken'))
+            and all(type(proof.get(k)) is int and proof[k] >= 0 for k in
+                    ('heal', 'priceCopper', 'beforeCopper', 'afterCopper', 'beforeLife', 'afterLife'))
+            and proof['beforeCopper'] - proof['afterCopper'] == proof['priceCopper'] > 0
+            and proof['afterLife'] - proof['beforeLife'] == proof['heal']
+            and isinstance(proof.get('removableDebuffs'), list)
+            and (proof['heal'] > 0 or bool(proof['removableDebuffs']))
+            and proof.get('buffsVerified') is True and proof.get('banksUnchanged') is True)
 
 
 def verified_sale(target, proof):
@@ -627,19 +661,25 @@ def result(action, generation):
             'completed': action['status'] == 'completed', 'cancelled': action['status'] == 'cancelled'}
 
 
-def verified_server_object(action, evidence):
+def verified_server_object(action, evidence, *, general_objects=False):
     target = action.get('targetTile') or {}
     footprint = evidence.get('footprint')
-    return (isinstance(footprint, dict) and set(footprint) == {'x', 'y', 'width', 'height'}
+    if not (isinstance(footprint, dict) and set(footprint) == {'x', 'y', 'width', 'height'}
             and all(type(v) is int for v in footprint.values())
             and evidence.get('objectPlacement') is True
             and evidence.get('fullFootprintVerified') is True
             and type(evidence.get('nativePlacementEvents')) is int and evidence['nativePlacementEvents'] == 1
             and evidence.get('uncertainNativeEffect') is False
-            and type(evidence.get('typeId')) is int and evidence['typeId'] == 18
-            and type(evidence.get('itemType')) is int and evidence['itemType'] == 36
-            and type(evidence.get('style')) is int and evidence['style'] == 0
-            and evidence.get('footprint') == dict(x=target.get('x'), y=target.get('y'), width=2, height=1))
+            and all(type(evidence.get(key)) is int for key in ('typeId', 'itemType', 'style'))
+            and evidence['style'] == 0 and all(type(target.get(k)) is int for k in ('x', 'y'))):
+        return False
+    pair = evidence['itemType'], evidence['typeId']
+    if pair == (36, 18):
+        return footprint == dict(**target, width=2, height=1)
+    if general_objects and pair == (25, 10):
+        # Style-zero wooden door placed at its middle-cell anchor.
+        return footprint == dict(x=target['x'], y=target['y']-1, width=1, height=3)
+    return False
 
 
 CONTAINER_TRANSFERS = frozenset(('deposit_container_item', 'withdraw_container_item'))
@@ -1173,6 +1213,8 @@ async def terminal(bridge, action, generation):
                                 and type(native_evidence.get('typeId')) is int and native_evidence['typeId']>0
                                 and isinstance(native_evidence.get('drops'),list) and bool(native_evidence['drops'])
                                 and all(isinstance(d,dict) and all(type(d.get(k)) is int and d[k]>0 for k in ('typeId','stack')) for d in native_evidence['drops'])),
+        'reforge_item': verified_reforge(action.get('targetTask'), native_evidence),
+        'heal_at_nurse': verified_treatment(action.get('targetTask'), native_evidence),
         'sell_npc_item': verified_sale(action.get('targetTask'), native_evidence),
         'buy_npc_item': verified_purchase(action.get('targetTask'), native_evidence),
         'assign_npc_home': verified_npc_home(action.get('targetTask'), native_evidence),
@@ -1215,7 +1257,8 @@ async def terminal(bridge, action, generation):
                        and native_evidence.get('targetPresent') is True
                        and native_evidence.get('targetChanged') is False
                        and type(native_evidence.get('consumedCount')) is int and native_evidence['consumedCount'] == 1
-                       and verified_server_object(action, native_evidence)),
+                       and verified_server_object(action, native_evidence, general_objects=
+                                                  'server_ai_general_operations_v1' in bridge.hello.get('capabilities', ()))),
         'mine_tile': (native_evidence.get('destroyedByActor') is True
                       and native_evidence.get('targetAbsent') is True
                       and native_evidence.get('targetChanged') is False),
@@ -1230,7 +1273,7 @@ async def terminal(bridge, action, generation):
         and isinstance(end,dict) and retreat.get('update')==end.get('gameUpdate')))
     native_end = (retreat_verified and isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('sell_npc_item','buy_npc_item','assign_npc_home','dismiss_summon','set_team','teleport_to_teammate','open_inventory_item','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','assign_npc_home','dismiss_summon','set_team','teleport_to_teammate','open_inventory_item','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -1341,7 +1384,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_container_transfer_v1')
     if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_containers_v1')
-    if name in ('inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
+    if name in ('inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):
@@ -1451,7 +1494,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Container target missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if name in ('sell_npc_item','buy_npc_item','assign_npc_home','set_team','teleport_to_teammate','mine_target', 'navigate_to'):
+        if name in ('reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','assign_npc_home','set_team','teleport_to_teammate','mine_target', 'navigate_to'):
             placement_invalid = True
             if action.get('targetTask') != arguments:
                 raise BridgeError('Task target missing or changed in start receipt')

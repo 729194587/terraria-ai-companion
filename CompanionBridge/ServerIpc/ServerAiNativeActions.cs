@@ -57,6 +57,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsContainers=>true;
     public bool SupportsSorting=>ActorSorting.Available;
     public bool SupportsCollection => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsReforge => MerchantShop.VanillaServicesSupported;
+    public bool SupportsNurse => NurseService.Supported;
     public bool SupportsMerchantSale => MerchantShop.SaleSupported;
     public bool SupportsMerchantPurchase => MerchantShop.Supported;
     public bool SupportsHousingAssignment => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
@@ -98,6 +100,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     true,absent,InputsAcquired:false));
             }
             if(operation=="sell_npc_item") return new Handle(identity,operation,null,MerchantShop.Sell(identity,args));
+            if(operation=="reforge_item") return new Handle(identity,operation,null,GoblinReforge.Execute(identity,args));
+            if(operation=="heal_at_nurse") return new Handle(identity,operation,null,NurseService.Heal(identity,args));
             if(operation=="buy_npc_item") return new Handle(identity,operation,null,MerchantShop.Buy(identity,args));
             if(operation=="assign_npc_home") return new Handle(identity,operation,null,NpcHousing.Assign(identity,args));
             if(operation=="set_team")return new Handle(identity,operation,null,ServerRegroup.SetTeam(identity,args.GetProperty("team").GetInt32()));

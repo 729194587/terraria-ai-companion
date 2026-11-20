@@ -40,16 +40,19 @@ internal static partial class MerchantShop
         int Slot, int Type, long Price, ulong Expires, long DeadlineMs, string Inventory, string Catalog);
     private static string Name => NPCShopDatabase.GetShopName(NPCID.Merchant, "Shop");
 
-    private static string Resolve(Identity id, string reference, out NPC merchant)
+    private static string Resolve(Identity id, string reference, out NPC merchant) =>
+        ResolveService(id, reference, NPCID.Merchant, Supported, out merchant);
+
+    internal static string ResolveService(Identity id, string reference, int npcType, bool supported, out NPC merchant)
     {
         merchant = null;
         foreach (var npc in Main.ActiveNPCs)
             if (NativeCombatWorld.Reference(id, npc) == reference) { merchant = npc; break; }
         if (merchant == null || merchant.life <= 0) return "stale_entity_ref";
-        if (!Supported || merchant.type != NPCID.Merchant) return "unsupported_merchant";
+        if (!supported || merchant.type != npcType) return npcType == NPCID.Merchant ? "unsupported_merchant" : "unsupported_npc_service";
         var player = (Player)id.Actor;
         return player.dead || player.ghost || !merchant.CanTalk || player.Distance(merchant.Center) > 80f
-            ? "merchant_not_in_range_or_busy" : null;
+            ? (npcType == NPCID.Merchant ? "merchant_not_in_range_or_busy" : "npc_not_in_range_or_busy") : null;
     }
 
     private static Listing Inspect(NPCShop.Entry entry, Item item, Player player, long carried)
@@ -95,10 +98,13 @@ internal static partial class MerchantShop
         finally { p.currentShoppingSettings = original; }
     }
 
-    private static string Inventory(Identity id, Player p) =>
+    internal static bool VanillaServicesSupported => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1"
+        && ModLoader.Mods.All(m => m.Name is "ModLoader" or "CompanionBridge");
+
+    internal static string Inventory(Identity id, Player p) =>
         string.Concat(p.inventory.Select((item, slot) => ActorInventory.Token(id,item,slot)));
 
-    private static string[] BankTokens(Identity id, Player p) => new[]{p.bank,p.bank2,p.bank3,p.bank4}.SelectMany((bank,b) =>
+    internal static string[] BankTokens(Identity id, Player p) => new[]{p.bank,p.bank2,p.bank3,p.bank4}.SelectMany((bank,b) =>
         bank.item.Select((item,s) => ActorInventory.Token(id,item,$"bank:{b}:{s}"))).ToArray();
 
     private static int Unique(Listing[] listings, int type)

@@ -26,6 +26,8 @@ CATEGORIES = (
      'Limited', '局部导航按各自profile；绳索操作受原版绳柱及原生接触条件限制。'),
     ('物品与战斗', ('dismiss_summon','set_team','list_teammates','teleport_to_teammate','use_item', 'configure_combat_loadout', 'query_combat_loadout', 'query_combat', 'discover_bosses','attack_entity'), 'Limited', '主动攻击通过 submit_task 提交 combat_attack；query_combat 可发现游戏侧自卫任务。'),
     ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '服务器挖掘从主背包自动选工具；复合挖掘可先接近指定格，掉落入包需另行核验。'),
+    ('重铸', ('quote_reforge','reforge_item'), 'Limited', '向附近的原版哥布林工匠报价并重铸主背包中一件武器、工具或配饰。每次付款只抽一次。'),
+    ('护士', ('quote_nurse_heal','heal_at_nurse'), 'Limited', '向附近原版护士查询治疗量、可清除减益和诊金，按有效报价支付随身钱币。'),
     ('商店', ('inspect_npc_shop', 'quote_npc_purchase', 'buy_npc_item', 'quote_npc_sale', 'sell_npc_item'), 'Limited', '原版普通商人；逐项检查可售状态，使用新鲜报价购买或出售一件。出售需要普通背包槽及其当前令牌。'),
     ('建造', ('inspect_npc_housing', 'assign_npc_home', 'inspect_housing', 'build_diff', 'place_tile', 'place_object', 'place_wall', 'hammer_tile', 'place_rope'),
      'Limited', '原生放置受材料、样式、占地和目标坐标限制。'),
@@ -185,6 +187,10 @@ return api("configure_combat_loadout",{primary={hotbarKey=row.hotbarKey,expected
                  'inspect_inventory': 'mode="selected"', 'observe_scene': 'layers={"objects"}',
                  'inspect_housing': 'x=100,y=200',
                  'inspect_npc_shop': 'entityRef=<商人引用>',
+                 'quote_reforge': 'entityRef=<工匠>,sourceSlot=<0..49>,sourceToken=<inventoryToken>',
+                 'reforge_item': 'entityRef=<同一工匠>,sourceSlot=<原槽>,sourceToken=<原槽令牌>,quoteToken=<重铸报价>',
+                 'quote_nurse_heal': 'entityRef=<附近护士引用>',
+                 'heal_at_nurse': 'entityRef=<同一护士>,quoteToken=<诊金报价>',
                  'quote_npc_purchase': 'entityRef=<商人引用>,itemType=8',
                  'quote_npc_sale': 'entityRef=<商人引用>,sourceSlot=<0..49>,sourceToken=<inventoryToken>',
                  'sell_npc_item': 'entityRef=<同一商人>,sourceSlot=<原槽>,sourceToken=<原槽令牌>,quoteToken=<出售报价>',
@@ -336,6 +342,13 @@ def server_contract(bridge, tool, *, compact=False):
             '活动或unknown任务阻止新身体变更，替换前显式取消并确认终态。'
             '危险由游戏Tick安全中断，resume_task只对可信危险中断显式重新受理，重新验证目标/工具/环境；不自动恢复。'
             'Task完成不等于Goal完成；Program/Run失败不改写Task，最终模型失败不重放动作。')
+        if {'build_diff', 'build_place'} <= supported:
+            task_reference += (' 建房先按选址生成完整 blueprint，含外框、背景墙、门和全部目标家具。'
+                               '开工前调用 api("build_diff",{blueprint=plan})，检查有效观察中的 materials、'
+                               'entries 的占地、阻挡和 plannedSupportCandidate，再选址、备料或定点清障。'
+                               '调整选址或设计后重新比对。保留同一布局，可按制作和支撑顺序分批 submit_task。'
+                               'build_partial 时先看 runtimeTasks.results[].result.remainingByReason 的数量和示例坐标，'
+                               '需要其余坐标才按 taskId 查完整回执。')
         if 'discover_bosses' in supported:
             task_reference+=' 用 inspect_inventory 的 combatCandidates 配置 configure_combat_loadout，query_combat_loadout 核对。discover_bosses 取 admissible 候选的 entityRef，submit_task 提交 boss_encounter；query_task 查看进展。cancel_task 停止，附 retreatTo={feetX,feetY} 导航撤退。'
         if 'boss_encounter' in supported and 'discover_bosses' not in supported:

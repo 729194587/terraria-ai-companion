@@ -241,7 +241,7 @@ Blueprint 不应预先假定世界已知：未观察、未加载和截断区域�
 
 - 住所分配只针对已经存在于世界中的 NPC。
 - 房间有效不保证 NPC 已满足首次生成/招募条件。
-- Guide 在普通新世界开局已存在；Merchant 需要空置有效住宅，并满足全世界玩家库存合计超过 50 Silver 的条件。放在箱子或便携存储中的金币不计入该招募条件。
+- Guide 在普通新世界开局已存在。普通 Merchant 首次招募需要空置有效住宅，目标版本的钱币检查在所有活跃玩家随身钱币合计达到 50 银时通过（含等号）。箱子及便携存储不计入。观察与判断方法见 [NPC 住宅攻略](../skills/npc_housing/SKILL.md)。
 - 其他 NPC 有各自的物品、生命、事件、Boss 进度或探索条件；Traveling Merchant 等也不遵循普通永久住宅流程。
 - NPC 出现受时间、事件和生成间隔影响。Agent 应观察实际生成状态，不把“条件已满足”报告成“NPC 已入住”。
 
@@ -363,7 +363,25 @@ tModLoader 提供可复用的商店注册机制：
 
 先完成 Vanilla Merchant 的查询/购买/出售闭环，再逐项增加特殊服务。客户端专属对话钩子不自动纳入服务端支持范围。
 
+#### 护士治疗（2026-11-20）
+
+在 tModLoader 2026.09.3.1、只加载 CompanionBridge 的服务器上，能力握手提供 `server_ai_nurse_v1`。用附近护士的 `entityRef` 调用 `quote_nurse_heal` 查看当前生命、治疗量、将清除的减益、诊金（铜）和随身支付能力，再用同一引用及 `quoteToken` 调用 `heal_at_nurse`。报价与普通商人交易共用租约的一次性令牌位置，有效期为 600 个游戏更新或 10 秒，以先到者为准。提交时重查生命、治疗内容、费用、支付能力、身份和距离；已开始支付但读回无法确认时返回 `unknown`。
+
+目标 DLL 的 `Main.GUIChatDrawInner` 在 IL_06fa–0837 按缺失生命及剩余时间超过 60 tick 的可治疗减益计价（每项加 100 铜基础费用），再应用世界进度、专家倍率与购物价格系数。IL_1247/1269 调用护士治疗与价格钩子，IL_20c8 通过 `Player.BuyItem` 收费，随后恢复生命、用 `DelBuff` 清除剩余时间大于零的可治疗减益，最后调用 `PostNurseHeal`。服务端在绑定 AI 上执行这些步骤，按原生规则保留护士不能清除的减益。只接受随身钱币足额的治疗，并核对四个银行。
+
+隔离专服使用公开 Lua 接口，实测支付 132 铜，生命 60 → 100，移除流血（30），保留药水病（21），四个银行逐槽一致。余额不足（银行有钱）、报价后再次受伤、同槽更换护士、成交后重用旧令牌均被拒绝；拒绝前后独立读取的生命、Buff 类型、背包与银行相同。满血且只剩药水病时无付费治疗报价。诊金随世界与角色状态变化，此处金额仅对应该场景。
+
+复现入口为 `tests/verify_server_ai_native.ps1 -NurseLua -PackagePath .local/nurse-service/Mods/CompanionBridge.tmod`。隔离 profile 中的 `nurse-results.jsonl` 保存回执和快照。真实模型、Host & Play 与远端显示留待集中验收。
+
 ---
+
+#### 哥布林工匠重铸（2026-11-20）
+
+目标 DLL 的 `Main.DrawInventory` 从 IL_1981 起取物品当前 `value × stack`，调用 `ItemLoader.ReforgePrice`。原版分支先按折扣资格乘 0.8 取整，再乘工匠购物系数取整，最后整除 3。界面显示金额的最小值与传给支付的变量分开；接口返回实际支付变量。槽位准入沿用 `Item.Prefix(-3)` 检查。点击时依次检查 `CanAfford`、`CanReforge`，调用 `BuyItem`、`PreReforge`、`ResetPrefix`、一次 `Prefix(-2)` 和 `PostReforge`。前缀可以和上次相同。
+
+能力 `server_ai_reforge_v1` 适用于目标版本原版服务配置。用附近工匠的 `entityRef`、普通背包 `sourceSlot` 和最新 `sourceToken` 调用 `quote_reforge`，再带同一组参数及 `quoteToken` 调用 `reforge_item`。当前支持不可堆叠的单件原版物品，只用随身钱币。报价与买卖、治疗共用租约的一次性报价位置。扣费后若无法确认抽取、源物品身份、数量、收藏状态、钱币或银行状态，返回 `unknown`。见[经济攻略](../skills/npc_interaction_and_economy/SKILL.md)。
+
+隔离专服公开 Lua 实测：木剑（24）报价 31 铜，随身钱币 1,000,000 → 999,969 铜，前缀 0 → 10，四个银行逐槽相同。用新的槽位令牌再次询价为 22 铜。不可重铸物品未获得报价；随身余额不足、同槽替换工匠、重用成交前的源槽令牌均被拒绝，拒绝前后的背包和银行逐槽相同。相同前缀的成功回执由定向测试覆盖。复现命令为 `tests/verify_server_ai_native.ps1 -ReforgeLua -PackagePath .local/goblin-reforge/Mods/CompanionBridge.tmod`，证据保存在隔离 profile 的 `reforge-results.jsonl`。
 
 ## 8. Gameplay Skills：Numen 风格 + 官方 Wiki 知识
 

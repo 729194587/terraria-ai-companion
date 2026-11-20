@@ -23,8 +23,12 @@ internal static class G3ShopFixture
         banks = new[] { Slots(p.bank.item), Slots(p.bank2.item), Slots(p.bank3.item), Slots(p.bank4.item) }
     };
 
+    private static bool NurseTest => Program.LaunchParameters.ContainsKey("-companionnursetest");
+    private static bool ReforgeTest => Program.LaunchParameters.ContainsKey("-companionreforgetest");
+    private static int VendorType => ReforgeTest ? NPCID.GoblinTinkerer : NurseTest ? NPCID.Nurse : NPCID.Merchant;
+
     private static int Spawn(Player p) => NPC.NewNPC(p.GetSource_Misc("G3ShopFixture"),
-        (int)p.Center.X + 32, (int)p.Bottom.Y - 2, NPCID.Merchant);
+        (int)p.Center.X + 32, (int)p.Bottom.Y - 2, VendorType);
 
     internal static void Tick(Player p)
     {
@@ -68,16 +72,23 @@ internal static class G3ShopFixture
                 if (!p.inventory[50].IsAir) throw new InvalidOperationException("Fixture coin slot is occupied");
                 p.inventory[50].SetDefaults(ItemID.SilverCoin);
                 p.inventory[50].stack = 2;
+                if (NurseTest || ReforgeTest) p.inventory[50].SetDefaults(ItemID.PlatinumCoin);
+            }
+            else if (NurseTest && op == "injure")
+            {
+                p.statLife -= 10;
+                p.AddBuff(BuffID.Bleeding,36000);
+                p.AddBuff(BuffID.PotionSickness,36000);
             }
             else if (op == "replace")
             {
-                if (!Main.npc[slot].active || Main.npc[slot].type != NPCID.Merchant)
+                if (!Main.npc[slot].active || Main.npc[slot].type != VendorType)
                     throw new InvalidOperationException("Fixture merchant missing");
                 Main.npc[slot].active = false;
                 if (Spawn(p) != slot) throw new InvalidOperationException("Fixture did not reuse merchant slot");
             }
             else if (op != "snapshot") throw new InvalidOperationException("Unexpected fixture command");
-            var answer = new { id = control.RootElement.GetProperty("id").GetString(), inventory = Snapshot(p),
+            var answer = new { id = control.RootElement.GetProperty("id").GetString(), inventory = Snapshot(p), life=p.statLife, buffs=p.buffType.Where(t=>t!=0).ToArray(),
                 entityRef = NativeCombatWorld.Reference(Identity(p), Main.npc[slot]) };
             File.WriteAllText(PathFor("control-result.tmp"), JsonSerializer.Serialize(answer));
             File.Move(PathFor("control-result.tmp"), PathFor("control-result.json"), true);
@@ -93,7 +104,7 @@ internal static class G3ShopFixture
             var merchant = Main.npc[slot];
             string observed = request.RootElement.GetProperty("entityRef").GetString();
             string current = NativeCombatWorld.Reference(id, merchant);
-            if (current != observed || !merchant.active || merchant.type != NPCID.Merchant)
+            if (current != observed || !merchant.active || merchant.type != VendorType)
                 throw new InvalidOperationException("Observed merchant changed before test");
             var catalog = G3ShopProbe.Catalog(p, merchant);
             object Try(string reference, bool purchase)

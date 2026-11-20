@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 from test_build_diff import atomic, ServerAiBridge, operations_for_capabilities, api_help
 import program_tasks
+from lua_action_results import action_results
 
 
 class BuildPlaceTests(unittest.TestCase):
@@ -35,6 +36,25 @@ class BuildPlaceTests(unittest.TestCase):
                         {'blueprint': dict(self.args['blueprint'], tiles=self.args['blueprint']['tiles'] * 2)}):
             with self.assertRaises(ValueError):
                 program_tasks.validate('submit_task', dict(submit, arguments=invalid))
+
+    def test_partial_receipt_groups_only_outstanding_targets(self):
+        rows = [dict(layer='walls', x=x, y=30, itemType=93, status='blocked', reason='wall_conflict')
+                for x in range(5)]
+        rows.extend([dict(status='placed'), dict(status='matched'),
+                     dict(layer='objects', x=7, y=30, itemType=25, status='changed', reason='target_no_longer_matches')])
+        receipt = dict(operation='build_place', status='failed', reason='build_partial', completed=False,
+                       task={'result': {'evidence': dict(outcome='partial', entries=rows)}},
+                       endEvidence={'inputsReleased': True})
+        item = action_results([receipt])['items'][0]
+        self.assertTrue(item['summaryOnly'])
+        groups = item['result']['remainingByReason']
+        self.assertEqual({'wall_conflict': 5, 'target_no_longer_matches': 1},
+                         {reason: group['count'] for reason, group in groups.items()})
+        self.assertEqual([0, 1, 2], [row['x'] for row in groups['wall_conflict']['examples']])
+        self.assertEqual(receipt['endEvidence'], item['result']['endEvidence'])
+        self.assertEqual(8, len(rows))
+        unknown = action_results([dict(receipt, status='unknown')])['items'][0]
+        self.assertNotIn('remainingByReason', unknown['result'])
 
     def test_submission_preserves_arguments_and_identity(self):
         self.caps.append('server_ai_build_place_v1')

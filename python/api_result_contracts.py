@@ -245,6 +245,13 @@ SHOP_LISTING = obj({'itemType': I, 'available': nullable(B), 'reason': nullable(
 OBSERVATIONS = {
     'inspect_npc_shop': observation(obj({**QUERY_METADATA, 'entityRef': S, 'shopName': S, 'carriedCopper': COUNT,
                                          'entries': array(SHOP_LISTING)})),
+    'quote_nurse_heal': observation(obj({**QUERY_METADATA, 'entityRef': S, 'life': COUNT, 'maxLife': COUNT,
+                                        'heal': COUNT, 'priceCopper': COUNT, 'removableDebuffs': array(I),
+                                        'carriedCopper': COUNT, 'canTreat': B, 'reason': nullable(S),
+                                        'quoteToken': nullable(atomic.SHOP_TOKEN), 'expiresAtGameUpdate': nullable(TICK)})),
+    'quote_reforge': observation(obj({**QUERY_METADATA, **atomic.SALE_SOURCE, 'itemType': I, 'prefix': COUNT,
+                                     'priceCopper': COUNT, 'carriedCopper': COUNT, 'canReforge': B, 'reason': nullable(S),
+                                     'quoteToken': nullable(atomic.SHOP_TOKEN), 'expiresAtGameUpdate': nullable(TICK)})),
     'quote_npc_sale': observation(obj({**QUERY_METADATA, **atomic.SALE_SOURCE, 'itemType': I, 'quantity': const(1),
                                       'unitPrice': COUNT, 'currency': const('copper'), 'canSell': B, 'reason': nullable(S),
                                       'quoteToken': nullable(atomic.SHOP_TOKEN), 'expiresAtGameUpdate': nullable(TICK)})),
@@ -710,7 +717,7 @@ TARGETS = {
     'targetRecipe': ('craft_recipe',),
     'targetInventory': ('dismiss_summon','open_inventory_item','configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
-    'targetTask': ('sell_npc_item','buy_npc_item','assign_npc_home','set_team','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'),
+    'targetTask': ('reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','assign_npc_home','set_team','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'),
 }
 MINE_ARGUMENTS = any_of(obj({**TILE_XY, 'cluster': B}, optional=('cluster',)),
                         obj({'target': ref('MineToken'), 'cluster': B}, optional=('cluster',)))
@@ -896,6 +903,16 @@ COMBAT_ROLE_STATE = nullable(obj({'hotbarKey':HOTBAR, 'expectedTypeId':I, 'actua
 DEFS['CombatLoadout'] = obj({'version':COUNT,'lastRefusal':nullable(obj({'reason':S,'gameUpdate':TICK,'entityRef':S})),
                              'primary':COMBAT_ROLE_STATE,'secondary':COMBAT_ROLE_STATE,'summon':COMBAT_ROLE_STATE,
                              'maintenance':nullable(obj({'status':S,'confirmedCasts':COUNT}))},optional=('secondary','summon','maintenance'))
+DEFS['NurseEvidence'] = any_of(
+    obj({'entityRef': S, 'quoteToken': atomic.SHOP_TOKEN, 'priceCopper': COUNT, 'beforeCopper': COUNT,
+         'afterCopper': COUNT, 'beforeLife': COUNT, 'afterLife': COUNT, 'heal': COUNT,
+         'removableDebuffs': array(I), 'buffsVerified': B, 'banksUnchanged': B}),
+    obj({'entityRef': S, 'mutationAttempted': const(False)}))
+DEFS['ReforgeEvidence'] = any_of(
+    obj({**atomic.SALE_SOURCE, 'quoteToken': atomic.SHOP_TOKEN, 'itemType': I, 'beforePrefix': COUNT,
+         'afterPrefix': COUNT, 'priceCopper': COUNT, 'beforeCopper': COUNT, 'afterCopper': COUNT,
+         'rolled': B, 'itemVerified': B, 'banksUnchanged': B}),
+    obj({'entityRef': S, 'mutationAttempted': const(False)}))
 DEFS['ShopSaleEvidence'] = any_of(
     obj({**atomic.SALE_SOURCE, 'quoteToken': atomic.SHOP_TOKEN, 'itemType': I, 'quantity': const(1), 'unitPrice': COUNT,
          'beforeCopper': COUNT, 'afterCopper': COUNT, 'beforeCount': COUNT, 'afterCount': COUNT,
@@ -918,6 +935,8 @@ DEFS['ItemOpeningEvidence']=obj({**fields(integers='sourceSlot typeId beforeStac
 ACTION_EVIDENCE = {
     'dismiss_summon':'DismissSummonEvidence',
     'open_inventory_item':'ItemOpeningEvidence',
+    'heal_at_nurse': 'NurseEvidence',
+    'reforge_item': 'ReforgeEvidence',
     'sell_npc_item': 'ShopSaleEvidence',
     'buy_npc_item': 'ShopPurchaseEvidence',
     'assign_npc_home': 'NpcHomeEvidence',
@@ -1082,6 +1101,8 @@ TASK_COMPLETION_PROOF = {
     },
 }
 SUCCESSFUL_PROOF = {
+    'heal_at_nurse': matches(banksUnchanged=TRUE, buffsVerified=TRUE, priceCopper={'minimum':1}),
+    'reforge_item': matches(rolled=TRUE, itemVerified=TRUE, banksUnchanged=TRUE, afterPrefix={'minimum':1}),
     'sell_npc_item': matches(quantity=const(1), banksUnchanged=TRUE, unitPrice={'minimum':1}),
     'buy_npc_item': matches(quantity=const(1), banksUnchanged=TRUE, unitPrice={'minimum':1}),
     'assign_npc_home': matches(after=matches(active=TRUE, townNPC=TRUE, homeless=const(False), managerHasRoom=TRUE)),
@@ -1100,9 +1121,10 @@ SUCCESSFUL_PROOF = {
     'use_item': matches(cycleVerified=TRUE),
     'mine_tile': MINED,
     'place_tile': matches(**PLACED),
-    'place_object': matches(**PLACED, **NATIVE_PLACEMENT, objectPlacement=TRUE, fullFootprintVerified=TRUE,
-                            typeId=const(18), itemType=const(36), style=const(0),
-                            footprint=matches(width=const(2), height=const(1))),
+    'place_object': {**matches(**PLACED, **NATIVE_PLACEMENT, objectPlacement=TRUE, fullFootprintVerified=TRUE,
+                              style=const(0)),
+                     'anyOf': [matches(typeId=const(18), itemType=const(36), footprint=matches(width=const(2), height=const(1))),
+                               matches(typeId=const(10), itemType=const(25), footprint=matches(width=const(1), height=const(3)))]},
     'place_rope': matches(**PLACED, **NATIVE_PLACEMENT, requestedX=I, requestedY=I, extended=B,
                           remainingStack=COUNT),
     'move_on_rope': {
