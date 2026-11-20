@@ -326,7 +326,7 @@ tModLoader 提供可复用的商店注册机制：
 
 交易实现不得自行直接减金币堆叠或直接改写库存数量。
 
-注意：\`Player.BuyItem\` 的 API 说明指出会从玩家的 inventories 和 banks 中取货币。第一版交易必须明确支付范围；建议初始只在携带金币足以支付时执行，以免在没有明确授权时动用银行存储。自定义货币、特殊 NPC 交易和 Mod 自定义购买回调应单独验证。
+注意：\`Player.BuyItem\` 的 API 说明指出会从玩家的 inventories 和 banks 中取货币。普通购买、治疗与重铸通过绑定玩家的原生支付路径使用随身钱币及四个银行，资金证据见[原生机制审计报告](NATIVE_MECHANISM_PARITY_AUDIT_REPORT.md)。自定义货币、特殊 NPC 交易和 Mod 自定义购买回调应单独验证。
 
 购买完成必须核验：
 
@@ -365,11 +365,11 @@ tModLoader 提供可复用的商店注册机制：
 
 #### 护士治疗（2026-11-20）
 
-在 tModLoader 2026.09.3.1、只加载 CompanionBridge 的服务器上，能力握手提供 `server_ai_nurse_v1`。用附近护士的 `entityRef` 调用 `quote_nurse_heal` 查看当前生命、治疗量、将清除的减益、诊金（铜）和随身支付能力，再用同一引用及 `quoteToken` 调用 `heal_at_nurse`。报价与普通商人交易共用租约的一次性令牌位置，有效期为 600 个游戏更新或 10 秒，以先到者为准。提交时重查生命、治疗内容、费用、支付能力、身份和距离；已开始支付但读回无法确认时返回 `unknown`。
+在 tModLoader 2026.09.3.1、只加载 CompanionBridge 的服务器上，能力握手提供 `server_ai_nurse_v1`。用附近护士的 `entityRef` 调用 `quote_nurse_heal` 查看当前生命、治疗量、将清除的减益、诊金（铜）和原生支付能力，再用同一引用及 `quoteToken` 调用 `heal_at_nurse`。报价与普通商人交易共用租约的一次性令牌位置，有效期为 600 个游戏更新或 10 秒，以先到者为准。提交时重查生命、治疗内容、费用、支付能力、身份和距离；已开始支付但读回无法确认时返回 `unknown`。
 
-目标 DLL 的 `Main.GUIChatDrawInner` 在 IL_06fa–0837 按缺失生命及剩余时间超过 60 tick 的可治疗减益计价（每项加 100 铜基础费用），再应用世界进度、专家倍率与购物价格系数。IL_1247/1269 调用护士治疗与价格钩子，IL_20c8 通过 `Player.BuyItem` 收费，随后恢复生命、用 `DelBuff` 清除剩余时间大于零的可治疗减益，最后调用 `PostNurseHeal`。服务端在绑定 AI 上执行这些步骤，按原生规则保留护士不能清除的减益。只接受随身钱币足额的治疗，并核对四个银行。
+目标 DLL 的 `Main.GUIChatDrawInner` 在 IL_06fa–0837 按缺失生命及剩余时间超过 60 tick 的可治疗减益计价（每项加 100 铜基础费用），再应用世界进度、专家倍率与购物价格系数。IL_1247/1269 调用护士治疗与价格钩子，IL_20c8 通过 `Player.BuyItem` 收费，随后恢复生命、用 `DelBuff` 清除剩余时间大于零的可治疗减益，最后调用 `PostNurseHeal`。服务端在绑定 AI 上执行这些步骤，按原生规则保留护士不能清除的减益。成交核对全部支付来源的总铜值差及银行非钱币物品。
 
-隔离专服使用公开 Lua 接口，实测支付 132 铜，生命 60 → 100，移除流血（30），保留药水病（21），四个银行逐槽一致。余额不足（银行有钱）、报价后再次受伤、同槽更换护士、成交后重用旧令牌均被拒绝；拒绝前后独立读取的生命、Buff 类型、背包与银行相同。满血且只剩药水病时无付费治疗报价。诊金随世界与角色状态变化，此处金额仅对应该场景。
+修复前的隔离专服使用公开 Lua 接口，实测支付 132 铜，生命 60 → 100，移除流血（30），保留药水病（21），四个银行逐槽一致。余额不足（银行有钱）、报价后再次受伤、同槽更换护士、成交后重用旧令牌均被拒绝；拒绝前后独立读取的生命、Buff 类型、背包与银行相同。满血且只剩药水病时无付费治疗报价。诊金随世界与角色状态变化，此处金额仅对应该场景。
 
 复现入口为 `tests/verify_server_ai_native.ps1 -NurseLua -PackagePath .local/nurse-service/Mods/CompanionBridge.tmod`。隔离 profile 中的 `nurse-results.jsonl` 保存回执和快照。真实模型、Host & Play 与远端显示留待集中验收。
 
@@ -379,9 +379,9 @@ tModLoader 提供可复用的商店注册机制：
 
 目标 DLL 的 `Main.DrawInventory` 从 IL_1981 起取物品当前 `value × stack`，调用 `ItemLoader.ReforgePrice`。原版分支先按折扣资格乘 0.8 取整，再乘工匠购物系数取整，最后整除 3。界面显示金额的最小值与传给支付的变量分开；接口返回实际支付变量。槽位准入沿用 `Item.Prefix(-3)` 检查。点击时依次检查 `CanAfford`、`CanReforge`，调用 `BuyItem`、`PreReforge`、`ResetPrefix`、一次 `Prefix(-2)` 和 `PostReforge`。前缀可以和上次相同。
 
-能力 `server_ai_reforge_v1` 适用于目标版本原版服务配置。用附近工匠的 `entityRef`、普通背包 `sourceSlot` 和最新 `sourceToken` 调用 `quote_reforge`，再带同一组参数及 `quoteToken` 调用 `reforge_item`。当前支持不可堆叠的单件原版物品，只用随身钱币。报价与买卖、治疗共用租约的一次性报价位置。扣费后若无法确认抽取、源物品身份、数量、收藏状态、钱币或银行状态，返回 `unknown`。见[经济攻略](../skills/npc_interaction_and_economy/SKILL.md)。
+能力 `server_ai_reforge_v1` 适用于目标版本原版服务配置。用附近工匠的 `entityRef`、普通背包 `sourceSlot` 和最新 `sourceToken` 调用 `quote_reforge`，再带同一组参数及 `quoteToken` 调用 `reforge_item`。当前支持不可堆叠的单件原版物品，支付范围包括随身钱币及四个银行。报价与买卖、治疗共用租约的一次性报价位置。扣费后若无法确认抽取、源物品身份、数量、收藏状态、钱币或银行状态，返回 `unknown`。见[经济攻略](../skills/npc_interaction_and_economy/SKILL.md)。
 
-隔离专服公开 Lua 实测：木剑（24）报价 31 铜，随身钱币 1,000,000 → 999,969 铜，前缀 0 → 10，四个银行逐槽相同。用新的槽位令牌再次询价为 22 铜。不可重铸物品未获得报价；随身余额不足、同槽替换工匠、重用成交前的源槽令牌均被拒绝，拒绝前后的背包和银行逐槽相同。相同前缀的成功回执由定向测试覆盖。复现命令为 `tests/verify_server_ai_native.ps1 -ReforgeLua -PackagePath .local/goblin-reforge/Mods/CompanionBridge.tmod`，证据保存在隔离 profile 的 `reforge-results.jsonl`。
+修复前的隔离专服公开 Lua 实测：木剑（24）报价 31 铜，随身钱币 1,000,000 → 999,969 铜，前缀 0 → 10，四个银行逐槽相同。用新的槽位令牌再次询价为 22 铜。不可重铸物品未获得报价；随身余额不足、同槽替换工匠、重用成交前的源槽令牌均被拒绝，拒绝前后的背包和银行逐槽相同。相同前缀的成功回执由定向测试覆盖。复现命令为 `tests/verify_server_ai_native.ps1 -ReforgeLua -PackagePath .local/goblin-reforge/Mods/CompanionBridge.tmod`，证据保存在隔离 profile 的 `reforge-results.jsonl`。
 
 ## 8. Gameplay Skills：Numen 风格 + 官方 Wiki 知识
 
@@ -478,7 +478,7 @@ Skill 应说明规则与策略，实际价格、商品、住所和 NPC 状态始
 
 #### G3-A 第一项实验：普通商人出售一支火把（2026-11-19）
 
-**验证环境。** Terraria 1.4.4.9 / tModLoader 2026.09.3.1 Stable，使用仓库引擎 profile 校验 DLL 指纹。隔离 Dedicated Server 加载 CompanionBridge；fixture 在复制世界中预置商人、绑定 AI Player 和一枚存于第一银行的金币。测试程序通过实际 IPC 的 `observe_scene` 取得已在场商人的槽位和 `entityRef`，由仅在该 fixture 开启的游戏线程探针执行交易。探针同时检查 Actor、NPC 实例身份、原生 `CanTalk` 和 80 像素内的实验距离。
+**历史验证环境（银行支付修复前）。** Terraria 1.4.4.9 / tModLoader 2026.09.3.1 Stable，使用仓库引擎 profile 校验 DLL 指纹。隔离 Dedicated Server 加载 CompanionBridge；fixture 在复制世界中预置商人、绑定 AI Player 和一枚存于第一银行的金币。测试程序通过实际 IPC 的 `observe_scene` 取得已在场商人的槽位和 `entityRef`，由仅在该 fixture 开启的游戏线程探针执行交易。探针同时检查 Actor、NPC 实例身份、原生 `CanTalk` 和 80 像素内的实验距离。
 
 **目标程序集 IL 与运行时注册表。**
 
@@ -519,7 +519,7 @@ Skill 应说明规则与策略，实际价格、商品、住所和 NPC 状态始
 
 `quote_npc_purchase({entityRef=ref,itemType=8,quantity=1})` 返回火把的实际单价和一次性 `quoteToken`。同一 IPC 租约的新报价替换旧报价，600 个游戏更新或 10 秒单调时钟时间先到即失效。`buy_npc_item({entityRef=ref,quoteToken=token})` 重新核对绑定玩家、商人实例、距离、背包、商品条件与价格，沿用 G3-A 的原生支付和交付路径。支付开始后若无法确认效果，返回 `unknown`。
 
-在 tModLoader 2026.09.3.1 隔离专服通过 Lua Worker 观察到以下结果。测试场景提供商人、随身测试钱币及银行内的 1 金，交易和拒绝均走公开 Lua 接口。
+以下为银行支付修复前的 tModLoader 2026.09.3.1 隔离专服记录。测试场景提供商人、随身测试钱币及银行内的 1 金，交易和拒绝均走公开 Lua 接口。
 
 | 场景 | 动作回执与独立逐槽读回 |
 | --- | --- |

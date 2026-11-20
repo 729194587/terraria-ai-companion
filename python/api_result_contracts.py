@@ -240,23 +240,25 @@ def observation(data):
 
 NPC_HOME_STATE = {**fields(strings='entityRef', integers='type slot homeTileX homeTileY',
                            booleans='active townNPC homeless managerHasRoom'), 'managerHomeTile': nullable(ref('TilePoint'))}
+FUNDS = obj({name: COUNT for name in ('carriedCopper', 'piggyBank', 'safe', 'defendersForge', 'voidVault', 'totalCopper')})
+PAYMENT = {'beforeFunds': FUNDS, 'afterFunds': FUNDS, 'bankNonCurrencyUnchanged': B}
 SHOP_LISTING = obj({'itemType': I, 'available': nullable(B), 'reason': nullable(S), 'unitPrice': nullable(COUNT),
-                    'canPurchase': B, 'currency': enum('copper','unknown'), 'stock': enum('unlimited','unknown')})
+                    'canAfford': nullable(B), 'canPurchase': B, 'currency': enum('copper','unknown'), 'stock': enum('unlimited','unknown')})
 OBSERVATIONS = {
-    'inspect_npc_shop': observation(obj({**QUERY_METADATA, 'entityRef': S, 'shopName': S, 'carriedCopper': COUNT,
+    'inspect_npc_shop': observation(obj({**QUERY_METADATA, 'entityRef': S, 'shopName': S, 'carriedCopper': COUNT, 'funds': FUNDS,
                                          'entries': array(SHOP_LISTING)})),
     'quote_nurse_heal': observation(obj({**QUERY_METADATA, 'entityRef': S, 'life': COUNT, 'maxLife': COUNT,
                                         'heal': COUNT, 'priceCopper': COUNT, 'removableDebuffs': array(I),
-                                        'carriedCopper': COUNT, 'canTreat': B, 'reason': nullable(S),
+                                        'carriedCopper': COUNT, 'funds': FUNDS, 'canAfford': B, 'currency': const('copper'), 'canTreat': B, 'reason': nullable(S),
                                         'quoteToken': nullable(atomic.SHOP_TOKEN), 'expiresAtGameUpdate': nullable(TICK)})),
     'quote_reforge': observation(obj({**QUERY_METADATA, **atomic.SALE_SOURCE, 'itemType': I, 'prefix': COUNT,
-                                     'priceCopper': COUNT, 'carriedCopper': COUNT, 'canReforge': B, 'reason': nullable(S),
+                                     'priceCopper': COUNT, 'carriedCopper': COUNT, 'funds': FUNDS, 'canAfford': nullable(B), 'currency': const('copper'), 'canReforge': B, 'reason': nullable(S),
                                      'quoteToken': nullable(atomic.SHOP_TOKEN), 'expiresAtGameUpdate': nullable(TICK)})),
     'quote_npc_sale': observation(obj({**QUERY_METADATA, **atomic.SALE_SOURCE, 'itemType': I, 'quantity': const(1),
                                       'unitPrice': COUNT, 'currency': const('copper'), 'canSell': B, 'reason': nullable(S),
                                       'quoteToken': nullable(atomic.SHOP_TOKEN), 'expiresAtGameUpdate': nullable(TICK)})),
     'quote_npc_purchase': observation(obj({**QUERY_METADATA, 'entityRef': S, 'itemType': I, 'quantity': const(1),
-                                           'unitPrice': nullable(COUNT), 'carriedCopper': COUNT, 'canPurchase': B,
+                                           'unitPrice': nullable(COUNT), 'carriedCopper': COUNT, 'funds': FUNDS, 'canAfford': nullable(B), 'canPurchase': B,
                                            'currency': enum('copper','unknown'), 'stock': enum('unlimited','unknown'),
                                            'quoteToken': nullable(atomic.SHOP_TOKEN), 'expiresAtGameUpdate': nullable(TICK),
                                            'reason': nullable(S)})),
@@ -904,14 +906,14 @@ DEFS['CombatLoadout'] = obj({'version':COUNT,'lastRefusal':nullable(obj({'reason
                              'primary':COMBAT_ROLE_STATE,'secondary':COMBAT_ROLE_STATE,'summon':COMBAT_ROLE_STATE,
                              'maintenance':nullable(obj({'status':S,'confirmedCasts':COUNT}))},optional=('secondary','summon','maintenance'))
 DEFS['NurseEvidence'] = any_of(
-    obj({'entityRef': S, 'quoteToken': atomic.SHOP_TOKEN, 'priceCopper': COUNT, 'beforeCopper': COUNT,
-         'afterCopper': COUNT, 'beforeLife': COUNT, 'afterLife': COUNT, 'heal': COUNT,
-         'removableDebuffs': array(I), 'buffsVerified': B, 'banksUnchanged': B}),
+    obj({'entityRef': S, 'quoteToken': atomic.SHOP_TOKEN, 'priceCopper': COUNT, **PAYMENT,
+         'beforeLife': COUNT, 'afterLife': COUNT, 'heal': COUNT,
+         'removableDebuffs': array(I), 'buffsVerified': B}),
     obj({'entityRef': S, 'mutationAttempted': const(False)}))
 DEFS['ReforgeEvidence'] = any_of(
     obj({**atomic.SALE_SOURCE, 'quoteToken': atomic.SHOP_TOKEN, 'itemType': I, 'beforePrefix': COUNT,
-         'afterPrefix': COUNT, 'priceCopper': COUNT, 'beforeCopper': COUNT, 'afterCopper': COUNT,
-         'rolled': B, 'itemVerified': B, 'banksUnchanged': B}),
+         'afterPrefix': COUNT, 'priceCopper': COUNT, **PAYMENT,
+         'rolled': B, 'itemVerified': B}),
     obj({'entityRef': S, 'mutationAttempted': const(False)}))
 DEFS['ShopSaleEvidence'] = any_of(
     obj({**atomic.SALE_SOURCE, 'quoteToken': atomic.SHOP_TOKEN, 'itemType': I, 'quantity': const(1), 'unitPrice': COUNT,
@@ -920,7 +922,7 @@ DEFS['ShopSaleEvidence'] = any_of(
     obj({'entityRef': S, 'mutationAttempted': const(False)}))
 DEFS['ShopPurchaseEvidence'] = any_of(
     obj({'entityRef': S, 'quoteToken': atomic.SHOP_TOKEN, 'itemType': I, 'quantity': const(1), 'unitPrice': COUNT,
-         'beforeCopper': COUNT, 'afterCopper': COUNT, 'beforeCount': COUNT, 'afterCount': COUNT, 'banksUnchanged': B}),
+         **PAYMENT, 'beforeCount': COUNT, 'afterCount': COUNT}),
     obj({'entityRef': S, 'mutationAttempted': const(False)}))
 DEFS['NpcHomeEvidence'] = any_of(
     obj({'entityRef': S, 'queryTile': ref('TilePoint'), 'homeTile': ref('TilePoint'),
@@ -1101,10 +1103,10 @@ TASK_COMPLETION_PROOF = {
     },
 }
 SUCCESSFUL_PROOF = {
-    'heal_at_nurse': matches(banksUnchanged=TRUE, buffsVerified=TRUE, priceCopper={'minimum':1}),
-    'reforge_item': matches(rolled=TRUE, itemVerified=TRUE, banksUnchanged=TRUE, afterPrefix={'minimum':1}),
+    'heal_at_nurse': matches(bankNonCurrencyUnchanged=TRUE, buffsVerified=TRUE, priceCopper={'minimum':1}),
+    'reforge_item': matches(rolled=TRUE, itemVerified=TRUE, bankNonCurrencyUnchanged=TRUE, afterPrefix={'minimum':1}),
     'sell_npc_item': matches(quantity=const(1), banksUnchanged=TRUE, unitPrice={'minimum':1}),
-    'buy_npc_item': matches(quantity=const(1), banksUnchanged=TRUE, unitPrice={'minimum':1}),
+    'buy_npc_item': matches(quantity=const(1), bankNonCurrencyUnchanged=TRUE, unitPrice={'minimum':1}),
     'assign_npc_home': matches(after=matches(active=TRUE, townNPC=TRUE, homeless=const(False), managerHasRoom=TRUE)),
     'set_team': matches(team=COUNT),'teleport_to_teammate': matches(before={'minimum':1},after=COUNT),
     'dismiss_summon': matches(absent=TRUE),

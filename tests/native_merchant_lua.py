@@ -8,7 +8,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 from native_direct_input import Limits, LuaRuntime, ServerAiBridge, wait_file
-from native_g3_shop import contents, copper, TORCH
+from native_g3_shop import check_payment, contents, copper, TORCH
 from api_result_contracts import schema_for
 
 
@@ -22,12 +22,12 @@ async def verify(port, profile):
                                "quote_npc_sale", "sell_npc_item")}
     trace = (profile / "merchant-lua.jsonl").open("w", encoding="utf-8")
 
-    async def fixture(op):
+    async def fixture(op, **kwargs):
         uid = uuid.uuid4().hex
         tmp = profile / "g3-shop-control.tmp"
         reply_path = profile / "g3-shop-control-result.json"
         reply_path.unlink(missing_ok=True)
-        tmp.write_text(json.dumps(dict(id=uid, op=op)))
+        tmp.write_text(json.dumps(dict(id=uid, op=op, **kwargs)))
         tmp.replace(profile / "g3-shop-control.json")
         reply = await wait_file(reply_path)
         assert reply["id"] == uid
@@ -98,9 +98,9 @@ error("Merchant not visible")
         ref = out["value"]
         assert isinstance(ref, str)
         empty = (await fixture("snapshot"))["inventory"]
-        assert copper(contents(empty["carried"])) == 0 and copper(contents(empty["banks"][0])) == 10000
+        assert copper(contents(empty["carried"])) == 0 and copper(contents(empty["banks"][0])) == 0
         poor = await quote(ref)
-        await rejected(ref, poor["quoteToken"], "insufficient_carried_funds")
+        await rejected(ref, poor["quoteToken"], "insufficient_funds")
         before = (await fixture("fund"))["inventory"]
         out, receipt = await lua("""
 local merchant=REF
@@ -120,8 +120,8 @@ return {unitPrice=q.data.unitPrice,quoteToken=q.data.quoteToken}
         paid = out["value"]["unitPrice"]
         after = (await fixture("snapshot"))["inventory"]
         a, b = contents(before["carried"]), contents(after["carried"])
-        assert a[TORCH]+1 == b[TORCH] and copper(a)-copper(b) == paid > 0
-        assert before["banks"] == after["banks"]
+        assert a[TORCH]+1 == b[TORCH] and paid > 0
+        check_payment(before, after, paid, receipt["evidence"])
         await rejected(ref, out["value"]["quoteToken"], "stale_quote")
         slot = next(r["slot"] for r in after["carried"] if r["type"] == TORCH)
         dest = next(r["slot"] for r in after["carried"] if 10 <= r["slot"] < 50 and not r["stack"])
@@ -160,6 +160,41 @@ return api("swap_inventory_slots",{sourceSlot=SRC,destinationSlot=DST,sourceToke
         stale_merchant = await sale_quote(fresh,new_slot)
         assert fresh != (await fixture("replace"))["entityRef"]
         await sell(stale_merchant, "stale_entity_ref")
+        ref = (await fixture("snapshot"))["entityRef"]
+        price = (await quote(ref))["unitPrice"]
+        cases = [[price if i == source else 0 for i in range(5)] for source in range(5)]
+        cases.extend([[1, price-1, 0, 0, 0], [1, 1, 1, 1, price-4]])
+        for amounts in cases:
+            before = (await fixture("balances", copper=amounts))["inventory"]
+            q = await quote(ref)
+            assert q["canAfford"] and q["unitPrice"] == price
+            _, result = await lua('return api("buy_npc_item",'+args(ref,'quoteToken='+json.dumps(q["quoteToken"]))+')',1,1)
+            assert result["completed"], result
+            after = (await fixture("snapshot"))["inventory"]
+            check_payment(before, after, price, result["evidence"])
+            assert contents(after["carried"])[TORCH] == contents(before["carried"])[TORCH]+1
+        await fixture("balances", copper=[0, price, 0, 0, 0])
+        stale = await quote(ref)
+        await fixture("balances", copper=[0, 0, price, 0, 0])
+        await rejected(ref, stale["quoteToken"], "stale_quote")
+        full = (await fixture("fillInventory"))["inventory"]
+        slot = next(r["slot"] for r in full["carried"] if r["type"] == TORCH)
+        _, no_space = await lua("""
+local i=api('inspect_inventory',{mode='slots',slots={SLOT}}).data.inventory[1]
+return api('quote_npc_sale',{entityRef=REF,sourceSlot=i.slot,sourceToken=i.inventoryToken})
+""".replace('SLOT',str(slot)).replace('REF',json.dumps(ref)),2,0)
+        assert no_space['data']['reason'] == 'insufficient_coin_space' and not no_space['data']['canSell']
+        q = await quote(ref)
+        before = (await fixture("interruptPayment"))["inventory"]
+        _, interrupted = await lua('return api("buy_npc_item",'+args(ref,'quoteToken='+json.dumps(q["quoteToken"]))+')',1,1)
+        assert interrupted["status"] == "unknown", interrupted
+        after = (await fixture("snapshot"))["inventory"]
+        check_payment(before, after, price)
+        assert contents(before["carried"])[TORCH] == contents(after["carried"])[TORCH]
+        replay = 'return api("buy_npc_item",'+args(ref,'quoteToken='+json.dumps(q["quoteToken"]))+')'
+        blocked = await runtime.execute(replay, limits=Limits(seconds=15, calls=1, actions=1))
+        assert blocked["status"] == "blocked" and blocked["calls"] == 0, blocked
+        assert after == (await fixture("snapshot"))["inventory"]
         print(f"Merchant Lua checks passed. Paid {paid} copper, received {sale['unitPrice']} copper; trace {trace.name}")
     finally:
         trace.close()

@@ -24,6 +24,25 @@ def copper(totals):
     return sum(totals[item] * value for item, value in COINS.items())
 
 
+def balance(inventory):
+    stores = [inventory['carried'][:54], *inventory['banks']]
+    names = ('carriedCopper', 'piggyBank', 'safe', 'defendersForge', 'voidVault')
+    funds = {name: copper(contents(rows)) for name, rows in zip(names, stores)}
+    return dict(funds, totalCopper=sum(funds.values()))
+
+
+def check_payment(before, after, price, evidence=None):
+    old, new = balance(before), balance(after)
+    assert old['totalCopper'] - new['totalCopper'] == price
+    def noncoins(snapshot):
+        return [[row for row in bank if row['type'] > 0 and row['type'] not in COINS]
+                for bank in snapshot['banks']]
+    assert noncoins(before) == noncoins(after)
+    if evidence is not None:
+        assert evidence['beforeFunds'] == old and evidence['afterFunds'] == new
+        assert evidence['bankNonCurrencyUnchanged'] is True
+
+
 def wait_file(path):
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
@@ -77,15 +96,15 @@ def verify(port, profile):
     for case in (insufficient, stale):
         assert case["after"] == case["before"], case["result"]
     assert copper(contents(insufficient["before"]["carried"])) == 0
-    assert copper(contents(insufficient["before"]["banks"][0])) == 10000
+    assert balance(insufficient["before"])["totalCopper"] == 0
     purchase = record["purchase"]
     before = contents(purchase["before"]["carried"])
     after = contents(purchase["after"]["carried"])
-    paid = copper(before) - copper(after)
-    assert paid > 0 and copper(after) >= paid
+    paid = purchase["result"]["unitPrice"]
+    assert paid > 0
     assert after[TORCH] == before[TORCH] + 1
     assert all(before[t] == after[t] for t in before.keys() | after.keys() if t not in COINS and t != TORCH)
-    assert purchase["before"]["banks"] == purchase["after"]["banks"]
+    check_payment(purchase["before"], purchase["after"], paid)
     assert final_inventory == after == contents(stale["after"]["carried"])
     check_receipts(quote["result"], insufficient["result"], purchase["result"], stale["result"], paid)
     (profile / "g3-shop-ipc-readback.json").write_text(
@@ -98,7 +117,7 @@ def check_receipts(quote, insufficient, purchase, stale, paid):
     assert quote["reason"] == "price_quoted" and quote["conditionCount"] == 0
     assert quote["unitPrice"] == purchase["unitPrice"] == paid
     assert (purchase["status"], purchase["reason"]) == ("completed", "purchase_verified"), purchase
-    assert (insufficient["status"], insufficient["reason"]) == ("failed", "insufficient_carried_funds")
+    assert (insufficient["status"], insufficient["reason"]) == ("failed", "insufficient_funds")
     assert insufficient["unitPrice"] == paid
     assert (stale["status"], stale["reason"], stale["unitPrice"]) == ("failed", "stale_entity_ref", None)
 

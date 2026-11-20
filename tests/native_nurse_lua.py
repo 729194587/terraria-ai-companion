@@ -7,7 +7,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 from native_direct_input import Limits, LuaRuntime, ServerAiBridge, wait_file
-from native_g3_shop import contents, copper
+from native_g3_shop import check_payment
 from api_result_contracts import schema_for
 
 
@@ -60,8 +60,8 @@ async def verify(port, profile):
         ref = (await fixture('snapshot'))['entityRef']
         await fixture('injure')
         poor = await quote(ref)
-        assert poor['reason'] == 'insufficient_carried_funds'
-        await refuse(ref,poor,'insufficient_carried_funds')
+        assert poor['reason'] == 'insufficient_funds'
+        await refuse(ref,poor,'insufficient_funds')
         await fixture('fund')
         stale = await quote(ref)
         await fixture('injure')
@@ -78,8 +78,7 @@ async def verify(port, profile):
         after = await fixture('snapshot')
         assert before['life'] + q['heal'] == after['life'] == q['maxLife']
         inv = before['inventory']
-        assert copper(contents(inv['carried'])) - copper(contents(after['inventory']['carried'])) == q['priceCopper']
-        assert inv['banks'] == after['inventory']['banks']
+        check_payment(inv, after['inventory'], q['priceCopper'], receipt['evidence'])
         expected = set(before['buffs']) - set(q['removableDebuffs'])
         assert expected and set(after['buffs']) == expected
         await refuse(ref,q,'stale_quote')

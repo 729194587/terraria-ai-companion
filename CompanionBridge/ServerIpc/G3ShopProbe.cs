@@ -79,16 +79,15 @@ internal static class G3ShopProbe
             if (!purchase) return Reply("completed", "price_quoted");
 
             // PayCurrency skips carried slots 54..58 and also considers four banks.
-            long carried = MerchantPayment.Coins(p.inventory, 54);
-            if (carried < price) return Reply("failed", "insufficient_carried_funds");
-            long[] Banks() => new[] { p.bank, p.bank2, p.bank3, p.bank4 }.Select(b => MerchantPayment.Coins(b.item, b.item.Length)).ToArray();
+            var funds = MerchantPayment.Balance(p);
+            if (!p.CanAfford(price, -1)) return Reply("failed", "insufficient_funds");
             int Torches() => p.inventory.Take(50).Where(i => i.type == ItemID.Torch).Sum(i => i.stack);
-            var banks = Banks();
+            var banks = MerchantPayment.NonCurrency(identity,p);
             int before = Torches();
             string error = MerchantPayment.Deliver(p, merchant, offer, price, ref paymentStarted);
             if (error != null) return Reply(paymentStarted ? "unknown" : "failed", error);
-            bool verified = Torches() == before + 1 && MerchantPayment.Coins(p.inventory, 54) == carried - price &&
-                banks.SequenceEqual(Banks()) && ServerAiNativeActions.Owned(identity) && merchant.active &&
+            bool verified = Torches() == before + 1 && MerchantPayment.Balance(p).totalCopper == funds.totalCopper - price &&
+                banks.SequenceEqual(MerchantPayment.NonCurrency(identity,p)) && ServerAiNativeActions.Owned(identity) && merchant.active &&
                 ReferenceEquals(Main.npc[merchant.whoAmI], merchant) && NativeCombatWorld.Reference(identity, merchant) == requestedRef;
             return verified ? Reply("completed", "purchase_verified") : Reply("unknown", "purchase_unconfirmed");
         }

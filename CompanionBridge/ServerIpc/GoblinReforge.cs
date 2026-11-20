@@ -14,7 +14,7 @@ namespace CompanionBridge.ServerIpc;
 internal static class GoblinReforge
 {
     private sealed record Offer(string Token, Player Actor, NPC Goblin, string Reference, string World,
-        long Generation, int Slot, int SourceSlot, string SourceToken, int Price, string Inventory,
+        long Generation, int Slot, int SourceSlot, string SourceToken, int Price, MerchantPayment.Funds Funds, string Inventory,
         ulong Expires, long Deadline);
 
     // Mirrors Main.DrawInventory on the pinned vanilla service configuration. Only
@@ -48,18 +48,19 @@ internal static class GoblinReforge
         var item = p.inventory[sourceSlot];
         if (ActorInventory.Token(id,item,sourceSlot) != sourceToken) throw new ShopReadException("stale_source_token");
         error = Inspect(p,goblin,item,out int price);
-        long funds = MerchantPayment.Coins(p.inventory,54);
+        var funds = MerchantPayment.Balance(p);
+        bool? canAfford = error == null ? p.CanAfford(price,-1) : null;
         Offer offer = null;
         if (error == null)
         {
             offer = new(Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),p,goblin,
-                entityRef,id.World,id.Generation,id.Slot,sourceSlot,sourceToken,price,MerchantShop.Inventory(id,p),
+                entityRef,id.World,id.Generation,id.Slot,sourceSlot,sourceToken,price,funds,MerchantShop.Inventory(id,p),
                 Main.GameUpdateCount+600,Environment.TickCount64+10000);
             lease.MerchantQuote = offer;
-            if (funds < price) error = "insufficient_carried_funds";
+            if (canAfford == false) error = "insufficient_funds";
         }
         return new {entityRef,sourceSlot,sourceToken,itemType=item.type,prefix=item.prefix,priceCopper=price,
-            carriedCopper=funds,canReforge=error==null,reason=error,quoteToken=offer?.Token,expiresAtGameUpdate=offer?.Expires};
+            funds.carriedCopper,funds,canAfford,currency="copper",canReforge=error==null,reason=error,quoteToken=offer?.Token,expiresAtGameUpdate=offer?.Expires};
     }
 
     internal static Result Execute(Identity id, JsonElement args)
@@ -84,11 +85,12 @@ internal static class GoblinReforge
             Main.GameUpdateCount >= offer.Expires || Environment.TickCount64 >= offer.Deadline) return Reject("stale_quote");
         error = Inspect(p,goblin,item,out int price);
         if (error != null || price != offer.Price) return Reject(error ?? "stale_quote");
-        long beforeCopper = MerchantPayment.Coins(p.inventory,54);
-        if (beforeCopper < price || !p.CanAfford(price,-1)) return Reject("insufficient_carried_funds");
+        var beforeFunds = MerchantPayment.Balance(p);
+        if (offer.Funds != beforeFunds) return Reject("stale_quote");
+        if (!p.CanAfford(price,-1)) return Reject("insufficient_funds");
         int itemType = item.type, beforePrefix = item.prefix, beforeStack = item.stack;
         bool favorite = item.favorited;
-        var banks = MerchantShop.BankTokens(id,p);
+        var banks = MerchantPayment.NonCurrency(id,p);
         bool rolled = false;
         try
         {
@@ -104,14 +106,14 @@ internal static class GoblinReforge
         catch (Exception) { rolled = false; } // No replay once payment begins.
         var after = p.inventory[sourceSlot];
         int afterPrefix = after.prefix;
-        long afterCopper = MerchantPayment.Coins(p.inventory,54);
-        bool banksUnchanged = banks.SequenceEqual(MerchantShop.BankTokens(id,p));
+        var afterFunds = MerchantPayment.Balance(p);
+        bool bankNonCurrencyUnchanged = banks.SequenceEqual(MerchantPayment.NonCurrency(id,p));
         bool itemVerified = ReferenceEquals(after,item) && after.type == itemType &&
             after.stack == beforeStack && after.favorited == favorite;
-        bool verified = rolled && afterPrefix > 0 && itemVerified && beforeCopper-afterCopper == price &&
-            banksUnchanged && ServerAiNativeActions.Owned(id) && goblin.active && ReferenceEquals(Main.npc[goblin.whoAmI],goblin);
+        bool verified = rolled && afterPrefix > 0 && itemVerified && beforeFunds.totalCopper-afterFunds.totalCopper == price &&
+            bankNonCurrencyUnchanged && ServerAiNativeActions.Owned(id) && goblin.active && ReferenceEquals(Main.npc[goblin.whoAmI],goblin);
         return new(verified?"completed":"unknown",verified?"reforge_verified":"reforge_unconfirmed",
             new {entityRef,sourceSlot,sourceToken,quoteToken,itemType,beforePrefix,afterPrefix,priceCopper=price,
-                beforeCopper,afterCopper,rolled,itemVerified,banksUnchanged},true,verified,InputsAcquired:false);
+                beforeFunds,afterFunds,rolled,itemVerified,bankNonCurrencyUnchanged},true,verified,InputsAcquired:false);
     }
 }

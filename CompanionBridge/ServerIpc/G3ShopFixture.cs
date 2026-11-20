@@ -30,6 +30,17 @@ internal static class G3ShopFixture
     private static int Spawn(Player p) => NPC.NewNPC(p.GetSource_Misc("G3ShopFixture"),
         (int)p.Center.X + 32, (int)p.Bottom.Y - 2, VendorType);
 
+    private static bool InterruptPayment(On_Player.orig_PayCurrency orig, Player player, long price, int currency)
+    {
+        bool paid = orig(player, price, currency);
+        if (paid && ReferenceEquals(player, ProbeSession.Actor))
+        {
+            On_Player.PayCurrency -= InterruptPayment;
+            throw new InvalidOperationException("Isolated interruption after native payment");
+        }
+        return paid;
+    }
+
     internal static void Tick(Player p)
     {
         string PathFor(string name) => Path.Combine(Main.SavePath, "g3-shop-" + name);
@@ -52,8 +63,9 @@ internal static class G3ShopFixture
             }
             int slot = Spawn(p);
             if (slot >= Main.maxNPCs) throw new InvalidOperationException("No shop fixture NPC slot");
-            // A protected bank balance distinguishes carried-only admission from native bank fallback.
-            p.bank.item[0].SetDefaults(ItemID.GoldCoin);
+            // Non-currency sentinels must survive spending and change-making.
+            foreach (var bank in new[] { p.bank, p.bank2, p.bank3, p.bank4 })
+                bank.item[3].SetDefaults(ItemID.StoneBlock);
             File.WriteAllText(PathFor("ready.json"), JsonSerializer.Serialize(new { slot }));
             return;
         }
@@ -62,17 +74,48 @@ internal static class G3ShopFixture
             // Lua uses the production IPC path. This fixture only funds the actor,
             // replaces an NPC instance, or snapshots the resulting inventories.
             if (!File.Exists(PathFor("control.json"))) return;
-            using var control = JsonDocument.Parse(File.ReadAllText(PathFor("control.json")));
-            File.Delete(PathFor("control.json"));
+            string command;
+            try
+            {
+                command = File.ReadAllText(PathFor("control.json"));
+                File.Delete(PathFor("control.json"));
+            }
+            catch (IOException ex) when ((ex.HResult & 0xffff) is 32 or 33)
+            {
+                return; // Windows can briefly hold the renamed command. No mutation yet.
+            }
+            using var control = JsonDocument.Parse(command);
             string op = control.RootElement.GetProperty("op").GetString();
             using var ready = JsonDocument.Parse(File.ReadAllText(PathFor("ready.json")));
             int slot = ready.RootElement.GetProperty("slot").GetInt32();
             if (op == "fund")
             {
-                if (!p.inventory[50].IsAir) throw new InvalidOperationException("Fixture coin slot is occupied");
-                p.inventory[50].SetDefaults(ItemID.SilverCoin);
-                p.inventory[50].stack = 2;
-                if (NurseTest || ReforgeTest) p.inventory[50].SetDefaults(ItemID.PlatinumCoin);
+                p.bank.item[0].SetDefaults(ItemID.PlatinumCoin);
+            }
+            else if (op == "balances")
+            {
+                var amounts = control.RootElement.GetProperty("copper").EnumerateArray().Select(e => e.GetInt32()).ToArray();
+                var stores = new[] { p.inventory, p.bank.item, p.bank2.item, p.bank3.item, p.bank4.item };
+                if (amounts.Length != stores.Length || amounts.Any(n => n < 0 || n > 9999))
+                    throw new InvalidOperationException("Invalid fixture funding");
+                for (int i = 0; i < stores.Length; i++)
+                {
+                    foreach (var coin in stores[i].Where(item => item.IsACoin)) coin.TurnToAir();
+                    if (amounts[i] == 0) continue;
+                    var slotItem = stores[i][i == 0 ? 50 : 0];
+                    if (!slotItem.IsAir) throw new InvalidOperationException("Fixture slot occupied");
+                    slotItem.SetDefaults(ItemID.CopperCoin);
+                    slotItem.stack = amounts[i];
+                }
+            }
+            else if (op == "fillInventory")
+            {
+                foreach (var item in p.inventory.Take(54).Where(item => item.IsAir || item.IsACoin))
+                    item.SetDefaults(ItemID.StoneBlock);
+            }
+            else if (op == "interruptPayment")
+            {
+                On_Player.PayCurrency += InterruptPayment;
             }
             else if (NurseTest && op == "injure")
             {
@@ -117,8 +160,8 @@ internal static class G3ShopFixture
             var insufficient = Try(observed, true);
             // Test endowment only, outside the measured purchase and refusal intervals.
             if (!p.inventory[50].IsAir) throw new InvalidOperationException("Fixture coin slot is occupied");
-            p.inventory[50].SetDefaults(ItemID.SilverCoin);
-            p.inventory[50].stack = 2;
+            p.bank.item[0].SetDefaults(ItemID.SilverCoin);
+            p.bank.item[0].stack = 2;
             var purchase = Try(observed, true);
             merchant.active = false;
             if (Spawn(p) != slot) throw new InvalidOperationException("Fixture did not reuse merchant slot");

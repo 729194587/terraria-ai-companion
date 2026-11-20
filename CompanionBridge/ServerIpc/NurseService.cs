@@ -18,7 +18,7 @@ internal static class NurseService
 
     private sealed record Offer(string Token, Player Actor, NPC Nurse, string Reference, string World,
         long Generation, int Slot, int Life, int MaxLife, int Heal, int Price, int[] Removable,
-        long Funds, ulong Expires, long Deadline);
+        MerchantPayment.Funds Funds, string Inventory, ulong Expires, long Deadline);
 
     private static int ProgressMultiplier()
     {
@@ -59,19 +59,20 @@ internal static class NurseService
         var lease = id.RequestLease ?? throw new ShopReadException("not_bound");
         lease.MerchantQuote = null;
         var plan = Inspect(p,nurse);
-        long funds = MerchantPayment.Coins(p.inventory,54);
+        var funds = MerchantPayment.Balance(p);
+        bool canAfford = p.CanAfford(plan.Price,-1);
         string reason = !plan.Allowed ? "nurse_vetoed" : plan.Price <= 0 ? "no_paid_treatment" :
-            funds < plan.Price ? "insufficient_carried_funds" : null;
+            !canAfford ? "insufficient_funds" : null;
         Offer offer = null;
         if (plan.Allowed && plan.Price > 0)
         {
             offer = new(Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
                 p,nurse,entityRef,id.World,id.Generation,id.Slot,p.statLife,p.statLifeMax2,plan.Heal,plan.Price,
-                plan.Debuffs,funds,Main.GameUpdateCount+600,Environment.TickCount64+10000);
+                plan.Debuffs,funds,MerchantShop.Inventory(id,p),Main.GameUpdateCount+600,Environment.TickCount64+10000);
             lease.MerchantQuote = offer;
         }
         return new { entityRef,life=p.statLife,maxLife=p.statLifeMax2,heal=plan.Heal,priceCopper=plan.Price,
-            removableDebuffs=plan.Debuffs,carriedCopper=funds,canTreat=reason==null,reason,
+            removableDebuffs=plan.Debuffs,funds.carriedCopper,funds,canAfford,currency="copper",canTreat=reason==null,reason,
             quoteToken=offer?.Token,expiresAtGameUpdate=offer?.Expires };
     }
 
@@ -91,12 +92,13 @@ internal static class NurseService
             offer.World != id.World || offer.Generation != id.Generation || offer.Slot != id.Slot ||
             Main.GameUpdateCount >= offer.Expires || Environment.TickCount64 >= offer.Deadline) return Reject("stale_quote");
         var plan = Inspect(p,nurse);
-        long beforeCopper = MerchantPayment.Coins(p.inventory,54);
+        var beforeFunds = MerchantPayment.Balance(p);
+        if (offer.Funds != beforeFunds) return Reject("stale_quote");
         if (!plan.Allowed || plan.Price != offer.Price || plan.Heal != offer.Heal || p.statLife != offer.Life ||
             p.statLifeMax2 != offer.MaxLife || !plan.Debuffs.SequenceEqual(offer.Removable)) return Reject("stale_quote");
-        if (beforeCopper < plan.Price) return Reject("insufficient_carried_funds");
-        if (beforeCopper != offer.Funds) return Reject("stale_quote");
-        var banks = MerchantShop.BankTokens(id,p);
+        if (offer.Inventory != MerchantShop.Inventory(id,p)) return Reject("stale_quote");
+        if (!p.CanAfford(plan.Price,-1)) return Reject("insufficient_funds");
+        var banks = MerchantPayment.NonCurrency(id,p);
         var retained = p.buffType.Where(t => t != 0 && !plan.Debuffs.Contains(t)).ToArray();
         bool treated = false;
         try
@@ -111,15 +113,15 @@ internal static class NurseService
             }
         }
         catch (Exception) { treated = false; } // Payment may already have changed the inventory.
-        long afterCopper = MerchantPayment.Coins(p.inventory,54);
-        bool banksUnchanged = banks.SequenceEqual(MerchantShop.BankTokens(id,p));
+        var afterFunds = MerchantPayment.Balance(p);
+        bool bankNonCurrencyUnchanged = banks.SequenceEqual(MerchantPayment.NonCurrency(id,p));
         bool buffsVerified = retained.SequenceEqual(p.buffType.Where(t => t != 0));
-        bool verified = treated && p.statLife == offer.Life + plan.Heal && beforeCopper-afterCopper == plan.Price &&
-            banksUnchanged && buffsVerified && ServerAiNativeActions.Owned(id) && nurse.active &&
+        bool verified = treated && p.statLife == offer.Life + plan.Heal && beforeFunds.totalCopper-afterFunds.totalCopper == plan.Price &&
+            bankNonCurrencyUnchanged && buffsVerified && ServerAiNativeActions.Owned(id) && nurse.active &&
             ReferenceEquals(Main.npc[nurse.whoAmI],nurse);
         return new(verified?"completed":"unknown",verified?"treatment_verified":"treatment_unconfirmed",
-            new {entityRef,quoteToken,priceCopper=plan.Price,beforeCopper,afterCopper,beforeLife=offer.Life,
-                afterLife=p.statLife,heal=plan.Heal,removableDebuffs=plan.Debuffs,buffsVerified,banksUnchanged},
+            new {entityRef,quoteToken,priceCopper=plan.Price,beforeFunds,afterFunds,beforeLife=offer.Life,
+                afterLife=p.statLife,heal=plan.Heal,removableDebuffs=plan.Debuffs,buffsVerified,bankNonCurrencyUnchanged},
             true,verified,InputsAcquired:false);
     }
 }

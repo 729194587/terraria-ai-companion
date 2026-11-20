@@ -5,6 +5,10 @@ import atomic_operations as atomic
 from server_ai import operations_for_capabilities
 
 
+def funds(balance):
+    return dict(carriedCopper=0, piggyBank=balance, safe=0, defendersForge=0, voidVault=0, totalCopper=balance)
+
+
 class MerchantShopTests(unittest.TestCase):
     def test_capabilities_and_arguments(self):
         caps = {'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_merchant_shop_v1'}
@@ -25,13 +29,25 @@ class MerchantShopTests(unittest.TestCase):
 
     def test_completed_requires_matching_receipt_and_exact_deltas(self):
         target = dict(entityRef='merchant', quoteToken='a' * 64)
-        receipt = dict(**target, itemType=8, quantity=1, unitPrice=44, beforeCopper=200,
-                       afterCopper=156, beforeCount=0, afterCount=1, banksUnchanged=True)
+        receipt = dict(**target, itemType=8, quantity=1, unitPrice=44, beforeFunds=funds(200),
+                       afterFunds=funds(156), beforeCount=0, afterCount=1, bankNonCurrencyUnchanged=True)
         self.assertTrue(atomic.verified_purchase(target, receipt))
         for change in (dict(entityRef='other'), dict(quoteToken='b' * 64), dict(unitPrice=0),
-                       dict(afterCopper=155), dict(afterCount=2), dict(banksUnchanged=False)):
+                       dict(afterFunds=dict(funds(156), totalCopper=155)), dict(afterFunds=funds(155)),
+                       dict(afterCount=2), dict(bankNonCurrencyUnchanged=False)):
             with self.subTest(change=change):
                 self.assertFalse(atomic.verified_purchase(target, dict(receipt, **change)))
+
+    def test_treatment_requires_payment_and_health_evidence(self):
+        target = dict(entityRef='nurse', quoteToken='a' * 64)
+        receipt = dict(**target, priceCopper=120, beforeFunds=funds(120), afterFunds=funds(0),
+                       beforeLife=80, afterLife=100, heal=20, removableDebuffs=[30],
+                       buffsVerified=True, bankNonCurrencyUnchanged=True)
+        self.assertTrue(atomic.verified_treatment(target, receipt))
+        for change in (dict(afterLife=99), dict(buffsVerified=False), dict(afterFunds=funds(1)),
+                       dict(beforeFunds={}), dict(bankNonCurrencyUnchanged=False)):
+            with self.subTest(change=change):
+                self.assertFalse(atomic.verified_treatment(target, dict(receipt, **change)))
 
     def test_sale_requires_own_capability_and_exact_source_and_payment(self):
         caps = {'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_merchant_purchase_v1'}

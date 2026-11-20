@@ -97,12 +97,12 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("inspect_npc_shop", "读取有交互资格的普通商人商品列表。未知条件或未支持的商品应按返回状态处理。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
     tool("quote_npc_purchase", "按绑定 AI 的当前购物状态报价，返回短时购买令牌、单价与支付能力。数量为一件。", {"entityRef": MERCHANT_REF, "itemType": {"type": "integer", "minimum": 1, "maximum": 2147483647}, "quantity": {"type": "integer", "minimum": 1, "maximum": 1}}, ["entityRef", "itemType"]),
     tool("quote_nurse_heal", "读取附近护士的治疗量、诊金（铜）、可清除减益和短时报价。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
-    tool("heal_at_nurse", "使用同一护士的报价治疗绑定 AI 并清除可治疗减益，支付随身钱币。", {"entityRef": MERCHANT_REF,"quoteToken": SHOP_TOKEN}, ["entityRef","quoteToken"]),
-    tool("quote_reforge", "凭主背包槽令牌向哥布林工匠查询当前前缀和一次重铸的随身铜币费用。", SALE_SOURCE, list(SALE_SOURCE)),
+    tool("heal_at_nurse", "使用同一护士的报价治疗绑定 AI 并清除可治疗减益，使用随身及四个银行的钱币支付。", {"entityRef": MERCHANT_REF,"quoteToken": SHOP_TOKEN}, ["entityRef","quoteToken"]),
+    tool("quote_reforge", "凭主背包槽令牌向哥布林工匠查询当前前缀和一次重铸的铜币费用。", SALE_SOURCE, list(SALE_SOURCE)),
     tool("reforge_item", "使用同一工匠和槽位的新鲜报价进行一次原生随机重铸，可能抽回原前缀。", {**SALE_SOURCE, "quoteToken": SHOP_TOKEN}, [*SALE_SOURCE, "quoteToken"]),
     tool("quote_npc_sale", "使用主背包指定槽的新鲜 inventoryToken 查询向普通商人出售一件的预计铜币收入。", SALE_SOURCE, list(SALE_SOURCE)),
     tool("sell_npc_item", "使用同一商人和背包槽的有效出售报价卖出一件，核验实收钱币和库存。", {**SALE_SOURCE, "quoteToken": SHOP_TOKEN}, [*SALE_SOURCE, "quoteToken"]),
-    tool("buy_npc_item", "使用同一商人的新鲜报价令牌购买一件商品。核验随身钱币与入包数量；过期后须重新查询报价。", {"entityRef": MERCHANT_REF, "quoteToken": SHOP_TOKEN}, ["entityRef", "quoteToken"]),
+    tool("buy_npc_item", "使用同一商人的新鲜报价令牌购买一件商品。核验随身及四个银行的钱币总额与入包数量；过期后须重新查询报价。", {"entityRef": MERCHANT_REF, "quoteToken": SHOP_TOKEN}, ["entityRef", "quoteToken"]),
     tool("inspect_npc_housing", "读取新鲜 NPC 引用对应的原生住所和房间管理器登记。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
     tool("assign_npc_home", "把指定现有城镇 NPC 分配到用室内 Tile 坐标指定的有效空房。使用新鲜 entityRef；核对 NPC 和管理器的住所读回。", {**TILE, "entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["x","y","entityRef"]),
     tool("inspect_housing", "以室内绝对 Tile 坐标执行只读原生验房。住宅判定见 data.status。", TILE, ["x", "y"]),
@@ -396,16 +396,29 @@ class ArgumentValidationError(ValueError):
         super().__init__('; '.join(issue['message'] for issue in issues)[:512])
 
 
+def verified_payment(proof, price):
+    if proof.get('bankNonCurrencyUnchanged') is not True:
+        return False
+    sources = ('carriedCopper', 'piggyBank', 'safe', 'defendersForge', 'voidVault')
+    for funds in (proof.get('beforeFunds'), proof.get('afterFunds')):
+        if not isinstance(funds, dict) or any(type(funds.get(k)) is not int or funds[k] < 0
+                                              for k in (*sources, 'totalCopper')):
+            return False
+        if sum(funds[k] for k in sources) != funds['totalCopper']:
+            return False
+    return proof['beforeFunds']['totalCopper'] - proof['afterFunds']['totalCopper'] == price
+
+
 def verified_purchase(target, proof):
     if not isinstance(target, dict) or not isinstance(proof, dict):
         return False
-    fields = ('itemType', 'quantity', 'unitPrice', 'beforeCopper', 'afterCopper', 'beforeCount', 'afterCount')
+    fields = ('itemType', 'quantity', 'unitPrice', 'beforeCount', 'afterCount')
     return (isinstance(target.get('entityRef'), str) and target['entityRef'] == proof.get('entityRef')
             and isinstance(target.get('quoteToken'), str) and target['quoteToken'] == proof.get('quoteToken')
             and all(type(proof.get(k)) is int and proof[k] >= 0 for k in fields)
             and proof['itemType'] > 0 and proof['quantity'] == 1 and proof['unitPrice'] > 0
-            and proof['beforeCopper'] - proof['afterCopper'] == proof['unitPrice']
-            and proof['afterCount'] - proof['beforeCount'] == 1 and proof.get('banksUnchanged') is True)
+            and verified_payment(proof, proof['unitPrice'])
+            and proof['afterCount'] - proof['beforeCount'] == 1)
 
 
 def verified_reforge(target, proof):
@@ -414,11 +427,11 @@ def verified_reforge(target, proof):
     if any(key not in target or target[key] != proof.get(key)
            for key in ('entityRef', 'sourceSlot', 'sourceToken', 'quoteToken')):
         return False
-    fields = ('itemType','beforePrefix','afterPrefix','beforeCopper','afterCopper','priceCopper')
+    fields = ('itemType','beforePrefix','afterPrefix','priceCopper')
     return (all(type(proof.get(k)) is int and proof[k] >= 0 for k in fields)
             and proof['itemType'] > 0 and proof['afterPrefix'] > 0
-            and proof['beforeCopper'] - proof['afterCopper'] == proof['priceCopper']
-            and all(proof.get(k) is True for k in ('rolled','itemVerified','banksUnchanged')))
+            and verified_payment(proof, proof['priceCopper'])
+            and all(proof.get(k) is True for k in ('rolled','itemVerified')))
 
 
 def verified_treatment(target, proof):
@@ -426,12 +439,12 @@ def verified_treatment(target, proof):
         return False
     return (all(isinstance(target.get(k), str) and target[k] == proof.get(k) for k in ('entityRef', 'quoteToken'))
             and all(type(proof.get(k)) is int and proof[k] >= 0 for k in
-                    ('heal', 'priceCopper', 'beforeCopper', 'afterCopper', 'beforeLife', 'afterLife'))
-            and proof['beforeCopper'] - proof['afterCopper'] == proof['priceCopper'] > 0
+                    ('heal', 'priceCopper', 'beforeLife', 'afterLife'))
+            and proof['priceCopper'] > 0 and verified_payment(proof, proof['priceCopper'])
             and proof['afterLife'] - proof['beforeLife'] == proof['heal']
             and isinstance(proof.get('removableDebuffs'), list)
             and (proof['heal'] > 0 or bool(proof['removableDebuffs']))
-            and proof.get('buffsVerified') is True and proof.get('banksUnchanged') is True)
+            and proof.get('buffsVerified') is True)
 
 
 def verified_sale(target, proof):

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 from native_direct_input import Limits, LuaRuntime, ServerAiBridge, wait_file
-from native_g3_shop import contents, copper
+from native_g3_shop import check_payment
 from api_result_contracts import schema_for
 
 
@@ -64,8 +64,8 @@ return api('quote_reforge',{entityRef=REF,sourceSlot=i.slot,sourceToken=i.invent
             assert old['type']==new['type']==q['itemType'] and old['stack']==new['stack']==1
             assert old['prefix']==q['prefix']==evidence['beforePrefix']==0
             assert new['prefix']==evidence['afterPrefix']>0 and old['favorited']==new['favorited']
-            paid=copper(contents(before['carried']))-copper(contents(after['carried']))
-            assert paid==evidence['priceCopper']==q['priceCopper']>0 and before['banks']==after['banks']
+            paid = q['priceCopper']
+            check_payment(before, after, paid, evidence)
             print(f"Item {new['type']}: prefix 0 -> {new['prefix']}, paid {paid} copper; {trace.name}")
 
     try:
@@ -73,8 +73,8 @@ return api('quote_reforge',{entityRef=REF,sourceSlot=i.slot,sourceToken=i.invent
         invalid=await quote(ref,2)
         assert invalid['reason']=='item_not_reforgeable' and invalid['quoteToken'] is None
         poor=await quote(ref)
-        assert poor['reason']=='insufficient_carried_funds'
-        await execute(poor,'insufficient_carried_funds')
+        assert poor['reason']=='insufficient_funds'
+        await execute(poor,'insufficient_funds')
         await fixture('fund')
         old=await quote(ref)
         replacement=(await fixture('replace'))['entityRef']
