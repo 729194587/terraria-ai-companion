@@ -56,6 +56,17 @@ class BuildPlaceTests(unittest.TestCase):
         unknown = action_results([dict(receipt, status='unknown')])['items'][0]
         self.assertNotIn('remainingByReason', unknown['result'])
 
+    def test_v2_model_history_preserves_metrics_without_repeating_every_entry(self):
+        metrics = dict(worksitesVisited=2, navigationCalls=1, materialSwitches=3)
+        proof = dict(scheduler=metrics, timing=dict(totalTicks=120), entries=[dict(status='placed')])
+        receipt = dict(operation='build_place', status='completed', completed=True,
+                       task=dict(result=dict(evidence=proof)))
+        item, = action_results([receipt])['items']
+        self.assertTrue(item['summaryOnly'])
+        self.assertEqual(metrics, item['result']['scheduler'])
+        self.assertEqual(120, item['result']['timing']['totalTicks'])
+        self.assertNotIn('task', item['result'])
+
     def test_submission_preserves_arguments_and_identity(self):
         self.caps.append('server_ai_build_place_v1')
         self.bridge.supported_atomic_operations = operations_for_capabilities(self.caps)

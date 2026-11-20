@@ -23,7 +23,14 @@ internal sealed class BuildingMaterials
         }
     }
 
-    internal void RequireOne(int type) => required[type] = required.GetValueOrDefault(type)+1;
+    private readonly Dictionary<int,int> outstanding = new();
+    internal void RequireOne(int type,bool matched=false)
+    {
+        required[type]=required.GetValueOrDefault(type)+1;
+        if(!matched)outstanding[type]=outstanding.GetValueOrDefault(type)+1;
+    }
+
+    internal bool CanHold(int type)=>usable.GetValueOrDefault(type)>0;
 
     internal string ReserveOne(int type)
     {
@@ -34,7 +41,11 @@ internal sealed class BuildingMaterials
         return null;
     }
 
-    internal sealed record Budget(int itemType,int required,int available,int missing);
-    internal Budget[] Summary() => required.Select(pair => new Budget(pair.Key,pair.Value,
-        available.GetValueOrDefault(pair.Key),Math.Max(0,pair.Value-available.GetValueOrDefault(pair.Key)))).ToArray();
+    internal object[] Summary(IReadOnlyDictionary<int,int> consumed=null) => required.Select(pair =>
+    {
+        int type=pair.Key, carried=usable.GetValueOrDefault(type), total=available.GetValueOrDefault(type);
+        return (object)new{itemType=type,required=pair.Value,available=total,carriedUsable=carried,
+            carriedUnavailable=total-carried,storedNearby=(int?)null,reserved=reserved.GetValueOrDefault(type),
+            consumed=consumed?.GetValueOrDefault(type)??0,missing=Math.Max(0,outstanding.GetValueOrDefault(type)-carried)};
+    }).ToArray();
 }

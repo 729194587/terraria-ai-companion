@@ -71,7 +71,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     internal object StartMaintenancePlacement(AiReadOnlyProtocol.Identity id,Microsoft.Xna.Framework.Point at)
         =>StartCore(id,"place_tile",JsonSerializer.SerializeToElement(new{x=at.X,y=at.Y}),"auto-torch",true);
     private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child,bool continuous=false,
-        NavigationKnowledge knowledge=null,AiAtomicActions.CombatAdmission admission=null,AiAtomicActions.RespawnPlan rejoin=null)
+        NavigationKnowledge knowledge=null,AiAtomicActions.CombatAdmission admission=null,AiAtomicActions.RespawnPlan rejoin=null,bool buildTravel=false)
     {
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
@@ -123,7 +123,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(AiAtomicActions.IsTask(operation))
             {
                 if(child)throw new InvalidOperationException("Nested root task denied");
-                var executor=new ChildExecutor(this,continuous:true);
+                var executor=new ChildExecutor(this,continuous:operation!="build_place",buildTravel:operation=="build_place");
                 CompanionTask task=operation==CombatProtocol.Operation
                     ?new CombatController(new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),
                         args.TryGetProperty("threat",out _)?ReflexTargetAllowed??((_,_)=>true):null,admission,alternate:args.TryGetProperty("button",out var button) && button.GetString()=="right"),
@@ -157,7 +157,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             else if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
             else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId,
                 movementOnly:child && args.TryGetProperty("movementOnly",out var movementOnly) && movementOnly.GetBoolean());ActorControl.Driver=navigation;}
-            else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge);ActorControl.Driver=navigation;}
+            else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge,
+                movementOnly:buildTravel);ActorControl.Driver=navigation;}
             else if(operation=="place_rope")
             {
                 if(p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned)return Reject("unsupported_placement_state");
@@ -418,10 +419,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         private readonly bool continuous;
         private readonly NavigationKnowledge knowledge=new();
         internal NavigationKnowledge Knowledge=>knowledge;
-        internal ChildExecutor(ServerAiNativeActions owner,bool continuous){this.owner=owner;this.continuous=continuous;}
+        private readonly bool buildTravel;
+        internal ChildExecutor(ServerAiNativeActions owner,bool continuous,bool buildTravel=false){this.owner=owner;this.continuous=continuous;this.buildTravel=buildTravel;}
         public string Validate(string op,JsonElement args)=>owner.Validate(op,args);
         public ulong ProgressVersion(object handle)=>handle is Handle {Context:ServerAiNavigation.Run run}?run.ProgressVersion:0;
-        public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>owner.StartCore(id,op,args,taskId,true,continuous,knowledge);
+        public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>owner.StartCore(id,op,args,taskId,true,continuous,knowledge,buildTravel:buildTravel);
         public Result Poll(AiReadOnlyProtocol.Identity id,object value)
         {
             var r=owner.Poll(id,value);

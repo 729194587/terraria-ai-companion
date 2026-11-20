@@ -249,3 +249,52 @@ V2 内部增加 Survey、Dependency、Worksite、Scheduler、Ledger 和 Recovery
 - 原生放置行为与 V1 保持一致。
 - 现有建筑、放置、住宅和导航回归通过。
 - 提供同一 Fixture 下 V1/V2 的可比较结果。
+
+## 8. 实现与验证记录
+
+2026-11-20，Terraria 1.4.4.9 / tModLoader 2026.09.3.1。V1 参考包从远端文档提交 `b1d8087` 构建，其施工代码与 `45e6ce6` 相同。
+
+### 调度与恢复契约
+
+- `BuildDiff.Providers` 只在原生调查报告缺支撑时，将相邻支撑、物体各候选 Alternate 的 Anchor 边和占地映射到 Blueprint 目标。边是可能提供支撑的目标。供体放好后重新调查依赖项，由原生调查判定是否就绪。无供体、阻塞的供体和闭环分别报告。
+- 当前稳定落脚点优先施工。需要移动时，`BuildWorksiteSearch` 评估原生安全落脚、整个站点的放置范围、覆盖数、材料种类和距离，最多对八个候选验证路径。直行可串联已验证的运动前缀，复杂地形复用 SurfaceNavigator。只有完整预测才提交落脚区域导航，到达后重新核验实际落脚。预算、未知地形与观察范围内无路有独立原因。
+- 已持材料、可解除的依赖与相邻目标决定站内顺序。连续铺墙会避开可能引发原生补洞的顺序。每个目标每次任务最多一次原生放置，出现不确定副作用时停止。重新提交会调查整个实际世界。全部完成须经过最终逐项目标复核。
+- `required` 统计含已匹配目标的蓝图用量，`missing` 按未完成需求和实际可持用库存计算。兼容字段 `available` 含不可直接持用的背包槽。没有容器观察时 `storedNearby` 为 null。进行中的预留见任务进度 `reservedItem`，已释放批次的终态预留为零。
+- `build_diff` 返回目标 ID、候选依赖、下一步和稳定当前位置的覆盖估计。`build_place` 的完整回执保留原生证据、坐标、占地、材料、调度计数和阶段耗时。模型历史保留摘要，可凭任务 ID 查询逐项证据。
+
+### 同世界副本的 V1/V2 对照
+
+每组使用同一来源世界、蓝图、初始位置、快捷栏和库存，以 4 木块和 4 泥土块交错输入。open 的近端目标在行进方向另一侧，crossing 需要跨过刚放好的结构。计时从发出任务到读到终态。每个单元格是一趟独立专服运行。
+
+| 场景 | 版本 | 访问站点 | 导航调用 | 材料持用调用 | 目标调查 | 放置尝试 / 核验成功 | unknown | 根任务 Tick | 实耗秒 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| open | V1 | 3 | 2 | 8 | 34 | 8 / 8 | 0 | 287 | 5.109 |
+| open | V2 | 2 | 1 | 3 | 39 | 8 / 8 | 0 | 242 | 4.329 |
+| crossing | V1 | 3 | 2 | 8 | 34 | 8 / 8 | 0 | 287 | 5.141 |
+| crossing | V2 | 3 | 2 | 4 | 41 | 8 / 8 | 0 | 298 | 5.219 |
+
+V1 的持用与导航计数来自连续子任务 ID，站点按初始位置加成功移动计。两种版本的 Tick 均从根任务创建算起。V1 的目标调查按该场景实际执行分支推算，每格有准入、放置后核验和最终调查，另加每次持用或导航后的调查。V2 直接读取调度器计数。该口径均排除原生执行器内部检查。open 减少 45 Tick，crossing 增加 11 Tick；两个场景都减少了材料切换。
+
+复现时分别构建 V1 和当前包，依次设置环境变量 `COMPANION_BUILD_COMPARISON` 为 `open`、`crossing`，在同一世界输入上执行下列命令。将两次打印的 profile 目录传给汇总脚本。
+
+```powershell
+./scripts/build-companion.ps1 -OutputPath .local/building-v2
+./tests/verify_server_ai_native.ps1 -BuildPlace -PackagePath $package -PythonExecutable .local/lua-venv/Scripts/python.exe
+python tests/summarize_build_comparison.py $v1Profile $v2Profile
+```
+
+### 定向验收与证据
+
+以下 Dedicated Server 命令使用上述构建包、复制的测试世界和单独端口。原始 trace、回执及 profile 保存在本地 `.local/`。
+
+| 命令或场景 | 实际验证 |
+|---|---|
+| `verify_server_ai_native.ps1 -BuildPlace` | 循环与外部缺支撑零尝试，缺料账本，阻挡部分完成，取消与新连接续建，全匹配重交；施工中 fixture 移除已放置格并补上未来目标，最终分别报告 changed / matched，再提交只补缺格 |
+| 同入口，`COMPANION_BUILD_RESTART=interrupt` / `resume` | 第一次使用 `-KeepProfile`，取消并保存世界时进度 1/4；第二个专服通过 `-WorldPath` 加载该世界副本，调查跳过 1 格，仅放置 3 格至 4/4。第二次使用新 fixture 背包，此场景验证世界进度恢复 |
+| `verify_server_ai_native.ps1 -BuildDiff -Actions` | 65 项蓝图调查、多格家具计量、Lua 只读和非法重叠拒绝 |
+| `verify_server_ai_native.ps1 -Housing -NpcHome` | 8×8 住宅、墙面、门、工作台、椅子、光源、原生 Housing 与 NPC Home |
+| `verify_server_ai_placement_native.ps1 -Survey` 与 `-Object -Survey` | 植物、南瓜、占地、Alternate、墙支撑、部分清除；对象原生套件 109 项检查含不确定消耗、外部变化、取消与期限 |
+| `verify_navigation_recovery_native.ps1 -Region -RegionIterations 1` | 原生区域查询及落脚导航通过 |
+| Python unittest | `test_build_place test_build_diff test_inspect_housing test_npc_home test_inventory_operations test_server_ai_inventory test_server_ai_placement` 共 34 项通过，涵盖 hold token、模型证据、取消后行为及精简回执 |
+
+现有限制：站点搜索有界，动态世界中的成功预测仍需真实移动和放置核验。一次并行运行的住宅 fixture 出现原生 `native_placement_refused`，回报 partial；单独运行通过，未确定这次拒绝的根因。离线 `run_csharp_tests.ps1 -LandingOnly` / `-SafeGroundWalkOnly` 在公共源集合编译时因缺少 ServerIpc 类型而停止。额外抽查通用类型契约的代表性 fixture 时，`use_item` 样本校验失败，已用 `b1d8087` 的 schema 独立复现。没有运行全量测试或真实模型 Host & Play。

@@ -1,6 +1,6 @@
 # Building V2：智能施工调度架构设计
 
-**状态：** Architecture Design  
+**状态：** 已在 Dedicated Server 施工链路实现。实测场景、性能口径和已知限制见 [Implementation Spec 的验证记录](BUILDING_V2_IMPLEMENTATION.md#8-实现与验证记录)。
 **基线：** \`codex/unified-autonomous-navigation\` @ \`45e6ce69a650a2029b0d2bd78edc046618b4c1c3\`  
 **目标：** Terraria 1.4.4.9 / tModLoader 2026.09.3.1 Stable  
 **主要参考：** Numen 1.21.1 Building 系统

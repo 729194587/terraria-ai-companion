@@ -15,6 +15,7 @@ namespace CompanionBridge.ServerIpc;
 internal static class ServerAiActionFixture
 {
     private static bool initialized, failed, combatIsolated;
+    private static bool buildingEditApplied;
     private static int x, y;
     private static object observedDrop;
     private static NPC perceptionNpc;
@@ -36,6 +37,10 @@ internal static class ServerAiActionFixture
                 {
                     if(update==null)throw new MissingMethodException("Native Main.Update(GameTime) unavailable");
                     int left=Main.spawnTileX, floor=Main.spawnTileY+8;
+                    // The second process in the restart test loads the saved terrain.
+                    bool resumeBuild=Program.LaunchParameters.ContainsKey("-companionplacementtest") &&
+                        Environment.GetEnvironmentVariable("COMPANION_BUILD_RESTART")=="resume";
+                    if(!resumeBuild)
                     for(int tx=left-22;tx<=left+24;tx++)for(int ty=floor-14;ty<=floor+2;ty++)
                     {
                         var tile=Main.tile[tx,ty];tile.ClearEverything();
@@ -105,6 +110,17 @@ internal static class ServerAiActionFixture
                     File.WriteAllText(Path.Combine(Main.SavePath,"action-fixture.json"),JsonSerializer.Serialize(new{targetX=p.position.X+64,mineX=x,mineY=y,
                         initialLife=p.statLife,initialAppleStack=2,perceptionNpcSlot=perceptionNpc?.whoAmI,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));
                 }
+            }
+            // One deterministic external edit, only in the explicit copied-world Building test.
+            if(Program.LaunchParameters.ContainsKey("-companionplacementtest") && !buildingEditApplied &&
+                Main.tile[x-10,y].HasTile && Main.tile[x-11,y].HasTile &&
+                File.Exists(Path.Combine(Main.SavePath,"building-external-edit")))
+            {
+                var removed=Main.tile[x-10,y];
+                var added=Main.tile[x-13,y];
+                removed.ClearTile();
+                added.HasTile=true;added.TileType=TileID.Dirt;
+                buildingEditApplied=true;
             }
             if (Program.LaunchParameters.ContainsKey("-companionnpchometest") &&
                 File.Exists(Path.Combine(Main.SavePath, "housing-refs-request")) &&
@@ -230,5 +246,5 @@ internal static class ServerAiActionFixture
             ProbeSession.Quarantine("Isolated action fixture failed: "+e.Message);
         }
     }
-    internal static void Reset(){initialized=failed=combatIsolated=false;observedDrop=null;perceptionNpc=null;perceptionPosition=default;}
+    internal static void Reset(){initialized=failed=combatIsolated=buildingEditApplied=false;observedDrop=null;perceptionNpc=null;perceptionPosition=default;}
 }

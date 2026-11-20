@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import json
+import os
 from pathlib import Path
 import socket
 import sys
@@ -87,7 +88,55 @@ def verify(port, profile):
             raise TimeoutError(aid)
 
         origin = dict(x=left, y=floor-1)
+        restart = os.getenv("COMPANION_BUILD_RESTART")
+        if restart in ("interrupt", "resume"):
+            plan = dict(origin=origin, tiles=[dict(x=x,y=0,itemType=3) for x in (-2,-3,-4,-5)])
+            before, stock = snapshot(plan, 3)
+            action = run(plan, cancel=restart == "interrupt")
+            after, remaining = snapshot(plan, 3)
+            if restart == "interrupt":
+                assert before["matched"] == 0 and action["status"] == "cancelled"
+                assert 0 < after["matched"] < 4
+            else:
+                assert 0 < before["matched"] < 4 and action["status"] == "completed"
+                entries = action["task"]["result"]["evidence"]["entries"]
+                assert sum(e["status"]=="matched" for e in entries) == before["matched"]
+                assert after["matched"] == 4
+            assert stock-remaining == after["matched"]-before["matched"]
+            print(f"Building restart {restart}: {profile} ({before['matched']} -> {after['matched']})")
+            return
+        comparison = os.getenv("COMPANION_BUILD_COMPARISON")
+        if comparison in ("crossing", "open"):
+            # Identical, freshly seeded actor and copied world for both packages.
+            near = (-3,-4,-5,-2) if comparison == "crossing" else (3,4,5,2)
+            plan = dict(origin=origin, tiles=[dict(x=x, y=0, itemType=t)
+                        for x, t in zip((*near,-12,-13,-14,-15), (9,2,9,2)*2)])
+            start = time.monotonic()
+            action = run(plan)
+            elapsed = time.monotonic() - start
+            evidence = action["task"]["result"]["evidence"]
+            proof = dict(fixture=comparison, elapsedSeconds=elapsed, status=action["status"], entries=evidence["entries"],
+                         scheduler=evidence.get("scheduler"), timing=evidence.get("timing"))
+            (profile / "building-comparison.json").write_text(json.dumps(proof, indent=2))
+            print(f"Building comparison: {profile}")
+            assert action["status"] == "completed", proof
+            metrics = proof["scheduler"]
+            if metrics:
+                assert metrics["nativePlacementAttempts"] == metrics["nativePlacementSuccesses"] == 8
+                assert metrics["nativePlacementUnknown"] == 0 and metrics["materialSwitches"] < 8
+                if comparison == "open":
+                    assert metrics["navigationCalls"] == 1 and metrics["worksitesVisited"] == 2
+            return
         partial = dict(origin=origin, tiles=[dict(x=3, y=0, itemType=9), dict(x=3, y=1, itemType=9)])
+        # Two floating tiles can only support each other. A lone tile has no provider.
+        floating = dict(origin=origin, tiles=[dict(x=x, y=-7, itemType=9) for x in (-2,-3,4)])
+        cycle = run(floating)["task"]["result"]["evidence"]
+        assert [e["reason"] for e in cycle["entries"]] == ["dependency_cycle"]*2+["missing_support_or_anchor"], cycle
+        assert cycle["outcome"] == "failed" and cycle["scheduler"]["nativePlacementAttempts"] == 0
+        shortage = dict(origin=origin, walls=[dict(x=-3, y=0, itemType=30)])
+        missing = run(shortage)["task"]["result"]["evidence"]
+        assert missing["entries"][0]["reason"] == "missing_material", missing
+        assert missing["materials"][0]["missing"] == 1
         before, stock = snapshot(partial, 9)
         assert before["matched"] == 0 and before["placeable"] == 1, before
         action = run(partial)
@@ -112,6 +161,16 @@ def verify(port, profile):
         assert asyncio.run(model_submit(port, plan, log)) == ["matched"] * 4
         repeated, final = snapshot(plan, 3)
         assert repeated["matched"] == 4 and final == rest, repeated
+        # The fixture edits the first and fourth cells after the second native placement.
+        # Reconcile must report the removed cell and never charge for the externally added one.
+        (profile / "building-external-edit").touch()
+        edit = dict(origin=origin, tiles=[dict(x=x, y=-1, itemType=2) for x in (-2,-3,-4,-5)])
+        changed = run(edit)["task"]["result"]["evidence"]
+        assert changed["outcome"] == "partial", changed
+        assert [e["status"] for e in changed["entries"]] == ["changed","placed","placed","matched"], changed
+        assert changed["scheduler"]["nativePlacementAttempts"] == 3, changed
+        resumed = run(edit)["task"]["result"]["evidence"]
+        assert [e["status"] for e in resumed["entries"]] == ["placed","matched","matched","matched"], resumed
     print(f"Native build_place passed: {profile / 'build-place-trace.jsonl'}")
 
 

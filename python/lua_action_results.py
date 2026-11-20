@@ -6,12 +6,12 @@ ACTION_RESULTS_BYTES = 32_768
 
 
 def _remaining_build_items(result):
-    if (result.get('operation'), result.get('status'), result.get('reason')) != (
-            'build_place', 'failed', 'build_partial'):
+    if (result.get('operation'), result.get('status')) != ('build_place', 'failed') or result.get('reason') not in (
+            'build_partial', 'blueprint_blocked'):
         return None
     terminal = (result.get('task') or {}).get('result') or {}
     evidence = terminal.get('evidence') or {}
-    if evidence.get('outcome') != 'partial' or not isinstance(evidence.get('entries'), list):
+    if evidence.get('outcome') not in ('partial', 'failed') or not isinstance(evidence.get('entries'), list):
         return None
     groups = {}
     for entry in evidence['entries']:
@@ -66,6 +66,11 @@ def action_results(actions, last_action=None, cleanup=None):
             fields['endEvidence'] = {'inputsReleased': end['inputsReleased']}
         if 'recovery' in result:
             fields['recovery'] = result['recovery']
+        if result.get('operation') == 'build_place':
+            proof = ((result.get('task') or {}).get('result') or {}).get('evidence') or {}
+            for field in ('scheduler', 'timing', 'completedByLayer'):
+                if field in proof:
+                    fields[field] = proof[field]
         remaining = _remaining_build_items(result)
         if remaining:
             for key in ('worldSessionId', 'actorId', 'actorSlot', 'actorGeneration', 'inputsReleased', 'effectVerified'):
@@ -89,7 +94,7 @@ def action_results(actions, last_action=None, cleanup=None):
         if item is None:
             continue
         compact = item['result']
-        if 'remainingByReason' in compact:
+        if 'remainingByReason' in compact or 'scheduler' in compact:
             continue
         item.update(result=records[index][0], summaryOnly=False)
         try:

@@ -24,11 +24,11 @@ internal static class BuildDiff
             {
                 left=x-actual.OriginX; top=y-actual.OriginY; width=actual.Width; height=actual.Height;
             }
+            if(supported)ledger.RequireOne(item.type,status=="already_matches");
             if (status == "already_matches") matched++;
             else if (supported)
             {
                 int type = item.type;
-                ledger.RequireOne(type);
                 if (survey.Attempt)
                 {
                     if (!inReach) status = "out_of_reach";
@@ -41,10 +41,11 @@ internal static class BuildDiff
                     }
                 }
             }
-            bool plannedSupportCandidate = status=="missing_support_or_anchor" && HasPlannedSupport(target, targets);
-            entries.Add(new { layer,x,y,itemType=item?.type,left,top,width,height,inReach,status,survey=survey.Status,alternate=survey.Alternate,candidates=survey.Candidates,blocker=survey.Blocker,plannedSupportCandidate });
+            var dependency=Providers(target,targets,survey).Select(Id).ToArray();
+            bool plannedSupportCandidate=dependency.Length>0;
+            entries.Add(new { layer,x,y,itemType=item?.type,left,top,width,height,inReach,status,survey=survey.Status,alternate=survey.Alternate,candidates=survey.Candidates,blocker=survey.Blocker,plannedSupportCandidate,dependency,id=Id(target),nextAction=Next(status,plannedSupportCandidate) });
         }
-        return new { entries, matched, pending=entries.Count-matched, placeable, materials=ledger.Summary() };
+        return new { entries, matched, currentSiteCoverage=ServerAiNavigation.Observe(player).Settled?(int?)placeable:null, pending=entries.Count-matched, placeable, materials=ledger.Summary() };
     }
 
     internal static string Observe(Player player, BuildingBlueprint.Target target, out bool inReach)
@@ -60,25 +61,57 @@ internal static class BuildDiff
         return target.Supported ? NativePlacementSurvey.Read(p,target.Material,target.X,target.Y) : new("unsupported_content");
     }
 
-    private static bool HasPlannedSupport(BuildingBlueprint.Target target, IReadOnlyList<BuildingBlueprint.Target> targets)
+    internal static string Id(BuildingBlueprint.Target t)=>$"{t.Layer}/{t.X}/{t.Y}/{t.Material?.type}/{t.Material?.placeStyle}";
+
+    internal static string Next(string status,bool planned=false)=>status switch
     {
-        bool Planned(int x,int y,bool wall=false) => WorldGen.InWorld(x,y,5) &&
-            (wall ? Main.tile[x,y].WallType==0 : !Main.tile[x,y].HasTile) && targets.Any(t => t.Supported && !ReferenceEquals(t,target) &&
-            (t.Layer=="walls")==wall && x>=t.Left && x<t.Left+t.Width && y>=t.Top && y<t.Top+t.Height);
-        var data=target.Shape?.Data;
-        if (data==null)
+        "already_matches" or "matched" or "placed"=>"none",
+        "ready" or "placeable" or "native_replaceable" or "native_attempt_required"=>"place",
+        "out_of_reach"=>"move",
+        "missing_support_or_anchor"=>planned?"wait_for_support":"provide_support",
+        "dependency_cycle"=>"revise_blueprint",
+        "missing_material" or "material_not_available_for_native_placement"=>"prepare_material",
+        "occupied_requires_dig"=>"clear_obstruction",
+        _=>"resurvey"
+    };
+
+    internal static BuildingBlueprint.Target[] Providers(BuildingBlueprint.Target target,
+        IReadOnlyList<BuildingBlueprint.Target> targets,NativePlacementSurvey.Result survey)
+    {
+        if(survey.Status!="missing_support_or_anchor")return Array.Empty<BuildingBlueprint.Target>();
+        var cells=new HashSet<(int x,int y,bool wall)>();
+        void Cell(int x,int y,bool wall=false)
         {
-            if (target.Layer!="walls" && Planned(target.X,target.Y,true)) return true;
-            foreach (var (dx,dy) in new[]{(-1,0),(1,0),(0,-1),(0,1)})
-                if (Planned(target.X+dx,target.Y+dy) || target.Layer=="walls" && Planned(target.X+dx,target.Y+dy,true)) return true;
-            return false;
+            if(WorldGen.InWorld(x,y,5) && (wall?Main.tile[x,y].WallType==0:!Main.tile[x,y].HasTile))
+                cells.Add((x,y,wall));
         }
-        bool Edge(Terraria.DataStructures.AnchorData anchor,int x,int y,bool horizontal) =>
-            Enumerable.Range(anchor.checkStart,anchor.tileCount).Any(i => Planned(x+(horizontal?i:0),y+(horizontal?0:i)));
-        return data.AnchorWall && Planned(target.X,target.Y,true) ||
-            Edge(data.AnchorBottom,target.Left,target.Top+target.Height,true) ||
-            Edge(data.AnchorTop,target.Left,target.Top-1,true) ||
-            Edge(data.AnchorLeft,target.Left-1,target.Top,false) ||
-            Edge(data.AnchorRight,target.Left+target.Width,target.Top,false);
+        void Anchors(ActorObjectPlacement.Shape shape)
+        {
+            int left=target.X-shape.OriginX,top=target.Y-shape.OriginY;
+            void Edge(Terraria.DataStructures.AnchorData a,int x,int y,bool horizontal)
+            {
+                for(int i=a.checkStart;i<a.checkStart+a.tileCount;i++)Cell(x+(horizontal?i:0),y+(horizontal?0:i));
+            }
+            var d=shape.Data;
+            if(d.AnchorWall)for(int x=left;x<left+shape.Width;x++)for(int y=top;y<top+shape.Height;y++)Cell(x,y,true);
+            Edge(d.AnchorBottom,left,top+shape.Height,true);
+            Edge(d.AnchorTop,left,top-1,true);
+            Edge(d.AnchorLeft,left-1,top,false);
+            Edge(d.AnchorRight,left+shape.Width,top,false);
+        }
+        if(survey.Candidates is {Length:>0})
+            foreach(var candidate in survey.Candidates)Anchors(ActorObjectPlacement.Definition(target.Material,candidate.alternate));
+        else if(survey.Shape!=null)Anchors(survey.Shape);
+        else
+        {
+            if(target.Layer!="walls")Cell(target.X,target.Y,true);
+            foreach(var (dx,dy) in new[]{(-1,0),(1,0),(0,-1),(0,1)})
+            {
+                Cell(target.X+dx,target.Y+dy);
+                Cell(target.X+dx,target.Y+dy,true);
+            }
+        }
+        return targets.Where(t=>t!=target && t.Supported && cells.Any(c=>c.wall==(t.Layer=="walls") &&
+            c.x>=t.Left && c.x<t.Left+t.Width && c.y>=t.Top && c.y<t.Top+t.Height)).ToArray();
     }
 }

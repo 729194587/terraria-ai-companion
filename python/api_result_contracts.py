@@ -223,6 +223,15 @@ SCANNED_ENTITY = any_of(
     obj({**ENTITY_FIELDS, 'kind': const('item'), 'typeId': I, 'classification': const('dropped_item'),
          'details': obj({'type': I, 'stack': I, 'contentKey': S, 'entityRef': S}, optional=('entityRef',))}),
 )
+BUILD_MATERIAL = obj({
+    **{key: COUNT for key in ('itemType', 'required', 'available', 'missing', 'carriedUsable',
+                              'carriedUnavailable', 'reserved', 'consumed')}, 'storedNearby': nullable(COUNT),
+}, optional=('carriedUsable', 'carriedUnavailable', 'reserved', 'consumed', 'storedNearby'))
+BUILD_TARGET = dict(id=S, nextAction=S, left=I, top=I, width=I, height=I)
+BUILD_PROGRESS = obj(dict(total=COUNT, settled=COUNT, phase=S,
+                          site=nullable(obj(fields(numbers='MinPlayerLeftX MaxPlayerLeftX SurfaceY'))),
+                          currentTarget=nullable(S), reservedItem=nullable(I), navigationCalls=COUNT),
+                     optional=('phase','site','currentTarget','reservedItem','navigationCalls'))
 DEFS['RecipeItem'] = obj({**ITEM_ID, 'count': I})
 RECIPE = obj({
     'recipeId': I, 'recipeToken': S, 'output': ref('RecipeItem'), 'supported': B, 'available': B,
@@ -318,11 +327,12 @@ OBSERVATIONS = {
                               'itemType': nullable(I), 'left': I, 'top': I, 'width': I, 'height': I,
                               'inReach': B, 'status': S, 'survey': S, 'alternate': nullable(I),
                               'candidates': nullable(array(obj({'alternate': I, 'left': I, 'top': I, 'width': I, 'height': I}))),
-                              'blocker': nullable(obj({**TILE_XY, 'tileType': I})), 'plannedSupportCandidate': B},
-                             optional=('survey', 'alternate', 'candidates', 'blocker'))),
+                              'blocker': nullable(obj({**TILE_XY, 'tileType': I})), 'plannedSupportCandidate': B,
+                              'id': S, 'nextAction': S, 'dependency': array(S)},
+                             optional=('survey', 'alternate', 'candidates', 'blocker', 'id', 'nextAction', 'dependency'))),
         'matched': COUNT, 'pending': COUNT, 'placeable': COUNT,
-        'materials': array(obj({'itemType': I, 'required': COUNT, 'available': COUNT, 'missing': COUNT})),
-    })),
+        'materials': array(BUILD_MATERIAL), 'currentSiteCoverage': nullable(COUNT),
+    }, optional=('currentSiteCoverage',))),
     'query_map': observation(obj({
         **QUERY_METADATA, **fields(integers='schemaVersion originX originY cellSize width height',
                                    strings='worldUid characterId legend knowledge visibility'),
@@ -860,7 +870,12 @@ DEFS['BuildPlaceEvidence'] = obj({
     'counts': obj({layer: obj(dict(placed=COUNT, matched=COUNT, pending=COUNT))
                    for layer in atomic.BLUEPRINT_LAYERS}, optional=atomic.BLUEPRINT_LAYERS),
     'completedByLayer': obj({layer: COUNT for layer in atomic.BLUEPRINT_LAYERS}),
-    'entries': array(obj({'layer': enum('tiles', 'walls', 'objects'), **TILE_XY,
+    'materials': array(BUILD_MATERIAL),
+    'scheduler': obj(dict(phase=S, **fields(integers='worksitesPlanned worksitesVisited navigationCalls materialSwitches '
+                           'surveyPasses targetSurveys localSurveys nativePlacementAttempts nativePlacementSuccesses '
+                           'nativePlacementUnknown dependencyDeferrals deferredResolved'))),
+    'timing': obj(dict(totalTicks=TICK, **fields(numbers='surveyMs planningMs travelMs workMs reconcileMs totalMs'))),
+    'entries': array(obj({'layer': enum('tiles', 'walls', 'objects'), **TILE_XY, **BUILD_TARGET,
                           'itemType': nullable(I), 'status': S, 'reason': nullable(S),
                           'blocker': nullable(obj({**TILE_XY, 'tileType': I})), 'observedStatus': nullable(S),
                           'nativeEvidence': nullable(obj({
@@ -869,8 +884,8 @@ DEFS['BuildPlaceEvidence'] = obj({
                                        booleans='placedByActor targetPresent targetChanged uncertainNativeEffect chestVerified'),
                           }, optional=('kind','requested','itemType','consumedCount','nativePlacementEvents','nativeClearEvents',
                                        'placedByActor','targetPresent','targetChanged','uncertainNativeEffect','chestVerified')))},
-                         optional=('blocker','observedStatus'))),
-})
+                         optional=('blocker','observedStatus',*BUILD_TARGET))),
+}, optional=('materials','scheduler','timing'))
 TASK_LEAF_EVIDENCE = (ref('BuildPlaceEvidence'), ref('PlaceItemEvidence'), ref('MiningEvidence'), ref('NavigationEvidence'), ref('PlacementEvidence'), ref('MiningRunEvidence'))
 
 
@@ -893,7 +908,7 @@ DEFS['GameTaskView'] = obj({
     **GAME_TASK_BASE, 'taskName': enum(*TASK_NAMES, *TASK_CHILDREN), **IDENTITY,
     'parentTaskId': nullable(S), 'observedGameUpdate': TICK, 'deadlineGameUpdate': TICK,
     'currentChild': nullable(ref('GameTaskView')),
-    'progress': nullable(any_of(ref('TaskProgress'), obj(dict(total=COUNT, settled=COUNT)), ref('ExcavationProgress'), ref('MiningRunEvidence'), ref('CombatProgress'), ref('BossEncounterProgress'), ref('CollectionEvidence'))),
+    'progress': nullable(any_of(ref('TaskProgress'), BUILD_PROGRESS, ref('ExcavationProgress'), ref('MiningRunEvidence'), ref('CombatProgress'), ref('BossEncounterProgress'), ref('CollectionEvidence'))),
     'lastResult': nullable(ref('TaskReceipt')), 'result': nullable(ref('TaskReceipt')),
 })
 DEFS['AcceptedGameTask'] = obj({
