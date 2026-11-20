@@ -16,6 +16,7 @@ internal static class ActorPlacement
     {
         internal int X,Y,TileType,Prefix,Style,Attempts,ConsumedCount,NativeEvents,NativeClearEvents;
         internal int WaterBridgeDirection;
+        internal ushort? InitialTile;
         internal ActorRope.Target Rope;
         internal bool Placed,ExternalChange,Object,UncertainNativeEffect,NativeObjectPlacement;
         internal ActorObjectPlacement.Shape Shape;
@@ -47,7 +48,8 @@ internal static class ActorPlacement
         if(!ActorRope.InReach(p,item,x,y))return "placement_out_of_range";
         if(kind=="wall")
         {
-            if(Main.tile[x,y].WallType!=0)return "wall_target_occupied";
+            var survey=NativePlacementSurvey.Read(p,item,x,y);
+            if(!survey.Attempt)return survey.Status is "already_matches" or "wall_conflict"?"wall_target_occupied":survey.Status;
             context=new(){X=x,Y=y,WallType=item.createWall,TileType=-1,Prefix=item.prefix,Style=item.placeStyle,Unified=true};
             return null;
         }
@@ -89,7 +91,6 @@ internal static class ActorPlacement
         else
         {
             if(!WorldGen.InWorld(x,y,2))return "invalid_target";
-            if(Main.tile[x,y].HasTile)return "target_occupied";
             bool ropeMaterial=ActorRope.Supported(item);
             if(!ropeMaterial&&!Supported(item))return "unsupported_selected_placement_item";
             if(p.gravDir!=1||p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)return "unsupported_placement_state";
@@ -99,8 +100,12 @@ internal static class ActorPlacement
                 if(error==null)context=FromRope(item,rope);
                 return error;
             }
+            var survey=NativePlacementSurvey.Read(p,item,x,y);
+            if(!survey.Attempt)return survey.Status is "occupied_requires_dig" or "already_matches" or "protected_or_occupied"
+                ? "target_occupied" : survey.Status;
         }
         context=new(){X=x,Y=y,TileType=item.createTile,Prefix=item.prefix,Style=item.placeStyle,Object=objectPlacement,Shape=shape};
+        if(!objectPlacement && Main.tile[x,y].HasTile)context.InitialTile=Main.tile[x,y].TileType;
         if(objectPlacement)context.SupportSnapshot=ActorObjectPlacement.SupportSnapshot(context);
         return null;
     }
@@ -127,6 +132,7 @@ internal static class ActorPlacement
     {
         var c=use.Placement;
         var (eventsBefore,before)=observation;
+        if(c.NativeClearEvents>0&&!c.Placed)c.UncertainNativeEffect=true;
         if(c.NativeEvents==eventsBefore&&before!=ReadTarget(c))
         {
             c.UncertainNativeEffect=true;
@@ -167,7 +173,7 @@ internal static class ActorPlacement
     {
         var c=Watching(x,y);
         var active=ActorItemUse.Current?.Placement;
-        bool own=c?.Object==false&&Own(c)&&x==c.X&&y==c.Y&&type==c.TileType&&plr==ActorItemUse.Current.Actor.whoAmI&&!forced&&!Main.tile[x,y].HasTile;
+        bool own=c?.Object==false&&Own(c)&&x==c.X&&y==c.Y&&type==c.TileType&&plr==ActorItemUse.Current.Actor.whoAmI&&!forced&&(!Main.tile[x,y].HasTile||NativePlacementSurvey.Replaceable(Main.tile[x,y],false));
         bool result=orig(x,y,type,mute,forced,plr,style);
         if(result&&c==null&&active!=null&&Own(active)&&!active.NativeObjectPlacement&&WorldGen.InWorld(x,y))
         {
@@ -186,8 +192,9 @@ internal static class ActorPlacement
     {
         var c=Watching(x,y);
         bool occupied=c!=null&&Main.tile[x,y].HasTile;
-        bool ownClear=c?.Object==true&&c.NativeObjectPlacement&&Own(c)&&!c.Placed
-            &&y<c.Y-c.Shape.OriginY+c.Shape.Height&&!ActorObjectPlacement.Blocks(Main.tile[x,y]);
+        bool ownClear=c!=null && Own(c) && !c.Placed && c.WallType==0 && c.Rope==null &&
+            (!c.Object || y<c.Y-c.Shape.OriginY+c.Shape.Height) &&
+            NativePlacementSurvey.Replaceable(Main.tile[x,y],c.Object);
         if(c!=null&&!fail&&!effectOnly&&occupied&&!ownClear)c.ExternalChange=true;
         orig(x,y,fail,effectOnly,noItem);
         if(ownClear&&!fail&&!effectOnly&&occupied&&!Main.tile[x,y].HasTile)c.NativeClearEvents++;
@@ -218,7 +225,7 @@ internal static class ActorPlacement
             ||!NativeNavigationEdits.WaterPlacementStillSafe(p,c.X,c.Y,c.WaterBridgeDirection,use.Item.stack)))
             return "navigation_water_placement_changed";
         if(c.ExternalChange||c.Placed&&!Present(c)
-            ||!c.Placed&&(c.WallType>0?Main.tile[c.X,c.Y].WallType!=0:Main.tile[c.X,c.Y].HasTile)){c.ExternalChange=true;return "placement_target_changed";}
+            ||!c.Placed&&(c.WallType>0?Main.tile[c.X,c.Y].WallType!=0:(Main.tile[c.X,c.Y].HasTile?(ushort?)Main.tile[c.X,c.Y].TileType:null)!=c.InitialTile)){c.ExternalChange=true;return "placement_target_changed";}
         if((!use.Item.IsAir||c.ConsumedCount==0)&&(!SupportedFor(c,use.Item)||use.Item.prefix!=c.Prefix||use.Item.placeStyle!=c.Style
             ||(c.WallType>0?use.Item.createWall!=c.WallType:use.Item.createTile!=c.TileType)))
             return "placement_item_changed";

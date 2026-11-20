@@ -58,7 +58,7 @@ internal static class NativeItemInput
         else ActorItemUse.Update(p,RunFrame);
     }
 
-    private static void Run(On_Player.orig_ItemCheckWrapped orig,Player p,int index,Intent input)
+    internal static void Run(On_Player.orig_ItemCheckWrapped orig,Player p,int index,Intent input)
     {
         if(actor!=null||!NativeSurvival.Owns(p)||!ActorItemUse.Allowed(p))
             throw new InvalidOperationException("Native item input has no exclusive Actor scope.");

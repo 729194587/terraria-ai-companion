@@ -23,6 +23,7 @@ internal static class PlacementSelfTest
         if(ran||!Environment.GetCommandLineArgs().Contains("-placementselftest"))return;
         ran=true;bool failure=Environment.GetCommandLineArgs().Contains("-placementfailureselftest");
         if(Environment.GetCommandLineArgs().Contains("-objectplacementselftest")){ObjectPlacementSelfTest.Run(failure);return;}
+        if(Environment.GetCommandLineArgs().Contains("-placementsurveyselftest")){PlacementSurveySelfTest.Run();return;}
         int checks=0;var evidence=new List<object>();
         string report=Path.Combine(Main.SavePath,"placement-native-result.json");
         void Check(bool ok,string why){if(!ok)throw new InvalidOperationException(why);checks++;}

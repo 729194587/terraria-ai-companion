@@ -84,7 +84,7 @@ internal static class BuildingBlueprint
     internal static bool ValidEnvelope(JsonElement args) => args.ValueKind==JsonValueKind.Object && args.EnumerateObject().Count()==1 &&
         args.TryGetProperty("blueprint",out var bp) && bp.ValueKind==JsonValueKind.Object && CompactBytes(bp)<=3072;
 
-    internal static IReadOnlyList<Target> Parse(JsonElement args)
+    internal static IReadOnlyList<Target> Parse(JsonElement args,Player player)
     {
         Fields(args, "blueprint");
         if (!args.TryGetProperty("blueprint", out var bp) || CompactBytes(bp) > 3072) throw Invalid();
@@ -108,7 +108,7 @@ internal static class BuildingBlueprint
                 var item = Material(entry);
                 string kind = item == null ? null : ActorPlacement.UnifiedKind(item);
                 bool supported = layer switch { "walls" => kind == "wall", "tiles" => kind == "tile", _ => kind is "object" or "chest" };
-                var shape = supported && layer == "objects" ? ActorObjectPlacement.Definition(item) : null;
+                var shape = supported && layer == "objects" ? NativePlacementSurvey.Read(player,item,(int)x,(int)y).Shape : null;
                 long left = x - (shape?.OriginX ?? 0), top = y - (shape?.OriginY ?? 0);
                 int width = shape?.Width ?? 1, height = shape?.Height ?? 1;
                 minX = Math.Min(left,minX); minY = Math.Min(top,minY);

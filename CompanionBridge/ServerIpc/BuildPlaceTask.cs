@@ -17,7 +17,7 @@ internal sealed class BuildPlaceTask : AbstractCompanionTask
     private readonly Queue<Target> pending = new();
     private readonly List<Target> deferred = new();
     private readonly Dictionary<Target,Entry> results = new();
-    private sealed record Entry(string layer,int x,int y,int? itemType,string status,string reason,object nativeEvidence);
+    private sealed record Entry(string layer,int x,int y,int? itemType,string status,string reason,object nativeEvidence,NativePlacementSurvey.Obstacle blocker,string observedStatus);
     private Target active;
     private NativeActionTask leaf;
     private int sequence;
@@ -32,16 +32,16 @@ internal sealed class BuildPlaceTask : AbstractCompanionTask
     internal override object LastResult=>null;
     internal override Result Prepare(AiReadOnlyProtocol.Identity frame)
     {
-        try { targets=BuildingBlueprint.Parse(args); }
+        try { targets=BuildingBlueprint.Parse(args,(Player)frame.Actor); }
         catch(FormatException){return Failed("invalid_arguments");}
         foreach(var t in targets.OrderBy(t=>t.Layer=="tiles"?0:t.Layer=="walls"?1:2).ThenByDescending(t=>t.Y))
             pending.Enqueue(t);
         return null;
     }
 
-    private void Record(Target t,string status,string reason,Result placement=null)
+    private void Record(Target t,string status,string reason,Result placement=null,NativePlacementSurvey.Result survey=null)
     {
-        results[t]=new(t.Layer,t.X,t.Y,t.Material?.type,status,reason,CompactEvidence(placement));
+        results[t]=new(t.Layer,t.X,t.Y,t.Material?.type,status,reason,CompactEvidence(placement),survey?.Blocker,survey?.Status);
     }
 
     private static object CompactEvidence(Result placement)
@@ -50,7 +50,7 @@ internal sealed class BuildPlaceTask : AbstractCompanionTask
         var proof=JsonSerializer.SerializeToElement(placement.Evidence);
         var fields=new Dictionary<string,JsonElement>();
         foreach(var key in new[]{"requested","itemType","kind","placedByActor","targetPresent","targetChanged",
-            "uncertainNativeEffect","nativePlacementEvents","consumedCount","chestVerified"})
+            "uncertainNativeEffect","nativePlacementEvents","nativeClearEvents","consumedCount","chestVerified"})
             if(proof.TryGetProperty(key,out var value))fields.Add(key,value);
         return fields;
     }
@@ -58,7 +58,7 @@ internal sealed class BuildPlaceTask : AbstractCompanionTask
     private Result Finish(AiReadOnlyProtocol.Identity frame,string status,string reason,bool released)
     {
         var entries=targets.Select(t=>results.GetValueOrDefault(t) ??
-            new Entry(t.Layer,t.X,t.Y,t.Material?.type,"pending",reason,null)).ToArray();
+            new Entry(t.Layer,t.X,t.Y,t.Material?.type,"pending",reason,null,null,null)).ToArray();
         var counts=entries.GroupBy(e=>e.layer).ToDictionary(g=>g.Key,g=>new{
             placed=g.Count(e=>e.status=="placed"),matched=g.Count(e=>e.status=="matched"),
             pending=g.Count(e=>e.status!="placed" && e.status!="matched")});
@@ -84,9 +84,10 @@ internal sealed class BuildPlaceTask : AbstractCompanionTask
             leaf=null;
             if(r.Status!="completed" || phase=="place_item_native")
             {
-                bool verified=r.Status=="completed" && BuildDiff.Observe(player,active,out _)=="already_matches";
+                var observed=BuildDiff.Survey(player,active,out _);
+                bool verified=r.Status=="completed" && observed.Status=="already_matches";
                 bool unknown=r.Status=="unknown" || !r.InputsReleased || r.Status=="completed" && !verified;
-                Record(active,unknown?"unknown":verified?"placed":"failed",r.Reason,phase=="place_item_native"?r:null);
+                Record(active,unknown?"unknown":verified?"placed":"failed",r.Reason,phase=="place_item_native"?r:null, observed);
                 changed|=verified;
                 active=null;
                 if(unknown)return Finish(frame,"unknown","build_child_unconfirmed",r.InputsReleased);
@@ -116,7 +117,17 @@ internal sealed class BuildPlaceTask : AbstractCompanionTask
             }
             approached=false;preparedMaterial=false;
         }
-        string reason=BuildDiff.Observe(player,active,out bool reachable);
+        var survey=BuildDiff.Survey(player,active,out bool reachable);
+        string reason=survey.Attempt?null:survey.Status;
+        if(reason=="unknown_or_not_loaded")
+        {
+            Record(active,"unknown",reason,survey:survey);
+            return Finish(frame,"unknown",reason,ServerAiNativeActions.Released(player));
+        }
+        if(survey.Attempt && survey.Shape is {} shape && targets.Any(other=>other!=active && other.Layer!="walls" &&
+            active.X-shape.OriginX < other.Left+other.Width && active.X-shape.OriginX+shape.Width > other.Left &&
+            active.Y-shape.OriginY < other.Top+other.Height && active.Y-shape.OriginY+shape.Height > other.Top))
+            reason="blueprint_footprint_conflict";
         if(reason=="missing_support_or_anchor"){deferred.Add(active);active=null;return Running();}
         reason??=new BuildingMaterials(player).ReserveOne(active.Material.type);
         if(reason==null && !reachable)
@@ -129,7 +140,7 @@ internal sealed class BuildPlaceTask : AbstractCompanionTask
         }
         if(reason!=null)
         {
-            Record(active,reason=="already_matches"?"matched":"blocked",reason);
+            Record(active,reason=="already_matches"?"matched":"blocked",reason,survey:survey);
             active=null;return Running();
         }
         int type=active.Material.type;

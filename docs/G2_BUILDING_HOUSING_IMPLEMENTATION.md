@@ -318,3 +318,9 @@
 - 电线、涂漆、液体工程、农业、钓鱼。
 - 自动拆除既有玩家建筑、自动清理墙/Tile 和危险地形。
 - 未经验证的通用 ModItem / 特殊 TileObjectData 支持。
+
+## 放置预检与施工回执
+
+`build_diff.entries[].survey` 是游戏线程上对当前目标的观察。`status` 另外考虑距离、角色状态和可选材料。`ready`、`native_replaceable` 和 `native_attempt_required` 均可进入一次原生输入。普通块按物品区分支撑规则，墙检查四邻，家具按放置点、方向、Origin 和所选 Alternate 的完整占地检查支撑与液体。缺支撑时先处理其他蓝图条目，后续重新观察。缺少支撑且 Alternate 未选定时，`candidates` 列出各候选的世界占地，顶层范围仅作规划参考。
+
+`occupied_requires_dig` 与 `protected_or_occupied` 可附 `blocker.x/y/tileType`，由调用者决定是否清理。施工保护南瓜、容器和已有家具。原生清除了植物却未完成放置时，回执保留 `nativeClearEvents` 和最新观察，停止施工并返回 `unknown`。再次提交蓝图会重新读世界。验证范围见[原生机制审计报告](NATIVE_MECHANISM_PARITY_AUDIT_REPORT.md)。

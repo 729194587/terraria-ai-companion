@@ -316,7 +316,10 @@ OBSERVATIONS = {
         **QUERY_METADATA,
         'entries': array(obj({'layer': enum('tiles', 'walls', 'objects'), **TILE_XY,
                               'itemType': nullable(I), 'left': I, 'top': I, 'width': I, 'height': I,
-                              'inReach': B, 'status': S, 'plannedSupportCandidate': B})),
+                              'inReach': B, 'status': S, 'survey': S, 'alternate': nullable(I),
+                              'candidates': nullable(array(obj({'alternate': I, 'left': I, 'top': I, 'width': I, 'height': I}))),
+                              'blocker': nullable(obj({**TILE_XY, 'tileType': I})), 'plannedSupportCandidate': B},
+                             optional=('survey', 'alternate', 'candidates', 'blocker'))),
         'matched': COUNT, 'pending': COUNT, 'placeable': COUNT,
         'materials': array(obj({'itemType': I, 'required': COUNT, 'available': COUNT, 'missing': COUNT})),
     })),
@@ -848,9 +851,9 @@ DEFS['PlaceItemEvidence'] = obj({
     'kind': enum('tile', 'object', 'wall', 'chest', 'rope'),
     'requested': obj(TILE_XY), 'anchor': obj(TILE_XY), 'footprint': ref('TileRect'),
     **{key: nullable(I) for key in ('tileType', 'wallType', 'alternate', 'direction', 'chestIndex')},
-    **fields(integers='style itemType initialStack remainingStack consumedCount nativePlacementEvents',
+    **fields(integers='style itemType initialStack remainingStack consumedCount nativePlacementEvents nativeClearEvents',
              booleans='placementVerified chestVerified targetPresent placedByActor targetChanged uncertainNativeEffect'),
-}, optional=('placementVerified',))
+}, optional=('placementVerified','nativeClearEvents'))
 DEFS['BuildPlaceEvidence'] = obj({
     'outcome': enum('running', 'completed', 'partial', 'cancelled', 'failed', 'timeout', 'unknown'),
     **IDENTITY, 'inputsReleased': B,
@@ -859,12 +862,14 @@ DEFS['BuildPlaceEvidence'] = obj({
     'completedByLayer': obj({layer: COUNT for layer in atomic.BLUEPRINT_LAYERS}),
     'entries': array(obj({'layer': enum('tiles', 'walls', 'objects'), **TILE_XY,
                           'itemType': nullable(I), 'status': S, 'reason': nullable(S),
+                          'blocker': nullable(obj({**TILE_XY, 'tileType': I})), 'observedStatus': nullable(S),
                           'nativeEvidence': nullable(obj({
                               'kind': S, 'requested': obj(TILE_XY),
-                              **fields(integers='itemType consumedCount nativePlacementEvents',
+                              **fields(integers='itemType consumedCount nativePlacementEvents nativeClearEvents',
                                        booleans='placedByActor targetPresent targetChanged uncertainNativeEffect chestVerified'),
-                          }, optional=('kind','requested','itemType','consumedCount','nativePlacementEvents',
-                                       'placedByActor','targetPresent','targetChanged','uncertainNativeEffect','chestVerified')))})),
+                          }, optional=('kind','requested','itemType','consumedCount','nativePlacementEvents','nativeClearEvents',
+                                       'placedByActor','targetPresent','targetChanged','uncertainNativeEffect','chestVerified')))},
+                         optional=('blocker','observedStatus'))),
 })
 TASK_LEAF_EVIDENCE = (ref('BuildPlaceEvidence'), ref('PlaceItemEvidence'), ref('MiningEvidence'), ref('NavigationEvidence'), ref('PlacementEvidence'), ref('MiningRunEvidence'))
 

@@ -23,7 +23,7 @@
 | 基线 MerchantShop、NurseService、GoblinReforge | 随身铜值门槛及 banksUnchanged 成功条件使银行足额者被拒，或把合法扣款误判为未确认。与上述 CanAfford/PayCurrency 的五来源直接冲突。 | **本次修复**。保留出售的随身收入证据。四个银行均能参与购买；三项服务都验证各自效果。 |
 | BuildingMaterials.Summary / ReserveOne、BuildPlaceTask.Tick | 代码级复现：目标需一块木料，槽 0–49 无木料，仅槽 54 有一块。Summary 计槽 0–57，给出 available=1、missing=0；ReserveOne 返回 material_not_available_for_native_placement，实际选材只搜前 50 槽。两处对同一份材料的可用性含义不同。 | 后续分别返回持有量及可施工量，按后者给施工缺口；加入特殊槽 fixture。离线直接编译该账本，以 Player/Item 替身注入槽 54 和对照槽 49，实测前者拒绝、后者接受，两者摘要相同。特殊槽注入仅用于诊断。 |
 | starter_house Skill / BuildPlaceTask.Finish | 攻略要求读 remainingByReason。实际回执包含 entries、counts、completedByLayer；原因在每个 entry.reason。部分完成时攻略指向缺失字段。 | 后续只改攻略为按 entries 的 status/reason 选择剩余目标；用实际部分完成回执校对示例。 |
-| BuildDiff.Inspect 对对象的预判 | 原生 TileObject.CanPlace IL_0574 调用按物件定义的 LiquidPlace，IL_05c0/05ee 区分可切割和可替换物。BuildDiff 在调用前直接拒绝任何液体和已占用足迹。部分原生合法位置会显示阻塞。 | 如需覆盖，先以允许液下放置的具体物品和可切割植物做客户端/专服成对验证，再缩小前置拒绝。此次只记录。 |
+| BuildDiff.Inspect 对对象的预判 | 原生 TileObject.CanPlace IL_0574 调用按物件定义的 LiquidPlace，IL_05c0/05ee 区分可切割和可替换物。BuildDiff 在调用前直接拒绝任何液体和已占用足迹。部分原生合法位置会显示阻塞。 | 如需覆盖，先以允许液下放置的具体物品和可切割植物做客户端/专服成对验证，再缩小前置拒绝。此项已由下文的放置专项修复。 |
 
 ## 有意限制（Intentional limitation）
 
@@ -39,7 +39,7 @@
 
 | 分类及位置 | 风险、依据及已有证据 | 最小后续验证 |
 | --- | --- | --- |
-| 潜在问题 · BuildDiff.Inspect、ActorObjectPlacement.Preflight | 预检使用主定义的 Origin、占地比较候选左上；执行可枚举 alternate。TileObject.CanPlace IL_0087 起枚举替代定义和各方向 anchor。方向导致 Origin/尺寸变化时可能漏报候选。 | 选一个两方向占地或 Origin 不同的实际物品，分别记录 candidate、最终 alternate 和全部帧。 |
+| 历史风险（见放置专项复验） · BuildDiff.Inspect、ActorObjectPlacement.Preflight | 预检使用主定义的 Origin、占地比较候选左上；执行可枚举 alternate。TileObject.CanPlace IL_0087 起枚举替代定义和各方向 anchor。方向导致 Origin/尺寸变化时可能漏报候选。 | 选一个两方向占地或 Origin 不同的实际物品，分别记录 candidate、最终 alternate 和全部帧。 |
 | 潜在问题 · 普通 Tile/Wall | BuildDiff 用同类且未致动判前景已匹配，用墙或四邻接判支撑；不会表达所需半砖或斜坡形状。WorldGen.PlaceTile IL_0492/04aa 等处有半砖、斜坡及物品种类分支。当前蓝图只指定材质，无证据可把普通邻接启发式推广到所有种类。 | 逐项测边邻、致动块、半砖、斜坡、液体、墙替换及玩家碰撞，分别比较 diff 与原生执行。 |
 | 潜在问题 · MerchantSale.CanReceive | 预估按各面额的 maxStack 和空槽计算，原生 SellItem 涉及 DoCoins、拆分和失败恢复。普通有空间/满库存用例不能证明临界找零的所有分支。 | 构造 99 银等进位边界、仅剩一空槽和跨面额，再对照实际 SellItem。 |
 | 潜在问题 · HousingInspection.Flag | 运行时有 DLL 指纹门槛，私有字段缺失会抛出。握手在有查询适配器时即公布住宅能力，缺少逐字段类型/布局探测。目标版本的此次回归实际读取了字段。 | 新版移植时在公布能力前检验字段名及类型。邪恶住宅、特殊气味和每一结构失败枚举分别加样本。 |
@@ -67,3 +67,27 @@
 故障夹具在原生 PayCurrency 成功返回后抛出异常。保险箱从 44 降至 0，火把数量不变，回执为 unknown。随后向同一 Lua runtime 提交原报价，返回 blocked，调用次数为 0，独立快照无第二次变化。故障注入只在显式标记的复制世界中启用。本次未对护士及重铸单独注入故障。
 
 可按以下 profile 后缀定位本机 .local/companion-g81-native-* 证据。商人 Lua 为 95e6620793294ec09da68ade7df0cd5f，独立商人探针为 318e07162f824f84aabb985081bf7b92，护士为 9660f581c40042cca4f90e11801bde6b，重铸为 19385659ba5742a2b39c1976d7b45e3e。BuildDiff、BuildPlace、NpcHome 分别为 f761f598f16246ebb5cb624913f740d1、0835950bc9ac48f098cba1a6d1412023、e62f7023858f4739976cfbe0a57cdb92。首次商人夹具碰到 Windows 短暂文件共享冲突；最终夹具在读取命令阶段等待下一帧。独立商人探针首次因安装日志轮换未能启动，顺序复测通过。
+
+## 放置专项复验（基线 d6138a6）
+
+目标仍为上列 DLL。锁定的 tModLoader 源码在 Player 放置链上保留 TileLoader/WallLoader 检查，TileObject 补丁明确按每格调用 LiquidPlace、区分 cut 例外 484/654 和 BreakableWhenPlacing，并按各边 Anchor 处理支撑。[Player 源码补丁](https://github.com/tModLoader/tModLoader/blob/4f072c7a2aaad0c35ef7455f5195c526f2a9066a/patches/tModLoader/Terraria/Player.cs.patch) · [TileObject 源码补丁](https://github.com/tModLoader/tModLoader/blob/4f072c7a2aaad0c35ef7455f5195c526f2a9066a/patches/tModLoader/Terraria/TileObject.cs.patch)
+
+| 分类 | 目标 IL 与实测结果 |
+| --- | --- |
+| 已验证一致 · 普通块 | PlaceThing_Tiles_BlockPlacementForAssortedThings IL_0e47–103a 区分目标附着条件。空目标放木块、替换草丛和 SmallPiles 均有放置事件且消耗一件。后两者各观察到一次清除。地表草皮保留并报告阻挡坐标。 |
+| 已验证一致 · 家具 | TileObject.CanPlace IL_0087 起选择 Alternate，IL_0574 检查液体，IL_05c0/05ee 检查占用。TileObject.Place IL_00c5–0129 计算帧样式。椅、门和床能清除占地内植物，工作台第二格有石块时拒绝，水中成功、熔岩中拒绝。床左右向分别采用 0/1，门中部与底部点击分别采用 1/2。开关左右锚点分别采用 1/2，实测 frameX 为 18/36。椅子平台支撑成功，绳、半砖、斜坡、致动支撑样本均拒绝。 |
+| 已验证一致 · 墙 | PlaceThing_Walls IL_02b9 调 WallLoader.CanPlace，IL_02f1 放墙。四邻有支撑时空墙层及带前景和水的目标可放，只有同格前景且四邻为空时拒绝。 |
+| 已修正偏差 | 旧 BuildDiff 提前拒绝全部非空占地和液体，且用主定义推算家具占地。此次以共用 Survey 和所选定义取代。安装后的输入仍经绑定 Player.ItemCheck，完成要求原生放置、世界读回、实际消耗及释放。故障注入实测清除一次后放置被拒，保留空格和原堆叠，动作一次即终止为 unknown。 |
+| 有意限制 | 单格南瓜类型夹具和玩家重叠的工作台夹具中，直接 ItemCheck 可以放置，施工主动保护。已有异种墙不覆盖。已有箱子和椅子类型的占地格均不能被当作可切装饰；本矩阵未验证装有物品的箱子内容。 |
+| 未经验证 | 任意 Mod 钩子、随机样式、所有特殊普通块、不同生长阶段的完整南瓜和跨客户端同步。需执行未审计查询钩子或采样随机样式的对象返回 unknown_or_not_loaded；未专门建模的普通块交给一次原生尝试。 |
+
+专服对照入口如下。每个常规样本分别重建现场运行只读观察、直接 ItemCheck 以及获准的生产动作，核对目标区、库存和输入。普通地形随机装饰帧不作跨现场逐字节比较。27 个现场对照和一个部分副作用故障样本通过，结果写入隔离 profile 的 placement-native-result.json。
+
+```powershell
+./scripts/build-companion.ps1 -OutputPath .local/survey-matrix
+./tests/verify_server_ai_placement_native.ps1 -Survey -PackagePath .local/survey-matrix/Mods/CompanionBridge.tmod
+```
+
+真实模型 Host & Play 住宅任务未执行。此次没有模型返工数、mine_target 次数、MCP 往返、施工耗时或图形会话最终验房记录。
+
+定向回归通过：普通 Tile、独立 Work Bench、BuildDiff、BuildPlace（部分施工、取消、续建、重复提交）及 NpcHome（含 Housing）。沿用上节专服命令和场景开关，替换为本次构建的包。构建 0 错误、0 警告。Python 的 test_build_diff.py 四项和 test_build_place.py 五项通过；27 条实际专服 BuildDiff 条目另经 Python JSON Schema 校验通过。通用契约样本测试 test_every_exposed_api_has_a_representative_value 在 use_item 样本上失败，以 d6138a6 的契约复现同一失败。未运行全量测试。

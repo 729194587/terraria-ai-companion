@@ -7,7 +7,7 @@ using CompanionBridge.ServerIpc;
 
 namespace VirtualPlayerEngineProbe;
 
-internal static class ActorItemUse
+internal static partial class ActorItemUse
 {
     internal sealed class Context
     {

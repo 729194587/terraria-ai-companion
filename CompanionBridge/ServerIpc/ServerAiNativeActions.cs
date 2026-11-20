@@ -303,7 +303,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                         style=tile.ActualStyle??tile.Style,alternate=tile.Object?(int?)tile.Alternate:null,direction=tile.Object?(int?)tile.Direction:null,
                         chestIndex=tile.ChestIndex>=0?(int?)tile.ChestIndex:null,chestVerified=tile.IsChest&&present,
                         itemType=c.Type,initialStack=c.InitialStack,remainingStack=p.inventory[c.Slot].stack,consumedCount=tile.ConsumedCount,
-                        nativePlacementEvents=tile.NativeEvents,targetPresent=present,placedByActor=tile.Placed,
+                        nativePlacementEvents=tile.NativeEvents,nativeClearEvents=tile.NativeClearEvents,targetPresent=present,placedByActor=tile.Placed,
                         targetChanged=tile.ExternalChange,uncertainNativeEffect=tile.UncertainNativeEffect},
                     Released(p)&&p.releaseUseItem&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0,verified,InputsAcquired:c.Ticks>0);
             return new(placementPhase,c.Phase=="completed"&&!verified?"native_placement_terminal_unconfirmed":c.Reason,
