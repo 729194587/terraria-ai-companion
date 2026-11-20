@@ -16,6 +16,8 @@
 | [G2 Building & Housing](G2_BUILDING_HOUSING_IMPLEMENTATION.md) | Blueprint、差异检查、原生施工与只读验房的接口和验证记录；含现有向导入住、占用与过期引用拒绝的专服实测 |
 | [Building V2 Design](BUILDING_V2_DESIGN.md) | Numen 启发的 Terraria 智能施工调度架构：依赖、工作站点、材料账本与恢复 |
 | [Building V2 Implementation](BUILDING_V2_IMPLEMENTATION.md) | Building V2 的实现步骤、接口决策、测试矩阵和验收标准 |
+| [Agent API & Gameplay Modules Design](AGENT_API_AND_GAMEPLAY_MODULES_DESIGN.md) | Numen 启发的 API 自描述、动态帮助、内置 Lua Gameplay Modules 与 Terraria 适配架构 |
+| [Agent API & Gameplay Modules Implementation](AGENT_API_AND_GAMEPLAY_MODULES_IMPLEMENTATION.md) | API Help 整理、模块注册/能力过滤/Worker 注入及首批制作和建造模块的实现规范 |
 
 ## Agent 与运行时
 
