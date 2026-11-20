@@ -46,6 +46,7 @@
 | [背包操作](INVENTORY_OPERATIONS.md) | 库存 Token、原生堆叠/拆分和 unknown |
 | [合成](SERVER_AI_CRAFTING.md) | 配方查询与原生合成 |
 | [物品放置](SERVER_AI_OBJECT_PLACEMENT.md) | 服务器侧物体放置 |
+| [Native Placement Survey](NATIVE_PLACEMENT_SURVEY_IMPLEMENTATION.md) | 统一 Terraria 原生放置预检查，修复植物、液体、家具占地和原生执行判定不一致 |
 | [导航](NAVIGATION.md) | 物理预测、路径规划、执行与落脚确认 |
 | [Phase 2 Surface Graph 实现](PHASE2_SURFACE_GRAPH_IMPLEMENTATION.md) | 地形图、多尺度搜索、物理验证、阶段证据与范围 |
 | [Phase 3 局部改造规划](PHASE3_LOCAL_PLANNING_IMPLEMENTATION.md) | v1.1 简化版成本比较、独立虚拟地形、逐项执行与验证 |
