@@ -16,9 +16,17 @@
 
 上述列表表示代码中存在的能力，不代表每一项都已通过图形多人环境或真实模型长期任务验收。用户已有实测反馈表明 Agent 曾能执行工作台放置；后续开发应以实际运行证据为依据，不从“缺少专用实现”推断“缺少能力”。
 
-## 当前工程任务：Native Placement Survey & Building Parity
+## 已完成：Native Placement Survey & Building Parity
 
-修复建筑预检查与 Terraria 原生放置规则不一致的问题，统一 BuildDiff、BuildPlaceTask、ActorPlacement 和 ActorObjectPlacement 的判定。实现规范见 [Native Placement Survey](NATIVE_PLACEMENT_SURVEY_IMPLEMENTATION.md)。
+统一放置预检查已在当前分支实现，并通过 Dedicated Server 原生放置对照测试。详见 [Native Placement Survey](NATIVE_PLACEMENT_SURVEY_IMPLEMENTATION.md)。
+
+## 当前阶段：Building V2 — 智能施工调度
+
+在 Native Placement Survey 完成后，升级建筑执行器的施工规划能力。重点是依赖感知排序、工作站点选择、材料分组、导航复用和局部恢复。架构见 [Building V2 Design](BUILDING_V2_DESIGN.md)，实现任务见 [Building V2 Implementation](BUILDING_V2_IMPLEMENTATION.md)。
+
+完成 Dedicated Server 定向测试和 V1/V2 可比较的施工统计后，再进行真实模型 Host & Play 建房验收。
+
+
 
 ## 历史基线：G1 Gameplay E2E Baseline
 
