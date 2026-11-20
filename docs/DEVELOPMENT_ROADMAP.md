@@ -16,7 +16,11 @@
 
 上述列表表示代码中存在的能力，不代表每一项都已通过图形多人环境或真实模型长期任务验收。用户已有实测反馈表明 Agent 曾能执行工作台放置；后续开发应以实际运行证据为依据，不从“缺少专用实现”推断“缺少能力”。
 
-## 当前阶段：G1 Gameplay E2E Baseline
+## 当前工程任务：Native Placement Survey & Building Parity
+
+修复建筑预检查与 Terraria 原生放置规则不一致的问题，统一 BuildDiff、BuildPlaceTask、ActorPlacement 和 ActorObjectPlacement 的判定。实现规范见 [Native Placement Survey](NATIVE_PLACEMENT_SURVEY_IMPLEMENTATION.md)。
+
+## 历史基线：G1 Gameplay E2E Baseline
 
 先使用当前 Agent、真实模型、实际 MCP 工具集合和真实游戏环境，验证 Agent 能否在一次指令下收集木材、制作并放置工作台。具体步骤见 [G1 E2E 基线文档](G1_GAMEPLAY_INTEGRATION_MVP.md)。
 
