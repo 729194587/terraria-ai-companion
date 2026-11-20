@@ -37,6 +37,23 @@ async def model_submit(port, plan, log):
         bridge.close()
 
 
+async def module_construct(port, blueprint, log):
+    from lua_runtime import LuaRuntime, Limits
+    bridge = ServerAiBridge(port)
+    try:
+        # Fresh worker, exactly the same absolute plan used by the direct IPC checks.
+        origin = blueprint["origin"]
+        tiles = ",".join("{x=%d,y=%d,itemType=%d}" % (t["x"],t["y"],t["itemType"]) for t in blueprint["tiles"])
+        source = ("return terraria.building.construct({origin={x=%d,y=%d},tiles={%s}},{milliseconds=10000})"
+                  % (origin["x"],origin["y"],tiles))
+        result = await LuaRuntime(bridge).execute(source, limits=Limits(seconds=30))
+        print(json.dumps(dict(module=result)), file=log, flush=True)
+        return result
+    finally:
+        await coordinator(bridge).close()
+        bridge.close()
+
+
 def verify(port, profile):
     assert (profile / "isolated-action-fixture").is_file()
     ready = profile / "action-fixture.json"
@@ -139,7 +156,10 @@ def verify(port, profile):
         assert missing["materials"][0]["missing"] == 1
         before, stock = snapshot(partial, 9)
         assert before["matched"] == 0 and before["placeable"] == 1, before
-        action = run(partial)
+        program = asyncio.run(module_construct(port, partial, log))
+        assert program["status"] == "failed" and program["moduleResult"]["status"] == "partial", program
+        assert program["moduleResult"]["after"]["data"]["pending"] == 1
+        action = program["moduleResult"]["task"]["result"]
         assert action["status"] == "failed" and action["reason"] == "build_partial", action
         assert action["task"]["result"]["evidence"]["outcome"] == "partial", action
         after, remaining = snapshot(partial, 9)
@@ -147,6 +167,11 @@ def verify(port, profile):
         assert stock - remaining == 1
         ground = request("query", operation="inspect_tile", arguments=dict(x=left+3, y=floor))["data"]["data"]["cell"]
         assert ground["hasTile"] and ground["tileType"] == 0, ground
+
+        extra = dict(origin=origin, tiles=[dict(x=3, y=-1, itemType=9)])
+        built = asyncio.run(module_construct(port, extra, log))["value"]
+        assert built["status"] == "completed" and built["before"]["data"]["pending"] == 1, built
+        assert built["task"]["result"]["completed"] and built["after"]["data"]["matched"] == 1, built
 
         plan = dict(origin=origin, tiles=[dict(x=x, y=0, itemType=3) for x in (-2, -3, -4, -5)])
         before, stock = snapshot(plan, 3)
@@ -161,6 +186,8 @@ def verify(port, profile):
         assert asyncio.run(model_submit(port, plan, log)) == ["matched"] * 4
         repeated, final = snapshot(plan, 3)
         assert repeated["matched"] == 4 and final == rest, repeated
+        matched = asyncio.run(module_construct(port, plan, log))
+        assert matched["value"]["status"] == "completed" and matched["actions"] == 0, matched
         # The fixture edits the first and fourth cells after the second native placement.
         # Reconcile must report the removed cell and never charge for the externally added one.
         (profile / "building-external-edit").touch()

@@ -28,6 +28,15 @@ FULL = BASE | set(OPTIONAL) | {
     'server_ai_scene_region_v1', 'server_ai_program_tasks_v1', 'server_ai_navigation_v1',
     'server_ai_equipment_v1', 'server_ai_place_rope_v1', 'server_ai_move_on_rope_v1',
 }
+FULL_ACTIONS = FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_v1',
+                       'server_ai_container_batch_v1', 'server_ai_sorting_v1'} | {
+            'server_ai_combat_v1', 'server_ai_weapon_button_v1', 'server_ai_combat_primary_v1',
+            'server_ai_boss_encounter_v1', 'server_ai_boss_strategy_v1', 'server_ai_open_item_v1',
+            'server_ai_regroup_v1', 'server_ai_dismiss_summon_v1', 'server_ai_doors_v1',
+            'server_ai_collect_drops_v1', 'server_ai_place_item_v1', 'server_ai_build_place_v1',
+            'server_ai_build_diff_v1', 'server_ai_merchant_shop_v1', 'server_ai_merchant_purchase_v1',
+            'server_ai_merchant_sale_v1', 'server_ai_nurse_v1', 'server_ai_reforge_v1',
+            'server_ai_npc_housing_v1', 'server_ai_housing_assignment_v1', 'server_ai_housing_inspect_v1'}
 
 
 def bridge(caps):
@@ -109,10 +118,10 @@ class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('SceneRegional', scene['returnsSchema']['$defs'])
 
     async def test_worker_round_trips_largest_single_help_schema(self):
-        result = await LuaRuntime(self.runtime_bridge(FULL)).execute(
+        result = await LuaRuntime(self.runtime_bridge(FULL_ACTIONS)).execute(
             "return api('help',{name='stop_action'})", allow_actions=False)
         self.assertEqual('completed', result['status'], result)
-        self.assertEqual(schema_for('stop_action', capabilities=FULL), result['value']['returnsSchema'])
+        self.assertEqual(schema_for('stop_action', capabilities=FULL_ACTIONS), result['value']['returnsSchema'])
 
     async def test_help_uses_existing_call_budget_and_is_server_only(self):
         result = await LuaRuntime(self.runtime_bridge(BASE)).execute(
@@ -198,11 +207,7 @@ class ResultRegistryTests(unittest.TestCase):
             help_result = api_help(enabled, {'name': name})
             self.assertEqual('ok', help_result['status'])
             Draft202012Validator.check_schema(help_result['returnsSchema'])
-        combat = bridge(set(enabled.hello['capabilities']) | {
-            'server_ai_combat_v1', 'server_ai_weapon_button_v1', 'server_ai_combat_primary_v1',
-            'server_ai_boss_encounter_v1', 'server_ai_boss_strategy_v1', 'server_ai_open_item_v1',
-            'server_ai_regroup_v1', 'server_ai_dismiss_summon_v1', 'server_ai_doors_v1',
-            'server_ai_collect_drops_v1', 'server_ai_place_item_v1'})
+        combat = bridge(FULL_ACTIONS)
         self.assertEqual(set(definitions) | set(combat.supported_atomic_operations), registered_names())
         self.assertEqual({'future_api'}, missing_for(set(definitions) | {'future_api'}))
         self.assertNotIn('Action_mine_tile', schema_for('stop_action', capabilities=BASE)['$defs'])
@@ -416,6 +421,10 @@ class ManifestTests(unittest.TestCase):
         for name, f in defs.items():
             if name == 'use_item':
                 self.assertEqual({}, f['parameters']['properties'])
+            elif name == 'mine_target':
+                expected = dict(atomic.SCHEMAS[name]['properties'])
+                expected.pop('cluster')
+                self.assertEqual(expected, f['parameters']['properties'])
             else:
                 self.assertEqual(atomic.SCHEMAS[name], f['parameters'])
         for name, facts in {

@@ -53,3 +53,9 @@ Lua 调用次数、动作次数、指令/内存和墙钟时间由宿主监督。
 - [Server AI 能力契约](SERVER_AI_CAPABILITIES.md)：能力白名单与模型投影。
 - [Server AI 动作](SERVER_AI_ACTIONS.md)：服务器侧原生执行边界。
 - [背包操作](INVENTORY_OPERATIONS.md)：库存 Token 和物品变更。
+
+## Server AI 的 Lua Help
+
+`return api("help")` 返回当前连接的分类索引。用 `return api("help",{name="craft_recipe"})` 查询具体操作。`parameters` 取自该连接的函数定义，`returnsSchema` 是包含所引用 `$defs` 的独立 JSON Schema。查询未开放的操作返回 `not_exposed`。Help 在宿主本地读取元数据，占用一次 Lua 调用预算。
+
+`returns` 和 `statusSemantics` 解释回执字段与终态。`prerequisites` 说明需要的授权或观察，`examples` 提供当前连接可以调用的 Lua 示例，`related` 列出已开放的相关操作。依赖缺失时示例数组可为空。旧调用方仍可读取字符串 `example`。箱子搬运示例先读取两侧槽位，购买示例先扫描 NPC，再用同一实例的报价令牌购买。

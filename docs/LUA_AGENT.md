@@ -33,3 +33,9 @@ Lua Worker 使用受限运行环境。调用次数、动作次数、源码大小
 - `python/server_ai_contract.py`、`python/server_ai.py`：Server AI 能力投影和调用适配。
 - [Lua Runtime](LUA_RUNTIME.md)：沙箱、取消、失败恢复和执行细节。
 - [Lua 可观测性](LUA_OBSERVABILITY.md)：Trace 与诊断格式。
+
+## 使用内置玩法模块
+
+Server AI 的系统上下文在 `available_modules` 中列出当前连接可用的函数。用 `read_skill` 查玩法知识，用 `api("help",{name=...})` 查底层参数和回执。在 `execute_lua` 中可直接调用模块，例如 `return terraria.crafting.make(8,7)` 请求制作至少七支火把。
+
+`terraria.building.construct(blueprint,{milliseconds=1000})` 接受与 `build_diff` 相同的 Blueprint。报告中的 `before` 是施工前调查，`task` 是任务回执，`after` 是可信终态后的复查。初始已全部匹配时直接返回该次调查。返回 `running` 时保留 `taskId`，后续用 `query_task` 或 `await_task` 跟踪原任务。调查未知时停止，部分完成时查看原回执和仍待施工的条目。

@@ -42,7 +42,7 @@ class SemanticTests(unittest.TestCase):
                 if self.mismatch=='actor': r['binding']['actor']='other'
                 else: r[self.mismatch]='other'
             return convert(r)
-        return plain(run('return sense_world('+options+')',api,lambda *a:None,1000000,EXPLORATION_SOURCE,SEMANTIC_SOURCE))
+        return plain(run('return sense_world('+options+')',api,lambda *a:None,None,self.fail,1000000,EXPLORATION_SOURCE,SEMANTIC_SOURCE))
     def test_vertical_tree_range_and_bottom_candidate(self):
         for y in (2,3,4): self.tile(3,y,5)
         o=self.run_helper()['objects'][0]

@@ -631,13 +631,15 @@ DEFS.update({
         'footprint': nullable(ref('TileRect')), 'requestedX': nullable(TILE_COORD), 'requestedY': nullable(TILE_COORD),
         'extended': nullable(B), 'effectStatus': enum('native_rope_placed', 'native_object_placed', 'native_tile_placed', 'not_confirmed'),
     }),
-    'UseEvidence': obj({
+    'UseEvidence': any_of(obj({
         **fields(integers='itemType Ticks Starts AnimationPeak TimePeak ToolPeak UsesPeak InitialStack stack',
                  booleans='consumptionObserved cycleVerified'),
-        'rootType': I, 'observedRootIdentity': nullable(I), 'buffType': I, 'buff': B,
+        'effectStatus': desc(enum('unconfirmed', 'not_started'), 'A verified use cycle does not prove a hit.'),
+    }), obj({
+        'itemType': I, 'cycleVerified': B, 'rootType': I, 'observedRootIdentity': nullable(I), 'buffType': I, 'buff': B,
         'slotsBefore': N, 'slotsAfter': N, 'maxSlots': I,
-        'effectStatus': desc(enum('unconfirmed', 'not_started','native_summon_verified'), 'A verified use cycle does not prove a hit.'),
-    }),
+        'effectStatus': enum('unconfirmed', 'native_summon_verified'),
+    })),
     'SelectionEvidence': obj(fields(integers='requestedHotbarKey targetSlot beforeSlot',
                                     booleans='mutationAttempted selectionApplied')),
     'RopeEvidence': obj({
@@ -1039,7 +1041,7 @@ DEFS['RawProgramTaskAction'] = obj({**RAW_TASK_ACTION, 'targetContainer': NULL},
 
 def refusal(*names, resumed=False):
     return obj({
-        'operation': enum(*names), 'valid': const(False), 'status': const('failed'), 'completed': const(False),
+        'operation': enum(*names) if names else S, 'valid': const(False), 'status': const('failed'), 'completed': const(False),
         'reason': S, 'dispatchState': const('not_admitted'), 'actionId': NULL, 'inputsAcquired': const(False),
         'inputsReleased': NULL, 'effectVerified': const(False), 'endEvidence': NULL,
         'endEvidenceStatus': const('not_started'), **CONTINUATION, 'recovery': ref('ActionRecovery'),
@@ -1122,6 +1124,8 @@ TASK_COMPLETION_PROOF = {
         ],
     },
 }
+DEFS.update({'TaskProof_' + name: proof for name, proof in TASK_COMPLETION_PROOF.items()})
+
 SUCCESSFUL_PROOF = {
     'heal_at_nurse': matches(bankNonCurrencyUnchanged=TRUE, buffsVerified=TRUE, priceCopper={'minimum':1}),
     'reforge_item': matches(rolled=TRUE, itemVerified=TRUE, bankNonCurrencyUnchanged=TRUE, afterPrefix={'minimum':1}),
@@ -1169,7 +1173,7 @@ SUCCESSFUL_PROOF = {
     'craft_recipe': matches(mutationAttempted=TRUE, inventoryVerified=TRUE,
                             producedCount={'minimum': 1}, outputTypeId={'minimum': 1},
                             outputCountPerCraft={'minimum': 1}),
-    **{name: matches(task=proof) for name, proof in TASK_COMPLETION_PROOF.items()},
+    **{name: matches(task=ref('TaskProof_' + name)) for name in TASK_COMPLETION_PROOF},
     **{name: matches(inventoryVerified=TRUE, mutationAttempted=TRUE,
                      before=ref('InventoryConfirmedSnapshot'), after=ref('InventoryConfirmedSnapshot'))
        for name in atomic.INVENTORY_OPERATIONS},
@@ -1179,26 +1183,36 @@ SUCCESSFUL_PROOF = {
 }
 
 
+DEFS['CompletedReceiptFields'] = matches(
+    completed=TRUE, valid=TRUE, cancelled=FALSE, dispatchState=const('admitted'),
+    endEvidenceStatus=const('known'), worldSessionId={'minLength': 1}, actorId={'minLength': 1},
+    actionGeneration=I, actorSlot=I)
+DEFS['ReleasedEffect'] = matches(phase=const('ServerAI_game_thread_inputs_released'),
+                                 inputsReleased=TRUE, effectVerified=TRUE, gameUpdate=COUNT)
+
+
 def completed_receipt(name):
-    proof = {
-        'completed': TRUE, 'valid': TRUE, 'cancelled': FALSE, 'dispatchState': const('admitted'),
-        'endEvidenceStatus': const('known'), 'evidence': SUCCESSFUL_PROOF[name],
-        'worldSessionId': {'minLength': 1}, 'actorId': {'minLength': 1},
-        'actionGeneration': I, 'actorSlot': I,
-        **{key: {'not': NULL} for key, names in TARGETS.items() if name in names},
-    }
+    proof = {'evidence': SUCCESSFUL_PROOF[name],
+             **{key: {'not': NULL} for key, names in TARGETS.items() if name in names}}
     if name == 'select_hotbar_slot':
         proof.update(inputsAcquired=FALSE, inputsReleased=NULL, effectVerified=NULL,
                      endEvidence=matches(phase=const('ServerAI_game_thread_no_input'),
                                          selectionVerified=TRUE, gameUpdate=COUNT))
     else:
         proof.update(inputsAcquired=B, inputsReleased=TRUE, effectVerified=TRUE,
-                     endEvidence=matches(phase=const('ServerAI_game_thread_inputs_released'), operation=const(name),
-                                         inputsReleased=TRUE, effectVerified=TRUE, gameUpdate=COUNT))
+                     endEvidence={**ref('ReleasedEffect'), **matches(operation=const(name))})
     if name in TASK_COMPLETION_PROOF:
-        proof['task'] = TASK_COMPLETION_PROOF[name]
-    return {**matches(**proof), 'properties': {**proof, **STOP_CONTINUATION},
+        proof['task'] = ref('TaskProof_' + name)
+    return {**ref('CompletedReceiptFields'), **matches(**proof), 'properties': {**proof, **STOP_CONTINUATION},
             'not': {'required': ['continuationScope']}}
+
+
+DEFS['ActionRefusal'] = refusal()
+DEFS['MinimalActionFailure'] = obj({
+    'operation': S, 'valid': const(False), 'status': enum('unknown', 'failed'),
+    'completed': const(False), 'reason': S, 'dispatchState': enum('unknown', 'not_admitted'),
+    'actionId': nullable(S), **RECEIPT_FLAGS,
+}, optional=('operation', 'actionId', *RECEIPT_FLAGS))
 
 
 def action_variants(name):
@@ -1243,12 +1257,10 @@ def action_variants(name):
                                              remainingCount={'minimum': 1}, blockedSlot=COUNT,
                                              before=ref('ContainerTransferPair'), after=ref('ContainerTransferPair'))),
         })
-    minimal = obj({
-        'operation': const(name), 'valid': const(False), 'status': enum('unknown', 'failed'),
-        'completed': const(False), 'reason': S, 'dispatchState': enum('unknown', 'not_admitted'),
-        'actionId': nullable(S), **RECEIPT_FLAGS,
-    }, optional=('operation', 'actionId', *RECEIPT_FLAGS))
-    return any_of(admitted, refusal(name), minimal, ref('ShortStopResult'), ref('SupervisorStopResult'))
+    restriction = {'properties': {'operation': const(name)}}
+    return any_of(admitted, {**ref('ActionRefusal'), **restriction},
+                  {**ref('MinimalActionFailure'), **restriction},
+                  ref('ShortStopResult'), ref('SupervisorStopResult'))
 
 
 def action_ref(name):

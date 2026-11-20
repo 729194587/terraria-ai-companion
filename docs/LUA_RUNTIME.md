@@ -63,3 +63,9 @@ Program、Action 和游戏 Task 是不同生命周期。普通 Program 返回不
 - `python/lua_agent.py`：模型工具契约。
 - `python/program_tasks.py`：独立游戏任务的结果交接。
 - `python/atomic_operations.py`：API Schema、后端校验和动作结果。
+
+## 内置 Gameplay Module 的执行边界
+
+宿主从 `python/lua_modules.py` 的固定注册表按本次握手筛选依赖。每个新 Worker 从 `python/lua/modules/` 加载选定的 Lua 源文件，检查返回表及导出函数，在本次程序的 `terraria` 表中发布。制作需要 `query_recipes` 和 `craft_recipe`，施工需要 `build_diff`、`build_place`、`submit_task` 和 `await_task`。模块的游戏调用使用现有宿主 callback，共享程序的调用、动作、时间和序列化预算。
+
+正常返回值在 `value`。若原生动作触发失败屏障，宿主可在 `moduleResult` 中保留内置模块的部分产量或施工报告；工具终态和原始动作证据仍在外层回执。已确认输入释放的施工失败允许模块对原蓝图做一次只读复查。结果未知时立即停止，后续脚本语句及包裹调用的 `pcall` 均不能恢复执行。

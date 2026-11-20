@@ -35,7 +35,7 @@ class NaturalFilterTests(unittest.TestCase):
             if name=='get_player_state':return convert(self.fixture['player'])
             if name=='observe_terrain':return convert(self.fixture['terrain'])
             return convert(self.fixture['queries'][name])
-        return plain(run("return explore({direction='left',maxSteps=1,stepPixels=128})",api,lambda *a:None,1000000,EXPLORATION_SOURCE,SEMANTIC_SOURCE))
+        return plain(run("return explore({direction='left',maxSteps=1,stepPixels=128})",api,lambda *a:None,None,self.fail,1000000,EXPLORATION_SOURCE,SEMANTIC_SOURCE))
 
     def test_recorded_traversable_left_descent_is_not_rejected_before_native_planning(self):
         for name in ('natural-navigation-left-descent.json','natural-navigation-grass-descent.json'):

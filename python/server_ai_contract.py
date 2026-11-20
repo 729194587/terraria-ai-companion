@@ -2,9 +2,11 @@
 import json
 from inspect import signature
 
+from api_documentation import OBSERVATION_RESULT, documentation
 import api_result_contracts
 import atomic_operations as atomic
 import gameplay_skills
+import lua_modules
 import program_tasks
 from lua_runtime import Limits
 from lua_worker import SOURCE_BYTES, REQUEST_BYTES, VALUE_BYTES, MAX_DEPTH, MAX_NODES, worker
@@ -54,9 +56,6 @@ SCENE_HELPER_AVAILABLE = 'scene_exploration' in signature(worker).parameters
 SCENE_EXPLORE_APIS = frozenset(('get_player_state', 'observe_scene', 'scan_entities', 'navigate_to_landing_region'))
 HORIZONTAL_EXPLORE_APIS = frozenset(('get_player_state', 'observe_terrain', 'scan_entities', 'scan_tiles', 'resolve_content', 'navigate_to_x'))
 
-OBSERVATION_RESULT = ('观察通常返回{valid,available,data,worldSessionId,actorGeneration,actorSlot,gameUpdate,observedAtUnixMs,clock}；'
-                      'ServerAiBridge附加连接binding；该字段来自Python，不是C#查询封套的一部分。'
-                      '例外见各API。多次调用非同帧；coverage/complete/truncated/未知各自独立；runtimeInventory是宿主AI背包摘要。')
 HELP_REFERENCE = (
     '用 execute_lua 提交 return api("help") 获取分类索引，或 return api("help",{name="函数名"}) 获取一项详情。'
     '读取 value 中的 description、parameters、returns、returnsSchema、statusSemantics、limits 和 example。'
@@ -159,105 +158,6 @@ def callable_categories(bridge, names):
     return categories
 
 
-def help_example(name, schema, capabilities=()):
-    if name == 'configure_combat_loadout':
-        if 'server_ai_combat_inventory_v1' in capabilities and {'primary','secondary','summon'} <= schema['properties'].keys():
-            return '''local q=api("inspect_inventory",{mode="hotbar"})
-if not q.valid then return q end
-local roles={melee="primary",ranged="secondary",magic="secondary",summon="summon"}
-local config={}
-for _,candidate in ipairs(q.data.combatCandidates) do
-    local role=roles[candidate.family]
-    if config[role] then return {chooseSlotFor=role} end
-    for _,row in ipairs(q.data.inventory) do
-        if row.slot==candidate.slot then
-            config[role]={hotbarKey=row.hotbarKey,expectedTypeId=row.typeId,inventoryToken=row.inventoryToken}
-        end
-    end
-end
-if not (config.primary or config.secondary) then return {missingAttackWeapon=true} end
-return api("configure_combat_loadout",config)'''
-        return '''local q=api("inspect_inventory",{mode="selected"})
-if not q.valid then return q end
-local row=q.data.inventory[1]
-return api("configure_combat_loadout",{primary={hotbarKey=row.hotbarKey,expectedTypeId=row.typeId,inventoryToken=row.inventoryToken}})'''
-    # Templates use named inputs for game coordinates and tokens. Read examples
-    # with a known safe default are executable as written.
-    arguments = {'open_container': 'x=100,y=200', 'close_container': 'containerToken=token',
-                 'inspect_inventory': 'mode="selected"', 'observe_scene': 'layers={"objects"}',
-                 'inspect_housing': 'x=100,y=200',
-                 'inspect_npc_shop': 'entityRef=<商人引用>',
-                 'quote_reforge': 'entityRef=<工匠>,sourceSlot=<0..49>,sourceToken=<inventoryToken>',
-                 'reforge_item': 'entityRef=<同一工匠>,sourceSlot=<原槽>,sourceToken=<原槽令牌>,quoteToken=<重铸报价>',
-                 'quote_nurse_heal': 'entityRef=<附近护士引用>',
-                 'heal_at_nurse': 'entityRef=<同一护士>,quoteToken=<诊金报价>',
-                 'quote_npc_purchase': 'entityRef=<商人引用>,itemType=8',
-                 'quote_npc_sale': 'entityRef=<商人引用>,sourceSlot=<0..49>,sourceToken=<inventoryToken>',
-                 'sell_npc_item': 'entityRef=<同一商人>,sourceSlot=<原槽>,sourceToken=<原槽令牌>,quoteToken=<出售报价>',
-                 'buy_npc_item': 'entityRef=<同一商人引用>,quoteToken=<报价返回值>',
-                 'inspect_npc_housing': 'entityRef=<从 NPC 观察取得>',
-                 'assign_npc_home': 'entityRef=<从 NPC 观察取得>,x=100,y=200',
-                 'build_diff': 'blueprint={origin={x=100,y=200},tiles={{x=0,y=0,itemType=9}}}',
-                 'query_map': 'mode="overview"', 'mine_target': 'target=target',
-                 'submit_task': 'operation="mine_target",arguments={target=target}'}.get(name)
-    if arguments is None:
-        arguments = ','.join(f'{key}={key}' for key in schema['required'])
-    return f'return api("{name}",{{{arguments}}})'
-
-
-def help_result_contract(name):
-    if name == 'inspect_housing':
-        return ('data.status 为 valid、invalid 或 unknown；failureStage 和 reason 说明原生判定。',
-                '外层 valid 表示观察可用。未执行阶段返回 null。homeTile 是评分选出的住所格。')
-    if name == 'build_diff':
-        return ('data.entries 逐项目给出绝对坐标、占地、inReach 与 status；matched/pending/placeable 汇总，materials 给出所需、已有和缺少的数量。',
-                '只读快照。already_matches 表示采样时已满足；placeable 是当前预检结果；unknown_or_not_loaded 表示未知。')
-    if name=='configure_combat_loadout':
-        return ('动作回执，evidence 含版本与各武器槽。','每次完整替换配置，省略的角色会清除；空表清空全部。示例按所需配装执行。先用 query_combat_loadout 查看已有角色，保留的角色也要重新取 token。')
-    if name == 'wait':
-        return ('{valid,status,elapsedMilliseconds,clock,effectStatus}',
-                'completed表示宿主计时结束；clock为host_monotonic，effectStatus为not_applicable。')
-    if name == 'query_task':
-        return (
-            '外层 Program Task 视图：{taskId,operation,status,valid,completed,dispatchState,origin,retryAllowed,'
-            'action?,result?,resultSequence?}。未知 taskId 返回 {status="unknown",taskId,reason="unknown_task",retryAllowed=false}。'
-            'action 是最近的原生动作快照，action.task 是游戏任务视图；终态 result 是宿主核验后的动作回执，'
-            '其中 result.task 也可携带游戏任务视图。游戏任务视图含 phase、status、reason、progress、currentChild、lastResult 和 result。'
-            '受理阶段或未创建游戏任务槽时可能只有精简视图；执行中游戏任务的最终 result 为 null。',
-            'phase 描述执行阶段，terminal 表示已结束，结果以 status 和回执为准。'
-            'currentChild 是当前子任务的视图或 null；lastResult 是最近结束的子任务回执，可能失败。'
-            'progress.children 是有界的已结束子任务历史，childrenTruncated/omittedChildren 表示裁剪；'
-            'settledChildren 统计所有已结束子任务，completedChildren 只统计成功项。'
-            'progress.stage/activity 描述执行阶段和活动，target 描述目标，search/planning/opening 提供局部规划或开路信息。'
-            'dugTiles/placedTiles 和 verifiedTerrainActions 记录已核验的开路改造，不能当作目标矿块完成数量。'
-            '要报告部分完成，检查子任务 result 的具体 evidence、effectVerified 和 inputsReleased，说明已核验的效果；'
-            '角色位移、动作成功、阶段变化和子任务计数都不能单独证明任务目标取得进展。'
-            '整体完成以外层 completed/status 和最终 result 的操作专属效果及释放证据为准；'
-            '游戏任务视图中的 result 属于该层任务，子任务的 result 或根任务 lastResult 不代表根任务完成。'
-            'failed/timeout/cancelled 时查看最终 reason 和证据，仍可报告已核验的部分效果。'
-            'unknown 表示结果未确认，既不是成功也不是普通失败，不据此重试。'
-            '若 actionResults.items[].summaryOnly 或 runtimeTasks.results[].resultSummaryOnly 为 true，'
-            '用原 taskId 调用 query_task 获取当前连接保留的完整任务回执；'
-            '查询无法补齐游戏侧已经裁剪的子任务历史。')
-    if name in program_tasks.NAMES:
-        return ('任务视图：{taskId,operation,status,valid,completed,dispatchState,action?,result?,waitStatus?}',
-                '受理或running不等于完成；await_task的waitStatus=timeout仅结束等待。'
-                '终态查看result和结束证据。宿主可在失败、取消或unknown时终止Lua并保留任务视图。')
-    if name in atomic.READS:
-        returns = ('{valid,available,player,motion,...}；成功时player与motion位于顶层。'
-                   if name == 'get_player_state' else OBSERVATION_RESULT)
-        return returns, 'valid/available表示是否取得当前观察；同时检查具体数据的状态、时效、覆盖和截断。'
-    statuses = ('只有valid、completed和已知结束证据才支持动作完成；'
-                '核对操作专属effect，unknown停止变更，不自动重试。失败可能使宿主直接终止Lua。')
-    if name in atomic.CONTAINER_BATCHES:
-        statuses += 'moves列出每次已核验的搬运。blocked列出剩余源槽及原因。部分效果返回failed和effectStatus=partial。无符合条件的物品时completed且effectStatus=none。每次最多128次槽位搬运。'
-    if name in atomic.CONTAINER_TRANSFERS:
-        statuses += '容量部分满足时返回failed且evidence.effectStatus=partial，并提供movedCount、remainingCount和blockedSlot。再次操作前重新观察两侧。'
-    if name == 'stop_action':
-        statuses += 'noOp=true表示无当前动作；停止回执不证明原动作成功。'
-    return '{valid,status,completed,reason,actionId?,evidence?,endEvidence?,endEvidenceStatus?,...}', statuses
-
-
 def api_help(bridge, arguments):
     if (not isinstance(arguments, dict) or set(arguments) - {'name'}
             or 'name' in arguments and (not isinstance(arguments['name'], str) or not arguments['name'].strip())):
@@ -279,12 +179,10 @@ def api_help(bridge, arguments):
         return {'valid': False, 'status': 'contract_missing', 'name': name}
     row = next(row for row in categories if name in row['apis'])
     definition = definitions[name]
-    returns, status_semantics = help_result_contract(name)
     return {'valid': True, 'status': 'ok', 'name': name, 'category': row['category'],
             'description': definition['description'], 'parameters': definition['parameters'],
-            'returns': returns, 'returnsSchema': returns_schema,
-            'statusSemantics': status_semantics, 'limits': row['limits'],
-            'example': help_example(name, definition['parameters'],bridge.hello.get('capabilities',()))}
+            'returnsSchema': returns_schema, 'limits': row['limits'],
+            **documentation(name, definition['parameters'], definitions, bridge.hello.get('capabilities', ()))}
 
 
 def helper_reference(supported):
@@ -394,6 +292,8 @@ def server_contract(bridge, tool, *, compact=False):
         examples.append('return api("select_hotbar_slot",{slot=1})')
     skill_index = gameplay_skills.bundled_skills().render_index()
     instructions = ('角色原则\n'+ROLE_PRINCIPLES+'\navailable_skills\n'+(skill_index or '当前无已注册攻略。')
+                    +'\navailable_modules\n'+(lua_modules.index(bridge) or '当前无可用模块。')
+                    +'\n模块用于复用游戏流程，玩法知识查 read_skill，参数与回执查 api("help")。'
                     +'\nCapability Manifest\n'+manifest_text
                     +'\nAPI Contract\n'+api_reference
                     +'\nLua Runtime Reference\n'+runtime_reference(supported)
