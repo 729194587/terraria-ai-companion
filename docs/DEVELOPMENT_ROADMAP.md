@@ -20,11 +20,13 @@
 
 统一放置预检查已在当前分支实现，并通过 Dedicated Server 原生放置对照测试。详见 [Native Placement Survey](NATIVE_PLACEMENT_SURVEY_IMPLEMENTATION.md)。
 
-## 当前阶段：Building V2 — 智能施工调度
+## 已完成：Building V2 — 智能施工调度
 
-在 Native Placement Survey 完成后，升级建筑执行器的施工规划能力。重点是依赖感知排序、工作站点选择、材料分组、导航复用和局部恢复。架构见 [Building V2 Design](BUILDING_V2_DESIGN.md)，实现任务见 [Building V2 Implementation](BUILDING_V2_IMPLEMENTATION.md)。
+Building V2 已在当前开发分支实现并通过 Dedicated Server 对照测试。真实模型建房也已完成一次约 6 分钟的验收；该次使用现有材料，未覆盖自动采集资源的完整闭环。详见 [Building V2 Design](BUILDING_V2_DESIGN.md) 与 [Building V2 Implementation](BUILDING_V2_IMPLEMENTATION.md)。
 
-完成 Dedicated Server 定向测试和 V1/V2 可比较的施工统计后，再进行真实模型 Host & Play 建房验收。
+## 当前阶段：Agent API Self-Documentation & Gameplay Modules
+
+完善模型发现和正确使用 Terraria API 的能力，并建立可复用的高层 Lua Gameplay Modules。重点是 API Help 的契约一致性、正确示例，以及制作和建造流程模块。架构见 [Agent API & Gameplay Modules Design](AGENT_API_AND_GAMEPLAY_MODULES_DESIGN.md)，实现规范见 [Agent API & Gameplay Modules Implementation](AGENT_API_AND_GAMEPLAY_MODULES_IMPLEMENTATION.md)。
 
 
 
