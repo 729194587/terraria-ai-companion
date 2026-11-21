@@ -44,11 +44,12 @@ public static class CombatOfflineTests
         internal bool Released = true;
         internal bool AllowTransfer = true;
         internal string StopReason;
+        internal Result PollResult = CompanionTask.Running();
         public bool SupportsCombat => true;
         public bool CanTransferBody(Identity id) => AllowTransfer;
         public string Validate(string op, JsonElement args) => null;
         public object Start(Identity id, string op, JsonElement args, string actionId) => new object();
-        public Result Poll(Identity id, object handle) => CompanionTask.Running();
+        public Result Poll(Identity id, object handle) => PollResult;
         public Result Cancel(Identity id, object handle) => CancelWithReason(id,handle,"cancelled","explicit_cancel");
         public Result CancelWithReason(Identity id, object handle, string status, string reason)
         { StopReason = reason; return new(status,reason,null,Released); }
@@ -60,6 +61,14 @@ public static class CombatOfflineTests
 
     public static void Run()
     {
+        int? Contact(float x,float y,float vx,float vy,float gravity=0) =>
+            ReflexContact.FirstTick(new(x,y),new(vx,vy),new(18,28),gravity,18);
+        Check(Contact(75,0,4,-3,.3f)==null,"knocked-back slime leaves work uninterrupted");
+        Check(Contact(90,-15,-5,-3,.4f)!=null,"airborne slime returns into body on its arc");
+        Check(Contact(80,-50,-6,0)==null,"overhead eye passes without contact");
+        Check(Contact(80,-50,-6,3)!=null,"diving eye crosses actor");
+        Check(Contact(80,-50,1,3)==null,"existing movement already avoids the dive");
+        Check(Contact(30,0,-70,0)==1,"swept body catches contact between updates");
         var id = new Identity(new object(),"world",1,254,null);
         var frame = id with{GameUpdate=1};
         var next = id with{GameUpdate=2};
@@ -178,6 +187,44 @@ public static class CombatOfflineTests
                 Check(!actions.HasActive,"unknown cleanup fences future reflex");
             }
         }
+        VerifyWorkHandoff(frame);
         Console.WriteLine("Combat offline lifecycle and priority passed.");
+    }
+
+    private static void VerifyWorkHandoff(Identity frame)
+    {
+        var executor = new Executor();
+        var actions = new AiAtomicActions(executor);
+        var owner = Guid.NewGuid();
+        var binding = new AiReadOnlyProtocol.Binding("actor","world",1,254);
+        JsonElement Mine() => JsonSerializer.SerializeToElement(new {
+            actionId=Guid.NewGuid().ToString("N"), operation="mine_target", arguments=new{x=1,y=2},
+            expiresAtUnixMs=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()+1500
+        });
+        void Tick()
+        {
+            frame=frame with {GameUpdate=frame.GameUpdate+1};
+            actions.Tick(()=>frame,null);
+        }
+
+        var mining=Mine();
+        Check(actions.Handle(owner,"start",mining,frame,binding,default).Error==null,"mining starts");
+        Tick();Tick();
+        actions.Reflex(frame,"actor","eye","projected_npc_contact");
+        Check(executor.StopReason==CombatProtocol.Interrupt,"incoming eye interrupts mining");
+        Check(actions.Handle(owner,"start",Mine(),frame,binding,default).Error!=null,"mining cannot take the body during defense");
+        Tick();Tick();
+        executor.PollResult=new("completed","combat_threats_cleared",null,true,true);
+        Tick();
+        Check(!actions.HasActive,"cleared defense releases body without replaying mining");
+        Check(actions.Handle(owner,"start",mining,frame,binding,default).Error=="duplicate_action","old mining admission stays terminal");
+        var nextMining=Mine();
+        Check(actions.Handle(owner,"start",nextMining,frame,binding,default).Error==null,"fresh mining task admitted after release");
+        Tick();Tick();
+        actions.Reflex(frame,"actor","eye","projected_npc_contact");
+        var nextDefense=JsonSerializer.SerializeToElement(actions.CombatState(frame)).GetProperty("action");
+        Check(nextDefense.GetProperty("status").GetString()=="running"
+            && nextDefense.GetProperty("targetTask").GetProperty("entityRef").GetString()=="eye",
+            "same live eye can interrupt again on the next dive");
     }
 }

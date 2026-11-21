@@ -2,7 +2,7 @@
 import json
 from inspect import signature
 
-from api_documentation import OBSERVATION_RESULT, documentation
+from api_documentation import ARGUMENT_HELP_APIS, OBSERVATION_RESULT, SCENE_MAP_ROWS, documentation, usage_help
 import api_result_contracts
 import atomic_operations as atomic
 import gameplay_skills
@@ -58,7 +58,8 @@ HORIZONTAL_EXPLORE_APIS = frozenset(('get_player_state', 'observe_terrain', 'sca
 
 HELP_REFERENCE = (
     '用 execute_lua 提交 return api("help") 获取分类索引，或 return api("help",{name="函数名"}) 获取一项详情。'
-    '读取 value 中的 description、parameters、returns、returnsSchema、statusSemantics、limits 和 example。'
+    '没看到所需参数或返回字段时，先查该函数的 help，不要猜。详情中的 examples 展示调用和取值，'
+    '用 parameters 和 returnsSchema 核对条件、字段与类型。签名中的 ? 表示非必填，枚举用 | 分隔。'
     'returnsSchema 是独立的 Draft 2020-12 JSON Schema，字段区分大小写、缺失和 null。'
     '帮助占一次 Lua API 调用，返回的是本地契约数据，不产生游戏查询、动作或新鲜观察。'
     '已知但未开放返回 not_exposed，未知名称返回 unknown_api；已开放但缺少返回契约时返回 contract_missing。'
@@ -158,10 +159,56 @@ def callable_categories(bridge, names):
     return categories
 
 
+def short_signature(definition):
+    schema = definition['parameters']
+    required = schema.get('required', ())
+    fields = []
+    for key, param in schema.get('properties', {}).items():
+        kind = param.get('type', 'value')
+        if kind == 'array':
+            kind = param.get('items', {}).get('type', 'value') + '[]'
+        choices = param.get('enum', ())
+        if choices and len(choices) <= 8:
+            kind = '|'.join(json.dumps(v, ensure_ascii=False) for v in choices)
+        marker = '' if key in required else '?'
+        fields.append(f'{key}{marker}:{kind}')
+    return definition['name'] + '({' + ', '.join(fields) + '})'
+
+
+def argument_usage(bridge, name, arguments):
+    """Offer only help that is actually visible on this server. Never replay caller values."""
+    if 'server_ai_atomic_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        return {}
+    definition = next((entry['function'] for entry in server_definitions(bridge)
+                       if entry['function']['name'] == name), None)
+    if definition is None:
+        return {}
+    schema = definition['parameters']
+    lookup = f'name="{name}"'
+    if name in ARGUMENT_HELP_APIS and isinstance(arguments, dict):
+        for key in ('mode', 'scale', 'category'):
+            value = arguments.get(key)
+            if value in schema['properties'].get(key, {}).get('enum', ()):
+                scoped = usage_help(name, schema, {key: value})
+                schema = {'properties': scoped['parameters'], 'required': scoped['required']}
+                lookup += f',forArgs={{{key}="{value}"}}'
+                break
+    return {'signature': short_signature({'name': name, 'parameters': schema}),
+            'helpQuery': f'return api("help",{{{lookup}}})'}
+
+
+def signature_index(bridge, definitions):
+    rows = callable_categories(bridge, definitions)
+    for row in rows:
+        row['signatures'] = [short_signature(definitions[name]) for name in row['apis']]
+    return rows
+
+
 def api_help(bridge, arguments):
-    if (not isinstance(arguments, dict) or set(arguments) - {'name'}
+    if (not isinstance(arguments, dict) or set(arguments) - {'name','forArgs'}
+            or 'forArgs' in arguments and ('name' not in arguments or not isinstance(arguments['forArgs'], dict))
             or 'name' in arguments and (not isinstance(arguments['name'], str) or not arguments['name'].strip())):
-        return {'valid': False, 'status': 'bad_argument', 'reason': 'help accepts {} or {name="API name"}'}
+        return {'valid': False, 'status': 'bad_argument', 'reason': 'help accepts {}, {name}, or {name,forArgs={...}}'}
     if 'server_ai_atomic_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         return {'valid': False, 'status': 'not_exposed', 'reason': 'help requires a Server AI backend'}
     definitions = {item['function']['name']: item['function'] for item in server_definitions(bridge)}
@@ -169,9 +216,15 @@ def api_help(bridge, arguments):
     if name is not None and name not in definitions:
         known = name in atomic.SCHEMAS or name in program_tasks.NAMES
         return {'valid': False, 'status': 'not_exposed' if known else 'unknown_api'}
-    categories = callable_categories(bridge, definitions)
     if name is None:
-        return {'valid': True, 'status': 'ok', 'categories': categories}
+        return {'valid': True, 'status': 'ok', 'categories': signature_index(bridge, definitions)}
+    if 'forArgs' in arguments:
+        try:
+            usage = usage_help(name, definitions[name]['parameters'], arguments['forArgs'])
+        except ValueError as error:
+            return {'valid': False, 'status': 'bad_argument', 'reason': str(error)}
+        return {'valid': True, 'status': 'ok', 'name': name, **usage}
+    categories = callable_categories(bridge, definitions)
     try:
         returns_schema = api_result_contracts.schema_for(
             name, capabilities=bridge.hello.get('capabilities', ()))
@@ -179,10 +232,15 @@ def api_help(bridge, arguments):
         return {'valid': False, 'status': 'contract_missing', 'name': name}
     row = next(row for row in categories if name in row['apis'])
     definition = definitions[name]
+    summary = {}
+    if name == 'observe_scene':
+        modes = definition['parameters']['properties'].get('scale', {}).get('enum', ['local'])
+        summary['mapRows'] = {mode: SCENE_MAP_ROWS[mode] for mode in modes}
     return {'valid': True, 'status': 'ok', 'name': name, 'category': row['category'],
+            **summary,
+            **documentation(name, definition['parameters'], definitions, bridge.hello.get('capabilities', ())),
             'description': definition['description'], 'parameters': definition['parameters'],
-            'returnsSchema': returns_schema, 'limits': row['limits'],
-            **documentation(name, definition['parameters'], definitions, bridge.hello.get('capabilities', ()))}
+            'returnsSchema': returns_schema, 'limits': row['limits']}
 
 
 def helper_reference(supported):
@@ -256,7 +314,8 @@ def server_contract(bridge, tool, *, compact=False):
             task_reference += ' 多成员战斗自动换部位，seed 标识请求实例，target 是当前部位。配对不明时返回原因；verifiedDamage 是已确认的累计伤害。'
         if 'query_combat' in supported:
             task_reference += ('combat_attack 与服务端自卫共享战斗优先级，可安全终止普通身体任务。'
-                               '用 query_combat 获取自卫任务的 actionId，再用 query_task 或 cancel_task。')
+                               '挖矿收到 task_interrupt_combat 后用 query_combat 获取自卫 actionId，用 query_task 或 await_task 核对正常完成和输入释放。'
+                               '本轮挖矿指令仍有效时，重新观察原目标；单格目标仍需挖掘可用原挖矿 taskId 调用 resume_task。需要停止自卫时用 cancel_task。')
     if 'configure_combat_loadout' in supported:
         task_reference += ' 主动攻击和自卫都会自动拔出已配置的近战主武器；可先整理快捷栏，用新鲜的 inventoryToken、hotbarKey 和 expectedTypeId 调用 configure_combat_loadout，再拿起工具。'
     if 'server_ai_combat_secondary_v1' in getattr(bridge,'hello',{}).get('capabilities',()):
@@ -266,12 +325,23 @@ def server_contract(bridge, tool, *, compact=False):
     if 'server_ai_combat_inventory_v1' in getattr(bridge,'hello',{}).get('capabilities',()):
         task_reference += (' 挖矿前先查 query_combat_loadout；需要配装时读 inspect_inventory(full) 的 data.combatCandidates，按 slot 对照 inventory。'
                            '背包武器用 swap_inventory_slots 放入选好的快捷栏（两端用 slots 新鲜 token），再读 hotbar。'
-                           'configure_combat_loadout 整份替换；用 row.typeId 填 expectedTypeId。help 的三槽示例适用于已各放好一件武器。'
-                           '挖矿收到 task_interrupt_combat 后查 query_combat，待释放后观察并决定是否重新提交挖矿。')
+                           'configure_combat_loadout 整份替换；用 row.typeId 填 expectedTypeId。help 的三槽示例适用于已各放好一件武器。')
+    help_reference = HELP_REFERENCE
+    scoped_names = sorted(supported & ARGUMENT_HELP_APIS)
+    if scoped_names:
+        example_name = 'observe_scene' if 'observe_scene' in scoped_names else scoped_names[0]
+        example_args = '{}'
+        if example_name == 'observe_scene':
+            example_args = ('{scale="region",layers={"map"}}' if 'server_ai_scene_region_v1' in bridge.hello['capabilities']
+                            else '{layers={"map"}}')
+        help_reference += (f" {'、'.join(scoped_names)} 可用 forArgs 按本次调用查帮助。"
+                           '直接返回摘要；parameters 为可用参数，missing 为待填参数；按 paths 和 examples 读取结果。'
+                           f'示例：return api("help",{{name="{example_name}",forArgs={example_args}}})。')
     if compact:
-        manifest_text = '\n'.join(f"- {row['category']}：{', '.join(row['apis'])}"
-                                  for row in callable_categories(bridge, supported))
-        api_reference = HELP_REFERENCE + '\n' + OBSERVATION_RESULT
+        definitions = {item['function']['name']: item['function'] for item in server_definitions(bridge, supported)}
+        manifest_text = '\n'.join(f"- {row['category']}：{'；'.join(row['signatures'])}"
+                                  for row in signature_index(bridge, definitions))
+        api_reference = help_reference + '\n' + OBSERVATION_RESULT
         examples = ['1. 发现函数：return api("help")']
     else:
         manifest_text = render_manifest(capability_manifest(bridge, supported))
@@ -297,7 +367,7 @@ def server_contract(bridge, tool, *, compact=False):
                     +'\nCapability Manifest\n'+manifest_text
                     +'\nAPI Contract\n'+api_reference
                     +'\nLua Runtime Reference\n'+runtime_reference(supported)
-                    +('' if compact else '\n'+HELP_REFERENCE)
+                    +('' if compact else '\n'+help_reference)
                     +'\n示例（含动作的例子仅在授权后使用）\n'+'\n'.join(examples))
     projected_tool = json.loads(json.dumps(tool))
     projected_tool['function']['description'] = ('执行完整有界Lua 5.4 source，内部api同步等待原子结果；'

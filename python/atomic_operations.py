@@ -46,6 +46,11 @@ CONTAINER_TRANSFER_ARGS = {
 INVENTORY_GUARDS = {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN,
                     "destinationToken": INVENTORY_TOKEN}
 SCENE_LAYERS = ["map", "geometry", "objects", "hazards", "landingRegions", "placementCandidates", "objectPlacementCandidates"]
+SCENE_EXCLUDED_PARAMS = {'local': ('width', 'height'), 'region': ('maxRegions', 'maxPlacements')}
+REGION_DEFAULT_LAYERS = ('geometry', 'objects', 'hazards')
+REGION_DEFAULT_WIDTH, REGION_DEFAULT_HEIGHT, REGION_MAX_AREA = 120, 68, 8192
+INVENTORY_MODE_ARGUMENTS = {'item': 'item', 'slots': 'slots'}
+REGION_LAYERS = ("map", "geometry", "objects", "hazards")
 SCENE_TEXT_CONTRACT = (
     "actor.bodyTileBounds为宿主按实际碰撞框计算的Tile范围，minX/minY/maxX/maxY均为包含端点；右/下边缘恰在Tile分界线时不包含边缘外的格。actor.mapTile是中心格，不是身体左上角；范围未裁剪至观察窗口，也不表示其中格为空或安全。"
     "observe_scene schemaVersion=2：固定图例/对象分组解释由本契约统一给出；三类候选的validation提升到集合级，matchedCount=0时省略validation。"
@@ -228,6 +233,29 @@ TOOLS.append(tool("build_diff", "只读比较蓝图和当前世界。origin 为�
                   "每项指定 itemType 或 contentKey。合计 1..256 项，宽高各最多 64 格，蓝图紧凑 UTF-8 JSON 最多 3072 字节。",
                   {"blueprint": BLUEPRINT}, ["blueprint"]))
 TOOLS.append(tool("build_place", "通过 submit_task 按蓝图施工，已匹配项跳过。", {"blueprint": BLUEPRINT}, ["blueprint"]))
+# Conditional inputs on otherwise flat read APIs. Unlisted fields are shared.
+READ_PARAMETER_RULES = {
+    'query_map': ('mode', dict.fromkeys(('centerX', 'centerY', 'width', 'height', 'cellSize'), ('region',))),
+    'scan_entities': ('category', {'npcFilter': ('npc',), 'typeIds': ('npc', 'item')}),
+}
+
+
+def read_parameter_schema(name, schema, arguments):
+    selector, conditions = READ_PARAMETER_RULES[name]
+    props = schema['properties']
+    if not isinstance(arguments, dict) or selector not in arguments:
+        return schema
+    mode = arguments[selector]
+    if mode not in props[selector]['enum']:
+        return schema  # Keep the original enum for the validation error.
+    for key, modes in conditions.items():
+        if key in arguments and key in props and mode not in modes:
+            raise ValueError(f"{name}.{key} requires {selector}={' or '.join(modes)}")
+    allowed = {k: v for k, v in props.items() if k not in conditions or mode in conditions[k]}
+    allowed[selector] = {**props[selector], 'enum': [mode]}
+    return {**schema, 'properties': allowed}
+
+
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 
 # Model-only server projection. Execution validation and the shared TOOLS stay unchanged.
@@ -271,7 +299,7 @@ SERVER_DESCRIPTION_SUFFIXES = {
 }
 
 
-SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene({scale="region",width=120,height=68})获取L1；'
+SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时，指定width或height即使用region；也可显式传scale="region"使用区域默认尺寸。'
     'width=45..128、height=29..96，面积<=8192 Tile；以AI中心为中心，非摄像机/视觉可见性。'
     'schemaVersion=3，默认geometry/objects/hazards；仅可选这三层及map，无导航/放置target。'
     'geometry.grid及map.terrain为encodingVersion=2无损逐Tile字典行编码：palette下标从0开始；rows[].encoding为rle或hex_indices。'
@@ -541,8 +569,8 @@ def _validate_blueprint(blueprint):
         raise ValueError('blueprint exceeds 3072 UTF-8 bytes')
 
 
-def validate(name, arguments):
-    """Validate shared schemas and losslessly normalize integer-valued numbers."""
+def validate_schema(name, arguments, schema):
+    """Check the given schema and losslessly normalize integer-valued numbers."""
     issues, truncated = [], False
     def typename(value):
         return {dict: 'object', list: 'array', str: 'string', bool: 'boolean',
@@ -590,6 +618,8 @@ def validate(name, arguments):
             if not numeric or not integral or not low <= value <= high:
                 issue(path, 'invalid_number', f"{path}: expected finite {kind} in [{low}, {high}], got {typename(value)}; fractional values are not rounded", expected=kind, actual=typename(value))
                 return value
+            if 'enum' in schema and value not in schema['enum']:
+                issue(path, 'unsupported_value', f"field '{path}': unsupported value", allowed=schema['enum'])
             return int(value) if kind == 'integer' else value
         if kind == 'boolean' and type(value) is not bool:
             issue(path, 'type_mismatch', f"field '{path}': expected boolean, got {typename(value)}", expected='boolean', actual=typename(value))
@@ -603,11 +633,19 @@ def validate(name, arguments):
             elif 'pattern' in schema and re.fullmatch(schema['pattern'],value) is None:
                 issue(path, 'invalid_pattern', f"field '{path}': string does not match required pattern")
         return value
-    if type(name) is not str or name not in SCHEMAS:
-        raise ArgumentValidationError(None, [dict(path='operation',code='unsupported_operation',message='Unsupported atomic operation')])
-    arguments = check(arguments, SCHEMAS[name], name)
+    normalized = check(arguments, schema, name)
     if issues:
         raise ArgumentValidationError(name, issues, truncated)
+    return normalized
+
+
+def validate(name, arguments):
+    if type(name) is not str or name not in SCHEMAS:
+        raise ArgumentValidationError(None, [dict(path='operation',code='unsupported_operation',message='Unsupported atomic operation')])
+    schema = SCHEMAS[name]
+    if name in READ_PARAMETER_RULES:
+        schema = read_parameter_schema(name, schema, arguments)
+    arguments = validate_schema(name, arguments, schema)
     if name in ("build_diff", "build_place"):
         _validate_blueprint(arguments["blueprint"])
     if name == 'configure_combat_loadout':
@@ -617,37 +655,29 @@ def validate(name, arguments):
     if name == 'mine_target' and set(arguments) - {'cluster'} not in ({'target'}, {'x', 'y'}):
         raise ValueError('mine_target requires either target or absolute x/y')
     if name == 'observe_scene':
+        if 'scale' not in arguments and ('width' in arguments or 'height' in arguments):
+            arguments['scale'] = 'region'
         region = arguments.get('scale') == 'region'
-        if not region and any(k in arguments for k in ('width','height')):
+        if not region and any(k in arguments for k in SCENE_EXCLUDED_PARAMS['local']):
             raise ValueError('observe_scene width/height require scale=region')
         if region:
-            if arguments.get('width',120)*arguments.get('height',68)>8192:
+            if arguments.get('width', REGION_DEFAULT_WIDTH) * arguments.get('height', REGION_DEFAULT_HEIGHT) > REGION_MAX_AREA:
                 raise ValueError('observe_scene region area must be <=8192 tiles')
-            if any(k in arguments for k in ('maxRegions','maxPlacements')) or any(
-                    k not in ('map','geometry','objects','hazards') for k in arguments.get('layers',[])):
+            if any(k in arguments for k in SCENE_EXCLUDED_PARAMS['region']) or any(
+                    k not in REGION_LAYERS for k in arguments.get('layers',[])):
                 raise ValueError('observe_scene region has no action candidates; use local observation')
-    if name == 'query_map':
-        if arguments.get('cellSize', 2) not in (1, 2, 4):
-            raise ValueError('query_map.cellSize must be 1, 2 or 4')
-        if arguments['mode'] == 'overview' and set(arguments) != {'mode'}:
-            raise ValueError('query_map overview accepts only mode')
     if name == 'scan_tiles':
         width, height = arguments['maxX'] - arguments['minX'] + 1, arguments['maxY'] - arguments['minY'] + 1
         if width <= 0 or height <= 0 or width * height > 4096:
             raise ValueError(f'scan_tiles.bounds: inclusive area {width} x {height} = {width * height}; require ordered bounds and area <=4096 tiles. Use observe_terrain bounds (45 x 29) or split into bounded scans')
     if name == 'collect_drops' and 'entityRef' in arguments and 'typeIds' in arguments:
         raise ValueError('collect_drops entityRef and typeIds are mutually exclusive')
-    if name == 'inspect_inventory' and (('item' in arguments) != (arguments.get('mode') == 'item')):
-        raise ValueError('item is required only for mode=item')
-    if name == 'inspect_inventory' and (('slots' in arguments) != (arguments.get('mode') == 'slots')):
-        raise ValueError('slots is required only for mode=slots')
+    if name == 'inspect_inventory':
+        for mode, key in INVENTORY_MODE_ARGUMENTS.items():
+            if (key in arguments) != (arguments.get('mode') == mode):
+                raise ValueError(f'{key} is required only for mode={mode}')
     if name in ('transfer_inventory_item', 'swap_inventory_slots') and arguments['sourceSlot'] == arguments['destinationSlot']:
         raise ValueError('Inventory source/destination must be different slots')
-    if name == 'scan_entities':
-        if 'typeIds' in arguments and arguments['category'] not in ('npc', 'item'):
-            raise ValueError('typeIds requires category=npc or item')
-        if 'npcFilter' in arguments and arguments['category'] != 'npc':
-            raise ValueError('npcFilter requires category=npc')
     if name == 'move_input' and arguments['jumpHoldUpdates'] > arguments['maxUpdates']:
         raise ValueError('jumpHoldUpdates must not exceed maxUpdates')
     if name == 'navigate_to_landing_region' and arguments['minPlayerLeftX'] > arguments['maxPlayerLeftX']:

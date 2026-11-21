@@ -2,6 +2,7 @@
 import re
 
 import atomic_operations as atomic
+import api_result_contracts as results
 import program_tasks
 
 
@@ -88,16 +89,70 @@ def help_result_contract(name):
 
 
 READ_EXAMPLES = {
-    'inspect_inventory': ('local q=api("inspect_inventory",{mode="full"})\n'
-                          'if not q.valid or not q.available then return q end\nreturn q.data.inventory'),
+    'get_player_state': '''local q=api("get_player_state",{})
+if not q.valid or not q.available then return q end
+return {player=q.player,motion=q.motion}''',
+    'inspect_inventory': '''local q=api("inspect_inventory",{mode="full"})
+if not q.valid or not q.available then return q end
+local counts={}
+for _, item in ipairs(q.data.inventory) do
+    if not item.empty then
+        counts[item.contentKey]=(counts[item.contentKey] or 0)+item.stack
+    end
+end
+return counts''',
     'resolve_content': 'return api("resolve_content",{kind="item",query="Terraria/Torch"})',
     'query_recipes': 'return api("query_recipes",{resultType=8,availableOnly=false})',
-    'scan_entities': 'return api("scan_entities",{category="npc",radius=320})',
+    'scan_entities': '''local q=api("scan_entities",{category="npc",radius=320})
+if not q.valid or not q.available then return q end
+return {status=q.data.status,first=q.data.items[1],matched=q.data.matchedCount,truncated=q.data.truncated}''',
     'inspect_container': 'return api("inspect_container",{})',
     'inspect_housing': 'return api("inspect_housing",{x=100,y=200})',
     'build_diff': 'return api("build_diff",{blueprint={origin={x=100,y=200},tiles={{x=0,y=0,itemType=9}}}})',
-    'observe_scene': 'return api("observe_scene",{layers={"objects"}})',
-    'query_map': 'return api("query_map",{mode="overview"})',
+    'observe_scene': '''local q=api("observe_scene",{layers={"objects"}})
+if not q.valid or not q.available then return q end
+return {objects=q.data.objects,coverage=q.data.coverage}''',
+    'query_map': '''local q=api("query_map",{mode="overview"})
+if not q.valid or not q.available then return q end
+return {row=q.data.rows[1],x=q.data.originX,y=q.data.originY,cellSize=q.data.cellSize,knowledge=q.data.knowledge}''',
+}
+
+# Examples read the first tile row (world Y = data.map.originY).
+SCENE_MAP_ROWS = {
+    'local': {
+        'path': 'data.map.rows',
+        'encoding': '每行是已绘制的地图字符串，可直接读取；Lua 行号从 1 开始。',
+        'example': '''local q=api("observe_scene",{layers={"map"}})
+if not q.valid or not q.available then return q end
+return q.data.map.rows[1]''',
+    },
+    'region': {
+        'path': 'data.map.terrain.rows',
+        'encoding': '地形网格 encodingVersion=2。逐行检查 encoding：rle 的 data 交替存放长度与索引；'
+                    'hex_indices 按该行 indexDigits 个十六进制字符读取一个索引。索引从 0 起，Lua 调色板从 1 起。'
+                    '角色与物件标记另见 data.map.actor、data.map.markers。',
+        'example': '''local q=api("observe_scene",{scale="region",layers={"map"}})
+if not q.valid or not q.available then return q end
+local grid=q.data.map.terrain
+assert(grid.encodingVersion==2)
+local row=grid.rows[1]
+local cells={}
+if row.encoding=="rle" then
+    for i=1,#row.data,2 do
+        local glyph=grid.palette[row.data[i+1]+1]
+        for n=1,row.data[i] do cells[#cells+1]=glyph end
+    end
+elseif row.encoding=="hex_indices" then
+    local digits=row.indexDigits
+    for i=1,#row.data,digits do
+        local index=tonumber(string.sub(row.data,i,i+digits-1),16)
+        cells[#cells+1]=grid.palette[index+1]
+    end
+else
+    error("unknown map row encoding")
+end
+return table.concat(cells)''',
+    },
 }
 CRAFT = """local q=api("query_recipes",{resultType=8,availableOnly=true})
 if not q.valid or not q.available then return q end
@@ -157,6 +212,130 @@ RETURN_NOTES = {
 }
 
 
+def _lua_value(value):
+    """Render validated read arguments (strings, integers and arrays) in a Lua example."""
+    if isinstance(value, list):
+        return '{' + ','.join(_lua_value(v) for v in value) + '}'
+    if isinstance(value, str):
+        escaped = re.sub(r'["\\\x00-\x1f]', lambda m: '\\%03d' % ord(m[0]), value)
+        return '"' + escaped + '"'
+    return str(value)
+
+
+def read_usage_help(name, schema, supplied):
+    selector, conditions = atomic.READ_PARAMETER_RULES[name]
+    projected = atomic.read_parameter_schema(name, schema, supplied)
+    required = projected['required']
+    missing = [key for key in required if key not in supplied]
+    # Missing top-level arguments are useful information in help. Still check every supplied value.
+    partial = {**projected, 'required': [key for key in required if key in supplied]}
+    args = atomic.validate_schema(name, supplied, partial)
+    data = results.READ_DATA_SCHEMAS[name]
+    fields = data['properties']
+    summary = dict(selector=selector, mode=args.get(selector), parameters=projected['properties'], required=required,
+                   missing=missing, paths=['data.' + key for key in fields],
+                   dataFields=dict(required=data['required'], optional=sorted(fields.keys() - data['required'])),
+                   examples=[])
+    if selector not in args:
+        summary['allowedWhen'] = {key: {selector: list(values)} for key, values in conditions.items()
+                                  if key in projected['properties']}
+    if not missing:
+        values = ','.join(k + '=' + _lua_value(v) for k, v in args.items())
+        example = (f'local q=api("{name}",{{{values}}})\n'
+                   'if not q.valid or not q.available then return q end\nreturn q.data')
+        summary.update(example=example, examples=[example])
+    return summary
+
+
+# Only expose argument-specific help when a selector changes inputs or the payload.
+ARGUMENT_HELP_APIS = frozenset(atomic.READ_PARAMETER_RULES) | {'inspect_inventory', 'observe_scene'}
+
+
+def usage_help(name, schema, supplied):
+    """Project one read usage without querying the game or relaxing dispatch validation."""
+    if name in atomic.READ_PARAMETER_RULES:
+        return read_usage_help(name, schema, supplied)
+    if name not in ARGUMENT_HELP_APIS:
+        raise ValueError(f'forArgs is unavailable for {name}')
+    props = schema['properties']
+    unknown = set(supplied) - props.keys()
+    if unknown:
+        raise ValueError('Unknown or unavailable argument: ' + ', '.join(sorted(unknown)))
+    args = dict(supplied)
+    required = list(schema.get('required', []))
+    allowed = list(props)
+    if name == 'inspect_inventory':
+        mode = args.get('mode')
+        if 'mode' not in args:
+            if not args:
+                return dict(required=required, parameters=props, missing=['mode'],
+                            usage='Choose a mode; use full for inventory totals.')
+            mode = 'item' if 'item' in args else 'slots'
+            args['mode'] = mode
+        if isinstance(mode, str) and mode in atomic.INVENTORY_MODE_ARGUMENTS:
+            key = atomic.INVENTORY_MODE_ARGUMENTS[mode]
+            required.append(key)
+            args.setdefault(key, 'Terraria/Wood' if mode == 'item' else [0])
+        allowed = required
+    args = atomic.validate(name, args)
+    call = 'api("' + name + '",{' + ','.join(k+'='+_lua_value(v) for k,v in args.items()) + '})'
+    prefix = 'local q=' + call + '\nif not q.valid or not q.available then return q end\n'
+    if name == 'inspect_inventory':
+        paths = ['data.inventory']
+        reads = 'return q.data.inventory'
+        status = 'Check valid and available before reading the requested slots.'
+        if mode == 'full':
+            reads = READ_EXAMPLES[name].split('\n', 2)[2]
+        elif mode == 'item':
+            paths = ['data.status','data.count','data.slots','data.candidates']
+            status = 'ok: count and matching slots; unknown_item/ambiguous_item: candidates and truncated.'
+            reads = 'if q.data.status~="ok" then return q.data end\nreturn {count=q.data.count,slots=q.data.slots}'
+        elif mode == 'slots':
+            status += ' Check data.status for inventory_slot_out_of_range.'
+            reads = 'if q.data.status~="ok" then return q.data end\n' + reads
+    else:
+        mode = args.get('scale', 'local')
+        layers = args.get('layers') or (atomic.REGION_DEFAULT_LAYERS if mode == 'region' else atomic.SCENE_LAYERS)
+        paths = ['data.'+layer for layer in layers]
+        status = 'Check valid/available, coverage and the requested collections’ truncation flags.'
+        reads = 'return {' + ','.join(layer+'=q.data.'+layer for layer in layers) + ',coverage=q.data.coverage}'
+        if 'map' in layers:
+            summary = SCENE_MAP_ROWS[mode]
+            paths[paths.index('data.map')] = summary['path']
+            reads = summary['example'].split('\n', 2)[2]
+            status += ' ' + summary['encoding']
+        allowed = [k for k in allowed if k not in atomic.SCENE_EXCLUDED_PARAMS[mode]]
+    parameters = {k:props[k] for k in allowed}
+    selector = 'mode' if name == 'inspect_inventory' else 'scale'
+    if selector in parameters:
+        parameters[selector] = {**parameters[selector], 'enum': [mode]}
+    if name == 'observe_scene' and mode == 'region':
+        layer = props['layers']
+        parameters['layers'] = {**layer, 'items': {**layer['items'], 'enum': list(atomic.REGION_LAYERS)}}
+        parameters['layers']['maxItems'] = len(atomic.REGION_LAYERS)
+        status += (f' Default dimensions {atomic.REGION_DEFAULT_WIDTH}x{atomic.REGION_DEFAULT_HEIGHT};'
+                   f' width * height <= {atomic.REGION_MAX_AREA}.')
+    if name == 'inspect_inventory':
+        # Each status has its own payload. Preserve the required/optional distinction.
+        fields = {}
+        for branch in results.INVENTORY['anyOf']:
+            props = branch['properties']
+            if mode not in props['inventoryScope']['properties']['mode']['enum']:
+                continue
+            state = props.get('status', {})
+            for label in state.get('enum', [state.get('const', 'full')]):
+                fields[label] = dict(required=branch['required'], optional=sorted(props.keys() - branch['required']))
+    else:
+        branch = results.DEFS['SceneRegional' if mode == 'region' else 'SceneLocal']
+        fields = list(branch['required'])
+        for condition in branch['allOf']:
+            if condition['if']['properties']['includedLayers']['contains']['const'] in layers:
+                fields.extend(condition['then']['required'])
+    return dict(mode=mode, parameters=parameters, required=required, dataFields=fields,
+                missing=[k for k in required if k not in supplied], paths=paths,
+                statusSemantics=status, example=prefix+reads, examples=[prefix+reads])
+
+
 def documentation(name, schema, definitions, capabilities):
     returns, semantics = help_result_contract(name)
     example = READ_EXAMPLES.get(name)
@@ -198,6 +377,11 @@ return api("submit_task",{operation="build_place",arguments={blueprint=plan}})""
             prerequisite = '从当前 NPC 观察的 details.entityRef 取目标实例；涉及付款时先获取同一对象和操作的有效报价。'
         else:
             prerequisite = '按 parameters 准备已授权的输入；涉及槽位、目标引用或报价时先取得新鲜观察。'
+    examples = [example] if example else []
+    if name == 'observe_scene' and 'server_ai_scene_region_v1' in capabilities:
+        examples.append('''local q=api("observe_scene",{width=100,height=40,layers={"objects"},maxObjects=32})
+if not q.valid or not q.available then return q end
+return {objects=q.data.objects,coverage=q.data.coverage}''')
     return dict(returns=RETURN_NOTES.get(name, returns), statusSemantics=semantics,
-                prerequisites=prerequisite, examples=[example] if example else [],
+                prerequisites=prerequisite, examples=examples,
                 example=example or '-- '+prerequisite, related=[n for n in related if n in definitions])

@@ -1,7 +1,10 @@
 """Stateful HTTP SDK, existing Agent/Worker and loopback game substitutes."""
 import asyncio
+import os
+from pathlib import Path
 import secrets
 import socket
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -65,9 +68,9 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
             request_id = self.rpc_id
         return {'jsonrpc': '2.0', 'id': request_id, 'method': method, 'params': params}
 
-    async def initialize(self, client=None):
+    async def initialize(self, client=None, *, request_id=None):
         body = self.request('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                            'clientInfo': {'name': 'fixture', 'version': '1'}})
+                            'clientInfo': {'name': 'fixture', 'version': '1'}}, request_id)
         response = await (client or self.http).post(self.url, json=body)
         if response.status_code == 200:
             self.headers = {'Mcp-Session-Id': response.headers['Mcp-Session-Id'],
@@ -84,6 +87,44 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
     async def game_chat(self, event_id, text):
         self.chathost.emit(event_id, text)
         self.brain.receive(await asyncio.wait_for(self.events.get(), 2))
+
+    async def test_mod_managed_http_ready_and_parent_pipe_shutdown(self):
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        token = secrets.token_urlsafe(32)
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, '-B', str(Path(fixture.__file__).resolve().parents[1] / 'python/agent.py'),
+            '--server-ai', '--external-brain', '--mcp-port', str(port),
+            '--port', str(self.chathost.server_address[1]), '--ai-port', str(self.aihost.server_address[1]),
+            env={**os.environ, 'COMPANION_MOD_MANAGED_MCP': '1', 'TERRARIA_MCP_TOKEN': token},
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            ready = await asyncio.wait_for(proc.stdout.readline(), 15)
+            self.assertEqual(b'COMPANION_MCP_READY', ready.strip())
+            async with httpx.AsyncClient(headers={'Authorization': 'Bearer ' + token}, trust_env=False) as http:
+                async with streamable_http_client(f'http://127.0.0.1:{port}/mcp', http_client=http) as (r, w, _):
+                    async with ClientSession(r, w) as session:
+                        await session.initialize()
+                        self.assertFalse((await session.call_tool('guide', {})).isError)
+                        try:
+                            reply = await asyncio.wait_for(session.call_tool('execute_lua', {
+                                'source': "return api('get_player_state', {})"}), timeout=15)
+                        except Exception:
+                            # Unblock shutdown even if Worker startup regresses.
+                            proc.stdin.close()
+                            raise
+                        result = reply.structuredContent
+                        self.assertEqual('completed', result['status'])
+                        self.assertEqual(self.aihost.binding['world'], result['value']['worldSessionId'])
+                        self.assertEqual(self.aihost.binding['slot'], result['value']['actorSlot'])
+                        self.assertTrue(result['value']['player']['inWorld'])
+            proc.stdin.close()
+            self.assertEqual(0, await asyncio.wait_for(proc.wait(), 12))
+        finally:
+            if proc.returncode is None:
+                proc.kill()
+                await proc.wait()
 
     async def test_sdk_session_tools_events_say_and_native_resume(self):
         async with httpx.AsyncClient(headers=self.auth, trust_env=False) as client:
@@ -119,7 +160,11 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(any(r['op'] == 'start' for r in self.aihost.sent))
                     skill = await session.call_tool('read_skill', {'name': 'mining_and_ores'})
                     self.assertTrue(skill.structuredContent['valid'])
-                    self.assertEqual(409, (await self.initialize()).status_code)
+                    for request_id in (0, 'client-b'):
+                        busy = await self.initialize(request_id=request_id)
+                        self.assertEqual(409, busy.status_code)
+                        self.assertEqual(request_id, busy.json()['id'])
+                        self.assertEqual('Brain Lease unavailable', busy.json()['error']['message'])
                     await self.game_chat('external-chat', '向右移动')
                     self.brain.receive({'type': 'game_message', 'eventId': 'sys-1', 'text': 'example',
                                         'droppedBefore': 2})

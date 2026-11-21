@@ -71,15 +71,9 @@ internal sealed class NativeNavigationWorld : INavigationWorld
         foreach(var npc in Main.npc)
         {
             if(!npc.active||npc.life<=0||npc.friendly||npc.townNPC||npc.damage<=0)continue;
-            var offset=player.Center-npc.Center;
-            bool contact=npc.Hitbox.Intersects(player.Hitbox);
-            if(!contact)
-            {
-                float distanceSquared=offset.LengthSquared();
-                if(distanceSquared>160*160||!npc.HasValidTarget||npc.target!=player.whoAmI)continue;
-                if(!npc.noTileCollide&&!Collision.CanHitLine(npc.position,npc.width,npc.height,player.position,player.width,player.height))continue;
-                if(distanceSquared>64*64&&Vector2.Dot(npc.velocity-player.velocity,offset)<=0)continue;
-            }
+            if(NativeCombatWorld.ContactTick(player,npc,player.velocity.X) is not int contact)continue;
+            if(contact>1 && (!npc.HasValidTarget||npc.target!=player.whoAmI))continue;
+            if(contact>0 && !npc.noTileCollide && !Collision.CanHitLine(npc.position,npc.width,npc.height,player.position,player.width,player.height))continue;
             int cooldown=-1;
             if(NPCLoader.CanHitPlayer(npc,player,ref cooldown))return "task_interrupt_nearby_hostile";
         }

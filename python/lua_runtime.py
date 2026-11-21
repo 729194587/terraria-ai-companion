@@ -408,8 +408,12 @@ class LuaRuntime:
                     if isinstance(exc, atomic.ArgumentValidationError):
                         details = dict(diagnostics=exc.diagnostics, diagnosticsTruncated=exc.diagnostics_truncated)
                         rejection.update(details)
-                    rejection['recovery'] = record_recovery(
-                        action_recovery.guidance(name, 'bad_argument', detail=str(exc)), **details)
+                    from server_ai_contract import argument_usage
+                    hint = action_recovery.guidance(name, 'bad_argument', detail=str(exc))
+                    usage = argument_usage(self.bridge, name, args)
+                    if usage:
+                        hint.update(usage, nextStep='核对 signature；需要参数或返回字段详情时执行 helpQuery。')
+                    rejection['recovery'] = record_recovery(hint, **details)
                     if not message.get('protected', False):
                         raise
                     call_end('bad_argument', error=rejection['error'])

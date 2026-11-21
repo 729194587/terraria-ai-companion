@@ -56,7 +56,7 @@ internal sealed class BossEvasion
             if(TerrainReader.ReadCell(x,row)!='=')return false;
         return true;
     }
-    internal bool Needed(Player p,NPC enemy,bool ranged,bool bossEncounter)
+    internal bool Needed(Player p,NPC enemy,bool ranged,bool bossEncounter,bool reflex=false)
     {
         canDrop=p.velocity.Y==0 && Math.Abs(p.Bottom.Y-MathF.Round(p.Bottom.Y/16)*16)<.5f && PlatformAt(p,0);
         platforms=canDrop;
@@ -84,7 +84,7 @@ internal sealed class BossEvasion
             }
         }
         foreach(var n in Main.ActiveNPCs)
-            if(!n.friendly&&!n.townNPC&&n.damage>0&&n.life>0)Add(n.Center,n.velocity,n.width,n.height);
+            if(!n.friendly&&!n.townNPC&&n.damage>0&&n.life>0)Add(n.Center,n.velocity,n.width,n.height,gravity:reflex?NativeCombatWorld.JumpGravity(n):0);
         foreach(var q in Main.ActiveProjectiles)
             if(q.hostile&&q.damage>0)
             {

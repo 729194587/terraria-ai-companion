@@ -1,5 +1,6 @@
 """Handshake projections and model reference checked against actual Worker permissions."""
 import copy
+import re
 import itertools
 import json
 from pathlib import Path
@@ -11,6 +12,7 @@ from jsonschema import Draft202012Validator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'python'))
 import atomic_operations as atomic
+import program_tasks
 from api_result_contracts import DRAFT, missing_for, registered_names, schema_for
 from lua_agent import server_contract
 from lua_runtime import Limits, LuaRuntime
@@ -134,6 +136,59 @@ class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ResultRegistryTests(unittest.TestCase):
+    def test_registry_index_and_full_help(self):
+        # Shared/client names intentionally unavailable to Server AI, even with all capabilities.
+        unavailable = {'attack_entity', 'drop_through_platform', 'get_player_status', 'get_world_state',
+                       'hammer_tile', 'interact_tile', 'mine_wall', 'observe_exploration', 'place_wall'}
+        task_only = {'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'}
+        scoped = {'inspect_inventory', 'observe_scene', 'query_map', 'scan_entities'}
+        registered = [entry['function']['name'] for entry in atomic.TOOLS] + sorted(program_tasks.NAMES)
+        self.assertCountEqual(registered, set(registered))
+        for caps in (BASE, FULL_ACTIONS):
+            b = bridge(caps)
+            definitions = {entry['function']['name']: entry['function'] for entry in server_definitions(b)}
+            expected = (set(registered) - unavailable - task_only if caps == FULL_ACTIONS
+                        else {'wait', 'stop_action', 'select_hotbar_slot'})
+            self.assertEqual(expected, definitions.keys())
+            rows = api_help(b, {})['categories']
+            self.assertCountEqual(expected, [name for row in rows for name in row['apis']])
+            for row in rows:
+                self.assertEqual(len(row['apis']), len(row['signatures']))
+            categories = {name: row['category'] for row in rows for name in row['apis']}
+            for name in registered:
+                with self.subTest(name=name, caps='extended' if caps == FULL_ACTIONS else 'base'):
+                    doc = api_help(b, {'name': name})
+                    partial = api_help(b, {'name': name, 'forArgs': {}})
+                    if name not in expected:
+                        self.assertEqual('not_exposed', doc['status'])
+                        self.assertEqual('not_exposed', partial['status'])
+                        continue
+                    self.assertEqual('ok', doc['status'])
+                    self.assertEqual(categories[name], doc['category'])
+                    self.assertEqual(definitions[name]['description'], doc['description'])
+                    self.assertTrue(doc['description'].strip())
+                    self.assertEqual(definitions[name]['parameters'], doc['parameters'])
+                    self.assertEqual(schema_for(name, capabilities=caps), doc['returnsSchema'])
+                    self.assertTrue(doc['returns'] and doc['statusSemantics'])
+                    self.assertTrue(doc['examples'] or doc['prerequisites'])
+                    self.assertLessEqual(set(doc['related']), expected)
+                    for example in doc['examples']:
+                        refs = re.findall(r"""api\(\s*["'](\w+)["']""", example)
+                        self.assertLessEqual(set(refs), expected)
+                    self.assertEqual('ok' if name in scoped else 'bad_argument', partial['status'])
+            if caps == FULL_ACTIONS:
+                submit = api_help(b, {'name': 'submit_task'})['parameters']['properties']
+                self.assertEqual(task_only | {'mine_target'}, set(submit['operation']['enum']))
+
+    def test_guide_only_advertises_available_argument_help(self):
+        for caps, names in [(BASE, set()), (BASE | {'server_ai_map_v1'}, {'query_map'}),
+                            (FULL_ACTIONS, {'query_map', 'observe_scene', 'inspect_inventory', 'scan_entities'})]:
+            guide, _ = server_contract(bridge(caps), compact=True)
+            if names:
+                self.assertIn('、'.join(sorted(names)) + ' 可用 forArgs', guide)
+            else:
+                self.assertNotIn('forArgs', guide)
+
     def test_completed_drop_batch_can_report_more_targets(self):
         from api_result_contracts import TASK_COMPLETION_PROOF
 
@@ -224,6 +279,22 @@ class ResultRegistryTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
+    def test_compact_guide_and_help_share_projected_signatures(self):
+        for caps in (FULL_ACTIONS, FULL_ACTIONS - {'server_ai_scene_region_v1'}):
+            backend = bridge(caps)
+            guide, _ = server_contract(backend, compact=True)
+            self.assertIn('没看到所需参数或返回字段时，先查该函数的 help，不要猜', guide)
+            signatures = {}
+            for row in api_help(backend, {})['categories']:
+                self.assertEqual(len(row['apis']), len(row['signatures']))
+                for name, signature in zip(row['apis'], row['signatures']):
+                    self.assertTrue(signature.startswith(name + '({'))
+                    self.assertIn(signature, guide)
+                    signatures[name] = signature
+            self.assertIn('mode:"selected"|"hotbar"|"item"|"full"|"slots"', signatures['inspect_inventory'])
+            self.assertIn('slots?:integer[]', signatures['inspect_inventory'])
+            self.assertEqual('server_ai_scene_region_v1' in caps, 'width?:integer' in signatures['observe_scene'])
+
     def test_opening_requires_capability_and_fresh_slot(self):
         old = bridge(FULL - {'server_ai_open_item_v1'})
         self.assertEqual('not_exposed', api_help(old, {'name':'open_inventory_item'})['status'])

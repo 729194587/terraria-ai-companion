@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -429,4 +429,42 @@ try {
     [IO.File]::WriteAllText("$profile/stdout.log",$stdout.GetAwaiter().GetResult())
     [IO.File]::WriteAllText("$profile/stderr.log",$stderr.GetAwaiter().GetResult())
     $process.Dispose()
+    if (!$KeepProfile -and !$BenchmarkSpec -and !$Atomic) {
+        try {
+            $profileItem = Get-Item -LiteralPath $profile -Force
+            $localRoot = [IO.Path]::GetFullPath((Join-Path $repo '.local'))
+            if ($profileItem -isnot [IO.DirectoryInfo] -or $profileItem.Parent.FullName -ne $localRoot -or
+                $profileItem.Name -cnotmatch '^companion-g81-native-[a-f0-9]{32}$') {
+                throw "Unexpected native test profile path: $profile"
+            }
+            for ($ancestor = $profileItem; $ancestor; $ancestor = $ancestor.Parent) {
+                if ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    throw "Profile path contains a reparse point: $($ancestor.FullName)"
+                }
+            }
+            $artifactPatterns = @{
+                Worlds = '^test\.(wld|twld)(\.bak)?$|^\d{4}-\d{2}-\d{2}-test\.zip$'
+                Players = '^\d{4}-\d{2}-\d{2}-character\.zip$'
+                VirtualPlayerEngineProbe = '^map\.bin$|^character\.(plr|tplr)$'
+                Mods = '^CompanionBridge\.tmod$'
+            }
+            foreach ($name in $artifactPatterns.Keys) {
+                $path = Join-Path $profileItem.FullName $name
+                if (!(Test-Path -LiteralPath $path)) { continue }
+                $directory = Get-Item -LiteralPath $path -Force
+                if ($directory -isnot [IO.DirectoryInfo] -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                    throw "Expected an ordinary test directory: $path"
+                }
+                foreach ($file in Get-ChildItem -LiteralPath $path -File -Recurse -Force) {
+                    if ($file.Name -match $artifactPatterns[$name] -and
+                        !($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
+                        $file.FullName.StartsWith($directory.FullName + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+                        Remove-Item -LiteralPath $file.FullName -Force
+                    }
+                }
+            }
+        } catch {
+            Write-Warning "Could not clean up native test data in ${profile}: $_"
+        }
+    }
 }

@@ -253,7 +253,21 @@ FUNDS = obj({name: COUNT for name in ('carriedCopper', 'piggyBank', 'safe', 'def
 PAYMENT = {'beforeFunds': FUNDS, 'afterFunds': FUNDS, 'bankNonCurrencyUnchanged': B}
 SHOP_LISTING = obj({'itemType': I, 'available': nullable(B), 'reason': nullable(S), 'unitPrice': nullable(COUNT),
                     'canAfford': nullable(B), 'canPurchase': B, 'currency': enum('copper','unknown'), 'stock': enum('unlimited','unknown')})
+READ_DATA_SCHEMAS = {
+    'query_map': obj({
+        **QUERY_METADATA, **fields(integers='schemaVersion originX originY cellSize width height',
+                                   strings='worldUid characterId legend knowledge visibility'),
+        'mode': enum('overview', 'region'), 'rows': array(S),
+        'exploredRatio': desc(N, 'Proportion of known map cells in this last-known memory, not live observation.'),
+    }),
+    'scan_entities': obj({
+        **QUERY_METADATA, **COLLECTION, 'items': array(SCANNED_ENTITY), 'radiusPixels': N, 'sort': S,
+        'complete': B, 'status': enum('not_found', 'ok'), 'originWorldPixels': ref('WorldPoint'), 'scope': S,
+    }),
+}
+
 OBSERVATIONS = {
+    **{name: observation(data) for name, data in READ_DATA_SCHEMAS.items()},
     'inspect_npc_shop': observation(obj({**QUERY_METADATA, 'entityRef': S, 'shopName': S, 'carriedCopper': COUNT, 'funds': FUNDS,
                                          'entries': array(SHOP_LISTING)})),
     'quote_nurse_heal': observation(obj({**QUERY_METADATA, 'entityRef': S, 'life': COUNT, 'maxLife': COUNT,
@@ -299,10 +313,6 @@ OBSERVATIONS = {
         'status': enum('partial_unloaded', 'not_found', 'ok'), 'bounds': ref('TileBounds'),
         'scannedCount': COUNT, 'sort': S, 'coordinates': S,
     })),
-    'scan_entities': observation(obj({
-        **QUERY_METADATA, **COLLECTION, 'items': array(SCANNED_ENTITY), 'radiusPixels': N, 'sort': S,
-        'complete': B, 'status': enum('not_found', 'ok'), 'originWorldPixels': ref('WorldPoint'), 'scope': S,
-    })),
     'resolve_content': observation(obj({
         **QUERY_METADATA, **COLLECTION, 'status': enum('not_found', 'ambiguous', 'ok'),
         'kind': enum('tile', 'wall', 'item'), 'mode': enum('search', 'exact'), 'scope': S,
@@ -333,12 +343,6 @@ OBSERVATIONS = {
         'matched': COUNT, 'pending': COUNT, 'placeable': COUNT,
         'materials': array(BUILD_MATERIAL), 'currentSiteCoverage': nullable(COUNT),
     }, optional=('currentSiteCoverage',))),
-    'query_map': observation(obj({
-        **QUERY_METADATA, **fields(integers='schemaVersion originX originY cellSize width height',
-                                   strings='worldUid characterId legend knowledge visibility'),
-        'mode': enum('overview', 'region'), 'rows': array(S),
-        'exploredRatio': desc(N, 'Proportion of known map cells in this last-known memory, not live observation.'),
-    })),
 }
 
 # SceneRegion.Json uses camelCase even for record members. A requested layer

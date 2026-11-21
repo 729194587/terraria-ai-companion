@@ -24,10 +24,7 @@ function Resolve-NativeTestInput {
     $paths = switch ($Kind) {
         Python { 'lua-venv/Scripts/python.exe' }
         World { 'native-test-fixtures/gameplay/test.wld'; 'virtual-player-control-host/Worlds/test.wld' }
-        CharacterWorld {
-            'native-test-fixtures/world-character/test.wld'
-            'companion-g82-host-20261027-175538-078/Worlds/test.wld'
-        }
+        CharacterWorld { 'native-test-fixtures/world-character/test.wld' }
     }
     foreach ($relative in $paths) {
         foreach ($root in $roots) {

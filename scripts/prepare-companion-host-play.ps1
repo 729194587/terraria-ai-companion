@@ -37,6 +37,8 @@ $previousEnabled=$env:COMPANION_SERVER_AI
 $previousPort=$env:COMPANION_AI_PORT
 $previousEngine=$env:COMPANION_ENGINE_PROFILE
 $previousMigration=$env:COMPANION_CHARACTER_MIGRATION
+$previousRoot=$env:COMPANION_PROJECT_ROOT
+$env:COMPANION_PROJECT_ROOT=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $env:COMPANION_SERVER_AI='1'
 $env:COMPANION_AI_PORT='__PORT__'
 $env:COMPANION_ENGINE_PROFILE=$engine.Name
@@ -49,6 +51,7 @@ finally {
     $env:COMPANION_AI_PORT=$previousPort
     $env:COMPANION_ENGINE_PROFILE=$previousEngine
     $env:COMPANION_CHARACTER_MIGRATION=$previousMigration
+    $env:COMPANION_PROJECT_ROOT=$previousRoot
 }
 '@
 $launcher=$launcher.Replace('__TML__',$TModLoaderPath.Replace("'","''")).Replace('__HASH__',$hash).Replace('__PORT__',"$AiPort").Replace('__PROFILE__',$engine.Name)

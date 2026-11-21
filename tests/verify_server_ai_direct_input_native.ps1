@@ -1,5 +1,5 @@
 param([string]$TModLoaderPath,[string]$EngineProfile, [string]$WorldPath,[string]$CharacterSeed, [string]$PackagePath, [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py', [switch]$Scene, [switch]$Equipment, [switch]$Torch, [switch]$Combat,[string]$SamplePackage,[string]$PythonExecutable,
-    [ValidateSet('eater','destroyers','twins','two-twins','moon')] [string]$BossProbe)
+    [ValidateSet('eater','destroyers','twins','two-twins','moon')] [string]$BossProbe, [switch]$KeepProfile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -54,4 +54,32 @@ try {
     [IO.File]::WriteAllText("$profile/stdout.log",$stdout.GetAwaiter().GetResult())
     [IO.File]::WriteAllText("$profile/stderr.log",$stderr.GetAwaiter().GetResult())
     $process.Dispose()
+    if (!$KeepProfile) {
+        try {
+            $profileItem = Get-Item -LiteralPath $profile -Force
+            $localRoot = [IO.Path]::GetFullPath((Join-Path $repo '.local'))
+            if ($profileItem.Parent.FullName -ne $localRoot -or
+                $profileItem.Name -cnotmatch '^direct-input-native-[a-f0-9]{32}$') {
+                throw "Unexpected native test profile path: $profile"
+            }
+            for ($ancestor = $profileItem; $ancestor; $ancestor = $ancestor.Parent) {
+                if ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    throw "Profile path contains a reparse point: $($ancestor.FullName)"
+                }
+            }
+            foreach ($name in 'Worlds', 'VirtualPlayerEngineProbe', 'Players', 'Mods') {
+                $path = Join-Path $profileItem.FullName $name
+                if (!(Test-Path -LiteralPath $path)) { continue }
+                $item = Get-Item -LiteralPath $path -Force
+                if ($item -isnot [IO.DirectoryInfo] -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                    throw "Expected an ordinary test directory: $path"
+                }
+                $link = Get-ChildItem -LiteralPath $path -Recurse -Force -Attributes ReparsePoint | Select-Object -First 1
+                if ($link) { throw "Test directory contains a reparse point: $($link.FullName)" }
+                Remove-Item -LiteralPath $path -Recurse -Force
+            }
+        } catch {
+            Write-Warning "Could not clean up native test data in ${profile}: $_"
+        }
+    }
 }

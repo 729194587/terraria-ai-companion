@@ -222,8 +222,8 @@ class ExternalMcp(McpBrain):
                 return bytes(body)
 
     async def __call__(self, scope, receive, send):
-        async def error(status, message):
-            await JSONResponse({'jsonrpc': '2.0', 'id': 'server-error',
+        async def error(status, message, request_id='server-error'):
+            await JSONResponse({'jsonrpc': '2.0', 'id': request_id,
                                 'error': {'code': -32000, 'message': message}},
                                status_code=status)(scope, receive, send)
 
@@ -277,7 +277,7 @@ class ExternalMcp(McpBrain):
                 except ValueError:
                     return await error(400, 'Invalid initialize request')
                 if self.session is not None or not self.brain.reserve():
-                    return await error(409, 'Brain Lease unavailable')
+                    return await error(409, 'Brain Lease unavailable', message.id)
                 sid = secrets.token_hex(16)
                 session = self.session = Session(sid, StreamableHTTPServerTransport(
                     mcp_session_id=sid, is_json_response_enabled=True))
@@ -367,11 +367,42 @@ async def route_events(brain, events):
 async def serve_host(app, port, events):
     import uvicorn
 
-    server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=port, lifespan='off', ws='none',
+    managed = os.environ.get('COMPANION_MOD_MANAGED_MCP') == '1'
+
+    class ManagedServer(uvicorn.Server):
+        async def on_tick(self, counter):
+            if counter % 5 == 0:
+                # A pending ReadFile on the inherited stdin pipe can stall a
+                # spawned Windows Lua Worker. Sample readiness without reading.
+                if sys.platform == 'win32':
+                    import _winapi
+                    import msvcrt
+                    handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+                    try:
+                        available, _ = _winapi.PeekNamedPipe(handle, 0)
+                    except BrokenPipeError:
+                        return True
+                    if available:
+                        return True
+                else:
+                    import select
+                    if select.select([sys.stdin], [], [], 0)[0]:
+                        return True
+            return await super().on_tick(counter)
+
+        async def startup(self, sockets=None):
+            await super().startup(sockets=sockets)
+            if self.started:
+                print('COMPANION_MCP_READY', flush=True)
+
+    server_type = ManagedServer if managed else uvicorn.Server
+    server = server_type(uvicorn.Config(app, host='127.0.0.1', port=port, lifespan='off', ws='none',
                                            proxy_headers=False, access_log=False,
                                            timeout_graceful_shutdown=5))
     router = asyncio.create_task(route_events(app.brain, events))
     game_connection = asyncio.create_task(app.watch_game_connection())
+    if managed:
+        game_connection.add_done_callback(lambda _: setattr(server, 'should_exit', True))
     try:
         await server.serve()
     finally:

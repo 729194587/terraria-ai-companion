@@ -51,6 +51,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool WaitingForRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>
         handle is Handle {Context:TaskSlot slot} && slot.Record.Started && slot.Task.CanWaitForRespawn(frame);
     public bool SupportsLoadout=>true;
+    public float? WorkVelocityX(AiReadOnlyProtocol.Identity frame)=>Owned(frame)?((Player)frame.Actor).velocity.X:null;
     public Func<bool> CapturePrimary(AiReadOnlyProtocol.Identity frame)=>NativeCombatWorld.CapturePrimary(frame);
     public object StartCombat(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.CombatAdmission admission)
         =>StartCore(frame,CombatProtocol.Operation,args,id,false,admission:admission);

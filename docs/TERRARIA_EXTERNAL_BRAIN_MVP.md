@@ -100,7 +100,24 @@ HTTP 认证采用独立随机 Bearer Token：
 
 使用默认游戏 Bridge 端口时，上面的配置会自动启动 Host。端口非默认时，可在 `args` 追加 `--port` 和 `--ai-port`。Harness 发现工具后，先调用 `mcp__terraria__guide`，再用 `mcp__terraria__execute_lua` 查询 `get_player_state`。示例关闭了 Harness 自动重连，游戏连接故障时可确认 Actor 状态后重启 Harness。
 
-继续使用 HTTP 时，端口与 `TERRARIA_MCP_TOKEN` 由手动启动的 Host 提供。DeepSeek Harness 的 HTTP 插件条目如下：
+### 本机 Host & Play 的 Mod 开关（Windows）
+
+先安装仓库的 Python 环境及 `python/requirements-mcp.txt`。在 Windows 用户环境中一次性配置随机凭据；已有凭据时继续使用原值。在 PowerShell 7 中执行：
+
+```powershell
+if (![Environment]::GetEnvironmentVariable('TERRARIA_MCP_TOKEN', 'User')) {
+    $token = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+    [Environment]::SetEnvironmentVariable('TERRARIA_MCP_TOKEN', $token, 'User')
+}
+```
+
+让 Codex 从带有该环境变量的环境启动，将生效配置里的 Terraria stdio 条目替换为下方 HTTP 条目。
+在 CompanionBridge 的「外部 AI（MCP）」设置中启用本机 HTTP MCP，使用已启用 Server AI 的本机 Host & Play 配置进入世界。
+新版 profile 启动器提供项目目录；旧 profile 可在设置中填写绝对路径。游戏聊天显示 `MCP ready` 后即可打开 Codex 对话。
+退出世界、关闭开关或关闭游戏会释放该游戏拥有的宿主。启动失败请查看游戏的 client.log；修正后重新切换开关。
+首次握手因其他对话占用而失败时，结束占用对话并在原客户端重载 MCP。手动管理 Host 时保持 Mod 开关关闭。
+
+DeepSeek Harness 的 HTTP 插件条目如下：
 
 ```yaml
 - id: mcp-terraria
@@ -171,7 +188,11 @@ return api("help")
 return api("help", {name="get_player_state"})
 ```
 
-详情的 `description` 来自现有执行契约，包含用途和函数专属限制。`parameters` 描述当前后端接受的参数，`returns` 概述返回结构。`value.returnsSchema` 是该 API 的 Draft 2020-12 JSON Schema，包含逐字段类型、必填项、可空项和状态分支，`$ref` 均指向同一份文档内的 `$defs`。索引只返回名称和分类，按需查询一个函数的详情即可。
+详情的 `description` 来自现有执行契约，包含用途和函数专属限制。`parameters` 描述当前后端接受的参数，`returns` 概述返回结构。`value.returnsSchema` 是该 API 的 Draft 2020-12 JSON Schema，包含逐字段类型、必填项、可空项和状态分支，`$ref` 均指向同一份文档内的 `$defs`。分类索引同时给出名称和由当前参数 Schema 生成的短签名。完整参数与结果 Schema 可按函数名查询。
+
+只有参数或结果结构随模式变化的接口才提供按参数帮助。当前有 `inspect_inventory`、`observe_scene`、`query_map` 和 `scan_entities`，guide 根据握手列出可用的子集。例如，`api("help",{name="query_map",forArgs={mode="overview"}})` 只列出总览模式可用的参数。
+
+注册表离线审计覆盖 80 个原子操作和 5 个任务 API。在扩展能力测试配置下，71 个直接入口各有一条索引记录和一份完整帮助；另有 5 个操作通过 `submit_task.operation` 提交，9 个共享操作不在服务器白名单内。可运行 `test_server_ai_contract.ResultRegistryTests.test_registry_index_and_full_help` 核对当前注册表。
 
 `statusSemantics` 说明如何解读回执，`limits` 给出类别边界，`example` 提供 Lua 调用示例。已知但当前不可调用的函数返回 `not_exposed`，未知名称返回 `unknown_api`，非法参数返回 `bad_argument`。如果开放的函数缺少已登记的返回契约，帮助返回 `contract_missing`。
 

@@ -37,7 +37,7 @@ internal sealed class AiAtomicActions
         .Concat(executor.SupportsBossEncounter ? new[]{"server_ai_boss_encounter_v1","server_ai_boss_members_v1","server_ai_boss_strategy_v1"} : Array.Empty<string>())
         .Concat(SupportsCombat?new[]{"server_ai_combat_v1","server_ai_weapon_button_v1"}:Array.Empty<string>()).ToArray();
     internal sealed record RespawnPlan(string PreviousTaskId,string EntityRef, Func<AiReadOnlyProtocol.Identity, NativeResult> Prepare);
-    internal sealed record CombatAdmission(ulong Update,string InterruptedAction,Func<bool> SameWeapon);
+    internal sealed record CombatAdmission(ulong Update,string InterruptedAction,Func<bool> SameWeapon,float? WorkVelocityX=null);
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
     {
@@ -72,6 +72,7 @@ internal sealed class AiAtomicActions
         bool SupportsReforge=>false;
         bool SupportsHousingAssignment=>false;
         bool SupportsBuildPlace=>false;
+        float? WorkVelocityX(AiReadOnlyProtocol.Identity identity)=>null;
         bool CanTransferBody(AiReadOnlyProtocol.Identity identity)=>false;
         string ValidateCombatAdmission(AiReadOnlyProtocol.Identity identity,string target)=>null;
         string CurrentCombatTarget(object handle)=>null;
@@ -135,7 +136,7 @@ internal sealed class AiAtomicActions
         admission=null;
         if (BodyBlocked(current)) return "body_release_unconfirmed";
         if (MaintenanceBusy?.Invoke()==true) return "action_busy";
-        admission=new(current.GameUpdate,active?.Id,executor.CapturePrimary(current));
+        admission=new(current.GameUpdate,active?.Id,executor.CapturePrimary(current),executor.WorkVelocityX(current));
         if (active==null) return executor.CanTransferBody(current)?null:"actor_busy";
         if (CombatActive || !Matches(active,current) || active.Cancel || active.Disconnected.IsCancellationRequested)
             return "action_busy";
@@ -315,7 +316,8 @@ internal sealed class AiAtomicActions
                     reflexBackoff=e;
                     reflexBackoffUntil=current.GameUpdate+60;
                 }
-                suppressUntil=current.GameUpdate+60;
+                suppressUntil=e.Owner==Guid.Empty && status=="completed" && reason=="combat_threats_cleared"
+                    ? current.GameUpdate : current.GameUpdate+60;
                 if(e.StopReason=="explicit_cancel")cancelledCombatRef=suppressedRef;
             }
         }
