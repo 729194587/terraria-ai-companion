@@ -71,8 +71,9 @@ internal static class ServerMineTaskFixture
         }
         else
         {
-            int fixtureRight=kind=="navigation_surface_wide"?72:24;
-            for(int tx=left-24;tx<=left+fixtureRight;tx++)for(int ty=floor-20;ty<=floor+16;ty++)
+            int fixtureRight=kind=="navigation_surface_wide"?72:kind=="cluster_far_right"?46:24;
+            int fixtureLeft=kind=="cluster_far_left"?46:24;
+            for(int tx=left-fixtureLeft;tx<=left+fixtureRight;tx++)for(int ty=floor-20;ty<=floor+16;ty++)
             {var t=Main.tile[tx,ty];t.ClearEverything();if(ty>=floor){t.HasTile=true;t.TileType=TileID.Dirt;}}
             foreach(var drop in Main.item)drop.active=false;
             Array.Clear(p.buffType);Array.Clear(p.buffTime); // Isolate from preceding native apple regression.
@@ -112,7 +113,7 @@ internal static class ServerMineTaskFixture
                     for(int ty=floor-9;ty<floor;ty++)
                     {var rock=Main.tile[tx,ty];rock.HasTile=true;rock.TileType=TileID.Stone;}
             }
-            if(kind is "opening_down" or "opening_probe" or "opening_hazard" or "opening_hard" or "opening_unsafe" or "opening_deadline" or "opening_unknown" or "opening_cancel")
+            if(kind is "opening_down" or "opening_multidrop" or "opening_probe" or "opening_hazard" or "opening_hard" or "opening_unsafe" or "opening_deadline" or "opening_unknown" or "opening_cancel")
             {
                 x=left;y=floor+4;
                 if(kind=="opening_probe")
@@ -126,14 +127,54 @@ internal static class ServerMineTaskFixture
                 if(kind=="opening_hard")
                     for(int tx=left;tx<=left+1;tx++)Main.tile[tx,floor].TileType=TileID.Obsidian;
                 if(kind=="opening_unsafe")
+                {
+                    y=floor+5;
                     for(int tx=left;tx<=left+1;tx++)
-                        for(int ty=floor+1;ty<=floor+3;ty++)Main.tile[tx,ty].ClearTile();
+                        for(int ty=floor+1;ty<=floor+4;ty++)Main.tile[tx,ty].ClearTile();
+                }
+                if(kind=="opening_multidrop")
+                {
+                    // Replay the two pass-through rows below the original grass cover.
+                    for(int tx=left;tx<=left+1;tx++)for(int ty=floor+1;ty<=floor+2;ty++)
+                    {var vine=Main.tile[tx,ty];vine.HasTile=true;vine.TileType=TileID.Vines;}
+                    Main.tile[left+1,floor].TileType=TileID.PumpkinBlock;
+                    var grass=Main.tile[left+2,floor];grass.TileType=TileID.Grass;
+                    var plant=Main.tile[left+2,floor-1];plant.HasTile=true;plant.TileType=TileID.Plants2;
+                    var view=new LocalTerrainView(Common.Systems.TerrainReader.ReadEnvironment);
+                    if(!NativeNavigationEdits.SafeExcavation(left+1,floor,view))
+                        throw new InvalidOperationException("Plants2 rejected an adjacent PumpkinBlock cut");
+                    var above=Main.tile[left+1,floor-1];above.HasTile=true;above.TileType=TileID.Sand;
+                    if(NativeNavigationEdits.SafeExcavation(left+1,floor,view))
+                        throw new InvalidOperationException("Opening allowed removal of a sand column's support");
+                    above.ClearTile();above.LiquidType=LiquidID.Lava;above.LiquidAmount=255;
+                    if(NativeNavigationEdits.SafeExcavation(left+1,floor,view))
+                        throw new InvalidOperationException("Opening allowed removal beside lava");
+                    above.LiquidAmount=0;
+                    for(int col=0;col<2;col++)
+                    {
+                        var part=Main.tile[left+8+col,floor-1];part.HasTile=true;part.TileType=TileID.WorkBenches;
+                        part.TileFrameX=(short)(col*18);part.TileFrameY=0;
+                    }
+                    if(NativeNavigationEdits.SafeExcavation(left+8,floor,view)
+                        ||!NativeNavigationEdits.SafeExcavation(left+7,floor,view))
+                        throw new InvalidOperationException("Opening must protect the workbench's anchor, not nearby unrelated blocks");
+                    for(int col=0;col<2;col++)Main.tile[left+8+col,floor-1].ClearTile();
+                }
                 if(kind=="opening_hazard")
                 {
                     var lava=Main.tile[left,floor+1];lava.ClearTile();lava.LiquidType=LiquidID.Lava;lava.LiquidAmount=255;
                 }
             }
-            var ore=Main.tile[x,y];ore.HasTile=true;ore.TileType=kind=="underpowered"?TileID.Obsidian:TileID.Copper;
+            if(kind is "cluster_far_right" or "cluster_far_left" or "cluster_near")
+            {
+                x=left+(kind=="cluster_far_right"?32:kind=="cluster_far_left"?-35:2);
+                y=floor+1;
+                for(int i=0;i<3;i++)Main.tile[x+i,y].TileType=TileID.Iron;
+            }
+            else
+            {
+                var ore=Main.tile[x,y];ore.HasTile=true;ore.TileType=kind=="underpowered"?TileID.Obsidian:TileID.Copper;
+            }
             if(kind is "workbench" or "workbench_task")
             {
                 for(int col=0;col<2;col++)
@@ -148,7 +189,7 @@ internal static class ServerMineTaskFixture
             if(kind=="no_tool")p.inventory[1]=new Item();
             if(kind.StartsWith("navigation_",StringComparison.Ordinal))
             {
-                ore.ClearTile();
+                Main.tile[x,y].ClearTile();
                 destinationX=(left+5)*16+8;
                 destinationY=floor*16;
                 if(kind is "navigation_single" or "navigation_single_platform" or "navigation_half" or "navigation_slope")
@@ -202,7 +243,7 @@ internal static class ServerMineTaskFixture
                     var from=new SurfaceNode(-1,left,floor,new(start.Px,start.Px,start.Py+42),start.Px,start.Px+20,SurfaceKind.Solid,0,true,true);
                     var to=new SurfaceNode(-2,left+5,floor,goal,(left+5)*16,(left+6)*16,half?SurfaceKind.Half:SurfaceKind.Solid,0,true,true);
                     var edge=graph.Candidate(from,to,physics);
-                    var walk=PhysicsSimulator.Predict(start,1,0,physics,source,walkFrames:40,maxDropPixels:StateSpacePlanner.MaxDropPixels);
+                    var walk=PhysicsSimulator.Predict(start,1,0,physics,source,walkFrames:40);
                     var probe=down?start:to.Rest((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2);
                     var jumpWorld=new NativeMotionWorld(probe);var jumped=probe;float rise=0;
                     for(int frame=0;frame<12;frame++)
@@ -249,6 +290,34 @@ internal static class ServerMineTaskFixture
                 {
                     for(int tx=left+3;tx<=left+22;tx++)Main.tile[tx,floor].ClearTile();
                     destinationY=(floor+1)*16;
+                }
+                if(kind.StartsWith("navigation_safety_",StringComparison.Ordinal))
+                {
+                    int depth=kind=="navigation_safety_drop13"?13:kind=="navigation_safety_immune"?36:
+                        kind is "navigation_safety_drop27" or "navigation_safety_extra"?27:0;
+                    bool dense=kind=="navigation_safety_dense",longTrip=kind=="navigation_safety_long";
+                    int right=longTrip?552:32,top=dense?32:10,bottom=dense?32:depth+4;
+                    for(int dx=-32;dx<=right;dx++)
+                    for(int dy=-top;dy<=bottom;dy++)
+                    {
+                        var tile=Main.tile[left+dx,floor+dy];tile.ClearEverything();
+                        int surface=dx<=2?0:depth;
+                        if(dense&&dy!=0)
+                        {
+                            if(Math.Abs(dy)%4!=0)continue;
+                            tile.HasTile=true;tile.TileType=TileID.Stone;tile.Slope=SlopeType.SlopeDownRight;
+                        }
+                        else if(dy>=surface){tile.HasTile=true;tile.TileType=TileID.Stone;}
+                    }
+                    for(int i=0;i<p.armor.Length;i++)p.armor[i]=new Item();
+                    if(kind=="navigation_safety_extra")p.armor[2]=new Item(ItemID.MoonLordLegs);
+                    if(kind=="navigation_safety_immune")p.armor[3]=new Item(ItemID.LuckyHorseshoe);
+                    p.inventory[1]=new Item();
+                    p.statLife=p.statLifeMax2;
+                    p.fallStart=FallSafety.Row(p.position.Y);
+                    destinationX=(left+(longTrip?530:dense?18:7))*16+8;
+                    destinationY=(floor+depth)*16;
+                    stepEvidence=new{depth,startX=p.position.X,startFeetY=floor*16,startLife=p.statLife};
                 }
                 if(kind=="navigation_place")
                 {

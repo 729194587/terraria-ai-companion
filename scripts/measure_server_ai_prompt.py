@@ -45,7 +45,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--baseline', type=Path, help='Pre-change lua_agent.py snapshot; trusted Python source')
     args = parser.parse_args()
-    result = dict(scope='system text + compact JSON execute_lua tool; excludes runtimeInventory/history/transport',
+    result = dict(scope='system text + compact JSON model tools; excludes runtimeInventory/history/transport',
                   estimator='CJK U+3400..U+9FFF: 1..2 tokens/character; other text: 4 characters/token; round up',
                   handshakes={name:sorted(caps) for name,caps in SCENARIOS.items()}, after=measure(lua_agent.server_contract))
     if args.baseline:

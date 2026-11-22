@@ -11,6 +11,7 @@ import uuid
 
 
 context = ContextVar("agent_trace_context", default={})
+MCP_CORRELATION = ('mcp_session_id', 'mcp_request_id', 'mcp_tool_name')
 
 
 class Trace:
@@ -58,7 +59,8 @@ class Trace:
                     self.dropped_records += 1
                     record = {key: record[key] for key in ("timestamp", "session_id", "sequence",
                               "task_id", "generation", "chat_event_id", "tool_call_id", "model_request_id",
-                              "lua_run_id", "lua_call_id", "lua_line", "source_sha256", "connection_id", "request_id") if key in record}
+                              "lua_run_id", "lua_call_id", "lua_line", "source_sha256", "connection_id",
+                              "request_id", *MCP_CORRELATION) if key in record}
                     raw = (json.dumps(self._redact({**record, "type": "trace_record_dropped",
                         "original_type": event_type, "reason": "event_exceeds_file_limit",
                         "bytes": len(raw)}), ensure_ascii=False) + "\n").encode("utf-8")

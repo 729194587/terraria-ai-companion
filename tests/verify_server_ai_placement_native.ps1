@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27837,[switch]$Failure,[switch]$Object,[switch]$AfterPlacementException,[switch]$ItemUse,
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27837,[switch]$Failure,[switch]$Object,[switch]$Survey,[switch]$AfterPlacementException,[switch]$ItemUse,
     [string]$PackagePath,[ValidateSet('VirtualPlayerEngineProbe','CompanionBridge')][string]$ModName='CompanionBridge')
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
@@ -22,6 +22,7 @@ $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.w
     '-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-placementselftest')
 if($ItemUse){$arguments[$arguments.Length-1]='-itemuseselftest'}
 if($Failure){$arguments+=$(if($ItemUse){'-itemusefailureselftest'}else{'-placementfailureselftest'})}
+if($Survey){$arguments+='-placementsurveyselftest'}
 if($Object){$arguments+='-objectplacementselftest'}
 if($AfterPlacementException){$arguments+='-objectplacementafterexception'}
 if($ModName -eq 'CompanionBridge'){

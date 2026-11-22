@@ -64,7 +64,8 @@ internal static class TerrainReader
     }
 
     internal static TerrainCell ReadEnvironment(Tile tile) => new(ReadShape(tile),
-        tile.LiquidAmount==0?default:new(tile.LiquidType,tile.LiquidAmount));
+        tile.LiquidAmount==0?default:new(tile.LiquidType,tile.LiquidAmount),
+        tile.HasTile?tile.TileType:null,tile.HasTile&&tile.IsActuated);
 
     private static char ReadShape(Tile tile)
     {

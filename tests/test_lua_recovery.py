@@ -100,6 +100,114 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('action_limit', r['status'], r)
         self.assertEqual(1, sum(q['op'] == 'start' for q in self.host.sent))
 
+    async def test_unsupported_item_repeated_across_programs_then_changes_entry_point(self):
+        self.enable()
+        self.host.placement = True
+        def refuse_use(action):
+            if action['operation'] == 'use_item':
+                action.update(status='failed', reason='unsupported_selected_item',
+                              reasonDetail='Rope requires place_tile',
+                              evidence=dict(operation='use_item', mutationAttempted=False, effectStatus='not_started'))
+                action['endEvidence'].update(inputsAcquired=False, effectVerified=False)
+        self.host.action_transform = refuse_use
+        runtime = LuaRuntime(self.bridge, evidence_root=self.directory.name)
+        first = await runtime.execute("return api('use_item',{})", limits=Limits(seconds=8))
+        self.assertEqual('unsupported', first['recovery']['kind'], first)
+        self.assertTrue(first['value']['continuationAllowed'])
+        second = await runtime.execute("""
+            local repeat_attempt=api('use_item',{})
+            assert(repeat_attempt.reason=='unchanged_ineffective_action')
+            assert(repeat_attempt.recovery.reason=='unsupported_selected_item')
+            assert(repeat_attempt.recovery.unchangedAttemptSuppressed)
+            return api('place_object',{x=12,y=20})
+        """, limits=Limits(seconds=8))
+        self.assertTrue(second['value']['completed'], second)
+        self.assertTrue(second['recovery']['unchangedAttemptSuppressed'])
+        event, = second['recoveryEvents']
+        self.assertEqual(1, event['callId'])
+        self.assertEqual(first['value']['recovery']['nextStep'], event['nextStep'])
+        self.assertEqual(['use_item', 'place_object'], [q['operation'] for q in self.host.sent if q['op']=='start'])
+
+    async def test_argument_rejection_can_be_corrected_in_same_worker(self):
+        self.enable()
+        runtime = LuaRuntime(self.bridge, evidence_root=self.directory.name)
+        result = await runtime.execute("""
+            local ok, rejection=pcall(function() return api('place_object',{x=12}) end)
+            assert(not ok)
+            return {rejection=rejection, action=api('place_object',{x=12,y=20})}
+        """, limits=Limits(seconds=8))
+        self.assertTrue(result['value']['action']['completed'], result)
+        self.assertEqual('bad_argument', result['recovery']['kind'])
+        self.assertIn('help', result['recovery']['nextStep'])
+        event, = result['recoveryEvents']
+        rejection = result['value']['rejection']
+        self.assertEqual(event, rejection['recovery'])
+        self.assertEqual(rejection['diagnostics'], event['diagnostics'])
+        self.assertEqual(1, event['callId'])
+        self.assertEqual('place_object', event['operation'])
+        self.assertEqual(1, sum(q['op']=='start' for q in self.host.sent))
+
+    async def test_final_execution_receipt_keeps_each_failure_after_success(self):
+        self.enable()
+        self.reject_first()
+        reject_object = self.host.action_transform
+
+        def refuse(action):
+            if action['operation'] == 'use_item':
+                action.update(status='failed', reason='unsupported_selected_item',
+                              evidence=dict(operation='use_item', mutationAttempted=False, effectStatus='not_started'))
+                action['endEvidence'].update(inputsAcquired=False, effectVerified=False)
+            else:
+                reject_object(action)
+
+        self.host.action_transform = refuse
+        receipts = []
+        runtime = LuaRuntime(self.bridge, evidence_root=self.directory.name)
+        result = await runtime.execute("""
+            assert(api('use_item',{}).recovery.kind=='unsupported')
+            assert(api('place_object',{x=10,y=20}).recovery.reason=='object_footprint_occupied')
+            return api('place_object',{x=12,y=20})
+        """, limits=Limits(seconds=8), on_result=lambda _, args, reply: receipts.append(reply))
+        final = lua_agent.summarize(result, receipts)
+        self.assertTrue(final['programCompleted'], final)
+        self.assertTrue(final['lastAction']['completed'])
+        self.assertNotIn('recovery', final['lastAction'])
+        first, second = final['recoveryEvents']
+        self.assertEqual([(1, 'use_item', 'unsupported_selected_item'),
+                          (2, 'place_object', 'object_footprint_occupied')],
+                         [(event['callId'], event['operation'], event['reason']) for event in (first, second)])
+        for item, event in zip(final['actionResults']['items'], (first, second)):
+            action = item['result']
+            self.assertEqual(event, action['recovery'])
+            self.assertEqual(event['reason'], action['reason'])
+            self.assertFalse(action['evidence']['mutationAttempted'])
+            self.assertTrue(action['endEvidence']['inputsReleased'])
+            self.assertTrue(action['continuationAllowed'])
+        self.assertEqual(second['nextStep'], final['recovery']['nextStep'])
+
+    async def test_repeated_motion_without_displacement_allows_another_direction(self):
+        self.enable()
+        self.host.direct_input = True
+        self.bridge.close()
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=2)
+        def observe_motion(action):
+            if action['operation'] == 'move_input':
+                action['evidence']['noProgress'] = action['requestedInputs']['horizontal'] == 'right'
+        self.host.action_transform = observe_motion
+        runtime = LuaRuntime(self.bridge, evidence_root=self.directory.name)
+        result = await runtime.execute("""
+            local args={horizontal='right',vertical='none',jumpHoldUpdates=0,maxUpdates=20}
+            assert(api('move_input',args).completed)
+            assert(api('move_input',args).completed)
+            assert(api('move_input',args).reason=='unchanged_ineffective_action')
+            args.horizontal='left'
+            return api('move_input',args)
+        """, limits=Limits(seconds=8))
+        self.assertTrue(result['value']['completed'], result)
+        self.assertEqual('no_progress', result['recovery']['kind'])
+        self.assertEqual(['right', 'right', 'left'],
+                         [q['arguments']['horizontal'] for q in self.host.sent if q['op']=='start'])
+
     async def test_uncertain_or_started_failures_keep_cross_operation_barrier(self):
         cases = {
             'unknown': lambda a: a.update(status='unknown'),

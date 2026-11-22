@@ -68,7 +68,7 @@ internal sealed record GrappleClimbPlan(LandingRegion Landing,int AnchorX,int An
         if(actual.Grounded||actual.Vy>=0)return null;
         for(int stride=8;stride<=48;stride+=2)
         {
-            var edge=PhysicsSimulator.Predict(actual,Direction,0,physics,world,walkFrames:stride,maxDropPixels:32);
+            var edge=PhysicsSimulator.Predict(actual,Direction,0,physics,world,walkFrames:stride);
             if(edge.Safe&&Landing.Arrived(edge.Landing,world))return edge with {ExecuteFrames=edge.Frames.Count};
         }
         return null;

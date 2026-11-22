@@ -6,7 +6,8 @@ using System.Collections.Generic;
 namespace CompanionBridge.Motion;
 
 internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRunSpeed,
-    float RunSlowdown, float Gravity, float MaxFall, float JumpSpeed, int JumpHeight,ExtraJumpModel ExtraJump=null,AirMotionModel Air=null)
+    float RunSlowdown, float Gravity, float MaxFall, float JumpSpeed, int JumpHeight,ExtraJumpModel ExtraJump=null,AirMotionModel Air=null,
+    FallSafety Fall=default)
 {
     // Player.Update initializes 10, then unconditionally adds 0.01 at IL_020d–021a
     // before our input hook. Match the effective value, not the reset constant.
@@ -14,6 +15,13 @@ internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRu
 
     // Native pinned-engine boundary measurement: BuffID.Swiftness (3).
     internal static readonly PhysicsParameters Swiftness = new(0.1f, 3.75f, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);
+    // The stock water profile is applied per frame without changing the route's
+    // movement capabilities when the actor crosses a waterline.
+    internal bool CanWade { get; init; }
+    internal const float WaterGravity=.2f, WaterMaxFall=5.01f, WaterJumpSpeed=6.01f;
+    internal const int WaterJumpHeight=30;
+    internal bool UsesWaterProfile=>Math.Abs(Gravity-WaterGravity)<.001f
+        &&Math.Abs(MaxFall-WaterMaxFall)<.001f&&Math.Abs(JumpSpeed-WaterJumpSpeed)<.001f&&JumpHeight==WaterJumpHeight;
     internal bool IsBasic=>Matches(Basic);
     internal bool IsSupportedGroundPhysics=>Positive(AccRun)&&Positive(MaxRun)&&Positive(AccRunSpeed)
         &&Positive(RunSlowdown)&&Positive(Gravity)&&Positive(MaxFall)&&Positive(JumpSpeed)&&JumpHeight>=0;
@@ -26,10 +34,24 @@ internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRu
 
 }
 
+// Terraria 1.4.4.9 Player.Update uses the tile row of the body's top,
+// not feet or velocity, and damages only above 25 + extraFall rows.
+internal readonly record struct FallSafety(int ExtraFall,bool Immune,int Life=0)
+{
+    // Terrain observation / simulation horizon. Immunity does not certify a landing.
+    internal const int LookaheadPixels=48*16;
+    internal static int Row(float top)=>(int)(top/16f);
+    internal long RawDamage(int fallStart,float landingTop)=>Immune?0:
+        Math.Max(0L,(long)Row(landingTop)-fallStart-25L-ExtraFall)*10;
+    internal bool Safe(int fallStart,float landingTop)=>RawDamage(fallStart,landingTop)==0;
+    internal bool CouldBeLethal(long rawDamage)=>rawDamage>0&&Life>0&&rawDamage>=Life;
+    internal bool Safe(float startTop,float landingTop)=>Safe(Row(startTop),landingTop);
+}
+
 internal readonly record struct PhysicsState(float Px, float Py, float Vx, float Vy,
     bool Grounded, int JumpFramesLeft = 0, bool ReleaseJump = true,
-    bool ExtraAvailable=false,bool ExtraActive=false,bool ExtraUsed=false,AirResources Air=null,AirPhase AirPhase=AirPhase.None);
-internal readonly record struct PhysicsInput(int Direction, bool Jump);
+    bool ExtraAvailable=false,bool ExtraActive=false,bool ExtraUsed=false,AirResources Air=null,AirPhase AirPhase=AirPhase.None,bool Wet=false);
+internal readonly record struct PhysicsInput(int Direction, bool Jump, bool Down=false);
 internal readonly record struct PredictedFrame(PhysicsInput Input, PhysicsState State);
 internal sealed record Prediction(bool Safe, string Reason, List<PredictedFrame> Frames,
     PhysicsState Landing, int ExecuteFrames, bool Jump,
@@ -69,8 +91,13 @@ internal interface IMotionWorld
     long TerrainSignature(PhysicsState start,Prediction edge=null)=>0;
     NavigationBlockingTile[] LastHorizontalContact => null;
     PhysicsState Move(PhysicsState start, float vx, float vy, float gravity);
+    PhysicsState MoveThroughPlatform(PhysicsState start,float vx,float vy,float gravity)
+        =>throw new UnsafeMotionException("platform descent unsupported by this world");
+    bool WaterContact(PhysicsState state)=>false;
+    PhysicsState MoveInWater(PhysicsState start,float vx,float vy,float gravity)=>Move(start,vx,vy,gravity);
     bool SafeSweep(PhysicsState start, PhysicsState end, out string reason);
     bool SafeLanding(PhysicsState state);
+    bool NegatesFallDamage(PhysicsState state)=>false;
     // Opt in only when the world can verify a flat solid or one-way platform top.
     bool SafeFlatLanding(PhysicsState state) => false;
     string LandingRejection(PhysicsState state) => SafeLanding(state) ? null : "unsafe foot support or body clearance";
@@ -94,10 +121,19 @@ internal static class PhysicsSimulator
     // supplied by native Terraria APIs in-game; offline worlds are explicitly test doubles.
     internal static PhysicsState Step(PhysicsState s, PhysicsInput input, PhysicsParameters ph, IMotionWorld world)
     {
+        bool wet=world.WaterContact(s);
+        if((wet||s.Wet)&&!ph.CanWade)throw new UnsafeMotionException("unsupported water movement profile");
+        if(input.Down && (s.Wet || wet))throw new UnsafeMotionException("wet platform descent unsupported");
+        float gravity=s.Wet?PhysicsParameters.WaterGravity:ph.Gravity;
+        float maxFall=s.Wet?PhysicsParameters.WaterMaxFall:ph.MaxFall;
+        float jumpSpeed=s.Wet?PhysicsParameters.WaterJumpSpeed:ph.JumpSpeed;
+        int jumpHeight=s.Wet?PhysicsParameters.WaterJumpHeight:ph.JumpHeight;
         float vx = s.Vx, vy = s.Vy;
         int jfl = s.JumpFramesLeft;
         bool launched=false;
-        float horizontalRun=ph.Air?.Kind==AirKind.Wings&&s.Vy!=0?Math.Max(ph.AccRunSpeed,6.25f):ph.AccRunSpeed;
+        bool airborneWing=ph.Air?.Kind==AirKind.Wings && s.Vy!=0;
+        float horizontalRun=airborneWing?Math.Max(ph.AccRunSpeed,ph.Air.AirRunSpeed):ph.AccRunSpeed;
+        float acceleration=airborneWing?ph.AccRun*ph.Air.AirAcceleration:ph.AccRun;
         bool available=s.ExtraAvailable,active=s.ExtraActive,used=s.ExtraUsed;
         if(ph.ExtraJump!=null&&s.Grounded&&s.Vy==0){available=true;used=false;}
         // Upstream's else-if chain is confirmed by 1.4.4.9 IL: primary
@@ -106,7 +142,7 @@ internal static class PhysicsSimulator
         if (input.Direction > 0 && vx < ph.MaxRun)
         {
             if (vx < -ph.RunSlowdown) vx += ph.RunSlowdown;
-            vx += ph.AccRun;
+            vx += acceleration;
         }
         else if (input.Direction > 0 && vx < horizontalRun)
         {
@@ -115,20 +151,20 @@ internal static class PhysicsSimulator
             if (vy == 0f)
             {
                 if (vx < -ph.RunSlowdown) vx += ph.RunSlowdown;
-                vx += ph.AccRun * 0.2f;
+                vx += acceleration * 0.2f;
             }
         }
         else if (input.Direction < 0 && vx > -ph.MaxRun)
         {
             if (vx > ph.RunSlowdown) vx -= ph.RunSlowdown;
-            vx -= ph.AccRun;
+            vx -= acceleration;
         }
         else if (input.Direction < 0 && vx > -horizontalRun)
         {
             if (vy == 0f)
             {
                 if (vx > ph.RunSlowdown) vx -= ph.RunSlowdown;
-                vx -= ph.AccRun * 0.2f;
+                vx -= acceleration * 0.2f;
             }
         }
         else if (vy == 0f) // vanilla L19591 ground friction: velocity.Y==0, not a Grounded flag
@@ -149,13 +185,13 @@ internal static class PhysicsSimulator
             if (jfl > 0)
             {
                 if (vy == 0) jfl = 0;
-                else { vy = -ph.JumpSpeed; jfl--; }
+                else { vy = -jumpSpeed; jfl--; }
             }
             else if (s.Grounded && s.ReleaseJump)
             {
-                vy = -ph.JumpSpeed;
+                vy = -jumpSpeed;
                 // Launch sets the full counter; only subsequent hold frames decrement.
-                jfl = ph.JumpHeight;
+                jfl = jumpHeight;
                 launched=true;
             }
             else if(ph.ExtraJump!=null&&s.ReleaseJump&&vy!=0&&available&&!used)
@@ -172,11 +208,11 @@ internal static class PhysicsSimulator
             if(!ph.Air.Valid(resources))throw new UnsafeMotionException("invalid air resource state");
             (vy,resources,phase)=ph.Air.Step(s,input,ph,vy,jfl,launched);
         }
-        else vy = Math.Min(vy + ph.Gravity, ph.MaxFall);
-        var moved = world.Move(s, vx, vy, ph.Gravity);
+        else vy = Math.Min(vy + gravity, maxFall);
+        var moved = input.Down?world.MoveThroughPlatform(s,vx,vy,gravity):wet?world.MoveInWater(s,vx,vy,gravity):world.Move(s,vx,vy,gravity);
         if (vy < 0 && Math.Abs(moved.Vy - vy) > 0.01f) jfl = 0;
         return moved with { JumpFramesLeft = jfl, ReleaseJump = !input.Jump,
-            ExtraAvailable=available,ExtraActive=active,ExtraUsed=used,Air=resources,AirPhase=phase };
+            ExtraAvailable=available,ExtraActive=active,ExtraUsed=used,Air=resources,AirPhase=phase,Wet=wet };
     }
 
     // The upstream input-enumeration/simulation loop, bounded to one local action.
@@ -184,16 +220,16 @@ internal static class PhysicsSimulator
     // moving prefix and replans, so an open flat surface does not become stop/start.
     internal static Prediction Predict(PhysicsState start, int direction, int hold,
         PhysicsParameters ph, IMotionWorld world, int walkFrames = WalkFrames, bool rollingJump = false,
-        float maxDropPixels = 16,int extraJumpFrame=-1,int airStartFrame=-1,int airHoldFrames=0)
+        int extraJumpFrame=-1,int airStartFrame=-1,int airHoldFrames=0,bool allowStationaryHop=false,bool drop=false)
     {
         var frames = new List<PredictedFrame>();
         bool brakingOnly = direction == 0 && hold == 0 && walkFrames == 0;
         var s = start;
-        bool airborne = false;
+        bool airborne = false,airborneBelow=false;
         int stable = 0;
         int movingLandingFrames = 0;
         bool landingChecked = false, extendLanding = false;
-        float lastGroundY = start.Py;
+        int fallStart=FallSafety.Row(start.Py);
         for (int f = 0; f < (airStartFrame>=0?180:extraJumpFrame>=0?140:MaxFrames); f++)
         {
             bool moving = hold > 0 ? !airborne || !s.Grounded
@@ -201,7 +237,7 @@ internal static class PhysicsSimulator
             bool extraHold=extraJumpFrame>=0&&f>=extraJumpFrame&&f<=extraJumpFrame+(ph.ExtraJump?.HoldFrames(ph)??0);
             bool airHold=airStartFrame>=0&&f>=airStartFrame&&f<airStartFrame+airHoldFrames;
             bool glide=airStartFrame>=0&&ph.Air?.Kind==AirKind.Wings&&s.Air?.WingTime<=0&&s.Vy>0&&!s.Grounded;
-            var input = new PhysicsInput(moving ? direction : 0, f < hold||extraHold||airHold||glide);
+            var input = new PhysicsInput(moving ? direction : 0, f < hold||extraHold||airHold||glide,drop && s.Py<=start.Py+4 && !airborneBelow);
             if(f==extraJumpFrame&&(ph.ExtraJump==null||s.Grounded||!s.ReleaseJump||!s.ExtraAvailable||s.ExtraUsed||s.Vy==0))
                 return new(false,"extra jump launch unavailable",frames,s,0,true,ExtraJumpFrame:extraJumpFrame,InitialHold:hold);
             PhysicsState next;
@@ -212,14 +248,18 @@ internal static class PhysicsSimulator
                     return new(false, reason, frames, next, 0, hold > 0);
             }
             catch (UnsafeMotionException error) { return new(false, error.Message, frames, s, 0, hold > 0); }
-            if (hold == 0 && Math.Abs(next.Px - s.Px) < 0.01f && Math.Abs(next.Vx) < 0.01f && f < walkFrames)
+            // Reversing input can spend a frame at zero speed before accelerating
+            // away. Judge a blocked walk once velocity no longer opposes input.
+            if (hold == 0 && direction * s.Vx >= 0 && Math.Abs(next.Px - s.Px) < 0.01f && Math.Abs(next.Vx) < 0.01f && f < walkFrames)
                 return new(false, "walking blocked", frames, next, 0, false, world.LastHorizontalContact);
             airborne |= !next.Grounded;
-            if (hold > 0 && next.Py - start.Py > maxDropPixels)
-                return new(false, $"jump descent exceeds {maxDropPixels:0}px limit", frames, next, 0, true);
-            if (hold == 0 && next.Py - lastGroundY > maxDropPixels)
-                return new(false, $"walking drop exceeds {maxDropPixels:0}px limit", frames, next, 0, false);
-            if (next.Grounded) lastGroundY = next.Py;
+            airborneBelow |= next.Py>start.Py+4;
+            if(s.Grounded||s.JumpFramesLeft>0||s.Wet)fallStart=FallSafety.Row(s.Py);
+            if(next.Py-start.Py>FallSafety.LookaheadPixels)
+                return new(false,"descent leaves the local collision horizon",frames,next,0,hold>0);
+            if(next.Grounded&&ph.Fall.RawDamage(fallStart,next.Py) is >0 and var damage&&!world.NegatesFallDamage(next))
+                return new(false,$"landing would exceed the native fall damage threshold: raw damage={damage}, life={ph.Fall.Life}, potentially lethal={ph.Fall.CouldBeLethal(damage)}",
+                    frames,next,0,hold>0);
             frames.Add(new(input, next));
             if (rollingJump && hold > 0 && movingLandingFrames == 0)
             {
@@ -249,9 +289,10 @@ internal static class PhysicsSimulator
                 // horizontal travel. Require a different supported height; a
                 // hop returning to the same floor must not create search cycles.
                 bool progress = direction == 0 && hold > 0
-                    ? start.Py - s.Py >= 4
-                    : direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4);
-                bool safe = (brakingOnly || progress)
+                    ? allowStationaryHop || start.Py - s.Py >= 4
+                    : direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4)
+                        || hold > 0 && s.Py <= start.Py - 16 && direction * (s.Px - start.Px) > 0;
+                bool safe = (!drop || airborneBelow && s.Py-start.Py is >=16 and <=96) && (brakingOnly || progress)
                     && world.SafeLanding(s)&&(extraJumpFrame<0||f>=extraJumpFrame)&&(airStartFrame<0||f>=airStartFrame);
                 if(airStartFrame>=0)safe&=frames.Exists(p=>p.State.AirPhase is AirPhase.Flying or AirPhase.Gliding or AirPhase.RocketPulse);
                 int execute = movingLandingFrames > 0 ? movingLandingFrames : frames.Count;

@@ -4,8 +4,8 @@ $ErrorActionPreference='Stop'
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
 $TModLoaderPath=$selectedEngine.Path
 $repo=Split-Path $PSScriptRoot -Parent
-if(!$WorldPath){$WorldPath=Join-Path $repo '.local/companion-g82-host-20261027-175538-078/Worlds/test.wld'}
-$WorldPath=(Resolve-Path -LiteralPath $WorldPath).Path
+. (Join-Path $repo 'scripts/native-test-inputs.ps1')
+$WorldPath=Resolve-NativeTestInput -Repo $repo -Kind CharacterWorld -ExplicitPath $WorldPath
 $package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$selectedEngine.Package}
 Assert-CompanionPackage -Package $package -Engine $selectedEngine
 if($Migration){

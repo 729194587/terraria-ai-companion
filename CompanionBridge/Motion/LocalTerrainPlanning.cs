@@ -10,7 +10,7 @@ namespace CompanionBridge.Motion;
 internal sealed class LocalTerrainView
 {
     private readonly Func<int,int,TerrainCell> read;
-    private readonly Dictionary<(int X,int Y),char> edits;
+    private readonly Dictionary<(int X,int Y),(char Shape,int? TileType)> edits;
     internal LocalTerrainView(Func<int,int,char> read):this((x,y)=>new TerrainCell(read(x,y),default)){}
     internal LocalTerrainView(Func<int,int,TerrainCell> read){this.read=read;edits=new();}
     private LocalTerrainView(LocalTerrainView other){read=other.read;edits=new(other.edits);}
@@ -18,7 +18,8 @@ internal sealed class LocalTerrainView
     internal TerrainCell Environment(int x,int y)
     {
         var cell=read(x,y);
-        return edits.TryGetValue((x,y),out var shape)?cell with{Shape=shape}:cell;
+        return edits.TryGetValue((x,y),out var edit)
+            ?new(edit.Shape,cell.Liquid,edit.TileType):cell;
     }
     internal char Cell(int x,int y)=>Environment(x,y).Shape;
     internal char DryCell(int x,int y)=>Environment(x,y).DryShape;
@@ -30,10 +31,10 @@ internal sealed class LocalTerrainView
                 if(Environment(tx,ty).Liquid.Amount>0)return true;
         return false;
     }
-    internal bool Set(int x,int y,char shape)
+    internal bool Set(int x,int y,char shape,int? type=null)
     {
         if(Cell(x,y) is '?' or '!'||shape is not ('.' or '#' or '='))return false;
-        edits[(x,y)]=shape;return true;
+        edits[(x,y)]=(shape,type);return true;
     }
 }
 
@@ -49,6 +50,21 @@ internal static class LocalEditGeometry
     }
     internal static bool LandingBand(PhysicsState pose,Func<int,int,char> read)
     {for(int dx=-2;dx<=2;dx++)if(!MotionSupport.SafeFlatLanding(pose with{Px=pose.Px+dx},read))return false;return true;}
+
+    internal static LandingRegion FindFlatLandingBand(PhysicsState pose,Func<int,int,char> read)
+    {
+        bool Safe(int offset)=>MotionSupport.SafeFlatLanding(pose with{Px=pose.Px+offset},read);
+        // Return the sampled pose itself when adjoining poses cannot be proved safe.
+        foreach(int offset in new[]{0,-1,1,-2,2})
+            if(Safe(offset))
+            {
+                int left=offset,right=offset;
+                while(left>-2&&Safe(left-1))left--;
+                while(right<2&&Safe(right+1))right++;
+                return new(pose.Px+left,pose.Px+right,pose.Py+PhysicsSimulator.PlayerH);
+            }
+        return null;
+    }
     internal static char LandingCell(LocalTerrainView view,int x,int y,int supportRow)
     {
         var cell=view.Environment(x,y);
@@ -78,12 +94,56 @@ internal static class LocalEditGeometry
         }
         return 0;
     }
-    internal static bool DropOneRow(PhysicsState pose,Func<int,int,char> read)
+    internal static PhysicsState? FallLanding(PhysicsState pose,Func<int,int,char> read,
+        PhysicsParameters physics,float maxDrop)
     {
-        float feet=pose.Py+42;int row=(int)Math.Round(feet/16);
-        if(Math.Abs(feet-row*16)>LandingRegion.FeetTolerance)return false;
-        for(int x=(int)Math.Floor(pose.Px/16);x<Math.Ceiling((pose.Px+20)/16);x++)if(read(x,row)!='.')return false;
-        return MotionSupport.SafeFlatLanding(pose with{Py=pose.Py+16},read);
+        if(!physics.IsSupportedGroundPhysics||!pose.Grounded||Math.Abs(pose.Vx)>.01f||Math.Abs(pose.Vy)>.01f
+            ||MotionSupport.ClearanceRejection(pose,read)!=null)return null;
+        float startFeet=pose.Py+PhysicsSimulator.PlayerH,feet=startFeet,vy=0;
+        float right=pose.Px+PhysicsSimulator.PlayerW;
+        // Counterfactual neutral fall only. The live world is never edited to probe collision.
+        for(int frame=0;frame<PhysicsSimulator.MaxFrames;frame++)
+        {
+            vy=Math.Min(vy+physics.Gravity,physics.MaxFall);
+            float nextFeet=feet+vy,contact=float.PositiveInfinity;
+            for(int x=(int)Math.Floor(pose.Px/16);x<Math.Ceiling(right/16);x++)
+                for(int y=(int)Math.Floor(feet/16);y<=(int)Math.Floor(nextFeet/16);y++)
+                {
+                    char shape=read(x,y);
+                    if(shape is '?' or '!')return null;
+                    float surface=y*16+TerrainClassifier.SurfaceOffset(shape,pose.Px-x*16,right-x*16);
+                    if(surface>=feet&&surface<=nextFeet)contact=Math.Min(contact,surface);
+                }
+            float reached=Math.Min(nextFeet,contact);
+            if(reached-startFeet>maxDrop)return null;
+            var next=pose with{Py=reached-PhysicsSimulator.PlayerH};
+            if(float.IsFinite(contact))
+                return contact-startFeet>LandingRegion.FeetTolerance&&physics.Fall.Safe(pose.Py,next.Py)
+                    &&MotionSupport.SafeLanding(next,read)?next:null;
+            if(MotionSupport.ClearanceRejection(next,read)!=null)return null;
+            feet=reached;
+        }
+        return null;
+    }
+
+    internal static PhysicsState? LowerWalkLanding(PhysicsState start,PhysicsParameters physics,IMotionWorld world,
+        float targetX,float targetFeet,float maxDrop)
+    {
+        PhysicsState? best=null;
+        float Score(PhysicsState p)=>Math.Abs(p.Px+PhysicsSimulator.PlayerW/2f-targetX)
+            +Math.Abs(p.Py+PhysicsSimulator.PlayerH-targetFeet);
+        float score=Score(start);
+        foreach(int direction in new[]{-1,1})
+            foreach(int stride in new[]{12,20,30})
+            {
+                var prediction=PhysicsSimulator.Predict(start,direction,0,physics,world,walkFrames:stride);
+                var landing=prediction.Landing;
+                float candidate=Score(landing);
+                if(!prediction.Safe||landing.Py<=start.Py+LandingRegion.FeetTolerance
+                    ||landing.Py-start.Py>maxDrop||candidate>=score)continue;
+                best=landing;score=candidate;
+            }
+        return best;
     }
 }
 
@@ -95,6 +155,7 @@ internal interface ILocalEditSource
     char Cell(int x,int y);
     TerrainCell Environment(int x,int y)=>new(Cell(x,y),default);
     LocalEditQuote Mine(PhysicsState pose,int x,int y,LocalTerrainView view);
+    float? PriceMiningRun(PhysicsState pose,IReadOnlyList<LocalEditAction> cuts,LocalTerrainView view)=>null;
     bool Place(PhysicsState pose,int x,int y,LocalMaterial material,LocalTerrainView view);
     IReadOnlyList<LocalMaterial> Materials {get;}
 }
@@ -161,6 +222,9 @@ internal sealed class LocalEditEvaluation : IDisposable
             {
                 float destination=pose.Px+direction*16;
                 bool rejected=false;
+                int firstCut=actions.Count;
+                var beforeCut=view.Fork();
+                float separateMining=0;
                 foreach(var (x,y) in LocalEditGeometry.Across(pose,destination))
                 {
                     if(view.Environment(x,y).Liquid.Amount>0){LiquidBoundary=true;unsafeTail=rejected=true;break;}
@@ -173,9 +237,12 @@ internal sealed class LocalEditEvaluation : IDisposable
                         unsafeTail=true;rejected=true;break;
                     }
                     actions.Add(new(LocalEditKind.Mine,pose,pose,x,y,quote.Slot,quote.Type));
-                    mining+=quote.Updates;changes++;
+                    separateMining+=quote.Updates;changes++;
                 }
                 if(rejected)break;
+                int cutCount=actions.Count-firstCut;
+                mining+=(cutCount>1?source.PriceMiningRun(pose,actions.GetRange(firstCut,cutCount),beforeCut):null)??separateMining;
+                if(cutCount>1)yield return 0;
                 var next=pose with{Px=destination};
                 if(!LocalEditGeometry.LandingBand(next,Landing))
                 {
@@ -196,7 +263,7 @@ internal sealed class LocalEditEvaluation : IDisposable
                         var branch=view.Fork();
                         char BranchLanding(int tx,int ty)=>LocalEditGeometry.LandingCell(branch,tx,ty,row);
                         bool allowed=source.Place(pose,x,row,material,view);yield return 0;
-                        if(!allowed||!branch.Set(x,row,material.Shape)||!LocalEditGeometry.LandingBand(next,BranchLanding)
+                        if(!allowed||!branch.Set(x,row,material.Shape,material.Type)||!LocalEditGeometry.LandingBand(next,BranchLanding)
                             ||!MotionSupport.SafeLanding(pose,BranchLanding))continue;
                         if(water&&!Enumerable.Range(1,15).All(dx=>LocalEditGeometry.LandingBand(pose with{Px=pose.Px+direction*dx},BranchLanding)))continue;
                         view=branch;actions.Add(new(LocalEditKind.Place,pose,pose,x,row,material.Slot,material.Type,material.Shape,water?direction:0));
@@ -214,8 +281,8 @@ internal sealed class LocalEditEvaluation : IDisposable
             }
             plans.AddRange(unsafeTail?emitted.Where(p=>p.OpenExit):emitted);
         }
-        // Reuse the original safe one-row descent structure; only the last cut
-        // may release support. Each real cut is followed by actual observation.
+        // Each real cut is followed by actual observation. A cut may release
+        // support only if its own counterfactual has a safe landing.
         if(start.Px<=goal.MaxPlayerLeftX+20&&start.Px+20>=goal.MinPlayerLeftX&&goal.SurfaceY>start.Py+42)
         {
             var view=new LocalTerrainView(source.Environment);var pose=start;var actions=new List<LocalEditAction>();float mining=0;int changes=0;
@@ -227,14 +294,14 @@ internal sealed class LocalEditEvaluation : IDisposable
                     .OrderBy(c=>Math.Min(pose.Px+20,(c.X+1)*16)-Math.Max(pose.Px,c.X*16)).ToArray();
                 var after=view.Fork();bool allowed=floor.Length>0;
                 foreach(var c in floor)allowed&=after.Set(c.X,c.Y,'.');
-                if(!allowed||!LocalEditGeometry.DropOneRow(pose,after.DryCell))
+                if(!allowed||!LocalEditGeometry.FallLanding(pose,after.DryCell,ph,FallSafety.LookaheadPixels).HasValue)
                 {LiquidBoundary|=floor.Any(c=>view.LiquidNear(c.X,c.Y));break;}
                 foreach(var (x,y) in floor)
                 {
                     if(view.Cell(x,y)!='#'||changes>=maxChanges)yield break;
                     var quote=source.Mine(pose,x,y,view);yield return 0;
                     if(quote==null){LiquidBoundary|=view.LiquidNear(x,y);yield break;}
-                    view.Set(x,y,'.');var next=LocalEditGeometry.DropOneRow(pose,view.DryCell)?pose with{Py=pose.Py+16}:pose;
+                    view.Set(x,y,'.');var next=LocalEditGeometry.FallLanding(pose,view.DryCell,ph,FallSafety.LookaheadPixels)??pose;
                     if(next==pose&&!MotionSupport.SafeLanding(pose,view.DryCell))yield break;
                     actions.Add(new(LocalEditKind.Mine,pose,next,x,y,quote.Slot,quote.Type));mining+=quote.Updates;changes++;pose=next;
                 }

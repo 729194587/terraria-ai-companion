@@ -3,7 +3,10 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Text.Json;
 using Terraria;
+using Terraria.ModLoader;
+using Microsoft.Xna.Framework;
 using CompanionBridge.Motion;
+using VirtualPlayerEngineProbe;
 
 namespace CompanionBridge.ServerIpc;
 
@@ -66,8 +69,14 @@ internal sealed class NativeNavigationWorld : INavigationWorld
         if(player.lavaWet)return "task_interrupt_lava_contact";
         // Bounded native safety check, on the game thread; no model/TCP wait.
         foreach(var npc in Main.npc)
-            if(npc.active&&!npc.friendly&&npc.damage>0&&Microsoft.Xna.Framework.Vector2.DistanceSquared(npc.Center,player.Center)<=160*160)
-                return "task_interrupt_nearby_hostile";
+        {
+            if(!npc.active||npc.life<=0||npc.friendly||npc.townNPC||npc.damage<=0)continue;
+            if(NativeCombatWorld.ContactTick(player,npc,player.velocity.X) is not int contact)continue;
+            if(contact>1 && (!npc.HasValidTarget||npc.target!=player.whoAmI))continue;
+            if(contact>0 && !npc.noTileCollide && !Collision.CanHitLine(npc.position,npc.width,npc.height,player.position,player.width,player.height))continue;
+            int cooldown=-1;
+            if(NPCLoader.CanHitPlayer(npc,player,ref cooldown))return "task_interrupt_nearby_hostile";
+        }
         return null;
     }
 
@@ -100,15 +109,21 @@ internal sealed class NativeNavigationWorld : INavigationWorld
 
     public NavigationStep FindOpening(int remainingTiles)
     {
-        if(!ready)Evaluate(remainingTiles,true);
+        Evaluate(remainingTiles,ready?forced:true);
         if(PlanningPending||PlanningFailure!=null)return null;
         var plan=selected;
         ReleasePlanning();
-        return plan==null?null:edits.Arm(plan.Actions[0]);
+        return plan==null?null:edits.ArmPlan(plan.Actions);
     }
 
     public bool PreferEdit(int remainingTiles)
     {
+        // Let the movement child handle an ordinary doorway before pricing terrain edits.
+        if(ServerDoor.Ahead(player,Math.Clamp(player.position.X,destination.MinPlayerLeftX,destination.MaxPlayerLeftX),out _,out _))
+        {
+            ReleasePlanning();
+            return false;
+        }
         Evaluate(remainingTiles,false);
         return ready&&selected!=null;
     }
@@ -119,7 +134,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
     {
         unchecked
         {
-            long hash=17;
+            long hash=ActorMining.CapabilityStamp(player);
             foreach(var item in player.inventory.Take(50))
             {
                 foreach(int value in new[]{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item),item.type,item.prefix,item.stack,
@@ -176,7 +191,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
                 if(route.SearchExit is "surface_node_budget" or "unknown_terrain" or "unsupported_model")
                 {
                     string reason=route.SearchExit=="surface_node_budget"?"navigation_surface_node_budget":route.SearchExit=="unknown_terrain"?"native_navigation_terrain_unknown":"unsupported_navigation_profile";
-                    PlanningFailure=new(route.SearchExit=="unknown_terrain"?"unknown":"failed",reason,null,true);
+                    PlanningFailure=new(route.SearchExit=="unknown_terrain"?"unknown":route.SearchExit=="surface_node_budget"?"timeout":"failed",reason,null,true);
                     PlanningPending=false;return;
                 }
             }

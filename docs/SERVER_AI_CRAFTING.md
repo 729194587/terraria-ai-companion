@@ -54,3 +54,9 @@ return api('craft_recipe', {
 ## 实现入口
 
 `CompanionBridge/ServerIpc/ActorCrafting.cs`、`ServerAiNativeActions.cs`、`python/atomic_operations.py`、`python/server_ai.py`。
+
+## 用 Lua 按产物件数制作
+
+`terraria.crafting.make(resultType, desiredCount, {maxBatches=8})` 中，`resultType` 为物品类型 ID，`desiredCount` 为本次期望新增的件数。模块逐页查询候选，检查可制作性及产物空间，以配方单次产量换算执行次数。每批最多执行 20 次，重新查询下一批的配方令牌。批数上限允许 1 至 32，仍受当前 Lua 预算约束。
+
+查看报告的 `producedCount`、`remaining`、`batches` 和原始 `receipt`。单次产量可能使实际件数超过目标。无可用候选时，`recipes` 保留最后一页观察，可查材料、工作站和空间。隔离专服用每次产出三件的配方请求七件，实得九件；空间不足场景保留了实际部分产量，随后停止。

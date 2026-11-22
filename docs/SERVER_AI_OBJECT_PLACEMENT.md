@@ -1,6 +1,6 @@
 # Server AI 多格物体放置
 
-当前多格放置接口只开放经过适配的原版 Work Bench 默认样式，不是通用家具放置 API。
+单件放置接口 `place_object` 只开放经过适配的原版 Work Bench 默认样式。蓝图通过 `build_diff` 比较世界，通过 `build_place` 组合调用统一原生放置路径。
 
 ## 接口与能力
 
@@ -17,7 +17,7 @@ api('place_object', {x = anchorX, y = anchorY})
 - 当前选中物品必须是原版 Work Bench（ItemID 36），默认样式；不会自动选栏、走近或重试。
 - 完整占地和支撑必须在世界边界内，锚点距离不超过 80 世界像素。
 - 占地必须为空，或属于当前固定引擎原生放置逻辑允许清除的植物/装饰物；不能把“非实心”泛化为可覆盖。
-- 支撑必须满足当前实现的双格水平实心支撑要求，不接受平台、液体、驱动、斜坡或半砖。
+- 按实际 Alternate 的 Anchor 检查支撑，按每格 TileObjectData.LiquidPlace 检查占地。专服工作台用例允许水、拒绝熔岩；椅子可由平台支撑。
 - 完整占地不能与 AI 或其他活跃存活玩家碰撞。
 - 未知 Tile、未知 Mod 类型或不匹配的 TileObjectData 定义保守拒绝。
 
@@ -47,10 +47,24 @@ api('place_object', {x = anchorX, y = anchorY})
 
 ## 当前边界
 
-仅支持上述 Work Bench 形状与默认样式。其他家具、多格物体、ModItem、墙/平台、自动挖除阻挡物、自动放置材料、自动走近和自动重试均不在支持范围。图形多人环境和任意第三方 Mod 兼容性需单独验收。
+旧接口 `place_object` 仅支持上述 Work Bench 形状与默认样式。统一接口 `place_item` 和蓝图按当前物品定义选取 Alternate，专服另验了门、椅、床和开关。其他家具、多格物体、ModItem、墙/平台、自动挖除阻挡物、自动放置材料、自动走近和自动重试均不在支持范围。图形多人环境和任意第三方 Mod 兼容性需单独验收。
 
 ## 实现入口
 
 - 候选与观察：`CompanionBridge/ServerIpc/ServerSceneReader.cs`
 - 原生放置：`CompanionBridge/ServerIpc/ServerAiNativeActions.cs`、`CompanionBridge/ServerPlayerRuntime/`
 - Python 契约：`python/atomic_operations.py`、`python/server_ai.py`
+
+## Server AI 蓝图施工
+
+读取绑定能力中的 `server_ai_build_diff_v1` 后，可用 `api("build_diff", {blueprint=plan})` 检查材料与现场条件。施工另需 `server_ai_build_place_v1`。两者共用蓝图格式，原点是世界 Tile 坐标，条目使用相对坐标，多格物体使用其原生 Origin 锚点，材料按件数计算。
+
+```lua
+local task = api("submit_task", {operation="build_place", arguments={blueprint=plan}})
+if task.taskId then
+    return api("await_task", {taskId=task.taskId, milliseconds=5000})
+end
+return task
+```
+
+同一蓝图可在取消或部分施工后再次提交。新任务重新读取世界，跳过仍与蓝图匹配的目标；重新观察只能证明当前状态，不能将先前结果未知的放置追认为成功。任务的操作记录和最终世界差异分别用于核对实际执行与剩余目标。完整契约和验证范围见 [G2 实现规范](G2_BUILDING_HOUSING_IMPLEMENTATION.md)。

@@ -8,10 +8,12 @@ import uuid
 
 import atomic_operations as atomic
 import agent_diagnostics as diagnostics
+import agent_trace as tracing
 from control import BridgeError, NotAdmittedError
 from lua_action_results import action_results
 
 NAMES = frozenset({'submit_task', 'query_task', 'await_task', 'cancel_task', 'resume_task'})
+OPERATIONS = ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place')
 
 
 def available(bridge):
@@ -24,9 +26,15 @@ def validate(name, args):
     if not isinstance(args, dict):
         raise ValueError('Task arguments must be an object')
     if name == 'submit_task':
-        if set(args) != {'operation', 'arguments'} or args['operation'] != 'mine_target':
-            raise ValueError('submit_task supports only mine_target and its existing arguments')
-        return {**args, 'arguments': atomic.validate('mine_target', args['arguments'])}
+        if set(args) != {'operation', 'arguments'} or args['operation'] not in OPERATIONS:
+            raise ValueError('submit_task requires a supported task operation and its arguments')
+        return {**args, 'arguments': atomic.validate(args['operation'], args['arguments'])}
+    if name=='cancel_task' and 'retreatTo' in args:
+        dest=args['retreatTo']
+        if not isinstance(dest,dict) or set(dest)!={'feetX','feetY'} or any(type(v) is not int or not 0<=v<=2**31-1 for v in dest.values()):
+            raise ValueError('retreatTo requires nonnegative integer feetX/feetY world pixels')
+        validate(name,{k:v for k,v in args.items() if k!='retreatTo'})
+        return args
     allowed = {'taskId', 'milliseconds'} if name == 'await_task' else {'taskId'}
     if set(args) - allowed or 'taskId' not in args or not isinstance(args['taskId'], str) or not re.fullmatch('[0-9a-f]{32}', args['taskId']):
         raise ValueError('An explicit taskId (32 lowercase hex characters) is required')
@@ -38,7 +46,7 @@ def validate(name, args):
     return args
 
 
-def definitions():
+def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=False, boss=False, members=False, strategy=False, collection=False, placement=False, building=False):
     rows = []
     for name in sorted(NAMES):
         properties = {'taskId': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'}}
@@ -49,8 +57,47 @@ def definitions():
             'cancel_task': '显式取消指定任务；仅可信终态和释放证据证明停止。',
             'resume_task': '仅对危险中断且已安全释放的任务显式重新提交；新身份，不自动重试，游戏侧重新验证环境/目标/工具。'}[name]
         if name == 'submit_task':
-            properties = {'operation': {'type': 'string', 'enum': ['mine_target']}, 'arguments': copy.deepcopy(atomic.SCHEMAS['mine_target'])}
+            operations = ['mine_target']
+            if combat:
+                operations.append('combat_attack')
+            if boss:
+                operations.append('boss_encounter')
+                roots = '克苏鲁之眼、吞噬者头、毁灭者头、双子、骷髅王头、月总核心' if members else '克苏鲁之眼'
+                if strategy:
+                    description+=' boss_encounter 先配武器，再用 discover_bosses 的 admissible 和 reason 选择原版或扩展根的 entityRef。受理后专服自主交战；通过 query_task 查看 verifiedHits、verifiedDamage 和 deathProof。'
+                else:
+                    description += f' boss_encounter 支持{roots}。先配武器，再传 scan_entities 根实体行的 details.entityRef。受理后专服自主交战，可查询或取消。'
+            if collection:
+                operations.append('collect_drops')
+            if placement:
+                operations.append('place_item')
+                description += ' place_item 使用当前选中的快捷栏物品在绝对 Tile 坐标 x/y 放置。终态回执核验占地、消耗和箱子存储记录。'
+            if building:
+                operations.append('build_place')
+                description += ' build_place 仅接收 blueprint，与 build_diff 共用输入。施工只沿可证安全的纯移动路径接近目标，无法通行则报告阻塞。检查逐项结果和输入释放。已匹配项跳过；部分施工或取消后先重新观察，再显式提交。unknown 不重放。'
+            mining = copy.deepcopy(atomic.SCHEMAS['mine_target'])
+            if not excavation:
+                mining['properties'].pop('cluster', None)
+            variants = [mining, *(copy.deepcopy(atomic.SCHEMAS[op]) for op in operations[1:])]
+            if combat and not weapon_button:
+                variants[operations.index('combat_attack')]['properties'].pop('button',None)
+            if boss:
+                boss_schema=variants[operations.index('boss_encounter')]
+                if regroup:
+                    description+=' 可指定 regroupTeammateRef，在自然复活后使用虫洞药水归队并重新交战。先用 list_teammates 确认同队引用。'
+                else:
+                    boss_schema['properties'].pop('regroupTeammateRef',None)
+            arguments = {'anyOf': variants} if len(variants) > 1 else mining
+            if collection:
+                description += ' collect_drops 默认收集320像素内各类掉落物。参数 radiusPixels 为16..960，typeIds 与 entityRef 互斥；entityRef 取自 scan_entities。查看 collected、remaining 和 unavailable。批次完成后 canContinue=true 可重新扫描继续收集，nextTarget 提供仍有效的候补目标。'
+            properties = {'operation': {'type': 'string', 'enum': operations}, 'arguments': arguments}
+            if combat:
+                description += ' combat_attack 使用 scan_entities 的 entityRef；query_combat 也可发现游戏侧自卫任务。'
             required = ['operation', 'arguments']
+        elif name=='cancel_task' and strategy:
+            properties['retreatTo']={'type':'object','properties':{k:{'type':'integer','minimum':0,'maximum':2147483647} for k in ('feetX','feetY')},
+                                    'additionalProperties':False,'required':['feetX','feetY']}
+            description+=' Boss 可选 retreatTo，以世界像素指定已观察的安全落点脚底坐标。受理后查询同一任务，boss_retreat_verified 表示到达并脱离。'
         elif name == 'await_task':
             properties['milliseconds'] = {'type': 'integer', 'minimum': 1, 'maximum': 30000, 'default': 1000}
         rows.append({'type': 'function', 'function': {'name': name, 'description': description,
@@ -102,8 +149,19 @@ class TaskCoordinator:
             self.on_ready()
 
     async def submit(self, args, origin=None):
+        operation = args['operation']
+        if operation in ('collect_drops', 'place_item', 'build_place') and operation not in getattr(self.bridge, 'supported_atomic_operations', ()):
+            return atomic.not_admitted_result('submit_task', 'collection_capability_unavailable' if operation == 'collect_drops' else 'placement_capability_unavailable')
+        try:
+            atomic.validate_backend(self.bridge, args['operation'], args['arguments'])
+        except atomic.PreDispatchRejected as error:
+            return atomic.not_admitted_result('submit_task', str(error))
         async with self.admission:
-            if self.closed or self.blocked() or getattr(self.bridge, '_lua_poisoned', False):
+            conflict = any(r['view']['status'] in ('submitting', 'unknown') or
+                           r['view']['status'] == 'running' and
+                           (operation != 'combat_attack' or r['view']['operation'] in ('combat_attack', 'boss_encounter'))
+                           for r in self.records.values())
+            if self.closed or conflict or getattr(self.bridge, '_lua_poisoned', False):
                 return atomic.not_admitted_result('submit_task', 'active_task_conflict_or_unresolved')
             # Never evict unconsumed results or unresolved outcomes to make room.
             for key, old in list(self.records.items()):
@@ -115,12 +173,16 @@ class TaskCoordinator:
                 return atomic.not_admitted_result('submit_task', 'task_receipt_capacity')
             task_id = uuid.uuid4().hex
             record = {'args': copy.deepcopy(args), 'done': asyncio.Event(), 'ack': asyncio.Event(), 'lock': asyncio.Lock(),
-                      'view': {'taskId': task_id, 'operation': 'mine_target', 'status': 'submitting',
+                      'view': {'taskId': task_id, 'operation': operation, 'status': 'submitting',
                                'valid': False, 'completed': False, 'dispatchState': 'unknown', 'origin': origin, 'retryAllowed': False}}
             self.records[task_id] = record
             # Never inherit a Program's command_owner, evidence bundle or Run
             # reply context into the independent task/result notification.
-            record['monitor'] = contextvars.Context().run(asyncio.create_task, self._run(record))
+            monitor_context = contextvars.Context()
+            correlation = {key: origin[key] for key in tracing.MCP_CORRELATION if origin and key in origin}
+            if correlation:
+                monitor_context.run(tracing.context.set, correlation)
+            record['monitor'] = monitor_context.run(asyncio.create_task, self._run(record))
         # This shield is essential: Program cancellation does not cancel admission/Task.
         await record['ack'].wait()
         return copy.deepcopy(record['view'])
@@ -129,8 +191,8 @@ class TaskCoordinator:
         try:
             view = record['view']
             reply = await asyncio.to_thread(self.bridge.task_request, 'start', view['taskId'],
-                operation='mine_target', arguments=record['args']['arguments'], expiresAtUnixMs=int(time.time()*1000)+1800)
-            if (reply.get('operation') != 'mine_target' or reply.get('targetTask') != record['args']['arguments']
+                operation=view['operation'], arguments=record['args']['arguments'], expiresAtUnixMs=int(time.time()*1000)+1800)
+            if (reply.get('operation') != view['operation'] or reply.get('targetTask') != record['args']['arguments']
                     or reply.get('status') not in ('running', 'completed', 'failed', 'cancelled', 'timeout', 'unknown')):
                 raise BridgeError('Task admission target/operation mismatch; outcome unknown')
             record['identity'] = copy.deepcopy(reply)
@@ -143,7 +205,7 @@ class TaskCoordinator:
                     await asyncio.sleep(.1)
         except NotAdmittedError as error:
             record['view']['dispatchState'] = 'not_admitted'
-            self._finish(record, atomic.not_admitted_result('mine_target', str(error)))
+            self._finish(record, atomic.not_admitted_result(record['view']['operation'], str(error)))
         except Exception as error:
             self._unknown(record, error)
             diagnostics.emit('game_task_monitor_failed', taskId=record['view']['taskId'],
@@ -156,7 +218,49 @@ class TaskCoordinator:
             return
         record['view']['dispatchState'] = 'unknown'
         self._finish(record, {'valid': False, 'status': 'unknown', 'completed': False,
-            'operation': 'mine_target', 'actionId': record['view']['taskId'], 'reason': str(error)[:256], 'retryAllowed': False})
+            'operation': record['view']['operation'], 'actionId': record['view']['taskId'], 'reason': str(error)[:256], 'retryAllowed': False})
+
+    async def _reflex(self, name, args):
+        task_id = args['taskId']
+        unknown = {'status': 'unknown', 'taskId': task_id, 'reason': 'unknown_task', 'retryAllowed': False}
+        if name == 'resume_task' or 'server_ai_combat_v1' not in self.bridge.hello.get('capabilities', ()):
+            return unknown
+        try:
+            first = await asyncio.to_thread(self.bridge.task_request, 'action', task_id)
+        except BridgeError as error:
+            if error.status == 'unknown_action':
+                return unknown
+            raise
+        if first.get('operation') not in ('combat_attack','boss_encounter') or first.get('session') != '0' * 32:
+            return unknown
+        view = {'taskId': task_id, 'operation': first['operation'], 'status': first['status'], 'valid': True,
+                'completed': False, 'dispatchState': 'admitted', 'origin': None, 'retryAllowed': False, 'action': first}
+        action = first
+        try:
+            if name == 'cancel_task' and action['status'] == 'running':
+                action = await asyncio.to_thread(self.bridge.task_request, 'cancel', task_id)
+            if name == 'await_task':
+                deadline = asyncio.get_running_loop().time() + args['milliseconds'] / 1000
+                while action['status'] == 'running':
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        return {**view, 'action': action, 'waitStatus': 'timeout'}
+                    await asyncio.sleep(min(remaining, .1))
+                    action = await asyncio.to_thread(self.bridge.task_request, 'action', task_id)
+                    if not atomic.same_action(first, action):
+                        raise BridgeError('Reflex task identity changed')
+            if not atomic.same_action(first, action) or action.get('status') not in (
+                    'running', 'completed', 'failed', 'cancelled', 'timeout', 'unknown'):
+                raise BridgeError('Reflex task identity changed')
+            if action['status'] != 'running':
+                result = await atomic.terminal(self.bridge, action, action['generation'])
+                view.update(status=result['status'], valid=result['valid'], completed=result['completed'], result=result)
+            return {**view, 'action': action}
+        except (BridgeError, OSError, ValueError, KeyError, TypeError) as error:
+            self.bridge._lua_poisoned = True
+            return {**view, 'status': 'unknown', 'valid': False, 'dispatchState': 'unknown',
+                    'result': {'valid': False, 'status': 'unknown', 'completed': False, 'operation': 'combat_attack',
+                               'actionId': task_id, 'reason': str(error)[:256], 'retryAllowed': False}}
 
     async def _observe(self, record, cancel=False):
         if record['done'].is_set():
@@ -176,13 +280,19 @@ class TaskCoordinator:
             raise atomic.PreDispatchRejected('Program task coordination unsupported')
         args = validate(name, args)
         if name == 'submit_task':
+            if args['operation']=='combat_attack' and 'button' in args['arguments'] and 'server_ai_weapon_button_v1' not in self.bridge.hello.get('capabilities',()):
+                raise atomic.PreDispatchRejected('Requires server_ai_weapon_button_v1')
             return await self.submit(args, origin)
         record = self.records.get(args['taskId'])
+        if 'retreatTo' in args and ('server_ai_boss_strategy_v1' not in self.bridge.hello.get('capabilities',())
+                or not record or record['view']['operation']!='boss_encounter'):
+            raise atomic.PreDispatchRejected('Retreat requires this connection’s active boss encounter')
         if record is None:
-            return {'status': 'unknown', 'taskId': args['taskId'], 'reason': 'unknown_task', 'retryAllowed': False}
+            return await self._reflex(name, args)
         if name == 'resume_task':
             result = record['view'].get('result') or {}
-            if (result.get('valid') is not True or result.get('status') != 'cancelled'
+            if (record['args']['operation'] != 'mine_target' or record['args']['arguments'].get('cluster') is True
+                    or result.get('valid') is not True or result.get('status') != 'cancelled'
                     or not str(result.get('reason', '')).startswith('task_interrupt_')
                     or (result.get('endEvidence') or {}).get('inputsReleased') is not True):
                 return atomic.not_admitted_result('resume_task', 'task_not_safely_resumable')
@@ -200,7 +310,13 @@ class TaskCoordinator:
         elif not record['done'].is_set():
             async with record['lock']:
                 try:
-                    await self._observe(record, cancel=name == 'cancel_task')
+                    if 'retreatTo' in args:
+                        reply=await asyncio.to_thread(self.bridge.task_request,'retreat',args['taskId'],arguments=args['retreatTo'])
+                        if not atomic.same_action(record['identity'],reply):raise BridgeError('Retreat task identity changed')
+                        record['view']['action']=reply
+                    else:await self._observe(record, cancel=name == 'cancel_task')
+                except NotAdmittedError as error:
+                    raise atomic.PreDispatchRejected(str(error)) from error
                 except (BridgeError, OSError, ValueError, KeyError, TypeError) as error:
                     self._unknown(record, error)
         return copy.deepcopy(record['view'])

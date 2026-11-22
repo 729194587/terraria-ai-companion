@@ -23,6 +23,7 @@ internal static class PlacementSelfTest
         if(ran||!Environment.GetCommandLineArgs().Contains("-placementselftest"))return;
         ran=true;bool failure=Environment.GetCommandLineArgs().Contains("-placementfailureselftest");
         if(Environment.GetCommandLineArgs().Contains("-objectplacementselftest")){ObjectPlacementSelfTest.Run(failure);return;}
+        if(Environment.GetCommandLineArgs().Contains("-placementsurveyselftest")){PlacementSurveySelfTest.Run();return;}
         int checks=0;var evidence=new List<object>();
         string report=Path.Combine(Main.SavePath,"placement-native-result.json");
         void Check(bool ok,string why){if(!ok)throw new InvalidOperationException(why);checks++;}
@@ -31,6 +32,11 @@ internal static class PlacementSelfTest
             Main.gameMenu=false;ProbeSession.Spawn();var p=ProbeSession.Actor;
             var human=Main.player[0];var bag=human.inventory.Select(i=>(i.type,i.stack)).ToArray();
             int local=Main.myPlayer,tx=Player.tileTargetX,ty=Player.tileTargetY;bool mouse=Main.blockMouse;
+            var pointer=(Main.screenPosition,Main.mouseX,Main.mouseY,Main.lastMouseX,Main.lastMouseY,Main.mouseItem);
+            var buttons=(Main.mouseLeft,Main.mouseLeftRelease,Main.mouseRight,Main.mouseRightRelease);
+            bool PointerRestored()=>pointer==(Main.screenPosition,Main.mouseX,Main.mouseY,Main.lastMouseX,Main.lastMouseY,Main.mouseItem)
+                &&buttons==(Main.mouseLeft,Main.mouseLeftRelease,Main.mouseRight,Main.mouseRightRelease)
+                &&Main.myPlayer==local&&Player.tileTargetX==tx&&Player.tileTargetY==ty&&Main.blockMouse==mouse;
             int x=Main.spawnTileX+3,floor=Main.spawnTileY+8,y=floor-1;
             for(int xx=x-8;xx<=x+6;xx++)for(int yy=floor-8;yy<=floor+6;yy++)
             {var t=Main.tile[xx,yy];t.ClearEverything();if(yy>=floor){t.HasTile=true;t.TileType=TileID.Dirt;}}
@@ -70,6 +76,7 @@ internal static class PlacementSelfTest
                 Check(threw&&ProbeSession.Quarantined&&!ActorItemUse.Running&&Released()
                     &&ReferenceEquals(Main.player[p.whoAmI],p)&&ProbeSession.Reservation.IsReserved(p.whoAmI)
                     &&!Main.tile[x,y].HasTile&&p.inventory[4].stack==5,"placement exception did not release/quarantine without world/inventory mutation");
+                Check(PointerRestored(),"placement exception did not restore the virtual mouse scope");
                 File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",checks,processTerminationRequired=true,nativePlacementException=true}));return;
             }
             foreach(int type in new[]{ItemID.Wood,ItemID.StoneBlock,ItemID.DirtBlock})
@@ -95,9 +102,42 @@ internal static class PlacementSelfTest
             Material(ItemID.Torch);var torch=Finish(Start());
             Check(torch.Status=="completed"&&torch.EffectVerified&&Main.tile[x,y].TileType==TileID.Torches,"native torch placement failed: "+JsonSerializer.Serialize(torch));
             Check(AiMapRuntime.Map.Get(x,y)==1,"confirmed torch Tile category not recorded");
+            foreach(int type in new[]{ItemID.WoodWall,ItemID.WorkBench,ItemID.Furnace,ItemID.Chest,ItemID.WoodPlatform,ItemID.Rope})
+            {
+                for(int dx=-1;dx<4;dx++)for(int dy=-3;dy<=0;dy++)Main.tile[x+dx,y+dy].ClearEverything();
+                Material(type);
+                if(type==ItemID.WoodWall)
+                {
+                    var support=Main.tile[x-1,y];support.WallType=WallID.Wood;
+                }
+                int targetX=type==ItemID.Furnace?x+1:x;
+                string refusal=ActorPlacement.PrepareUnified(p,targetX,y,out var placement);
+                Check(refusal==null,"unified placement preflight refused "+type+": "+refusal);
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,placement);
+                for(int tick=0;ActorItemUse.Running&&tick<605;tick++)Frame();
+                Check(ActorItemUse.Current.Phase=="completed"&&ActorPlacement.Present(placement)
+                    &&placement.ConsumedCount==1&&Released()&&PointerRestored(),
+                    "unified native placement failed for "+type+": "+ActorItemUse.Current.Reason);
+                if(type==ItemID.Chest)
+                {
+                    Check(placement.ChestIndex>=0&&ReferenceEquals(Main.chest[placement.ChestIndex],placement.Chest),
+                        "native chest hook did not register storage");
+                    Chest.DestroyChest(x,y-1);
+                }
+                evidence.Add(new{itemType=type,placement.Kind,placement.ConsumedCount,placement.ChestIndex});
+            }
+            Material(ItemID.Rope);
+            var existingRope=Main.tile[x,y-1];
+            existingRope.HasTile=true;existingRope.TileType=TileID.Rope;
+            Check(ActorPlacement.PrepareUnified(p,x,y-1,out var extension)==null,"rope extension preflight");
+            ActorItemUse.StartPlacement(p,identity.World,identity.Generation,extension);
+            for(int tick=0;ActorItemUse.Running&&tick<605;tick++)Frame();
+            Check(ActorItemUse.Current.Phase=="completed"&&extension.Y==y&&ActorPlacement.Present(extension)
+                &&extension.ConsumedCount==1&&PointerRestored()&&Released(),"native rope retarget or restoration failed");
+            existingRope.ClearEverything();
             AiMapNativeTest.Run(p,Check);
             AiMapRuntime.Reset();
-            foreach(int type in new[]{ItemID.WoodenSword,ItemID.WorkBench,ItemID.Rope})
+            foreach(int type in new[]{ItemID.WoodenSword,ItemID.WorkBench})
             {
                 Material(type);var r=executor.Poll(identity,Start());
                 Check(r.Status=="failed"&&!r.InputsAcquired&&!Main.tile[x,y].HasTile,"unsupported item was accepted: "+type);
@@ -138,7 +178,7 @@ internal static class PlacementSelfTest
             Check(executor.Poll(identity,deadline).Status=="timeout"&&Released(),"placement deadline did not release");
             evidence.Add(new{isolation=new{HumanScopeChecks,localBefore=local,localAfter=Main.myPlayer,txBefore=tx,txAfter=Player.tileTargetX,tyBefore=ty,tyAfter=Player.tileTargetY,mouseBefore=mouse,mouseAfter=Main.blockMouse}});
             Check(HumanScopeChecks>0&&ReferenceEquals(human,Main.player[0])&&bag.SequenceEqual(human.inventory.Select(i=>(i.type,i.stack)))
-                &&Main.myPlayer==local&&Player.tileTargetX==tx&&Player.tileTargetY==ty&&Main.blockMouse==mouse,"placement changed human inventory, cursor or identity");
+                &&PointerRestored(),"placement changed human inventory, cursor or identity");
             executor.Shutdown();ProbeSession.Finish("native placement diagnostic complete",true);
             File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",checks,HumanScopeChecks,evidence,
                 mode="isolated native ItemCheckWrapped, real Player placement and consumption; not graphical Host & Play"}));
@@ -157,7 +197,7 @@ public sealed class PlacementDiagnosticTile : GlobalTile
         if(Environment.GetCommandLineArgs().Contains("-placementselftest"))
         {
             var human=Main.player[0];
-            if(ActorPlacement.TargetX(human)!=Player.tileTargetX||ActorPlacement.TargetY(human)!=Player.tileTargetY)
+            if(NativeItemInput.Active(human)||Main.myPlayer!=ActorItemUse.Current.Actor.whoAmI)
                 throw new InvalidOperationException("AI scope contaminated another Player's placement target");
             PlacementSelfTest.HumanScopeChecks++;
         }

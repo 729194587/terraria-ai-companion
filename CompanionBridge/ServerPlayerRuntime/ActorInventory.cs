@@ -16,8 +16,20 @@ internal static class ActorInventory
 {
     private sealed class Identity { internal readonly string Value=Guid.NewGuid().ToString("N"); }
     private static readonly ConditionalWeakTable<Item,Identity> identities=new();
-    private sealed record Core(int Type,int Stack,int Prefix,int MaxStack,bool Favorite);
-    private static Core Read(Item i)=>i.IsAir?new(0,0,0,0,false):new(i.type,i.stack,i.prefix,i.maxStack,i.favorited);
+    internal sealed record Core(int Type,int Stack,int Prefix,int MaxStack,bool Favorite);
+    internal static Core Read(Item i)=>i.IsAir?new(0,0,0,0,false):new(i.type,i.stack,i.prefix,i.maxStack,i.favorited);
+    internal static Core WithCount(Core value, int stack, bool favorite) =>
+        stack == 0 ? new(0, 0, 0, 0, false) : value with { Stack = stack, Favorite = favorite };
+
+    internal static int Move(Item source, ref Item destination, int count)
+    {
+        int moved = count;
+        if (destination.IsAir) destination = ItemLoader.TransferWithLimit(source, count);
+        else ItemLoader.StackItems(destination, source, out moved, numToTransfer: count);
+        if (source.IsAir && source.stack >= 0) source.TurnToAir();
+        return moved;
+    }
+
     internal sealed class Context
     {
         internal AiReadOnlyProtocol.Identity Identity;
@@ -32,7 +44,20 @@ internal static class ActorInventory
         internal bool SourceBaselineEstablished,DestinationBaselineEstablished;
     }
     internal static bool IsOperation(string op)=>op is "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item";
-    internal static string Token(AiReadOnlyProtocol.Identity id,Item item,int slot)=>Token(id,item,slot.ToString());
+    private static readonly ConditionalWeakTable<object,long[]> slotRevisions = new();
+    internal static void InvalidateSlot(AiReadOnlyProtocol.Identity id, int slot) =>
+        slotRevisions.GetValue(id.Actor, _ => new long[59])[slot]++;
+    internal static string Token(AiReadOnlyProtocol.Identity id, Item item, int slot) =>
+        Token(id, item, $"inventory:{slot}:{slotRevisions.GetValue(id.Actor, _ => new long[59])[slot]}");
+
+    internal static bool MatchesMove(Core source, Core destination, Item afterSource, Item afterDestination, int count)
+    {
+        bool empty = destination.Type == 0;
+        return afterSource.stack >= 0 && afterDestination.stack >= 0
+            && Read(afterSource) == WithCount(source, source.Stack - count, empty && source.Favorite)
+            && Read(afterDestination) == WithCount(empty ? source : destination, destination.Stack + count,
+                empty ? count == source.Stack && source.Favorite : source.Favorite || destination.Favorite);
+    }
     internal static string Token(AiReadOnlyProtocol.Identity id,Item item,string slot)
     {
         var c=Read(item);
@@ -58,7 +83,7 @@ internal static class ActorInventory
         return new(){Identity=id,Operation=operation,Arguments=args.Clone(),Source=args.GetProperty("sourceSlot").GetInt32(),
             Destination=operation=="hold_inventory_item"?CompanionBridge.HotbarSlots.ToInventorySlot(args.GetProperty("hotbarKey").GetInt32()):args.GetProperty("destinationSlot").GetInt32()};
     }
-    internal static void Step(Context c)
+    internal static void Step(Context c,bool confirmOnlyMovedSlots=false)
     {
         if(c.Status!="running")return;
         ServerAiNativeActions.Require(c.Identity);
@@ -69,7 +94,12 @@ internal static class ActorInventory
             try
             {
                 var confirmed=Tokens(c,p);
-                bool valid=confirmed.SequenceEqual(c.AfterTokens)&&p.selectedItem==c.Selected&&ServerAiNativeActions.Owned(c.Identity);
+                // Maintenance restoration can coexist with natural pickups
+                // in unrelated slots between mutation and confirmation.
+                bool sameSlots=confirmOnlyMovedSlots
+                    ?confirmed[c.Source]==c.AfterTokens[c.Source]&&confirmed[c.Destination]==c.AfterTokens[c.Destination]
+                    :confirmed.SequenceEqual(c.AfterTokens);
+                bool valid=sameSlots&&p.selectedItem==c.Selected&&ServerAiNativeActions.Owned(c.Identity);
                 c.ConfirmedTick=Main.GameUpdateCount;
                 Finish(c,valid?"completed":"unknown",valid?"inventory_change_verified_next_update":"inventory_changed_before_confirmation");
             }
@@ -112,13 +142,10 @@ internal static class ActorInventory
             int moved=count;
             if(transfer)
             {
-                if(destination.IsAir)p.inventory[c.Destination]=ItemLoader.TransferWithLimit(source,count);
-                else ItemLoader.StackItems(destination,source,out moved,numToTransfer:count);
-                if(source.IsAir&&source.stack>=0)source.TurnToAir();
+                moved=Move(source,ref p.inventory[c.Destination],count);
             }
             else if(c.Source!=c.Destination)Utils.Swap(ref p.inventory[c.Source],ref p.inventory[c.Destination]);
             if(hold){ServerAiNativeActions.Require(c.Identity);p.selectedItem=c.Destination;}
-            Core WithCount(Core value,int stack,bool favorite)=>stack==0?new(0,0,0,0,false):value with{Stack=stack,Favorite=favorite};
             var expectedS=transfer?WithCount(s,s.Stack-count,d.Type==0?s.Favorite:false):c.Source==c.Destination?s:d;
             var expectedD=transfer?WithCount(d.Type==0?s:d,d.Stack+count,d.Type==0?count==s.Stack&&s.Favorite:d.Favorite||s.Favorite):s;
             string[] after=Tokens(c,p);

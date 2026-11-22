@@ -20,6 +20,12 @@ internal static class ActorControl
     internal static ActorAction<Player> Current;
     private static ActorAction<Player> executing;
     private static bool injected;
+    internal static void ReleaseCombatInputs(Player p)
+    {
+        Inputs(p, false);
+        p.releaseUseItem = true;
+        p.channel = false;
+    }
     internal static void Reset() { Current = executing = null; injected = false; }
 
     // Called under the lifecycle Gate, only on the engine game thread. A known

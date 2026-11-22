@@ -5,6 +5,8 @@ No Bridge or game handles enter this process. Only bounded JSON crosses the pipe
 import json
 import math
 import re
+
+import lua_modules
 from pathlib import Path
 
 SOURCE_BYTES = 16_384
@@ -90,7 +92,7 @@ BOOTSTRAP = '''
     local current_line = 0
     local function mark(t, kind) tags[t] = kind; return t end
     local function kind(t) return tags[t] end
-    local function run(source, callback, progress, protected, terminate, budget, exploration_source, semantic_source)
+    local function run(source, callback, progress, protected, terminate, budget, exploration_source, semantic_source, modules, module_done)
         local env = {type=type, tonumber=tonumber, tostring=tostring,
                      pairs=pairs, ipairs=ipairs, next=next, assert=assert, error=error}
         -- Explicit pure Lua allowlist; no random state, loaders or host objects.
@@ -108,6 +110,24 @@ BOOTSTRAP = '''
         local helper = assert(load(exploration_source, "exploration.lua", "t", env))
         env.explore = helper(string.sub)
         env.sense_world = assert(load(semantic_source, "semantic.lua", "t", env))()
+        env.terraria = {}
+        for _, m in ipairs(modules or {}) do
+            local private = {api=function(name,args) return callback(name, args or {}, current_line, m.name) end}
+            for _, k in ipairs({"type","assert","ipairs","pairs","math","json"}) do
+                if type(env[k]) == "table" then
+                    private[k] = {}
+                    for key,v in pairs(env[k]) do private[k][key] = v end
+                else private[k] = env[k] end
+            end
+            local exports = assert(load(m.source, "terraria."..m.name, "t", private))()
+            assert(type(exports) == "table" and type(exports[m.export]) == "function", "invalid module exports")
+            for k in pairs(exports) do assert(k == m.export, "unregistered module export") end
+            env.terraria[m.name] = {[m.export]=function(...)
+                local report = exports[m.export](...)
+                module_done(report)
+                return report
+            end}
+        end
         local f, err = load(source, "companion.lua", "t", env)
         if not f then error(err, 0) end
         local used = 0
@@ -126,7 +146,7 @@ BOOTSTRAP = '''
 '''
 
 
-def worker(connection, source, limits, helper_source=None):
+def worker(connection, source, limits, helper_source=None, module_names=()):
     from lupa import lua54 as module
     def deny(*args):
         raise AttributeError('Python access denied')
@@ -249,13 +269,22 @@ def worker(connection, source, limits, helper_source=None):
         return out
 
     sequence = 0
-    def call(name, arguments, line):
-        nonlocal sequence
+    terminal_module = False
+    terminal_report = None
+
+    def module_done(value):
+        nonlocal terminal_report
+        if terminal_module:
+            terminal_report = plain(value, VALUE_BYTES, return_value=True)
+            terminate('module_terminal')
+
+    def call(name, arguments, line, module_name=None):
+        nonlocal sequence, terminal_module
         if type(name) is not str or len(name) > 64:
             raise ValueLimit('bad_argument')
         sequence += 1
         connection.send_bytes(encode({'type': 'call', 'id': sequence, 'name': name,
-                                      'line': line, 'protected': protected_depth > 0,
+                                      'line': line, 'protected': protected_depth > 0, 'module': module_name,
                                       'arguments': plain(arguments, REQUEST_BYTES)}, REQUEST_BYTES))
         reply = decode(connection.recv_bytes(FRAME_BYTES))
         if reply.get('id') != sequence:
@@ -264,7 +293,9 @@ def worker(connection, source, limits, helper_source=None):
             if protected_depth <= 0 or type(reply.get('value')) is not dict:
                 raise ValueLimit('protocol_error')
             raise LocalArgumentRejected(reply['value'])
-        if reply.get('type') != 'result':
+        if reply.get('type') == 'module_terminal' and module_name is not None:
+            terminal_module = True
+        elif reply.get('type') != 'result':
             raise ValueLimit('protocol_error')
         return to_lua(reply['value'])
 
@@ -280,18 +311,23 @@ def worker(connection, source, limits, helper_source=None):
 
     try:
         returned = run(source, guarded(call), guarded(progress), protected, terminate, limits.instructions,
-                       EXPLORATION_SOURCE if helper_source is None else helper_source, SEMANTIC_SOURCE)
+                       EXPLORATION_SOURCE if helper_source is None else helper_source, SEMANTIC_SOURCE,
+                       to_lua(lua_modules.sources(module_names)), module_done)
         check_fatal()
         value = plain(returned, VALUE_BYTES, return_value=True)
         out = {'type': 'done', 'status': 'completed', 'value': value}
     except ForcedTermination as exc:
         out = {'type': 'done', 'status': str(exc)}
+        if terminal_module and terminal_report is not None:
+            out['moduleResult'] = terminal_report
     except SerializationError as exc:
         out = {'type': 'done', 'status': 'serialization_error', 'error': str(exc)[:512]}
     except UnicodeError:
         out = {'type': 'done', 'status': 'serialization_error', 'error': 'invalid UTF-8 string cannot be represented as JSON'}
     except ValueLimit as exc:
         out = {'type': 'done', 'status': str(exc)}
+        if terminal_module and terminal_report is not None:
+            out['moduleResult'] = terminal_report
     except module.LuaMemoryError:
         out = {'type': 'done', 'status': 'memory_limit'}
     except module.LuaError as exc:

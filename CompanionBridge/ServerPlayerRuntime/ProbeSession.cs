@@ -43,6 +43,7 @@ internal static class ProbeSession
 
     internal static void Reset()
     {
+        ActorContainer.Reset();
         ActorControl.Reset();
         ActorItemUse.Reset();ActorMining.Reset();
         ActorGeneration = 0;
@@ -143,7 +144,7 @@ internal static class ProbeSession
                 candidate.whoAmI = view.Slot;
                 candidate.position = new Vector2(x, y);
                 candidate.velocity = Vector2.Zero;
-                candidate.SpawnX = candidate.SpawnY = -1;
+                candidate.FindSpawn(); // Resolve this world's saved bed on the unpublished actor.
                 candidate.controlLeft = candidate.controlRight = candidate.controlUp = candidate.controlDown = false;
                 candidate.controlJump = candidate.controlUseItem = candidate.controlUseTile = false;
                 candidate.dead = false; candidate.respawnTimer = 0; candidate.fallStart = y / 16;
@@ -217,6 +218,7 @@ internal static class ProbeSession
                 Log("teardown-quarantined", new { reason, same, occupied });
                 throw new InvalidOperationException("STOP: occupied/transitioning slot quarantined; native clearWorld/unload must not continue.");
             }
+            ActorContainer.Retire(owned);
             ActorMining.Retire(owned);ActorItemUse.Retire(owned);
             ActorControl.Retire(owned);
             WorldCharacterPersistence.BeforeRetire(owned);

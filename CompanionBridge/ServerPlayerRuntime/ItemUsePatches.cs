@@ -27,10 +27,61 @@ public static class ItemUsePatches
         il.InsertBefore(entry,guard);il.InsertBefore(entry,Instruction.Create(OpCodes.Call,predicate));
         il.InsertBefore(entry,Instruction.Create(OpCodes.Brtrue,target));
     }
-    public static void Patch(MethodDefinition m,string operation,MethodReference predicate,MethodReference miningDispatch=null,MethodReference miningOnly=null)
+    public static void Patch(MethodDefinition m,string operation,MethodReference predicate,MethodReference miningDispatch=null,
+        MethodReference miningOnly=null,MethodReference combatOnly=null,MethodReference miningScope=null)
     {
         Require(!m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.FullName==predicate.FullName));
-        if(operation=="inner")
+        if(operation=="wrapper")
+        {
+            // MonoMod's live IL clone is static with an explicit Player argument.
+            Require(m.Name.Contains("ItemCheckWrapped")&&m.ReturnType.MetadataType==MetadataType.Void
+                &&(m.HasThis?m.Parameters.Count==1:m.Parameters.Count==2&&m.Parameters[0].ParameterType.FullName=="Terraria.Player")
+                &&m.Parameters.Last().ParameterType.MetadataType==MetadataType.Int32
+                &&Call(At(m,0x0071),"SetUP")&&At(m,0x0076)?.OpCode==OpCodes.Ldarg_0
+                &&Call(At(m,0x0090),"ItemCheck")&&Call(At(m,0x0098),"ItemCheck")
+                &&At(m,0x00b1)?.OpCode==OpCodes.Ldc_I4_0&&Call(At(m,0x00b2),"FindRecipes")
+                &&Call(At(m,0x00b7),"SetDOWN")&&Field(At(m,0x00d1),"itemAnimation"));
+            // Keep native item execution and frame bookkeeping; don't enter client UI
+            // or mutate recipe availability while Main.myPlayer is the server actor.
+            Guard(m,0,0x0076,predicate);
+            Guard(m,0x00b1,0x00d0,predicate);
+            Guard(m,0x00b7,0x00d0,predicate);
+        }
+        else if(operation=="mining-ui")
+        {
+            Require(m.Name.Contains("ItemCheck_UseMiningTools")&&m.Body.ExceptionHandlers.Count==0
+                &&Call(At(m,0x00f0),"get_GamepadDisableCursorItemIcon")
+                &&Target(At(m,0x00f5))==At(m,0x0109)&&Field(At(m,0x00f9),"cursorItemIconEnabled")
+                &&Call(At(m,0x0104),"ItemIconCacheUpdate")&&At(m,0x0109)?.OpCode==OpCodes.Ldc_I4_0);
+            Guard(m,0x00f0,0x0109,predicate);
+        }
+        else if(operation=="combat-cooldown")
+        {
+            Require(m.Name.Contains("UpdateMeleeHitCooldowns")&&m.Body.ExceptionHandlers.Count==0
+                &&Field(At(m,0),"myPlayer")&&Field(At(m,0x0006),"whoAmI")
+                &&Target(At(m,0x000b))==At(m,0x002e)&&Field(At(m,0x0012),"meleeNPCHitCooldown"));
+            Guard(m,0,0x000d,predicate);
+        }
+        else if(operation=="combat-strike")
+        {
+            var strike=At(m,0x0529);
+            Require(m.Name.Contains("ProcessHitAgainstNPC")&&m.Body.ExceptionHandlers.Count==0
+                &&Call(At(m,0x0501),"ModifyPlayerHitNPCWithItem")
+                &&strike?.OpCode==OpCodes.Callvirt&&Call(strike,"StrikeNPC")
+                &&At(m,0x052e)?.OpCode==OpCodes.Stloc_S&&Call(At(m,0x0537),"OnPlayerHitNPCWithItem")
+                &&!m.Body.Instructions.Any(i=>Target(i)==strike));
+            m.Body.GetILProcessor().InsertBefore(strike,Instruction.Create(OpCodes.Ldarg_0));
+            strike.OpCode=OpCodes.Call;
+            strike.Operand=predicate;
+        }
+        else if(operation=="combat-pose")
+        {
+            Require(m.Name.Contains("ItemCheck_ApplyUseStyle_Inner")&&m.Body.ExceptionHandlers.Count==0
+                &&Field(At(m,0x0000),"dedServ")&&Target(At(m,0x0005))==At(m,0x0008)
+                &&At(m,0x0007)?.OpCode==OpCodes.Ret&&Field(At(m,0x0009),"useStyle"));
+            Guard(m,0x0000,0x0008,predicate);
+        }
+        else if(operation=="inner")
         {
             Require(m.Name.Contains("ItemCheck_Inner")&&m.Body.ExceptionHandlers.Count==0
                 &&At(m,0x071d)?.OpCode==OpCodes.Ldarg_0&&Field(At(m,0x0723),"myPlayer")&&Target(At(m,0x0728))==At(m,0x0752)
@@ -51,11 +102,27 @@ public static class ItemUsePatches
                 &&At(m,0x01a7)?.OpCode==OpCodes.Ldarg_0&&At(m,0x01e8)?.OpCode==OpCodes.Ldarg_0
                 &&Field(At(m,0x01b6),"toolTime"));
             if(miningOnly!=null)Require(Call(At(m,0x0543),"ItemCheck_CutTiles")&&At(m,0x0570)?.OpCode==OpCodes.Ret);
-            // Air-swing experiment: retain native melee; skip cursor-driven tools,
-            // placement and accessory projectiles. No global tile target substitution.
+            if(miningScope!=null)Require(Call(At(m,0x01ea),"ItemCheck_TryDestroyingDrones")
+                &&At(m,0x01ef)?.OpCode==OpCodes.Ldarg_0&&Call(At(m,0x01f1),"ItemCheck_UseMiningTools")
+                &&At(m,0x01f6)?.OpCode==OpCodes.Ldarg_0&&Call(At(m,0x01f8),"ItemCheck_UseTeleportRod"));
+            // Mining uses only the native mining call in this cursor block.
             Guard(m,0x017d,0x01a7,predicate);
             Guard(m,0x01e8,0x044d,miningDispatch??predicate);
+            if(miningScope!=null)
+            {
+                Guard(m,0x01e8,0x01ef,miningScope);
+                Guard(m,0x01f6,0x044d,miningScope);
+            }
             if(miningOnly!=null)Guard(m,0x044d,0x0570,miningOnly); // G7 cannot cut neighboring tiles or attack.
+            if(combatOnly!=null)
+            {
+                Require(Field(At(m,0x04c2),"myPlayer")&&Target(At(m,0x04cd))==At(m,0x04e8)
+                    &&Call(At(m,0x04e1),"ItemCheck_CatchCritters")&&Call(At(m,0x0511),"ItemCheck_CutTiles")&&Call(At(m,0x0543),"ItemCheck_CutTiles")
+                    &&Call(At(m,0x055b),"ItemCheck_MeleeHitPVP")&&Call(At(m,0x056b),"ItemCheck_EmitHammushProjectiles"));
+                Guard(m,0x04c2,0x0516,combatOnly);
+                Guard(m,0x0534,0x0548,combatOnly);
+                Guard(m,0x0554,0x0570,combatOnly);
+            }
         }
         else throw new ArgumentException(operation);
     }

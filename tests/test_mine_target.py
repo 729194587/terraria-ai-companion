@@ -128,50 +128,5 @@ class MineTargetTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len([a for a in self.host.sent if a['op'] == 'start']))
 
 
-import test_server_ai_agent as agent_fixture
-
-
-class TaskAgentHost(agent_fixture.AiHost):
-    def __init__(self):
-        super().__init__()
-        self.scene = self.perception = True
-    def query(self, op, args):
-        if op == 'observe_scene':
-            return dict(available=True, worldSessionId='world-1', actorGeneration=1, actorSlot=254,
-                        gameUpdate=10, observedAtUnixMs=1793520000000, clock='server_utc_at_projection',
-                        data=dict(objects=dict(items=[dict(kind='ore_component', target=copy.deepcopy(TARGET))])))
-        return super().query(op, args)
-
-
-class MineTaskAgentTests(unittest.IsolatedAsyncioTestCase):
-    host_type = TaskAgentHost
-    asyncTearDown = agent_fixture.ServerAiAgentTests.asyncTearDown
-    program = agent_fixture.ServerAiAgentTests.program
-    receive = agent_fixture.ServerAiAgentTests.receive
-    async def asyncSetUp(self):
-        await agent_fixture.ServerAiAgentTests.asyncSetUp(self)
-        self.bridge = self.ai
-        MineTargetTests.enable(self, {'target': TARGET})
-        self.agent.history[0]['content'], self.agent.tools = agent_fixture.server_contract(self.ai)
-    async def test_chat_model_substitute_submits_one_structured_task(self):
-        source = "local q=api('observe_scene',{layers={'objects'}});return api('mine_target',{target=q.data.objects.items[1].target})"
-        self.answers = [self.program(source), dict(role='assistant', content='指定矿物已挖掘，输入已释放。')]
-        await self.receive('mine-task', '挖掘观察到的铜矿')
-        await self.agent.task
-        self.assertEqual(2, len(self.requests))
-        self.assertIn('mine_target', self.requests[0]['messages'][0]['content'])
-        starts = [r for r in self.aihost.sent if r['op'] == 'start']
-        self.assertEqual(1, len(starts))
-        self.assertEqual('mine_target', starts[0]['operation'])
-        self.assertEqual({'target': TARGET}, starts[0]['arguments'])
-        self.assertEqual(['execute_lua'], [t['function']['name'] for t in self.requests[0]['tools']])
-        self.assertEqual(254, self.ai.reply_receipts[-1]['authorSlot'])
-        import json
-        receipt = json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role'] == 'tool'))
-        self.assertEqual('completed', receipt['taskOutcome'])
-        self.assertEqual('unknown', receipt['goalOutcome'])
-        self.assertEqual('unknown', self.agent.runs[-1].goal_outcome)
-
-
 if __name__ == '__main__':
     unittest.main()

@@ -1,0 +1,301 @@
+{
+  "Action": "jump",
+  "ActualLanding": {
+    "X": 33688.59,
+    "Y": 3462
+  },
+  "ActualMovingUpdates": 50,
+  "ActualTravelPixels": 145.82097228716023,
+  "AirMotion": null,
+  "BlockingTiles": [
+    {
+      "Basis": "rejected_root_forward_walk_contact",
+      "ContentKey": "Terraria/Dirt",
+      "X": 2105,
+      "Y": 210
+    }
+  ],
+  "CompletedActions": 1,
+  "CompletedJumps": 1,
+  "ContinuedEdges": 0,
+  "DeferredSearches": 14,
+  "DetourCheckpoints": 0,
+  "DominatedStates": 0,
+  "Expansions": 2,
+  "ExpectedPosition": {
+    "X": 33688.59,
+    "Y": 3462
+  },
+  "ExpectedVelocity": {
+    "X": 0,
+    "Y": 0
+  },
+  "FailedEdgeCount": 0,
+  "FailureMemory": [],
+  "FastWalkPlans": 0,
+  "Frame": 52,
+  "Generation": 1,
+  "HoldFrames": 6,
+  "InvalidatedRoutes": 0,
+  "LandingConfirmationFrames": 0,
+  "LastLanding": {
+    "ActionNumber": 1,
+    "Actual": {
+      "X": 33688.59,
+      "Y": 3462
+    },
+    "ActualVelocity": {
+      "X": 0,
+      "Y": 0
+    },
+    "Jump": true,
+    "MaxError": 0,
+    "Predicted": {
+      "X": 33688.59,
+      "Y": 3462
+    },
+    "PredictedVelocity": {
+      "X": 0,
+      "Y": 0
+    },
+    "Settled": true
+  },
+  "MaxError": 0,
+  "Mobility": {
+    "AvailableModes": [
+      "ground_walk",
+      "ground_jump"
+    ],
+    "EffectivePhysics": {
+      "AccRun": 0.08,
+      "AccRunSpeed": 3,
+      "Air": null,
+      "ExtraJump": null,
+      "Gravity": 0.4,
+      "JumpHeight": 15,
+      "JumpSpeed": 5.01,
+      "MaxFall": 10.01,
+      "MaxRun": 3,
+      "RunSlowdown": 0.2
+    },
+    "Generation": 1,
+    "Height": 42,
+    "Movement": {
+      "BlockExtraJumps": false,
+      "Environment": {
+        "HoneyWet": false,
+        "LavaWet": false,
+        "Pulley": false,
+        "PulleyDir": 0,
+        "ShimmerWet": false,
+        "Wet": false
+      },
+      "ExtraJumps": [
+        {
+          "Active": false,
+          "Available": false,
+          "Enabled": false,
+          "FullName": "Terraria/FlipperJump",
+          "Order": 0
+        },
+        {
+          "Active": false,
+          "Available": false,
+          "Enabled": false,
+          "FullName": "Terraria/BasiliskMountJump",
+          "Order": 1
+        },
+        {
+          "Active": false,
+          "Available": false,
+          "Enabled": false,
+          "FullName": "Terraria/GoatMountJump",
+          "Order": 2
+        },
+        {
+          "Active": false,
+          "Available": false,
+          "Enabled": false,
+          "FullName": "Terraria/SantankMountJump",
+          "Order": 3
+        },
+        {
+          "Active": false,
+          "Available": false,
+          "Enabled": false,
+          "FullName": "Terraria/UnicornMountJump",
+          "Order": 4
+        },
+        {
+          "Active": false,
+          "Available": false,
+          "Enabled": false,
+          "FullName": "Terraria/SandstormInABottleJump",
+          "Order": 5
+        },
+        {
+          "Active": false,
+          "Available": false,
+          "Enabled": false,
+          "FullName": "Terraria/BlizzardInABottleJump",
+          "Order": 6
+        },
+        {
+          "Active": false,
+          "Available": false,
+          "Enabled": false,
+          "FullName": "Terraria/FartInAJarJump",
+          "Order": 7
+        },
+        {
+          "Active": false,
+          "Available": false,
+          "Enabled": false,
+          "FullName": "Terraria/TsunamiInABottleJump",
+          "Order": 8
+        },
+        {
+          "Active": false,
+          "Available": false,
+          "Enabled": false,
+          "FullName": "Terraria/CloudInABottleJump",
+          "Order": 9
+        }
+      ],
+      "GrappleCount": 0,
+      "GrappleListComplete": true,
+      "Grapples": [],
+      "Mount": {
+        "Active": false,
+        "ModFullName": null,
+        "RegisteredTypes": 54,
+        "Type": -1
+      },
+      "Rockets": {
+        "Boots": 0,
+        "CanRocket": false,
+        "Delay": 0,
+        "Delay2": 0,
+        "Frame": false,
+        "Release": false,
+        "Time": 7,
+        "TimeMax": 7
+      },
+      "Scope": "loaded native registries and current player state; discovery is not navigation support",
+      "Wings": {
+        "BaseStats": null,
+        "FunctionalSlot": 0,
+        "RegisteredSlots": 59,
+        "Time": 0,
+        "TimeMax": 0
+      }
+    },
+    "ObservedPhysics": {
+      "AccRun": 0.08,
+      "AccRunSpeed": 3,
+      "Air": null,
+      "ExtraJump": null,
+      "Gravity": 0.4,
+      "JumpHeight": 15,
+      "JumpSpeed": 5.01,
+      "MaxFall": 10.01,
+      "MaxRun": 3,
+      "RunSlowdown": 0.2
+    },
+    "Revision": 37,
+    "Session": 37,
+    "Source": "native_PostUpdateRunSpeeds",
+    "SourceTick": 10519,
+    "Supported": true,
+    "SwiftnessExpiryTail": false,
+    "UnsupportedEffects": [],
+    "Variant": "basic",
+    "Width": 20
+  },
+  "MobilityRevision": 37,
+  "NoProgressUpdates": 0,
+  "ObservedGrounded": null,
+  "ObservedPosition": {
+    "X": 33688.59,
+    "Y": 3462
+  },
+  "ObservedVelocity": {
+    "X": 0,
+    "Y": 0
+  },
+  "PlanKind": "surface_graph",
+  "PlanMilliseconds": 2.4416,
+  "PlanMobilityRevision": 37,
+  "PlanNumber": 15,
+  "PlanStart": {
+    "Air": null,
+    "AirPhase": 0,
+    "ExtraActive": false,
+    "ExtraAvailable": false,
+    "ExtraUsed": false,
+    "Grounded": true,
+    "JumpFramesLeft": 0,
+    "Px": 33616,
+    "Py": 3462,
+    "ReleaseJump": true,
+    "Vx": 0,
+    "Vy": 0
+  },
+  "PlannedActions": 1,
+  "PredictedLanding": {
+    "X": 33688.59,
+    "Y": 3462
+  },
+  "ProgressActivity": "VerifiedCheckpoint",
+  "ReachedGoal": true,
+  "Reason": "landing region verified on safe settled ground",
+  "RecoveryCount": 0,
+  "RecoveryInputsReleased": null,
+  "RecoveryPosition": null,
+  "RecoveryReason": null,
+  "RecoveryReplans": 0,
+  "RepeatRejections": 0,
+  "SafeSupport": null,
+  "SearchCacheHits": 0,
+  "SearchExit": "complete",
+  "SearchExpansionHits": 0,
+  "SearchFailureReason": null,
+  "SearchNumber": 15,
+  "SearchRejections": {
+    "no safe landing/progress": 2
+  },
+  "SearchWaitUpdates": 15,
+  "Session": 37,
+  "Status": "arrived",
+  "SurfaceGraph": {
+    "CandidateEdges": 70,
+    "CandidateReachedGoal": true,
+    "ChangedTiles": 2200,
+    "EstimatedRouteUpdates": 20.666666,
+    "Exit": "complete",
+    "Expansions": 4,
+    "Nodes": 49,
+    "Radius": 24,
+    "RangeExpansions": 0,
+    "RetainedNodes": 0,
+    "SliceMilliseconds": 4.0731,
+    "SliceWork": 483,
+    "TileReads": 2200,
+    "VerifiedEdges": 1,
+    "Waypoint": {
+      "MaxPlayerLeftX": 33704,
+      "MinPlayerLeftX": 33684,
+      "SurfaceY": 3504
+    }
+  },
+  "TargetRegion": {
+    "MaxPlayerLeftX": 33704,
+    "MinPlayerLeftX": 33684,
+    "SurfaceY": 3504
+  },
+  "TargetX": 33684,
+  "TimeBudgetReached": true,
+  "TripPlanningMilliseconds": 14.086500000000001,
+  "TripUpdates": 67,
+  "VisitedCheckpoints": 2
+}

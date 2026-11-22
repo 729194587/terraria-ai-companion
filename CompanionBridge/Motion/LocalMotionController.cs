@@ -31,6 +31,7 @@ internal enum MotionFailureKind { None, RouteDeviation, Unsafe }
 
 internal sealed class LocalMotionController
 {
+    internal int? LiveFallStart { get; set; }
     private Prediction _plan;
     private int _session, _direction, _generation, _frame, _hold, _badFrames, _supportedLandingFrames;
     private float _maxError;
@@ -102,6 +103,11 @@ internal sealed class LocalMotionController
             _frame = 0; _badFrames = 0; _supportedLandingFrames = 0; _maxError = 0; _airborne = false;
         }
         _plan=AirMotionModel.Correct(_plan,_frame,state,parameters,world);
+        var landing=_plan.Frames[^1].State;
+        if(LiveFallStart is int from&&state.Vy>=0&&state.JumpFramesLeft==0&&landing.Py>state.Py+LandingRegion.FeetTolerance
+            &&(!world.SafeLanding(landing)||!parameters.Fall.Safe(state.Grounded?FallSafety.Row(state.Py):from,landing.Py)
+                &&!world.NegatesFallDamage(landing)))
+            return Fail("live descent landing no longer safe",MotionFailureKind.RouteDeviation);
         var next = _plan.Frames[_frame];
         // Recheck the immediate step against the current world and actual velocity.
         try

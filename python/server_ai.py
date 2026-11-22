@@ -13,7 +13,16 @@ from control import BridgeError, NotAdmittedError, command_owner
 import agent_trace as tracing
 
 
+CONTAINER_READS = frozenset(("inspect_container",))
+REFORGE_READS = frozenset(("quote_reforge",))
+NURSE_READS = frozenset(("quote_nurse_heal",))
+SALE_READS = frozenset(("quote_npc_sale",))
+SHOP_READS = frozenset(("inspect_npc_shop", "quote_npc_purchase"))
+HOUSING_READS = frozenset(("inspect_housing", "inspect_npc_housing"))
+BUILD_READS = frozenset(("build_diff",))
+PYLON_READS = frozenset(("list_pylons",))
 MAP_READS = frozenset(("query_map",))
+COMBAT_READS = frozenset(("query_combat","query_combat_loadout","list_teammates","discover_bosses"))
 CRAFT_READS = frozenset(("query_recipes",))
 SCENE_OPERATIONS = frozenset(("observe_scene",))
 PERCEPTION_OPERATIONS = frozenset(("observe_terrain", "scan_tiles", "scan_entities", "inspect_tile", "resolve_content"))
@@ -28,7 +37,20 @@ def operations_for_capabilities(capabilities):
     for capability, names in (
         ('server_ai_reads_v1', {'get_player_state', 'inspect_inventory'}),
         ('server_ai_perception_v1', PERCEPTION_OPERATIONS),
+        ('server_ai_build_diff_v1', BUILD_READS),
+        ('server_ai_merchant_shop_v1', SHOP_READS),
+        ('server_ai_merchant_sale_v1', SALE_READS),
+        ('server_ai_nurse_v1', NURSE_READS),
+        ('server_ai_reforge_v1', REFORGE_READS),
+        ('server_ai_npc_housing_v1', {'inspect_npc_housing'}),
+        ('server_ai_housing_inspect_v1', {'inspect_housing'}),
+        ('server_ai_pylons_v1', PYLON_READS),
         ('server_ai_map_v1', MAP_READS),
+        ('server_ai_containers_v1', CONTAINER_READS),
+        ('server_ai_combat_v1', {'query_combat'}),
+        ('server_ai_regroup_v1', {'list_teammates'}),
+        ('server_ai_boss_strategy_v1', {'discover_bosses'}),
+        ('server_ai_combat_primary_v1', {'query_combat_loadout'}),
         ('server_ai_crafting_v1', CRAFT_READS),
         ('server_ai_scene_v1', SCENE_OPERATIONS),
     ):
@@ -39,10 +61,37 @@ def operations_for_capabilities(capabilities):
         for capability, operation in (
             ('server_ai_direct_input_v1', 'move_input'),
             ('server_ai_tasks_v1', 'mine_target'),
+            ('server_ai_collect_drops_v1', 'collect_drops'),
+            ('server_ai_place_item_v1', 'place_item'),
+            ('server_ai_build_place_v1', 'build_place'),
             ('server_ai_navigation_v1', 'navigate_to'),
+            ('server_ai_combat_v1', 'combat_attack'),
+            ('server_ai_boss_encounter_v1', 'boss_encounter'),
+            ('server_ai_combat_primary_v1', 'configure_combat_loadout'),
             ('server_ai_crafting_v1', 'craft_recipe'),
             ('server_ai_place_object_workbench_v1', 'place_object'),
             ('server_ai_place_tile_v1', 'place_tile'),
+            ('server_ai_personal_inventory_v1', 'manage_trash'),
+            ('server_ai_personal_inventory_v1', 'switch_equipment_loadout'),
+            ('server_ai_inventory_favorite_v1', 'set_inventory_favorite'),
+            ('server_ai_drop_item_v1', 'drop_inventory_item'),
+            ('server_ai_open_item_v1', 'open_inventory_item'),
+            ('server_ai_npc_dialogue_v1', 'open_npc_dialogue'),
+            ('server_ai_npc_dialogue_v1', 'close_npc_dialogue'),
+            ('server_ai_merchant_purchase_v1', 'buy_npc_item'),
+            ('server_ai_merchant_sale_v1', 'sell_npc_item'),
+            ('server_ai_nurse_v1', 'heal_at_nurse'),
+            ('server_ai_reforge_v1', 'reforge_item'),
+            ('server_ai_housing_assignment_v1', 'assign_npc_home'),
+            ('server_ai_pylons_v1', 'teleport_to_pylon'),
+            ('server_ai_regroup_v1', 'set_team'),
+            ('server_ai_regroup_v1', 'teleport_to_teammate'),
+            ('server_ai_dismiss_summon_v1', 'dismiss_summon'),
+            ('server_ai_hammer_v1', 'mine_wall'),
+            ('server_ai_hammer_v1', 'hammer_tile'),
+            ('server_ai_interact_tile_v1', 'interact_tile'),
+            ('server_ai_doors_v1', 'open_door'),
+            ('server_ai_doors_v1', 'close_door'),
             ('server_ai_place_rope_v1', 'place_rope'),
             ('server_ai_move_on_rope_v1', 'move_on_rope'),
             ('landing_region_navigation_v1', 'navigate_to_landing_region'),
@@ -53,6 +102,14 @@ def operations_for_capabilities(capabilities):
         operations.update(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
     if {'server_ai_actions_v1', 'server_ai_equipment_v1'} <= caps:
         operations.update(('equip_item', 'unequip_item'))
+    if {'server_ai_actions_v1', 'server_ai_containers_v1'} <= caps:
+        operations.update(('open_container', 'close_container'))
+        if 'server_ai_sorting_v1' in caps:
+            operations.update(('sort_inventory', 'sort_container'))
+        if 'server_ai_container_batch_v1' in caps:
+            operations.update(('quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'))
+        if 'server_ai_container_transfer_v1' in caps:
+            operations.update(('deposit_container_item', 'withdraw_container_item'))
     return frozenset(operations)
 
 
@@ -62,6 +119,8 @@ class ServerAiBridge:
         self.timeout = timeout
         self.trace_connection_id = uuid.uuid4().hex
         self._lock = threading.RLock()
+        self._regroup_task = None
+        self._retired_binding = False
         self._closed = False
         self._action_id = None
         self._request_id = 0
@@ -111,11 +170,14 @@ class ServerAiBridge:
         with self._wire_lock:
             if _guard is not None and not _guard():
                 raise BridgeError('AI reply superseded before send',status='superseded')
+            if self._retired_binding:
+                raise BridgeError('Action identity/outcome unresolved: stale_binding')
             if self._closed:raise BridgeError('Server AI connection closed; action outcome may be unknown')
             self._request_id+=1;request_id=str(self._request_id)
             request={'v':1,'id':request_id,'op':op,**values}
             if op!='bind':request['binding']=self.binding
-            wire=(json.dumps(request,ensure_ascii=False)+'\n').encode('utf-8')
+            compact = (op, request.get("operation")) in {("query", "build_diff"), ("start", "build_place")}
+            wire=(json.dumps(request,ensure_ascii=False,separators=(",", ":") if compact else None)+'\n').encode('utf-8')
             if len(wire)>4097:raise BridgeError('AI request exceeds 4096 bytes')
             pending=Future()
             with self._pending_lock:self._pending[request_id]=pending
@@ -139,9 +201,17 @@ class ServerAiBridge:
         if not reply.get("ok"):
             # Older peers incorrectly label duplicate IDs as not_admitted. The original
             # action may have executed; this error never proves absence of effects.
+            if op=='retreat' and reply.get('error') in ('invalid_destination','boss_retreat_unsafe_destination','boss_not_started','boss_retreat_unavailable'):
+                raise NotAdmittedError(reply['error'],status=reply['error'])
             if op == 'start' and reply.get('dispatchState') == 'not_admitted' and reply.get('error') != 'duplicate_action':
                 raise NotAdmittedError(reply.get('error', 'AI start rejected'), status=reply.get('error'))
-            if self._action_id is not None and reply.get("error") in ("stale_binding", "identity_unavailable", "engine_unavailable", "unknown_action"):
+            if (op=='action' and reply.get('error')=='stale_binding'
+                    and values.get('actionId')==self._regroup_task and self._regroup_task is not None):
+                # Fence all future requests. Keep only the disconnect signal for the server-owned successor.
+                self._retired_binding=True
+                raise BridgeError("Action identity/outcome unresolved: stale_binding")
+            if (reply.get("error") in ("stale_binding", "identity_unavailable")
+                    or self._action_id is not None and reply.get("error") in ("engine_unavailable", "unknown_action")):
                 self.close()
                 raise BridgeError("Action identity/outcome unresolved: " + reply["error"])
             raise BridgeError(reply.get("error", "AI request rejected"), status=reply.get("error"))
@@ -195,21 +265,29 @@ class ServerAiBridge:
                     raise
             if cmd == "query_atomic":
                 operation = parameters.get("operation")
-                if operation not in {"get_player_state", "inspect_inventory"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS or operation not in self.supported_atomic_operations:
+                if operation not in {"get_player_state", "inspect_inventory"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | BUILD_READS | SHOP_READS | SALE_READS | NURSE_READS | REFORGE_READS | HOUSING_READS | PYLON_READS | MAP_READS | COMBAT_READS | CONTAINER_READS or operation not in self.supported_atomic_operations:
                     raise BridgeError("Query unsupported by server AI backend", status="unsupported_operation")
                 reply = self._request("query", operation=operation, arguments=parameters.get("arguments", {}))
                 data = reply.get("data")
                 if not isinstance(data, dict):
                     self.close()
                     raise BridgeError("Missing AI query envelope")
-                if data.get("available") is True and (data.get("worldSessionId") != self.binding["world"]
+                available = data.get("available")
+                if type(available) is not bool or (not available and (
+                        not isinstance(data.get("reason"), str) or not data["reason"] or "data" in data)):
+                    self.close()
+                    raise BridgeError("Malformed AI query availability")
+                # Older unavailable observations carry only the outer binding and reason.
+                sampled = available or any(k in data for k in (
+                    "worldSessionId", "actorGeneration", "actorSlot", "gameUpdate", "clock", "observedAtUnixMs"))
+                if sampled and (data.get("worldSessionId") != self.binding["world"]
                         or data.get("actorGeneration") != self.binding["generation"]
                         or data.get("actorSlot") != self.binding["slot"]
                         or type(data.get("gameUpdate")) is not int or data["gameUpdate"] < 0
-                        or not isinstance(data.get("data"), dict)):
+                        or (available and not isinstance(data.get("data"), dict))):
                     self.close()
                     raise BridgeError("AI query evidence identity/shape mismatch")
-                if operation in PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS and data.get("available") is True and (
+                if sampled and (not available or operation not in {"inspect_inventory", "get_player_state"}) and (
                         type(data.get("observedAtUnixMs")) is not int or data["observedAtUnixMs"] <= 0
                         or data.get("clock") != "server_utc_at_projection"):
                     self.close()
@@ -222,7 +300,7 @@ class ServerAiBridge:
                 return self._movement(self._request("action", actionId=self._action_id)["data"]["action"])
             if cmd == "start_atomic":
                 operation = parameters.get("operation")
-                if operation not in self.supported_atomic_operations - ({"wait", "stop_action", "get_player_state", "inspect_inventory"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | MAP_READS):
+                if operation not in self.supported_atomic_operations - ({"wait", "stop_action", "get_player_state", "inspect_inventory", "combat_attack", "boss_encounter", "collect_drops", "place_item", "build_place"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | BUILD_READS | SHOP_READS | SALE_READS | NURSE_READS | REFORGE_READS | HOUSING_READS | PYLON_READS | MAP_READS | COMBAT_READS | CONTAINER_READS):
                     raise BridgeError("Operation unsupported by server AI backend", status="unsupported_operation")
                 if parameters.get("expectedGeneration") != self.binding["generation"]:
                     raise BridgeError("AI generation changed", status="stale_binding")
@@ -247,12 +325,17 @@ class ServerAiBridge:
 
         No reconnect/replay or new execution state here. C# checks connection ownership.
         """
-        if op not in ('start', 'action', 'cancel') or (op == 'start' and parameters.get('operation') != 'mine_target'):
+        if op=='retreat' and 'server_ai_boss_strategy_v1' not in self.hello.get('capabilities',()):raise ValueError('Retreat unavailable')
+        if op not in ('start', 'action', 'cancel','retreat') or (op == 'start' and (
+                parameters.get('operation') not in ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place')
+                or parameters['operation'] not in self.supported_atomic_operations)):
             raise ValueError('Unsupported task request')
         if not {'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_tasks_v1', 'server_ai_program_tasks_v1'} <= set(self.hello.get('capabilities', ())):
             raise BridgeError('Task capability unavailable')
         action = self._request(op, actionId=task_id, **parameters)['data']['action']
         self._validate_action(action, task_id)
+        if op=='start' and parameters.get('operation')=='boss_encounter' and 'regroupTeammateRef' in parameters['arguments']:
+            self._regroup_task=task_id
         return action
 
     def _validate_action(self, action, action_id):

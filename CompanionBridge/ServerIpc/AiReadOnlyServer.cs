@@ -94,11 +94,13 @@ internal sealed class AiReadOnlyServer : IDisposable
     }
     internal void Tick(Func<AiReadOnlyProtocol.Identity> capture, Action<AiReadOnlyProtocol.Identity, int> select = null,
         Func<AiReadOnlyProtocol.Identity,string,JsonElement,object> query = null,
-        Func<AiReadOnlyProtocol.Identity,string,object> say = null)
+        Func<AiReadOnlyProtocol.Identity,string,object> say = null,
+        Action beforeSimulationActions = null)
     {
         AssertOwner();
         while (closed.TryDequeue(out var connection)) protocol.Forget(connection);
-        actions?.Tick(capture, select);
+        protocol.UpdateDialogues();
+        if(beforeSimulationActions==null)actions?.Tick(capture, select);
         // Bound work per simulation tick; workers never invoke capture.
         for (int i = 0; i < 16 && jobs.TryDequeue(out var job); i++)
         {
@@ -108,7 +110,14 @@ internal sealed class AiReadOnlyServer : IDisposable
             try { job.Reply.TrySetResult(protocol.Handle(job.Connection, job.Line, capture, job.Token, query, say)); }
             catch { job.Reply.TrySetResult("{\"v\":1,\"ok\":false,\"error\":\"engine_unavailable\"}"); }
         }
+        if(beforeSimulationActions!=null)
+        {
+            beforeSimulationActions();
+            actions?.Tick(capture, select);
+        }
     }
+    internal void Reflex(AiReadOnlyProtocol.Identity actor,string entityRef,string threat)
+        =>actions.Reflex(actor,protocol.ActorId(actor),entityRef,threat);
     private void AssertOwner() { if (ownerThread != Environment.CurrentManagedThreadId) throw new InvalidOperationException("IPC dispatch requires the simulation thread."); }
     public void Dispose()
     {

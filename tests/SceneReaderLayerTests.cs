@@ -40,6 +40,14 @@ public static class SceneReaderLayerTests
         if(expected["objects"] is JsonObject objects)foreach(var item in objects["items"].AsArray())
         {
             Remove(item.AsObject(),"grouping");
+            if(item["kind"].GetValue<string>()=="workbench")
+            {
+                var anchor=item["details"]["anchorTile"];
+                item["furniture"]=JsonSerializer.SerializeToNode(new{category="workbench",
+                    footprint=new{x=anchor["x"].GetValue<int>(),y=anchor["y"].GetValue<int>(),width=2,height=1},
+                    origin=new{x=0,y=0},placementAnchor=anchor},Json);
+                item["complete"]=item["observedTileCount"].GetValue<int>()==2;
+            }
             if(item["details"] is JsonObject details&&details.ContainsKey("identity"))Remove(details,"identity");
         }
         foreach(string name in new[]{"landingRegions","placementCandidates","objectPlacementCandidates"})

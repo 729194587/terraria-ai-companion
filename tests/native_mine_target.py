@@ -143,6 +143,33 @@ async def verify(args):
         await verify_navigation()
         return
 
+    for case in ('cluster_far_right', 'cluster_far_left', 'cluster_near'):
+        spec = await fixture(case)
+        bridge = ServerAiBridge(args.port)
+        try:
+            result = await atomic.dispatch(bridge, 'mine_target', dict(x=spec['x'], y=spec['y'], cluster=True))
+            rows.append(dict(case=case, result=result))
+            save()
+            task = result['evidence']['task']
+            assert task['status'] == 'completed' and task['result']['inputsReleased'], task
+            history = task['progress']['children']
+            if case == 'cluster_near':
+                assert all(child['taskName'] == 'excavate_tiles' for child in history), history
+            else:
+                first = history[0]
+                assert first['taskName'] == 'navigate_to_landing_region' and first['status'] == 'completed', first
+                movement = first['result']['evidence']
+                direction = 1 if case == 'cluster_far_right' else -1
+                assert movement['settled'] and direction * (movement['x'] - movement['startX']) > 15 * 16, movement
+            targets = task['result']['evidence']['targets']
+            assert {(t['x'], t['y']) for t in targets} == {(spec['x'] + i, spec['y']) for i in range(3)}, targets
+            assert all(t['status'] == 'verified' and t['proof']['Strikes'] > 0 for t in targets), targets
+            print(case, [child['taskName'] for child in history], flush=True)
+        finally:
+            bridge.close()
+    if args.cluster_only:
+        return
+
     choose = "local q=api('observe_scene',{layers={'objects'}}); for _,o in ipairs(q.data.objects.items) do if o.kind=='ore_component' and o.target then return api('mine_target',{target=o.target}) end end; error('no observed ore')"
     for case in ('approach', 'near', 'blocked', 'no_tool'):
         spec = await fixture(case)
@@ -215,7 +242,7 @@ async def verify(args):
 
     for case, status in (
         ('opening_across', 'completed'), ('opening_bag', 'completed'), ('opening_bag_replaced', 'failed'),
-        ('opening_down', 'completed'), ('opening_probe', 'completed'),
+        ('opening_down', 'completed'), ('opening_multidrop', 'completed'), ('opening_probe', 'completed'),
         ('opening_hazard', 'failed'), ('opening_hard', 'failed'), ('opening_unsafe', 'timeout'),
         ('opening_deadline', 'timeout'), ('opening_unknown', 'unknown'),
     ):
@@ -244,13 +271,21 @@ async def verify(args):
             assert ticks == sorted(ticks) and task['currentChild'] is None, task
             if status == 'completed':
                 cuts = [c for c in history if c['taskName']=='mine_tile']
-                assert len(cuts)>1 and task['progress']['clearedTiles']==len(cuts)-1, task
+                batches = [c['result']['evidence'] for c in history if c['taskName']=='excavate_tiles']
+                verified = [tile for batch in batches for tile in batch['verified']]
+                assert all(batch['requested']==len(batch['verified']) for batch in batches), batches
+                assert all((tile['X'], tile['Y'])!=(spec['x'], spec['y']) and tile['Strikes']>0 for tile in verified)
+                cleared = len(verified) + len(cuts) - 1
+                assert cuts and cleared > 0 and task['progress']['clearedTiles']==cleared, task
                 for cut in cuts[:-1]:
                     proof = cut['result']['evidence']
                     assert (proof['X'], proof['Y']) != (spec['x'], spec['y']) and proof['destroyedByActor'], proof
                 proof = cuts[-1]['result']['evidence']
                 assert (proof['X'], proof['Y']) == (spec['x'], spec['y']) and proof['destroyedByActor'], proof
-                if case in ('opening_down', 'opening_probe', 'opening_unsafe'):
+                if case == 'opening_multidrop':
+                    drops = task['progress']['opening']['drops']
+                    assert any(d['toFeetY']-d['fromFeetY'] == 48 for d in drops), task
+                elif case in ('opening_down', 'opening_probe', 'opening_unsafe'):
                     drops = task['progress']['opening']['drops']
                     assert drops and all(d['toFeetY']-d['fromFeetY']==16 for d in drops), task
                     if case == 'opening_unsafe':
@@ -393,4 +428,5 @@ if __name__ == '__main__':
     p.add_argument('--port', type=int, required=True)
     p.add_argument('--profile', type=Path, required=True)
     p.add_argument('--navigation-only', action='store_true')
+    p.add_argument('--cluster-only', action='store_true')
     asyncio.run(verify(p.parse_args()))

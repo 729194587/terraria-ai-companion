@@ -62,7 +62,7 @@ def _observation_summary(name, result):
                     if isinstance(item,dict) and isinstance(item.get('use'),dict):
                         out['use']=_fields(item['use'],('pick','axe','hammer','damage','createTile','createWall','consumable','useTime'))
                     if isinstance(item,dict) and isinstance(item.get('details'),dict):
-                        out['details']=_fields(item['details'],('entityRef','type','life','lifeMax','stack','contentKey'))
+                        out['details']=_fields(item['details'],('entityRef','type','life','lifeMax','stack','contentKey','typeName'))
                 summary[collection+'OmittedFromLog']=max(0,len(items)-8)
     if name in ('get_exploration_observation','observe_exploration','get_observation'):
         obs=result.get('exploration',result.get('observation')) or {}

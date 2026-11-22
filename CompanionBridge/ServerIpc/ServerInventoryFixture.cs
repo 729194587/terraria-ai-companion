@@ -209,7 +209,7 @@ public sealed class InventoryDiagnosticItem : ModItem
     internal string Mode="";
     internal int State;
     internal static int SaveCalls;
-    public override bool IsLoadingEnabled(Mod mod)=>Program.LaunchParameters.ContainsKey("-companioninventorytest")&&Program.LaunchParameters.ContainsKey("-companionaiipctest");
+    public override bool IsLoadingEnabled(Mod mod)=>ServerContainerFixture.SortEnabled || ServerContainerFixture.BatchEnabled || ServerContainerFixture.TransferEnabled || Program.LaunchParameters.ContainsKey("-companioninventorytest")&&Program.LaunchParameters.ContainsKey("-companionaiipctest");
     public override string Texture=>"Terraria/Images/Item_9";
     public override void SetDefaults(){Item.width=16;Item.height=16;Item.maxStack=9999;}
     public override void SaveData(TagCompound tag)

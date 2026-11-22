@@ -76,8 +76,54 @@ public static class LocalTerrainPlanningTests
         }
         source=new();plans=Evaluate(source,LandingRegion.AtDestination(1610,1616));
         Check(plans.Any(p=>p.Actions.Any(a=>a.Kind==LocalEditKind.Mine&&a.Expected.Py>a.Start.Py)),"safe one-row native excavation structure remains available");
+        CheckDescent();
         CheckWater();
         Console.WriteLine($"Local terrain planning: {checks} checks passed; structural counterfactuals only");
+    }
+
+    private static void CheckDescent()
+    {
+        const int vineType=52;
+        var view=new LocalTerrainView((int x,int y)=>y switch
+        {
+            100=>new('.',default,vineType),
+            101=>new('.',default,vineType),
+            103=>new('#',default,1),
+            _=>new('.',default)
+        });
+        Check(view.Environment(100,100).HasTile&&view.Environment(100,100).TileType==vineType
+            &&!view.Environment(100,102).HasTile,"collision air distinguishes vines from absent tiles");
+        Check(!MotionSupport.SafeLanding(Start,view.DryCell),"vines supply no foot contact");
+        var fall=LocalEditGeometry.FallLanding(Start,view.DryCell,PhysicsParameters.Basic,64);
+        Check(fall?.Py==Start.Py+48,"neutral fall traverses vines and finds the first real landing");
+        Check(!LocalEditGeometry.FallLanding(Start,view.DryCell,PhysicsParameters.Basic,32).HasValue,"depth budget protects unsupported drops");
+        var overlay=view.Fork();
+        Check(overlay.Set(100,100,'.')&&!overlay.Environment(100,100).HasTile&&view.Environment(100,100).HasTile,
+            "a counterfactual removal clears identity without changing the source");
+        foreach(char bad in new[]{'?','!'})
+            Check(!LocalEditGeometry.FallLanding(Start,(x,y)=>x==100&&y==101?bad:view.DryCell(x,y),PhysicsParameters.Basic,64).HasValue,
+                "unknown or hazardous cells abort a descent even when a floor exists");
+        var lava=new LocalTerrainView((int x,int y)=>y==101?new('.',new TileLiquid(1,255)):view.Environment(x,y));
+        Check(!LocalEditGeometry.FallLanding(Start,lava.DryCell,PhysicsParameters.Basic,64).HasValue,"lava interrupts the dry descent preview");
+        foreach(var (shape,height) in new[]{('=',16),('h',24),('1',16),('2',16)})
+        {
+            char Landing(int x,int y)=>y==101?shape:view.DryCell(x,y);
+            Check(LocalEditGeometry.FallLanding(Start,Landing,PhysicsParameters.Basic,64)?.Py==Start.Py+height,
+                $"{shape} catches the body at its own collision surface");
+        }
+        char RemainingSupport(int x,int y)=>x==101&&y==100?'#':view.DryCell(x,y);
+        Check(!LocalEditGeometry.FallLanding(Start,RemainingSupport,PhysicsParameters.Basic,64).HasValue
+            &&MotionSupport.SafeLanding(Start,RemainingSupport),"partial support stops the fall at the original height");
+
+        var ledge=new SurfaceGraphTests.Terrain{ReadOverride=(x,y)=>x<=101&&y>=100||y>=103?'#':'.'};
+        var side=LocalEditGeometry.LowerWalkLanding(Start,PhysicsParameters.Basic,ledge,1655,1648,64);
+        Check(side?.Py==Start.Py+48&&side.Value.Px>Start.Px,"a verified walking trajectory finds a lower side landing");
+        Check(!LocalEditGeometry.LowerWalkLanding(Start,PhysicsParameters.Basic,ledge,1655,1648,32).HasValue,
+            "the lateral trajectory obeys the same drop bound");
+        var tight=new SurfaceGraphTests.Terrain{Floor=true};tight.Tiles[(101,98)]='#';
+        var narrow=Start with{Px=1596};
+        Check(!LocalEditGeometry.LandingBand(narrow,tight.Cell)&&LocalEditGeometry.FindFlatLandingBand(narrow,tight.Cell) is {} band
+            &&band.Contains(narrow)&&band.MaxPlayerLeftX==narrow.Px,"a narrow supported pose survives unsafe adjacent offsets");
     }
 
     private static void CheckWater()

@@ -45,6 +45,7 @@ namespace Terraria
     }
     public sealed class Player : Entity
     {
+        public int fallStart;
         public bool dead, ghost;
         public bool controlLeft, controlRight, controlJump, controlDown, controlUp, controlUseItem, releaseUseItem;
         public float gravDir = 1;
@@ -331,6 +332,7 @@ namespace CompanionBridge.Motion
     // planner below are production classes. Count cancellation at the hook boundary.
     internal static class GameNavigation
     {
+        internal static FallSafety FallProfile(Terraria.Player player)=>default;
         internal static NavigationSnapshot Snapshot => Task.Snapshot;
         internal static NavigationTask Task = new();
         internal static IMotionWorld World = null;

@@ -8,17 +8,20 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from jsonschema import Draft202012Validator
 
 from test_agent import Model, final, event
 from test_lua_agent import program
 from agent import Agent
 from agent_run import facts_reply, goal_outcome, task_outcome
+from api_result_contracts import schema_for
 from control import BridgeError
 from llm import LLMError
 from lua_agent import ProgramStore
 from lua_runtime import LuaRuntime
 from program_tasks import TaskCoordinator, coordinator, definitions, validate
 from server_ai import ServerAiBridge
+from server_ai_contract import api_help
 
 SUBMIT = "local t=api('submit_task',{operation='mine_target',arguments={x=10,y=20}});"
 
@@ -71,6 +74,7 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
     async def submit(self):
         result=await self.runtime.execute(SUBMIT+'return t')
         self.assertEqual('completed',result['status'],result)
+        Draft202012Validator(schema_for('submit_task')).validate(result['value'])
         return result['value']['taskId']
 
     def make_agent(self, model):
@@ -85,20 +89,48 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         task_id=await self.submit()
         waited=await self.runtime.execute("return api('await_task',{taskId='"+task_id+"',milliseconds=1})")
         self.assertEqual(('completed','timeout','running'),(waited['status'],waited['value']['waitStatus'],waited['value']['status']))
+        Draft202012Validator(schema_for('await_task')).validate(waited['value'])
         self.assertEqual('running',task_outcome([], active_tasks=waited['tasks']['active']))
         query=await self.runtime.execute("return api('query_task',{taskId='"+task_id+"'})")
         self.assertEqual('running',query['value']['status'])
+        help_view = api_help(self.bridge, {'name': 'query_task'})
+        validator = Draft202012Validator(help_view['returnsSchema'])
+        validator.validate(query['value'])
+        self.assertIsNone(query['value']['action']['task']['currentChild'])
+        self.assertNotIn('result', query['value'])
+        for field in ('action.task', 'phase', 'progress', 'currentChild', 'lastResult', 'result.task'):
+            self.assertIn(field, help_view['returns'])
+        for phrase in ('progress.children', 'effectVerified', 'inputsReleased', 'unknown',
+                       'summaryOnly', 'resultSummaryOnly', '用原 taskId 调用 query_task'):
+            self.assertIn(phrase, help_view['statusSemantics'])
         conflict=await self.runtime.execute("api('use_item',{})")
         self.assertEqual('failed',conflict['status']);self.assertEqual(1,await self.starts())
         self.complete()
         await self.wait_for(lambda:self.manager.records[task_id]['done'].is_set())
-        view=(await self.manager.invoke('query_task',{'taskId':task_id}))
+        queried=await self.runtime.execute("return api('query_task',{taskId='"+task_id+"'})")
+        self.assertEqual('completed', queried['status'], queried)
+        view=queried['value']
+        validator.validate(view)
+        task = view['action']['task']
+        self.assertEqual(task, view['result']['task'])
+        self.assertEqual('terminal', task['phase'])
+        self.assertIsNone(task['currentChild'])
+        child, = task['progress']['children']
+        self.assertEqual(task_id, child['parentTaskId'])
+        self.assertEqual('mine_tile', child['taskName'])
+        self.assertEqual((1, 1), (task['progress']['settledChildren'], task['progress']['completedChildren']))
+        self.assertEqual(child['result'], task['lastResult'])
+        self.assertTrue(task['result']['effectVerified'])
         self.assertEqual('completed',view['result']['status']);self.assertTrue(view['result']['completed'])
         self.assertEqual('completed',task_outcome([view['result']],False,'unknown'))
         self.assertEqual([True],notices)
         projection=self.manager.projection();self.assertEqual(1,len(projection['results']))
+        with patch('lua_action_results.ACTION_RESULTS_BYTES', 1024):
+            summary, = self.manager.projection()['results']
+        self.assertTrue(summary['resultSummaryOnly'])
+        self.assertNotIn('task', summary['result'])
         self.manager.consume(projection['throughSequence'])
-        await self.manager.invoke('query_task',{'taskId':task_id})
+        self.assertEqual(view, await self.manager.invoke('query_task',{'taskId':summary['taskId']}))
         self.assertEqual([],self.manager.projection()['results']);self.assertEqual([True],notices)
 
     async def test_program_cancel_preserves_task_then_explicit_cancel_releases(self):
@@ -110,6 +142,54 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         cancelled=await self.manager.invoke('cancel_task',{'taskId':task_id})
         self.assertEqual('cancelled',cancelled['status']);self.assertTrue(cancelled['result']['inputsReleased'])
         self.assertEqual(1,await self.starts())
+
+    async def test_mcp_program_cancel_preserves_task_but_lease_delete_stops_it(self):
+        import httpx
+        from agent import is_server_ai_chat
+        from external_brain import BrainHost
+        try:
+            from external_mcp import ExternalMcp, token_digest
+        except ImportError:
+            self.skipTest('install python/requirements-mcp.txt to verify External Brain')
+        token = 'a' * 32
+        app = ExternalMcp(BrainHost(self.make_agent(None), is_server_ai_chat), 18790, token_digest(token))
+        headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/json, text/event-stream'}
+        transport = httpx.ASGITransport(app=app)
+        try:
+            async with httpx.AsyncClient(transport=transport, base_url='http://127.0.0.1:18790',
+                                         headers=headers) as client:
+                async def post(method, params, request_id=None):
+                    body = {'jsonrpc': '2.0', 'method': method, 'params': params}
+                    if request_id is not None:
+                        body['id'] = request_id
+                    return await asyncio.wait_for(client.post('/mcp', json=body), 10)
+
+                opened = await post('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
+                                    'clientInfo': {'name': 'fixture', 'version': '1'}}, 1)
+                self.assertEqual(200, opened.status_code, opened.text)
+                client.headers.update({'Mcp-Session-Id': opened.headers['Mcp-Session-Id'],
+                                       'MCP-Protocol-Version': opened.json()['result']['protocolVersion']})
+                self.assertEqual(202, (await post('notifications/initialized', {})).status_code)
+                submitted = await post('tools/call', {'name': 'execute_lua',
+                    'arguments': {'source': SUBMIT + 'return t'}}, 2)
+                task_id = submitted.json()['result']['structuredContent']['value']['taskId']
+                wait_source = f"return api('await_task',{{taskId='{task_id}',milliseconds=30000}})"
+                waiting = asyncio.create_task(post('tools/call', {'name': 'execute_lua',
+                                             'arguments': {'source': wait_source}}, 3))
+                await self.wait_for(lambda: bool(app.session.jobs))
+                self.assertEqual(202, (await post('notifications/cancelled', {'requestId': 3})).status_code)
+                await waiting
+                await self.wait_for(lambda: not app.session.jobs)
+                self.assertEqual('running', (await self.manager.invoke('query_task', {'taskId': task_id}))['status'])
+                deleted = await asyncio.wait_for(client.delete('/mcp'), 10)
+                self.assertEqual(200, deleted.status_code)
+                self.assertEqual('native', app.brain.phase)
+                terminal = await self.manager.invoke('query_task', {'taskId': task_id})
+                self.assertEqual('cancelled', terminal['status'])
+                self.assertTrue(terminal['result']['endEvidence']['inputsReleased'])
+                self.assertEqual(1, await self.starts())
+        finally:
+            await app.close()
 
     async def test_existing_synchronous_mine_api_also_preserves_task_on_program_cancel(self):
         waiting=asyncio.create_task(self.runtime.execute("return api('mine_target',{x=10,y=20})"))
@@ -126,8 +206,17 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         await self.submit()
         result=await self.runtime.execute("return api('stop_action',{})")
         self.assertEqual('cancelled',result['lastAction']['status'])
+        Draft202012Validator(schema_for('stop_action')).validate(result['lastAction'])
         self.assertTrue(result['lastAction']['inputsReleased'])
         self.assertFalse(self.manager.blocked())
+
+    async def test_synchronous_mine_conflict_has_no_submit_receipt_in_lua_or_last_action(self):
+        await self.submit()
+        result=await self.runtime.execute("return api('mine_target',{x=10,y=20})")
+        self.assertEqual('failed',result['status'])
+        self.assertIsNone(result['value'])
+        self.assertIsNone(result['lastAction'])
+        self.assertEqual(1,await self.starts())
 
     async def test_result_notification_cannot_authorize_new_mutation(self):
         model=Model(program(SUBMIT+'return t'),final('running'),program(SUBMIT+'return t'),final('invented success'))
@@ -180,6 +269,23 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(('action_unknown','unknown'),(result['status'],result['actionState']))
         self.assertTrue(self.manager.blocked())
         self.assertTrue(self.bridge._closed)
+        self.assertEqual('1',Path(str(self.ready)+'.advance.starts').read_text())
+
+    async def test_synchronous_mine_lost_ack_retains_unknown_action_receipt(self):
+        original=self.bridge.task_request
+
+        def lose(op,*args,**kwargs):
+            result=original(op,*args,**kwargs)
+            if op=='start':
+                raise BridgeError('fixture lost ACK after admission')
+            return result
+
+        with patch.object(self.bridge,'task_request',side_effect=lose):
+            result=await self.runtime.execute("return api('mine_target',{x=10,y=20})")
+        self.assertEqual(('action_unknown','unknown'),(result['status'],result['actionState']))
+        self.assertIsNone(result['value'])
+        self.assertFalse(result['lastAction']['retryAllowed'])
+        Draft202012Validator(schema_for('mine_target')).validate(result['lastAction'])
         self.assertEqual('1',Path(str(self.ready)+'.advance.starts').read_text())
 
     async def test_cancel_before_ack_keeps_admitted_task_and_receipt(self):
@@ -257,7 +363,7 @@ class M3ResultTests(unittest.TestCase):
         prompt,tools=server_contract(bridge)
         names={op for row in capability_manifest(bridge)['categories'] for op in row['callableApis']}
         self.assertTrue({'submit_task','await_task','resume_task'}<=names)
-        self.assertIn('不自动恢复',prompt);self.assertEqual(['execute_lua'],[t['function']['name'] for t in tools])
+        self.assertIn('不自动恢复',prompt);self.assertEqual(['execute_lua','read_skill'],[t['function']['name'] for t in tools])
         bridge.hello['capabilities']=caps[:-1]  # Old task support is not M3 safety support.
         self.assertNotIn('submit_task',{op for row in capability_manifest(bridge)['categories'] for op in row['callableApis']})
 

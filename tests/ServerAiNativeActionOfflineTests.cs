@@ -42,6 +42,15 @@ public static class ServerAiNativeActionOfflineTests
     }
     public static void Run()
     {
+        {
+            var f = new Fixture();
+            string id = Guid.NewGuid().ToString("N");
+            var args = new { blueprint = new { origin = new { x=100, y=100 },
+                tiles = new[] { new { x=0, y=0, itemType=9 } } } };
+            var rejected = f.Send("start", id, "build_place", args: args);
+            Check(rejected.GetProperty("error").GetString()=="unsupported_operation" && f.Native.Starts==0,
+                "an executor without building capability refuses a build before native start");
+        }
         foreach (string trigger in new[]{"cancel","timeout"})
         foreach (string terminal in new[]{"completed","failed","timeout","cancelled","unknown","running"})
         foreach (bool released in new[]{true,false})
@@ -94,6 +103,11 @@ public static class ServerAiNativeActionOfflineTests
         Check(AiActionReasons.Navigation("no safe local route: blocked")=="native_navigation_failed","ordinary no-route mapping remains compatible");
         Check(AiActionReasons.Navigation("navigation_surface_node_budget")=="navigation_surface_node_budget","graph node resource reason survives protocol mapping");
         Check(AiActionReasons.NavigationRecoveryKind("navigation_surface_node_budget")==null,"graph node resource failure cannot trigger root excavation fallback");
+        foreach(string reason in new[]{"navigation_surface_node_budget","navigation_local_coverage_exhausted","navigation_trip_search_budget","navigation_edit_window_exceeded"})
+            Check(AiActionReasons.NavigationSearchIncomplete(reason)&&AiActionReasons.NavigationRecoveryKind(reason)==null,
+                "an incomplete search does not prove a blocked route: "+reason);
+        Check(!AiActionReasons.NavigationSearchIncomplete("navigation_unknown_terrain")
+            &&!AiActionReasons.NavigationSearchIncomplete("no safe local route: blocked"),"unknown terrain and exhausted covered routes remain distinct");
         Check(AiActionReasons.Mining("completed","None")=="native_tile_destroyed","mining success translates outcome rather than failure enum");
         foreach(var pair in new[]{("InvalidTarget","invalid_target"),("InvalidTool","invalid_tool"),("TargetChanged","target_changed"),
             ("NativeRefused","native_use_refused"),("NoPickPower","insufficient_pick_power"),("TargetProtected","target_protected"),("NativeException","native_mining_exception"),

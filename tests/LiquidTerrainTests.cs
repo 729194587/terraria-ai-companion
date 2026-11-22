@@ -1,5 +1,6 @@
 using System;
 using CompanionBridge;
+using CompanionBridge.Motion;
 
 public static class LiquidTerrainTests
 {
@@ -27,6 +28,39 @@ public static class LiquidTerrainTests
         Check(!half.OverlapsVertical(10,150,168)&&half.OverlapsVertical(10,150,168.01f),
             "half-filled surface uses a strict lower-body overlap");
         Check(!half.OverlapsVertical(10,176,186),"body entirely below this liquid cell has no overlap");
+        var world=new WaterBoundary();
+        var dry=PhysicsParameters.Basic with{CanWade=true};
+        var start=new PhysicsState(0,0,3,0,true);
+        var entering=PhysicsSimulator.Step(start,new(1,false),dry,world);
+        var wading=PhysicsSimulator.Step(entering,new(1,false),dry,world);
+        var exiting=PhysicsSimulator.Step(wading,new(1,false),dry,world);
+        Check(!entering.Wet&&entering.Px==entering.Vx&&entering.Py==dry.Gravity,
+            "entry displacement uses the native collision query at the pre-movement pose");
+        Check(wading.Wet&&wading.Px==entering.Px+wading.Vx*.5f&&world.LastWaterGravity==dry.Gravity,
+            "first water collision halves displacement, retaining velocity and that update's dry gravity");
+        Check(!exiting.Wet&&exiting.Px==wading.Px+exiting.Vx&&world.LastDryGravity==PhysicsParameters.WaterGravity,
+            "leaving water restores dry displacement before the next update restores dry gravity");
+        var jump=PhysicsSimulator.Step(new(3,0,0,0,true,Wet:true),new(1,true),dry,world);
+        Check(jump.JumpFramesLeft==PhysicsParameters.WaterJumpHeight&&jump.Vy< -5.8f&&jump.Py==jump.Vy*.5f,
+            "water jump uses native wet launch parameters and displacement");
         Console.WriteLine($"Phase 4.6 liquid terrain: {checks} checks");
+    }
+
+    private sealed class WaterBoundary : IMotionWorld
+    {
+        public float LastDryGravity,LastWaterGravity;
+        public bool WaterContact(PhysicsState s)=>s.Px>=2&&s.Px<4;
+        public PhysicsState Move(PhysicsState s,float vx,float vy,float gravity)
+        {
+            LastDryGravity=gravity;
+            return new(s.Px+vx,s.Py+vy,vx,vy,false);
+        }
+        public PhysicsState MoveInWater(PhysicsState s,float vx,float vy,float gravity)
+        {
+            LastWaterGravity=gravity;
+            return new(s.Px+vx*.5f,s.Py+vy*.5f,vx,vy,false);
+        }
+        public bool SafeSweep(PhysicsState a,PhysicsState b,out string reason){reason=null;return true;}
+        public bool SafeLanding(PhysicsState s)=>s.Grounded;
     }
 }

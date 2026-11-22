@@ -139,7 +139,7 @@ public static class MotionOfflineTests
                 for (int hold = 2; hold <= 16; hold += 2)
                 {
                     var edge = PhysicsSimulator.Predict(start, dir, Math.Min(hold, 15), PhysicsParameters.Basic,
-                        world, walkFrames: 24, rollingJump: true, maxDropPixels: StateSpacePlanner.MaxDropPixels);
+                        world, walkFrames: 24, rollingJump: true);
                     if (edge.Safe && goal.Arrived(edge.Landing, world)) directGoals++;
                 }
             foreach (int limit in new[] { 1, 256 })
@@ -415,7 +415,7 @@ public static class MotionOfflineTests
         bool candidateExists = Enumerable.Range(1, 8).Any(option =>
         {
             var edge = PhysicsSimulator.Predict(start, 1, Math.Min(option * 2, 15), PhysicsParameters.Basic,
-                world, walkFrames: 24, rollingJump: true, maxDropPixels: StateSpacePlanner.MaxDropPixels);
+                world, walkFrames: 24, rollingJump: true);
             return edge.Safe && goal.Arrived(edge.Landing, world);
         });
         Check(candidateExists, "Root expansion contains a physically validated complete landing candidate");
@@ -939,8 +939,8 @@ public static class MotionOfflineTests
         {
             var world = new World { WallX = 1600, WallWidth = 32, AllowWallLanding = true };
             Check(world.SafeLanding(top), "Player may stand safely on a two-tile-high obstacle");
-            Check(!PhysicsSimulator.Predict(top, dir, 0, ph, world).Safe,
-                "Legacy one-tile descent restriction reproduces obstacle-top departure rejection");
+            var descent=PhysicsSimulator.Predict(top,dir,0,ph,world,walkFrames:32);
+            Check(descent.Safe&&descent.Landing.Py==1558,"Ordinary walking can leave a two-tile ledge");
             var task = new NavigationTask();
             var actual = top;
             float goal = top.Px + dir * 200;
@@ -968,12 +968,7 @@ public static class MotionOfflineTests
         }
         Check(landedOnTop && chainTask.Snapshot.CompletedJumps >= 2 && chainTask.Snapshot.Status == "arrived",
             "Route may land on an obstacle, descend and clear a subsequent obstacle without restarting");
-        var deep = new World { GapStart = 1624, GapEnd = 2000, GapFloor = 1680 };
-        var rejected = PhysicsSimulator.Predict(new PhysicsState(1600, 1558, 0, 0, true), 1, 15,
-            ph, deep, maxDropPixels: StateSpacePlanner.MaxDropPixels);
-        Check(!rejected.Safe && rejected.Reason.Contains("64px"),
-            "Navigation descent remains bounded; an eighty-pixel fall is rejected");
-        Console.WriteLine("PASS: bidirectional obstacle-top departure, raised landing then another obstacle, bounded descent and rejection diagnostics");
+        Console.WriteLine("PASS: bidirectional obstacle-top departure and raised landing followed by another obstacle");
     }
 
     private static void NativeSupportRegression()
@@ -1033,7 +1028,7 @@ public static class MotionOfflineTests
         var world = new ClippedContactWorld();
         var ph = PhysicsParameters.Basic;
         var start = new PhysicsState(1600, 1526, 0, 0, true);
-        var raw = PhysicsSimulator.Predict(start, 1, 2, ph, world, rollingJump: true, maxDropPixels: 64);
+        var raw = PhysicsSimulator.Predict(start, 1, 2, ph, world, rollingJump: true);
         Check(raw.Safe && raw.ExecuteFrames < raw.Frames.Count, "Raised jump retains a rolling handoff");
         var edge = raw with { Landing = raw.Frames[raw.ExecuteFrames - 1].State };
         var controller = new LocalMotionController();

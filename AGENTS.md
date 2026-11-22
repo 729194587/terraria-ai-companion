@@ -32,7 +32,7 @@
 
 服务器模式的主链路是：本地聊天 → 客户端聊天 Bridge → 原 Agent / `execute_lua` → 原子分发器 → `ServerAiBridge` → 游戏线程 → 独立 AI Player。
 聊天通道默认 `18777`，AI IPC 默认 `18779`，游戏联机通常 `7777`；多个实例须核对端口与同一世界的绑定。
-服务器模式只向模型开放 `execute_lua`，Lua API 按当前后端能力白名单过滤；客户端完整 API 列表不是服务器能力承诺。
+服务器模式的游戏查询与动作都走 `execute_lua`，Lua API 按当前后端能力白名单过滤。另有只读 `read_skill` 加载已注册的玩法攻略；见 [Gameplay MVP 第一阶段](docs/TERRARIA_AGENT_GAMEPLAY_MVP_PHASE1.md)。
 `experiments/virtual-player-engine-hooks/` 保留独立探针与验证来源；正式集成位于 `CompanionBridge/ServerPlayerRuntime/`，仍有历史命名空间 `VirtualPlayerEngineProbe`。
 
 ## 修改时必须保持的边界

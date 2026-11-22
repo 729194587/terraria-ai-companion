@@ -57,7 +57,11 @@ local region = api('observe_scene', {
 
 `hazards.entities.items` 可包含当前 NPC/弹幕的包围盒、原生速度、观察 Tick 和短时威胁推断。当前实现的威胁推断是在最多 12 个游戏 Tick 内按相对匀速包围盒计算接触；它不模拟地形、敌人 AI 转向、输入、加速度或真实伤害判定。没有预测接触、字段缺失或列表截断均不能证明安全。
 
-专用服务器的光照数据可能返回 `available=false`，原因例如原生光照缓冲未验证。调用方必须把它视为不可用，而不是零亮度或黑暗事实。
+## 角色中心光照
+
+专用服务器的 `lighting.available=true` 表示本次成功采样。`lighting.brightness` 是角色中心 Tile 的 RGB 最大分量，`lighting.gameUpdate` 是该采样的游戏更新号。服务端以原生 `TileLightScanner` 和局部 `LightMap.Blur` 计算，使用天空颜色和角色附近的原版生态权重。自主火把与场景接口复用同一采样器。
+
+`lighting.available=false` 表示当前没有可用样本，例如覆盖不完整或原生采样失败。调用方应将此状态视为未知。该字段是角色中心的静态 Tile 照明估计，手持物、弹幕等动态光源和客户端天空特效不在采样范围。
 
 ## 地图记忆
 

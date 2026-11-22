@@ -8,7 +8,10 @@ namespace CompanionBridge;
 
 // Detached local facts. No Terraria access, path search or action selection.
 internal sealed record SceneCell(TileCell Facts,char Navigation,string Kind=null,string ContentKey=null,int? AnchorX=null,int? AnchorY=null,string[] Sources=null,
-    bool PlacementCuttable=false,bool BreakableWhenPlacing=false);
+    bool PlacementCuttable=false,bool BreakableWhenPlacing=false,SceneFurniture Furniture=null);
+internal sealed record SceneTilePoint(int X,int Y);
+internal sealed record SceneFurniture(string Category,TileBounds Footprint,SceneTilePoint Origin,SceneTilePoint PlacementAnchor,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string DoorState=null);
 // Pinned TileObject.CanPlace occupancy branch (checkStay=false), not solidity.
 // The native Place call alone clears allowed tiles; this rule never mutates them.
 internal static class WorkbenchFootprint
@@ -17,7 +20,8 @@ internal static class WorkbenchFootprint
         =>hasTile&&!((cuttable&&type!=484&&type!=654)||breakable);
 }
 internal sealed record SceneObject(string Id,string Kind,int? TypeId,string ContentKey,TileBounds ObservedBounds,
-    int ObservedTileCount,bool Complete,object Details=null,[property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] object Target=null);
+    int ObservedTileCount,bool Complete,object Details=null,[property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] object Target=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] SceneFurniture Furniture=null);
 internal sealed record SceneLanding(string Id,LandingRegion Target,float FeetDeltaY);
 internal sealed record ScenePlacement(string Id,object Target,object SolidNeighbor);
 internal sealed record SceneObjectPlacement(string Id,object Target,TileBounds Footprint,TileBounds Support,float DistancePixels,
@@ -111,7 +115,7 @@ internal static class SceneGeometry
         if(c.HasTile&&c.Actuated)return 'A';
         return TerrainClassifier.Classify(true,c.HasTile,c.Actuated,c.Solid,c.SolidTop,c.FrameY,c.HalfBlock,c.Slope,false);
     }
-    internal static char Glyph(string kind)=>kind switch{"tree_component"=>'T',"ore_component"=>'O',"chest"=>'C',"door"=>'D',"workbench"=>'W',"light_source"=>'t',"drop"=>'$',"npc"=>'N',"player"=>'P',_=>'+'};
+    internal static char Glyph(string kind)=>kind switch{"tree_component"=>'T',"ore_component"=>'O',"chest"=>'C',"door"=>'D',"workbench"=>'W',"chair"=>'c',"light_source"=>'t',"drop"=>'$',"npc"=>'N',"player"=>'P',_=>'+'};
     internal static char Danger(string[] sources)
     {
         if(sources==null||sources.Length==0)return '\0';
@@ -166,11 +170,11 @@ internal static class SceneGeometry
             int minX=group.Min(p=>p.x),maxX=group.Max(p=>p.x),minY=group.Min(p=>p.y),maxY=group.Max(p=>p.y);
             var bottom=group.OrderByDescending(p=>p.y).ThenBy(p=>p.x).First();
             output.Add(new("o"+(output.Count+1),c.Kind,c.Facts.TileType,c.ContentKey,new(minX+ox,minY+oy,maxX-minX+1,maxY-minY+1),
-                group.Count,complete,c.Kind=="light_source"
+                group.Count,c.Furniture is {} f ? group.Count==f.Footprint.Width*f.Footprint.Height : complete,c.Kind=="light_source"
                     ?new{anchorTile=new{x=minX+ox,y=minY+oy},frameX=c.Facts.FrameX,frameY=c.Facts.FrameY,actuated=c.Facts.Actuated}
                     :(object)new{anchorTile=new{x=c.AnchorX??minX+ox,y=c.AnchorY??minY+oy},
                         observedTargetTile=new{x=bottom.x+ox,y=bottom.y+oy}},
-                Target:c.Kind=="ore_component"&&oreTarget!=null?SelectTarget():null));
+                Target:c.Kind=="ore_component"&&oreTarget!=null?SelectTarget():null,Furniture:c.Furniture));
             object SelectTarget()
             {
                 var cell=group.OrderBy(p=>Math.Abs((p.x+ox)*16+8-actorX)+Math.Abs((p.y+oy)*16+8-actorY)).First();

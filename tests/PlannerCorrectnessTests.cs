@@ -26,7 +26,7 @@ public static class PlannerCorrectnessTests
                     foreach (int stride in option == 0 ? new[] { 24, 6 } : new[] { 24 })
                     {
                         var e = PhysicsSimulator.Predict(cur.S, dir, Math.Min(option * 2, Ph.JumpHeight), Ph,
-                            world, walkFrames: stride, rollingJump: true, maxDropPixels: 64);
+                            world, walkFrames: stride, rollingJump: true);
                         if (!e.Safe) continue;
                         int execute = goal.Contains(e.Landing) || !PhysicsSimulator.SupportedCheckpoint(
                             e.Frames[e.ExecuteFrames - 1].State, world) ? e.Frames.Count : e.ExecuteFrames;
@@ -69,8 +69,39 @@ public static class PlannerCorrectnessTests
         }
     }
 
+    // Reconstruct the recorded collision faces at the last merchant replan.
+    // The wall is to the left, the exit to the right, with a low roof above.
+    private static void CheckTurnaround()
+    {
+        var world = new SurfaceGraphTests.Terrain
+        {
+            ReadOverride = (x, y) => y >= 211 || x == 2085 && y >= 205
+                || x >= 2085 && x <= 2094 && y == 205 || x == 2094 && y is 206 or 207 ? '#'
+                : y == 210 && x is 2087 or 2088 ? '=' : '.'
+        };
+        var start = new PhysicsState(33384.52f, 3318, -2.1200006f, 0, true);
+        var reverse = PhysicsSimulator.Predict(start, 1, 0, Ph, world, walkFrames:24);
+        Check(reverse.Safe, $"turnaround rejected: {reverse.Reason}, frames={reverse.Frames.Count}, x={reverse.Landing.Px}, vx={reverse.Landing.Vx}");
+        var blocked = PhysicsSimulator.Predict(start, -1, 0, Ph, world, walkFrames:24);
+        Check(!blocked.Safe && blocked.Reason == "walking blocked", "actual wall contact is still rejected");
+        var task = new NavigationTask(enableSafeGroundWalk:true);
+        var state = start;
+        float rightmost = start.Px, highest = start.Py;
+        for (int tick=0; tick<1800 && !task.Terminal; tick++)
+        {
+            var input = task.Before(1, 1, 33217.027f, state, Ph, world);
+            state = PhysicsSimulator.Step(state, input, Ph, world);
+            task.After(state, world, input == default);
+            rightmost = Math.Max(rightmost, state.Px);
+            highest = Math.Min(highest, state.Py);
+        }
+        Check(task.Snapshot.Status == "arrived" && rightmost >= 2095*16 && highest+42 <= 205*16,
+            $"roof detour: {task.Snapshot.Reason}, x={state.Px}, rightmost={rightmost}, highest={highest}");
+    }
+
     public static void Run()
     {
+        CheckTurnaround();
         var w = new MotionOfflineTests.RegionWorld();
         w.Collision.WallX = 1632; w.Collision.WallHeight = 32;
         var goal = new LandingRegion(1645, 1645.5f, 1568);
@@ -84,8 +115,8 @@ public static class PlannerCorrectnessTests
         Console.WriteLine($"M4.1 narrow higher landing: expansions={route.Expansions}, ms={route.Milliseconds:F3}, exit={route.SearchExit}, edges={route.Actions.Count}");
 
         // Same cell and velocity bucket, distinct reachable jump checkpoints.
-        var a = PhysicsSimulator.Predict(Start, 1, 8, Ph, w, walkFrames: 24, rollingJump: true, maxDropPixels: 64);
-        var b = PhysicsSimulator.Predict(Start, 1, 10, Ph, w, walkFrames: 24, rollingJump: true, maxDropPixels: 64);
+        var a = PhysicsSimulator.Predict(Start, 1, 8, Ph, w, walkFrames: 24, rollingJump: true);
+        var b = PhysicsSimulator.Predict(Start, 1, 10, Ph, w, walkFrames: 24, rollingJump: true);
         var sa = a.Frames[a.ExecuteFrames - 1].State; var sb = b.Frames[b.ExecuteFrames - 1].State;
         Check(a.Safe && b.Safe && MathF.Floor((sa.Px + 10) / 16) == MathF.Floor((sb.Px + 10) / 16)
             && (int)(sa.Vx / .5f) == (int)(sb.Vx / .5f) && sa != sb, "reachable same-cell states are not equivalent");
@@ -98,8 +129,8 @@ public static class PlannerCorrectnessTests
         Check(StateSpacePlanner.SearchEstimate(Start, 1645, 1, goal, Ph) == 1
             && StateSpacePlanner.SearchEstimate(route.Actions[^1].Landing, 1645, 1, goal, Ph) == 0,
             "region indicator lower bound: outside needs >=1 positive-cost edge, inside zero");
-        var brakeA = PhysicsSimulator.Predict(sa, 0, 0, Ph, flat, walkFrames: 0, maxDropPixels: 64);
-        var brakeB = PhysicsSimulator.Predict(sb, 0, 0, Ph, flat, walkFrames: 0, maxDropPixels: 64);
+        var brakeA = PhysicsSimulator.Predict(sa, 0, 0, Ph, flat, walkFrames: 0);
+        var brakeB = PhysicsSimulator.Predict(sb, 0, 0, Ph, flat, walkFrames: 0);
         Check(brakeA.Safe && brakeB.Safe && Math.Abs(brakeA.Landing.Px - brakeB.Landing.Px) > 8, "different braking successors");
         var wall = new MotionOfflineTests.World { WallX = 1632, WallHeight = 200 };
         var slow = PhysicsSimulator.Predict(Start with { Vx = .8f }, 1, 0, Ph, wall, walkFrames: 6);

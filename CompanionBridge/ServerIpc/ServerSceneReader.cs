@@ -54,6 +54,7 @@ internal static class ServerSceneReader
             if(c.Knowledge!="read")unknown++;
             if(c.Knowledge!="read")unknownReasons[c.Knowledge]=unknownReasons.GetValueOrDefault(c.Knowledge)+1;
             if(c.CollisionKnowledge!="known")uninterpreted++;
+            SceneFurniture furniture=null;
             string kind=null;int? ax=null,ay=null;sources.Clear();
             if(c.LiquidAmount>0)sources.Add(c.LiquidType switch{0=>"water",1=>"lava",2=>"honey",3=>"shimmer",_=>"unknown_liquid"});
             if(c.HasTile&&!c.Actuated)
@@ -69,17 +70,29 @@ internal static class ServerSceneReader
                 else if(Ores.Contains(t))kind="ore_component";
                 else if(t is TileID.Containers or TileID.Containers2 or TileID.Dressers)kind="chest";
                 else if(t is TileID.OpenDoor or TileID.ClosedDoor)kind="door";
+                else if(t==TileID.Chairs)kind="chair";
                 else if(t==TileID.WorkBenches)kind="workbench";
                 else if(t==TileID.Torches)kind="light_source";
-                if(layers.Has("objects")&&kind is ("chest" or "door" or "workbench"))
-                {var a=TileObjectData.TopLeft(x+ox,y+oy);ax=a.X;ay=a.Y;}
+                if(layers.Has("objects")&&kind is ("chest" or "door" or "workbench" or "chair"))
+                {
+                    var left=TileObjectData.TopLeft(x+ox,y+oy);
+                    ax=left.X;ay=left.Y;
+                    if(kind!="chest" && TileObjectData.GetTileData(Main.tile[x+ox,y+oy]) is {} shape)
+                    {
+                        furniture=new(kind,new(left.X,left.Y,shape.Width,shape.Height),new(shape.Origin.X,shape.Origin.Y),
+                            new(left.X+shape.Origin.X,left.Y+shape.Origin.Y),
+                            kind=="door"?(t==TileID.OpenDoor?"open":"closed"):null);
+                    }
+                }
+                else if(layers.Has("objects")&&kind=="light_source")
+                    furniture=new("torch",new(x+ox,y+oy,1,1),new(0,0),new(x+ox,y+oy));
             }
             char nav=TerrainReader.ReadCell(x+ox,y+oy);
             if(nav=='?')unknownNavigation++;
             if(sources.Contains("unsupported_motion_surface"))nav='!';
             bool placementFacts=layers.Has("objectPlacementCandidates")&&c.TileType is int placementType&&placementType>=0&&placementType<TileID.Count;
             cells[x,y]=new(c,nav,kind,(layers.Has("objects")||layers.Has("hazards"))&&c.TileType is int material&&(kind!=null||sources.Count>0)?Key(material):null,ax,ay,sources.ToArray(),
-                placementFacts&&Main.tileCut[c.TileType.Value],placementFacts&&TileID.Sets.BreakableWhenPlacing[c.TileType.Value]);
+                placementFacts&&Main.tileCut[c.TileType.Value],placementFacts&&TileID.Sets.BreakableWhenPlacing[c.TileType.Value],furniture);
         }
         var actor=new WorldRect(p.position.X,p.position.Y,p.width,p.height);
         bool Intersects(Entity e)=>e.position.X<(ox+width)*16&&e.position.X+e.width>ox*16&&e.position.Y<(oy+height)*16&&e.position.Y+e.height>oy*16;
@@ -140,13 +153,13 @@ internal static class ServerSceneReader
         var regionalGeometry=new Lazy<object>(()=>SceneRegion.Encode(cells,c=>SceneGeometry.Geometry(c).ToString()));
         var response=new Dictionary<string,object>{
             ["schemaVersion"]=scope.Region?3:2,["sceneId"]=sceneId,["gameUpdate"]=tick,
-            ["lighting"]=new{available=false,source="dedicated_server",reason="native_light_buffer_not_verified"},
+            ["lighting"]=ServerAiSystem.Lighting?.Observe(p)??new{available=false,source="dedicated_server",reason="tile_light_map_unavailable"},
             ["bounds"]=new{minX=ox,minY=oy,maxX=ox+width-1,maxY=oy+height-1},["tileSize"]=16,
             ["actor"]=new{slot=p.whoAmI,boundsWorldPixels=actor,feetY=p.Bottom.Y,velocity=new StateVector(p.velocity.X,p.velocity.Y),p.dead,
                 navigationProfileSupported=GameNavigation.Ordinary(p),mapTile=new{x=ox+actorX,y=oy+actorY},
                 bodyTileBounds=BodyTileBounds.FromPixels(p.position.X,p.position.Y,p.width,p.height)},
             ["coverage"]=new{scannedTiles=1305,unknownCells=unknown,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0},
-            ["limits"]="observation-scoped IDs; no visibility/lighting, contents, persistent map or custom Mod hook interpretation; truncation is per collection, never empty=absent",
+            ["limits"]="observation-scoped IDs; no visibility, contents, persistent map or custom Mod hook interpretation; truncation is per collection, never empty=absent",
             ["includedLayers"]=layers.Included};
         if(scope.Region)
         {
@@ -155,7 +168,7 @@ internal static class ServerSceneReader
                 unknownByReason=unknownReasons,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,
                 geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0,samplingTruncated=samplingStopped,
                 knowledge=SceneRegion.Encode(cells,c=>new SceneKnowledge(c.Facts.Knowledge,c.Facts.CollisionKnowledge,c.Navigation!='?'))};
-            response["limits"]="current server Tile facts, not camera/visibility/lighting; region has no action targets or reachability proof; L0/native collision must approve execution; query_map is separate last-known history";
+            response["limits"]="current server Tile facts, not camera visibility; region has no action targets or reachability proof; L0/native collision must approve execution; query_map is separate last-known history";
             layers.Add(response,"map",()=>new{originX=ox,originY=oy,terrain=regionalGeometry.Value,
                 actor=new{x=ox+actorX,y=oy+actorY},markers=SceneGeometry.Limit(entityMarkers.Select(m=>new{x=ox+m.Item1,y=oy+m.Item2,glyph=m.Item3.ToString()}),128)});
             layers.Add(response,"geometry",()=>new{originX=ox,originY=oy,grid=regionalGeometry.Value});
@@ -204,7 +217,18 @@ internal static class ServerSceneReader
         });
         layers.Add(response,"placementCandidates",()=>
         {
-            response["placementMaterial"]=new{itemType=p.HeldItem.type,p.HeldItem.stack,p.HeldItem.createTile,hotbarKey=HotbarSlots.KeyForInventorySlot(p.selectedItem),supported=ActorPlacement.Supported(p.HeldItem)};
+            var item=p.HeldItem;
+            var material=new Dictionary<string,object>{
+                ["itemType"]=item.type,["stack"]=item.stack,["createTile"]=item.createTile,
+                ["hotbarKey"]=HotbarSlots.KeyForInventorySlot(p.selectedItem),["supported"]=ActorPlacement.Supported(item)};
+            if(ActorPlacement.UnifiedAvailable)
+            {
+                string kind=ActorPlacement.UnifiedKind(item);
+                var shape=kind is "object" or "chest"?ActorObjectPlacement.Definition(item):null;
+                material["placeItem"]=new{kind,createWall=item.createWall,style=item.placeStyle,
+                    width=shape?.Width??1,height=shape?.Height??1,originX=shape?.OriginX??0,originY=shape?.OriginY??0};
+            }
+            response["placementMaterial"]=material;
             return SceneGeometry.LimitPlacements(SceneGeometry.Placements(cells,ox,oy,actor,bodies),placementCap);
         });
         layers.Add(response,"objectPlacementCandidates",()=>

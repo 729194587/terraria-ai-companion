@@ -93,13 +93,23 @@ internal static class ServerAiTerrainFixture
         // Explicit disturbance inside the existing copied-world/main-thread gate.
         // This is not a production steering or recovery path.
         var active=(ActorControl.Driver as ServerAiNavigation)?.Current;
+        if(recoveryMode=="turnaround"&&!recoveryFired)
+        {
+            // One recorded initial condition in the copied-world fixture.
+            // The merchant journey starts once and then runs with ordinary physics.
+            // Only the dedicated reversal probe needs the velocity on its first input tick.
+            p.position=new(33384.52f,3318);
+            p.velocity=new(-2.1200006f,0);
+            if(Program.LaunchParameters.ContainsKey("-companionmerchantjourney") || active?.Status=="running")
+                recoveryFired=true;
+        }
         if(mobilityMode=="cloud_offset"&&!mobilityChanged&&active?.Status=="running"
             &&Motion.NativeMovementReader.Capture(p).ActiveExtraJump)
         {
             if(!Program.LaunchParameters.ContainsKey("-companionextrajumptest"))throw new InvalidOperationException("Missing extra jump diagnostic gate");
             p.position.X-=32;mobilityChanged=true;
         }
-        if (recoveryMode!=null&&!recoveryFired&&active?.Status=="running"&&active.Updates>=8
+        if (recoveryMode!=null&&recoveryMode!="turnaround"&&!recoveryFired&&active?.Status=="running"&&active.Updates>=8
             &&active.Snapshot is {Status:"running",Frame:>=4,Action:"walk" or "jump"})
         {
             if(!Program.LaunchParameters.ContainsKey("-companionnavrecoverytest"))
@@ -148,11 +158,11 @@ internal static class ServerAiTerrainFixture
         int direction=doc.RootElement.GetProperty("direction").GetInt32();
         if(direction!=1&&direction!=-1)throw new ArgumentException("Invalid terrain direction");
         if(scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall" or "platform_up" or "platform_down" or "high_platform"
-            or "obstacle_one" or "solid_up_three" or "solid_up_five" or "shaft_up" or "shaft_ceiling" or "alternating" or "no_landing" or "descent_five" or "hazard_target" or "extra_up" or "extra_chain"))
+            or "obstacle_one" or "solid_up_three" or "solid_up_five" or "shaft_up" or "shaft_ceiling" or "alternating" or "no_landing" or "descent_five" or "hazard_target" or "extra_up" or "extra_chain" or "wing_chain"))
             throw new ArgumentException("Unknown terrain scene");
         mobilityMode=doc.RootElement.TryGetProperty("mobility",out var mobility)?mobility.GetString():null;
         if(mobilityMode!=null&&(!Program.LaunchParameters.ContainsKey("-companionmobilitytest")
-            ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "rapid" or "expiry" or "unknown" or "equipment" or "cloud" or "cloud_fail" or "cloud_offset" or "angel" or "demon")))
+            ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "rapid" or "expiry" or "unknown" or "equipment" or "cloud" or "cloud_fail" or "cloud_offset" or "angel" or "bone" or "demon")))
             throw new ArgumentException("Invalid isolated mobility scene");
         if((mobilityMode?.StartsWith("cloud")==true||scene.StartsWith("extra_"))&&!Program.LaunchParameters.ContainsKey("-companionextrajumptest"))
             throw new InvalidOperationException("Missing extra jump fixture flag");
@@ -160,7 +170,7 @@ internal static class ServerAiTerrainFixture
         mobilityRestored=false;
         recoveryMode=doc.RootElement.TryGetProperty("recovery",out var mode)?mode.GetString():null;
         if(recoveryMode!=null && (!Program.LaunchParameters.ContainsKey("-companionnavrecoverytest")
-            || scene!="flat" || direction!=1 || recoveryMode is not ("offset" or "low_wall" or "high_wall" or "air" or "cancel_air")))
+            || scene!="flat" || direction!=1 || recoveryMode is not ("offset" or "low_wall" or "high_wall" or "air" or "cancel_air" or "turnaround")))
             throw new ArgumentException("Invalid isolated navigation recovery scene");
         recoveryFired=false;recoveryLeft=Main.spawnTileX;recoveryFloor=Main.spawnTileY+8;
         bool region=doc.RootElement.TryGetProperty("region",out var regionFlag)&&regionFlag.GetBoolean();
@@ -172,6 +182,7 @@ internal static class ServerAiTerrainFixture
         inputTick=null;
         lastRun=(ActorControl.Driver as ServerAiNavigation)?.Current;
         int left=Main.spawnTileX, floor=Main.spawnTileY+8;
+        if(recoveryMode=="turnaround"){left=2085;floor=211;}
         for(int tx=left-36;tx<=left+36;tx++)for(int ty=floor-24;ty<=floor+18;ty++)
         {
             int q=direction*(tx-left), surface=floor;
@@ -191,9 +202,18 @@ internal static class ServerAiTerrainFixture
             if(scene=="solid_up_five"&&q>=4)surface-=5;
             if(scene is "extra_up" or "extra_chain")
             {if(q>=6)surface-=8;if(scene=="extra_chain"&&q>=14)surface-=8;}
+            if(scene=="wing_chain")
+                surface+=q switch {>=3 and <=5 or >=15 and <=17=>12,>=18=>-16,>=6=>-8,_=>0};
             if(scene=="high_wall"&&q>=4&&q<=6)surface-=12;
             var tile=Main.tile[tx,ty];tile.ClearEverything();
             if(ty>=surface){tile.HasTile=true;tile.TileType=TileID.Dirt;if(ty==surface)tile.Slope=(SlopeType)slope;}
+            if(recoveryMode=="turnaround")
+            {
+                if(tx==2085 && ty is >=205 and <=210 || tx is >=2085 and <=2094 && ty==205
+                    || tx==2094 && ty is 206 or 207)
+                {tile.HasTile=true;tile.TileType=TileID.PumpkinBlock;}
+                if(tx is 2087 or 2088 && ty==210){tile.HasTile=true;tile.TileType=TileID.Platforms;}
+            }
             if(platformScene)
             {
                 int top=scene=="platform_down"?floor-4:floor;
@@ -233,12 +253,12 @@ internal static class ServerAiTerrainFixture
             if(mobilityMode is "swiftness" or "remove" or "rapid" or "expiry")p.AddBuff(BuffID.Swiftness,36000,true);
             if(mobilityMode=="unknown")p.AddBuff(BuffID.WellFed,36000,true);
             if(mobilityMode=="equipment")p.armor[0].SetDefaults(ItemID.CopperHelmet);
-            if(mobilityMode=="angel")p.armor[3].SetDefaults(ItemID.AngelWings);
+            if(mobilityMode is "angel" or "bone")p.armor[3].SetDefaults(mobilityMode=="angel"?ItemID.AngelWings:ItemID.BoneWings);
             if(mobilityMode=="demon")p.armor[3].SetDefaults(ItemID.DemonWings);
             if(mobilityMode.StartsWith("cloud"))p.armor[3].SetDefaults(ItemID.CloudinaBottle);
         }
         if(environment) ProbeEnvironment(p, left, floor-4);
-        pending=new{scene,direction,startX=p.position.X,startY=p.position.Y,targetX=p.position.X+direction*192,
+        pending=new{scene,direction,startX=p.position.X,startY=p.position.Y,targetX=recoveryMode=="turnaround"?33217.027f:p.position.X+direction*192,
             floor,originTileX=left,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,
             regionalFixture=region};
         settle=15;

@@ -1,4 +1,4 @@
-param([string]$PackagePath,[string]$TModLoaderPath,[string]$EngineProfile)
+param([string]$PackagePath,[string]$TModLoaderPath,[string]$EngineProfile,[switch]$CombatOnly)
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
 $sources=@('CompanionBridge/HotbarSlots.cs','CompanionBridge/ServerIpc/AiReplyFence.cs','CompanionBridge/ServerIpc/AiAtomicActions.cs','CompanionBridge/ServerIpc/AiReadOnlyProtocol.cs','CompanionBridge/ServerIpc/AiReadOnlyServer.cs','tests/ServerAiIpcOfflineTests.cs','tests/ServerAiAtomicOfflineTests.cs','tests/ServerAiReadProtocolTests.cs') | ForEach-Object { Join-Path $repo $_ }
@@ -16,13 +16,16 @@ if($PackagePath){
 $sources+=@(Join-Path $repo 'tests/ServerAiNativeActionOfflineTests.cs')
 $sources+=@(Join-Path $repo 'tests/ServerAiChatProtocolTests.cs')
 $sources+=@(Join-Path $repo 'CompanionBridge/ServerIpc/AiActionReasons.cs')
-$sources+=@('CompanionBridge/Motion/NavigationProgressWatchdog.cs','CompanionBridge/ServerIpc/TaskRuntime.cs','CompanionBridge/ServerIpc/AutonomousNavigationTask.cs','CompanionBridge/ServerIpc/MineTargetTask.cs','tests/TaskRuntimeOfflineTests.cs') | ForEach-Object {Join-Path $repo $_}
+$sources+=@('CompanionBridge/Motion/NavigationProgressWatchdog.cs','CompanionBridge/ServerIpc/TaskRuntime.cs','CompanionBridge/ServerIpc/ExcavationReceipt.cs','CompanionBridge/ServerIpc/AutonomousNavigationTask.cs','CompanionBridge/ServerIpc/MineTargetTask.cs','tests/TaskRuntimeOfflineTests.cs') | ForEach-Object {Join-Path $repo $_}
+$sources+=@('CompanionBridge/ServerIpc/CombatController.cs','CompanionBridge/ServerIpc/ReflexContact.cs','tests/CombatOfflineTests.cs') | ForEach-Object {Join-Path $repo $_}
 Add-Type -Path $sources -ReferencedAssemblies $references
+if($CombatOnly){[CombatOfflineTests]::Run();return}
 [ServerAiIpcOfflineTests]::Run()
 [ServerAiAtomicOfflineTests]::Run()
 [ServerAiReadProtocolTests]::Run()
 [ServerAiNativeActionOfflineTests]::Run()
 [TaskRuntimeOfflineTests]::Run()
+[CombatOfflineTests]::Run()
 [ServerAiChatProtocolTests]::Run()
 if($PackagePath){
     $version=(Select-String -LiteralPath (Join-Path $repo 'CompanionBridge/build.txt') -Pattern '^version\s*=\s*(\S+)$').Matches[0].Groups[1].Value
