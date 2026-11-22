@@ -37,6 +37,8 @@ internal static partial class ActorContainer
         target = null;
         if (!WorldGen.InWorld(x, y, 1)) return "invalid_target";
         var tile = Main.tile[x, y];
+        if (tile.HasTile && tile.TileType is TileID.PiggyBank or TileID.Safes or TileID.DefendersForge or TileID.VoidVault)
+            return ResolveBank(player,x,y,out target);
         if (!Vanilla(tile) || tile.TileFrameX < 0 || tile.TileFrameX % 18 != 0
             || tile.TileFrameY is not (0 or 18)) return "unsupported_container";
         x -= tile.TileFrameX / 18 % 2;
@@ -62,6 +64,49 @@ internal static partial class ActorContainer
         return null;
     }
 
+    private static string ResolveBank(Player p,int x,int y,out Target target)
+    {
+        target=null;
+        var tile=Main.tile[x,y];
+        int type=tile.TileType;
+        var data=Terraria.ObjectData.TileObjectData.GetTileData(tile);
+        if(data==null || tile.TileFrameX<0 || tile.TileFrameY<0)return "invalid_container_footprint";
+        int stride=data.CoordinateWidth+data.CoordinatePadding;
+        int dx=tile.TileFrameX%data.CoordinateFullWidth/stride;
+        int offsetY=tile.TileFrameY%data.CoordinateFullHeight;
+        int dy=0;
+        while(dy<data.Height && offsetY>0)offsetY-=data.CoordinateHeights[dy++]+data.CoordinatePadding;
+        if(dx>=data.Width || dy>=data.Height || offsetY!=0)return "invalid_container_footprint";
+        x-=dx; y-=dy;
+        if(!WorldGen.InWorld(x,y,1)||!WorldGen.InWorld(x+data.Width-1,y+data.Height-1,1))return "invalid_container_footprint";
+        var anchor=Main.tile[x,y];
+        int frameY=anchor.TileFrameY;
+        for(int row=0;row<data.Height;row++)
+        {
+            for(int col=0;col<data.Width;col++)
+            {
+                var part=Main.tile[x+col,y+row];
+                if(!part.HasTile||part.IsActuated||part.TileType!=type||part.TileFrameX!=anchor.TileFrameX+col*stride||
+                    part.TileFrameY!=frameY)return "invalid_container_footprint";
+            }
+            frameY+=data.CoordinateHeights[row]+data.CoordinatePadding;
+        }
+        if(!p.IsInInteractionRangeToMultiTileHitbox(x,y))return "out_of_native_interaction_range";
+        var (index,bank)=type switch {
+            TileID.PiggyBank => (-2,p.bank), TileID.Safes => (-3,p.bank2),
+            TileID.DefendersForge => (-4,p.bank3), _ => (-5,p.bank4)
+        };
+        if(bank?.item.Length!=40 || bank.item.Any(item=>item==null))return "container_record_missing";
+        target=new(index,bank,x,y,type,anchor.TileFrameX);
+        return null;
+    }
+
+    // Personal banks belong to the server actor and have no world chest slots to broadcast.
+    private static void SyncChestSlot(Target target,int slot)
+    {
+        if(target.Index>=0)NetMessage.SendData(MessageID.SyncChestItem,-1,-1,null,target.Index,slot);
+    }
+
     private static bool Matches(Session session, AiReadOnlyProtocol.Identity identity) =>
         ReferenceEquals(session.Identity.Actor, identity.Actor) && session.Identity.World == identity.World
         && session.Identity.Generation == identity.Generation && session.Identity.Slot == identity.Slot;
@@ -77,6 +122,7 @@ internal static partial class ActorContainer
         string error = Resolve(player, target.X, target.Y, out var current);
         if (error != null) return error;
         if (current != target || !ReferenceEquals(current.Record, target.Record)) return "container_replaced";
+        if(target.Index < -1)return null;
         int owner = Chest.UsingChest(target.Index);
         return owner == identity.Slot && !Main.player.Take(255).Any(other =>
             other.active && other.whoAmI != identity.Slot && other.chest == target.Index)
@@ -183,7 +229,7 @@ internal static partial class ActorContainer
                 string reason = Resolve(player, x, y, out target);
                 if (reason != null) return result = Report("failed", reason);
                 if (player.chest != -1) return result = Report("failed", "container_already_open");
-                if (Chest.UsingChest(target.Index) != -1) return result = Report("failed", "container_in_use");
+                if (target.Index >= 0 && Chest.UsingChest(target.Index) != -1) return result = Report("failed", "container_in_use");
             }
             else
             {
@@ -204,7 +250,7 @@ internal static partial class ActorContainer
                     opened = new(identity, target);
                     Sync(player);
                     // Packet 31 also fires a rigged chest using the opener as wiring user.
-                    if (WorldGen.IsChestRigged(target.X, target.Y))
+                    if (target.Index >= 0 && WorldGen.IsChestRigged(target.X, target.Y))
                     {
                         Wiring.SetCurrentUser(player.whoAmI);
                         try { Wiring.HitSwitch(target.X, target.Y); }

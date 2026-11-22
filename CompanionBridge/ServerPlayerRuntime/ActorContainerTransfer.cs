@@ -148,7 +148,7 @@ internal static partial class ActorContainer
             NetMessage.SendData(MessageID.SyncEquipment, -1, -1, null, player.whoAmI, inventorySlot);
             if (!OwnsTarget() || !InventoryTokens().SequenceEqual(afterInventory) || !ChestTokens().SequenceEqual(afterChest))
                 return terminal = Report("unknown", "container_changed_during_inventory_sync");
-            NetMessage.SendData(MessageID.SyncChestItem, -1, -1, null, session.Target.Index, containerSlot);
+            SyncChestSlot(session.Target, containerSlot);
             return Report("running", "awaiting_container_transfer_confirmation");
         }
     }

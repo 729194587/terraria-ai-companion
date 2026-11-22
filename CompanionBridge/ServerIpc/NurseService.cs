@@ -53,7 +53,7 @@ internal static class NurseService
     internal static object Quote(Identity id, JsonElement args)
     {
         string entityRef = args.GetProperty("entityRef").GetString();
-        string error = MerchantShop.ResolveService(id,entityRef,NPCID.Nurse,Supported,out var nurse);
+        string error = MerchantShop.ResolveService(id,entityRef,NPCID.Nurse,Supported,out var nurse, reading: true);
         if (error != null) throw new ShopReadException(error);
         var p = (Player)id.Actor;
         var lease = id.RequestLease ?? throw new ShopReadException("not_bound");

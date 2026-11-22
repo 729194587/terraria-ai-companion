@@ -62,4 +62,4 @@ Write-Output "Explicit Lua selection: & .local/lua-venv/Scripts/python.exe scrip
 Write-Output "Lua state/inventory reads (read-only by default): & .local/lua-venv/Scripts/python.exe scripts/server_ai_verify.py --port $AiPort"
 Write-Output "Both G8.2 stages in one Lua run: & .local/lua-venv/Scripts/python.exe scripts/server_ai_verify.py --port $AiPort --key 2"
 Write-Output "Explicit Lua movement/use/mining: scripts/server_ai_actions.py --help; see docs/SERVER_AI_ACTIONS.md. No test terrain/items are created by this profile."
-Write-Output "Server AI Agent: & .local/lua-venv/Scripts/python.exe python/agent.py --server-ai --ai-port $AiPort ; then type normally in local game chat (!ai remains optional with Mod 0.1.49+). Model settings reuse .env."
+Write-Output "Server AI Agent: & .local/lua-venv/Scripts/python.exe python/start_agent.py --server-ai --ai-port $AiPort ; then type normally in local game chat (!ai remains optional with Mod 0.1.49+). Model settings reuse .env."

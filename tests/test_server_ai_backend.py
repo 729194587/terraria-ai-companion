@@ -125,7 +125,15 @@ class Handler(socketserver.StreamRequestHandler):
                           actorGeneration=h.binding['generation'],gameUpdate=33)
             elif op == 'query':
                 data = h.query(r['operation'], r['arguments'])
-                if h.mode == 'bad_query_identity':
+                if h.mode == 'drop_query':
+                    return
+                if h.mode == 'query_unknown':
+                    error = 'engine_unavailable'
+                elif h.mode == 'unavailable_wrong_generation':
+                    data.pop('data')
+                    data.update(available=False, reason='npc_out_of_range', actorGeneration=h.binding['generation']+1,
+                                clock='server_utc_at_projection', observedAtUnixMs=1793070000123)
+                elif h.mode == 'bad_query_identity':
                     data['actorGeneration'] += 1
                 elif h.mode == 'unavailable_query':
                     data = dict(available=False, reason='fixture_state_unknown')
@@ -314,6 +322,33 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1793070000123,result['value']['time'])
         self.assertEqual(5,len([r for r in self.host.sent if r['op']=='query']))
         self.assertFalse(any(r['op']=='start' for r in self.host.sent))
+
+    async def test_short_read_reason_tracks_only_the_same_query(self):
+        from lua_agent import summarize
+        self.enable_perception()
+        original = self.host.query
+        seen = set()
+
+        def query(operation, args):
+            reply = original(operation, args)
+            if args['x'] not in seen:
+                seen.add(args['x'])
+                reply.pop('data')
+                reply.update(available=False, reason='fixture_unavailable')
+            return reply
+
+        self.host.query = query
+        source = """
+            api('inspect_tile',{x=1,y=2})
+            api('inspect_tile',{x=3,y=2})
+            return api('inspect_tile',{y=2,x=1}).data.sample
+        """
+        receipt = await LuaRuntime(self.bridge, evidence_root=self.directory.name).execute(source)
+        summary = summarize(receipt, [])
+        self.assertEqual('completed', summary['status'])
+        self.assertEqual('inspect_tile', summary['value'])
+        self.assertIn('#1 inspect_tile: fixture_unavailable (resolved by #3)', summary['reason'])
+        self.assertIn('#2 inspect_tile: fixture_unavailable (unavailable)', summary['reason'])
 
     async def test_lua_float_tile_coordinates_are_json_integers_on_server_socket(self):
         self.enable_perception()
@@ -716,6 +751,18 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(result['valid'])
             self.assertNotIn('player', result)
             self.assertNotIn('data', result)
+
+    async def test_unconfirmed_read_stops_lua_before_action(self):
+        for mode in ('drop_query', 'query_unknown', 'unavailable_wrong_generation', 'unavailable_query'):
+            with self.subTest(mode=mode):
+                self.enable_native_actions()
+                self.host.mode = mode
+                self.host.sent.clear()
+                result = await LuaRuntime(self.bridge, evidence_root=self.directory.name).execute(
+                    "api('get_player_state'); return api('select_hotbar_slot',{slot=2})", limits=Limits(seconds=8))
+                self.assertEqual('host_error', result['status'], result)
+                self.assertTrue(any(row['op'] == 'query' for row in self.host.sent))
+                self.assertFalse(any(row['op'] == 'start' for row in self.host.sent))
 
     async def test_previous_server_without_read_capability_rejects_before_rpc(self):
         self.bridge.close()

@@ -26,6 +26,8 @@ def guidance(operation, reason, *, detail=None):
         kind, next_step = 'unsupported', '读取选中物品并选择对应入口。放原版绳索用 place_tile 指定空格，延伸已有绳段用 place_rope。'
     elif reason.startswith('unsupported'):
         kind, next_step = 'unsupported', '检查该能力的 Help 和当前角色状态，改用已开放且适用的操作。'
+    elif reason.endswith('not_in_range_or_busy'):
+        kind, next_step = 'out_of_range', '重新观察目标和角色。距离可能已变化；可安全接近时先移动并确认位置，再核对交互条件。若目标仍忙，停止重复尝试。'
     elif 'out_of_range' in reason:
         kind, next_step = 'out_of_range', '重新观察角色和目标位置，先安全接近并确认位移，再尝试该目标。'
     elif reason in SEARCH_LIMITS:

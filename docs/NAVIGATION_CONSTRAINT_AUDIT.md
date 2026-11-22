@@ -34,7 +34,7 @@ flowchart LR
 | 干燥走、跳、下落 | 支持有限 profile、动作及落脚窗口。长程靠滚动 Graph | 直接 X 和落脚区使用局部任务。客户端预测控制另走同一模型，无服务器改造编排 | 有隔离原生及部分自然地形记录 |
 | 平台、半砖、斜坡 | 有形状识别、原生支撑和预测。平台可上穿，缺少主动下穿 | 站位候选及编辑规则各有额外限制 | 有隔离落脚场景和离线 Graph 覆盖 |
 | 二段跳 | 单一 Cloud 模型，采样有限触发时刻 | 同一模型，服从各入口的规划预算 | Cloud 有隔离原生记录 |
-| 翼与火箭 | 天使翼、基础火箭靴的受限模型 | 同一模型，无任意空中状态起步规划 | 离线、IL 和构建。未找到真实飞行通过记录 |
+| 翼与火箭 | 已建模的普通非悬停翼、基础火箭靴 | 同一模型，无任意空中状态起步规划 | 天使翼、骨之翼有隔离服务器原生飞行记录，火箭靴仍为离线与 IL 证据 |
 | 钩爪 | 连续落脚子任务可尝试一次目的地高台模板 | 已挂钩时普通导航拒绝。直接 X / 公开落脚区无该连续回退 | 基础钩模板有双引擎隔离记录 |
 | 绳索 | Graph 无绳索边 | `move_on_rope` 独立对齐攀爬，`place_rope` 独立布置 | 独立操作有双引擎隔离记录 |
 | 游泳、液体进出 | 无。干燥跨越、绕行、贴水开挖或特定水面搭平台 | 原始输入入口有独立资格和时长边界，完成只证明输入执行 | 已有干燥规避与湿起点拒绝的隔离证据 |
@@ -58,7 +58,7 @@ flowchart LR
 | 物品动画与身体尺寸 | [GameNavigation.OrdinaryRejection](../CompanionBridge/Motion/GameNavigation.cs#L70) | itemAnimation != 0、身体不等于模型、速度非有限 | 20×42 px | 固定姿态模型，避免物品使用边界冲突 | 模型与保守互斥 | 走路时挥镐、移动中使用物品或不同体型失败 | Mobility 离线，真实混合动画待验证 | 细分真实输入互斥 |
 | 有效运动参数 | [PhysicsParameters.IsSupportedGroundPhysics](../CompanionBridge/Motion/PhysicsSimulator.cs#L18) · [NativeNavigation.Parameters](../CompanionBridge/Motion/GameNavigation.cs#L77) · [MobilityTracker.Sample](../CompanionBridge/Motion/MobilityProfile.cs#L28) | 加速、速度、重力等需通过参数域检查，profile 修订使路线失效 | Basic 参考 accRun 0.08、maxRun 3、重力 0.4、最大落速 10.01、跳速 5.01、跳跃计数 15；Swiftness 参考 0.1、3.75 | 用当前原生参数预测，固定模型只接受其适用域 | 模型 | 普通地面数值可变，异常参数或执行中改变会拒绝或恢复 | Mobility 原生有药效增删、到期和 ABA | 保留参数核验，扩大有证据的模型域 |
 | 二段跳白名单 | [ExtraJumpModel.Select](../CompanionBridge/Motion/ExtraJumpModel.cs#L10) · [GameNavigation.OrdinaryRejection](../CompanionBridge/Motion/GameNavigation.cs#L59) | 唯一启用项须为 Cloud；其他可用或 active 跳跃触发拒绝 | 原跳计数×0.75，取整数 | 用明确原生模型与资源核验 | 未实现 | 多瓶叠加、其他原版与 Mod 跳跃可能连普通导航也进不去 | ExtraJump 离线及双引擎原生 | 按可组合资源扩展 |
-| 飞行 profile 白名单 | [AirMotionModel.Select](../CompanionBridge/Motion/AirMotionModel.cs#L23) · [GameNavigation.OrdinaryRejection](../CompanionBridge/Motion/GameNavigation.cs#L62) | 天使翼或基础火箭靴；翼优先；飞行资源须合法；拒绝额外跳跃组合及 slowFall、empressBrooch、chilled；只认 Basic/Swiftness 基础参数 | 参数匹配容差约 0.001，见 Matches | 固定原生资源与推进模型 | 未实现与模型 | 其他翼靴、混装、飞行耗尽后切靴等原生组合缺失 | Air 离线、IL，真实飞行待验证 | 先验收现有模型，再扩展 |
+| 飞行 profile 白名单 | [AirMotionModel.Select](../CompanionBridge/Motion/AirMotionModel.cs#L23) · [GameNavigation.OrdinaryRejection](../CompanionBridge/Motion/GameNavigation.cs#L62) | 已建模垂直分组的普通翼或基础火箭靴；翼优先；飞行资源须合法；拒绝额外跳跃组合及 slowFall、empressBrooch、chilled；只认 Basic/Swiftness 基础参数 | 参数匹配容差约 0.001，见 Matches | 固定原生资源与推进模型 | 未实现与模型 | 其他翼靴、混装、飞行耗尽后切靴等原生组合缺失 | Air 离线、IL，天使翼与骨之翼已有隔离原生验收 | 其余翼型逐组验证 |
 | 输入字母表 | [PhysicsSimulator.Predict](../CompanionBridge/Motion/PhysicsSimulator.cs#L197) · [ServerAiNavigation.Apply](../CompanionBridge/ServerIpc/ServerAiNavigation.cs#L116) | 普通边只生成横向和 Jump，Up/Down 清零，单边通常固定横向方向 | 左、右、部分中立，Jump 开关 | 限制组合规模 | 算法与未实现 | 平台主动下穿、空中多次反向、部分同侧跃迁不在动作空间 | Planner、Vertical 离线，平台原生 | 扩展动作基元 |
 | 候选持续时间和触发点 | [StateSpacePlanner.Search.Run](../CompanionBridge/Motion/StateSpacePlanner.cs#L188) · [SafeGroundWalk.TryPlan](../CompanionBridge/Motion/SafeGroundWalk.cs#L13) | 常规 jump hold 每 2 帧取样；普通步行仅两个 stride；中立跳只在目标 X 带内且上升至少 4 px；能力分支抽样释放/激活 | 步行 6/24；平走捷径落脚模式枚举 1–24；Cloud 4 个触发点、间隔 8；翼 8–40 帧五档；靴三档起始时间、一帧触发 | 降低分支 | 算法边界 | 精确短挪、奇数帧跳、窄竖井和特定时机可能漏解 | Planner、Vertical、ExtraJump、Air 离线 | 用反例驱动补充动作 |
 | 预测时域和最小位移 | [PhysicsSimulator.Predict](../CompanionBridge/Motion/PhysicsSimulator.cs#L185) · [终止](../CompanionBridge/Motion/PhysicsSimulator.cs#L244) | 预测期内须有连续两帧稳定支撑；非纯刹车还须达最小进展 | 普通 90、Cloud 140、Air 180；方向步行 ≥4、方向跳 ≥24、原地上升 ≥4 px；预测尾部 VX <0.01 | 排除无进展边并为停止留证据 | 算法与预算 | 小跳、短微调及长滞空被筛掉 | Motion、Planner、Air 离线 | 分离到达精度与防循环 |

@@ -161,7 +161,7 @@ internal static partial class ActorContainer
             {
                 if (!ActorValid()) return false;
                 if (TargetValid(chest) && MatchesSlot(chest, slot))
-                    NetMessage.SendData(MessageID.SyncChestItem, -1, -1, null, chest.Target.Index, slot);
+                    SyncChestSlot(chest.Target, slot);
                 else if (!verifiedOnly) return false;
             }
             return true;

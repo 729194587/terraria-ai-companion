@@ -105,6 +105,40 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
     async def receive(self,id='task-1',text='向右移动80像素'):
         self.chathost.emit(id,text)
         self.agent.receive(await asyncio.wait_for(self.events.get(),2))
+    async def test_private_memory_survives_new_agent(self):
+        from agent_memory import Notebook
+        root = Path(self.directory.name)
+        def fresh():
+            self.ai.close()
+            self.ai = ServerAiBridge(self.aihost.server_address[1],timeout=2)
+            return Agent(self.ai,self.llm,chat_bridge=self.chat,lua_store=ProgramStore(root/'sources'),
+                         notebook=Notebook(root/'memory','a'*32,'b'*32))
+        def call(args):
+            return dict(role='assistant',tool_calls=[dict(id='note',type='function',function=dict(
+                name='memory',arguments=json.dumps(args)))])
+        await self.agent.close()
+        self.agent = fresh()
+        self.answers = [call(dict(command='remember',name='基地',description='玩家称东侧仓库为家',
+                                  quote='东侧仓库是家')),dict(role='assistant',content='记下了。')]
+        await self.receive(text='东侧仓库是家')
+        await self.agent.task
+        self.assertIn('memory',[t['function']['name'] for t in self.requests[0]['tools']])
+        system = self.requests[0]['messages'][0]
+        self.assertEqual('system', system['role'])
+        self.assertIn('值得主动记', system['content'])
+        await self.agent.close()
+        self.agent = fresh()
+        self.requests.clear()
+        self.answers = [call(dict(command='recall',name='基地')),dict(role='assistant',content='东侧仓库。')]
+        await self.receive(id='next',text='家在哪？')
+        await self.agent.task
+        runtime = json.loads(self.requests[0]['messages'][-1]['content'])
+        self.assertEqual([{'name':'基地','description':'玩家称东侧仓库为家'}],runtime['privateNotes'])
+        note = json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role']=='tool'))['note']
+        self.assertEqual('Local player',note['origin']['senderName'])
+        self.assertEqual('东侧仓库是家',note['origin']['quote'])
+        self.assertFalse(any(r['op']=='start' for r in self.aihost.sent))
+
     async def test_cli_refuses_old_prefix_only_client_before_connecting_ai(self):
         from unittest.mock import AsyncMock
         from control import BridgeError

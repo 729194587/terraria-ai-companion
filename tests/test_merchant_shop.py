@@ -20,11 +20,28 @@ class MerchantShopTests(unittest.TestCase):
         self.assertNotIn('buy_npc_item', ops)
         self.assertIn('buy_npc_item', operations_for_capabilities(caps | {'server_ai_merchant_purchase_v1'}))
         for name, args in (
-            ('quote_npc_purchase', dict(entityRef='npc', itemType=8, quantity=2)),
+            ('quote_npc_purchase', dict(entityRef='npc', itemType=8, quantity=0)),
+            ('quote_npc_purchase', dict(entityRef='npc', itemType=8, quantity=51)),
             ('quote_npc_purchase', dict(entityRef='npc', itemType=0)),
             ('buy_npc_item', dict(entityRef='npc', quoteToken='invalid')),
         ):
             with self.subTest(name=name, args=args), self.assertRaises(ValueError):
+                atomic.validate(name, args)
+
+        bulk = dict(entityRef='merchant', itemType=8, quantity=12)
+        atomic.validate('quote_npc_purchase', bulk)
+        with self.assertRaises(atomic.PreDispatchRejected):
+            atomic.validate_backend(bridge(caps), 'quote_npc_purchase', bulk)
+        atomic.validate_backend(bridge(caps | {'server_ai_merchant_purchase_v1',
+                                               'server_ai_merchant_bulk_purchase_v1'}), 'quote_npc_purchase', bulk)
+
+    def test_dialogue_requires_its_capability(self):
+        caps = BASE | {'server_ai_actions_v1', 'server_ai_atomic_v1'}
+        for name, args in [('open_npc_dialogue', {'entityRef': 'merchant'}), ('close_npc_dialogue', {})]:
+            with self.subTest(name=name):
+                self.assertNotIn(name, operations_for_capabilities(caps))
+                enabled = caps | {'server_ai_npc_dialogue_v1'}
+                self.assertIn(name, operations_for_capabilities(enabled))
                 atomic.validate(name, args)
 
     def test_completed_requires_matching_receipt_and_exact_deltas(self):
@@ -37,6 +54,16 @@ class MerchantShopTests(unittest.TestCase):
                        dict(afterCount=2), dict(bankNonCurrencyUnchanged=False)):
             with self.subTest(change=change):
                 self.assertFalse(atomic.verified_purchase(target, dict(receipt, **change)))
+
+    def test_batch_checks_each_delivered_unit_and_total_cost(self):
+        target = dict(entityRef='merchant', quoteToken='b' * 64)
+        proof = dict(**target, itemType=8, quantity=12, verifiedQuantity=12, unitPrice=44,
+                     beforeFunds=funds(1000), afterFunds=funds(472), beforeCount=3,
+                     afterCount=15, bankNonCurrencyUnchanged=True)
+        self.assertTrue(atomic.verified_purchase(target, proof))
+        for change in (dict(verifiedQuantity=11), dict(afterCount=14), dict(afterFunds=funds(956))):
+            with self.subTest(change=change):
+                self.assertFalse(atomic.verified_purchase(target, proof | change))
 
     def test_treatment_requires_payment_and_health_evidence(self):
         target = dict(entityRef='nurse', quoteToken='a' * 64)

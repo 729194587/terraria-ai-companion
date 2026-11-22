@@ -113,7 +113,7 @@ DEFS = {
                       'observedGameUpdate': TICK, 'observedAtUnixMs': OBSERVED['observedAtUnixMs'],
                       'targetToken': desc(S, 'Observation-bound token; pass unchanged to mine_target.')}),
     'ObservationUnavailable': obj({'valid': const(False), 'available': const(False),
-                                    'reason': S, 'binding': ref('Binding')}, optional=('binding', 'reason')),
+                                    'reason': S, **OBSERVED}, optional=(*OBSERVED, 'reason')),
     'ObservationEnvelope': obj({'valid': const(True), 'available': const(True), **OBSERVED},
                                optional=('binding',), closed=False),
 }
@@ -145,7 +145,7 @@ DEFS.update({
                        'favorited': B, 'inventoryToken': desc(nullable(INVENTORY_TOKEN),
                            'Pass the fresh slot token unchanged for guarded inventory actions. Null means no usable token.'),
                        'use': obj(fields(integers='pick axe hammer createTile createWall'))}),
-    'EquipmentSlot': obj({'slotId': S, 'kind': enum('head', 'body', 'legs', 'accessory'),
+    'EquipmentSlot': obj({'slotId': S, 'kind': enum('head', 'body', 'legs', 'accessory', 'dye'),
                           'source': enum('vanilla', 'mod_accessory_slot'), 'displayName': S, 'enabled': B,
                           'occupied': B, 'item': nullable(ref('FullItem')),
                           'targetToken': desc(INVENTORY_TOKEN, 'Functional equipment slot guard, including empty slots. Pass unchanged to equip_item or unequip_item.')}),
@@ -164,7 +164,10 @@ INVENTORY = any_of(
     obj({**INVENTORY_FIELDS, **PLAYER_FIELDS, 'inventoryScope': inventory_scope('full'),
          **dict.fromkeys(('inventory', 'equipment', 'dyes', 'miscEquipment', 'miscDyes'), array(FULL_SLOT)),
          'buffs': array(obj({'slot': I, 'typeId': I, 'timeTicks': I, 'contentKey': nullable(S)})),
-         'buffScope': S, 'scope': S, 'functionalEquipmentSlots': array(ref('EquipmentSlot')), 'combatCandidates':COMBAT_CANDIDATES},optional=('combatCandidates',)),
+         'buffScope': S, 'scope': S, 'functionalEquipmentSlots': array(ref('EquipmentSlot')),
+         'cosmeticEquipmentSlots':array(ref('EquipmentSlot')), 'combatCandidates':COMBAT_CANDIDATES,
+         'currentLoadout':enum(1,2,3), 'trash':obj({**fields(integers='typeId stack prefix'),'trashToken':S})},
+        optional=('combatCandidates','currentLoadout','trash','cosmeticEquipmentSlots')),
     obj({**INVENTORY_FIELDS, **ITEM_ID, 'status': const('ok'), 'inventoryScope': inventory_scope('item'),
          'count': COUNT, 'slots': array(obj({**SLOT_FIELDS, 'stack': I})), 'scope': S}),
     obj({**INVENTORY_FIELDS, 'status': enum('unknown_item', 'ambiguous_item'), 'inventoryScope': inventory_scope('item'),
@@ -179,7 +182,7 @@ PHYSICS_FIELDS = {**dict.fromkeys(('px', 'py'), PIXEL), **dict.fromkeys(('vx', '
                   **fields(integers='jumpFramesLeft',
                            booleans='grounded releaseJump extraAvailable extraActive extraUsed'),
                   'air': nullable(ref('AirResources'))}
-DEFS['PhysicsPose'] = obj(PHYSICS_FIELDS)
+DEFS['PhysicsPose'] = obj({**PHYSICS_FIELDS, 'wet': B}, optional=('wet',))
 DEFS['TileCell'] = obj({
     **fields(integers='frameX frameY slope wireMask liquidType liquidAmount tilePaint wallPaint touchDamage',
              booleans='hasTile halfBlock solid solidTop actuated actuator tileInvisible wallInvisible tileFullbright wallFullbright hot bleeding destroyOnTouch boulder'),
@@ -216,8 +219,9 @@ ENTITY_FIELDS = {'slot': I, 'name': S, 'classificationBasis': S, 'centerWorldPix
                  'velocityPixelsPerTick': ref('Velocity'), 'distancePixels': N}
 SCANNED_ENTITY = any_of(
     obj({**ENTITY_FIELDS, 'kind': const('npc'), 'typeId': I, 'classification': NPC_CLASS,
-         'details': obj({'entityRef': S, **fields(integers='type life lifeMax', booleans='friendly dontTakeDamage chaseable'),
-                         'evidence': obj(fields(integers='damage', booleans='friendly townNpc critter chaseable modded projectileNpc'))})}),
+         'details': obj({'entityRef': S, 'contentKey': S, 'typeName': S, 'bottomWorldPixels': ref('WorldPoint'), **fields(integers='type life lifeMax', booleans='friendly dontTakeDamage chaseable'),
+                         'evidence': obj(fields(integers='damage', booleans='friendly townNpc critter chaseable modded projectileNpc'))},
+                        optional=('contentKey', 'typeName', 'bottomWorldPixels'))}),
     obj({**ENTITY_FIELDS, 'kind': const('player'), 'typeId': NULL, 'classification': const('other_player'),
          'details': obj({'dead': B, 'statLife': I, 'team': I})}),
     obj({**ENTITY_FIELDS, 'kind': const('item'), 'typeId': I, 'classification': const('dropped_item'),
@@ -280,7 +284,7 @@ OBSERVATIONS = {
     'quote_npc_sale': observation(obj({**QUERY_METADATA, **atomic.SALE_SOURCE, 'itemType': I, 'quantity': const(1),
                                       'unitPrice': COUNT, 'currency': const('copper'), 'canSell': B, 'reason': nullable(S),
                                       'quoteToken': nullable(atomic.SHOP_TOKEN), 'expiresAtGameUpdate': nullable(TICK)})),
-    'quote_npc_purchase': observation(obj({**QUERY_METADATA, 'entityRef': S, 'itemType': I, 'quantity': const(1),
+    'quote_npc_purchase': observation(obj({**QUERY_METADATA, 'entityRef': S, 'itemType': I, 'quantity': {'type': 'integer', 'minimum': 1, 'maximum': 50},
                                            'unitPrice': nullable(COUNT), 'carriedCopper': COUNT, 'funds': FUNDS, 'canAfford': nullable(B), 'canPurchase': B,
                                            'currency': enum('copper','unknown'), 'stock': enum('unlimited','unknown'),
                                            'quoteToken': nullable(atomic.SHOP_TOKEN), 'expiresAtGameUpdate': nullable(TICK),
@@ -294,7 +298,7 @@ OBSERVATIONS = {
     'inspect_container': observation(any_of(
         obj({'status': const('unavailable'), 'reason': S, 'container': NULL}),
         obj({'status': const('open'), 'reason': NULL, 'container': obj({
-            **TILE_XY, 'typeId': enum(21, 467), 'chestIndex': COUNT, 'name': S,
+            **TILE_XY, 'typeId': enum(21, 467, 29, 97, 463, 491), 'chestIndex': {'anyOf':[COUNT,enum(-2,-3,-4,-5)]}, 'name': S,
             'containerToken': atomic.INVENTORY_TOKEN,
             'slots': {'type': 'array', 'minItems': 40, 'maxItems': 40, 'items': obj({
                 **fields(integers='slot typeId stack prefix maxStack', strings='name instanceId', booleans='favorited'),
@@ -305,7 +309,8 @@ OBSERVATIONS = {
     'inspect_tile': observation(any_of(
         obj({**INSPECT_TILE, 'preflight': NULL, 'preflightStatus': const('unknown_target')}),
         obj({**INSPECT_TILE, 'preflight': PREFLIGHT, 'preflightStatus': const('partial_checks_only'),
-             'content': nullable(S), 'wallContent': nullable(S)}))),
+             'content': nullable(S), 'wallContent': nullable(S),
+             'interaction': obj({'kind': enum('door','switch','lever','bed'), 'active': B, 'target': ref('MineToken')})}, optional=('interaction',)))),
     'scan_tiles': observation(obj({
         **QUERY_METADATA, **COLLECTION,
         'items': array(obj({**TILE_XY, 'typeId': I, 'contentKey': S, 'distancePixels': N})),
@@ -533,7 +538,8 @@ DEFS.update({
     'PhysicsParameters': obj({
         **fields(numbers='AccRun MaxRun AccRunSpeed RunSlowdown Gravity MaxFall JumpSpeed', integers='JumpHeight'),
         'ExtraJump': nullable(obj(fields(strings='FullName', numbers='DurationMultiplier'))),
-        'Air': nullable(obj({'Kind': AIR_KIND})),
+        'Air': nullable(obj({'Kind': AIR_KIND, **fields(numbers='AirRunSpeed AirAcceleration RiseLimit')},
+                            optional=('AirRunSpeed','AirAcceleration','RiseLimit'))),
         'Fall': obj(fields(integers='ExtraFall', booleans='Immune')),
     }, optional=('Fall',)),
     'MovementSnapshot': obj({
@@ -682,7 +688,7 @@ DEFS.update({
     }),
     'SortEvidence': obj({
         **fields(booleans='mutationAttempted sortVerified'),
-        'mutationGameUpdate': TICK, 'observedGameUpdate': TICK, 'chestIndex': nullable(COUNT),
+        'mutationGameUpdate': TICK, 'observedGameUpdate': TICK, 'chestIndex': nullable({'anyOf':[COUNT,enum(-2,-3,-4,-5)]}),
         'changedSlots': array(obj(fields(integers='slot typeId stack prefix', booleans='favorited', strings='instanceId'))),
     }),
     'ContainerBatchEvidence': obj({
@@ -695,7 +701,7 @@ DEFS.update({
     'ContainerTransferPair': obj({'source': ref('ContainerTransferSlot'), 'destination': ref('ContainerTransferSlot')}),
     'ContainerTransferEvidence': obj({
         **fields(integers='inventorySlot containerSlot requestedCount', booleans='mutationAttempted'),
-        **dict.fromkeys(('movedCount', 'remainingCount', 'blockedSlot', 'chestIndex'), nullable(COUNT)),
+        **dict.fromkeys(('movedCount', 'remainingCount', 'blockedSlot'), nullable(COUNT)), 'chestIndex': nullable({'anyOf':[COUNT,enum(-2,-3,-4,-5)]}),
         'before': nullable(ref('ContainerTransferPair')), 'after': nullable(ref('ContainerTransferPair')),
         'effectStatus': enum('complete', 'partial', 'none', 'unknown'),
         'mutationGameUpdate': TICK, 'observedGameUpdate': TICK,
@@ -733,12 +739,12 @@ DEFS.update({
 DEFS['MoveArguments'] = atomic.SCHEMAS['move_input']
 TARGETS = {
     'targetRegion': ('navigate_to_landing_region',),
-    'targetTile': ('open_door','close_door','place_tile', 'place_object', 'place_rope'),
+    'targetTile': ('mine_wall','hammer_tile','open_door','close_door','place_tile', 'place_object', 'place_rope'),
     'targetContainer': tuple(sorted(atomic.CONTAINER_OPERATIONS)),
     'targetRecipe': ('craft_recipe',),
-    'targetInventory': ('dismiss_summon','open_inventory_item','configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
+    'targetInventory': ('manage_trash','switch_equipment_loadout','set_inventory_favorite','drop_inventory_item','dismiss_summon','open_inventory_item','configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
-    'targetTask': ('reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','assign_npc_home','set_team','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'),
+    'targetTask': ('interact_tile','reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','set_team','teleport_to_pylon','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'),
 }
 MINE_ARGUMENTS = any_of(obj({**TILE_XY, 'cluster': B}, optional=('cluster',)),
                         obj({'target': ref('MineToken'), 'cluster': B}, optional=('cluster',)))
@@ -746,7 +752,7 @@ COMBAT_ARGUMENTS = obj({'entityRef': S, 'threat': S, 'button': enum('left','righ
 
 
 def target_schema(key, names):
-    variants = [MINE_ARGUMENTS if name == 'mine_target' else COMBAT_ARGUMENTS if name == 'combat_attack' else atomic.SCHEMAS[name]
+    variants = [MINE_ARGUMENTS if name == 'mine_target' else COMBAT_ARGUMENTS if name == 'combat_attack' else atomic.SERVER_INTERACT_ARGS if name == 'interact_tile' else atomic.SCHEMAS[name]
                 for name in TARGETS[key] if name in names]
     return any_of(*variants, NULL) if variants else NULL
 
@@ -946,29 +952,53 @@ DEFS['ShopSaleEvidence'] = any_of(
          'beforeCopper': COUNT, 'afterCopper': COUNT, 'beforeCount': COUNT, 'afterCount': COUNT,
          'beforeStack': COUNT, 'afterStack': COUNT, 'banksUnchanged': B}),
     obj({'entityRef': S, 'mutationAttempted': const(False)}))
+DEFS['NpcDialogueEvidence'] = obj({'entityRef': S, 'text': S, 'open': B}, optional=('entityRef', 'text'))
 DEFS['ShopPurchaseEvidence'] = any_of(
-    obj({'entityRef': S, 'quoteToken': atomic.SHOP_TOKEN, 'itemType': I, 'quantity': const(1), 'unitPrice': COUNT,
-         **PAYMENT, 'beforeCount': COUNT, 'afterCount': COUNT}),
+    obj({'entityRef': S, 'quoteToken': atomic.SHOP_TOKEN, 'itemType': I, 'quantity': {'type': 'integer', 'minimum': 1, 'maximum': 50}, 'verifiedQuantity': COUNT, 'effectStatus': enum('complete','partial','unconfirmed'), 'unitPrice': COUNT,
+         **PAYMENT, 'beforeCount': COUNT, 'afterCount': COUNT}, optional=('verifiedQuantity','effectStatus')),
     obj({'entityRef': S, 'mutationAttempted': const(False)}))
 DEFS['NpcHomeEvidence'] = any_of(
     obj({'entityRef': S, 'queryTile': ref('TilePoint'), 'homeTile': ref('TilePoint'),
          'before': obj(NPC_HOME_STATE), 'after': nullable(obj(NPC_HOME_STATE))}),
     obj({'entityRef': S, 'queryTile': ref('TilePoint'), 'before': nullable(obj(NPC_HOME_STATE)),
          'mutationAttempted': const(False)}))
+DEFS['PylonEvidence']=any_of(obj({'pylonRef':S,'nativeTeleport':B,**fields(numbers='actorX actorY targetX targetY')}),
+                              obj({'pylonRef':S,'nativeTeleport':const(False)}))
 DEFS['TeamEvidence']=obj(fields(integers='beforeTeam team'))
 DEFS['WormholeEvidence']=obj({'teammateRef':S, **fields(integers='team before after',numbers='actorX actorY targetX targetY')})
 DEFS['DismissSummonEvidence']=obj(fields(integers='itemType buffType', booleans='wasActive absent'))
+DEFS['HammerCell'] = obj(fields(integers='tileType wallType slope', booleans='hasTile halfBlock actuated'))
+DEFS['HammerEvidence'] = obj({**TILE_XY, **fields(integers='toolType hammerPower strikes', booleans='effectObserved'),
+                              'before': ref('HammerCell'), 'after': ref('HammerCell')})
+DEFS['TileInteractionEvidence'] = any_of(
+    obj({**TILE_XY, 'kind': enum('door','switch','lever'), **fields(booleans='beforeActive afterActive')}),
+    obj({**TILE_XY, 'kind': const('bed'), **fields(booleans='beforeActive afterActive',
+        integers='bedSpawnX bedSpawnY beforeSpawnX beforeSpawnY afterSpawnX afterSpawnY')}))
 DEFS['DoorEvidence']=obj({**TILE_XY, **fields(integers='hinge top', booleans='beforeOpen afterOpen changed')})
+DEFS['TrashEvidence']=obj({**fields(integers='slot typeId stack', booleans='verified'),'mode':enum('discard','retrieve')})
+DEFS['LoadoutEvidence']=obj(fields(integers='beforeLoadout afterLoadout', booleans='verified'))
+DEFS['FavoriteEvidence'] = obj(fields(integers='sourceSlot typeId stack prefix', booleans='beforeFavorite afterFavorite'))
+DEFS['ItemDropEvidence'] = obj({**fields(integers='sourceSlot typeId prefix beforeStack afterStack spawnedCount'),
+                                'entityRef': S, 'teammateRef': nullable(S), 'receiptStatus': const('unconfirmed')})
+DEFS['HandoffObservation'] = obj({**fields(integers='typeId spawnedCount confirmedReceived', booleans='stillOnGround'),
+                                  'entityRef': S, 'receiptStatus': enum('received','partial','unconfirmed')})
 DEFS['ItemOpeningEvidence']=obj({**fields(integers='sourceSlot typeId beforeStack afterStack'), 'drops':array(obj({'typeId':I,'stack':I}))})
 ACTION_EVIDENCE = {
     'dismiss_summon':'DismissSummonEvidence',
+    'manage_trash':'TrashEvidence', 'switch_equipment_loadout':'LoadoutEvidence',
+    'set_inventory_favorite':'FavoriteEvidence',
+    'drop_inventory_item':'ItemDropEvidence',
     'open_inventory_item':'ItemOpeningEvidence',
     'heal_at_nurse': 'NurseEvidence',
     'reforge_item': 'ReforgeEvidence',
     'sell_npc_item': 'ShopSaleEvidence',
+    'open_npc_dialogue': 'NpcDialogueEvidence',
+    'close_npc_dialogue': 'NpcDialogueEvidence',
     'buy_npc_item': 'ShopPurchaseEvidence',
     'assign_npc_home': 'NpcHomeEvidence',
-    'set_team':'TeamEvidence','teleport_to_teammate':'WormholeEvidence',
+    'teleport_to_pylon':'PylonEvidence','set_team':'TeamEvidence','teleport_to_teammate':'WormholeEvidence',
+    'mine_wall':'HammerEvidence', 'hammer_tile':'HammerEvidence',
+    'interact_tile':'TileInteractionEvidence',
     'open_door':'DoorEvidence','close_door':'DoorEvidence',
     'configure_combat_loadout': 'CombatLoadout',
     'craft_recipe': 'CraftEvidence',
@@ -1134,11 +1164,19 @@ SUCCESSFUL_PROOF = {
     'heal_at_nurse': matches(bankNonCurrencyUnchanged=TRUE, buffsVerified=TRUE, priceCopper={'minimum':1}),
     'reforge_item': matches(rolled=TRUE, itemVerified=TRUE, bankNonCurrencyUnchanged=TRUE, afterPrefix={'minimum':1}),
     'sell_npc_item': matches(quantity=const(1), banksUnchanged=TRUE, unitPrice={'minimum':1}),
-    'buy_npc_item': matches(quantity=const(1), bankNonCurrencyUnchanged=TRUE, unitPrice={'minimum':1}),
+    'open_npc_dialogue': matches(open=TRUE, text={'type':'string','minLength':1}, entityRef=S),
+    'close_npc_dialogue': matches(open=const(False)),
+    'buy_npc_item': matches(quantity={'type': 'integer', 'minimum': 1, 'maximum': 50}, bankNonCurrencyUnchanged=TRUE, unitPrice={'minimum':1}),
     'assign_npc_home': matches(after=matches(active=TRUE, townNPC=TRUE, homeless=const(False), managerHasRoom=TRUE)),
-    'set_team': matches(team=COUNT),'teleport_to_teammate': matches(before={'minimum':1},after=COUNT),
+    'teleport_to_pylon': matches(nativeTeleport=TRUE),'set_team': matches(team=COUNT),'teleport_to_teammate': matches(before={'minimum':1},after=COUNT),
     'dismiss_summon': matches(absent=TRUE),
+    'manage_trash': matches(verified=TRUE), 'switch_equipment_loadout': matches(verified=TRUE),
+    'set_inventory_favorite': ref('FavoriteEvidence'),
+    'drop_inventory_item': matches(spawnedCount={'minimum':1}, receiptStatus=const('unconfirmed')),
     'open_inventory_item': matches(drops={'minItems':1}),
+    'mine_wall': matches(effectObserved=TRUE, after=matches(wallType=const(0))),
+    'hammer_tile': matches(effectObserved=TRUE, after=matches(hasTile=TRUE)),
+    'interact_tile': ref('TileInteractionEvidence'),
     'open_door': matches(afterOpen=TRUE), 'close_door': matches(afterOpen=FALSE),
     'configure_combat_loadout': ref('CombatLoadout'),
     'select_hotbar_slot': matches(selectionApplied=TRUE),
@@ -1171,8 +1209,8 @@ SUCCESSFUL_PROOF = {
     **dict.fromkeys(sorted(atomic.CONTAINER_TRANSFERS), matches(
         mutationAttempted=TRUE, effectStatus=const('complete'), movedCount={'minimum': 1},
         remainingCount=const(0), blockedSlot=NULL, before=ref('ContainerTransferPair'), after=ref('ContainerTransferPair'))),
-    'open_container': matches(mutationAttempted=TRUE, containerVerified=TRUE, chestIndex=COUNT,
-                              x=TILE_COORD, y=TILE_COORD, typeId=enum(21, 467)),
+    'open_container': matches(mutationAttempted=TRUE, containerVerified=TRUE, chestIndex={'anyOf':[COUNT,enum(-2,-3,-4,-5)]},
+                              x=TILE_COORD, y=TILE_COORD, typeId=enum(21, 467, 29, 97, 463, 491)),
     'close_container': matches(mutationAttempted=TRUE, containerVerified=TRUE, chestIndex=const(-1)),
     'craft_recipe': matches(mutationAttempted=TRUE, inventoryVerified=TRUE,
                             producedCount={'minimum': 1}, outputTypeId={'minimum': 1},
@@ -1316,7 +1354,8 @@ def stop_schema(operations, program_tasks=True):
 REGISTRY = {
     **{name: any_of(schema, PRE_DISPATCH) for name, schema in OBSERVATIONS.items()},
     'observe_scene': any_of(observation(ref('SceneLocal')), PRE_DISPATCH),
-    'list_teammates': any_of(observation(obj({'actorTeam':I,'players':array(obj({'teammateRef':S,'team':I,'name':S,'reason':nullable(S)}))})), PRE_DISPATCH),
+    'list_pylons': any_of(observation(obj({'pylons':array(obj({'pylonRef':S,'name':S,'type':I,'x':I,'y':I}))})), PRE_DISPATCH),
+    'list_teammates': any_of(observation(obj({'actorTeam':I,'players':array(obj({'teammateRef':S,'team':I,'name':S,'reason':nullable(S),'lastDrop':nullable(ref('HandoffObservation'))}, optional=('lastDrop',)))})), PRE_DISPATCH),
     'discover_bosses': any_of(observation(obj({'radiusPixels': I, 'extensionConflicts': COUNT,
         'candidates': array(obj({'entityRef': S,'typeId': I,'name': S,'strategy': S,'admissible': B,'reason': nullable(S)}))})), PRE_DISPATCH),
     'query_combat_loadout': any_of(observation(ref('CombatLoadout')), PRE_DISPATCH),

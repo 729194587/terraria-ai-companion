@@ -26,19 +26,19 @@ CATEGORIES = (
     ('直接身体输入', ('move_input',), 'Limited', '原生方向/跳跃多更新输入；不是目标导航或装备运动适配。'),
     ('目标导航', ('navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'drop_through_platform', 'move_on_rope'),
      'Limited', '局部导航按各自profile；绳索操作受原版绳柱及原生接触条件限制。'),
-    ('物品与战斗', ('dismiss_summon','set_team','list_teammates','teleport_to_teammate','use_item', 'configure_combat_loadout', 'query_combat_loadout', 'query_combat', 'discover_bosses','attack_entity'), 'Limited', '主动攻击通过 submit_task 提交 combat_attack；query_combat 可发现游戏侧自卫任务。'),
-    ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '服务器挖掘从主背包自动选工具；复合挖掘可先接近指定格，掉落入包需另行核验。'),
+    ('物品与战斗', ('dismiss_summon','set_team','list_pylons','teleport_to_pylon','list_teammates','teleport_to_teammate','use_item', 'configure_combat_loadout', 'query_combat_loadout', 'query_combat', 'discover_bosses','attack_entity'), 'Limited', '主动攻击通过 submit_task 提交 combat_attack；query_combat 可发现游戏侧自卫任务。'),
+    ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '挖前景从主背包自动选工具，拆墙须先手持纯锤；复合挖掘可先接近指定格，掉落入包需另行核验。'),
     ('重铸', ('quote_reforge','reforge_item'), 'Limited', '向附近的原版哥布林工匠报价并重铸主背包中一件武器、工具或配饰。每次付款只抽一次。'),
     ('护士', ('quote_nurse_heal','heal_at_nurse'), 'Limited', '向附近原版护士查询治疗量、可清除减益和诊金，按有效报价支付随身钱币。'),
-    ('商店', ('inspect_npc_shop', 'quote_npc_purchase', 'buy_npc_item', 'quote_npc_sale', 'sell_npc_item'), 'Limited', '原版普通商人；逐项检查可售状态，使用新鲜报价购买或出售一件。出售需要普通背包槽及其当前令牌。'),
+    ('商店', ('open_npc_dialogue', 'close_npc_dialogue', 'inspect_npc_shop', 'quote_npc_purchase', 'buy_npc_item', 'quote_npc_sale', 'sell_npc_item'), 'Limited', '原版普通商人；逐项检查可售状态，打开对话读取台词，结束时关闭；使用新鲜报价购买（批量能力支持 1..50 件）或出售一件。出售需要普通背包槽及其当前令牌。'),
     ('建造', ('inspect_npc_housing', 'assign_npc_home', 'inspect_housing', 'build_diff', 'place_tile', 'place_object', 'place_wall', 'hammer_tile', 'place_rope'),
      'Limited', '原生放置受材料、样式、占地和目标坐标限制。'),
     ('制作', ('query_recipes', 'craft_recipe'), 'Limited', '普通原版配方及已支持环境/制作站；按当前supported判定。'),
-    ('背包变更', ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'),
+    ('背包变更', ('manage_trash','switch_equipment_loadout','set_inventory_favorite','drop_inventory_item','transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'),
      'Limited', '仅AI自身背包内有界搬运/交换/持用；需新鲜槽位令牌和效果/输入释放核验。'),
     ('排序', ('sort_inventory', 'sort_container'), 'Limited', '原生排序，操作后重新观察相关槽位。'),
-    ('容器', ('open_container', 'inspect_container', 'close_container', 'deposit_container_item', 'withdraw_container_item', 'quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'), 'Limited', '绑定AI在原生范围内操作原版箱子。存取只涉及指定的两个槽，部分效果查看实际数量和剩余数量。'),
-    ('世界交互', ('open_door','close_door','interact_tile'), 'Limited', '观察门格后显式开关普通木门，服务端导航会开启前方可及的门并重新规划。'),
+    ('容器', ('open_container', 'inspect_container', 'close_container', 'deposit_container_item', 'withdraw_container_item', 'quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'), 'Limited', '绑定AI在原生范围内操作原版箱子或已放置的个人仓库家具。存取只涉及指定的两个槽，部分效果查看实际数量和剩余数量。'),
+    ('世界交互', ('open_door','close_door','interact_tile'), 'Limited', '支持时用 interact_tile 对新鲜目标激活一次（普通木门、开关、拉杆）；服务端导航会开启前方可及的门并重新规划。'),
     ('等待与取消', ('wait', 'stop_action'), 'Supported', '宿主等待与当前AI动作取消；不推进游戏时间。'),
     ('装备运动', (), 'Not exposed', '翅膀/钩爪/坐骑适配、飞行控制与自动恢复均不可直接调用。'),
 )
@@ -79,7 +79,7 @@ def capability_manifest(bridge, supported=None):
     supported = exposed_operations(bridge) if supported is None else set(supported)
     categories = []
     for name, operations, level, boundary in CATEGORIES:
-        operations = [op for op in operations if op not in ('set_team','list_teammates','teleport_to_teammate','discover_bosses') or op in supported]
+        operations = [op for op in operations if op not in ('set_team','list_pylons','teleport_to_pylon','list_teammates','teleport_to_teammate','discover_bosses') or op in supported]
         exposed = [op for op in operations if op in supported]
         row = dict(category=name, status=level if exposed else 'Not exposed', callableApis=exposed,
                    notExposed=[op for op in operations if op not in supported])
@@ -129,9 +129,11 @@ def server_definitions(bridge, supported=None):
     if supported is None:
         supported = exposed_operations(bridge)
     capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
-    definitions = atomic.server_tools(supported, combat_inventory="server_ai_combat_inventory_v1" in capabilities,
+    definitions = atomic.server_tools(supported, bulk_purchase='server_ai_merchant_bulk_purchase_v1' in capabilities,
+                                      bed_spawn='server_ai_bed_spawn_v1' in capabilities, combat_inventory="server_ai_combat_inventory_v1" in capabilities,
                                       summon_loadout="server_ai_combat_summon_loadout_v1" in capabilities,
                                       dual_weapons="server_ai_combat_secondary_v1" in capabilities, scene_region='server_ai_scene_region_v1' in capabilities,
+                                      general_dialogue='server_ai_general_npc_dialogue_v1' in capabilities,
                                       general_operations='server_ai_general_operations_v1' in capabilities,
                                       mining_opening='server_ai_mining_opening_v1' in capabilities,
                                       excavation='server_ai_excavation_v1' in capabilities)
@@ -279,6 +281,7 @@ log(message)最多32条、每条512 UTF-8字节，不占API次数；log/value是
 
 ROLE_PRINCIPLES = '''你通过玩家本地主动聊天与其对话并控制独立服务器AI Player。普通聊天和知识问答直接回答；游戏状态问题按需只读观察。无需!ai前缀，旧!ai兼容；用玩家语言简短回复，最多400字符。宿主以AI身份广播回复；始终以绑定AI的状态行动。
 行动优先：玩家明确委托且目标能安全推进时，本轮实际执行，再依据回执回复。直接获取所需观察，在已有授权、能力和预算内自主选择合理目标、执行并核验；无需先给行动计划或让玩家逐步指定坐标。只要能预先说清如何根据观察结果选择下一步，就在同一次 execute_lua 中编写观察、条件判断、动作和必要核验。坐标或槽位可以在程序运行时从观察中取得。例如玩家要求走到某物旁，程序找到目标且能选出安全站位就直接导航并检查回执；目标缺失或无法判断站位时，返回实际观察和原因。存在关键歧义且观察无法解决时再询问；缺少安全路径、能力、有效观察或预算时，报告实测进度和停止原因。
+扫描命中只说明目标在感知范围内。玩家要求过去交互时，按目标当前坐标接近并复查位置；移动的实体要重新定位。已知的前置步骤在同一程序里按顺序执行。预检失败且 continuationAllowed=true 时，按 recovery 换站位或补齐前置条件再继续；已发生的效果按回执保留。
 每次工具决策只调用一个工具。复杂玩法行动前按需从available_skills索引选择相关攻略，用read_skill读取，再自行编写execute_lua。简单行动直接使用execute_lua；已在上下文中的同一篇攻略无需重复加载。攻略提供策略和示例，权限、能力与终态仍由玩家授权和运行时契约决定。
 请求附带runtimeInventory、runtimeLua及按能力提供的runtimeTasks，分别给出本轮背包摘要、剩余预算和任务状态。缺失、不可用或过期的事实按需查询，不能把历史快照当成实时状态。已知失败按实际原因和宿主续行范围决定下一步；无进展或unknown停止变更。
 能力以Manifest/API契约为准，不枚举Lua环境或试错API参数来探测。
@@ -342,7 +345,7 @@ def server_contract(bridge, tool, *, compact=False):
         manifest_text = '\n'.join(f"- {row['category']}：{'；'.join(row['signatures'])}"
                                   for row in signature_index(bridge, definitions))
         api_reference = help_reference + '\n' + OBSERVATION_RESULT
-        examples = ['1. 发现函数：return api("help")']
+        examples = ['需要发现函数时：return api("help")']
     else:
         manifest_text = render_manifest(capability_manifest(bridge, supported))
         api_reference = OBSERVATION_RESULT + '\n' + json.dumps(server_definitions(bridge, supported),
@@ -351,8 +354,8 @@ def server_contract(bridge, tool, *, compact=False):
                     'local a={3,1,2}; table.sort(a); log(tostring(#a)); return a']
     if 'get_player_state' in supported:
         if compact:
-            examples.extend(['2. 查参数和回执：return api("help",{name="get_player_state"})',
-                             '3. 下一次execute_lua执行：local p=api("get_player_state",{}); '
+            examples.extend(['缺少参数或回执字段时：return api("help",{name="get_player_state"})',
+                             '只问状态时：local p=api("get_player_state",{}); '
                              'if not p.valid then return p end; return {player=p.player,motion=p.motion}'])
         else:
             examples.append('local p=api("get_player_state",{}); return {player=p.player,motion=p.motion}')
@@ -371,5 +374,7 @@ def server_contract(bridge, tool, *, compact=False):
                     +'\n示例（含动作的例子仅在授权后使用）\n'+'\n'.join(examples))
     projected_tool = json.loads(json.dumps(tool))
     projected_tool['function']['description'] = ('执行完整有界Lua 5.4 source，内部api同步等待原子结果；'
+        '前往已指定的目标时，在同一段 Lua 中扫描、按条件选目标、用观察坐标开始导航并核对回执。'
+        '查参数时优先查当前一步所需的函数；后续交互可以到达后再查。目标不明、预算不足或宿主要求停止时返回。'
         '唯一参数source。以系统的Capability Manifest、API Contract和Lua Runtime Reference为准；程序返回不证明游戏目标完成。')
     return instructions + task_reference, [projected_tool, gameplay_skills.TOOL]

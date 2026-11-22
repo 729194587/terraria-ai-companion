@@ -144,7 +144,7 @@ internal static class ProbeSession
                 candidate.whoAmI = view.Slot;
                 candidate.position = new Vector2(x, y);
                 candidate.velocity = Vector2.Zero;
-                candidate.SpawnX = candidate.SpawnY = -1;
+                candidate.FindSpawn(); // Resolve this world's saved bed on the unpublished actor.
                 candidate.controlLeft = candidate.controlRight = candidate.controlUp = candidate.controlDown = false;
                 candidate.controlJump = candidate.controlUseItem = candidate.controlUseTile = false;
                 candidate.dead = false; candidate.respawnTimer = 0; candidate.fallStart = y / 16;

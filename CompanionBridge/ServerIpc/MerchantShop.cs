@@ -37,22 +37,29 @@ internal static partial class MerchantShop
         public string stock => unitPrice.HasValue ? "unlimited" : "unknown";
     }
     private sealed record Quote(string Token, Player Actor, NPC Merchant, string Reference, string World, long Generation,
-        int Slot, int Type, long Price, ulong Expires, long DeadlineMs, string Inventory, MerchantPayment.Funds Funds, string Catalog);
+        int Slot, int Type, int Quantity, long Price, ulong Expires, long DeadlineMs, string Inventory, MerchantPayment.Funds Funds, string Catalog);
     private static string Name => NPCShopDatabase.GetShopName(NPCID.Merchant, "Shop");
 
-    private static string Resolve(Identity id, string reference, out NPC merchant) =>
-        ResolveService(id, reference, NPCID.Merchant, Supported, out merchant);
-
-    internal static string ResolveService(Identity id, string reference, int npcType, bool supported, out NPC merchant)
+    private static string Resolve(Identity id, string reference, out NPC merchant, bool reading = false)
     {
-        merchant = null;
-        foreach (var npc in Main.ActiveNPCs)
-            if (NativeCombatWorld.Reference(id, npc) == reference) { merchant = npc; break; }
+        var error = ResolveService(id, reference, NPCID.Merchant, Supported, out merchant, reading);
+        if (error != null) return error;
+        if (id.RequestLease?.Dialogue is NpcDialogue.Conversation session && session.Reference == reference && session.IsCurrent)
+            return null;
+        if (reading) throw new QueryUnavailableException("merchant_dialogue_required");
+        return "merchant_dialogue_required";
+    }
+
+    internal static string ResolveService(Identity id, string reference, int npcType, bool supported, out NPC merchant, bool reading = false)
+    {
+        if (reading && id.RequestLease == null) throw new ShopReadException("not_bound");
+        merchant = NpcDialogue.Resolve(id, reference);
         if (merchant == null || merchant.life <= 0) return "stale_entity_ref";
         if (!supported || merchant.type != npcType) return npcType == NPCID.Merchant ? "unsupported_merchant" : "unsupported_npc_service";
-        var player = (Player)id.Actor;
-        return player.dead || player.ghost || !merchant.CanTalk || player.Distance(merchant.Center) > 80f
-            ? (npcType == NPCID.Merchant ? "merchant_not_in_range_or_busy" : "npc_not_in_range_or_busy") : null;
+        string unavailable = NpcDialogue.UnavailableReason((Player)id.Actor, merchant);
+        if (unavailable == null) return null;
+        if (reading) throw new QueryUnavailableException(unavailable);
+        return npcType == NPCID.Merchant ? "merchant_not_in_range_or_busy" : "npc_not_in_range_or_busy";
     }
 
     private static Listing Inspect(NPCShop.Entry entry, Item item, Player player)
@@ -117,7 +124,7 @@ internal static partial class MerchantShop
     internal static object Read(Identity id, JsonElement args, bool quote)
     {
         string entityRef = args.GetProperty("entityRef").GetString();
-        var error = Resolve(id,entityRef,out var merchant);
+        var error = Resolve(id,entityRef,out var merchant, reading: true);
         if (error != null) throw new ShopReadException(error);
         var p = (Player)id.Actor;
         var funds = MerchantPayment.Balance(p);
@@ -127,19 +134,22 @@ internal static partial class MerchantShop
         lease.MerchantQuote = null;
         Quote current = null;
         int itemType = args.GetProperty("itemType").GetInt32();
+        int quantity = args.TryGetProperty("quantity", out var requested) ? requested.GetInt32() : 1;
+        if (quantity is < 1 or > 50) throw new ShopReadException("invalid_quantity");
         int index = Unique(entries,itemType);
         var listing = index < 0 ? null : entries[index];
         if (listing != null)
         {
             string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-            current = new(token,p,merchant,entityRef,id.World,id.Generation,id.Slot,itemType,listing.unitPrice.Value,
+            current = new(token,p,merchant,entityRef,id.World,id.Generation,id.Slot,itemType,quantity,listing.unitPrice.Value,
                 Main.GameUpdateCount + 600, Environment.TickCount64 + 10_000, Inventory(id,p),funds,JsonSerializer.Serialize(entries));
             lease.MerchantQuote = current;
         }
-        return new { entityRef,itemType,quantity=1,unitPrice=listing?.unitPrice,funds.carriedCopper,funds,canAfford=listing?.canAfford,
+        bool? affordable = listing?.unitPrice is long price ? p.CanAfford(checked(price * quantity), -1) : null;
+        return new { entityRef,itemType,quantity,unitPrice=listing?.unitPrice,funds.carriedCopper,funds,canAfford=affordable,
             currency=listing?.currency ?? "unknown",stock=listing?.stock ?? "unknown",
-            canPurchase=listing?.canPurchase == true,quoteToken=current?.Token,expiresAtGameUpdate=current?.Expires,
-            reason=listing == null ? entries.FirstOrDefault(l => l.itemType == itemType)?.reason ?? "unsupported_offer" : listing.reason };
+            canPurchase=listing?.canPurchase == true && affordable == true,quoteToken=current?.Token,expiresAtGameUpdate=current?.Expires,
+            reason=listing == null ? entries.FirstOrDefault(l => l.itemType == itemType)?.reason ?? "unsupported_offer" : affordable == false ? "insufficient_funds" : listing.reason };
     }
 
     internal static Result Buy(Identity id, JsonElement args)
@@ -167,24 +177,61 @@ internal static partial class MerchantShop
         var banks = MerchantPayment.NonCurrency(id,p);
         int beforeCount = Count();
         var offer = offers[index];
-        bool paymentStarted = false;
+        if (!p.CanAfford(checked(q.Price * q.Quantity), -1)) return Reject("insufficient_funds");
+        bool unitPaymentStarted = false;
+        int verifiedQuantity = 0;
+        var previousFunds = beforeFunds;
         var original = p.currentShoppingSettings;
         try
         {
             p.currentShoppingSettings = Main.ShopHelper.GetShoppingSettings(p, merchant);
-            error = MerchantPayment.Deliver(p,merchant,offer,q.Price,ref paymentStarted);
-            if (error != null && !paymentStarted) return Reject(error);
+            while (verifiedQuantity < q.Quantity)
+            {
+                unitPaymentStarted = false;
+                p.GetItemExpectedPrice(offer, out _, out long currentPrice);
+                if (currentPrice != q.Price)
+                {
+                    if (verifiedQuantity == 0) return Reject("stale_quote");
+                    error = "stale_quote";
+                    break;
+                }
+                error = MerchantPayment.Deliver(p,merchant,offer,q.Price,ref unitPaymentStarted);
+                if (error != null)
+                {
+                    if (verifiedQuantity == 0 && !unitPaymentStarted) return Reject(error);
+                    break;
+                }
+                var funds = MerchantPayment.Balance(p);
+                if (previousFunds.totalCopper - funds.totalCopper != q.Price ||
+                    Count() != beforeCount + verifiedQuantity + 1 ||
+                    !banks.SequenceEqual(MerchantPayment.NonCurrency(id,p)) || !ServerAiNativeActions.Owned(id) ||
+                    !merchant.active || !ReferenceEquals(Main.npc[merchant.whoAmI],merchant) ||
+                    NativeCombatWorld.Reference(id,merchant) != entityRef)
+                {
+                    error = "purchase_unconfirmed";
+                    break;
+                }
+                verifiedQuantity++;
+                previousFunds = funds;
+            }
         }
-        catch when (paymentStarted) { error = "purchase_unconfirmed"; }
+        catch when (unitPaymentStarted || verifiedQuantity > 0) { error = "purchase_unconfirmed"; }
         finally { p.currentShoppingSettings = original; }
         var afterFunds = MerchantPayment.Balance(p);
         int afterCount = Count();
         bool bankNonCurrencyUnchanged = banks.SequenceEqual(MerchantPayment.NonCurrency(id,p));
-        bool ok = error == null && beforeFunds.totalCopper - afterFunds.totalCopper == q.Price && afterCount == beforeCount + 1 &&
+        bool effectsMatch = beforeFunds.totalCopper - afterFunds.totalCopper == q.Price * verifiedQuantity &&
+            afterCount == beforeCount + verifiedQuantity &&
             bankNonCurrencyUnchanged && ServerAiNativeActions.Owned(id) && ReferenceEquals(Main.npc[merchant.whoAmI],merchant) &&
             merchant.active && NativeCombatWorld.Reference(id,merchant) == entityRef;
-        return new(ok ? "completed" : "unknown",ok ? "purchase_verified" : "purchase_unconfirmed",
-            new { entityRef,quoteToken=q.Token,itemType=q.Type,quantity=1,unitPrice=q.Price,beforeFunds,afterFunds,beforeCount,afterCount,bankNonCurrencyUnchanged },
+        bool ok = effectsMatch && error == null && verifiedQuantity == q.Quantity;
+        bool partial = effectsMatch && verifiedQuantity > 0 && !unitPaymentStarted &&
+            error is ("stale_quote" or "inventory_full" or "purchase_vetoed");
+        string status = ok ? "completed" : partial ? "failed" : "unknown";
+        string reason = ok ? "purchase_verified" : partial ? error : "purchase_unconfirmed";
+        string effectStatus = ok ? "complete" : partial ? "partial" : "unconfirmed";
+        return new(status,reason,
+            new { entityRef,quoteToken=q.Token,itemType=q.Type,quantity=q.Quantity,verifiedQuantity,effectStatus,unitPrice=q.Price,beforeFunds,afterFunds,beforeCount,afterCount,bankNonCurrencyUnchanged },
             true,ok,InputsAcquired:false);
     }
 }

@@ -63,8 +63,9 @@ internal static class ServerMineTaskFixture
         }
         else
         {
-            int fixtureRight=kind=="navigation_surface_wide"?72:24;
-            for(int tx=left-24;tx<=left+fixtureRight;tx++)for(int ty=floor-20;ty<=floor+16;ty++)
+            int fixtureRight=kind=="navigation_surface_wide"?72:kind=="cluster_far_right"?46:24;
+            int fixtureLeft=kind=="cluster_far_left"?46:24;
+            for(int tx=left-fixtureLeft;tx<=left+fixtureRight;tx++)for(int ty=floor-20;ty<=floor+16;ty++)
             {var t=Main.tile[tx,ty];t.ClearEverything();if(ty>=floor){t.HasTile=true;t.TileType=TileID.Dirt;}}
             foreach(var drop in Main.item)drop.active=false;
             Array.Clear(p.buffType);Array.Clear(p.buffTime); // Isolate from preceding native apple regression.
@@ -155,7 +156,16 @@ internal static class ServerMineTaskFixture
                     var lava=Main.tile[left,floor+1];lava.ClearTile();lava.LiquidType=LiquidID.Lava;lava.LiquidAmount=255;
                 }
             }
-            var ore=Main.tile[x,y];ore.HasTile=true;ore.TileType=kind=="underpowered"?TileID.Obsidian:TileID.Copper;
+            if(kind is "cluster_far_right" or "cluster_far_left" or "cluster_near")
+            {
+                x=left+(kind=="cluster_far_right"?32:kind=="cluster_far_left"?-35:2);
+                y=floor+1;
+                for(int i=0;i<3;i++)Main.tile[x+i,y].TileType=TileID.Iron;
+            }
+            else
+            {
+                var ore=Main.tile[x,y];ore.HasTile=true;ore.TileType=kind=="underpowered"?TileID.Obsidian:TileID.Copper;
+            }
             if(kind is "workbench" or "workbench_task")
             {
                 for(int col=0;col<2;col++)
@@ -170,7 +180,7 @@ internal static class ServerMineTaskFixture
             if(kind=="no_tool")p.inventory[1]=new Item();
             if(kind.StartsWith("navigation_",StringComparison.Ordinal))
             {
-                ore.ClearTile();
+                Main.tile[x,y].ClearTile();
                 destinationX=(left+5)*16+8;
                 destinationY=floor*16;
                 if(kind is "navigation_single" or "navigation_single_platform" or "navigation_half" or "navigation_slope")

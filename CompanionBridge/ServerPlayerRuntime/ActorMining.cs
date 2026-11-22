@@ -15,7 +15,7 @@ using CompanionBridge.ServerIpc;
 namespace VirtualPlayerEngineProbe;
 
 // G7 executor only. The existing mine_tile/Lua/IPC lifecycle will own adaptation.
-internal static class ActorMining
+internal static partial class ActorMining
 {
     internal const int MaxUpdates=600;
     internal enum Failure { None, InvalidTarget, UnsupportedTarget, OutOfRange, InvalidTool, Busy,
@@ -33,6 +33,7 @@ internal static class ActorMining
         internal Item Displaced;
         internal bool SelectionChanged,KillingTarget;
         internal FurnitureCell[] Furniture=Array.Empty<FurnitureCell>();
+        internal HammerWork Hammer;
         internal Batch Batch;
         internal ActionPhase Phase=ActionPhase.Running;internal Failure Reason;internal string Detail="";
     }
@@ -71,6 +72,7 @@ internal static class ActorMining
         install(()=>IL_Player.ItemCheck_UseMiningTools+=ui,()=>IL_Player.ItemCheck_UseMiningTools-=ui);
         install(()=>On_Player.ItemCheck_UseMiningTools+=UseMiningTools,()=>On_Player.ItemCheck_UseMiningTools-=UseMiningTools);
         install(()=>On_Player.ItemCheck_UseMiningTools_ActuallyUseMiningTool+=ObserveTool,()=>On_Player.ItemCheck_UseMiningTools_ActuallyUseMiningTool-=ObserveTool);
+        if (VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1") InstallHammer(install);
         install(()=>On_HitTile.AddDamage+=Damage,()=>On_HitTile.AddDamage-=Damage);
         install(()=>On_Player.PickTile+=Pick,()=>On_Player.PickTile-=Pick);
         install(()=>On_Player.DoesPickTargetTransformOnKill+=TransformPrediction,()=>On_Player.DoesPickTargetTransformOnKill-=TransformPrediction);
@@ -86,7 +88,7 @@ internal static class ActorMining
         &&Netplay.Clients!=null&&v.Slot<Netplay.Clients.Length
         &&VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[v.Slot]);
     private static bool Held(Context c)=>c.Actor.selectedItem==c.Slot&&ReferenceEquals(c.Actor.inventory[c.Slot],c.Item)
-        &&!c.Item.IsAir&&c.Item.type==c.Type&&c.Item.prefix==c.Prefix&&c.Item.pick==c.Pick&&c.Item.axe==c.Axe&&SupportedTool(c.Item);
+        &&!c.Item.IsAir&&c.Item.type==c.Type&&c.Item.prefix==c.Prefix&&c.Item.pick==c.Pick&&c.Item.axe==c.Axe&&(c.Hammer != null ? PureHammer(c.Item) && c.Item.hammer == c.Hammer.Power : SupportedTool(c.Item));
     private static Context RangeTarget()=>Program.IsMainThread&&Bound(rangeContext)?rangeContext:throw new InvalidOperationException("No bound G7 reach scope.");
     public static int RangeX()=>RangeTarget().X;
     public static int RangeY()=>RangeTarget().Y;
@@ -379,6 +381,21 @@ internal static class ActorMining
         var c=executing;
         if(!usingTools||striking||c.LastStrikeTick==c.Ticks||!ReferenceEquals(item,c.Item)||x!=c.X||y!=c.Y)
             throw new InvalidOperationException("Native mining tool call does not match the current target frame.");
+        if(c.Hammer != null)
+        {
+            hitWall = false;
+            if (!HammerReady(c)) return;
+            c.LastStrikeTick = c.Ticks;
+            c.Strikes++;
+            try { striking=true;orig(p,item,out hitWall,x,y); }
+            finally { striking=false; }
+            if (!c.Hammer.Wall)
+            {
+                hitWall = false;
+                ObserveHammerEffect(c);
+            }
+            return;
+        }
         if(!Allowed(p)||!Healthy(p)||c.Destroyed||c.ExternalChange||!Same(c)){hitWall=false;return;}
         c.LastStrikeTick=c.Ticks;
         c.Strikes++;c.Damage=c.ProposedDamage=0;
@@ -387,8 +404,8 @@ internal static class ActorMining
         // Only an observed native Grass -> Dirt transition may retain target identity.
         if(!c.Destroyed&&!Same(c))c.ExternalChange=true;
     }
-    private static void ClearProgress(Player p,int x,int y)
-    {int id=p.hitTile.TryFinding(x,y,1);if(id>=0)p.hitTile.Clear(id);}
+    private static void ClearProgress(Player p,int x,int y,int layer=1)
+    {int id=p.hitTile.TryFinding(x,y,layer);if(id>=0)p.hitTile.Clear(id);}
     private static void Pick(On_Player.orig_PickTile orig,Player p,int x,int y,int power)
     {
         var c=executing;
@@ -407,7 +424,7 @@ internal static class ActorMining
     private static int Damage(On_HitTile.orig_AddDamage orig,HitTile hits,int id,int damage,bool update)
     {
         int total=orig(hits,id,damage,update);var c=executing;
-        if(c!=null&&(picking||striking&&TreeTarget(c.TileType))&&Allowed(c.Actor)&&ReferenceEquals(hits,c.Actor.hitTile)&&update)
+        if(c!=null&&c.Hammer==null&&(picking||striking&&TreeTarget(c.TileType))&&Allowed(c.Actor)&&ReferenceEquals(hits,c.Actor.hitTile)&&update)
         {
             // Axe damage is computed in ActuallyUseMiningTool AFTER CanKillTile;
             // unlike picks it never passes through PickTile/transform prediction.
@@ -464,6 +481,7 @@ internal static class ActorMining
         {
             if(!Healthy(p)){End(c,ActionPhase.Cancelled,Failure.ActorUnavailable);return;}
             if(!Held(c)){End(c,ActionPhase.Cancelled,Failure.ItemChanged);return;}
+            if (c.Hammer != null) { UpdateHammer(c,runNative); return; }
             var batch=c.Batch;
             if(batch==null)
             {
@@ -524,13 +542,13 @@ internal static class ActorMining
             if(c.Ticks==1&&p.itemAnimation==0&&batch?.Draining!=true){End(c,ActionPhase.Failed,Failure.NativeRefused,"Native CanUseItem/PreItemCheck did not start use.");return;}
             if(c.Ticks==1||c.Ticks%6==0)Sync(p);
         }
-        catch(Exception e){End(c,ActionPhase.Failed,Failure.NativeException,(e.InnerException??e).Message);throw;}
+        catch(Exception e){End(c,c.Hammer==null?ActionPhase.Failed:ActionPhase.Stale,Failure.NativeException,(e.InnerException??e).Message);throw;}
         finally
         {
             executing=null;usingTools=striking=picking=false;
             // Mining is a held native intent until destruction/cancellation.
             // Keep the same input for periodic and full snapshots this tick.
-            if(Bound(c))p.controlUseItem=c.Phase==ActionPhase.Running&&c.Batch?.Draining!=true&&(!c.Destroyed||c.Ticks==1&&c.AnimationPeak>0);
+            if(Bound(c))p.controlUseItem=c.Phase==ActionPhase.Running&&c.Batch?.Draining!=true&&(c.Hammer != null ? !c.Hammer.Effected : !c.Destroyed||c.Ticks==1&&c.AnimationPeak>0);
         }
     }
     private static void Sync(Player p)
@@ -556,9 +574,10 @@ internal static class ActorMining
         if(Bound(c))
         {
             var p=c.Actor;p.controlUseItem=false;p.releaseUseItem=true;p.channel=false;
+            if(c.Hammer!=null)p.poundRelease=true;
             if(phase!=ActionPhase.Completed)p.itemAnimation=p.itemTime=p.reuseDelay=p.toolTime=0;
             if(phase==ActionPhase.Completed&&c.Batch==null)AiMapRuntime.Remember(c.X,c.Y);
-            ClearProgress(p,c.X,c.Y);
+            ClearProgress(p,c.X,c.Y,c.Hammer?.Wall==true?2:1);
             if(c.SelectionChanged)
             {
                 // Swap back only the same two entries. Never overwrite an unrelated inventory change.

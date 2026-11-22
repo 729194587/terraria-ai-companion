@@ -131,7 +131,9 @@ internal static class PhysicsSimulator
         float vx = s.Vx, vy = s.Vy;
         int jfl = s.JumpFramesLeft;
         bool launched=false;
-        float horizontalRun=ph.Air?.Kind==AirKind.Wings&&s.Vy!=0?Math.Max(ph.AccRunSpeed,6.25f):ph.AccRunSpeed;
+        bool airborneWing=ph.Air?.Kind==AirKind.Wings && s.Vy!=0;
+        float horizontalRun=airborneWing?Math.Max(ph.AccRunSpeed,ph.Air.AirRunSpeed):ph.AccRunSpeed;
+        float acceleration=airborneWing?ph.AccRun*ph.Air.AirAcceleration:ph.AccRun;
         bool available=s.ExtraAvailable,active=s.ExtraActive,used=s.ExtraUsed;
         if(ph.ExtraJump!=null&&s.Grounded&&s.Vy==0){available=true;used=false;}
         // Upstream's else-if chain is confirmed by 1.4.4.9 IL: primary
@@ -140,7 +142,7 @@ internal static class PhysicsSimulator
         if (input.Direction > 0 && vx < ph.MaxRun)
         {
             if (vx < -ph.RunSlowdown) vx += ph.RunSlowdown;
-            vx += ph.AccRun;
+            vx += acceleration;
         }
         else if (input.Direction > 0 && vx < horizontalRun)
         {
@@ -149,20 +151,20 @@ internal static class PhysicsSimulator
             if (vy == 0f)
             {
                 if (vx < -ph.RunSlowdown) vx += ph.RunSlowdown;
-                vx += ph.AccRun * 0.2f;
+                vx += acceleration * 0.2f;
             }
         }
         else if (input.Direction < 0 && vx > -ph.MaxRun)
         {
             if (vx > ph.RunSlowdown) vx -= ph.RunSlowdown;
-            vx -= ph.AccRun;
+            vx -= acceleration;
         }
         else if (input.Direction < 0 && vx > -horizontalRun)
         {
             if (vy == 0f)
             {
                 if (vx > ph.RunSlowdown) vx -= ph.RunSlowdown;
-                vx -= ph.AccRun * 0.2f;
+                vx -= acceleration * 0.2f;
             }
         }
         else if (vy == 0f) // vanilla L19591 ground friction: velocity.Y==0, not a Grounded flag
@@ -246,7 +248,9 @@ internal static class PhysicsSimulator
                     return new(false, reason, frames, next, 0, hold > 0);
             }
             catch (UnsafeMotionException error) { return new(false, error.Message, frames, s, 0, hold > 0); }
-            if (hold == 0 && Math.Abs(next.Px - s.Px) < 0.01f && Math.Abs(next.Vx) < 0.01f && f < walkFrames)
+            // Reversing input can spend a frame at zero speed before accelerating
+            // away. Judge a blocked walk once velocity no longer opposes input.
+            if (hold == 0 && direction * s.Vx >= 0 && Math.Abs(next.Px - s.Px) < 0.01f && Math.Abs(next.Vx) < 0.01f && f < walkFrames)
                 return new(false, "walking blocked", frames, next, 0, false, world.LastHorizontalContact);
             airborne |= !next.Grounded;
             airborneBelow |= next.Py>start.Py+4;
@@ -286,7 +290,8 @@ internal static class PhysicsSimulator
                 // hop returning to the same floor must not create search cycles.
                 bool progress = direction == 0 && hold > 0
                     ? allowStationaryHop || start.Py - s.Py >= 4
-                    : direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4);
+                    : direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4)
+                        || hold > 0 && s.Py <= start.Py - 16 && direction * (s.Px - start.Px) > 0;
                 bool safe = (!drop || airborneBelow && s.Py-start.Py is >=16 and <=96) && (brakingOnly || progress)
                     && world.SafeLanding(s)&&(extraJumpFrame<0||f>=extraJumpFrame)&&(airStartFrame<0||f>=airStartFrame);
                 if(airStartFrame>=0)safe&=frames.Exists(p=>p.State.AirPhase is AirPhase.Flying or AirPhase.Gliding or AirPhase.RocketPulse);

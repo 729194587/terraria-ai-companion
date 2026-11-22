@@ -40,9 +40,15 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         handle is Handle {Context:TaskSlot {Task:CombatController combat}}?combat.TargetRef:null;
     public bool SupportsBossEncounter=>true;
     public bool SupportsCombat=>true;
+    public bool SupportsPersonalInventory => MerchantShop.VanillaServicesSupported;
+    public bool SupportsInventoryFavorite => true;
+    public bool SupportsItemDrop => ServerItemDrop.Available;
     public bool SupportsOpening=>ServerItemOpening.Available;
     public bool SupportsDismissSummon=>true;
+    public bool SupportsHammer => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsTileInteraction => ServerTileInteraction.Available;
     public bool SupportsDoors=>true;
+    public bool SupportsPylons=>SupportsCollection;
     public bool SupportsRegroup=>SupportsCollection;
     public AiAtomicActions.RespawnPlan AfterRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>
         handle is Handle {Context:TaskSlot {Task:BossEncounterTask boss}} ? boss.AfterRespawn(frame) : null;
@@ -60,8 +66,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsCollection => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
     public bool SupportsReforge => MerchantShop.VanillaServicesSupported;
     public bool SupportsNurse => NurseService.Supported;
-    public bool SupportsMerchantSale => MerchantShop.SaleSupported;
-    public bool SupportsMerchantPurchase => MerchantShop.Supported;
+    public bool SupportsMerchantSale => SupportsMerchantPurchase && MerchantShop.SaleSupported;
+    public bool SupportsNpcDialogue => MerchantShop.VanillaServicesSupported;
+    public bool SupportsMerchantPurchase => SupportsNpcDialogue && MerchantShop.Supported;
     public bool SupportsHousingAssignment => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
     public bool SupportsBuildPlace => SupportsPlacement;
     public bool SupportsPlacement => ActorPlacement.UnifiedAvailable;
@@ -79,7 +86,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             new{operation,mutationAttempted=false,effectStatus="not_started"},true,InputsAcquired:false,ReasonDetail:detail));
         if(NativeCombatWorld.Running||ActorControl.Running||ActorItemUse.Running||ActorMining.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
             return Reject("actor_busy");
-        if(p.dead||p.ghost||p.gravDir!=1||p.mount.Active)return Reject("unsupported_actor_state");
+        if(p.dead||p.ghost||(operation!="teleport_to_pylon" && (p.gravDir!=1||p.mount.Active)))return Reject("unsupported_actor_state");
         try
         {
             object context;
@@ -103,11 +110,39 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(operation=="sell_npc_item") return new Handle(identity,operation,null,MerchantShop.Sell(identity,args));
             if(operation=="reforge_item") return new Handle(identity,operation,null,GoblinReforge.Execute(identity,args));
             if(operation=="heal_at_nurse") return new Handle(identity,operation,null,NurseService.Heal(identity,args));
+            if(operation is "open_npc_dialogue" or "close_npc_dialogue")
+                return new Handle(identity,operation,null,NpcDialogue.Dialogue(identity,args,operation=="open_npc_dialogue"));
             if(operation=="buy_npc_item") return new Handle(identity,operation,null,MerchantShop.Buy(identity,args));
             if(operation=="assign_npc_home") return new Handle(identity,operation,null,NpcHousing.Assign(identity,args));
             if(operation=="set_team")return new Handle(identity,operation,null,ServerRegroup.SetTeam(identity,args.GetProperty("team").GetInt32()));
+            if(operation=="teleport_to_pylon")return new Handle(identity,operation,null,ServerPylons.Travel(identity,args.GetProperty("pylonRef").GetString()));
             if(operation=="teleport_to_teammate")return new Handle(identity,operation,null,ServerRegroup.Teleport(identity,args.GetProperty("teammateRef").GetString()));
+            if(operation=="manage_trash")return new Handle(identity,operation,null,ServerPersonalInventory.Trash(identity,args));
+            if(operation=="switch_equipment_loadout")return new Handle(identity,operation,null,ServerPersonalInventory.Switch(identity,args));
+            if(operation=="set_inventory_favorite")
+            {
+                int slot=args.GetProperty("sourceSlot").GetInt32();
+                var item=p.inventory[slot];
+                if(ActorInventory.Token(identity,item,slot)!=args.GetProperty("sourceToken").GetString())
+                    return Reject("stale_inventory_token");
+                if(item.IsAir)return Reject("empty_inventory_slot");
+                bool favorite=args.GetProperty("favorited").GetBoolean();
+                var before=ActorInventory.Read(item);
+                if(before.Favorite!=favorite)
+                {
+                    item.favorited=favorite;
+                    ActorInventory.InvalidateSlot(identity,slot);
+                }
+                var after=ActorInventory.Read(p.inventory[slot]);
+                bool verified=ReferenceEquals(item,p.inventory[slot]) && after==(before with {Favorite=favorite});
+                return new Handle(identity,operation,null,new(verified?"completed":"unknown",
+                    verified?"favorite_verified":"favorite_unconfirmed",
+                    new{sourceSlot=slot,typeId=after.Type,stack=after.Stack,prefix=after.Prefix,
+                        beforeFavorite=before.Favorite,afterFavorite=after.Favorite},true,verified,InputsAcquired:false));
+            }
+            if(operation=="drop_inventory_item")return new Handle(identity,operation,null,ServerItemDrop.Drop(identity,args));
             if(operation=="open_inventory_item")return new Handle(identity,operation,null,ServerItemOpening.Open(identity,args));
+            if(operation=="interact_tile")return new Handle(identity,operation,null,ServerTileInteraction.Activate(identity,args));
             if(operation is "open_door" or "close_door")
             {
                 string reason=ServerDoor.Set(p,args.GetProperty("x").GetInt32(),args.GetProperty("y").GetInt32(),operation=="open_door",out var proof);
@@ -192,6 +227,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 if(error!=null)return new Handle(identity,operation,null,new("failed",error,null,true,InputsAcquired:false));
                 ActorItemUse.StartPlacement(p,identity.World,identity.Generation,placement);
                 context=ActorItemUse.Current;
+            }
+            else if(operation is "mine_wall" or "hammer_tile")
+            {
+                string reason=ActorMining.StartHammer(p,identity.World,identity.Generation,args.GetProperty("x").GetInt32(),
+                    args.GetProperty("y").GetInt32(),operation=="mine_wall",out var hammer);
+                if(reason!=null)return Reject(reason);
+                context=hammer;
             }
             else if(operation=="use_item" && NativeCombatWorld.MinionStaff(p.HeldItem))
             {
@@ -328,6 +370,16 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         }
         if(!ReferenceEquals(ActorMining.Current,h.Context))return new("unknown","native_context_changed",null,false);
         var mine=(ActorMining.Context)h.Context;
+        if(mine.Hammer is {} hammer)
+        {
+            bool confirmed=hammer.Effected && !mine.ExternalChange && hammer.After==ActorMining.HammerCell.Read(mine.X,mine.Y);
+            string status=mine.Phase switch{ActionPhase.Running=>"running",ActionPhase.Completed when confirmed=>"completed",
+                ActionPhase.Cancelled=>"cancelled",ActionPhase.TimedOut=>"timeout",ActionPhase.Failed when !hammer.Effected=>"failed",_=>"unknown"};
+            return new(status,status=="completed"?"native_hammer_effect_verified":AiActionReasons.Mining(status,mine.Reason.ToString()),
+                new{x=mine.X,y=mine.Y,before=hammer.Before,after=hammer.After,toolType=mine.Type,hammerPower=hammer.Power,
+                    strikes=mine.Strikes,effectObserved=confirmed},Released(p)&&p.itemAnimation==0&&p.itemTime==0,
+                status=="completed",InputsAcquired:mine.Ticks>0,ReasonDetail:mine.Detail);
+        }
         bool destroyed=mine.Destroyed&&!mine.ExternalChange&&WorldGen.InWorld(mine.X,mine.Y)&&!Main.tile[mine.X,mine.Y].HasTile;
         bool furnitureAbsent=ActorMining.FurnitureAbsent(mine);
         string phase=mine.Phase switch{ActionPhase.Running=>"running",ActionPhase.Completed=>destroyed&&furnitureAbsent?"completed":"unknown",ActionPhase.Cancelled=>"cancelled",ActionPhase.TimedOut=>"timeout",ActionPhase.Stale=>"unknown",_=>"failed"};
@@ -443,6 +495,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         catch(Exception e){ProbeSession.Quarantine("Native action shutdown unconfirmed: "+e.Message);}
         finally
         {
+            ServerPylons.Clear();
             ServerRegroup.Clear();
             NativeCombatWorld.ClearLoadout();
             ServerDrops.Current = null;

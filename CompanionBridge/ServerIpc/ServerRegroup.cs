@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using Terraria;
 using Terraria.ID;
+using Terraria.Chat;
+using Terraria.Localization;
+using Microsoft.Xna.Framework;
 using VirtualPlayerEngineProbe;
 using Identity = CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity;
 using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
@@ -21,6 +24,7 @@ internal static class ServerRegroup
     internal static void Clear()
     {
         sessions.Clear();
+        ServerItemDrop.Clear();
         teamActor=null;
         teamWorld=null;
         nextTeamChange=0;
@@ -45,12 +49,15 @@ internal static class ServerRegroup
         actor.team == 0 ? "actor_unteamed" : actor.team != other.team ? "different_team" :
         other.dead || other.ghost ? "teammate_dead" : null;
 
+    internal static Player Recipient(Identity frame,string token) =>
+        Online(frame).FirstOrDefault(s=>s.Token==token && Eligibility((Player)frame.Actor,s.Player)==null)?.Player;
+
     internal static object Discover(Identity frame)
     {
         var p = (Player)frame.Actor;
         return new { actorTeam = p.team, players = Online(frame).Select(s => new {
             teammateRef = s.Token, name = s.Player.name, team = s.Player.team,
-            reason = Eligibility(p, s.Player) }).ToArray() };
+            reason = Eligibility(p, s.Player), lastDrop = ServerItemDrop.Status(frame,s.Token) }).ToArray() };
     }
 
     internal static Result SetTeam(Identity frame, int team)
@@ -69,6 +76,19 @@ internal static class ServerRegroup
         }
         p.team = team;
         NetMessage.SendData(MessageID.PlayerTeam, number:p.whoAmI);
+        if (beforeTeam != team)
+        {
+            // MessageBuffer.GetData (PlayerTeam) notifies the old and new
+            // non-neutral teams. The AI has no client to notify at its own slot.
+            var message = NetworkText.FromKey(Lang.mp[team == 5 ? 22 : 13 + team].Key, p.name);
+            for (int slot = 0; slot < Main.maxPlayers; slot++)
+            {
+                var observer = Main.player[slot];
+                if (!observer.active || slot == p.whoAmI) continue;
+                if ((beforeTeam > 0 && observer.team == beforeTeam) || (team > 0 && observer.team == team))
+                    ChatHelper.SendChatMessageToClient(message, Main.teamColor[team], slot);
+            }
+        }
         return new("completed","team_verified",new { beforeTeam, team = p.team },true,p.team == team,false);
     }
 
@@ -99,6 +119,9 @@ internal static class ServerRegroup
         p.TakeUnityPotion();
         long after = Count();
         bool verified = p.position == destination && before == after + 1;
+        if (verified)
+            ChatHelper.BroadcastChatMessage(NetworkText.FromKey("Game.HasTeleportedTo", p.name, other.name),
+                new Color(250, 250, 0));
         return new(verified ? "completed" : "unknown", verified ? "wormhole_verified" : "wormhole_effect_unconfirmed",
             new { teammateRef=token, team=p.team, targetX=destination.X, targetY=destination.Y,
                 actorX=p.position.X, actorY=p.position.Y, before, after }, true, verified, false);

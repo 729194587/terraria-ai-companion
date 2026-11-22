@@ -29,6 +29,11 @@ MOVE = "return api('navigate_to_x',{targetX=180})"
 class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         await fixture.ServerAiAgentTests.asyncSetUp(self)
+        if self._testMethodName == 'test_external_private_memory':
+            from agent_memory import Notebook
+            from agent import Agent
+            book = Notebook(Path(self.directory.name),'a'*32,'b'*32)
+            self.agent = Agent(self.ai,None,chat_bridge=self.chat,lua_store=self.agent.lua_store,notebook=book)
         self.socket = socket.socket()
         self.socket.bind(('127.0.0.1', 0))
         port = self.socket.getsockname()[1]
@@ -94,7 +99,7 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
             port = probe.getsockname()[1]
         token = secrets.token_urlsafe(32)
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, '-B', str(Path(fixture.__file__).resolve().parents[1] / 'python/agent.py'),
+            sys.executable, '-B', str(Path(fixture.__file__).resolve().parents[1] / 'python/start_agent.py'),
             '--server-ai', '--external-brain', '--mcp-port', str(port),
             '--port', str(self.chathost.server_address[1]), '--ai-port', str(self.aihost.server_address[1]),
             env={**os.environ, 'COMPANION_MOD_MANAGED_MCP': '1', 'TERRARIA_MCP_TOKEN': token},
@@ -126,6 +131,27 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
                 proc.kill()
                 await proc.wait()
 
+    async def test_external_private_memory(self):
+        await self.initialize()
+        async def call(tool_name, **args):
+            response = await self.tool(tool_name, args)
+            return response.json()['result']
+        guide = (await call('guide',full=True))['structuredContent']
+        self.assertEqual(self.agent.history[0]['content'],guide['instructions'])
+        self.assertIn('值得主动记',guide['instructions'])
+        self.assertEqual([],guide['privateNotes'])
+        await self.game_chat('m1','矿石放东箱')
+        note = dict(command='remember', name='仓库', description='矿石放东箱', quote='矿石放东箱')
+        self.assertTrue((await call('memory',**note))['isError'])
+        await call('get_events')
+        self.assertTrue((await call('memory',**note))['structuredContent']['valid'])
+        recalled = (await call('memory',command='recall',name='仓库'))['structuredContent']['note']
+        self.assertEqual('m1',recalled['origin']['turnId'])
+        self.assertEqual('仓库',(await call('get_events'))['structuredContent']['privateNotes'][0]['name'])
+        await self.game_chat('m2','去基地')
+        self.assertTrue((await call('memory',**note))['isError'])
+        self.assertEqual([],self.requests)
+
     async def test_sdk_session_tools_events_say_and_native_resume(self):
         async with httpx.AsyncClient(headers=self.auth, trust_env=False) as client:
             async with streamable_http_client(self.url, http_client=client) as (read, write, _):
@@ -143,6 +169,11 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
                     self.assertNotIn('"parameters":{"type":"object"', guide['instructions'])
                     self.assertLess(len(guide['instructions']), len(self.agent.history[0]['content']))
                     sent_before_help = len(self.aihost.sent)
+                    scoped = (await session.call_tool('guide', {'names': ['get_player_state', 'missing_api']})).structuredContent
+                    self.assertEqual(['get_player_state'], [fn['name'] for fn in scoped['functions']])
+                    self.assertEqual(['missing_api'], scoped['unavailable'])
+                    self.assertNotIn('instructions', scoped)
+                    self.assertEqual(sent_before_help, len(self.aihost.sent))
                     help_result = (await session.call_tool('execute_lua', {'source':
                         "return {index=api('help'),detail=api('help',{name='get_player_state'})}"})).structuredContent
                     self.assertEqual('completed', help_result['status'])
@@ -169,12 +200,15 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
                     self.brain.receive({'type': 'game_message', 'eventId': 'sys-1', 'text': 'example',
                                         'droppedBefore': 2})
                     self.assertEqual([], self.requests)
-                    result = (await session.call_tool('execute_lua', {'source':
-                        "local p=api('get_player_state'); assert(p.valid); " + MOVE})).structuredContent
+                    moving = asyncio.create_task(session.call_tool('execute_lua', {'source':
+                        "local p=api('get_player_state'); assert(p.valid); " + MOVE}))
+                    await self.until(lambda: self.brain.active_program is not None)
+                    await self.game_chat('during-move', '到了告诉我')
+                    result = (await moving).structuredContent
                     self.assertTrue(result['actionSuccess'])
                     self.assertEqual('known', result['lastAction']['endEvidenceStatus'])
                     self.assertEqual('available', result['runtimeInventory']['status'])
-                    self.assertEqual(['external-chat', 'sys-1'], [e['eventId'] for e in result['events']])
+                    self.assertEqual(['external-chat', 'sys-1', 'during-move'], [e['eventId'] for e in result['events']])
                     self.assertEqual(2, result['eventCoverage']['serverDroppedCount'])
                     events = await session.call_tool('get_events', {})
                     self.assertEqual([], events.structuredContent['events'])

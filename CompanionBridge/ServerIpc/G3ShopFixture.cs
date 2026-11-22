@@ -44,9 +44,11 @@ internal static class G3ShopFixture
     internal static void Tick(Player p)
     {
         string PathFor(string name) => Path.Combine(Main.SavePath, "g3-shop-" + name);
+        bool journey = Program.LaunchParameters.ContainsKey("-companionmerchantjourney");
         if (!File.Exists(PathFor("ready.json")))
         {
-            if (Program.LaunchParameters.ContainsKey("-companionmerchantluatest"))
+            if (journey && !File.Exists(Path.Combine(Main.SavePath, "terrain-ready.json"))) return;
+            if (!journey && Program.LaunchParameters.ContainsKey("-companionmerchantluatest"))
             {
                 // Keep the actors in the same small stall while the quote ages.
                 // NPC movement, CanTalk, item use and transaction preflight stay native.
@@ -61,16 +63,32 @@ internal static class G3ShopFixture
                             tile.TileType = TileID.WoodBlock;
                         }
             }
-            int slot = Spawn(p);
+            int slot = journey ? NPC.NewNPC(p.GetSource_Misc("MerchantJourney"),
+                33217, 211 * 16 - 2, VendorType) : Spawn(p);
             if (slot >= Main.maxNPCs) throw new InvalidOperationException("No shop fixture NPC slot");
+            if (journey && Program.LaunchParameters.ContainsKey("-companiontalkjourney"))
+            {
+                // Start in the town NPC walking state once; native AI owns every subsequent tick.
+                Main.npc[slot].ai[0] = 1f;
+                Main.npc[slot].ai[1] = 240f;
+                Main.npc[slot].direction = -1;
+            }
             // Non-currency sentinels must survive spending and change-making.
             foreach (var bank in new[] { p.bank, p.bank2, p.bank3, p.bank4 })
                 bank.item[3].SetDefaults(ItemID.StoneBlock);
+            journeySlot = slot;
             File.WriteAllText(PathFor("ready.json"), JsonSerializer.Serialize(new { slot }));
             return;
         }
         if (Program.LaunchParameters.ContainsKey("-companionmerchantluatest"))
         {
+            if (journey && p.talkNPC == journeySlot)
+            {
+                float x = Main.npc[journeySlot].Center.X;
+                minTalkX = Math.Min(minTalkX, x);
+                maxTalkX = Math.Max(maxTalkX, x);
+                talkFrames++;
+            }
             // Lua uses the production IPC path. This fixture only funds the actor,
             // replaces an NPC instance, or snapshots the resulting inventories.
             if (!File.Exists(PathFor("control.json"))) return;
@@ -108,6 +126,12 @@ internal static class G3ShopFixture
                     slotItem.stack = amounts[i];
                 }
             }
+            else if (journey && op == "leaveOneTorchSpace")
+            {
+                foreach (var item in p.inventory.Take(50)) item.SetDefaults(ItemID.StoneBlock);
+                p.inventory[0].SetDefaults(ItemID.Torch);
+                p.inventory[0].stack = p.inventory[0].maxStack - 1;
+            }
             else if (op == "fillInventory")
             {
                 foreach (var item in p.inventory.Take(54).Where(item => item.IsAir || item.IsACoin))
@@ -132,6 +156,8 @@ internal static class G3ShopFixture
             }
             else if (op != "snapshot") throw new InvalidOperationException("Unexpected fixture command");
             var answer = new { id = control.RootElement.GetProperty("id").GetString(), inventory = Snapshot(p), life=p.statLife, buffs=p.buffType.Where(t=>t!=0).ToArray(),
+                p.talkNPC, merchantX = Main.npc[slot].Center.X, talkFrames,
+                talkTravel = talkFrames == 0 ? 0 : maxTalkX - minTalkX,
                 entityRef = NativeCombatWorld.Reference(Identity(p), Main.npc[slot]) };
             File.WriteAllText(PathFor("control-result.tmp"), JsonSerializer.Serialize(answer));
             File.Move(PathFor("control-result.tmp"), PathFor("control-result.json"), true);
@@ -180,4 +206,6 @@ internal static class G3ShopFixture
             throw;
         }
     }
+    private static int journeySlot, talkFrames;
+    private static float minTalkX = float.MaxValue, maxTalkX = float.MinValue;
 }

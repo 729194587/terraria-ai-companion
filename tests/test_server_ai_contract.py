@@ -33,11 +33,12 @@ FULL = BASE | set(OPTIONAL) | {
 FULL_ACTIONS = FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_v1',
                        'server_ai_container_batch_v1', 'server_ai_sorting_v1'} | {
             'server_ai_combat_v1', 'server_ai_weapon_button_v1', 'server_ai_combat_primary_v1',
-            'server_ai_boss_encounter_v1', 'server_ai_boss_strategy_v1', 'server_ai_open_item_v1',
-            'server_ai_regroup_v1', 'server_ai_dismiss_summon_v1', 'server_ai_doors_v1',
+            'server_ai_boss_encounter_v1', 'server_ai_boss_strategy_v1', 'server_ai_open_item_v1', 'server_ai_drop_item_v1', 'server_ai_inventory_favorite_v1', 'server_ai_personal_inventory_v1',
+            'server_ai_pylons_v1', 'server_ai_regroup_v1', 'server_ai_dismiss_summon_v1', 'server_ai_doors_v1', 'server_ai_interact_tile_v1', 'server_ai_hammer_v1',
             'server_ai_collect_drops_v1', 'server_ai_place_item_v1', 'server_ai_build_place_v1',
             'server_ai_build_diff_v1', 'server_ai_merchant_shop_v1', 'server_ai_merchant_purchase_v1',
-            'server_ai_merchant_sale_v1', 'server_ai_nurse_v1', 'server_ai_reforge_v1',
+            'server_ai_merchant_sale_v1', 'server_ai_npc_dialogue_v1', 'server_ai_merchant_bulk_purchase_v1',
+            'server_ai_nurse_v1', 'server_ai_reforge_v1',
             'server_ai_npc_housing_v1', 'server_ai_housing_assignment_v1', 'server_ai_housing_inspect_v1'}
 
 
@@ -136,10 +137,38 @@ class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ResultRegistryTests(unittest.TestCase):
+    def test_inventory_favorite_requires_requested_state(self):
+        self.assertIn('set_inventory_favorite', operations_for_capabilities(FULL_ACTIONS))
+        self.assertNotIn('set_inventory_favorite', operations_for_capabilities(
+            FULL_ACTIONS - {'server_ai_inventory_favorite_v1'}))
+        for desired in (True, False):
+            goal = dict(sourceSlot=12, favorited=desired)
+            evidence = dict(sourceSlot=12, typeId=8, stack=10, prefix=0,
+                            beforeFavorite=not desired, afterFavorite=desired)
+            self.assertTrue(atomic.verified_favorite(goal, evidence))
+            self.assertTrue(atomic.verified_favorite(goal, evidence | dict(beforeFavorite=desired)))
+            for change in (dict(afterFavorite=not desired), dict(afterFavorite=int(desired)),
+                           dict(sourceSlot=13), dict(stack=0)):
+                self.assertFalse(atomic.verified_favorite(goal, evidence | change))
+
+    def test_drop_inventory_item_requires_capability_and_matching_ground_evidence(self):
+        cap = 'server_ai_drop_item_v1'
+        self.assertIn('drop_inventory_item', operations_for_capabilities(FULL_ACTIONS))
+        self.assertNotIn('drop_inventory_item', operations_for_capabilities(FULL_ACTIONS - {cap}))
+        goal = dict(sourceSlot=20, count=3, teammateRef='a' * 32)
+        evidence = dict(sourceSlot=20, typeId=8, prefix=0, beforeStack=10, afterStack=7,
+                        spawnedCount=3, entityRef='world-drop', teammateRef='a' * 32,
+                        receiptStatus='unconfirmed')
+        self.assertTrue(atomic.verified_drop(goal, evidence))
+        for change in (dict(afterStack=8), dict(spawnedCount=2), dict(entityRef=''),
+                       dict(teammateRef='b' * 32), dict(receiptStatus='received'), dict(sourceSlot=19)):
+            with self.subTest(change=change):
+                self.assertFalse(atomic.verified_drop(goal, evidence | change))
+
     def test_registry_index_and_full_help(self):
         # Shared/client names intentionally unavailable to Server AI, even with all capabilities.
         unavailable = {'attack_entity', 'drop_through_platform', 'get_player_status', 'get_world_state',
-                       'hammer_tile', 'interact_tile', 'mine_wall', 'observe_exploration', 'place_wall'}
+                       'observe_exploration', 'place_wall'}
         task_only = {'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'}
         scoped = {'inspect_inventory', 'observe_scene', 'query_map', 'scan_entities'}
         registered = [entry['function']['name'] for entry in atomic.TOOLS] + sorted(program_tasks.NAMES)
@@ -303,6 +332,54 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual('ok', help_row['status'])
         self.assertEqual({'sourceSlot','sourceToken'}, set(help_row['parameters']['required']))
 
+    def test_hammer_requires_handshake_and_native_effect(self):
+        base = bridge(FULL)
+        modern = bridge(FULL | {'server_ai_hammer_v1'})
+        for name in ('mine_wall','hammer_tile'):
+            self.assertEqual('not_exposed',api_help(base,{'name':name})['status'])
+            row = api_help(modern,{'name':name})
+            self.assertEqual('ok',row['status'])
+            self.assertEqual({'x','y'},set(row['parameters']['required']))
+            self.assertIn('HammerEvidence',row['returnsSchema']['$defs'])
+            action = dict(operation=name,targetTile=dict(x=12,y=15))
+            wall = name == 'mine_wall'
+            cell = dict(hasTile=not wall,tileType=0 if wall else 1,wallType=4 if wall else 0,
+                        halfBlock=False,slope=0,actuated=False)
+            proof = dict(x=12,y=15,before=cell,after={**cell,'wallType':0,'halfBlock':not wall},
+                         toolType=196,hammerPower=25,strikes=2,effectObserved=True)
+            self.assertTrue(atomic.verified_hammer(action,proof))
+            for mismatch in (dict(x=13),dict(after=cell),dict(effectObserved=False),
+                             dict(after={**proof['after'],'tileType':22}),dict(strikes=0)):
+                self.assertFalse(atomic.verified_hammer(action,{**proof,**mismatch}))
+
+    def test_bed_interaction_requires_matching_personal_spawn(self):
+        goal = {'target': dict(typeId=79, x=20, y=30)}
+        setting = dict(kind='bed', x=20, y=30, bedSpawnX=21, bedSpawnY=31,
+                       beforeActive=False, afterActive=True, beforeSpawnX=-1, beforeSpawnY=-1,
+                       afterSpawnX=21, afterSpawnY=31)
+        self.assertTrue(atomic.verified_interaction(goal, setting))
+        clearing = setting | dict(beforeActive=True, afterActive=False, beforeSpawnX=21, beforeSpawnY=31,
+                                  afterSpawnX=-1, afterSpawnY=-1)
+        self.assertTrue(atomic.verified_interaction(goal, clearing))
+        self.assertFalse(atomic.verified_interaction(goal, setting | dict(afterSpawnY=30)))
+        self.assertFalse(atomic.verified_interaction(goal, clearing | dict(beforeSpawnX=22)))
+
+    def test_interact_tile_has_backend_specific_inputs(self):
+        old = bridge(FULL)
+        modern = bridge(FULL | {'server_ai_interact_tile_v1'})
+        self.assertEqual('not_exposed', api_help(old, {'name':'interact_tile'})['status'])
+        row = api_help(modern, {'name':'interact_tile'})
+        self.assertEqual(['target'], row['parameters']['required'])
+        self.assertIn('TileInteractionEvidence', row['returnsSchema']['$defs'])
+        self.assertEqual({'x':1,'y':2}, atomic.validate('interact_tile', {'x':1,'y':2}))
+        with self.assertRaises(ValueError):
+            atomic.validate('interact_tile', {'x':1,'y':2}, server=True)
+        goal = {'target': {'x':21,'y':10,'typeId':132}}
+        proof = dict(x=21,y=10,kind='lever',beforeActive=False,afterActive=True)
+        self.assertTrue(atomic.verified_interaction(goal, proof))
+        for mismatch in (dict(x=20), dict(kind='switch'), dict(afterActive=False)):
+            self.assertFalse(atomic.verified_interaction(goal, {**proof, **mismatch}))
+
     def test_doors_require_handshake(self):
         old = bridge(FULL - {'server_ai_doors_v1'})
         modern = bridge(set(old.hello['capabilities']) | {'server_ai_doors_v1'})
@@ -311,6 +388,13 @@ class ManifestTests(unittest.TestCase):
             help_row = api_help(modern, {'name': name})
             self.assertEqual('ok', help_row['status'])
             self.assertEqual({'x', 'y'}, set(help_row['parameters']['required']))
+
+    def test_pylon_capability_distinguishes_queries_and_actions(self):
+        for caps, expected in ((BASE,set()), (BASE | {'server_ai_pylons_v1'},{'list_pylons'}),
+                               (FULL_ACTIONS,{'list_pylons','teleport_to_pylon'})):
+            self.assertEqual(exposed_operations(bridge(caps)) & {'list_pylons','teleport_to_pylon'}, expected)
+            for name in expected:
+                Draft202012Validator.check_schema(schema_for(name))
 
     def test_regroup_capability_controls_atoms_and_boss_argument(self):
         old = bridge(FULL | {'server_ai_boss_encounter_v1'})

@@ -201,6 +201,7 @@ internal static class StateSpacePlanner
                 bool neutralAscent = region != null && cur.Px >= region.MinPlayerLeftX && cur.Px <= region.MaxPlayerLeftX
                     && cur.Py + PhysicsSimulator.PlayerH - region.SurfaceY >= 4;
                 var directions = neutralAscent ? new[] { 0, sign, -sign } : new[] { sign, -sign };
+                bool forwardWalkBlocked = false;
                 foreach (int dir in directions)
                 {
                     // BuildHoldOptions from upstream: walk then 2-frame hold increments.
@@ -236,6 +237,8 @@ internal static class StateSpacePlanner
                                 :learning.Predict(cur,dir,hold,stride,ph,world,extraFrame,airStart,airHold);
                             if (!edge.Safe)
                             {
+                                if (cur == start && dir == sign && hold == 0 && edge.Reason == "walking blocked")
+                                    forwardWalkBlocked = true;
                                 if(cur.Equals(start)&&dir==sign&&hold==0&&rootBlocks==null)rootBlocks=edge.BlockingTiles;
                                 Reject(edge.Reason); continue;
                             }
@@ -299,6 +302,34 @@ internal static class StateSpacePlanner
                                 && (score < bestScore - 0.01f || (Math.Abs(score - bestScore) <= 0.01f && distance < bestDistance)))
                             { best = next; bestDistance = distance; bestScore = score; }
                         }
+                    }
+                }
+                // A short reverse prefix loses to a return toward the same wall.
+                // For a horizontal trip, prove the retreat and its return jump
+                // together before committing to either part of the detour.
+                if (region == null && forwardWalkBlocked && best == start && !reachedGoal)
+                {
+                    for (int stride = 12; stride <= 72; stride += 6)
+                    {
+                        if (watch.Elapsed.TotalMilliseconds >= budgetMs)
+                        {
+                            yield return Result("time_budget");
+                            sliceStart = expansions;
+                            budgetMs = sliceMilliseconds;
+                        }
+                        var retreat = PhysicsSimulator.Predict(start, -sign, 0, ph, world, walkFrames:stride);
+                        if (!retreat.Safe || Math.Abs(retreat.Landing.Px-start.Px) > 192) continue;
+                        retreat = retreat with { ExecuteFrames=retreat.Frames.Count };
+                        if (rejectEdge?.Invoke(start, retreat) == true) continue;
+                        // The launch frame initializes the native jump counter.
+                        var climb = PhysicsSimulator.Predict(retreat.Landing, sign, ph.JumpHeight+1, ph, world, rollingJump:true);
+                        if (!climb.Safe || climb.Landing.Py > start.Py-16) continue;
+                        climb = climb with { ExecuteFrames=climb.Frames.Count };
+                        if (rejectEdge?.Invoke(retreat.Landing, climb) == true) continue;
+                        Finished = true;
+                        yield return new(new() {retreat, climb}, expansions-sliceStart, watch.Elapsed.TotalMilliseconds,
+                            ReachedGoal:Reached(climb.Landing), SearchExit:"verified_climb_detour", Rejections:new(rejected));
+                        yield break;
                     }
                 }
                 learning?.Expanded(cur);

@@ -143,6 +143,33 @@ async def verify(args):
         await verify_navigation()
         return
 
+    for case in ('cluster_far_right', 'cluster_far_left', 'cluster_near'):
+        spec = await fixture(case)
+        bridge = ServerAiBridge(args.port)
+        try:
+            result = await atomic.dispatch(bridge, 'mine_target', dict(x=spec['x'], y=spec['y'], cluster=True))
+            rows.append(dict(case=case, result=result))
+            save()
+            task = result['evidence']['task']
+            assert task['status'] == 'completed' and task['result']['inputsReleased'], task
+            history = task['progress']['children']
+            if case == 'cluster_near':
+                assert all(child['taskName'] == 'excavate_tiles' for child in history), history
+            else:
+                first = history[0]
+                assert first['taskName'] == 'navigate_to_landing_region' and first['status'] == 'completed', first
+                movement = first['result']['evidence']
+                direction = 1 if case == 'cluster_far_right' else -1
+                assert movement['settled'] and direction * (movement['x'] - movement['startX']) > 15 * 16, movement
+            targets = task['result']['evidence']['targets']
+            assert {(t['x'], t['y']) for t in targets} == {(spec['x'] + i, spec['y']) for i in range(3)}, targets
+            assert all(t['status'] == 'verified' and t['proof']['Strikes'] > 0 for t in targets), targets
+            print(case, [child['taskName'] for child in history], flush=True)
+        finally:
+            bridge.close()
+    if args.cluster_only:
+        return
+
     choose = "local q=api('observe_scene',{layers={'objects'}}); for _,o in ipairs(q.data.objects.items) do if o.kind=='ore_component' and o.target then return api('mine_target',{target=o.target}) end end; error('no observed ore')"
     for case in ('approach', 'near', 'blocked', 'no_tool'):
         spec = await fixture(case)
@@ -385,4 +412,5 @@ if __name__ == '__main__':
     p.add_argument('--port', type=int, required=True)
     p.add_argument('--profile', type=Path, required=True)
     p.add_argument('--navigation-only', action='store_true')
+    p.add_argument('--cluster-only', action='store_true')
     asyncio.run(verify(p.parse_args()))

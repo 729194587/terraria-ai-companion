@@ -69,8 +69,39 @@ public static class PlannerCorrectnessTests
         }
     }
 
+    // Reconstruct the recorded collision faces at the last merchant replan.
+    // The wall is to the left, the exit to the right, with a low roof above.
+    private static void CheckTurnaround()
+    {
+        var world = new SurfaceGraphTests.Terrain
+        {
+            ReadOverride = (x, y) => y >= 211 || x == 2085 && y >= 205
+                || x >= 2085 && x <= 2094 && y == 205 || x == 2094 && y is 206 or 207 ? '#'
+                : y == 210 && x is 2087 or 2088 ? '=' : '.'
+        };
+        var start = new PhysicsState(33384.52f, 3318, -2.1200006f, 0, true);
+        var reverse = PhysicsSimulator.Predict(start, 1, 0, Ph, world, walkFrames:24);
+        Check(reverse.Safe, $"turnaround rejected: {reverse.Reason}, frames={reverse.Frames.Count}, x={reverse.Landing.Px}, vx={reverse.Landing.Vx}");
+        var blocked = PhysicsSimulator.Predict(start, -1, 0, Ph, world, walkFrames:24);
+        Check(!blocked.Safe && blocked.Reason == "walking blocked", "actual wall contact is still rejected");
+        var task = new NavigationTask(enableSafeGroundWalk:true);
+        var state = start;
+        float rightmost = start.Px, highest = start.Py;
+        for (int tick=0; tick<1800 && !task.Terminal; tick++)
+        {
+            var input = task.Before(1, 1, 33217.027f, state, Ph, world);
+            state = PhysicsSimulator.Step(state, input, Ph, world);
+            task.After(state, world, input == default);
+            rightmost = Math.Max(rightmost, state.Px);
+            highest = Math.Min(highest, state.Py);
+        }
+        Check(task.Snapshot.Status == "arrived" && rightmost >= 2095*16 && highest+42 <= 205*16,
+            $"roof detour: {task.Snapshot.Reason}, x={state.Px}, rightmost={rightmost}, highest={highest}");
+    }
+
     public static void Run()
     {
+        CheckTurnaround();
         var w = new MotionOfflineTests.RegionWorld();
         w.Collision.WallX = 1632; w.Collision.WallHeight = 32;
         var goal = new LandingRegion(1645, 1645.5f, 1568);

@@ -32,6 +32,8 @@ if($SamplePackage){
     $info.ArgumentList.Add('-companionbosssamplehash')
     $info.ArgumentList.Add((Get-FileHash -LiteralPath "$profile/Mods/BossStrategySample.tmod").Hash)
 }
+if($TestScript -eq 'native_pylons.py'){$info.ArgumentList.Add('-companionpylontest')}
+if($TestScript -eq 'native_regroup_observers.py'){$info.ArgumentList.Add('-companionregroupobservers')}
 if($BossProbe){$info.ArgumentList.Add('-companionbossprobe');$info.ArgumentList.Add($BossProbe);$TestScript='native_boss_probe.py'}
 elseif($Combat){$info.ArgumentList.Add('-companioncombattest');$TestScript='native_combat.py'}
 elseif($Torch){$info.ArgumentList.Add('-companiontorchtest');$TestScript='native_auto_torch.py'}
@@ -41,11 +43,13 @@ else{$info.ArgumentList.Add('-companiondirectinputtest')}
 $process=[Diagnostics.Process]::Start($info)
 $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
 try {
-    & $PythonExecutable -B (Join-Path $PSScriptRoot $TestScript) --port $IpcPort --profile $profile
+    $extra = @()
+    if($TestScript -eq 'native_regroup_observers.py'){$extra = @('--game-port',$Port)}
+    & $PythonExecutable -B (Join-Path $PSScriptRoot $TestScript) --port $IpcPort --profile $profile @extra
     if($LASTEXITCODE -ne 0){throw "$TestScript verification failed: $profile"}
     [IO.File]::WriteAllText("$profile/g81-test-stop",'Stop this isolated server')
     if(!$process.WaitForExit(20000) -or $process.ExitCode -ne 0){throw 'Isolated server did not unload cleanly'}
-    $report=@{profile=$profile;packageSHA256=(Get-FileHash -LiteralPath "$profile/Mods/CompanionBridge.tmod").Hash;processId=$process.Id;exitCode=$process.ExitCode;mode='isolated dedicated native server; no clients or model requests'}
+    $report=@{profile=$profile;packageSHA256=(Get-FileHash -LiteralPath "$profile/Mods/CompanionBridge.tmod").Hash;processId=$process.Id;exitCode=$process.ExitCode;mode=if($TestScript -eq 'native_regroup_observers.py'){'loopback observers; native chat receive replay'}else{'isolated dedicated native server; no clients or model requests'}}
     if($SamplePackage){$report.sampleSHA256=(Get-FileHash -LiteralPath "$profile/Mods/BossStrategySample.tmod").Hash}
     $report | ConvertTo-Json | Set-Content "$profile/manifest.json"
     Write-Output "$TestScript native passed: $profile"

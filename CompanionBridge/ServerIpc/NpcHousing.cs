@@ -14,13 +14,6 @@ internal static class NpcHousing
     private sealed record State(string entityRef, int type, int slot, bool active, bool townNPC,
         bool homeless, int homeTileX, int homeTileY, bool managerHasRoom, TilePosition managerHomeTile);
 
-    private static NPC Resolve(Identity identity, string reference)
-    {
-        foreach (var npc in Main.ActiveNPCs)
-            if (NativeCombatWorld.Reference(identity, npc) == reference) return npc;
-        return null;
-    }
-
     private static State Snapshot(NPC npc, string reference)
     {
         bool registered = WorldGen.TownManager.HasRoom(npc.type, out Point room);
@@ -29,7 +22,7 @@ internal static class NpcHousing
     }
 
     internal static object Read(Identity identity, string reference) =>
-        Snapshot(Resolve(identity, reference) ?? throw new StaleNpcReferenceException(), reference);
+        Snapshot(NpcDialogue.Resolve(identity, reference) ?? throw new StaleNpcReferenceException(), reference);
 
     // Existing vanilla residents with ordinary housing rules. Truffle has an extra
     // biome check; pets use separate sharing rules and modded residents can veto housing.
@@ -46,7 +39,7 @@ internal static class NpcHousing
         string entityRef = args.GetProperty("entityRef").GetString();
         int x = args.GetProperty("x").GetInt32(), y = args.GetProperty("y").GetInt32();
         var queryTile = new TilePosition(x, y);
-        var npc = Resolve(identity, entityRef);
+        var npc = NpcDialogue.Resolve(identity, entityRef);
         State before = npc == null ? null : Snapshot(npc, entityRef);
         Result Reject(string reason) => new("failed", reason, new { entityRef, queryTile, before, mutationAttempted = false },
             true, InputsAcquired: false);
@@ -69,7 +62,7 @@ internal static class NpcHousing
         try
         {
             WorldGen.moveRoom(x, y, npc.whoAmI);
-            if (ServerAiNativeActions.Owned(identity) && ReferenceEquals(npc, Resolve(identity, entityRef)))
+            if (ServerAiNativeActions.Owned(identity) && ReferenceEquals(npc, NpcDialogue.Resolve(identity, entityRef)))
                 after = Snapshot(npc, entityRef);
         }
         catch (Exception)

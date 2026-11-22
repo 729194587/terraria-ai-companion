@@ -8,8 +8,8 @@ public static class AirMotionTests
     public static void Run()
     {
         int checks=0;void Check(bool ok,string why){if(!ok)throw new Exception(why);checks++;}
-        MovementSnapshot Snapshot(int wing=1,float time=100,int boots=0,int delay=0,int visualDelay=0)=>new(Array.Empty<ExtraJumpSnapshot>(),false,
-            new(wing,time,100,59,AirMotionModel.AngelStats),new(boots,7,7,delay,visualDelay),new(false,-1,null,54),0,true,Array.Empty<GrappleSnapshot>(),new(false,0,false,false,false,false));
+        MovementSnapshot Snapshot(int wing=1,float time=100,int boots=0,int delay=0,int visualDelay=0,WingBaseSnapshot stats=null)=>new(Array.Empty<ExtraJumpSnapshot>(),false,
+            new(wing,time,100,59,stats??AirMotionModel.AngelStats),new(boots,7,7,delay,visualDelay),new(false,-1,null,54),0,true,Array.Empty<GrappleSnapshot>(),new(false,0,false,false,false,false));
         Check(AirMotionModel.Select(Snapshot(wing:2))==AirMotionModel.Angel,"native Angel Wings slot matches pinned stats");
         foreach(float time in new[]{0f,1f,100f})foreach(int boots in new[]{0,1})
         {
@@ -22,6 +22,10 @@ public static class AirMotionTests
         Check(AirMotionModel.Select(Snapshot(delay:1))==null,"existing rocket pulse with wings is not combined");
         var flat=new MotionOfflineTests.World();
         var wing=PhysicsParameters.Basic with{Air=AirMotionModel.Angel};
+        var boneStats=AirMotionModel.AngelStats with {FlyTime=170,AccRunSpeedOverride=7.5f};
+        var bone=AirMotionModel.Select(Snapshot(wing:8,stats:boneStats));
+        Check(bone?.RiseLimit==1.66f && bone.AirRunSpeed==7.5f,"Bone wing profile uses its registry and ascent group");
+        Check(AirMotionModel.Select(Snapshot(wing:8,stats:boneStats with {HasDownHoverStats=true}))==null,"hover profile stays unsupported");
         var rocket=PhysicsParameters.Basic with{Air=AirMotionModel.Rocket};
         var resource=new AirResources(100,100,7,7,0,false,true,false);
         var air=new PhysicsState(1600,1400,0,-4, false,Air:resource);
@@ -51,6 +55,13 @@ public static class AirMotionTests
         Check(b.ObservedPhysics.AccRunSpeed==6.25f&&b.EffectivePhysics.AccRunSpeed==3,"raw native physics stays visible beside normalized planning parameters");
         var c=tracker.Sample(wing,20,42,false,Array.Empty<string>(),3,1,1,movement:Snapshot(time:98),unexpectedAirResource:true);
         Check(c.Revision>b.Revision,"unexpected resource loss invalidates version");
+        var rechargeWorld=new MotionOfflineTests.World();
+        var low=new PhysicsState(1600,1558,0,0,true,Air:resource with {WingTime=1});
+        var recharge=new NavigationTask();
+        var neutral=recharge.Before(1,1,1800,low,wing,rechargeWorld);
+        Check(neutral==default && recharge.Snapshot.Reason=="awaiting observed wing recharge","low fuel on safe ground releases jump");
+        var refreshed=PhysicsSimulator.Step(low,neutral,wing,rechargeWorld);
+        Check(refreshed.Air.WingTime==resource.WingMax,"native model refills on neutral ground update");
         foreach(var ph in new[]{wing,rocket})
         {
             float height=ph.Air.Kind==AirKind.Wings?160:128;

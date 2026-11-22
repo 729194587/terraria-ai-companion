@@ -81,6 +81,11 @@ namespace VirtualPlayerEngineProbe
 
 namespace CompanionBridge.ServerIpc
 {
+    internal static class ServerItemOpening
+    {
+        internal static void Spawn(Terraria.Item item, Terraria.DataStructures.IEntitySource source) { }
+    }
+
     internal static class AiReadOnlyProtocol
     {
         internal sealed record Identity(object Actor, string World, long Generation, int Slot);

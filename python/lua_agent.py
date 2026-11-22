@@ -13,7 +13,7 @@ TOOL_NAME = 'execute_lua'
 TOOL = atomic.tool(TOOL_NAME,
     '执行完整 Lua 5.4 程序来编排多步骤任务；仅 source 字段，不要 Markdown 代码围栏。'
     'api(name,args) 同步等待现有同名原子工具的真实结果，参数严格使用其工具定义。'
-    '可调用的 API：' + ', '.join(name for name in atomic.SCHEMAS if name not in {'quote_reforge', 'reforge_item', 'quote_nurse_heal', 'heal_at_nurse', 'inspect_npc_shop', 'quote_npc_purchase', 'buy_npc_item', 'quote_npc_sale', 'sell_npc_item', 'inspect_npc_housing', 'assign_npc_home', 'dismiss_summon', 'observe_scene', 'query_recipes', 'craft_recipe', 'place_object', 'place_rope','list_teammates','set_team','teleport_to_teammate','open_inventory_item','open_door','close_door', 'move_on_rope', 'equip_item', 'unequip_item', 'configure_combat_loadout', 'query_combat_loadout', 'discover_bosses','boss_encounter'}) + '。'
+    '可调用的 API：' + ', '.join(name for name in atomic.SCHEMAS if name not in {'quote_reforge', 'reforge_item', 'quote_nurse_heal', 'heal_at_nurse', 'open_npc_dialogue', 'close_npc_dialogue', 'inspect_npc_shop', 'quote_npc_purchase', 'buy_npc_item', 'quote_npc_sale', 'sell_npc_item', 'inspect_npc_housing', 'assign_npc_home', 'dismiss_summon', 'observe_scene', 'query_recipes', 'craft_recipe', 'place_object', 'place_rope','list_pylons','teleport_to_pylon','list_teammates','set_team','teleport_to_teammate','manage_trash','switch_equipment_loadout','set_inventory_favorite','drop_inventory_item','open_inventory_item','open_door','close_door', 'move_on_rope', 'equip_item', 'unequip_item', 'configure_combat_loadout', 'query_combat_loadout', 'discover_bosses','boss_encounter'}) + '。'
     '数组从1开始，JSON null使用json.null；空数组用json.array()。'
     '混合返回表自动编码为$luaTable版本1封套，array与fields分别保留数组和字符串字段；API参数仍用纯对象/数组。'
     '支持type/tonumber/tostring/pairs/ipairs/next/assert/error、受控pcall与api/json/log，以及受限math/table和string.sub/string.len纯计算函数；无os/io/require/xpcall/print。'
@@ -119,6 +119,24 @@ class ProgramStore:
         return {'sourceSha256': digest, 'path': str(path.resolve()), 'redacted': saved != source}
 
 
+def short_read_reason(receipt):
+    issues = [r for r in receipt.get('trace', ()) if r.get('available') is False]
+    if not issues:
+        return {}
+    # Show outstanding reads first. Preserve the call IDs for the full receipt.
+    issues.sort(key=lambda r: ('resolvedBy' in r, -r['id']))
+    notes = []
+    if receipt.get('failure'):
+        notes.append(str(receipt['failure']['message'])[:200])
+    for row in issues[:4]:
+        reason = str(row.get('reason') or 'unavailable')[:160]
+        state = f"resolved by #{row['resolvedBy']}" if 'resolvedBy' in row else 'unavailable'
+        notes.append(f"#{row['id']} {row['operation']}: {reason} ({state})")
+    if len(issues) > 4:
+        notes.append(f"+{len(issues) - 4} more in trace")
+    return {'reason': ' | '.join(notes)}
+
+
 def summarize(receipt, actions):
     """Host fields cannot be forged by a script's nested return value."""
     program_completed = receipt['status'] == 'completed'
@@ -131,7 +149,7 @@ def summarize(receipt, actions):
     if receipt['actionState'] == 'unknown':
         action_success = False
     from agent_run import task_outcome, goal_outcome
-    return {**receipt, 'valid': True, 'programCompleted': program_completed, 'actionResults': history,
+    return {**short_read_reason(receipt), **receipt, 'valid': True, 'programCompleted': program_completed, 'actionResults': history,
             'actionSuccess': action_success,
             'taskOutcome': task_outcome(actions, program_completed, receipt.get('actionState'),
                                         (receipt.get('tasks') or {}).get('active', ())),

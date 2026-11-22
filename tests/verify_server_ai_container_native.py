@@ -104,7 +104,7 @@ def wait_for(predicate, seconds=20):
     raise TimeoutError("Native test condition timed out")
 
 
-async def verify(profile, bridge, first, second, *, transfers=False, batches=False, sorting=False):
+async def verify(profile, bridge, first, second, *, transfers=False, batches=False, sorting=False, personal=False):
     ready = json.loads((profile / "container-ready.json").read_text())
     x, y, index, other = (ready[key] for key in ("x", "y", "index", "other"))
     actor = bridge.binding["slot"]
@@ -152,6 +152,58 @@ async def verify(profile, bridge, first, second, *, transfers=False, batches=Fal
             except (FileNotFoundError, json.JSONDecodeError):
                 return None
         return wait_for(read)
+
+    if personal:
+        async def bag(slot):
+            return (await dispatch(bridge,"inspect_inventory",{"mode":"slots","slots":[slot]}))["data"]["inventory"][0]
+        async def full():
+            return (await dispatch(bridge,"inspect_inventory",{"mode":"full"}))["data"]
+
+        fixture("personal-seed")
+        for name, index in (("piggy",-2),("safe",-3),("forge",-4),("void",-5)):
+            fixture("personal-"+name)
+            await open_at(x-3,y+1)
+            chest=await inspect()
+            assert chest["chestIndex"]==index and chest["slots"][0]["stack"]==0
+            for action in ("deposit_container_item","withdraw_container_item"):
+                await api(action,dict(inventorySlot=20, containerSlot=0, count=3,
+                          inventoryToken=(await bag(20))["inventoryToken"],containerToken=chest["containerToken"],
+                          slotToken=chest["slots"][0]["slotToken"]))
+                chest=await inspect()
+                assert chest["slots"][0]["stack"]==(3 if action.startswith("deposit") else 0)
+            await close(chest["containerToken"])
+            for human in fixture("snapshot")["clients"]:
+                assert human["bankCounts"]==[human["slot"]+1]*4
+        for mode,slot in (("discard",20),("retrieve",23)):
+            await api("manage_trash", dict(mode=mode,slot=slot,slotToken=(await bag(slot))["inventoryToken"],
+                      trashToken=(await full())["trash"]["trashToken"]))
+        assert (await bag(23))["stack"]==10
+        async def favorite(value):
+            return await api("set_inventory_favorite",dict(sourceSlot=23,sourceToken=(await bag(23))["inventoryToken"],
+                             favorited=value))
+        await favorite(True)
+        await api("drop_inventory_item",dict(sourceSlot=23,sourceToken=(await bag(23))["inventoryToken"],count=3),
+                  status="failed",reason="empty_or_favorited_slot")
+        await favorite(False)
+        teammates=(await dispatch(bridge,"list_teammates",{}))["data"]["players"]
+        recipient=teammates[0]["teammateRef"]
+        request=dict(sourceSlot=23,sourceToken=(await bag(23))["inventoryToken"],count=3,teammateRef=recipient)
+        await api("drop_inventory_item",request | {"count":11},status="failed",reason="insufficient_stack")
+        drop=await api("drop_inventory_item",request)
+        await api("drop_inventory_item",request,status="failed",reason="stale_inventory_token")
+        assert drop["evidence"]["spawnedCount"]==3 and (await bag(23))["stack"]==7
+        for slot,gear in ((21,"vanity:head"),(22,"dye:head"),(24,"miscDye:mount")):
+            rows=(await full())["cosmeticEquipmentSlots"]
+            tok=next(r["targetToken"] for r in rows if r["slotId"]==gear)
+            await api("equip_item",dict(sourceSlot=slot,sourceToken=(await bag(slot))["inventoryToken"],
+                      targetSlotId=gear,targetToken=tok))
+        original=(await full())["currentLoadout"]
+        target=1 if original==2 else 2
+        await api("switch_equipment_loadout",dict(expectedLoadout=original,loadout=target))
+        await api("switch_equipment_loadout",dict(expectedLoadout=target,loadout=original))
+        rows=(await full())["cosmeticEquipmentSlots"]
+        assert all(next(r["occupied"] for r in rows if r["slotId"]==gear) for gear in ("vanity:head","dye:head","miscDye:mount"))
+        return report
 
     first.send(31, struct.pack("<hh", x + 4, y))
     first.wait(33)
@@ -712,6 +764,7 @@ def main():
     mode.add_argument("--transfers", action="store_true")
     mode.add_argument("--batches", action="store_true")
     mode.add_argument("--sorting", action="store_true")
+    mode.add_argument("--personal", action="store_true")
     mode.add_argument("--collect", action="store_true")
     parser.add_argument("--port", default=27941, type=int)
     parser.add_argument("--ipc-port", default=27942, type=int)
@@ -745,6 +798,7 @@ def main():
             + (["-companioncontainertransfertest"] if args.transfers else [])
             + (["-companioncontainerbatchtest"] if args.batches else [])
             + (["-companioncontainersorttest"] if args.sorting else [])
+            + (["-companionpersonaltest"] if args.personal else [])
             + (["-companioncollecttest"] if args.collect else []),
             cwd=args.engine, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW,
@@ -761,7 +815,7 @@ def main():
             if args.collect:
                 report = asyncio.run(verify_collect(profile, bridge, clients, args.engine / "tModLoader-Logs/server.log"))
             else:
-                report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches, sorting=args.sorting))
+                report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches, sorting=args.sorting, personal=args.personal))
             if "openAtWorldUnload" in report:
                 (profile / "g81-test-stop").touch()
                 for client in clients:

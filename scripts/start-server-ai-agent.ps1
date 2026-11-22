@@ -8,6 +8,6 @@ Write-Output 'Enter Host & Play with CompanionBridge 0.1.49 first. Local chat: e
 Write-Output 'Stop or replace exploration: send a new local chat message, or Ctrl+C here and wait for cleanup.'
 Push-Location $repo
 try {
-    & $PythonExecutable (Join-Path $repo 'python/agent.py') --server-ai --port $Port --ai-port $AiPort --timeout 5
+    & $PythonExecutable (Join-Path $repo 'python/start_agent.py') --server-ai --port $Port --ai-port $AiPort --timeout 5
     if($LASTEXITCODE -ne 0){throw "Agent exited with code $LASTEXITCODE"}
 }finally{Pop-Location}

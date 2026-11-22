@@ -97,6 +97,10 @@ error("Merchant not visible")
 """.replace("SLOT", str(ready["slot"])), 1, 0)
         ref = out["value"]
         assert isinstance(ref, str)
+        async def talk(entity_ref):
+            _, opened = await lua('return api("open_npc_dialogue",{entityRef='+json.dumps(entity_ref)+'})',1,1)
+            assert opened["completed"], opened
+        await talk(ref)
         empty = (await fixture("snapshot"))["inventory"]
         assert copper(contents(empty["carried"])) == 0 and copper(contents(empty["banks"][0])) == 0
         poor = await quote(ref)
@@ -152,6 +156,7 @@ return api("swap_inventory_slots",{sourceSlot=SRC,destinationSlot=DST,sourceToke
         assert replacement["entityRef"].rsplit(":",1)[0] == ref.rsplit(":",1)[0]
         await rejected(ref, live["quoteToken"], "stale_entity_ref")
         fresh = replacement["entityRef"]
+        await talk(fresh)
         fresh_buy = await quote(fresh)
         _, bought = await lua('return api("buy_npc_item",'+args(fresh,'quoteToken='+json.dumps(fresh_buy["quoteToken"]))+')',1,1)
         assert bought["completed"], bought
@@ -161,6 +166,7 @@ return api("swap_inventory_slots",{sourceSlot=SRC,destinationSlot=DST,sourceToke
         assert fresh != (await fixture("replace"))["entityRef"]
         await sell(stale_merchant, "stale_entity_ref")
         ref = (await fixture("snapshot"))["entityRef"]
+        await talk(ref)
         price = (await quote(ref))["unitPrice"]
         cases = [[price if i == source else 0 for i in range(5)] for source in range(5)]
         cases.extend([[1, price-1, 0, 0, 0], [1, 1, 1, 1, price-4]])

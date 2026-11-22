@@ -2,10 +2,8 @@
 import argparse
 import asyncio
 import copy
-from dataclasses import dataclass
 import hashlib
 import json
-import math
 import multiprocessing as mp
 from pathlib import Path
 from time import monotonic
@@ -20,30 +18,9 @@ import navigation_recovery
 import lua_modules
 import program_tasks
 from control import Bridge, BridgeError, command_owner
+from lua_limits import Limits
 from lua_worker import (worker, encode, decode, ValueLimit, SOURCE_BYTES,
                         REQUEST_BYTES, VALUE_BYTES, FRAME_BYTES, EXPLORATION_SOURCE, SEMANTIC_SOURCE)
-
-
-@dataclass(frozen=True)
-class Limits:
-    seconds: float = 60
-    calls: int = 64
-    instructions: int = 1_000_000
-    memory: int = 16_000_000
-    cleanup_seconds: float = 3
-    actions: int = 8
-
-    def validate(self):
-        for value, low, high in ((self.seconds, .05, 300), (self.calls, 1, 256),
-                                 (self.instructions, 100, 10_000_000),
-                                 (self.memory, 100_000, 64_000_000),
-                                 (self.cleanup_seconds, .05, 10)):
-            if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
-                raise ValueError('Invalid trusted Lua limit')
-        if any(type(v) is not int for v in (self.calls, self.instructions, self.memory)):
-            raise ValueError('Integer budgets required')
-        if type(self.actions) is not int or not 0 <= self.actions <= 32:
-            raise ValueError('Action budget must be an integer in 0..32')
 
 
 class Interrupted(Exception):
@@ -228,6 +205,8 @@ class LuaRuntime:
         def emit(event, **fields):
             tracing.trace.emit(event, **fields)
             diagnostics.emit(event, **fields)
+        pending_reads = {}
+
         def call_end(status, *, result=None, error=None):
             nonlocal call_open, failure_call
             if not call_open:
@@ -242,7 +221,18 @@ class LuaRuntime:
                 row['error'] = str(error)[:512]
             if error is not None or status=='unknown':
                 failure_call = dict(call_meta)
-            out['trace'].append({key:row[key] for key in ('id','operation','line','status','valid','reason','elapsed_ms','error') if key in row})
+            entry = {key:row[key] for key in ('id','operation','line','status','valid','reason','elapsed_ms','error') if key in row}
+            out['trace'].append(entry)
+            if result is not None and row['operation'] in atomic.READS:
+                available = result.get('available')
+                if available is False or (pending_reads and available is True and result.get('valid') is True):
+                    key = (row['operation'], json.dumps(args, sort_keys=True, separators=(',', ':')))
+                    if available is False:
+                        entry['available'] = False
+                        pending_reads.setdefault(key, []).append(entry)
+                    else:
+                        for earlier in pending_reads.pop(key, ()):
+                            earlier['resolvedBy'] = row['id']
             emit('lua_api_result' if result is not None else 'lua_api_error', **row)
             call_open = False
         emit('lua_start', semantic_helper_sha256=semantic_digest, exploration_helper_sha256=helper_digest, source_sha256=digest, source_bytes=len(source.encode()), limits=vars(limits), chat_id=chat_id)
@@ -396,7 +386,8 @@ class LuaRuntime:
                     active = None
                     continue
                 try:
-                    args = program_tasks.validate(name, args) if name in program_tasks.NAMES else atomic.validate(name, args)
+                    args = program_tasks.validate(name, args) if name in program_tasks.NAMES else atomic.validate(
+                        name, args, server="server_ai_atomic_v1" in getattr(self.bridge, "hello", {}).get("capabilities", ()))
                 except ValueError as exc:
                     if name not in atomic.SCHEMAS.keys() | program_tasks.NAMES:
                         raise
@@ -544,6 +535,9 @@ class LuaRuntime:
                         and lifecycle.get('action') is None and not lifecycle.get('uncertain'))
                     rejected_before_dispatch |= admission_refused
                     active = None
+                    if (name in atomic.READS and result.get('available') is False and 'binding' in result
+                            and 'observedAtUnixMs' not in result):
+                        raise BridgeError('Server read unavailable without a confirmed observation')
                     if (name in atomic.READS and result.get('valid') is True
                             and result.get('available') is not False
                             and result.get('status') not in ('failed', 'timeout', 'cancelled', 'unknown', 'unavailable')):

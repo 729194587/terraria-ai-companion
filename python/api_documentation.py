@@ -208,7 +208,7 @@ RETURN_NOTES = {
     'query_recipes': 'data.items 含 output.count、ingredients、stations、conditions 和 hasOutputSpace；检查 truncated 和 offset。',
     'craft_recipe': 'evidence.completedCrafts 为完成次数，producedCount 为件数；完成时核对 inventoryVerified。部分制作保留原生回执。',
     'inspect_container': 'data.status=open 时 data.container 含 containerToken 和 slots；每行含 slot、stack 和 slotToken。',
-    'scan_entities': 'data.items 内 NPC 的 details.entityRef 是当前实例引用，检查范围与 truncated。',
+    'scan_entities': 'data.items 内城镇 NPC 的 name 是个人名字，details.contentKey 和 details.typeName 分别是注册键和本地化种类名（旧后端可能缺失），centerWorldPixels.x/y 是世界像素中心；details.entityRef 是当前实例引用。检查范围与 truncated。',
 }
 
 
@@ -343,9 +343,36 @@ def documentation(name, schema, definitions, capabilities):
     prerequisite = PREREQUISITES.get(name, '')
     if name == 'craft_recipe':
         example = CRAFT
+    elif name == 'equip_item':
+        prerequisite = ('例子把矿工头盔穿到功能头部槽。sourceToken 来自背包来源格的 inventoryToken，'
+                        'targetToken 来自要穿入的装备槽；空装备槽也有令牌。购买后重新读槽位。')
+        related = ('inspect_inventory', 'unequip_item')
+        example = '''local wanted = 88 -- 示例：已确认的矿工头盔物品类型
+local bag = api("inspect_inventory",{mode="full"})
+if not bag.valid or not bag.available then return bag end
+local source, head
+for _,item in ipairs(bag.data.inventory) do
+    if item.typeId == wanted then source = item.slot; break end
+end
+for _,slot in ipairs(bag.data.functionalEquipmentSlots) do
+    if slot.kind == "head" and slot.enabled then head = slot; break end
+end
+if not source or not head then return "未找到目标物品或可用头部槽" end
+local fresh = api("inspect_inventory",{mode="slots",slots={source}})
+if not fresh.valid or not fresh.available then return fresh end
+local item = fresh.data.inventory[1]
+if not item or item.slot ~= source or item.typeId ~= wanted then return "来源物品已变化" end
+return api("equip_item",{sourceSlot=source,sourceToken=item.inventoryToken,
+    targetSlotId=head.slotId,targetToken=head.targetToken})'''
     elif name in atomic.CONTAINER_TRANSFERS:
         example = TRANSFER.replace('SOURCE', 'row' if name.startswith('deposit') else 'slot').replace('OP', name)
         related = ('inspect_inventory','inspect_container')
+    elif name == 'open_npc_dialogue':
+        example = SHOP.replace('return api("inspect_npc_shop"', 'return api("open_npc_dialogue"')
+        related = ('scan_entities','inspect_npc_shop','close_npc_dialogue')
+    elif name == 'close_npc_dialogue':
+        example = 'return api("close_npc_dialogue",{})'
+        related = ('open_npc_dialogue',)
     elif name == 'inspect_npc_shop':
         example = SHOP
         related = ('scan_entities','quote_npc_purchase','quote_npc_sale')
@@ -355,8 +382,14 @@ def documentation(name, schema, definitions, capabilities):
                     '            return api("buy_npc_item",{entityRef=npc.details.entityRef,quoteToken=price.data.quoteToken})\n'
                     '        end\n        ') if name == 'buy_npc_item' else ''
         example = SHOP.replace('return api("inspect_npc_shop",{entityRef=npc.details.entityRef})', quote+'\n        '+purchase+'return price')
-        prerequisite = '示例目标为普通商人的一支火把。执行购买前确认物品和支出已经授权。'
+        prerequisite = '示例目标为普通商人的一支火把。支持批量购买时在报价中传 quantity（1..50）；令牌绑定数量，逐件核验。中途满包等已知拒绝返回 failed；evidence.effectStatus=partial 时 verifiedQuantity 是已成交件数。执行购买前确认物品和支出已经授权。'
         related = ('scan_entities','inspect_npc_shop','quote_npc_purchase')
+    elif name == 'interact_tile':
+        example = '''-- x、y 为已找到的拉杆组成格
+local tile=api("inspect_tile",{x=x,y=y})
+if not tile.valid or not tile.available or not tile.data.interaction then return tile end
+if tile.data.interaction.active then return tile end
+return api("interact_tile",{target=tile.data.interaction.target})'''
     elif name == 'configure_combat_loadout':
         example = loadout_example(name, schema, capabilities)
     elif name == 'submit_task' and 'build_place' in schema['properties']['operation']['enum']:
@@ -378,10 +411,25 @@ return api("submit_task",{operation="build_place",arguments={blueprint=plan}})""
         else:
             prerequisite = '按 parameters 准备已授权的输入；涉及槽位、目标引用或报价时先取得新鲜观察。'
     examples = [example] if example else []
+    if name == 'scan_entities' and 'navigate_to_x' in definitions:
+        examples.append('''-- 已获授权接近指定 NPC 时，按注册键或本地化种类名选目标。
+local function approachNpc(target)
+    local q=api("scan_entities",{category="npc",radius=1600})
+    if not q.valid or not q.available then return q end
+    for _,n in ipairs(q.data.items) do
+        if n.details.contentKey==target or n.details.typeName==target then
+            return api("navigate_to_x",{targetX=n.centerWorldPixels.x})
+        end
+    end
+    return {matched=q.data.matchedCount,truncated=q.data.truncated}
+end''')
     if name == 'observe_scene' and 'server_ai_scene_region_v1' in capabilities:
         examples.append('''local q=api("observe_scene",{width=100,height=40,layers={"objects"},maxObjects=32})
 if not q.valid or not q.available then return q end
 return {objects=q.data.objects,coverage=q.data.coverage}''')
+    if 'open_npc_dialogue' in definitions and name in (
+            'inspect_npc_shop', 'quote_npc_purchase', 'buy_npc_item', 'quote_npc_sale', 'sell_npc_item'):
+        prerequisite = '先用 open_npc_dialogue 与目标商人交谈。货单、报价和成交均要求同一连接保持与该商人的对话。' + prerequisite
     return dict(returns=RETURN_NOTES.get(name, returns), statusSemantics=semantics,
                 prerequisites=prerequisite, examples=examples,
                 example=example or '-- '+prerequisite, related=[n for n in related if n in definitions])

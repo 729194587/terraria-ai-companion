@@ -99,6 +99,7 @@ internal sealed class AiReadOnlyServer : IDisposable
     {
         AssertOwner();
         while (closed.TryDequeue(out var connection)) protocol.Forget(connection);
+        protocol.UpdateDialogues();
         if(beforeSimulationActions==null)actions?.Tick(capture, select);
         // Bound work per simulation tick; workers never invoke capture.
         for (int i = 0; i < 16 && jobs.TryDequeue(out var job); i++)

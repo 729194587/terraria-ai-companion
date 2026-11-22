@@ -41,8 +41,8 @@ internal static class NativeSurvival
                     typeof(CompanionBridge.ServerIpc.ServerDrops).GetMethod("Allows")));
         };
         if (VirtualPlayerEngineProbe.Engine.Selected == "2026.09.3.1")
-            install(() => On_Player.PickupItem += CompanionBridge.ServerIpc.ServerDrops.Pickup,
-                () => On_Player.PickupItem -= CompanionBridge.ServerIpc.ServerDrops.Pickup);
+            install(() => On_Player.PickupItem += CompanionBridge.ServerIpc.ServerItemDrop.Pickup,
+                () => On_Player.PickupItem -= CompanionBridge.ServerIpc.ServerItemDrop.Pickup);
         var lethal=Patch("lethal");var dodge=Patch("dodge");
         var drops=Patch("death-drops");var spawn=Patch("spawn");var coins=Patch("coin-mouse");
         install(()=>IL_Player.GrabItems+=pickup,()=>IL_Player.GrabItems-=pickup);

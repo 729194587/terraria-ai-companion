@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -28,6 +28,8 @@ if(!$WorldPath){$WorldPath=Join-Path $repo '.local/virtual-player-control-host/W
 $WorldPath=(Resolve-Path -LiteralPath $WorldPath).Path
 $package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$selectedEngine.Package}
 Assert-CompanionPackage -Package $package -Engine $selectedEngine
+if($TalkToNpc){$MerchantJourney=$true;$NurseLua=$TalkToNpc -eq 'Nurse'}
+if($MerchantJourney){$MerchantLua=$true;$Terrain=$true}
 if($ReforgeLua -or $NurseLua){$MerchantLua=$true}
 if(!$PythonExecutable){$PythonExecutable=if($Atomic -or $NpcHome -or $MerchantLua){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
 if(!(Test-Path -LiteralPath $package)){throw 'Build CompanionBridge first.'}
@@ -59,7 +61,9 @@ if($Inventory){$info.ArgumentList.Add("-companioninventorytest")}
 if($Crafting){$info.ArgumentList.Add("-companioncrafttest")}
 if($Scene){$info.ArgumentList.Add("-companionscenetest")}
 if($ReforgeLua){$info.ArgumentList.Add('-companionreforgetest')}
+if($TalkToNpc){$info.ArgumentList.Add('-companiontalkjourney')}
 if($NurseLua){$info.ArgumentList.Add('-companionnursetest')}
+if($MerchantJourney){$info.ArgumentList.Add('-companionmerchantjourney');$info.ArgumentList.Add('-companionnavrecoverytest')}
 if($MerchantLua){$info.ArgumentList.Add('-companionmerchantluatest')}
 if($G3Shop){$info.ArgumentList.Add('-companiong3shoptest')}
 if($NpcHome){$info.ArgumentList.Add('-companionnpchometest')}
@@ -107,8 +111,8 @@ try {
     if($bindingMismatch.ok -or $bindingMismatch.error -ne 'stale_binding'){throw 'Mismatched request binding was not rejected'}
     if($BuildPlace -or $Housing -or $G3Shop){
         if(!$G3Shop -and 'server_ai_build_place_v1' -notin $bound.data.capabilities){throw 'Missing build_place capability'}
-        $probe=if($ReforgeLua){'tests/native_reforge_lua.py'}elseif($NurseLua){'tests/native_nurse_lua.py'}elseif($MerchantLua){'tests/native_merchant_lua.py'}elseif($G3Shop){'tests/native_g3_shop.py'}elseif($Housing){'tests/native_housing.py'}else{'tests/native_build_place.py'}
-        [string[]]$probeArgs=if($NpcHome){@('--npc-home')}else{@()}
+        $probe=if($TalkToNpc){'tests/native_talk_to.py'}elseif($ReforgeLua){'tests/native_reforge_lua.py'}elseif($NurseLua){'tests/native_nurse_lua.py'}elseif($MerchantJourney){'tests/native_merchant_journey.py'}elseif($MerchantLua){'tests/native_merchant_lua.py'}elseif($G3Shop){'tests/native_g3_shop.py'}elseif($Housing){'tests/native_housing.py'}else{'tests/native_build_place.py'}
+        [string[]]$probeArgs=if($TalkToNpc){@('--npc',$TalkToNpc)}elseif($NpcHome){@('--npc-home')}else{@()}
         & $PythonExecutable (Join-Path $repo $probe) --port $IpcPort --profile $profile @probeArgs
         if($LASTEXITCODE -ne 0){throw "Native verification failed in $profile"}
         $client.Dispose();$client=$null

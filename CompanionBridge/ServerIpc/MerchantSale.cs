@@ -61,7 +61,7 @@ internal static partial class MerchantShop
     internal static object QuoteSale(Identity id, JsonElement args)
     {
         string entityRef = args.GetProperty("entityRef").GetString();
-        string error = Resolve(id, entityRef, out var merchant);
+        string error = Resolve(id, entityRef, out var merchant, reading: true);
         if (error != null) throw new ShopReadException(error);
         int sourceSlot = args.GetProperty("sourceSlot").GetInt32();
         string sourceToken = args.GetProperty("sourceToken").GetString();

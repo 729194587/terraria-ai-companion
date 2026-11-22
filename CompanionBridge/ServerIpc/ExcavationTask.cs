@@ -80,7 +80,7 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             return Stop(frame,"cancelled","actor_cannot_mine");
         if(active!=null)
         {
-            if(stage=="navigating"&&(capability!=ActorMining.CapabilityStamp(player)
+            if(stage!="mining"&&(capability!=ActorMining.CapabilityStamp(player)
                 ||targets.Any(t=>!t.Changed&&t.Proof==null&&!t.Cell.Matches())))
             {
                 var stopped=base.Stop(frame,"cancelled","excavation_needs_replan");
@@ -112,7 +112,7 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             {
                 if(result.Status!="failed")return Finish(result.Status,result.Reason);
                 failedStances.Add(destination.Region);
-                if(failedStances.Count>=6)return Finish("failed","excavation_no_work_position");
+                if(failedStances.Count>=6)return Finish("failed",result.Reason);
             }
             stage="observe";
         }
@@ -157,31 +157,44 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             var region=destination.Region;
             var arguments=JsonSerializer.SerializeToElement(new{minPlayerLeftX=region.MinPlayerLeftX,
                 maxPlayerLeftX=region.MaxPlayerLeftX,surfaceY=region.SurfaceY});
-            stage="navigating";
-            active=new NativeActionTask(native,"navigate_to_landing_region",arguments,taskId+"/work-"+(++sequence));
+            stage=InLocalSearch(pose,region)?"navigating":"approaching";
+            active=new NativeActionTask(native,"navigate_to_landing_region",arguments,taskId+"/"+stage+"-"+(++sequence));
             RunChild(active,frame,900);
             return Running();
         }
         return Running();
     }
 
+    private static bool InLocalSearch(PhysicsState start,LandingRegion region)
+    {
+        int centerX=(int)((start.Px+10)/16),centerY=(int)((start.Py+42)/16);
+        float x=(region.MinPlayerLeftX+region.MaxPlayerLeftX)/2+10;
+        return Math.Abs(x-centerX*16)<=15*16&&Math.Abs(region.SurfaceY-centerY*16)<=12*16;
+    }
+
     private IEnumerable<int> FindWorkPosition(PhysicsState start,NativeMotionWorld world,PhysicsParameters physics,ExcavationCell[] pending)
     {
         var candidates=new List<WorkPose>();
-        int centerX=(int)((start.Px+10)/16),centerY=(int)((start.Py+42)/16);
-        int left=Math.Max(centerX-15,pending.Min(c=>c.X)-6)*16-10;
-        int right=Math.Min(centerX+15,pending.Max(c=>c.X)+7)*16-10;
-        int top=Math.Max(centerY-12,pending.Min(c=>c.Y)-6)*16;
-        int bottom=Math.Min(centerY+12,pending.Max(c=>c.Y)+6)*16;
+        WorkPose approach=null;
+        int left=(pending.Min(c=>c.X)-6)*16-10,right=(pending.Max(c=>c.X)+7)*16-10;
+        int top=(pending.Min(c=>c.Y)-6)*16,bottom=(pending.Max(c=>c.Y)+6)*16;
         for(int feet=top;feet<=bottom;feet+=8)
         for(int x=left;x<=right;x+=8)
         {
             yield return 0;
             var stance=new PhysicsState(x,feet-42,0,0,true,0,true);
             var region=new LandingRegion(x-2,x+2,feet);
-            if(failedStances.Contains(region)||region.Contains(start)||!world.SafeLanding(stance))continue;
+            // A distant landing is a travel goal only. The actor's collision window
+            // cannot validate it; probe the destination in its own native window.
+            bool local=InLocalSearch(start,region);
+            if(failedStances.Contains(region)||region.Contains(start)
+                ||!(local?world:new NativeMotionWorld(stance)).SafeLanding(stance))continue;
             var quote=NativeExcavation.Choose(identity,stance,pending,new(TerrainReader.ReadEnvironment),ordered:false);
-            if(quote!=null)candidates.Add(new(region,quote.Coverage,quote.TotalUpdates,region.Distance(start)/physics.MaxRun));
+            if(quote==null)continue;
+            var candidate=new WorkPose(region,quote.Coverage,quote.TotalUpdates,region.Distance(start)/physics.MaxRun);
+            if(local)candidates.Add(candidate);
+            else if(approach==null||candidate.Coverage>approach.Coverage||candidate.Coverage==approach.Coverage
+                &&candidate.LowerBound+candidate.Mining<approach.LowerBound+approach.Mining)approach=candidate;
         }
 
         float best=float.PositiveInfinity;
@@ -214,6 +227,9 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             if(destination!=null&&cost>=best)continue;
             destination=candidate;best=cost;
         }
+        // Travel through the normal rolling navigator. On arrival Tick observes the
+        // live pose and quotes the remaining ore anew before starting a mining run.
+        destination??=approach;
     }
 
     private void Record(Result result)

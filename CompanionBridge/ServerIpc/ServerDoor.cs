@@ -47,6 +47,9 @@ internal static class ServerDoor
             bool changed=open?WorldGen.OpenDoor(hinge,y,direction):WorldGen.CloseDoor(hinge,y,forced:false);
             if(!changed && open){direction=-direction;changed=WorldGen.OpenDoor(hinge,y,direction);}
             if(!changed)return "door_blocked";
+            for (int col = hinge - 1; col <= hinge + 1; col++)
+            for (int row = top; row < top + 3; row++)
+                SceneMineTargets.Changed(col, row);
             NetMessage.SendTileSquare(-1,hinge-1,top,3,3);
         }
         if(!State(open))return "door_state_unconfirmed";

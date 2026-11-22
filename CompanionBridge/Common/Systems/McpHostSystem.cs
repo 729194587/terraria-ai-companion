@@ -67,7 +67,7 @@ public sealed class McpHostSystem : ModSystem
             if (string.IsNullOrWhiteSpace(root) || !Path.IsPathFullyQualified(root))
                 throw new InvalidOperationException("Set the absolute project directory in MCP settings.");
             var python = Path.Combine(root, ".local", "lua-venv", "Scripts", "python.exe");
-            if (!File.Exists(python) || !File.Exists(Path.Combine(root, "python", "agent.py")))
+            if (!File.Exists(python) || !File.Exists(Path.Combine(root, "python", "start_agent.py")))
                 throw new InvalidOperationException("Project directory or Python environment missing.");
             var token = Environment.GetEnvironmentVariable("TERRARIA_MCP_TOKEN")
                 ?? Environment.GetEnvironmentVariable("TERRARIA_MCP_TOKEN", EnvironmentVariableTarget.User);
@@ -80,7 +80,7 @@ public sealed class McpHostSystem : ModSystem
                 WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true,
                 RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
             };
-            foreach (string arg in new[] { "-B", "python/agent.py", "--server-ai", "--external-brain",
+            foreach (string arg in new[] { "-B", "python/start_agent.py", "--server-ai", "--external-brain",
                 "--mcp-transport", "http", "--port", chatPort.ToString(), "--ai-port", aiPort.ToString() })
                 info.ArgumentList.Add(arg);
             info.Environment["TERRARIA_MCP_TOKEN"] = token;

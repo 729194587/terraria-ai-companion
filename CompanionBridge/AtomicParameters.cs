@@ -24,7 +24,7 @@ internal static class AtomicParameters
 
     internal static string ValidateServerAction(string op, JsonElement args)
     {
-        try { Validate(op, args, false); return op == "use_item" && args.TryGetProperty("target", out _) ? "targeted_use_not_supported" : null; }
+        try { Validate(op == "interact_tile" ? "activate_observed_tile" : op, args, false); return op == "use_item" && args.TryGetProperty("target", out _) ? "targeted_use_not_supported" : null; }
         catch (AtomicParameterException) { return "invalid_arguments"; }
     }
 
@@ -61,7 +61,7 @@ internal static class AtomicParameters
         {
             switch (op)
             {
-                case "list_teammates": case "discover_bosses": case "query_combat_loadout": case "inspect_container": case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
+                case "list_pylons": case "list_teammates": case "discover_bosses": case "query_combat_loadout": case "inspect_container": case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
                 case "observe_scene":
                     if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers","scale","width","height"}).Any())throw new FormatException("Unexpected scene parameter.");
                     foreach(string key in keys.Where(k=>k is "maxObjects" or "maxRegions" or "maxPlacements" or "maxHazards"))Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
@@ -126,7 +126,7 @@ internal static class AtomicParameters
                 case "quote_npc_sale":
                     Fields("entityRef","sourceSlot","sourceToken"); EntityRef(); Integer("sourceSlot",0,49); Token("sourceToken"); break;
                 case "quote_npc_purchase":
-                    if (keys.Contains("quantity")) { Fields("entityRef","itemType","quantity"); Integer("quantity",1,1); }
+                    if (keys.Contains("quantity")) { Fields("entityRef","itemType","quantity"); Integer("quantity",1,50); }
                     else Fields("entityRef","itemType");
                     EntityRef(); Integer("itemType",1,int.MaxValue); break;
                 case "quote_nurse_heal":
@@ -241,18 +241,38 @@ internal static class AtomicParameters
                 break;
             case "drop_through_platform": Fields(); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
+            case "manage_trash":
+                Fields("mode","slot","slotToken","trashToken");Integer("slot",0,49);Token("slotToken");Token("trashToken");
+                if(args.GetProperty("mode").GetString() is not ("discard" or "retrieve"))throw new FormatException("Invalid trash action.");
+                break;
+            case "switch_equipment_loadout":
+                Fields("expectedLoadout","loadout");Integer("expectedLoadout",1,3);Integer("loadout",1,3);break;
+            case "set_inventory_favorite":
+                Fields("sourceSlot","sourceToken","favorited"); Integer("sourceSlot",0,49); Token("sourceToken");
+                args.GetProperty("favorited").GetBoolean(); break;
+            case "drop_inventory_item":
+                if(keys.Contains("teammateRef"))
+                {
+                    Fields("sourceSlot","sourceToken","count","teammateRef");
+                    if(!Guid.TryParseExact(args.GetProperty("teammateRef").GetString(),"N",out _))throw new FormatException("Invalid teammate reference.");
+                }
+                else Fields("sourceSlot","sourceToken","count");
+                Integer("sourceSlot",0,49);Token("sourceToken");Integer("count",1,9999);break;
             case "open_inventory_item": Fields("sourceSlot","sourceToken"); Integer("sourceSlot",0,49); Token("sourceToken"); break;
             case "dismiss_summon": Fields("itemType"); Integer("itemType",1,int.MaxValue); break;
             case "reforge_item":
             case "sell_npc_item":
                 Fields("entityRef","sourceSlot","sourceToken","quoteToken"); EntityRef(); Integer("sourceSlot",0,49); Token("sourceToken"); Token("quoteToken"); break;
             case "heal_at_nurse": Fields("entityRef","quoteToken"); EntityRef(); Token("quoteToken"); break;
+            case "open_npc_dialogue": Fields("entityRef"); EntityRef(); break;
+            case "close_npc_dialogue": Fields(); break;
             case "buy_npc_item":
                 if (keys.Contains("quantity")) { Fields("entityRef","quoteToken","quantity"); Integer("quantity",1,1); }
                 else Fields("entityRef","quoteToken");
                 EntityRef(); Token("quoteToken"); break;
             case "assign_npc_home": Fields("entityRef","x","y"); EntityRef(); Integer("x",0,100000); Integer("y",0,100000); break;
             case "set_team": Fields("team"); Integer("team",0,5); break;
+            case "teleport_to_pylon": Fields("pylonRef"); if(!Guid.TryParseExact(args.GetProperty("pylonRef").GetString(),"N",out _))throw new FormatException("Invalid pylon reference."); break;
             case "teleport_to_teammate": Fields("teammateRef"); if(!Guid.TryParseExact(args.GetProperty("teammateRef").GetString(),"N",out _))throw new FormatException("Invalid teammate reference."); break;
             case "open_door": case "close_door": case "place_item": case "place_object": case "place_rope": goto case "place_tile";
             case "collect_drops":
@@ -274,6 +294,9 @@ internal static class AtomicParameters
                             throw new FormatException("Invalid drop type.");
                 }
                 break;
+            case "activate_observed_tile":
+                Fields("target");
+                goto case "mine_target";
             case "mine_target":
             {
                 bool hasCluster=args.TryGetProperty("cluster",out var cluster);

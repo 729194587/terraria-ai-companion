@@ -38,7 +38,7 @@ internal static class GoblinReforge
     internal static object Quote(Identity id, JsonElement args)
     {
         string entityRef = args.GetProperty("entityRef").GetString();
-        string error = MerchantShop.ResolveService(id,entityRef,NPCID.GoblinTinkerer,MerchantShop.VanillaServicesSupported,out var goblin);
+        string error = MerchantShop.ResolveService(id,entityRef,NPCID.GoblinTinkerer,MerchantShop.VanillaServicesSupported,out var goblin, reading: true);
         if (error != null) throw new ShopReadException(error);
         var lease = id.RequestLease ?? throw new ShopReadException("not_bound");
         lease.MerchantQuote = null;

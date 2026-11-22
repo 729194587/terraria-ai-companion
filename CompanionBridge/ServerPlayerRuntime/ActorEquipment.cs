@@ -27,15 +27,21 @@ internal static class ActorEquipment
 
     private sealed record Slot(string Id, string Kind, int Index, ModAccessorySlot Mod)
     {
-        internal Item Get(Player p) => Mod == null ? p.armor[Index] : Mod.FunctionalItem;
+        internal bool Dye => Kind=="dye";
+        internal bool MiscDye => Id.StartsWith("miscDye:",StringComparison.Ordinal);
+        internal bool Vanity => Id.StartsWith("vanity:",StringComparison.Ordinal);
+        internal Item Get(Player p) => MiscDye?p.miscDyes[Index]:Dye?p.dye[Index]:Mod == null ? p.armor[Index] : Mod.FunctionalItem;
         internal void Set(Player p, Item item)
         {
-            if (Mod == null) p.armor[Index] = item;
+            if(MiscDye)p.miscDyes[Index]=item;
+            else if(Dye)p.dye[Index]=item;
+            else if (Mod == null) p.armor[Index] = item;
             else Mod.FunctionalItem = item;
         }
         internal bool Enabled(Player p)
         {
-            if (Mod == null) return p.IsItemSlotUnlockedAndUsable(Index);
+            if(MiscDye)return true;
+            if (Mod == null) return p.IsItemSlotUnlockedAndUsable(Vanity?Index-10:Index);
             if (!ReferenceEquals(Main.CurrentPlayer, p)) throw new InvalidOperationException("Mod slot changed the player scope.");
             return Loader.ModdedIsSpecificItemSlotUnlockedAndUsable(Index, p, false);
         }
@@ -50,6 +56,16 @@ internal static class ActorEquipment
         yield return new("vanilla:legs", "legs", 2, null);
         for (int i = 3; i < 3 + AccessorySlotLoader.MaxVanillaSlotCount; i++)
             yield return new($"vanilla:accessory:{i - 2}", "accessory", i, null);
+        for(int i=0;i<p.dye.Length && i<10;i++)
+        {
+            string kind=i switch {0=>"head",1=>"body",2=>"legs",_=>"accessory"};
+            string name=i<3?kind:$"accessory:{i-2}";
+            yield return new($"vanity:{name}",kind,i+10,null);
+            yield return new($"dye:{name}","dye",i,null);
+        }
+        string[] miscNames=["pet","lightPet","minecart","mount","grapple"];
+        for(int i=0;i<miscNames.Length && i<p.miscDyes.Length;i++)
+            yield return new($"miscDye:{miscNames[i]}","dye",i,null);
         int count = p.GetModPlayer<ModAccessorySlotPlayer>().LoadedSlotCount;
         for (int i = 0; i < count; i++)
         {
@@ -66,17 +82,17 @@ internal static class ActorEquipment
 
     private sealed class State(AiReadOnlyProtocol.Identity id, Player p)
     {
-        internal readonly Item[] Inventory = p.inventory, Armor = p.armor, ModItems = Extended(p);
+        internal readonly Item[] Inventory = p.inventory, Armor = p.armor, Dyes=p.dye, MiscDyes=p.miscDyes, ModItems = Extended(p);
         internal readonly int Selected = p.selectedItem, Loadout = p.CurrentLoadoutIndex;
-        internal readonly Stamp[] Items = p.inventory.Concat(p.armor).Concat(Extended(p)).Select(item => Capture(id, item)).ToArray();
+        internal readonly Stamp[] Items = p.inventory.Concat(p.armor).Concat(p.dye).Concat(p.miscDyes).Concat(Extended(p)).Select(item => Capture(id, item)).ToArray();
 
         internal bool Matches(AiReadOnlyProtocol.Identity identity, Player player, int bag = -1, int gear = -1)
         {
             if (!ServerAiNativeActions.Owned(identity) || player.selectedItem != Selected || player.CurrentLoadoutIndex != Loadout
                 || !ReferenceEquals(player.inventory, Inventory) || !ReferenceEquals(player.armor, Armor)
-                || !ReferenceEquals(Extended(player), ModItems)) return false;
+                || !ReferenceEquals(player.dye,Dyes) || !ReferenceEquals(player.miscDyes,MiscDyes) || !ReferenceEquals(Extended(player), ModItems)) return false;
             int index = 0;
-            foreach (var item in Inventory.Concat(Armor).Concat(ModItems))
+            foreach (var item in Inventory.Concat(Armor).Concat(Dyes).Concat(MiscDyes).Concat(ModItems))
             {
                 int expected = index == bag ? gear : index == gear ? bag : index;
                 if (Capture(identity, item) != Items[expected]) return false;
@@ -85,17 +101,17 @@ internal static class ActorEquipment
             return true;
         }
 
-        internal int IndexOf(Slot slot) => Inventory.Length + slot.Index + (slot.Mod == null ? 0 : Armor.Length);
+        internal int IndexOf(Slot slot) => Inventory.Length + slot.Index + (slot.Mod!=null?Armor.Length+Dyes.Length+MiscDyes.Length:slot.MiscDye?Armor.Length+Dyes.Length:slot.Dye?Armor.Length:0);
     }
 
-    internal static object Observe(AiReadOnlyProtocol.Identity id)
+    internal static object Observe(AiReadOnlyProtocol.Identity id, bool cosmetic=false)
     {
         ServerAiNativeActions.Require(id);
         var p = (Player)id.Actor;
         var state = new State(id, p);
         using var scope = new Main.CurrentPlayerOverride(p);
         var rows = new List<object>();
-        foreach (var slot in Slots(p))
+        foreach (var slot in Slots(p).Where(slot=>(slot.Vanity || slot.Dye)==cosmetic))
         {
             bool enabled = slot.Enabled(p);
             if (slot.Mod != null && (!ReferenceEquals(Main.CurrentPlayer, p) || !state.Matches(id, p)))
@@ -225,6 +241,19 @@ internal static class ActorEquipment
         private static string CheckCompatibility(Player p, Slot slot, Item item, State state)
         {
             if (item.stack != 1 || ItemSlot.isEquipLocked(item.type)) return "equipment_item_incompatible";
+            // Dedicated servers skip shader initialization. The fallback is the vanilla
+            // armor-dye item table from DyeInitializer on the audited engine.
+            if(slot.Dye)
+            {
+                bool dye=item.dye>0 || (VirtualPlayerEngineProbe.Engine?.Selected=="2026.09.3.1" &&
+                    item.type is >=1007 and <=1070 or 1969 or 2864 or >=2869 and <=2879 or
+                    >=2883 and <=2885 or >=3024 and <=3028 or >=3038 and <=3042 or 3190 or
+                    >=3526 and <=3530 or >=3533 and <=3535 or >=3550 and <=3562 or
+                    >=3597 and <=3600 or 3978 or 4662 or 4663 or 4778);
+                return dye?null:"equipment_item_incompatible";
+            }
+            if(slot.Vanity && slot.Kind=="accessory")
+                return item.accessory && item.FitsAccessoryVanitySlot?null:"equipment_item_incompatible";
             if (slot.Kind != "accessory")
                 return (slot.Kind switch { "head" => item.headSlot, "body" => item.bodySlot, _ => item.legSlot }) >= 0
                     ? null : "equipment_item_incompatible";

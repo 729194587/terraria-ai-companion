@@ -22,6 +22,18 @@ internal sealed class AiReadOnlyProtocol
     {
         // Engine payload is opaque to the transport. At most one quote per bound connection.
         internal object MerchantQuote;
+        internal IDialogue Dialogue;
+        internal void EndDialogue()
+        {
+            if (Dialogue == null) return;
+            Dialogue.Dispose();
+            Dialogue = null;
+            MerchantQuote = null;
+        }
+    }
+    internal interface IDialogue : IDisposable
+    {
+        bool IsCurrent { get; }
     }
     private readonly Dictionary<Guid, Lease> leases = new();
     private object actor;
@@ -38,8 +50,13 @@ internal sealed class AiReadOnlyProtocol
         if (!ReferenceEquals(actor, current.Actor)) { actor = current.Actor; actorId = Guid.NewGuid().ToString("N"); }
         return actorId;
     }
-    internal void Clear() { foreach(var f in replyFences.Values)f.Revoke();replyFences.Clear();foreach (var lease in leases.Values) lease.MerchantQuote = null; leases.Clear(); speech.Clear(); actor = null; actorId = null; actions?.Clear(); }
-    internal void Forget(Guid connection) { RevokeReplies(connection);replyFences.TryRemove(connection,out _);if (leases.Remove(connection,out var lease)) lease.MerchantQuote = null; foreach(var key in speech.Keys.Where(k=>k.Item1==connection).ToArray())speech.Remove(key); actions?.Forget(connection); }
+    internal void UpdateDialogues()
+    {
+        foreach (var lease in leases.Values)
+            if (lease.Dialogue is { IsCurrent: false }) lease.EndDialogue();
+    }
+    internal void Clear() { foreach(var f in replyFences.Values)f.Revoke();replyFences.Clear();foreach (var lease in leases.Values) { lease.EndDialogue(); lease.MerchantQuote = null; } leases.Clear(); speech.Clear(); actor = null; actorId = null; actions?.Clear(); }
+    internal void Forget(Guid connection) { RevokeReplies(connection);replyFences.TryRemove(connection,out _);if (leases.Remove(connection,out var lease)) { lease.EndDialogue(); lease.MerchantQuote = null; } foreach(var key in speech.Keys.Where(k=>k.Item1==connection).ToArray())speech.Remove(key); actions?.Forget(connection); }
 
     internal string Handle(Guid connection, string line, Func<Identity> capture, CancellationToken disconnected = default,
         Func<Identity,string,JsonElement,object> query = null, Func<Identity,string,object> say = null)
@@ -74,7 +91,7 @@ internal sealed class AiReadOnlyProtocol
                 if(!Guid.TryParseExact(messageId,"N",out _)||string.IsNullOrWhiteSpace(text)||text.Length>400
                     ||text.IndexOfAny(new[]{'\r','\n','\0'})>=0)throw new FormatException();
             }
-            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat" or "query_combat_loadout" or "list_teammates" or "discover_bosses" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase" or "quote_npc_sale" or "quote_nurse_heal" or "quote_reforge"))
+            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat" or "query_combat_loadout" or "list_pylons" or "list_teammates" or "discover_bosses" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase" or "quote_npc_sale" or "quote_nurse_heal" or "quote_reforge"))
                 return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             if (op == "bind" && root.TryGetProperty("binding", out _)) throw new FormatException();
             // Reject malformed bindings before invoking the engine adapter.
@@ -149,6 +166,7 @@ internal sealed class AiReadOnlyProtocol
                     return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
                 if (root.GetProperty("operation").GetString() is ("inspect_npc_shop" or "quote_npc_purchase") && actions?.SupportsMerchantShop != true)
                     return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+                if(root.GetProperty("operation").GetString()=="list_pylons" && actions?.Capabilities.Contains("server_ai_pylons_v1")!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="list_teammates" && actions?.Capabilities.Contains("server_ai_regroup_v1")!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="discover_bosses" && actions?.Capabilities.Contains("server_ai_boss_strategy_v1")!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="query_combat")

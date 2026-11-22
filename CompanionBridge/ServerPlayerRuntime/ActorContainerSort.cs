@@ -111,7 +111,7 @@ internal static partial class ActorContainer
                 if (!Bound() || Snapshot.Read(items[slot]) != sorted[slot])
                     return terminal = Report("unknown", "sort_changed_during_sync");
                 if (inventory) NetMessage.SendData(MessageID.SyncEquipment, -1, -1, null, player.whoAmI, slot);
-                else NetMessage.SendData(MessageID.SyncChestItem, -1, -1, null, session.Target.Index, slot);
+                else SyncChestSlot(session.Target, slot);
             }
             return Report("running", "awaiting_sort_confirmation");
         }

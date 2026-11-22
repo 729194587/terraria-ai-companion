@@ -61,6 +61,41 @@ internal static class ServerContainerFixture
         if (!File.Exists(request)) return;
         string command = File.ReadAllText(request);
         File.Delete(request);
+        if(command.StartsWith("personal-") && Program.LaunchParameters.ContainsKey("-companionpersonaltest"))
+        {
+            int type=command switch {"personal-safe"=>TileID.Safes,"personal-forge"=>TileID.DefendersForge,
+                "personal-void"=>TileID.VoidVault,_=>TileID.PiggyBank};
+            var layout=Terraria.ObjectData.TileObjectData.GetTileData(type,0);
+            int frameY=0;
+            for(int row=0;row<layout.Height;row++)
+            {
+                for(int col=0;col<layout.Width;col++)
+                {
+                    var tile=Main.tile[x-4+col,y+2-layout.Height+row];
+                    tile.ClearEverything(); tile.HasTile=true; tile.TileType=(ushort)type;
+                    tile.TileFrameX=(short)(col*(layout.CoordinateWidth+layout.CoordinatePadding));
+                    tile.TileFrameY=(short)frameY;
+                }
+                frameY+=layout.CoordinateHeights[row]+layout.CoordinatePadding;
+            }
+            if(command=="personal-seed")
+            {
+                player.team=1;
+                foreach(var client in Netplay.Clients.Where(c=>c.State==10))
+                {
+                    var human=Main.player[client.Id];
+                    human.team=1;
+                    foreach(var bank in new[]{human.bank,human.bank2,human.bank3,human.bank4})
+                        bank.item[0]=new Item(ItemID.Wood,client.Id+1);
+                }
+                player.inventory[20]=new Item(ItemID.Torch,10);
+                player.inventory[21]=new Item(ItemID.CopperHelmet);
+                player.inventory[22]=new Item(ItemID.RedDye);
+                player.inventory[23]=new Item();
+                player.inventory[24]=new Item(ItemID.BlueDye);
+                player.trashItem=new Item(ItemID.Wood,2);
+            }
+        }
         if (command is "replace" or "destroy" or "missing")
         {
             Main.chest[index] = null;
@@ -185,6 +220,9 @@ internal static class ServerContainerFixture
         var clients = Netplay.Clients.Where(client => client.State == 10).Select(client => new
         {
             slot = client.Id, chest = Main.player[client.Id].chest,
+            bankCounts=Program.LaunchParameters.ContainsKey("-companionpersonaltest")
+                ? new[]{Main.player[client.Id].bank,Main.player[client.Id].bank2,Main.player[client.Id].bank3,
+                        Main.player[client.Id].bank4}.Select(b=>b.item[0].stack).ToArray() : null,
             inventory = Main.player[client.Id].inventory.Select(item => new { item.type, item.stack, item.prefix }).ToArray()
         }).ToArray();
         File.WriteAllText(Path.Combine(Main.SavePath, "container-state.json"), JsonSerializer.Serialize(new

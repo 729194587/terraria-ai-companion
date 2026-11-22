@@ -10,9 +10,13 @@ class Module:
     requires: tuple
     export: str
     signature: str
+    capability: str = ""
 
 
 BUILTINS = (
+    Module('npc', '接近可见的指定 NPC 实例并开启对话。',
+           ('scan_entities', 'navigate_to', 'open_npc_dialogue'), 'talk_to', 'talk_to(contentKey)',
+           'server_ai_general_npc_dialogue_v1'),
     Module('crafting', '按当前可用配方制作指定数量的产物，逐批核验并报告剩余需求。',
            ('query_recipes', 'craft_recipe'), 'make', 'make(resultType, desiredCount, {maxBatches=8})'),
     Module('building', '调查蓝图、提交一次施工、有界等待并在可信终态复查。',
@@ -37,7 +41,8 @@ def available(bridge):
         if (not module.name.isidentifier() or not module.export.isidentifier() or not module.requires
                 or not set(module.requires) <= known):
             raise ValueError(f'Invalid builtin module metadata: {module.name}')
-    return tuple(module for module in BUILTINS if operations.issuperset(module.requires))
+    return tuple(module for module in BUILTINS if operations.issuperset(module.requires)
+                 and (not module.capability or module.capability in bridge.hello['capabilities']))
 
 
 def sources(names):

@@ -45,6 +45,36 @@ class ModuleTests(unittest.IsolatedAsyncioTestCase):
             result = await self.runtime.execute(source, **options)
         return result,calls
 
+    async def test_talk_to_does_not_follow_replacement_in_same_slot(self):
+        caps = CAPS | {'server_ai_npc_dialogue_v1'}
+        self.assertNotIn('npc', [m.name for m in lua_modules.available(bridge(caps))])
+        self.bridge = contract_tests.ApiHelpTests.runtime_bridge(caps | {'server_ai_general_npc_dialogue_v1'})
+        self.runtime = LuaRuntime(self.bridge)
+        def npc(ref, distance):
+            return dict(slot=2, typeId=18, distancePixels=distance, details=dict(
+                entityRef=ref, contentKey='Terraria/Nurse', bottomWorldPixels=dict(x=500,y=320)))
+        result, calls = await self.run_lua('return terraria.npc.talk_to("Terraria/Nurse")', [
+            query([npc('first', 180)]), dict(valid=True, status='completed', completed=True),
+            query([npc('replacement', 10)])])
+        self.assertEqual('completed', result['status'], result)
+        self.assertEqual('target_not_observed', result['value']['reason'])
+        self.assertEqual('first', result['value']['entityRef'])
+        self.assertEqual(['scan_entities', 'navigate_to', 'scan_entities'], [n for n, _ in calls])
+
+    async def test_equip_example_uses_fresh_source_and_head_tokens(self):
+        example, = api_help(self.bridge, {'name':'equip_item'})['examples']
+        item = dict(typeId=88, slot=5)
+        head = dict(kind='head', enabled=True, slotId='vanilla:head', targetToken='a'*64)
+        def bag(**data):
+            return dict(valid=True, available=True, data=data)
+        result, calls = await self.run_lua(example, [
+            bag(inventory=[item], functionalEquipmentSlots=[head]),
+            bag(inventory=[dict(item, inventoryToken='b'*64)]),
+            dict(valid=True, status='completed', completed=True)])
+        self.assertEqual('completed', result['status'], result)
+        self.assertEqual(('equip_item', dict(sourceSlot=5, sourceToken='b'*64,
+                         targetSlotId='vanilla:head', targetToken='a'*64)), calls[-1])
+
     async def test_full_help_teaches_reading_actual_result_fields(self):
         receipts = json.loads((Path(__file__).parent / 'fixtures/api_results/observations.json').read_text('utf8'))
         player = receipts['get_player_state']

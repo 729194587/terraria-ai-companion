@@ -39,6 +39,7 @@
 | [客户端观察历史](archive/OBSERVATION.md) | 旧客户端观察接口记录，仅供追溯 |
 | [语义场景](LOCAL_SEMANTIC_SCENE.md) | Server AI 的 L0/L1 场景快照、编码和候选语义 |
 | [局部语义世界](L1_SEMANTIC_WORLD.md) | 树木、矿物和掉落物的按需语义查询 |
+| [Agent 私人记忆](AGENT_MEMORY.md) | 按世界与角色隔离的笔记、来源和模型召回 |
 | [AI Map](AI_MAP_V1.md) | 持久化探索地图及其时效语义 |
 | [模型状态投影](MODEL_STATE_PROJECTION.md) | 完整观察校验、模型投影与历史上下文压缩 |
 

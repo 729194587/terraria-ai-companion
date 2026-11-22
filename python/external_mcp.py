@@ -27,9 +27,9 @@ from control import BridgeError
 
 
 INSTRUCTIONS = (
-    '你正在驾驶 Terraria 中独立的 Server AI Player。先调用 guide 读取当前游戏契约，'
-    '用 execute_lua 组合有界游戏操作，按需用 read_skill 查攻略。'
-    '用 get_events 读取玩家指令与系统消息，用 say 回复当前授权的游戏聊天。'
+    '你正在驾驶 Terraria 中独立的 Server AI Player。先调用 guide(full=true) 读取原生系统提示和私人笔记索引，'
+    '用 execute_lua 组合有界游戏操作；读取回执时同时保留 events 和 value，途中消息在 events 中一次性交付。按需用 read_skill 查攻略。'
+    '可用时用 memory 自主记忆或召回。用 get_events 读取玩家指令与系统消息，用 say 回复当前授权的游戏聊天。'
     '遵守玩家授权、运行预算及宿主回执，unknown 时停止变更。'
     '单次 execute_lua 取消会清理 Program；已受理的独立 Task 需显式取消。'
 )

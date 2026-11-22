@@ -153,7 +153,8 @@ internal static class AtomicQueries
                 NPCID.Sets.CountsAsCritter[n.type], n.damage, n.CanBeChasedBy(), n.ModNPC != null, NPCID.Sets.ProjectileNPC[n.type]);
             var c = EntityCollector.Classify(evidence);
             Add(n,"npc",n.whoAmI,n.type,n.GivenOrTypeName,c.Kind,c.Basis,
-                new { entityRef=entityRef(n),n.type,n.life,n.lifeMax,n.friendly,n.dontTakeDamage,chaseable=n.CanBeChasedBy(),evidence });
+                new { entityRef=entityRef(n), contentKey=n.ModNPC?.FullName ?? "Terraria/" + NPCID.Search.GetName(n.type),
+                    typeName=n.TypeName, bottomWorldPixels=new StateVector(n.Bottom.X,n.Bottom.Y), n.type,n.life,n.lifeMax,n.friendly,n.dontTakeDamage,chaseable=n.CanBeChasedBy(),evidence });
         }
         if (category is "all" or "player") foreach (var other in Main.player) if (other.active && other.whoAmI != p.whoAmI)
             Add(other,"player",other.whoAmI,null,other.name,"other_player","PvP hostility not evaluated",new {other.dead,other.statLife,other.team});

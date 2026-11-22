@@ -78,7 +78,7 @@ internal sealed class NavigationTask
     internal PhysicsState? ExpectedState=>_executor.ExpectedState;
     private double _planningMilliseconds;
     private Prediction Edge=>_route.Actions[_routeIndex];
-    private bool _executing;
+    private bool _executing, _waitedForWingRefill;
     internal const int LandingConfirmationLimit=60;
     private bool _confirming;
     private int _confirmationFrames,_settledFrames;
@@ -95,6 +95,7 @@ internal sealed class NavigationTask
         _observedWorld=null;
         _deferredSearches=_consecutiveRecoveries=0;
         _recoveries=_recoveryReplans=_updates=0; _recoveryReason=null; _recoveryPosition=null; _recoveryInputsReleased=null;
+        _waitedForWingRefill=false;
         _executor.Cancel(); _session = 0; _executing = false; _lastLanding = null; _route = null;
         _surfaceSnapshot=null;
         _confirming=false;_confirmationFrames=_settledFrames=0;
@@ -181,6 +182,19 @@ internal sealed class NavigationTask
             { Snapshot = Snapshot with { Status = "arrived", Reason = region != null
                 ? "landing region verified on safe settled ground" : "horizontal goal crossed on safe settled ground" }; return default; }
             if (!state.ReleaseJump || state.JumpFramesLeft != 0) return default;
+            // Native wings recharge on a settled frame with jump released. Use the
+            // next observed amount; a missing refill must not stall route planning.
+            if(ph.Air?.Kind==AirKind.Wings && state.Air is {} resources &&
+                resources.WingTime<resources.WingMax && PhysicsSimulator.Settled(state,world))
+            {
+                if(!_waitedForWingRefill)
+                {
+                    _waitedForWingRefill=true;
+                    Snapshot=Snapshot with {Action="release",Reason="awaiting observed wing recharge"};
+                    return default;
+                }
+            }
+            else _waitedForWingRefill=false;
             if (!TryContinue(state,ph,world))
             {
                 if (recoveryReplan) { _recoveryReplans++; Snapshot=Snapshot with {RecoveryReplans=_recoveryReplans}; }

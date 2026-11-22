@@ -3,6 +3,7 @@ import asyncio
 from collections import deque
 import copy
 import uuid
+import sqlite3
 
 import agent_diagnostics as diagnostics
 import agent_trace as tracing
@@ -11,8 +12,10 @@ from agent_tools import ToolExecutor
 import atomic_operations as atomic
 from control import BridgeError
 import evidence
+import agent_memory
 import gameplay_skills
 import lua_agent
+from server_ai_contract import server_definitions
 from lua_runtime import LuaRuntime
 
 
@@ -22,8 +25,14 @@ class BrainHost:
         self.bridge = agent.bridge
         self.is_chat = is_chat
         self.guide, native_tools = lua_agent.server_contract(self.bridge, compact=True)
+        if agent.notebook is not None:
+            self.guide += agent_memory.MEMORY_RULES
+            native_tools = [*native_tools, agent_memory.TOOL]
+        self.delivered_chat = None
         self.tools = native_tools + [
-            atomic.tool('guide', '读取当前 Server AI 游戏契约。'),
+            atomic.tool('guide', '首次用 full=true 读取原生提示。之后查几个函数的参数用 names，例如 ["scan_entities","equip_item"]；用 Lua api("help",{name="equip_item"}) 查示例。', {
+                'full': {'type': 'boolean'},
+                'names': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 12, 'uniqueItems': True}}),
             atomic.tool('get_events', '取走未交付的游戏内指令和系统消息。', {
                 'wait_seconds': {'type': 'number', 'minimum': 0, 'maximum': 45, 'default': 0}}),
             atomic.tool('say', '以 AI Player 身份回复当前授权的本地游戏聊天。', {
@@ -63,6 +72,7 @@ class BrainHost:
     def reserve(self):
         if self.phase != 'native':
             return False
+        self.delivered_chat = None
         self.phase = 'acquiring'
         self.agent._brain_paused = True
         self.agent._active_turn_id = None
@@ -160,7 +170,21 @@ class BrainHost:
             self.isolate()
             raise ValueError('Server AI state is unresolved; restart only after inspecting the Actor')
         if name == 'guide':
-            return {'instructions': self.guide}
+            if 'names' in args:
+                names = args['names']
+                if (args.get('full') or not isinstance(names, list) or not 1 <= len(names) <= 12
+                        or not all(isinstance(n, str) and n for n in names) or len(set(names)) != len(names)):
+                    raise ValueError('Use names with 1..12 distinct API names, without full=true')
+                definitions = {d['function']['name']: d['function'] for d in server_definitions(self.bridge)}
+                return {'functions': [definitions[n] for n in names if n in definitions],
+                        'unavailable': [n for n in names if n not in definitions]}
+            instructions = self.agent.history[0]['content'] if args.get('full') else self.guide
+            return {'instructions': '外部驾驶时，execute_lua 的顶层 events 与 value 一起读取。回复中已交付的消息不会在 get_events 重发。\n' + instructions, **self.memory_context()}
+        if name == 'memory' and self.agent.notebook is not None:
+            chat = self.delivered_chat
+            if chat is None or chat['eventId'] != self.agent._active_turn_id:
+                chat = {}
+            return self.agent.notebook.invoke(args, chat, self.bridge.binding['world'])
         if name == 'read_skill':
             return gameplay_skills.bundled_skills().load(args)
         if name == 'get_events':
@@ -235,10 +259,19 @@ class BrainHost:
             tracing.context.reset(trace_token)
             evidence.current.reset(bundle_token)
 
+    def memory_context(self):
+        if self.agent.notebook is None:
+            return {}
+        try:
+            return {'privateNotes': self.agent.notebook.index()}
+        except sqlite3.Error:
+            return {'privateNotesError': 'notebook_unavailable'}
+
     async def runtime_context(self):
         inventory = await self.agent.runtime_inventory()
         context = {
             'runtimeInventory': inventory,
+            **self.memory_context(),
             'runtimeLua': {
                 'scope': 'per execute_lua call; current result usage is reported separately',
                 **lua_agent.runtime_budget(self.agent.lua_limits),
@@ -254,6 +287,10 @@ class BrainHost:
             context['runtimeTasks'] = tasks
             self.agent.program_tasks.consume(tasks['throughSequence'])
         events = list(self.events)
+        for event in reversed(events):
+            if self.is_chat(event) and event['eventId'] == self.agent._active_turn_id:
+                self.delivered_chat = event
+                break
         self.events.clear()
         self.event_ready.clear()
         context.update(events=events, eventCoverage={'maxEvents': self.events.maxlen,

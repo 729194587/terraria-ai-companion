@@ -77,10 +77,11 @@ internal sealed class NativeNavigation
     internal static PhysicsParameters Parameters(Player p)
     {
         var m=NativeMovementReader.Capture(p);var air=AirMotionModel.Select(m);
-        // Angel's native air tweak changes accRunSpeed before this boundary.
-        // Keep one planning profile; Step applies that verified air-only value.
-        float speed=air?.Kind==AirKind.Wings&&Math.Abs(p.accRunSpeed-6.25f)<.001f?3:p.accRunSpeed;
-        var observed=new PhysicsParameters(p.runAcceleration,p.maxRunSpeed,speed,p.runSlowdown,p.gravity,p.maxFallSpeed,
+        // Normalize only the airborne native WingAirLogicTweaks; Step reapplies them per frame.
+        bool airborneWing=air?.Kind==AirKind.Wings && p.velocity.Y!=0 && !p.merman && !p.mount.Active;
+        float speed=airborneWing && Math.Abs(p.accRunSpeed-air.AirRunSpeed)<.001f?PhysicsParameters.Basic.AccRunSpeed:p.accRunSpeed;
+        float acceleration=airborneWing?p.runAcceleration/air.AirAcceleration:p.runAcceleration;
+        var observed=new PhysicsParameters(acceleration,p.maxRunSpeed,speed,p.runSlowdown,p.gravity,p.maxFallSpeed,
             Player.jumpSpeed,Player.jumpHeight,AirMotionModel.Strategy(m)==AirKind.None?ExtraJumpModel.Select(m):null,air,FallProfile(p));
         var basic=PhysicsParameters.Basic;
         bool stockDry=Math.Abs(observed.Gravity-basic.Gravity)<.001f&&Math.Abs(observed.MaxFall-basic.MaxFall)<.001f

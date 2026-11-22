@@ -103,6 +103,7 @@ public sealed class VirtualPlayerEngineProbe
         ActorItemUse.Install(Install);
         NativeItemInput.Install(Install);
         CompanionBridge.ServerIpc.CombatProjectile.Install(Install);
+        if (Engine.Selected=="2026.09.3.1") CompanionBridge.ServerIpc.ServerPylons.Install(Install);
         ActorGrapple.Install(Install);
         ActorSorting.Install(Install);
         ActorCrafting.Initialize();
