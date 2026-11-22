@@ -10,7 +10,7 @@ namespace CompanionBridge.ServerIpc;
 internal sealed class AiAtomicActions
 {
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
-    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_tasks_v1","server_ai_program_tasks_v1"}).ToArray();
+    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_program_tasks_v1"}).ToArray();
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
     {

@@ -75,6 +75,10 @@ class MineTargetTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('原生', description)
             self.assertNotIn('80', description)
             self.assertNotIn('仅选快捷栏', description)
+        opening = atomic.server_tools({'mine_target'}, mining_opening=True)[0]['function']
+        self.assertIn('串行挖开阻挡格', opening['description'])
+        self.assertNotIn('串行挖开阻挡格', tools['mine_target']['description'])
+        self.assertEqual(tools['mine_target']['parameters'], opening['parameters'])
         params = tools['mine_tile']['parameters']
         self.assertEqual({'x', 'y'}, set(params['properties']))
         self.assertEqual(['x', 'y'], params['required'])

@@ -51,7 +51,7 @@ SCENE_TEXT_CONTRACT = (
     "箱柜/门/工作台按注册锚点分组，未验证完整家具占地或内容；动态实体按当前相交碰撞框观察，槽位/objects.id不是跨观察持久身份。"
     "所有候选仅为几何预筛选，不保证路径/可达或原生放置权限，行动后仍需真实回执和新鲜观察。"
 )
-MINE_TARGET_DESCRIPTION = "服务器复合挖掘（server_ai_tasks_v1）。传 observe_scene 矿物对象的 target，或传明确的绝对 Tile 坐标 x/y，两种形式互斥。观察目标须通过身份、30秒及600游戏更新时效和目标变化检查。与 mine_tile 共用主背包自动选工具、临时切换快捷栏及原生触及和工具判定。已在安全站位且够得着时直接挖掘，否则在局部窗口内尝试一次导航，抵达后重验目标和站位。只挖指定格，可连带拆除该格所属家具。按 evidence.task.lastResult 和子动作释放证据核验，掉落入包需另行观察。unknown 停止。"
+MINE_TARGET_DESCRIPTION = "服务器复合挖掘（server_ai_tasks_v1）。传 observe_scene 矿物对象的 target，或传明确的绝对 Tile 坐标 x/y，两种形式互斥。观察目标须通过身份、30秒及600游戏更新时效和目标变化检查。与 mine_tile 共用主背包自动选工具、临时切换快捷栏及原生触及和工具判定。已在安全站位且够得着时直接挖掘，否则先尝试沿现有地形接近，抵达后重验目标和站位。最终核验指定格，可连带拆除该格所属家具。按 evidence.task.lastResult 和子动作释放证据核验，掉落入包需另行观察。unknown 停止。"
 PLACE_OBJECT_DESCRIPTION = "服务器 AI 放置快捷栏选中的多格对象。x/y 是绝对 Tile 锚点，按选中物品的 createTile、placeStyle 和原生 TileObjectData 解析占地和 Anchor。由原生范围、碰撞和 Mod Hook 判定；依赖全局光标的特殊对象不支持。核验放置事件、整组帧、消耗和释放后才完成。取消可能已有副作用，unknown 停止。10秒上限。"
 
 TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地下视野采用遮挡/近身/可见原版火把近似。",
@@ -185,7 +185,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene(
     'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
 
 
-def server_tools(supported, *, scene_region=False, general_operations=True):
+def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
     definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported]
     for definition in definitions:
@@ -196,6 +196,8 @@ def server_tools(supported, *, scene_region=False, general_operations=True):
         f['description'] = SERVER_DESCRIPTIONS.get(name, f['description'])
         if not general_operations and name in LEGACY_SERVER_OPERATION_DESCRIPTIONS:
             f['description'] = LEGACY_SERVER_OPERATION_DESCRIPTIONS[name]
+        if name == 'mine_target' and mining_opening:
+            f['description'] += '服务器可在局部范围内串行挖开阻挡格，等待原生落脚并重新规划；开路有明确预算，可能已移除部分地形。查看 task.progress 的 clearedTiles、opening 和 search。'
         if name == 'observe_scene':
             f['description'] += ('新版data.lighting.available=false表示专用服暂无可信原生亮度。'
                 'hazards.entities.items可带observedGameUpdate、observationRef、velocity和threat。'

@@ -67,6 +67,13 @@ internal static class ActorMining
         &&VirtualPlayerEngineProbe.ConnectionIdle(Netplay.Clients[v.Slot]);
     private static bool Held(Context c)=>c.Actor.selectedItem==c.Slot&&ReferenceEquals(c.Actor.inventory[c.Slot],c.Item)
         &&!c.Item.IsAir&&c.Item.type==c.Type&&c.Item.prefix==c.Prefix&&c.Item.pick==c.Pick&&c.Item.axe==c.Axe&&SupportedTool(c.Item);
+    internal static bool HoldsBorrowedTool(Player player,string world,long generation,int source,Item item)
+    {
+        var c=Current;
+        return Running && Bound(c) && ReferenceEquals(c.Actor,player) && c.World==world && c.Generation==generation
+            && c.SourceSlot==source && c.Displaced!=null && ReferenceEquals(c.Item,item) && Held(c)
+            && ReferenceEquals(player.inventory[source],c.Displaced);
+    }
     private static Context RangeTarget()=>Program.IsMainThread&&Bound(rangeContext)?rangeContext:throw new InvalidOperationException("No bound G7 reach scope.");
     public static int RangeX()=>RangeTarget().X;
     public static int RangeY()=>RangeTarget().Y;
