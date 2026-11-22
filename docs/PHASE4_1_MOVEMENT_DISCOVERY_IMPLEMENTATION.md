@@ -1,3 +1,7 @@
+> **历史阶段记录**：本文保留对应阶段的设计、实现过程与当时验证结果。当前导航架构见 [NAVIGATION.md](NAVIGATION.md)。本文中的代码基线、待办和测试状态属于记录时点。
+
+> **历史阶段记录**：本文保留对应阶段的设计、实现过程与当时验证结果。当前导航架构和能力说明见 [NAVIGATION.md](NAVIGATION.md)；本文中的分支、提交、待办和测试状态均属于记录时点。
+
 # Phase 4.1 MVP：原生运动能力发现与状态采样
 
 日期：2026-11-06。设计依据：[Phase 4.1 v0.1](terraria_navigation_phase4_1_design_v0.1.md)。实现基线为 `35906041ad6dc17ac897c5eccdd3b672cb49463e`，分支 `codex/unified-autonomous-navigation`。

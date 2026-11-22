@@ -1,41 +1,47 @@
 # Lua Agent
 
-Lua Agent 允许模型在一次 `execute_lua` 工具调用中提交完整程序，通过受限 Worker 顺序组合当前后端开放的游戏 API。模型负责选择目标和策略；宿主负责参数校验、能力过滤、预算、动作派发、失败屏障和结果核验。
+Lua Agent 是模型与 Terraria 游戏 API 之间的程序执行接口。模型通过一次 `execute_lua` 提交 Lua 源码，在 Worker 中组织观察、查询和动作，并根据返回结果决定后续策略。
 
-## 调用模型
+## 程序模型
 
-- Server AI 的游戏查询与动作使用 `execute_lua`；内部 Lua `api(name, args)` 调用由宿主分发。模型还可通过只读 `read_skill` 查阅[已注册的玩法攻略](TERRARIA_AGENT_GAMEPLAY_MVP_PHASE1.md)。
-- 模型可使用局部函数、条件、有限循环和普通 Lua 计算，根据观察结果动态选择后续动作。
-- 多步骤任务优先组合现有查询和原子操作；不要假设存在未开放的客户端 API 或专用任务函数。
-- `explore()` 等 helper 是可选程序辅助，不是强制探索策略，也不替代 Agent 自主决策。
-- Server AI 的 API 集合由实际 IPC 能力握手、服务端白名单和契约描述共同决定；客户端 API 清单不代表服务器可用能力。
+模型可使用 Lua 的局部变量、函数、条件、循环和普通计算，将多个 API 调用组织成一个程序。游戏 API 通过宿主注入的 `api(name, args)` 函数访问。
 
-## 预算与隔离
+Server AI 还提供：
 
-Lua Worker 使用受限运行环境。调用次数、动作次数、源码大小和累计 Lua 执行时间均由宿主控制；多份程序共享当前轮次剩余额度。模型推理时间不计入 Lua 执行时间。
+- `read_skill`：按需读取已注册的 Terraria 玩法知识。
+- `api("help", ...)`：查询当前连接开放的 API、参数和返回结构。
+- 内置 Gameplay Modules：复用制作、建造等多步骤 Lua 流程。
 
-源码和执行结果可通过本地诊断链路关联。Trace 可能包含游戏观察、脚本和玩家数据，应按本地诊断资料管理，不提交临时日志或密钥。
+模块与底层 API 的关系见 [Gameplay Modules 设计](AGENT_API_AND_GAMEPLAY_MODULES_DESIGN.md)，玩法知识见 [Gameplay MVP 第一阶段](TERRARIA_AGENT_GAMEPLAY_MVP_PHASE1.md)。
 
-## 结果语义
+## API 发现
 
-- Program 正常返回只说明 Lua 程序结束，不代表玩家目标完成。
-- 内部 API 的结果必须按各自状态与效果证据解释；脚本返回值不能覆盖宿主失败。
-- 已知失败后遵守本轮行动屏障；unknown 表示副作用或结果无法确定，不能包装成成功或自动重试。
-- 动作完成、输入释放和目标达成是不同事实。需要持续执行的任务使用游戏侧任务 API，并按任务身份查询/等待/取消。
-- 新聊天、取消和 Agent 关闭必须先完成既有安全收尾；旧轮次不得发布迟到回复或启动新动作。
+Server AI 在连接时根据 IPC 能力握手和服务端白名单生成可用 API。模型通过 Help 查询具体参数、返回字段和示例。不同服务器实例可能开放不同能力，因此帮助内容与当前连接保持一致。
+
+## 任务协作
+
+短操作可以在同一 Lua 程序中顺序完成。需要跨多个游戏更新持续推进的动作交给游戏侧任务运行时：
+
+1. Lua 提交任务并取得 taskId。
+2. 游戏线程在后续更新中推进任务。
+3. Agent 可查询进度、等待终态或取消任务。
+4. Agent 根据任务回执和新观察选择后续行动。
+
+Program、Action 和游戏 Task 各自具有生命周期。Lua 程序结束后，独立游戏任务仍按任务自身的状态运行。
+
+## 预算与执行
+
+Lua Worker 负责程序计算和数据编码。宿主管理源码、指令、内存、API 调用、动作和执行时间预算。Worker 通过有界 JSON 消息与 Python 宿主通信，宿主再调用游戏 Bridge。
+
+Worker 不持有 Terraria 对象，也不跨程序保留 Lua 全局状态。跨程序任务进度使用任务 API 或游戏状态表达。
 
 ## 代码入口
 
-- `python/agent.py`：聊天轮次与模型工具注册。
-- `python/lua_agent.py`：Lua 工具与模型契约。
-- `python/lua_runtime.py`、`python/lua_worker.py`：Worker、预算和执行协议。
-- `python/atomic_operations.py`：API Schema、分发与结果处理。
-- `python/server_ai_contract.py`、`python/server_ai.py`：Server AI 能力投影和调用适配。
-- [Lua Runtime](LUA_RUNTIME.md)：沙箱、取消、失败恢复和执行细节。
-- [Lua 可观测性](LUA_OBSERVABILITY.md)：Trace 与诊断格式。
-
-## 使用内置玩法模块
-
-Server AI 的系统上下文在 `available_modules` 中列出当前连接可用的函数。用 `read_skill` 查玩法知识，用 `api("help",{name=...})` 查底层参数和回执。在 `execute_lua` 中可直接调用模块，例如 `return terraria.crafting.make(8,7)` 请求制作至少七支火把。
-
-`terraria.building.construct(blueprint,{milliseconds=1000})` 接受与 `build_diff` 相同的 Blueprint。报告中的 `before` 是施工前调查，`task` 是任务回执，`after` 是可信终态后的复查。初始已全部匹配时直接返回该次调查。返回 `running` 时保留 `taskId`，后续用 `query_task` 或 `await_task` 跟踪原任务。调查未知时停止，部分完成时查看原回执和仍待施工的条目。
+- `python/agent.py`：聊天轮次、模型请求和工具调用。
+- `python/lua_agent.py`：Lua 工具定义与 API 契约。
+- `python/lua_runtime.py`：Worker 生命周期、预算、动作监督和取消。
+- `python/lua_worker.py`：Lua 执行环境与数据序列化。
+- `python/atomic_operations.py`：API Schema、校验和分发。
+- `python/program_tasks.py`：持续游戏任务的协调。
+- [Lua Runtime](LUA_RUNTIME.md)：执行细节。
+- [Lua 执行诊断](LUA_OBSERVABILITY.md)：Trace 和任务证据。

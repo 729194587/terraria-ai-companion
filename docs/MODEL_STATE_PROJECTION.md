@@ -1,22 +1,34 @@
-# 模型可见状态投影
+# 模型状态投影与上下文压缩
 
-状态投影在不修改完整游戏观察协议的前提下，减少发送给模型的冗余状态。原始观察仍由宿主完整校验并保留；投影只作用于模型请求副本，不回写规范历史或游戏状态。
+Agent 在构造模型请求时，会把经过校验的游戏观察投影为更紧凑的模型可见状态，并对较早的对话历史进行压缩。原始观察和规范对话历史保留在宿主侧。
 
-## 当前规则
+## 游戏观察投影
 
-- 完整观察先由 `validate_observation()` 校验 schema、采样阶段、世界/观察身份、摄像机帧、地形编码、覆盖计数和实体唯一性。
-- `project_model_observation()` 深拷贝已校验快照，仅从 `player` 移除 `inventory`、`equipment`、`dyes`、`miscEquipment`、`miscDyes` 和 `buffs`。
-- 投影增加 `inventoryScope` 提示按需调用 `inspect_inventory`；Mod 自定义状态仍标记为未知。
-- 其他字段原样保留，包括未来新增的安全字段。局部背包查询、selected/hotbar/item 模式不经此完整观察投影。
+`validate_observation()` 先检查观察协议版本、采样阶段、世界与观察身份、地形编码、覆盖计数和实体唯一性。
 
-## 上下文历史压缩
+`project_model_observation()` 深拷贝已校验的快照，移除完整 Player 观察中的以下高体积字段：
 
-`ContextManager` 在构造模型请求副本时，按 user-turn 边界压缩较早历史；规范对话历史不被改写。工具回执摘要只作为索引，明确标记 `lossy`、`currentState=false` 和被省略记录数量。最近轮次及当前任务尽量原样保留；无法满足输入预算时明确拒绝请求，不悄悄裁掉当前任务或工具定义。
+- inventory
+- equipment
+- dyes
+- miscEquipment
+- miscDyes
+- buffs
 
-Token 预算估算是 UTF-8 字节数除以 3 的近似值，不是模型 tokenizer 结果；实际 token usage 以服务端返回为准。成本统计见 [成本指标](COST_METRICS.md)。
+投影同时增加 `inventoryScope`，提示模型按需使用 `inspect_inventory` 获取背包或装备信息。其他观察字段保留在投影中。
+
+局部背包查询（selected、hotbar、item 等模式）走独立 API，不经过完整观察投影。
+
+## 对话历史压缩
+
+`ContextManager` 在构造模型请求副本时，以 user-turn 为边界压缩较早历史。规范对话历史保持不变，压缩结果只用于后续模型请求。
+
+工具回执摘要作为历史索引，记录 `lossy`、`currentState=false` 和省略数量。最近轮次与当前任务上下文优先保留。
+
+Token 预算估算使用 UTF-8 字节数除以 3 的近似值，实际 token 用量以模型服务端统计为准。相关成本记录见 [成本指标](COST_METRICS.md)。
 
 ## 实现入口
 
-- `python/observation.py`：完整观察校验与模型投影。
-- `python/agent_context.py`：请求上下文预算和历史摘要。
+- `python/observation.py`：观察校验与模型投影。
+- `python/agent_context.py`：请求上下文预算和历史压缩。
 - `python/agent.py`、`python/agent_run.py`：模型请求与执行反馈。

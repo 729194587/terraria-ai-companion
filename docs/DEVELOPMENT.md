@@ -1,75 +1,89 @@
 # 开发指南
 
-本文只记录可复用的环境准备、构建和验证方式。具体接口行为见 [文档索引](INDEX.md) 中对应专题；历史阶段记录不放在本页。
+本文介绍本地开发环境、Mod 构建和常用验证入口。模块接口与行为见 [文档索引](INDEX.md) 中的专题文档。
 
 ## 环境
 
-- Terraria 通过 tModLoader 运行；当前项目构建配置见 `CompanionBridge/CompanionBridge.csproj` 与 `CompanionBridge/build.txt`。
-- 默认目标为 tModLoader 2026.09.3.1 Stable、Terraria 1.4.4.9 和 .NET 8。2026.08.3.0 保留独立配置，用于旧版构建、复现和角色回滚。详见 [引擎配置与角色迁移](TML_ENGINE_MIGRATION.md)。
-- Python 3.10+；依赖见 `python/requirements.txt`。Lua Runtime 的 Python 依赖应按锁定文件安装。
-- 模型配置参考 `.env.example`。不要提交或输出 `.env`、API Key 或其他凭据。
+- Terraria 通过 tModLoader 运行。
+- 默认构建目标为 Terraria 1.4.4.9、tModLoader 2026.09.3.1 Stable 和 .NET 8。
+- 兼容配置与角色迁移方式见 [引擎配置与角色迁移](TML_ENGINE_MIGRATION.md)。
+- Python 依赖见 `python/requirements.txt`。
+- 模型配置参考仓库根目录的 `.env.example`。
 
-## 初始化 Python 环境
+## Python 环境
 
-仅在尚无可用环境时执行：
+在仓库根目录创建环境并安装依赖：
 
 ```powershell
 python -m venv .local/lua-venv
 & .local/lua-venv/Scripts/python.exe -m pip install -r python/requirements.txt
 ```
 
-已有环境可直接复用。不要每个任务重复创建虚拟环境或重装依赖。
-
 ## 构建 Mod
-
-仓库提供构建脚本：
 
 ```powershell
 pwsh -NoProfile -File scripts/build-companion.ps1
 ```
 
-构建产物位于：
+默认构建产物位于：
 
 ```text
 .local/companion-build-2026.09.3.1/Mods/CompanionBridge.tmod
 ```
 
-脚本使用选定的本机 tModLoader 安装及其构建工具。`-EngineProfile` 选择版本，`-TModLoaderPath` 指定该版本的安装位置。构建产物按版本分开保存。
+可通过 `-EngineProfile` 选择引擎配置，通过 `-TModLoaderPath` 指定本机安装路径。构建脚本使用对应 tModLoader 安装中的构建工具。
 
-构建后先核对包版本、哈希和输出路径。不要覆盖正在运行的游戏包或用户存档；部署与启动游戏必须属于明确授权的任务。
+## 测试
 
-## 定向验证
+项目包含 Python 测试、C# 离线测试、IPC 测试和隔离 Dedicated Server 原生验证。根据修改模块选择相应入口。
 
-默认选择与改动直接相关的测试，不运行全量测试。先阅读目标测试脚本的参数和副作用。
-
-常见入口：
+Python 示例：
 
 ```powershell
-# Python：按改动选择测试文件
 & .local/lua-venv/Scripts/python.exe -B -m unittest discover -s tests -p 'test_server_ai_backend.py' -v
+```
 
-# C#：选择相关子集
+C# 与 IPC 示例：
+
+```powershell
 pwsh -NoProfile -File tests/run_csharp_tests.ps1 -NavigationOnly
 pwsh -NoProfile -File tests/run_server_ai_ipc_tests.ps1
+```
 
-# 服务器原生工具或 IL 相关改动
+服务器原生工具验证：
+
+```powershell
 pwsh -NoProfile -File tests/run_server_ai_tool_tests.ps1
 ```
 
-以上是入口示例，不是每次都要执行的固定清单。根据本次改动选择最小充分验证；不重复运行代码未变化且已通过的测试。
+## 游戏验证环境
 
-## 验证等级
+隔离服务器验证脚本通常会使用复制的世界、角色或测试 profile。具体场景参数见对应的 `tests/verify_*`、`tests/native_*` 脚本。
 
-结果报告应区分：
+图形 Host & Play 环境可由以下脚本准备：
 
-1. **静态检查/源码检查**：确认结构、契约或调用关系。
-2. **定向离线测试**：使用测试替身、IPC 或独立 harness 验证局部逻辑。
-3. **隔离原生服务器测试**：使用真实 Terraria/tModLoader 代码和独立 profile 验证原生行为。
-4. **图形 Host & Play**：验证图形客户端、多人场景和同步。
-5. **真实模型端到端任务**：验证模型决策、工具使用和长期任务表现。
+```powershell
+pwsh -NoProfile -File scripts/prepare-companion-host-play.ps1 -PackagePath .local/companion-build-2026.09.3.1/Mods/CompanionBridge.tmod
+```
 
-较低等级通过不能自动推出较高等级通过。记录实际执行的场景、版本和结果，不把未执行的验证写成通过。
+启动 Agent 的入口：
 
-## 本地临时文件
+```powershell
+pwsh -NoProfile -File scripts/start-server-ai-agent.ps1
+```
 
-构建产物、测试 profile、临时日志、模型 Trace 和原始回执放在 `.local/` 等本地临时目录。默认不提交这些运行产物；不要把本机绝对路径、临时 profile 状态或一次性命令记录写入长期文档。
+## 验证结果
+
+项目使用不同层级的验证方式：
+
+- **源码与静态检查**：代码结构、协议和引擎调用分析。
+- **离线测试**：测试替身、纯逻辑、序列化和 IPC。
+- **隔离原生服务器**：在指定 tModLoader 版本中验证真实游戏逻辑。
+- **图形 Host & Play**：验证客户端显示、输入和多人同步。
+- **真实模型任务**：验证模型决策、工具组合和持续游玩表现。
+
+记录验证结果时，注明引擎版本、运行环境、场景和实际执行的测试入口。
+
+## 本地开发产物
+
+构建包、测试世界、profile、Trace 和运行日志通常保存在 `.local/`。模型凭据保存在本地环境配置中。

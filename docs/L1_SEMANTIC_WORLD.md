@@ -1,40 +1,60 @@
 # 局部语义世界查询
 
-`sense_world(options)` 是 Lua Worker 注入的只读组合 helper，不是独立原子 API，不维护跨程序地图或稳定对象 ID。它组合现有的地形观察、内容解析、Tile 扫描、单格检查和掉落物扫描。
+`sense_world(options)` 是 Lua Worker 提供的只读组合 helper。它把地形观察、内容解析、Tile 扫描、单格检查和掉落物扫描组合成一份局部资源报告。
 
-只有当前后端同时开放以下 API 时，Server AI 模型契约才会公布该 helper：`observe_terrain`、`scan_entities`、`scan_tiles`、`resolve_content`、`inspect_tile`。客户端与服务器能力不能互相推断。
+该 helper 不保存跨程序地图，也不生成跨调用稳定的对象 ID。它的可用性取决于当前连接是否开放所需的底层 API：`observe_terrain`、`scan_entities`、`scan_tiles`、`resolve_content` 和 `inspect_tile`。
 
 ## 参数
 
-| 参数 | 默认值 | 约束 |
+| 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `trees` / `ores` / `drops` | `true` | 分别启用树、矿物、掉落物查询 |
-| `maxObjects` | 8 | 1..16；限制返回的树/矿物候选及掉落物数量 |
-| `radius` | 640 | 1..1600 世界像素；只影响掉落物扫描 |
-| `oreNames` | 全部支持矿物 | 非空唯一列表；仅支持当前 helper 列出的 19 种原版矿物名称 |
-| `dropTypes` | 不过滤 | 非空唯一 Item 类型 ID 列表，最多 32 个，范围 0..65535；仅在 drops=true 时有效 |
+| `trees` | true | 查询树木组件 |
+| `ores` | true | 查询矿物 |
+| `drops` | true | 查询掉落物 |
+| `maxObjects` | 8 | 树木/矿物候选及掉落物返回上限，1..16 |
+| `radius` | 640 | 掉落物扫描半径，1..1600 世界像素 |
+| `oreNames` | 全部支持矿物 | 非空、无重复的矿物名称列表 |
+| `dropTypes` | 不过滤 | 最多 32 个 Item 类型 ID |
 
-支持的矿物名称：Copper、Tin、Iron、Lead、Silver、Tungsten、Gold、Platinum、Demonite、Crimtane、Meteorite、Hellstone、Cobalt、Palladium、Mythril、Orichalcum、Adamantite、Titanium、Chlorophyte。参数在执行查询前校验；未知选项、重复项、稀疏列表或与关闭类别冲突的过滤器会拒绝。
+当前支持的矿物名称为 Copper、Tin、Iron、Lead、Silver、Tungsten、Gold、Platinum、Demonite、Crimtane、Meteorite、Hellstone、Cobalt、Palladium、Mythril、Orichalcum、Adamantite、Titanium 和 Chlorophyte。
 
-## 查询与返回
+## 查询流程
 
-1. 读取当前 `observe_terrain` 范围和 Server AI 身份。
-2. 通过 `resolve_content` 解析请求的 Trees/矿物内容键；解析不唯一或不完整时记入 `unresolvedContent`，不猜测数字 ID。
-3. 在本次地形 bounds 内执行一次有界 `scan_tiles`，最多返回 256 格，并聚合候选。
-4. 对每个返回的树/矿物候选执行 `inspect_tile`，检查候选格仍然存在且类型匹配。
-5. 如启用 drops，执行一次有界 `scan_entities`，返回掉落物类型、堆叠、位置、速度和距离。
+1. 读取当前地形范围及 Server AI 身份。
+2. 使用 `resolve_content` 解析树木和矿物内容键。
+3. 在本次地形范围内扫描最多 256 个 Tile 候选。
+4. 对候选调用 `inspect_tile`，核对目标格当前内容。
+5. 如启用掉落物查询，扫描指定半径内的实体。
 
-报告保留各来源的 `gameUpdate`、时间、范围、完整性、截断和未知计数。不同来源不是同一帧快照；身份或绑定发生变化时 helper 终止，不发布混合身份结果。
+返回报告分别保留各来源的 gameUpdate、时间、范围、完整性、截断和未知计数。多次底层查询各自拥有采样时间，报告不会将它们合并成同一帧快照。
 
-## 对象语义
+## 结果结构
 
-- **树木**：按同一 X 列连续的 Trees Tile 形成树干片段。相邻列归属存在歧义；结果不是整棵树，不含完整树冠/根系保证，`complete` 不会被提升为 true。
-- **矿物**：按同类型 Tile 的四邻接连通分量聚合；斜角不连通。只有扫描完整、无截断/未知且分量未触及观察边界时，分量才可能标记为 complete。它只表示本次请求范围内的连通性，不表示可达、安全或可挖。
-- **候选**：候选格经独立 inspect 后标记为 `observed_present` 或 `changed_or_unknown`。即使仍存在，也不代表当前工具、距离、保护规则或原生动作一定允许挖掘。
-- **掉落物**：位置和扫描槽位只代表本次观察；槽位可能复用，没有跨调用稳定实例 ID。掉落物消失不证明 AI 已拾取，必须重新扫描并结合背包数量变化核验。
+- **树木**：按同一 X 列的连续树干 Tile 聚合为组件。组件不代表完整树冠或整棵树。
+- **矿物**：按同类型 Tile 的四邻接连通分量聚合。complete 表示本次扫描范围内的连通性完整，不表示可达或可挖。
+- **候选状态**：独立检查后标记为 `observed_present` 或 `changed_or_unknown`。
+- **掉落物**：返回类型、堆叠、位置、速度和距离。实体槽位可能复用，拾取结果需结合背包变化重新观察。
 
-## 限制
+## 使用方式
 
-该 helper 不提供玩家视线/摄像机可见性、全局寻矿、路径可达性、自动选工具、移动、挖掘、拾取或 Mod 矿物识别。观察未覆盖、截断、未知或候选不完整时，不能推断目标不存在。需要执行动作时，使用相应原子 API 并以其最新回执和结束证据为准。
+```lua
+local world = sense_world({
+    trees = false,
+    ores = true,
+    drops = true,
+    oreNames = {'Iron', 'Lead'},
+    radius = 800,
+    maxObjects = 8
+})
+
+for _, ore in ipairs(world.objects) do
+    if ore.kind == 'ore_component' and ore.contentKey == 'Terraria/Iron' then
+        -- 根据组件的候选信息选择后续观察或采集目标
+    end
+end
+return world
+```
+
+该 helper 负责发现与整理候选，不负责全局寻矿、路径规划、工具选择、移动、挖掘或拾取。相关行动由导航、任务和原子 API 完成。
 
 实现：`python/lua/semantic.lua`、`python/lua_worker.py`、`python/server_ai_contract.py`。

@@ -1,58 +1,49 @@
-# 原子操作契约
+# 原子操作
 
-原子操作是 Agent 可调用的单一游戏意图。模型只通过 `execute_lua` 提交程序；Lua 的 `api(name, args)` 由 Python 宿主验证、按后端能力过滤，再经 IPC 交给 C# 游戏侧执行。
+原子操作是 Agent 可调用的单项游戏意图。模型通过 Lua 程序组合这些操作；宿主负责参数校验与分发，游戏侧执行器在 Terraria 更新线程中完成实际行为。
 
 ## 定义与开放
 
-- 参数 Schema、工具名称和默认描述定义在 `python/atomic_operations.py` 的 `TOOLS` / `SCHEMAS`。
-- Server AI 的能力投影由 `python/server_ai.py` 的 `operations_for_capabilities()` 和 `python/server_ai_contract.py` 的 `exposed_operations()` 完成。
-- C# Bridge 仍需执行自己的协议、能力、参数、Actor 和游戏状态校验。Python 白名单或模型可见工具不是执行许可。
-- 客户端与 Server AI 的工具集合不相同；同名操作可能有更窄的服务器参数或支持范围。以实际连接的能力握手和对应后端契约为准。
+操作 Schema、名称和描述定义在 `python/atomic_operations.py`。Server AI 根据连接能力生成可见操作集合，相关逻辑位于 `python/server_ai.py` 和 `python/server_ai_contract.py`。
+
+客户端控制与独立 Server AI Player 使用不同后端。相同名称的操作可能有不同参数和支持范围，实际可用集合由当前连接的 Help 契约提供。
 
 ## 操作类别
 
-| 类别 | 代表操作 | 语义 |
+| 类别 | 代表操作 | 作用 |
 | --- | --- | --- |
-| 只读观察 | `get_player_state`、`observe_terrain`、`observe_scene`、`inspect_tile`、`scan_tiles`、`scan_entities`、`inspect_inventory`、`query_map` | 返回带范围、身份、时间或截断信息的快照；不是执行许可 |
-| 角色与物品 | `select_hotbar_slot`、`use_item`、`transfer_inventory_item`、`swap_inventory_slots`、`hold_inventory_item` | 依赖当前 Player、选中物品或新鲜库存 Token；按操作核验原生状态 |
-| 世界修改 | `move_input`、`navigate_to_x`、`navigate_to_landing_region`、`mine_tile`、`mine_wall`、`place_tile`、`place_wall`、`place_object`、`hammer_tile`、`interact_tile`、`craft_recipe` | 由游戏线程调用 Terraria 原生路径；动作完成需操作专属效果证据 |
-| 复合任务 | `mine_target` | 游戏侧任务运行时管理生命周期，内部复用导航和挖掘动作 |
-| 宿主控制 | `wait`、`stop_action`、`observe_exploration` | 等待、取消或有界探索辅助；不直接代表游戏效果 |
+| 观察 | `get_player_state`、`observe_terrain`、`observe_scene`、`inspect_tile`、`scan_tiles`、`scan_entities`、`inspect_inventory`、`query_map` | 获取玩家、地形、实体、库存和探索记忆 |
+| 角色与物品 | `select_hotbar_slot`、`use_item`、`transfer_inventory_item`、`swap_inventory_slots`、`hold_inventory_item`、`equip_item` | 管理快捷栏、物品使用、库存和装备 |
+| 世界操作 | `move_input`、`navigate_to_x`、`navigate_to_landing_region`、`mine_tile`、`mine_wall`、`place_tile`、`place_wall`、`place_object`、`craft_recipe` | 移动、采集、放置和合成 |
+| NPC 与经济 | NPC 对话、商店报价/交易、护士治疗、重铸、住房与队伍操作 | 使用原生 NPC 服务和世界规则 |
+| 复合任务 | `mine_target`、`combat_attack`、`boss_encounter`、`build_place`、`collect_drops` | 由游戏侧任务运行时持续推进 |
+| 宿主控制 | `wait`、`stop_action`、任务查询与取消 | 协调程序和动作生命周期 |
 
-完整参数、范围和当前后端支持列表以代码 Schema 和能力契约为准，不在文档中复制一份易漂移的 API 清单。
+完整参数、范围和能力要求以当前 Schema 和 Help 为准，避免在文档中维护另一份完整 API 清单。
 
 ## 坐标与观察
 
-- Tile 坐标以格为单位，世界像素以像素为单位；Tile 为 16×16 像素，Y 轴向下。每个 API 的坐标类型由 Schema/描述明确。
-- 观察结果必须同时考虑 World/Actor/Generation 身份、采样 Tick、bounds、coverage、unknown 和截断标记。
-- 未返回的对象、Tile 或层不等于不存在或为空；未加载、未采样、超范围和未知 Mod 行为不能折叠为空气。
-- 观察候选是有界快照，不保证目标仍存在、可达、可放置或可执行。执行前仍需重新校验。
+Tile 坐标以格为单位，世界像素以像素为单位；一个 Tile 为 16×16 像素，世界 Y 轴向下。每个操作的坐标语义由其参数描述定义。
 
-## 结果与失败语义
+观察结果包含适用的世界与 Actor 身份、采样更新、空间范围、覆盖和截断信息。场景观察、区域查询与持久化地图分别服务于即时动作、区域认知和战略定位。
 
-- `dispatchState=not_admitted`：宿主确认请求未受理，尚未创建游戏动作。
-- `dispatchState=admitted`：动作已进入执行生命周期；不代表动作已开始或效果已发生。
-- `dispatchState=unknown`：请求是否受理或副作用无法确定。不得自动重放或换入口重试。
-- `completed` 必须由对应操作的实际效果和结束证据支持；输入释放、原生函数返回或程序正常结束都不足以单独证明成功。
-- `failed`、`cancelled`、`timeout` 与 `unknown` 各自保留语义。取消可能发生在部分副作用之后，不能假定回滚。
-- 结束证据应区分目标变化、物品数量/实例、位置/支撑、输入释放和任务状态。某一项已确认不代表其他项也已确认。
+## 结果语义
 
-## 库存操作
+动作回执区分请求受理、执行终态和操作效果。常见终态包括 completed、failed、cancelled、timeout 和 unknown；具体字段由操作契约定义。
 
-库存变更只作用于受支持的普通背包槽。调用方先读取目标槽及新鲜 Token，再提交搬运、交换或快捷栏持用。Token 绑定 World、Actor Generation、槽位和物品基础实例信息；它不覆盖所有 Mod 自定义 Item 状态。异常或不确定副作用保持 unknown，不尝试自动回滚。
+例如：
+- 导航核对真实位置、支撑和停稳。
+- 挖掘核对目标 Tile 与原生破坏结果。
+- 放置核对目标 Tile/Object 和物品消耗。
+- 交易核对报价、货币和库存变化。
+- 战斗核对目标实例、命中来源和生命变化。
 
-细节见 [背包操作](INVENTORY_OPERATIONS.md)。
-
-## Server AI 特殊边界
-
-- 所有读写绑定独立服务器 AI Player，不回退到真人 Player 或客户端本地 Player。
-- Server AI 的 `use_item`、库存、合成、导航、放置和任务 API 可能比客户端版本更窄。
-- `mine_target` 只接受受支持的观察目标或明确坐标；任务生命周期见 [任务运行时](M1_TASK_RUNTIME.md)。
-- `observe_scene` 的 L0/L1、数据层和编码见 [语义场景](LOCAL_SEMANTIC_SCENE.md)。
-- 服务器动作执行边界见 [Server AI Actions](SERVER_AI_ACTIONS.md)。
+库存、导航、战斗及持续任务的详细语义分别见对应专题。
 
 ## 代码入口
 
-- Schema 与通用分发：`python/atomic_operations.py`
+- Schema 与操作分发：`python/atomic_operations.py`
 - Server AI 能力投影：`python/server_ai.py`、`python/server_ai_contract.py`
-- 游戏侧 IPC 和原生执行：`CompanionBridge/ServerIpc/`、`CompanionBridge/ServerPlayerRuntime/`
+- Python/C# 结果契约：`python/api_result_contracts.py`
+- 游戏执行：`CompanionBridge/ServerIpc/`
+- Actor 专属操作：`CompanionBridge/ServerPlayerRuntime/`

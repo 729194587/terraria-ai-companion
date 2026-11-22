@@ -1,3 +1,5 @@
+> **历史阶段记录**：本文保留对应阶段的设计、实现过程与当时验证结果。当前导航架构见 [NAVIGATION.md](NAVIGATION.md)。本文中的代码基线、待办和测试状态属于记录时点。
+
 # Phase 4.8：装备管理实现说明 v0.1
 
 **配套设计：** `PHASE4_8_EQUIPMENT_MANAGEMENT_DESIGN_v0.1.md`\

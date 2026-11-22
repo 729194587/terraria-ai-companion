@@ -1,24 +1,37 @@
 # Server AI 能力契约
 
-Server AI 暴露给模型的 API 必须来自运行时能力握手与服务端白名单的交集。模型提示、文档或客户端工具列表不能扩大执行端实际开放的能力。
+Server AI 的模型可见 API 由当前 IPC 连接能力生成。能力投影将服务端运行时实际开放的操作整理为模型可查询的接口目录。
 
 ## 能力来源
 
-- `server_ai.operations_for_capabilities()` 根据 IPC bind 握手投影服务器 API 白名单。
-- `server_ai_contract.exposed_operations()` 将握手投影、Bridge 白名单和已描述的服务器 API 取交集。
-- 未知能力旗标不扩大权限。能力缺失时，调用应在进入游戏动作前明确拒绝。
-- Capability Manifest 区分 Supported、Limited 和 Not exposed。只读观察接口与修改世界的操作分开列出；相关观察能力不代表对应动作已开放。
-- API Contract 从实际工具 Schema 生成，参数结构以执行端 Schema 为准。服务器端对特定操作的限制必须在契约描述和执行器校验中保持一致。
+能力由 CompanionBridge 在 IPC bind 握手中声明。Python 侧结合握手能力、服务端白名单、操作 Schema 和描述注册表，生成当前连接可用的 API。
 
-## 维护要求
+主要入口：
 
-新增或修改 Server AI API 时，核对能力旗标、Bridge 白名单、Schema、Python 分发、C# IPC/执行端、模型契约和定向测试。不能只更新 Prompt 或 Manifest。
+- `python/server_ai.py`：根据能力生成 Server AI 操作集合。
+- `python/server_ai_contract.py`：生成模型可见的能力说明和 Lua Help。
+- `python/atomic_operations.py`：共享操作 Schema 与参数校验。
+- `CompanionBridge/ServerIpc/`：服务端能力声明、协议和执行实现。
 
-能力开放只说明接口可调用，不代表所有装备、地形、实体或 Mod 场景都已实机验证。有限支持范围和 unknown 结果必须显式呈现。
+## 能力分类
 
-## 实现入口
+Capability Manifest 将操作按领域组织，并标记 Supported、Limited 和 Not exposed 等状态。分类说明帮助模型理解当前后端的能力范围；单项 Help 提供参数、返回字段和使用示例。
 
-- `python/server_ai.py`
-- `python/server_ai_contract.py`
-- `python/atomic_operations.py`
-- `CompanionBridge/ServerIpc/`
+能力集合会随服务端版本和连接握手变化。查询与动作分别描述，便于 Agent 判断当前能够观察什么、执行什么。
+
+## 新增或修改能力
+
+新增接口时，沿调用链维护以下内容：
+
+1. C# 能力旗标和 IPC 操作。
+2. Python Schema、后端分发和结果契约。
+3. Server AI 能力投影与 API Help。
+4. Lua 模块或 Gameplay Skill（如该能力需要组合使用）。
+5. 对应的 Python、C# 和原生场景测试。
+
+## 相关文档
+
+- [API 契约](API_CONTRACT.md)
+- [原子操作](ATOMIC_OPERATIONS.md)
+- [Lua Agent](LUA_AGENT.md)
+- [游戏侧任务运行时](M1_TASK_RUNTIME.md)

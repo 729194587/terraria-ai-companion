@@ -1,3 +1,7 @@
+> **历史阶段记录**：本文保留对应阶段的设计、实现过程与当时验证结果。当前导航架构见 [NAVIGATION.md](NAVIGATION.md)。本文中的代码基线、待办和测试状态属于记录时点。
+
+> **历史阶段记录**：本文保留对应阶段的设计、实现过程与当时验证结果。当前导航架构和能力说明见 [NAVIGATION.md](NAVIGATION.md)；本文中的分支、提交、待办和测试状态均属于记录时点。
+
 # Phase 4.2 ExtraJump 导航接入 MVP
 
 日期：2026-11-06。基线 `d238728`，分支 `codex/unified-autonomous-navigation`。依据 [v0.1 设计](PHASE4_2_EXTRA_JUMP_NAVIGATION_DESIGN_v0.1.md) 实现。

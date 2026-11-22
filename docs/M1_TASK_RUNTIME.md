@@ -1,62 +1,86 @@
 # 游戏侧任务运行时
 
-本文说明当前 Server AI 高层游戏任务的执行契约。原子动作接口见 [原子操作](ATOMIC_OPERATIONS.md)，Agent/Lua 调用方式见 [Lua Runtime](LUA_RUNTIME.md) 和 [Server AI Actions](SERVER_AI_ACTIONS.md)。
+游戏侧任务运行时在 Terraria 游戏更新中推进持续动作。Agent 决定目标，Lua 组织调用，C# 运行时管理任务生命周期并执行原生操作。
 
-## 职责
+## 任务模型
 
-长时间身体操作由游戏侧任务运行时推进，不依赖 LLM 逐 Tick 轮询。Agent 决定目标，Lua 组织程序，C# 任务运行时维护任务生命周期并调用既有原生动作。
+一个外部任务对应一个根 TaskSlot。任务可以在内部顺序执行多个子动作，例如导航、挖掘、放置和物品持用。父任务保留整体目标与进度，子任务复用同一绑定 Actor 和游戏执行上下文。
 
-当前代表性高层任务为 `mine_target`：选择受支持的工具、检查原生交互范围、寻找站位并导航。常规接近无可用站位或确认没有安全进展时，带开路能力的服务器可挖开局部阻挡并重新规划，直至指定目标得到核验。
+当前代表性高层任务包括：
 
-## 调用与目标
+- `mine_target`：围绕指定矿物目标完成工具选择、站位搜索、导航、局部开路和原生挖掘。
+- `navigate_to`：在局部路线与地形改造候选之间选择，并连续推进至目标落脚区域。
+- `build_place`：调查 Blueprint、选择施工目标和工作位置，组合库存、导航与原生放置。
+- `combat_attack` / `boss_encounter`：持续推进攻击、目标追踪、命中确认与战斗终态。
 
-Server AI 在运行时宣告 `server_ai_tasks_v1`，且具备对应原子操作与动作能力时才开放任务 API。没有任务能力的服务器在 RPC 前拒绝。带 `server_ai_mining_opening_v1` 的服务器支持下文的开路阶段。普通客户端 TCP 不支持该操作。
+## 提交与查询
 
-优先把 `observe_scene` 返回的结构化 `target` 原样传给 `mine_target`：
+任务 API 通过 Server AI 能力握手开放。典型流程：
 
 ```lua
-local scene = api('observe_scene', {layers={'objects'}})
-for _, object in ipairs(scene.data.objects.items) do
-    if object.kind == 'ore_component'
-        and object.contentKey == 'Terraria/Copper'
-        and object.target then
-        return api('mine_target', {target=object.target})
-    end
+local accepted = api('submit_task', {
+    operation = 'mine_target',
+    arguments = {target = target}
+})
+
+if accepted.taskId then
+    return api('await_task', {
+        taskId = accepted.taskId,
+        milliseconds = 5000
+    })
 end
-return {status='no_returned_target'}
+return accepted
 ```
 
-观察目标绑定 World Session、Actor Generation/Slot、采样 Tick、时间和目标令牌。目标过期、身份变化、字段被改写或目标发生修订时拒绝执行。也支持明确指定绝对 Tile 坐标，但会在任务预检时捕获目标并执行同样的后续重验。观察结果受范围、采样和截断限制；没有返回候选不证明世界中不存在该资源。
+提交返回任务标识和当前状态。Agent 可通过 `query_task` 查询进度、使用 `await_task` 等待一段时间，或通过 `cancel_task` 取消任务。等待超时只结束本次等待，不改变任务自身期限。
+
+## 游戏更新驱动
+
+TaskSlot 在游戏更新中推进任务。同一个 GameUpdate 不会重复执行 Tick。任务记录包括：
+
+- taskId、任务名称和父任务 ID；
+- World、Actor Generation 与 Player Slot；
+- 当前阶段、状态、原因和截止更新；
+- 当前子任务、进度及最近结果。
+
+任务可按已核验进展续期；导航根任务使用进展租约，普通任务使用自身截止时间。子任务串行运行，终态结果写入父任务进度。
 
 ## 生命周期
 
-- 一个外部任务对应一个根 Action；导航、阻挡挖掘和目标挖掘作为串行内部子动作运行，不重新派发 IPC 或创建第二个外部 Action。
-- 任务由游戏更新驱动；同一 GameUpdateCount 不重复推进。受理本身不启动任务。
-- Program 正常结束、普通新聊天或等待超时不等于取消已受理任务。明确停止、取消、断连、身份失效和截止时间按任务取消契约处理。
-- 等待超时只结束等待，不延长或取消游戏任务期限。
-- 子任务复用绑定 Actor 的原生执行上下文；父任务只有在目标效果、身份和输入释放均得到核验后才报告完成。
-- 失败、取消、超时和 unknown 保持不同结果。unknown 不重放、不通过新入口绕过失败屏障。
-- 任务结果通过既有 Action 查询/回执中的 task 信息交接；终态结果去重并有界保留。
+任务经历 Prepare、Start、Tick 和 Stop：
 
-## 安全与效果核验
+1. **Prepare**：检查当前 Actor、目标、能力和任务前置条件。
+2. **Start**：取得执行资源并开始原生动作。
+3. **Tick**：每个游戏更新推进任务并更新进度。
+4. **Stop**：取消或结束子任务、释放输入并整理结果。
 
-任务执行始终绑定 World、Generation、Slot 和 Player 对象身份。旧身份失效后不得向新 Actor 写入。挖掘完成要求目标被本次原生挖掘破坏、目标状态复核为空且输入已释放；这不证明掉落物已进入背包。
+同一 Actor 同一时刻由一个身体动作所有者控制。任务交接会先处理现有动作，再核对新任务所需的角色状态。
 
-任务使用 Terraria 原生导航、挖掘和输入路径。站位预检、目标重验和 IL 引擎指纹是执行安全的一部分，不应通过放宽阈值或直接改写 Tile/Player 状态规避失败。
+## 结果与证据
 
-## 有界开路
+任务终态包括 completed、failed、timeout、cancelled 和 unknown。回执包含任务进度、子动作摘要、输入释放状态和操作相关效果证据。
 
-- 任务优先在当前位置挖掘，再尝试现有地形上的安全接近。单次搜索预算耗尽时留在游戏侧接续搜索；找不到站位，或导航已确认局部无路线/无进展且输入已释放时进入开路。取消或 unknown 停止后续动作。
-- 开路从当前已确认的真实站位，以左右各 12 格、向下 8 格的局部窗口审核，每次局部开路方案最多包含 18 格。累计挖掘、放置和移动次数不截断行程。根任务期限为 2700 游戏更新及 55 秒墙钟。
-- 横向开路以目标方向一格为单位，先核验拟开空间的身体净空和支撑，再逐格清除阻挡。向下仅开挖有干燥净空和已知平坦支撑的一格落差。优先清除较小的脚底重叠，保留中间站位的支撑。子动作完成后等待实际落脚再规划，最长等待 90 更新。
-- 阻挡格使用原生工具、交互范围和破坏核验。保护块、未知碰撞、液体、伤害地形、相邻家具或落沙风险以及无安全落脚都会拒绝。指定目标和已识别的家具组成格只由最终目标子动作处理。
-- `task.progress` 的 `clearedTiles`、`dugTiles`、`placedTiles`、`openingMoves`、`opening.drops` 和 `search` 记录累计进度及实际下落。子动作详细历史保留最近 16 项，用 `childrenTruncated`、`omittedChildren` 标明覆盖；累计计数及最终效果独立保留。失败的 `reasonDetail` 包含阶段、预算和搜索拒绝原因。取消或失败前已核验的地形变化会保留。
+父任务根据子任务结果和自己的目标条件决定最终状态。例如：
 
-## 当前范围与限制
+- 挖掘任务确认目标 Tile 被本次原生挖掘破坏。
+- 导航任务确认角色实际落入目标区域并停稳。
+- 建造任务结合施工记录和最终 Blueprint 差异确认完成情况。
+- Boss Encounter 根据本场根实例及成员死亡证据判断胜负。
 
-- 开路用于普通镐类目标，使用普通地面 profile，从平坦整格表面逐步接近。当前策略沿目标方向横移，或在目标列对齐后下挖，遇到复杂障碍可能提前失败。
-- 完整矿脉采集、全局寻矿、绕路挖掘、任意高度的垂直通道、动态战斗及拾取归属仍超出范围。
-- 任务运行时不提供通用并行、抢占、持久化或进程重启恢复。
-- 隔离原生验证不等于图形 Host & Play、远端客户端同步或真实 LLM 长期任务验收。
+任务历史只保留有界数量的子动作明细，同时保留累计进度和终态摘要。
 
-实现入口：`CompanionBridge/ServerIpc/TaskRuntime.cs`、`AutonomousNavigationTask.cs`、`MineTargetTask.cs`、`NativeMineTargetWorld.cs`、`NativeNavigationEdits.cs`、`ServerAiNativeActions.cs`，以及 Python 侧 `server_ai.py`、`program_tasks.py`。
+## 取消、超时与角色生命周期
+
+取消和超时会向当前子任务传递停止请求。任务在游戏线程清理输入并收集最终证据。角色死亡、世界卸载、Actor 换代或绑定变化会影响任务是否能够继续；普通任务结束，明确支持复活等待的 Boss Encounter 可进入等待阶段。
+
+Lua Program 与游戏 Task 生命周期相互独立。Program 返回或等待超时不会自动终止已提交的游戏任务。
+
+## 实现入口
+
+- `CompanionBridge/ServerIpc/TaskRuntime.cs`：TaskSlot、TaskRecord 与通用生命周期。
+- `CompanionBridge/ServerIpc/ServerAiSystem.cs`：游戏更新驱动。
+- `CompanionBridge/ServerIpc/ServerAiNativeActions.cs`：动作与任务创建。
+- `CompanionBridge/ServerIpc/AutonomousNavigationTask.cs`：导航与挖掘任务。
+- `CompanionBridge/ServerIpc/BuildPlaceTask.cs`：建造任务。
+- `CompanionBridge/ServerIpc/CombatController.cs`、`BossEncounterTask.cs`：战斗任务。
+- `python/program_tasks.py`：Python 侧任务提交、查询和结果交接。

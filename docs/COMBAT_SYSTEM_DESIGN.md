@@ -1,356 +1,79 @@
-# COMBAT_SYSTEM_DESIGN.md
+# 战斗系统
 
-**状态：** 代码审查修订版，可作为 Combat MVP 实施基线\
-**审查基线：** `codex/unified-autonomous-navigation` @
-`926101e817282930c510121f2532f23e16418fe5`\
-**目标：** 实现单目标普通近战自主战斗，并验证 Combat
-优先级抢占与移动/攻击输入协调。
+Server AI 战斗由游戏侧持续任务驱动。Agent 负责选择目标、配置武器并发起战斗；C# 运行时负责目标身份、身体控制权、原生攻击、接近、命中归因和终态判断。
 
-## 1. 目标与原则
+当前有两种战斗入口：
 
-为 Terraria AI Companion 增加游戏侧自主战斗能力。
+- **主动战斗**：Agent 通过 `combat_attack(entityRef)` 指定一个目标。
+- **自卫 Reflex**：服务器运行时根据角色受到的威胁主动寻找目标，并在当前防御任务中继续处理其他威胁。
 
-Agent 可以主动提交战斗任务；当角色遭遇明确的近距离威胁时，游戏侧
-CombatReflex 可以自动触发战斗。CombatTask 在游戏 Tick 中持续执行，不要求
-Agent 逐帧发送操作。
+两种入口共用 CombatController 和 NativeCombatWorld，避免分别维护攻击、输入和命中规则。
 
-Agent 在战斗期间仍可观察游戏、读取战斗状态和发送聊天消息。战斗执行不等待
-LLM 响应。
+## 任务生命周期
 
-核心原则：
+CombatController 在游戏更新中推进目标观察、接近、攻击和结果确认。单次主动战斗的预算为 1800 个游戏更新。
 
--   Agent 决定战略意图；游戏侧负责实时战斗执行。
--   同一时刻只有一个主要身体任务拥有控制权。
--   CombatReflex 和 Agent 主动战斗共用同一套
-    CombatTask/CombatController。
--   移动和攻击可以组合，但不因此开放任意动作并行。
--   继续使用 Terraria 原生物品使用、碰撞和伤害机制。
+启动时，NativeCombatWorld 核对目标引用、NPC 实例、角色状态、武器和执行条件，然后取得身体控制权。任务执行期间持续检查目标是否仍为同一出生实例、是否存活以及是否仍可攻击。
 
-## 2. 当前架构基线
+主动战斗在目标被确认击败时完成。目标被替换、失效或不再符合条件时，任务以对应原因结束。自卫任务可以在当前目标失效或接近失败后重新选择威胁；主动任务则保持调用者指定的单一目标。
 
-当前项目已经具备：
+## 身体控制与动作协调
 
--   游戏更新驱动的 `TaskSlot`；
--   单根任务、单活动子任务的任务组合；
--   异步 `submit_task` / `query_task` / `await_task` / `cancel_task`
-    基础；
--   World、Actor、Generation、Slot 身份绑定；
--   原生移动、挖掘和物品使用路径；
--   任务期间继续执行只读观察的能力。
+同一个 Server AI Player 同一时刻由一个身体动作所有者控制。战斗通过统一的原生执行入口取得控制权，与导航、挖掘、物品使用等动作协调。
 
-当前尚不具备：
+CombatInputCycle 记录移动与攻击输入的更新周期，并确保每个游戏更新至多执行一次原生 ItemCheck。移动和攻击可以在同一更新中组合，但各自的输入通道由战斗运行时协调。
 
--   通用任务优先级仲裁；
--   原地 Suspend/Resume；
--   移动与持续攻击的输入合并；
--   CombatTask、CombatReflex 和战斗状态查询。
+攻击执行沿 Terraria 原生物品使用路径进行。近战攻击使用原生 ItemCheck；远程攻击核对弹药、弹道与投射物；召唤攻击记录召唤物来源和实例。战斗结束后释放由任务持有的输入。
 
-本设计要求在现有任务运行时和原生执行路径上演进，不重建一套平行任务系统。
+## 目标与命中归因
 
-## 3. 任务与仲裁
+目标引用绑定世界会话、Actor 代次、NPC Slot 和出生 Token。NPC 槽位复用时，旧引用不会指向新实例。
 
-### 3.1 单一身体控制权
+命中证据记录目标实例、生命值变化、伤害、游戏更新和攻击来源。远程投射物保存发射时的武器、弹药、所有者、实例和目标 epoch；召唤物保存来源武器、Projectile 身份及其目标归属。命中时重新检查来源与目标关系，避免把旧任务、其他角色或已替换目标的攻击计入当前战斗。
 
-保持一个活动根身体任务。任务内部可以串行调用导航、挖掘等子任务；CombatTask
-内部则协调移动与攻击意图。
+完成条件以原生目标状态和本次战斗可归因的效果为依据。攻击输入次数、动画播放或投射物发射本身不构成命中证据。
 
-不允许多个独立执行器同时直接控制同一个 Player。
+## 武器配置与选择
 
-优先级保持简单：
+Agent 可通过 `configure_combat_loadout` 配置主武器、副武器和召唤武器。配置引用快捷栏中的物品槽及观察 Token，并记录物品类型和配置版本。
 
-1.  显式停止/取消；
-2.  Combat（Agent 主动战斗或 CombatReflex）；
-3.  普通 Agent 身体任务；
-4.  空闲。
+战斗运行时根据距离、武器类别、弹药、法力和可用攻击方式选择武器。近距离优先使用可生效的近战武器；远距离在弹道与资源允许时使用弓、枪或已适配法器。召唤武器用于生成仆从，运行时会核对原生施放结果和仆从实例。
 
-Agent 主动战斗和 CombatReflex 必须进入同一个
-CombatController。若目标相同且已有 CombatTask，不创建第二个战斗执行器。
+配置与执行分离：Agent 决定允许使用哪些武器，游戏侧根据当前交战条件选择和切换。完整配置行为见 [战斗配装与自卫](COMBAT_WEAPON_LOADOUT_DESIGN.md)。
 
-### 3.2 CombatTask 生命周期
+## 自卫与威胁躲避
 
-CombatTask 是异步、游戏 Tick 驱动的根任务。
+自卫 Reflex 在服务器更新中观察附近敌对实体，并根据目标关系和接近情况选择威胁。Boss Encounter 使用独立的短时威胁预测器，处理 NPC 接触、弹幕和已适配的特殊弹道。
 
-任务生命周期沿用现有异步任务终态语义：
+BossEvasion 使用约 48 个游戏更新的局部预测窗口，限制候选威胁数量，并复用导航的物理模拟与落脚检查评估刹停、水平移动、跳跃和平台穿越。预测结果在执行过程中持续与实际位置比较。
 
-``` text
-ACCEPTED
-   ↓
-RUNNING
-   ├── COMPLETED
-   ├── FAILED
-   ├── CANCELLED
-   └── UNKNOWN
-```
+当局部候选均无法避开威胁时，系统保留本次无安全路线结果，并选择通过地形检查且预测暴露较低的动作。该判断服务于当前观察窗口，不是全局安全保证。
 
-MVP 不增加 `SUSPENDED` 状态。
+## Boss Encounter
 
-战斗内部阶段独立管理：
+Boss 战斗使用独立的 BossEncounterTask。它在整场战斗期间持有一个身体控制权，维护 Encounter ID、Boss 根实例、成员集合、当前目标、武器状态和战斗证据。
 
-``` text
-ACQUIRE_TARGET
-      ↓
-APPROACH
-      ↓
-ATTACK
-      ↓
-VERIFY_RESULT
-      ↓
-REASSESS
-      ├── 继续战斗
-      └── 结束战斗
-```
+成员追踪区分 Boss 根、部件、附属敌人和共享生命承载者。系统根据原生关系、出生实例和专用规则更新成员集合。每次攻击与命中都关联当前 Encounter 和成员版本。
 
-CombatTask 至少记录：
+Boss Encounter 支持：
 
--   Task ID 和创建来源（Agent / Reflex）；
--   目标 NPC 身份；
--   当前阶段；
--   当前武器；
--   最近一次攻击结果；
--   当前威胁摘要；
--   终止原因和输入释放证据。
+- 多成员 Boss 的发现与成员追踪。
+- 持续攻击、武器选择和威胁躲避。
+- 战斗进度与已核验伤害记录。
+- 显式取消和有界撤退。
+- 可选的死亡后自然复活等待与队友归队流程。
 
-任务完成必须依据实际游戏状态，不能仅根据攻击次数或持续时间推断。
+当前原版 Boss 隔离专服记录中，克苏鲁之眼、世界吞噬者和骷髅王完成过原生击败；双子魔眼、毁灭者和月亮领主的记录以角色死亡结束。详细场景、配装和数据见 [Boss Encounter 验证记录](R2_E_BOSS_ENCOUNTERS.md)。
 
-### 3.3 CombatReflex 抢占
+## 主要实现入口
 
-CombatReflex 在游戏侧运行，不依赖 Agent 及时响应。
-
-触发依据必须是可靠威胁，而不是"附近有一个可攻击 NPC"。MVP
-至少结合以下信号：
-
--   敌对 NPC 已明确将 AI 作为攻击目标，且进入实际威胁/交战范围；
--   AI 最近受到可归因于敌对 NPC 或敌对攻击的实际伤害。
-
-仅有距离接近、`friendly == false` 或观察快照中的 `hostile_creature`
-推断，不足以单独触发战斗。
-
-触发流程：
-
-1.  确认目标有效、具有敌对威胁且可交战。
-2.  若已有同目标 CombatTask，复用该任务。
-3.  若普通身体任务正在运行，请求通过统一仲裁路径安全中断。
-4.  以 `task_interrupt_combat` 记录危险中断原因。
-5.  确认 Actor 身份仍有效、原任务输入已释放。
-6.  启动 CombatTask 并取得身体控制权。
-
-如果原动作清理失败、输入仍被占用或 Actor
-身份无法确认，不允许第二个控制器并发写入。保留 unknown 和诊断信息。
-
-CombatReflex 只负责检测威胁和申请控制权，不实现另一套攻击逻辑。
-
-### 3.4 被抢占任务的恢复
-
-**MVP 不做原地暂停和自动恢复。**
-
-当前项目已有经过测试的危险中断契约：原任务以明确的 `task_interrupt_*`
-原因终止；Agent 在危险解除后决定是否调用 `resume_task`。恢复会产生新的
-Task ID，并由游戏侧重新验证目标、工具和环境。
-
-Combat 使用
-`task_interrupt_combat`，使已知且安全释放的普通任务可以进入现有恢复流程。
-
-限制：
-
--   当前 `resume_task` 只支持非 cluster 的 `mine_target`。
--   独立导航和其他原子动作由 Agent 重新观察后决定是否重新提交。
--   如果原任务结果为 unknown，或输入释放未确认，不得恢复或重放。
--   恢复时不能沿用旧按键、旧位置或旧的原生动作句柄。
-
-未来若确实需要原地
-Suspend/Resume，应另行设计每种任务和原生子动作的暂停检查点，不属于本次
-MVP。
-
-## 4. 统一移动与攻击输入协调
-
-### 4.1 输入意图
-
-建立统一的 Actor 输入协调机制（可沿用或扩展
-`ActorControl`，具体类结构由实现根据现有代码决定）。
-
-移动控制器产生移动意图：
-
-``` text
-MovementIntent:
-    direction
-    jump
-    verticalMovement
-    facing
-```
-
-攻击控制器产生攻击意图：
-
-``` text
-AttackIntent:
-    useItem
-    weaponSlot
-    attackState
-```
-
-输入协调器将两者合并为同一游戏更新周期的 Actor 输入，并在正确的 Terraria
-原生执行阶段应用。
-
-### 4.2 输入所有权
-
--   同一个身体任务是输入意图的所有者。
--   移动逻辑不得清除不属于移动通道的攻击输入。
--   攻击逻辑不得覆盖移动方向、跳跃等输入。
--   停止任务时只释放当前任务拥有的输入；任务终止后必须确认所有 AI
-    控制输入已释放。
--   不同 Hook
-    需要在不同原生阶段应用输入时，仍由同一个协调机制决定最终意图。
--   每个 Player 更新周期只能执行一次受控的原生 ItemCheck，避免重复调用。
-
-MVP 只要求支持"移动 +
-普通近战攻击"组合。挖掘、放置和其他动作仍按各自原生约束执行，不要求任意并行。
-
-### 4.3 导航复用
-
-复用现有 NavigationTask/导航规划能力，不重写导航算法。
-
-但战斗不能简单启动一个独立 `navigate_to` 动作，再同时启动
-`use_item`。当前两个执行器互斥，而且导航输入会清除物品使用字段。
-
-战斗需要取得导航产生的移动意图，并由统一输入协调器与攻击意图合并。具体实现可调整现有
-MovementDriver/导航执行边界，但不得形成第二个身体控制所有者。
-
-### 4.4 原生近战攻击
-
-当前 `ActorItemUse` 是单次物品使用动作，不是持续战斗控制器。MVP
-需要战斗专用的近战攻击周期管理：
-
--   使用当前选中的有效近战武器；
--   维护正确的攻击按下、持续和释放时机；
--   遵循 `itemAnimation`、`itemTime`、`reuseDelay` 和 Terraria
-    原生使用规则；
--   通过原生 `ItemCheck`、命中判定和伤害流程执行；
--   不直接修改 NPC 生命值，不自行伪造命中结果。
-
-战斗期间不能让 ActorMining、ActorItemUse 和 CombatAttack
-重复拥有或重复调用 AI 的 ItemCheck 路径。
-
-## 5. Combat Perception 与目标身份
-
-战斗控制以服务端权威 NPC 状态为准，不以 Agent 的 client-known
-观察快照作为唯一执行依据。
-
-MVP 至少读取：
-
--   NPC 是否 active、存活；
--   是否为有效敌对目标；
--   NPC 当前位置、速度和碰撞箱；
--   是否正在攻击/追踪 AI；
--   当前目标是否仍然有效。
-
-目标引用必须防止 NPC 槽位复用。至少结合 NPC
-slot、类型和本次生成身份/代次，在每次关键攻击前重新验证。
-
-当前 `EntitySnapshot` 的半径、数量限制、Mod NPC
-分类和攻击意图不确定性只适合观察，不足以承担 CombatReflex 的权威判定。
-
-## 6. Combat MVP 范围
-
-第一版只实现单目标普通近战战斗。
-
-流程：
-
-1.  获取并验证一个有效敌对 NPC。
-2.  验证目标身份、生命状态和交战条件。
-3.  验证当前选中的武器确实属于受支持的普通近战武器。
-4.  使用现有导航规划能力接近目标。
-5.  根据目标位置和近战范围调整朝向与站位。
-6.  由 CombatController 协调移动和原生近战攻击。
-7.  观察目标 NPC 的实际生命变化、死亡或失效状态。
-8.  目标被击败或战斗条件不再成立时结束任务。
-9.  释放输入并发布终态结果。
-
-第一版不做复杂装备切换。没有有效近战武器时，明确失败，不尝试用任意物品攻击。
-
-## 7. Agent 参与方式
-
-Agent 主动战斗接入现有异步任务体验，扩展 `submit_task` 支持
-`combat_attack`，并复用任务查询、等待和取消机制。
-
-CombatReflex 自动启动的战斗也必须向 Agent 暴露可查询的状态和结果。
-
-战斗期间：
-
--   允许只读观察和状态查询；
--   允许 Agent 发送聊天消息；
--   允许 Agent 根据进度发表评论；
--   不要求 Agent 逐帧发送攻击指令；
--   其他身体变更必须经过仲裁器，不得绕过 CombatTask 抢占输入。
-
-## 8. 非本阶段范围
-
--   弓箭、枪械、魔法等远程武器；
--   弹道预测和动态瞄准；
--   复杂武器选择与自动换装；
--   多目标战术；
--   高级闪避和弹幕预测；
--   Boss 战斗；
--   任意动作并行（例如通用的移动+挖矿）；
--   通用任务原地 Suspend/Resume、持久化和进程重启恢复。
-
-这些功能不应阻止近战 Combat MVP 落地。
-
-## 9. 验收标准
-
-1.  Agent 可以异步提交 `combat_attack`，获得稳定 Task
-    ID，并查询任务进度和结果。
-2.  CombatReflex 能在明确威胁出现时自动请求战斗控制权。
-3.  正在运行的低优先级动作/任务能够被安全中断；CombatTask 只在 Actor
-    身份有效且输入释放得到确认后启动。
-4.  Agent 主动战斗和 Reflex 自卫使用同一套
-    CombatController，不会生成两个互相争夺输入的战斗执行器。
-5.  战斗期间可以在同一游戏更新周期协调移动与普通近战攻击，输入不会互相覆盖。
-6.  近战攻击通过 Terraria 原生使用和命中机制实际造成伤害。
-7.  每个 Player 更新周期不会重复执行受控 ItemCheck。
-8.  Agent 在战斗期间仍能执行只读观察和聊天；其他身体变更受到仲裁。
-9.  战斗结束、失败、取消和异常后，输入释放状态有明确证据。
-10. 被中断的 `mine_target` 不自动恢复；Agent 显式调用 `resume_task`
-    时使用新 Task ID，并重新验证目标。unknown 不得恢复。
-11. NPC 槽位复用、目标死亡、目标失效和 Actor Generation
-    改变不会导致攻击旧目标或写入旧 Actor。
-12. 完成离线定向测试后，必须在真实 Terraria Dedicated Server +
-    客户端环境验证普通敌怪战斗、战斗反射、Agent
-    并行观察/聊天和任务恢复流程。
-
-## 10. 主要实现入口
-
-优先检查和扩展：
-
--   `CompanionBridge/ServerIpc/AiAtomicActions.cs`
--   `CompanionBridge/ServerIpc/TaskRuntime.cs`
--   `CompanionBridge/ServerIpc/ServerAiNativeActions.cs`
--   `CompanionBridge/ServerIpc/ServerAiSystem.cs`
--   `CompanionBridge/ServerIpc/NativeNavigationWorld.cs`
--   `CompanionBridge/ServerIpc/AutonomousNavigationTask.cs`
--   `CompanionBridge/ServerPlayerRuntime/ActorControl.cs`
--   `CompanionBridge/ServerPlayerRuntime/ActorItemUse.cs`
--   `CompanionBridge/ServerPlayerRuntime/ActorMining.cs`
--   `CompanionBridge/ServerPlayerRuntime/NativeSurvival.cs`
--   `CompanionBridge/EntitySnapshot.cs`
--   `python/program_tasks.py`
--   `python/server_ai.py`
--   `python/server_ai_contract.py`
--   相关 Schema、能力握手和测试。
-
-## 11. 参考原则
-
-### Numen
-
-借鉴异步身体任务、任务优先级、Reflex
-抢占、父子任务组织和战斗任务统一入口。
-
-不照搬 Minecraft 的战斗动作和游戏规则。
-
-### TerraBot
-
-借鉴 Terraria 原生移动、近战攻击周期、武器范围、战斗站位和原生物理反馈。
-
-MVP 只采用普通近战所需的子集，不在本阶段移植远程弹道和 Boss 战术。
-
-**最终目标：** 让角色能够在游戏侧自主完成基础近战战斗，同时保持 Agent
-对战斗过程的观察和参与；战斗是现有身体任务系统的高优先级能力，而不是一套独立、互相争夺
-Player 输入的新系统。
+| 模块 | 文件 |
+| --- | --- |
+| 普通战斗任务 | `CompanionBridge/ServerIpc/CombatController.cs` |
+| 原生战斗适配与命中归因 | `CompanionBridge/ServerIpc/NativeCombatWorld.cs` |
+| 武器与弹道 | `CompanionBridge/ServerIpc/CombatBallistics.cs` |
+| Boss 任务 | `CompanionBridge/ServerIpc/BossEncounterTask.cs` |
+| 威胁预测与躲避 | `CompanionBridge/ServerIpc/BossEvasion.cs` |
+| 战斗入口与能力 | `CompanionBridge/ServerIpc/ServerAiNativeActions.cs`、`python/server_ai_contract.py` |
+| 任务生命周期 | `CompanionBridge/ServerIpc/TaskRuntime.cs` |
+| 原生验证 | `tests/native_combat.py`、`tests/native_boss_encounter.py`、`tests/native_boss_strategy.py` |

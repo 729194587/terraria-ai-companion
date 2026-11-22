@@ -1,3 +1,5 @@
+> **历史审计快照**：本文反映 `926101e` 对应时期的 Combat MVP 架构。后续已实现 CombatController、BossEncounterTask、武器配置和命中归因。当前战斗架构见 [COMBAT_SYSTEM_DESIGN.md](COMBAT_SYSTEM_DESIGN.md)，本文中的缺口和建议仅用于追溯设计演进。
+
 # COMBAT_ARCHITECTURE_AUDIT.md
 
 **审查基线：** `codex/unified-autonomous-navigation`\

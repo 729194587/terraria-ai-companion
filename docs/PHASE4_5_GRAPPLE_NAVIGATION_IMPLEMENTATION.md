@@ -1,3 +1,7 @@
+> **历史阶段记录**：本文保留对应阶段的设计、实现过程与当时验证结果。当前导航架构见 [NAVIGATION.md](NAVIGATION.md)。本文中的代码基线、待办和测试状态属于记录时点。
+
+> **历史阶段记录**：本文保留对应阶段的设计、实现过程与当时验证结果。当前导航架构和能力说明见 [NAVIGATION.md](NAVIGATION.md)；本文中的分支、提交、待办和测试状态均属于记录时点。
+
 # Phase 4.5 单钩爪攀升实现与验证
 
 基线为 `codex/unified-autonomous-navigation` 上的 `583fa95`。设计见 [Phase 4.5 MVP](PHASE4_5_GRAPPLE_NAVIGATION_MVP_DESIGN_v0.1.md)。
