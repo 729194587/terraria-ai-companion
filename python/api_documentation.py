@@ -101,6 +101,7 @@ for _, item in ipairs(q.data.inventory) do
     end
 end
 return counts''',
+    'query_item_sources': 'return api("query_item_sources",{typeId=38})',
     'query_item_info': 'return api("query_item_info",{typeId=8})',
     'resolve_content': 'return api("resolve_content",{kind="item",query="Terraria/Torch"})',
     'query_recipes': 'return api("query_recipes",{resultType=8,availableOnly=false})',
@@ -194,6 +195,7 @@ PREREQUISITES = {
 }
 RELATED = {
     'inspect_inventory': ('hold_inventory_item','inspect_container'),
+    'query_item_sources': ('resolve_content', 'query_item_info'),
     'query_item_info': ('resolve_content',),
     'resolve_content': ('query_item_info','query_recipes','scan_tiles'),
     'query_recipes': ('resolve_content','craft_recipe'),
@@ -206,6 +208,7 @@ RELATED = {
 }
 RETURN_NOTES = {
     'inspect_inventory': '必填 mode。data.inventory 是槽位行数组；row.slot 是游戏槽位编号，Lua 数组下标从 1 开始。',
+    'query_item_sources': 'sources 每行是 NPC 专属掉落表的一条原生报告。probability 为规则条件成立时的报告概率（1 为必掉），数量含两端。同一 NPC 可有多行。条件附类型和可用的本地化文本，未判定当前是否满足。排除全局掉落和开袋奖励。空数组表示没有匹配报告。',
     'query_item_info': 'typeId 取自 resolve_content 当前候选。data.tooltip 是普通本地化描述行数组，data.extraTooltip 仅有扩展时返回，可含多行。stats.valueCopper 以铜币为单位。未注册的 ID 返回 available=false。',
     'resolve_content': '检查 data.status 和 data.candidates；唯一精确匹配时取 typeId。',
     'query_recipes': 'data.items 含 output.count、ingredients、stations、conditions 和 hasOutputSpace；检查 truncated 和 offset。',

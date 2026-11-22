@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile,[switch]$ItemInfo,[string[]]$ModPackages,[switch]$CompatibilityQueries)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile,[switch]$ItemInfo,[switch]$ItemSources,[string[]]$ModPackages,[switch]$CompatibilityQueries)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -31,7 +31,7 @@ Assert-CompanionPackage -Package $package -Engine $selectedEngine
 if($TalkToNpc){$MerchantJourney=$true;$NurseLua=$TalkToNpc -eq 'Nurse'}
 if($MerchantJourney){$MerchantLua=$true;$Terrain=$true}
 if($ReforgeLua -or $NurseLua){$MerchantLua=$true}
-if(!$PythonExecutable){$PythonExecutable=if($Atomic -or $NpcHome -or $MerchantLua -or $ItemInfo){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
+if(!$PythonExecutable){$PythonExecutable=if($Atomic -or $NpcHome -or $MerchantLua -or $ItemInfo -or $ItemSources){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
 if(!(Test-Path -LiteralPath $package)){throw 'Build CompanionBridge first.'}
 $profile=if($BenchmarkSpec){[IO.Path]::GetFullPath($BenchmarkProfile)}else{Join-Path $repo ('.local/companion-'+$(if($Atomic){'g82'}else{'g81'})+'-native-'+[guid]::NewGuid().ToString('N'))}
 New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds" | Out-Null
@@ -105,16 +105,23 @@ try {
         Start-Sleep -Milliseconds 100
     }
     if(!$bound.ok){throw 'Native actor never became available'}
-    if ($ItemInfo) {
+    if ($ItemInfo -or $ItemSources) {
         $bound.data | ConvertTo-Json -Depth 8 | Set-Content "$profile/handshake.json"
         foreach ($mod in $enabled) {
             if ($mod -notin $bound.data.compatibility.loadedMods.name) { throw "Server did not load $mod" }
         }
         $options = @()
         if ('CalamityMod' -in $enabled) { $options += '--calamity' }
-        & $PythonExecutable (Join-Path $repo 'tests/native_item_info.py') --port $IpcPort --profile $profile @options
-        if ($LASTEXITCODE -ne 0) { throw 'Native item info verification failed' }
-        Write-Output "Item info results: $profile/item-info.json"
+        if ($ItemInfo) {
+            & $PythonExecutable (Join-Path $repo 'tests/native_item_info.py') --port $IpcPort --profile $profile @options
+            if ($LASTEXITCODE -ne 0) { throw 'Native item info verification failed' }
+            Write-Output "Item info results: $profile/item-info.json"
+        }
+        if ($ItemSources) {
+            & $PythonExecutable (Join-Path $repo 'tests/native_item_sources.py') --port $IpcPort --profile $profile @options
+            if ($LASTEXITCODE -ne 0) { throw 'Native item sources verification failed' }
+            Write-Output "Item sources results: $profile/item-sources.json"
+        }
         if ($CompatibilityQueries) {
             & $PythonExecutable (Join-Path $repo 'tests/native_mod_queries.py') --port $IpcPort --profile $profile
             if ($LASTEXITCODE -ne 0) { throw "Registry/scene compatibility check failed: $profile" }

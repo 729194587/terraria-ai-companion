@@ -318,6 +318,12 @@ OBSERVATIONS = {
         'status': enum('partial_unloaded', 'not_found', 'ok'), 'bounds': ref('TileBounds'),
         'scannedCount': COUNT, 'sort': S, 'coordinates': S,
     })),
+    'query_item_sources': observation(obj({
+        **QUERY_METADATA, 'typeId': I, 'contentKey': S,
+        'sources': array(obj({'netId': I, 'npcType': I, 'name': S, 'contentKey': S, 'boss': B,
+                              'probability': N, 'minStack': I, 'maxStack': I,
+                              'conditions': array(obj({'id': S, 'description': nullable(S)}))})),
+    })),
     'query_item_info': observation(obj({
         **QUERY_METADATA, 'typeId': I, 'contentKey': S, 'name': S, 'mod': S,
         'stats': obj(fields(integers='damage defense pickPower axePower hammerPower rarity valueCopper maxStack mana useTime useAnimation crit healLife healMana',

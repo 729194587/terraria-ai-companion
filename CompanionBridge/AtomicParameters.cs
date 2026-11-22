@@ -84,6 +84,7 @@ internal static class AtomicParameters
                     if(keys.Contains("offset"))Integer("offset",0,100000);
                     if(keys.Contains("availableOnly")&&args.GetProperty("availableOnly").ValueKind is not (JsonValueKind.True or JsonValueKind.False))throw new FormatException("Invalid availableOnly.");
                     break;
+                case "query_item_sources":
                 case "query_item_info": Fields("typeId"); Integer("typeId", 1, int.MaxValue); break;
                 case "resolve_content":
                     if (keys.Except(new[] { "kind", "query", "mode", "maxResults" }).Any()

@@ -90,6 +90,8 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
      "width":{"type":"integer","minimum":45,"maximum":128},
      "height":{"type":"integer","minimum":29,"maximum":96}}),tool("get_player_state", "读取真实玩家位置/速度/生命和地面支撑及运动模型支持状态。"),
     tool("get_player_status", "紧凑玩家状态：生命/魔力、运动和液体、所选完整物品、非空装备及活跃Buff；背包仅槽位摘要。不是完整背包，Mod自定义状态未知。"),
+    tool("query_item_sources", "按物品 typeId 查询 NPC 和 Boss 的直接掉落规则、概率、数量与条件。",
+         {"typeId": {"type": "integer", "minimum": 1, "maximum": 2147483647}}, ["typeId"]),
     tool("query_item_info", "按当前加载的物品 typeId 查询名称、内容键、所属 Mod、基础属性及本地化普通和扩展描述。",
          {"typeId": {"type": "integer", "minimum": 1, "maximum": 2147483647}}, ["typeId"]),
     tool("resolve_content", "按内容键或名称解析当前已加载的item/tile/wall ID。item支持本地化名称；tile/wall名称仅内容符号（如Terraria/Dirt），不是本地化地图名称。默认精确匹配，search为包含搜索；歧义必须选择候选，不猜ID。",
@@ -392,7 +394,7 @@ def server_tools(supported, *, bulk_purchase=False, bed_spawn=False, scene_regio
     return definitions
 
 READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_pylons', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'query_item_info', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
+READS |= {'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_pylons', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'query_item_info', 'query_item_sources', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -1573,11 +1575,11 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_container_transfer_v1')
     if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_containers_v1')
-    if name == 'query_item_info':
-        capability = 'server_ai_item_info_v1' if server else 'item_info_v1'
+    if name in ('query_item_info', 'query_item_sources'):
+        capability = ('server_ai_' if server else '') + name.removeprefix('query_') + '_v1'
         if capability not in bridge.hello.get('capabilities', []):
             raise PreDispatchRejected(f'Requires {capability}', status='unsupported_operation')
-    if name in ('query_item_info', 'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
+    if name in ('query_item_info', 'query_item_sources', 'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):

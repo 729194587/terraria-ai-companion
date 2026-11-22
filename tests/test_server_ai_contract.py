@@ -36,7 +36,7 @@ FULL_ACTIONS = FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_
             'server_ai_boss_encounter_v1', 'server_ai_boss_strategy_v1', 'server_ai_open_item_v1', 'server_ai_drop_item_v1', 'server_ai_inventory_favorite_v1', 'server_ai_personal_inventory_v1',
             'server_ai_pylons_v1', 'server_ai_regroup_v1', 'server_ai_dismiss_summon_v1', 'server_ai_doors_v1', 'server_ai_interact_tile_v1', 'server_ai_hammer_v1',
             'server_ai_collect_drops_v1', 'server_ai_place_item_v1', 'server_ai_build_place_v1',
-            'server_ai_item_info_v1', 'server_ai_build_diff_v1', 'server_ai_merchant_shop_v1', 'server_ai_merchant_purchase_v1',
+            'server_ai_item_sources_v1', 'server_ai_item_info_v1', 'server_ai_build_diff_v1', 'server_ai_merchant_shop_v1', 'server_ai_merchant_purchase_v1',
             'server_ai_merchant_sale_v1', 'server_ai_npc_dialogue_v1', 'server_ai_merchant_bulk_purchase_v1',
             'server_ai_nurse_v1', 'server_ai_reforge_v1',
             'server_ai_npc_housing_v1', 'server_ai_housing_assignment_v1', 'server_ai_housing_inspect_v1'}
@@ -389,16 +389,18 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual('ok', help_row['status'])
             self.assertEqual({'x', 'y'}, set(help_row['parameters']['required']))
 
-    def test_item_info_is_a_capability_gated_read(self):
-        name = 'query_item_info'
-        self.assertIn(name, atomic.READS)
-        self.assertEqual('not_exposed', api_help(bridge(FULL), {'name': name})['status'])
-        help_doc = api_help(bridge(FULL | {'server_ai_item_info_v1'}), {'name': name})
-        validator = Draft202012Validator(help_doc['parameters'])
-        self.assertTrue(validator.is_valid({'typeId': 193}))
-        for invalid in ({}, {'typeId': 0}, {'typeId': '193'}, {'typeId': 2**31}, {'typeId': 1, 'x': 0}):
-            self.assertFalse(validator.is_valid(invalid))
-        Draft202012Validator.check_schema(help_doc['returnsSchema'])
+    def test_item_queries_are_capability_gated_reads(self):
+        for query in ('item_info', 'item_sources'):
+            with self.subTest(query=query):
+                name = 'query_' + query
+                self.assertIn(name, atomic.READS)
+                self.assertEqual('not_exposed', api_help(bridge(FULL), {'name': name})['status'])
+                help_doc = api_help(bridge(FULL | {'server_ai_' + query + '_v1'}), {'name': name})
+                validator = Draft202012Validator(help_doc['parameters'])
+                self.assertTrue(validator.is_valid({'typeId': 193}))
+                for invalid in ({}, {'typeId': 0}, {'typeId': '193'}, {'typeId': 2**31}, {'typeId': 1, 'x': 0}):
+                    self.assertFalse(validator.is_valid(invalid))
+                Draft202012Validator.check_schema(help_doc['returnsSchema'])
 
     def test_pylon_capability_distinguishes_queries_and_actions(self):
         for caps, expected in ((BASE,set()), (BASE | {'server_ai_pylons_v1'},{'list_pylons'}),

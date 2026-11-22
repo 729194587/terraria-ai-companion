@@ -41,7 +41,7 @@ internal static class ServerAiQueries
 
     private static object ReadBound(AiReadOnlyProtocol.Identity expected, string operation, JsonElement arguments)
     {
-        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "query_item_info" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat_loadout" or "list_pylons" or "list_teammates" or "discover_bosses" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase" or "quote_npc_sale" or "quote_nurse_heal" or "quote_reforge")) throw new FormatException("Unsupported server AI query.");
+        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "query_item_sources" or "query_item_info" or "resolve_content" or "observe_scene" or "query_recipes" or "query_map" or "query_combat_loadout" or "list_pylons" or "list_teammates" or "discover_bosses" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase" or "quote_npc_sale" or "quote_nurse_heal" or "quote_reforge")) throw new FormatException("Unsupported server AI query.");
         if (operation != "build_diff") AtomicParameters.Validate(operation, arguments, true);
         Require(expected);
         bool regional=operation=="observe_scene"&&arguments.TryGetProperty("scale",out var scale)&&scale.GetString()=="region";
@@ -97,6 +97,8 @@ internal static class ServerAiQueries
                 liquidCoordinates="terrain.liquids entries use absolute Tile x/y and native amount 1..255; missing entries on unread cells are unknown",
                 scope="45x29 collision categories, not tile types or visibility; unknown Mod collision hooks; no path guarantee" };
         }
+        else if (operation == "query_item_sources") data = ItemSourcesQuery.Read(arguments.GetProperty("typeId").GetInt32())
+            ?? throw new QueryUnavailableException("unknown_item_type");
         else if (operation == "query_item_info") data = ItemInfoQuery.Read(arguments.GetProperty("typeId").GetInt32())
             ?? throw new QueryUnavailableException("unknown_item_type");
         else if (operation == "resolve_content") data = AtomicQueries.Resolve(arguments);
