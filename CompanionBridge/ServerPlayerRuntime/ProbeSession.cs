@@ -393,7 +393,11 @@ public sealed class ProbePlayer : ModPlayer
     public override void PostUpdate() => PostUpdates++;
     public override bool PreItemCheck(){if (VirtualPlayerEngineProbe.Instance?.Name == "VirtualPlayerEngineProbe") ProbeTargeting.Capture(Player);return true;}
     public override void PostItemCheck(){if (VirtualPlayerEngineProbe.Instance?.Name == "VirtualPlayerEngineProbe") ProbeTargeting.Observe(Player);}
-    public override void PostUpdateRunSpeeds() => ActorControl.BeforeMovement(Player);
+    public override void PostUpdateRunSpeeds()
+    {
+        CompanionBridge.ServerIpc.MovementDiscoveryFixture.AtRunSpeeds(Player);
+        ActorControl.BeforeMovement(Player);
+    }
     public override void PostUpdateBuffs() => CompanionBridge.ServerIpc.ServerAiTerrainFixture.AfterBuffs(Player);
     public override void SaveData(Terraria.ModLoader.IO.TagCompound tag)
     {

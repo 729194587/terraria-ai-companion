@@ -23,7 +23,7 @@ internal sealed record NavigationSnapshot(int Session, string Status, string Act
     double TripPlanningMilliseconds=0,int DetourCheckpoints=0,int VisitedCheckpoints=0,int RepeatRejections=0, MobilityProfile Mobility=null, long MobilityRevision=0, long PlanMobilityRevision=0, int DeferredSearches=0,int SearchCacheHits=0,NavigationFailureMemory.Failure[] FailureMemory=null,
     string ProgressActivity=null,int SearchWaitUpdates=0,int NoProgressUpdates=0,
     int ActualMovingUpdates=0,double ActualTravelPixels=0,int SearchExpansionHits=0,
-    SurfaceGraphSnapshot SurfaceGraph=null);
+    SurfaceGraphSnapshot SurfaceGraph=null,AirFeedback AirMotion=null);
 
 // One rolling walk or one jump; no graph, digging, placement, or autonomous retries.
 // Candidate simulation and landing feedback follow TerraBlind JumpExecutor's pattern.
@@ -35,15 +35,18 @@ internal sealed class LocalMotionController
     private int _session, _direction, _generation, _frame, _hold, _badFrames, _supportedLandingFrames;
     private float _maxError;
     private bool _airborne;
+    private AirFeedback _airFeedback;
     internal NavigationSnapshot Snapshot { get; private set; } = new(0, "idle", "none", "not started", 0, 0, null, null, 0);
     internal bool Terminal => Snapshot.Status is "failed" or "landed";
     internal bool NeedsPlan => _plan == null;
+    internal PhysicsState? ExpectedState=>_plan!=null&&_frame>0?_plan.Frames[_frame-1].State:null;
     internal bool NeedsLandingConfirmation { get; private set; }
     internal MotionFailureKind FailureKind { get; private set; }
 
     internal void LoadPlan(Prediction plan)
     {
         _plan = plan;
+        _airFeedback=null;
         NeedsLandingConfirmation=false;
         FailureKind=MotionFailureKind.None;
         _frame = 0; _badFrames = 0; _supportedLandingFrames = 0; _maxError = 0; _airborne = false;
@@ -60,6 +63,7 @@ internal sealed class LocalMotionController
     internal void Cancel()
     {
         _plan = null;
+        _airFeedback=null;
         NeedsLandingConfirmation=false;
         FailureKind=MotionFailureKind.None;
         _session = 0;
@@ -97,6 +101,7 @@ internal sealed class LocalMotionController
             }
             _frame = 0; _badFrames = 0; _supportedLandingFrames = 0; _maxError = 0; _airborne = false;
         }
+        _plan=AirMotionModel.Correct(_plan,_frame,state,parameters,world);
         var next = _plan.Frames[_frame];
         // Recheck the immediate step against the current world and actual velocity.
         try
@@ -110,7 +115,7 @@ internal sealed class LocalMotionController
         }
         catch (UnsafeMotionException error) { return Fail(error.Message); }
         Snapshot = new(session, "running", _plan.Jump ? "jump" : "walk", _plan.Reason,
-            _frame, _hold, new(_plan.Landing.Px, _plan.Landing.Py), null, _maxError, Generation: _generation);
+            _frame, _hold, new(_plan.Landing.Px, _plan.Landing.Py), null, _maxError, Generation: _generation,AirMotion:_airFeedback);
         return next.Input;
     }
 
@@ -124,6 +129,18 @@ internal sealed class LocalMotionController
         float error = Math.Max(Math.Abs(expected.Px - actual.Px), Math.Abs(expected.Py - actual.Py));
         _maxError = Math.Max(_maxError, error);
         float velocityError = Math.Max(Math.Abs(expected.Vx - actual.Vx), Math.Abs(expected.Vy - actual.Vy));
+        if(_plan.AirMode!=AirKind.None)
+        {
+            bool confirmed=AirMotionModel.Matches(expected,actual)&&error<=6&&velocityError<=1.5f;
+            _airFeedback=new(_plan.AirMode,expected.AirPhase,confirmed,_frame,expected.Air,actual.Air);
+            Snapshot=Snapshot with{AirMotion=_airFeedback};
+            if(!confirmed){Fail("air thrust/resource/cooldown did not match native observation",MotionFailureKind.RouteDeviation);return;}
+        }
+        if(_plan.ExtraJumpFrame>=0&&!ExtraJumpModel.MatchesResource(expected,actual))
+        {
+            Snapshot=Snapshot with{Frame=_frame,MaxError=_maxError};
+            Fail("extra jump activation/resource/counter did not match native observation",MotionFailureKind.RouteDeviation);return;
+        }
         _badFrames = error > 6 || velocityError > 1.5f ? _badFrames + 1 : 0;
         _airborne |= !actual.Grounded;
         if (_plan.Jump && _plan.ExecuteFrames < _plan.Frames.Count)
@@ -156,7 +173,7 @@ internal sealed class LocalMotionController
                             + $"supportFrames={_supportedLandingFrames}, releaseJump={actual.ReleaseJump}, jumpCounter={actual.JumpFramesLeft}, "
                             + $"vxError={Math.Abs(actual.Vx - (movingLanding ? _plan.Landing.Vx : 0)):F3}, vy={actual.Vy:F3}",
                     _frame, _hold, new(_plan.Landing.Px, _plan.Landing.Py), !NeedsLandingConfirmation ? new(actual.Px, actual.Py) : null, _maxError,
-                    Snapshot.ExpectedPosition, Snapshot.ObservedPosition, Snapshot.ExpectedVelocity, Snapshot.ObservedVelocity, _generation);
+                    Snapshot.ExpectedPosition, Snapshot.ObservedPosition, Snapshot.ExpectedVelocity, Snapshot.ObservedVelocity, _generation,AirMotion:_airFeedback);
             }
             else _plan = null; // Next update replans a moving walk prefix.
         }
@@ -167,7 +184,7 @@ internal sealed class LocalMotionController
         FailureKind=kind;
         Snapshot = new(_session, "failed", _plan?.Jump == true ? "jump" : "walk", reason,
             _frame, _hold, _plan == null ? null : new(_plan.Landing.Px, _plan.Landing.Py), null, _maxError,
-            Snapshot.ExpectedPosition, Snapshot.ObservedPosition, Snapshot.ExpectedVelocity, Snapshot.ObservedVelocity, _generation);
+            Snapshot.ExpectedPosition, Snapshot.ObservedPosition, Snapshot.ExpectedVelocity, Snapshot.ObservedVelocity, _generation,AirMotion:_airFeedback);
         _plan = null;
         return default;
     }

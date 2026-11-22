@@ -194,7 +194,10 @@ internal static class StateSpacePlanner
                 foreach (int dir in directions)
                 {
                     // BuildHoldOptions from upstream: walk then 2-frame hold increments.
-                    for (int option = 0; option <= (ph.JumpHeight + 1) / 2; option++)
+                    int ordinaryOptions=(ph.JumpHeight+1)/2;
+                    int extraOptions=ph.ExtraJump!=null&&(cur.ExtraAvailable||cur.Grounded)?4:0;
+                    int airOptions=ph.Air?.Kind==AirKind.Wings?5:ph.Air?.Kind==AirKind.RocketBoots?3:0;
+                    for (int option = 0; option <= ordinaryOptions+extraOptions+airOptions; option++)
                     {
                         if (dir == 0 && option == 0) continue;
                         if(watch.Elapsed.TotalMilliseconds>=budgetMs)
@@ -203,7 +206,11 @@ internal static class StateSpacePlanner
                             sliceStart=expansions;
                             budgetMs=sliceMilliseconds;maxExpansions=sliceNodes;
                         }
-                        int hold = Math.Min(option * 2, ph.JumpHeight);
+                        int hold = option>ordinaryOptions?ph.JumpHeight:Math.Min(option * 2, ph.JumpHeight);
+                        int extraFrame=option>ordinaryOptions&&option<=ordinaryOptions+extraOptions?hold+1+(option-ordinaryOptions-1)*8:-1;
+                        int airOption=option-ordinaryOptions-extraOptions-1;
+                        int airStart=airOption>=0?hold+1+(ph.Air.Kind==AirKind.RocketBoots?airOption*8:0):-1;
+                        int airHold=airOption>=0?(ph.Air.Kind==AirKind.Wings?(airOption+1)*8:1):0;
                         if(requireInitialJump&&cur==start&&hold==0)
                         {Reject("graph launch requires jump");continue;}
                         foreach (int stride in hold == 0 ? new[] { 24, 6 } : new[] { 24 })
@@ -215,8 +222,8 @@ internal static class StateSpacePlanner
                                 budgetMs=sliceMilliseconds;maxExpansions=sliceNodes;
                             }
                             var edge = learning==null
-                                ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,maxDropPixels:MaxDropPixels)
-                                :learning.Predict(cur,dir,hold,stride,ph,world);
+                                ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,maxDropPixels:MaxDropPixels,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold)
+                                :learning.Predict(cur,dir,hold,stride,ph,world,extraFrame,airStart,airHold);
                             if (!edge.Safe)
                             {
                                 if(cur.Equals(start)&&dir==sign&&hold==0&&rootBlocks==null)rootBlocks=edge.BlockingTiles;
@@ -225,7 +232,7 @@ internal static class StateSpacePlanner
                             // Predict still checks the complete braking/landing trajectory.
                             // Carry the observed prefix velocity into the next search node;
                             // The final approach or an unsafe handoff executes the tail.
-                            bool settle = (region != null ? region.Contains(edge.Landing)
+                            bool settle = airStart>=0||(region != null ? region.Contains(edge.Landing)
                                     : sign * (targetX - edge.Landing.Px) <= 12)
                                 || !PhysicsSimulator.SupportedCheckpoint(edge.Frames[edge.ExecuteFrames - 1].State,world);
                             int execute = settle ? edge.Frames.Count : edge.ExecuteFrames;
@@ -236,7 +243,7 @@ internal static class StateSpacePlanner
                             if (rejectEdge?.Invoke(cur, edge) == true)
                             { Reject("recently failed local edge"); continue; }
                             var next = edge.Landing;
-                            if (Math.Abs(next.Px - start.Px) > 192 || Math.Abs(next.Py - start.Py) > 128)
+                            if (Math.Abs(next.Px - start.Px) > (ph.ExtraJump!=null||ph.Air!=null?288:192) || Math.Abs(next.Py - start.Py) > (ph.ExtraJump!=null||ph.Air!=null?208:128))
                             { Reject("outside route span"); continue; }
                             // Prefer walking when it makes comparable progress. Braking at
                             // every walk boundary previously made flat-ground jumps cheaper.

@@ -32,9 +32,9 @@ internal sealed class NativeNavigation
 
     private PhysicsState State(Player p) => NativeMotionWorld.Observe(p);
 
-    internal bool Ordinary(Player p) => OrdinaryRejection(p) == null;
+    internal bool Ordinary(Player p) => OrdinaryRejection(p,NativeMovementReader.Capture(p)) == null;
 
-    private string OrdinaryRejection(Player p)
+    private string OrdinaryRejection(Player p,MovementSnapshot movement)
     {
         var ph = Parameters(p);
         List<string> reasons = null;
@@ -56,9 +56,17 @@ internal sealed class NativeNavigation
         Reject(p.slippy || p.slippy2, "slippery");
         Reject(p.sticky, "sticky");
         Reject(p.powerrun, "power_run");
-        Reject(p.AnyExtraJumpUsable(), "extra_jump_usable");
-        Reject(p.wingsLogic != 0, "functional_wings");
-        Reject(p.rocketBoots != 0, "rocket_boots");
+        bool modeled=ExtraJumpModel.Select(movement)!=null;
+        Reject(movement.ActiveExtraJump&&!modeled,"extra_jump_active");
+        Reject(movement.PotentialExtraJump&&!modeled,"extra_jump_available");
+        bool airRequested=AirMotionModel.Strategy(movement)!=AirKind.None;
+        Reject(airRequested&&ph.Air==null,"unsupported_air_profile");
+        Reject(airRequested&&(p.slowFall||p.empressBrooch||p.chilled),"unmodeled_air_effect");
+        Reject(ph.Air!=null&&!ph.Air.Valid(AirMotionModel.Resources(movement)),"invalid_air_resources");
+        Reject(ph.Air!=null&&!ph.Matches(PhysicsParameters.Basic)&&!ph.Matches(PhysicsParameters.Swiftness),"unsupported_air_physics");
+        Reject(p.honeyWet&&!p.wet,"honey_wet");
+        Reject(p.lavaWet&&!p.wet,"lava_wet");
+        Reject(p.shimmerWet&&!p.wet,"shimmer_wet");
         Reject(p.itemAnimation != 0, "item_animation");
         Reject(p.width != PhysicsSimulator.PlayerW || p.height != PhysicsSimulator.PlayerH, "unsupported_body_size");
         Reject(!float.IsFinite(p.velocity.X)||!float.IsFinite(p.velocity.Y), "invalid_velocity");
@@ -66,8 +74,15 @@ internal sealed class NativeNavigation
         return reasons == null ? null : string.Join("; ", reasons);
     }
 
-    internal static PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
-        p.accRunSpeed, p.runSlowdown, p.gravity, p.maxFallSpeed, Player.jumpSpeed, Player.jumpHeight);
+    internal static PhysicsParameters Parameters(Player p)
+    {
+        var m=NativeMovementReader.Capture(p);var air=AirMotionModel.Select(m);
+        // Angel's native air tweak changes accRunSpeed before this boundary.
+        // Keep one planning profile; Step applies that verified air-only value.
+        float speed=air?.Kind==AirKind.Wings&&Math.Abs(p.accRunSpeed-6.25f)<.001f?3:p.accRunSpeed;
+        return new(p.runAcceleration,p.maxRunSpeed,speed,p.runSlowdown,p.gravity,p.maxFallSpeed,Player.jumpSpeed,Player.jumpHeight,
+            AirMotionModel.Strategy(m)==AirKind.None?ExtraJumpModel.Select(m):null,air);
+    }
 
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
         LandingRegion region = null)
@@ -86,11 +101,15 @@ internal sealed class NativeNavigation
             else Task.Begin(session, generation, targetX.Value, State(p));
         }
         var ph=Parameters(p);
-        string rejection = OrdinaryRejection(p);
+        var movement=NativeMovementReader.Capture(p);
+        string rejection = OrdinaryRejection(p,movement);
         int swiftnessIndex=p.FindBuffIndex(BuffID.Swiftness);
         _profile=_mobility.Sample(ph,p.width,p.height,p.HasBuff(BuffID.Swiftness),
             rejection==null?Array.Empty<string>():new[]{rejection},Main.GameUpdateCount,session,generation,
-            swiftnessIndex>=0?p.buffTime[swiftnessIndex]:0);
+            swiftnessIndex>=0?p.buffTime[swiftnessIndex]:0,movement,
+            ph.ExtraJump!=null&&ExtraJumpModel.ExpectedBoundary(_navigation?Task.ExpectedState:Controller.ExpectedState,State(p)),
+            ph.Air!=null&&(_navigation?Task.ExpectedState:Controller.ExpectedState) is {} expected&&!AirMotionModel.Matches(expected,State(p),true),
+            ph.Air==null?null:new(p.runAcceleration,p.maxRunSpeed,p.accRunSpeed,p.runSlowdown,p.gravity,p.maxFallSpeed,Player.jumpSpeed,Player.jumpHeight));
         if(!_profile.Supported)return Fail("unsupported navigation state: "+string.Join("; ",_profile.UnsupportedEffects));
         if (_session != session || _generation != generation) _life = p.statLife;
         _session = session; _generation = generation;

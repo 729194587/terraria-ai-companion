@@ -44,6 +44,17 @@ public static class ServerAiPackageTests
             &&Calls(Type("CharacterStore").Methods.Single(m=>m.Name=="SaveCore"),"Read"),"world and legacy saves share native SavePlayer and native read-back validation");
         Check(Calls(Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop"),"Observe")
             &&Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="native_navigation_landing_unconfirmed"),"native airborne failure cleanup reports unconfirmed landing");
+        var grapple=Type("ActorGrapple");
+        var fire=grapple.Methods.Single(m=>m.Name=="Fire");
+        Check(Calls(fire,"Require")&&Calls(fire,"NewProjectile")&&Calls(fire,"CanUseGrapple")&&Calls(fire,"UseGrapple")
+            &&!Calls(fire,"QuickGrapple"),"grapple spawn uses audited native item/projectile path with explicit actor binding");
+        var grappleMethods=Walk(grapple).Concat(Walk(Type("ServerGrappleClimb")))
+            .SelectMany(t=>t.Methods).Where(m=>m.HasBody).ToArray();
+        Check(!grappleMethods.SelectMany(m=>m.Body.Instructions).Any(i=>i.OpCode==OpCodes.Stsfld
+            &&i.Operand is FieldReference f&&f.DeclaringType.FullName=="Terraria.Main"&&f.Name is "myPlayer" or "mouseX" or "mouseY")
+            &&!grappleMethods.Any(m=>Calls(m,"Update")),"grapple does not rewrite client globals or call Player.Update");
+        Check(Calls(grapple.Methods.Single(m=>m.Name=="Matches"),"TryGetGlobalProjectile")
+            &&Calls(grapple.Methods.Single(m=>m.Name=="Release"),"Matches"),"grapple release verifies the projectile incarnation before mutation");
         Check(Walk(Type("StateSpacePlanner")).SelectMany(t=>t.Methods).Where(m=>m.HasBody)
             .Any(m=>Calls(m,"SupportedCheckpoint")),"planner requires real supported checkpoints beyond collision contact");
         var motionWorld=Type("NativeMotionWorld");
@@ -192,6 +203,26 @@ public static class ServerAiPackageTests
             &&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="statLife")
             &&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="lavaWet"),"hazard reads bound actor health/lava and current native NPCs");
         Check(!hazard.Body.Instructions.Any(i=>i.OpCode==OpCodes.Stfld&&i.Operand is FieldReference f&&f.DeclaringType.Name=="Player"),"hazard detection never rewrites Player motion or controls");
+        var movement=Type("NativeMovementReader").Methods.Single(m=>m.Name=="Capture");
+        var nativeCalls=movement.Body.Instructions.Select(i=>i.Operand).OfType<MethodReference>().Where(r=>r.DeclaringType.Namespace.StartsWith("Terraria")).ToArray();
+        var allowed=new[]{"get_OrderedJumps","GetJumpState","get_FullName","get_Enabled","get_Available","get_Active","get_Type","get_MountCount","GetMount"};
+        Check(nativeCalls.All(r=>allowed.Contains(r.Name)),"movement discovery calls only audited registry/state getters, never extension hooks");
+        Check(!Type("NativeNavigation").Methods.Where(m=>m.HasBody).Any(m=>Calls(m,"AnyExtraJumpUsable")),"navigation admission never calls hook-bearing AnyExtraJumpUsable");
+        Check(Calls(Type("NativeNavigation").Methods.Single(m=>m.Name=="Before"),"Capture"),"movement snapshot sampled by existing navigation Before");
+        var boundary=Type("ProbePlayer").Methods.Single(m=>m.Name=="PostUpdateRunSpeeds");
+        Check(boundary.Body.Instructions.Count(i=>i.Operand is MethodReference r&&r.Name=="BeforeMovement")==1&&!Calls(boundary,"Update"),"one native run-speeds navigation boundary, no extra Player.Update");
+        Check(!movement.Body.Instructions.Any(i=>i.OpCode==OpCodes.Stfld&&i.Operand is FieldReference f&&f.DeclaringType.Namespace.StartsWith("Terraria")),"movement collector never mutates native game state");
+        Check(types.Where(t=>t.Namespace=="CompanionBridge.Motion").SelectMany(t=>t.Methods).Where(m=>m.HasBody)
+            .SelectMany(m=>m.Body.Instructions).All(i=>i.Operand is not MethodReference r||r.DeclaringType.Namespace!="Terraria.ModLoader"
+                ||!new[]{"ProcessJumps","PerformJump","CanStart","CanStartExtraJump","GetDurationMultiplier","OnStarted"}.Contains(r.Name)),
+            "prediction/execution never probes or directly invokes native ExtraJump hooks");
+        Check(Calls(Type("LocalMotionController").Methods.Single(m=>m.Name=="After"),"MatchesResource"),"native execution verifies actual activation and counters");
+        Check(types.Where(t=>t.Namespace=="CompanionBridge.Motion").SelectMany(t=>t.Methods).Where(m=>m.HasBody)
+            .SelectMany(m=>m.Body.Instructions).All(i=>i.Operand is not MethodReference r
+                ||!new[]{"HorizontalWingSpeeds","VerticalWingSpeeds","WingGlidingSpeeds","WingMovement","RocketBootVisuals"}.Contains(r.Name)),
+            "air prediction and collection never replay wing/rocket extension hooks");
+        Check(Calls(Type("LocalMotionController").Methods.Single(m=>m.Name=="Before"),"Correct")
+            &&Calls(Type("NativeMotionWorld").Methods.Single(m=>m.Name=="Observe"),"Resources"),"air feedback reuses actual native resources and existing executor");
         Console.WriteLine($"AI formal package: {checks} IL checks passed; no graphical game launched.");
     }
 }

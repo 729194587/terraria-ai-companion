@@ -1,7 +1,8 @@
 param([string]$TModLoaderPath,[string]$EngineProfile,
     [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes,[switch]$Mobility,[switch]$Probe,[switch]$Region,
-    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation)
+    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation,[switch]$ExtraJump,[switch]$Grapple)
 $ErrorActionPreference='Stop'
+if($ExtraJump){$Mobility=$true}
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
 $TModLoaderPath=$selectedEngine.Path
@@ -30,12 +31,14 @@ foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld"
     '-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest',
     '-companionactionstest','-companionterraintest','-companionnavrecoverytest')){$info.ArgumentList.Add($arg)}
 if($Mobility -or $Region){$info.ArgumentList.Add('-companionmobilitytest')}
+if($ExtraJump){$info.ArgumentList.Add('-companionextrajumptest')}
+if($Grapple){$info.ArgumentList.Add('-companiongrappletest')}
 if($Region){$info.ArgumentList.Add('-companionregiontest')}
 if($Environment){$info.ArgumentList.Add('-companionenvironmenttest')}
 $process=[Diagnostics.Process]::Start($info)
 $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
 try {
-    $testScript=if($Region){'native_scene_region.py'}elseif($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
+    $testScript=if($Grapple){'native_grapple.py'}elseif($ExtraJump){'native_extra_jump.py'}elseif($Region){'native_scene_region.py'}elseif($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
     $probeArgs=@('-B',(Join-Path $PSScriptRoot $testScript),'--port',"$IpcPort",'--profile',$profile)
     if($Region){$probeArgs+=@('--iterations',"$RegionIterations")}
     if($Environment){$probeArgs+='--environment'}
@@ -45,6 +48,11 @@ try {
     if($AutonomousNavigation){$probeArgs+='--autonomous'}
     & "$repo/.local/lua-venv/Scripts/python.exe" @probeArgs
     if($LASTEXITCODE -ne 0){throw "Native recovery verification failed: $profile"}
+    if($Mobility){
+        $discovery=Get-Content -LiteralPath "$profile/movement-discovery.json" -Raw | ConvertFrom-Json
+        if($discovery.checks -lt 100 -or !$discovery.fieldInjectionRestored -or $discovery.additionalPlayerUpdates -ne 0){throw 'Movement discovery boundary checks failed'}
+        Write-Output "Movement discovery native: $($discovery.checks) checks at $($discovery.boundary)"
+    }
     [IO.File]::WriteAllText("$profile/g81-test-stop",'Stop only this isolated server')
     if(!$process.WaitForExit(20000) -or $process.ExitCode -ne 0){throw 'Isolated server did not unload cleanly'}
     @{profile=$profile;packageSHA256=(Get-FileHash -LiteralPath $package).Hash;

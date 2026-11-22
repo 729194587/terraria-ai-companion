@@ -10,6 +10,23 @@ from lua_runtime import LuaRuntime, Limits
 from native_direct_input import wait_file
 
 
+def check_movement_trace(trace):
+    checked = 0
+    for frame in trace:
+        profile = (frame.get('navigation') or {}).get('Mobility')
+        if not profile or not frame.get('injectedInput'):
+            continue
+        movement = profile['Movement']
+        assert profile['Source'] == 'native_PostUpdateRunSpeeds', profile
+        assert profile['SourceTick'] == frame['inputPhysics']['sampleTick'], profile
+        assert [j['Order'] for j in movement['ExtraJumps']] == list(range(len(movement['ExtraJumps'])))
+        assert len({j['FullName'] for j in movement['ExtraJumps']}) == len(movement['ExtraJumps'])
+        assert set(profile['AvailableModes']) <= {'ground_walk', 'ground_jump'}, profile
+        checked += 1
+    assert checked, 'Missing native boundary snapshots'
+    return checked
+
+
 async def verify(args):
     p=args.profile;await wait_file(p/'action-fixture.json',90);rows=[]
     cases=args.scenes or (['basic','swiftness'] if args.probe else ['basic','swiftness','basic_jump','swiftness_jump','basic_region','swiftness_region','swiftness_region_left','add','remove','rapid','expiry','unknown','equipment'])
@@ -31,6 +48,7 @@ async def verify(args):
         action=result.get('value') or result.get('lastAction') or {}
         (p/f'mobility-{mode}-receipt.json').write_text(json.dumps(dict(source=source,fixture=fixture,result=result),indent=2))
         trace=await wait_file(p/f'terrain-motion-{scene}-{direction}-mobility-{variant}.json')
+        check_movement_trace(trace)
         samples={json.dumps(f['inputPhysics'],sort_keys=True) for f in trace if f.get('inputPhysics') and f.get('injectedInput')}
         row=dict(mode=mode,status=action.get('status'),reason=action.get('reason'),detail=action.get('reasonDetail'),
             endX=(action.get('evidence') or {}).get('x'),samples=[json.loads(s) for s in sorted(samples)],frames=len(trace),maxPredictionError=max((f.get('maxError') or 0 for f in trace),default=0),navigation=(action.get('evidence') or {}).get('navigation'))

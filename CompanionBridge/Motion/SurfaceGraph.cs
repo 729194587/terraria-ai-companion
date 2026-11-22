@@ -76,6 +76,7 @@ internal sealed class SurfaceGraph
     internal IEnumerable<int> Refresh(ISurfaceTerrain source,int cx,int cy,int radius,PhysicsParameters physics=null)
     {
         physics??=PhysicsParameters.Basic;
+        if(physics.Air!=null)physics=physics with{Air=null}; // Static stances have no Actor resources.
         int height=Math.Min(64,Math.Max(16,radius/2));
         int l=cx-radius,r=cx+radius,t=cy-height,b=cy+height;
         var dirty=new HashSet<(int X,int Y)>();
@@ -169,6 +170,7 @@ internal sealed class SurfaceGraph
     // native-verified samples at the exact goal height, including slope inverses.
     internal IEnumerable<SurfaceNode> GoalStances(ISurfaceTerrain source,LandingRegion goal,PhysicsParameters ph)
     {
+        if(ph.Air!=null)ph=ph with{Air=null};
         for(int x=(int)Math.Floor(goal.MinPlayerLeftX/16);x<=Math.Floor((goal.MaxPlayerLeftX+20)/16);x++)
             for(int y=(int)Math.Floor(goal.SurfaceY/16)-1;y<=Math.Floor(goal.SurfaceY/16);y++)
             {
@@ -212,7 +214,9 @@ internal sealed class SurfaceGraph
     internal SurfaceEdge Candidate(SurfaceNode a,SurfaceNode b,PhysicsParameters ph)
     {
         float dx=Math.Abs(a.X-b.X),dy=b.Region.SurfaceY-a.Region.SurfaceY;
-        if(a.Id==b.Id||dx>144||dy>StateSpacePlanner.MaxDropPixels||dy<-(ph.JumpSpeed*ph.JumpHeight+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity)+16))return null;
+        float extraRise=ph.ExtraJump==null?0:ph.JumpSpeed*ph.ExtraJump.HoldFrames(ph)+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity);
+        if(ph.Air!=null)extraRise+=ph.JumpSpeed*16;
+        if(a.Id==b.Id||dx>(ph.ExtraJump==null&&ph.Air==null?144:256)||dy>StateSpacePlanner.MaxDropPixels||dy<-(ph.JumpSpeed*ph.JumpHeight+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity)+16+extraRise))return null;
         if(dx<2&&Math.Abs(dy)<1)return null;
         SurfaceMotion kind=dy>16?SurfaceMotion.Drop:Math.Abs(dy)<=16?SurfaceMotion.Walk:SurfaceMotion.Jump;
         if(kind==SurfaceMotion.Walk)
@@ -338,7 +342,7 @@ internal sealed class SurfaceNavigator : IDisposable
                     float d=goal.Distance(a.Rest(Math.Clamp((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2,a.Region.MinPlayerLeftX,a.Region.MaxPlayerLeftX)));
                     if(d<bestDistance){bestDistance=d;best=a;}
                     if(d==0){end=a;break;}
-                    for(int column=a.TileX-10;column<=a.TileX+10;column++)
+                    for(int column=a.TileX-(ph.ExtraJump==null&&ph.Air==null?10:17);column<=a.TileX+(ph.ExtraJump==null&&ph.Air==null?10:17);column++)
                     {
                         if(!byColumn.TryGetValue(column,out var neighbors))continue;
                         foreach(var b in neighbors)
@@ -439,6 +443,7 @@ internal sealed class SurfaceNavigator : IDisposable
     // the actual PhysicsState before execution.
     private static LandingRegion JumpLaunch(SurfaceNode node,PhysicsState actual,ISurfaceTerrain source,PhysicsParameters ph)
     {
+        if(ph.Air!=null)ph=ph with{Air=null};
         float? first=null;float last=0,bestLeft=0,bestRight=-1;
         for(float x=node.Region.MinPlayerLeftX;x<=node.Region.MaxPlayerLeftX;x+=2)
         {
@@ -448,6 +453,9 @@ internal sealed class SurfaceNavigator : IDisposable
             {
                 for(int frame=0;frame<3&&clear;frame++)
                 {
+                    // A hypothetical surface has no observed flight resources.
+                    // These three ordinary launch frames only test headroom;
+                    // the later actual-state search proves powered movement.
                     var previous=next;next=PhysicsSimulator.Step(next,new(0,true),ph,w);
                     clear=w.SafeSweep(previous,next,out _);
                 }

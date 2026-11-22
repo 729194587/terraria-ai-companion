@@ -11,9 +11,9 @@ internal sealed class NavigationFailureMemory
     internal const int LifetimeUpdates = 120;
     internal const int Capacity=64;
     internal sealed record Failure(string Motion,int Direction,int Hold,int Stride,PhysicsState Start,PhysicsState ExpectedLanding,
-        PhysicsState ActualLanding,string Reason,long Terrain,PhysicsParameters Physics,long Expires);
+        PhysicsState ActualLanding,string Reason,long Terrain,PhysicsParameters Physics,long Expires,int ExtraJumpFrame=-1,int AirStartFrame=-1,int AirHoldFrames=0);
     private sealed record Edge(PhysicsState At, int Direction, int Hold, int Stride, long Expires,
-        Prediction Prediction,Failure Detail);
+        Prediction Prediction,Failure Detail,int ExtraJumpFrame,int AirStartFrame,int AirHoldFrames);
     private readonly List<Edge> edges = new();
     internal int Count => edges.Count;
     internal int Version { get; private set; }
@@ -35,9 +35,9 @@ internal sealed class NavigationFailureMemory
         Expire(update);
         if(edges.Count>=Capacity)edges.RemoveAt(0);
         var footprint=world==null?p:p with{Frames=new(p.Frames){new(default,actualLanding)}};
-        var detail=world==null?null:new Failure(p.Jump?"jump":"walk",key.Direction,key.Hold,key.Stride,at,p.Landing,actualLanding,reason,
-            world.TerrainSignature(at,footprint),physics,update+LifetimeUpdates);
-        edges.Add(new(at, key.Direction, key.Hold, key.Stride, update + LifetimeUpdates,footprint,detail));
+        var detail=world==null?null:new Failure(p.AirStartFrame>=0?p.AirMode.ToString():p.ExtraJumpFrame>=0?"extra_jump":p.Jump?"jump":"walk",key.Direction,key.Hold,key.Stride,at,p.Landing,actualLanding,reason,
+            world.TerrainSignature(at,footprint),physics,update+LifetimeUpdates,p.ExtraJumpFrame,p.AirStartFrame,p.AirHoldFrames);
+        edges.Add(new(at, key.Direction, key.Hold, key.Stride, update + LifetimeUpdates,footprint,detail,p.ExtraJumpFrame,p.AirStartFrame,p.AirHoldFrames));
         Version++;
     }
     internal bool Reject(PhysicsState start, Prediction p, long update)
@@ -59,7 +59,8 @@ internal sealed class NavigationFailureMemory
     {
         if (edges.Count==0) return false;
         var key = Signature(p);
-        return edges.Any(e => e.Direction == key.Direction && e.Hold == key.Hold && e.Stride == key.Stride
+        return edges.Any(e => e.Direction == key.Direction && e.Hold == key.Hold && e.Stride == key.Stride&&e.ExtraJumpFrame==p.ExtraJumpFrame
+            &&e.AirStartFrame==p.AirStartFrame&&e.AirHoldFrames==p.AirHoldFrames
             && (e.Detail!=null?start==e.At
                 : Math.Abs(start.Px - e.At.Px) <= 32 && Math.Abs(start.Py - e.At.Py) <= 8
                     && Math.Abs(start.Vx - e.At.Vx) <= .5f));

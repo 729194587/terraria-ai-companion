@@ -39,6 +39,12 @@ Agent 选择目的地和策略；Lua 组织观察与动作；导航运行时负�
 
 Phase 3 v1.1 在原根任务中加入有限连续改造评估：在彼此独立的虚拟地形上估算连续挖掘、放置及组合成本，与真实地形移动路线比较；每次只执行下一项原生动作，确认真实变化后重新观察。虚拟结构不构成原生碰撞证明，也不会写入真实 Tile。范围与定向证据见 [Phase 3 实现记录](PHASE3_LOCAL_PLANNING_IMPLEMENTATION.md)。
 
+Phase 4.1 在原有 `MobilityProfile` 中提供原生运动能力和环境状态的只读值快照，保留 ExtraJump 原生顺序、功能性翅膀、火箭靴、坐骑及钩爪身份。资源采样与规划版本分离；发现特殊能力不会增加可用导航模式。实际采集边界、双引擎验证和限制见 [Phase 4.1 实现记录](PHASE4_1_MOVEMENT_DISCOVERY_IMPLEMENTATION.md)。
+
+Phase 4.2 在现有物理状态、地面动作搜索和逐帧执行上接入单一已验证的 Cloud ExtraJump 模型。只有动态快照中单独启用该能力、且没有阻止额外跳跃时才参与规划；计划通过真实松键/再按下请求原生触发，并核验 Active、Available、jump 计数及运动状态。正常消耗/结束/落地刷新保持规划版本，异常变化仍走释放、落地核验与恢复。范围、证据和手动验证见 [Phase 4.2 实现记录](PHASE4_2_EXTRA_JUMP_NAVIGATION_IMPLEMENTATION.md)。
+
+Phase 4.3 在同一预测与执行链上加入普通天使翅膀和基础火箭靴脉冲模型。有功能性翅膀时始终使用翅膀策略，耗尽后也不切到火箭靴；没有翅膀才考虑推进。飞行时间、推进资源和延迟进入物理搜索状态，原生观察核验与安全恢复继续复用。只对经过完整安全落脚尾段验证的小幅空中偏差进行反馈修正。当前证据为离线、IL 契约和双引擎构建，尚未进行本阶段原生飞行或真实世界验收，详见 [Phase 4.3 实现记录](PHASE4_3_WINGS_ROCKET_BOOTS_IMPLEMENTATION.md)。
+
 - 规划与执行：`CompanionBridge/Motion/`
 - Server AI 导航适配：`CompanionBridge/ServerIpc/ServerAiNavigation.cs`
 - Server Player 原生输入/钩子：`CompanionBridge/ServerPlayerRuntime/`
