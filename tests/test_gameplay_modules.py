@@ -239,7 +239,8 @@ class ModuleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((name,expected), calls[-1])
 
     async def test_registry_matches_prompt_and_fresh_workers(self):
-        for caps, expected in ((CAPS, ['crafting','building']), (FULL,['crafting']), (set(),[])):
+        for caps, expected in ((CAPS, ['crafting','building','material_plan']),
+                               (FULL,['crafting','material_plan']), (set(),[])):
             with self.subTest(caps=caps):
                 b = contract_tests.ApiHelpTests.runtime_bridge(caps)
                 self.assertEqual(expected, [m.name for m in lua_modules.available(b)])

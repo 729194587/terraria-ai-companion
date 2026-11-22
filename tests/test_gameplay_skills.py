@@ -8,6 +8,24 @@ from gameplay_skills import MAX_SKILL_BYTES, SkillRegistry, bundled_skills
 
 
 class SkillRegistryTests(unittest.TestCase):
+    def test_tool_upgrade_knowledge_is_versioned_and_loaded_on_demand(self):
+        registry = bundled_skills()
+        skill = registry.load({'name': 'tool_upgrades'})
+        knowledge = skill['knowledge']
+        self.assertEqual(skill['game_version'], knowledge['game_version'])
+        aliases = {name: key for key, row in knowledge['records'].items() for name in row['names']}
+        self.assertEqual('Terraria/MoltenPickaxe', aliases['熔岩镐'])
+        self.assertEqual(aliases['熔岩镐'], aliases['Molten Pickaxe'])
+        self.assertNotIn('minPickaxePower', registry.render_index())
+        self.assertIn('tool_upgrades', registry.render_index())
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'tool_upgrades' / 'SKILL.md'
+            path.parent.mkdir()
+            path.write_bytes((Path(__file__).resolve().parents[1] / 'skills/tool_upgrades/SKILL.md').read_bytes())
+            path.with_name('knowledge.json').write_text('{"game_version":"other"}')
+            with self.assertRaisesRegex(ValueError, 'version'):
+                SkillRegistry(Path(directory)).load({'name': 'tool_upgrades'})
+
     def test_bundled_index_and_read_only_load(self):
         registry = bundled_skills()
         index = registry.render_index()

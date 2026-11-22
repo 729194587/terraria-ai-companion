@@ -22,6 +22,8 @@ BUILTINS = (
     Module('building', '调查蓝图、提交一次施工、有界等待并在可信终态复查。',
            ('build_diff', 'build_place', 'submit_task', 'await_task'), 'construct',
            'construct(blueprint, {milliseconds=1000})'),
+    Module('material_plan', '只读计算新制一把熔岩镐的背包材料缺口。',
+           ('resolve_content', 'inspect_inventory', 'query_recipes'), 'molten_pickaxe', 'molten_pickaxe()'),
 )
 
 
