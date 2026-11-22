@@ -28,6 +28,10 @@ Terraria AI Companion 是一个让 AI 以 Terraria 原生 Player 身份参与游
 | 游戏通信 | TCP、服务器 IPC |
 | 测试 | Python unittest、C# 离线测试、隔离 Dedicated Server 验证 |
 
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。第三方组件保留各自的许可证和归属声明。
+
 ## 文档
 
 - [文档索引](docs/INDEX.md)：按模块查找技术资料。
