@@ -69,6 +69,9 @@
 ## 历史与研究
 
 - [历史阶段资料](archive/README.md)：早期架构、阶段实施和修复记录。
+- [Phase 2–4 导航阶段记录](#)：各阶段的 Surface Graph、局部规划、特殊移动与液体/绳索实现记录，当前架构见 [导航系统](NAVIGATION.md)。
+- [原生机制审计报告](NATIVE_MECHANISM_PARITY_AUDIT_REPORT.md)：目标引擎 IL 对照、已确认差异及隔离专服证据。
+- [战斗架构历史审计](COMBAT_ARCHITECTURE_AUDIT.md)：Combat MVP 早期架构快照。
 - [Numen 参考研究](architecture/NUMEN_ADAPTATION_ROADMAP.md)：外部项目的架构参考与适配思路。
 - [架构审查计划](architecture/ARCHITECTURE_AUDIT_PLAN.md)：Agent 与游戏运行时的后续审查问题。
 - [原生执行架构](NATIVE_EXECUTION_REFACTOR.md)：原生执行、Actor 适配与效果核验。
