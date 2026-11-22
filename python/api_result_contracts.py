@@ -318,6 +318,12 @@ OBSERVATIONS = {
         'status': enum('partial_unloaded', 'not_found', 'ok'), 'bounds': ref('TileBounds'),
         'scannedCount': COUNT, 'sort': S, 'coordinates': S,
     })),
+    'query_item_info': observation(obj({
+        **QUERY_METADATA, 'typeId': I, 'contentKey': S, 'name': S, 'mod': S,
+        'stats': obj(fields(integers='damage defense pickPower axePower hammerPower rarity valueCopper maxStack mana useTime useAnimation crit healLife healMana',
+                            numbers='knockBack', booleans='accessory consumable')),
+        'tooltip': array(S), 'extraTooltip': S,
+    }, optional=('extraTooltip',))),
     'resolve_content': observation(obj({
         **QUERY_METADATA, **COLLECTION, 'status': enum('not_found', 'ambiguous', 'ok'),
         'kind': enum('tile', 'wall', 'item'), 'mode': enum('search', 'exact'), 'scope': S,

@@ -101,6 +101,7 @@ for _, item in ipairs(q.data.inventory) do
     end
 end
 return counts''',
+    'query_item_info': 'return api("query_item_info",{typeId=8})',
     'resolve_content': 'return api("resolve_content",{kind="item",query="Terraria/Torch"})',
     'query_recipes': 'return api("query_recipes",{resultType=8,availableOnly=false})',
     'scan_entities': '''local q=api("scan_entities",{category="npc",radius=320})
@@ -193,7 +194,8 @@ PREREQUISITES = {
 }
 RELATED = {
     'inspect_inventory': ('hold_inventory_item','inspect_container'),
-    'resolve_content': ('query_recipes','scan_tiles'),
+    'query_item_info': ('resolve_content',),
+    'resolve_content': ('query_item_info','query_recipes','scan_tiles'),
     'query_recipes': ('resolve_content','craft_recipe'),
     'craft_recipe': ('query_recipes','inspect_inventory'),
     'inspect_container': ('open_container','deposit_container_item','withdraw_container_item'),
@@ -204,6 +206,7 @@ RELATED = {
 }
 RETURN_NOTES = {
     'inspect_inventory': '必填 mode。data.inventory 是槽位行数组；row.slot 是游戏槽位编号，Lua 数组下标从 1 开始。',
+    'query_item_info': 'typeId 取自 resolve_content 当前候选。data.tooltip 是普通本地化描述行数组，data.extraTooltip 仅有扩展时返回，可含多行。stats.valueCopper 以铜币为单位。未注册的 ID 返回 available=false。',
     'resolve_content': '检查 data.status 和 data.candidates；唯一精确匹配时取 typeId。',
     'query_recipes': 'data.items 含 output.count、ingredients、stations、conditions 和 hasOutputSpace；检查 truncated 和 offset。',
     'craft_recipe': 'evidence.completedCrafts 为完成次数，producedCount 为件数；完成时核对 inventoryVerified。部分制作保留原生回执。',

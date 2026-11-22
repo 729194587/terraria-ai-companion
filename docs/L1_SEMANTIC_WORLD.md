@@ -58,3 +58,9 @@ return world
 该 helper 负责发现与整理候选，不负责全局寻矿、路径规划、工具选择、移动、挖掘或拾取。相关行动由导航、任务和原子 API 完成。
 
 实现：`python/lua/semantic.lua`、`python/lua_worker.py`、`python/server_ai_contract.py`。
+
+## 物品信息
+
+先通过 `resolve_content({kind="item", query=...})` 取得当前加载环境的 `candidates[].typeId`，再调用 `api("query_item_info", {typeId=id})`。成功时 `data` 包含本地化名称、内容键、Mod 内部名称、基础物品样本属性及普通描述行数组 `tooltip`。价值以铜币计，斧力已换算为游戏内百分比。未知的正整数 ID 返回 `available=false` 和 `reason="unknown_item_type"`。
+
+实现从运行时本地化表读取描述。实现 `IHoldShiftTooltipItem` 的物品还会读取普通提示、风味文本和独立的多行 `extraTooltip`；没有扩展文本时省略该字段。查询不执行客户端悬停绘制或玩家状态相关的 UI 钩子。客户端支持已加载的内容 Mod。Server AI 仍受 G1 的 Mod 加载隔离条件限制。

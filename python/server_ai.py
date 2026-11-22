@@ -36,6 +36,7 @@ def operations_for_capabilities(capabilities):
     operations = {'select_hotbar_slot', 'stop_action', 'wait'}
     for capability, names in (
         ('server_ai_reads_v1', {'get_player_state', 'inspect_inventory'}),
+        ('server_ai_item_info_v1', {'query_item_info'}),
         ('server_ai_perception_v1', PERCEPTION_OPERATIONS),
         ('server_ai_build_diff_v1', BUILD_READS),
         ('server_ai_merchant_shop_v1', SHOP_READS),
@@ -265,7 +266,7 @@ class ServerAiBridge:
                     raise
             if cmd == "query_atomic":
                 operation = parameters.get("operation")
-                if operation not in {"get_player_state", "inspect_inventory"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | BUILD_READS | SHOP_READS | SALE_READS | NURSE_READS | REFORGE_READS | HOUSING_READS | PYLON_READS | MAP_READS | COMBAT_READS | CONTAINER_READS or operation not in self.supported_atomic_operations:
+                if operation not in {"get_player_state", "inspect_inventory", "query_item_info"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | BUILD_READS | SHOP_READS | SALE_READS | NURSE_READS | REFORGE_READS | HOUSING_READS | PYLON_READS | MAP_READS | COMBAT_READS | CONTAINER_READS or operation not in self.supported_atomic_operations:
                     raise BridgeError("Query unsupported by server AI backend", status="unsupported_operation")
                 reply = self._request("query", operation=operation, arguments=parameters.get("arguments", {}))
                 data = reply.get("data")
@@ -300,7 +301,7 @@ class ServerAiBridge:
                 return self._movement(self._request("action", actionId=self._action_id)["data"]["action"])
             if cmd == "start_atomic":
                 operation = parameters.get("operation")
-                if operation not in self.supported_atomic_operations - ({"wait", "stop_action", "get_player_state", "inspect_inventory", "combat_attack", "boss_encounter", "collect_drops", "place_item", "build_place"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | BUILD_READS | SHOP_READS | SALE_READS | NURSE_READS | REFORGE_READS | HOUSING_READS | PYLON_READS | MAP_READS | COMBAT_READS | CONTAINER_READS):
+                if operation not in self.supported_atomic_operations - ({"query_item_info", "wait", "stop_action", "get_player_state", "inspect_inventory", "combat_attack", "boss_encounter", "collect_drops", "place_item", "build_place"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | BUILD_READS | SHOP_READS | SALE_READS | NURSE_READS | REFORGE_READS | HOUSING_READS | PYLON_READS | MAP_READS | COMBAT_READS | CONTAINER_READS):
                     raise BridgeError("Operation unsupported by server AI backend", status="unsupported_operation")
                 if parameters.get("expectedGeneration") != self.binding["generation"]:
                     raise BridgeError("AI generation changed", status="stale_binding")
