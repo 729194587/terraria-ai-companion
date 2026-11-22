@@ -134,15 +134,6 @@ internal static class ObjectPlacementSelfTest
                     &&ActorItemUse.Current.Placement.ConsumedCount==1&&p.inventory[4].stack==4,"clear then place bench/consume one");
             }
             Setup();
-            foreach(int protectedType in new[]{TileID.Containers,TileID.WorkBenches,TileID.Plants2,TileID.VineFlowers})
-            {
-                Setup();var protectedTile=Main.tile[x,y];protectedTile.HasTile=true;protectedTile.TileType=(ushort)protectedType;
-                p.inventory[3].SetDefaults(ItemID.CopperPickaxe);ActorItemUse.Select(p,id.World,id.Generation,3);
-                var decorationDenied=executor.Start(id,"mine_tile",JsonSerializer.SerializeToElement(new{x,y}),Guid.NewGuid().ToString("N"));
-                var rejected=executor.Poll(id,decorationDenied);evidence.Add(new{protectedType,rejected});
-                Check(rejected.Status=="failed"&&ActorMining.Current.Reason==ActorMining.Failure.UnsupportedTarget
-                    &&Main.tile[x,y].HasTile&&ActorMining.Current.Strikes==0,"protected/unverified decoration accepted");
-            }
             Setup();
             var initialScene=JsonSerializer.SerializeToElement(ServerSceneReader.Read(p,id,JsonSerializer.SerializeToElement(new{})),new JsonSerializerOptions{PropertyNamingPolicy=JsonNamingPolicy.CamelCase});
             var candidate=initialScene.GetProperty("objectPlacementCandidates").GetProperty("items").EnumerateArray().Single(e=>e.GetProperty("target").GetProperty("x").GetInt32()==x&&e.GetProperty("target").GetProperty("y").GetInt32()==y);

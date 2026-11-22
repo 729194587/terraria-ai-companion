@@ -35,7 +35,11 @@ async def verify(args):
         finally:
             bridge.close()
         rows.append(dict(case=case, result=r));save()
-        assert r['status'] == ('failed' if case in ('blocked', 'no_tool') else 'completed'), (case, r)
+        expected = {'blocked': 'failed', 'no_tool': 'failed', 'deadline': 'timeout'}
+        if case == 'underpowered':
+            assert r['lastAction']['status'] == 'failed', (case, r)
+        else:
+            assert r['status'] == expected.get(case, 'completed'), (case, r)
         assert r['actions'] == 1, r
         return r['value'] if r['status'] == 'completed' else r['lastAction']
     choose = "local q=api('observe_scene',{layers={'objects'}}); for _,o in ipairs(q.data.objects.items) do if o.kind=='ore_component' and o.target then return api('mine_target',{target=o.target}) end end; error('no observed ore')"
@@ -55,6 +59,59 @@ async def verify(args):
             assert result['status'] == 'failed' and not result['completed'], result
             assert 'mine_tile' not in [c['taskName'] for c in task['progress']['children']], task
         print(json.dumps(dict(case=case, status=result['status'], reason=result['reason'])), flush=True)
+    for case in ('hotbar', 'bag', 'reach_corner', 'workbench', 'workbench_task', 'underpowered', 'cutout', 'deadline'):
+        spec = await fixture(case)
+        op = 'mine_target' if case in ('cutout', 'workbench_task') else 'mine_tile'
+        source = f"return api('{op}',{{x={spec['x']},y={spec['y']}}})"
+        result = await run(case, source)
+        assert result['endEvidence']['inputsReleased'], result
+        if case == 'underpowered':
+            assert result['reason'] == 'insufficient_pick_power' and result['evidence']['targetUnchanged'], result
+            continue
+        if case == 'deadline':
+            assert result['status'] == 'timeout' and result['evidence']['targetUnchanged'], result
+        else:
+            assert result['completed'] and result['effectVerified'], result
+        proof = result['evidence'] if op == 'mine_tile' else result['task']['lastResult']['evidence']
+        if case != 'deadline':
+            assert proof['targetAbsent'] and proof['destroyedByActor'], proof
+        if case in ('workbench', 'workbench_task'):
+            assert proof['furnitureCells'] == 2 and proof['furnitureAbsent'], proof
+        bridge = ServerAiBridge(args.port)
+        try:
+            q = bridge.command('query_atomic', operation='get_player_state', arguments={})
+            assert q['data']['data']['player']['selectedSlot'] == 0, q
+            if case in ('bag', 'deadline'):
+                q = bridge.command('query_atomic', operation='inspect_inventory', arguments=dict(mode='full'))
+                slots = q['data']['data']['inventory']
+                assert any(i['slot']==20 and i['contentKey']=='Terraria/CopperPickaxe' for i in slots), q
+        finally:
+            bridge.close()
+        print(json.dumps(dict(case=case, status=result['status'], reason=result['reason'])), flush=True)
+
+    spec = await fixture('bag')
+    bridge = ServerAiBridge(args.port)
+    try:
+        bridge.command('start_atomic', operation='mine_tile', arguments=dict(x=spec['x'], y=spec['y']),
+                       expectedGeneration=bridge.binding['generation'])
+        for _ in range(100):
+            action = bridge.command('get_movement')['movement']['action']
+            if (action.get('evidence') or {}).get('Strikes', 0) > 0:
+                break
+            assert action['status'] == 'running', action
+            await asyncio.sleep(.01)
+        else:
+            raise AssertionError('mining never struck')
+        stopped = bridge.command('cancel_move', actionId=bridge._action_id)['movement']['action']
+        assert stopped['status'] == 'cancelled' and stopped['reason'] == 'explicit_stop', stopped
+        assert stopped['endEvidence']['inputsReleased'], stopped
+        q = bridge.command('query_atomic', operation='inspect_inventory', arguments=dict(mode='full'))
+        slots = {i['slot']: i.get('contentKey') for i in q['data']['data']['inventory']}
+        assert slots[0] == 'Terraria/CopperShortsword' and slots[20] == 'Terraria/CopperPickaxe', q
+        rows.append(dict(case='cancel-bag-mining', result=stopped));save()
+    finally:
+        bridge.close()
+
     spec = await fixture('approach')
     autonomous = ServerAiBridge(args.port)
     try:

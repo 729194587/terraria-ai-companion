@@ -42,6 +42,17 @@ public static class MiningSupportImpactTests
         Check(!MiningSupportImpact.Read(pose,1,10,Read,"unsupported_body_dimensions").Available,"unsupported profile explicit");
         Check(!MiningSupportImpact.Read(pose with{Grounded=false},1,10,Read).Available,"airborne pose not treated as settled stance");
         Check(!MiningSupportImpact.Read(pose,1,10,(x,y)=>throw new IOException("fixture")).Available,"read failure becomes unknown, no speculative empty cell");
+        char Cutout(int x,int y)=>y==10||((x==0||x==3)&&y is 8 or 9)?'#':'.';
+        var cutout=new PhysicsState(20,118,0,0,true); // 42px body, feet exactly at row 10.
+        Check(MotionSupport.SafeFlatLanding(cutout,Cutout)
+            &&!MotionSupport.SafeFlatLanding(cutout with{Px=14},Cutout)
+            &&!MotionSupport.SafeFlatLanding(cutout with{Px=30},Cutout),
+            "a two-tile opening admits an off-centre pose but neither tile-centred pose");
+        var edge=MiningSupportImpact.Read(cutout,2,10,Cutout);
+        Check(edge.AffectsCurrentStance==true&&edge.AfterRemoval.Rejection==null,
+            "removing edge support can leave a stable stance");
+        Check(MotionSupport.SafeFlatLanding(cutout with{Py=126},(x,y)=>y==10?'h':'.'),
+            "half-block top is a horizontal arrival surface eight pixels below the tile top");
         // Fractional overlap fixture only: not an assertion about v6's historical terrain.
         var fractional=new PhysicsState(35326.562f,3414,0,0,true);
         var fr=MiningSupportImpact.Read(fractional,2209,216,(x,y)=>x==2209&&y==216?'#':'.');

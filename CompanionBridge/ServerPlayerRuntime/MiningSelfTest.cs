@@ -217,7 +217,7 @@ internal static class MiningSelfTest
             Check(remaining>=0&&p.hitTile.AddDamage(remaining,0,false)==20,"Clearing target progress changed another cached target.");
             ActorMining.Stop(p,world,generation);
             Target(TileID.Stone);DenyTile=true;try{Start();Frame();}finally{DenyTile=false;}
-            Check(ActorMining.Current.Reason==ActorMining.Failure.NoPickPower&&Main.tile[x,y].HasTile,"Native GlobalTile protection hook bypassed.");
+            Check(ActorMining.Current.Reason==ActorMining.Failure.TargetProtected&&Main.tile[x,y].HasTile,"Native GlobalTile protection hook bypassed.");
             Target(TileID.Obsidian);Start();Frame();Check(ActorMining.Current.Phase==ActionPhase.Failed
                 &&ActorMining.Current.Reason==ActorMining.Failure.NoPickPower&&Main.tile[x,y].HasTile,"Copper pick bypassed obsidian power rule.");
             Target(TileID.Stone);Start();Frame();ActorMining.Stop(p,world,generation);

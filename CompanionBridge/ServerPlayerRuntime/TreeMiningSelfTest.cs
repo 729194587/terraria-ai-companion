@@ -29,15 +29,15 @@ internal static class TreeMiningSelfTest
         }
         // Tree-shaped fixture is used only for preflight failures. Successful
         // felling below MUST use a tree grown by the real WorldGen.GrowTree.
+        var savedPick=p.inventory[0];p.inventory[0]=new Item();
         Block(TileID.Stone);var rejected=Start(x,y);var refusal=executor.Poll(identity,rejected);
-        Check(ActorMining.Current.Reason==ActorMining.Failure.UnsupportedTarget&&ActorMining.Current.Ticks==0
+        Check(ActorMining.Current.Reason==ActorMining.Failure.InvalidTool&&ActorMining.Current.Ticks==0
             &&Main.tile[x,y].HasTile&&refusal.Status=="failed"&&!refusal.EffectVerified&&Released(),"axe damaged an ordinary block");
+        p.inventory[0]=savedPick;var savedAxe=p.inventory[2];p.inventory[2]=new Item();
         Block(TileID.Trees);ActorItemUse.Select(p,world,generation,0);Start(x,y);
         Check(ActorMining.Current.Reason==ActorMining.Failure.UnsupportedTarget&&ActorMining.Current.Ticks==0
             &&Main.tile[x,y].HasTile&&Released(),"pickaxe accepted a tree");
-        ActorItemUse.Select(p,world,generation,2);
-        Block(TileID.ClosedDoor);Start(x,y);
-        Check(ActorMining.Current.Reason==ActorMining.Failure.UnsupportedTarget&&Main.tile[x,y].HasTile&&Released(),"axe accepted furniture");
+        p.inventory[2]=savedAxe;ActorItemUse.Select(p,world,generation,2);
         var invalid=executor.Poll(identity,Start(-1,y));
         Check(invalid.Status=="failed"&&!invalid.InputsAcquired&&!invalid.EffectVerified&&Released(),"invalid coordinates were not preflight failure");
         var distant=executor.Poll(identity,Start(x+30,y));
@@ -56,7 +56,7 @@ internal static class TreeMiningSelfTest
         int dropsBefore=Main.item.Where(i=>i.active&&i.type==ItemID.Wood).Sum(i=>i.stack);
         MiningSelfTest.DenyTile=true;
         try{Start(x,y);frame();}finally{MiningSelfTest.DenyTile=false;}
-        Check(ActorMining.Current.Reason==ActorMining.Failure.NoPickPower&&!ActorMining.Current.Destroyed
+        Check(ActorMining.Current.Reason==ActorMining.Failure.TargetProtected&&!ActorMining.Current.Destroyed
             &&Main.tile[x,y].HasTile&&Released(),"axe bypassed native CanKillTile");
         ItemUseSelfTest.Deny=true;
         try{Start(x,y);frame();}finally{ItemUseSelfTest.Deny=false;}

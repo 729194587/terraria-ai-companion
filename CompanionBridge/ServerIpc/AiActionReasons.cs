@@ -27,7 +27,7 @@ internal static class AiActionReasons
             "OutOfRange"=>"out_of_range", "InvalidTool"=>"invalid_tool", "Busy"=>"actor_busy",
             "ActorUnavailable"=>"actor_unavailable", "BindingChanged"=>"actor_binding_changed",
             "ItemChanged"=>"selected_item_changed", "TargetChanged"=>"target_changed",
-            "NativeRefused"=>"native_use_refused", "NoPickPower"=>"native_tool_damage_refused",
+            "NativeRefused"=>"native_use_refused", "TargetProtected"=>"target_protected", "NoPickPower"=>"insufficient_pick_power",
             "NativeException"=>"native_mining_exception", "ExplicitStop"=>"explicit_stop",
             "DeathOrRetirement"=>"actor_retired", "Deadline"=>"native_mining_deadline",
             _=>"native_mining_unconfirmed"

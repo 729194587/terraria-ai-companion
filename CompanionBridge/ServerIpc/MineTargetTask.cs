@@ -7,7 +7,6 @@ internal interface IMineTargetWorld
 {
     string InterruptionReason()=>null;
     string Prepare();
-    void SelectTool();
     string Revalidate();
     bool CanMine();
     JsonElement? FindApproach();
@@ -26,7 +25,7 @@ internal sealed class MineTargetTask : AbstractCompanionTask
     internal override string Phase=>phase;
     internal override object Progress=>new{stage=phase,completedChildren,settledChildren=children.Count,children,target=world.Target,recoveryAttempts=0};
     internal override Result Prepare(AiReadOnlyProtocol.Identity frame)=>(world.InterruptionReason()??world.Prepare()) is {} why?Failed(why):null;
-    internal override void Start(AiReadOnlyProtocol.Identity frame){world.SelectTool();phase="observe";}
+    internal override void Start(AiReadOnlyProtocol.Identity frame){phase="observe";}
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)
     {
         if(world.InterruptionReason() is {} danger)return Stop(frame,"cancelled",danger);
@@ -55,7 +54,7 @@ internal sealed class MineTargetTask : AbstractCompanionTask
             phase="mining";child=new NativeActionTask(native,"mine_tile",world.MineArguments(),taskId+"/mine");
             RunChild(child,frame,600);return Running();
         }
-        if(phase=="reobserve")return Failed("mining_reach_not_verified_after_navigation");
+        if(phase=="reobserve")return Failed("mining_stance_or_reach_changed_after_navigation");
         var approach=world.FindApproach();if(!approach.HasValue)return Failed("no_safe_mining_stance_in_local_window");
         phase="navigating";child=new NativeActionTask(native,"navigate_to_landing_region",approach.Value,taskId+"/approach");
         RunChild(child,frame,1800);return Running();
