@@ -69,7 +69,7 @@
 ## 历史与研究
 
 - [历史阶段资料](archive/README.md)：早期架构、阶段实施和修复记录。
-- [Phase 2–4 导航阶段记录](#)：各阶段的 Surface Graph、局部规划、特殊移动与液体/绳索实现记录，当前架构见 [导航系统](NAVIGATION.md)。
+- Phase 2–4 导航阶段记录：根目录中的 `PHASE*` 与 `terraria_navigation_phase*` 文件均为历史资料，当前架构见 [导航系统](NAVIGATION.md)。
 - [原生机制审计报告](NATIVE_MECHANISM_PARITY_AUDIT_REPORT.md)：目标引擎 IL 对照、已确认差异及隔离专服证据。
 - [战斗架构历史审计](COMBAT_ARCHITECTURE_AUDIT.md)：Combat MVP 早期架构快照。
 - [Numen 参考研究](architecture/NUMEN_ADAPTATION_ROADMAP.md)：外部项目的架构参考与适配思路。
