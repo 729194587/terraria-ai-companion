@@ -9,12 +9,13 @@ public static class AirMotionTests
     {
         int checks=0;void Check(bool ok,string why){if(!ok)throw new Exception(why);checks++;}
         MovementSnapshot Snapshot(int wing=1,float time=100,int boots=0,int delay=0,int visualDelay=0)=>new(Array.Empty<ExtraJumpSnapshot>(),false,
-            new(wing,time,100,59,wing==1?AirMotionModel.AngelStats:null),new(boots,7,7,delay,visualDelay),new(false,-1,null,54),0,true,Array.Empty<GrappleSnapshot>(),new(false,0,false,false,false,false));
+            new(wing,time,100,59,wing!=0?AirMotionModel.AngelStats:null),new(boots,7,7,delay,visualDelay),new(false,-1,null,54),0,true,Array.Empty<GrappleSnapshot>(),new(false,0,false,false,false,false));
         foreach(float time in new[]{0f,1f,100f})foreach(int boots in new[]{0,1})
         {
             var m=Snapshot(time:time,boots:boots);
             Check(AirMotionModel.Strategy(m)==AirKind.Wings&&AirMotionModel.Select(m)==AirMotionModel.Angel,"functional wings always win, including exhausted wings");
         }
+        Check(AirMotionModel.Select(Snapshot(wing:2))==AirMotionModel.Angel,"native Angel and Demon slots use the same ascent model");
         Check(AirMotionModel.Select(Snapshot(wing:0,boots:1))==AirMotionModel.Rocket,"rocket only without functional wings");
         Check(AirMotionModel.Select(Snapshot(wing:0,boots:0))==null,"ordinary route without either capability");
         Check(AirMotionModel.Strategy(Snapshot(wing:99,boots:1))==AirKind.Wings&&AirMotionModel.Select(Snapshot(wing:99,boots:1))==null,"unsupported wings never fall back to rockets");

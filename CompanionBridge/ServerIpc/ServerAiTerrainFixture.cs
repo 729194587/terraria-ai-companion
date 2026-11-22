@@ -152,7 +152,7 @@ internal static class ServerAiTerrainFixture
             throw new ArgumentException("Unknown terrain scene");
         mobilityMode=doc.RootElement.TryGetProperty("mobility",out var mobility)?mobility.GetString():null;
         if(mobilityMode!=null&&(!Program.LaunchParameters.ContainsKey("-companionmobilitytest")
-            ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "rapid" or "expiry" or "unknown" or "equipment" or "cloud" or "cloud_fail" or "cloud_offset")))
+            ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "rapid" or "expiry" or "unknown" or "equipment" or "cloud" or "cloud_fail" or "cloud_offset" or "angel" or "demon")))
             throw new ArgumentException("Invalid isolated mobility scene");
         if((mobilityMode?.StartsWith("cloud")==true||scene.StartsWith("extra_"))&&!Program.LaunchParameters.ContainsKey("-companionextrajumptest"))
             throw new InvalidOperationException("Missing extra jump fixture flag");
@@ -233,6 +233,8 @@ internal static class ServerAiTerrainFixture
             if(mobilityMode is "swiftness" or "remove" or "rapid" or "expiry")p.AddBuff(BuffID.Swiftness,36000,true);
             if(mobilityMode=="unknown")p.AddBuff(BuffID.WellFed,36000,true);
             if(mobilityMode=="equipment")p.armor[0].SetDefaults(ItemID.CopperHelmet);
+            if(mobilityMode=="angel")p.armor[3].SetDefaults(ItemID.AngelWings);
+            if(mobilityMode=="demon")p.armor[3].SetDefaults(ItemID.DemonWings);
             if(mobilityMode.StartsWith("cloud"))p.armor[3].SetDefaults(ItemID.CloudinaBottle);
         }
         if(environment) ProbeEnvironment(p, left, floor-4);

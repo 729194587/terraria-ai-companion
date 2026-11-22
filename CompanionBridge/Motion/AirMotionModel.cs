@@ -25,7 +25,8 @@ internal sealed record AirMotionModel(AirKind Kind)
         if(!m.BlockExtraJumps&&m.ExtraJumps.Any(j=>j.Enabled)||m.ActiveExtraJump)return null;
         return Strategy(m) switch
         {
-            AirKind.Wings when m.Wings.FunctionalSlot==1&&m.Wings.BaseStats==AngelStats&&m.Rockets.Delay==0=>Angel,
+            // Demon (1) and Angel (2) share the native ordinary ascent branch.
+            AirKind.Wings when m.Wings.FunctionalSlot is 1 or 2 && m.Wings.FunctionalSlot<m.Wings.RegisteredSlots && m.Wings.BaseStats==AngelStats&&m.Rockets.Delay==0=>Angel,
             AirKind.RocketBoots when m.Rockets.Boots==1=>Rocket,
             _=>null
         };

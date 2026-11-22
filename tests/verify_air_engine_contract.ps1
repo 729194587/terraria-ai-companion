@@ -11,11 +11,11 @@ try {
     $stats=(($a.MainModule.Types | Where-Object FullName -eq 'Terraria.Initializers.WingStatsInitializer').Methods | Where-Object Name -eq 'Load').Body.Instructions
     $fly=@($stats | Where-Object {$_.OpCode.Name -eq 'stloc.s' -and $_.Operand.Index -eq 11})[0]
     $speed=@($stats | Where-Object {$_.OpCode.Name -eq 'stloc.3'})[0]
-    $angelRow=$false
+    $wingRows=@{}
     for($i=1;$i -lt $stats.Count-8;$i++){
-        if($stats[$i-1].OpCode.Name -eq 'ldloc.0' -and $stats[$i].OpCode.Name -eq 'ldc.i4.1' -and $stats[$i+1].Operand.Index -eq 11 -and $stats[$i+2].OpCode.Name -eq 'ldloc.3' -and $stats[$i+3].Operand -eq 1 -and $stats[$i+4].OpCode.Name -eq 'ldc.i4.0' -and $stats[$i+5].Operand -eq -1 -and $stats[$i+6].Operand -eq 1){$angelRow=$true}
+        if($stats[$i-1].OpCode.Name -eq 'ldloc.0' -and $stats[$i].OpCode.Name -in 'ldc.i4.1','ldc.i4.2' -and $stats[$i+1].Operand.Index -eq 11 -and $stats[$i+2].OpCode.Name -eq 'ldloc.3' -and $stats[$i+3].Operand -eq 1 -and $stats[$i+4].OpCode.Name -eq 'ldc.i4.0' -and $stats[$i+5].Operand -eq -1 -and $stats[$i+6].Operand -eq 1){$wingRows[$stats[$i].OpCode.Name]=$true}
     }
-    Check ($angelRow -and $stats[$stats.IndexOf($fly)-1].Operand -eq 100 -and $stats[$stats.IndexOf($speed)-1].Operand -eq 6.25) 'Angel registry slot 1: 100 ticks, 6.25 speed, multiplier 1, no hover'
+    Check ($wingRows.Count -eq 2 -and $stats[$stats.IndexOf($fly)-1].Operand -eq 100 -and $stats[$stats.IndexOf($speed)-1].Operand -eq 6.25) 'Demon and Angel registry slots 1 and 2: 100 ticks, 6.25 speed, multiplier 1, no hover'
     $wing=($player.Methods | Where-Object Name -eq 'WingMovement').Body.Instructions
     $update=($player.Methods | Where-Object Name -eq 'Update').Body.Instructions
     $air=($player.Methods | Where-Object Name -eq 'WingAirLogicTweaks').Body.Instructions
@@ -37,9 +37,9 @@ try {
     Check $defaults 'Angel default ascent coefficients .1/.5/1.5/.5/.1'
     $angelOverride=$false
     for($i=0;$i -lt $wing.Count-1;$i++){
-        if($wing[$i].Operand -is [Mono.Cecil.FieldReference] -and $wing[$i].Operand.Name -eq 'wingsLogic' -and $wing[$i+1].OpCode.Name -eq 'ldc.i4.1'){$angelOverride=$true}
+        if($wing[$i].Operand -is [Mono.Cecil.FieldReference] -and $wing[$i].Operand.Name -eq 'wingsLogic' -and $wing[$i+1].OpCode.Name -in 'ldc.i4.1','ldc.i4.2'){$angelOverride=$true}
     }
-    Check (!$angelOverride) 'Angel slot has no special wing ascent branch'
+    Check (!$angelOverride) 'Neither Demon nor Angel has no special wing ascent branch'
     $fuel=@($wing | Where-Object {$_.OpCode.Name -eq 'stfld' -and $_.Operand.Name -eq 'wingTime'})
     Check (@($fuel | Where-Object {$wing[$wing.IndexOf($_)-2].OpCode.Name -eq 'ldc.r4' -and $wing[$wing.IndexOf($_)-2].Operand -eq 1}).Count -ge 1) 'normal wings consume one wingTime per powered update'
     Check (@($air | Where-Object {$_.Operand -is [Mono.Cecil.FieldReference] -and $_.Operand.Name -eq 'AccRunSpeedOverride'}).Count -gt 0) 'air horizontal parameters come from native wing stats before sampling'

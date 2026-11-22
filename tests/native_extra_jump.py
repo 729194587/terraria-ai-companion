@@ -14,7 +14,7 @@ async def verify(args):
     p = args.profile
     await wait_file(p / 'action-fixture.json', 90)
     results = []
-    for case in args.scenes or ['cloud', 'cloud_chain', 'cloud_fail', 'cloud_offset', 'cloud_root']:
+    for case in args.scenes or ['cloud', 'cloud_chain', 'cloud_fail', 'cloud_offset', 'cloud_root', 'angel', 'demon']:
         mode = 'cloud' if case in ['cloud_chain', 'cloud_root'] else case
         scene = 'extra_chain' if case == 'cloud_chain' else 'extra_up'
         ready = p / 'terrain-ready.json'
@@ -51,11 +51,23 @@ async def verify(args):
                    navigation=(action.get('evidence') or {}).get('navigation'))
         results.append(row)
         (p / 'extra-jump-results.json').write_text(json.dumps(results, indent=2))
-        print(json.dumps(dict(case=case,status=row['status'],reason=row['reason'],activations=len(starts))), flush=True)
+        print(json.dumps(dict(case=case,status=row['status'],reason=row['reason'],extraJumpActivations=len(starts))), flush=True)
         assert action.get('completed'), row
         assert action['endEvidence']['inputsReleased'], action
         evidence = action['task']['lastResult']['evidence'] if case == 'cloud_root' else action['evidence']
         assert all(evidence.get(k) for k in ['arrived', 'safeSupport', 'settled', 'grounded']), evidence
+        if case in ('angel', 'demon'):
+            samples = [(frame, frame['extraObservation']['movement']['Wings']) for frame in trace if frame.get('extraObservation')]
+            slot = 2 if case == 'angel' else 1
+            assert samples and all(wing['FunctionalSlot'] == slot for _, wing in samples)
+            assert any(frame['vy'] < 0 and wing['Time'] < wing['TimeMax'] for frame, wing in samples)
+            nav = evidence['navigation']
+            actual, predicted = nav['ActualLanding'], nav['PredictedLanding']
+            error = {axis: abs(actual[axis] - predicted[axis]) for axis in ('X', 'Y')}
+            assert max(error.values()) <= 2 and action['endEvidence']['inputsReleased'], (error, nav)
+            print(case, 'wing time', min(w['Time'] for _, w in samples), 'of', max(w['TimeMax'] for _, w in samples),
+                  'predicted', predicted, 'actual', actual, 'error', error, flush=True)
+            continue
         assert len(starts) >= (2 if case == 'cloud_chain' else 1), row
         assert all(s['jumpCounter'] == 11 and abs(s['vy'] + 4.61) < .01 for s in starts), starts
         if case == 'cloud_root':
