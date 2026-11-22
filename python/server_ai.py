@@ -139,7 +139,8 @@ class ServerAiBridge:
         try:
             bound = self._request("bind")
             self.binding = bound["binding"]
-            self.hello = {"capabilities": (bound.get("data") or {}).get("capabilities", [])}
+            handshake = bound.get("data") or {}
+            self.hello = {"capabilities": handshake.get("capabilities", []), "compatibility": handshake.get("compatibility")}
             if "server_ai_atomic_v1" not in self.hello["capabilities"]:
                 raise BridgeError("Server AI execution capability unavailable")
             self.supported_atomic_operations = operations_for_capabilities(self.hello['capabilities'])

@@ -13,6 +13,10 @@ Server AI 的模型可见 API 由当前 IPC 连接能力生成。能力投影将
 - `python/atomic_operations.py`：共享操作 Schema 与参数校验。
 - `CompanionBridge/ServerIpc/`：服务端能力声明、协议和执行实现。
 
+## 多 Mod 专服
+
+绑定回执的 `data.compatibility` 给出实际引擎、已加载的 Mod 名称与版本，以及本次初始化失败的可选适配器和原因。Python 可从 `bridge.hello["compatibility"]` 读取；当前连接开放的 API 仍由 `capabilities` 决定。诊断字段为空集合时，单项配方、武器或操作仍可能有自己的支持范围。实测环境、用例和限制见 [R3-C2 实施报告](architecture/R3_C2_MOD_COMPATIBILITY.md)。
+
 ## 能力分类
 
 Capability Manifest 将操作按领域组织，并标记 Supported、Limited 和 Not exposed 等状态。分类说明帮助模型理解当前后端的能力范围；单项 Help 提供参数、返回字段和使用示例。

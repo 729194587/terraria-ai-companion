@@ -62,6 +62,15 @@ internal static class ServerEquipmentFixture
             permissionCalls = 0;
             MutateOnSync = false;
         }
+        else if (mode == "loaded-content")
+        {
+            // Stage two real registered items in the copied world for the IPC probe.
+            p.inventory[25] = new Item(ModContent.Find<ModItem>("CalamityMod/FungalSymbiote").Type);
+            var potion = ContentSamples.ItemsByType.Values.First(i => i.ModItem?.Mod.Name == "CalamityMod"
+                && i.useStyle == ItemUseStyleID.DrinkLiquid && i.consumable && i.buffType > 0
+                && i.buffTime > 0 && ActorItemUse.Supported(i) && i.maxStack >= 2);
+            p.inventory[0] = new Item(potion.type, 2);
+        }
         else if (mode == "full")
         {
             for (int i = 0; i < 50; i++)

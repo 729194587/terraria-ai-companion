@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using Microsoft.Xna.Framework;
@@ -20,24 +19,17 @@ public sealed class VirtualPlayerEngineProbe
     internal static bool Ready;
     internal static StartupReservation Reservation = new();
     internal static long NetworkLoops, CleanupSkips, SyncSkips, SectionSkips, Accepts;
+    private static readonly Dictionary<string, string> disabled = new();
+    internal static bool ItemReceiptSupported => !disabled.ContainsKey("item receipt UI adapter");
+    internal static object Compatibility() => new {
+        engine = Engine.Selected,
+        loadedMods = ModLoader.Mods.Select(m => new { name = m.Name, version = m.Version.ToString() }).ToArray(),
+        disabledAdapters = disabled
+    };
     private static int listenerEntries;
     private static int scopeThread;
     private static string fault;
     internal static string Fault => Volatile.Read(ref fault);
-
-    // Only the copied-world E4 launcher supplies the exact reviewed sample package hash.
-    private static bool IsIsolatedBossSample(Mod mod)
-    {
-        if(mod.Name!="BossStrategySample" || !Main.dedServ ||
-            !Program.LaunchParameters.ContainsKey("-companioncombattest") ||
-            !CompanionBridge.ServerIpc.ServerAiActionFixture.Enabled ||
-            !Program.LaunchParameters.TryGetValue("-companionbosssamplehash",out var expected) ||
-            !Program.LaunchParameters.TryGetValue("-modpath",out var modPath))return false;
-        var directory=Path.Combine(Main.SavePath,"Mods");
-        if(!string.Equals(Path.GetFullPath(directory),Path.GetFullPath(modPath),StringComparison.OrdinalIgnoreCase))return false;
-        using var input=File.OpenRead(Path.Combine(directory,"BossStrategySample.tmod"));
-        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(input))==expected;
-    }
 
     public void Load(Mod owner)
     {
@@ -45,6 +37,7 @@ public sealed class VirtualPlayerEngineProbe
         Ready = false;
         Reservation = new();
         fault = null;
+        disabled.Clear();
         NetworkLoops = CleanupSkips = SyncSkips = SectionSkips = Accepts = 0;
         ProbeSession.Reset();
         scopeThread = 0;
@@ -54,8 +47,7 @@ public sealed class VirtualPlayerEngineProbe
         {
             Engine = EngineProfiles.Verify(owner);
             Instance.Logger.Info($"Engine fingerprint confirmed: Terraria 1.4.4.9 / tML {Engine.Selected}; {Engine.EngineHash}");
-            if (ModLoader.Mods.Any(m => m != Instance && m.Name != "ModLoader" && !IsIsolatedBossSample(m)))
-                throw new InvalidOperationException("G1 isolation requires this probe and tModLoader only.");
+            Instance.Logger.Info("G1 loaded content: " + string.Join(", ", ModLoader.Mods.Select(m => $"{m.Name} {m.Version}")));
             NetworkStateSync.Reset();
             ProbeAnnouncements.ResetNotices();
             CharacterStore.Reset();
@@ -96,7 +88,8 @@ public sealed class VirtualPlayerEngineProbe
         Install(() => On_RemoteClient.CheckSection += Sections, () => On_RemoteClient.CheckSection -= Sections);
         Install(() => On_Main.DedServ_PostModLoad += ServerScope, () => On_Main.DedServ_PostModLoad -= ServerScope);
         Install(() => On_WorldGen.clearWorld += ClearWorld, () => On_WorldGen.clearWorld -= ClearWorld);
-        NativeSurvival.Install(Install);
+        InstallOptional("item receipt UI adapter", () => DedicatedContentAdapters.Install(Install));
+        NativeSurvival.Install(Install, InstallOptional);
         NativeItemOwnership.Install(Install);
         ActorMining.Install(Install);
         ActorPlacement.Install(Install);
@@ -105,8 +98,9 @@ public sealed class VirtualPlayerEngineProbe
         CompanionBridge.ServerIpc.CombatProjectile.Install(Install);
         if (Engine.Selected=="2026.09.3.1") CompanionBridge.ServerIpc.ServerPylons.Install(Install);
         ActorGrapple.Install(Install);
-        ActorSorting.Install(Install);
-        ActorCrafting.Initialize();
+        InstallOptional("inventory sorting", () => ActorSorting.Install(Install));
+        if (ItemReceiptSupported) InstallOptional("crafting", ActorCrafting.Initialize);
+        else disabled["crafting"] = "Item creation notification is unavailable on this server.";
         Install(() => On_Player.Update += NativeSurvival.Update, () => On_Player.Update -= NativeSurvival.Update);
         Ready = allocatorPatched && cleanupPatched && syncPatched && savePatched;
         if (!Ready) throw new InvalidOperationException("Incomplete IL hook installation.");
@@ -123,9 +117,22 @@ public sealed class VirtualPlayerEngineProbe
 
     private void Install(Action add, Action remove)
     {
-        try { add(); rollback.Push(remove); }
-        catch { remove(); throw; }
+        rollback.Push(remove);
+        add();
     }
+    // Roll back only hooks registered by this adapter. A rollback failure still blocks startup.
+    private void InstallOptional(string capability, Action initialize)
+    {
+        int checkpoint = rollback.Count;
+        try { initialize(); }
+        catch (Exception error)
+        {
+            while (rollback.Count > checkpoint) rollback.Pop()();
+            disabled[capability] = error.GetBaseException().Message;
+            Instance.Logger.Warn($"G1 disabled {capability} for this load.", error);
+        }
+    }
+
     private void Undo() { while (rollback.TryPop(out var remove)) remove(); }
 
     public void Unload()

@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[string]$PackagePath,[int]$Port=27961,[switch]$Migration,[string]$LegacyEnginePath,[string]$LegacyPackagePath,[string]$LegacySeedPackagePath)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[string]$PackagePath,[int]$Port=27961,[switch]$Migration,[string]$LegacyEnginePath,[string]$LegacyPackagePath,[string]$LegacySeedPackagePath,[string[]]$ModPackages,[switch]$RestoreOnly)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -24,11 +24,12 @@ Copy-Item -LiteralPath $WorldPath -Destination "$profile/Worlds/test.wld"
 $worldMod=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $worldMod){Copy-Item -LiteralPath $worldMod -Destination "$profile/Worlds/test.twld"}
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
-Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value '["CompanionBridge"]'
+. (Join-Path $PSScriptRoot 'native_mod_packages.ps1')
+$null = Set-NativeModPackages $profile $ModPackages
 Set-Content -LiteralPath "$profile/isolated-world-character-fixture" -Value 'private headless diagnostic only'
 $resultPath=Join-Path $profile 'world-character-result.json'
 $identity=$null;$pointer=$null
-$phases=if($Migration){@('seed','reject','upgrade','rollback','reupgrade')}else{@('1','2','3','4','5')}
+$phases=if($Migration){@('seed','reject','upgrade','rollback','reupgrade')}elseif($RestoreOnly){@('1','2')}else{@('1','2','3','4','5')}
 foreach($phase in $phases)
 {
     $engine=$selectedEngine
@@ -58,6 +59,7 @@ foreach($phase in $phases)
         $corruptHash=(Get-FileHash -LiteralPath $pointer).Hash
     }
     $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",'-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-companionserverai','-companionengineprofile',$engine.Name,'-companionaiport',"$($Port+1)",'-worldcharacterselftest','-worldcharacterround',"$round")
+    if($RestoreOnly){$arguments+='-worldcharactercycle'}
     if($operation){$arguments+=@('-companioncharactermigration',$operation)}
     $process=Start-Process -FilePath (Join-Path $engine.Path 'dotnet/dotnet.exe') -ArgumentList $arguments -WorkingDirectory $engine.Path -WindowStyle Hidden -PassThru -RedirectStandardOutput "$profile/round-$phase.stdout.log" -RedirectStandardError "$profile/round-$phase.stderr.log"
     try
@@ -100,5 +102,5 @@ foreach($phase in $phases)
     }
 }
 if((Get-FileHash -LiteralPath $WorldPath).Hash -ne $sourceHash){throw 'Source world changed'}
-Write-Output "Native world-character lifecycle passed across five processes: $profile"
+Write-Output "Native world-character lifecycle passed across $($phases.Count) processes: $profile"
 Write-Output 'Host & Play and real models: NOT EXECUTED.'

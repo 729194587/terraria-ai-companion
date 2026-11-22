@@ -125,9 +125,9 @@ internal sealed class AiReadOnlyProtocol
                 var binding = new Binding(ActorId(current), current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
                 var capabilities=actions?.Capabilities.ToList();
-                if(query!=null){capabilities ??= new(); capabilities.Add("server_ai_item_info_v1");capabilities.Add("server_ai_build_diff_v1");capabilities.Add("server_ai_housing_inspect_v1");capabilities.Add("server_ai_npc_housing_v1");if (actions?.SupportsMerchantShop == true) capabilities.Add("server_ai_merchant_shop_v1");capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_scene_region_v1");capabilities?.Add("server_ai_crafting_v1");capabilities?.Add("server_ai_map_v1");}
+                if(query!=null){capabilities ??= new(); capabilities.Add("server_ai_item_info_v1");capabilities.Add("server_ai_build_diff_v1");capabilities.Add("server_ai_housing_inspect_v1");capabilities.Add("server_ai_npc_housing_v1");if (actions?.SupportsMerchantShop == true) capabilities.Add("server_ai_merchant_shop_v1");capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_scene_region_v1");capabilities?.Add("server_ai_map_v1");}
                 if(say!=null)capabilities?.Add("server_ai_chat_v2");
-                return JsonSerializer.Serialize(Reply(true, data: capabilities==null?null:new { capabilities }, binding: binding));
+                return JsonSerializer.Serialize(Reply(true, data: capabilities==null?null:new { capabilities, compatibility = actions?.Compatibility }, binding: binding));
             }
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)
@@ -166,6 +166,7 @@ internal sealed class AiReadOnlyProtocol
                     return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
                 if (root.GetProperty("operation").GetString() is ("inspect_npc_shop" or "quote_npc_purchase") && actions?.SupportsMerchantShop != true)
                     return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+                if(root.GetProperty("operation").GetString()=="query_recipes" && actions?.SupportsCrafting!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="list_pylons" && actions?.Capabilities.Contains("server_ai_pylons_v1")!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="list_teammates" && actions?.Capabilities.Contains("server_ai_regroup_v1")!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));
                 if(root.GetProperty("operation").GetString()=="discover_bosses" && actions?.Capabilities.Contains("server_ai_boss_strategy_v1")!=true)return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));

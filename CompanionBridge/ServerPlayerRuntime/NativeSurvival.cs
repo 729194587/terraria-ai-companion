@@ -29,7 +29,7 @@ internal static class NativeSurvival
     {
         try { ProbeSession.Log(name,detail); } catch { /* Logging cannot interrupt a native item/health transition. */ }
     }
-    internal static void Install(Action<Action,Action> install)
+    internal static void Install(Action<Action,Action> install, Action<string, Action> optional)
     {
         MethodInfo predicate=typeof(NativeSurvival).GetMethod(nameof(Owns));
         ILContext.Manipulator Patch(string operation)=>il=>SurvivalPatches.Patch(il.Method,operation,il.Module.ImportReference(predicate));
@@ -45,10 +45,11 @@ internal static class NativeSurvival
                 () => On_Player.PickupItem -= CompanionBridge.ServerIpc.ServerItemDrop.Pickup);
         var lethal=Patch("lethal");var dodge=Patch("dodge");
         var drops=Patch("death-drops");var spawn=Patch("spawn");var coins=Patch("coin-mouse");
-        install(()=>IL_Player.GrabItems+=pickup,()=>IL_Player.GrabItems-=pickup);
+        if (VirtualPlayerEngineProbe.ItemReceiptSupported)
+            install(()=>IL_Player.GrabItems+=pickup,()=>IL_Player.GrabItems-=pickup);
         install(()=>IL_Player.Hurt_HurtInfo_bool+=lethal,()=>IL_Player.Hurt_HurtInfo_bool-=lethal);
-        install(()=>IL_Player.Hurt_PlayerDeathReason_int_int_refHurtInfo_bool_bool_int_bool_float_float_float+=dodge,
-            ()=>IL_Player.Hurt_PlayerDeathReason_int_int_refHurtInfo_bool_bool_int_bool_float_float_float-=dodge);
+        optional("player dodge", () => install(()=>IL_Player.Hurt_PlayerDeathReason_int_int_refHurtInfo_bool_bool_int_bool_float_float_float+=dodge,
+            ()=>IL_Player.Hurt_PlayerDeathReason_int_int_refHurtInfo_bool_bool_int_bool_float_float_float-=dodge));
         install(()=>IL_Player.KillMe+=drops,()=>IL_Player.KillMe-=drops);
         install(()=>IL_Player.Spawn+=spawn,()=>IL_Player.Spawn-=spawn);
         install(()=>IL_Player.DropCoins+=coins,()=>IL_Player.DropCoins-=coins);

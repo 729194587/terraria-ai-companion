@@ -492,7 +492,7 @@ public sealed class ProbeCommand : ModCommand
                     caller.Reply(status,Color.LightCyan);return;
                 }
                 else if (action == "allocator") ProbeSession.Allocator();
-                else if (action == "spawn") ProbeSession.Spawn();
+                else if (action == "spawn") WorldCharacterPersistence.SpawnRequested();
                 else if (action == "save") CharacterStore.Save(copy.Length == 2 ? copy[1] : null);
                 else if (action == "load") CharacterStore.Load(copy.Length == 2 ? copy[1] : null);
                 else if (action == "fixture") CharacterSelfTest.Seed();

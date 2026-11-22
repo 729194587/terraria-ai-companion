@@ -48,8 +48,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsHammer => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
     public bool SupportsTileInteraction => ServerTileInteraction.Available;
     public bool SupportsDoors=>true;
-    public bool SupportsPylons=>SupportsCollection;
-    public bool SupportsRegroup=>SupportsCollection;
+    private static bool TargetEngine => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsPylons=>TargetEngine;
+    public bool SupportsRegroup=>TargetEngine;
     public AiAtomicActions.RespawnPlan AfterRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>
         handle is Handle {Context:TaskSlot {Task:BossEncounterTask boss}} ? boss.AfterRespawn(frame) : null;
     public object StartRejoin(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.RespawnPlan plan)
@@ -62,8 +63,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public object StartCombat(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.CombatAdmission admission)
         =>StartCore(frame,CombatProtocol.Operation,args,id,false,admission:admission);
     public bool SupportsContainers=>true;
+    public object Compatibility => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Compatibility();
+    public bool SupportsCrafting => ActorCrafting.Initialized;
     public bool SupportsSorting=>ActorSorting.Available;
-    public bool SupportsCollection => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsCollection => TargetEngine && VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.ItemReceiptSupported;
     public bool SupportsReforge => MerchantShop.VanillaServicesSupported;
     public bool SupportsNurse => NurseService.Supported;
     public bool SupportsMerchantSale => SupportsMerchantPurchase && MerchantShop.SaleSupported;

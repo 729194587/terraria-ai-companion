@@ -1,5 +1,5 @@
 param([string]$TModLoaderPath,[string]$EngineProfile, [string]$WorldPath,[string]$CharacterSeed, [string]$PackagePath, [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py', [switch]$Scene, [switch]$Equipment, [switch]$Torch, [switch]$Combat,[string]$SamplePackage,[string]$PythonExecutable,
-    [ValidateSet('eater','destroyers','twins','two-twins','moon')] [string]$BossProbe, [switch]$KeepProfile)
+    [ValidateSet('eater','destroyers','twins','two-twins','moon')] [string]$BossProbe, [switch]$KeepProfile,[string[]]$ModPackages)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -19,25 +19,20 @@ Copy-Item -LiteralPath $world -Destination "$profile/Worlds/test.wld"
 $twld=[IO.Path]::ChangeExtension($world,'.twld')
 if(Test-Path -LiteralPath $twld){Copy-Item -LiteralPath $twld -Destination "$profile/Worlds/test.twld"}
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
-if($SamplePackage){
-    Copy-Item -LiteralPath (Resolve-Path -LiteralPath $SamplePackage).Path -Destination "$profile/Mods/BossStrategySample.tmod"
-    [IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge","BossStrategySample"]')
-}else{[IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')}
+. (Join-Path $PSScriptRoot 'native_mod_packages.ps1')
+if ($SamplePackage) { $ModPackages = @($ModPackages | Where-Object { $_ }) + $SamplePackage }
+$null = Set-NativeModPackages $profile $ModPackages
 [IO.File]::WriteAllText("$profile/isolated-action-fixture",'Explicit copied-world diagnostic only')
 $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dotnet.exe'))
 $info.WorkingDirectory=$TModLoaderPath;$info.UseShellExecute=$false;$info.CreateNoWindow=$true
 $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
 foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest','-companionactionstest')){$info.ArgumentList.Add($arg)}
-if($SamplePackage){
-    $info.ArgumentList.Add('-companionbosssamplehash')
-    $info.ArgumentList.Add((Get-FileHash -LiteralPath "$profile/Mods/BossStrategySample.tmod").Hash)
-}
 if($TestScript -eq 'native_pylons.py'){$info.ArgumentList.Add('-companionpylontest')}
 if($TestScript -eq 'native_regroup_observers.py'){$info.ArgumentList.Add('-companionregroupobservers')}
 if($BossProbe){$info.ArgumentList.Add('-companionbossprobe');$info.ArgumentList.Add($BossProbe);$TestScript='native_boss_probe.py'}
 elseif($Combat){$info.ArgumentList.Add('-companioncombattest');$TestScript='native_combat.py'}
 elseif($Torch){$info.ArgumentList.Add('-companiontorchtest');$TestScript='native_auto_torch.py'}
-elseif($Equipment){$info.ArgumentList.Add('-companionequipmenttest');$TestScript='native_equipment.py'}
+elseif($Equipment){$info.ArgumentList.Add('-companionequipmenttest');if($TestScript -eq 'native_direct_input.py'){$TestScript='native_equipment.py'}}
 elseif($Scene){$info.ArgumentList.Add('-companionscenetest');$info.ArgumentList.Add('-companionperceptiontest');$info.ArgumentList.Add('-companionscenelighttest')}
 else{$info.ArgumentList.Add('-companiondirectinputtest')}
 $process=[Diagnostics.Process]::Start($info)

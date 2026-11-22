@@ -9,6 +9,7 @@ public static class ServerAiNativeActionOfflineTests
     private static void Check(bool ok,string text){if(!ok)throw new Exception(text);checks++;Console.WriteLine("PASS AI native-adapter fixture: "+text);}
     private sealed class Executor : AiAtomicActions.IExecutor
     {
+        public bool SupportsCrafting => true;
         internal int Starts,Cancels,Shutdowns;
         internal bool ThrowStart, ThrowCancel, CompleteOnCancel, UnknownOnCancel, KeepInputHeld;
         internal string CancelStatus;

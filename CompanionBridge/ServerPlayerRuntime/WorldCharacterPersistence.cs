@@ -21,6 +21,21 @@ internal static class WorldCharacterPersistence
     internal static void Reset()
     {AiMapRuntime.Reset();files?.Dispose();files=null;committed=null;actor=null;session=new();}
     private static Guid World=>Main.ActiveWorldFileData?.UniqueId??Guid.Empty;
+    internal static void SpawnRequested()
+    {
+        ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
+        if (!Enabled || ProbeSession.Actor != null) { ProbeSession.Spawn(); return; }
+        if (session.Phase == WorldCharacterPhase.Saved && World == session.World
+            && ProbeSession.WorldSession == session.Run && ProbeSession.Reservation.Snapshot != null
+            && VirtualPlayerEngineProbe.Fault == null && !ProbeSession.Quarantined)
+        {
+            // Only an explicit spawn after a clean, reserved teardown can reopen the profile.
+            Reset();
+        }
+        Start();
+        if (!Ready) throw new IOException("World character has no live binding after spawn.");
+    }
+
     internal static void Start()
     {
         if(!Enabled){ProbeSession.Spawn();return;}

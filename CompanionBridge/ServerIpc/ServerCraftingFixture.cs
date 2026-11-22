@@ -17,7 +17,17 @@ internal static class ServerCraftingFixture
         if(!Program.LaunchParameters.ContainsKey("-companioncrafttest"))return;
         string request=Path.Combine(Main.SavePath,"craft-request.json");if(!File.Exists(request))return;
         if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Craft fixture cannot replace an active actor");
-        var spec=JsonDocument.Parse(File.ReadAllText(request));string kind=spec.RootElement.GetProperty("caseId").GetString();File.Delete(request);
+        string contents;
+        try
+        {
+            contents = File.ReadAllText(request);
+            File.Delete(request);
+        }
+        catch (IOException error) when ((error.HResult & 0xffff) is 32 or 33)
+        {
+            return; // Windows sharing violation: no fixture state changed, retry next update.
+        }
+        using var spec=JsonDocument.Parse(contents);string kind=spec.RootElement.GetProperty("caseId").GetString();
         for(int x=left-8;x<=left+6;x++)for(int y=floor-38;y<=floor+2;y++)
         {var t=Main.tile[x,y];t.ClearEverything();if(y>=floor){t.HasTile=true;t.TileType=TileID.Grass;}}
         for(int i=0;i<Main.item.Length;i++)if(Main.item[i].active)Main.item[i].active=false;

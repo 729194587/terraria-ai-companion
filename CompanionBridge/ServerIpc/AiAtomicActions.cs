@@ -17,8 +17,11 @@ internal static class CombatProtocol
 internal sealed class AiAtomicActions
 {
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
+    internal object Compatibility => executor?.Compatibility;
+    internal bool SupportsCrafting => executor?.SupportsCrafting == true;
     internal bool SupportsMerchantShop => executor?.SupportsMerchantPurchase == true;
-    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"})
+    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"})
+        .Concat(SupportsCrafting ? new[]{"server_ai_crafting_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsPersonalInventory ? new[]{"server_ai_personal_inventory_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsInventoryFavorite ? new[]{"server_ai_inventory_favorite_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsItemDrop ? new[]{"server_ai_drop_item_v1"} : Array.Empty<string>())
@@ -66,6 +69,8 @@ internal sealed class AiAtomicActions
         bool SupportsHammer=>false;
         bool SupportsTileInteraction=>false;
         bool SupportsDoors=>false;
+        object Compatibility=>null;
+        bool SupportsCrafting=>false;
         bool SupportsPylons=>false;
         bool SupportsRegroup=>false;
         RespawnPlan AfterRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>null;
@@ -240,6 +245,7 @@ internal sealed class AiAtomicActions
         if(active!=null&&!combat)return new(Error:"action_busy");
         bool selecting = operation == "select_hotbar_slot";
         bool container = IsContainerOperation(operation);
+        if (operation == "craft_recipe" && !SupportsCrafting) return new(Error:"unsupported_operation");
         if (operation is ("sort_inventory" or "sort_container") && executor?.SupportsSorting != true)
             return new(Error: "unsupported_operation");
         if (container && !SupportsContainers) return new(Error: "unsupported_operation");
