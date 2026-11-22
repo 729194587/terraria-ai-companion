@@ -59,7 +59,10 @@ public static class ServerAiPackageTests
         Check(!miningIL.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.FullName=="Terraria.WorldGen"&&r.Name=="KillTile"),"tool executor never directly deletes a tile");
         Check(mining.Methods.Single(m=>m.Name=="TreeTarget").Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="IsATreeTrunk")
             &&mining.Methods.Single(m=>m.Name=="TreeTarget").Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="tileAxe"),"axe targets require both native axe and tree-trunk sets");
-        Check(Type("ActorItemUse").Methods.Single(m=>m.Name=="Supported").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldc_I4&&Convert.ToInt32(i.Operand)==3506),"copper axe is explicitly whitelisted for native air swing");
+        var itemAdmission=Type("ActorItemUse").Methods.Single(m=>m.Name=="Supported").Body.Instructions
+            .Select(i=>i.Operand).OfType<FieldReference>().Select(f=>f.Name).ToArray();
+        Check(itemAdmission.Contains("shoot")&&itemAdmission.Contains("useAmmo")&&!itemAdmission.Contains("type"),
+            "untargeted item admission checks native input requirements without an item ID whitelist");
         Check(types.Count(t=>t.BaseType?.FullName=="Terraria.ModLoader.Mod")==1&&Type("CompanionBridge").BaseType.FullName=="Terraria.ModLoader.Mod","one formal Mod entry; runtime is not a second mod");
         var save=Type("ProbePlayer").Methods.Single(m=>m.Name=="SaveData");
         Check(save.Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="VirtualPlayerEngineProbe")
@@ -93,7 +96,7 @@ public static class ServerAiPackageTests
             "placement observes native effect/consumption without directly setting Tile or consuming items");
         var objectPlacement=Type("ActorObjectPlacement");
         Check(!objectPlacement.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.Operand is MethodReference r&&r.Name is "set_HasTile" or "PlaceObject" or "PlaceTile" or "ConsumeItem"),"object executor only observes native placement, no Tile/inventory mutation");
-        Check(Calls(objectPlacement.Methods.Single(m=>m.Name=="Definition"),"GetTileData")&&Calls(objectPlacement.Methods.Single(m=>m.Name=="Present"),"get_TileFrameX"),"object whitelist reads native definition and verifies every frame");
+        Check(Calls(objectPlacement.Methods.Single(m=>m.Name=="Definition"&&m.Parameters.Count==1),"GetTileData")&&Calls(objectPlacement.Methods.Single(m=>m.Name=="ReadFrames"),"get_TileFrameX"),"object placement reads selected native definition and verifies every frame");
         Check(Calls(Type("ActorItemUse").Methods.Single(m=>m.Name=="Update"),"AfterCheck")
             &&Calls(Type("ActorItemUse").Methods.Single(m=>m.Name=="SkipCursor"),"Dispatch"),"placement uses original ItemCheck owner stage and observes its consumption");
         Check(Calls(placement.Methods.Single(m=>m.Name=="Coordinate"),"get_IsMainThread")

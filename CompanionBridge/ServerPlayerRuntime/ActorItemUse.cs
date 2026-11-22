@@ -38,7 +38,9 @@ internal static class ActorItemUse
         if(Running||ActorMining.Running||ActorControl.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
             throw new InvalidOperationException("Wait for walking/item animation/cooldown to finish, or /vph use-stop.");
     }
-    internal static bool Supported(int type)=>type==ItemID.WoodenSword||type==ItemID.CopperPickaxe||type==ItemID.CopperAxe||type==ItemID.Apple;
+    // The server action carries one press, with no world-space cursor.
+    internal static bool Supported(Item item)=>!item.IsAir&&!item.channel
+        &&item.shoot<=0&&item.useAmmo<=0&&item.createTile<0&&item.createWall<0;
     internal static void Select(Player p,string world,long generation,int slot)
     {lock(ProbeSession.Reservation.Gate){SelectCore(p,world,generation,slot);}}
     private static void SelectCore(Player p,string world,long generation,int slot)
@@ -68,15 +70,15 @@ internal static class ActorItemUse
     {
         Capture(p,world,generation);Idle(p);
         var placement=x.HasValue?ActorPlacement.Create(p,x.Value,y.Value,objectPlacement):null;
-        if(p.selectedItem<0||p.selectedItem>9||(placement==null?!Supported(p.HeldItem.type):!ActorPlacement.SupportedFor(placement,p.HeldItem))||p.HeldItem.IsAir)
-            throw new InvalidOperationException("G6 supports only a wooden sword, copper pickaxe, copper axe or apple in hotbar 1–10.");
+        if(p.selectedItem<0||p.selectedItem>9||(placement==null?!Supported(p.HeldItem):!ActorPlacement.SupportedFor(placement,p.HeldItem))||p.HeldItem.IsAir)
+            throw new InvalidOperationException("Select an item in hotbar 1–10 that can use a single press without a world target.");
         if(p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)throw new InvalidOperationException("AI cannot use an item in this state.");
         Current=new Context{Actor=p,World=world,Generation=generation,Slot=p.selectedItem,Item=p.HeldItem,Type=p.HeldItem.type,InitialStack=p.HeldItem.stack,Placement=placement};
         // Release an old input; the next natural ItemCheck supplies one press.
         p.controlUseItem=false;p.releaseUseItem=true;
     }
     public static bool Allowed(Player p)=>ActorMining.Allowed(p)||(executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
-        &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&(executing.Placement!=null?ActorPlacement.SupportedFor(executing.Placement,executing.Item)||executing.Placement.Placed&&executing.Item.IsAir:Supported(executing.Type)));
+        &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&(executing.Placement!=null?ActorPlacement.SupportedFor(executing.Placement,executing.Item)||executing.Placement.Placed&&executing.Item.IsAir:(executing.Item.type==executing.Type||executing.Consumed&&executing.Item.IsAir)));
     internal static bool Placing(Player p)=>executing?.Placement!=null&&Allowed(p);
     public static bool SkipMelee(Player p)=>ActorMining.Allowed(p)||ActorPlacement.Allowed(p);
     public static bool SkipCursor(Player p){if(ActorMining.Allowed(p))ActorMining.Strike(p);else if(ActorPlacement.Allowed(p))ActorPlacement.Dispatch(p);return Allowed(p);}
@@ -90,7 +92,14 @@ internal static class ActorItemUse
         install(()=>IL_Player.ItemCheck_Inner+=inner,()=>IL_Player.ItemCheck_Inner-=inner);
         install(()=>IL_Player.ItemCheck_OwnerOnlyCode+=melee,()=>IL_Player.ItemCheck_OwnerOnlyCode-=melee);
         install(()=>On_Player.ItemCheckWrapped+=Update,()=>On_Player.ItemCheckWrapped-=Update);
+        install(()=>On_Player.ItemCheck_Shoot+=Shoot,()=>On_Player.ItemCheck_Shoot-=Shoot);
         install(()=>On_Player.SmartSelectLookup+=SmartSelect,()=>On_Player.SmartSelectLookup-=SmartSelect);
+    }
+    private static void Shoot(On_Player.orig_ItemCheck_Shoot orig,Player p,int slot,Item item,int damage)
+    {
+        // A Mod hook can change shoot/ammo requirements after preflight.
+        // Stop before the native PickAmmo path for an actor without a cursor.
+        if(!NativeSurvival.Owns(p))orig(p,slot,item,damage);
     }
     private static void SmartSelect(On_Player.orig_SmartSelectLookup orig,Player p)
     {if(!NativeSurvival.Owns(p))orig(p);}
@@ -109,12 +118,12 @@ internal static class ActorItemUse
             return;
         }
         if(c.Placement!=null&&ActorPlacement.Validate(c) is {} invalid)
-        {Retire(p);if(c.Placement.Object&&c.Phase=="unknown")return;c.Phase=c.Placement.Object&&(c.Placement.Placed||c.Placement.ConsumedCount!=0||c.Placement.UncertainNativeEffect)?"unknown":"failed";c.Reason=invalid;return;}
+        {Retire(p);if(c.Phase=="unknown")return;c.Phase=(c.Placement.Placed||c.Placement.ConsumedCount!=0||c.Placement.UncertainNativeEffect)?"unknown":"failed";c.Reason=invalid;return;}
         bool nativeEmpty=c.Consumed&&c.Item.IsAir;
         if(p.dead||p.ghost||p.CCed||p.noItems){Retire(p);return;}
         if(p.selectedItem!=c.Slot||!ReferenceEquals(p.inventory[c.Slot],c.Item)||c.Item.type!=c.Type&&!nativeEmpty)
-        {Retire(p);if(c.Placement?.Object==true&&c.Phase=="unknown")return;c.Phase="cancelled";c.Reason="selected_item_changed";return;}
-        if(++c.Ticks>(c.Placement!=null?600:180)){Retire(p);if(c.Placement?.Object==true&&c.Phase=="unknown")return;c.Phase=c.Placement!=null?"timeout":"failed";c.Reason=c.Placement!=null?"native_placement_deadline":"native_item_timeout";return;}
+        {Retire(p);if(c.Placement!=null&&c.Phase=="unknown")return;c.Phase="cancelled";c.Reason="selected_item_changed";return;}
+        if(++c.Ticks>(c.Placement!=null?600:180)){Retire(p);if(c.Placement!=null&&c.Phase=="unknown")return;c.Phase="timeout";c.Reason=c.Placement!=null?"native_placement_deadline":"native_item_timeout";return;}
         try
         {
             executing=c;p.controlUseItem=c.Ticks==1;
@@ -123,7 +132,7 @@ internal static class ActorItemUse
             if(c.Placement!=null)ActorPlacement.AfterCheck(c,beforeStack);
             if(!Binding(c)||!NativeSurvival.Owns(p)||p.selectedItem!=c.Slot)throw new InvalidOperationException("AI binding changed during ItemCheck.");
             if(c.Phase!="running"||p.dead)return;
-            if(c.Type==ItemID.Apple&&c.Item.stack<c.InitialStack)c.Consumed=true;
+            if(c.Placement==null&&c.Item.stack<beforeStack)c.Consumed=true;
             if(!ReferenceEquals(p.inventory[c.Slot],c.Item)&&!(c.Consumed&&c.Item.stack<=0&&p.inventory[c.Slot].IsAir&&p.itemAnimation==0&&p.itemTime==0))
                 throw new InvalidOperationException("Item object changed during ItemCheck.");
             c.AnimationPeak=Math.Max(c.AnimationPeak,p.itemAnimation);c.TimePeak=Math.Max(c.TimePeak,p.itemTime);
@@ -131,7 +140,7 @@ internal static class ActorItemUse
             if(p.itemAnimation>before)c.Starts++;
             if(c.Ticks==1&&c.AnimationPeak>0||c.Ticks>1&&(p.itemAnimation==0||c.Ticks%6==0))Sync(p);
             if(c.Ticks==1&&c.AnimationPeak==0){c.Phase="rejected";c.Reason="native_use_refused";}
-            else if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0)
+            else if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0&&!p.channel)
             {if(c.Placement!=null)ActorPlacement.Complete(c);else {c.Phase="completed";c.Reason="native_item_cycle_verified";}}
             if(c.Phase!="running")
             {
@@ -141,9 +150,11 @@ internal static class ActorItemUse
         }
         catch
         {
-            if(c.Placement?.Object==true)
-            {c.Placement.UncertainNativeEffect=true;c.Phase="unknown";c.Reason="native_object_effect_unconfirmed";}
-            Retire(p);throw;
+            if(c.Placement!=null)
+            {c.Placement.UncertainNativeEffect=true;c.Phase="unknown";c.Reason="native_placement_effect_unconfirmed";}
+            Retire(p);
+            if(c.Placement==null&&c.Phase!="stale"){c.Phase="unknown";c.Reason="native_item_effect_unconfirmed";}
+            throw;
         }
         finally
         {
@@ -167,14 +178,14 @@ internal static class ActorItemUse
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
         var c=Current;if(c==null||!ReferenceEquals(c.Actor,p)
-            ||c.Phase!="running"&&!(c.Placement?.Object==true&&c.Phase=="unknown"))return;
+            ||c.Phase!="running"&&!(c.Placement!=null&&c.Phase=="unknown"))return;
         if(!Binding(c)){c.Phase="stale";c.Reason="actor_binding_changed";return;} // Unknown object/slot never receives a write.
-        if(c.Placement?.Object==true)
+        if(c.Placement!=null)
         {
             // Assessment failure must never prevent release of owned inputs or
             // turn an uncertain native effect into an ordinary cancellation.
             string uncertainty;
-            try{uncertainty=ActorObjectPlacement.CancellationUncertainty(c);}
+            try{uncertainty=ActorPlacement.CancellationUncertainty(c);}
             catch{c.Placement.UncertainNativeEffect=true;uncertainty="object_cancellation_check_unconfirmed";}
             if(c.Phase!="unknown")
             {c.Phase=uncertainty==null?"cancelled":"unknown";c.Reason=uncertainty??"actor_retired";}
@@ -188,7 +199,7 @@ internal static class ActorItemUse
     {lock(ProbeSession.Reservation.Gate){StopCore(p,world,generation);}}
     private static void StopCore(Player p,string world,long generation)
     {
-        if(Current?.Placement?.Object==true&&ReferenceEquals(Current.Actor,p))
+        if(Current?.Placement!=null&&ReferenceEquals(Current.Actor,p))
         {
             ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
             if(world!=Current.World||generation!=Current.Generation||!Binding(Current))throw new InvalidOperationException("Object cancellation binding changed.");
@@ -196,7 +207,7 @@ internal static class ActorItemUse
             if(Current.Phase=="completed")
             {
                 string uncertainty;
-                try{uncertainty=ActorObjectPlacement.CancellationUncertainty(Current);}
+                try{uncertainty=ActorPlacement.CancellationUncertainty(Current);}
                 catch{uncertainty="object_cancellation_check_unconfirmed";}
                 if(uncertainty!=null){Current.Phase="unknown";Current.Reason=uncertainty;}
             }

@@ -15,7 +15,9 @@ internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRu
     // Native pinned-engine boundary measurement: BuffID.Swiftness (3).
     internal static readonly PhysicsParameters Swiftness = new(0.1f, 3.75f, 3, 0.2f, 0.4f, 10.01f, 5.01f, 15);
     internal bool IsBasic=>Matches(Basic);
-    internal bool IsSupportedGroundPhysics=>IsBasic||Matches(Swiftness);
+    internal bool IsSupportedGroundPhysics=>Positive(AccRun)&&Positive(MaxRun)&&Positive(AccRunSpeed)
+        &&Positive(RunSlowdown)&&Positive(Gravity)&&Positive(MaxFall)&&Positive(JumpSpeed)&&JumpHeight>=0;
+    private static bool Positive(float value)=>float.IsFinite(value)&&value>0;
     internal bool Matches(PhysicsParameters other)=>Math.Abs(AccRun-other.AccRun)<.001f
         &&Math.Abs(MaxRun-other.MaxRun)<.001f&&Math.Abs(AccRunSpeed-other.AccRunSpeed)<.001f
         &&Math.Abs(RunSlowdown-other.RunSlowdown)<.001f&&Math.Abs(Gravity-other.Gravity)<.001f

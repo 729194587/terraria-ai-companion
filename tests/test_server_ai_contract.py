@@ -95,7 +95,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual('Not exposed', next(c for c in capability_manifest(b)['categories'] if c['category']=='直接身体输入')['status'])
 
     def test_limited_boundaries_and_shared_schemas(self):
-        b = bridge(BASE | set(OPTIONAL) | {'server_ai_scene_region_v1'})
+        b = bridge(BASE | set(OPTIONAL) | {'server_ai_scene_region_v1', 'server_ai_general_operations_v1'})
         manifest, definitions, _ = contract_parts(server_contract(b)[0])
         defs = {t['function']['name']: t['function'] for t in definitions}
         for name, f in defs.items():
@@ -105,13 +105,18 @@ class ManifestTests(unittest.TestCase):
                 self.assertEqual(atomic.SCHEMAS[name], f['parameters'])
         for name, facts in {
             'move_input': ('jumpHoldUpdates', 'X/Y', '不要求导航profile', 'unknown'),
-            'use_item': ('木剑', '铜镐', '铜斧', '苹果', '不证明命中'),
-            'place_tile': ('泥土', '石块', '木材', '火把', '不支持家具'),
-            'place_object': ('Work Bench', '2×1', '消耗1件'),
+            'use_item': ('ItemCheck', 'ModItem', '具体治疗', '需另行观察'),
+            'place_tile': ('createTile', 'placeStyle', '原生放置范围', 'place_object'),
+            'place_object': ('TileObjectData', 'Anchor', '整组帧', '消耗'),
             'craft_recipe': ('0..57', '特殊回调', '箱子'),
             'navigate_to_landing_region': ('64px', '斜平台', '0.5px'),
         }.items():
             for fact in facts:self.assertIn(fact, defs[name]['description'])
+        old = bridge(BASE | set(OPTIONAL))
+        _, old_definitions, _ = contract_parts(server_contract(old)[0])
+        old_defs = {t['function']['name']: t['function']['description'] for t in old_definitions}
+        self.assertIn('默认样式的原版工作台', old_defs['place_object'])
+        self.assertIn('物品使用范围受限', old_defs['use_item'])
         for category in ('直接身体输入', '目标导航', '物品与战斗', '建造', '制作'):
             self.assertEqual('Limited', next(c for c in capability_manifest(b)['categories'] if c['category']==category)['status'])
         before = server_contract(b)

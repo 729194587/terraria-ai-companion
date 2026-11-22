@@ -171,20 +171,26 @@ internal static class ObjectPlacementSelfTest
             var crafted=executor.Poll(id,craft);evidence.Add(new{recipeId,before,after,crafted});
             Check(crafted.Status=="completed"&&crafted.EffectVerified,"native station recipe craft failed");
             Setup(stack:1);Check(Finish(Start()).EffectVerified&&p.inventory[4].IsAir,"last bench stack not consumed");
-            foreach(int type in new[]{ItemID.Wood,ItemID.WoodenSword,ItemID.WoodenChair,ItemID.Furnace})
+            foreach(int type in new[]{ItemID.Wood,ItemID.WoodenSword})
             {Setup(type);Check(Refused().Reason=="unsupported_selected_object_item","wrong item accepted: "+type);}
-            Setup();p.HeldItem.placeStyle=1;Check(Refused().Reason=="unsupported_selected_object_item","non-default style accepted");
+            foreach(int type in new[]{ItemID.WoodenChair,ItemID.Furnace,ItemID.BorealWoodWorkBench})
+            {
+                Setup(type);
+                var shape=ActorObjectPlacement.Definition(p.HeldItem);
+                var result=Finish(Start());
+                Check(result.EffectVerified&&ActorObjectPlacement.Present(ActorItemUse.Current.Placement)
+                    &&p.inventory[4].stack==4&&shape!=null,"generic object placement failed: "+type+" "+JsonSerializer.Serialize(result));
+            }
             Setup();var blocked=Main.tile[x+1,y];blocked.HasTile=true;blocked.TileType=TileID.Stone;
             var occupied=Refused();
             Check(occupied.Reason=="object_footprint_occupied"&&occupied.ReasonDetail.Contains($"occupiedTile=({x+1},{y})")
                 &&occupied.ReasonDetail.Contains($"tileType={TileID.Stone}")&&!occupied.InputsAcquired
                 &&JsonSerializer.SerializeToElement(occupied.Evidence).GetProperty("mutationAttempted").GetBoolean()==false,"second footprint cell/diagnostic ignored");
-            Setup();Main.tile[x+1,floor].ClearEverything();Check(Refused().Reason=="object_support_missing","second support ignored");
+            Setup();Main.tile[x+1,floor].ClearEverything();Check(Finish(Start()).Status=="failed"&&!Main.tile[x,y].HasTile,"second support ignored");
             Setup();Check(Refused(Main.maxTilesX-2,y).Reason=="invalid_target","full bounds ignored");
-            var distant=Refused(x+20,y);
-            Check(distant.Reason=="out_of_conservative_80_pixel_reach"&&distant.ReasonDetail.Contains($"anchorTile=({x+20},{y})")
-                &&distant.ReasonDetail.Contains(FormattableString.Invariant($"distancePixels={Vector2.Distance(p.Center,new Vector2((x+20)*16+8,y*16+8)):F3}"))
-                &&distant.ReasonDetail.Contains("limitPixels=80")&&!distant.InputsAcquired,"distance diagnostic ignored");
+            for(int col=0;col<2;col++)
+            {Main.tile[x+20+col,y].ClearEverything();var support=Main.tile[x+20+col,floor];support.HasTile=true;support.TileType=TileID.Dirt;}
+            Check(Finish(Start(x+20,y)).Status=="failed"&&!Main.tile[x+20,y].HasTile,"native distance ignored");
             Setup();p.position=new(x*16,floor*16-p.height);var collision=Refused();
             Check(collision.Reason=="object_player_collision"&&collision.ReasonDetail.Contains($"playerSlot={p.whoAmI}")
                 &&collision.ReasonDetail.Contains($"footprintTiles=({x},{y},2,1)")&&collision.ReasonDetail.Contains(p.Hitbox.ToString())
@@ -201,7 +207,6 @@ internal static class ObjectPlacementSelfTest
                 Check(Refused().Reason=="object_player_collision","other player bounds exclusion failed");
             }
             finally{body.position=bodyPosition;body.active=bodyActive;body.dead=bodyDead;body.ghost=bodyGhost;body.width=bodyWidth;body.height=bodyHeight;}
-            Setup();Main.tile[x+1,y].LiquidAmount=1;Check(Refused().Reason=="object_footprint_liquid","shallow liquid accepted");
             Setup();bool stale=false;try{executor.Start(id with{Generation=id.Generation+1},"place_object",JsonSerializer.SerializeToElement(new{x,y}),"stale");}catch{stale=true;}
             Check(stale&&!Main.tile[x,y].HasTile,"old identity accepted");
             Setup();var pending=Start();Check(Refused().Reason=="actor_busy","overlapping action accepted");executor.Cancel(id,pending);Check(Released(),"pre-input cancellation failed");

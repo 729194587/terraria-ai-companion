@@ -13,12 +13,13 @@ public static class MobilityProfileTests
         Check(a.Supported&&a.AvailableModes.Length==2&&a.Revision==b.Revision&&b.SourceTick==11,"sampling tick alone does not invalidate profile");
         var c=tracker.Sample(PhysicsParameters.Swiftness,20,42,true,Array.Empty<string>(),12,1,7);
         Check(c.Supported&&c.Revision>a.Revision&&c.EffectivePhysics.MaxRun==3.75f,"measured numeric effect changes supported profile revision");
-        Check(!tracker.Sample(p,20,42,true,Array.Empty<string>(),13,1,7).Supported,"buff name cannot authorize unmatching physics");
-        Check(!tracker.Sample(PhysicsParameters.Swiftness,20,42,false,Array.Empty<string>(),14,1,7).Supported,"unattributed physics are not basic");
-        Check(!tracker.Sample(p,20,42,false,new[]{"unsupported_equipment"},15,1,7).Supported,"unknown equipment rejects even with basic numbers");
+        Check(tracker.Sample(p,20,42,true,Array.Empty<string>(),13,1,7).Supported,"buff name does not override effective basic physics");
+        Check(tracker.Sample(PhysicsParameters.Swiftness,20,42,false,Array.Empty<string>(),14,1,7).Supported,"matching physics needs no buff identity");
+        Check(!tracker.Sample(p,20,42,false,new[]{"unsupported_motion_mode"},15,1,7).Supported,"unsupported motion mode rejects even with basic numbers");
         Check(!tracker.Sample(p,24,42,false,Array.Empty<string>(),16,1,7).Supported,"unverified body size rejected");
-        Check(!tracker.Sample(p with{Gravity=.2f},20,42,false,Array.Empty<string>(),17,1,7).Supported,"unverified motion effects rejected");
-        foreach(string effect in new[]{"extra_jump_usable","functional_wings","unvalidated_loaded_mod: Other"})
+        Check(tracker.Sample(p with{Gravity=.2f},20,42,false,Array.Empty<string>(),17,1,7).Supported,"measured positive gravity is supported");
+        Check(!tracker.Sample(p with{Gravity=float.NaN},20,42,false,Array.Empty<string>(),17,1,7).Supported,"invalid physics rejected");
+        foreach(string effect in new[]{"extra_jump_usable","functional_wings"})
             Check(!tracker.Sample(p,20,42,false,new[]{effect},17,1,7).Supported,"supplied unsupported effect is retained despite matching numbers (not Mod discovery)");
         var mutable=new[]{"unknown_effect"};var immutable=tracker.Sample(p,20,42,false,mutable,17,1,7);mutable[0]="changed";
         Check(immutable.UnsupportedEffects[0]=="unknown_effect","profile evidence owns its effect snapshot");
@@ -36,9 +37,9 @@ public static class MobilityProfileTests
         Check(expired.Supported&&!expired.SwiftnessExpiryTail&&expired.Revision>tail.Revision,"next Basic frame invalidates Swift plan");
         expiry.Reset();Check(!expiry.IsSwiftnessExpiryTail(swift,false,103,1,7),"cancel cannot retain expiry permission");
         expiry.Sample(swift,20,42,true,Array.Empty<string>(),110,1,7,2);
-        Check(!expiry.Sample(swift,20,42,false,Array.Empty<string>(),111,1,7).Supported,"early disappearance cannot masquerade as natural expiry");
+        Check(!expiry.Sample(swift,20,42,false,Array.Empty<string>(),111,1,7).SwiftnessExpiryTail,"early disappearance cannot masquerade as natural expiry");
         expiry.Sample(swift,20,42,true,new[]{"unknown_mod"},120,1,7,1);
-        Check(!expiry.Sample(swift,20,42,false,Array.Empty<string>(),121,1,7).Supported,"unsupported prior capability cannot authorize expiry");
+        Check(!expiry.Sample(swift,20,42,false,Array.Empty<string>(),121,1,7).SwiftnessExpiryTail,"unsupported prior state does not mark expiry");
         foreach(bool upgrade in new[]{true,false})
         {
             var task=new NavigationTask();var world=new MotionOfflineTests.World();var s=new PhysicsState(1600,1558,0,0,true);

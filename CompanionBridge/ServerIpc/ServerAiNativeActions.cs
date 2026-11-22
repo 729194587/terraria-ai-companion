@@ -65,7 +65,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             }
             else if(operation=="use_item")
             {
-                if(p.selectedItem<0||p.selectedItem>9||p.HeldItem.IsAir||!ActorItemUse.Supported(p.HeldItem.type))return Reject("unsupported_selected_item");
+                if(p.selectedItem<0||p.selectedItem>9||p.HeldItem.IsAir||!ActorItemUse.Supported(p.HeldItem))return Reject("unsupported_selected_item");
                 ActorItemUse.Start(p,identity.World,identity.Generation);context=ActorItemUse.Current;
             }
             else
@@ -138,10 +138,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ActorItemUse.Context)h.Context;var tile=c.Placement;
             bool present=tile.Object?ActorObjectPlacement.Present(tile):Main.tile[tile.X,tile.Y].HasTile&&Main.tile[tile.X,tile.Y].TileType==tile.TileType;
-            bool verified=c.Phase=="completed"&&tile.Placed&&!tile.ExternalChange&&present&&tile.ConsumedCount==1
-                &&(!tile.Object||tile.NativeEvents==1&&ActorObjectPlacement.Validate(c)==null);
-            string placementPhase=c.Phase=="rejected"?"failed":c.Phase=="stale"||tile.Object&&c.Phase=="completed"&&!verified?"unknown":c.Phase;
-            return new(placementPhase,tile.Object&&c.Phase=="completed"&&!verified?"native_object_terminal_unconfirmed":c.Reason,
+            bool verified=c.Phase=="completed"&&tile.Placed&&!tile.ExternalChange&&present&&tile.NativeEvents==1&&!tile.UncertainNativeEffect&&tile.ConsumedCount==1
+                &&(!tile.Object||ActorObjectPlacement.Validate(c)==null);
+            string placementPhase=c.Phase=="rejected"?"failed":c.Phase=="stale"||c.Phase=="completed"&&!verified?"unknown":c.Phase;
+            return new(placementPhase,c.Phase=="completed"&&!verified?"native_placement_terminal_unconfirmed":c.Reason,
                 new{x=tile.X,y=tile.Y,typeId=tile.TileType,itemType=c.Type,c.InitialStack,remainingStack=p.inventory[c.Slot].stack,
                     c.Ticks,c.Starts,c.AnimationPeak,tile.Attempts,nativePlacementEvents=tile.NativeEvents,uncertainNativeEffect=tile.UncertainNativeEffect,consumedCount=tile.ConsumedCount,placedByActor=tile.Placed,
                     objectPlacement=tile.Object,footprint=tile.Object?ActorObjectPlacement.Bounds(tile):null,fullFootprintVerified=tile.Object&&present,style=tile.Style,
@@ -152,7 +152,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         {
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ActorItemUse.Context)h.Context;
-            string status=c.Phase switch{"completed"=>"completed","running"=>"running","cancelled"=>"cancelled","stale"=>"unknown",_=>"failed"};
+            string status=c.Phase switch{"completed"=>"completed","running"=>"running","cancelled"=>"cancelled","stale" or "unknown"=>"unknown","timeout"=>"timeout",_=>"failed"};
             bool cycle=c.Phase=="completed"&&c.Starts==1&&c.AnimationPeak>0&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0;
             return new(status,c.Reason,new{itemType=c.Type,c.Ticks,c.Starts,c.AnimationPeak,c.TimePeak,c.ToolPeak,c.UsesPeak,
                 c.InitialStack,stack=p.inventory[c.Slot].stack,consumptionObserved=c.Consumed,cycleVerified=cycle,effectStatus=c.AnimationPeak>0?"unconfirmed":"not_started"},

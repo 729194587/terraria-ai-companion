@@ -7,6 +7,16 @@ Mods: {
 				DisplayName: Inventory Diagnostic Item
 				Tooltip: ""
 			}
+
+			PlacementFixtureBlock: {
+				DisplayName: Placement Fixture Block
+				Tooltip: ""
+			}
+
+			ItemUseFixtureFood: {
+				DisplayName: Item Use Fixture Food
+				Tooltip: ""
+			}
 		}
 	}
 }

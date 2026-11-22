@@ -20,10 +20,10 @@ CATEGORIES = (
     ('直接身体输入', ('move_input',), 'Limited', '原生方向/跳跃多更新输入；不是目标导航或装备运动适配。'),
     ('目标导航', ('navigate_to_x', 'navigate_to_landing_region', 'drop_through_platform'),
      'Limited', '普通profile局部导航；不能保证任意目标可达。'),
-    ('物品与战斗', ('use_item', 'attack_entity'), 'Limited', '白名单物品使用周期；没有实体定向攻击/命中保证。'),
+    ('物品与战斗', ('use_item', 'attack_entity'), 'Limited', '原生物品使用周期；具体效果需另行观察。'),
     ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '服务器挖掘从主背包自动选工具；复合挖掘可先接近指定格，掉落入包需另行核验。'),
     ('建造', ('place_tile', 'place_object', 'place_wall', 'hammer_tile'),
-     'Limited', '仅所列API的材料/样式白名单；不是通用家具/建造系统。'),
+     'Limited', '原生放置由选中材料、样式、占地和目标坐标决定。'),
     ('制作', ('query_recipes', 'craft_recipe'), 'Limited', '普通原版配方及已支持环境/制作站；按当前supported判定。'),
     ('背包变更', ('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'),
      'Limited', '仅AI自身背包内有界搬运/交换/持用；需新鲜槽位令牌和效果/输入释放核验。'),
@@ -144,7 +144,9 @@ ROLE_PRINCIPLES = '''你通过玩家本地主动聊天与其对话并控制独�
 
 def server_contract(bridge, tool):
     supported = exposed_operations(bridge)
-    definitions = atomic.server_tools(supported, scene_region='server_ai_scene_region_v1' in bridge.hello.get('capabilities', []))
+    capabilities = bridge.hello.get('capabilities', [])
+    definitions = atomic.server_tools(supported, scene_region='server_ai_scene_region_v1' in capabilities,
+                                      general_operations='server_ai_general_operations_v1' in capabilities)
     manifest = capability_manifest(bridge, supported)
     task_reference = ''
     if program_tasks.available(bridge):

@@ -79,6 +79,9 @@ internal static class PlacementSelfTest
                     &&c.Placement.ConsumedCount==1&&c.Placement.Attempts==1&&c.Starts==1&&p.inventory[4].stack==4
                     &&Main.tile[x,y].TileType==c.Placement.TileType&&Released(),"native block placement/consumption failed: "+JsonSerializer.Serialize(r));
             }
+            Material(ModContent.ItemType<PlacementFixtureBlock>());
+            Check(Finish(Start()).EffectVerified&&Main.tile[x,y].TileType==TileID.GrayBrick&&p.inventory[4].stack==4,
+                "ModItem did not reach the native placement and consumption path");
             Material(stack:1);var last=Finish(Start());
             Check(last.EffectVerified&&p.inventory[4].IsAir&&Released(),"last native block did not complete after slot replacement");
             AiMapRuntime.Map=new AiMap(Guid.NewGuid(),"native-fixture",Main.maxTilesX,Main.maxTilesY);
@@ -94,7 +97,7 @@ internal static class PlacementSelfTest
             Check(AiMapRuntime.Map.Get(x,y)==1,"confirmed torch Tile category not recorded");
             AiMapNativeTest.Run(p,Check);
             AiMapRuntime.Reset();
-            foreach(int type in new[]{ItemID.WoodenSword,ItemID.WoodPlatform,ItemID.WorkBench,ItemID.SandBlock})
+            foreach(int type in new[]{ItemID.WoodenSword,ItemID.WorkBench,ItemID.Rope})
             {
                 Material(type);var r=executor.Poll(identity,Start());
                 Check(r.Status=="failed"&&!r.InputsAcquired&&!Main.tile[x,y].HasTile,"unsupported item was accepted: "+type);
@@ -103,7 +106,7 @@ internal static class PlacementSelfTest
             Check(executor.Poll(identity,Start()).Reason=="target_occupied"&&p.inventory[4].stack==5,"placement replaced an occupied tile");
             Material();Check(executor.Poll(identity,Start(-1,y)).Reason=="invalid_target","out-of-world target accepted");
             Main.tile[x+30,y].ClearEverything();
-            Check(executor.Poll(identity,Start(x+30,y)).Reason=="out_of_conservative_80_pixel_reach","distant placement accepted");
+            Check(Finish(Start(x+30,y)).Status=="failed"&&!Main.tile[x+30,y].HasTile,"distant placement accepted");
             var floating=Finish(Start(x,y-3));
             Check(floating.Status=="failed"&&!floating.EffectVerified&&!Main.tile[x,y-3].HasTile&&p.inventory[4].stack==5&&Released(),"floating block bypassed native adjacency");
             // Below the feet: inside conservative centre radius, outside the native
@@ -125,12 +128,12 @@ internal static class PlacementSelfTest
             Material();var changed=Start();Block(TileID.Stone);Frame();
             Check(executor.Poll(identity,changed).Status=="failed"&&!ActorItemUse.Current.Placement.Placed&&p.inventory[4].stack==5,"foreign placement became owned success");
             Material();var replaced=Start();Frame();WorldGen.KillTile(x,y);Block(TileID.WoodBlock);Frame();
-            Check(executor.Poll(identity,replaced).Status=="failed"&&ActorItemUse.Current.Placement.ExternalChange&&Released(),"same-type remove/replace was adopted");
+            Check(executor.Poll(identity,replaced).Status=="unknown"&&ActorItemUse.Current.Placement.ExternalChange&&Released(),"same-type remove/replace was adopted");
             Material();var tool=Start();p.inventory[4]=p.inventory[4].Clone();Frame();
             Check(executor.Poll(identity,tool).Status=="cancelled"&&!Main.tile[x,y].HasTile&&p.inventory[4].stack==5,"replaced item object was used");
             Material();var prefix=Start();Frame();ActorItemUse.Current.Item.prefix=1;Frame();
             var prefixResult=executor.Poll(identity,prefix);evidence.Add(prefixResult);
-            Check(prefixResult.Status=="failed"&&ActorItemUse.Current.Reason=="placement_item_changed"&&Released(),"remaining material metadata change after consumption was ignored");
+            Check(prefixResult.Status=="unknown"&&ActorItemUse.Current.Reason=="placement_item_changed"&&Released(),"remaining material metadata change after consumption was ignored");
             Material();var deadline=Start();Frame();ActorItemUse.Current.Ticks=600;Frame();
             Check(executor.Poll(identity,deadline).Status=="timeout"&&Released(),"placement deadline did not release");
             evidence.Add(new{isolation=new{HumanScopeChecks,localBefore=local,localAfter=Main.myPlayer,txBefore=tx,txAfter=Player.tileTargetX,tyBefore=ty,tyAfter=Player.tileTargetY,mouseBefore=mouse,mouseAfter=Main.blockMouse}});
@@ -168,4 +171,11 @@ public sealed class PlacementDiagnosticItem : GlobalItem
             throw new InvalidOperationException("Intentional native exception after object placement, before consumption");
         return !PlacementSelfTest.DenyConsumption;
     }
+}
+
+public sealed class PlacementFixtureBlock : ModItem
+{
+    public override bool IsLoadingEnabled(Mod mod)=>Environment.GetCommandLineArgs().Contains("-placementselftest");
+    public override string Texture=>"Terraria/Images/Item_"+ItemID.GrayBrick;
+    public override void SetDefaults()=>Item.DefaultToPlaceableTile(TileID.GrayBrick);
 }

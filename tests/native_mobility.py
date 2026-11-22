@@ -38,32 +38,29 @@ async def verify(args):
         print(json.dumps({k:v for k,v in {**row,'samples':row['samples'][:1]}.items() if k!='navigation'}),flush=True)
         assert action.get('endEvidenceStatus')=='known' and action['endEvidence']['inputsReleased'],action
         if not args.probe:
-            if mode in ('unknown','equipment'):
-                assert action['status']=='failed' and 'unsupported' in (action.get('reasonDetail') or ''),action
-            else:
-                assert action.get('completed'),action
-                e=action['evidence'];assert all(e.get(k) for k in ('arrived','grounded','safeSupport','settled'))
-                assert all(abs(e['velocityBeforeRelease'][k])<=.1 for k in ('X','Y'))
-                assert row['maxPredictionError']<.01, row
-                if 'jump' in mode or 'region' in mode:assert e['navigation']['CompletedJumps']>=1
-                if mode in ('add','remove','rapid','expiry'):
-                    assert e['navigation']['RecoveryCount']>=1 and e['navigation']['RecoveryReplans']>=1
-                    assert any(f.get('navigation',{}).get('Status')=='recovering' for f in trace if f.get('navigation'))
-                if mode in ('rapid','expiry'):
-                    injected=[f for f in trace if f.get('injectedInput') and f.get('navigation',{}).get('Mobility')]
-                    changes=[]
-                    for f in injected:
-                        profile=f['navigation']['Mobility']
-                        if not changes or changes[-1]['Revision']!=profile['Revision']:changes.append(profile)
-                    assert len(changes)==(3 if mode=='rapid' else 2),changes
-                    assert all(a['Revision']<b['Revision'] for a,b in zip(changes,changes[1:])),changes
-                    assert e['navigation']['RecoveryCount']==e['navigation']['RecoveryReplans']==1,e
-                    if mode=='expiry':
-                        tails=[f for f in injected if f['navigation']['Mobility']['SwiftnessExpiryTail']]
-                        assert len(tails)==1 and not tails[0]['inputPhysics']['swiftness'],tails
-                        assert tails[0]['inputPhysics']['maxRunSpeed']==3.75,tails
-                        assert any(f['inputPhysics']['swiftnessTime']==1 for f in injected),injected
-                    assert e['navigation']['PlanMobilityRevision']==changes[-1]['Revision'],e
+            assert action.get('completed'),action
+            e=action['evidence'];assert all(e.get(k) for k in ('arrived','grounded','safeSupport','settled'))
+            assert all(abs(e['velocityBeforeRelease'][k])<=.1 for k in ('X','Y'))
+            assert row['maxPredictionError']<.01, row
+            if 'jump' in mode or 'region' in mode:assert e['navigation']['CompletedJumps']>=1
+            if mode in ('add','remove','rapid','expiry'):
+                assert e['navigation']['RecoveryCount']>=1 and e['navigation']['RecoveryReplans']>=1
+                assert any(f.get('navigation',{}).get('Status')=='recovering' for f in trace if f.get('navigation'))
+            if mode in ('rapid','expiry'):
+                injected=[f for f in trace if f.get('injectedInput') and f.get('navigation',{}).get('Mobility')]
+                changes=[]
+                for f in injected:
+                    profile=f['navigation']['Mobility']
+                    if not changes or changes[-1]['Revision']!=profile['Revision']:changes.append(profile)
+                assert len(changes)==(3 if mode=='rapid' else 2),changes
+                assert all(a['Revision']<b['Revision'] for a,b in zip(changes,changes[1:])),changes
+                assert e['navigation']['RecoveryCount']==e['navigation']['RecoveryReplans']==1,e
+                if mode=='expiry':
+                    tails=[f for f in injected if f['navigation']['Mobility']['SwiftnessExpiryTail']]
+                    assert len(tails)==1 and not tails[0]['inputPhysics']['swiftness'],tails
+                    assert tails[0]['inputPhysics']['maxRunSpeed']==3.75,tails
+                    assert any(f['inputPhysics']['swiftnessTime']==1 for f in injected),injected
+                assert e['navigation']['PlanMobilityRevision']==changes[-1]['Revision'],e
             for f in trace:
                 n=f.get('navigation') or {};profile=n.get('Mobility')
                 if profile and profile['Supported'] and f.get('injectedInput'):

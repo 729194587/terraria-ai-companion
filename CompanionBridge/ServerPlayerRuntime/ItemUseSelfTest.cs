@@ -58,7 +58,7 @@ internal static class ItemUseSelfTest
             Check(humanPath&&!ActorItemUse.Allowed(human)&&!ActorItemUse.Allowed(p),"Human wrapper or out-of-scope identity changed.");
             bool stale=false;try{ActorItemUse.Start(p,world,gen-1);}catch(InvalidOperationException){stale=true;}
             Check(stale,"Stale queued generation accepted.");
-            object Exercise(int slot,int type)
+            object Exercise(int slot,int type,bool consumable=false)
             {
                 ActorItemUse.Select(p,world,gen,slot);int before=p.HeldItem.stack;
                 ActorItemUse.Start(p,world,gen);
@@ -79,19 +79,32 @@ internal static class ItemUseSelfTest
                 var c=ActorItemUse.Current;
                 Check(c.Phase=="completed"&&c.Reason=="native_item_cycle_verified"&&c.Starts==1&&c.AnimationPeak>0&&p.itemAnimation==0&&p.itemTime==0&&!p.controlUseItem,
                     $"Native cycle failed for {type}: {c.Phase}/{c.Reason}, peaks={c.AnimationPeak}/{c.TimePeak}, starts={c.Starts}");
-                Check(type==ItemID.Apple?p.inventory[slot].stack==before-1:p.inventory[slot].stack==before,"Wrong native consumption.");
+                Check(consumable?p.inventory[slot].stack==before-1:p.inventory[slot].stack==before,"Wrong native consumption.");
                 if(type==ItemID.Apple)Check(p.HasBuff(BuffID.WellFed),"Native food buff was skipped.");
                 return new {type,c.Ticks,c.Starts,c.AnimationPeak,c.TimePeak,c.ToolPeak,c.UsesPeak,stackBefore=before,stackAfter=p.inventory[slot].stack,firstTickControls,firstPressPreserved=true};
             }
-            var sword=Exercise(0,ItemID.WoodenSword);var pick=Exercise(1,ItemID.CopperPickaxe);var axe=Exercise(3,ItemID.CopperAxe);var apple=Exercise(2,ItemID.Apple);
+            var sword=Exercise(0,ItemID.WoodenSword);var pick=Exercise(1,ItemID.CopperPickaxe);var axe=Exercise(3,ItemID.CopperAxe);var apple=Exercise(2,ItemID.Apple,true);
+            p.statLife=20;
+            p.inventory[4].SetDefaults(ItemID.LesserHealingPotion);
+            var potion=Exercise(4,ItemID.LesserHealingPotion,true);
+            Check(p.statLife>20&&p.potionDelay>0,"native potion effect/cooldown missing");
+            p.inventory[5].SetDefaults(ModContent.ItemType<ItemUseFixtureFood>());
+            var modItem=Exercise(5,p.inventory[5].type,true);
+            Check(p.HasBuff(BuffID.Regeneration),"ModItem native buff missing");
+            p.inventory[6].SetDefaults(ItemID.WoodenBow);
+            p.inventory[54].SetDefaults(ItemID.WoodenArrow);p.inventory[54].stack=5;
+            ActorItemUse.Select(p,world,gen,6);
+            bool bowRejected=false;
+            try{ActorItemUse.Start(p,world,gen);}catch(InvalidOperationException){bowRejected=true;}
+            Check(bowRejected&&p.inventory[54].stack==5,"untargeted bow consumed ammo");
             // Last item must exercise the native zero-stack cleanup without touching a human mouse.
-            p.inventory[2].stack=1;var lastApple=Exercise(2,ItemID.Apple);
+            p.inventory[2].stack=1;var lastApple=Exercise(2,ItemID.Apple,true);
             Check(p.inventory[2].IsAir,"Native final consumable cleanup failed.");
             ActorItemUse.Select(p,world,gen,3);Deny=true;ActorItemUse.Start(p,world,gen);Frame();Deny=false;
             Check(ActorItemUse.Current.Phase=="rejected"&&ActorItemUse.Current.Starts==0&&p.itemAnimation==0
                 &&!p.controlUseItem&&p.releaseUseItem,"Native copper axe CanUseItem denial bypassed or input retained.");
             ActorItemUse.Start(p,world,gen);Frame();ActorItemUse.Current.Ticks=180;Frame();
-            Check(ActorItemUse.Current.Phase=="failed"&&!p.controlUseItem&&p.releaseUseItem&&p.itemAnimation==0,"Copper axe timeout did not release input.");
+            Check(ActorItemUse.Current.Phase=="timeout"&&!p.controlUseItem&&p.releaseUseItem&&p.itemAnimation==0,"Copper axe timeout did not release input.");
             ActorItemUse.Start(p,world,gen);Frame();ActorItemUse.Stop(p,world,gen);
             Check(ActorItemUse.Current.Phase=="cancelled"&&!p.controlUseItem&&p.releaseUseItem&&p.itemAnimation==0,"Copper axe cancel did not release input.");
             ActorItemUse.Select(p,world,gen,0);
@@ -109,7 +122,7 @@ internal static class ItemUseSelfTest
             Check(Main.myPlayer==local&&Main.blockMouse==mouse&&Player.tileTargetX==tx&&Player.tileTargetY==ty
                 &&ReferenceEquals(human,Main.player[0])&&humanItems.Select((i,n)=>i.type==human.inventory[n].type&&i.stack==human.inventory[n].stack).All(v=>v),"Human/global state changed.");
             ProbeSession.Finish("G6 selftest complete",true);
-            File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",sword,pick,axe,apple,lastApple,explicitStop=true,deathStops=true,axeTimeout=true,axeCancel=true,
+            File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",sword,pick,axe,apple,lastApple,potion,modItem,bowRejected,explicitStop=true,deathStops=true,axeTimeout=true,axeCancel=true,
                 humanUnchanged=true,nativeCanUseDenial=true,staleGeneration=true,itemReplacement=true,
                 hostAndPlay="not executed",remoteMultiplayer="not executed",mining="air animation only; no tile target"}));
         }
@@ -134,5 +147,16 @@ public sealed class ItemUseDiagnosticHook : GlobalItem
             if(ItemUseSelfTest.Deny)return false;
         }
         return true;
+    }
+}
+
+public sealed class ItemUseFixtureFood : ModItem
+{
+    public override bool IsLoadingEnabled(Mod mod)=>Environment.GetCommandLineArgs().Contains("-itemuseselftest");
+    public override string Texture=>"Terraria/Images/Item_"+ItemID.Apple;
+    public override void SetDefaults()
+    {
+        Item.CloneDefaults(ItemID.Apple);
+        Item.buffType=BuffID.Regeneration;
     }
 }
