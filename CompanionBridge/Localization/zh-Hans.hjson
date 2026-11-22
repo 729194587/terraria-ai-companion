@@ -1,6 +1,25 @@
 Mods: {
 	CompanionBridge: {
-		Keybinds.ToggleAutoMove.DisplayName: 切换自动向右移动
+		Configs: {
+			McpSettings: {
+				DisplayName: 外部 AI（MCP）
+
+				EnableHttpMcp: {
+					Label: 启用本机 HTTP MCP
+					Tooltip: 在启用服务器 AI 的本机 Host & Play 世界内提供连接。请先配置 TERRARIA_MCP_TOKEN。
+				}
+
+				ProjectDirectory: {
+					Label: Terraria AI Companion 项目目录
+					Tooltip: 新版 Host & Play 启动器可自动提供。使用旧启动器时填写仓库的绝对路径。
+				}
+			}
+		}
+
+		Keybinds: {
+			WatchAI.DisplayName: 观战 AI / 返回玩家视角
+			ToggleAutoMove.DisplayName: 切换自动向右移动
+		}
 
 		Items: {
 			InventoryDiagnosticItem: {

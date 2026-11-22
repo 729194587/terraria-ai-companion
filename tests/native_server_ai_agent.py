@@ -77,7 +77,7 @@ return {action=action,after=after.player.position}"""
             and bridge.reply_receipts[-1]['authorSlot']==bridge.binding['slot']
             and ((-240<=p['position']['x']-start['position']['x']<=-144) if args.exploration else (36<=p['position']['x']-start['position']['x']<=64))
             and p['velocity']==dict(x=0,y=0) and after['binding']==before['binding']
-            and all(r['toolNames']==['execute_lua'] for r in requests))
+            and all(r['toolNames']==['execute_lua','read_skill'] for r in requests))
         if args.exploration:
             passed=passed and len(exploration_reports)==1 and len(exploration_reports[0]['steps'])==3 and completed[-1]['actions']==3
         bridge.invalidate_replies(2)

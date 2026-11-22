@@ -62,7 +62,7 @@ class LayerRuntime(unittest.IsolatedAsyncioTestCase):
             self.assertIn(term,instructions)
         for term in ('schemaVersion=2','validation提升到集合级','A=虚化Tile','a/b=斜平台','19种原版矿','图符不能恢复'):
             self.assertIn(term,instructions)
-        self.assertEqual(['execute_lua'],[t['function']['name'] for t in tools])
+        self.assertEqual(['execute_lua','read_skill'],[t['function']['name'] for t in tools])
 
 
 if __name__=='__main__':unittest.main()

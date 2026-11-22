@@ -61,6 +61,19 @@ async def verify(args):
         finally:bridge.close()
         (p/f'recovery-{scene}-receipt.json').write_text(json.dumps(dict(source=source,fixture=fixture,receipt=receipt),indent=2))
         trace=await wait_file(p/f'terrain-motion-flat-1-{scene}.json')
+        if scene=='turnaround':
+            nav=action['evidence']['navigation']
+            assert action['completed'] and action['endEvidenceStatus']=='known' and action['endEvidence']['inputsReleased'],nav
+            assert all(action['evidence'][k] for k in ('arrived','grounded','safeSupport','settled')),nav
+            starts=[f['navigation']['PlanStart'] for f in trace if (f.get('navigation') or {}).get('PlanStart')]
+            first=starts[0]
+            assert abs(first['Px']-33384.52)<.01 and abs(first['Vx']+2.1200006)<.001,first
+            assert max(f['x'] for f in trace)>=2095*16 and min(f['y'] for f in trace)+42<=205*16
+            assert action['evidence']['x']<=target+12
+            rows.append(dict(scene=scene, start=first, finalX=action['evidence']['x'],
+                             jumps=nav['CompletedJumps'], inputsReleased=True))
+            (p/'recovery-results.json').write_text(json.dumps(rows,indent=2))
+            continue
         fired=await wait_file(p/'terrain-recovery-fired.json')
         assert fired['navigationFrame']>=4 and fired['navigationAction'] in ('walk','jump'),fired
         evidence=action.get('evidence') or {};end=action.get('endEvidence') or {}
@@ -126,5 +139,5 @@ if __name__=='__main__':
     parser.add_argument('--profile',type=Path,required=True)
     parser.add_argument('--baseline',action='store_true')
     parser.add_argument('--autonomous',action='store_true')
-    parser.add_argument('--scenes',nargs='+',choices=['offset','low_wall','high_wall','air','cancel_air'])
+    parser.add_argument('--scenes',nargs='+',choices=['offset','low_wall','high_wall','air','cancel_air','turnaround'])
     asyncio.run(verify(parser.parse_args()))

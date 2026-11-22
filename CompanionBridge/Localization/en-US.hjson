@@ -1,6 +1,25 @@
 Mods: {
 	CompanionBridge: {
-		Keybinds.ToggleAutoMove.DisplayName: Toggle auto move right
+		Configs: {
+			McpSettings: {
+				DisplayName: External AI (MCP)
+
+				EnableHttpMcp: {
+					Label: Enable local HTTP MCP
+					Tooltip: Serve MCP in a local Host & Play world with Server AI enabled. Configure TERRARIA_MCP_TOKEN first.
+				}
+
+				ProjectDirectory: {
+					Label: Terraria AI Companion project directory
+					Tooltip: New Host & Play launchers supply this automatically. For older launchers enter the absolute repository path.
+				}
+			}
+		}
+
+		Keybinds: {
+			WatchAI.DisplayName: Watch AI / return to player
+			ToggleAutoMove.DisplayName: Toggle auto move right
+		}
 
 		Items: {
 			InventoryDiagnosticItem: {

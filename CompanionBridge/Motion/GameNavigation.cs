@@ -32,9 +32,9 @@ internal sealed class NativeNavigation
 
     private PhysicsState State(Player p) => NativeMotionWorld.Observe(p);
 
-    internal bool Ordinary(Player p) => OrdinaryRejection(p,NativeMovementReader.Capture(p)) == null;
+    internal bool Ordinary(Player p,bool combatSwing=false) => OrdinaryRejection(p,NativeMovementReader.Capture(p),combatSwing) == null;
 
-    private string OrdinaryRejection(Player p,MovementSnapshot movement)
+    private string OrdinaryRejection(Player p,MovementSnapshot movement,bool combatSwing=false)
     {
         var ph = Parameters(p);
         List<string> reasons = null;
@@ -44,7 +44,7 @@ internal sealed class NativeNavigation
         }
         Reject(p.mount.Active, "mount_active");
         Reject(p.gravDir != 1, "unsupported_gravity");
-        Reject(p.wet, "wet");
+        Reject(p.wet&&!ph.CanWade&&!p.honeyWet&&!p.lavaWet&&!p.shimmerWet, "unsupported_water_profile");
         Reject(p.pulley, "pulley");
         Reject(p.grapCount != 0, "grappling");
         Reject(p.webbed, "webbed");
@@ -64,10 +64,10 @@ internal sealed class NativeNavigation
         Reject(airRequested&&(p.slowFall||p.empressBrooch||p.chilled),"unmodeled_air_effect");
         Reject(ph.Air!=null&&!ph.Air.Valid(AirMotionModel.Resources(movement)),"invalid_air_resources");
         Reject(ph.Air!=null&&!ph.Matches(PhysicsParameters.Basic)&&!ph.Matches(PhysicsParameters.Swiftness),"unsupported_air_physics");
-        Reject(p.honeyWet&&!p.wet,"honey_wet");
-        Reject(p.lavaWet&&!p.wet,"lava_wet");
-        Reject(p.shimmerWet&&!p.wet,"shimmer_wet");
-        Reject(p.itemAnimation != 0, "item_animation");
+        Reject(p.honeyWet,"honey_wet");
+        Reject(p.lavaWet,"lava_wet");
+        Reject(p.shimmerWet,"shimmer_wet");
+        Reject(p.itemAnimation != 0 && !combatSwing, "item_animation");
         Reject(p.width != PhysicsSimulator.PlayerW || p.height != PhysicsSimulator.PlayerH, "unsupported_body_size");
         Reject(!float.IsFinite(p.velocity.X)||!float.IsFinite(p.velocity.Y), "invalid_velocity");
         Reject(!ph.IsSupportedGroundPhysics, $"unsupported_physics: {ph}");
@@ -77,15 +77,26 @@ internal sealed class NativeNavigation
     internal static PhysicsParameters Parameters(Player p)
     {
         var m=NativeMovementReader.Capture(p);var air=AirMotionModel.Select(m);
-        // Angel's native air tweak changes accRunSpeed before this boundary.
-        // Keep one planning profile; Step applies that verified air-only value.
-        float speed=air?.Kind==AirKind.Wings&&Math.Abs(p.accRunSpeed-6.25f)<.001f?3:p.accRunSpeed;
-        return new(p.runAcceleration,p.maxRunSpeed,speed,p.runSlowdown,p.gravity,p.maxFallSpeed,Player.jumpSpeed,Player.jumpHeight,
-            AirMotionModel.Strategy(m)==AirKind.None?ExtraJumpModel.Select(m):null,air);
+        // Normalize only the airborne native WingAirLogicTweaks; Step reapplies them per frame.
+        bool airborneWing=air?.Kind==AirKind.Wings && p.velocity.Y!=0 && !p.merman && !p.mount.Active;
+        float speed=airborneWing && Math.Abs(p.accRunSpeed-air.AirRunSpeed)<.001f?PhysicsParameters.Basic.AccRunSpeed:p.accRunSpeed;
+        float acceleration=airborneWing?p.runAcceleration/air.AirAcceleration:p.runAcceleration;
+        var observed=new PhysicsParameters(acceleration,p.maxRunSpeed,speed,p.runSlowdown,p.gravity,p.maxFallSpeed,
+            Player.jumpSpeed,Player.jumpHeight,AirMotionModel.Strategy(m)==AirKind.None?ExtraJumpModel.Select(m):null,air,FallProfile(p));
+        var basic=PhysicsParameters.Basic;
+        bool stockDry=Math.Abs(observed.Gravity-basic.Gravity)<.001f&&Math.Abs(observed.MaxFall-basic.MaxFall)<.001f
+            &&Math.Abs(observed.JumpSpeed-basic.JumpSpeed)<.001f&&observed.JumpHeight==basic.JumpHeight;
+        bool wade=observed.Air==null&&observed.ExtraJump==null&&!p.ignoreWater&&!p.waterWalk&&!p.waterWalk2
+            &&!p.trident&&!p.merman&&!p.accFlipper&&!p.canFloatInWater
+            &&(stockDry||observed.UsesWaterProfile);
+        return wade?observed with{CanWade=true,Gravity=basic.Gravity,MaxFall=basic.MaxFall,
+            JumpSpeed=basic.JumpSpeed,JumpHeight=basic.JumpHeight}:observed;
     }
 
+    internal static FallSafety FallProfile(Player p)=>new(p.extraFall,p.noFallDmg||p.equippedWings!=null,p.statLife);
+
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
-        LandingRegion region = null)
+        LandingRegion region = null, bool combatSwing = false)
     {
         _paired = false;
         _navigation = targetX.HasValue || region != null;
@@ -102,7 +113,7 @@ internal sealed class NativeNavigation
         }
         var ph=Parameters(p);
         var movement=NativeMovementReader.Capture(p);
-        string rejection = OrdinaryRejection(p,movement);
+        string rejection = OrdinaryRejection(p,movement,combatSwing);
         int swiftnessIndex=p.FindBuffIndex(BuffID.Swiftness);
         _profile=_mobility.Sample(ph,p.width,p.height,p.HasBuff(BuffID.Swiftness),
             rejection==null?Array.Empty<string>():new[]{rejection},Main.GameUpdateCount,session,generation,
@@ -113,7 +124,7 @@ internal sealed class NativeNavigation
         if(!_profile.Supported)return Fail("unsupported navigation state: "+string.Join("; ",_profile.UnsupportedEffects));
         if (_session != session || _generation != generation) _life = p.statLife;
         _session = session; _generation = generation;
-        if (p.statLife < _life) return Fail("life decreased");
+        if (!combatSwing && p.statLife < _life) return Fail("life decreased");
         _life = p.statLife;
         var state = State(p);
         if(_planRevision!=_profile.Revision)
@@ -123,6 +134,7 @@ internal sealed class NativeNavigation
         }
         _planRevision=_profile.Revision;
         _world = new NativeMotionWorld(state,_captureContacts);
+        Task.LiveFallStart=Controller.LiveFallStart=p.fallStart;
         long started = Stopwatch.GetTimestamp();
         var input = _navigation
             ? region != null ? Task.Before(session, generation, region, state, ph, _world)
@@ -139,11 +151,11 @@ internal sealed class NativeNavigation
         return input;
     }
 
-    internal void After(Player p)
+    internal void After(Player p, bool combatSwing = false)
     {
         if (!_paired) return;
         _paired = false;
-        if (p.statLife < _life || p.dead) { Fail("life decreased/dead"); return; }
+        if ((!combatSwing && p.statLife < _life) || p.dead) { Fail("life decreased/dead"); return; }
         if (_navigation) { Task.After(State(p), _world, inputsReleased: !p.controlLeft && !p.controlRight && !p.controlJump
             && !p.controlDown && !p.controlUp && !p.controlUseItem && !p.controlUseTile); Diagnostics.Observe(Snapshot); }
         else Controller.After(State(p), _world);
@@ -172,7 +184,8 @@ internal static class GameNavigation
     internal static LocalMotionController Controller => instance.Controller;
     internal static NavigationTask Task => instance.Task;
     internal static NavigationSnapshot Snapshot => instance.Snapshot;
-    internal static bool Ordinary(Player p) => instance.Ordinary(p);
+    internal static bool Ordinary(Player p,bool combatSwing=false) => instance.Ordinary(p,combatSwing);
+    internal static FallSafety FallProfile(Player p)=>NativeNavigation.FallProfile(p);
     internal static PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null, LandingRegion region = null)
         => instance.Before(p, session, direction, generation, targetX, region);
     internal static void After(Player p) => instance.After(p);

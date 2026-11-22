@@ -30,7 +30,7 @@ class AgentRun:
 def task_outcome(actions, program_completed=True, action_state=None, active_tasks=()):
     """Only native composite-task contracts can establish task completion.
 
-    Even a verified mine_target concerns one tile, not the entire player goal.
+    A verified mine_target proves its submitted excavation scope.
     """
     tasks = [a for a in actions if a.get('operation') == 'mine_target']
     from atomic_operations import verified_server_mine_task
@@ -42,17 +42,33 @@ def task_outcome(actions, program_completed=True, action_state=None, active_task
                 and a.get('endEvidenceStatus') == 'known' and end.get('inputsReleased') is True
                 and end.get('effectVerified') is True and verified_server_mine_task(raw, a.get('evidence') or {}))
     successes = [a for a in tasks if verified(a)]
+    def has_partial_excavation(a):
+        target = a.get('targetTask') or {}
+        end = a.get('endEvidence') or {}
+        task = (a.get('evidence') or {}).get('task') or {}
+        result = task.get('result') or {}
+        batch = result.get('evidence') or {}
+        return (a.get('valid') is True and a.get('status') in ('failed', 'cancelled', 'timeout')
+                and isinstance(target, dict) and target.get('cluster') is True
+                and a.get('endEvidenceStatus') == 'known' and end.get('inputsReleased') is True
+                and task.get('taskId') == a.get('actionId') and task.get('phase') == 'terminal'
+                and task.get('worldSessionId') == end.get('worldSessionId')
+                and task.get('actorGeneration') == end.get('actorGeneration') and task.get('actorSlot') == end.get('actorSlot')
+                and result.get('inputsReleased') is True and batch.get('outcome') in ('partial', 'interrupted')
+                and any(isinstance(t, dict) and t.get('status') == 'verified' and isinstance(t.get('proof'), dict)
+                        for t in batch.get('targets', ())))
+    progressed = successes or any(has_partial_excavation(a) for a in tasks)
     if any(t.get('status') == 'unknown' for t in active_tasks):
-        return 'partial' if successes else 'unknown'
+        return 'partial' if progressed else 'unknown'
     if any(t.get('status') in ('submitting', 'running') for t in active_tasks):
         return 'running'
     if tasks and len(successes) == len(tasks):
         return 'completed'  # Run/Program/other actions cannot rewrite this task fact.
     failures = [a for a in tasks if a.get('valid') is not True or a.get('status') != 'completed']
     if action_state == 'unknown' or any(a.get('status') == 'unknown' for a in failures):
-        return 'partial' if successes else 'unknown'
+        return 'partial' if progressed else 'unknown'
     if failures:
-        return 'partial' if successes else 'not_completed'
+        return 'partial' if progressed else 'not_completed'
     return 'completed' if tasks and len(successes) == len(tasks) else 'unknown'
 
 

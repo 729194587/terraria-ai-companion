@@ -7,9 +7,11 @@ import tempfile
 import unittest
 import uuid
 from unittest.mock import patch
+from jsonschema import Draft202012Validator
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'python'))
 import atomic_operations as atomic
+from api_result_contracts import schema_for
 from control import BridgeError
 from lua_runtime import LuaRuntime
 from server_ai import ServerAiBridge
@@ -20,6 +22,7 @@ class ActualProtocolTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             ready=Path(directory)/'ready';stop=Path(directory)/'stop'
             Path(str(ready)+'.live').touch()
+            Path(str(ready)+'.typed').touch()
             process=subprocess.Popen(['pwsh','-NoProfile','-File',str(Path(__file__).with_name('run_api_contract_host.ps1')),
                 '-ReadyPath',str(ready),'-StopPath',str(stop)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                 creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -65,6 +68,28 @@ class ActualProtocolTests(unittest.IsolatedAsyncioTestCase):
                     if status=='completed':
                         self.assertTrue(after['endEvidence']['effectVerified'])
                 self.assertFalse(bridge._closed)
+                runtime=LuaRuntime(bridge,evidence_root=directory)
+                state_schema=Draft202012Validator(schema_for('get_player_state'))
+                read=await runtime.execute("return api('get_player_state')", allow_actions=False)
+                self.assertEqual('completed', read['status'], read)
+                state_schema.validate(read['value'])
+                self.assertNotIn('data', read['value'])
+                self.assertEqual({'x':160,'y':320}, read['value']['player']['positionWorldPixels'])
+                self.assertEqual(bridge.binding, read['value']['binding'])
+
+                Path(str(ready)+'.unavailable').touch()
+                unavailable=await runtime.execute("return api('get_player_state')", allow_actions=False)
+                self.assertEqual('completed', unavailable['status'], unavailable)
+                state_schema.validate(unavailable['value'])
+                self.assertFalse(unavailable['value']['available'])
+                self.assertNotIn('player', unavailable['value'])
+
+                mined=await runtime.execute("return api('mine_tile',{x=10,y=20})")
+                self.assertEqual('completed', mined['status'], mined)
+                Draft202012Validator(schema_for('mine_tile')).validate(mined['value'])
+                proof=mined['value']['evidence']
+                self.assertEqual((10,20,7), (proof['X'], proof['Y'], proof['TileType']))
+                self.assertNotIn('tileType', proof)
             finally:
                 if bridge is not None:bridge.close()
                 stop.write_text('stop')
@@ -96,6 +121,7 @@ class ActualProtocolTests(unittest.IsolatedAsyncioTestCase):
                 runtime=LuaRuntime(bridge,evidence_root=directory)
                 result=await runtime.execute("api('select_hotbar_slot',{slot=2});log('escaped')")
                 self.assertEqual(('failed','idle'),(result['status'],result['actionState']))
+                Draft202012Validator(schema_for('select_hotbar_slot')).validate(result['lastAction'])
                 self.assertFalse(result['lastAction']['continuationAllowed']);self.assertEqual([],result['logs'])
                 read=await runtime.execute("return api('get_player_state',{}).player.life")
                 self.assertEqual(('completed',73),(read['status'],read['value']))

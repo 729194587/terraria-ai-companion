@@ -3,10 +3,11 @@ using System.Linq;
 using MonoMod.Cil;
 using Terraria;
 using Terraria.ID;
+using CompanionBridge.ServerIpc;
 
 namespace VirtualPlayerEngineProbe;
 
-internal static class ActorItemUse
+internal static partial class ActorItemUse
 {
     internal sealed class Context
     {
@@ -64,12 +65,11 @@ internal static class ActorItemUse
     }
     internal static void Start(Player p,string world,long generation)
     {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation);}}
-    internal static void StartPlacement(Player p,string world,long generation,int x,int y,bool objectPlacement=false,ActorRope.Target rope=null)
-    {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,x,y,objectPlacement,rope);}}
-    private static void StartCore(Player p,string world,long generation,int? x=null,int? y=null,bool objectPlacement=false,ActorRope.Target rope=null)
+    internal static void StartPlacement(Player p,string world,long generation,ActorPlacement.Context placement)
+    {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,placement);}}
+    private static void StartCore(Player p,string world,long generation,ActorPlacement.Context placement=null)
     {
         Capture(p,world,generation);Idle(p);
-        var placement=x.HasValue?ActorPlacement.Create(p,x.Value,y.Value,objectPlacement,rope):null;
         if(p.selectedItem<0||p.selectedItem>9||(placement==null?!Supported(p.HeldItem):!ActorPlacement.SupportedFor(placement,p.HeldItem))||p.HeldItem.IsAir)
             throw new InvalidOperationException("Select an item in hotbar 1–10 that can use a single press without a world target.");
         if(p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)throw new InvalidOperationException("AI cannot use an item in this state.");
@@ -77,38 +77,47 @@ internal static class ActorItemUse
         // Release an old input; the next natural ItemCheck supplies one press.
         p.controlUseItem=false;p.releaseUseItem=true;
     }
-    public static bool Allowed(Player p)=>ActorMining.Allowed(p)||(executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
+    public static bool Allowed(Player p)=>NativeCombatWorld.AllowsItem(p)||ActorMining.Allowed(p)||(executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
         &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&(executing.Placement!=null?ActorPlacement.SupportedFor(executing.Placement,executing.Item)||executing.Placement.Placed&&executing.Item.IsAir:(executing.Item.type==executing.Type||executing.Consumed&&executing.Item.IsAir)));
     internal static bool Placing(Player p)=>executing?.Placement!=null&&Allowed(p);
-    public static bool SkipMelee(Player p)=>ActorMining.Allowed(p)||ActorPlacement.Allowed(p);
-    public static bool SkipCursor(Player p){if(ActorMining.Allowed(p))ActorMining.Strike(p);else if(ActorPlacement.Allowed(p))ActorPlacement.Dispatch(p);return Allowed(p);}
+    public static bool SkipMelee(Player p)=>ActorMining.InInputScope(p)||Placing(p);
+    public static bool SkipCursor(Player p)=>!ActorMining.InInputScope(p)&&!Placing(p)&&Allowed(p);
     internal static void Install(Action<Action,Action> install)
     {
         var predicate=typeof(ActorItemUse).GetMethod(nameof(Allowed));
+        var combat=typeof(NativeCombatWorld).GetMethod(nameof(NativeCombatWorld.AllowsItem));
         ILContext.Manipulator inner=il=>ItemUsePatches.Patch(il.Method,"inner",il.Module.ImportReference(predicate));
         ILContext.Manipulator melee=il=>ItemUsePatches.Patch(il.Method,"melee",il.Module.ImportReference(predicate),
             il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipCursor))),
-            il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipMelee))));
+            il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipMelee))),il.Module.ImportReference(combat),
+            il.Module.ImportReference(typeof(ActorMining).GetMethod(nameof(ActorMining.InInputScope))));
+        ILContext.Manipulator combatPose=il=>ItemUsePatches.Patch(il.Method,"combat-pose",
+            il.Module.ImportReference(combat));
         install(()=>IL_Player.ItemCheck_Inner+=inner,()=>IL_Player.ItemCheck_Inner-=inner);
         install(()=>IL_Player.ItemCheck_OwnerOnlyCode+=melee,()=>IL_Player.ItemCheck_OwnerOnlyCode-=melee);
-        install(()=>On_Player.ItemCheckWrapped+=Update,()=>On_Player.ItemCheckWrapped-=Update);
+        install(()=>IL_Player.ItemCheck_ApplyUseStyle_Inner+=combatPose,()=>IL_Player.ItemCheck_ApplyUseStyle_Inner-=combatPose);
+        ILContext.Manipulator combatStrike=il=>ItemUsePatches.Patch(il.Method,"combat-strike",
+            il.Module.ImportReference(typeof(NativeCombatWorld).GetMethod(nameof(NativeCombatWorld.StrikeWithEvidence))));
+        install(()=>IL_Player.ProcessHitAgainstNPC+=combatStrike,()=>IL_Player.ProcessHitAgainstNPC-=combatStrike);
+        ILContext.Manipulator combatCooldown=il=>ItemUsePatches.Patch(il.Method,"combat-cooldown",il.Module.ImportReference(combat));
+        install(()=>IL_Player.UpdateMeleeHitCooldowns+=combatCooldown,()=>IL_Player.UpdateMeleeHitCooldowns-=combatCooldown);
+        install(()=>On_Player.ItemCheck_ApplyUseStyle_Inner+=ApplyUseStyle,()=>On_Player.ItemCheck_ApplyUseStyle_Inner-=ApplyUseStyle);
         install(()=>On_Player.ItemCheck_Shoot+=Shoot,()=>On_Player.ItemCheck_Shoot-=Shoot);
         install(()=>On_Player.SmartSelectLookup+=SmartSelect,()=>On_Player.SmartSelectLookup-=SmartSelect);
     }
+    private static void ApplyUseStyle(On_Player.orig_ItemCheck_ApplyUseStyle_Inner orig,Player p,float height,Item item,Microsoft.Xna.Framework.Rectangle frame)
+        =>orig(p,height,item,NativeCombatWorld.SwingFrame(p,item,frame));
     private static void Shoot(On_Player.orig_ItemCheck_Shoot orig,Player p,int slot,Item item,int damage)
     {
         // A Mod hook can change shoot/ammo requirements after preflight.
         // Stop before the native PickAmmo path for an actor without a cursor.
         if(!NativeSurvival.Owns(p))orig(p,slot,item,damage);
+        else NativeCombatWorld.Shoot(orig,p,slot,item,damage);
     }
     private static void SmartSelect(On_Player.orig_SmartSelectLookup orig,Player p)
     {if(!NativeSurvival.Owns(p))orig(p);}
-    internal static void Update(On_Player.orig_ItemCheckWrapped orig,Player p,int index)
+    internal static void Update(Player p,Action<NativeItemInput.Intent> runNative)
     {
-        if(!ReferenceEquals(p,ProbeSession.Actor)){orig(p,index);return;}
-        // Never run the UI wrapper for an AI, even when idle or quarantined.
-        if(!NativeSurvival.Owns(p))return;
-        if(ActorMining.Running){ActorMining.Update(p);return;}
         var c=Current;
         if(!Running||!ReferenceEquals(c.Actor,p))return;
         if(!Binding(c))
@@ -126,11 +135,15 @@ internal static class ActorItemUse
         if(++c.Ticks>(c.Placement!=null?600:180)){Retire(p);if(c.Placement!=null&&c.Phase=="unknown")return;c.Phase="timeout";c.Reason=c.Placement!=null?"native_placement_deadline":"native_item_timeout";return;}
         try
         {
-            executing=c;p.controlUseItem=c.Ticks==1;
+            executing=c;
             int before=p.itemAnimation,beforeStack=c.Item.stack;
-            p.ItemCheck(); // Exactly once at the native Update call site, with normal tML hooks.
-            if(c.Placement!=null)ActorPlacement.AfterCheck(c,beforeStack);
+            var placement=c.Placement;
+            bool press=c.Ticks==1;
+            var input=placement==null?NativeItemInput.Intent.Untargeted(p,press):ActorPlacement.Input(placement,press);
+            var observation=placement==null?default:ActorPlacement.BeforeCheck(placement,press);
+            runNative(input);
             if(!Binding(c)||!NativeSurvival.Owns(p)||p.selectedItem!=c.Slot)throw new InvalidOperationException("AI binding changed during ItemCheck.");
+            if(placement!=null)ActorPlacement.AfterCheck(c,beforeStack,observation);
             if(c.Phase!="running"||p.dead)return;
             if(c.Placement==null&&c.Item.stack<beforeStack)c.Consumed=true;
             if(!ReferenceEquals(p.inventory[c.Slot],c.Item)&&!(c.Consumed&&c.Item.stack<=0&&p.inventory[c.Slot].IsAir&&p.itemAnimation==0&&p.itemTime==0))
@@ -139,7 +152,12 @@ internal static class ActorItemUse
             c.ToolPeak=Math.Max(c.ToolPeak,p.toolTime);c.UsesPeak=Math.Max(c.UsesPeak,p.ItemUsesThisAnimation);
             if(p.itemAnimation>before)c.Starts++;
             if(c.Ticks==1&&c.AnimationPeak>0||c.Ticks>1&&(p.itemAnimation==0||c.Ticks%6==0))Sync(p);
-            if(c.Ticks==1&&c.AnimationPeak==0){c.Phase="rejected";c.Reason=c.Placement?.Rope!=null?"native_rope_placement_refused":"native_use_refused";}
+            if(c.Ticks==1&&c.AnimationPeak==0)
+            {
+                if(placement is {Unified:true}&&(placement.Placed||placement.ConsumedCount!=0||placement.UncertainNativeEffect))
+                {c.Phase="unknown";c.Reason="native_placement_effect_unconfirmed";}
+                else {c.Phase="rejected";c.Reason=c.Placement?.Rope!=null?"native_rope_placement_refused":"native_use_refused";}
+            }
             else if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0&&!p.channel)
             {if(c.Placement!=null)ActorPlacement.Complete(c);else {c.Phase="completed";c.Reason="native_item_cycle_verified";}}
             if(c.Phase!="running")

@@ -11,11 +11,19 @@ namespace CompanionBridge.ServerIpc;
 internal sealed class NativeMineTargetWorld : IMineTargetWorld
 {
     public string ProgressKey=>NativeNavigationWorld.CheckpointKey(Player);
+    public bool RefreshApproachAfterOpening=>true;
     private readonly AiReadOnlyProtocol.Identity identity;
     private readonly JsonElement args;
     private Player Player=>(Player)identity.Actor;
-    private int x,y,type,slot,toolType,toolPrefix,toolPower,toolAxe,toolBoost;
+    private int x,y,type,slot,miningCapability;
     private Item item;
+    private (int Type,int Prefix,int Pick,int Axe,int Boost) toolStats;
+    private void RememberTool(int selected)
+    {
+        slot=selected;
+        item=Player.inventory[slot];
+        toolStats=(item.type,item.prefix,item.pick,item.axe,item.tileBoost);
+    }
     private ActorMining.FurnitureCell[] furniture;
     private string shape;
     private long revision;
@@ -36,22 +44,32 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
         type=Main.tile[x,y].TileType;
         if(!GameNavigation.Ordinary(Player)||Player.width!=PhysicsSimulator.PlayerW||Player.height!=PhysicsSimulator.PlayerH)
             return "unsupported_mining_profile";
-        var failure=ActorMining.ChooseTool(Player,identity.World,identity.Generation,x,y,false,out slot);
-        if(failure!=ActorMining.Failure.None)return AiActionReasons.Mining("failed",failure.ToString());
+        if(RefreshTool() is {} toolError)return toolError;
         furniture=ActorMining.FurnitureAt(x,y);
-        item=Player.inventory[slot];toolType=item.type;toolPrefix=item.prefix;toolPower=item.pick;toolAxe=item.axe;toolBoost=item.tileBoost;shape=SceneMineTargets.NavigationShape(x,y);edits=new(identity,ServerAiNavigation.Observe(Player).State,IsTargetCell,rolling:true);SceneMineTargets.Watch(x,y);revision=SceneMineTargets.Revision(x,y);
+        shape=SceneMineTargets.NavigationShape(x,y);edits=new(identity,ServerAiNavigation.Observe(Player).State,IsTargetCell,rolling:true);SceneMineTargets.Watch(x,y);revision=SceneMineTargets.Revision(x,y);
         return null;
     }
+
+    private string RefreshTool(int? capability=null)
+    {
+        var failure=ActorMining.ChooseTool(Player,identity.World,identity.Generation,x,y,false,out slot,out _);
+        if(failure!=ActorMining.Failure.None)return AiActionReasons.Mining("failed",failure.ToString());
+        RememberTool(slot);
+        miningCapability=capability??ActorMining.CapabilityStamp(Player);
+        return null;
+    }
+
     public string Revalidate()
     {
         ServerAiNativeActions.Require(identity);
         if(!ActorMining.Healthy(Player))return "actor_cannot_mine";
-        bool toolPresent=ReferenceEquals(Player.inventory[slot],item)
-            ||ActorMining.HoldsBorrowedTool(Player,identity.World,identity.Generation,slot,item);
-        if(!toolPresent||item.type!=toolType||item.prefix!=toolPrefix||item.pick!=toolPower||item.axe!=toolAxe||item.tileBoost!=toolBoost)return "task_tool_changed";
         if(SceneMineTargets.NavigationShape(x,y)!=shape||SceneMineTargets.Revision(x,y)!=revision
             ||furniture.Any(cell=>!ActorMining.SameFurnitureCell(type,cell)))return "task_target_changed";
-        return null;
+        if(toolStats!=(item.type,item.prefix,item.pick,item.axe,item.tileBoost))return "task_tool_changed";
+        if(ActorMining.HoldsBorrowedTool(Player,identity.World,identity.Generation,slot,item))return null;
+        if(!ReferenceEquals(Player.inventory[slot],item))return "task_tool_changed";
+        int capability=ActorMining.CapabilityStamp(Player);
+        return capability==miningCapability?null:RefreshTool(capability);
     }
     private bool IsTargetCell(int tx,int ty)=>tx==x&&ty==y||furniture.Any(part=>part.X==tx&&part.Y==ty);
 
@@ -66,13 +84,17 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
             if(IsTargetCell(tx,ty))return '.';
             return cell;
         });
-        return safe||!arrival&&edits.Edited&&furniture.Length==0&&edits.CanDropAfter(pose,new[]{(x,y)});
+        return safe||!arrival&&edits.Edited&&furniture.Length==0&&edits.LandingAfterCut(pose,new[]{(x,y)}).HasValue;
     }
     public bool CanMine()
     {
         var p=Player;var observed=ServerAiNavigation.Observe(p);
-        return observed.Settled&&(!edits.Edited||NativeNavigationEdits.SafeCutNeighbours(x,y))&&SafePose(observed.State,new NativeMotionWorld(observed.State),false)
-            &&ActorMining.QueryReach(p,identity.World,identity.Generation,item,x,y,p.position.X,p.position.Y);
+        if(!observed.Settled||edits.Edited&&!NativeNavigationEdits.SafeRemovalNeighbours(x,y,new(edits.Environment))
+            ||!SafePose(observed.State,new NativeMotionWorld(observed.State),false)
+            ||ActorMining.ChooseTool(p,identity.World,identity.Generation,x,y,true,out int reachableSlot,out _)!=ActorMining.Failure.None)
+            return false;
+        RememberTool(reachableSlot);
+        return true;
     }
     public JsonElement? FindApproach()
     {
@@ -115,10 +137,12 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
     }
     public NavigationStep FindOpening(int remainingTiles)
     {
-        if(item.pick<=0||Main.tileFrameImportant[type])return null;
+        if(item.pick<=0||Main.tileFrameImportant[type])
+        {SearchDetail+="; opening requires an ordinary pickaxe target";return null;}
         var p=Player;
         if(ActorMining.QueryReach(p,identity.World,identity.Generation,item,x,y,p.position.X,p.position.Y)
-            &&!NativeNavigationEdits.SafeCutNeighbours(x,y))return null;
+            &&!NativeNavigationEdits.SafeRemovalNeighbours(x,y,new(edits.Environment)))
+        {SearchDetail+="; reachable target has unsafe removal neighbours";return null;}
         var step=edits.FindOpening(x*16+8,y*16,remainingTiles);
         SearchDetail=edits.SearchDetail;
         return step;
@@ -126,6 +150,6 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
     public string RevalidateOpening()=>edits.RevalidateOpening();
     public bool OpeningSettled()=>edits.OpeningSettled();
     public string OpeningLandingError()=>edits.OpeningLandingError();
-    public JsonElement MineArguments()=>JsonSerializer.SerializeToElement(new{x,y,plannedToolSlot=slot});
+    public JsonElement MineArguments()=>JsonSerializer.SerializeToElement(new{x,y});
     public bool TargetAbsent(){ServerAiNativeActions.Require(identity);return !Main.tile[x,y].HasTile;}
 }

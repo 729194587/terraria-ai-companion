@@ -51,6 +51,15 @@ async def verify(args):
             assert not a['completed'] and a['evidence']['completedCrafts']==(1 if case=='partial_space' else 0)
             assert a['evidence']['mutationAttempted']==(case=='partial_space')
         if case=='group':assert any(i['typeId']==2503 for i in a['evidence']['batches'][0]['consumed'])  # pinned engine BorealWood
+    await fixture('group')
+    made=await program('module-group','return terraria.crafting.make(8, 7)')
+    assert made['value']['status']=='completed' and made['value']['producedCount']==9
+    assert made['actions']==1 and made['value']['remaining']==0
+    await fixture('partial_space')
+    partial=await program('module-partial','local r=terraria.crafting.make(94, 200); error("unexpected continuation")',
+                          expected_failure='insufficient_inventory_space')
+    report=partial['moduleResult']
+    assert report['status']=='partial' and 0<report['producedCount']<200 and partial['actions']==1, report
     await fixture('insufficient')
     stale=await program('stale-token',query.replace('OUTPUT','36')+"return api('craft_recipe',{recipeId=r.recipeId,recipeToken='"+'0'*64+"',crafts=1})",expected_failure='recipe_changed')
     assert not stale['lastAction']['evidence']['mutationAttempted']

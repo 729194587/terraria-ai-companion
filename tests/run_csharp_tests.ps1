@@ -82,6 +82,17 @@ $sources = @(
     (Join-Path $PSScriptRoot 'PlayerHookOfflineTests.cs')
 )
 $references = Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName
+if ($AirOnly -or $PlannerOnly) {
+    $dependencies = @('AirMotionTests','PlannerCorrectnessTests','MotionOfflineTests','SurfaceGraphTests','ControlState','AtomicParameters',
+        'SceneLayers','AiChatInput','HotbarSlots','GameMessageCapture','ObservationSnapshot','TerrainSnapshot',
+        'SceneGeometry','SceneRegion','EntitySnapshot')
+    $airSources = $sources | Where-Object {
+        ((Split-Path (Split-Path $_ -Parent) -Leaf) -eq 'Motion' -and [IO.Path]::GetFileNameWithoutExtension($_) -ne 'PlatformDropAction') -or [IO.Path]::GetFileNameWithoutExtension($_) -in $dependencies
+    }
+    Add-Type -Path $airSources -ReferencedAssemblies $references
+    if ($PlannerOnly) { [PlannerCorrectnessTests]::Run() } else { [AirMotionTests]::Run() }
+    return
+}
 if ($AuthorityNetworkOnly) {
     $sources += (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicMultiplayer.cs')
     $sources += (Join-Path $PSScriptRoot 'AuthorityNetworkOfflineTests.cs')
@@ -90,13 +101,11 @@ if ($AuthorityNetworkOnly) {
     return
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
-if ($AirOnly) { [AirMotionTests]::Run(); return }
 if ($MobilityOnly) { [MobilityProfileTests]::Run(); [ExtraJumpNavigationTests]::Run(); [AirMotionTests]::Run(); return }
 if ($SurfaceGraphOnly) { [SurfaceGraphTests]::Run(); return }
 if ($LocalEditsOnly) { [LocalTerrainPlanningTests]::Run(); return }
 if ($TripOnly) { [NavigationTripTests]::Run(); return }
 if ($RecoveryOnly) { [NavigationRecoveryTests]::Run(); return }
-if ($PlannerOnly) { [PlannerCorrectnessTests]::Run(); return }
 if ($SafeGroundWalkOnly) { [SafeGroundWalkTests]::Run(); return }
 if ($MiningSupportOnly) { [MiningSupportImpactTests]::Run((Join-Path $PSScriptRoot 'fixtures/mining-support-play2.json')); return }
 if ($SceneOnly) { [SceneGeometryTests]::Run(); return }

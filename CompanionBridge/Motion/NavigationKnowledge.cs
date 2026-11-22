@@ -76,8 +76,8 @@ internal sealed class NavigationSearchMemory
             rejected.Remove(key);
         }
         var prediction=PhysicsSimulator.Predict(state,direction,hold,profile,world,
-            walkFrames:stride,rollingJump:true,maxDropPixels:StateSpacePlanner.MaxDropPixels,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold);
-        if(!prediction.Safe)
+            walkFrames:stride,rollingJump:true,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold);
+        if(!prediction.Safe&&prediction.Landing.Py-state.Py<=StateSpacePlanner.StandardVerticalSpan)
         {
             while(order.Count>0&&(rejected.Count>=Capacity||order.Count>=Capacity))
                 rejected.Remove(order.Dequeue());

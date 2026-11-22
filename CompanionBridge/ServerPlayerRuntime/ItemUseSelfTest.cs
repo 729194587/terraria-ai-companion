@@ -15,7 +15,8 @@ namespace VirtualPlayerEngineProbe;
 internal static class ItemUseSelfTest
 {
     private static bool ran;
-    internal static bool Deny,Throw;
+    internal static bool Deny;
+    internal static Action Reenter;
     private static Player controlActor;
     private static readonly List<bool> controls=new();
     private static void ObserveControls(On_NetMessage.orig_SendData orig,int msg,int remote,int ignore,NetworkText text,int number,float a,float b,float c,int d,int e,int f)
@@ -37,6 +38,11 @@ internal static class ItemUseSelfTest
             void Frame()=>NativeSurvival.Run(p,()=>wrapped.Invoke(p,new object[]{p.whoAmI}));
             var human=Main.player[0];var humanItems=human.inventory.Select(i=>i.Clone()).ToArray();
             int local=Main.myPlayer,tx=Player.tileTargetX,ty=Player.tileTargetY;bool mouse=Main.blockMouse;
+            var pointer=(Main.screenPosition,Main.mouseX,Main.mouseY,Main.lastMouseX,Main.lastMouseY,Main.mouseItem,
+                Main.mouseLeft,Main.mouseLeftRelease,Main.mouseRight,Main.mouseRightRelease,p.mouseInterface);
+            bool PointerRestored()=>pointer==(Main.screenPosition,Main.mouseX,Main.mouseY,Main.lastMouseX,Main.lastMouseY,Main.mouseItem,
+                Main.mouseLeft,Main.mouseLeftRelease,Main.mouseRight,Main.mouseRightRelease,p.mouseInterface)
+                &&Main.myPlayer==local&&Player.tileTargetX==tx&&Player.tileTargetY==ty&&Main.blockMouse==mouse&&!NativeItemInput.Active(p);
             string world=ProbeSession.WorldSession;long gen=ProbeSession.ActorGeneration;
             // Explicit diagnostic inventory, independent of normal starter gear.
             for(int i=0;i<10;i++)p.inventory[i].TurnToAir();
@@ -44,17 +50,40 @@ internal static class ItemUseSelfTest
             p.inventory[3].SetDefaults(ItemID.CopperAxe);
             if(failure)
             {
-                ActorItemUse.Select(p,world,gen,0);ActorItemUse.Start(p,world,gen);Throw=true;
-                bool isolated=false;try{Frame();}catch{isolated=true;}finally{Throw=false;}
-                Check(isolated&&ProbeSession.Quarantined&&!ActorItemUse.Running&&!p.controlUseItem&&p.itemAnimation==0
+                ActorItemUse.Select(p,world,gen,0);ActorItemUse.Start(p,world,gen);
+                bool attempted=false;int humanNativeCalls=0;
+                void ObserveItemCheck(On_Player.orig_ItemCheck orig,Player player)
+                {
+                    if(ReferenceEquals(player,human))humanNativeCalls++;
+                    orig(player);
+                }
+                Reenter=()=>{
+                    Check(NativeItemInput.Active(p)&&Main.myPlayer==p.whoAmI&&!ReferenceEquals(p,human),
+                        "Cross-player probe did not run inside the AI input scope.");
+                    attempted=true;
+                    wrapped.Invoke(human,new object[]{0});
+                };
+                Exception error=null;
+                On_Player.ItemCheck+=ObserveItemCheck;
+                try{Frame();}catch(Exception e){error=e.GetBaseException();}
+                finally{On_Player.ItemCheck-=ObserveItemCheck;Reenter=null;}
+                Check(attempted&&humanNativeCalls==0
+                    &&error is InvalidOperationException{Message:"Reentrant native item update during an AI input scope."},
+                    "Nested human wrapper reached native item execution or was not rejected by the scope guard.");
+                Check(ProbeSession.Quarantined&&!ActorItemUse.Running&&!p.controlUseItem&&p.releaseUseItem&&p.itemAnimation==0
                     &&ReferenceEquals(Main.player[p.whoAmI],p)&&ProbeSession.Reservation.IsReserved(p.whoAmI)&&p.inventory[0].stack==1,
-                    "Native hook exception did not retain/quarantine AI and release inputs.");
+                    "Reentry exception did not retain/quarantine AI and release inputs.");
+                Check(PointerRestored(),"Reentry exception did not restore virtual input state.");
+                bool humanAfter=false;
+                NativeItemInput.Update((player,index)=>humanAfter=ReferenceEquals(player,human)&&index==0,human,0);
+                Check(humanAfter&&PointerRestored(),"Normal human dispatch did not resume after reentry unwound.");
                 File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",nativeExceptionQuarantine=true,
+                    crossPlayerReentryRejected=true,humanNativeCalls,virtualInputRestored=true,humanAfter,
                     processTerminationRequired=true,hostAndPlay="not executed",remoteMultiplayer="not executed"}));
                 return; // Quarantine intentionally forbids in-process unload/recovery.
             }
 
-            bool humanPath=false;ActorItemUse.Update((player,index)=>humanPath=true,human,0);
+            bool humanPath=false;NativeItemInput.Update((player,index)=>humanPath=true,human,0);
             Check(humanPath&&!ActorItemUse.Allowed(human)&&!ActorItemUse.Allowed(p),"Human wrapper or out-of-scope identity changed.");
             bool stale=false;try{ActorItemUse.Start(p,world,gen-1);}catch(InvalidOperationException){stale=true;}
             Check(stale,"Stale queued generation accepted.");
@@ -116,14 +145,23 @@ internal static class ItemUseSelfTest
             p.inventory[0]=held;
             ActorItemUse.Select(p,world,gen,0);ActorItemUse.Start(p,world,gen);Frame();ActorItemUse.Stop(p,world,gen);
             Check(!p.controlUseItem&&p.itemAnimation==0&&p.itemTime==0&&!ActorItemUse.Running,"Explicit stop did not release native use.");
-            ActorItemUse.Start(p,world,gen);Frame();NativeSurvival.Debug(p,world,gen,true);
+            Check(PointerRestored()&&ReferenceEquals(human,Main.player[0])
+                &&humanItems.Select((i,n)=>i.type==human.inventory[n].type&&i.stack==human.inventory[n].stack).All(v=>v),
+                "Human/global state changed during the item wrapper.");
+            // Player.Update also maintains the engine's tile target outside the item
+            // wrapper. Check natural cadence separately from wrapper isolation.
+            ActorItemUse.Start(p,world,gen);p.Update(p.whoAmI);
+            Check(ActorItemUse.Current.Ticks==1&&ActorItemUse.Current.Starts==1&&p.controlUseItem,
+                "Player.Update did not start exactly one native item frame.");
+            p.Update(p.whoAmI);
+            Check(ActorItemUse.Current.Ticks==2&&ActorItemUse.Current.Starts==1&&!p.controlUseItem,
+                "Player.Update repeated the press or missed the second native item frame.");
+            NativeSurvival.Debug(p,world,gen,true);
             Check(p.dead&&!ActorItemUse.Running&&!p.controlUseItem&&p.itemAnimation==0,"Death did not cancel use immediately.");
-            Check(ProbeSession.StatusText().Contains("AI 已死亡"),"Readable status did not report native death.");
-            Check(Main.myPlayer==local&&Main.blockMouse==mouse&&Player.tileTargetX==tx&&Player.tileTargetY==ty
-                &&ReferenceEquals(human,Main.player[0])&&humanItems.Select((i,n)=>i.type==human.inventory[n].type&&i.stack==human.inventory[n].stack).All(v=>v),"Human/global state changed.");
+            Check(ProbeSession.StatusText().Contains($"AI 已死亡"),"Readable status did not report native death.");
             ProbeSession.Finish("G6 selftest complete",true);
             File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",sword,pick,axe,apple,lastApple,potion,modItem,bowRejected,explicitStop=true,deathStops=true,axeTimeout=true,axeCancel=true,
-                humanUnchanged=true,nativeCanUseDenial=true,staleGeneration=true,itemReplacement=true,
+                humanUnchanged=true,naturalPlayerUpdate=true,nativeCanUseDenial=true,staleGeneration=true,itemReplacement=true,
                 hostAndPlay="not executed",remoteMultiplayer="not executed",mining="air animation only; no tile target"}));
         }
         catch(Exception e)
@@ -143,7 +181,7 @@ public sealed class ItemUseDiagnosticHook : GlobalItem
     {
         if(NativeSurvival.Owns(player))
         {
-            if(ItemUseSelfTest.Throw)throw new InvalidOperationException("G6 intentional native hook failure");
+            ItemUseSelfTest.Reenter?.Invoke();
             if(ItemUseSelfTest.Deny)return false;
         }
         return true;

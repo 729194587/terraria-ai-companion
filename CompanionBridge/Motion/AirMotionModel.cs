@@ -13,8 +13,8 @@ internal sealed record AirFeedback(AirKind Kind,AirPhase Phase,bool Confirmed,in
     public string Motion=>Phase.ToString();
 }
 
-// Two pinned native models, not a general special-movement framework.
-internal sealed record AirMotionModel(AirKind Kind)
+// Ordinary non-hover wing branches of Player.WingMovement and WingAirLogicTweaks.
+internal sealed record AirMotionModel(AirKind Kind,float AirRunSpeed=6.25f,float AirAcceleration=1,float RiseLimit=1.5f)
 {
     internal static readonly AirMotionModel Angel=new(AirKind.Wings),Rocket=new(AirKind.RocketBoots);
     internal static readonly WingBaseSnapshot AngelStats=new(100,6.25f,1,false,-1,1);
@@ -25,11 +25,26 @@ internal sealed record AirMotionModel(AirKind Kind)
         if(!m.BlockExtraJumps&&m.ExtraJumps.Any(j=>j.Enabled)||m.ActiveExtraJump)return null;
         return Strategy(m) switch
         {
-            // Demon (1) and Angel (2) share the native ordinary ascent branch.
-            AirKind.Wings when m.Wings.FunctionalSlot is 1 or 2 && m.Wings.FunctionalSlot<m.Wings.RegisteredSlots && m.Wings.BaseStats==AngelStats&&m.Rockets.Delay==0=>Angel,
+            AirKind.Wings when m.Rockets.Delay==0=>OrdinaryWing(m.Wings),
             AirKind.RocketBoots when m.Rockets.Boots==1=>Rocket,
             _=>null
         };
+    }
+    private static AirMotionModel OrdinaryWing(WingSnapshot wing)
+    {
+        var stats=wing.BaseStats;
+        if(stats==null || stats.HasDownHoverStats || stats.FlyTime<=0 || wing.FunctionalSlot>=wing.RegisteredSlots ||
+            !float.IsFinite(stats.AccRunSpeedOverride) || stats.AccRunSpeedOverride<=0 ||
+            !float.IsFinite(stats.AccRunAccelerationMult) || stats.AccRunAccelerationMult<=0)return null;
+        // WingStats contains horizontal parameters. Vertical speed groups are separate native branches.
+        float rise=wing.FunctionalSlot switch
+        {
+            1 or 2 or 3 or 5 or 6 or 7 or 9 or 10 or 13 or 14 or 15 or 16 or 17 or 18 or 19 or 25 => 1.5f,
+            8 or 11 or 24 or 27 => 1.66f,
+            12 or 20 or 21 or 23 => 1.805f,
+            _ => 0
+        };
+        return rise==0?null:new(AirKind.Wings,stats.AccRunSpeedOverride,stats.AccRunAccelerationMult,rise);
     }
     internal static AirResources Resources(MovementSnapshot m)=>new(m.Wings.Time,m.Wings.TimeMax,
         m.Rockets.Time,m.Rockets.TimeMax,m.Rockets.Delay,m.Rockets.CanRocket,m.Rockets.Release,m.Rockets.Frame,m.Rockets.Boots);
@@ -67,7 +82,7 @@ internal sealed record AirMotionModel(AirKind Kind)
             vy-=.1f;
             if(vy>0)vy-=.5f;
             else if(vy>-ph.JumpSpeed*.5f)vy-=.1f;
-            vy=Math.Max(vy,-ph.JumpSpeed*1.5f);wing-=1;
+            vy=Math.Max(vy,-ph.JumpSpeed*RiseLimit);wing-=1;
         }
         // Vanilla converts fuel even when no powered wing movement occurred.
         // This is still wing strategy: never request a rocket pulse with wings.
@@ -123,7 +138,7 @@ internal sealed record AirMotionModel(AirKind Kind)
                     if(timer.Elapsed.TotalMilliseconds>=budgetMs)return best??plan;
                     var input=i<at+4?candidate:plan.Frames[i].Input;
                     var next=PhysicsSimulator.Step(s,input,ph,world);
-                    if(!world.SafeSweep(s,next,out _)||next.Py-Math.Max(actual.Py,plan.Frames[0].State.Py)>StateSpacePlanner.MaxDropPixels){safe=false;break;}
+                    if(!world.SafeSweep(s,next,out _)||next.Py-actual.Py>FallSafety.LookaheadPixels){safe=false;break;}
                     frames.Add(new(input,next));s=next;
                 }
                 if(!safe||frames.Count<2||!PhysicsSimulator.Settled(s,world)||!PhysicsSimulator.Settled(frames[^2].State,world)

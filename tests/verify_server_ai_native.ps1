@@ -1,9 +1,15 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$VerticalNavigation,[switch]$TcpCapacity,[switch]$Mobility)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
 $TModLoaderPath=$selectedEngine.Path
-if(($Tasks -or $AutonomousNavigation) -and !$Actions){throw 'Task validation requires isolated Actions fixture.'}
+if([bool]$BenchmarkSpec -ne [bool]$BenchmarkProfile){throw 'Benchmark requires a spec and a fresh profile path.'}
+if($BenchmarkSpec){
+    if(Test-Path -LiteralPath $BenchmarkProfile){throw 'Benchmark profile must be new.'}
+    $BenchmarkSpec=(Resolve-Path -LiteralPath $BenchmarkSpec).Path
+    $Actions=$true
+}
+if(($Tasks -or $AutonomousNavigation -or $NavigationSafety) -and !$Actions){throw 'Task validation requires isolated Actions fixture.'}
 if($Inventory -and !$Actions){throw 'Inventory validation requires isolated Actions fixture.'}
 if($Crafting -and !$Actions){throw 'Crafting verification requires isolated Actions fixture.'}
 if($Scene){$Perception=$true;if(!$Actions){throw 'Scene verification requires isolated Actions fixture.'}}
@@ -22,18 +28,25 @@ if(!$WorldPath){$WorldPath=Join-Path $repo '.local/virtual-player-control-host/W
 $WorldPath=(Resolve-Path -LiteralPath $WorldPath).Path
 $package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$selectedEngine.Package}
 Assert-CompanionPackage -Package $package -Engine $selectedEngine
-if(!$PythonExecutable){$PythonExecutable=if($Atomic){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
+if($TalkToNpc){$MerchantJourney=$true;$NurseLua=$TalkToNpc -eq 'Nurse'}
+if($MerchantJourney){$MerchantLua=$true;$Terrain=$true}
+if($ReforgeLua -or $NurseLua){$MerchantLua=$true}
+if(!$PythonExecutable){$PythonExecutable=if($Atomic -or $NpcHome -or $MerchantLua){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
 if(!(Test-Path -LiteralPath $package)){throw 'Build CompanionBridge first.'}
-$profile=Join-Path $repo ('.local/companion-'+$(if($Atomic){'g82'}else{'g81'})+'-native-'+[guid]::NewGuid().ToString('N'))
+$profile=if($BenchmarkSpec){[IO.Path]::GetFullPath($BenchmarkProfile)}else{Join-Path $repo ('.local/companion-'+$(if($Atomic){'g82'}else{'g81'})+'-native-'+[guid]::NewGuid().ToString('N'))}
 New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds" | Out-Null
 $oldLogs=Join-Path $TModLoaderPath 'tModLoader-Logs'
-if(Test-Path -LiteralPath $oldLogs){Copy-Item -LiteralPath $oldLogs -Destination "$profile/previous-installation-logs" -Recurse}
+if(!$BenchmarkSpec -and (Test-Path -LiteralPath $oldLogs)){Copy-Item -LiteralPath $oldLogs -Destination "$profile/previous-installation-logs" -Recurse}
 Copy-Item -LiteralPath $WorldPath -Destination "$profile/Worlds/test.wld"
 $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
 [IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')
+if($MerchantLua){$G3Shop=$true}
+if($NpcHome){$Housing=$true}
+if($BuildPlace -or $Housing -or $G3Shop){$Actions=$true}
 if($Actions){[IO.File]::WriteAllText("$profile/isolated-action-fixture",'Explicit test fixture in this copied world only.')}
+if($BenchmarkSpec){[IO.File]::WriteAllText("$profile/isolated-benchmark-fixture",'One benchmark attempt in a copied world.')}
 $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dotnet.exe'))
 $info.WorkingDirectory=$TModLoaderPath
 $info.UseShellExecute=$false
@@ -43,16 +56,25 @@ $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
 if($TcpCapacity){$info.ArgumentList.Add('-maxplayers');$info.ArgumentList.Add('2')}
-if($Tasks -or $AutonomousNavigation){$info.ArgumentList.Add("-companiontasktest")}
+if($Tasks -or $AutonomousNavigation -or $NavigationSafety){$info.ArgumentList.Add("-companiontasktest")}
 if($Inventory){$info.ArgumentList.Add("-companioninventorytest")}
 if($Crafting){$info.ArgumentList.Add("-companioncrafttest")}
 if($Scene){$info.ArgumentList.Add("-companionscenetest")}
-if($Placement){$info.ArgumentList.Add("-companionplacementtest")}
+if($ReforgeLua){$info.ArgumentList.Add('-companionreforgetest')}
+if($TalkToNpc){$info.ArgumentList.Add('-companiontalkjourney')}
+if($NurseLua){$info.ArgumentList.Add('-companionnursetest')}
+if($MerchantJourney){$info.ArgumentList.Add('-companionmerchantjourney');$info.ArgumentList.Add('-companionnavrecoverytest')}
+if($MerchantLua){$info.ArgumentList.Add('-companionmerchantluatest')}
+if($G3Shop){$info.ArgumentList.Add('-companiong3shoptest')}
+if($NpcHome){$info.ArgumentList.Add('-companionnpchometest')}
+if($Housing){$info.ArgumentList.Add('-companionhousingtest')}
+if($Placement -or $BuildPlace){$info.ArgumentList.Add("-companionplacementtest")}
 if($Perception){$info.ArgumentList.Add("-companionperceptiontest")}
 if($Semantic){$info.ArgumentList.Add("-companionsemantictest")}
 if($Terrain){$info.ArgumentList.Add("-companionterraintest")}
 if($Mobility){$info.ArgumentList.Add("-companionmobilitytest")}
 if($Actions){$info.ArgumentList.Add('-companionactionstest')}
+if($BenchmarkSpec){$info.ArgumentList.Add('-companionbenchmarktest')}
 if($Landing){$info.ArgumentList.Add('-companionlandingtest')}
 $process=[Diagnostics.Process]::Start($info)
 $startedUtc=$process.StartTime.ToUniversalTime()
@@ -87,6 +109,42 @@ try {
     $mismatchedBinding=@{actor=$bound.binding.actor;world=$bound.binding.world;generation=([long]$bound.binding.generation+1);slot=$bound.binding.slot}
     $bindingMismatch=Request @{v=1;id='native-binding-mismatch';op='state';binding=$mismatchedBinding}
     if($bindingMismatch.ok -or $bindingMismatch.error -ne 'stale_binding'){throw 'Mismatched request binding was not rejected'}
+    if($BuildPlace -or $Housing -or $G3Shop){
+        if(!$G3Shop -and 'server_ai_build_place_v1' -notin $bound.data.capabilities){throw 'Missing build_place capability'}
+        $probe=if($TalkToNpc){'tests/native_talk_to.py'}elseif($ReforgeLua){'tests/native_reforge_lua.py'}elseif($NurseLua){'tests/native_nurse_lua.py'}elseif($MerchantJourney){'tests/native_merchant_journey.py'}elseif($MerchantLua){'tests/native_merchant_lua.py'}elseif($G3Shop){'tests/native_g3_shop.py'}elseif($Housing){'tests/native_housing.py'}else{'tests/native_build_place.py'}
+        [string[]]$probeArgs=if($TalkToNpc){@('--npc',$TalkToNpc)}elseif($NpcHome){@('--npc-home')}else{@()}
+        & $PythonExecutable (Join-Path $repo $probe) --port $IpcPort --profile $profile @probeArgs
+        if($LASTEXITCODE -ne 0){throw "Native verification failed in $profile"}
+        $client.Dispose();$client=$null
+        [IO.File]::WriteAllText("$profile/g81-test-stop",'Isolated test complete.')
+        if(!$process.WaitForExit(30000)){throw 'Diagnostic server did not exit'}
+        if($process.ExitCode -ne 0){throw "Diagnostic server exited $($process.ExitCode)"}
+        return
+    }
+    if($BuildDiff){
+        if('server_ai_build_diff_v1' -notin $bound.data.capabilities){throw 'Missing build_diff capability'}
+        $origin=@{x=[int][math]::Floor($state.data.position.x/16); y=[int][math]::Floor($state.data.position.y/16)}
+        $tiles=@(foreach($y in 0..7){foreach($x in 0..7){
+            if($x -in 0,7 -or $y -in 0,7){@{x=$x;y=$y;itemType=9}}
+        }})
+        $walls=@(foreach($y in 1..6){foreach($x in 1..6){@{x=$x;y=$y;itemType=93}}})
+        $blueprint=@{origin=$origin;tiles=$tiles;walls=$walls;objects=@(@{x=3;y=6;itemType=36})}
+        $query=@{v=1;id='build-diff';op='query';operation='build_diff';binding=$bound.binding;arguments=@{blueprint=$blueprint}}
+        $comparison=Request $query
+        if(!$comparison.ok){throw ($comparison|ConvertTo-Json -Depth 12)}
+        $diff=$comparison.data.data
+        if($diff.entries.Count -ne 65 -or $diff.matched+$diff.pending -ne 65){throw 'Incomplete blueprint comparison'}
+        $bench=@($diff.entries|Where-Object layer -eq 'objects')
+        if($bench.Count -ne 1 -or $bench[0].width -ne 2 -or $bench[0].height -ne 1){throw 'Work bench native footprint mismatch'}
+        $cost=@($diff.materials|Where-Object itemType -eq 36)
+        if($bench[0].status -ne 'already_matches' -and ($cost.Count -ne 1 -or $cost[0].required -ne 1)){throw 'Work bench must cost one item'}
+        $comparison|ConvertTo-Json -Depth 16|Set-Content -LiteralPath "$profile/build-diff.json"
+        & $PythonExecutable (Join-Path $repo 'tests/native_build_diff.py') --port $IpcPort --profile $profile
+        if($LASTEXITCODE -ne 0){throw 'Lua build_diff native verification failed'}
+        $query.arguments.blueprint.tiles+=@($tiles[0])
+        $duplicate=Request $query
+        if($duplicate.ok -or $duplicate.error -ne 'invalid_request'){throw 'Duplicate blueprint target accepted or misclassified'}
+    }
     $action=Request @{v=1;id='native-mine';op='mine'}
     if($action.ok -or $action.error -ne 'unsupported_operation'){throw 'Action isolation failed'}
     $pythonText=& $PythonExecutable (Join-Path $repo 'scripts/ai_player_state.py') --port $IpcPort
@@ -123,7 +181,12 @@ try {
         if($readMismatch.ok -or $readMismatch.error -ne 'stale_binding'){throw 'Mismatched read binding was not rejected'}
     }
     $actionResult=$null;$worldEvidence=$null
-    if($Actions){
+    if($BenchmarkSpec){
+        [IO.File]::WriteAllText("$profile/benchmark-binding.json",($bound.binding|ConvertTo-Json -Compress))
+        & $PythonExecutable (Join-Path $repo 'tests/benchmark/runner.py') attempt --port $IpcPort --profile $profile --spec $BenchmarkSpec
+        if($LASTEXITCODE -ne 0){throw 'Benchmark attempt process failed to write evidence.'}
+    }
+    if($Actions -and !$BenchmarkSpec){
         $fixturePath=Join-Path $profile 'action-fixture.json'
         $fixtureDeadline=[DateTime]::UtcNow.AddSeconds(10)
         while(!(Test-Path -LiteralPath $fixturePath) -and [DateTime]::UtcNow -lt $fixtureDeadline){Start-Sleep -Milliseconds 100}
@@ -245,6 +308,13 @@ try {
             if($LASTEXITCODE -ne 0){throw "Native terrain matrix failed: $profile"}
         }
     }
+    if($NavigationSafety){
+        $safetyArguments=@('--port',"$IpcPort",'--profile',$profile)
+        foreach($case in $NavigationSafetyCases){$safetyArguments+=@('--case',$case)}
+        & $PythonExecutable (Join-Path $repo 'tests/native_navigation_safety.py') @safetyArguments
+        if($LASTEXITCODE -ne 0){throw "Native navigation safety verification failed: $profile/navigation-safety-results.json"}
+    }
+
     if($Tasks -or $AutonomousNavigation){
         $taskArguments=@('--port',$IpcPort,'--profile',$profile)
         if($AutonomousNavigation -and !$Tasks){$taskArguments+='--navigation-only'}
@@ -348,7 +418,7 @@ try {
     if($Tasks -or $AutonomousNavigation){$report.tasks=Get-Content -LiteralPath "$profile/mine-target-results.json" -Raw|ConvertFrom-Json}
     if($Inventory){$report.inventory=Get-Content -LiteralPath "$profile/inventory-results.json" -Raw|ConvertFrom-Json}
     if($Crafting){$report.crafting=Get-Content -LiteralPath "$profile/crafting-results.json" -Raw|ConvertFrom-Json;$report.combatIsolation=$combatIsolation}
-    if($Actions -and !$Scene -and !$Crafting){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
+    if($Actions -and !$Scene -and !$Crafting -and !$BenchmarkSpec){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
         $report.nativeCancellations=$nativeCancellations;$report.worldAfterCancel=$worldAfterCancel;$report.emptyTileRefusal=$empty.data.action;
         $report.actionFrameMode='Explicit diagnostic whole native Main.Update frames; Netplay.HasClients remains false. Not Host & Play.'}
     if($Landing){
@@ -363,4 +433,42 @@ try {
     [IO.File]::WriteAllText("$profile/stdout.log",$stdout.GetAwaiter().GetResult())
     [IO.File]::WriteAllText("$profile/stderr.log",$stderr.GetAwaiter().GetResult())
     $process.Dispose()
+    if (!$KeepProfile -and !$BenchmarkSpec -and !$Atomic) {
+        try {
+            $profileItem = Get-Item -LiteralPath $profile -Force
+            $localRoot = [IO.Path]::GetFullPath((Join-Path $repo '.local'))
+            if ($profileItem -isnot [IO.DirectoryInfo] -or $profileItem.Parent.FullName -ne $localRoot -or
+                $profileItem.Name -cnotmatch '^companion-g81-native-[a-f0-9]{32}$') {
+                throw "Unexpected native test profile path: $profile"
+            }
+            for ($ancestor = $profileItem; $ancestor; $ancestor = $ancestor.Parent) {
+                if ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    throw "Profile path contains a reparse point: $($ancestor.FullName)"
+                }
+            }
+            $artifactPatterns = @{
+                Worlds = '^test\.(wld|twld)(\.bak)?$|^\d{4}-\d{2}-\d{2}-test\.zip$'
+                Players = '^\d{4}-\d{2}-\d{2}-character\.zip$'
+                VirtualPlayerEngineProbe = '^map\.bin$|^character\.(plr|tplr)$'
+                Mods = '^CompanionBridge\.tmod$'
+            }
+            foreach ($name in $artifactPatterns.Keys) {
+                $path = Join-Path $profileItem.FullName $name
+                if (!(Test-Path -LiteralPath $path)) { continue }
+                $directory = Get-Item -LiteralPath $path -Force
+                if ($directory -isnot [IO.DirectoryInfo] -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                    throw "Expected an ordinary test directory: $path"
+                }
+                foreach ($file in Get-ChildItem -LiteralPath $path -File -Recurse -Force) {
+                    if ($file.Name -match $artifactPatterns[$name] -and
+                        !($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
+                        $file.FullName.StartsWith($directory.FullName + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+                        Remove-Item -LiteralPath $file.FullName -Force
+                    }
+                }
+            }
+        } catch {
+            Write-Warning "Could not clean up native test data in ${profile}: $_"
+        }
+    }
 }

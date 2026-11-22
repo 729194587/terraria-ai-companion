@@ -2,10 +2,8 @@
 import argparse
 import asyncio
 import copy
-from dataclasses import dataclass
 import hashlib
 import json
-import math
 import multiprocessing as mp
 from pathlib import Path
 from time import monotonic
@@ -15,33 +13,14 @@ import agent_trace as tracing
 import agent_diagnostics as diagnostics
 import evidence
 import atomic_operations as atomic
+import action_recovery
 import navigation_recovery
+import lua_modules
 import program_tasks
 from control import Bridge, BridgeError, command_owner
+from lua_limits import Limits
 from lua_worker import (worker, encode, decode, ValueLimit, SOURCE_BYTES,
                         REQUEST_BYTES, VALUE_BYTES, FRAME_BYTES, EXPLORATION_SOURCE, SEMANTIC_SOURCE)
-
-
-@dataclass(frozen=True)
-class Limits:
-    seconds: float = 60
-    calls: int = 64
-    instructions: int = 1_000_000
-    memory: int = 16_000_000
-    cleanup_seconds: float = 3
-    actions: int = 8
-
-    def validate(self):
-        for value, low, high in ((self.seconds, .05, 300), (self.calls, 1, 256),
-                                 (self.instructions, 100, 10_000_000),
-                                 (self.memory, 100_000, 64_000_000),
-                                 (self.cleanup_seconds, .05, 10)):
-            if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
-                raise ValueError('Invalid trusted Lua limit')
-        if any(type(v) is not int for v in (self.calls, self.instructions, self.memory)):
-            raise ValueError('Integer budgets required')
-        if type(self.actions) is not int or not 0 <= self.actions <= 32:
-            raise ValueError('Action budget must be an integer in 0..32')
 
 
 class Interrupted(Exception):
@@ -160,7 +139,8 @@ class LuaRuntime:
                       allow_actions=True, on_result=None):
         limits.validate()
         out = {'runId': uuid.uuid4().hex, 'status': 'unknown', 'calls': 0, 'value': None,
-               'actions': 0, 'logs': [], 'actionState': 'idle', 'lastAction': None, 'lastObservation': None, 'cleanup': None, 'trace': []}
+               'actions': 0, 'logs': [], 'actionState': 'idle', 'lastAction': None, 'lastObservation': None,
+               'cleanup': None, 'trace': [], 'recoveryEvents': []}
         if type(source) is not str or len(source) > SOURCE_BYTES or len(source.encode('utf-8')) > SOURCE_BYTES:
             return {**out, 'status': 'source_limit'}
         if getattr(self.bridge, '_lua_poisoned', False):
@@ -178,6 +158,10 @@ class LuaRuntime:
         process, connection, active = None, None, None
         active_role = None
         lifecycle = {}
+        scope = (chat_id, copy.deepcopy(getattr(self.bridge, 'binding', None)))
+        recovery = getattr(self.bridge, '_lua_action_recovery', None)
+        if recovery is None or recovery.scope != scope:
+            recovery = self.bridge._lua_action_recovery = action_recovery.Recovery(scope)
         handoff = getattr(self.bridge, '_lua_navigation_handoff', None)
         if handoff is not None and handoff.chat_id != chat_id:
             self.bridge._lua_navigation_handoff = None
@@ -195,9 +179,34 @@ class LuaRuntime:
         token = tracing.context.set({**tracing.context.get(), 'task_id': bundle.id,
                                     'lua_run_id': out['runId'], 'source_sha256': digest})
         call_token, call_open, call_meta, failure_call = None, False, {}, None
+
+        terminal_module_status = None
+        building_survey_args = None
+        postflight = None
+
+        async def report_terminal(status, receipt, *, reconcile=False):
+            # A trusted builtin may describe its failure. The ordinary Lua program
+            # never resumes. The sole optional game call is the original read-only diff.
+            nonlocal terminal_module_status, postflight, active, active_role
+            terminal_module_status = status
+            postflight = building_survey_args if reconcile else None
+            frame = encode(dict(type='module_terminal', id=sequence, value=receipt))
+            active = asyncio.create_task(asyncio.to_thread(connection.send_bytes, frame))
+            active_role = "send"
+            await watch(active)
+            active = None
+
+        def record_recovery(hint, **details):
+            out['recovery'] = hint
+            event = {**hint, **details, 'callId': call_meta['id']}
+            out['recoveryEvents'].append(event)
+            return event
+
         def emit(event, **fields):
             tracing.trace.emit(event, **fields)
             diagnostics.emit(event, **fields)
+        pending_reads = {}
+
         def call_end(status, *, result=None, error=None):
             nonlocal call_open, failure_call
             if not call_open:
@@ -212,7 +221,18 @@ class LuaRuntime:
                 row['error'] = str(error)[:512]
             if error is not None or status=='unknown':
                 failure_call = dict(call_meta)
-            out['trace'].append({key:row[key] for key in ('id','operation','line','status','valid','reason','elapsed_ms','error') if key in row})
+            entry = {key:row[key] for key in ('id','operation','line','status','valid','reason','elapsed_ms','error') if key in row}
+            out['trace'].append(entry)
+            if result is not None and row['operation'] in atomic.READS:
+                available = result.get('available')
+                if available is False or (pending_reads and available is True and result.get('valid') is True):
+                    key = (row['operation'], json.dumps(args, sort_keys=True, separators=(',', ':')))
+                    if available is False:
+                        entry['available'] = False
+                        pending_reads.setdefault(key, []).append(entry)
+                    else:
+                        for earlier in pending_reads.pop(key, ()):
+                            earlier['resolvedBy'] = row['id']
             emit('lua_api_result' if result is not None else 'lua_api_error', **row)
             call_open = False
         emit('lua_start', semantic_helper_sha256=semantic_digest, exploration_helper_sha256=helper_digest, source_sha256=digest, source_bytes=len(source.encode()), limits=vars(limits), chat_id=chat_id)
@@ -287,7 +307,8 @@ class LuaRuntime:
                 return out
             context = mp.get_context('spawn')
             connection, child = context.Pipe(duplex=True)
-            process = context.Process(target=worker, args=(child, source, limits, EXPLORATION_SOURCE), daemon=True)
+            module_names = tuple(m.name for m in lua_modules.available(self.bridge))
+            process = context.Process(target=worker, args=(child, source, limits, EXPLORATION_SOURCE, module_names), daemon=True)
             try:
                 process.start()
             finally:
@@ -310,6 +331,10 @@ class LuaRuntime:
                     emit('lua_progress', **out['logs'][-1])
                     continue
                 if message.get('type') == 'done':
+                    if terminal_module_status:
+                        if message.get('status') == 'module_terminal':
+                            out['moduleResult'] = message.get('moduleResult')
+                        break
                     if message.get('status') not in ('completed', 'script_error', 'instruction_limit',
                             'memory_limit', 'value_limit', 'serialization_error', 'bad_argument', 'protocol_error', 'worker_error', 'log_limit'):
                         raise Interrupted('protocol_error')
@@ -325,6 +350,15 @@ class LuaRuntime:
                 encode(message, REQUEST_BYTES)
                 sequence += 1
                 name, args = message.get('name'), message.get('arguments')
+                module = message.get('module')
+                if module is not None and module not in module_names:
+                    raise Interrupted('protocol_error')
+                if terminal_module_status:
+                    if module != 'building' or name != 'build_diff' or postflight is None or args != postflight:
+                        break
+                    postflight = None
+                if module == 'building' and name == 'submit_task':
+                    building_survey_args = args.get('arguments') if args.get('operation') == 'build_place' else None
                 line = message.get('line', 0)
                 if type(line) is not int or not 0 <= line <= source.count('\n')+1:
                     raise Interrupted('protocol_error')
@@ -339,18 +373,40 @@ class LuaRuntime:
                     raise Interrupted('bad_argument')
                 if type(message.get('protected', False)) is not bool:
                     raise Interrupted('protocol_error')
+                if name == 'help':
+                    # Host-local metadata uses the same bounded Worker reply
+                    # path, without dispatch or changing observation/continuation state.
+                    from server_ai_contract import api_help
+                    result = api_help(self.bridge, args)
+                    call_end(result['status'], result=result)
+                    active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
+                        encode({'type': 'result', 'id': sequence, 'value': result})))
+                    active_role = 'send'
+                    await watch(active)
+                    active = None
+                    continue
                 try:
-                    args = program_tasks.validate(name, args) if name in program_tasks.NAMES else atomic.validate(name, args)
+                    args = program_tasks.validate(name, args) if name in program_tasks.NAMES else atomic.validate(
+                        name, args, server="server_ai_atomic_v1" in getattr(self.bridge, "hello", {}).get("capabilities", ()))
                 except ValueError as exc:
+                    if name not in atomic.SCHEMAS.keys() | program_tasks.NAMES:
+                        raise
                     # Only this local schema/range check is recoverable. No
                     # dispatch, network call or game action has begun here.
-                    if name not in atomic.SCHEMAS.keys() | program_tasks.NAMES or not message.get('protected', False):
-                        raise
                     rejection = {'status': 'bad_argument', 'error': str(exc)[:512],
                                  'argumentOperation': name}
+                    details = {}
                     if isinstance(exc, atomic.ArgumentValidationError):
-                        rejection.update(diagnostics=exc.diagnostics,
-                                         diagnosticsTruncated=exc.diagnostics_truncated)
+                        details = dict(diagnostics=exc.diagnostics, diagnosticsTruncated=exc.diagnostics_truncated)
+                        rejection.update(details)
+                    from server_ai_contract import argument_usage
+                    hint = action_recovery.guidance(name, 'bad_argument', detail=str(exc))
+                    usage = argument_usage(self.bridge, name, args)
+                    if usage:
+                        hint.update(usage, nextStep='核对 signature；需要参数或返回字段详情时执行 helpQuery。')
+                    rejection['recovery'] = record_recovery(hint, **details)
+                    if not message.get('protected', False):
+                        raise
                     call_end('bad_argument', error=rejection['error'])
                     active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
                         encode({'type': 'local_argument_rejected', 'id': sequence, 'value': rejection})))
@@ -359,6 +415,19 @@ class LuaRuntime:
                     active = None
                     continue
                 synchronous_task = name == 'mine_target' and program_tasks.available(self.bridge)
+                if (allow_actions and not halted and handoff is None and name in atomic.BUDGETED_ACTIONS
+                        and (guidance := recovery.blocked(name, args)) is not None):
+                    result = {'valid': False, 'status': 'failed', 'completed': False,
+                              'operation': name, 'reason': 'unchanged_ineffective_action',
+                              'dispatchState': 'not_admitted', 'continuationAllowed': True,
+                              'recovery': record_recovery({**guidance, 'unchangedAttemptSuppressed': True})}
+                    call_end('failed', result=result)
+                    active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
+                        encode({'type': 'result', 'id': sequence, 'value': result})))
+                    active_role = 'send'
+                    await watch(active)
+                    active = None
+                    continue
                 if name in program_tasks.NAMES or synchronous_task:
                     if not program_tasks.available(self.bridge):
                         raise ValueError('Program task coordination unsupported')
@@ -369,7 +438,9 @@ class LuaRuntime:
                             raise Interrupted('action_limit')
                         out['actions'] += 1
                     manager = program_tasks.coordinator(self.bridge)
-                    origin = {'chatId': chat_id, 'programId': out['runId'], 'runId': tracing.context.get().get('run_id')}
+                    context = tracing.context.get()
+                    origin = {'chatId': chat_id, 'programId': out['runId'], 'runId': context.get('run_id')}
+                    origin.update({key: context[key] for key in tracing.MCP_CORRELATION if key in context})
                     async def task_call():
                         if not synchronous_task:
                             return await manager.invoke(name, args, origin)
@@ -385,17 +456,30 @@ class LuaRuntime:
                     active = None
                     out['tasks'] = manager.projection()
                     terminal_result = result.get('result')
+                    can_continue = synchronous_task and terminal_result is not None and action_recovery.released_task_failure(terminal_result)
+                    if can_continue:
+                        terminal_result = {**terminal_result, 'continuationAllowed': True}
+                    if synchronous_task and terminal_result is not None:
+                        if (hint := recovery.observe(name, args, terminal_result)) is not None:
+                            terminal_result = {**terminal_result, 'recovery': record_recovery(hint)}
                     if terminal_result is not None and on_result is not None:
-                        on_result('mine_target', {}, terminal_result)
+                        on_result(result.get('operation', 'mine_target'), args if synchronous_task else {}, terminal_result)
                     if synchronous_task and terminal_result is not None:
                         out['lastAction'] = bounded_action(terminal_result)
                         out['actionState'] = 'released' if safe_terminal(terminal_result) else 'unknown'
                     call_end(result.get('status'), result=result)
                     if result.get('status') == 'unknown':
                         out.update(status='action_unknown', actionState='unknown')
+                        if module == 'building':
+                            await report_terminal('action_unknown', result)
+                            continue
                         break
-                    if result.get('status') in ('failed', 'timeout', 'cancelled'):
+                    if result.get('status') in ('failed', 'timeout', 'cancelled') and not can_continue:
                         out['status'] = result['status']
+                        if module == 'building':
+                            released = safe_terminal(terminal_result) and terminal_result.get('inputsReleased') is True
+                            await report_terminal(out['status'], result, reconcile=released)
+                            continue
                         break
                     active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
                         encode({'type': 'result', 'id': sequence,
@@ -446,10 +530,14 @@ class LuaRuntime:
                         result = {'valid': False, 'status': 'failed' if rejected_before_dispatch else 'unknown',
                                   'completed': False, 'reason': str(error),
                                   'dispatchState': 'not_admitted' if rejected_before_dispatch else 'unknown'}
-                    rejected_before_dispatch |= (lifecycle.get('dispatchState') == 'not_admitted'
+                    admission_refused = (lifecycle.get('dispatchState') == 'not_admitted'
                         and result.get('dispatchState') == 'not_admitted'
                         and lifecycle.get('action') is None and not lifecycle.get('uncertain'))
+                    rejected_before_dispatch |= admission_refused
                     active = None
+                    if (name in atomic.READS and result.get('available') is False and 'binding' in result
+                            and 'observedAtUnixMs' not in result):
+                        raise BridgeError('Server read unavailable without a confirmed observation')
                     if (name in atomic.READS and result.get('valid') is True
                             and result.get('available') is not False
                             and result.get('status') not in ('failed', 'timeout', 'cancelled', 'unknown', 'unavailable')):
@@ -463,11 +551,14 @@ class LuaRuntime:
                         navigation_continuation = ({'observe_scene', 'move_input'} <= set(getattr(self.bridge, 'supported_atomic_operations', ()))
                             and navigation_recovery.confirmed_failure(result, lifecycle) and not fallback_attempt)
                         result = {**result, 'continuationAllowed': navigation_continuation or
-                                  (not fallback_attempt and safe_preflight_rejection(result, lifecycle))}
+                                  (not fallback_attempt and (safe_preflight_rejection(result, lifecycle)
+                                   or admission_refused or action_recovery.released_task_failure(result)))}
                         if navigation_continuation:
                             handoff = navigation_recovery.Handoff(result, lifecycle['action'], chat_id)
                             self.bridge._lua_navigation_handoff = handoff
                             result['continuationScope'] = 'observe_scene_then_move_input'
+                        if (hint := recovery.observe(name, args, result)) is not None:
+                            result['recovery'] = record_recovery(hint)
 
                     if on_result is not None:
                         on_result(name, args, result)
@@ -477,6 +568,9 @@ class LuaRuntime:
                         if lifecycle.get('uncertain') or not (rejected_before_dispatch or safe_terminal(result)):
                             out['actionState'] = 'unknown'
                             out['status'] = 'action_unknown'
+                            if module == 'crafting':
+                                await report_terminal('action_unknown', {**result,'status':'unknown','completed':False})
+                                continue
                             break
                         if not rejected_before_dispatch:
                             out['actionState'] = 'released'
@@ -484,11 +578,13 @@ class LuaRuntime:
                 call_end(result.get('status'), result=result)
                 if (name in atomic.ACTIONS and result.get('status') != 'completed'
                         and result.get('continuationAllowed') is not True):
-                    # Keep the real receipt above, but never send this failure
-                    # back into Lua (including a protected call). The parent
-                    # terminates the worker before any following script code.
+                    # Only the trusted module can finish its report. User code
+                    # cannot resume after this receipt, including inside pcall.
                     out['status'] = result['status']
                     failure_call = dict(call_meta)
+                    if module == 'crafting':
+                        await report_terminal(out['status'], result)
+                        continue
                     break
                 try:
                     encode(result, VALUE_BYTES)
@@ -541,6 +637,8 @@ class LuaRuntime:
                 except asyncio.CancelledError:
                     cancelled = True
                     out['status'] = 'cancelled'
+            if terminal_module_status and out['status'] not in ('action_unknown', 'cancelled'):
+                out['status'] = terminal_module_status
             if out['actionState'] == 'unknown':
                 out['value'] = None
             call_end(out['status'], error=out.get('error',out['status']))

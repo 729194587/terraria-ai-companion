@@ -19,6 +19,8 @@ internal static class NativeSurvival
     private static string managedWorld;
     private static long managedGeneration;
     private static Action<Projectile> hostileDamage;
+    [ThreadStatic] internal static Player UpdatingAbigail;
+    private static readonly Action<Player> updateAbigail = typeof(Player).GetMethod("UpdateAbigailStatus", BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public).CreateDelegate<Action<Player>>();
     private static readonly MethodInfo npcCollision=typeof(Player).GetMethod("Update_NPCCollision",BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public);
     private static readonly MethodInfo respawnTime=typeof(Player).GetMethod("GetRespawnTime",BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public);
     internal static int ExpectedRespawn(Player p,bool pvp=false)=>(int)respawnTime.Invoke(p,new object[]{pvp});
@@ -31,7 +33,17 @@ internal static class NativeSurvival
     {
         MethodInfo predicate=typeof(NativeSurvival).GetMethod(nameof(Owns));
         ILContext.Manipulator Patch(string operation)=>il=>SurvivalPatches.Patch(il.Method,operation,il.Module.ImportReference(predicate));
-        var pickup=Patch("pickup");var lethal=Patch("lethal");var dodge=Patch("dodge");
+        ILContext.Manipulator pickup = il =>
+        {
+            SurvivalPatches.Patch(il.Method, "pickup", il.Module.ImportReference(predicate));
+            if (VirtualPlayerEngineProbe.Engine.Selected == "2026.09.3.1")
+                SurvivalPatches.PickupFilter(il.Method, il.Module.ImportReference(
+                    typeof(CompanionBridge.ServerIpc.ServerDrops).GetMethod("Allows")));
+        };
+        if (VirtualPlayerEngineProbe.Engine.Selected == "2026.09.3.1")
+            install(() => On_Player.PickupItem += CompanionBridge.ServerIpc.ServerItemDrop.Pickup,
+                () => On_Player.PickupItem -= CompanionBridge.ServerIpc.ServerItemDrop.Pickup);
+        var lethal=Patch("lethal");var dodge=Patch("dodge");
         var drops=Patch("death-drops");var spawn=Patch("spawn");var coins=Patch("coin-mouse");
         install(()=>IL_Player.GrabItems+=pickup,()=>IL_Player.GrabItems-=pickup);
         install(()=>IL_Player.Hurt_HurtInfo_bool+=lethal,()=>IL_Player.Hurt_HurtInfo_bool-=lethal);
@@ -122,11 +134,18 @@ internal static class NativeSurvival
         {ActorControl.Update(orig,p,index);return;}
         try { Run(p,()=> {
             if(p.difficulty==2)throw new InvalidOperationException("Hardcore AI archives are unsupported; no human archive deletion is allowed.");
+            if (!p.dead && p.HasBuff(BuffID.AbigailMinion))
+            {
+                UpdatingAbigail=p;
+                try { updateAbigail(p); }
+                finally { UpdatingAbigail=null; }
+            }
             ActorControl.Update(orig,p,index);
             if(!Owns(p))throw new InvalidOperationException("Actor replaced during native update.");
             if(!p.dead&&!p.ghost)npcCollision.Invoke(p,null); // Original local-only update region was skipped for this AI.
             if(p.dead&&p.respawnTimer<=0&&p.difficulty!=2)
             {
+                ActorContainer.Retire(p);
                 ActorMining.Retire(p);ActorItemUse.Retire(p);ActorControl.Retire(p);p.FindSpawn();
                 p.Spawn(PlayerSpawnContext.ReviveFromDeath);
                 if(!Owns(p)||p.dead)throw new InvalidOperationException("Native respawn failed ownership/state validation.");
@@ -155,6 +174,8 @@ internal static class NativeSurvival
         if(!Owns(p))throw new InvalidOperationException("Hurt callback changed AI ownership.");
         if(p.statLife!=life)
         {
+            if(p.statLife<life)CompanionBridge.ServerIpc.ServerCombatFixture.EvasionHurt(info,life-p.statLife);
+            if(p.statLife<life)CompanionBridge.ServerIpc.NativeCombatWorld.RecordHurt(p,info.DamageSource.SourceNPCIndex);
             Hurts++;NetMessage.SendPlayerHurt(p.whoAmI,info,-1);
             NetMessage.SendData(MessageID.PlayerLifeMana,-1,-1,null,p.whoAmI);
             Emit("native-hurt",new {before=life,after=p.statLife,damage=info.Damage,p.immuneTime,p.respawnTimer,p.dead});

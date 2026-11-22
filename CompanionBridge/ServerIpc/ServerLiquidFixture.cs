@@ -32,14 +32,14 @@ internal static class ServerLiquidFixture
         File.Delete(request);
         int x=Main.spawnTileX,floor=Main.spawnTileY+8;
         scene=null;
-        if(mode is "bridge" or "detour" or "hazard" or "mine" or "flood")
+        if(mode is "bridge" or "detour" or "hazard" or "mine" or "flood" or "wade_one" or "wade_deep" or "wade_long")
         {
             PrepareScene(p,mode,x,floor);
             return;
         }
         if(mode=="wet")
         {
-            p.position=new((x+4)*16-2,floor*16-3);
+            p.position=new((x+4)*16-2,floor*16+32-p.height);
             p.velocity=Vector2.Zero;
             File.WriteAllText(Path.Combine(Main.SavePath,"liquid-wet-ready"),"native liquid update pending");
             return;
@@ -50,7 +50,7 @@ internal static class ServerLiquidFixture
             {
                 var tile=Main.tile[tx,ty];
                 tile.ClearEverything();
-                if(ty>=floor&&(tx<x+3||tx>x+5||ty>=floor+3))
+                if(ty>=floor&&(tx<x+3||tx>x+5||ty>=floor+2))
                 {tile.HasTile=true;tile.TileType=TileID.Stone;}
                 else if(ty>=floor)tile.LiquidAmount=255;
             }
@@ -59,10 +59,11 @@ internal static class ServerLiquidFixture
         p.velocity=Vector2.Zero;
         var world=new NativeMotionWorld(start);
         var checks=new Dictionary<string,bool>();
-        var ph=PhysicsParameters.Basic;
-        var walk=PhysicsSimulator.Predict(start,1,0,ph,world,walkFrames:48,maxDropPixels:96);
-        var jump=PhysicsSimulator.Predict(start,1,15,ph,world,maxDropPixels:96);
-        checks["wetWalkRejected"]=!walk.Safe&&walk.Reason.Contains("wet contact");
+        var ph=PhysicsParameters.Basic with{CanWade=true};
+        var walk=PhysicsSimulator.Predict(start,1,0,ph,world,walkFrames:48);
+        var jump=PhysicsSimulator.Predict(start,1,15,ph,world);
+        checks["walkReachesWetFloor"]=walk.Frames.Any(frame=>frame.State.Wet&&frame.State.Grounded
+            &&Math.Abs(frame.State.Py+PhysicsSimulator.PlayerH-(floor+2)*16)<.01f);
         checks["dryJumpSafe"]=jump.Safe&&jump.Landing.Px+20>(x+6)*16
             &&Math.Abs(jump.Landing.Py+42-floor*16)<.01f;
         if(jump.Safe)
@@ -97,21 +98,21 @@ internal static class ServerLiquidFixture
                 var liquid=snapshot.Liquids.Single(c=>c.X==sx&&c.Y==sy);
                 char shape=snapshot.Rows[sy-snapshot.OriginY][sx-snapshot.OriginX];
                 long stamp=world.TerrainSignature(start);
-                observations.Add(new{amount,shape,liquid,stamp,wet=Risk(shallow)});
+                observations.Add(new{amount,shape,liquid,stamp,wet=NativeLiquidRisk.WaterContact(shallow)});
                 checks["split-"+amount]=shape=='='&&liquid.Type=="water"&&liquid.Amount==amount;
                 checks["stamp-"+amount]=stamp!=previous;
                 previous=stamp;
-                checks["native-wet-"+amount]=(Risk(shallow)!=null)==(amount==255);
+                checks["native-wet-"+amount]=NativeLiquidRisk.WaterContact(shallow)==(amount==255);
             }
-            checks["aboveFullTileDry"]=Risk(above)==null;
+            checks["aboveFullTileDry"]=!NativeLiquidRisk.WaterContact(above);
             float tileLeft=sx*16;
             var a=shallow with{Px=tileLeft-15};
             var b=shallow with{Px=tileLeft+11};
-            checks["crossingBetweenDryEndpoints"]=Risk(a)==null&&Risk(b)==null
-                &&NativeLiquidRisk.Rejection(a,b)?.Contains("wet contact")==true;
+            checks["waterBetweenDryEndpoints"]=!NativeLiquidRisk.WaterContact(a)&&!NativeLiquidRisk.WaterContact(b)
+                &&NativeLiquidRisk.WaterContact(shallow)&&NativeLiquidRisk.Rejection(a,b)==null;
             search.Scope(previous,ph,1);
             search.Predict(start,1,0,48,ph,world);
-            checks["cacheContainsRejectedWalk"]=search.Count==1;
+            checks["cacheContainsWalk"]=search.Count==1;
             var surface=world.ReadSurfaceCell(sx,sy);
             sample.LiquidType=LiquidID.Honey;
             checks["typeChangesSurfaceStamp"]=world.ReadSurfaceCell(sx,sy).Signature!=surface.Signature;
@@ -133,15 +134,15 @@ internal static class ServerLiquidFixture
             checks["dryTypeIgnored"]=empty==world.TerrainSignature(start);
             sample.LiquidAmount=255;
             Collision.honey=true;Collision.shimmer=false;
-            checks["flagsRestoredAfterWet"]=Risk(shallow)!=null&&Collision.honey&&!Collision.shimmer;
+            checks["flagsRestoredAfterWet"]=NativeLiquidRisk.WaterContact(shallow)&&Collision.honey&&!Collision.shimmer;
             Collision.honey=false;Collision.shimmer=true;
             sample.LiquidAmount=128;
-            checks["flagsRestoredAfterDry"]=Risk(shallow)==null&&!Collision.honey&&Collision.shimmer;
+            checks["flagsRestoredAfterDry"]=!NativeLiquidRisk.WaterContact(shallow)&&!Collision.honey&&Collision.shimmer;
             sample.LiquidAmount=255;
             var slope=Main.tile[sx,sy+1];
             slope.HasTile=true;slope.TileType=TileID.Stone;slope.Slope=SlopeType.SlopeDownRight;
             var below=shallow with{Py=(sy+1)*16-5};
-            checks["nativeWetOnSlopeBelowLiquid"]=Risk(below)?.Contains("wet contact")==true;
+            checks["nativeWetOnSlopeBelowLiquid"]=NativeLiquidRisk.WaterContact(below);
             slope.ClearEverything();
         }
         finally
@@ -159,14 +160,17 @@ internal static class ServerLiquidFixture
     private static void PrepareScene(Player p,string mode,int x,int floor)
     {
         scene=mode;gateOpened=false;samples=0;
+        bool wade=mode.StartsWith("wade_",StringComparison.Ordinal);
+        int depth=mode=="wade_deep"?2:wade?1:4;
+        int right=x+(mode=="wade_long"?20:mode=="wade_deep"?13:8);
         bool tunnel=mode is "mine" or "flood";
         for(int tx=x-28;tx<=x+28;tx++)
             for(int ty=floor-23;ty<=floor+8;ty++)
             {
                 var tile=Main.tile[tx,ty];
                 tile.ClearEverything();
-                bool roof=mode!="detour"&&ty<=floor-4;
-                bool gap=!tunnel&&tx>=x+3&&tx<=x+8&&ty>=floor&&ty<floor+4;
+                bool roof=mode!="detour"&&(!wade||mode!="wade_deep"||tx<=x+6)&&ty<=floor-4;
+                bool gap=!tunnel&&tx>=x+3&&tx<=right&&ty>=floor&&ty<floor+depth;
                 if(roof||ty>=floor&&!gap||tunnel&&tx==x+3&&ty>=floor-3&&ty<floor)
                 {tile.HasTile=true;tile.TileType=TileID.Stone;}
                 else if(gap)
@@ -179,12 +183,17 @@ internal static class ServerLiquidFixture
         p.miscEquips[4].TurnToAir();
         if(tunnel)p.inventory[1].SetDefaults(ItemID.CopperPickaxe);
         else p.inventory[1].TurnToAir();
-        p.inventory[4].SetDefaults(ItemID.WoodPlatform);
-        p.inventory[4].stack=16;
+        if(mode=="wade_deep")p.inventory[4].TurnToAir();
+        else
+        {
+            p.inventory[4].SetDefaults(ItemID.WoodPlatform);
+            p.inventory[4].stack=16;
+        }
         p.position=new((x+2)*16-4,floor*16-p.height);
         p.velocity=Vector2.Zero;minY=p.position.Y;
+        p.statLife=p.statLifeMax2;
         File.WriteAllText(Path.Combine(Main.SavePath,"liquid-edit-ready.json"),JsonSerializer.Serialize(new
-            {x=(x+11)*16,y=floor*16,left=x+3,right=x+8,floor,startX=p.position.X,startY=p.position.Y}));
+            {x=(right+3)*16,y=floor*16,left=x+3,right,floor,startX=p.position.X,startY=p.position.Y}));
     }
 
     private static void ObserveScene(Player p)
@@ -204,10 +213,9 @@ internal static class ServerLiquidFixture
         string path=Path.Combine(Main.SavePath,"liquid-edit-"+scene+".jsonl");
         File.AppendAllText(path,JsonSerializer.Serialize(new
         {
-            minY,x=p.position.X,p.wet,p.lavaWet,gateOpened,
+            minY,x=p.position.X,y=p.position.Y,p.wet,p.lavaWet,p.honeyWet,p.shimmerWet,vy=p.velocity.Y,p.statLife,gateOpened,
             inflow=Main.tile[x+4,floor-1].LiquidAmount,
-            wetCorridor=gateOpened&&NativeLiquidRisk.Rejection(
-                new((x+4)*16,floor*16-42,0,0,true),new((x+4)*16,floor*16-42,0,0,true))!=null,
+            wetCorridor=gateOpened&&NativeLiquidRisk.WaterContact(new((x+4)*16,floor*16-42,0,0,true)),
             platforms=Enumerable.Range(x+3,6).Count(tx=>Main.tile[tx,floor].HasTile&&Main.tile[tx,floor].TileType==TileID.Platforms),
             waterPlatforms=Enumerable.Range(x+3,6).Count(tx=>Main.tile[tx,floor].HasTile&&Main.tile[tx,floor].TileType==TileID.Platforms
                 &&Main.tile[tx,floor].LiquidAmount>0)

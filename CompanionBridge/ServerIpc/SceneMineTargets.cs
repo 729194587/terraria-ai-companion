@@ -12,7 +12,7 @@ internal static class SceneMineTargets
 {
     internal sealed record Target(string kind,int x,int y,int typeId,string worldSessionId,long actorGeneration,int actorSlot,
         ulong observedGameUpdate,long observedAtUnixMs,string targetToken);
-    private sealed record Entry(Target Target,object Actor,long Expires,string Shape,long Revision);
+    private sealed record Entry(Target Target,object Actor,long Expires,string Shape,long Revision, (int,int)? BedSpawn);
     private static readonly Dictionary<string,Entry> entries=new();
     private static readonly Dictionary<(int,int),long> revisions=new();
     private static string world;
@@ -41,7 +41,9 @@ internal static class SceneMineTargets
         Watch(x,y);
         var token=Guid.NewGuid().ToString("N")+Guid.NewGuid().ToString("N");
         var target=new Target("tile",x,y,Main.tile[x,y].TileType,id.World,id.Generation,id.Slot,Main.GameUpdateCount,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),token);
-        entries[token]=new(target,id.Actor,Environment.TickCount64+30000,Shape(x,y),Revision(x,y));return target;
+        var actor=(Player)id.Actor;
+        entries[token]=new(target,id.Actor,Environment.TickCount64+30000,Shape(x,y),Revision(x,y),
+            target.typeId==TileID.Beds?(actor.SpawnX,actor.SpawnY):null);return target;
     }
     internal static string Resolve(AiReadOnlyProtocol.Identity id,JsonElement args,out int x,out int y)
     {
@@ -53,6 +55,7 @@ internal static class SceneMineTargets
         if(Environment.TickCount64>e.Expires||Main.GameUpdateCount<e.Target.observedGameUpdate||Main.GameUpdateCount-e.Target.observedGameUpdate>600)return "observed_target_expired";
         var expected=JsonSerializer.SerializeToElement(e.Target);
         if(supplied.EnumerateObject().Count()!=expected.EnumerateObject().Count()||expected.EnumerateObject().Any(p=>!supplied.TryGetProperty(p.Name,out var v)||v.GetRawText()!=p.Value.GetRawText()))return "observed_target_modified";
+        if(e.BedSpawn is {} bed && id.Actor is Player p && bed!=(p.SpawnX,p.SpawnY))return "bed_spawn_changed_since_observation";
         x=e.Target.x;y=e.Target.y;
         if(Revision(x,y)!=e.Revision||Shape(x,y)!=e.Shape)return "target_changed_since_observation";
         return null;

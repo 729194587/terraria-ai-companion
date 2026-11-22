@@ -11,6 +11,13 @@
 | [路线图](DEVELOPMENT_ROADMAP.md) | 当前能力与尚待解决的方向 |
 | [工程原则](ENGINEERING.md) | 长期有效的安全与设计约束 |
 | [API 契约](API_CONTRACT.md) | 模型工具入口、Schema、能力投影和结果语义 |
+| [G1 Gameplay E2E Baseline](G1_GAMEPLAY_INTEGRATION_MVP.md) | 用真实模型验证现有 Agent 是否能自主完成木材采集、工作台制作与放置；先测试后实现 |
+| [Terraria World Interaction](TERRARIA_WORLD_INTERACTION_DESIGN.md) | Building、Housing、NPC Interaction 与 Economy 的架构基线，含 Numen 参考、Terraria 1.4.4.9 规则及 tModLoader 原生机制 |
+| [G2 Building & Housing](G2_BUILDING_HOUSING_IMPLEMENTATION.md) | Blueprint、差异检查、原生施工与只读验房的接口和验证记录；含现有向导入住、占用与过期引用拒绝的专服实测 |
+| [Building V2 Design](BUILDING_V2_DESIGN.md) | Numen 启发的 Terraria 智能施工调度架构：依赖、工作站点、材料账本与恢复 |
+| [Building V2 Implementation](BUILDING_V2_IMPLEMENTATION.md) | Building V2 的实现步骤、接口决策、测试矩阵和验收标准 |
+| [Agent API & Gameplay Modules Design](AGENT_API_AND_GAMEPLAY_MODULES_DESIGN.md) | Numen 启发的 API 自描述、动态帮助、内置 Lua Gameplay Modules 与 Terraria 适配架构 |
+| [Agent API & Gameplay Modules Implementation](AGENT_API_AND_GAMEPLAY_MODULES_IMPLEMENTATION.md) | API Help 整理、模块注册/能力过滤/Worker 注入及首批制作和建造模块的实现规范 |
 
 ## Agent 与运行时
 
@@ -19,6 +26,7 @@
 | [Lua Runtime](LUA_RUNTIME.md) | Lua 沙箱、调用、预算、取消和失败语义 |
 | [Lua Agent](LUA_AGENT.md) | 模型如何生成并提交 Lua 程序 |
 | [Lua 可观测性](LUA_OBSERVABILITY.md) | 本地执行 Trace 与诊断关联 |
+| [External Brain MVP](TERRARIA_EXTERNAL_BRAIN_MVP.md) | MCP 接入、控制租约、启动与验收 |
 | [游戏系统消息](GAME_MESSAGES.md) | 系统提示事件的捕获与 Agent 上下文处理 |
 | [Server AI 能力契约](SERVER_AI_CAPABILITIES.md) | 模型可见能力与运行时能力门禁 |
 | [Server AI Actions](SERVER_AI_ACTIONS.md) | 服务器侧移动和原生动作 |
@@ -31,6 +39,7 @@
 | [客户端观察历史](archive/OBSERVATION.md) | 旧客户端观察接口记录，仅供追溯 |
 | [语义场景](LOCAL_SEMANTIC_SCENE.md) | Server AI 的 L0/L1 场景快照、编码和候选语义 |
 | [局部语义世界](L1_SEMANTIC_WORLD.md) | 树木、矿物和掉落物的按需语义查询 |
+| [Agent 私人记忆](AGENT_MEMORY.md) | 按世界与角色隔离的笔记、来源和模型召回 |
 | [AI Map](AI_MAP_V1.md) | 持久化探索地图及其时效语义 |
 | [模型状态投影](MODEL_STATE_PROJECTION.md) | 完整观察校验、模型投影与历史上下文压缩 |
 
@@ -42,6 +51,7 @@
 | [背包操作](INVENTORY_OPERATIONS.md) | 库存 Token、原生堆叠/拆分和 unknown |
 | [合成](SERVER_AI_CRAFTING.md) | 配方查询与原生合成 |
 | [物品放置](SERVER_AI_OBJECT_PLACEMENT.md) | 服务器侧物体放置 |
+| [Native Placement Survey](NATIVE_PLACEMENT_SURVEY_IMPLEMENTATION.md) | 统一 Terraria 原生放置预检查，修复植物、液体、家具占地和原生执行判定不一致 |
 | [导航](NAVIGATION.md) | 物理预测、路径规划、执行与落脚确认 |
 | [Phase 2 Surface Graph 实现](PHASE2_SURFACE_GRAPH_IMPLEMENTATION.md) | 地形图、多尺度搜索、物理验证、阶段证据与范围 |
 | [Phase 3 局部改造规划](PHASE3_LOCAL_PLANNING_IMPLEMENTATION.md) | v1.1 简化版成本比较、独立虚拟地形、逐项执行与验证 |

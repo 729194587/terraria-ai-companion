@@ -17,7 +17,7 @@ internal static class NativeLiquidRisk
         float bottom=Math.Max(start.Py,end.Py)+PhysicsSimulator.PlayerH;
         int minX=(int)Math.Floor(left/16),maxX=(int)Math.Ceiling(right/16)-1;
         int minY=(int)Math.Floor(top/16),maxY=(int)Math.Ceiling(bottom/16)-1;
-        bool wetCandidate=false,lavaCandidate=false;
+        bool lavaCandidate=false;
         for(int x=minX;x<=maxX;x++)
             // WetCollision can see liquid in the cell above an active slope.
             for(int y=minY-1;y<=maxY;y++)
@@ -26,44 +26,53 @@ internal static class NativeLiquidRisk
                 var tile=Main.tile[x,y];
                 if(tile.LiquidAmount==0)continue;
                 var liquid=new TileLiquid(tile.LiquidType,tile.LiquidAmount);
-                wetCandidate=true;
+                if(liquid.Kind==LiquidKind.Water)
+                {
+                    // Grounded wading and ordinary jumps are supported. Keep
+                    // the head above water without relying on oxygen reserves.
+                    // DrownCollision uses a head box from top - 2 to top + 10.
+                    // This swept envelope uses the whole body width.
+                    if(liquid.OverlapsVertical(y,top-2,Math.Max(start.Py,end.Py)+10))
+                        return "submerged head requires unsupported swimming";
+                    continue;
+                }
                 lavaCandidate|=liquid.Kind==LiquidKind.Lava;
-                if(liquid.Kind is not (LiquidKind.Honey or LiquidKind.Shimmer or LiquidKind.Unknown))continue;
                 // For unmodeled special liquids use the full swept body,
                 // including contact outside the engine's narrow wet probe.
-                if(liquid.OverlapsVertical(y,top,bottom))return Reason(liquid.Kind);
+                if(liquid.Kind!=LiquidKind.Lava&&liquid.OverlapsVertical(y,top,bottom))
+                    return Reason(liquid.Kind);
                 if(y<maxY&&bottom>(y+1)*16&&top<(y+2)*16
                     &&TerrainReader.Loaded(x,y+1)&&Main.tile[x,y+1].HasTile
                     &&Main.tile[x,y+1].Slope!=SlopeType.Solid&&Main.tile[x,y+1].LiquidAmount==0)
                     return Reason(liquid.Kind);
             }
-        if(!wetCandidate)return null;
 
         // LavaCollision uses the supplied full box and does not write flags.
         // The enclosing integer box conservatively covers intermediate poses.
         if(lavaCandidate&&Collision.LavaCollision(new Vector2(left,top),
             (int)Math.Ceiling(right-left),(int)Math.Ceiling(bottom-top)))return Reason(LiquidKind.Lava);
 
-        float dx=end.Px-start.Px,dy=end.Py-start.Py;
-        int steps=(int)Math.Ceiling(Math.Max(Math.Abs(dx),Math.Abs(dy))/4);
-        if(steps==0)return WetRejection(left,top);
-        for(int i=0;i<=steps;i++)
-        {
-            float t=(float)i/steps;
-            string reason=WetRejection(start.Px+dx*t,start.Py+dy*t);
-            if(reason!=null)return reason;
-        }
         return null;
     }
 
-    private static string WetRejection(float x,float y)
+    internal static bool WaterContact(PhysicsState state)
     {
+        int minX=FallSafety.Row(state.Px),maxX=FallSafety.Row(state.Px+PhysicsSimulator.PlayerW);
+        int minY=FallSafety.Row(state.Py)-1,maxY=FallSafety.Row(state.Py+PhysicsSimulator.PlayerH);
+        bool water=false;
+        for(int x=minX;x<=maxX;x++)
+            for(int y=minY;y<=maxY;y++)
+            {
+                if(!TerrainReader.Loaded(x,y))return false; // Sweep rejects unknown coverage.
+                var tile=Main.tile[x,y];
+                water|=tile.LiquidAmount>0&&tile.LiquidType==LiquidID.Water;
+            }
+        if(!water)return false;
         var flags=(Collision.honey,Collision.shimmer);
         try
         {
-            if(!Collision.WetCollision(new Vector2(x,y),PhysicsSimulator.PlayerW,PhysicsSimulator.PlayerH))return null;
-            return Collision.honey?Reason(LiquidKind.Honey):Collision.shimmer?Reason(LiquidKind.Shimmer)
-                :"liquid wet contact requires unsupported motion";
+            return Collision.WetCollision(new Vector2(state.Px,state.Py),PhysicsSimulator.PlayerW,PhysicsSimulator.PlayerH)
+                &&!Collision.honey&&!Collision.shimmer;
         }
         finally{(Collision.honey,Collision.shimmer)=flags;}
     }

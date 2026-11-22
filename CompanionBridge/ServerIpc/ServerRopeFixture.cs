@@ -10,7 +10,6 @@ namespace CompanionBridge.ServerIpc;
 internal static class ServerRopeFixture
 {
     private static string mode;
-    private static (int Local,int MouseX,int MouseY,int X,int Y) cursor;
     private static bool injected;
     private static bool Enabled=>ServerAiActionFixture.Enabled&&!Netplay.HasClients
         &&Program.LaunchParameters.ContainsKey("-companionropetest");
@@ -54,7 +53,7 @@ internal static class ServerRopeFixture
             }
             Main.tile[x,floor].ClearEverything();
         }
-        else
+        else if(mode!="build_and_climb")
         {
             var anchor=Main.tile[x,y-1];
             anchor.HasTile=true;anchor.TileType=TileID.Stone;
@@ -65,7 +64,7 @@ internal static class ServerRopeFixture
             {var tile=Main.tile[x,ty];tile.ClearEverything();tile.HasTile=true;tile.TileType=TileID.Rope;}
             Main.tile[x,floor+12].ClearEverything();
         }
-        p.position=new(center*16,floor*16-p.height);
+        p.position=new(mode=="build_and_climb"?x*16-2:center*16,floor*16-p.height);
         p.velocity=Vector2.Zero;
         p.selectedItem=0;
         p.inventory[4].SetDefaults(mode switch
@@ -74,10 +73,9 @@ internal static class ServerRopeFixture
         });
         if(!p.inventory[4].IsAir)p.inventory[4].stack=mode switch
         {
-            "upward"=>16,"vine" or "silk" or "web"=>1,_=>5
+            "upward"=>16,"build_and_climb"=>10,"vine" or "silk" or "web"=>1,_=>5
         };
         PlacementSelfTest.DenyTile=mode=="refuse";
-        cursor=(Main.myPlayer,Main.mouseX,Main.mouseY,Player.tileTargetX,Player.tileTargetY);
         // Native PlaceThing_Tiles tests the fractional upper bound before any
         // rope retarget. Ceiling gives the first integer row inside that bound.
         int minReachY=(int)System.Math.Ceiling(p.position.Y/16-Player.tileRangeY-p.inventory[4].tileBoost-p.blockRange);
@@ -88,9 +86,9 @@ internal static class ServerRopeFixture
     {
         if(!Enabled||ActorItemUse.Current?.Placement?.Rope==null)return;
         var human=Main.player[0];
-        bool unchanged=cursor==(Main.myPlayer,Main.mouseX,Main.mouseY,Player.tileTargetX,Player.tileTargetY);
-        bool unscoped=ActorPlacement.TargetX(human)==Player.tileTargetX&&ActorPlacement.TargetY(human)==Player.tileTargetY;
+        bool actorScoped=Main.myPlayer==ActorItemUse.Current.Actor.whoAmI;
+        bool unscoped=!NativeItemInput.Active(human);
         File.AppendAllText(Path.Combine(Main.SavePath,"rope-scope.jsonl"),
-            JsonSerializer.Serialize(new {mode,x,y,unchanged,unscoped})+System.Environment.NewLine);
+            JsonSerializer.Serialize(new {mode,x,y,actorScoped,unscoped})+System.Environment.NewLine);
     }
 }

@@ -16,7 +16,8 @@ internal sealed record Route(List<Prediction> Actions, int Expansions, double Mi
 
 internal static class StateSpacePlanner
 {
-    internal const float MaxDropPixels = 64;
+    internal const int MaximumStates = 40000;
+    internal const int StandardVerticalSpan = 128;
     internal static float SearchEstimate(PhysicsState s, float goal, int sign,
         LandingRegion region, PhysicsParameters ph) => region != null ? (region.Contains(s) ? 0 : 1)
         : Math.Max(0, sign * (goal - s.Px)) / ph.MaxRun;
@@ -121,7 +122,7 @@ internal static class StateSpacePlanner
                 // bounded simulation, sweep/drop/landing checks and stable tail as
                 // other actions, but release direction rather than accelerate again.
                 var brake = PhysicsSimulator.Predict(start, 0, 0, ph, world,
-                    walkFrames: 0, maxDropPixels: MaxDropPixels);
+                    walkFrames: 0);
                 if (brake.Safe && (region != null ? region.Arrived(brake.Landing, world)
                         : sign * (targetX - brake.Landing.Px) <= 12)
                     && Math.Abs(brake.Landing.Vx) <= 0.1f)
@@ -158,6 +159,15 @@ internal static class StateSpacePlanner
                 string failure = actions.Count == 0 ? string.Join("; ", rejected.OrderByDescending(p => p.Value)
                     .Take(3).Select(p => $"{p.Key} ({p.Value} candidates)")) : null;
                 if (actions.Count == 0 && string.IsNullOrEmpty(failure)) failure = "no improving supported checkpoint in local action/span search";
+                if(actions.Count==0&&searchExit=="local_frontier_exhausted")
+                {
+                    if(rejected.Keys.Any(reason=>reason.Contains("unknown terrain",StringComparison.OrdinalIgnoreCase)
+                        ||reason.EndsWith(": ?",StringComparison.Ordinal)))
+                        searchExit="unknown_terrain";
+                    else if(rejected.Keys.Any(reason=>reason=="outside route span"
+                        ||reason.Contains("outside local prediction window",StringComparison.Ordinal)))
+                        searchExit="local_coverage_exhausted";
+                }
                 if (actions.Count == 0) failure = searchExit + "; " + failure;
                 return new(actions, expansions - sliceStart, watch.Elapsed.TotalMilliseconds, failure, resultReached, searchExit=="time_budget",
                     actions.Count==0&&searchExit=="local_frontier_exhausted"?rootBlocks:null,
@@ -177,7 +187,7 @@ internal static class StateSpacePlanner
                 if (came[cur].G != queued.G) continue; // Superseded exact-state label.
                 if (Reached(cur))
                 { best = cur; reachedGoal = true; break; }
-                if(came.Count>=8192)
+                if(came.Count>=MaximumStates)
                 {
                     Finished=true;
                     yield return Result("local_state_budget");
@@ -191,6 +201,7 @@ internal static class StateSpacePlanner
                 bool neutralAscent = region != null && cur.Px >= region.MinPlayerLeftX && cur.Px <= region.MaxPlayerLeftX
                     && cur.Py + PhysicsSimulator.PlayerH - region.SurfaceY >= 4;
                 var directions = neutralAscent ? new[] { 0, sign, -sign } : new[] { sign, -sign };
+                bool forwardWalkBlocked = false;
                 foreach (int dir in directions)
                 {
                     // BuildHoldOptions from upstream: walk then 2-frame hold increments.
@@ -222,10 +233,12 @@ internal static class StateSpacePlanner
                                 budgetMs=sliceMilliseconds;maxExpansions=sliceNodes;
                             }
                             var edge = learning==null
-                                ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,maxDropPixels:MaxDropPixels,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold)
+                                ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold)
                                 :learning.Predict(cur,dir,hold,stride,ph,world,extraFrame,airStart,airHold);
                             if (!edge.Safe)
                             {
+                                if (cur == start && dir == sign && hold == 0 && edge.Reason == "walking blocked")
+                                    forwardWalkBlocked = true;
                                 if(cur.Equals(start)&&dir==sign&&hold==0&&rootBlocks==null)rootBlocks=edge.BlockingTiles;
                                 Reject(edge.Reason); continue;
                             }
@@ -243,7 +256,11 @@ internal static class StateSpacePlanner
                             if (rejectEdge?.Invoke(cur, edge) == true)
                             { Reject("recently failed local edge"); continue; }
                             var next = edge.Landing;
-                            if (Math.Abs(next.Px - start.Px) > (ph.ExtraJump!=null||ph.Air!=null?288:192) || Math.Abs(next.Py - start.Py) > (ph.ExtraJump!=null||ph.Air!=null?208:128))
+                            float verticalSpan=ph.ExtraJump!=null||ph.Air!=null?208:StandardVerticalSpan;
+                            bool descentHandoff=next.Py-start.Py>verticalSpan&&next.Py-cur.Py>16
+                                &&region!=null&&region.SurfaceY>cur.Py+PhysicsSimulator.PlayerH;
+                            if (Math.Abs(next.Px - start.Px) > (ph.ExtraJump!=null||ph.Air!=null?288:192)
+                                || Math.Abs(next.Py - start.Py)>verticalSpan&&!descentHandoff)
                             { Reject("outside route span"); continue; }
                             // Prefer walking when it makes comparable progress. Braking at
                             // every walk boundary previously made flat-ground jumps cheaper.
@@ -265,7 +282,9 @@ internal static class StateSpacePlanner
                             {
                                 complete = next; completeCost = ng;
                             }
-                            open.Enqueue((next, ng), ng + H(next)+(learning?.Preference(next)??0));
+                            // A verified descent can cross the vertical search
+                            // window once. Continue from its real landing next plan.
+                            if(!descentHandoff)open.Enqueue((next, ng), ng + H(next)+(learning?.Preference(next)??0));
                             // Cost-aware partial fallback: choosing only the farthest landing
                             // discards the walk/jump costs whenever the budget is exhausted.
                             // Region pixel distance only ranks safe partial checkpoints;
@@ -283,6 +302,34 @@ internal static class StateSpacePlanner
                                 && (score < bestScore - 0.01f || (Math.Abs(score - bestScore) <= 0.01f && distance < bestDistance)))
                             { best = next; bestDistance = distance; bestScore = score; }
                         }
+                    }
+                }
+                // A short reverse prefix loses to a return toward the same wall.
+                // For a horizontal trip, prove the retreat and its return jump
+                // together before committing to either part of the detour.
+                if (region == null && forwardWalkBlocked && best == start && !reachedGoal)
+                {
+                    for (int stride = 12; stride <= 72; stride += 6)
+                    {
+                        if (watch.Elapsed.TotalMilliseconds >= budgetMs)
+                        {
+                            yield return Result("time_budget");
+                            sliceStart = expansions;
+                            budgetMs = sliceMilliseconds;
+                        }
+                        var retreat = PhysicsSimulator.Predict(start, -sign, 0, ph, world, walkFrames:stride);
+                        if (!retreat.Safe || Math.Abs(retreat.Landing.Px-start.Px) > 192) continue;
+                        retreat = retreat with { ExecuteFrames=retreat.Frames.Count };
+                        if (rejectEdge?.Invoke(start, retreat) == true) continue;
+                        // The launch frame initializes the native jump counter.
+                        var climb = PhysicsSimulator.Predict(retreat.Landing, sign, ph.JumpHeight+1, ph, world, rollingJump:true);
+                        if (!climb.Safe || climb.Landing.Py > start.Py-16) continue;
+                        climb = climb with { ExecuteFrames=climb.Frames.Count };
+                        if (rejectEdge?.Invoke(retreat.Landing, climb) == true) continue;
+                        Finished = true;
+                        yield return new(new() {retreat, climb}, expansions-sliceStart, watch.Elapsed.TotalMilliseconds,
+                            ReachedGoal:Reached(climb.Landing), SearchExit:"verified_climb_detour", Rejections:new(rejected));
+                        yield break;
                     }
                 }
                 learning?.Expanded(cur);

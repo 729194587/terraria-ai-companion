@@ -29,31 +29,154 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
         if(!Owned(expected))throw new InvalidOperationException("Native action binding unavailable.");
     }
-    private static bool Released(Player p)=>!p.controlLeft&&!p.controlRight&&!p.controlUp&&!p.controlDown
+    internal static bool Released(Player p)=>!p.controlLeft&&!p.controlRight&&!p.controlUp&&!p.controlDown
         &&!p.controlJump&&!p.controlUseItem&&!p.controlUseTile&&!p.channel;
+    public bool CanTransferBody(AiReadOnlyProtocol.Identity identity)=>BodyIdle(identity);
+    internal static bool BodyIdle(AiReadOnlyProtocol.Identity identity)=>Owned(identity)&&identity.CanAct
+        &&!NativeCombatWorld.Running&&!ActorControl.Running&&!ActorItemUse.Running&&!ActorMining.Running
+        &&identity.Actor is Player p&&Released(p)&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0;
+    internal Func<AiReadOnlyProtocol.Identity,string,bool> ReflexTargetAllowed {get;set;}
+    public string CurrentCombatTarget(object handle)=>
+        handle is Handle {Context:TaskSlot {Task:CombatController combat}}?combat.TargetRef:null;
+    public bool SupportsBossEncounter=>true;
+    public bool SupportsCombat=>true;
+    public bool SupportsPersonalInventory => MerchantShop.VanillaServicesSupported;
+    public bool SupportsInventoryFavorite => true;
+    public bool SupportsItemDrop => ServerItemDrop.Available;
+    public bool SupportsOpening=>ServerItemOpening.Available;
+    public bool SupportsDismissSummon=>true;
+    public bool SupportsHammer => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsTileInteraction => ServerTileInteraction.Available;
+    public bool SupportsDoors=>true;
+    public bool SupportsPylons=>SupportsCollection;
+    public bool SupportsRegroup=>SupportsCollection;
+    public AiAtomicActions.RespawnPlan AfterRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>
+        handle is Handle {Context:TaskSlot {Task:BossEncounterTask boss}} ? boss.AfterRespawn(frame) : null;
+    public object StartRejoin(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.RespawnPlan plan)
+        =>StartCore(frame,CombatProtocol.Boss,args,id,false,rejoin:plan);
+    public bool WaitingForRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>
+        handle is Handle {Context:TaskSlot slot} && slot.Record.Started && slot.Task.CanWaitForRespawn(frame);
+    public bool SupportsLoadout=>true;
+    public float? WorkVelocityX(AiReadOnlyProtocol.Identity frame)=>Owned(frame)?((Player)frame.Actor).velocity.X:null;
+    public Func<bool> CapturePrimary(AiReadOnlyProtocol.Identity frame)=>NativeCombatWorld.CapturePrimary(frame);
+    public object StartCombat(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.CombatAdmission admission)
+        =>StartCore(frame,CombatProtocol.Operation,args,id,false,admission:admission);
+    public bool SupportsContainers=>true;
+    public bool SupportsSorting=>ActorSorting.Available;
+    public bool SupportsCollection => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsReforge => MerchantShop.VanillaServicesSupported;
+    public bool SupportsNurse => NurseService.Supported;
+    public bool SupportsMerchantSale => SupportsMerchantPurchase && MerchantShop.SaleSupported;
+    public bool SupportsNpcDialogue => MerchantShop.VanillaServicesSupported;
+    public bool SupportsMerchantPurchase => SupportsNpcDialogue && MerchantShop.Supported;
+    public bool SupportsHousingAssignment => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsBuildPlace => SupportsPlacement;
+    public bool SupportsPlacement => ActorPlacement.UnifiedAvailable;
+    public string ValidateCombatAdmission(AiReadOnlyProtocol.Identity identity,string target)=>NativeCombatWorld.Preflight(identity,target);
     public string Validate(string operation,JsonElement args)
-        => AtomicParameters.ValidateServerAction(operation, args);
+        => operation=="build_place" ? BuildingBlueprint.ValidEnvelope(args) ? null : "invalid_arguments" : AtomicParameters.ValidateServerAction(operation, args);
     public object Start(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId)=>StartCore(identity,operation,args,actionId,false);
+    internal object StartMaintenancePlacement(AiReadOnlyProtocol.Identity id,Microsoft.Xna.Framework.Point at)
+        =>StartCore(id,"place_tile",JsonSerializer.SerializeToElement(new{x=at.X,y=at.Y}),"auto-torch",true);
     private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child,bool continuous=false,
-        NavigationKnowledge knowledge=null)
+        NavigationKnowledge knowledge=null,AiAtomicActions.CombatAdmission admission=null,AiAtomicActions.RespawnPlan rejoin=null,bool buildTravel=false)
     {
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
             new{operation,mutationAttempted=false,effectStatus="not_started"},true,InputsAcquired:false,ReasonDetail:detail));
-        if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
+        if(NativeCombatWorld.Running||ActorControl.Running||ActorItemUse.Running||ActorMining.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
             return Reject("actor_busy");
-        if(p.dead||p.ghost||p.gravDir!=1||p.mount.Active)return Reject("unsupported_actor_state");
+        if(p.dead||p.ghost||(operation!="teleport_to_pylon" && (p.gravDir!=1||p.mount.Active)))return Reject("unsupported_actor_state");
         try
         {
             object context;
+            if(operation=="dismiss_summon")
+            {
+                int type=args.GetProperty("itemType").GetInt32();
+                if(!Terraria.ID.ContentSamples.ItemsByType.TryGetValue(type,out var staff) ||
+                    !NativeCombatWorld.MinionStaff(staff))return Reject("not_minion_weapon");
+                bool active=p.HasBuff(staff.buffType);
+                if(active)
+                {
+                    p.ClearBuff(staff.buffType);
+                    NetMessage.SendData(Terraria.ID.MessageID.PlayerBuffs,-1,-1,null,p.whoAmI);
+                }
+                bool absent=!p.HasBuff(staff.buffType);
+                if(absent)NativeCombatWorld.PauseSummon(identity,type);
+                return new Handle(identity,operation,null,new(absent?"completed":"unknown",
+                    absent?"summon_buff_absent":"summon_buff_unconfirmed",new{itemType=type,buffType=staff.buffType,wasActive=active,absent},
+                    true,absent,InputsAcquired:false));
+            }
+            if(operation=="sell_npc_item") return new Handle(identity,operation,null,MerchantShop.Sell(identity,args));
+            if(operation=="reforge_item") return new Handle(identity,operation,null,GoblinReforge.Execute(identity,args));
+            if(operation=="heal_at_nurse") return new Handle(identity,operation,null,NurseService.Heal(identity,args));
+            if(operation is "open_npc_dialogue" or "close_npc_dialogue")
+                return new Handle(identity,operation,null,NpcDialogue.Dialogue(identity,args,operation=="open_npc_dialogue"));
+            if(operation=="buy_npc_item") return new Handle(identity,operation,null,MerchantShop.Buy(identity,args));
+            if(operation=="assign_npc_home") return new Handle(identity,operation,null,NpcHousing.Assign(identity,args));
+            if(operation=="set_team")return new Handle(identity,operation,null,ServerRegroup.SetTeam(identity,args.GetProperty("team").GetInt32()));
+            if(operation=="teleport_to_pylon")return new Handle(identity,operation,null,ServerPylons.Travel(identity,args.GetProperty("pylonRef").GetString()));
+            if(operation=="teleport_to_teammate")return new Handle(identity,operation,null,ServerRegroup.Teleport(identity,args.GetProperty("teammateRef").GetString()));
+            if(operation=="manage_trash")return new Handle(identity,operation,null,ServerPersonalInventory.Trash(identity,args));
+            if(operation=="switch_equipment_loadout")return new Handle(identity,operation,null,ServerPersonalInventory.Switch(identity,args));
+            if(operation=="set_inventory_favorite")
+            {
+                int slot=args.GetProperty("sourceSlot").GetInt32();
+                var item=p.inventory[slot];
+                if(ActorInventory.Token(identity,item,slot)!=args.GetProperty("sourceToken").GetString())
+                    return Reject("stale_inventory_token");
+                if(item.IsAir)return Reject("empty_inventory_slot");
+                bool favorite=args.GetProperty("favorited").GetBoolean();
+                var before=ActorInventory.Read(item);
+                if(before.Favorite!=favorite)
+                {
+                    item.favorited=favorite;
+                    ActorInventory.InvalidateSlot(identity,slot);
+                }
+                var after=ActorInventory.Read(p.inventory[slot]);
+                bool verified=ReferenceEquals(item,p.inventory[slot]) && after==(before with {Favorite=favorite});
+                return new Handle(identity,operation,null,new(verified?"completed":"unknown",
+                    verified?"favorite_verified":"favorite_unconfirmed",
+                    new{sourceSlot=slot,typeId=after.Type,stack=after.Stack,prefix=after.Prefix,
+                        beforeFavorite=before.Favorite,afterFavorite=after.Favorite},true,verified,InputsAcquired:false));
+            }
+            if(operation=="drop_inventory_item")return new Handle(identity,operation,null,ServerItemDrop.Drop(identity,args));
+            if(operation=="open_inventory_item")return new Handle(identity,operation,null,ServerItemOpening.Open(identity,args));
+            if(operation=="interact_tile")return new Handle(identity,operation,null,ServerTileInteraction.Activate(identity,args));
+            if(operation is "open_door" or "close_door")
+            {
+                string reason=ServerDoor.Set(p,args.GetProperty("x").GetInt32(),args.GetProperty("y").GetInt32(),operation=="open_door",out var proof);
+                return new Handle(identity,operation,null,new(reason==null?"completed":reason=="door_state_unconfirmed"?"unknown":"failed",
+                    reason??"door_state_verified",proof,true,reason==null,InputsAcquired:false));
+            }
+            if(operation=="configure_combat_loadout")
+            {
+                string reason=NativeCombatWorld.Configure(identity,args);
+                if(reason!=null)return Reject(reason);
+                return new Handle(identity,operation,null,new("completed","combat_loadout_configured",
+                    NativeCombatWorld.Loadout(identity),true,true,InputsAcquired:false));
+            }
             if(AiAtomicActions.IsTask(operation))
             {
                 if(child)throw new InvalidOperationException("Nested root task denied");
-                var executor=new ChildExecutor(this,continuous:true);
-                CompanionTask task=operation=="mine_target"
-                    ?new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
+                var executor=new ChildExecutor(this,continuous:operation!="build_place",buildTravel:operation=="build_place");
+                CompanionTask task=operation==CombatProtocol.Operation
+                    ?new CombatController(new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),
+                        args.TryGetProperty("threat",out _)?ReflexTargetAllowed??((_,_)=>true):null,admission,alternate:args.TryGetProperty("button",out var button) && button.GetString()=="right"),
+                        args.TryGetProperty("threat",out var threat)?"reflex":"agent",threat.ValueKind==JsonValueKind.String?threat.GetString():null)
+                    :operation==CombatProtocol.Boss
+                    ?new BossEncounterTask(actionId,new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),bossEncounter:true),navigation,args.TryGetProperty("regroupTeammateRef",out var teammate)?teammate.GetString():null,rejoin)
+                    :operation=="mine_target"
+                    ?args.TryGetProperty("cluster",out var cluster)&&cluster.GetBoolean()
+                        ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge)
+                        :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
+                    :operation=="collect_drops" ? new CollectDropsTask(actionId,args,executor)
+                    :operation=="build_place" ? new BuildPlaceTask(actionId,args,executor)
+                    :operation=="place_item" ? new NativeActionTask(executor,"place_item_native",args,actionId,operation)
                     :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
-                context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},AutonomousNavigationTask.TripUpdates);
+                ulong budget=operation switch {CombatProtocol.Boss=>BossEncounterTask.Budget,CombatProtocol.Operation=>CombatController.Budget,"collect_drops"=>CollectDropsTask.Budget,
+                    "build_place"=>10800,"place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
+                context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},budget);
             }
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
             else if(operation=="move_on_rope")
@@ -61,11 +184,17 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 if(rope.Start(identity,args,out var run) is {} reason)return Reject(reason);
                 context=run;ActorControl.Driver=rope;
             }
+            else if (operation is "sort_inventory" or "sort_container") context = new ActorContainer.SortAction(identity, operation, args);
+            else if (ActorContainer.IsBatch(operation)) context = new ActorContainer.Batch(identity, operation, args);
+            else if (operation is "deposit_container_item" or "withdraw_container_item") context = new ActorContainer.Transfer(identity, operation, args);
+            else if (operation is "open_container" or "close_container") context = new ActorContainer.Action(identity, operation, args);
             else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
             else if(ActorEquipment.IsOperation(operation))context=new ActorEquipment.Context(identity,operation,args);
             else if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
-            else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId);ActorControl.Driver=navigation;}
-            else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge);ActorControl.Driver=navigation;}
+            else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId,
+                movementOnly:child && args.TryGetProperty("movementOnly",out var movementOnly) && movementOnly.GetBoolean());ActorControl.Driver=navigation;}
+            else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge,
+                movementOnly:buildTravel);ActorControl.Driver=navigation;}
             else if(operation=="place_rope")
             {
                 if(p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned)return Reject("unsupported_placement_state");
@@ -75,7 +204,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 string error=ActorRope.Resolve(p,p.inventory[slot],x,y,out var target);
                 if(error!=null)return Reject(error);
                 if(p.selectedItem!=slot)ActorItemUse.Select(p,identity.World,identity.Generation,slot);
-                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,rope:target);
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,ActorPlacement.FromRope(p.HeldItem,target));
                 context=ActorItemUse.Current;
             }
             else if(operation is "place_tile" or "place_object")
@@ -83,16 +212,40 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
                 if(child&&operation=="place_tile"&&args.TryGetProperty("plannedPlacementSlot",out var plannedSlot))
                     ActorItemUse.Select(p,identity.World,identity.Generation,plannedSlot.GetInt32());
-                string error=ActorPlacement.Preflight(p,x,y,operation=="place_object");
+                string error=ActorPlacement.Prepare(p,x,y,operation=="place_object",out var placement);
                 if(error!=null)return Reject(error,operation=="place_object"?ActorObjectPlacement.PreflightDetail(p,x,y,error):null);
-                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,operation=="place_object");
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,placement);
                 if(child&&operation=="place_tile"&&args.TryGetProperty("waterBridgeDirection",out var direction))
                     ActorItemUse.Current.Placement.WaterBridgeDirection=direction.GetInt32();
                 context=ActorItemUse.Current;
             }
+            else if(child&&operation=="place_item_native")
+            {
+                int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
+                if(args.TryGetProperty("expectedType",out var expected) && (p.selectedItem is <0 or >9 || p.HeldItem.type!=expected.GetInt32()))return Reject("held_material_changed");
+                string error=ActorPlacement.PrepareUnified(p,x,y,out var placement);
+                if(error!=null)return new Handle(identity,operation,null,new("failed",error,null,true,InputsAcquired:false));
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,placement);
+                context=ActorItemUse.Current;
+            }
+            else if(operation is "mine_wall" or "hammer_tile")
+            {
+                string reason=ActorMining.StartHammer(p,identity.World,identity.Generation,args.GetProperty("x").GetInt32(),
+                    args.GetProperty("y").GetInt32(),operation=="mine_wall",out var hammer);
+                if(reason!=null)return Reject(reason);
+                context=hammer;
+            }
+            else if(operation=="use_item" && NativeCombatWorld.MinionStaff(p.HeldItem))
+            {
+                if(NativeCombatWorld.SummonRefusal(p,p.HeldItem,true) is string error) return Reject(error);
+                context=NativeCombatWorld.StartSummon(identity);
+            }
             else if(operation=="use_item")
             {
-                if(p.selectedItem<0||p.selectedItem>9||p.HeldItem.IsAir||!ActorItemUse.Supported(p.HeldItem))return Reject("unsupported_selected_item");
+                if(p.selectedItem<0||p.selectedItem>9||!ActorItemUse.Supported(p.HeldItem))
+                    return Reject("unsupported_selected_item",ActorRope.Supported(p.HeldItem)
+                        ?"Rope placement requires Tile coordinates. Use place_tile for an empty cell or place_rope to extend an existing rope."
+                        :null);
                 ActorItemUse.Start(p,identity.World,identity.Generation);context=ActorItemUse.Current;
             }
             else
@@ -118,6 +271,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if (h.Context is NativeCombatWorld summon) return summon.PollSummon();
+        if (h.Context is ActorContainer.SortAction sort) return sort.Poll();
+        if (h.Context is ActorContainer.Batch batch) return batch.Poll();
+        if (h.Context is ActorContainer.Transfer transfer) return transfer.Poll();
+        if (h.Context is ActorContainer.Action container) return container.Poll();
         var p=(Player)h.Identity.Actor;
         if(AiAtomicActions.IsTask(h.Operation))
         {
@@ -172,15 +330,26 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 effectStatus="native_navigation_observed"},Released(p),c.Status=="completed"&&physical.Settled
                     &&(c.Region==null||c.Region.Arrived(physical.State,new NativeMotionWorld(physical.State))),InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);
         }
-        if(h.Operation is "place_tile" or "place_object" or "place_rope")
+        if(h.Operation is "place_tile" or "place_object" or "place_rope" or "place_item_native")
         {
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ActorItemUse.Context)h.Context;var tile=c.Placement;
-            bool present=tile.Object?ActorObjectPlacement.Present(tile):Main.tile[tile.X,tile.Y].HasTile&&Main.tile[tile.X,tile.Y].TileType==tile.TileType
-                &&(tile.Rope==null||!Main.tile[tile.X,tile.Y].IsActuated);
-            bool verified=c.Phase=="completed"&&tile.Placed&&!tile.ExternalChange&&present&&tile.NativeEvents==1&&!tile.UncertainNativeEffect&&tile.ConsumedCount==1
+            bool present=ActorPlacement.Present(tile);
+            bool placementVerified=tile.Placed&&!tile.ExternalChange&&present&&tile.NativeEvents==1&&!tile.UncertainNativeEffect&&tile.ConsumedCount==1
                 &&(!tile.Object||ActorObjectPlacement.Validate(c)==null);
+            bool verified=c.Phase=="completed" && placementVerified;
             string placementPhase=c.Phase=="rejected"?"failed":c.Phase=="stale"||c.Phase=="completed"&&!verified?"unknown":c.Phase;
+            if(tile.Unified)
+                return new(placementPhase,c.Phase=="completed"&&!verified?"native_placement_terminal_unconfirmed":c.Reason,
+                    new {placementVerified,kind=tile.Kind,requested=new{x=tile.Rope?.X??tile.X,y=tile.Rope?.Y??tile.Y},
+                        anchor=new{x=tile.X,y=tile.Y},footprint=tile.Object?ActorObjectPlacement.Bounds(tile):new{x=tile.X,y=tile.Y,width=1,height=1},
+                        tileType=tile.TileType<0?(int?)null:tile.TileType,wallType=tile.WallType>0?(int?)tile.WallType:null,
+                        style=tile.ActualStyle??tile.Style,alternate=tile.Object?(int?)tile.Alternate:null,direction=tile.Object?(int?)tile.Direction:null,
+                        chestIndex=tile.ChestIndex>=0?(int?)tile.ChestIndex:null,chestVerified=tile.IsChest&&present,
+                        itemType=c.Type,initialStack=c.InitialStack,remainingStack=p.inventory[c.Slot].stack,consumedCount=tile.ConsumedCount,
+                        nativePlacementEvents=tile.NativeEvents,nativeClearEvents=tile.NativeClearEvents,targetPresent=present,placedByActor=tile.Placed,
+                        targetChanged=tile.ExternalChange,uncertainNativeEffect=tile.UncertainNativeEffect},
+                    Released(p)&&p.releaseUseItem&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0,verified,InputsAcquired:c.Ticks>0);
             return new(placementPhase,c.Phase=="completed"&&!verified?"native_placement_terminal_unconfirmed":c.Reason,
                 new{x=tile.X,y=tile.Y,typeId=tile.TileType,itemType=c.Type,c.InitialStack,remainingStack=p.inventory[c.Slot].stack,
                     c.Ticks,c.Starts,c.AnimationPeak,tile.Attempts,nativePlacementEvents=tile.NativeEvents,uncertainNativeEffect=tile.UncertainNativeEffect,consumedCount=tile.ConsumedCount,placedByActor=tile.Placed,
@@ -201,11 +370,21 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         }
         if(!ReferenceEquals(ActorMining.Current,h.Context))return new("unknown","native_context_changed",null,false);
         var mine=(ActorMining.Context)h.Context;
+        if(mine.Hammer is {} hammer)
+        {
+            bool confirmed=hammer.Effected && !mine.ExternalChange && hammer.After==ActorMining.HammerCell.Read(mine.X,mine.Y);
+            string status=mine.Phase switch{ActionPhase.Running=>"running",ActionPhase.Completed when confirmed=>"completed",
+                ActionPhase.Cancelled=>"cancelled",ActionPhase.TimedOut=>"timeout",ActionPhase.Failed when !hammer.Effected=>"failed",_=>"unknown"};
+            return new(status,status=="completed"?"native_hammer_effect_verified":AiActionReasons.Mining(status,mine.Reason.ToString()),
+                new{x=mine.X,y=mine.Y,before=hammer.Before,after=hammer.After,toolType=mine.Type,hammerPower=hammer.Power,
+                    strikes=mine.Strikes,effectObserved=confirmed},Released(p)&&p.itemAnimation==0&&p.itemTime==0,
+                status=="completed",InputsAcquired:mine.Ticks>0,ReasonDetail:mine.Detail);
+        }
         bool destroyed=mine.Destroyed&&!mine.ExternalChange&&WorldGen.InWorld(mine.X,mine.Y)&&!Main.tile[mine.X,mine.Y].HasTile;
         bool furnitureAbsent=ActorMining.FurnitureAbsent(mine);
         string phase=mine.Phase switch{ActionPhase.Running=>"running",ActionPhase.Completed=>destroyed&&furnitureAbsent?"completed":"unknown",ActionPhase.Cancelled=>"cancelled",ActionPhase.TimedOut=>"timeout",ActionPhase.Stale=>"unknown",_=>"failed"};
         return new(phase,AiActionReasons.Mining(phase,mine.Reason.ToString()),new{nativeActionId=mine.Id,mine.X,mine.Y,TileType=mine.InvalidTarget==null?(int?)mine.TileType:null,mine.ExpectedType,mine.Ticks,invalidTarget=mine.InvalidTarget,
-            mine.Swings,mine.Strikes,mine.PeakDamage,mine.Transforms,toolKind=mine.Axe>0?"axe":"pickaxe",pick=mine.Pick,axe=mine.Axe,nativeDestroyed=mine.Destroyed,targetAbsent=destroyed,
+            mine.Swings,mine.Strikes,mine.PeakDamage,mine.Transforms,toolKind=ActorMining.TreeTarget(mine.TileType)?"axe":"pickaxe",pick=mine.Pick,axe=mine.Axe,nativeDestroyed=mine.Destroyed,targetAbsent=destroyed,
             furnitureCells=mine.Furniture.Length,furnitureAbsent=mine.Furniture.Length>0&&furnitureAbsent,
             targetChanged=mine.ExternalChange||(!mine.Destroyed&&mine.TargetCaptured&&!ActorMining.TargetUnchanged(mine)),
             targetUnchanged=!mine.ExternalChange&&mine.Transforms==0&&!mine.Destroyed&&ActorMining.TargetUnchanged(mine),
@@ -216,6 +395,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if (h.Context is NativeCombatWorld summon) return summon.PollSummon(cancel:true);
+        if (h.Context is ActorContainer.SortAction sort) return sort.Poll(cancel: true);
+        if (h.Context is ActorContainer.Batch batch) return batch.Poll(cancel: true);
+        if (h.Context is ActorContainer.Transfer transfer) return transfer.Poll(cancel: true);
+        if (h.Context is ActorContainer.Action container) return container.Poll(cancel: true);
         if(AiAtomicActions.IsTask(h.Operation))return CancelWithReason(identity,value,"cancelled","explicit_stop");
         if(h.Context is ActorEquipment.Context equipment)
         {
@@ -233,7 +417,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(c.Status=="running"){c.Status="cancelled";c.Reason="explicit_stop";}
             return new(c.Status,c.Reason,ActorCrafting.Evidence(c),Released((Player)h.Identity.Actor),c.Status=="completed",InputsAcquired:false);
         }
-        if(h.Operation=="place_object")
+        if(h.Operation is "place_object" or "place_item_native")
         {
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
             ActorItemUse.Stop((Player)h.Identity.Actor,h.Identity.World,h.Identity.Generation);
@@ -251,6 +435,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     }
     private static Result EquipmentResult(AiReadOnlyProtocol.Identity id,ActorEquipment.Context c)
         => new(c.Status,c.Reason,c.Evidence(),Owned(id)&&Released((Player)id.Actor),c.Status=="completed",InputsAcquired:false,ReasonDetail:c.Error);
+    public string Retreat(AiReadOnlyProtocol.Identity frame,object handle,int x,int y)=>
+        handle is Handle {Context:TaskSlot {Task:BossEncounterTask boss}} h && TaskSlot.Same(frame,h.Identity)
+            ?boss.RequestRetreat(frame,x,y):"boss_not_started";
+
     public Result CancelWithReason(AiReadOnlyProtocol.Identity identity,object value,string status,string reason)
     {
         var h=(Handle)value;Require(h.Identity);
@@ -267,13 +455,14 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             result=result with{Status="unknown",Reason="task_inputs_not_released",InputsReleased=false,EffectVerified=false};
         else result=result with{InputsReleased=result.InputsReleased&&released};
         if(result.Status!="running")
-        {task.Record.Result=result;task.Record.Status=result.Status;task.Record.Phase="terminal";task.Record.Reason=result.Reason;}
+        {if(task.Task is BossEncounterTask)ServerCombatFixture.WholeTerminal(task.Record.Id,result.Status,result.Reason);
+         task.Record.Result=result;task.Record.Status=result.Status;task.Record.Phase="terminal";task.Record.Reason=result.Reason;}
         return result with{Evidence=new{task=task.View()}};
     }
     public Result BindingLost(object value)
     {
         var h=(Handle)value;
-        if(!AiAtomicActions.IsTask(h.Operation))return new("unknown","actor_binding_changed",null,false);
+        if(!AiAtomicActions.IsTask(h.Operation)||h.Rejection!=null)return new("unknown","actor_binding_changed",null,false);
         var task=(TaskSlot)h.Context;var result=task.Abandon();return result with{Evidence=new{task=task.View()}};
     }
     // Native contexts only: no AiAtomicActions.Handle/registry/IPC start per child.
@@ -283,9 +472,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         private readonly bool continuous;
         private readonly NavigationKnowledge knowledge=new();
         internal NavigationKnowledge Knowledge=>knowledge;
-        internal ChildExecutor(ServerAiNativeActions owner,bool continuous){this.owner=owner;this.continuous=continuous;}
+        private readonly bool buildTravel;
+        internal ChildExecutor(ServerAiNativeActions owner,bool continuous,bool buildTravel=false){this.owner=owner;this.continuous=continuous;this.buildTravel=buildTravel;}
         public string Validate(string op,JsonElement args)=>owner.Validate(op,args);
-        public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>owner.StartCore(id,op,args,taskId,true,continuous,knowledge);
+        public ulong ProgressVersion(object handle)=>handle is Handle {Context:ServerAiNavigation.Run run}?run.ProgressVersion:0;
+        public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>owner.StartCore(id,op,args,taskId,true,continuous,knowledge,buildTravel:buildTravel);
         public Result Poll(AiReadOnlyProtocol.Identity id,object value)
         {
             var r=owner.Poll(id,value);
@@ -302,6 +493,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         try { if(active!=null&&Owned(active.Identity))Cancel(active.Identity,active); }
         catch(Exception e){ProbeSession.Quarantine("Native action shutdown unconfirmed: "+e.Message);}
-        finally { if(ReferenceEquals(ActorControl.Driver,navigation)||ReferenceEquals(ActorControl.Driver,directInput))ActorControl.Driver=null; }
+        finally
+        {
+            ServerPylons.Clear();
+            ServerRegroup.Clear();
+            NativeCombatWorld.ClearLoadout();
+            ServerDrops.Current = null;
+            if(ReferenceEquals(ActorControl.Driver,navigation)||ReferenceEquals(ActorControl.Driver,directInput))ActorControl.Driver=null;
+        }
     }
 }

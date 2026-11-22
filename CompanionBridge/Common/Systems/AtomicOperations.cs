@@ -8,6 +8,7 @@ using Terraria.ModLoader;
 using Terraria.GameContent;
 using Terraria.ObjectData;
 using CompanionBridge.Motion;
+using CompanionBridge.ServerIpc;
 
 namespace CompanionBridge.Common.Systems;
 
@@ -16,12 +17,51 @@ public sealed class AtomicNpcIdentity : GlobalNPC
 {
     public override bool InstancePerEntity => true;
     internal Guid Token = Guid.NewGuid();
+    internal Guid Family;
+    internal ulong SpawnUpdate;
+    internal bool AmbiguousTwinSpawn;
+    internal (Type Source,string Context,Entity Parent) TwinOrigin;
+    public override void OnSpawn(NPC npc, Terraria.DataStructures.IEntitySource source)
+    {
+        Token = Guid.NewGuid();
+        SpawnUpdate=Main.GameUpdateCount;
+        Family=Token;
+        if(source is Terraria.DataStructures.EntitySource_Parent {Entity:NPC parent})
+        {
+            var origin=parent.GetGlobalNPC<AtomicNpcIdentity>();
+            if(npc.type is NPCID.EaterofWorldsBody or NPCID.EaterofWorldsTail or NPCID.TheDestroyerBody or NPCID.TheDestroyerTail)
+                Family=origin.Family==Guid.Empty?origin.Token:origin.Family;
+            else if(npc.ModNPC!=null || npc.type is NPCID.SkeletronHand or NPCID.MoonLordHead or NPCID.MoonLordHand)
+                Family=origin.Token;
+        }
+        if(Main.dedServ && npc.type is NPCID.Retinazer or NPCID.Spazmatism)
+        {
+            TwinOrigin=(source?.GetType(),source?.Context,(source as Terraria.DataStructures.EntitySource_Parent)?.Entity);
+            foreach(var other in Main.ActiveNPCs)
+                if(other!=npc && other.type==npc.type)
+                    AmbiguousTwinSpawn=other.GetGlobalNPC<AtomicNpcIdentity>().AmbiguousTwinSpawn=true;
+        }
+    }
+    public override void OnKill(NPC npc) { NativeCombatWorld.ObserveDeath(npc); ServerCombatFixture.RecordDeath(npc); }
     public override GlobalNPC Clone(NPC from, NPC to)
     {
         var clone = (AtomicNpcIdentity)base.Clone(from, to);
         clone.Token = Guid.NewGuid();
+        clone.Family=Guid.Empty;
+        clone.AmbiguousTwinSpawn=false;
+        clone.TwinOrigin=default;
         return clone;
     }
+}
+
+public sealed class ServerCombatPlayer : ModPlayer
+{
+    public override void OnHitNPCWithItem(Item item,NPC target,NPC.HitInfo hit,int damageDone)
+        => ServerCombatFixture.ObserveHit(Player,target,damageDone);
+
+    public override bool? CanHitNPCWithItem(Item item, NPC target)
+        => NativeCombatWorld.CanHit(Player, item, target);
+
 }
 
 internal static class AtomicOperations
@@ -171,8 +211,8 @@ internal static class AtomicOperations
         {
             var terrain = TerrainReader.Read(p);
             var state = new PhysicsState(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,terrain.Grounded,p.jump,p.releaseJump);
-            if(first) { _action=action.ActionId; _drop=new(); _drop.Begin(state,p.statLife,terrain.Supported,TerrainReader.ReadDryCell); }
-            _drop.Before(state,p.statLife,TerrainReader.ReadDryCell);
+            if(first) { _action=action.ActionId; _drop=new(); _drop.Begin(state,p.statLife,terrain.Supported,TerrainReader.ReadDryCell,GameNavigation.FallProfile(p)); }
+            _drop.Before(state,p.statLife,TerrainReader.ReadDryCell,GameNavigation.FallProfile(p),p.fallStart);
             p.controlLeft=p.controlRight=p.controlJump=p.controlUp=p.controlUseItem=false;
             p.controlDown=_drop.Down; _downInjected=true;
             if(_drop.Status!="running") Finish(_drop.Status,_drop.Reason);
@@ -459,7 +499,7 @@ internal static class AtomicOperations
         {
             var terrain=TerrainReader.Read(p);
             var state=new PhysicsState(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,terrain.Grounded,p.jump,p.releaseJump);
-            _drop.After(state,p.statLife,TerrainReader.ReadDryCell);
+            _drop.After(state,p.statLife,TerrainReader.ReadDryCell,GameNavigation.FallProfile(p),p.fallStart);
             if(_drop.Status!="running") Finish(_drop.Status,_drop.Reason,new {
                 startFeetY=_drop.StartFeetY,targetSurfaceY=_drop.TargetSurfaceY,
                 actualPosition=new StateVector(p.position.X,p.position.Y), actualFeetY=p.position.Y+p.height,

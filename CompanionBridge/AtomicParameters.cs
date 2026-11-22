@@ -24,7 +24,7 @@ internal static class AtomicParameters
 
     internal static string ValidateServerAction(string op, JsonElement args)
     {
-        try { Validate(op, args, false); return op == "use_item" && args.TryGetProperty("target", out _) ? "targeted_use_not_supported" : null; }
+        try { Validate(op == "interact_tile" ? "activate_observed_tile" : op, args, false); return op == "use_item" && args.TryGetProperty("target", out _) ? "targeted_use_not_supported" : null; }
         catch (AtomicParameterException) { return "invalid_arguments"; }
     }
 
@@ -44,6 +44,11 @@ internal static class AtomicParameters
         foreach (var p in args.EnumerateObject()) if (!keys.Add(p.Name)) throw new FormatException("Duplicate parameter.");
         void Fields(params string[] names) { if (!keys.SetEquals(names)) throw new FormatException("Unexpected/missing parameters for " + op); }
         void Integer(string key, int min, int max) { if (!args.GetProperty(key).TryGetInt32(out int v) || v < min || v > max) throw new FormatException("Invalid " + key); }
+        void EntityRef()
+        {
+            var value = args.GetProperty("entityRef");
+            if (value.ValueKind != JsonValueKind.String || CharacterCount(value) is < 1 or > 150) throw new FormatException("Invalid entityRef.");
+        }
         void Token(string key)
         {
             var token = args.GetProperty(key);
@@ -56,7 +61,7 @@ internal static class AtomicParameters
         {
             switch (op)
             {
-                case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
+                case "list_pylons": case "list_teammates": case "discover_bosses": case "query_combat_loadout": case "inspect_container": case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
                 case "observe_scene":
                     if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers","scale","width","height"}).Any())throw new FormatException("Unexpected scene parameter.");
                     foreach(string key in keys.Where(k=>k is "maxObjects" or "maxRegions" or "maxPlacements" or "maxHazards"))Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
@@ -117,6 +122,17 @@ internal static class AtomicParameters
                     foreach (var type in types.EnumerateArray())
                         if (!type.TryGetInt32(out int id) || id < 0 || id > 65535 || !seen.Add(id)) throw new FormatException("Invalid/duplicate tile type.");
                     break;
+                case "quote_reforge":
+                case "quote_npc_sale":
+                    Fields("entityRef","sourceSlot","sourceToken"); EntityRef(); Integer("sourceSlot",0,49); Token("sourceToken"); break;
+                case "quote_npc_purchase":
+                    if (keys.Contains("quantity")) { Fields("entityRef","itemType","quantity"); Integer("quantity",1,50); }
+                    else Fields("entityRef","itemType");
+                    EntityRef(); Integer("itemType",1,int.MaxValue); break;
+                case "quote_nurse_heal":
+                case "inspect_npc_shop":
+                case "inspect_npc_housing": Fields("entityRef"); EntityRef(); break;
+                case "inspect_housing":
                 case "inspect_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
                 case "scan_entities":
                     if (keys.Contains("maxResults")) { Integer("maxResults",1,128); keys.Remove("maxResults"); }
@@ -144,6 +160,27 @@ internal static class AtomicParameters
         }
         switch (op)
         {
+            case "open_container": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
+            case "deposit_container_item": case "withdraw_container_item":
+                Fields("inventorySlot", "containerSlot", "count", "inventoryToken", "containerToken", "slotToken");
+                Integer("inventorySlot", 0, 49); Integer("containerSlot", 0, 39); Integer("count", 1, 9999);
+                Token("inventoryToken"); Token("containerToken"); Token("slotToken"); break;
+            case "sort_inventory": case "quick_stack_nearby": Fields(); break;
+            case "sort_container": case "quick_stack_container": case "loot_all": case "deposit_all": case "restock":
+                Fields("containerToken"); Token("containerToken"); break;
+            case "close_container": Fields("containerToken"); Token("containerToken"); break;
+            case "configure_combat_loadout":
+                if(keys.Count==0)break;
+                foreach(var role in args.EnumerateObject())
+                {
+                    if(role.Name is not ("primary" or "secondary" or "summon"))throw new FormatException("Unknown weapon role");
+                    Validate("combat_primary_role",role.Value,false);
+                }
+                break;
+            case "combat_primary_role":
+                Fields("hotbarKey","expectedTypeId","inventoryToken");
+                Integer("hotbarKey",0,9); Integer("expectedTypeId",1,int.MaxValue); Token("inventoryToken");
+                break;
             case "transfer_inventory_item": case "swap_inventory_slots": case "hold_inventory_item":
                 if (op == "transfer_inventory_item") { Fields("sourceSlot","destinationSlot","sourceToken","destinationToken","count"); Integer("count",1,9999); }
                 else if (op == "hold_inventory_item") { Fields("sourceSlot","hotbarKey","sourceToken","destinationToken"); Integer("hotbarKey",0,9); }
@@ -204,11 +241,72 @@ internal static class AtomicParameters
                 break;
             case "drop_through_platform": Fields(); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
-            case "place_object": case "place_rope": goto case "place_tile";
+            case "manage_trash":
+                Fields("mode","slot","slotToken","trashToken");Integer("slot",0,49);Token("slotToken");Token("trashToken");
+                if(args.GetProperty("mode").GetString() is not ("discard" or "retrieve"))throw new FormatException("Invalid trash action.");
+                break;
+            case "switch_equipment_loadout":
+                Fields("expectedLoadout","loadout");Integer("expectedLoadout",1,3);Integer("loadout",1,3);break;
+            case "set_inventory_favorite":
+                Fields("sourceSlot","sourceToken","favorited"); Integer("sourceSlot",0,49); Token("sourceToken");
+                args.GetProperty("favorited").GetBoolean(); break;
+            case "drop_inventory_item":
+                if(keys.Contains("teammateRef"))
+                {
+                    Fields("sourceSlot","sourceToken","count","teammateRef");
+                    if(!Guid.TryParseExact(args.GetProperty("teammateRef").GetString(),"N",out _))throw new FormatException("Invalid teammate reference.");
+                }
+                else Fields("sourceSlot","sourceToken","count");
+                Integer("sourceSlot",0,49);Token("sourceToken");Integer("count",1,9999);break;
+            case "open_inventory_item": Fields("sourceSlot","sourceToken"); Integer("sourceSlot",0,49); Token("sourceToken"); break;
+            case "dismiss_summon": Fields("itemType"); Integer("itemType",1,int.MaxValue); break;
+            case "reforge_item":
+            case "sell_npc_item":
+                Fields("entityRef","sourceSlot","sourceToken","quoteToken"); EntityRef(); Integer("sourceSlot",0,49); Token("sourceToken"); Token("quoteToken"); break;
+            case "heal_at_nurse": Fields("entityRef","quoteToken"); EntityRef(); Token("quoteToken"); break;
+            case "open_npc_dialogue": Fields("entityRef"); EntityRef(); break;
+            case "close_npc_dialogue": Fields(); break;
+            case "buy_npc_item":
+                if (keys.Contains("quantity")) { Fields("entityRef","quoteToken","quantity"); Integer("quantity",1,1); }
+                else Fields("entityRef","quoteToken");
+                EntityRef(); Token("quoteToken"); break;
+            case "assign_npc_home": Fields("entityRef","x","y"); EntityRef(); Integer("x",0,100000); Integer("y",0,100000); break;
+            case "set_team": Fields("team"); Integer("team",0,5); break;
+            case "teleport_to_pylon": Fields("pylonRef"); if(!Guid.TryParseExact(args.GetProperty("pylonRef").GetString(),"N",out _))throw new FormatException("Invalid pylon reference."); break;
+            case "teleport_to_teammate": Fields("teammateRef"); if(!Guid.TryParseExact(args.GetProperty("teammateRef").GetString(),"N",out _))throw new FormatException("Invalid teammate reference."); break;
+            case "open_door": case "close_door": case "place_item": case "place_object": case "place_rope": goto case "place_tile";
+            case "collect_drops":
+                if (keys.Except(new[]{"radiusPixels","typeIds","entityRef"}).Any()) throw new FormatException("Unexpected collect_drops parameter.");
+                if (keys.Contains("radiusPixels")) Integer("radiusPixels", 16, 960);
+                if (keys.Contains("entityRef"))
+                {
+                    var reference = args.GetProperty("entityRef");
+                    if (reference.ValueKind != JsonValueKind.String || CharacterCount(reference) is < 1 or > 128 || keys.Contains("typeIds"))
+                        throw new FormatException("Invalid drop reference.");
+                }
+                if (keys.Contains("typeIds"))
+                {
+                    var types = args.GetProperty("typeIds"); var unique = new HashSet<int>();
+                    if (types.ValueKind != JsonValueKind.Array || types.GetArrayLength() is < 1 or > 16)
+                        throw new FormatException("Invalid drop types.");
+                    foreach (var type in types.EnumerateArray())
+                        if (!type.TryGetInt32(out int value) || value is < 1 or > 65535 || !unique.Add(value))
+                            throw new FormatException("Invalid drop type.");
+                }
+                break;
+            case "activate_observed_tile":
+                Fields("target");
+                goto case "mine_target";
             case "mine_target":
             {
-                if(!keys.Contains("target")){Fields("x","y");Integer("x",0,100000);Integer("y",0,100000);break;}
-                Fields("target");
+                bool hasCluster=args.TryGetProperty("cluster",out var cluster);
+                if(hasCluster&&cluster.ValueKind is not (JsonValueKind.True or JsonValueKind.False))throw new FormatException("Expected boolean cluster.");
+                if(!keys.Contains("target"))
+                {
+                    Fields(hasCluster?new[]{"x","y","cluster"}:new[]{"x","y"});
+                    Integer("x",0,100000);Integer("y",0,100000);break;
+                }
+                Fields(hasCluster?new[]{"target","cluster"}:new[]{"target"});
                 var mineTarget=args.GetProperty("target");
                 string[] mineTargetKeys={"kind","x","y","typeId","worldSessionId","actorGeneration","actorSlot","observedGameUpdate","observedAtUnixMs","targetToken"};
                 if(mineTarget.ValueKind!=JsonValueKind.Object||!mineTarget.EnumerateObject().Select(f=>f.Name).OrderBy(k=>k).SequenceEqual(mineTargetKeys.OrderBy(k=>k)))throw new FormatException("Invalid observed mine target");
@@ -221,7 +319,13 @@ internal static class AtomicParameters
                 break;
             }
             case "mine_tile": case "place_tile": case "interact_tile": case "mine_wall": case "place_wall": case "hammer_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
-            case "attack_entity": Fields("entityRef"); if (args.GetProperty("entityRef").ValueKind != JsonValueKind.String || CharacterCount(args.GetProperty("entityRef")) is < 1 or > 150) throw new FormatException("Invalid entityRef."); break;
+            case "boss_encounter": case "combat_attack": case "attack_entity":
+                if(op=="combat_attack" && keys.Remove("button") && args.GetProperty("button").GetString() is not ("left" or "right"))throw new FormatException("Invalid weapon button.");
+                if(op=="boss_encounter" && keys.Remove("regroupTeammateRef") && !Guid.TryParseExact(args.GetProperty("regroupTeammateRef").GetString(),"N",out _))throw new FormatException("Invalid regroup reference.");
+                if(op=="boss_encounter" && keys.Contains("durationSeconds"))
+                { Fields("entityRef","durationSeconds"); Integer("durationSeconds",1,600); }
+                else Fields("entityRef");
+                if (args.GetProperty("entityRef").ValueKind != JsonValueKind.String || CharacterCount(args.GetProperty("entityRef")) is < 1 or > 150) throw new FormatException("Invalid entityRef."); break;
             case "use_item":
                 if (keys.Count == 0) break;
                 Fields("target"); var target = args.GetProperty("target");

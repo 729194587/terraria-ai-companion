@@ -16,10 +16,13 @@ async def verify(args):
     profile = args.profile
     await wait_file(profile / "action-fixture.json", 90)
     rows = []
+    scene_number = 0
     bridge = ServerAiBridge(args.port)
     assert "place_rope" in bridge.supported_atomic_operations
 
     async def setup(mode):
+        nonlocal scene_number
+        scene_number += 1
         ready = profile / "rope-ready.json"
         ready.unlink(missing_ok=True)
         temp = profile / "rope-request.tmp"
@@ -27,9 +30,9 @@ async def verify(args):
         temp.replace(profile / "rope-request")
         return await wait_file(ready)
 
-    async def place(label, x, y, status, reason=None):
+    async def action_for(label, source, status, reason=None, *, require_release=True):
         result = await LuaRuntime(bridge).execute(
-            "return api('place_rope',{x=%d,y=%d})" % (x, y),
+            source, chat_id=f'rope-fixture-{scene_number}',
             limits=Limits(seconds=18, calls=1, actions=1))
         action = result.get("value") or result.get("lastAction") or {}
         rows.append(dict(label=label, action=action))
@@ -37,10 +40,13 @@ async def verify(args):
         assert action.get("status") == status, (label, action, profile)
         if reason:
             assert action.get("reason") == reason, (label, action, profile)
-        if status != "unknown":
+        if require_release and status != "unknown":
             assert action["endEvidence"]["inputsReleased"], action
         print(f"Native rope {label}: {action['status']} {action['reason']}", flush=True)
         return action
+
+    async def place(label, x, y, status, reason=None, operation="place_rope"):
+        return await action_for(label, "return api('%s',{x=%d,y=%d})" % (operation, x, y), status, reason)
 
     async def observed_tile(x, y):
         reply = await asyncio.to_thread(bridge.command, "query_atomic", operation="inspect_tile", arguments=dict(x=x, y=y))
@@ -101,6 +107,37 @@ async def verify(args):
         assert not (await observed_tile(x, min_y - 1))["hasTile"], rejected
         assert not (await observed_tile(x, bottom_gap))["hasTile"] and await rope_stack() == initial - len(targets)
 
+        shaft = await setup("build_and_climb")
+        x, floor = shaft["x"], shaft["floor"]
+        assert await rope_stack() == 10
+        await action_for("select_rope", "return api('select_hotbar_slot',{slot=5})", "completed",
+                         require_release=False)
+        refused = await action_for("cursorless_rope_use", "return api('use_item',{})",
+                                   "failed", "unsupported_selected_item")
+        assert refused["endEvidence"]["inputsAcquired"] is False
+        assert "place_tile" in refused["reasonDetail"] and "place_rope" in refused["reasonDetail"]
+        assert await rope_stack() == 10 and not (await observed_tile(x, floor - 1))["hasTile"]
+        for index, row in enumerate(range(floor - 1, floor - 7, -1), start=1):
+            assert not (await observed_tile(x, row))["hasTile"], row
+            action = await place(f"place_tile-rope-{index}", x, row, "completed",
+                                 "native_rope_placed_and_consumed", operation="place_tile")
+            evidence = action["evidence"]
+            assert (evidence["x"], evidence["y"], evidence["extended"]) == (x, row, False), evidence
+            assert evidence["nativePlacementEvents"] == evidence["consumedCount"] == 1, evidence
+            assert await observed_type(x, row) == 213 and await rope_stack() == 10 - index
+        occupied = await place("place_tile-existing-rope", x, floor - 6, "failed", "target_occupied",
+                               operation="place_tile")
+        assert occupied["endEvidence"]["inputsAcquired"] is False and await rope_stack() == 4
+        assert not (await observed_tile(x, floor - 7))["hasTile"]
+        target_feet = floor * 16 - 38
+        climb = await action_for("climb_new_rope",
+                                 "return api('move_on_rope',{ropeX=%d,targetFeetY=%d,finish='hold',maxUpdates=180})"
+                                 % (x, target_feet), "completed", "native_rope_hold_verified")
+        proof = climb["evidence"]
+        assert proof["attached"] and proof["attachmentObserved"] and proof["settled"], proof
+        assert proof["startFeetY"] == floor * 16 and abs(proof["feetY"] - target_feet) <= 4, proof
+        assert await rope_stack() == 4
+
         await setup("cancel")
         await asyncio.to_thread(bridge.command, "start_atomic", operation="place_rope",
                                 arguments=dict(x=x, y=y), expectedGeneration=bridge.binding["generation"])
@@ -115,7 +152,7 @@ async def verify(args):
         assert before["empty"] and before["stack"] == 5 and before["inputReleased"], before
 
         scope = [json.loads(line) for line in (profile / "rope-scope.jsonl").read_text().splitlines()]
-        assert scope and all(r["unchanged"] and r["unscoped"] for r in scope), scope
+        assert scope and all(r["actorScoped"] and r["unscoped"] for r in scope), scope
         assert {(r["x"], r["y"]) for r in scope if r["mode"] == "plain"} == {(x, y + i) for i in range(3)}, scope
         assert [(r["x"], r["y"]) for r in scope if r["mode"] == "upward"] == [(x, row) for row in targets], scope
 

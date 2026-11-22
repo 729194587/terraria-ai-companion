@@ -4,7 +4,7 @@ Lua Agent 允许模型在一次 `execute_lua` 工具调用中提交完整程序�
 
 ## 调用模型
 
-- Agent 对模型只注册 `execute_lua`；内部 Lua `api(name, args)` 调用由宿主分发。
+- Server AI 的游戏查询与动作使用 `execute_lua`；内部 Lua `api(name, args)` 调用由宿主分发。模型还可通过只读 `read_skill` 查阅[已注册的玩法攻略](TERRARIA_AGENT_GAMEPLAY_MVP_PHASE1.md)。
 - 模型可使用局部函数、条件、有限循环和普通 Lua 计算，根据观察结果动态选择后续动作。
 - 多步骤任务优先组合现有查询和原子操作；不要假设存在未开放的客户端 API 或专用任务函数。
 - `explore()` 等 helper 是可选程序辅助，不是强制探索策略，也不替代 Agent 自主决策。
@@ -33,3 +33,9 @@ Lua Worker 使用受限运行环境。调用次数、动作次数、源码大小
 - `python/server_ai_contract.py`、`python/server_ai.py`：Server AI 能力投影和调用适配。
 - [Lua Runtime](LUA_RUNTIME.md)：沙箱、取消、失败恢复和执行细节。
 - [Lua 可观测性](LUA_OBSERVABILITY.md)：Trace 与诊断格式。
+
+## 使用内置玩法模块
+
+Server AI 的系统上下文在 `available_modules` 中列出当前连接可用的函数。用 `read_skill` 查玩法知识，用 `api("help",{name=...})` 查底层参数和回执。在 `execute_lua` 中可直接调用模块，例如 `return terraria.crafting.make(8,7)` 请求制作至少七支火把。
+
+`terraria.building.construct(blueprint,{milliseconds=1000})` 接受与 `build_diff` 相同的 Blueprint。报告中的 `before` 是施工前调查，`task` 是任务回执，`after` 是可信终态后的复查。初始已全部匹配时直接返回该次调查。返回 `running` 时保留 `taskId`，后续用 `query_task` 或 `await_task` 跟踪原任务。调查未知时停止，部分完成时查看原回执和仍待施工的条目。

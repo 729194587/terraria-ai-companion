@@ -30,6 +30,18 @@ public static class ServerAiAtomicOfflineTests
     public static void Run()
     {
         {
+            var f=new Fixture();bool maintenance=true;
+            f.Actions.MaintenanceBusy=()=>maintenance;
+            string id=Fixture.Id();
+            Check(f.Send("start",id).GetProperty("ok").GetBoolean()&&f.Actions.HasActive,
+                "Agent admission reserves the lane while maintenance drains");
+            for(int i=0;i<4;i++)f.Tick();
+            Check(f.Writes==0&&f.Actions.HasActive,"maintenance cleanup prevents concurrent native input");
+            maintenance=false;f.Tick();f.Tick();
+            Check(f.Writes==1&&!f.Actions.HasActive&&f.Action(id).GetProperty("status").GetString()=="completed",
+                "Agent resumes once after maintenance releases its lane");
+        }
+        {
             var f = new Fixture(); string first = null, last = null;
             for (int i = 0; i < 1300; i++)
             {

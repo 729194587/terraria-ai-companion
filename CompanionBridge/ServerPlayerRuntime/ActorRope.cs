@@ -25,11 +25,14 @@ internal static class ActorRope
 
     // PlaceThing_Tiles checks its requested target before retargeting. Apply
     // the same native rectangle to the final cell as a server action bound.
-    private static bool InReach(Player p,Item item,int x,int y)
-        =>x>=p.position.X/16-Player.tileRangeX-item.tileBoost-p.blockRange
-        &&x<=(p.position.X+p.width)/16+Player.tileRangeX+item.tileBoost-1+p.blockRange
-        &&y>=p.position.Y/16-Player.tileRangeY-item.tileBoost-p.blockRange
-        &&y<=(p.position.Y+p.height)/16+Player.tileRangeY+item.tileBoost-2+p.blockRange;
+    internal static bool InReach(Player p,Item item,int x,int y)
+        =>InReachAt(p,item,x,y,p.position.X,p.position.Y);
+
+    internal static bool InReachAt(Player p,Item item,int x,int y,float left,float top)
+        =>x>=left/16-Player.tileRangeX-item.tileBoost-p.blockRange
+        &&x<=(left+p.width)/16+Player.tileRangeX+item.tileBoost-1+p.blockRange
+        &&y>=top/16-Player.tileRangeY-item.tileBoost-p.blockRange
+        &&y<=(top+p.height)/16+Player.tileRangeY+item.tileBoost-2+p.blockRange;
 
     internal static string Resolve(Player p,Item item,int x,int y,out Target target)
     {

@@ -64,7 +64,7 @@ return api('navigate_to_landing_region',candidate.target)
         self.enable();instructions,tools=lua_agent.server_contract(self.bridge)
         self.assertIn('observe_scene',instructions);self.assertIn('candidate.target',instructions)
         self.assertIn('不保证路径/可达',instructions);self.assertIn('不是整树计数',instructions)
-        self.assertEqual(['execute_lua'],[t['function']['name'] for t in tools])
+        self.assertEqual(['execute_lua','read_skill'],[t['function']['name'] for t in tools])
         self.assertIn('coveredScopeComplete',instructions);self.assertIn('rejectedCount',instructions)
 
     async def test_object_diagnostics_pass_through_and_remain_observation_only(self):

@@ -35,6 +35,24 @@ class ReasonProjectionTests(unittest.TestCase):
                 self.assertEqual(status == 'cancelled', restored['cancelled'])
 
 
+class CombatReceiptTests(unittest.TestCase):
+    def test_defense_resolves_separate_spawn_evidence_and_external_removal(self):
+        a = {'Slot': 0, 'TypeId': 1, 'EntityRef': 'spawn-a'}
+        b = {'Slot': 0, 'TypeId': 1, 'EntityRef': 'spawn-b'}
+        strike = {'LifeBefore': 8, 'LifeAfter': -1, 'DamageDone': 9, 'Defeated': True, 'GameUpdate': 10}
+        proof = dict(source='reflex', threat='native', target=b, lastHit=None, encounters=[
+            dict(Target=a, Reason='combat_target_defeated', LastHit=strike),
+            dict(Target=b, Reason='combat_target_invalidated', LastHit=None),
+        ])
+        result = dict(reason='combat_threats_cleared', inputsReleased=True, effectVerified=True)
+        task = dict(taskName='combat_attack', taskId='defense', status='completed')
+        action = dict(actionId='defense', task=task, targetTask=dict(entityRef='spawn-a', threat='native'))
+        self.assertTrue(atomic.verified_server_combat(action, task, result, proof))
+        proof['encounters'][-1].update(Reason='combat_target_defeated', LastHit=strike)
+        proof['lastHit'] = strike
+        self.assertFalse(atomic.verified_server_combat(action, task, result, proof))
+
+
 class StopContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_supervisor_deadline_preserves_actual_stop_terminal(self):
         for status in ('completed','failed','timeout','cancelled','unknown'):

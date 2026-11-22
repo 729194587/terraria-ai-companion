@@ -6,6 +6,14 @@ using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
 
 public static class TaskRuntimeOfflineTests
 {
+    private sealed class LeaseTask(string name) : CompanionTask
+    {
+        internal ulong Version;
+        internal override string Name=>name;
+        internal override ulong ProgressVersion=>Version;
+        internal override Result Tick(AiReadOnlyProtocol.Identity frame)=>Running();
+        internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)=>new(status,reason,null,true);
+    }
     private static int checks;
     private static void Check(bool ok,string text){if(!ok)throw new Exception(text);checks++;}
     private sealed class World : IMineTargetWorld
@@ -15,6 +23,7 @@ public static class TaskRuntimeOfflineTests
         internal bool Settled=true;
         internal bool PendingPlanning,PreferChanges;
         internal Result PlanningStop;
+        internal CompanionTask Clearance;
         internal int PlanningReleases;
         public bool PlanningPending=>PendingPlanning;
         public Result PlanningFailure=>PlanningStop;
@@ -28,12 +37,27 @@ public static class TaskRuntimeOfflineTests
         public bool CanMine()=>Reach;
         public JsonElement? FindApproach()=>NoApproach?null:JsonSerializer.SerializeToElement(new{minPlayerLeftX=100,maxPlayerLeftX=108,surfaceY=200});
         public JsonElement MineArguments()=>JsonSerializer.SerializeToElement(new{x=12,y=10});
-        public NavigationStep FindOpening(int remainingTiles)=>AllowOpening
-            ?new(PlaceSupport?"place_tile":"mine_tile",JsonSerializer.SerializeToElement(new{x=11,y=10})):null;
+        public NavigationStep FindOpening(int remainingTiles)=>Clearance!=null?new("excavate_tiles",default,Clearance)
+            :AllowOpening?new(PlaceSupport?"place_tile":"mine_tile",JsonSerializer.SerializeToElement(new{x=11,y=10})):null;
         public bool OpeningSettled()=>Settled;
         public string OpeningLandingError()=>PlaceSupport?"fixture_landing_changed":null;
         public bool TargetAbsent()=>Absent;
         public object Target=>new{x=12,y=10};
+    }
+    private sealed class ClearanceRun(World world) : CompanionTask
+    {
+        internal int Starts;
+        internal override string Name=>"excavate_tiles";
+        internal override void Start(AiReadOnlyProtocol.Identity frame)=>Starts++;
+        internal override Result Tick(AiReadOnlyProtocol.Identity frame)
+        {
+            world.Reach=true;
+            return new("completed","excavation_run_verified",
+                new MiningRunReceipt(2,new[]{new ExcavationProof(11,10,1,4,2),new ExcavationProof(11,11,1,8,2)},12,12,4,10),
+                true,true);
+        }
+        internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)
+            =>new(status,reason,new MiningRunReceipt(2,new[]{new ExcavationProof(11,10,1,4,2)},12,6,2,10),true);
     }
     private sealed class Native : AiAtomicActions.IExecutor
     {
@@ -59,6 +83,39 @@ public static class TaskRuntimeOfflineTests
     }
     public static void Run()
     {
+        foreach(var name in new[]{"navigate_to","navigate_to_landing_region","mine_target"})
+        {
+            var task=new LeaseTask(name);
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var slot=new TaskSlot(task,name,null,frame,5);
+            slot.Tick(frame with{GameUpdate=1});
+            task.Version++;
+            var progress=slot.Tick(frame with{GameUpdate=5});
+            if(name=="mine_target")
+                Check(progress.Status=="timeout"&&progress.Reason=="task_game_update_deadline","mining retains its fixed deadline");
+            else
+            {
+                Check(progress.Status=="running"&&slot.Record.Deadline==10,"verified progress renews root and movement leases");
+                Check(slot.Tick(frame with{GameUpdate=9}).Status=="running","planning may consume the remaining lease");
+                var expired=slot.Tick(frame with{GameUpdate=10});
+                Check(expired.Status=="timeout"&&expired.Reason=="navigation_progress_lease_expired","unchanged progress does not renew");
+            }
+        }
+        foreach(bool cancel in new[]{false,true})
+        {
+            var world=new World{PreferChanges=true,PlaceSupport=true};var native=new Native();
+            var run=new ClearanceRun(world);world.Clearance=run;
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var root=new TaskSlot(new AutonomousNavigationTask("batch",world,native),"batch",null,frame,100);
+            for(ulong tick=1;tick<4;tick++)root.Tick(frame with{GameUpdate=tick});
+            var result=cancel?root.Stop(frame with{GameUpdate=3},"cancelled","explicit_stop"):root.Tick(frame with{GameUpdate=4});
+            if(!cancel)result=root.Tick(frame with{GameUpdate=5});
+            var view=JsonSerializer.SerializeToElement(root.View());
+            Check(result.Status==(cancel?"cancelled":"completed")&&run.Starts==1&&native.Starts.Count==0,
+                "navigation uses one clearance child and preserves its lifecycle");
+            Check(view.GetProperty("progress").GetProperty("dugTiles").GetInt32()==(cancel?1:2),
+                "navigation counts only individually verified clearance effects, including cancellation");
+        }
         {
             var world=new World{PendingPlanning=true};var native=new Native();
             var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);

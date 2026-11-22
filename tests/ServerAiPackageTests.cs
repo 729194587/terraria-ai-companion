@@ -115,9 +115,13 @@ public static class ServerAiPackageTests
         Check(!objectPlacement.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.Operand is MethodReference r&&r.Name is "set_HasTile" or "PlaceObject" or "PlaceTile" or "ConsumeItem"),"object executor only observes native placement, no Tile/inventory mutation");
         Check(Calls(objectPlacement.Methods.Single(m=>m.Name=="Definition"&&m.Parameters.Count==1),"GetTileData")&&Calls(objectPlacement.Methods.Single(m=>m.Name=="ReadFrames"),"get_TileFrameX"),"object placement reads selected native definition and verifies every frame");
         Check(Calls(Type("ActorItemUse").Methods.Single(m=>m.Name=="Update"),"AfterCheck")
-            &&Calls(Type("ActorItemUse").Methods.Single(m=>m.Name=="SkipCursor"),"Dispatch"),"placement uses original ItemCheck owner stage and observes its consumption");
-        Check(Calls(placement.Methods.Single(m=>m.Name=="Coordinate"),"get_IsMainThread")
-            &&Calls(placement.Methods.Single(m=>m.Name=="Coordinate"),"Allowed"),"placement coordinate scope requires simulation thread and owned item execution");
+            &&Calls(Type("ActorPlacement").Methods.Single(m=>m.Name=="CheckItem"),"ItemCheck"),"placement uses original ItemCheck owner stage and observes its consumption");
+        var pointer=placement.Methods.Single(m=>m.Name=="CheckItem");
+        Check(Calls(pointer,"get_IsMainThread")&&Calls(pointer,"Placing")
+            &&pointer.Body.ExceptionHandlers.Any(h=>h.HandlerType==ExceptionHandlerType.Finally),
+            "placement mouse scope requires simulation thread and owned item execution and restores in finally");
+        Check(!placementIL.Any(i=>i.Operand is MethodReference r&&r.Name.StartsWith("PlaceThing_",StringComparison.Ordinal)),
+            "placement dispatch does not call or patch individual native placement branches");
         var nativeStart=actions.Methods.Single(m=>m.Name=="StartCore");
         Check(nativeStart.Body.Instructions.Count(i=>i.Operand is MethodReference r&&r.Name=="Start"&&r.DeclaringType.Name is "ServerAiNavigation" or "ActorMining" or "ActorItemUse")==4,"both navigation goals delegate to G4 boundary; use/mining retain G6/G7");
         Check(Calls(nativeStart,"StartPlacement"),"server placement dispatch uses existing item-use lifecycle");
@@ -189,7 +193,18 @@ public static class ServerAiPackageTests
         Check(!taskIL.Any(i=>i.Operand is MethodReference r&&r.DeclaringType.Name is "AiReadOnlyServer" or "AiReadOnlyProtocol" or "AiAtomicActions"),"task runtime never re-enters top-level IPC/action dispatch");
         Check(Calls(Type("ChildExecutor").Methods.Single(m=>m.Name=="Start"),"StartCore"),"children start internal native contexts directly");
         Check(Calls(Type("TaskSlot").Methods.Single(m=>m.Name=="Tick"),"get_GameUpdate"),"task slot gates advancement on actual game update identity");
-        Check(Calls(Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="CanMine"),"QueryReach")&&Calls(Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="FindApproach"),"QueryReach"),"actual stance and candidate intervals use the native mining range query");
+        var actorMining=Type("ActorMining");
+        var chooseTool=actorMining.Methods.Single(m=>m.Name=="ChooseTool");
+        Check(Calls(Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="CanMine"),"ChooseTool")
+            &&Calls(chooseTool,"QueryReach")&&Calls(Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="FindApproach"),"QueryReach"),
+            "actual stance and candidate intervals use the native mining range query");
+        var edits=Type("NativeNavigationEdits");
+        Check(Calls(chooseTool,"EstimateUpdates")&&Calls(actorMining.Methods.Single(m=>m.Name=="Start"),"ChooseTool")
+            &&Calls(edits.Methods.Single(m=>m.Name=="Mine"),"ChooseTool")&&Calls(edits.Methods.Single(m=>m.Name=="PlanCut"),"ChooseTool"),
+            "ordinary mining and both navigation clearance paths use the same cost model");
+        Check(Calls(Type("NativeNavigationWorld").Methods.Single(m=>m.Name=="InventoryStamp"),"CapabilityStamp")
+            &&Calls(edits.Methods.Single(m=>m.Name=="RevalidateOpening"),"CapabilityStamp"),
+            "planning and armed cuts invalidate on mining capability changes");
         var queryReach=Type("ActorMining").Methods.Single(m=>m.Name=="QueryReach");
         Check(Calls(queryReach,"Capture")&&queryReach.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="inRange"),"reach projection keeps actor binding and audited native delegate");
         var taskResult=Type("ServerAiNativeActions").Methods.Single(m=>m.Name=="TaskResult");

@@ -1,6 +1,7 @@
 """LLM atomic operations. One Bridge session, game-thread actions and release receipts."""
 import asyncio
 import copy
+import json
 import math
 import re
 from time import perf_counter
@@ -32,28 +33,50 @@ MINE_TARGET = {"type": "object", "properties": {
     "actorSlot": {"type": "integer", "minimum": 0, "maximum": 254},
     "targetToken": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"}},
     "required": ['kind','x','y','typeId','worldSessionId','actorGeneration','actorSlot','observedGameUpdate','observedAtUnixMs','targetToken'], "additionalProperties": False}
+SERVER_INTERACT_ARGS = {"type": "object", "properties": {"target": MINE_TARGET},
+                        "required": ["target"], "additionalProperties": False}
 TYPE_IDS = {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535},
             "minItems": 1, "maxItems": 32, "uniqueItems": True}
 INVENTORY_SLOT = {"type": "integer", "minimum": 0, "maximum": 49}
 EQUIPMENT_SLOT = {"type": "string", "minLength": 1, "maxLength": 256}
 INVENTORY_TOKEN = {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"}
+CONTAINER_TRANSFER_ARGS = {
+    "inventorySlot": INVENTORY_SLOT, "containerSlot": {"type": "integer", "minimum": 0, "maximum": 39},
+    "count": {"type": "integer", "minimum": 1, "maximum": 9999},
+    **dict.fromkeys(("inventoryToken", "containerToken", "slotToken"), INVENTORY_TOKEN),
+}
 INVENTORY_GUARDS = {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN,
                     "destinationToken": INVENTORY_TOKEN}
 SCENE_LAYERS = ["map", "geometry", "objects", "hazards", "landingRegions", "placementCandidates", "objectPlacementCandidates"]
+SCENE_EXCLUDED_PARAMS = {'local': ('width', 'height'), 'region': ('maxRegions', 'maxPlacements')}
+REGION_DEFAULT_LAYERS = ('geometry', 'objects', 'hazards')
+REGION_DEFAULT_WIDTH, REGION_DEFAULT_HEIGHT, REGION_MAX_AREA = 120, 68, 8192
+INVENTORY_MODE_ARGUMENTS = {'item': 'item', 'slots': 'slots'}
+REGION_LAYERS = ("map", "geometry", "objects", "hazards")
 SCENE_TEXT_CONTRACT = (
     "actor.bodyTileBounds为宿主按实际碰撞框计算的Tile范围，minX/minY/maxX/maxY均为包含端点；右/下边缘恰在Tile分界线时不包含边缘外的格。actor.mapTile是中心格，不是身体左上角；范围未裁剪至观察窗口，也不表示其中格为空或安全。"
     "observe_scene schemaVersion=2：固定图例/对象分组解释由本契约统一给出；三类候选的validation提升到集合级，matchedCount=0时省略validation。"
     "geometry图符：.=不阻挡（不等于可落脚），#=完整实心，h=半砖，1..4=实心斜坡，平平台为单字符=，a/b=斜平台，A=虚化Tile，?=未知碰撞/世界边界。"
-    "map另有T=树干组件、O=矿脉、C=箱柜、D=门、W=工作台、t=火把光源物体、$=掉落、N=NPC、P=其他玩家、*=敌对弹幕、@=AI；~=水、L=岩浆、H=蜂蜜、S=微光、!=接触/NPC危险、B=巨石、M=运动模型排除。"
+    "map另有T=树干组件、O=矿脉、C=箱柜、D=门、W=工作台、c=椅子、t=火把光源物体、$=掉落、N=NPC、P=其他玩家、*=敌对弹幕、@=AI；~=水、L=岩浆、H=蜂蜜、S=微光、!=接触/NPC危险、B=巨石、M=运动模型排除。"
     "叠加优先级是未知>Tile危险>Actor/实体/对象>几何；图符不能恢复被覆盖的geometry，重叠危险须看结构化sources，边缘实体标记可能钳位；墙不阻挡。"
-    "对象范围为原版树干、19种原版矿、箱柜/门/工作台、原版Torches各样式及相交活跃实体，未分类不等于不存在。"
+    "对象范围为原版树干、19种原版矿、箱柜/门/工作台/椅子、原版Torches各样式及相交活跃实体，未分类不等于不存在。"
+    "门、椅子、工作台和火把可含furniture：category分类，footprint为世界Tile占地，origin是占地内原生原点偏移，placementAnchor是对应绝对Tile坐标，doorState区分open/closed。contentKey标识Tile类型。旧回执可能缺少furniture。"
     "light_source逐火把返回typeId/contentKey、observedBounds与details.anchorTile（真实Tile坐标），details保留frameX/frameY/actuated；分类不保证点亮或照明，不覆盖其他灯具/Mod光源。objects先返回非光源，再返回光源，组内按距离排序；objectCounts.observed/returned与集合截断共同说明省略，map标记不受上限影响。"
     "tree_component是相连观察树干，可能拆分一棵或合并相邻树，complete始终false，不是整树计数；ore_component按同类型四邻接，边界/未知使其不完整。"
-    "箱柜/门/工作台按注册锚点分组，未验证完整家具占地或内容；动态实体按当前相交碰撞框观察，槽位/objects.id不是跨观察持久身份。"
+    "箱柜/门/工作台/椅子按左上角分组；有furniture时complete表示占地各格均已观察到，视野裁剪时仍保留完整footprint；动态实体按当前相交碰撞框观察，槽位/objects.id不是跨观察持久身份。"
     "所有候选仅为几何预筛选，不保证路径/可达或原生放置权限，行动后仍需真实回执和新鲜观察。"
 )
 MINE_TARGET_DESCRIPTION = "服务器复合挖掘（server_ai_tasks_v1）。传 observe_scene 矿物对象的 target，或传明确的绝对 Tile 坐标 x/y，两种形式互斥。观察目标须通过身份、30秒及600游戏更新时效和目标变化检查。与 mine_tile 共用主背包自动选工具、临时切换快捷栏及原生触及和工具判定。已在安全站位且够得着时直接挖掘，否则先尝试沿现有地形接近，抵达后重验目标和站位。最终核验指定格，可连带拆除该格所属家具。按 evidence.task.lastResult 和子动作释放证据核验，掉落入包需另行观察。unknown 停止。"
 PLACE_OBJECT_DESCRIPTION = "服务器 AI 放置快捷栏选中的多格对象。x/y 是绝对 Tile 锚点，按选中物品的 createTile、placeStyle 和原生 TileObjectData 解析占地和 Anchor。由原生范围、碰撞和 Mod Hook 判定；依赖全局光标的特殊对象不支持。核验放置事件、整组帧、消耗和释放后才完成。取消可能已有副作用，unknown 停止。10秒上限。"
+
+COMBAT_ROLE = {"type":"object","properties":{
+        "hotbarKey":{"type":"integer","minimum":0,"maximum":9}, "expectedTypeId":{"type":"integer","minimum":1,"maximum":2147483647}, "inventoryToken":INVENTORY_TOKEN},
+        "required":["hotbarKey","expectedTypeId","inventoryToken"],"additionalProperties":False}
+
+MERCHANT_REF = {"type": "string", "minLength": 1, "maxLength": 150}
+SHOP_TOKEN = {"type": "string", "pattern": "^[0-9a-f]{64}$", "minLength": 64, "maxLength": 64}
+
+SALE_SOURCE = {"entityRef": MERCHANT_REF, "sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN}
 
 TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地下视野采用遮挡/近身/可见原版火把近似。",
     {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
@@ -78,6 +101,20 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("wait", "可取消的宿主真实时间等待，milliseconds为1..10000。不会推进游戏时间、持有按键或确认游戏效果；受Lua总时限和工具次数预算约束。",
          {"milliseconds": {"type": "integer", "minimum": 1, "maximum": 10000}}, ["milliseconds"]),
     tool("observe_terrain", "复用get_terrain读取45×29局部碰撞及同次玩家状态；Tile为16像素。"),
+    tool("inspect_npc_shop", "读取有交互资格的普通商人商品列表。未知条件或未支持的商品应按返回状态处理。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
+    tool("open_npc_dialogue", "与附近的普通商人交谈，成功时从 evidence.text 读取台词。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
+    tool("close_npc_dialogue", "结束绑定 AI 与普通商人的交谈。", {}, []),
+    tool("quote_npc_purchase", "按绑定 AI 的当前购物状态报价，返回短时购买令牌、单价与支付能力。默认一件，支持批量的服务器每次最多 50 件。", {"entityRef": MERCHANT_REF, "itemType": {"type": "integer", "minimum": 1, "maximum": 2147483647}, "quantity": {"type": "integer", "minimum": 1, "maximum": 50}}, ["entityRef", "itemType"]),
+    tool("quote_nurse_heal", "读取附近护士的治疗量、诊金（铜）、可清除减益和短时报价。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
+    tool("heal_at_nurse", "使用同一护士的报价治疗绑定 AI 并清除可治疗减益，使用随身及四个银行的钱币支付。", {"entityRef": MERCHANT_REF,"quoteToken": SHOP_TOKEN}, ["entityRef","quoteToken"]),
+    tool("quote_reforge", "凭主背包槽令牌向哥布林工匠查询当前前缀和一次重铸的铜币费用。", SALE_SOURCE, list(SALE_SOURCE)),
+    tool("reforge_item", "使用同一工匠和槽位的新鲜报价进行一次原生随机重铸，可能抽回原前缀。", {**SALE_SOURCE, "quoteToken": SHOP_TOKEN}, [*SALE_SOURCE, "quoteToken"]),
+    tool("quote_npc_sale", "使用主背包指定槽的新鲜 inventoryToken 查询向普通商人出售一件的预计铜币收入。", SALE_SOURCE, list(SALE_SOURCE)),
+    tool("sell_npc_item", "使用同一商人和背包槽的有效出售报价卖出一件，核验实收钱币和库存。", {**SALE_SOURCE, "quoteToken": SHOP_TOKEN}, [*SALE_SOURCE, "quoteToken"]),
+    tool("buy_npc_item", "使用同一商人的新鲜报价令牌购买报价指定数量的商品。核验随身及四个银行的钱币总额与入包数量；过期后须重新查询报价。", {"entityRef": MERCHANT_REF, "quoteToken": SHOP_TOKEN}, ["entityRef", "quoteToken"]),
+    tool("inspect_npc_housing", "读取新鲜 NPC 引用对应的原生住所和房间管理器登记。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
+    tool("assign_npc_home", "把指定现有城镇 NPC 分配到用室内 Tile 坐标指定的有效空房。使用新鲜 entityRef；核对 NPC 和管理器的住所读回。", {**TILE, "entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["x","y","entityRef"]),
+    tool("inspect_housing", "以室内绝对 Tile 坐标执行只读原生验房。住宅判定见 data.status。", TILE, ["x", "y"]),
     tool("inspect_tile", "读取指定Tile类型、Frame、形状、液体、墙/线/颜色，附内容键及距离/工具等preflight局部前提（不保证可达或可执行）；服务器可附data.miningSupportImpact：只读比较当前姿态移除单格前后的支撑，检查available/reasons/current/afterRemoval/supportDeltaPixels；不预测下落落点、不保证返程或挖掘许可，缺字段表示未提供；越界或未加载显式未知。", TILE, ["x", "y"]),
     tool("scan_entities", "按世界像素半径扫描客户端已知NPC、掉落物、其他玩家；先按typeIds/npcFilter筛选，再按玩家中心距离排序截断；npcFilter须category=npc，typeIds须npc/item。NPC entityRef仅当前世界实例有效；截断不等于没有。",
          {"category": {"type": "string", "enum": ["all", "npc", "item", "player"]}, "radius": {"type": "number", "minimum": 1, "maximum": 1600},
@@ -87,6 +124,24 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          {**{k: {"type": "integer", "minimum": 0, "maximum": 100000} for k in ('minX', 'minY', 'maxX', 'maxY')},
           "tileTypes": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535}, "minItems": 1, "maxItems": 32, "uniqueItems": True},
           "maxResults": {"type": "integer", "minimum": 1, "maximum": 256}}, ['minX', 'minY', 'maxX', 'maxY', 'tileTypes']),
+    tool("open_container", "仅服务器AI。指定原版箱子或已放置的猪猪储蓄罐、保险箱、护卫熔炉、虚空保险库任一格的 Tile 坐标。个人仓库绑定当前 AI。需在原生范围内且箱子未锁、无人占用；已有打开的箱子时先关闭。带机关的原版箱子可能触发机关。", TILE, ["x", "y"]),
+    tool("inspect_container", "观察 AI 当前打开的箱子或个人仓库。返回锚点、类型、Chest索引及40个槽位，签发新的容器和槽位Token。未打开或上下文失效时返回不可用。"),
+    tool("deposit_container_item", "仅服务器AI。从指定普通背包槽存入当前箱子的指定槽。传最新 inspect_inventory(mode=slots) 和 inspect_container 的三种Token。目标容量不足时，只搬入可容纳数量，回执failed且effectStatus=partial。", CONTAINER_TRANSFER_ARGS, list(CONTAINER_TRANSFER_ARGS)),
+    tool("withdraw_container_item", "仅服务器AI。从当前箱子的指定槽取到指定普通背包槽。传最新 inspect_inventory(mode=slots) 和 inspect_container 的三种Token。目标容量不足时，只取出可容纳数量，回执failed且effectStatus=partial。", CONTAINER_TRANSFER_ARGS, list(CONTAINER_TRANSFER_ARGS)),
+    tool("quick_stack_nearby", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到600像素内已有同类物品且无人占用的原版箱子。"),
+    tool("quick_stack_container", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到当前箱子的已有同类物品。需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("loot_all", "服务器AI。按拾取规则从当前箱子批量取出，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("deposit_all", "服务器AI。批量存入普通背包10..49中未收藏物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("collect_drops", "通过 submit_task 收集本轮观察到的附近掉落物。默认320像素，最多16个。可用 typeIds 筛选，或用 scan_entities 返回的掉落物 entityRef 指定目标。", {
+        "radiusPixels": {"type": "integer", "minimum": 16, "maximum": 960, "default": 320},
+        "typeIds": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": True,
+                    "items": {"type": "integer", "minimum": 1, "maximum": 65535}},
+        "entityRef": {"type": "string", "minLength": 1, "maxLength": 128},
+    }),
+    tool("sort_inventory", "服务器AI。使用原生背包排序，包括钱币和弹药整理。排序后重新读取背包槽位。"),
+    tool("sort_container", "服务器AI。使用原生算法整理当前箱子，需新鲜容器Token。排序后重新读取箱子槽位。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("restock", "服务器AI。从当前箱子补充背包已有的可堆叠非钱币物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("close_container", "关闭 AI 当前打开的箱子或个人仓库。传最近一次inspect_container返回的containerToken，有效期30秒。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("inspect_inventory", "mode必填：selected仅当前选中槽；hotbar检查0..9；slots配slots检查指定内部索引（0..58，最多16项）；item按精确contentKey或本地名称搜索全部player.inventory槽（含快捷栏/钱币/弹药/58号槽），slots结果仅为匹配位置。full检查全部player.inventory、原版装备/社交栏、染料、misc装备/染料和全部Buff槽（仅返回活跃Buff）。均返回inventoryScope与inspectedSlots（实际检查的player.inventory内部索引，非匹配位置）；inventoryScope.arrays列出实际检查的各数组槽。full不独立读取银行/仓库、箱子、Main.mouseItem或Mod自定义槽位/状态；58号槽仅按player.inventory实际内容返回。局部模式不代表完整背包；hotbarKey为游戏按键。客户端inventoryToken仅供既有背包动作防旧快照校验。",
          {"mode": {"type": "string", "enum": ['selected', 'hotbar', 'item', 'full', 'slots']},
           "item": {"type": "string", "minLength": 1, "maxLength": 150},
@@ -102,7 +157,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("hold_inventory_item", "单人：将sourceSlot完整物品与指定hotbarKey对应槽交换后选择该快捷键；目标原物品回源槽。即使同类也不合并，source已在目标槽则只选择。sourceToken/destinationToken来自两槽当前观察；核验槽位与下一更新持用状态。不自动使用物品。",
          {**INVENTORY_GUARDS, "hotbarKey": {"type": "integer", "minimum": 0, "maximum": 9}},
          ['sourceSlot', 'hotbarKey', 'sourceToken', 'destinationToken']),
-    tool("equip_item", "仅服务器AI：从普通背包穿戴一件装备。用inspect_inventory(mode='slots')取得sourceToken，用full的functionalEquipmentSlots取得targetSlotId和targetToken（空槽也要）。替换时原装备回来源槽，后续游戏更新确认。unknown后先观察。",
+    tool("equip_item", "仅服务器AI：从普通背包穿戴一件装备。用inspect_inventory(mode='slots')取得sourceToken，从 full 的 functionalEquipmentSlots 或 cosmeticEquipmentSlots（时装和染料，单件穿戴）取得targetSlotId和targetToken（空槽也要）。替换时原装备回来源槽，后续游戏更新确认。unknown后先观察。",
          {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN, "targetSlotId": EQUIPMENT_SLOT,
           "targetToken": INVENTORY_TOKEN}, ["sourceSlot", "sourceToken", "targetSlotId", "targetToken"]),
     tool("unequip_item", "仅服务器AI：从功能装备槽卸下一件装备。用inspect_inventory(mode='full')取得targetSlotId和targetToken。可指定0..49的空背包槽，省略时使用首个空槽。后续游戏更新确认，unknown后先观察。",
@@ -127,7 +182,18 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          {"target": {"type": "object", "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1000000}, "y": {"type": "number", "minimum": 0, "maximum": 1000000}}, "required": ["x", "y"], "additionalProperties": False}}),
     tool("navigate_to", "服务器自主导航。只传预期落脚面的世界像素 x、y（Y 向下）。游戏侧自行选择走、跳、安全下落、挖掘和搭路。安全着地停稳且脚底覆盖目的地才完成。unknown 后停止。",
          {key: {"type": "number", "minimum": 0, "maximum": 1000000} for key in ("x", "y")}, ["x", "y"]),
-    tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE}),
+    tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE, "cluster": {"type": "boolean"}}),
+    tool("configure_combat_loadout", "配置服务器 AI 的主副武器。primary 和 secondary 各自使用快捷键 1..9、0、预期 typeId 和新鲜 inventoryToken。完整替换配置，省略角色即清除该角色；配置不换手。", {"primary": COMBAT_ROLE, "secondary": COMBAT_ROLE, "summon": COMBAT_ROLE}),
+    tool("list_pylons", "列出本世界登记的晶塔及其目的地引用和格坐标。", {}),
+    tool("teleport_to_pylon", "对 list_pylons 返回的目的地发起一次原生传送，由当前游戏和 Mod 裁决。", {"pylonRef":{"type":"string","pattern":"^[0-9a-f]{32}$"}}, ["pylonRef"]),
+    tool("list_teammates", "查看 AI 的队伍和在线真人的队伍、当次上线引用和传送限制。", {}),
+    tool("set_team", "设置 AI 自己的队伍。0 离队，1..5 为游戏队伍编号。", {"team":{"type":"integer","minimum":0,"maximum":5}}, ["team"]),
+    tool("teleport_to_teammate", "消耗自己的虫洞药水，传送到指定的在线同队存活玩家。teammateRef 来自 list_teammates。", {"teammateRef":{"type":"string","pattern":"^[0-9a-f]{32}$"}}, ["teammateRef"]),
+    tool("discover_bosses", "发现 640 像素内的 Boss 种子、策略及拒绝原因。用 admissible 行的 entityRef 提交 boss_encounter。", {}),
+    tool("query_combat_loadout", "读取主副武器的快捷栏物品、可用性与最近一次自卫选武器失败原因。", {}),
+    tool("boss_encounter", "通过 submit_task 挑战单根克苏鲁之眼，需要配置主或副武器。可指定墙钟秒数（默认 300）。", {"entityRef": {"type":"string","minLength":1,"maxLength":150}, "regroupTeammateRef":{"type":"string","pattern":"^[0-9a-f]{32}$"}, "durationSeconds":{"type":"integer","minimum":1,"maximum":600}}, ["entityRef"]),
+    tool("combat_attack", "通过 submit_task 提交单目标战斗。使用 scan_entities 返回的 entityRef。已配置主武器时自动切换；未配置时使用手持武器。button 默认 left；right 请求原生副使用。", {"button":{"type":"string","enum":["left","right"]},"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
+    tool("query_combat", "读取绑定角色当前或最近一次战斗。返回 action（含可查询或取消的 actionId），空闲且无战斗记录时为 null。", {}),
     tool("mine_tile", "原生挖掘指定 Tile。服务器 AI 从整个主背包自动选择合适工具，必要时临时切换快捷栏，按 Terraria 原生范围和工具规则判定。客户端控制使用当前手持镐。动作在当前位置执行，以实际移除为准，10秒上限。",
          {"x": {**TILE["x"], "description": "目标格的绝对 Tile X 坐标"},
           "y": {**TILE["y"], "description": "目标格的绝对 Tile Y 坐标"}}, ["x", "y"]),
@@ -136,7 +202,16 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("mine_wall", "选中纯锤原生挖背景墙；80像素内，前景必须为空；实际墙消失才成功。多人需同版本服务器确认；10秒上限，可取消。", TILE, ['x', 'y']),
     tool("place_wall", "选中原版消耗型墙物品，在80像素内无墙格原生放置；正确墙类型和消耗一件共同核验，多人需服务器确认；自动补邻墙或自动涂漆不支持，10秒上限。", TILE, ['x', 'y']),
     tool("hammer_tile", "选中纯锤对80像素内原版普通方块/平台原生锤击；目标无背景墙，实际形状变化才成功，多人需服务器确认。不支持家具/破坏型锤目标。10秒上限。", TILE, ['x', 'y']),
+    tool("manage_trash", "操作自己的垃圾槽。discard 将非收藏的整堆放入垃圾槽并永久替换旧垃圾；retrieve 取回到指定空槽。用 full 观察 trash.trashToken，slots 观察 slotToken。", {"mode":{"type":"string","enum":["discard","retrieve"]},"slot":INVENTORY_SLOT,"slotToken":INVENTORY_TOKEN,"trashToken":INVENTORY_TOKEN}, ["mode","slot","slotToken","trashToken"]),
+    tool("switch_equipment_loadout", "切换原版装备套装 1..3。expectedLoadout 来自 inspect_inventory(full).currentLoadout。", {"expectedLoadout":{"type":"integer","minimum":1,"maximum":3},"loadout":{"type":"integer","minimum":1,"maximum":3}}, ["expectedLoadout","loadout"]),
+    tool("set_inventory_favorite", "设置主背包非空槽的收藏状态。sourceToken 来自 inspect_inventory；favorited=true 收藏，false 取消。变更后操作该槽需重新观察。", {"sourceSlot":INVENTORY_SLOT,"sourceToken":INVENTORY_TOKEN,"favorited":{"type":"boolean"}}, ["sourceSlot","sourceToken","favorited"]),
+    tool("drop_inventory_item", "从已观察的普通槽向面前丢出恰好 count 件原版可堆叠非钱币物品。收藏、数量不足和陈旧令牌会拒绝。可选 teammateRef 来自 list_teammates，指定后朝该队友所在的左侧或右侧短抛，横坐标相同时保持朝向；该队友的 lastDrop 单独记录拾取证据。completed 仅确认扣除和生成，不保证收件。", {"sourceSlot":INVENTORY_SLOT,"sourceToken":INVENTORY_TOKEN,"count":{"type":"integer","minimum":1,"maximum":9999},"teammateRef":{"type":"string","pattern":"^[0-9a-f]{32}$"}}, ["sourceSlot","sourceToken","count"]),
+    tool("open_inventory_item", "打开一件普通背包中的原版 Boss 宝藏袋或钓鱼板条箱。sourceToken 取自 inspect_inventory。返回已观察的生成掉落；拾取需另行核验。", {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN}, ["sourceSlot","sourceToken"]),
+    tool("dismiss_summon", "按召唤武器的类型 ID 解除绑定 AI 自己的对应随从增益。核验增益消失；已配置的自动补召仍可再次施法。", {"itemType":{"type":"integer","minimum":1,"maximum":2147483647}}, ["itemType"]),
+    tool("open_door", "打开80像素内已观察的普通木门。x/y 为门占用的绝对 Tile。已打开时核验现状。", TILE, ["x","y"]),
+    tool("close_door", "关闭80像素内已观察的普通木门。门口受阻时返回失败。", TILE, ["x","y"]),
     tool("interact_tile", "80像素内原版门、未锁宝箱、开关、拉杆基础交互；多格任一占用格可指定；宝箱核验打开/关闭，开关及拉杆核验Frame切换，不证明下游电路效果。多人需同版本服务器确认。", TILE, ["x", "y"]),
+    tool("place_item", "通过 submit_task 使用当前选中的快捷栏物品在 Tile 坐标 x/y 执行原生放置。", TILE, ["x", "y"]),
     tool("place_object", PLACE_OBJECT_DESCRIPTION, TILE, ["x", "y"]),
     tool("place_rope", "服务器 AI 放置一节原版绳索。x/y 为绝对 Tile 坐标，空格直接放置，已有原版绳索则向下延伸一节。自动使用自身快捷栏绳索，点击格与实际落点均须在范围内。回执核验实际落点、绳索类型和一件库存消耗。", TILE, ["x", "y"]),
     tool("move_on_rope", "服务器 AI 沿对齐的干燥原版连续绳柱原生上下移动。ropeX 为 Tile 列，targetFeetY 为脚底世界像素 Y，向下增大。起点须静止，绳索位于头顶探测格。hold 确认在绳上停稳，land 沿下端脱离并确认正下方实体地面落脚。单次最多384像素及maxUpdates帧。",
@@ -147,6 +222,50 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          ["ropeX","targetFeetY","finish","maxUpdates"]),
     tool("place_tile", "用选中消耗品在80像素内空格放单格方块，支持当前画面缩放，仍限正常重力；Tile类型与物品消耗共同核验；不支持多格家具或ModItem。10秒上限。", TILE, ["x", "y"]),
     tool("stop_action", "取消当前Agent动作并等待游戏线程输入释放证据，不抢占手动控制。")]
+BLUEPRINT_LAYERS = ('tiles', 'walls', 'objects')
+BLUEPRINT_ENTRY = {
+    "type": "object", "additionalProperties": False, "required": ["x", "y"],
+    "properties": {
+        **{axis: {"type": "integer", "minimum": -100000, "maximum": 100000} for axis in TILE},
+        "itemType": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+        "contentKey": {"type": "string", "minLength": 1, "maxLength": 3072},
+    },
+    "oneOf": [{"required": ["itemType"]}, {"required": ["contentKey"]}],
+}
+BLUEPRINT = {
+    "type": "object", "additionalProperties": False, "required": ["origin"],
+    "properties": {
+        "origin": {"type": "object", "properties": TILE, "required": ["x", "y"], "additionalProperties": False},
+        **{layer: {"type": "array", "maxItems": 256, "items": BLUEPRINT_ENTRY} for layer in BLUEPRINT_LAYERS},
+    },
+}
+TOOLS.append(tool("build_diff", "只读比较蓝图和当前世界。origin 为绝对 Tile 坐标，条目 x/y 为有符号相对坐标，objects 按锚点指定。"
+                  "每项指定 itemType 或 contentKey。合计 1..256 项，宽高各最多 64 格，蓝图紧凑 UTF-8 JSON 最多 3072 字节。",
+                  {"blueprint": BLUEPRINT}, ["blueprint"]))
+TOOLS.append(tool("build_place", "通过 submit_task 按蓝图施工，已匹配项跳过。", {"blueprint": BLUEPRINT}, ["blueprint"]))
+# Conditional inputs on otherwise flat read APIs. Unlisted fields are shared.
+READ_PARAMETER_RULES = {
+    'query_map': ('mode', dict.fromkeys(('centerX', 'centerY', 'width', 'height', 'cellSize'), ('region',))),
+    'scan_entities': ('category', {'npcFilter': ('npc',), 'typeIds': ('npc', 'item')}),
+}
+
+
+def read_parameter_schema(name, schema, arguments):
+    selector, conditions = READ_PARAMETER_RULES[name]
+    props = schema['properties']
+    if not isinstance(arguments, dict) or selector not in arguments:
+        return schema
+    mode = arguments[selector]
+    if mode not in props[selector]['enum']:
+        return schema  # Keep the original enum for the validation error.
+    for key, modes in conditions.items():
+        if key in arguments and key in props and mode not in modes:
+            raise ValueError(f"{name}.{key} requires {selector}={' or '.join(modes)}")
+    allowed = {k: v for k, v in props.items() if k not in conditions or mode in conditions[k]}
+    allowed[selector] = {**props[selector], 'enum': [mode]}
+    return {**schema, 'properties': allowed}
+
+
 SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 
 # Model-only server projection. Execution validation and the shared TOOLS stay unchanged.
@@ -158,12 +277,17 @@ SERVER_DESCRIPTIONS = {
     'swap_inventory_slots': '服务器AI：新鲜两槽token，交换0..49完整物品实例；不合并，后续游戏更新核验；unknown不回滚、不自动重试。',
     'hold_inventory_item': '服务器AI：完整交换sourceSlot与hotbarKey(游戏键1..9,0)，目标物品回源槽，再选中；同槽只选择，不自动使用；核验两槽与后续更新。unknown不回滚、不自动重试。',
     'get_player_state': '读取绑定服务器AI的实际位置/速度/生命及motion；无参数。返回{valid,player,motion,binding,...}，player.position是碰撞框左上角世界像素，velocity为像素/游戏更新，Y向下；motion.grounded与supported独立，supported只是导航profile适用性，不保证支撑/路径安全。',
+    'open_container': '在原生交互距离内打开原版箱子。用 inspect_container 观察槽位和令牌。',
+    'inspect_container': 'data.status为open时，data.container含箱子身份和40个槽位。只保留最新容器Token，有效期30秒。槽位Token覆盖实例及基础字段，自定义物品状态未知。data.status为unavailable时检查reason。',
+    'close_container': '使用最新观察的data.container.containerToken。关闭或换箱后旧Token失效。检查completed及endEvidence。',
     'inspect_inventory': '只读AI真实背包，必须显式mode；局部查询不代表完整背包。返回{valid,available,data,...}，data.inventoryScope/inspectedSlots标明实际检查范围，item匹配slots不等于搜索范围。hotbarKey是游戏键1..9,0；新版本server_ai_inventory_v1提供绑定World/Actor/Generation/槽位、物品实例与基础字段的inventoryToken；操作前用slots/selected/hotbar读取两槽新鲜token。full附functionalEquipmentSlots及装备targetToken；full/item不提供普通背包槽token，全部Mod自定义状态未知；token不调用保存钩子，不能识别仅自定义状态变化。',
-    'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。data.terrain含originX/originY/rows和独立液体层liquids。液体项含绝对Tile坐标x/y、type、原生数量amount（1–255），未知格的缺项不代表干燥。data.state含centerWorldPixels，另含bounds/legend/coverage。格为Tile（16像素）。supported只是profile适用性。',
-    'use_item': '当前快捷栏物品执行一次原生使用周期，参数仅{}。支持可无坐标单次使用的原版物品及 ModItem，使用条件由 ItemCheck 和 Mod Hook 判定。需要瞄准、弹药、持续按住或放置坐标的物品需使用相应入口。3秒上限。cycleVerified 证明使用周期，consumptionObserved 表示持用物品堆叠减少；具体治疗、Buff、命中等效果需另行观察。',
+    'observe_terrain': '读取AI周围45×29碰撞格及同次状态；无参数。data.terrain含originX/originY/rows和独立液体层liquids。液体项含绝对Tile坐标x/y、type、原生数量amount（1–255），未知格的缺项不代表干燥。data.state含centerWorldPixels；data还含bounds、legend、scannedCount、unknownCount和complete。格为Tile（16像素）。supported只是profile适用性。',
+    'use_item': '当前快捷栏物品执行一次原生使用周期，参数仅{}。支持可无坐标单次使用的原版物品及 ModItem，使用条件由 ItemCheck 和 Mod Hook 判定。需要瞄准、弹药、持续按住或放置坐标的物品需使用相应入口。普通随从武器一次施法。仅当 native_summon_verified 且 slotsAfter 大于 slotsBefore 时可按需继续，达到 maxSlots 或容量不足即停；不替换已有随从。3秒上限。cycleVerified 证明使用周期，consumptionObserved 表示持用物品堆叠减少；具体治疗、Buff、命中等效果需另行观察。',
+    'mine_wall': '手持原版纯锤，在当前位置按原生节奏拆指定背景墙。要求前景为空、距离不超过80像素、原生可触及与可拆；拒绝邻墙重定向。',
+    'hammer_tile': '手持原版纯锤，锤到指定原版普通方块或平台首次改变形状即松手。要求无背景墙、距离不超过80像素且原生可触及；需要下一种形状时重新观察。',
     'mine_tile': '原生挖掘指定 Tile。自动在整个主背包（含快捷栏）选择合适工具，必要时临时切换快捷栏，无需预选镐。由 Terraria 原生挖掘范围、工具和破坏许可判定。在当前位置执行，需要接近时用 mine_target。可指定家具有效组成格，已识别的多格家具核验整组移除。10秒上限，destroyedByActor、targetAbsent 和绑定输入释放证据齐备才完成。掉落入包需另行观察，unknown 停止。',
-    'place_tile': '在空的绝对 Tile 格 x/y 用选中的快捷栏材料放置普通单格 Tile。按 createTile、placeStyle 和原生放置范围、邻接及 Mod Hook 判定；多格对象用 place_object。核验本 AI 的放置事件、目标格、consumedCount=1 和输入释放。取消可能已有副作用，unknown 停止。10秒上限。',
-    'scan_entities': '以AI中心扫描世界像素半径radius（1..1600）内真实活跃NPC/掉落/其他玩家，排除AI自身；category与可选typeIds/npcFilter按Schema，先筛选再按距离排序截断。返回data.items及范围/计数/截断；entityRef绑定世界/AI代次/NPC实例，仅是观察标识，不保证视线、可达或可攻击。',
+    'place_tile': '在空的绝对 Tile 格 x/y 用选中的快捷栏材料放置普通单格 Tile 或原版绳索。按 createTile、placeStyle 和原生放置范围、邻接及 Mod Hook 判定。点击已有绳段向下延伸用 place_rope；多格对象用 place_object。核验本 AI 的放置事件、目标格、consumedCount=1 和输入释放。取消可能已有副作用，unknown 停止。10秒上限。',
+    'scan_entities': '以AI中心扫描世界像素半径radius（1..1600）内真实活跃NPC/掉落/其他玩家，排除AI自身；category与可选typeIds/npcFilter按Schema，先筛选再按距离排序截断。返回data.items及范围/计数/截断；城镇NPC的name是个人名字，details.contentKey 是注册键、details.typeName 是本地化种类名，位置取centerWorldPixels.x/y；entityRef绑定世界/AI代次/NPC实例，仅是观察标识，不保证视线、可达或可攻击。',
 }
 LEGACY_SERVER_OPERATION_DESCRIPTIONS = {
     'use_item': '旧版服务器的物品使用范围受限，参数仅{}。completed 仅核验原生使用周期。',
@@ -187,7 +311,7 @@ SERVER_DESCRIPTION_SUFFIXES = {
 }
 
 
-SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene({scale="region",width=120,height=68})获取L1；'
+SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时，指定width或height即使用region；也可显式传scale="region"使用区域默认尺寸。'
     'width=45..128、height=29..96，面积<=8192 Tile；以AI中心为中心，非摄像机/视觉可见性。'
     'schemaVersion=3，默认geometry/objects/hazards；仅可选这三层及map，无导航/放置target。'
     'geometry.grid及map.terrain为encodingVersion=2无损逐Tile字典行编码：palette下标从0开始；rows[].encoding为rle或hex_indices。'
@@ -202,21 +326,52 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时可用observe_scene(
     'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
 
 
-def server_tools(supported, *, scene_region=False, general_operations=True, mining_opening=False):
+def server_tools(supported, *, bulk_purchase=False, bed_spawn=False, scene_region=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
-    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported]
+    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place')]
     for definition in definitions:
         f = definition['function']
         name = f['name']
+        if name == 'quote_npc_purchase' and not bulk_purchase:
+            f['parameters']['properties']['quantity']['maximum'] = 1
+            f['description'] = '按绑定 AI 的当前购物状态为一件商品报价。'
+        if name == 'configure_combat_loadout' and not summon_loadout:
+            f['parameters']['properties'].pop('summon')
+        if name == 'configure_combat_loadout' and summon_loadout:
+            f['description'] += ' summon 槽可放当前后端识别的随从或哨兵武器；安全空闲时自动补召，临敌优先主副武器。'
+        if name == 'configure_combat_loadout' and not dual_weapons:
+            f['parameters']['properties'].pop('secondary')
+            f['description'] = '配置普通近战主武器 primary；传空参数清除配置。'
+        if name == "interact_tile":
+            f["parameters"] = copy.deepcopy(SERVER_INTERACT_ARGS)
+            f["description"] = "对80像素内原版普通木门、开关或拉杆交互一次。传 inspect_tile 的 data.interaction.target。重复点击会再次切换，电路效果另查。"
+            if bed_spawn:
+                f["description"] += " 对原版床脚使用同一操作可设置或清除自己的出生点；interaction.active 表示此床已绑定。先核对目标状态。"
         if name == 'use_item':
             f['parameters'] = {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}
         f['description'] = SERVER_DESCRIPTIONS.get(name, f['description'])
+        if general_dialogue and name == 'open_npc_dialogue':
+            f['description'] = '与附近可交谈的原版 NPC 开启对话；evidence 含同一实例的 entityRef 和台词 text。'
+        if general_dialogue and name == 'close_npc_dialogue':
+            f['description'] = '结束绑定 AI 当前的 NPC 对话。'
+        if name == 'open_container' and 'manage_trash' in supported:
+            f['description'] += ' 支持四种已放置的个人仓库家具，使用当前 AI 的储物空间。'
+        if name == 'inspect_inventory' and 'manage_trash' in supported:
+            f['description'] += ' full 附垃圾槽 trash、currentLoadout（1..3）和时装染料槽 cosmeticEquipmentSlots。'
+        if combat_inventory and name == 'inspect_inventory':
+            f['description'] += (' full/hotbar/slots/selected 的 data.combatCandidates 按内部 slot 列出本次检查中可配置的武器与 family；'
+                                 'melee/ranged/magic 用于主副手，summon 用于召唤槽。类型匹配后用 query_combat_loadout 查实际资源。')
         if not general_operations and name in LEGACY_SERVER_OPERATION_DESCRIPTIONS:
             f['description'] = LEGACY_SERVER_OPERATION_DESCRIPTIONS[name]
         if name == 'mine_target' and mining_opening:
             f['description'] += '服务器可在局部范围内串行挖开阻挡格，等待原生落脚并重新规划；开路有明确预算，可能已移除部分地形。查看 task.progress 的 clearedTiles、opening 和 search。'
+        if name == 'mine_target':
+            if excavation:
+                f['description'] += '设置 cluster=true 采集种子所在的同种四连通矿簇，上限18格。逐格结果见 task.result.evidence.targets。'
+            else:
+                f['parameters']['properties'].pop('cluster', None)
         if name == 'observe_scene':
-            f['description'] += ('新版data.lighting.available=false表示专用服暂无可信原生亮度。'
+            f['description'] += ('data.lighting 在 available=true 时提供角色中心的原生 Tile 光照估计。'
                 'hazards.entities.items可带observedGameUpdate、observationRef、velocity和threat。'
                 'observationRef仅本次场景有效。threat是在12游戏更新内按恒速和弹幕extraUpdates推算的包围盒接触，'
                 '未评估地形、AI、输入和伤害规则。先按推断接触时间排序，再按距离。'
@@ -229,11 +384,13 @@ def server_tools(supported, *, scene_region=False, general_operations=True, mini
         if name in SERVER_DESCRIPTION_SUFFIXES:
             f['description'] += SERVER_DESCRIPTION_SUFFIXES[name]
         if name in ('navigate_to_x', 'navigate_to_landing_region'):
+            f['description'] = (f['description'].replace('evidence.navigation.blockingTiles', 'evidence.navigation.BlockingTiles')
+                                .replace('x/y/contentKey及basis', 'X/Y/ContentKey及Basis'))
             f['description'] += '已确认可恢复失败仍返回failed及实际位置/速度/支撑/释放证据；只有宿主continuationAllowed=true且continuationScope=observe_scene_then_move_input时，才可重新observe_scene后尝试一次有界move_input，不能按reason文字自行放行或重试导航。'
     return definitions
 
-READS = {'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration'}
+READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
+READS |= {'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_pylons', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -243,9 +400,47 @@ NATIVE_OPERATIONS = frozenset(SCHEMAS) - HOST_OPERATIONS
 
 def validate_backend(bridge, name, arguments):
     """Backend narrowing supplements, and never replaces, shared validation."""
+    if name == 'build_place' and 'server_ai_build_place_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_build_place_v1')
+    capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
+    if name in ('open_npc_dialogue', 'close_npc_dialogue') and 'server_ai_npc_dialogue_v1' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_npc_dialogue_v1')
+    if name == 'quote_npc_purchase' and arguments.get('quantity', 1) > 1 and 'server_ai_merchant_bulk_purchase_v1' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_merchant_bulk_purchase_v1')
+    if name in ('inspect_npc_shop', 'quote_npc_purchase', 'buy_npc_item'):
+        cap = 'server_ai_merchant_purchase_v1' if name == 'buy_npc_item' else 'server_ai_merchant_shop_v1'
+        if cap not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+            raise PreDispatchRejected(f'Requires {cap}')
+    if name in ('quote_npc_sale', 'sell_npc_item') and 'server_ai_merchant_sale_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_merchant_sale_v1')
+    if name in ('quote_nurse_heal','heal_at_nurse') and 'server_ai_nurse_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_nurse_v1')
+    if name in ('quote_reforge','reforge_item') and 'server_ai_reforge_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_reforge_v1')
+    housing_cap = {'inspect_npc_housing': 'server_ai_npc_housing_v1', 'assign_npc_home': 'server_ai_housing_assignment_v1'}.get(name)
+    if housing_cap and housing_cap not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected(f'Requires {housing_cap}')
+    if name == 'inspect_housing' and 'server_ai_housing_inspect_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_housing_inspect_v1')
+    if name == 'build_diff' and 'server_ai_build_diff_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_build_diff_v1')
     if 'server_ai_atomic_v1' in getattr(bridge, 'hello', {}).get('capabilities', ()):
         if name == 'use_item' and arguments:
             raise PreDispatchRejected('targeted_use_not_supported', status='targeted_use_not_supported')
+    if name == 'configure_combat_loadout' and 'summon' in arguments and 'server_ai_combat_summon_loadout_v1' not in getattr(bridge,'hello',{}).get('capabilities',()):
+        raise PreDispatchRejected('Requires server_ai_combat_summon_loadout_v1')
+    if name == 'configure_combat_loadout' and 'secondary' in arguments and 'server_ai_combat_secondary_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_combat_secondary_v1')
+    if name == 'mine_target' and 'cluster' in arguments and 'server_ai_excavation_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_excavation_v1; no excavation task submitted')
+    if name in ('list_pylons','teleport_to_pylon') and 'server_ai_pylons_v1' not in getattr(bridge,'hello',{}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_pylons_v1')
+    if (name in ('list_teammates','set_team','teleport_to_teammate') or name=='boss_encounter' and 'regroupTeammateRef' in arguments) and 'server_ai_regroup_v1' not in getattr(bridge,'hello',{}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_regroup_v1')
+    if name == 'boss_encounter' and 'server_ai_boss_encounter_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_boss_encounter_v1')
+    if name in ('combat_attack', 'query_combat') and 'server_ai_combat_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
+        raise PreDispatchRejected('Requires server_ai_combat_v1')
 
 
 def not_admitted_result(name, reason):
@@ -264,8 +459,155 @@ class ArgumentValidationError(ValueError):
         super().__init__('; '.join(issue['message'] for issue in issues)[:512])
 
 
-def validate(name, arguments):
-    """Validate shared schemas and losslessly normalize integer-valued numbers."""
+def verified_payment(proof, price):
+    if proof.get('bankNonCurrencyUnchanged') is not True:
+        return False
+    sources = ('carriedCopper', 'piggyBank', 'safe', 'defendersForge', 'voidVault')
+    for funds in (proof.get('beforeFunds'), proof.get('afterFunds')):
+        if not isinstance(funds, dict) or any(type(funds.get(k)) is not int or funds[k] < 0
+                                              for k in (*sources, 'totalCopper')):
+            return False
+        if sum(funds[k] for k in sources) != funds['totalCopper']:
+            return False
+    return proof['beforeFunds']['totalCopper'] - proof['afterFunds']['totalCopper'] == price
+
+
+def verified_purchase(target, proof):
+    if not isinstance(target, dict) or not isinstance(proof, dict):
+        return False
+    fields = ('itemType', 'quantity', 'unitPrice', 'beforeCount', 'afterCount')
+    return (isinstance(target.get('entityRef'), str) and target['entityRef'] == proof.get('entityRef')
+            and isinstance(target.get('quoteToken'), str) and target['quoteToken'] == proof.get('quoteToken')
+            and all(type(proof.get(k)) is int and proof[k] >= 0 for k in fields)
+            and proof['itemType'] > 0 and 1 <= proof['quantity'] <= 50 and proof['unitPrice'] > 0
+            and proof.get('effectStatus', 'complete') == 'complete'
+            and type(proof.get('verifiedQuantity', 1)) is int and proof.get('verifiedQuantity', 1) == proof['quantity']
+            and verified_payment(proof, proof['unitPrice'] * proof['quantity'])
+            and proof['afterCount'] - proof['beforeCount'] == proof['quantity'])
+
+
+def verified_reforge(target, proof):
+    if not isinstance(target, dict) or not isinstance(proof, dict):
+        return False
+    if any(key not in target or target[key] != proof.get(key)
+           for key in ('entityRef', 'sourceSlot', 'sourceToken', 'quoteToken')):
+        return False
+    fields = ('itemType','beforePrefix','afterPrefix','priceCopper')
+    return (all(type(proof.get(k)) is int and proof[k] >= 0 for k in fields)
+            and proof['itemType'] > 0 and proof['afterPrefix'] > 0
+            and verified_payment(proof, proof['priceCopper'])
+            and all(proof.get(k) is True for k in ('rolled','itemVerified')))
+
+
+def verified_treatment(target, proof):
+    if not isinstance(target, dict) or not isinstance(proof, dict):
+        return False
+    return (all(isinstance(target.get(k), str) and target[k] == proof.get(k) for k in ('entityRef', 'quoteToken'))
+            and all(type(proof.get(k)) is int and proof[k] >= 0 for k in
+                    ('heal', 'priceCopper', 'beforeLife', 'afterLife'))
+            and proof['priceCopper'] > 0 and verified_payment(proof, proof['priceCopper'])
+            and proof['afterLife'] - proof['beforeLife'] == proof['heal']
+            and isinstance(proof.get('removableDebuffs'), list)
+            and (proof['heal'] > 0 or bool(proof['removableDebuffs']))
+            and proof.get('buffsVerified') is True)
+
+
+def verified_sale(target, proof):
+    if not isinstance(target, dict) or not isinstance(proof, dict):
+        return False
+    if any(key not in target or target[key] != proof.get(key)
+           for key in ('entityRef', 'sourceSlot', 'sourceToken', 'quoteToken')):
+        return False
+    fields = ('itemType', 'quantity', 'unitPrice', 'beforeCopper', 'afterCopper',
+              'beforeCount', 'afterCount', 'beforeStack', 'afterStack')
+    return (all(type(proof.get(key)) is int and proof[key] >= 0 for key in fields)
+            and proof['itemType'] > 0 and proof['quantity'] == 1 and proof['unitPrice'] > 0
+            and proof['afterCopper'] - proof['beforeCopper'] == proof['unitPrice']
+            and proof['beforeCount'] - proof['afterCount'] == proof['beforeStack'] - proof['afterStack'] == 1
+            and proof.get('banksUnchanged') is True)
+
+
+def verified_npc_home(target, evidence):
+    if not isinstance(target, dict) or not isinstance(evidence, dict):
+        return False
+    ref = target.get('entityRef')
+    before, after = evidence.get('before'), evidence.get('after')
+    home = evidence.get('homeTile')
+    if (not isinstance(ref, str) or not ref or evidence.get('entityRef') != ref
+            or evidence.get('queryTile') != {k: target.get(k) for k in ('x', 'y')}
+            or not isinstance(before, dict) or not isinstance(after, dict)
+            or not isinstance(home, dict) or any(type(home.get(k)) is not int for k in ('x', 'y'))):
+        return False
+    return (before.get('entityRef') == after.get('entityRef') == ref
+            and all(type(after.get(k)) is int and before.get(k) == after[k] for k in ('slot', 'type'))
+            and after.get('active') is True and after.get('townNPC') is True
+            and after.get('homeless') is False and after.get('managerHasRoom') is True
+            and after.get('managerHomeTile') == home
+            and (after.get('homeTileX'), after.get('homeTileY')) == (home['x'], home['y']))
+
+
+def verified_build_entries(arguments, evidence):
+    if not isinstance(evidence, dict) or evidence.get('outcome') != 'completed':
+        return False
+    try:
+        blueprint = validate('build_place', arguments)['blueprint']
+    except ValueError:
+        return False
+    origin = blueprint['origin']
+    expected = {(layer, origin['x'] + entry['x'], origin['y'] + entry['y']): entry
+                for layer in BLUEPRINT_LAYERS for entry in blueprint.get(layer, [])}
+    rows = evidence.get('entries')
+    if not isinstance(rows, list) or len(rows) != len(expected):
+        return False
+    for row in rows:
+        if not isinstance(row, dict) or type(row.get('layer')) != str or any(type(row.get(k)) != int for k in TILE):
+            return False
+        entry = expected.pop((row['layer'], row['x'], row['y']), None)
+        if (entry is None or type(row.get('itemType')) is not int or row['itemType'] <= 0
+                or 'itemType' in entry and row['itemType'] != entry['itemType']):
+            return False
+        proof = row.get('nativeEvidence')
+        if row.get('status') == 'matched' and proof is None:
+            continue
+        if (row.get('status') != 'placed' or not isinstance(proof, dict)
+                or proof.get('requested') != {k: row[k] for k in TILE}
+                or proof.get('itemType') != row['itemType'] or proof.get('placedByActor') is not True
+                or proof.get('targetPresent') is not True or proof.get('targetChanged') is not False
+                or proof.get('uncertainNativeEffect') is not False or proof.get('nativePlacementEvents') != 1
+                or type(proof.get('nativePlacementEvents')) is not int or type(proof.get('consumedCount')) is not int
+                or proof.get('consumedCount') != 1 or (proof.get('kind') == 'chest' and proof.get('chestVerified') is not True)):
+            return False
+    counts = evidence.get('completedByLayer')
+    return (isinstance(counts, dict) and set(counts) == set(BLUEPRINT_LAYERS)
+            and all(type(counts[layer]) is int and counts[layer] == len(blueprint.get(layer, []))
+                    for layer in BLUEPRINT_LAYERS))
+
+
+def _validate_blueprint(blueprint):
+    entries = [entry for layer in BLUEPRINT_LAYERS for entry in blueprint.get(layer, [])]
+    if not 1 <= len(entries) <= 256:
+        raise ValueError('blueprint requires 1..256 entries across layers')
+    for axis in TILE:
+        offsets = [entry[axis] for entry in entries]
+        low, high = min(offsets), max(offsets)
+        origin = blueprint['origin'][axis]
+        if high - low >= 64 or low + origin < 0 or high + origin > 100000:
+            raise ValueError('blueprint exceeds 64-tile span or absolute coordinate bounds')
+    occupied = set()
+    for layer in BLUEPRINT_LAYERS:
+        for entry in blueprint.get(layer, []):
+            if ('itemType' in entry) == ('contentKey' in entry) or not entry.get('contentKey', 'item').strip():
+                raise ValueError('blueprint entry requires exactly one itemType or nonblank contentKey')
+            target = (layer == 'walls', entry['x'], entry['y'])
+            if target in occupied:
+                raise ValueError('duplicate blueprint target')
+            occupied.add(target)
+    if len(json.dumps(blueprint, ensure_ascii=False, separators=(',', ':')).encode('utf-8')) > 3072:
+        raise ValueError('blueprint exceeds 3072 UTF-8 bytes')
+
+
+def validate_schema(name, arguments, schema):
+    """Check the given schema and losslessly normalize integer-valued numbers."""
     issues, truncated = [], False
     def typename(value):
         return {dict: 'object', list: 'array', str: 'string', bool: 'boolean',
@@ -313,6 +655,8 @@ def validate(name, arguments):
             if not numeric or not integral or not low <= value <= high:
                 issue(path, 'invalid_number', f"{path}: expected finite {kind} in [{low}, {high}], got {typename(value)}; fractional values are not rounded", expected=kind, actual=typename(value))
                 return value
+            if 'enum' in schema and value not in schema['enum']:
+                issue(path, 'unsupported_value', f"field '{path}': unsupported value", allowed=schema['enum'])
             return int(value) if kind == 'integer' else value
         if kind == 'boolean' and type(value) is not bool:
             issue(path, 'type_mismatch', f"field '{path}': expected boolean, got {typename(value)}", expected='boolean', actual=typename(value))
@@ -326,43 +670,51 @@ def validate(name, arguments):
             elif 'pattern' in schema and re.fullmatch(schema['pattern'],value) is None:
                 issue(path, 'invalid_pattern', f"field '{path}': string does not match required pattern")
         return value
-    if type(name) is not str or name not in SCHEMAS:
-        raise ArgumentValidationError(None, [dict(path='operation',code='unsupported_operation',message='Unsupported atomic operation')])
-    arguments = check(arguments, SCHEMAS[name], name)
+    normalized = check(arguments, schema, name)
     if issues:
         raise ArgumentValidationError(name, issues, truncated)
-    if name == 'mine_target' and not (set(arguments) == {'target'} or set(arguments) == {'x', 'y'}):
+    return normalized
+
+
+def validate(name, arguments, *, server=False):
+    if type(name) is not str or name not in SCHEMAS:
+        raise ArgumentValidationError(None, [dict(path='operation',code='unsupported_operation',message='Unsupported atomic operation')])
+    schema = SERVER_INTERACT_ARGS if server and name == "interact_tile" else SCHEMAS[name]
+    if name in READ_PARAMETER_RULES:
+        schema = read_parameter_schema(name, schema, arguments)
+    arguments = validate_schema(name, arguments, schema)
+    if name in ("build_diff", "build_place"):
+        _validate_blueprint(arguments["blueprint"])
+    if name == 'configure_combat_loadout':
+        keys = [role['hotbarKey'] for role in arguments.values()]
+        if len(set(keys)) != len(keys):
+            raise ValueError('weapon roles must use different hotbar keys')
+    if name == 'mine_target' and set(arguments) - {'cluster'} not in ({'target'}, {'x', 'y'}):
         raise ValueError('mine_target requires either target or absolute x/y')
     if name == 'observe_scene':
+        if 'scale' not in arguments and ('width' in arguments or 'height' in arguments):
+            arguments['scale'] = 'region'
         region = arguments.get('scale') == 'region'
-        if not region and any(k in arguments for k in ('width','height')):
+        if not region and any(k in arguments for k in SCENE_EXCLUDED_PARAMS['local']):
             raise ValueError('observe_scene width/height require scale=region')
         if region:
-            if arguments.get('width',120)*arguments.get('height',68)>8192:
+            if arguments.get('width', REGION_DEFAULT_WIDTH) * arguments.get('height', REGION_DEFAULT_HEIGHT) > REGION_MAX_AREA:
                 raise ValueError('observe_scene region area must be <=8192 tiles')
-            if any(k in arguments for k in ('maxRegions','maxPlacements')) or any(
-                    k not in ('map','geometry','objects','hazards') for k in arguments.get('layers',[])):
+            if any(k in arguments for k in SCENE_EXCLUDED_PARAMS['region']) or any(
+                    k not in REGION_LAYERS for k in arguments.get('layers',[])):
                 raise ValueError('observe_scene region has no action candidates; use local observation')
-    if name == 'query_map':
-        if arguments.get('cellSize', 2) not in (1, 2, 4):
-            raise ValueError('query_map.cellSize must be 1, 2 or 4')
-        if arguments['mode'] == 'overview' and set(arguments) != {'mode'}:
-            raise ValueError('query_map overview accepts only mode')
     if name == 'scan_tiles':
         width, height = arguments['maxX'] - arguments['minX'] + 1, arguments['maxY'] - arguments['minY'] + 1
         if width <= 0 or height <= 0 or width * height > 4096:
             raise ValueError(f'scan_tiles.bounds: inclusive area {width} x {height} = {width * height}; require ordered bounds and area <=4096 tiles. Use observe_terrain bounds (45 x 29) or split into bounded scans')
-    if name == 'inspect_inventory' and (('item' in arguments) != (arguments.get('mode') == 'item')):
-        raise ValueError('item is required only for mode=item')
-    if name == 'inspect_inventory' and (('slots' in arguments) != (arguments.get('mode') == 'slots')):
-        raise ValueError('slots is required only for mode=slots')
+    if name == 'collect_drops' and 'entityRef' in arguments and 'typeIds' in arguments:
+        raise ValueError('collect_drops entityRef and typeIds are mutually exclusive')
+    if name == 'inspect_inventory':
+        for mode, key in INVENTORY_MODE_ARGUMENTS.items():
+            if (key in arguments) != (arguments.get('mode') == mode):
+                raise ValueError(f'{key} is required only for mode={mode}')
     if name in ('transfer_inventory_item', 'swap_inventory_slots') and arguments['sourceSlot'] == arguments['destinationSlot']:
         raise ValueError('Inventory source/destination must be different slots')
-    if name == 'scan_entities':
-        if 'typeIds' in arguments and arguments['category'] not in ('npc', 'item'):
-            raise ValueError('typeIds requires category=npc or item')
-        if 'npcFilter' in arguments and arguments['category'] != 'npc':
-            raise ValueError('npcFilter requires category=npc')
     if name == 'move_input' and arguments['jumpHoldUpdates'] > arguments['maxUpdates']:
         raise ValueError('jumpHoldUpdates must not exceed maxUpdates')
     if name == 'navigate_to_landing_region' and arguments['minPlayerLeftX'] > arguments['maxPlayerLeftX']:
@@ -383,29 +735,64 @@ def result(action, generation):
             'inputsAcquired': end.get('inputsAcquired'), 'inputsReleased': end.get('inputsReleased'),
             'effectVerified': end.get('effectVerified'), 'stopRequest': action.get('stopRequest'),
             'operation': action.get('operation'), 'actionId': action['actionId'],
-            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'), 'targetRecipe': action.get('targetRecipe'), 'targetInventory': action.get('targetInventory'), 'targetTask': action.get('targetTask'),
+            'session': action.get('session'), 'actionGeneration': action.get('generation'), 'targetRegion': action.get('targetRegion'), 'targetTile': action.get('targetTile'), 'targetRecipe': action.get('targetRecipe'), 'targetInventory': action.get('targetInventory'), 'targetContainer': action.get('targetContainer'), 'targetTask': action.get('targetTask'),
             'task': action.get('task'), 'evidence': action.get('evidence'), 'endEvidence': action.get('endEvidence'),
             'endEvidenceStatus': action.get('endEvidenceStatus'), 'controlGeneration': generation,
             'completed': action['status'] == 'completed', 'cancelled': action['status'] == 'cancelled'}
 
 
-def verified_server_object(action, evidence):
+def verified_server_object(action, evidence, *, general_objects=False):
     target = action.get('targetTile') or {}
     footprint = evidence.get('footprint')
-    return (isinstance(footprint, dict) and set(footprint) == {'x', 'y', 'width', 'height'}
+    if not (isinstance(footprint, dict) and set(footprint) == {'x', 'y', 'width', 'height'}
             and all(type(v) is int for v in footprint.values())
             and evidence.get('objectPlacement') is True
             and evidence.get('fullFootprintVerified') is True
             and type(evidence.get('nativePlacementEvents')) is int and evidence['nativePlacementEvents'] == 1
             and evidence.get('uncertainNativeEffect') is False
-            and type(evidence.get('typeId')) is int and evidence['typeId'] == 18
-            and type(evidence.get('itemType')) is int and evidence['itemType'] == 36
-            and type(evidence.get('style')) is int and evidence['style'] == 0
-            and evidence.get('footprint') == dict(x=target.get('x'), y=target.get('y'), width=2, height=1))
+            and all(type(evidence.get(key)) is int for key in ('typeId', 'itemType', 'style'))
+            and evidence['style'] == 0 and all(type(target.get(k)) is int for k in ('x', 'y'))):
+        return False
+    pair = evidence['itemType'], evidence['typeId']
+    if pair == (36, 18):
+        return footprint == dict(**target, width=2, height=1)
+    if general_objects and pair == (25, 10):
+        # Style-zero wooden door placed at its middle-cell anchor.
+        return footprint == dict(x=target['x'], y=target['y']-1, width=1, height=3)
+    return False
 
 
+CONTAINER_TRANSFERS = frozenset(('deposit_container_item', 'withdraw_container_item'))
+CONTAINER_BATCHES = frozenset(('quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'))
+SORT_OPERATIONS = frozenset(('sort_inventory', 'sort_container'))
+CONTAINER_OPERATIONS = frozenset(('open_container', 'close_container')) | CONTAINER_TRANSFERS | CONTAINER_BATCHES | SORT_OPERATIONS
 INVENTORY_OPERATIONS = frozenset(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
 EQUIPMENT_OPERATIONS = frozenset(('equip_item', 'unequip_item'))
+
+
+def verified_loadout(action, evidence):
+    goal = action.get('targetInventory')
+    if not isinstance(goal, dict) or type(evidence.get('version')) is not int or evidence['version'] < 1:
+        return False
+    if 'primary' not in evidence or set(goal) - {'primary','secondary','summon'}:
+        return False
+    for role in ('primary','secondary','summon'):
+        expected, actual = goal.get(role), evidence.get(role)
+        if expected is None and actual is None:
+            continue
+        if not isinstance(expected, dict) or not isinstance(actual, dict):
+            return False
+        if actual.get('available') is not True:
+            resource_failures = ('combat_ammo_unavailable','combat_mana_unavailable','combat_ammo_unsupported')
+            if role == 'summon':
+                resource_failures += ('summon_already_active','summon_capacity_unavailable')
+            if actual.get('available') is not False or actual.get('reason') not in resource_failures:
+                return False
+        if (any(type(actual.get(key)) is not int for key in ('hotbarKey','expectedTypeId','actualTypeId'))
+                or expected.get('hotbarKey') != actual['hotbarKey']
+                or actual['actualTypeId'] != actual['expectedTypeId'] or actual['expectedTypeId'] != expected.get('expectedTypeId')):
+            return False
+    return True
 
 
 def verified_server_equipment(action, evidence):
@@ -453,6 +840,65 @@ def verified_server_rope_motion(action, evidence):
             and (finish == 'hold' and evidence.get('attached') is True and abs(feet-target) <= 4
                  or finish == 'land' and evidence.get('attached') is False and abs(feet-target) <= .5
                  and evidence.get('grounded') is True and evidence.get('safeSupport') is True))
+
+
+def verified_favorite(goal, evidence):
+    return (isinstance(goal, dict) and type(goal.get('favorited')) is bool
+            and type(evidence.get('beforeFavorite')) is bool
+            and evidence.get('afterFavorite') is goal['favorited']
+            and all(type(evidence.get(k)) is int for k in ('sourceSlot','typeId','stack','prefix'))
+            and evidence['sourceSlot'] == goal.get('sourceSlot') and evidence['typeId'] > 0 and evidence['stack'] > 0)
+
+
+def verified_drop(goal, evidence):
+    if not isinstance(goal, dict):
+        return False
+    numbers = ('sourceSlot','typeId','prefix','beforeStack','afterStack','spawnedCount')
+    return (all(type(evidence.get(k)) is int for k in numbers)
+            and evidence['sourceSlot'] == goal.get('sourceSlot') and evidence['typeId'] > 0
+            and evidence['beforeStack'] - evidence['afterStack'] == evidence['spawnedCount'] == goal.get('count')
+            and evidence['afterStack'] >= 0 and evidence['spawnedCount'] > 0
+            and isinstance(evidence.get('entityRef'), str) and bool(evidence['entityRef'])
+            and evidence.get('teammateRef') == goal.get('teammateRef') and evidence.get('receiptStatus') == 'unconfirmed')
+
+
+def verified_hammer(action, evidence):
+    target = action.get('targetTile')
+    before, after = evidence.get('before'), evidence.get('after')
+    if not (isinstance(target, dict) and isinstance(before, dict) and isinstance(after, dict)
+            and all(type(evidence.get(k)) is int and evidence[k] == target.get(k) for k in ('x','y'))
+            and evidence.get('effectObserved') is True
+            and all(type(evidence.get(k)) is int and evidence[k] > 0 for k in ('toolType','hammerPower','strikes'))):
+        return False
+    for cell in (before, after):
+        if (any(type(cell.get(k)) is not bool for k in ('hasTile','halfBlock','actuated'))
+                or any(type(cell.get(k)) is not int or cell[k] < 0 for k in ('tileType','wallType','slope'))
+                or cell['slope'] > 4):
+            return False
+    if action['operation'] == 'mine_wall':
+        return not before['hasTile'] and before['wallType'] > 0 and after == {**before, 'wallType':0}
+    return (before['hasTile'] and not before['actuated'] and before['wallType'] == 0 and before != after
+            and after == {**before, 'halfBlock':after['halfBlock'], 'slope':after['slope']})
+
+
+def verified_interaction(goal, evidence):
+    if not isinstance(goal, dict) or not isinstance(goal.get('target'), dict):
+        return False
+    target = goal['target']
+    kinds = {10: 'door', 11: 'door', 132: 'lever', 136: 'switch', 79: 'bed'}
+    kind = kinds.get(target.get('typeId'))
+    before = evidence.get('beforeActive')
+    if kind == 'bed':
+        keys = ('bedSpawnX','bedSpawnY','beforeSpawnX','beforeSpawnY','afterSpawnX','afterSpawnY')
+        if not all(type(evidence.get(key)) is int for key in keys):
+            return False
+        bed, old, current = [tuple(evidence[prefix + axis] for axis in ('X','Y'))
+                             for prefix in ('bedSpawn','beforeSpawn','afterSpawn')]
+        if before is not (old == bed) or current != ((-1,-1) if before else bed):
+            return False
+    return (kind is not None and evidence.get('kind') == kind and type(before) is bool
+            and evidence.get('afterActive') is (not before)
+            and all(type(evidence.get(k)) is int and evidence[k] == target.get(k) for k in ('x', 'y')))
 
 
 def verified_server_rope(action, evidence):
@@ -520,6 +966,9 @@ def verified_server_mine_task(action, evidence):
     task = evidence.get('task')
     if not isinstance(task, dict):
         return False
+    arguments = action.get('targetTask')
+    if isinstance(arguments, dict) and arguments.get('cluster') is True:
+        return verified_excavation_task(action, task, arguments.get('target', arguments))
     last = task.get('lastResult') or {}
     if not isinstance(last, dict):
         return False
@@ -537,6 +986,52 @@ def verified_server_mine_task(action, evidence):
             and isinstance(action.get('targetTask'), dict)
             and all(type(goal.get(k)) is int and proof.get(k.upper()) == goal[k] for k in ('x', 'y'))
             and ('typeId' not in goal or proof.get('TileType') == goal['typeId']))
+
+
+def verified_excavation_task(action, task, goal):
+    if not (isinstance(goal, dict) and task.get('taskId') == action.get('actionId')
+            and task.get('taskName') == 'mine_target' and task.get('status') == 'completed'
+            and task.get('phase') == 'terminal' and task.get('currentChild') is None
+            and task.get('worldSessionId') == action.get('worldSessionId')
+            and task.get('actorGeneration') == action.get('generation') and task.get('actorSlot') == action.get('actorSlot')):
+        return False
+    result = task.get('result')
+    if not (isinstance(result, dict) and result.get('status') == 'completed'
+            and result.get('inputsReleased') is True and result.get('effectVerified') is True):
+        return False
+    batch = result.get('evidence')
+    if not isinstance(batch, dict) or batch.get('outcome') != 'completed':
+        return False
+    seed = (goal.get('x'), goal.get('y'))
+    ore = batch.get('typeId')
+    if (not all(type(value) is int for value in seed) or seed != (batch.get('seedX'), batch.get('seedY'))
+            or type(ore) is not int or ('typeId' in goal and ore != goal['typeId'])):
+        return False
+    targets = batch.get('targets')
+    if not isinstance(targets, list) or not 1 <= len(targets) <= 18:
+        return False
+    cells = set()
+    for target in targets:
+        if not isinstance(target, dict) or target.get('status') != 'verified' or target.get('typeId') != ore:
+            return False
+        cell = (target.get('x'), target.get('y'))
+        proof = target.get('proof')
+        if (not all(type(value) is int for value in cell) or cell in cells or not isinstance(proof, dict)
+                or (proof.get('X'), proof.get('Y'), proof.get('Type')) != (*cell, ore)
+                or not all(type(proof.get(k)) is int and proof[k] > 0 for k in ('Update', 'Strikes'))):
+            return False
+        cells.add(cell)
+    if seed not in cells:
+        return False
+    frontier = [seed]
+    cells.remove(seed)
+    while frontier:
+        x, y = frontier.pop()
+        for neighbor in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            if neighbor in cells:
+                cells.remove(neighbor)
+                frontier.append(neighbor)
+    return not cells
 
 
 def verified_server_craft(action, evidence):
@@ -557,7 +1052,7 @@ def verified_server_craft(action, evidence):
 
 def same_action(expected, current):
     return isinstance(current, dict) and all(current.get(key) == expected.get(key) for key in
-        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'requestedInputs', 'targetInventory', 'targetTask', 'actorId', 'actorSlot'))
+        ('actionId', 'session', 'generation', 'worldSessionId', 'operation', 'targetRegion', 'targetTile', 'targetRecipe', 'requestedInputs', 'targetInventory', 'targetContainer', 'targetTask', 'actorId', 'actorSlot'))
 
 
 def verify_landing_start(action, arguments, *, server_ai=False):
@@ -607,6 +1102,168 @@ def verified_server_landing(action, evidence):
     return low <= x <= high and abs(y + 42 - surface) <= 0.5 and abs(vx) <= 0.1 and abs(vy) <= 0.1
 
 
+def verified_container_transfer(action, evidence, end):
+    goal = action.get('targetContainer')
+    before, after = evidence.get('before'), evidence.get('after')
+    if not all(isinstance(row, dict) for row in (goal, before, after, end)):
+        return False
+    integers = ('requestedCount', 'movedCount', 'remainingCount', 'mutationGameUpdate', 'observedGameUpdate', 'chestIndex')
+    if not all(type(evidence.get(key)) is int for key in integers):
+        return False
+    count, moved = evidence['requestedCount'], evidence['movedCount']
+    if (evidence.get('mutationAttempted') is not True or end.get('inputsAcquired') is not False
+            or not valid_chest_index(evidence['chestIndex']) or not 0 < moved <= count or count != goal.get('count')
+            or evidence['remainingCount'] != count - moved
+            or not 0 <= evidence['mutationGameUpdate'] < evidence['observedGameUpdate'] == end.get('gameUpdate')
+            or any(evidence.get(slot) != goal.get(slot) for slot in ('inventorySlot', 'containerSlot'))):
+        return False
+    for pair, side, delta in ((before, 'source', 0), (before, 'destination', 0),
+                              (after, 'source', -moved), (after, 'destination', moved)):
+        slot, original = pair.get(side), before.get(side)
+        if not all(isinstance(row, dict) and type(row.get('stack')) is int for row in (slot, original)):
+            return False
+        if slot['stack'] < 0 or slot['stack'] != original['stack'] + delta:
+            return False
+    if moved == count:
+        return (action.get('status') == 'completed' and evidence.get('effectStatus') == 'complete'
+                and evidence.get('blockedSlot') is None)
+    blocked = 'containerSlot' if action.get('operation') == 'deposit_container_item' else 'inventorySlot'
+    return (action.get('status') == 'failed' and evidence.get('effectStatus') == 'partial'
+            and evidence.get('blockedSlot') == goal.get(blocked))
+
+
+def verified_container_batch(action, evidence, end):
+    moves, blocked = evidence.get('moves'), evidence.get('blocked')
+    if (not isinstance(end, dict) or end.get('inputsAcquired') is not False
+            or evidence.get('mutationAttempted') is not True
+            or not all(type(evidence.get(key)) is int for key in ('mutationGameUpdate', 'observedGameUpdate', 'movedCount'))
+            or not 0 <= evidence['mutationGameUpdate'] < evidence['observedGameUpdate'] == end.get('gameUpdate')
+            or not isinstance(moves, list) or len(moves) > 128 or not isinstance(blocked, list)):
+        return False
+    if not all(isinstance(move, dict) and all(type(move.get(key)) is int for key in
+               ('inventorySlot', 'chestIndex', 'containerSlot', 'typeId', 'prefix', 'count'))
+               and 0 <= move['inventorySlot'] < 58 and 0 <= move['containerSlot'] < 40
+               and valid_chest_index(move['chestIndex']) and move['typeId'] > 0 and move['count'] > 0 for move in moves):
+        return False
+    if sum(move['count'] for move in moves) != evidence['movedCount']:
+        return False
+    expected = 'partial' if moves and blocked else 'complete' if moves else 'none'
+    return (evidence.get('effectStatus') == expected
+            and action.get('status') == ('failed' if blocked else 'completed'))
+
+
+def verified_boss_deaths(proof, *, members_required=False):
+    """E1 receipts predate member evidence; E2 must account for its required cohort."""
+    if 'seed' not in proof:
+        return not members_required and 'deathProof' not in proof
+    seed = proof.get('seed')
+    deaths = proof.get('deathProof')
+    if not isinstance(seed, dict) or not isinstance(deaths, list) or not deaths:
+        return False
+    members = []
+    updates = []
+    for row in deaths:
+        if not isinstance(row, dict) or not isinstance(row.get('member'), dict) or type(row.get('update')) is not int:
+            return False
+        members.append(row['member'])
+        updates.append(row['update'])
+    if (seed not in members or any(not isinstance(m.get('EntityRef'), str) for m in members)
+            or len({m['EntityRef'] for m in members}) != len(members)
+            or min(updates) < proof['startedUpdate'] or max(updates) != proof['rootDeathUpdate']):
+        return False
+    if seed.get('TypeId') in (125, 126):
+        return len(members)==2 and {m.get('TypeId') for m in members}=={125,126}
+    if seed.get('TypeId')==13:
+        return all(m.get('TypeId') in (13,14,15) for m in members)
+    return members==[seed]
+
+
+def verified_server_combat(action, task, result, proof):
+    if (task.get('taskName') != 'combat_attack' or task.get('taskId') != action.get('actionId')
+            or task.get('status') != 'completed' or task != action.get('task')
+            or result.get('inputsReleased') is not True or result.get('effectVerified') is not True):
+        return False
+
+    def defeated(hit):
+        return (isinstance(hit, dict) and hit.get('Defeated') is True
+                and type(hit.get('LifeAfter')) is int and type(hit.get('LifeBefore')) is int
+                and hit['LifeAfter'] <= 0 < hit['LifeBefore'])
+
+    requested = action.get('targetTask') or {}
+    target = proof.get('target') or {}
+    hit = proof.get('lastHit')
+    if proof.get('source') != 'reflex' or result.get('reason') != 'combat_threats_cleared':
+        return (target.get('EntityRef') == requested.get('entityRef')
+                and defeated(hit) and proof.get('life') == hit['LifeAfter'])
+
+    encounters = proof.get('encounters')
+    if (not requested.get('threat') or requested['threat'] != proof.get('threat')
+            or not isinstance(encounters, list) or not encounters):
+        return False
+    kills = set()
+    previous_kill_tick = -1
+    for encounter in encounters:
+        if not isinstance(encounter, dict) or not isinstance(encounter.get('Target'), dict):
+            return False
+        reference = encounter['Target'].get('EntityRef')
+        if not isinstance(reference, str) or not reference:
+            return False
+        reason = encounter.get('Reason')
+        if reason == 'combat_target_defeated':
+            strike = encounter.get('LastHit')
+            if (not defeated(strike) or type(strike.get('DamageDone')) is not int or strike['DamageDone'] <= 0
+                    or type(strike.get('GameUpdate')) is not int or strike['GameUpdate'] <= previous_kill_tick
+                    or reference in kills):
+                return False
+            previous_kill_tick = strike['GameUpdate']
+            kills.add(reference)
+        elif reason not in ('combat_target_replaced', 'combat_target_invalidated',
+                             'combat_target_out_of_range', 'combat_approach_failed', 'combat_shot_blocked',
+                             'combat_firing_navigation_no_route'):
+            return False
+    return (encounters[0]['Target']['EntityRef'] == requested.get('entityRef')
+            and encounters[-1]['Target'] == target and encounters[-1].get('LastHit') == hit)
+
+
+BANK_TILES = {-2: 29, -3: 97, -4: 463, -5: 491}
+
+def verified_open_target(goal, evidence):
+    index, tile = evidence.get('chestIndex'), evidence.get('typeId')
+    if not isinstance(goal, dict) or not valid_chest_index(index):
+        return False
+    if index >= 0:
+        if tile not in (21, 467):
+            return False
+        width, height = 2, 2
+    else:
+        if tile != BANK_TILES[index]:
+            return False
+        width, height = {-2:(2,1), -3:(2,2), -4:(3,4), -5:(3,3)}[index]
+    return all(type(goal.get(key)) is int and type(evidence.get(key)) is int
+               and 0 <= goal[key] - evidence[key] < size for key,size in (('x',width),('y',height)))
+
+
+def valid_chest_index(index):
+    return type(index) is int and (index >= 0 or index in BANK_TILES)
+
+
+def verified_sort(action, evidence, end):
+    inventory = action.get('operation') == 'sort_inventory'
+    slots = evidence.get('changedSlots')
+    index = evidence.get('chestIndex')
+    observed, mutated = evidence.get('observedGameUpdate'), evidence.get('mutationGameUpdate')
+    return (isinstance(end, dict) and end.get('inputsAcquired') is False
+            and evidence.get('sortVerified') is True and evidence.get('mutationAttempted') is True
+            and type(mutated) is int and type(observed) is int and 0 <= mutated < observed == end.get('gameUpdate')
+            and (index is None if inventory else valid_chest_index(index))
+            and isinstance(slots, list) and len(slots) <= (59 if inventory else 40)
+            and all(isinstance(row, dict) and type(row.get('slot')) is int
+                    and 0 <= row['slot'] < (59 if inventory else 40)
+                    and type(row.get('stack')) is int and row['stack'] >= 0
+                    and isinstance(row.get('instanceId'), str) for row in slots)
+            and len({row['slot'] for row in slots}) == len(slots))
+
+
 async def terminal(bridge, action, generation):
     deadline = asyncio.get_running_loop().time() + 1.0
     while action.get('endEvidenceStatus') == 'pending' and asyncio.get_running_loop().time() < deadline:
@@ -634,7 +1291,48 @@ async def terminal(bridge, action, generation):
                           and end.get('selectedSlot') == action.get('evidence', {}).get('targetSlot')))
     native_evidence = action.get('evidence') or {}
     native_evidence = native_evidence if isinstance(native_evidence, dict) else {}
+    combat = native_evidence.get('task')
+    combat = combat if isinstance(combat, dict) else {}
+    combat_result = combat.get('result') or {}
+    combat_proof = combat_result.get('evidence') or {}
+    container_verified = (native_evidence.get('containerVerified') is True
+                          and native_evidence.get('mutationAttempted') is True
+                          and all(type(native_evidence.get(key)) is int
+                                  for key in ('mutationGameUpdate', 'observedGameUpdate', 'chestIndex'))
+                          and 0 <= native_evidence['mutationGameUpdate'] < native_evidence['observedGameUpdate']
+                          and isinstance(end, dict) and native_evidence['observedGameUpdate'] == end.get('gameUpdate'))
+    if action.get('operation') in CONTAINER_TRANSFERS:
+        effect = native_evidence.get('effectStatus')
+        if action.get('status') == 'completed' or effect == 'partial':
+            container_verified = verified_container_transfer(action, native_evidence, end)
+    if action.get('operation') in CONTAINER_BATCHES:
+        container_verified = verified_container_batch(action, native_evidence, end)
+    pickup = combat_result.get('evidence')
     native_verified = {
+        'build_place': (combat.get('taskName') == 'build_place' and combat.get('taskId') == action.get('actionId')
+                        and combat == action.get('task') and combat.get('status') == 'completed'
+                        and combat.get('phase') == 'terminal' and combat_result.get('effectVerified') is True
+                        and combat_result.get('inputsReleased') is True
+                        and verified_build_entries(action.get('targetTask'), pickup)),
+        'place_item': (combat.get('taskName') == 'place_item' and combat.get('taskId') == action.get('actionId')
+                       and combat == action.get('task') and combat.get('status') == 'completed'
+                       and combat_result.get('effectVerified') is True and combat_result.get('inputsReleased') is True
+                       and isinstance(pickup, dict) and pickup.get('requested') == action.get('targetTask')
+                       and pickup.get('placedByActor') is True and pickup.get('targetPresent') is True
+                       and pickup.get('targetChanged') is False and pickup.get('uncertainNativeEffect') is False
+                       and pickup.get('nativePlacementEvents') == 1 and pickup.get('consumedCount') == 1
+                       and (pickup.get('kind') != 'chest' or pickup.get('chestVerified') is True)),
+        'collect_drops': (combat.get('taskName') == 'collect_drops' and combat.get('taskId') == action.get('actionId')
+                          and combat == action.get('task') and combat.get('status') == 'completed'
+                          and combat_result.get('effectVerified') is True and combat_result.get('inputsReleased') is True
+                          and isinstance(pickup, dict) and pickup.get('remaining') == []
+                          and pickup.get('unavailable') == [] and pickup.get('pickupUnconfirmed') is False
+                          and ((pickup.get('truncated') is False and pickup.get('outcome') in ('collected', 'none'))
+                               or (pickup.get('truncated') is True and pickup.get('outcome') == 'partial'
+                                   and pickup.get('canContinue') is True))),
+        **dict.fromkeys(SORT_OPERATIONS, verified_sort(action, native_evidence, end)),
+        **dict.fromkeys(CONTAINER_BATCHES, container_verified),
+        **dict.fromkeys(CONTAINER_TRANSFERS, container_verified),
         'move_input': (native_evidence.get('requestedInputs') == action.get('requestedInputs')
                        and isinstance(action.get('requestedInputs'), dict)
                        and type(native_evidence.get('updatesExecuted')) is int
@@ -645,9 +1343,69 @@ async def terminal(bridge, action, generation):
         'navigate_to_x': native_evidence.get('arrived') is True,
         'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
+        'open_container': container_verified and verified_open_target(action.get('targetContainer'), native_evidence),
+        'close_container': container_verified and native_evidence.get('chestIndex', -2) == -1,
         'craft_recipe': verified_server_craft(action, native_evidence),
         'mine_target': verified_server_mine_task(action, native_evidence),
+        'boss_encounter': (combat.get('taskName') == 'boss_encounter' and combat == action.get('task')
+                           and combat.get('taskId') == combat_proof.get('encounterId') == action.get('actionId')
+                           and combat_result.get('reason') == 'boss_root_defeated'
+                           and combat_result.get('inputsReleased') is True and combat_result.get('effectVerified') is True
+                           and (combat_proof.get('seed',combat_proof.get('target')) or {}).get('EntityRef') == (action.get('targetTask') or {}).get('entityRef')
+                           and type(combat_proof.get('life')) is int and combat_proof['life'] <= 0
+                           and combat.get('status') == 'completed' and combat_proof.get('source') == 'boss'
+                           and type(combat_proof.get('rootDeathUpdate')) is int
+                           and type(combat_proof.get('startedUpdate')) is int
+                           and isinstance(end, dict) and type(end.get('gameUpdate')) is int
+                           and combat_proof['startedUpdate'] <= combat_proof['rootDeathUpdate'] <= end['gameUpdate']
+                           and verified_boss_deaths(combat_proof, members_required=
+                               'server_ai_boss_members_v1' in getattr(bridge,'hello',{}).get('capabilities',()))),
+        'combat_attack': verified_server_combat(action, combat, combat_result, combat_proof),
         **{op: verified_server_inventory(action, native_evidence) for op in INVENTORY_OPERATIONS},
+        'manage_trash': (native_evidence.get('verified') is True and isinstance(action.get('targetInventory'),dict)
+                        and native_evidence.get('mode') == action['targetInventory'].get('mode')
+                        and native_evidence.get('slot') == action['targetInventory'].get('slot')
+                        and type(native_evidence.get('stack')) is int and native_evidence['stack']>0
+                        and type(native_evidence.get('typeId')) is int and native_evidence['typeId']>0),
+        'switch_equipment_loadout': (native_evidence.get('verified') is True and isinstance(action.get('targetInventory'),dict)
+                                    and native_evidence.get('beforeLoadout') == action['targetInventory'].get('expectedLoadout')
+                                    and native_evidence.get('afterLoadout') == action['targetInventory'].get('loadout')),
+        'set_inventory_favorite': verified_favorite(action.get('targetInventory'), native_evidence),
+        'drop_inventory_item': verified_drop(action.get('targetInventory'), native_evidence),
+        'open_inventory_item': (isinstance(action.get('targetInventory'),dict)
+                                and native_evidence.get('sourceSlot')==action['targetInventory'].get('sourceSlot')
+                                and type(native_evidence.get('beforeStack')) is int and type(native_evidence.get('afterStack')) is int
+                                and native_evidence['beforeStack']==native_evidence['afterStack']+1 and native_evidence['afterStack']>=0
+                                and type(native_evidence.get('typeId')) is int and native_evidence['typeId']>0
+                                and isinstance(native_evidence.get('drops'),list) and bool(native_evidence['drops'])
+                                and all(isinstance(d,dict) and all(type(d.get(k)) is int and d[k]>0 for k in ('typeId','stack')) for d in native_evidence['drops'])),
+        'reforge_item': verified_reforge(action.get('targetTask'), native_evidence),
+        'heal_at_nurse': verified_treatment(action.get('targetTask'), native_evidence),
+        'sell_npc_item': verified_sale(action.get('targetTask'), native_evidence),
+        'open_npc_dialogue': (native_evidence.get('open') is True and isinstance(action.get('targetTask'), dict)
+                              and isinstance(native_evidence.get('entityRef'), str)
+                              and action['targetTask'].get('entityRef') == native_evidence['entityRef']
+                              and isinstance(native_evidence.get('text'), str) and bool(native_evidence['text'].strip())),
+        'close_npc_dialogue': native_evidence.get('open') is False,
+        'buy_npc_item': verified_purchase(action.get('targetTask'), native_evidence),
+        'assign_npc_home': verified_npc_home(action.get('targetTask'), native_evidence),
+        'set_team': (isinstance(action.get('targetTask'),dict) and type(native_evidence.get('team')) is int
+                     and native_evidence['team']==action['targetTask'].get('team')),
+        'teleport_to_pylon': (isinstance(action.get('targetTask'),dict) and isinstance(native_evidence.get('pylonRef'),str)
+                              and native_evidence['pylonRef']==action['targetTask'].get('pylonRef')
+                              and native_evidence.get('nativeTeleport') is True
+                              and all(type(native_evidence.get(k)) in (int,float) for k in ('actorX','actorY','targetX','targetY'))
+                              and native_evidence['actorX']==native_evidence['targetX'] and native_evidence['actorY']==native_evidence['targetY']),
+        'teleport_to_teammate': (isinstance(action.get('targetTask'),dict) and isinstance(native_evidence.get('teammateRef'),str)
+                                and native_evidence['teammateRef']==action['targetTask'].get('teammateRef')
+                                and type(native_evidence.get('team')) is int and 1<=native_evidence['team']<=5
+                                and all(type(native_evidence.get(k)) in (int,float) for k in ('actorX','actorY','targetX','targetY'))
+                                and native_evidence['actorX']==native_evidence['targetX'] and native_evidence['actorY']==native_evidence['targetY']
+                                and type(native_evidence.get('before')) is int and type(native_evidence.get('after')) is int
+                                and native_evidence['before']==native_evidence['after']+1 and native_evidence['after']>=0),
+        'dismiss_summon': (action.get('targetInventory')=={'itemType':native_evidence.get('itemType')} and native_evidence.get('absent') is True and type(native_evidence.get('buffType')) is int
+                           and native_evidence['buffType']>0 and type(native_evidence.get('wasActive')) is bool),
+        'configure_combat_loadout': verified_loadout(action, native_evidence),
         **{op: verified_server_equipment(action, native_evidence) for op in EQUIPMENT_OPERATIONS},
         'place_tile': (isinstance(action.get('targetTile'), dict)
                        and set(action['targetTile']) == {'x', 'y'}
@@ -658,6 +1416,14 @@ async def terminal(bridge, action, generation):
                        and native_evidence.get('targetPresent') is True
                        and native_evidence.get('targetChanged') is False
                        and type(native_evidence.get('consumedCount')) is int and native_evidence['consumedCount'] == 1),
+        **{op: (isinstance(action.get('targetTile'),dict)
+                and all(type(native_evidence.get(k)) is int and native_evidence[k]==action['targetTile'].get(k) for k in ('x','y'))
+                and native_evidence.get('afterOpen') is (op=='open_door')
+                and type(native_evidence.get('beforeOpen')) is bool
+                and native_evidence.get('changed') is (native_evidence['beforeOpen']!=native_evidence['afterOpen']))
+           for op in ('open_door','close_door')},
+        **{op: verified_hammer(action, native_evidence) for op in ('mine_wall','hammer_tile') if action.get('operation') == op},
+        'interact_tile': verified_interaction(action.get('targetTask'), native_evidence),
         'place_rope': verified_server_rope(action, native_evidence),
         'move_on_rope': verified_server_rope_motion(action, native_evidence),
         'place_object': (isinstance(action.get('targetTile'), dict)
@@ -669,14 +1435,23 @@ async def terminal(bridge, action, generation):
                        and native_evidence.get('targetPresent') is True
                        and native_evidence.get('targetChanged') is False
                        and type(native_evidence.get('consumedCount')) is int and native_evidence['consumedCount'] == 1
-                       and verified_server_object(action, native_evidence)),
+                       and verified_server_object(action, native_evidence, general_objects=
+                                                  'server_ai_general_operations_v1' in bridge.hello.get('capabilities', ()))),
         'mine_tile': (native_evidence.get('destroyedByActor') is True
                       and native_evidence.get('targetAbsent') is True
                       and native_evidence.get('targetChanged') is False),
     }.get(action.get('operation'), False)
-    native_end = (isinstance(end, dict)
+    retreat= combat_proof.get('retreatProof') or {}
+    retreat_verified=(action.get('reason')!='boss_retreat_verified' or (
+        action.get('status')=='cancelled' and combat_proof.get('retreatVerified') is True
+        and retreat.get('attackReleased') is True and retreat.get('settled') is True
+        and all(type(retreat.get(k)) in (int,float) for k in ('left','right','feetX','feetY','bottom'))
+        and retreat['left']<=retreat['feetX']<=retreat['right'] and abs(retreat['bottom']-retreat['feetY'])<=.5
+        and retreat.get('npcClearRadius')==320 and retreat.get('projectileClearRadius')==160
+        and isinstance(end,dict) and retreat.get('update')==end.get('gameUpdate')))
+    native_end = (retreat_verified and isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS)
+                  and action.get('operation') in ('reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','dismiss_summon','set_team','teleport_to_pylon','teleport_to_teammate','manage_trash','switch_equipment_loadout','set_inventory_favorite','drop_inventory_item','open_inventory_item','mine_wall','hammer_tile','interact_tile','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -686,6 +1461,7 @@ async def terminal(bridge, action, generation):
                   and end.get('actorGeneration') == action.get('generation')
                   and end.get('actorSlot') == action.get('actorSlot')
                   and (action.get('status') != 'completed'
+                       and not (action.get('operation') in (CONTAINER_TRANSFERS | CONTAINER_BATCHES) and native_evidence.get('effectStatus') == 'partial')
                        or end.get('effectVerified') is True and native_verified))
     server_ai_end = server_ai_end or native_end
     valid_phase = server_ai_end if 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []) else (
@@ -696,6 +1472,8 @@ async def terminal(bridge, action, generation):
             or end['worldSessionId'] != action.get('worldSessionId')
             or not valid_phase):
         out.update(valid=False, status='unknown', completed=False, reason='missing_game_thread_release_evidence', terminalActionStatus=action['status'])
+        if action.get('operation') in (CONTAINER_TRANSFERS | CONTAINER_BATCHES | SORT_OPERATIONS):
+            out.update(effectVerified=False, evidence=None)
     return out
 
 
@@ -737,8 +1515,11 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     def track(**fields):
         if lifecycle is not None:
             lifecycle.update(copy.deepcopy(fields))
-    arguments = validate(name, arguments)
+    server = "server_ai_atomic_v1" in bridge.hello.get("capabilities", ())
+    arguments = validate(name, arguments, server=server)
     validate_backend(bridge, name, arguments)
+    if name in ('collect_drops', 'place_item', 'build_place'):
+        raise PreDispatchRejected(f'Use submit_task for {name}')
     if name == 'navigate_to' and 'server_ai_navigation_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_navigation_v1; no navigation task submitted')
     if name == 'mine_target' and 'server_ai_tasks_v1' not in bridge.hello.get('capabilities', []):
@@ -747,6 +1528,20 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_crafting_v1; no crafting RPC started')
     if name == 'place_object' and 'server_ai_place_object_workbench_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_place_object_workbench_v1; no object placement RPC started')
+    if name=='dismiss_summon' and 'server_ai_dismiss_summon_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_dismiss_summon_v1')
+    if name in ('manage_trash','switch_equipment_loadout') and 'server_ai_personal_inventory_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_personal_inventory_v1')
+    if name=='set_inventory_favorite' and 'server_ai_inventory_favorite_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_inventory_favorite_v1')
+    if name=='drop_inventory_item' and 'server_ai_drop_item_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_drop_item_v1')
+    if name=='open_inventory_item' and 'server_ai_open_item_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_open_item_v1')
+    if server and name == 'interact_tile' and 'server_ai_interact_tile_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_interact_tile_v1')
+    if name in ('open_door','close_door') and 'server_ai_doors_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_doors_v1')
     if name == 'place_rope' and 'server_ai_place_rope_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_place_rope_v1; no rope placement RPC started')
     if name == 'observe_scene' and 'server_ai_scene_v1' not in bridge.hello.get('capabilities', []):
@@ -768,6 +1563,20 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'observe_exploration':
         from exploration import read_bounded_exploration
         return await asyncio.to_thread(read_bounded_exploration, bridge, **arguments)
+    if name in SORT_OPERATIONS and 'server_ai_sorting_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_sorting_v1')
+    if name in CONTAINER_BATCHES and 'server_ai_container_batch_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_container_batch_v1')
+    if name in CONTAINER_TRANSFERS and 'server_ai_container_transfer_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_container_transfer_v1')
+    if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_containers_v1')
+    if name in ('inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
+        reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
+        envelope = reply.get('data')
+        if not isinstance(envelope, dict):
+            raise BridgeError(f'Missing server AI {name} envelope')
+        return {'valid': envelope.get('available') is True, **envelope}
     if name == 'query_map':
         if 'server_ai_map_v1' not in bridge.hello.get('capabilities', []):
             raise PreDispatchRejected('AI map unavailable', status='unsupported_operation')
@@ -809,11 +1618,19 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         required_capability = ('server_ai_inventory_v1' if 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []) and name in INVENTORY_OPERATIONS else 'inventory_operations_v1')
     if name == 'inspect_inventory' and 'server_ai_reads_v1' in bridge.hello.get('capabilities', []):
         required_capability = 'server_ai_reads_v1'
+    if server and name in ('mine_wall','hammer_tile'):
+        required_capability = 'server_ai_hammer_v1'
+    if server and name == 'interact_tile':
+        required_capability = 'server_ai_interact_tile_v1'
+    if name=='discover_bosses':
+        required_capability='server_ai_boss_strategy_v1'
+    if name in ('configure_combat_loadout','query_combat_loadout'):
+        required_capability = 'server_ai_combat_primary_v1'
     if name in EQUIPMENT_OPERATIONS:
         required_capability = 'server_ai_equipment_v1'
     if required_capability and required_capability not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected(f'Requires {required_capability}; no action started')
-    if name in ('mine_wall', 'place_wall', 'hammer_tile', 'interact_tile') and 'server_confirmed_interactions_v1' not in bridge.hello.get('capabilities', []):
+    if not (server and name in ('interact_tile','mine_wall','hammer_tile')) and name in ('mine_wall', 'place_wall', 'hammer_tile', 'interact_tile') and 'server_confirmed_interactions_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_confirmed_interactions_v1 (CompanionBridge 0.1.37+); no action started')
     if name in READS:
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
@@ -856,13 +1673,19 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Direct inputs missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if name in INVENTORY_OPERATIONS | EQUIPMENT_OPERATIONS and 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []):
+        if name in INVENTORY_OPERATIONS | EQUIPMENT_OPERATIONS | {"dismiss_summon","configure_combat_loadout","open_inventory_item","manage_trash","switch_equipment_loadout","set_inventory_favorite","drop_inventory_item"} and 'server_ai_atomic_v1' in bridge.hello.get('capabilities', []):
             placement_invalid = True
             if action.get('targetInventory') != arguments:
                 raise BridgeError('Inventory target missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if name in ('mine_target', 'navigate_to'):
+        if name in CONTAINER_OPERATIONS:
+            placement_invalid = True
+            if action.get('targetContainer') != arguments:
+                raise BridgeError('Container target missing or different in start receipt')
+            placement_invalid = False
+            placement_identity = dict(action)
+        if (server and name == 'interact_tile') or name in ('reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','set_team','teleport_to_pylon','teleport_to_teammate','mine_target', 'navigate_to'):
             placement_invalid = True
             if action.get('targetTask') != arguments:
                 raise BridgeError('Task target missing or changed in start receipt')
@@ -876,7 +1699,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             placement_identity = dict(action)
         if (name == 'place_tile' and 'server_ai_place_tile_v1' in bridge.hello.get('capabilities', [])
                 or name == 'place_object' and 'server_ai_place_object_workbench_v1' in bridge.hello.get('capabilities', [])
-                or name == 'place_rope'):
+                or server and name in ('mine_wall','hammer_tile')
+                or name in ('place_rope','open_door','close_door')):
             placement_invalid = True
             if (action.get('targetTile') != arguments
                     or any(type(value) is not int for value in action['targetTile'].values())):

@@ -15,6 +15,7 @@ namespace CompanionBridge.ServerIpc;
 internal static class ServerAiActionFixture
 {
     private static bool initialized, failed, combatIsolated;
+    private static bool buildingEditApplied;
     private static int x, y;
     private static object observedDrop;
     private static NPC perceptionNpc;
@@ -36,6 +37,10 @@ internal static class ServerAiActionFixture
                 {
                     if(update==null)throw new MissingMethodException("Native Main.Update(GameTime) unavailable");
                     int left=Main.spawnTileX, floor=Main.spawnTileY+8;
+                    // The second process in the restart test loads the saved terrain.
+                    bool resumeBuild=Program.LaunchParameters.ContainsKey("-companionplacementtest") &&
+                        Environment.GetEnvironmentVariable("COMPANION_BUILD_RESTART")=="resume";
+                    if(!resumeBuild)
                     for(int tx=left-22;tx<=left+24;tx++)for(int ty=floor-14;ty<=floor+2;ty++)
                     {
                         var tile=Main.tile[tx,ty];tile.ClearEverything();
@@ -67,6 +72,23 @@ internal static class ServerAiActionFixture
                         p.inventory[5].SetDefaults(ItemID.StoneBlock);p.inventory[5].stack=4;
                         p.inventory[6].SetDefaults(ItemID.DirtBlock);p.inventory[6].stack=4;
                     }
+                    if(Program.LaunchParameters.ContainsKey("-companionhousingtest"))
+                    {
+                        int[] items={ItemID.Wood,ItemID.WoodWall,ItemID.WoodenDoor,ItemID.Torch,ItemID.WorkBench,ItemID.WoodenChair};
+                        for(int i=0;i<items.Length;i++)
+                        {
+                            p.inventory[4+i].SetDefaults(items[i]);
+                            p.inventory[4+i].stack=i<2?64:1;
+                        }
+                        // Exterior platform and native reach accessories; no fixture tile inside the residence.
+                        var staging=Main.tile[left-1,floor-3];
+                        staging.HasTile=true;staging.TileType=TileID.Platforms;
+                        p.position=new(left*16-p.width,(floor-3)*16-p.height);
+                        p.armor[3].SetDefaults(ItemID.ArchitectGizmoPack);
+                        p.armor[4].SetDefaults(ItemID.Toolbelt);
+                        p.inventory[10].SetDefaults(ItemID.Toolbox);
+
+                    }
                     if(Program.LaunchParameters.ContainsKey("-companionlandingtest"))ServerAiLandingFixture.Run(p);
                     if(Program.LaunchParameters.ContainsKey("-companionsemantictest"))
                     {
@@ -89,6 +111,49 @@ internal static class ServerAiActionFixture
                         initialLife=p.statLife,initialAppleStack=2,perceptionNpcSlot=perceptionNpc?.whoAmI,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));
                 }
             }
+            // One deterministic external edit, only in the explicit copied-world Building test.
+            if(Program.LaunchParameters.ContainsKey("-companionplacementtest") && !buildingEditApplied &&
+                Main.tile[x-10,y].HasTile && Main.tile[x-11,y].HasTile &&
+                File.Exists(Path.Combine(Main.SavePath,"building-external-edit")))
+            {
+                var removed=Main.tile[x-10,y];
+                var added=Main.tile[x-13,y];
+                removed.ClearTile();
+                added.HasTile=true;added.TileType=TileID.Dirt;
+                buildingEditApplied=true;
+            }
+            if (Program.LaunchParameters.ContainsKey("-companionnpchometest") &&
+                File.Exists(Path.Combine(Main.SavePath, "housing-refs-request")) &&
+                !File.Exists(Path.Combine(Main.SavePath, "housing-refs.json")))
+            {
+                var p = ProbeSession.Actor;
+                int left=x-8, floor=y+2;
+                // Exercise slot reuse with two native spawns in the copied world.
+                var identity = new AiReadOnlyProtocol.Identity(p, ProbeSession.WorldSession,
+                    ProbeSession.ActorGeneration, p.whoAmI, null, p.selectedItem, Main.GameUpdateCount);
+                int SpawnMerchant() => NPC.NewNPC(p.GetSource_Misc("HousingSlotReuse"),
+                    (left+16)*16, floor*16-32, NPCID.Merchant);
+                int oldSlot = SpawnMerchant();
+                if (oldSlot >= Main.maxNPCs) throw new InvalidOperationException("No fixture NPC slot");
+                string stale = NativeCombatWorld.Reference(identity, Main.npc[oldSlot]);
+                Main.npc[oldSlot].active = false;
+                int liveSlot = SpawnMerchant();
+                if (liveSlot != oldSlot) throw new InvalidOperationException("Fixture did not reuse NPC slot");
+                string merchant = NativeCombatWorld.Reference(identity, Main.npc[liveSlot]);
+                if (merchant == stale) throw new InvalidOperationException("NPC spawn identity did not change");
+                File.WriteAllText(Path.Combine(Main.SavePath, "housing-refs.json"),
+                    JsonSerializer.Serialize(new { stale, merchant }));
+            }
+            if (Program.LaunchParameters.ContainsKey("-companiong3shoptest"))
+                lock (ProbeSession.Reservation.Gate) G3ShopFixture.Tick(ProbeSession.Actor);
+            // The ordinary action fixture retires ambient NPCs. The Boss probe needs
+            // complete native NPC updates, including newly spawned parts and adds.
+            if(Program.LaunchParameters.TryGetValue("-companionbossprobe",out string bossCase))
+            {
+                update.Invoke(Main.instance,new object[]{new GameTime()});
+                BossProbeScenario.Advance(ProbeSession.Actor,bossCase);
+                return;
+            }
             lock(ProbeSession.Reservation.Gate)ServerAiDirectInputFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerMineTaskFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerInventoryFixture.Tick(ProbeSession.Actor);
@@ -105,9 +170,10 @@ internal static class ServerAiActionFixture
                 var p=ProbeSession.Actor;NetworkStateSync.Require(p);
                 if(isolate&&!combatIsolated&&(ActorControl.Running||ActorItemUse.Running||ActorMining.Running))
                     throw new InvalidOperationException("Cannot isolate combat during an active action");
-                var removed=Main.npc.Where(n=>n.active&&!n.townNPC&&(isolate||!ReferenceEquals(n,perceptionNpc)))
+                ServerCombatFixture.Tick(p);
+                var removed=Main.npc.Where(n=>n.active&&!n.townNPC&&!ServerCombatFixture.Keeps(n)&&(isolate||!ReferenceEquals(n,perceptionNpc)))
                     .Select(n=>new{slot=n.whoAmI,n.type,n.damage,n.aiStyle,n.noGravity,x=n.position.X,y=n.position.Y}).ToArray();
-                foreach(var npc in Main.npc)if(npc.active&&!npc.townNPC)
+                foreach(var npc in Main.npc)if(npc.active&&!npc.townNPC&&!ServerCombatFixture.Keeps(npc))
                 {
                     if(isolate||!ReferenceEquals(npc,perceptionNpc))npc.active=false;
                     else
@@ -141,7 +207,14 @@ internal static class ServerAiActionFixture
                 File.WriteAllText(Path.Combine(Main.SavePath,"task-freeze-ready.json"),JsonSerializer.Serialize(new{gameUpdate=Main.GameUpdateCount}));
                 return;
             }
+            lock(ProbeSession.Reservation.Gate)ServerTorchFixture.Tick(ProbeSession.Actor);
+            if(ServerTorchFixture.Paused || ServerCombatFixture.ArenaPaused())return;
+            ServerCombatFixture.BeginFrame();
             update.Invoke(Main.instance,new object[]{new GameTime()});
+            ServerCombatFixture.EndFrame(ProbeSession.Actor);
+            ServerCombatFixture.ArenaAfter(ProbeSession.Actor);
+            if(ServerBenchmarkFixture.Enabled)
+                lock(ProbeSession.Reservation.Gate)ServerBenchmarkFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerAiTerrainFixture.Observe(ProbeSession.Actor);
             var current=ActorMining.Current;
             object[] Drops()=>Main.item.Where(i=>i.active&&i.type==ItemID.StoneBlock&&Vector2.Distance(i.Center,new(x*16+8,y*16+8))<160)
@@ -173,5 +246,5 @@ internal static class ServerAiActionFixture
             ProbeSession.Quarantine("Isolated action fixture failed: "+e.Message);
         }
     }
-    internal static void Reset(){initialized=failed=combatIsolated=false;observedDrop=null;perceptionNpc=null;perceptionPosition=default;}
+    internal static void Reset(){initialized=failed=combatIsolated=buildingEditApplied=false;observedDrop=null;perceptionNpc=null;perceptionPosition=default;}
 }

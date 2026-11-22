@@ -41,7 +41,7 @@ internal sealed class MobilityTracker
             ||ph.Air!=null&&previous.Movement!=null&&movement!=null
                 &&(previous.Movement.Wings.TimeMax!=movement.Wings.TimeMax||previous.Movement.Rockets.TimeMax!=movement.Rockets.TimeMax)
             ||!previous.UnsupportedEffects.SequenceEqual(unsupported)
-            ||(movement==null?previous.Movement!=null:!movement.SamePlanningAssumptions(previous.Movement,expectedExtraJump)))revision++;
+            ||(movement==null?previous.Movement!=null:!movement.SamePlanningAssumptions(previous.Movement,expectedExtraJump,ph.CanWade)))revision++;
         previous=new(revision,tick,session,generation,variant,ph,width,height,
             unsupported.Length==0?(ph.Air!=null?new[]{"ground_walk","ground_jump",ph.Air.Kind==AirKind.Wings?"wings":"rocket_pulse"}:ph.ExtraJump!=null?new[]{"ground_walk","ground_jump","extra_jump"}:new[]{"ground_walk","ground_jump"}):Array.Empty<string>(),unsupported,expiryTail,movement,observedPhysics);
         previousSwiftnessTime=swiftness?swiftnessTime:0;
