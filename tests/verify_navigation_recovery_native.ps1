@@ -1,16 +1,17 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',
+param([string]$TModLoaderPath,[string]$EngineProfile,
     [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes,[switch]$Mobility,[switch]$Probe,[switch]$Region,
     [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
+$selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
+$TModLoaderPath=$selectedEngine.Path
 if($Environment -and !$Region){throw 'Environment probe requires Region mode.'}
 if($Region -and ($Mobility -or $Probe -or $Baseline -or $Scenes)){throw 'Region mode does not combine with mobility/recovery probes or scene selectors.'}
 $repo=Split-Path $PSScriptRoot -Parent
 $world=(Resolve-Path -LiteralPath $WorldPath).Path
 $package=(Resolve-Path -LiteralPath $PackagePath).Path
-$expected=[regex]::Match((Get-Content -LiteralPath (Join-Path $repo 'CompanionBridge/ServerPlayerRuntime/EngineHooks.cs') -Raw),
-    'EngineHash = "([0-9A-F]+)"').Groups[1].Value
-$actual=(Get-FileHash -LiteralPath (Join-Path $TModLoaderPath 'tModLoader.dll')).Hash
-if(!$expected -or $actual -ne $expected){throw "Pinned native engine required; expected=$expected actual=$actual. No server started."}
+Assert-CompanionPackage -Package $package -Engine $selectedEngine
+
 if($Port -eq $IpcPort -or @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() |
     Where-Object {$_.Port -in @($Port,$IpcPort)}).Count){throw 'Test ports must be distinct and unused'}
 $profile=Join-Path $repo ('.local/navigation-recovery-native-'+[guid]::NewGuid().ToString('N'))
@@ -25,7 +26,7 @@ $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dot
 $info.WorkingDirectory=$TModLoaderPath;$info.UseShellExecute=$false;$info.CreateNoWindow=$true
 $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
 foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,
-    '-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest',
+    '-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest',
     '-companionactionstest','-companionterraintest','-companionnavrecoverytest')){$info.ArgumentList.Add($arg)}
 if($Mobility -or $Region){$info.ArgumentList.Add('-companionmobilitytest')}
 if($Region){$info.ArgumentList.Add('-companionregiontest')}

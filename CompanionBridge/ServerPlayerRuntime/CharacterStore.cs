@@ -109,18 +109,24 @@ internal static class CharacterStore
         }
     }
 
-    internal static void LoadWorld(WorldCharacterFiles files,WorldCharacterManifest manifest)
+    internal static Player VerifyWorldCandidate(string path, WorldCharacterManifest manifest)
+    {
+        var p = CharacterIo.Read(path);
+        if (p.difficulty == 2 || CharacterIo.State(p, true) != manifest.Native.StateHash
+            || p.GetModPlayer<ProbePlayer>().PersistentMarker != "world-ai:" + manifest.CharacterId)
+            throw new IOException("World character native state/identity failed validation.");
+        p.selectedItem = manifest.SelectedItem;
+        return p;
+    }
+
+    internal static void LoadWorld(WorldCharacterFiles files,WorldCharacterManifest manifest, Player verified = null)
     {
         ProbeSession.Reservation.AssertOwner(Program.IsMainThread);
         lock(ProbeSession.Reservation.Gate)
         {
             if(ProbeSession.Actor!=null)throw new InvalidOperationException("World restore requires an unpublished actor.");
             ProbeSession.CheckInitialSlot();
-            var p=CharacterIo.Read(files.Open(manifest));
-            if(p.difficulty==2||CharacterIo.State(p,true)!=manifest.Native.StateHash
-                ||p.GetModPlayer<ProbePlayer>().PersistentMarker!="world-ai:"+files.CharacterId)
-                throw new IOException("World character native state/identity failed validation.");
-            p.selectedItem=manifest.SelectedItem;
+            var p=verified ?? VerifyWorldCandidate(files.Open(manifest), manifest);
             prepared=p;
             try{ProbeSession.Spawn();if(!ReferenceEquals(ProbeSession.Actor,p))throw new IOException("World character was not published.");CurrentId=files.CharacterId;}
             finally{prepared=null;}

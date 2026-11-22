@@ -1,9 +1,14 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader', [string]$WorldPath='.local/virtual-player-control-host/Worlds/test.wld', [string]$PackagePath='.local/agent-build/Mods/CompanionBridge.tmod', [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py', [switch]$Scene)
+param([string]$TModLoaderPath,[string]$EngineProfile, [string]$WorldPath='.local/virtual-player-control-host/Worlds/test.wld', [string]$PackagePath, [int]$Port=27941, [int]$IpcPort=27942, [string]$TestScript='native_direct_input.py', [switch]$Scene)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
+$selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
+$TModLoaderPath=$selectedEngine.Path
+if(!$PackagePath){$PackagePath=$selectedEngine.Package}
 $repo=Split-Path $PSScriptRoot -Parent
 if($Port -eq $IpcPort -or @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners() | Where-Object {$_.Port -in @($Port,$IpcPort)}).Count){throw 'Test ports must be distinct and unused'}
 $world=(Resolve-Path -LiteralPath $WorldPath).Path
 $package=(Resolve-Path -LiteralPath $PackagePath).Path
+Assert-CompanionPackage -Package $package -Engine $selectedEngine
 $profile=Join-Path $repo ('.local/direct-input-native-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds" | Out-Null
 Copy-Item -LiteralPath $world -Destination "$profile/Worlds/test.wld"
@@ -15,7 +20,7 @@ Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod
 $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dotnet.exe'))
 $info.WorkingDirectory=$TModLoaderPath;$info.UseShellExecute=$false;$info.CreateNoWindow=$true
 $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
-foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest','-companionactionstest')){$info.ArgumentList.Add($arg)}
+foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest','-companionactionstest')){$info.ArgumentList.Add($arg)}
 if($Scene){$info.ArgumentList.Add('-companionscenetest');$info.ArgumentList.Add('-companionperceptiontest');$info.ArgumentList.Add('-companionscenelighttest')}
 else{$info.ArgumentList.Add('-companiondirectinputtest')}
 $process=[Diagnostics.Process]::Start($info)

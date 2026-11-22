@@ -19,13 +19,17 @@ async def verify(args):
             if ready.is_file():return json.loads(ready.read_text())
             await asyncio.sleep(.05)
         raise TimeoutError(case)
-    async def program(case,source,actions=1):
+    async def program(case,source,actions=1,expected_failure=None):
         (profile/f'craft-{case}.lua').write_text(source,encoding='utf-8')
         bridge=ServerAiBridge(args.port)
         try:r=await LuaRuntime(bridge,evidence_root=profile/'craft-lua').execute(source,limits=Limits(actions=actions,calls=40,seconds=50))
         finally:bridge.close()
         rows.append(dict(case=case,result=r));(profile/'crafting-results.json').write_text(json.dumps(dict(records=rows),ensure_ascii=False,indent=2),encoding='utf-8')
-        assert r['status']=='completed',(case,r)
+        if expected_failure:
+            assert r['status']=='failed' and r['actionState']=='released',(case,r)
+            assert r['lastAction']['valid'] and r['lastAction']['reason']==expected_failure,(case,r['lastAction'])
+        else:
+            assert r['status']=='completed',(case,r)
         print(json.dumps(dict(case=case,calls=r['calls'],actions=r['actions'],status=r['status'])),flush=True)
         return r
     # Item type IDs are diagnostic selectors, never recipe IDs; resolve recipe registry live.
@@ -37,16 +41,19 @@ async def verify(args):
         expected={'insufficient':'insufficient_materials','full':'insufficient_inventory_space','station_absent':'missing_crafting_station','water_absent':'environment_not_met','partial_space':'insufficient_inventory_space'}.get(case)
         count=3 if case=='group' else 2 if case=='partial_space' else 1
         source=query.replace('OUTPUT',str(output))+"local before=api('inspect_inventory',{mode='full'}); "+craft.replace('COUNT',str(count))+"local after=api('inspect_inventory',{mode='full'}); "
-        if expected:
-            source+=f"assert(a.valid and not a.completed and a.reason=='{expected}'); "
-            source+="assert(a.evidence.completedCrafts==1); " if case=='partial_space' else "assert(a.evidence.completedCrafts==0 and not a.evidence.mutationAttempted); "
-        else:source+=f"assert(r.supported and r.available and a.valid and a.completed and a.evidence.inventoryVerified and a.evidence.completedCrafts=={count} and a.evidence.producedCount==r.output.count*{count}); "
+        if not expected:
+            source+=f"assert(r.supported and r.available and a.valid and a.completed and a.evidence.inventoryVerified and a.evidence.completedCrafts=={count} and a.evidence.producedCount==r.output.count*{count}); "
         source+="return {recipe=r,action=a,before=before,after=after}"
-        r=await program(case,source)
-        a=r['value']['action'];assert a['endEvidence']['inputsReleased']
+        r=await program(case,source,expected_failure=expected)
+        a=r['lastAction'] if expected else r['value']['action']
+        assert a['endEvidence']['inputsReleased']
+        if expected:
+            assert not a['completed'] and a['evidence']['completedCrafts']==(1 if case=='partial_space' else 0)
+            assert a['evidence']['mutationAttempted']==(case=='partial_space')
         if case=='group':assert any(i['typeId']==2503 for i in a['evidence']['batches'][0]['consumed'])  # pinned engine BorealWood
     await fixture('insufficient')
-    await program('stale-token',query.replace('OUTPUT','36')+"local a=api('craft_recipe',{recipeId=r.recipeId,recipeToken='"+'0'*64+"',crafts=1}); assert(a.valid and a.reason=='recipe_changed' and not a.evidence.mutationAttempted); return a")
+    stale=await program('stale-token',query.replace('OUTPUT','36')+"return api('craft_recipe',{recipeId=r.recipeId,recipeToken='"+'0'*64+"',crafts=1})",expected_failure='recipe_changed')
+    assert not stale['lastAction']['evidence']['mutationAttempted']
     await fixture('cancel')
     bridge=ServerAiBridge(args.port)
     try:

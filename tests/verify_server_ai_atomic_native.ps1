@@ -1,5 +1,5 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[string]$PythonExecutable,[switch]$Reads)
-$arguments=@{TModLoaderPath=$TModLoaderPath;Port=27851;IpcPort=27852;Atomic=$true;PackagePath=(Join-Path (Split-Path $PSScriptRoot -Parent) '.local/companion-g82-build/Mods/CompanionBridge.tmod')}
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$PackagePath,[string]$WorldPath,[string]$PythonExecutable,[switch]$Reads)
+$arguments=@{TModLoaderPath=$TModLoaderPath;Port=27851;IpcPort=27852;Atomic=$true;EngineProfile=$EngineProfile;PackagePath=$PackagePath}
 if($WorldPath){$arguments.WorldPath=$WorldPath}
 if($PythonExecutable){$arguments.PythonExecutable=$PythonExecutable}
 if($Reads){$arguments.Reads=$true}

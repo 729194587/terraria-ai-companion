@@ -1,8 +1,12 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$SeedProfile,[int]$AiPort=18779,[string]$PackagePath)
+param([string]$TModLoaderPath,[string]$SeedProfile,[int]$AiPort=18779,[string]$PackagePath,[string]$EngineProfile)
 $ErrorActionPreference='Stop'
 $repo=Split-Path $PSScriptRoot -Parent
-$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{Join-Path $repo '.local/companion-g82-build/Mods/CompanionBridge.tmod'}
+. (Join-Path $PSScriptRoot 'engine-profile.ps1')
+$engine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
+$TModLoaderPath=$engine.Path
+$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$engine.Package}
 if(!(Test-Path -LiteralPath $package)){throw 'Run scripts/build-companion.ps1 first.'}
+Assert-CompanionPackage -Package $package -Engine $engine
 if($AiPort -lt 1024 -or $AiPort -gt 65535 -or $AiPort -eq 18777 -or $AiPort -eq 7777){throw 'Choose a distinct AI IPC port.'}
 # Always create a new profile; older experiments and formal saves stay intact.
 $profile=Join-Path $repo ('.local/companion-g82-host-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
@@ -18,8 +22,10 @@ Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod
 [IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')
 $hash=(Get-FileHash -LiteralPath $package).Hash
 $launcher=@'
-param([string]$TModLoaderPath='__TML__')
+param([string]$TModLoaderPath='__TML__',[ValidateSet('upgrade','rollback')][string]$CharacterMigration)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '../../scripts/engine-profile.ps1')
+$engine=Resolve-CompanionEngine -Name '__PROFILE__' -Path $TModLoaderPath
 $package=Join-Path $PSScriptRoot 'Mods/CompanionBridge.tmod'
 if((Get-FileHash -LiteralPath $package).Hash -ne '__HASH__'){throw 'Package changed; prepare a new isolated profile.'}
 $enabled=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Mods/enabled.json') -Raw | ConvertFrom-Json
@@ -29,13 +35,23 @@ foreach($port in @(7777,18777,__PORT__)){
 }
 $previousEnabled=$env:COMPANION_SERVER_AI
 $previousPort=$env:COMPANION_AI_PORT
+$previousEngine=$env:COMPANION_ENGINE_PROFILE
+$previousMigration=$env:COMPANION_CHARACTER_MIGRATION
 $env:COMPANION_SERVER_AI='1'
 $env:COMPANION_AI_PORT='__PORT__'
+$env:COMPANION_ENGINE_PROFILE=$engine.Name
+$env:COMPANION_CHARACTER_MIGRATION=if($CharacterMigration){$CharacterMigration}else{$null}
 Push-Location $TModLoaderPath
 try { & (Join-Path $TModLoaderPath 'start-tModLoader.bat') -tmlsavedirectory $PSScriptRoot -modpath (Join-Path $PSScriptRoot 'Mods') }
-finally { Pop-Location; $env:COMPANION_SERVER_AI=$previousEnabled; $env:COMPANION_AI_PORT=$previousPort }
+finally {
+    Pop-Location
+    $env:COMPANION_SERVER_AI=$previousEnabled
+    $env:COMPANION_AI_PORT=$previousPort
+    $env:COMPANION_ENGINE_PROFILE=$previousEngine
+    $env:COMPANION_CHARACTER_MIGRATION=$previousMigration
+}
 '@
-$launcher=$launcher.Replace('__TML__',$TModLoaderPath.Replace("'","''")).Replace('__HASH__',$hash).Replace('__PORT__',"$AiPort")
+$launcher=$launcher.Replace('__TML__',$TModLoaderPath.Replace("'","''")).Replace('__HASH__',$hash).Replace('__PORT__',"$AiPort").Replace('__PROFILE__',$engine.Name)
 [IO.File]::WriteAllText("$profile/start-host-play.ps1",$launcher,[Text.UTF8Encoding]::new($true))
 Write-Output "Prepared only; graphical Host & Play NOT RUN: $profile/start-host-play.ps1"
 Write-Output "After manually selecting Multiplayer > Host & Play, run: python scripts/ai_player_state.py --port $AiPort"

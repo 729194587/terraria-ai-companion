@@ -1,5 +1,8 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$VerticalNavigation)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$VerticalNavigation,[switch]$TcpCapacity)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
+$selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
+$TModLoaderPath=$selectedEngine.Path
 if($Tasks -and !$Actions){throw 'Task validation requires isolated Actions fixture.'}
 if($Inventory -and !$Actions){throw 'Inventory validation requires isolated Actions fixture.'}
 if($Crafting -and !$Actions){throw 'Crafting verification requires isolated Actions fixture.'}
@@ -17,7 +20,8 @@ if($occupied.Count){throw 'Native test port already occupied; refusing to connec
 $repo=Split-Path $PSScriptRoot -Parent
 if(!$WorldPath){$WorldPath=Join-Path $repo '.local/virtual-player-control-host/Worlds/test.wld'}
 $WorldPath=(Resolve-Path -LiteralPath $WorldPath).Path
-$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{Join-Path $repo '.local/companion-g81-build/Mods/CompanionBridge.tmod'}
+$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$selectedEngine.Package}
+Assert-CompanionPackage -Package $package -Engine $selectedEngine
 if(!$PythonExecutable){$PythonExecutable=if($Atomic){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
 if(!(Test-Path -LiteralPath $package)){throw 'Build CompanionBridge first.'}
 $profile=Join-Path $repo ('.local/companion-'+$(if($Atomic){'g82'}else{'g81'})+'-native-'+[guid]::NewGuid().ToString('N'))
@@ -37,7 +41,8 @@ $info.CreateNoWindow=$true
 $info.RedirectStandardInput=$true
 $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
-foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
+foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
+if($TcpCapacity){$info.ArgumentList.Add('-maxplayers');$info.ArgumentList.Add('2')}
 if($Tasks){$info.ArgumentList.Add("-companiontasktest")}
 if($Inventory){$info.ArgumentList.Add("-companioninventorytest")}
 if($Crafting){$info.ArgumentList.Add("-companioncrafttest")}
@@ -242,6 +247,49 @@ try {
         & $PythonExecutable (Join-Path $repo 'tests/native_mine_target.py') --port $IpcPort --profile $profile
         if($LASTEXITCODE -ne 0){throw "Mine target task verification failed: $profile/mine-target-results.json"}
     }
+    if($TcpCapacity){
+        if($bound.binding.slot -ne 1){throw 'AI must reserve slot 1 of the two-slot fixture'}
+        function Test-FullPacket($socket) {
+            $stream=$socket.GetStream()
+            $stream.ReadTimeout=1200
+            $header=[byte[]]::new(3)
+            $deadline=[DateTime]::UtcNow.AddMilliseconds(1200)
+            do {
+                try {$stream.ReadExactly($header)}catch [IO.IOException] {
+                    if($_.Exception.InnerException.SocketErrorCode -eq [Net.Sockets.SocketError]::TimedOut){return $false}
+                    throw
+                }
+                $length=[BitConverter]::ToUInt16($header,0)
+                if($length -lt 3){throw "Invalid native packet length $length"}
+                $payload=[byte[]]::new($length-3)
+                $stream.ReadExactly($payload)
+                if($header[2] -eq 2){return $true}
+            } while([DateTime]::UtcNow -lt $deadline)
+            return $false
+        }
+        $first=$null;$extra1=$null;$extra2=$null;$replacement=$null
+        try {
+            $first=[Net.Sockets.TcpClient]::new('127.0.0.1',$Port)
+            if(Test-FullPacket $first){throw 'The only human slot was rejected'}
+            $extra1=[Net.Sockets.TcpClient]::new()
+            $extra2=[Net.Sockets.TcpClient]::new()
+            [Threading.Tasks.Task]::WaitAll(@($extra1.ConnectAsync('127.0.0.1',$Port),$extra2.ConnectAsync('127.0.0.1',$Port)))
+            if(!(Test-FullPacket $extra1) -or !(Test-FullPacket $extra2)){throw 'Extra connections were not both rejected'}
+            $first.Dispose();$first=$null
+            $limit=[DateTime]::UtcNow.AddSeconds(10)
+            do {
+                Start-Sleep -Milliseconds 200
+                $replacement=[Net.Sockets.TcpClient]::new('127.0.0.1',$Port)
+                if(!(Test-FullPacket $replacement)){break}
+                $replacement.Dispose();$replacement=$null
+            } while([DateTime]::UtcNow -lt $limit)
+            if(!$replacement){throw 'Human slot was not reusable after disconnect'}
+            $afterCapacity=Request @{v=1;id='after-capacity';op='state';binding=$bound.binding}
+            if(!$afterCapacity.ok -or !$afterCapacity.data.active){throw 'AI binding changed during native accepts'}
+        } finally {
+            foreach($socket in @($first,$extra1,$extra2,$replacement)){if($socket){$socket.Dispose()}}
+        }
+    }
     $client.Dispose();$client=$null
     [IO.File]::WriteAllText("$profile/g81-test-stop",'The isolated harness requests native main-thread shutdown after read-only TCP assertions.')
     if(!$process.WaitForExit(20000)){throw 'Native graceful unload timed out'}
@@ -269,6 +317,21 @@ try {
         $report.afterSelection=$after.data
     }
     if($Reads){$report.luaReads=$readResult;$report.luaCombined=$combinedResult;$report.rawPlayerQuery=$rawQuery;$report.stateAfterReads=$rawState.data;$report.readBindingMismatchError=$readMismatch.error;$report.nativeSelections=$nativeSelection}
+    if($TcpCapacity){
+        $reservation=@($events|Where-Object eventName -eq 'pre-listen-reservation')
+        $listenerEntries=@($events|Where-Object eventName -eq 'native-listener-entry')
+        if($reservation.Count -ne 1 -or !$reservation[0].detail.armed -or $reservation[0].detail.tcpListenerExists -or
+            $reservation[0].detail.listenerEntries -ne 0 -or $listenerEntries.Count -ne 1 -or !$listenerEntries[0].detail.reserved){
+            throw 'Reservation was not armed before the single native listener start'
+        }
+        $accepted=@($events|Where-Object eventName -eq 'native-accept')
+        $slots=@($accepted|ForEach-Object {$_.detail.slot})
+        $listeners=@([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners()|Where-Object {$_.Port -in @($Port,$IpcPort)})
+        if($slots.Count -lt 4 -or $slots[0] -ne 0 -or $slots[-1] -ne 0 -or @($slots|Where-Object {$_ -eq -1}).Count -lt 2 -or @($slots|Where-Object {$_ -notin -1,0}).Count -or $listeners.Count){
+            throw 'Native capacity slots or shutdown listener state differs from expected'
+        }
+        $report.tcpCapacity=@{acceptedSlots=$slots;aiSlot=$bound.binding.slot;extraDisconnectPackets=2;portsReleased=$true;clientMode='raw TCP, before Terraria handshake'}
+    }
     if($Perception){$report.perception=$perceptionResult}
     if($Agent){$report.agent=$agentResult}
     if($Scene){$report.scene=Get-Content -LiteralPath "$profile/scene-actions.json" -Raw|ConvertFrom-Json}

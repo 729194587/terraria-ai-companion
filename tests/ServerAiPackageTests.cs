@@ -7,14 +7,14 @@ using Mono.Cecil.Cil;
 
 public static class ServerAiPackageTests
 {
-    public static void Run(string package)
+    public static void Run(string package, string expectedVersion)
     {
         int checks=0;
         void Check(bool ok,string text){if(!ok)throw new Exception(text);checks++;Console.WriteLine("PASS AI package: "+text);}
         using var file=File.OpenRead(package);using var reader=new BinaryReader(file);
         Check(System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4))=="TMOD","real TMOD package");
         reader.ReadString();reader.ReadBytes(276);reader.ReadInt32();
-        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()=="0.1.75","formal package identity/version");
+        Check(reader.ReadString()=="CompanionBridge"&&reader.ReadString()==expectedVersion,"formal package identity/version");
         int count=reader.ReadInt32(),offset=0,dllOffset=-1,size=0,packed=0;
         for(int i=0;i<count;i++){string name=reader.ReadString();int length=reader.ReadInt32(),compressed=reader.ReadInt32();if(name=="CompanionBridge.dll"){dllOffset=offset;size=length;packed=compressed;}offset+=compressed;}
         Check(dllOffset>=0,"formal DLL packaged");file.Position+=dllOffset;

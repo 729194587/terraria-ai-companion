@@ -1,6 +1,9 @@
-param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27837,[switch]$Failure,[switch]$Object,[switch]$AfterPlacementException,
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27837,[switch]$Failure,[switch]$Object,[switch]$AfterPlacementException,
     [string]$PackagePath,[ValidateSet('VirtualPlayerEngineProbe','CompanionBridge')][string]$ModName='CompanionBridge')
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
+$selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
+$TModLoaderPath=$selectedEngine.Path
 if($AfterPlacementException -and (!$Object -or !$Failure)){throw 'AfterPlacementException requires Object and Failure.'}
 $repo=Split-Path $PSScriptRoot -Parent
 if(!$WorldPath){$WorldPath=Join-Path $repo '.local/virtual-player-control-host/Worlds/test.wld'}
@@ -11,7 +14,8 @@ New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds"|Out-Null
 Copy-Item -LiteralPath $WorldPath -Destination "$profile/Worlds/test.wld"
 $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
-$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{(Join-Path $repo '.local/server-place-build/Mods/CompanionBridge.tmod')}
+$package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$selectedEngine.Package}
+Assert-CompanionPackage -Package $package -Engine $selectedEngine
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/$ModName.tmod"
 Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value ('["'+$ModName+'"]')
 $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",
@@ -22,7 +26,7 @@ if($AfterPlacementException){$arguments+='-objectplacementafterexception'}
 if($ModName -eq 'CompanionBridge'){
     $ipcPort=$Port+1
     if(@(Get-NetTCPConnection -LocalPort $ipcPort -State Listen -ErrorAction SilentlyContinue).Count){throw 'Diagnostic IPC port is in use.'}
-    $arguments+=@('-companionserverai','-companionaiport',"$ipcPort")
+    $arguments+=@('-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$ipcPort")
 }
 $process=Start-Process -FilePath (Join-Path $TModLoaderPath 'dotnet/dotnet.exe') -ArgumentList $arguments `
     -WorkingDirectory $TModLoaderPath -WindowStyle Hidden -PassThru `

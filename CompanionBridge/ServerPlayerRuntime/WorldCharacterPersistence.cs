@@ -29,21 +29,54 @@ internal static class WorldCharacterPersistence
         session.Enter(World,ProbeSession.WorldSession,()=>
         {
             if(ProbeSession.Actor!=null)throw new IOException("Unbound actor already exists; refusing world profile adoption.");
-            files=new(Main.SavePath,World,VirtualPlayerEngineProbe.EngineHash);
+            var engine = VirtualPlayerEngineProbe.Engine;
+            files=new(Main.SavePath,World,engine.EngineHash);
             files.Acquire();
             try
             {
-                committed=files.Read();
+                string operation = Environment.GetEnvironmentVariable("COMPANION_CHARACTER_MIGRATION");
+                if (Program.LaunchParameters.TryGetValue("-companioncharactermigration", out var argument)) operation = argument;
+                Player verified = null;
+                AiMap verifiedMap = null;
+                void Verify(string path, WorldCharacterManifest manifest)
+                {
+                    verified = CharacterStore.VerifyWorldCandidate(path, manifest);
+                    verifiedMap = LoadMap(manifest.Version == 2 ? Path.Combine(Path.GetDirectoryName(path), "map.bin") : null);
+                }
+                AiMap LoadMap(string path) => path == null ? new AiMap(World,files.CharacterId,Main.maxTilesX,Main.maxTilesY)
+                    : AiMap.Load(path,World,files.CharacterId,Main.maxTilesX,Main.maxTilesY);
+
+                switch (operation)
+                {
+                    case null:
+                        committed = files.Read();
+                        break;
+                    case "upgrade" when engine.Selected == EngineProfiles.Target:
+                        string oldHash = engine.HashFor(EngineProfiles.Previous);
+                        committed = files.Read(oldHash) ?? throw new IOException("Upgrade requires an existing world character. Start without migration for a new world.");
+                        if (committed.EngineHash == oldHash)
+                        {
+                            committed = files.Migrate(committed, oldHash, Verify);
+                            ProbeSession.Log("world-character-engine-upgraded", new { world = World, committed.Native.Generation });
+                        }
+                        break;
+                    case "rollback" when engine.Selected == EngineProfiles.Previous:
+                        committed = files.Rollback(engine.HashFor(EngineProfiles.Target), Verify);
+                        ProbeSession.Log("world-character-engine-rollback", new { world = World, committed.Native.Generation });
+                        break;
+                    default:
+                        throw new IOException("Character migration operation does not match the verified engine profile.");
+                }
                 bool restored=committed!=null;
-                if(committed!=null)CharacterStore.LoadWorld(files,committed);
+                var map = verifiedMap ?? LoadMap(committed == null ? null : files.OpenMap(committed));
+                if(committed!=null)CharacterStore.LoadWorld(files,committed,verified);
                 else
                 {
                     ProbeSession.Spawn();
                     ProbeSession.Actor.GetModPlayer<ProbePlayer>().PersistentMarker="world-ai:"+files.CharacterId;
                 }
                 actor=ProbeSession.Actor;
-                string mapPath=committed==null?null:files.OpenMap(committed);
-                AiMapRuntime.Map=mapPath==null?new AiMap(World,files.CharacterId,Main.maxTilesX,Main.maxTilesY):AiMap.Load(mapPath,World,files.CharacterId,Main.maxTilesX,Main.maxTilesY);
+                AiMapRuntime.Map=map;
                 if(committed?.Version==1)ProbeSession.Log("ai-map-migration",new{from=1,knowledge="empty; legacy profile had no AI map"});
                 // Commit new identity before it can receive any IPC actions.
                 if(committed==null)Save();
