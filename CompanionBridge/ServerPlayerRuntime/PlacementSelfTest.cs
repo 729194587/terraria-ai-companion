@@ -152,6 +152,7 @@ public sealed class PlacementDiagnosticTile : GlobalTile
 {
     public override bool CanPlace(int i,int j,int type)
     {
+        CompanionBridge.ServerIpc.ServerRopeFixture.ObservePlacementScope(i,j);
         if(PlacementSelfTest.Throw)throw new InvalidOperationException("Intentional native placement exception");
         if(Environment.GetCommandLineArgs().Contains("-placementselftest"))
         {

@@ -13,6 +13,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     private sealed record Handle(AiReadOnlyProtocol.Identity Identity,string Operation,object Context,Result Rejection=null);
     private readonly ServerAiNavigation navigation = new();
     private readonly ServerAiDirectInput directInput = new();
+    private readonly ServerAiRope rope = new();
     private Handle active;
     private static bool IsNavigation(string op)=>op is "navigate_to_x" or "navigate_to_landing_region";
     internal ServerAiNativeActions(){ActorControl.Driver=navigation;}
@@ -55,10 +56,28 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},AutonomousNavigationTask.TripUpdates);
             }
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
+            else if(operation=="move_on_rope")
+            {
+                if(rope.Start(identity,args,out var run) is {} reason)return Reject(reason);
+                context=run;ActorControl.Driver=rope;
+            }
             else if(ActorInventory.IsOperation(operation))context=ActorInventory.Begin(identity,operation,args);
+            else if(ActorEquipment.IsOperation(operation))context=new ActorEquipment.Context(identity,operation,args);
             else if(operation=="craft_recipe")context=ActorCrafting.Begin(identity,args);
             else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId);ActorControl.Driver=navigation;}
             else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge);ActorControl.Driver=navigation;}
+            else if(operation=="place_rope")
+            {
+                if(p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned)return Reject("unsupported_placement_state");
+                int slot=ActorRope.FindSlot(p);
+                if(slot<0)return Reject("rope_material_unavailable");
+                int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
+                string error=ActorRope.Resolve(p,p.inventory[slot],x,y,out var target);
+                if(error!=null)return Reject(error);
+                if(p.selectedItem!=slot)ActorItemUse.Select(p,identity.World,identity.Generation,slot);
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,rope:target);
+                context=ActorItemUse.Current;
+            }
             else if(operation is "place_tile" or "place_object")
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
@@ -66,7 +85,10 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     ActorItemUse.Select(p,identity.World,identity.Generation,plannedSlot.GetInt32());
                 string error=ActorPlacement.Preflight(p,x,y,operation=="place_object");
                 if(error!=null)return Reject(error,operation=="place_object"?ActorObjectPlacement.PreflightDetail(p,x,y,error):null);
-                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,operation=="place_object");context=ActorItemUse.Current;
+                ActorItemUse.StartPlacement(p,identity.World,identity.Generation,x,y,operation=="place_object");
+                if(child&&operation=="place_tile"&&args.TryGetProperty("waterBridgeDirection",out var direction))
+                    ActorItemUse.Current.Placement.WaterBridgeDirection=direction.GetInt32();
+                context=ActorItemUse.Current;
             }
             else if(operation=="use_item")
             {
@@ -88,7 +110,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         catch
         {
             // Start preflight excludes other running actions. Release only this known actor.
-            if(Owned(identity)){ActorMining.Retire(p);ActorItemUse.Retire(p);navigation.Retire(p);directInput.Retire(p);}
+            if(Owned(identity)){ActorMining.Retire(p);ActorItemUse.Retire(p);navigation.Retire(p);directInput.Retire(p);rope.Retire(p);}
             throw;
         }
     }
@@ -107,6 +129,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             var c=(ActorInventory.Context)h.Context;ActorInventory.Step(c);
             return new(c.Status,c.Reason,ActorInventory.Evidence(c),Released(p),c.Status=="completed",InputsAcquired:false);
         }
+        if(h.Context is ActorEquipment.Context equipment)
+        {
+            equipment.Step();
+            return EquipmentResult(h.Identity,equipment);
+        }
         if(h.Operation=="craft_recipe")
         {
             var c=(ActorCrafting.Context)h.Context;ActorCrafting.Step(c);
@@ -119,6 +146,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             var c=(ServerAiDirectInput.Run)h.Context;
             return new(c.Status,c.Reason,directInput.Evidence(),c.InputReleased&&Released(p),
                 c.Status=="completed"&&c.Updates==c.MaxUpdates,InputsAcquired:c.Updates>0,ReasonDetail:c.Detail);
+        }
+        if(h.Operation=="move_on_rope")
+        {
+            if(!ReferenceEquals(rope.Current,h.Context))return new("unknown","native_context_changed",null,false);
+            var c=(ServerAiRope.Run)h.Context;
+            return new(c.Status,c.Reason,rope.Evidence(),c.InputReleased&&Released(p),
+                c.Status=="completed",InputsAcquired:c.Updates>0,ReasonDetail:c.Detail);
         }
         if(IsNavigation(h.Operation))
         {
@@ -138,11 +172,12 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 effectStatus="native_navigation_observed"},Released(p),c.Status=="completed"&&physical.Settled
                     &&(c.Region==null||c.Region.Arrived(physical.State,new NativeMotionWorld(physical.State))),InputsAcquired:c.Updates>0,ReasonDetail:c.ReasonDetail);
         }
-        if(h.Operation is "place_tile" or "place_object")
+        if(h.Operation is "place_tile" or "place_object" or "place_rope")
         {
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
             var c=(ActorItemUse.Context)h.Context;var tile=c.Placement;
-            bool present=tile.Object?ActorObjectPlacement.Present(tile):Main.tile[tile.X,tile.Y].HasTile&&Main.tile[tile.X,tile.Y].TileType==tile.TileType;
+            bool present=tile.Object?ActorObjectPlacement.Present(tile):Main.tile[tile.X,tile.Y].HasTile&&Main.tile[tile.X,tile.Y].TileType==tile.TileType
+                &&(tile.Rope==null||!Main.tile[tile.X,tile.Y].IsActuated);
             bool verified=c.Phase=="completed"&&tile.Placed&&!tile.ExternalChange&&present&&tile.NativeEvents==1&&!tile.UncertainNativeEffect&&tile.ConsumedCount==1
                 &&(!tile.Object||ActorObjectPlacement.Validate(c)==null);
             string placementPhase=c.Phase=="rejected"?"failed":c.Phase=="stale"||c.Phase=="completed"&&!verified?"unknown":c.Phase;
@@ -150,7 +185,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 new{x=tile.X,y=tile.Y,typeId=tile.TileType,itemType=c.Type,c.InitialStack,remainingStack=p.inventory[c.Slot].stack,
                     c.Ticks,c.Starts,c.AnimationPeak,tile.Attempts,nativePlacementEvents=tile.NativeEvents,uncertainNativeEffect=tile.UncertainNativeEffect,consumedCount=tile.ConsumedCount,placedByActor=tile.Placed,
                     objectPlacement=tile.Object,footprint=tile.Object?ActorObjectPlacement.Bounds(tile):null,fullFootprintVerified=tile.Object&&present,style=tile.Style,
-                    targetPresent=present,targetChanged=tile.ExternalChange,effectStatus=verified?(tile.Object?"native_object_placed":"native_tile_placed"):"not_confirmed"},
+                    requestedX=tile.Rope?.X,requestedY=tile.Rope?.Y,extended=tile.Rope==null?(bool?)null:tile.Y>tile.Rope.Y,
+                    targetPresent=present,targetChanged=tile.ExternalChange,effectStatus=verified?(tile.Rope!=null?"native_rope_placed":tile.Object?"native_object_placed":"native_tile_placed"):"not_confirmed"},
                 Released(p)&&p.itemAnimation==0&&p.itemTime==0&&(!tile.Object||p.releaseUseItem&&p.reuseDelay==0),verified,InputsAcquired:c.Ticks>0);
         }
         if(h.Operation=="use_item")
@@ -181,6 +217,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
         if(AiAtomicActions.IsTask(h.Operation))return CancelWithReason(identity,value,"cancelled","explicit_stop");
+        if(h.Context is ActorEquipment.Context equipment)
+        {
+            equipment.Cancel();
+            return EquipmentResult(h.Identity,equipment);
+        }
         if(ActorInventory.IsOperation(h.Operation))
         {
             var c=(ActorInventory.Context)h.Context;ActorInventory.Cancel(c);
@@ -202,11 +243,14 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         if(observed.Status!="running")return observed;
         var p=(Player)h.Identity.Actor;
         if(h.Operation=="move_input")directInput.Stop("cancelled","explicit_stop");
+        else if(h.Operation=="move_on_rope")rope.Stop("cancelled","explicit_stop");
         else if(IsNavigation(h.Operation))navigation.Stop("cancelled","explicit_stop");
-        else if(h.Operation is "use_item" or "place_tile" or "place_object")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
+        else if(h.Operation is "use_item" or "place_tile" or "place_object" or "place_rope")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
         else ActorMining.Stop(p,h.Identity.World,h.Identity.Generation);
         return Poll(h.Identity,h);
     }
+    private static Result EquipmentResult(AiReadOnlyProtocol.Identity id,ActorEquipment.Context c)
+        => new(c.Status,c.Reason,c.Evidence(),Owned(id)&&Released((Player)id.Actor),c.Status=="completed",InputsAcquired:false,ReasonDetail:c.Error);
     public Result CancelWithReason(AiReadOnlyProtocol.Identity identity,object value,string status,string reason)
     {
         var h=(Handle)value;Require(h.Identity);

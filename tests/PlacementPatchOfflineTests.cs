@@ -11,6 +11,7 @@ using VirtualPlayerEngineProbe;
 public static class PlacementPatchOfflineTests
 {
     public static int X(object player)=>0;
+    public static void Y(int y,object player){}
     public static void Run(string engine)
     {
         string dll=System.IO.Path.Combine(engine,"tModLoader.dll");
@@ -41,6 +42,16 @@ public static class PlacementPatchOfflineTests
             il.Invoke(c=>PlacementPatches.Patch(c.Method,c.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(X))),c.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(X)))));
             Check(true,"actual native ILContext accepted");
         }
-        Console.WriteLine($"Native placement scoped-target IL: {checks} checks across {PlacementPatches.Reads.Count} pinned methods; no world/client/model.");
+        using var rope=new DynamicMethodDefinition(runtime.GetType("Terraria.Player").GetMethod(PlacementPatches.RopeMethod,
+            BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic));
+        var ropeGetter=rope.Definition.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(X)));
+        var setter=rope.Definition.Module.ImportReference(typeof(PlacementPatchOfflineTests).GetMethod(nameof(Y)));
+        using var ropeIl=new ILContext(rope.Definition);
+        ropeIl.Invoke(c=>PlacementPatches.PatchRope(c.Method,ropeGetter,ropeGetter,setter));
+        var instructions=rope.Definition.Body.Instructions;
+        Check(instructions.Count(i=>i.OpCode==OpCodes.Call&&i.Operand==ropeGetter)==7,"seven native rope target reads replaced");
+        Check(instructions.Count(i=>i.OpCode==OpCodes.Call&&i.Operand==setter)==1,"native retarget store replaced with scoped setter");
+        Check(!instructions.Any(i=>i.Operand is FieldReference f&&f.Name is "tileTargetX" or "tileTargetY"),"no native rope global coordinate access remains in the patched helper");
+        Console.WriteLine($"Native placement scoped-target IL: {checks} checks across {PlacementPatches.Reads.Count+1} pinned methods; no world/client/model.");
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using CompanionBridge.ServerIpc;
 using Mono.Cecil;
 using MonoMod.RuntimeDetour;
 using Terraria;
@@ -16,6 +17,10 @@ internal static class ActorPlacement
     internal sealed class Context
     {
         internal int X,Y,TileType,Prefix,Style,Attempts,ConsumedCount,NativeEvents,NativeClearEvents;
+        internal int WaterBridgeDirection;
+        internal ActorRope.Target Rope;
+        internal int ScopedY;
+        internal bool RopeRetargetRefused;
         internal bool Placed,ExternalChange,Object,UncertainNativeEffect,NativeObjectPlacement;
         internal ActorObjectPlacement.Shape Shape;
         internal string SupportSnapshot, ObjectFrames;
@@ -38,9 +43,11 @@ internal static class ActorPlacement
         if(p.gravDir!=1||p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)return "unsupported_placement_state";
         return null;
     }
-    internal static Context Create(Player p,int x,int y,bool objectPlacement=false)
+    internal static Context Create(Player p,int x,int y,bool objectPlacement=false,ActorRope.Target rope=null)
     {
         ActorObjectPlacement.Shape shape=null;
+        if(rope!=null)return new Context{X=rope.X,Y=rope.EndY,Rope=rope,
+            TileType=p.HeldItem.createTile,Prefix=p.HeldItem.prefix,Style=p.HeldItem.placeStyle};
         string error=objectPlacement?ActorObjectPlacement.Preflight(p,x,y,out shape):Preflight(p,x,y);if(error!=null)throw new InvalidOperationException(error);
         var c=new Context{X=x,Y=y,TileType=p.HeldItem.createTile,Prefix=p.HeldItem.prefix,Style=p.HeldItem.placeStyle,Object=objectPlacement};
         if(objectPlacement){c.Shape=shape;c.SupportSnapshot=ActorObjectPlacement.SupportSnapshot(c);}
@@ -51,24 +58,42 @@ internal static class ActorPlacement
     {
         if(!ReferenceEquals(scope,p))return x?Player.tileTargetX:Player.tileTargetY;
         if(!Program.IsMainThread||!Allowed(p))throw new InvalidOperationException("Placement target scope lost ownership.");
-        var c=ActorItemUse.Current.Placement;return x?c.X:c.Y;
+        var c=ActorItemUse.Current.Placement;return x?c.X:c.Rope!=null?c.ScopedY:c.Y;
     }
     public static int TargetX(Player p)=>Coordinate(p,true);
     public static int TargetY(Player p)=>Coordinate(p,false);
+    public static bool TileReplacementEnabled(Player p)=>p.TileReplacementEnabled
+        &&!(ReferenceEquals(scope,p)&&ActorItemUse.Current?.Placement?.Rope!=null);
+    public static void RetargetRopeY(int y,Player p)
+    {
+        if(!ReferenceEquals(scope,p)){Player.tileTargetY=y;return;}
+        var c=ActorItemUse.Current.Placement;
+        if(!Program.IsMainThread||!Allowed(p)||c.Rope==null)throw new InvalidOperationException("Rope target scope lost ownership.");
+        c.RopeRetargetRefused|=y!=c.Y;
+        c.ScopedY=c.Y;
+    }
     internal static void Install(Action<Action,Action> install)
     {
         using(var a=AssemblyDefinition.ReadAssembly(typeof(Player).Assembly.Location))
         {
             var p=a.MainModule.Types.Single(t=>t.FullName=="Terraria.Player");
             foreach(var name in PlacementPatches.Reads.Keys)PlacementPatches.Validate(p.Methods.Single(m=>m.Name==name));
+            PlacementPatches.ValidateRope(p.Methods.Single(m=>m.Name==PlacementPatches.RopeMethod));
         }
         const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public;
+        ILHook ropeHook=null;
+        install(()=>ropeHook=new ILHook(typeof(Player).GetMethod(PlacementPatches.RopeMethod,flags),il=>
+            PlacementPatches.PatchRope(il.Method,
+                il.Module.ImportReference(typeof(ActorPlacement).GetMethod(nameof(TargetX))),
+                il.Module.ImportReference(typeof(ActorPlacement).GetMethod(nameof(TargetY))),
+                il.Module.ImportReference(typeof(ActorPlacement).GetMethod(nameof(RetargetRopeY))))),()=>ropeHook?.Dispose());
         foreach(var name in PlacementPatches.Reads.Keys)
         {
             ILHook hook=null;var method=typeof(Player).GetMethod(name,flags);
             install(()=>hook=new ILHook(method,il=>PlacementPatches.Patch(il.Method,
                 il.Module.ImportReference(typeof(ActorPlacement).GetMethod(nameof(TargetX))),
-                il.Module.ImportReference(typeof(ActorPlacement).GetMethod(nameof(TargetY))))),()=>hook?.Dispose());
+                il.Module.ImportReference(typeof(ActorPlacement).GetMethod(nameof(TargetY))),
+                name=="PlaceThing_Tiles"?il.Module.ImportReference(typeof(ActorPlacement).GetMethod(nameof(TileReplacementEnabled))):null)),()=>hook?.Dispose());
         }
         place=(Action<Player>)typeof(Player).GetMethod("PlaceThing_Tiles",flags).CreateDelegate(typeof(Action<Player>));
         install(()=>On_WorldGen.PlaceTile+=Placed,()=>On_WorldGen.PlaceTile-=Placed);
@@ -79,9 +104,12 @@ internal static class ActorPlacement
     {
         var use=ActorItemUse.Current;var c=use.Placement;
         if(!Allowed(p)||c.Placed||c.ExternalChange||use.Ticks!=1||!p.controlUseItem)return;
+        if(c.Rope is {} expected&&(ActorRope.Resolve(p,use.Item,expected.X,expected.Y,out var actual)!=null||actual!=expected))
+        {c.ExternalChange=true;return;}
         if(c.Object?ActorObjectPlacement.EmptyError(p,c.X,c.Y,c.Shape)!=null:Main.tile[c.X,c.Y].HasTile){c.ExternalChange=true;return;}
         if(scope!=null)throw new InvalidOperationException("Reentrant native placement rejected.");
         c.Attempts++;
+        if(c.Rope is {} rope)c.ScopedY=rope.Y;
         try
         {
             scope=p;place(p);
@@ -104,6 +132,8 @@ internal static class ActorPlacement
         var c=Watching(x,y);
         bool own=c?.Object==false&&Own(c)&&x==c.X&&y==c.Y
             &&type==c.TileType&&plr==scope.whoAmI&&!forced&&!Main.tile[x,y].HasTile;
+        if(scope!=null&&ActorItemUse.Current?.Placement?.Rope!=null
+            &&(!own||c.RopeRetargetRefused||c.ScopedY!=c.Y||style!=c.Style))return false;
         bool result=orig(x,y,type,mute,forced,plr,style);
         if(c!=null&&result&&Main.tile[x,y].HasTile)
         {
@@ -114,6 +144,7 @@ internal static class ActorPlacement
     }
     private static void Killed(On_WorldGen.orig_KillTile orig,int x,int y,bool fail,bool effectOnly,bool noItem)
     {
+        if(scope!=null&&ActorItemUse.Current?.Placement?.Rope!=null&&!fail&&!effectOnly)return;
         var c=Watching(x,y);
         bool occupied=c!=null&&Main.tile[x,y].HasTile;
         bool ownClear=c?.Object==true&&c.NativeObjectPlacement&&Own(c)&&!c.Placed
@@ -124,14 +155,24 @@ internal static class ActorPlacement
     }
     internal static bool Own(Context c)=>ReferenceEquals(scope,ActorItemUse.Current?.Actor)&&scope!=null&&Allowed(scope)
         &&ReferenceEquals(c,ActorItemUse.Current.Placement);
-    internal static bool SupportedFor(Context c,Item item)=>c?.Object==true?ActorObjectPlacement.CanPlace(item):Supported(item);
+    internal static bool SupportedFor(Context c,Item item)=>c?.Rope!=null?ActorRope.Supported(item)
+        :c?.Object==true?ActorObjectPlacement.CanPlace(item):Supported(item);
     internal static string Validate(ActorItemUse.Context use)
     {
         var c=use.Placement;var p=use.Actor;
         if(c.Object)return ActorObjectPlacement.Validate(use);
-        if(c.ExternalChange||c.Placed&&(!Main.tile[c.X,c.Y].HasTile||Main.tile[c.X,c.Y].TileType!=c.TileType)
+        if(use.Ticks==0&&c.Rope is {} rope)
+        {
+            string error=ActorRope.Resolve(p,use.Item,rope.X,rope.Y,out var actual);
+            if(error!=null)return error;
+            if(actual!=rope)return "rope_target_changed";
+        }
+        if(use.Ticks==0&&c.WaterBridgeDirection!=0&&(c.TileType!=TileID.Platforms
+            ||!NativeNavigationEdits.WaterPlacementStillSafe(p,c.X,c.Y,c.WaterBridgeDirection,use.Item.stack)))
+            return "navigation_water_placement_changed";
+        if(c.ExternalChange||c.Placed&&(!Main.tile[c.X,c.Y].HasTile||c.Rope!=null&&Main.tile[c.X,c.Y].IsActuated||Main.tile[c.X,c.Y].TileType!=c.TileType)
             ||!c.Placed&&Main.tile[c.X,c.Y].HasTile){c.ExternalChange=true;return "placement_target_changed";}
-        if((!use.Item.IsAir||c.ConsumedCount==0)&&(!Supported(use.Item)||use.Item.prefix!=c.Prefix||use.Item.placeStyle!=c.Style||use.Item.createTile!=c.TileType))
+        if((!use.Item.IsAir||c.ConsumedCount==0)&&(!SupportedFor(c,use.Item)||use.Item.prefix!=c.Prefix||use.Item.placeStyle!=c.Style||use.Item.createTile!=c.TileType))
             return "placement_item_changed";
         int remaining=p.inventory[use.Slot].IsAir?0:p.inventory[use.Slot].stack;
         if(remaining!=use.InitialStack-c.ConsumedCount)return "placement_stack_changed";
@@ -156,10 +197,10 @@ internal static class ActorPlacement
     {
         var c=use.Placement;string invalid=Validate(use);
         if(invalid!=null){use.Phase=(c.Placed||c.ConsumedCount!=0||c.UncertainNativeEffect)?"unknown":"failed";use.Reason=invalid;}
-        else if(c.Placed&&c.NativeEvents==1&&c.ConsumedCount==1&&!c.UncertainNativeEffect){use.Phase="completed";use.Reason=c.Object?"native_object_placed_and_consumed":"native_tile_placed_and_consumed";
+        else if(c.Placed&&c.NativeEvents==1&&c.ConsumedCount==1&&!c.UncertainNativeEffect){use.Phase="completed";use.Reason=c.Rope!=null?"native_rope_placed_and_consumed":c.Object?"native_object_placed_and_consumed":"native_tile_placed_and_consumed";
             int left=c.X-(c.Object?c.Shape.OriginX:0),top=c.Y-(c.Object?c.Shape.OriginY:0);
             for(int y=top;y<top+(c.Object?c.Shape.Height:1);y++)for(int x=left;x<left+(c.Object?c.Shape.Width:1);x++)AiMapRuntime.Remember(x,y);}
         else {use.Phase=c.Placed||c.ConsumedCount!=0||c.UncertainNativeEffect?"unknown":"failed";
-            use.Reason=c.Placed?"native_placement_consumption_unconfirmed":"native_placement_refused";}
+            use.Reason=c.Placed?"native_placement_consumption_unconfirmed":c.Rope!=null?"native_rope_placement_refused":"native_placement_refused";}
     }
 }

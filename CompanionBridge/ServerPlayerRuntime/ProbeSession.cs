@@ -391,6 +391,10 @@ public sealed class ProbePlayer : ModPlayer
     internal string PersistentMarker = "";
     public override void PreUpdate() => PreUpdates++;
     public override void PostUpdate() => PostUpdates++;
+    public override void PostUpdateMiscEffects()
+    {
+        if(ActorControl.Driver is CompanionBridge.ServerIpc.ServerAiRope rope)rope.BeforePulley(Player);
+    }
     public override bool PreItemCheck(){if (VirtualPlayerEngineProbe.Instance?.Name == "VirtualPlayerEngineProbe") ProbeTargeting.Capture(Player);return true;}
     public override void PostItemCheck(){if (VirtualPlayerEngineProbe.Instance?.Name == "VirtualPlayerEngineProbe") ProbeTargeting.Observe(Player);}
     public override void PostUpdateRunSpeeds()

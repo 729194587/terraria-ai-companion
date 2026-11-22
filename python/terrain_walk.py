@@ -12,6 +12,7 @@ import sys
 import time
 
 from control import Bridge, BridgeError
+from spatial import liquid_tiles
 
 
 class SafetyStop(Exception):
@@ -45,6 +46,7 @@ class View:
             self.width, self.height = terrain["playerWidth"], terrain["playerHeight"]
             self.left, self.top = terrain["originX"], terrain["originY"]
             self.rows = terrain["rows"]
+            self.liquids = liquid_tiles(terrain)
             self.grounded = terrain["grounded"]
             if (self.width != 20 or self.height != 42 or terrain["tileSize"] != 16
                     or type(self.left) is not int or type(self.top) is not int
@@ -53,7 +55,7 @@ class View:
                     or any(not isinstance(row, str) or len(row) != 45
                            or set(row) - set(".#=h1234abs!?") for row in self.rows)):
                 raise SafetyStop("invalid terrain window", "runtime")
-        except (KeyError, TypeError, AttributeError) as error:
+        except (KeyError, TypeError, AttributeError, ValueError) as error:
             raise SafetyStop("missing terrain observation", "runtime") from error
         if self.life <= 0 or abs(self.vx) > 4.1 or abs(self.vy) > 12:
             raise SafetyStop("dead player or speed outside tested walking envelope", "runtime")
@@ -65,6 +67,8 @@ class View:
         if not 0 <= row < len(self.rows) or not 0 <= column < len(self.rows[0]):
             raise SafetyStop("terrain outside observed window")
         cell = self.rows[row][column]
+        if cell != "?" and (x, y) in self.liquids:
+            cell = "!"
         if cell in "s!?":
             kind = {"s": "untyped slope (requires Bridge 0.1.7+)",
                     "!": "liquid or marked hazard", "?": "unknown terrain"}[cell]

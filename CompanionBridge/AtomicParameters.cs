@@ -44,6 +44,13 @@ internal static class AtomicParameters
         foreach (var p in args.EnumerateObject()) if (!keys.Add(p.Name)) throw new FormatException("Duplicate parameter.");
         void Fields(params string[] names) { if (!keys.SetEquals(names)) throw new FormatException("Unexpected/missing parameters for " + op); }
         void Integer(string key, int min, int max) { if (!args.GetProperty(key).TryGetInt32(out int v) || v < min || v > max) throw new FormatException("Invalid " + key); }
+        void Token(string key)
+        {
+            var token = args.GetProperty(key);
+            if (token.ValueKind != JsonValueKind.String || token.GetString().Length != 64
+                || token.GetString().Any(c => !(c is >= '0' and <= '9' or >= 'a' and <= 'f')))
+                throw new FormatException("Invalid item token.");
+        }
         void Number(JsonElement v, double min, double max) { if (v.ValueKind != JsonValueKind.Number || !v.TryGetDouble(out double n) || !double.IsFinite(n) || n < min || n > max) throw new FormatException("Invalid finite coordinate/radius."); }
         if (query)
         {
@@ -147,18 +154,37 @@ internal static class AtomicParameters
                     Integer("destinationSlot",0,49);
                     if (args.GetProperty("sourceSlot").GetInt32() == args.GetProperty("destinationSlot").GetInt32()) throw new FormatException("Inventory slots must differ.");
                 }
-                foreach(string name in new[] {"sourceToken","destinationToken"})
+                Token("sourceToken"); Token("destinationToken");
+                break;
+            case "equip_item": case "unequip_item":
+                if (op == "equip_item")
                 {
-                    var token=args.GetProperty(name);
-                    if (token.ValueKind != JsonValueKind.String || token.GetString().Length != 64
-                        || token.GetString().Any(c => !(c is >= '0' and <= '9' or >= 'a' and <= 'f'))) throw new FormatException("Invalid inventory token.");
+                    Fields("sourceSlot", "sourceToken", "targetSlotId", "targetToken");
+                    Integer("sourceSlot", 0, 49); Token("sourceToken");
                 }
+                else if (keys.Contains("destinationSlot"))
+                {
+                    Fields("targetSlotId", "targetToken", "destinationSlot");
+                    Integer("destinationSlot", 0, 49);
+                }
+                else Fields("targetSlotId", "targetToken");
+                var targetSlot = args.GetProperty("targetSlotId");
+                if (targetSlot.ValueKind != JsonValueKind.String || CharacterCount(targetSlot) is < 1 or > 256)
+                    throw new FormatException("Invalid equipment slot ID.");
+                Token("targetToken");
                 break;
             case "move_input":
                 Fields("horizontal", "vertical", "jumpHoldUpdates", "maxUpdates");
                 if(args.GetProperty("horizontal").GetString() is not ("none" or "left" or "right")
                     ||args.GetProperty("vertical").GetString() is not ("none" or "up" or "down"))throw new FormatException("Invalid input direction.");
                 Integer("maxUpdates",1,600);Integer("jumpHoldUpdates",0,args.GetProperty("maxUpdates").GetInt32());
+                break;
+            case "move_on_rope":
+                Fields("ropeX","targetFeetY","finish","maxUpdates");
+                Integer("ropeX",0,100000);Number(args.GetProperty("targetFeetY"),0,1000000);
+                Integer("maxUpdates",1,360);
+                if(args.GetProperty("finish").GetString() is not ("hold" or "land"))
+                    throw new FormatException("Invalid rope finish.");
                 break;
             case "navigate_to_landing_region":
                 Fields("minPlayerLeftX", "maxPlayerLeftX", "surfaceY");
@@ -178,7 +204,7 @@ internal static class AtomicParameters
                 break;
             case "drop_through_platform": Fields(); break;
             case "select_hotbar_slot": Fields("slot"); Integer("slot", 0, 9); break;
-            case "place_object": goto case "place_tile";
+            case "place_object": case "place_rope": goto case "place_tile";
             case "mine_target":
             {
                 if(!keys.Contains("target")){Fields("x","y");Integer("x",0,100000);Integer("y",0,100000);break;}

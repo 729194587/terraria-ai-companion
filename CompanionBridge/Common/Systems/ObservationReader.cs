@@ -145,7 +145,7 @@ internal static class ObservationReader
             contactStatus = "unknown; no universal player collideX/Y or grounded flag inferred" }
     };
 
-    private static object ItemData(Item item, int slot, bool inventory = false) => new { slot,
+    internal static object ItemData(Item item, int slot, bool inventory = false) => new { slot,
         hotbarKey = inventory ? HotbarSlots.KeyForInventorySlot(slot) : null, empty = item.IsAir,
         typeId = item.type, contentKey = item.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(item.type),
         name = item.Name, stack = item.stack, prefix = (int)item.prefix, item.favorited,

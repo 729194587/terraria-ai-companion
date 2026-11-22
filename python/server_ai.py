@@ -43,12 +43,16 @@ def operations_for_capabilities(capabilities):
             ('server_ai_crafting_v1', 'craft_recipe'),
             ('server_ai_place_object_workbench_v1', 'place_object'),
             ('server_ai_place_tile_v1', 'place_tile'),
+            ('server_ai_place_rope_v1', 'place_rope'),
+            ('server_ai_move_on_rope_v1', 'move_on_rope'),
             ('landing_region_navigation_v1', 'navigate_to_landing_region'),
         ):
             if capability in caps:
                 operations.add(operation)
     if {'server_ai_actions_v1', 'server_ai_inventory_v1'} <= caps:
         operations.update(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
+    if {'server_ai_actions_v1', 'server_ai_equipment_v1'} <= caps:
+        operations.update(('equip_item', 'unequip_item'))
     return frozenset(operations)
 
 

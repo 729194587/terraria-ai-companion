@@ -25,6 +25,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
     private PhysicsParameters plannedPhysics;
     private long plannedTerrain,plannedInventory;
     private string planningDetail;
+    private bool liquidBoundary;
     private readonly Queue<object> decisions=new();
     public bool PlanningPending{get;private set;}
     public AiAtomicActions.NativeResult PlanningFailure{get;private set;}
@@ -50,7 +51,8 @@ internal sealed class NativeNavigationWorld : INavigationWorld
         var pose=NativeMotionWorld.Observe(actor);
         return JsonSerializer.Serialize(new{pose,terrain=new NativeMotionWorld(pose).TerrainSignature(pose)});
     }
-    public string NoRouteReason=>edits.SearchFailure??"navigation_local_frontier_exhausted";
+    public string NoRouteReason=>edits.SearchFailure??(liquidBoundary
+        ?"navigation_liquid_local_frontier_exhausted":"navigation_local_frontier_exhausted");
     public string SearchDetail=>planningDetail??edits?.SearchDetail;
     public object OpeningEvidence=>edits?.OpeningEvidence;
     public object ArrivalEvidence{get;private set;}
@@ -189,13 +191,18 @@ internal sealed class NativeNavigationWorld : INavigationWorld
                 if(!complete&&plans.Any(p=>p.Cost.Remaining*ph.MaxRun<destination.Distance(route.Actions[^1].Landing)))moving=null;
             }
         }
-        selected=LocalEditEvaluation.Choose(plans,moving,complete);ready=true;PlanningPending=false;
-        planningDetail=selected==null?"movement preferred or no admissible local edits":"bounded local edit plan selected; execute one action then reobserve";
+        bool localLiquidBoundary=evaluation.LiquidBoundary;
+        liquidBoundary|=localLiquidBoundary;
+        selected=complete&&localLiquidBoundary?null:LocalEditEvaluation.Choose(plans,moving,complete);
+        ready=true;PlanningPending=false;
+        planningDetail=selected!=null?"bounded local edit plan selected; execute one action then reobserve"
+            :liquidBoundary&&!complete?"no verified movement or admissible edit across the local liquid boundary"
+            :"movement preferred or no admissible local edits";
         var decision=new{choice=selected==null?"movement":"local_edits",movementCost=moving,movementVerifiedComplete=complete,
-            candidateCount=plans.Length,selected,virtualNativeVerified=false,gameUpdate=Main.GameUpdateCount};
+            candidateCount=plans.Length,selected,liquidBoundary=localLiquidBoundary,virtualNativeVerified=false,gameUpdate=Main.GameUpdateCount};
         if(decisions.Count>=8)decisions.Dequeue();decisions.Enqueue(decision);
         PlanningEvidence=new{status="complete",decision.choice,decision.movementCost,decision.movementVerifiedComplete,
-            candidateCount=plans.Length,selected,virtualNativeVerified=false,graph,history=decisions.ToArray(),
+            candidateCount=plans.Length,selected,liquidBoundary,virtualNativeVerified=false,graph,history=decisions.ToArray(),
             candidates=plans.OrderBy(p=>p.Cost.Total).Take(6).Select(p=>new{p.Cost,p.OpenExit,changes=p.Changes,steps=p.Actions.Length}).ToArray()};
     }
 

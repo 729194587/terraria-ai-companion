@@ -5,8 +5,30 @@ import test_server_ai_backend as backend
 import atomic_operations as atomic
 from control import BridgeError
 from lua_runtime import LuaRuntime, Limits
-from server_ai import ServerAiBridge
+from server_ai import ServerAiBridge, operations_for_capabilities
 from lua_agent import server_contract
+
+
+class RopeReceiptTests(unittest.TestCase):
+    def test_rope_requires_explicit_capability_and_native_actions(self):
+        capability = "server_ai_place_rope_v1"
+        atomic_cap = "server_ai_atomic_v1"
+        self.assertIn("place_rope", operations_for_capabilities({atomic_cap, capability, "server_ai_actions_v1"}))
+        self.assertNotIn("place_rope", operations_for_capabilities({atomic_cap, capability}))
+        self.assertNotIn("place_rope", operations_for_capabilities({atomic_cap, "server_ai_actions_v1"}))
+
+    def test_rope_extension_checks_actual_target_type_and_consumption(self):
+        action = {"targetTile": {"x": 7, "y": 8}}
+        evidence = dict(x=7, y=10, requestedX=7, requestedY=8, extended=True, itemType=965,
+                        typeId=213, placedByActor=True, targetPresent=True, targetChanged=False,
+                        uncertainNativeEffect=False, nativePlacementEvents=1, consumedCount=1,
+                        InitialStack=2, remainingStack=1)
+        self.assertTrue(atomic.verified_server_rope(action, evidence))
+        for key, value in (("x", 8), ("y", 25), ("extended", False), ("requestedY", 9),
+                           ("typeId", 353), ("itemType", []), ("remainingStack", 2),
+                           ("nativePlacementEvents", 2), ("targetChanged", True)):
+            with self.subTest(key=key):
+                self.assertFalse(atomic.verified_server_rope(action, {**evidence, key: value}))
 
 
 class PlacementBackendTests(unittest.IsolatedAsyncioTestCase):

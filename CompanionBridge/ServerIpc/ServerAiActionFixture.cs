@@ -92,6 +92,7 @@ internal static class ServerAiActionFixture
             lock(ProbeSession.Reservation.Gate)ServerAiDirectInputFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerMineTaskFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerInventoryFixture.Tick(ProbeSession.Actor);
+            lock(ProbeSession.Reservation.Gate)ServerEquipmentFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerCraftingFixture.Tick(ProbeSession.Actor,Main.spawnTileX,Main.spawnTileY+8);
             // The copied-world perception fixture tests NPC presence, not AI/combat.
             // Keep only that NPC in its explicit static pose during reads; exclude
@@ -132,6 +133,9 @@ internal static class ServerAiActionFixture
             // Does not call Player.Update, spoof identity, or change Netplay.HasClients.
             lock(ProbeSession.Reservation.Gate)ServerAiTerrainFixture.Tick(ProbeSession.Actor);
             lock(ProbeSession.Reservation.Gate)ServerGrappleFixture.Tick(ProbeSession.Actor);
+            lock(ProbeSession.Reservation.Gate)ServerLiquidFixture.Tick(ProbeSession.Actor);
+            lock(ProbeSession.Reservation.Gate)ServerRopeFixture.Tick(ProbeSession.Actor);
+            lock(ProbeSession.Reservation.Gate)ServerRopeMotionFixture.Tick(ProbeSession.Actor);
             if(ServerMineTaskFixture.Enabled&&File.Exists(Path.Combine(Main.SavePath,"task-freeze-updates")))
             {
                 File.WriteAllText(Path.Combine(Main.SavePath,"task-freeze-ready.json"),JsonSerializer.Serialize(new{gameUpdate=Main.GameUpdateCount}));
