@@ -1,3 +1,5 @@
+> **历史阶段记录**：本文保留对应阶段的设计、实现过程与当时验证结果。当前导航架构和能力说明见 [NAVIGATION.md](NAVIGATION.md)；本文中的分支、提交、待办和测试状态均属于记录时点。
+
 # Phase 2 Surface Graph 实现与验证
 
 2026-11-05。基线为 `81f3d2d6119123d1b374115186dd748f80fd2500`，实现前 HEAD 与设计文档指定提交一致。范围遵循 [Phase 2 规范](terraria_navigation_phase2_surface_graph.md)。本记录区分离线碰撞替身、隔离原生执行与未验证的图形场景。
