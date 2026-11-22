@@ -69,6 +69,7 @@
 ## 历史与研究
 
 - [历史阶段资料](archive/README.md)：早期架构、阶段实施和修复记录。
-- [架构研究](architecture/)：Numen 参考与尚在研究的架构方向。
+- [Numen 参考研究](architecture/NUMEN_ADAPTATION_ROADMAP.md)：外部项目的架构参考与适配思路。
+- [架构审查计划](architecture/ARCHITECTURE_AUDIT_PLAN.md)：Agent 与游戏运行时的后续审查问题。
 
 专题文档记录所属模块的设计与实现。阶段实施记录保留当时的代码基线和验证结果，当前接口以对应模块说明和源码为准。
