@@ -113,7 +113,8 @@ async def verify(args):
         bridge.close()
 
     for case, status in (
-        ('opening_across', 'completed'), ('opening_down', 'completed'), ('opening_probe', 'completed'),
+        ('opening_across', 'completed'), ('opening_bag', 'completed'), ('opening_bag_replaced', 'failed'),
+        ('opening_down', 'completed'), ('opening_probe', 'completed'),
         ('opening_hazard', 'failed'), ('opening_hard', 'failed'), ('opening_unsafe', 'failed'),
         ('opening_deadline', 'timeout'), ('opening_unknown', 'unknown'),
     ):
@@ -152,6 +153,16 @@ async def verify(args):
                 assert all(c['taskName']!='mine_tile' or c['status']!='completed' for c in history), task
                 if case == 'opening_hard':
                     assert 'insufficient_pick_power' in result['reasonDetail'], result
+            if case in ('opening_bag', 'opening_bag_replaced'):
+                query = bridge.command('query_atomic', operation='inspect_inventory', arguments=dict(mode='full'))
+                slots = {i['slot']: i.get('contentKey') for i in query['data']['data']['inventory']}
+                if case == 'opening_bag':
+                    assert slots[20]=='Terraria/CopperPickaxe' and slots[0]=='Terraria/CopperShortsword', slots
+                else:
+                    assert result['reason']=='task_tool_changed' and task['progress']['clearedTiles']==0, result
+                    assert slots[0]=='Terraria/CopperPickaxe' and slots[20]=='Terraria/CopperShortsword', slots
+                    tile = bridge.command('query_atomic', operation='inspect_tile', arguments=dict(x=spec['x'], y=spec['y']))
+                    assert tile['data']['data']['preflight']['checks']['tilePresent'], tile
             print(json.dumps(dict(case=case, status=status, reason=result['reason'],
                                   cleared=task['progress']['clearedTiles'])), flush=True)
         finally:

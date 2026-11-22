@@ -10,11 +10,19 @@ namespace CompanionBridge.ServerIpc;
 
 internal static class ServerMineTaskFixture
 {
-    private static bool expireMining, obscureMining;
+    private static bool expireMining, obscureMining, replaceBorrowedPick;
     internal static bool Enabled=>ServerAiActionFixture.Enabled&&Program.LaunchParameters.ContainsKey("-companiontasktest");
     internal static void Tick(Player p)
     {
         if(!Enabled)return;
+        if(replaceBorrowedPick && ActorMining.Running && ActorMining.Current.Strikes>0)
+        {
+            var mining=ActorMining.Current;
+            if(mining.SourceSlot!=20 || !ReferenceEquals(p.HeldItem,mining.Item))
+                throw new InvalidOperationException("Expected the borrowed bag pick in hand.");
+            p.inventory[mining.Slot]=mining.Item.Clone();
+            replaceBorrowedPick=false;
+        }
         if(expireMining&&ActorMining.Running&&ActorMining.Current.Strikes>0)
         {
             ActorMining.Current.Ticks=600;
@@ -54,7 +62,8 @@ internal static class ServerMineTaskFixture
             if(kind is "near" or "hotbar" or "bag" or "underpowered" or "workbench" or "workbench_task" or "cutout" or "deadline")x=left+2;
             expireMining=kind is "deadline" or "opening_deadline";
             obscureMining=kind=="opening_unknown";
-            if(kind is "bag" or "cutout" or "deadline")
+            replaceBorrowedPick=kind=="opening_bag_replaced";
+            if(kind is "bag" or "cutout" or "deadline" or "opening_bag" or "opening_bag_replaced")
                 Utils.Swap(ref p.inventory[1],ref p.inventory[20]);
             if(kind=="cutout")
             {
@@ -74,7 +83,7 @@ internal static class ServerMineTaskFixture
                 x=left-4;
                 y=floor-5;
             }
-            if(kind=="opening_across")
+            if(kind is "opening_across" or "opening_bag" or "opening_bag_replaced")
             {
                 x=left+7;y=floor-2;
                 for(int tx=left+2;tx<=left+17;tx++)

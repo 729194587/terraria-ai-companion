@@ -51,7 +51,9 @@ internal sealed partial class NativeMineTargetWorld : IMineTargetWorld
     {
         ServerAiNativeActions.Require(identity);
         if(!ActorMining.Healthy(Player))return "actor_cannot_mine";
-        if(!ReferenceEquals(Player.inventory[slot],item)||item.type!=toolType||item.prefix!=toolPrefix||item.pick!=toolPower||item.axe!=toolAxe||item.tileBoost!=toolBoost)return "task_tool_changed";
+        bool toolPresent=ReferenceEquals(Player.inventory[slot],item)
+            ||ActorMining.HoldsBorrowedTool(Player,identity.World,identity.Generation,slot,item);
+        if(!toolPresent||item.type!=toolType||item.prefix!=toolPrefix||item.pick!=toolPower||item.axe!=toolAxe||item.tileBoost!=toolBoost)return "task_tool_changed";
         if(TaskShape(x,y)!=shape||SceneMineTargets.Revision(x,y)!=revision
             ||furniture.Any(cell=>!ActorMining.SameFurnitureCell(type,cell)))return "task_target_changed";
         return null;
