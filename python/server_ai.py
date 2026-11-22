@@ -39,6 +39,7 @@ def operations_for_capabilities(capabilities):
         for capability, operation in (
             ('server_ai_direct_input_v1', 'move_input'),
             ('server_ai_tasks_v1', 'mine_target'),
+            ('server_ai_navigation_v1', 'navigate_to'),
             ('server_ai_crafting_v1', 'craft_recipe'),
             ('server_ai_place_object_workbench_v1', 'place_object'),
             ('server_ai_place_tile_v1', 'place_tile'),

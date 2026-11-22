@@ -10,8 +10,16 @@ public static class TaskRuntimeOfflineTests
     private static void Check(bool ok,string text){if(!ok)throw new Exception(text);checks++;}
     private sealed class World : IMineTargetWorld
     {
-        internal bool Reach,Absent=true,ThrowPrepare,NoApproach,AllowOpening;
+        internal bool Reach,Absent=true,ThrowPrepare,NoApproach,AllowOpening,PlaceSupport;
+        public bool ReplanAfterChange=>PlaceSupport;
         internal bool Settled=true;
+        internal bool PendingPlanning,PreferChanges;
+        internal Result PlanningStop;
+        internal int PlanningReleases;
+        public bool PlanningPending=>PendingPlanning;
+        public Result PlanningFailure=>PlanningStop;
+        public bool PreferEdit(int remaining)=>PreferChanges;
+        public void ReleasePlanning(){PlanningReleases++;}
         internal string Error,PrepareError,Danger;
         public string InterruptionReason()=>Danger;
         internal int Preparations,Observations;
@@ -20,9 +28,10 @@ public static class TaskRuntimeOfflineTests
         public bool CanMine()=>Reach;
         public JsonElement? FindApproach()=>NoApproach?null:JsonSerializer.SerializeToElement(new{minPlayerLeftX=100,maxPlayerLeftX=108,surfaceY=200});
         public JsonElement MineArguments()=>JsonSerializer.SerializeToElement(new{x=12,y=10});
-        public MiningOpening FindOpening(int remainingTiles)=>AllowOpening
-            ?new("mine_tile",JsonSerializer.SerializeToElement(new{x=11,y=10})):null;
+        public NavigationStep FindOpening(int remainingTiles)=>AllowOpening
+            ?new(PlaceSupport?"place_tile":"mine_tile",JsonSerializer.SerializeToElement(new{x=11,y=10})):null;
         public bool OpeningSettled()=>Settled;
+        public string OpeningLandingError()=>PlaceSupport?"fixture_landing_changed":null;
         public bool TargetAbsent()=>Absent;
         public object Target=>new{x=12,y=10};
     }
@@ -50,6 +59,23 @@ public static class TaskRuntimeOfflineTests
     }
     public static void Run()
     {
+        {
+            var world=new World{PendingPlanning=true};var native=new Native();
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var root=new TaskSlot(new AutonomousNavigationTask("planning",world,native),"planning",null,frame,100);
+            for(ulong tick=1;tick<8;tick++)Check(root.Tick(frame with{GameUpdate=tick}).Status=="running","planning budget is waiting, not no route");
+            Check(native.Starts.Count==0,"pending candidate evaluation cannot dispatch any native action");
+            root.Stop(frame with{GameUpdate=8},"cancelled","explicit_cancel");
+            Check(world.PlanningReleases==1&&native.Starts.Count==0,"cancelling evaluation disposes pending planning without replay");
+        }
+        foreach(string failure in new[]{"unknown","failed"})
+        {
+            var world=new World{PlanningStop=new(failure,"comparison_refused",null,true),AllowOpening=true,PreferChanges=true};var native=new Native();
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var root=new TaskSlot(new AutonomousNavigationTask("refusal",world,native),"refusal",null,frame,100);
+            root.Tick(frame with{GameUpdate=1});var r=root.Tick(frame with{GameUpdate=2});
+            Check(r.Status==failure&&r.InputsReleased&&native.Starts.Count==0,"unknown/resource comparison refusal never starts dependent edits");
+        }
         foreach(bool absent in new[]{false,true})
         {
             var f=new Fixture();f.World.Reach=true;f.World.Absent=absent;f.Native.Pending=true;
@@ -107,6 +133,15 @@ public static class TaskRuntimeOfflineTests
             var f=new Fixture();f.World.PrepareError="invalid_target";Check(f.Tick(1).Status=="failed"&&f.Native.Starts.Count==0&&f.World.Preparations==1,"precondition refusal has no native side effects");
         }
         {
+            var f=new Fixture();
+            for(ulong tick=1;tick<=4;tick++)f.Tick(tick);
+            var published=f.Root.View();
+            string snapshot=JsonSerializer.Serialize(published);
+            for(ulong tick=5;tick<=7;tick++)f.Tick(tick);
+            Check(JsonSerializer.Serialize(published)==snapshot,
+                "published task history is detached from subsequent game-thread updates");
+        }
+        {
             var f=new Fixture();f.Tick(1);f.Tick(2);f.Tick(3);f.World.Error="target_changed";
             Check(f.Tick(4).Status=="failed"&&f.Native.Cancels==1&&f.Native.Starts.Count==1,"changed target stops active child and never starts mining");
         }
@@ -122,10 +157,53 @@ public static class TaskRuntimeOfflineTests
         {
             var f=new Fixture();f.World.NoApproach=f.World.AllowOpening=true;
             Result result=null;
-            for(ulong tick=1;tick<100;tick++)
+            for(ulong tick=1;tick<=100;tick++)
             {result=f.Tick(tick);if(result.Status!="running")break;}
-            Check(result?.Reason=="mining_opening_budget_exhausted"&&f.Native.Starts.Count==MineTargetTask.MaxOpeningTiles,
-                "opening budget stops verified excavation without starting a further child");
+            Check(result?.Status=="timeout"&&result.Reason=="task_game_update_deadline"&&f.Native.Starts.Count>AutonomousNavigationTask.LocalCutTileLimit,
+                "verified excavation continues beyond old count limit until root deadline");
+        }
+        foreach(bool uncertain in new[]{false,true})
+        {
+            var world=new World{NoApproach=true,AllowOpening=true,PlaceSupport=true};
+            var native=new Native{BadEffect=uncertain};
+            native.OnPoll=op=>
+            {
+                if(op=="place_tile")world.NoApproach=false;
+                if(op=="navigate_to_landing_region")world.Reach=true;
+            };
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var root=new TaskSlot(new AutonomousNavigationTask("nav",world,native),"nav",null,frame,100);
+            Result result=null;
+            for(ulong tick=1;tick<=15;tick++)result=root.Tick(frame with{GameUpdate=tick});
+            Check(native.Starts[0]=="place_tile","navigation selects placement without model assistance");
+            if(uncertain)
+                Check(result.Status=="unknown"&&native.Starts.Count==1,"unknown placement stops without replay");
+            else
+                Check(result.Status=="completed"&&native.Starts.Count==2&&native.Starts[1]=="navigate_to_landing_region",
+                    "confirmed placement and changed landing trigger one newly observed movement");
+        }
+        foreach(bool placement in new[]{false,true})
+        {
+            var world=new World{NoApproach=true,AllowOpening=true,PlaceSupport=placement};
+            var native=new Native();
+            int effects=0;
+            native.OnPoll=op=>{effects++;world.Reach=effects==25;};
+            var frame=new AiReadOnlyProtocol.Identity(new object(),"world",1,254,null,0,0);
+            var root=new TaskSlot(new AutonomousNavigationTask("many",world,native),"many",null,frame,200);
+            Result result=null;
+            for(ulong tick=1;tick<200;tick++)
+            {
+                result=root.Tick(frame with{GameUpdate=tick});
+                if(result.Status!="running")break;
+            }
+            Check(result?.Status=="completed"&&effects==25,
+                "one root continues beyond cumulative terrain action cap: "+placement);
+            var view=JsonSerializer.SerializeToElement(root.View()).GetProperty("progress");
+            Check(view.GetProperty("settledChildren").GetInt32()==25
+                &&view.GetProperty("childrenTruncated").GetBoolean()
+                &&view.GetProperty("children").GetArrayLength()==16
+                &&view.GetProperty("verifiedTerrainActions").GetInt32()==25,
+                "long journeys retain exact totals and bounded, explicitly truncated history");
         }
         Console.WriteLine($"Task runtime: {checks} checks passed; native executor/world are substitutes.");
     }

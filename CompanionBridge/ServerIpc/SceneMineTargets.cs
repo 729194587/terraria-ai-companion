@@ -21,6 +21,14 @@ internal static class SceneMineTargets
     {if(world==id.World&&generation==id.Generation)return;entries.Clear();revisions.Clear();world=id.World;generation=id.Generation;}
     internal static string Shape(int x,int y)
     {var t=Main.tile[x,y];return $"{t.HasTile}:{t.TileType}:{t.TileFrameX}:{t.TileFrameY}:{t.Slope}:{t.IsHalfBlock}:{t.IsActuated}";}
+    // Neighbor excavation legitimately reframes ordinary blocks. Target revisions,
+    // tile type, slope and actuation still protect the original intent.
+    internal static string NavigationShape(int tx,int ty)
+    {
+        var tile=Main.tile[tx,ty];
+        return tile.HasTile&&Main.tileFrameImportant[tile.TileType]?Shape(tx,ty)
+            :$"{tile.HasTile}:{tile.TileType}:{tile.Slope}:{tile.IsHalfBlock}:{tile.IsActuated}";
+    }
     internal static long Revision(int x,int y)=>revisions.TryGetValue((x,y),out long value)?value:long.MinValue;
     internal static void Watch(int x,int y)
     {if(!revisions.ContainsKey((x,y))){if(revisions.Count>=512)revisions.Remove(revisions.Keys.First());revisions[(x,y)]=++sequence;}}

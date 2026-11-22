@@ -33,6 +33,12 @@ Agent 选择目的地和策略；Lua 组织观察与动作；导航运行时负�
 
 ## 实现入口
 
+服务器自主 `navigate_to` 的持续内部移动已加入 Phase 2 Surface Graph：在游戏线程增量采集较大范围地形，以落脚区间和 walk/jump/drop 候选图组织局部目标，再交给已有物理规划器验证。原生碰撞窗口、根任务串行挖掘/放置、真实落地确认及身份/取消保护继续复用。短程地面接续保留原有精确制动规划。预算、未知覆盖和局部无路线分开报告；图未找到路线不证明全局不可达。
+
+具体映射、范围、定向证据和限制见 [Phase 2 实现记录](PHASE2_SURFACE_GRAPH_IMPLEMENTATION.md)。
+
+Phase 3 v1.1 在原根任务中加入有限连续改造评估：在彼此独立的虚拟地形上估算连续挖掘、放置及组合成本，与真实地形移动路线比较；每次只执行下一项原生动作，确认真实变化后重新观察。虚拟结构不构成原生碰撞证明，也不会写入真实 Tile。范围与定向证据见 [Phase 3 实现记录](PHASE3_LOCAL_PLANNING_IMPLEMENTATION.md)。
+
 - 规划与执行：`CompanionBridge/Motion/`
 - Server AI 导航适配：`CompanionBridge/ServerIpc/ServerAiNavigation.cs`
 - Server Player 原生输入/钩子：`CompanionBridge/ServerPlayerRuntime/`

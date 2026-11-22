@@ -94,6 +94,8 @@ internal abstract class AbstractCompanionTask : CompanionTask
     protected readonly List<object> children=new();
     protected Result lastResult;
     protected int completedChildren;
+    protected int settledChildren;
+    protected const int ChildHistoryCapacity=16;
     protected readonly string taskId;
     private int sequence;
     protected AbstractCompanionTask(string id){taskId=id;}
@@ -105,15 +107,21 @@ internal abstract class AbstractCompanionTask : CompanionTask
         else if(!ReferenceEquals(child.Task,task))throw new InvalidOperationException("An active child cannot be replaced");
         var r=child.Tick(frame);
         if(r.Status=="running")return null;
-        lastResult=r;if(r.Status=="completed")completedChildren++;children.Add(child.View());child=null;return r;
+        lastResult=r;if(r.Status=="completed")completedChildren++;RecordChild();return r;
+    }
+    private void RecordChild()
+    {
+        settledChildren++;
+        if(children.Count>=ChildHistoryCapacity)children.RemoveAt(0);
+        children.Add(child.View());child=null;
     }
     internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)
     {
         var r=child?.Stop(frame,status,reason);
-        if(child!=null){lastResult=r;children.Add(child.View());child=null;}
+        if(child!=null){lastResult=r;RecordChild();}
         return r?.Status=="unknown"||r?.InputsReleased==false?r:new(status,reason,null,true,InputsAcquired:r?.InputsAcquired??false);
     }
-    internal override void Abandon(){child?.Abandon();if(child!=null){lastResult=child.Record.Result;children.Add(child.View());child=null;}}
+    internal override void Abandon(){child?.Abandon();if(child!=null){lastResult=child.Record.Result;RecordChild();}}
 }
 internal sealed class NativeActionTask : CompanionTask
 {

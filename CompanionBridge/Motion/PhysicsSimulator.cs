@@ -64,6 +64,7 @@ internal static class NavigationContact
 
 internal interface IMotionWorld
 {
+    long TerrainSignature(PhysicsState start,Prediction edge=null)=>0;
     NavigationBlockingTile[] LastHorizontalContact => null;
     PhysicsState Move(PhysicsState start, float vx, float vy, float gravity);
     bool SafeSweep(PhysicsState start, PhysicsState end, out string reason);
@@ -82,6 +83,8 @@ internal static class PhysicsSimulator
 {
     internal static bool SupportedCheckpoint(PhysicsState s,IMotionWorld world)=>s.Grounded
         &&Math.Abs(s.Vy)<=0.1f&&s.ReleaseJump&&s.JumpFramesLeft==0&&world.SafeLanding(s);
+    internal static bool Settled(PhysicsState s,IMotionWorld world)
+        => Math.Abs(s.Vx)<=0.1f&&SupportedCheckpoint(s,world);
     internal const int PlayerW = 20, PlayerH = 42, MaxFrames = 90, WalkFrames = 12;
 
     // TerraBlind's dry step, adapted to the installed 1.4.4.9 IL. Collision is

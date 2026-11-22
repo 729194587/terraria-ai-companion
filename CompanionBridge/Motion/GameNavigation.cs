@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
-using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Motion;
 
@@ -31,8 +30,7 @@ internal sealed class NativeNavigation
         Diagnostics=new(diagnosticWriter??(line=>ModContent.GetInstance<CompanionBridge>().Logger.Info(line)));
     }
 
-    private PhysicsState State(Player p) => new(p.position.X, p.position.Y,
-        p.velocity.X, p.velocity.Y, TerrainReader.Read(p).Grounded, p.jump, p.releaseJump);
+    private PhysicsState State(Player p) => NativeMotionWorld.Observe(p);
 
     internal bool Ordinary(Player p) => OrdinaryRejection(p) == null;
 
@@ -68,7 +66,7 @@ internal sealed class NativeNavigation
         return reasons == null ? null : string.Join("; ", reasons);
     }
 
-    private PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
+    internal static PhysicsParameters Parameters(Player p) => new(p.runAcceleration, p.maxRunSpeed,
         p.accRunSpeed, p.runSlowdown, p.gravity, p.maxFallSpeed, Player.jumpSpeed, Player.jumpHeight);
 
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
@@ -101,7 +99,7 @@ internal sealed class NativeNavigation
         var state = State(p);
         if(_planRevision!=_profile.Revision)
         {
-            if(_navigation)Task.InvalidateMobility(state,_profile.Revision);
+            if(_navigation)Task.InvalidateMobility(state,_profile.Revision,ph);
             else Controller.Cancel();
         }
         _planRevision=_profile.Revision;
@@ -112,7 +110,11 @@ internal sealed class NativeNavigation
                 : Task.Before(session, generation, targetX.Value, state, ph, _world)
             : Controller.Before(session, direction, state, ph, _world, generation);
         if (Stopwatch.GetElapsedTime(started).TotalMilliseconds > 50)
-            return Fail("local prediction exceeded 50ms budget");
+        {
+            if(!_navigation||!Task.Continuous)return Fail("local prediction exceeded 50ms budget");
+            Task.DeferPlanningOverrun(state);
+            input=default;
+        }
         if (_navigation) Diagnostics.Observe(Snapshot);
         _paired = true;
         return input;

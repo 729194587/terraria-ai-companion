@@ -8,8 +8,24 @@ using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Motion;
 
-internal sealed class NativeMotionWorld : IMotionWorld
+internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
 {
+    public IMotionWorld MotionAt(PhysicsState pose)=>new NativeMotionWorld(pose);
+    public SurfaceCell ReadSurfaceCell(int x,int y)
+    {
+        char shape=TerrainReader.ReadCell(x,y);
+        if(!WorldGen.InWorld(x,y,1))return new('?',long.MinValue);
+        var tile=Main.tile[x,y];
+        unchecked
+        {
+            long h=shape;
+            void Add(long v){h=(h^v)*1099511628211;}
+            Add(tile.TileType);Add(tile.HasTile?1:0);Add(tile.IsActuated?1:0);
+            Add((int)tile.Slope);Add(tile.IsHalfBlock?1:0);Add(tile.TileFrameX);Add(tile.TileFrameY);
+            Add(tile.LiquidAmount);Add(tile.LiquidType);
+            return new(shape,h);
+        }
+    }
     private const int CollisionMargin = 32;
     private readonly int _left, _top;
     private readonly bool _captureContacts;
@@ -19,6 +35,40 @@ internal sealed class NativeMotionWorld : IMotionWorld
         _captureContacts=captureContacts;
         _left = (int)Math.Floor((start.Px + 10) / 16) - 22;
         _top = (int)Math.Floor((start.Py + 42) / 16) - 17;
+    }
+
+    public long TerrainSignature(PhysicsState start,Prediction edge=null)
+    {
+        // Search signatures cover the complete native prediction window.
+        // Executed-edge signatures cover every predicted frame and collision margin.
+        float left=start.Px,top=start.Py,right=left+20,bottom=top+42;
+        if(edge!=null)
+            foreach(var frame in edge.Frames)
+            {
+                left=Math.Min(left,frame.State.Px);top=Math.Min(top,frame.State.Py);
+                right=Math.Max(right,frame.State.Px+20);bottom=Math.Max(bottom,frame.State.Py+42);
+            }
+        int minX=edge==null?_left:(int)Math.Floor((left-CollisionMargin)/16);
+        int minY=edge==null?_top:(int)Math.Floor((top-CollisionMargin)/16);
+        int maxX=edge==null?_left+44:(int)Math.Floor((right+CollisionMargin)/16);
+        int maxY=edge==null?_top+28:(int)Math.Floor((bottom+CollisionMargin)/16);
+        unchecked
+        {
+            long hash=1469598103934665603;
+            void Add(long value){hash=(hash^value)*1099511628211;}
+            Add(minX);Add(minY);Add(maxX);Add(maxY);
+            for(int x=minX;x<=maxX;x++)
+                for(int y=minY;y<=maxY;y++)
+                {
+                    char cell=TerrainReader.ReadCell(x,y);Add(cell);
+                    if(!WorldGen.InWorld(x,y,1))continue;
+                    var tile=Main.tile[x,y];
+                    Add(tile.TileType);Add(tile.HasTile?1:0);Add(tile.IsActuated?1:0);
+                    Add((int)tile.Slope);Add(tile.IsHalfBlock?1:0);
+                    Add(tile.TileFrameX);Add(tile.TileFrameY);Add(tile.LiquidAmount);Add(tile.LiquidType);
+                }
+            return hash;
+        }
     }
 
     private void Check(float left, float top, float right, float bottom, bool hazards)
@@ -47,8 +97,13 @@ internal sealed class NativeMotionWorld : IMotionWorld
     }
 
     public PhysicsState Move(PhysicsState start, float vx, float vy, float gravity)
+        => MoveCore(start,vx,vy,gravity,stepAssist:true);
+
+    // A stationary downward probe asks whether native collision holds this
+    // exact pose. Step assist could move the probe onto a different surface.
+    private PhysicsState MoveCore(PhysicsState start,float vx,float vy,float gravity,bool stepAssist)
     {
-        LastHorizontalContact=null;
+        if(stepAssist)LastHorizontalContact=null;
         // Native helpers inspect neighbouring tiles. Reject unloaded/custom tiles
         // there before calling them, not merely after accepting a trajectory.
         if(!float.IsFinite(vx)||!float.IsFinite(vy)||Math.Abs(vx)>CollisionMargin||Math.Abs(vy)>CollisionMargin)
@@ -65,14 +120,17 @@ internal sealed class NativeMotionWorld : IMotionWorld
             Collision.sloping, Collision.landMine, Collision.up, Collision.down);
         try
         {
-            var down = Collision.WalkDownSlope(pos, vel, 20, 42, gravity);
-            pos = new(down.X, down.Y); vel = new(down.Z, down.W);
-            if (vel.Y == gravity)
-                Collision.StepDown(ref pos, ref vel, 20, 42, ref stepSpeed, ref gfxOffY);
-            if (vel.Y >= gravity)
-                Collision.StepUp(ref pos, ref vel, 20, 42, ref stepSpeed, ref gfxOffY);
+            if(stepAssist)
+            {
+                var down = Collision.WalkDownSlope(pos, vel, 20, 42, gravity);
+                pos = new(down.X, down.Y); vel = new(down.Z, down.W);
+                if (vel.Y == gravity)
+                    Collision.StepDown(ref pos, ref vel, 20, 42, ref stepSpeed, ref gfxOffY);
+                if (vel.Y >= gravity)
+                    Collision.StepUp(ref pos, ref vel, 20, 42, ref stepSpeed, ref gfxOffY);
+            }
             var clipped = Collision.TileCollision(pos, vel, 20, 42, false, false, 1);
-            if(_captureContacts)LastHorizontalContact=NavigationContact.Horizontal(pos.X,pos.Y,vel.X,clipped.X,(x,y)=>
+            if(stepAssist&&_captureContacts)LastHorizontalContact=NavigationContact.Horizontal(pos.X,pos.Y,vel.X,clipped.X,(x,y)=>
             {
                 // This face lies inside the neighbourhood already checked above.
                 // Unknown/out-of-window positions never yield content evidence.
@@ -96,6 +154,28 @@ internal sealed class NativeMotionWorld : IMotionWorld
     public bool SafeLanding(PhysicsState state)
         => LandingRejection(state) == null;
 
+    internal static PhysicsState Observe(Player player)
+    {
+        var state=new PhysicsState(player.position.X,player.position.Y,player.velocity.X,player.velocity.Y,
+            false,player.jump,player.releaseJump);
+        if(player.width!=PhysicsSimulator.PlayerW||player.height!=PhysicsSimulator.PlayerH||player.gravDir!=1)
+            return state;
+        bool eligible=Math.Abs(state.Vy)<.01f||player.sloping&&state.Vy>=-.01f;
+        return state with{Grounded=eligible&&new NativeMotionWorld(state).ContactRejection(state)==null};
+    }
+
+    private string ContactRejection(PhysicsState state)
+    {
+        const float probe=.125f;
+        try
+        {
+            var contact=MoveCore(state,0,probe,probe,stepAssist:false);
+            return contact.Grounded&&Math.Abs(contact.Py-state.Py)<.01f&&Math.Abs(contact.Vy)<.01f
+                ?null:"no native foot contact";
+        }
+        catch(UnsafeMotionException error){return error.Message;}
+    }
+
     public bool SafeFlatLanding(PhysicsState state) => SafeLanding(state)
         && MotionSupport.SafeFlatLanding(state, TerrainReader.ReadCell);
 
@@ -105,6 +185,6 @@ internal sealed class NativeMotionWorld : IMotionWorld
         if (!SafeSweep(state, state, out string reason)) return reason;
         try { Check(state.Px, state.Py - 2, state.Px + 20, state.Py + 46, true); }
         catch (UnsafeMotionException error) { return error.Message; }
-        return MotionSupport.LandingRejection(state, TerrainReader.ReadCell);
+        return MotionSupport.ClearanceRejection(state,TerrainReader.ReadCell)??ContactRejection(state);
     }
 }

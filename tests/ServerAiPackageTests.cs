@@ -44,8 +44,14 @@ public static class ServerAiPackageTests
             &&Calls(Type("CharacterStore").Methods.Single(m=>m.Name=="SaveCore"),"Read"),"world and legacy saves share native SavePlayer and native read-back validation");
         Check(Calls(Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop"),"Observe")
             &&Type("ServerAiNavigation").Methods.Single(m=>m.Name=="Stop").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="native_navigation_landing_unconfirmed"),"native airborne failure cleanup reports unconfirmed landing");
-        Check(Calls(Type("StateSpacePlanner").Methods.Single(m=>m.Name=="PlanCore"),"SupportedCheckpoint"),"planner requires real supported checkpoints beyond collision contact");
-        Check(Calls(Type("NativeMotionWorld").Methods.Single(m=>m.Name=="Move"),"Horizontal"),"navigation contacts use native clipped movement rather than nearby tile scan");
+        Check(Walk(Type("StateSpacePlanner")).SelectMany(t=>t.Methods).Where(m=>m.HasBody)
+            .Any(m=>Calls(m,"SupportedCheckpoint")),"planner requires real supported checkpoints beyond collision contact");
+        var motionWorld=Type("NativeMotionWorld");
+        Check(Calls(motionWorld.Methods.Single(m=>m.Name=="MoveCore"),"Horizontal"),"navigation contacts use native clipped movement rather than nearby tile scan");
+        Check(Calls(motionWorld.Methods.Single(m=>m.Name=="Observe"),"ContactRejection")
+            &&Calls(motionWorld.Methods.Single(m=>m.Name=="LandingRejection"),"ContactRejection")
+            &&Calls(motionWorld.Methods.Single(m=>m.Name=="ContactRejection"),"MoveCore"),
+            "actual grounded observation and predicted support reuse native collision");
         Check(Calls(Type("ServerSceneReader").Methods.Single(m=>m.Name=="Read"),"FromPixels"),"scene body tile bounds use host collision rectangle");
         Check(Calls(Type("ServerAiNativeActions").Methods.Single(m=>m.Name=="Poll"),"Mining")
             &&Type("AiActionReasons").Methods.Single(m=>m.Name=="Mining").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="native_tile_destroyed"),"mining receipt translates native failure enum to outcome reason");
@@ -180,7 +186,7 @@ public static class ServerAiPackageTests
         var taskTick=Type("MineTargetTask").Methods.Single(m=>m.Name=="Tick");
         Check(Type("AiAtomicActions").Methods.Single(m=>m.Name=="get_Capabilities").Body.Instructions.Any(
             i=>i.OpCode==OpCodes.Ldstr&&(string)i.Operand=="server_ai_program_tasks_v1"),"new task safety/lifecycle semantics have an explicit capability fence");
-        var hazard=Type("NativeMineTargetWorld").Methods.Single(m=>m.Name=="InterruptionReason");
+        var hazard=Type("NativeNavigationWorld").Methods.Single(m=>m.Name=="CheckHazards");
         Check(Calls(taskTick,"InterruptionReason")&&Calls(taskTick,"Stop"),"root task checks hazards in game-tick execution and uses normal child cleanup");
         Check(Calls(hazard,"Require")&&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="npc")
             &&hazard.Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="statLife")

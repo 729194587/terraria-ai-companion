@@ -1,6 +1,6 @@
 param([switch]$MobilityOnly,[switch]$TripOnly,[switch]$RecoveryOnly, [switch]$PlannerOnly, [switch]$SafeGroundWalkOnly, [switch]$MiningSupportOnly, [switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
     [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly, [switch]$AuthorityNetworkOnly,
-    [switch]$InventoryOnly, [switch]$BridgeOnly, [switch]$ServerReadsOnly, [switch]$NavigationOnly,[switch]$SceneOnly,[switch]$VerticalOnly)
+    [switch]$InventoryOnly, [switch]$BridgeOnly, [switch]$ServerReadsOnly, [switch]$NavigationOnly,[switch]$SurfaceGraphOnly,[switch]$LocalEditsOnly,[switch]$SceneOnly,[switch]$VerticalOnly)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
@@ -51,6 +51,12 @@ $sources = @(
     (Join-Path $PSScriptRoot 'SafeGroundWalkTests.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationTask.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationFailureMemory.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/NavigationKnowledge.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/SurfaceGraph.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/LocalTerrainPlanning.cs'),
+    (Join-Path $PSScriptRoot 'LocalTerrainPlanningTests.cs'),
+    (Join-Path $PSScriptRoot 'SurfaceGraphTests.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/NavigationProgressWatchdog.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationTripProgress.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationDiagnostics.cs'),
     (Join-Path $repo 'CompanionBridge/TcpControlServer.cs'),
@@ -76,6 +82,8 @@ if ($AuthorityNetworkOnly) {
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
 if ($MobilityOnly) { [MobilityProfileTests]::Run(); return }
+if ($SurfaceGraphOnly) { [SurfaceGraphTests]::Run(); return }
+if ($LocalEditsOnly) { [LocalTerrainPlanningTests]::Run(); return }
 if ($TripOnly) { [NavigationTripTests]::Run(); return }
 if ($RecoveryOnly) { [NavigationRecoveryTests]::Run(); return }
 if ($PlannerOnly) { [PlannerCorrectnessTests]::Run(); return }
@@ -83,7 +91,7 @@ if ($SafeGroundWalkOnly) { [SafeGroundWalkTests]::Run(); return }
 if ($MiningSupportOnly) { [MiningSupportImpactTests]::Run((Join-Path $PSScriptRoot 'fixtures/mining-support-play2.json')); return }
 if ($SceneOnly) { [SceneGeometryTests]::Run(); return }
 if ($VerticalOnly) { [VerticalNavigationTests]::Run(); return }
-if ($NavigationOnly) { [MobilityProfileTests]::Run(); [NavigationTripTests]::Run(); [NavigationRecoveryTests]::Run(); [PlannerCorrectnessTests]::Run(); [NavigationPerceptionTests]::Run(); [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }
+if ($NavigationOnly) { [LocalTerrainPlanningTests]::Run(); [SurfaceGraphTests]::Run(); [MobilityProfileTests]::Run(); [NavigationTripTests]::Run(); [NavigationRecoveryTests]::Run(); [PlannerCorrectnessTests]::Run(); [NavigationPerceptionTests]::Run(); [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }
 if ($ServerReadsOnly) { [ServerAiSharedReadTests]::Run(); [AtomicExtensionsOfflineTests]::Run(); return }
 if ($BridgeOnly) { [AiChatOfflineTests]::Run(); [BridgeOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); [LocalInputOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); return }
 if ($InventoryOnly) { [InventoryOfflineTests]::Run(); return }

@@ -10,7 +10,7 @@ namespace CompanionBridge.ServerIpc;
 internal sealed class AiAtomicActions
 {
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
-    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_program_tasks_v1"}).ToArray();
+    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"}).ToArray();
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
     {
@@ -56,16 +56,17 @@ internal sealed class AiAtomicActions
     internal void Forget(Guid connection) { if (active?.Owner == connection) active.Cancel = true; }
     private static bool Matches(Entry e, AiReadOnlyProtocol.Identity current) => current != null
         && ReferenceEquals(e.Actor, current.Actor) && e.World == current.World && e.Generation == current.Generation && e.Slot == current.Slot;
+    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to";
     private static object TaskState(Entry e)
     {
-        if(e.Operation!="mine_target")return null;
+        if(!IsTask(e.Operation))return null;
         if(e.Result?.Evidence!=null)
         {
             var evidence=JsonSerializer.SerializeToElement(e.Result.Evidence);
             if(evidence.ValueKind==JsonValueKind.Object&&evidence.TryGetProperty("task",out var task))return task;
         }
         // Accepted requests and native admission refusals do not yet have a task slot.
-        return new{taskId=e.Id,taskName="mine_target",phase=e.Phase,status=e.Status,currentChild=(object)null,
+        return new{taskId=e.Id,taskName=e.Operation,phase=e.Phase,status=e.Status,currentChild=(object)null,
             progress=new{completedChildren=0},lastResult=e.Result==null?null:(object)new{status=e.Result.Status,reason=e.Result.Reason,evidence=e.Result.Evidence},reason=e.Reason};
     }
     private static object Snapshot(Entry e) => new {
@@ -73,7 +74,7 @@ internal sealed class AiAtomicActions
         worldSessionId = e.World, actorId = e.ActorId, actorSlot = e.Slot, durationMs = e.Duration,
         targetTile = e.Operation is "place_tile" or "place_object" ? (JsonElement?)e.Arguments : null,
         targetInventory = e.Operation is "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" ? (JsonElement?)e.Arguments : null,
-        targetTask = e.Operation=="mine_target" ? (JsonElement?)e.Arguments : null,
+        targetTask = IsTask(e.Operation) ? (JsonElement?)e.Arguments : null,
         targetRecipe = e.Operation == "craft_recipe" ? (JsonElement?)e.Arguments : null,
         requestedInputs = e.Operation == "move_input" ? (JsonElement?)e.Arguments : null,
         targetRegion = e.Operation == "navigate_to_landing_region" ? (JsonElement?)e.Arguments : null,
@@ -101,7 +102,7 @@ internal sealed class AiAtomicActions
         if (!current.CanAct) return new(Error: "actor_not_alive");
         string operation = root.GetProperty("operation").GetString();
         bool selecting = operation == "select_hotbar_slot";
-        if (!selecting && (executor == null || operation is not ("move_input" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "mine_target"))) return new(Error: "unsupported_operation");
+        if (!selecting && (executor == null || operation is not ("move_input" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "place_tile" or "place_object" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "mine_target" or "navigate_to"))) return new(Error: "unsupported_operation");
         var arguments = root.GetProperty("arguments");
         int key = 0;
         if (selecting)
@@ -126,7 +127,7 @@ internal sealed class AiAtomicActions
         long remaining = root.GetProperty("expiresAtUnixMs").GetInt64() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (remaining <= 0) return new(Error: "request_expired");
         if (remaining > 2000) return new(Error: "invalid_deadline");
-        int duration = operation switch { "mine_target"=>55000, "move_input" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "place_tile" or "place_object" => 10000, _ => 2000 };
+        int duration = operation switch { "mine_target" or "navigate_to"=>55000, "move_input" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "place_tile" or "place_object" => 10000, _ => 2000 };
         while (entries.Count >= RegistryCapacity && terminalEntries.TryDequeue(out var oldest))
             if (entries.TryGetValue(oldest, out var terminal) && terminal.Status != "running") entries.Remove(oldest);
         if (entries.Count >= RegistryCapacity) return new(Error: "action_registry_full");
@@ -159,7 +160,7 @@ internal sealed class AiAtomicActions
         e.StopStatus = status; e.StopReason = reason;
         if (e.Handle != null)
         {
-            try { e.Result = e.Operation=="mine_target"?executor.CancelWithReason(current,e.Handle,status,reason):executor.Cancel(current,e.Handle); }
+            try { e.Result = IsTask(e.Operation)?executor.CancelWithReason(current,e.Handle,status,reason):executor.Cancel(current,e.Handle); }
             catch { End(e, "unknown", "native_cleanup_unconfirmed", current, false); return; }
             if (!e.Result.InputsReleased) { End(e, "unknown", "native_inputs_not_released", current, false); return; }
             // Confirmed release does not resolve uncertain native observation/effect state.
@@ -182,7 +183,7 @@ internal sealed class AiAtomicActions
         try { current = capture(); } catch { current = null; }
         if (!Matches(e, current))
         {
-            if(e.Operation=="mine_target"&&e.Handle!=null){try{e.Result=executor.BindingLost(e.Handle);}catch{}}
+            if(IsTask(e.Operation)&&e.Handle!=null){try{e.Result=executor.BindingLost(e.Handle);}catch{}}
             End(e,"unknown","actor_binding_changed",current,false);return;
         }
         if (!current.CanAct) { Stop(e, "cancelled", "actor_not_alive", current); return; }

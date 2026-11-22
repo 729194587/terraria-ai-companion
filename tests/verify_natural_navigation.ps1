@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$LandingRegions,[switch]$Scene,[switch]$Trip)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -81,9 +81,10 @@ try {
     }
     Copy-Item -LiteralPath $loadedWorld -Destination "$profile/source.wld"
     $initialWorldHash=(Get-FileHash -LiteralPath "$profile/source.wld").Hash
-    $probeScript=if($Trip){'tests/native_trip_navigation.py'}elseif($Scene){'tests/native_natural_scene.py'}elseif($LandingRegions){'tests/native_natural_landing.py'}else{'tests/native_natural_navigation.py'}
+    $probeScript=if($AutonomousNavigation){'tests/native_natural_landing.py'}elseif($Trip){'tests/native_trip_navigation.py'}elseif($Scene){'tests/native_natural_scene.py'}elseif($LandingRegions){'tests/native_natural_landing.py'}else{'tests/native_natural_navigation.py'}
     $probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile,'--offsets')+@($Offsets|ForEach-Object {"$_"})
     if($HelperSource){$probeArgs+=@('--helper-source',(Resolve-Path -LiteralPath $HelperSource).Path)}
+    if($AutonomousNavigation){$probeArgs+='--autonomous'}
     & $PythonExecutable @probeArgs
     if($LASTEXITCODE -ne 0){throw 'Natural deterministic Lua probe failed'}
     $client.Dispose();$client=$null

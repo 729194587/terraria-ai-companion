@@ -110,7 +110,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
          ["horizontal","vertical","jumpHoldUpdates","maxUpdates"]),
     tool("navigate_to_x", "复用连续导航至玩家左上角水平世界像素targetX；30秒上限，普通角色运动限制仍适用；arrived由游戏物理状态校验。失败时evidence.navigation.blockingTiles若存在，提供x/y/contentKey及basis，表示被拒绝的根节点前向步行试算中原生裁剪确认的完整实心接触，不证明全部路径被封死；缺失表示未可靠定位。",
          {"targetX": {"type": "number", "minimum": 0, "maximum": 1000000}}, ["targetX"]),
-    tool("navigate_to_landing_region", "二维落脚导航：全部为世界像素，Y向下；minPlayerLeftX/maxPlayerLeftX是玩家碰撞框左边缘的闭区间，surfaceY是脚底目标水平表面高度（非玩家顶部）。原有普通角色限制；落点支持完整方块顶面和水平单向平台，不支持斜平台/半砖；30秒上限。仅实际进入X区间、脚底高度误差<=0.5px、安全着地且停稳后完成，不能只经过目标X。失败时evidence.navigation.blockingTiles若存在，提供x/y/contentKey及basis，仅表示被拒绝的根节点前向步行试算的已确认完整实心接触；缺失表示未可靠定位。",
+    tool("navigate_to_landing_region", "二维落脚导航：全部为世界像素，Y向下；minPlayerLeftX/maxPlayerLeftX是玩家碰撞框左边缘的闭区间，surfaceY是目标脚底高度（世界像素）。按原生碰撞确认方块、平台、半砖或斜坡支撑，适用普通角色运动；30秒上限。仅实际进入X区间、脚底高度误差<=0.5px、安全着地且停稳后完成，不能只经过目标X。失败时evidence.navigation.blockingTiles若存在，提供x/y/contentKey及basis，仅表示被拒绝的根节点前向步行试算的已确认完整实心接触；缺失表示未可靠定位。",
          {key: {"type": "number", "minimum": 0, "maximum": 1000000}
           for key in ("minPlayerLeftX", "maxPlayerLeftX", "surfaceY")},
          ["minPlayerLeftX", "maxPlayerLeftX", "surfaceY"]),
@@ -118,6 +118,8 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("select_hotbar_slot", "按游戏显示的快捷键选择：1..9为前九格，0为最右第十格。slot不是背包数组索引。核对实际选中按键。", {"slot": {"type": "integer", "minimum": 0, "maximum": 9}}, ["slot"]),
     tool("use_item", "用当前物品完成一次原生使用周期；target可选世界像素{x,y}。completed只证明使用周期，具体效果需感知核验。无target保留原生鼠标，不限制画面缩放；有target支持当前缩放，仍限正常重力及80像素。",
          {"target": {"type": "object", "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1000000}, "y": {"type": "number", "minimum": 0, "maximum": 1000000}}, "required": ["x", "y"], "additionalProperties": False}}),
+    tool("navigate_to", "服务器自主导航。只传预期落脚面的世界像素 x、y（Y 向下）。游戏侧自行选择走、跳、安全下落、挖掘和搭路。安全着地停稳且脚底覆盖目的地才完成。unknown 后停止。",
+         {key: {"type": "number", "minimum": 0, "maximum": 1000000} for key in ("x", "y")}, ["x", "y"]),
     tool("mine_target", MINE_TARGET_DESCRIPTION, {"target": MINE_TARGET, **TILE}),
     tool("mine_tile", "原生挖掘指定 Tile。服务器 AI 从整个主背包自动选择合适工具，必要时临时切换快捷栏，按 Terraria 原生范围和工具规则判定。客户端控制使用当前手持镐。动作在当前位置执行，以实际移除为准，10秒上限。",
          {"x": {**TILE["x"], "description": "目标格的绝对 Tile X 坐标"},
@@ -136,6 +138,7 @@ SCHEMAS = {t['function']['name']: t['function']['parameters'] for t in TOOLS}
 # Model-only server projection. Execution validation and the shared TOOLS stay unchanged.
 SERVER_DESCRIPTIONS = {
     'mine_target': MINE_TARGET_DESCRIPTION,
+    'navigate_to': '到达目的地用 navigate_to，只传落脚面世界像素 x/y，Y 向下。游戏侧自主选择走、跳、安全下落、挖掘或搭路。受普通角色运动、局部安全和任务预算限制。unknown 后停止。',
     'place_object': PLACE_OBJECT_DESCRIPTION,
     'transfer_inventory_item': '服务器AI：仅0..49普通库存槽，新鲜两槽token；原生拆分/堆叠，CanStack检查Mod兼容性，容量不足不执行；核验数量及后续游戏更新。unknown可能已变更，不回滚、不自动重试。',
     'swap_inventory_slots': '服务器AI：新鲜两槽token，交换0..49完整物品实例；不合并，后续游戏更新核验；unknown不回滚、不自动重试。',
@@ -158,7 +161,7 @@ SERVER_DESCRIPTION_SUFFIXES = {
     'craft_recipe': '仅普通原版配方/配方组、AI背包0..57与已支持制作站/六类环境条件；特殊回调、其他条件、Mod内容、箱子/虚空仓库不支持。前置：新鲜配方token及supported/available、材料/站点/条件/保守空间检查；单次产量见output.count，每批重验。按completedCrafts/producedCount、batches、inventoryVerified核验；可能部分完成，不回滚。制作站是否邻接要重新查询，不能由放置动画推定。',
     'move_input': '前置为绑定身份/控制权、无互斥动作、正常重力；坐骑/失能状态拒绝，空中/非零起速允许。30秒墙钟看门，不要求导航profile/安全支撑。evidence包含updatesExecuted、startPosition/endPosition/endVelocity（向量X/Y）、healthDelta、grounded/airborne、inputReleased、settled、noProgress；completed只证明输入时长结束，inputReleased不证明停稳或效果确定，观察/同步不确定时仍返回unknown。',
     'navigate_to_x': '先读取当前位置再计算相对targetX；起步/路径仍需普通导航profile，飞行/坐骑/反重力等不支持。结束evidence含x/y/vx/vy、arrived/grounded/safeSupport/settled；不能把经过X、零预测误差或局部搜索失败当成已落地/全局不可达。',
-    'navigate_to_landing_region': '目标须来自新鲜观察，可将已观察候选target直接传入；不同高度仍受原局部预算、普通profile及64px下降限制。半砖顶部可作水平落脚面；斜坡和斜平台可作路径，落脚区域要求水平接触。导航不执行Down平台下穿。成功须targetRegion一致、arrived/grounded/safeSupport/settled=true及known释放；未确认落地保持unknown。',
+    'navigate_to_landing_region': '目标须来自新鲜观察，可将已观察候选target直接传入；不同高度仍受原局部预算、普通profile及64px下降限制。支持部分脚底悬空的落点，须由原生碰撞和停稳状态核验。导航不执行Down平台下穿。成功须targetRegion一致、arrived/grounded/safeSupport/settled=true及known释放；未确认落地保持unknown。',
     'scan_tiles': '返回data.items及matchedCount/returnedCount/complete/truncated；按Tile格计数，一棵树有多格，不能当树的棵数。附近查询先取得观察bounds；世界像素转Tile用math.floor(px/16)，不猜内容ID。',
     'inspect_tile': '返回data内的实际格和preflight；x/y为Tile坐标。只读前提不是原生执行许可；移除支撑比较不预测实际落点。',
     'resolve_content': '返回data中的匹配候选/ID及歧义；内容注册表中存在不等于当前观察范围或世界内存在。',
@@ -488,6 +491,25 @@ def verify_landing_start(action, arguments, *, server_ai=False):
         raise BridgeError('Landing target/identity missing or different in start receipt')
 
 
+def verified_server_navigation(action, evidence):
+    task = evidence.get('task')
+    target = action.get('targetTask')
+    if (not isinstance(task, dict) or not isinstance(target, dict) or set(target) != {'x', 'y'}
+            or any(type(value) not in (float, int) for value in target.values())
+            or task.get('taskId') != action.get('actionId') or task.get('taskName') != 'navigate_to'
+            or task.get('status') != 'completed' or task.get('currentChild') is not None):
+        return False
+    result = task.get('result')
+    arrival = result.get('evidence') if isinstance(result, dict) else None
+    return (isinstance(arrival, dict)
+            and result.get('effectVerified') is True and result.get('inputsReleased') is True
+            and arrival.get('target') == target
+            and all(arrival.get(key) is True for key in ('arrived', 'grounded', 'safeSupport', 'settled'))
+            and type(arrival.get('x')) in (float, int) and type(arrival.get('feetY')) in (float, int)
+            and arrival['x'] - .01 <= target['x'] <= arrival['x'] + 20.01
+            and abs(arrival['feetY'] - target['y']) <= .51)
+
+
 def verified_server_landing(action, evidence):
     if action.get('operation') != 'navigate_to_landing_region':
         return False
@@ -538,6 +560,7 @@ async def terminal(bridge, action, generation):
                        and native_evidence['updatesExecuted'] == action['requestedInputs'].get('maxUpdates')
                        and native_evidence.get('updatesRequested') == native_evidence['updatesExecuted']
                        and native_evidence.get('inputReleased') is True),
+        'navigate_to': verified_server_navigation(action, native_evidence),
         'navigate_to_x': native_evidence.get('arrived') is True,
         'navigate_to_landing_region': verified_server_landing(action, native_evidence),
         'use_item': native_evidence.get('cycleVerified') is True,
@@ -569,7 +592,7 @@ async def terminal(bridge, action, generation):
     }.get(action.get('operation'), False)
     native_end = (isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('move_input', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe', 'mine_target', *INVENTORY_OPERATIONS)
+                  and action.get('operation') in ('move_input', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'craft_recipe', 'mine_target', *INVENTORY_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -632,6 +655,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             lifecycle.update(copy.deepcopy(fields))
     arguments = validate(name, arguments)
     validate_backend(bridge, name, arguments)
+    if name == 'navigate_to' and 'server_ai_navigation_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_navigation_v1; no navigation task submitted')
     if name == 'mine_target' and 'server_ai_tasks_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_tasks_v1; no task submitted')
     if name in {'query_recipes','craft_recipe'} and 'server_ai_crafting_v1' not in bridge.hello.get('capabilities', []):
@@ -748,10 +773,10 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Inventory target missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if name == 'mine_target':
+        if name in ('mine_target', 'navigate_to'):
             placement_invalid = True
             if action.get('targetTask') != arguments:
-                raise BridgeError('Mine task target missing or changed in start receipt')
+                raise BridgeError('Task target missing or changed in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
         if name == 'craft_recipe':

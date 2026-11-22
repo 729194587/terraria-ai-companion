@@ -8,21 +8,54 @@ internal sealed class NavigationTask
 {
     private readonly LocalMotionController _executor = new();
     private readonly bool _enableSafeGroundWalk;
-    private int _searches,_fastWalks;
+    private int _searches,_fastWalks,_deferredSearches,_consecutiveRecoveries;
+    private StateSpacePlanner.Search _pendingSearch;
+    private SurfaceNavigator _surfaceSearch;
+    private SurfaceGraphSnapshot _surfaceSnapshot;
+    private PhysicsState _searchStart;
+    private PhysicsParameters _searchPhysics;
+    private long _searchTerrain;
+    private int _searchFailures;
+    private IMotionWorld _observedWorld;
+    private PhysicsState _observedTerrainPose;
+    private long _observedTerrain;
+    private NavigationKnowledge _knowledge=new();
+    private bool _sharedKnowledge;
+    private NavigationFailureMemory _failures=>_knowledge.Failures;
+    private readonly NavigationProgressWatchdog _watchdog=new();
+    internal long ObservationUpdate { get; set; }=-1;
+    private long Clock=>ObservationUpdate>=0?ObservationUpdate:_updates;
+    internal void SetKnowledge(NavigationKnowledge knowledge)
+    {
+        _sharedKnowledge=knowledge!=null;
+        _knowledge=knowledge??new();
+    }
+    private void DiscardSearch(){_pendingSearch?.Dispose();_pendingSearch=null;_surfaceSearch?.Dispose();_surfaceSearch=null;}
+
+    internal bool Continuous { get; set; }
+    internal bool PreferFlatRegion { get; set; }
     internal const int RecoveryLimit = 3;
-    private readonly NavigationFailureMemory _failures = new();
     private int _updates, _recoveries, _recoveryReplans, _recoveryFrames, _recoverySettled;
     private int _cancelledSession, _cancelledGeneration;
     private bool _recovering, _neutralIssued, _resumePending;
     private Prediction _failedEdge;
+    private PhysicsState _edgeStart;
+    private PhysicsState _motionStart;
+    private bool _motionIssued;
+    private readonly double _searchBudgetMilliseconds;
     private long _mobilityRevision,_planMobilityRevision;
     private bool _rememberFailedEdge=true;
     private string _recoveryReason;
     private PhysicsState? _recoveryPosition;
     private bool? _recoveryInputsReleased;
     private readonly Func<PhysicsState,int> _historicalPreference;
-    internal NavigationTask(bool enableSafeGroundWalk=false,Func<PhysicsState,int> historicalPreference=null)
-    {_enableSafeGroundWalk=enableSafeGroundWalk;_historicalPreference=historicalPreference;}
+    internal NavigationTask(bool enableSafeGroundWalk=false,Func<PhysicsState,int> historicalPreference=null,
+        double searchBudgetMilliseconds=25)
+    {
+        _enableSafeGroundWalk=enableSafeGroundWalk;
+        _historicalPreference=historicalPreference;
+        _searchBudgetMilliseconds=searchBudgetMilliseconds;
+    }
     private int _session, _generation, _direction, _actions, _jumps, _plans;
     private float _targetX, _furthest;
     private LandingRegion _region;
@@ -44,10 +77,14 @@ internal sealed class NavigationTask
     internal void Cancel(bool retire=true)
     {
         if (retire && _session != 0) { _cancelledSession=_session; _cancelledGeneration=_generation; }
-        _recovering=_neutralIssued=_resumePending=false;
-        _failures.Clear(); _failedEdge=null;
+        _recovering=_neutralIssued=_resumePending=_motionIssued=false;
+        if(!_sharedKnowledge)_knowledge.Clear();
+        DiscardSearch();_watchdog.Reset();_failedEdge=null;
+        _observedWorld=null;
+        _deferredSearches=_consecutiveRecoveries=0;
         _recoveries=_recoveryReplans=_updates=0; _recoveryReason=null; _recoveryPosition=null; _recoveryInputsReleased=null;
         _executor.Cancel(); _session = 0; _executing = false; _lastLanding = null; _route = null;
+        _surfaceSnapshot=null;
         _confirming=false;_confirmationFrames=_settledFrames=0;
         _routeIndex=_continuedEdges=_invalidatedRoutes=0;_planningMilliseconds=0;_routePhysics=null;_mobilityRevision=_planMobilityRevision=0;_rememberFailedEdge=true;
         Snapshot = new(0, "idle", "none", "control released", 0, 0, null, null, 0);
@@ -57,7 +94,7 @@ internal sealed class NavigationTask
     {
         Snapshot = Snapshot with { Status = "failed", Reason = reason,BlockingTiles=blockingTiles };
         _executing = false; _recovering=_resumePending=false;
-        _executor.Cancel();
+        _executor.Cancel();DiscardSearch();
         return default;
     }
 
@@ -73,6 +110,7 @@ internal sealed class NavigationTask
         if (_session == session && _generation == generation && Terminal) return;
         if (_session != session || _generation != generation || _targetX != targetX || _region != region)
         {
+            if(_generation!=0&&_generation!=generation)_knowledge.Clear();
             Cancel(retire:false); _session = session; _generation = generation; _targetX = targetX;
             _region = region;
             _direction = targetX >= state.Px ? 1 : -1;
@@ -96,9 +134,19 @@ internal sealed class NavigationTask
     {
         BeginCore(session, generation, targetX, region, state);
         if (_session != session || _generation != generation || Terminal) return default;
-        _updates++; _failures.Expire(_updates);
-        if(_updates>NavigationTripProgress.UpdateLimit)return Fail("navigation_trip_update_budget");
-        if (_recovering) { _neutralIssued=true; return default; }
+        _updates++; _failures.Validate(world,ph,Clock);
+        long terrain=0;
+        if(Continuous)
+        {
+            // Re-read the previous fixed window before moving the observation
+            // window. Scrolling alone must not erase trip history.
+            if(_observedWorld!=null&&_observedWorld.TerrainSignature(_observedTerrainPose)!=_observedTerrain)
+                _trip.Begin(state,Distance(state));
+            terrain=world.TerrainSignature(state);
+            _observedWorld=world;_observedTerrainPose=state;_observedTerrain=terrain;
+        }
+        if(!Continuous&&_updates>NavigationTripProgress.UpdateLimit)return Fail("navigation_trip_update_budget");
+        if (_recovering) { _watchdog.Observe(NavigationActivity.Recovery);_neutralIssued=true; return default; }
         if (_confirming) return default; // Observe natural braking/fall, never replay or replan in air.
         if (!ph.IsSupportedGroundPhysics) return Fail("unsupported landing-region physics");
         if (!_executing)
@@ -116,25 +164,53 @@ internal sealed class NavigationTask
             if (landingRejection != null)
                 return Fail($"replan requires safe foot support and body clearance: {landingRejection}; "
                     + $"position=({state.Px},{state.Py}), velocity=({state.Vx},{state.Vy})");
-            if (region != null ? region.Arrived(state, world)
-                : _direction * (targetX - state.Px) <= 12 && Math.Abs(state.Vx) <= 0.1f
-                    && Math.Abs(state.Vy) <= 0.1f && state.ReleaseJump && state.JumpFramesLeft == 0)
+            if ((region?.Contains(state)??(_direction * (targetX - state.Px) <= 12))&&PhysicsSimulator.Settled(state,world))
             { Snapshot = Snapshot with { Status = "arrived", Reason = region != null
                 ? "landing region verified on safe settled ground" : "horizontal goal crossed on safe settled ground" }; return default; }
             if (!state.ReleaseJump || state.JumpFramesLeft != 0) return default;
             if (!TryContinue(state,ph,world))
             {
                 if (recoveryReplan) { _recoveryReplans++; Snapshot=Snapshot with {RecoveryReplans=_recoveryReplans}; }
-                if(_searches>=NavigationTripProgress.SearchLimit||_planningMilliseconds>=NavigationTripProgress.PlanningLimitMilliseconds)
+                if(!Continuous&&(_searches>=NavigationTripProgress.SearchLimit||_planningMilliseconds>=NavigationTripProgress.PlanningLimitMilliseconds))
                     return Fail("navigation_trip_search_budget");
                 _routeIndex=0;_routePhysics=ph;_planMobilityRevision=_mobilityRevision;
                 int priorRepeatRejections=_trip.RepeatRejections;
-                _route = _enableSafeGroundWalk&&region==null?SafeGroundWalk.TryPlan(state,targetX,_direction,ph,world):null;
+                float walkTarget=region==null?targetX:(region.MinPlayerLeftX+region.MaxPlayerLeftX)/2;
+                int walkDirection=walkTarget>=state.Px?1:-1;
+                bool surface=Continuous&&region!=null&&world is ISurfaceTerrain;
+                // Cleared edit corridors and precise final braking retain the
+                // existing fully simulated shortcut. Larger/special terrain is
+                // organised by the graph, not a succession of flat prefixes.
+                bool shortApproach=!surface||region.Distance(state)<=64;
+                _route = shortApproach&&_enableSafeGroundWalk&&(region==null||Continuous||PreferFlatRegion)
+                    ?SafeGroundWalk.TryPlan(state,walkTarget,region==null?_direction:walkDirection,ph,world,region):null;
                 if (_route != null && RejectRemembered(state, _route.Actions[0])) _route=null;
                 if(_route==null)
                 {
-                    _route = region != null ? StateSpacePlanner.Plan(state, region, ph, world, rejectEdge: RejectRemembered, detourCheckpoint: _trip.Detour, historicalPreference: _historicalPreference)
-                        : StateSpacePlanner.Plan(state, targetX, ph, world, goalDirection: _direction, rejectEdge: RejectRemembered, detourCheckpoint: _trip.Detour, historicalPreference: _historicalPreference);
+                    _watchdog.Observe(NavigationActivity.Search);
+                    if(Continuous&&region!=null)
+                    {
+                        _knowledge.Search.Scope(terrain,ph,Clock);
+                        if((_pendingSearch==null&&_surfaceSearch==null)||_searchStart!=state||_searchPhysics!=ph||_searchTerrain!=terrain
+                            ||_searchFailures!=_failures.Version)
+                        {
+                            DiscardSearch();
+                            _searchStart=state;_searchPhysics=ph;_searchTerrain=terrain;
+                            _searchFailures=_failures.Version;
+                            if(surface)_surfaceSearch=new(_knowledge.Surfaces,state,region,ph,world,(ISurfaceTerrain)world,_knowledge.Search,RejectRemembered,_trip.Detour,_historicalPreference);
+                            else _pendingSearch=new(state,targetX,region,ph,world,rejectEdge:RejectRemembered,
+                                    detourCheckpoint:_trip.Detour,historicalPreference:_historicalPreference,learning:_knowledge.Search);
+                        }
+                        if(_surfaceSearch!=null)
+                        {
+                            _route=_surfaceSearch.Advance(budgetMs:Math.Min(4,_searchBudgetMilliseconds));
+                            _surfaceSnapshot=_surfaceSearch.Snapshot;
+                        }
+                        else _route=_pendingSearch.Advance(budgetMs:_searchBudgetMilliseconds);
+                    }
+                    else
+                        _route = region != null ? StateSpacePlanner.Plan(state, region, ph, world, budgetMs: _searchBudgetMilliseconds, rejectEdge: RejectRemembered, detourCheckpoint: _trip.Detour, historicalPreference: _historicalPreference)
+                            : StateSpacePlanner.Plan(state, targetX, ph, world, goalDirection: _direction, rejectEdge: RejectRemembered, detourCheckpoint: _trip.Detour, historicalPreference: _historicalPreference);
                     _searches++;
                 }
                 else _fastWalks++;
@@ -145,6 +221,21 @@ internal sealed class NavigationTask
                     PlanNumber = _plans, ReachedGoal = _route.ReachedGoal, TimeBudgetReached = _route.TimeBudgetReached, PlanStart=state, SearchFailureReason=_route.FailureReason, PlanKind=_route.Kind, SearchNumber=_searches, FastWalkPlans=_fastWalks, SearchExit=_route.SearchExit, SearchRejections=_route.Rejections, DominatedStates=_route.DominatedStates };
                 if (_route.Actions.Count == 0)
                 {
+                    if(_route.SearchExit=="surface_node_budget")
+                        return Fail("navigation_surface_node_budget");
+                    bool sliceExhausted=_route.TimeBudgetReached||_route.SearchExit is "expansion_budget" or "local_state_budget";
+                    if(Continuous&&sliceExhausted)
+                    {
+                        // Retain exact frontier/candidate cursor. Its start, terrain
+                        // and physics are revalidated before the next game-thread slice.
+                        _deferredSearches++;
+                        if(_pendingSearch?.Finished==true||_surfaceSearch?.Finished==true)DiscardSearch();
+                        Snapshot=Snapshot with{Status="running",Reason="local search deferred"};
+                        return default;
+                    }
+                    DiscardSearch();
+                    if(_route.SearchExit=="unknown_terrain")
+                    {Unconfirmed("navigation_unknown_terrain");return default;}
                     return Fail(_route.TimeBudgetReached ? "navigation_search_timeout"
                         : _route.SearchExit == "expansion_budget" ? "navigation_search_expansion_budget"
                         : _trip.RepeatRejections>priorRepeatRejections ? "navigation_trip_repeated_state"
@@ -153,17 +244,21 @@ internal sealed class NavigationTask
                 }
 
             }
+            DiscardSearch();
+            _edgeStart=state;
             var edge=Edge;
             _executor.Cancel();
             _executor.Begin(session, edge.Frames[0].Input.Direction, generation);
             _executor.LoadPlan(edge);
             _executing = true;
         }
+        _watchdog.Observe(NavigationActivity.Movement);
         var input = _executor.Before(session, Edge.Frames[0].Input.Direction,
             state, ph, world, generation);
         Publish();
         if (_executor.FailureKind == MotionFailureKind.RouteDeviation)
         { BeginRecovery(state, _executor.Snapshot.Reason); _neutralIssued=_recovering; return default; }
+        _motionStart=state;_motionIssued=true;
         return input;
     }
 
@@ -171,6 +266,7 @@ internal sealed class NavigationTask
     {AfterCore(state,world,inputsReleased);UpdateTripSnapshot();}
     private void AfterCore(PhysicsState state, IMotionWorld world, bool inputsReleased)
     {
+        if(_motionIssued){_watchdog.MotionObserved(_motionStart.Px,_motionStart.Py,state.Px,state.Py);_motionIssued=false;}
         if (Terminal) return;
         if (_recovering) { ObserveRecovery(state, world, inputsReleased); return; }
         if (!_executing) return;
@@ -206,7 +302,7 @@ internal sealed class NavigationTask
                 new(landing.Vx, landing.Vy), new(state.Vx, state.Vy),
                 Math.Abs(state.Vx) <= 0.1f && Math.Abs(state.Vy) <= 0.1f);
             float forward = Progress(state);
-            _stalled = _trip.Checkpoint(state,Distance(state)) ? 0 : _stalled + 1;
+            _stalled = Checkpoint(state) ? 0 : _stalled + 1;
             _furthest = Math.Max(_furthest, forward);
             if(_routeIndex>0)_continuedEdges++;
             _routeIndex++;
@@ -218,10 +314,21 @@ internal sealed class NavigationTask
         }
     }
 
+    private bool Checkpoint(PhysicsState state,bool verifiedAction=true)
+    {
+        bool progress=_trip.Checkpoint(state,Distance(state),continuous:Continuous);
+        if(progress)
+        {
+            _watchdog.Observe(NavigationActivity.VerifiedCheckpoint);
+            if(Continuous&&verifiedAction)_consecutiveRecoveries=0;
+        }
+        return progress;
+    }
+
     private void CheckBudgets()
     {
-        if (_stalled >= 4) Fail("navigation_stalled");
-        else if (_actions >= 256) Fail("navigation_action_limit");
+        if (Continuous?_watchdog.Stalled:_stalled>=4) Fail("navigation_stalled");
+        else if (!Continuous && _actions >= 256) Fail("navigation_action_limit");
     }
 
     private void BeginConfirmation(PhysicsState state,IMotionWorld world)
@@ -240,7 +347,7 @@ internal sealed class NavigationTask
             ObservedGrounded=state.Grounded,SafeSupport=support,LandingConfirmationFrames=_confirmationFrames};
         if(!world.SafeSweep(state,state,out string danger))
         {Unconfirmed("landing observation unsafe: "+danger);return;}
-        bool settled=PhysicsSimulator.SupportedCheckpoint(state,world)&&Math.Abs(state.Vx)<=0.1f;
+        bool settled=PhysicsSimulator.Settled(state,world);
         _settledFrames=settled?_settledFrames+1:0;
         if(_settledFrames>=2)
         {
@@ -253,7 +360,7 @@ internal sealed class NavigationTask
             _actions++;if(Edge.Jump)_jumps++;
             _lastLanding=new(_actions,Edge.Jump,new(predicted.Px,predicted.Py),new(state.Px,state.Py),
                 _executor.Snapshot.MaxError,new(predicted.Vx,predicted.Vy),new(state.Vx,state.Vy),true);
-            float forward=Progress(state);_stalled=_trip.Checkpoint(state,Distance(state))?0:_stalled+1;_furthest=Math.Max(_furthest,forward);
+            float forward=Progress(state);_stalled=Checkpoint(state)?0:_stalled+1;_furthest=Math.Max(_furthest,forward);
             Snapshot=Snapshot with{Status="running",Reason="safe landing confirmed; replan from observed state",
                 CompletedActions=_actions,CompletedJumps=_jumps,LastLanding=_lastLanding};
             if(_routeIndex>0)_continuedEdges++;
@@ -268,11 +375,23 @@ internal sealed class NavigationTask
     {
         Snapshot=Snapshot with{Status="unknown",Reason=reason,ActualLanding=null};
         _confirming=false;_executing=false;_recovering=_resumePending=false;
-        _executor.Cancel();
+        _executor.Cancel();DiscardSearch();
+    }
+
+    internal void DeferPlanningOverrun(PhysicsState state)
+    {
+        if(Terminal)return;
+        _deferredSearches++;
+        if(_executing)
+        {
+            BeginRecovery(state,"game-thread planning slice overran");
+            _rememberFailedEdge=false;
+        }
+        else Snapshot=Snapshot with{Status="running",Reason="game-thread search slice deferred"};
     }
 
     private bool RejectRemembered(PhysicsState start, Prediction edge)
-        => _failures.Reject(start,edge,_updates)||_trip.Reject(edge.Landing);
+        => _failures.RejectKnown(start,edge,Clock)||_trip.Reject(edge.Landing);
 
     private bool TryContinue(PhysicsState state,PhysicsParameters ph,IMotionWorld world)
     {
@@ -300,11 +419,12 @@ internal sealed class NavigationTask
     }
     private float Distance(PhysicsState state)=>_region?.Distance(state)??Math.Max(0,_direction*(_targetX-state.Px));
 
-    internal void InvalidateMobility(PhysicsState state,long revision)
+    internal void InvalidateMobility(PhysicsState state,long revision,PhysicsParameters physics=null)
     {
         if(Terminal)return;
         _mobilityRevision=revision;
-        _failures.Clear();
+        DiscardSearch();
+        _knowledge.ObservePhysics(physics);
         if(_recovering){_rememberFailedEdge=false;return;}
         if(_route!=null&&(_executing||_routeIndex<_route.Actions.Count))
         {
@@ -316,9 +436,9 @@ internal sealed class NavigationTask
     }
     private void BeginRecovery(PhysicsState state, string reason)
     {
-        if (_recoveries >= RecoveryLimit) { Fail("navigation_recovery_limit"); return; }
-        _recoveries++;
-        _rememberFailedEdge=true;_failedEdge=Edge; _routeIndex=0; _executor.Cancel();
+        if ((Continuous?_consecutiveRecoveries:_recoveries) >= RecoveryLimit) { Fail("navigation_recovery_limit"); return; }
+        _recoveries++;_consecutiveRecoveries++;
+        _rememberFailedEdge=!Continuous||Snapshot.Frame>0;_failedEdge=Edge; _routeIndex=0; _executor.Cancel();
         _recovering=true; _executing=_confirming=_neutralIssued=false;
         _recoveryFrames=_recoverySettled=0;
         _recoveryReason=reason; _recoveryPosition=state; _recoveryInputsReleased=null;
@@ -337,13 +457,18 @@ internal sealed class NavigationTask
             RecoveryInputsReleased=inputsReleased,LandingConfirmationFrames=_recoveryFrames};
         if (!inputsReleased) { Unconfirmed("recovery_input_release_unconfirmed"); return; }
         if (!world.SafeSweep(state,state,out string danger)) { Unconfirmed("recovery observation unsafe: "+danger); return; }
-        bool settled=PhysicsSimulator.SupportedCheckpoint(state,world) && Math.Abs(state.Vx)<=.1f;
+        bool settled=PhysicsSimulator.Settled(state,world);
         _recoverySettled=settled?_recoverySettled+1:0;
         if (_recoverySettled>=2)
         {
-            if(_rememberFailedEdge)_failures.Remember(state,_failedEdge,_updates); _failedEdge=null;
+            if(_rememberFailedEdge)
+            {
+                if(Continuous)_failures.Remember(_edgeStart,_failedEdge,Clock,world,_routePhysics,_recoveryReason,state);
+                else _failures.Remember(state,_failedEdge,Clock);
+            }
+            _failedEdge=null;
             _recovering=false; _resumePending=true; _route=null;
-            float forward=Progress(state); _stalled=_trip.Checkpoint(state,Distance(state))?0:_stalled+1;
+            float forward=Progress(state); _stalled=Checkpoint(state,verifiedAction:false)?0:_stalled+1;
             _furthest=Math.Max(_furthest,forward);
             Snapshot=Snapshot with {Status="running",Reason="safe recovery checkpoint; replan from actual state",
                 ActualLanding=new(state.Px,state.Py),RecoveryReplans=_recoveryReplans,FailedEdgeCount=_failures.Count};
@@ -363,7 +488,11 @@ internal sealed class NavigationTask
         Snapshot=Snapshot with{TripUpdates=_updates,ContinuedEdges=_continuedEdges,InvalidatedRoutes=_invalidatedRoutes,
             TripPlanningMilliseconds=_planningMilliseconds,DetourCheckpoints=_trip.DetourCheckpoints,
             VisitedCheckpoints=_trip.VisitedCheckpoints,RepeatRejections=_trip.RepeatRejections,
-            MobilityRevision=_mobilityRevision,PlanMobilityRevision=_planMobilityRevision};
+            MobilityRevision=_mobilityRevision,PlanMobilityRevision=_planMobilityRevision,DeferredSearches=_deferredSearches,SearchCacheHits=_knowledge.Search.CacheHits,
+            FailureMemory=_failures.Records,ProgressActivity=_watchdog.Activity.ToString(),
+            SearchWaitUpdates=_watchdog.SearchUpdates,NoProgressUpdates=_watchdog.NoProgressUpdates,
+            ActualMovingUpdates=_watchdog.ActualMovingUpdates,ActualTravelPixels=_watchdog.ActualTravelPixels,
+            SearchExpansionHits=_knowledge.Search.ExpansionHits,SurfaceGraph=_surfaceSnapshot};
     }
     private void Publish() => Snapshot = _executor.Snapshot with
     {

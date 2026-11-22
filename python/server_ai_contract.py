@@ -18,7 +18,7 @@ CATEGORIES = (
      'Limited', '有界采样，保留身份、时效、未知和截断；可见不证明可达。'),
     ('探索记忆', ('query_map',), 'Limited', 'AI持久探索记忆，可能过时；不是脚本持久变量或实时地图。'),
     ('直接身体输入', ('move_input',), 'Limited', '原生方向/跳跃多更新输入；不是目标导航或装备运动适配。'),
-    ('目标导航', ('navigate_to_x', 'navigate_to_landing_region', 'drop_through_platform'),
+    ('目标导航', ('navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'drop_through_platform'),
      'Limited', '普通profile局部导航；不能保证任意目标可达。'),
     ('物品与战斗', ('use_item', 'attack_entity'), 'Limited', '原生物品使用周期；具体效果需另行观察。'),
     ('采集', ('mine_tile', 'mine_wall', 'mine_target'), 'Limited', '服务器挖掘从主背包自动选工具；复合挖掘可先接近指定格，掉落入包需另行核验。'),

@@ -1,9 +1,9 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$VerticalNavigation,[switch]$TcpCapacity,[switch]$Mobility)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$VerticalNavigation,[switch]$TcpCapacity,[switch]$Mobility)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
 $TModLoaderPath=$selectedEngine.Path
-if($Tasks -and !$Actions){throw 'Task validation requires isolated Actions fixture.'}
+if(($Tasks -or $AutonomousNavigation) -and !$Actions){throw 'Task validation requires isolated Actions fixture.'}
 if($Inventory -and !$Actions){throw 'Inventory validation requires isolated Actions fixture.'}
 if($Crafting -and !$Actions){throw 'Crafting verification requires isolated Actions fixture.'}
 if($Scene){$Perception=$true;if(!$Actions){throw 'Scene verification requires isolated Actions fixture.'}}
@@ -43,7 +43,7 @@ $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
 if($TcpCapacity){$info.ArgumentList.Add('-maxplayers');$info.ArgumentList.Add('2')}
-if($Tasks){$info.ArgumentList.Add("-companiontasktest")}
+if($Tasks -or $AutonomousNavigation){$info.ArgumentList.Add("-companiontasktest")}
 if($Inventory){$info.ArgumentList.Add("-companioninventorytest")}
 if($Crafting){$info.ArgumentList.Add("-companioncrafttest")}
 if($Scene){$info.ArgumentList.Add("-companionscenetest")}
@@ -245,8 +245,10 @@ try {
             if($LASTEXITCODE -ne 0){throw "Native terrain matrix failed: $profile"}
         }
     }
-    if($Tasks){
-        & $PythonExecutable (Join-Path $repo 'tests/native_mine_target.py') --port $IpcPort --profile $profile
+    if($Tasks -or $AutonomousNavigation){
+        $taskArguments=@('--port',$IpcPort,'--profile',$profile)
+        if($AutonomousNavigation -and !$Tasks){$taskArguments+='--navigation-only'}
+        & $PythonExecutable (Join-Path $repo 'tests/native_mine_target.py') @taskArguments
         if($LASTEXITCODE -ne 0){throw "Mine target task verification failed: $profile/mine-target-results.json"}
     }
     if($TcpCapacity){
@@ -343,7 +345,7 @@ try {
     if($Terrain -and (!$Mobility -or $VerticalNavigation -or $LandingRegions)){$matrixFile=if($VerticalNavigation){'vertical-result.json'}else{'terrain-result.json'};$report.terrain=Get-Content -LiteralPath "$profile/$matrixFile" -Raw|ConvertFrom-Json}
     if($VerticalNavigation -and $LandingRegions){$report.landingRegions=Get-Content -LiteralPath "$profile/terrain-result.json" -Raw|ConvertFrom-Json}
     if($Scene){$report.combatIsolation=$combatIsolation;$report.actionFixture=$fixture;$report.actionFrameMode='isolated whole native Main.Update frames, scene candidates; no old action fixture state reuse'}
-    if($Tasks){$report.tasks=Get-Content -LiteralPath "$profile/mine-target-results.json" -Raw|ConvertFrom-Json}
+    if($Tasks -or $AutonomousNavigation){$report.tasks=Get-Content -LiteralPath "$profile/mine-target-results.json" -Raw|ConvertFrom-Json}
     if($Inventory){$report.inventory=Get-Content -LiteralPath "$profile/inventory-results.json" -Raw|ConvertFrom-Json}
     if($Crafting){$report.crafting=Get-Content -LiteralPath "$profile/crafting-results.json" -Raw|ConvertFrom-Json;$report.combatIsolation=$combatIsolation}
     if($Actions -and !$Scene -and !$Crafting){$report.combatIsolation=$combatIsolation;$report.luaActions=$actionResult;$report.nativeWorldEvidence=$worldEvidence;$report.actionFixture=$fixture;
@@ -353,7 +355,7 @@ try {
         $report.landingCleanup=Get-Content -LiteralPath "$profile/landing-cleanup-evidence.json" -Raw|ConvertFrom-Json
         if($report.landingCleanup.result -ne 'passed'){throw 'Native landing cleanup validation failed'}
     }
-    $report|ConvertTo-Json -Depth $(if($Tasks){32}else{12})|Set-Content -LiteralPath "$profile/result.json"
+    $report|ConvertTo-Json -Depth $(if($Tasks -or $AutonomousNavigation){32}else{12})|Set-Content -LiteralPath "$profile/result.json"
     Write-Output "Native AI IPC passed: $profile/result.json"
 } finally {
     if($client){$client.Dispose()}
