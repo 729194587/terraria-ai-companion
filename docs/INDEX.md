@@ -53,17 +53,17 @@
 | [通用地形挖掘](GENERAL_TERRAIN_EXCAVATION.md) | 资源采集与通路清障 |
 | [合成](SERVER_AI_CRAFTING.md) | 配方查询与原生合成 |
 | [物品放置](SERVER_AI_OBJECT_PLACEMENT.md) | 多格物体放置与蓝图施工 |
-| [原生放置预检](NATIVE_PLACEMENT_SURVEY_IMPLEMENTATION.md) | 原生放置规则与共享预检 |
+| [原生放置预检](NATIVE_PLACEMENT_SURVEY_IMPLEMENTATION.md) | Tile、Wall 和多格物体的放置规则 |
 | [Building V2 设计](BUILDING_V2_DESIGN.md) | 依赖感知施工调度 |
-| [Building V2 实现](BUILDING_V2_IMPLEMENTATION.md) | 施工调度实现与验证 |
+| [Building V2 实现记录](BUILDING_V2_IMPLEMENTATION.md) | 施工调度实现与对照验证 |
 | [世界交互设计](TERRARIA_WORLD_INTERACTION_DESIGN.md) | 住房、NPC 服务和经济系统 |
 
 ## 战斗
 
 | 文档 | 内容 |
 | --- | --- |
-| [Combat System Design](COMBAT_SYSTEM_DESIGN.md) | 战斗任务、身体控制与目标感知 |
-| [Combat Weapon Loadout](COMBAT_WEAPON_LOADOUT_DESIGN.md) | 武器配置、自卫切换与召唤物 |
+| [战斗系统](COMBAT_SYSTEM_DESIGN.md) | 战斗任务、身体控制与目标感知 |
+| [战斗配装](COMBAT_WEAPON_LOADOUT_DESIGN.md) | 武器配置、自卫切换与召唤物 |
 | [Boss Encounters](R2_E_BOSS_ENCOUNTERS.md) | Boss 战斗任务与成员追踪 |
 
 ## 历史与研究
@@ -71,5 +71,6 @@
 - [历史阶段资料](archive/README.md)：早期架构、阶段实施和修复记录。
 - [Numen 参考研究](architecture/NUMEN_ADAPTATION_ROADMAP.md)：外部项目的架构参考与适配思路。
 - [架构审查计划](architecture/ARCHITECTURE_AUDIT_PLAN.md)：Agent 与游戏运行时的后续审查问题。
+- [原生执行架构](NATIVE_EXECUTION_REFACTOR.md)：原生执行、Actor 适配与效果核验。
 
 专题文档记录所属模块的设计与实现。阶段实施记录保留当时的代码基线和验证结果，当前接口以对应模块说明和源码为准。
