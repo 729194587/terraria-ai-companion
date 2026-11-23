@@ -46,6 +46,12 @@ internal static class ServerCraftingFixture
             p.inventory[0]=new Item();Give(1,ItemID.CopperAxe,1);
             if(!WorldGen.GrowTree(left-3,floor))throw new InvalidOperationException("Native crafting harvest tree failed");
         }
+        else if(kind=="material_plan")
+        {
+            Give(0,ItemID.Zenith,1);
+            Give(1,ItemID.BloodButcherer,1);
+            Give(2,ItemID.CopperShortsword,1);
+        }
         else if(kind=="group"){Give(0,ItemID.BorealWood,30);Give(2,ItemID.Gel,3);}
         else if(kind is "full" or "partial_space")
         {

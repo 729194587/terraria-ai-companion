@@ -251,6 +251,8 @@ def observation(data):
     return any_of(extend(ref('ObservationEnvelope'), {'data': data}), ref('ObservationUnavailable'))
 
 
+PLAN_AMOUNT = {'typeId': I, 'contentKey': S, 'count': COUNT}
+
 NPC_HOME_STATE = {**fields(strings='entityRef', integers='type slot homeTileX homeTileY',
                            booleans='active townNPC homeless managerHasRoom'), 'managerHomeTile': nullable(ref('TilePoint'))}
 FUNDS = obj({name: COUNT for name in ('carriedCopper', 'piggyBank', 'safe', 'defendersForge', 'voidVault', 'totalCopper')})
@@ -317,6 +319,13 @@ OBSERVATIONS = {
         'unknownCount': COUNT, 'complete': desc(B, 'All requested cells sampled; independent of truncation.'),
         'status': enum('partial_unloaded', 'not_found', 'ok'), 'bounds': ref('TileBounds'),
         'scannedCount': COUNT, 'sort': S, 'coordinates': S,
+    })),
+    'plan_materials': observation(obj({
+        **QUERY_METADATA, **PLAN_AMOUNT, 'inventoryUsed': array(obj(PLAN_AMOUNT)),
+        'deficits': array(obj({**PLAN_AMOUNT, 'reason': enum('no_recipe', 'cycle')})),
+        'steps': array(obj({'typeId': I, 'contentKey': S, 'recipeId': I, 'recipeIds': array(I),
+                            'batches': COUNT, 'outputPerBatch': COUNT, 'inputs': array(obj(PLAN_AMOUNT)),
+                            'stations': array(S), 'conditions': array(S)})),
     })),
     'query_item_sources': observation(obj({
         **QUERY_METADATA, 'typeId': I, 'contentKey': S,

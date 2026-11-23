@@ -11,6 +11,7 @@ class Module:
     export: str
     signature: str
     capability: str = ""
+    namespace: str = ""
 
 
 BUILTINS = (
@@ -22,6 +23,8 @@ BUILTINS = (
     Module('building', '调查蓝图、提交一次施工、有界等待并在可信终态复查。',
            ('build_diff', 'build_place', 'submit_task', 'await_task'), 'construct',
            'construct(blueprint, {milliseconds=1000})'),
+    Module('plan_materials', '一次递归规划目标总数，汇总库存抵扣和缺口。',
+           ('plan_materials',), 'plan', 'plan(typeId, count)', namespace='material_plan'),
     Module('material_plan', '只读计算新制一把熔岩镐的背包材料缺口。',
            ('resolve_content', 'inspect_inventory', 'query_recipes'), 'molten_pickaxe', 'molten_pickaxe()'),
 )
@@ -54,10 +57,10 @@ def sources(names):
     for name in names:
         module = catalogue[name]
         source = (Path(__file__).parent / 'lua' / 'modules' / (name + '.lua')).read_text(encoding='utf-8')
-        modules.append(dict(name=name, export=module.export, source=source))
+        modules.append(dict(name=name, namespace=module.namespace or name, export=module.export, source=source))
     return modules
 
 
 def index(bridge):
-    return '\n'.join(f'terraria.{m.name}.{m.signature} — {m.summary} 依赖 {", ".join(m.requires)}。'
+    return '\n'.join(f'terraria.{m.namespace or m.name}.{m.signature} — {m.summary} 依赖 {", ".join(m.requires)}。'
                      for m in available(bridge))
