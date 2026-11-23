@@ -56,6 +56,8 @@ internal static class TerrainReader
     internal static bool Loaded(int x,int y)=>WorldGen.InWorld(x,y,1)
         &&(Main.netMode!=NetmodeID.MultiplayerClient||Main.sectionManager?.TileLoaded(x,y)==true);
     internal static char ReadCell(int x,int y)=>Loaded(x,y)?ReadShape(Main.tile[x,y]):'?';
+    internal static bool UnsupportedMotionSurface(int type)=>type>=0 && (TileID.Sets.IceSkateSlippery[type] ||
+        type is TileID.HoneyBlock or TileID.Cobweb or TileID.Asphalt or TileID.SlimeBlock or TileID.FrozenSlimeBlock);
     internal static char ReadDryCell(int x,int y)=>ReadEnvironment(x,y).DryShape;
 
     internal static TerrainCell ReadEnvironment(int x, int y)

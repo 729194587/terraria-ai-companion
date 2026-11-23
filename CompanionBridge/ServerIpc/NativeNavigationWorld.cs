@@ -221,7 +221,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
             candidates=plans.OrderBy(p=>p.Cost.Total).Take(6).Select(p=>new{p.Cost,p.OpenExit,changes=p.Changes,steps=p.Actions.Length}).ToArray()};
     }
 
-    private static JsonElement RegionArguments(LandingRegion region)=>JsonSerializer.SerializeToElement(new
+    internal static JsonElement RegionArguments(LandingRegion region)=>JsonSerializer.SerializeToElement(new
     {
         minPlayerLeftX=region.MinPlayerLeftX,maxPlayerLeftX=region.MaxPlayerLeftX,surfaceY=region.SurfaceY
     });

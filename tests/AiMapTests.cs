@@ -15,8 +15,26 @@ public static class AiMapTests
         object Query(AiMap m,object a)=>m.Query(JsonSerializer.SerializeToElement(a),0,0);
         JsonElement Data(object a)=>JsonSerializer.SerializeToElement(a);
         var world=Guid.NewGuid();var map=new AiMap(world,"character-a",8400,2400);
+        string legacy=Path.Combine(root,"v1.bin");
+        using(var writer=new BinaryWriter(File.Create(legacy)))
+        {
+            writer.Write("CompanionBridge/AiMap");writer.Write(1);writer.Write(world.ToString("N"));writer.Write("legacy");
+            writer.Write(64);writer.Write(1);var raw=new byte[64];raw[31]=3;writer.Write(raw);
+        }
+        var prior=AiMap.Load(legacy,world,"legacy",64,1);
+        Check(prior.Get(31,0)==3 && prior.Get(32,0)==0 && prior.Revision==0,"v1 migration");
+        prior.BeginSample();prior.Remember(32,0,1,4);prior.Remember(33,0,1,4);prior.EndSample();
+        long changed=prior.Revision;
+        prior.Remember(32,0,1,5);
+        var metadata=Data(Query(prior,new{mode="region",width=64,height=1,cellSize=1,includeChunks=true})).GetProperty("chunks");
+        Check(changed==1 && prior.Revision==changed && prior.ChunkRevision(31,0)==0 &&
+            metadata[1].GetProperty("lastSeenTick").GetInt64()==5 && metadata[1].GetProperty("knownCount").GetInt32()==2,"chunk age or revision");
+        string upgraded=Path.Combine(root,"upgraded.bin");prior.Save(upgraded);
+        var reload=AiMap.Load(upgraded,world,"legacy",64,1);
+        Check(reload.Revision==1 && reload.ChunkRevision(32,0)==1 && reload.Get(31,0)==3,"metadata restore");
         var unknown=Data(Query(map,new{mode="region",centerX=1,centerY=1,width=2,height=2,cellSize=2}));
         Check(unknown.GetProperty("rows")[0].GetString()=="?"&&unknown.GetProperty("exploredRatio").GetDouble()==0,"unknown leaked");
+        Check(!unknown.TryGetProperty("chunks",out _)&&!unknown.TryGetProperty("mapRevision",out _),"legacy response changed");
         for(int y=0;y<2;y++)for(int x=0;x<2;x++)map.Remember(x,y,2);
         map.Remember(1,0,1);
         var mixed=Data(Query(map,new{mode="region",centerX=1,centerY=1,width=2,height=2,cellSize=2}));

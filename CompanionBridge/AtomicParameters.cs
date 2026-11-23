@@ -68,7 +68,8 @@ internal static class AtomicParameters
                     SceneLayers.Read(args);
                     break;
                 case "query_map":
-                    if(keys.Except(new[]{"mode","centerX","centerY","width","height","cellSize"}).Any()||!keys.Contains("mode"))throw new FormatException("Invalid map parameters.");
+                    if(keys.Except(new[]{"mode","centerX","centerY","width","height","cellSize","includeChunks"}).Any()||!keys.Contains("mode"))throw new FormatException("Invalid map parameters.");
+                    if(keys.Contains("includeChunks"))args.GetProperty("includeChunks").GetBoolean();
                     string mapMode=args.GetProperty("mode").GetString();
                     if(mapMode is not ("overview" or "region"))throw new FormatException("Invalid map mode.");
                     if(mapMode=="overview"&&keys.Count!=1)throw new FormatException("Overview takes only mode.");
@@ -278,6 +279,10 @@ internal static class AtomicParameters
             case "teleport_to_pylon": Fields("pylonRef"); if(!Guid.TryParseExact(args.GetProperty("pylonRef").GetString(),"N",out _))throw new FormatException("Invalid pylon reference."); break;
             case "teleport_to_teammate": Fields("teammateRef"); if(!Guid.TryParseExact(args.GetProperty("teammateRef").GetString(),"N",out _))throw new FormatException("Invalid teammate reference."); break;
             case "open_door": case "close_door": case "place_item": case "place_object": case "place_rope": goto case "place_tile";
+            case "explore_frontier":
+                if(keys.Except(new[]{"radiusTiles","maxSegments","allowDig"}).Any())throw new FormatException("Unexpected exploration parameter.");
+                Integer("radiusTiles",4,64);Integer("maxSegments",1,64);
+                if(keys.Contains("allowDig"))args.GetProperty("allowDig").GetBoolean();break;
             case "collect_drops":
                 if (keys.Except(new[]{"radiusPixels","typeIds","entityRef"}).Any()) throw new FormatException("Unexpected collect_drops parameter.");
                 if (keys.Contains("radiusPixels")) Integer("radiusPixels", 16, 960);

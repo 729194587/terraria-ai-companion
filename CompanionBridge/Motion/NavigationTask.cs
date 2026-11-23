@@ -8,6 +8,7 @@ internal sealed class NavigationTask
 {
     internal int? LiveFallStart { set=>_executor.LiveFallStart=value; }
     internal ulong ProgressVersion { get; private set; }
+    internal Func<PhysicsState,bool> AllowedPose {get;set;}
     internal Func<PhysicsState,PhysicsParameters,IMotionWorld,bool> TryGrapple { get; set; }
     private readonly LocalMotionController _executor = new();
     private readonly bool _enableSafeGroundWalk;
@@ -283,6 +284,8 @@ internal sealed class NavigationTask
             DiscardSearch();
             _edgeStart=state;
             var edge=Edge;
+            if(AllowedPose!=null && (!AllowedPose(state)||edge.Frames.Exists(f=>!AllowedPose(f.State))))
+                return Fail("exploration_route_outside_known_terrain");
             _executor.Cancel();
             _executor.Begin(session, edge.Frames[0].Input.Direction, generation);
             _executor.LoadPlan(edge);

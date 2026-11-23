@@ -22,6 +22,7 @@ public static class ApiContractProtocolHost
     {
         private sealed record Handle(AiReadOnlyProtocol.Identity Identity,string Id,string Operation,JsonElement Arguments);
         internal int Starts;
+        public bool SupportsExploration=>File.Exists(advancePath+".frontier");
         public string Validate(string operation,JsonElement arguments)=>null;
         public object Start(AiReadOnlyProtocol.Identity identity,string operation,JsonElement arguments,string actionId)
         {Starts++;File.WriteAllText(advancePath+".starts",Starts.ToString());return new Handle(identity,actionId,operation,arguments.Clone());}
@@ -31,6 +32,18 @@ public static class ApiContractProtocolHost
             if(!File.Exists(advancePath))return new("running","fixture_running",null,false);
             var h=(Handle)handle;
             object evidence=null;
+            if(h.Operation=="explore_frontier")
+            {
+                var proof=new{segments=2,newTiles=3,returned=!File.Exists(advancePath+".no_return"),mapRevision=4,
+                    actualLeft=File.Exists(advancePath+".off_anchor")?176:160,anchorLeft=160,
+                    actualFeetY=320,anchorFeetY=320,candidates=Array.Empty<object>()};
+                var result=new{status="completed",reason="frontier_observed_and_returned",inputsReleased=true,effectVerified=true,
+                    inputsAcquired=true,reasonDetail=(string)null,evidence=proof};
+                evidence=new{task=new{taskId=h.Id,taskName=h.Operation,phase="terminal",status="completed",parentTaskId=(string)null,
+                    worldSessionId=h.Identity.World,actorGeneration=h.Identity.Generation,actorSlot=h.Identity.Slot,
+                    observedGameUpdate=identity.GameUpdate,deadlineGameUpdate=h.Identity.GameUpdate+3600,
+                    currentChild=(object)null,progress=proof,lastResult=(object)null,reason=result.reason,result}};
+            }
             if(h.Operation is "mine_tile" or "mine_target")
             {
                 var target=h.Arguments.TryGetProperty("target",out var structured)?structured:h.Arguments;

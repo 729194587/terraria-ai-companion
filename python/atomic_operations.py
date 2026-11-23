@@ -79,7 +79,7 @@ SHOP_TOKEN = {"type": "string", "pattern": "^[0-9a-f]{64}$", "minLength": 64, "m
 SALE_SOURCE = {"entityRef": MERCHANT_REF, "sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN}
 
 TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地下视野采用遮挡/近身/可见原版火把近似。",
-    {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
+    {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]},"includeChunks":{"type":"boolean"}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
     {"resultType":{"type":"integer","minimum":1},"availableOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":24},"offset":{"type":"integer","minimum":0,"maximum":100000}}),
     tool("craft_recipe", "按新鲜query_recipes的recipeId/recipeToken原生合成，crafts是配方执行次数1..20，不是产物件数；每次重查材料/制作站/空间。可能部分完成，不回滚或失败后自动重试。",
     {"recipeId":{"type":"integer","minimum":0,"maximum":100000},"recipeToken":INVENTORY_TOKEN,"crafts":{"type":"integer","minimum":1,"maximum":20}},["recipeId","recipeToken","crafts"]),tool("observe_scene", "服务器AI局部45×29二维侧视语义图：几何/对象/危险来源、可直接用于导航的landingRegions.items[].target和相互独立的placementCandidates（单格place_tile）/objectPlacementCandidates（工作台place_object，含完整footprint/support）候选。geometry/map共用originX/originY，Lua用string.sub解析行。单次游戏线程采样；候选不保证可达/放置成功，树组件不是整树计数；检查coverage与各集合truncated。可选layers为非空、无重复的白名单数组，未传返回全部七层；data.includedLayers列出实际层，未请求字段省略。objects附带objectCounts，放置候选附带对应Material；身份、范围、角色、coverage和sample始终保留。objectPlacementCandidates.diagnostics区分已检查排除、unknownCount及notCheckedCount；matchedCount仍为通过筛选且截断前的数目。" + SCENE_TEXT_CONTRACT,
@@ -138,6 +138,11 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("quick_stack_container", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到当前箱子的已有同类物品。需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("loot_all", "服务器AI。按拾取规则从当前箱子批量取出，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("deposit_all", "服务器AI。批量存入普通背包10..49中未收藏物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("explore_frontier", "有界调查未知区域并回到出发落区。仅在玩家要求探索时提交。范围与行程预算必填，allowDig 默认关闭，开启需要玩家允许清障。", {
+        "radiusTiles": {"type":"integer","minimum":4,"maximum":64},
+        "maxSegments": {"type":"integer","minimum":1,"maximum":64},
+        "allowDig": {"type":"boolean","default":False},
+    }, ["radiusTiles","maxSegments"]),
     tool("collect_drops", "通过 submit_task 收集本轮观察到的附近掉落物。默认320像素，最多16个。可用 typeIds 筛选，或用 scan_entities 返回的掉落物 entityRef 指定目标。", {
         "radiusPixels": {"type": "integer", "minimum": 16, "maximum": 960, "default": 320},
         "typeIds": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": True,
@@ -251,7 +256,7 @@ TOOLS.append(tool("build_diff", "只读比较蓝图和当前世界。origin 为�
 TOOLS.append(tool("build_place", "通过 submit_task 按蓝图施工，已匹配项跳过。", {"blueprint": BLUEPRINT}, ["blueprint"]))
 # Conditional inputs on otherwise flat read APIs. Unlisted fields are shared.
 READ_PARAMETER_RULES = {
-    'query_map': ('mode', dict.fromkeys(('centerX', 'centerY', 'width', 'height', 'cellSize'), ('region',))),
+    'query_map': ('mode', dict.fromkeys(('centerX', 'centerY', 'width', 'height', 'cellSize', 'includeChunks'), ('region',))),
     'scan_entities': ('category', {'npcFilter': ('npc',), 'typeIds': ('npc', 'item')}),
 }
 
@@ -332,9 +337,9 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时，指定width或hei
     'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
 
 
-def server_tools(supported, *, bulk_purchase=False, bed_spawn=False, scene_region=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False):
+def server_tools(supported, *, map_chunks=False, bulk_purchase=False, bed_spawn=False, scene_region=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
-    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place')]
+    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')]
     for definition in definitions:
         f = definition['function']
         name = f['name']
@@ -353,6 +358,8 @@ def server_tools(supported, *, bulk_purchase=False, bed_spawn=False, scene_regio
             f["description"] = "对80像素内原版普通木门、开关或拉杆交互一次。传 inspect_tile 的 data.interaction.target。重复点击会再次切换，电路效果另查。"
             if bed_spawn:
                 f["description"] += " 对原版床脚使用同一操作可设置或清除自己的出生点；interaction.active 表示此床已绑定。先核对目标状态。"
+        if name == 'query_map' and not map_chunks:
+            f['parameters']['properties'].pop('includeChunks', None)
         if name == 'use_item':
             f['parameters'] = {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}
         f['description'] = SERVER_DESCRIPTIONS.get(name, f['description'])
@@ -409,6 +416,10 @@ def validate_backend(bridge, name, arguments):
     if name == 'build_place' and 'server_ai_build_place_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_build_place_v1')
     capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
+    if name == 'query_map' and 'includeChunks' in arguments and 'server_ai_map_chunks_v1' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_map_chunks_v1')
+    if name == 'explore_frontier' and 'server_ai_frontier_exploration_v1' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_frontier_exploration_v1')
     if name in ('open_npc_dialogue', 'close_npc_dialogue') and 'server_ai_npc_dialogue_v1' not in capabilities:
         raise PreDispatchRejected('Requires server_ai_npc_dialogue_v1')
     if name == 'quote_npc_purchase' and arguments.get('quantity', 1) > 1 and 'server_ai_merchant_bulk_purchase_v1' not in capabilities:
@@ -1270,6 +1281,23 @@ def verified_sort(action, evidence, end):
             and len({row['slot'] for row in slots}) == len(slots))
 
 
+def verified_exploration(action, task):
+    if not isinstance(task, dict) or task.get('taskName') != 'explore_frontier':
+        return False
+    receipt = task.get('result') or {}
+    proof = receipt.get('evidence') or {}
+    return (task.get('taskId') == action.get('actionId') and task == action.get('task')
+            and task.get('worldSessionId') == action.get('worldSessionId')
+            and task.get('actorGeneration') == action.get('generation') and task.get('actorSlot') == action.get('actorSlot')
+            and task.get('status') == receipt.get('status') == 'completed' and task.get('phase') == 'terminal'
+            and receipt.get('inputsReleased') is True and receipt.get('effectVerified') is True
+            and task.get('currentChild') is None and isinstance(proof, dict) and proof.get('returned') is True
+            and type(proof.get('newTiles')) is int and proof['newTiles'] > 0
+            and type(proof.get('segments')) is int and proof['segments'] > 0
+            and all(type(proof.get(k)) in (int, float) for k in ('actualLeft','anchorLeft','actualFeetY','anchorFeetY'))
+            and abs(proof['actualLeft']-proof['anchorLeft']) <= 2 and abs(proof['actualFeetY']-proof['anchorFeetY']) <= .5)
+
+
 async def terminal(bridge, action, generation):
     deadline = asyncio.get_running_loop().time() + 1.0
     while action.get('endEvidenceStatus') == 'pending' and asyncio.get_running_loop().time() < deadline:
@@ -1328,6 +1356,7 @@ async def terminal(bridge, action, generation):
                        and pickup.get('targetChanged') is False and pickup.get('uncertainNativeEffect') is False
                        and pickup.get('nativePlacementEvents') == 1 and pickup.get('consumedCount') == 1
                        and (pickup.get('kind') != 'chest' or pickup.get('chestVerified') is True)),
+        'explore_frontier': verified_exploration(action, combat),
         'collect_drops': (combat.get('taskName') == 'collect_drops' and combat.get('taskId') == action.get('actionId')
                           and combat == action.get('task') and combat.get('status') == 'completed'
                           and combat_result.get('effectVerified') is True and combat_result.get('inputsReleased') is True
@@ -1457,7 +1486,7 @@ async def terminal(bridge, action, generation):
         and isinstance(end,dict) and retreat.get('update')==end.get('gameUpdate')))
     native_end = (retreat_verified and isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','dismiss_summon','set_team','teleport_to_pylon','teleport_to_teammate','manage_trash','switch_equipment_loadout','set_inventory_favorite','drop_inventory_item','open_inventory_item','mine_wall','hammer_tile','interact_tile','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','dismiss_summon','set_team','teleport_to_pylon','teleport_to_teammate','manage_trash','switch_equipment_loadout','set_inventory_favorite','drop_inventory_item','open_inventory_item','mine_wall','hammer_tile','interact_tile','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -1524,7 +1553,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     server = "server_ai_atomic_v1" in bridge.hello.get("capabilities", ())
     arguments = validate(name, arguments, server=server)
     validate_backend(bridge, name, arguments)
-    if name in ('collect_drops', 'place_item', 'build_place'):
+    if name in ('collect_drops', 'explore_frontier', 'place_item', 'build_place'):
         raise PreDispatchRejected(f'Use submit_task for {name}')
     if name == 'navigate_to' and 'server_ai_navigation_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_navigation_v1; no navigation task submitted')

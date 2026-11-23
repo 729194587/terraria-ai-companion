@@ -38,7 +38,17 @@ class MapIntegration(unittest.IsolatedAsyncioTestCase):
             bridge.close();host.shutdown();host.server_close();thread.join()
 
     def test_schema_limits(self):
-        for args in ({'mode':'bad'},{'mode':'region','cellSize':3},{'mode':'region','width':129},{'mode':'region','height':97}):
+        for args in ({'mode':'bad'},{'mode':'region','cellSize':3},{'mode':'region','width':129},{'mode':'region','height':97},
+                     {'mode':'overview','includeChunks':True}):
             with self.assertRaises(ValueError):atomic.validate('query_map',args)
+
+    def test_chunk_query_is_capability_gated(self):
+        args = {'mode':'region','includeChunks':True}
+        self.assertEqual(args,atomic.validate('query_map',args))
+        def properties(enabled):
+            tools = atomic.server_tools({'query_map'},map_chunks=enabled)
+            return tools[0]['function']['parameters']['properties']
+        self.assertIn('includeChunks',properties(True))
+        self.assertNotIn('includeChunks',properties(False))
 
 if __name__=='__main__':unittest.main()

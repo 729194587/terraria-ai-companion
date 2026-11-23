@@ -38,6 +38,8 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.ready=Path(self.directory.name)/'ready'
         self.stop=Path(self.directory.name)/'stop'
         Path(str(self.ready)+'.live').touch()
+        if self._testMethodName.startswith('test_frontier_'):
+            Path(str(self.ready)+'.advance.frontier').touch()
         self.process=subprocess.Popen(['pwsh','-NoProfile','-File',str(Path(__file__).with_name('run_api_contract_host.ps1')),
             '-ReadyPath',str(self.ready),'-StopPath',str(self.stop)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,
             creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -338,6 +340,60 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('仍在执行',self.bridge.reply_receipts[-1]['text'])
         self.assertNotEqual('[AI] 生命值为73。',self.bridge.reply_receipts[-1]['text'])
         self.assertEqual(1,await self.starts())
+
+    async def test_frontier_goal_wakes_and_reports_verified_return(self):
+        args = {'radiusTiles': 10, 'maxSegments': 6}
+        model = Model(tool('schedule_exploration', json.dumps(args)), final('已登记'), final('已返回'))
+        store = GoalStore(Path(self.directory.name) / 'goals.sqlite3')
+        self.agent = Agent(self.bridge, model, chat_bridge=Authorizer(), goal_store=store,
+                           lua_store=ProgramStore(Path(self.directory.name)/'programs'))
+        self.receive(self.agent, 1, '探索附近十格并安全返回，最多向外走六段')
+        await self.agent.task
+        await self.wait_for(lambda: any(r['ack'].is_set() for r in self.manager.records.values()))
+        self.assertEqual('running', store.latest()['state'])
+        self.complete()
+        await self.wait_for(lambda: store.latest()['state'] == 'completed')
+        view = next(iter(self.manager.records.values()))['view']
+        Draft202012Validator(schema_for('query_task')).validate(view)
+        self.assertIn('探索新增 3 格', facts_reply([view['result']]))
+        self.assertEqual(1, await self.starts())
+
+    async def test_frontier_lua_missing_return_is_unknown(self):
+        await self.assert_frontier_unconfirmed('no_return')
+
+    async def test_frontier_completed_off_anchor_is_unknown(self):
+        await self.assert_frontier_unconfirmed('off_anchor')
+
+    async def assert_frontier_unconfirmed(self, fixture):
+        Path(str(self.ready)+'.advance.'+fixture).touch()
+        run = await self.runtime.execute("return api('submit_task',{operation='explore_frontier',arguments={radiusTiles=6,maxSegments=2}})")
+        self.assertEqual('completed',run['status'],run)
+        task_id = run['value']['taskId']
+        self.complete()
+        view = await self.manager.invoke('await_task', {'taskId':task_id, 'milliseconds':5000})
+        self.assertEqual('unknown',view['result']['status'],view)
+        self.assertFalse(view['result']['completed'])
+        self.assertEqual(1, await self.starts())
+
+    async def test_frontier_releases_before_new_player_commission(self):
+        steps = [{'operation':'mine_target','arguments':{'x':x,'y':20}} for x in (10,11)]
+        model = Model(tool('schedule_exploration','{"radiusTiles":8,"maxSegments":4}'),final('已登记'),
+                      tool('schedule_player_goal',json.dumps({'steps':steps})),final('已登记'),final('回执'),final('回执'))
+        store = GoalStore(Path(self.directory.name)/'goals.sqlite3')
+        self.agent = Agent(self.bridge,model,chat_bridge=Authorizer(),goal_store=store,
+                           lua_store=ProgramStore(Path(self.directory.name)/'programs'))
+        self.receive(self.agent,1,'自主探索并返回')
+        await self.agent.task
+        await self.wait_for(lambda: any(r['ack'].is_set() for r in self.manager.records.values()))
+        first = next(iter(self.manager.records.values()))
+        self.assertNotIn('action',self.manager.projection()['active'][0])
+        self.receive(self.agent,2,'改为依次挖除 (10,20) 和 (11,20)')
+        await self.agent.task
+        self.assertTrue(first['view']['result']['inputsReleased'])
+        self.assertEqual('cancelled',first['view']['status'])
+        self.complete()
+        await self.wait_for(lambda:store.latest()['state']=='completed')
+        self.assertEqual(3,await self.starts())
 
     async def start_commission(self):
         steps = [{'operation':'mine_target','arguments':{'x':x,'y':20}} for x in (10,11)]

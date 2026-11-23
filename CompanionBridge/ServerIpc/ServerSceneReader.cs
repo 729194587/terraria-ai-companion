@@ -62,7 +62,7 @@ internal static class ServerSceneReader
                 if(c.TouchDamage>0)sources.Add("touch_damage");if(c.Hot)sources.Add("touch_hot");
                 if(c.Bleeding)sources.Add("touch_bleeding");if(c.DestroyOnTouch)sources.Add("touch_destroy");if(c.Boulder)sources.Add("boulder_tile");
                 int type=c.TileType??-1;
-                if(type>=0&&(TileID.Sets.IceSkateSlippery[type]||type is TileID.HoneyBlock or TileID.Cobweb or TileID.Asphalt or TileID.SlimeBlock or TileID.FrozenSlimeBlock))sources.Add("unsupported_motion_surface");
+                if(TerrainReader.UnsupportedMotionSurface(type))sources.Add("unsupported_motion_surface");
             }
             if((layers.Has("map")||layers.Has("objects"))&&c.HasTile&&c.TileType is int t)
             {

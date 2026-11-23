@@ -98,8 +98,9 @@ def capability_manifest(bridge, supported=None):
         categories.append(row)
     if program_tasks.available(bridge) and 'mine_target' in supported:
         placement = ' 支持通过 submit_task 提交 place_item。' if 'place_item' in supported else ''
+        exploration = ' explore_frontier 以已揭示地图选择已知观察落区，核验开图增量和返程。' if 'explore_frontier' in supported else ''
         categories.append(dict(category='Program任务协作',status='Limited',callableApis=sorted(program_tasks.NAMES),
-            notExposed=[],boundary='宿主提交、查询、等待与取消。由游戏侧执行，unknown 不重放，危险中断后由 Agent 显式决定是否重新提交。' + placement))
+            notExposed=[],boundary='宿主提交、查询、等待与取消。由游戏侧执行，unknown 不重放，危险中断后由 Agent 显式决定是否重新提交。' + placement + exploration))
     return dict(schemaVersion=1, source='ServerAiBridge bind handshake + backend whitelist',
                 scope='当前连接/服务器AI；不是原生游戏全部功能或实机验收承诺',
                 levels={'Supported': '所列有界接口开放', 'Limited': '部分能力开放，限制见各API',
@@ -129,7 +130,7 @@ def server_definitions(bridge, supported=None):
     if supported is None:
         supported = exposed_operations(bridge)
     capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
-    definitions = atomic.server_tools(supported, bulk_purchase='server_ai_merchant_bulk_purchase_v1' in capabilities,
+    definitions = atomic.server_tools(supported, map_chunks='server_ai_map_chunks_v1' in capabilities, bulk_purchase='server_ai_merchant_bulk_purchase_v1' in capabilities,
                                       bed_spawn='server_ai_bed_spawn_v1' in capabilities, combat_inventory="server_ai_combat_inventory_v1" in capabilities,
                                       summon_loadout="server_ai_combat_summon_loadout_v1" in capabilities,
                                       dual_weapons="server_ai_combat_secondary_v1" in capabilities, scene_region='server_ai_scene_region_v1' in capabilities,
@@ -143,7 +144,7 @@ def server_definitions(bridge, supported=None):
                                                  strategy='server_ai_boss_strategy_v1' in capabilities,
                                                  members='server_ai_boss_members_v1' in capabilities,
                                                  combat='server_ai_combat_v1' in capabilities, weapon_button='server_ai_weapon_button_v1' in capabilities,
-                                                 collection='collect_drops' in supported,
+                                                 collection='collect_drops' in supported, exploration='explore_frontier' in supported,
                                                  placement='place_item' in supported, building='build_place' in supported)
     return definitions
 

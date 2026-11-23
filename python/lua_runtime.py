@@ -134,6 +134,7 @@ class LuaRuntime:
         self.bridge = bridge
         self.evidence_root = evidence_root
         self.last_result = None
+        self.before_player_action = None
 
     async def execute(self, source, *, chat_id=None, limits=Limits(), cancel=None,
                       allow_actions=True, on_result=None):
@@ -415,6 +416,13 @@ class LuaRuntime:
                     active = None
                     continue
                 synchronous_task = name == 'mine_target' and program_tasks.available(self.bridge)
+                if (self.before_player_action and allow_actions and not halted
+                        and out['actions'] < limits.actions and (name in atomic.BUDGETED_ACTIONS or name in ('submit_task','resume_task'))):
+                    if not await self.before_player_action():
+                        raise Interrupted('previous_task_release_unconfirmed')
+                    self.before_player_action = None
+                if name == 'cancel_task' and not allow_actions:
+                    raise Interrupted('read_only_turn')
                 if (allow_actions and not halted and handoff is None and name in atomic.BUDGETED_ACTIONS
                         and (guidance := recovery.blocked(name, args)) is not None):
                     result = {'valid': False, 'status': 'failed', 'completed': False,

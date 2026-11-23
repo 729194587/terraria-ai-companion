@@ -24,6 +24,14 @@ def definition(operations):
         '登记后只报告已排队。', {'steps': {'type':'array', 'minItems':2, 'maxItems':MAX_STEPS, 'items':step}}, ['steps'])
 
 
+def exploration_definition():
+    schema = atomic.SCHEMAS['explore_frontier']
+    return atomic.tool('schedule_exploration',
+        '玩家明确授权自主探索时登记一次有界往返。radiusTiles 是以出发点为中心的 Tile 半径，'
+        'maxSegments 是外出尝试上限。默认仅移动，玩家明确允许清障才开启 allowDig。'
+        '完成要求实际开图、返回安全锚点并释放输入。', schema['properties'], schema['required'])
+
+
 class GoalStore:
     """One database per stable world/character, one unfinished commission at a time."""
     def __init__(self, path):
@@ -59,6 +67,15 @@ class GoalStore:
                     or not isinstance(step['arguments'], dict) or set(step['arguments']) != {'x','y'}):
                 raise ValueError('Expected an available task and absolute Tile x/y')
             atomic.validate(step['operation'], step['arguments'])
+        return self._save(steps, binding, chat, sender, instruction)
+
+    def create_exploration(self, args, binding, chat, sender, instruction, operations, budget):
+        if 'explore_frontier' not in operations or budget < 1:
+            raise ValueError('Exploration admission unavailable')
+        step = {'operation': 'explore_frontier', 'arguments': atomic.validate('explore_frontier', args)}
+        return self._save([step], binding, chat, sender, instruction)
+
+    def _save(self, steps, binding, chat, sender, instruction):
         goal = uuid.uuid4().hex
         with closing(self.connect()) as db, db:
             db.execute("INSERT INTO goals(id,binding,chat,sender,instruction,expires,total,state) VALUES(?,?,?,?,?,?,?,'ready')",
@@ -91,6 +108,19 @@ class GoalStore:
         with closing(self.connect()) as db:
             return db.execute("SELECT 1 FROM goals WHERE state IN ('ready','running','reconcile')").fetchone() is not None
 
+    def exploration_owner(self, binding):
+        with closing(self.connect()) as db:
+            row = db.execute("""SELECT g.id,s.task,s.args FROM goals g JOIN steps s
+                ON s.goal=g.id AND s.ordinal=g.progress WHERE g.binding=?
+                AND g.state IN ('ready','running','reconcile')""", (binding,)).fetchone()
+            if row and json.loads(row['args'])['operation'] == 'explore_frontier':
+                return row['id'], row['task']
+
+    def revoke_goal(self, goal):
+        with closing(self.connect()) as db, db:
+            db.execute("""UPDATE goals SET revoked=1, state=CASE WHEN state='ready' THEN 'cancelled' ELSE state END
+                WHERE id=? AND state IN ('ready','running','reconcile')""", (goal,))
+
     def claim(self, step, binding):
         with closing(self.connect()) as db, db:
             return db.execute("""UPDATE goals SET state='running' WHERE id=? AND state='ready' AND revoked=0
@@ -117,7 +147,7 @@ class GoalStore:
                         and result.get('targetTask') == step['arguments'] and result.get('valid') is True
                         and result.get('completed') is True and result.get('status') == 'completed'
                         and result.get('effectVerified') is True and result.get('inputsReleased') is True
-                        and (step['operation'] != 'mine_target' or task_outcome([result]) == 'completed'))
+                        and (step['operation'] not in ('mine_target','explore_frontier') or task_outcome([result]) == 'completed'))
             if verified:
                 state = 'completed' if row['progress'] + 1 == row['total'] else 'ready'
             elif result.get('dispatchState') == 'not_admitted' or (

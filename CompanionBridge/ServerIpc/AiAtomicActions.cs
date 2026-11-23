@@ -42,6 +42,7 @@ internal sealed class AiAtomicActions
         .Concat(executor.SupportsBuildPlace ? new[]{"server_ai_build_place_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsPlacement ? new[]{"server_ai_place_item_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsCollection ? new[]{"server_ai_collect_drops_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsExploration ? new[]{"server_ai_frontier_exploration_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsSorting ? new[]{"server_ai_sorting_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsLoadout ? new[]{"server_ai_combat_primary_v1","server_ai_combat_secondary_v1","server_ai_combat_summon_loadout_v1","server_ai_combat_inventory_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsBossEncounter ? new[]{"server_ai_boss_encounter_v1","server_ai_boss_members_v1","server_ai_boss_strategy_v1"} : Array.Empty<string>())
@@ -83,6 +84,7 @@ internal sealed class AiAtomicActions
         bool SupportsContainers=>false;
         bool SupportsSorting=>false;
         bool SupportsCollection=>false;
+        bool SupportsExploration=>false;
         bool SupportsPlacement=>false;
         bool SupportsNpcDialogue=>false;
         bool SupportsMerchantPurchase=>false;
@@ -146,7 +148,7 @@ internal sealed class AiAtomicActions
     private static bool IsContainerOperation(string operation) =>
         operation is "open_container" or "close_container" or "deposit_container_item" or "withdraw_container_item"
         or "sort_inventory" or "sort_container" or "quick_stack_nearby" or "quick_stack_container" or "loot_all" or "deposit_all" or "restock";
-    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to" or "collect_drops" or "build_place" or "place_item" or CombatProtocol.Operation or CombatProtocol.Boss;
+    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to" or "collect_drops" or "explore_frontier" or "build_place" or "place_item" or CombatProtocol.Operation or CombatProtocol.Boss;
     internal object CombatState(AiReadOnlyProtocol.Identity current) =>
         new{action=Matches(lastCombat,current)?Snapshot(lastCombat):null};
 
@@ -270,7 +272,8 @@ internal sealed class AiAtomicActions
         if (operation == "build_place" && executor?.SupportsBuildPlace != true) return new(Error: "unsupported_operation");
         if (operation == "place_item" && executor?.SupportsPlacement != true) return new(Error: "unsupported_operation");
         if (operation == "collect_drops" && executor?.SupportsCollection != true) return new(Error: "unsupported_operation");
-        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("interact_tile" or "reforge_item" or "heal_at_nurse" or "sell_npc_item" or "buy_npc_item" or "open_npc_dialogue" or "close_npc_dialogue" or "assign_npc_home" or "dismiss_summon" or "set_team" or "teleport_to_pylon" or "teleport_to_teammate" or "manage_trash" or "switch_equipment_loadout" or "set_inventory_favorite" or "drop_inventory_item" or "open_inventory_item" or "open_door" or "close_door" or "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "build_place" or "place_item" or CombatProtocol.Boss or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
+        if (operation == "explore_frontier" && executor?.SupportsExploration != true) return new(Error: "unsupported_operation");
+        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("interact_tile" or "reforge_item" or "heal_at_nurse" or "sell_npc_item" or "buy_npc_item" or "open_npc_dialogue" or "close_npc_dialogue" or "assign_npc_home" or "dismiss_summon" or "set_team" or "teleport_to_pylon" or "teleport_to_teammate" or "manage_trash" or "switch_equipment_loadout" or "set_inventory_favorite" or "drop_inventory_item" or "open_inventory_item" or "open_door" or "close_door" or "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "explore_frontier" or "build_place" or "place_item" or CombatProtocol.Boss or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
         int key = 0;
         if (selecting)
         {
@@ -294,7 +297,7 @@ internal sealed class AiAtomicActions
         long remaining = root.GetProperty("expiresAtUnixMs").GetInt64() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (remaining <= 0) return new(Error: "request_expired");
         if (remaining > 2000) return new(Error: "invalid_deadline");
-        int duration = operation switch { CombatProtocol.Boss => arguments.TryGetProperty("durationSeconds",out var seconds)?seconds.GetInt32()*1000:300000, CombatProtocol.Operation=>35000, "navigate_to"=>180000, "mine_target"=>55000, "collect_drops"=>35000, "build_place"=>180000, "place_item"=>12000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
+        int duration = operation switch { CombatProtocol.Boss => arguments.TryGetProperty("durationSeconds",out var seconds)?seconds.GetInt32()*1000:300000, CombatProtocol.Operation=>35000, "explore_frontier"=>120000, "navigate_to"=>180000, "mine_target"=>55000, "collect_drops"=>35000, "build_place"=>180000, "place_item"=>12000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
         CombatAdmission admission=null;
         if(combat&&CombatConflict(current,arguments.GetProperty("entityRef").GetString(),out admission) is {} conflict)
             return new(Error:conflict);

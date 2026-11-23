@@ -407,12 +407,26 @@ class Agent:
         if self.goals is not None:
             self.program_tasks.on_goal_result = self.goals.settle
             self.tools = [*self.tools, player_goals.definition(bridge.supported_atomic_operations)]
+            if 'explore_frontier' in bridge.supported_atomic_operations:
+                self.tools.append(player_goals.exploration_definition())
+                self.history[0]['content'] += '\n玩家委托自主探索并返回时用 schedule_exploration 登记一次行程，终态核验后报告结果。'
             self.history[0]['content'] += '\n两步玩家委托可用 schedule_player_goal 登记；runtimeGoal.progress 是已由宿主核验的步骤数。'
         if self.program_tasks is not None:
             self.program_tasks.on_ready = self._wake_task_results
 
     def _goal_binding(self):
         return json.dumps(self.bridge.binding, sort_keys=True)
+
+    async def _release_exploration(self):
+        owner = self.goals.exploration_owner(self._goal_binding())
+        if owner:
+            goal, task = owner
+            self.goals.revoke_goal(goal)
+            if task in self.program_tasks.records:
+                view = await self.program_tasks.invoke('cancel_task', {'taskId':task})
+                if view.get('status') in ('running','submitting'):
+                    await self.program_tasks.invoke('await_task', {'taskId':task,'milliseconds':1500})
+        return not self.goals.holds_body()
 
     def _goal_idle(self):
         return (not self._closing and not self._brain_paused and self.llm is not None
@@ -538,6 +552,8 @@ class Agent:
             raise ValueError('Local instruction must be one nonempty line, at most 2000 characters')
         if 'local_terminal_input_v1' not in self.bridge.hello.get('capabilities', []):
             raise BridgeError('Local input requires local_terminal_input_v1 (Mod 0.1.36+)')
+        if self.goals is not None and is_stop_request(text):
+            self.goals.revoke()
         self._invalidate_turn('cancelled' if is_stop_request(text) else 'superseded')
         generation = self.generation
         self._active_turn_id = None
@@ -829,11 +845,14 @@ class Agent:
                             elif self.notebook is not None and name == 'memory':
                                 turn = json.loads(messages[user_index]['content'])
                                 result = self.notebook.invoke(arguments, turn, self.bridge.binding['world'])
-                            elif self.goals is not None and name == 'schedule_player_goal':
-                                if task_notification or atomic_halted or mutation_budget_reason() or self.program_tasks.blocked():
+                            elif self.goals is not None and name in ('schedule_player_goal', 'schedule_exploration'):
+                                if task_notification or atomic_halted or mutation_budget_reason():
                                     raise ValueError('Goal admission unavailable in this turn')
+                                if not await self._release_exploration() or self.program_tasks.blocked():
+                                    raise ValueError('Previous task release is unconfirmed')
                                 turn = json.loads(messages[user_index]['content'])
-                                result = self.goals.create(arguments, self._goal_binding(), chat_id, turn['senderId'],
+                                create = self.goals.create_exploration if name == 'schedule_exploration' else self.goals.create
+                                result = create(arguments, self._goal_binding(), chat_id, turn['senderId'],
                                                            instruction, self.bridge.supported_atomic_operations,
                                                            self.lua_limits.actions - actions_used)
                                 scheduled_goal = result
@@ -871,12 +890,15 @@ class Agent:
                                         if operation == 'use_item' and reply.get('status') == 'completed':
                                             unconfirmed_item_effect = True
                                 executor = ToolExecutor(LuaRuntime, self.bridge)
+                                exploration = self.goals and self.goals.exploration_owner(self._goal_binding())
+                                if exploration:
+                                    executor.runtime.before_player_action = self._release_exploration
                                 try:
                                     result = await executor.execute(source, chat_id=chat_id,
                                         limits=replace(self.lua_limits, seconds=seconds, calls=remaining,
                                                        actions=max(0,self.lua_limits.actions-actions_used)),
                                         allow_actions=not atomic_halted and not task_notification
-                                            and not (self.goals and self.goals.holds_body()), on_result=observe_lua)
+                                            and (bool(exploration) or not (self.goals and self.goals.holds_body())), on_result=observe_lua)
                                 finally:
                                     lua_seconds += executor.elapsed
                                     actual = executor.receipt

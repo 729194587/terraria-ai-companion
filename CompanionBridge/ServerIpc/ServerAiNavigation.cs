@@ -60,6 +60,11 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     private int session;
     private bool executing, injected, suppressStaleGrapple;
     internal Run Current;
+    internal void RestrictToExplored(MapWindow window)
+    {
+        var map=AiMapRuntime.Map;
+        navigation.Task.AllowedPose=p=>ReferenceEquals(map,AiMapRuntime.Map)&&FrontierExplorationTask.KnownPose(map,window,p);
+    }
     public bool Running => Current?.Status=="running";
     public bool Matches(Player p) => Current!=null && ReferenceEquals(Current.Identity.Actor,p);
     internal Run Start(AiReadOnlyProtocol.Identity identity,float target,string actionId=null,bool movementOnly=false)
@@ -79,6 +84,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         ActorControl.Healthy(p);
         if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Actor busy.");
         navigation.Cancel();
+        navigation.Task.AllowedPose=null;
         knowledge?.Bind(identity.Actor,identity.World,identity.Generation,identity.Slot);
         navigation.Task.SetKnowledge(knowledge);
         navigation.Task.Continuous=continuous;
@@ -173,6 +179,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         }
         Current.Status=status;Current.Reason=reason;Current.Snapshot=navigation.Snapshot;
         navigation.Cancel();Release(!Current.Combat);
+        navigation.Task.AllowedPose=null;
         if(ServerAiNativeActions.Owned(Current.Identity))
         {
             try
