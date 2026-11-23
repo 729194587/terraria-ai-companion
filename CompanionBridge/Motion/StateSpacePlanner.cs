@@ -195,6 +195,9 @@ internal static class StateSpacePlanner
                 }
                 expansions++;
                 TotalExpansions=expansions;
+#if NAVIGATION_EXPERIMENT
+                NavigationExperiment.Expanded++;
+#endif
                 // Region goals also need an in-place ascent, e.g. a platform above
                 // the player in a narrow shaft. Horizontal crossing keeps its existing
                 // candidates; all variants use the same sweep, drop and braking proof.
@@ -205,7 +208,12 @@ internal static class StateSpacePlanner
                 foreach (int dir in directions)
                 {
                     // BuildHoldOptions from upstream: walk then 2-frame hold increments.
-                    int ordinaryOptions=(ph.JumpHeight+1)/2;
+#if NAVIGATION_EXPERIMENT
+                    int holdStep=NavigationExperiment.HoldStep;
+#else
+                    const int holdStep=2;
+#endif
+                    int ordinaryOptions=(ph.JumpHeight+holdStep-1)/holdStep;
                     int extraOptions=ph.ExtraJump!=null&&(cur.ExtraAvailable||cur.Grounded)?4:0;
                     int airOptions=ph.Air?.Kind==AirKind.Wings?5:ph.Air?.Kind==AirKind.RocketBoots?3:0;
                     for (int option = 0; option <= ordinaryOptions+extraOptions+airOptions; option++)
@@ -217,7 +225,7 @@ internal static class StateSpacePlanner
                             sliceStart=expansions;
                             budgetMs=sliceMilliseconds;maxExpansions=sliceNodes;
                         }
-                        int hold = option>ordinaryOptions?ph.JumpHeight:Math.Min(option * 2, ph.JumpHeight);
+                        int hold = option>ordinaryOptions?ph.JumpHeight:Math.Min(option * holdStep, ph.JumpHeight);
                         int extraFrame=option>ordinaryOptions&&option<=ordinaryOptions+extraOptions?hold+1+(option-ordinaryOptions-1)*8:-1;
                         int airOption=option-ordinaryOptions-extraOptions-1;
                         int airStart=airOption>=0?hold+1+(ph.Air.Kind==AirKind.RocketBoots?airOption*8:0):-1;
@@ -235,6 +243,9 @@ internal static class StateSpacePlanner
                             var edge = learning==null
                                 ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold)
                                 :learning.Predict(cur,dir,hold,stride,ph,world,extraFrame,airStart,airHold);
+#if NAVIGATION_EXPERIMENT
+                            NavigationExperiment.Observe(edge,extraFrame,airStart);
+#endif
                             if (!edge.Safe)
                             {
                                 if (cur == start && dir == sign && hold == 0 && edge.Reason == "walking blocked")

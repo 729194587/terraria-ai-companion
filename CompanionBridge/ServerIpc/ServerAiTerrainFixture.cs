@@ -157,9 +157,12 @@ internal static class ServerAiTerrainFixture
         string scene=doc.RootElement.GetProperty("scene").GetString();
         int direction=doc.RootElement.GetProperty("direction").GetInt32();
         if(direction!=1&&direction!=-1)throw new ArgumentException("Invalid terrain direction");
-        if(scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall" or "platform_up" or "platform_down" or "high_platform"
+        bool experiment=scene=="experiment_platform"&&Program.LaunchParameters.ContainsKey("-companionnavexperiment");
+        if(!experiment&&scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall" or "platform_up" or "platform_down" or "high_platform"
             or "obstacle_one" or "solid_up_three" or "solid_up_five" or "shaft_up" or "shaft_ceiling" or "alternating" or "no_landing" or "descent_five" or "hazard_target" or "extra_up" or "extra_chain" or "wing_chain"))
             throw new ArgumentException("Unknown terrain scene");
+        if(Program.LaunchParameters.ContainsKey("-companionnavexperiment"))
+            ServerNavigationReplayFixture.Prepare(doc.RootElement);
         mobilityMode=doc.RootElement.TryGetProperty("mobility",out var mobility)?mobility.GetString():null;
         if(mobilityMode!=null&&(!Program.LaunchParameters.ContainsKey("-companionmobilitytest")
             ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "rapid" or "expiry" or "unknown" or "equipment" or "cloud" or "cloud_fail" or "cloud_offset" or "angel" or "bone" or "demon")))
@@ -187,7 +190,7 @@ internal static class ServerAiTerrainFixture
         {
             int q=direction*(tx-left), surface=floor;
             int slope=0;
-            bool platformScene=scene is "platform_up" or "platform_down" or "high_platform";
+            bool platformScene=experiment||scene is "platform_up" or "platform_down" or "high_platform";
             if(platformScene)surface=floor+8;
             if(scene=="step_up"&&q>=4)surface--;
             if(scene=="step_down"&&q>=4)surface++;
@@ -217,7 +220,7 @@ internal static class ServerAiTerrainFixture
             if(platformScene)
             {
                 int top=scene=="platform_down"?floor-4:floor;
-                int target=scene=="platform_down"?floor:scene=="high_platform"?floor-12:floor-4;
+                int target=experiment?floor-13:scene=="platform_down"?floor:scene=="high_platform"?floor-12:floor-4;
                 if(q<=3&&ty==top||q>=6&&ty==target)
                 {tile.HasTile=true;tile.TileType=TileID.Platforms;}
             }

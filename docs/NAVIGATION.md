@@ -88,3 +88,5 @@ Phase 3 的局部改造规划为导航增加了有限的反事实评估。规划
 | 入口与结果契约 | `python/atomic_operations.py`、`python/server_ai.py` |
 
 Phase 2～4 的实现记录保留了各阶段的原生验证场景和历史决策，可从文档索引的历史资料部分查阅。
+
+[导航算法对照实验](../tests/navigation_experiments/README.md)记录了固定地形的候选采样、预算、运动能力、逐帧回放与隔离专服到达率。

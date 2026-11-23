@@ -29,6 +29,11 @@ $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
 foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest','-companionactionstest')){$info.ArgumentList.Add($arg)}
 if($TestScript -eq 'native_pylons.py'){$info.ArgumentList.Add('-companionpylontest')}
 if($TestScript -eq 'native_regroup_observers.py'){$info.ArgumentList.Add('-companionregroupobservers')}
+if($TestScript -eq 'navigation_experiments/native.py'){
+    foreach($flag in '-companionnavexperiment','-companionterraintest','-companionmobilitytest','-companionextrajumptest','-companiongrappletest','-companiontasktest'){
+        $info.ArgumentList.Add($flag)
+    }
+}
 if($BossProbe){$info.ArgumentList.Add('-companionbossprobe');$info.ArgumentList.Add($BossProbe);$TestScript='native_boss_probe.py'}
 elseif($Combat){$info.ArgumentList.Add('-companioncombattest');$TestScript='native_combat.py'}
 elseif($Torch){$info.ArgumentList.Add('-companiontorchtest');$TestScript='native_auto_torch.py'}

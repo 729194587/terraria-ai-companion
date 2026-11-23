@@ -1,6 +1,6 @@
 param([switch]$AirOnly,[switch]$MobilityOnly,[switch]$TripOnly,[switch]$RecoveryOnly, [switch]$PlannerOnly, [switch]$SafeGroundWalkOnly, [switch]$MiningSupportOnly, [switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
     [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly, [switch]$AuthorityNetworkOnly,
-    [switch]$InventoryOnly, [switch]$BridgeOnly, [switch]$ServerReadsOnly, [switch]$NavigationOnly,[switch]$SurfaceGraphOnly,[switch]$LocalEditsOnly,[switch]$SceneOnly,[switch]$VerticalOnly)
+    [switch]$InventoryOnly, [switch]$BridgeOnly, [switch]$ServerReadsOnly, [switch]$NavigationOnly,[switch]$SurfaceGraphOnly,[switch]$LocalEditsOnly,[switch]$SceneOnly,[switch]$VerticalOnly,[string]$NavigationExperimentOutput)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 # PowerShell 7.4+ uses .NET 8+; compile the actual IPC sources without Terraria.
@@ -82,15 +82,24 @@ $sources = @(
     (Join-Path $PSScriptRoot 'PlayerHookOfflineTests.cs')
 )
 $references = Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName
-if ($AirOnly -or $PlannerOnly) {
+if ($AirOnly -or $PlannerOnly -or $NavigationExperimentOutput -or $SurfaceGraphOnly -or $LandingBudgetAudit) {
     $dependencies = @('AirMotionTests','PlannerCorrectnessTests','MotionOfflineTests','SurfaceGraphTests','ControlState','AtomicParameters',
         'SceneLayers','AiChatInput','HotbarSlots','GameMessageCapture','ObservationSnapshot','TerrainSnapshot',
         'SceneGeometry','SceneRegion','EntitySnapshot')
-    $airSources = $sources | Where-Object {
+    $motionSources = $sources | Where-Object {
         ((Split-Path (Split-Path $_ -Parent) -Leaf) -eq 'Motion' -and [IO.Path]::GetFileNameWithoutExtension($_) -ne 'PlatformDropAction') -or [IO.Path]::GetFileNameWithoutExtension($_) -in $dependencies
     }
-    Add-Type -Path $airSources -ReferencedAssemblies $references
-    if ($PlannerOnly) { [PlannerCorrectnessTests]::Run() } else { [AirMotionTests]::Run() }
+    if ($NavigationExperimentOutput) {
+        $motionSources += Join-Path $PSScriptRoot 'navigation_experiments/NavigationExperiment.cs'
+        Add-Type -Path $motionSources -ReferencedAssemblies $references -CompilerOptions '/define:NAVIGATION_EXPERIMENT','/optimize+'
+        [CompanionBridge.Motion.NavigationExperiment]::Run($NavigationExperimentOutput)
+        return
+    }
+    Add-Type -Path $motionSources -ReferencedAssemblies $references
+    if ($PlannerOnly) { [PlannerCorrectnessTests]::Run() }
+    elseif ($AirOnly) { [AirMotionTests]::Run() }
+    elseif ($SurfaceGraphOnly) { [SurfaceGraphTests]::Run() }
+    else { [MotionOfflineTests]::AuditLandingBudget($BudgetRepetitions, $BudgetColdOnly.IsPresent) }
     return
 }
 if ($AuthorityNetworkOnly) {
@@ -102,7 +111,6 @@ if ($AuthorityNetworkOnly) {
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
 if ($MobilityOnly) { [MobilityProfileTests]::Run(); [ExtraJumpNavigationTests]::Run(); [AirMotionTests]::Run(); return }
-if ($SurfaceGraphOnly) { [SurfaceGraphTests]::Run(); return }
 if ($LocalEditsOnly) { [LocalTerrainPlanningTests]::Run(); return }
 if ($TripOnly) { [NavigationTripTests]::Run(); return }
 if ($RecoveryOnly) { [NavigationRecoveryTests]::Run(); return }
@@ -116,7 +124,6 @@ if ($BridgeOnly) { [AiChatOfflineTests]::Run(); [BridgeOfflineTests]::Run(); [Pl
 if ($InventoryOnly) { [InventoryOfflineTests]::Run(); return }
 if ($LandingProtocolHost) { [LandingNavigationOfflineTests]::RunProtocolHost(); return }
 if ($LandingOnly) { [LandingNavigationOfflineTests]::Run(); return }
-if ($LandingBudgetAudit) { [MotionOfflineTests]::AuditLandingBudget($BudgetRepetitions, $BudgetColdOnly.IsPresent); return }
 if (!$MotionOnly) { [AtomicOfflineTests]::Run(); [BridgeOfflineTests]::Run(); [ObservationOfflineTests]::Run(); [DeathLifecycleOfflineTests]::Run(); [GameMessageOfflineTests]::Run(); [BoundedMovementOfflineTests]::Run() }
 if ($ObservationSamplePath -and !$MotionOnly) {
     [System.IO.File]::WriteAllText($ObservationSamplePath, [ObservationOfflineTests]::SampleJson,

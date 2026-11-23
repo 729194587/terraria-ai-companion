@@ -211,6 +211,9 @@ internal sealed class SurfaceGraph
 
     internal bool KeySample(SurfaceNode n,PhysicsState start,LandingRegion goal)
     {
+#if NAVIGATION_EXPERIMENT
+        if(NavigationExperiment.AllStances)return true;
+#endif
         if(n.Kind!=SurfaceKind.Solid||Math.Abs(n.X-start.Px)<48||Math.Abs(n.X-goal.MinPlayerLeftX)<64)return true;
         // Flat interior reduction only. Keep every narrow support, boundary,
         // height transition and obstacle-adjacent tile.
@@ -222,12 +225,20 @@ internal sealed class SurfaceGraph
         return n.TileX%4==0;
     }
 
+    internal static int HorizontalRange(PhysicsParameters ph)
+    {
+#if NAVIGATION_EXPERIMENT
+        if(NavigationExperiment.HorizontalRange is int range)return range;
+#endif
+        return ph.ExtraJump==null&&ph.Air==null?144:256;
+    }
+
     internal SurfaceEdge Candidate(SurfaceNode a,SurfaceNode b,PhysicsParameters ph)
     {
         float dx=Math.Abs(a.X-b.X),dy=b.Region.SurfaceY-a.Region.SurfaceY;
         float extraRise=ph.ExtraJump==null?0:ph.JumpSpeed*ph.ExtraJump.HoldFrames(ph)+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity);
         if(ph.Air!=null)extraRise+=ph.JumpSpeed*16;
-        if(a.Id==b.Id||dx>(ph.ExtraJump==null&&ph.Air==null?144:256)||dy>FallSafety.LookaheadPixels
+        if(a.Id==b.Id||dx>HorizontalRange(ph)||dy>FallSafety.LookaheadPixels
             ||dy<-(ph.JumpSpeed*ph.JumpHeight+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity)+16+extraRise))return null;
         if(dy>16&&!ph.Fall.Safe(a.Region.SurfaceY-PhysicsSimulator.PlayerH,b.Region.SurfaceY-PhysicsSimulator.PlayerH))
         {
@@ -373,7 +384,8 @@ internal sealed class SurfaceNavigator : IDisposable
                     float d=goal.Distance(a.Rest(Math.Clamp((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2,a.Region.MinPlayerLeftX,a.Region.MaxPlayerLeftX)));
                     if(d<bestDistance){bestDistance=d;best=a;}
                     if(d==0){end=a;break;}
-                    for(int column=a.TileX-(ph.ExtraJump==null&&ph.Air==null?10:17);column<=a.TileX+(ph.ExtraJump==null&&ph.Air==null?10:17);column++)
+                    int columns=(SurfaceGraph.HorizontalRange(ph)+15)/16+1;
+                    for(int column=a.TileX-columns;column<=a.TileX+columns;column++)
                     {
                         if(!byColumn.TryGetValue(column,out var neighbors))continue;
                         foreach(var b in neighbors)

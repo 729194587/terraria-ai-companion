@@ -19,6 +19,7 @@ internal static class ServerAiDirectInputFixture
     private static bool Enabled=>ServerAiActionFixture.Enabled&&Program.LaunchParameters.ContainsKey("-companiondirectinputtest");
     internal static void Input(Player p)
     {
+        if(ServerNavigationReplayFixture.Input(p))return;
         if(!Enabled)return;
         frames.Add(new{tick=Main.GameUpdateCount,left=p.controlLeft,right=p.controlRight,up=p.controlUp,down=p.controlDown,
             jump=p.controlJump,releaseJump=p.releaseJump,x=p.position.X,y=p.position.Y,vx=p.velocity.X,vy=p.velocity.Y});
@@ -27,6 +28,7 @@ internal static class ServerAiDirectInputFixture
     }
     internal static void Result(object result)
     {
+        ServerNavigationReplayFixture.Finish();
         if(!Enabled)return;
         try{File.WriteAllText(Path.Combine(Main.SavePath,"direct-input-terminal.json"),JsonSerializer.Serialize(result));}
         catch(IOException){ }
