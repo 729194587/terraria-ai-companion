@@ -108,6 +108,7 @@ def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=
 class TaskCoordinator:
     def __init__(self, bridge, on_ready=None):
         self.bridge, self.on_ready = bridge, on_ready
+        self.on_goal_result = None
         self.records = {}
         self.sequence = 0
         self.consumed = 0
@@ -143,12 +144,14 @@ class TaskCoordinator:
         record['view'].update(status=result['status'], valid=result.get('valid') is True,
             completed=result.get('completed') is True, result=copy.deepcopy(result), resultSequence=self.sequence)
         record['done'].set()
+        if self.on_goal_result is not None and (record['view']['origin'] or {}).get('goalId'):
+            self.on_goal_result(record['view']['taskId'], result)
         diagnostics.emit('game_task_result', taskId=record['view']['taskId'], origin=record['view']['origin'],
                          resultSequence=self.sequence, result=result)
         if self.on_ready is not None and not self.closed:
             self.on_ready()
 
-    async def submit(self, args, origin=None):
+    async def submit(self, args, origin=None, *, task_id=None, authorize=None):
         operation = args['operation']
         if operation in ('collect_drops', 'place_item', 'build_place') and operation not in getattr(self.bridge, 'supported_atomic_operations', ()):
             return atomic.not_admitted_result('submit_task', 'collection_capability_unavailable' if operation == 'collect_drops' else 'placement_capability_unavailable')
@@ -171,7 +174,11 @@ class TaskCoordinator:
                     del self.records[key]
             if len(self.records) >= 64:
                 return atomic.not_admitted_result('submit_task', 'task_receipt_capacity')
-            task_id = uuid.uuid4().hex
+            if authorize is not None and not authorize():
+                return atomic.not_admitted_result(operation, 'goal_authorization_revoked')
+            task_id = task_id or uuid.uuid4().hex
+            if task_id in self.records:
+                raise ValueError('Duplicate task admission')
             record = {'args': copy.deepcopy(args), 'done': asyncio.Event(), 'ack': asyncio.Event(), 'lock': asyncio.Lock(),
                       'view': {'taskId': task_id, 'operation': operation, 'status': 'submitting',
                                'valid': False, 'completed': False, 'dispatchState': 'unknown', 'origin': origin, 'retryAllowed': False}}
@@ -182,14 +189,17 @@ class TaskCoordinator:
             correlation = {key: origin[key] for key in tracing.MCP_CORRELATION if origin and key in origin}
             if correlation:
                 monitor_context.run(tracing.context.set, correlation)
-            record['monitor'] = monitor_context.run(asyncio.create_task, self._run(record))
+            record['monitor'] = monitor_context.run(asyncio.create_task, self._run(record, authorize))
         # This shield is essential: Program cancellation does not cancel admission/Task.
         await record['ack'].wait()
         return copy.deepcopy(record['view'])
 
-    async def _run(self, record):
+    async def _run(self, record, authorize=None):
         try:
             view = record['view']
+            if authorize is not None and not authorize():
+                self._finish(record, atomic.not_admitted_result(view['operation'], 'goal_authorization_revoked'))
+                return
             reply = await asyncio.to_thread(self.bridge.task_request, 'start', view['taskId'],
                 operation=view['operation'], arguments=record['args']['arguments'], expiresAtUnixMs=int(time.time()*1000)+1800)
             if (reply.get('operation') != view['operation'] or reply.get('targetTask') != record['args']['arguments']

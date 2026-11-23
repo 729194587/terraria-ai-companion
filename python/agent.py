@@ -22,6 +22,7 @@ from pathlib import Path
 import mining_recovery
 import lua_agent
 import program_tasks
+import player_goals
 from dataclasses import replace
 from lua_runtime import LuaRuntime, Limits as LuaLimits
 import agent_diagnostics as diagnostics
@@ -345,7 +346,7 @@ def entity_result(reply):
 class Agent:
     def __init__(self, bridge, llm, max_model_calls=8, max_tool_calls=7, max_movement_ms=6000, *,
                  local_input=False, lua_limits=LuaLimits(), lua_store=None, chat_bridge=None,
-                 context_manager=None, notebook=None):
+                 context_manager=None, notebook=None, goal_store=None):
         self.bridge, self.llm = bridge, llm
         self.chat_bridge = bridge if chat_bridge is None else chat_bridge
         self.server_ai = chat_bridge is not None
@@ -400,12 +401,75 @@ class Agent:
         self._brain_paused = False
         self._task_wakeup_sequence = 0
         self.program_tasks = program_tasks.coordinator(bridge) if program_tasks.available(bridge) else None
+        self.goals = goal_store if self.server_ai and self.program_tasks is not None else None
+        self._goal_dispatch = None
+        self._check_uncertain_goal = True
+        if self.goals is not None:
+            self.program_tasks.on_goal_result = self.goals.settle
+            self.tools = [*self.tools, player_goals.definition(bridge.supported_atomic_operations)]
+            self.history[0]['content'] += '\n两步玩家委托可用 schedule_player_goal 登记；runtimeGoal.progress 是已由宿主核验的步骤数。'
         if self.program_tasks is not None:
             self.program_tasks.on_ready = self._wake_task_results
 
+    def _goal_binding(self):
+        return json.dumps(self.bridge.binding, sort_keys=True)
+
+    def _goal_idle(self):
+        return (not self._closing and not self._brain_paused and self.llm is not None
+                and not self.bridge._closed and (self.task is None or self.task.done()))
+
+    async def _dispatch_goal_step(self, step):
+        binding = self._goal_binding()
+        def authorized():
+            return (self._goal_idle() and self._goal_binding() == binding
+                    and self.goals.authorized(step, binding))
+
+        if step['state'] in ('running', 'reconcile'):
+            # No local monitor survived. Read once using the original native identity.
+            result = {'status': 'unknown', 'reason': 'binding_changed'}
+            if binding == step['binding']:
+                try:
+                    action = await asyncio.to_thread(self.bridge.task_request, 'action', step['task'])
+                    if action.get('status') in ('completed', 'failed', 'timeout', 'cancelled'):
+                        result = await atomic_operations.terminal(self.bridge, action, action['generation'])
+                    else:
+                        result = {'status': 'unknown', 'reason': 'no_verified_terminal_receipt'}
+                except (BridgeError, OSError, ValueError, KeyError):
+                    result = {'status': 'unknown', 'reason': 'original_task_unavailable'}
+            self.goals.settle(step['task'], result)
+            return
+        if not self._goal_idle() or not self.goals.claim(step, binding):
+            return
+        try:
+            view = await self.program_tasks.submit(step['args'],
+                {'goalId':step['id'], 'goalRunId':step['task']}, task_id=step['task'], authorize=authorized)
+            if view.get('taskId') is None:
+                self.goals.settle(step['task'], view)
+        except (BridgeError, OSError, ValueError):
+            self.goals.settle(step['task'], {})
+
     def _wake_task_results(self):
+        if self.goals is not None and self._goal_idle():
+            if self._goal_dispatch is not None and not self._goal_dispatch.done():
+                return
+            step = self.goals.next_step(self._goal_binding(), check_uncertain=self._check_uncertain_goal)
+            self._check_uncertain_goal = False
+            if step and step['state'] in ('running', 'reconcile'):
+                record = self.program_tasks.records.get(step['task'])
+                if record is not None and step['state'] == 'running':
+                    if record['done'].is_set():
+                        self.goals.settle(step['task'], record['view']['result'])
+                        step = self.goals.next_step(self._goal_binding())
+                    else:
+                        step = None
+            if step and (step['state'] != 'ready' or not self.program_tasks.blocked()):
+                self._goal_dispatch = asyncio.create_task(self._dispatch_goal_step(step))
+                self._tasks.add(self._goal_dispatch)
+                self._goal_dispatch.add_done_callback(self._tasks.discard)
+                self._goal_dispatch.add_done_callback(self._goal_dispatch_done)
+                return
         if (self._closing or self._brain_paused or self.llm is None or self.program_tasks is None
-                or self.task is not None and not self.task.done()):
+                or self._active_turn_id is None or self.task is not None and not self.task.done()):
             return
         projection = self.program_tasks.projection()
         if not projection['results'] or projection['throughSequence'] <= self._task_wakeup_sequence:
@@ -415,6 +479,14 @@ class Agent:
         # This is a host result notification, never a new human instruction.
         self._start_turn({'eventId': self._active_turn_id, 'senderId': -1, 'senderName': 'Task runtime',
             'source': 'host_task_result', 'text': '游戏任务结果已到达。依据runtimeTasks说明事实；不自动重试或重放。'})
+
+    def _goal_dispatch_done(self, task):
+        if task.cancelled():
+            return
+        if error := task.exception():
+            diagnostics.emit('goal_dispatch_error', reason=str(error)[:256])
+            return
+        self._wake_task_results()
 
     def receive(self, event):
         if event.get("type") == "game_message":
@@ -435,6 +507,9 @@ class Agent:
         if self.local_input or (not self.server_ai and event.get("isSelf") is not False) or event["eventId"] in self._seen:
             return
         self._seen.add(event["eventId"])
+        self._check_uncertain_goal = True
+        if self.goals is not None and is_stop_request(event['text']):
+            self.goals.revoke()
         self._start_turn(event)
 
     def _fence_reply(self):
@@ -445,6 +520,8 @@ class Agent:
             self.bridge.invalidate_replies(self.generation)
 
     def _invalidate_turn(self, reason='superseded'):
+        if self.goals is not None and reason in ('external_brain_handoff','external_brain_host_isolated'):
+            self.goals.revoke()
         self._fence_reply()
         if self.task and not self.task.done():
             if self.active_run is not None:
@@ -587,6 +664,7 @@ class Agent:
         last_program = None
         executor = None
         execution_receipt = None
+        scheduled_goal = None
 
         def record_direct(result):
             # Dispatch and its recovery/cleanup can report the same action.
@@ -686,6 +764,8 @@ class Agent:
                         runtime_data['privateNotes'] = self.notebook.index()
                     except sqlite3.Error:
                         runtime_data['privateNotesError'] = 'notebook_unavailable'
+                if self.goals is not None:
+                    runtime_data['runtimeGoal'] = self.goals.latest()
                 task_projection = self.program_tasks.projection() if self.program_tasks is not None else None
                 if task_projection is not None:
                     runtime_data['runtimeTasks'] = task_projection
@@ -749,6 +829,16 @@ class Agent:
                             elif self.notebook is not None and name == 'memory':
                                 turn = json.loads(messages[user_index]['content'])
                                 result = self.notebook.invoke(arguments, turn, self.bridge.binding['world'])
+                            elif self.goals is not None and name == 'schedule_player_goal':
+                                if task_notification or atomic_halted or mutation_budget_reason() or self.program_tasks.blocked():
+                                    raise ValueError('Goal admission unavailable in this turn')
+                                turn = json.loads(messages[user_index]['content'])
+                                result = self.goals.create(arguments, self._goal_binding(), chat_id, turn['senderId'],
+                                                           instruction, self.bridge.supported_atomic_operations,
+                                                           self.lua_limits.actions - actions_used)
+                                scheduled_goal = result
+                                actions_used += result['stepCount']
+                                atomic_halted = True
                             elif self.server_ai and name == gameplay_skills.TOOL_NAME:
                                 result = gameplay_skills.bundled_skills().load(arguments)
                             elif name == lua_agent.TOOL_NAME:
@@ -785,7 +875,8 @@ class Agent:
                                     result = await executor.execute(source, chat_id=chat_id,
                                         limits=replace(self.lua_limits, seconds=seconds, calls=remaining,
                                                        actions=max(0,self.lua_limits.actions-actions_used)),
-                                        allow_actions=not atomic_halted and not task_notification, on_result=observe_lua)
+                                        allow_actions=not atomic_halted and not task_notification
+                                            and not (self.goals and self.goals.holds_body()), on_result=observe_lua)
                                 finally:
                                     lua_seconds += executor.elapsed
                                     actual = executor.receipt
@@ -986,6 +1077,13 @@ class Agent:
                     or any((last_program.get('tasks') or {}).get(key) for key in ('active', 'results')))
                 if all_actions or program_requires_facts or task_facts and (task_facts['active'] or task_facts['results']):
                     text = facts_reply(all_actions, last_program, task_facts)
+                if scheduled_goal:
+                    text = f"已登记 {scheduled_goal['stepCount']} 步委托，等待逐步执行与核验。"
+                elif task_notification and self.goals:
+                    goal = self.goals.latest()
+                    if goal and any((v.get('origin') or {}).get('goalId') == goal['id']
+                                    for v in (task_projection or {}).get('results', [])):
+                        text = f"委托已核验 {goal['progress']}/{goal['total']} 步，状态 {goal['state']}。" + text
                 text = " ".join(text.replace("\0", "").split())
                 if len(text.encode("utf-16-le")) > 800:
                     text = text.encode("utf-16-le")[:794].decode("utf-16-le", errors="ignore") + "..."
@@ -1265,8 +1363,12 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
                         Path(__file__).resolve().parents[1] / '.local' / 'agent-memory')
             except (sqlite3.Error, OSError, ValueError) as error:
                 print(f'Private notes unavailable: {error}', file=sys.stderr, flush=True)
-            agent = Agent(execution, llm, chat_bridge=bridge, notebook=notebook,
+            goals = (player_goals.GoalStore(notebook.path.with_name('goals.sqlite3'))
+                     if notebook and llm and program_tasks.available(execution) else None)
+            agent = Agent(execution, llm, chat_bridge=bridge, notebook=notebook, goal_store=goals,
                           context_manager=ContextManager(context_input_tokens))
+            if goals is not None:
+                agent._wake_task_results()
         else:
             agent = Agent(bridge, llm, local_input=local_input,
                           context_manager=ContextManager(context_input_tokens))
