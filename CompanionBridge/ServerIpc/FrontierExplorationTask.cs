@@ -124,6 +124,7 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
     {
         bool Known(PhysicsState pose)=>KnownPose(map,trip.Window,pose);
         var world=new NativeMotionWorld(start);
+        Passage hookPassage=null;
         if(ActorGrapple.Selected(actor)!=null && !ActorGrapple.HasHook(actor) && !actor.noItems && !actor.CCed)
         {
             bool KnownCell(int x,int y)=>trip.Window.Contains(new(x,y)) && map.Get(x,y)!=0;
@@ -134,8 +135,9 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
                 var launch=hook.Approach?.Landing??start;
                 if(!GrappleClimbPlan.ClearShot(launch,hook.AnchorX,hook.AnchorY,world,KnownCell))continue;
                 if(hook.Preview(start,planningPhysics,world,Known) is not {} tail)continue;
-                accept(new(start,tail.Landing,145+(hook.Approach?.ExecuteFrames??0),null,hook,tail));
-                yield break;
+                hookPassage=new(start,tail.Landing,145+(hook.Approach?.ExecuteFrames??0),null,hook,tail);
+                if(planningPhysics.Air==null && planningPhysics.Impulse==null){accept(hookPassage);yield break;}
+                break;
             }
         }
         var query=new LandingRouteQuote();
@@ -144,7 +146,12 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
             yield return work;
         searchLimited|=query.BudgetLimited;
         if(query.Route is {} route)
-            accept(new(start,route.Actions[^1].Landing,route.Actions.Sum(e=>e.ExecuteFrames),route,null));
+        {
+            int updates=route.Actions.Sum(e=>e.ExecuteFrames);
+            if(hookPassage==null || updates<=hookPassage.Updates)
+            {accept(new(start,route.Actions[^1].Landing,updates,route,null));yield break;}
+        }
+        if(hookPassage!=null)accept(hookPassage);
     }
 
     private IEnumerable<int> Quote(MapPoint? observation,Action<ExplorationLeg,int> accept)

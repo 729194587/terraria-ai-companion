@@ -83,6 +83,8 @@ internal static class ServerAiTerrainFixture
     internal static void Tick(Player p)
     {
         if(!Program.LaunchParameters.ContainsKey("-companionterraintest"))return;
+        if(Program.LaunchParameters.ContainsKey("-companionloadouttest"))
+            ServerNavigationLoadoutFixture.Observe(p,inputTick.HasValue && (inputLeft || inputRight),inputTick.HasValue && inputJump);
         // Tick -> native Main.Update -> Observe is one synchronous fixture frame.
         // Main.Update increments GameUpdateCount after the movement boundary, so
         // retain the actual sample tick rather than requiring the post-update tick.
@@ -292,6 +294,9 @@ internal static class ServerAiTerrainFixture
         }
         if(scene is "frontier_hook" or "frontier_nohook")
             p.miscEquips[4].SetDefaults(scene=="frontier_hook"?ItemID.GrapplingHook:ItemID.None);
+        if(Program.LaunchParameters.ContainsKey("-companionloadouttest"))
+            ServerNavigationLoadoutFixture.Prepare(p,doc.RootElement.GetProperty("loadout").GetString(),scene,left,floor,
+                doc.RootElement.TryGetProperty("shelfHeight",out var heightParam)?heightParam.GetInt32():0);
         if(environment) ProbeEnvironment(p, left, floor-4);
         pending=new{scene,direction,startX=p.position.X,startY=p.position.Y,targetX=recoveryMode=="turnaround"?33217.027f:p.position.X+direction*192,
             floor,originTileX=left,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,

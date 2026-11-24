@@ -15,6 +15,14 @@ internal sealed class NavigationKnowledge
     internal NavigationSearchMemory Search { get; }=new();
     internal SurfaceGraph Surfaces { get; }=new();
     internal LandingRegion ShoreGoal {get;set;}
+    internal NavigationQuote BankCrossing {get;set;}
+    internal Route TakeBankCrossing(PhysicsState start,LandingRegion goal,PhysicsParameters physics)
+    {
+        var crossing=BankCrossing;
+        BankCrossing=null;
+        return crossing!=null && crossing.Goal==goal && crossing.Start==start &&
+            crossing.Physics==physics && crossing.TerrainCurrent()?crossing.Route:null;
+    }
     internal bool GrappleAttempted { get; set; }
     internal void Clear(){Failures.Clear();Search.Clear();Surfaces.Clear();physics=null;}
     internal void ObservePhysics(PhysicsParameters profile)
@@ -24,7 +32,8 @@ internal sealed class NavigationKnowledge
     }
     internal void Bind(object boundActor,string boundWorld,long boundGeneration,int boundSlot)
     {
-        if(!ReferenceEquals(actor,boundActor)||world!=boundWorld||generation!=boundGeneration||slot!=boundSlot)Clear();
+        if(!ReferenceEquals(actor,boundActor)||world!=boundWorld||generation!=boundGeneration||slot!=boundSlot)
+        {Clear();BankCrossing=null;}
         actor=boundActor;world=boundWorld;generation=boundGeneration;slot=boundSlot;
     }
 }

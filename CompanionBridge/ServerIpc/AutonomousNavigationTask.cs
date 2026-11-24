@@ -15,6 +15,7 @@ internal interface INavigationWorld
     string Revalidate();
     bool Arrived();
     JsonElement? FindApproach();
+    NavigationStep FindRopeRoute()=>null;
     NavigationStep FindOpening(int remainingTiles)=>null;
     string RevalidateOpening()=>null;
     bool OpeningSettled()=>true;
@@ -33,6 +34,7 @@ internal interface INavigationWorld
     bool PlanningPending=>false;
     Result PlanningFailure=>null;
     object PlanningEvidence=>null;
+    object BankAirEvidence=>null;
     void ReleasePlanning(){}
 }
 internal class AutonomousNavigationTask : AbstractCompanionTask
@@ -66,7 +68,7 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
     internal override object Progress=>new{stage=phase,completedChildren,settledChildren,
         children=children.ToArray(),childrenTruncated=settledChildren>children.Count,omittedChildren=settledChildren-children.Count,
         target=world.Target,clearedTiles,dugTiles,placedTiles,openingMoves,openingMode,search=world.SearchDetail,
-        opening=world.OpeningEvidence,planning=world.PlanningEvidence,activity=progressWatch.Activity.ToString(),verifiedTerrainActions=progressWatch.VerifiedEffects};
+        opening=world.OpeningEvidence,planning=world.PlanningEvidence,bankAir=world.BankAirEvidence,activity=progressWatch.Activity.ToString(),verifiedTerrainActions=progressWatch.VerifiedEffects};
     internal override Result Prepare(AiReadOnlyProtocol.Identity frame)=>(world.InterruptionReason()??world.Prepare()) is {} why?Describe(Failed(why)):null;
     internal override void Start(AiReadOnlyProtocol.Identity frame){phase="observe";}
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)
@@ -167,6 +169,8 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
         progressWatch.Observe(NavigationActivity.Search);
         if(!openingMode)
         {
+            if(world.FindRopeRoute() is {} rope)
+                return StartChild(frame,rope.Operation,rope.Arguments,"navigating",360);
             bool prefer=phase!="reobserve"&&world.PreferEdit(LocalCutTileLimit);
             if(world.PlanningFailure is {} refusal)return Describe(refusal);
             if(world.PlanningPending)return Running();

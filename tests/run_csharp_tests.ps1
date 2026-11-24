@@ -83,10 +83,11 @@ $sources = @(
     (Join-Path $PSScriptRoot 'PlayerHookOfflineTests.cs')
 )
 $references = Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName
-if ($VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $WorldJourneyOnly -or $TripOnly -or $GrappleOnly -or $AirOnly -or $PlannerOnly -or $NavigationExperimentOutput -or $SurfaceGraphOnly -or $LandingBudgetAudit) {
+if ($MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $WorldJourneyOnly -or $TripOnly -or $GrappleOnly -or $AirOnly -or $PlannerOnly -or $NavigationExperimentOutput -or $SurfaceGraphOnly -or $LandingBudgetAudit) {
     $dependencies = @('AirMotionTests','PlannerCorrectnessTests','MotionOfflineTests','SurfaceGraphTests','ControlState','AtomicParameters',
         'SceneLayers','AiChatInput','HotbarSlots','GameMessageCapture','ObservationSnapshot','TerrainSnapshot',
         'SceneGeometry','SceneRegion','EntitySnapshot')
+    if ($MobilityOnly) { $dependencies += 'MobilityProfileTests','ExtraJumpNavigationTests','MovementSnapshotTests' }
     if ($VerticalOnly) { $dependencies += 'VerticalNavigationTests' }
     if ($WorldJourneyOnly -or $TripOnly) { $dependencies += 'NavigationTripTests' }
     if ($LocalEditsOnly) { $dependencies += 'LocalTerrainPlanningTests' }
@@ -102,7 +103,8 @@ if ($VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $WorldJourneyOnly -or 
         return
     }
     Add-Type -Path $motionSources -ReferencedAssemblies $references
-    if ($PlannerOnly) { [PlannerCorrectnessTests]::Run() }
+    if ($MobilityOnly) { [MobilityProfileTests]::Run(); [ExtraJumpNavigationTests]::Run(); [AirMotionTests]::Run() }
+    elseif ($PlannerOnly) { [PlannerCorrectnessTests]::Run() }
     elseif ($VerticalOnly) { [VerticalNavigationTests]::Run() }
     elseif ($LocalEditsOnly) { [LocalTerrainPlanningTests]::Run() }
     elseif ($LiquidOnly) { [LiquidTerrainTests]::Run() }
@@ -122,7 +124,6 @@ if ($AuthorityNetworkOnly) {
     return
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
-if ($MobilityOnly) { [MobilityProfileTests]::Run(); [ExtraJumpNavigationTests]::Run(); [AirMotionTests]::Run(); return }
 if ($RecoveryOnly) { [NavigationRecoveryTests]::Run(); return }
 if ($SafeGroundWalkOnly) { [SafeGroundWalkTests]::Run(); return }
 if ($MiningSupportOnly) { [MiningSupportImpactTests]::Run((Join-Path $PSScriptRoot 'fixtures/mining-support-play2.json')); return }

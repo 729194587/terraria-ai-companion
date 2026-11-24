@@ -84,7 +84,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain, IPoolMo
         for (int x = (int)Math.Floor(left / 16); x < (int)Math.Ceiling(right / 16); x++)
             for (int y = (int)Math.Floor(top / 16); y < (int)Math.Ceiling(bottom / 16); y++)
             {
-                if (x < _left || x >= _left + 45 || y < _top || y >= _top + 17 + FallSafety.LookaheadPixels/16 + 5)
+                if (x < _left-64 || x >= _left + 45+64 || y < _top-64 || y >= _top + 17 + FallSafety.LookaheadPixels/16 + 5)
                     throw new UnsafeMotionException($"outside local prediction window at ({x},{y})");
                 char cell = TerrainReader.ReadCell(x, y);
                 if (cell == '?') throw new UnsafeMotionException($"unknown terrain at ({x},{y})");
@@ -191,14 +191,20 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain, IPoolMo
     internal static PhysicsState Observe(Player player)
     {
         var state=new PhysicsState(player.position.X,player.position.Y,player.velocity.X,player.velocity.Y,
-            false,player.jump,player.releaseJump,Wet:player.wet);
+            false,player.jump,player.releaseJump,Wet:player.wet,Cooldowns:NavigationAirActions.Capture(player).Cooldowns);
         var movement=NativeMovementReader.Capture(player);
         var model=ExtraJumpModel.Select(movement);
         if(AirMotionModel.Select(movement)!=null)state=state with{Air=AirMotionModel.Resources(movement)};
         if(model!=null)
         {
-            var jump=Array.Find(movement.ExtraJumps,j=>j.FullName==model.FullName);
-            state=state with{ExtraAvailable=jump.Available,ExtraActive=jump.Active,ExtraUsed=jump.Active||!jump.Available};
+            int remaining=0,active=0;
+            foreach(var jump in movement.ExtraJumps)
+            {
+                if(!jump.Enabled || model.Find(jump.FullName) is not {} kind)continue;
+                if(jump.Available)remaining|=kind.Bit;
+                if(jump.Active)active|=kind.Bit;
+            }
+            state=state with{ExtraAvailable=remaining!=0,ExtraActive=active!=0,ExtraUsed=remaining==0,RemainingJumps=remaining,ActiveJump=active};
         }
         if(player.width!=PhysicsSimulator.PlayerW||player.height!=PhysicsSimulator.PlayerH||player.gravDir!=1)
             return state;

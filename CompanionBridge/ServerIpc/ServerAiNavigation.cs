@@ -186,6 +186,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         else p.controlUseItem=p.controlUseTile=false;
         ServerCombatFixture.EvasionInput(p);
         ServerAiTerrainFixture.RecordInput(p);
+        if(input.ImpulseKey!=null)NavigationAirActions.Activate(p,input);
         injected=true;
     }
     private bool Release(bool brake=false)

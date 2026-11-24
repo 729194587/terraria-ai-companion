@@ -213,23 +213,18 @@ internal static class StateSpacePlanner
 #else
                     const int holdStep=2;
 #endif
-                    int ordinaryOptions=(ph.JumpHeight+holdStep-1)/holdStep;
-                    int extraOptions=ph.ExtraJump!=null&&(cur.ExtraAvailable||cur.Grounded)?4:0;
-                    int airOptions=ph.Air?.Kind==AirKind.Wings?5:ph.Air?.Kind==AirKind.RocketBoots?3:0;
-                    for (int option = 0; option <= ordinaryOptions+extraOptions+airOptions; option++)
+                    foreach (var action in ph.Launches(cur,dir,holdStep))
                     {
-                        if (dir == 0 && option == 0) continue;
+                        int hold=action.Hold;
+                        if (dir == 0 && hold == 0) continue;
                         if(watch.Elapsed.TotalMilliseconds>=budgetMs)
                         {
                             yield return Result("time_budget");
                             sliceStart=expansions;
                             budgetMs=sliceMilliseconds;maxExpansions=sliceNodes;
                         }
-                        int hold = option>ordinaryOptions?ph.JumpHeight:Math.Min(option * holdStep, ph.JumpHeight);
-                        int extraFrame=option>ordinaryOptions&&option<=ordinaryOptions+extraOptions?hold+1+(option-ordinaryOptions-1)*8:-1;
-                        int airOption=option-ordinaryOptions-extraOptions-1;
-                        int airStart=airOption>=0?hold+1+(ph.Air.Kind==AirKind.RocketBoots?airOption*8:0):-1;
-                        int airHold=airOption>=0?(ph.Air.Kind==AirKind.Wings?(airOption+1)*8:1):0;
+                        int extraFrame=action.ExtraFrame, airStart=action.AirStart, airHold=action.AirHold;
+                        int impulseFrame=action.ImpulseFrame;
                         if(requireInitialJump&&cur==start&&hold==0)
                         {Reject("graph launch requires jump");continue;}
                         foreach (int stride in hold == 0 ? new[] { 24, 6 } : new[] { 24 })
@@ -240,8 +235,8 @@ internal static class StateSpacePlanner
                                 sliceStart=expansions;
                                 budgetMs=sliceMilliseconds;maxExpansions=sliceNodes;
                             }
-                            var edge = learning==null
-                                ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold)
+                            var edge = learning==null||impulseFrame>=0||action.ExtraCount>1||action.ExtraHold>=0
+                                ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold,impulseFrame:impulseFrame,impulseKey:action.ImpulseKey,extraCount:action.ExtraCount,extraHoldLimit:action.ExtraHold)
                                 :learning.Predict(cur,dir,hold,stride,ph,world,extraFrame,airStart,airHold);
 #if NAVIGATION_EXPERIMENT
                             NavigationExperiment.Observe(edge,extraFrame,airStart);
@@ -267,10 +262,10 @@ internal static class StateSpacePlanner
                             if (rejectEdge?.Invoke(cur, edge) == true)
                             { Reject("recently failed local edge"); continue; }
                             var next = edge.Landing;
-                            float verticalSpan=ph.ExtraJump!=null||ph.Air!=null?208:StandardVerticalSpan;
+                            float verticalSpan=Math.Max(StandardVerticalSpan,ph.RiseBound(cur.Air?.WingTime??0));
                             bool descentHandoff=next.Py-start.Py>verticalSpan&&next.Py-cur.Py>16
                                 &&region!=null&&region.SurfaceY>cur.Py+PhysicsSimulator.PlayerH;
-                            if (Math.Abs(next.Px - start.Px) > (ph.ExtraJump!=null||ph.Air!=null?288:192)
+                            if (Math.Abs(next.Px - start.Px) > Math.Max(192,ph.ReachX(cur.Air?.WingTime??0)+32)
                                 || Math.Abs(next.Py - start.Py)>verticalSpan&&!descentHandoff)
                             { Reject("outside route span"); continue; }
                             // Prefer walking when it makes comparable progress. Braking at

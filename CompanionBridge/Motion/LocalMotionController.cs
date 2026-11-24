@@ -160,6 +160,8 @@ internal sealed class LocalMotionController
         float error = Math.Max(Math.Abs(expected.Px - actual.Px), Math.Abs(expected.Py - actual.Py));
         _maxError = Math.Max(_maxError, error);
         float velocityError = Math.Max(Math.Abs(expected.Vx - actual.Vx), Math.Abs(expected.Vy - actual.Vy));
+        if(_plan.Frames[_frame].Input.ImpulseKey is {} key && Math.Abs(ActionCooldown.Get(expected.Cooldowns,key)-ActionCooldown.Get(actual.Cooldowns,key))>1)
+        { Fail("air impulse cooldown did not match",MotionFailureKind.RouteDeviation);return; }
         if(_plan.AirMode!=AirKind.None)
         {
             bool confirmed=AirMotionModel.Matches(expected,actual)&&error<=6&&velocityError<=1.5f;

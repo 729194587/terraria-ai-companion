@@ -8,6 +8,7 @@ using Microsoft.Xna.Framework;
 using CompanionBridge.Motion;
 using Terraria;
 using Terraria.ID;
+using Terraria.ModLoader;
 using VirtualPlayerEngineProbe;
 
 namespace CompanionBridge.ServerIpc;
@@ -23,6 +24,36 @@ internal static class ServerAiNaturalFixture
     private static bool contactInjected;
     private static object pending, initialNavigation;
     private static bool failed, journey;
+    private enum FlightStage { Ground, Primary, Extra, Wing }
+    private static FlightStage stage;
+    private static bool grounded,held,commandRight,commandJump;
+    private static int flightGoal,flightTicks,stalled;
+    private static float furthest;
+
+    internal static void SampleTravelInput(Player p)
+    {
+        if(caseId==null || !ReferenceEquals(p,ProbeSession.Actor))return;
+        if(flightGoal>0 && settle==0 && !failed)
+        {
+            bool jump=true;
+            if(grounded)
+            {
+                jump=!held;
+                stage=jump?FlightStage.Primary:FlightStage.Ground;
+            }
+            else if(stage==FlightStage.Primary && p.jump<=0)
+            {
+                jump=false;stage=FlightStage.Extra;
+            }
+            else if(stage==FlightStage.Extra && held && p.jump<=0 && !p.GetJumpState(ExtraJump.CloudInABottle).Active)
+            {
+                jump=false;stage=FlightStage.Wing;
+            }
+            p.controlLeft=false;p.controlRight=true;p.controlJump=held=jump;
+            flightTicks++;
+        }
+        commandRight=p.controlRight;commandJump=p.controlJump;
+    }
     private static string FileAt(string name)=>Path.Combine(Main.SavePath,name);
     private static bool Enabled=>Program.LaunchParameters.ContainsKey("-companionnaturaltest")
         &&Program.LaunchParameters.ContainsKey("-companionaiipctest")&&File.Exists(FileAt("isolated-natural-world"));
@@ -62,7 +93,7 @@ internal static class ServerAiNaturalFixture
                 if(!File.Exists(catalog))
                 {
                     var columns=new List<object>();
-                    int left=Math.Max(32,Main.spawnTileX-512),right=Math.Min(Main.maxTilesX-32,Main.spawnTileX+512);
+                    int left=Math.Max(32,Main.spawnTileX-512),right=Math.Min(Main.maxTilesX-32,Main.spawnTileX+(Program.LaunchParameters.ContainsKey("-companiontraversetest")?768:512));
                     var ground=Program.LaunchParameters.ContainsKey("-companionjourneytest")
                         ?GroundComponent(left,right,Math.Min(Main.maxTilesY-40,(int)Main.worldSurface+100)):null;
                     for(int cx=left;cx<=right;cx++)
@@ -92,7 +123,7 @@ internal static class ServerAiNaturalFixture
                     caseId=doc.RootElement.GetProperty("caseId").GetString();
                     if(string.IsNullOrEmpty(caseId)||caseId.Any(c=>!char.IsAsciiLetterOrDigit(c)&&c!='-'))throw new ArgumentException("Invalid diagnostic case ID");
                     int offset=doc.RootElement.GetProperty("offsetTiles").GetInt32();
-                    if(Math.Abs(offset)>512)throw new ArgumentException("Natural start offset exceeds diagnostic scope");
+                    if(Math.Abs(offset)>512 && !((caseId is "local-replay" or "slope-entry" or "slope-approach") && offset<=768 && offset>512 && Program.LaunchParameters.ContainsKey("-companiontraversetest")))throw new ArgumentException("Natural start offset exceeds diagnostic scope");
                     int tx=Main.spawnTileX+offset, surface=-1;
                     if(tx<32||tx>Main.maxTilesX-32)throw new ArgumentException("Natural start outside world");
                     journey=Program.LaunchParameters.ContainsKey("-companionjourneytest");
@@ -114,9 +145,12 @@ internal static class ServerAiNaturalFixture
                         if(Collision.SolidCollision(pos,p.width,p.height))continue;
                         surface=ty;break;
                     }
+                    bool bankReplay=caseId=="bank-replay" && journey;
+                    if(bankReplay)surface=firstY;
                     if(surface<0)throw new InvalidOperationException("No unmodified natural start surface");
                     // Scene initialization only; every navigation thereafter uses native inputs.
                     p.position=new(startX,surface*16-p.height);p.velocity=Vector2.Zero;
+                    if(bankReplay)p.position.Y=doc.RootElement.GetProperty("startFeetY").GetSingle()-p.height;
                     p.controlLeft=p.controlRight=p.controlJump=p.controlDown=p.controlUp=p.controlUseItem=p.controlUseTile=false;
                     p.jump=0;p.releaseJump=true;p.fallStart=surface;p.statLife=p.statLifeMax2;
                     Array.Clear(p.buffType);Array.Clear(p.buffTime);
@@ -126,6 +160,7 @@ internal static class ServerAiNaturalFixture
                         p.inventory[0].SetDefaults(ItemID.CopperPickaxe);
                         p.inventory[1].SetDefaults(ItemID.CopperAxe);
                         p.inventory[2].SetDefaults(ItemID.WoodPlatform);p.inventory[2].stack=caseId=="east-wall"?4:60;
+                        if(bankReplay)p.inventory[2].TurnToAir();
                         if(caseId=="death-feedback")
                         {
                             p.inventory[50]=new Item(ItemID.GoldCoin,4);
@@ -133,9 +168,19 @@ internal static class ServerAiNaturalFixture
                         }
                         if(caseId is "death-feedback" or "death-stop")p.bank.item[0]=new Item(ItemID.PlatinumCoin,1);
                         p.miscEquips[4].SetDefaults(ItemID.GrapplingHook);
+                        if(Program.LaunchParameters.TryGetValue("-companionjourneyloadout",out var loadout))
+                        {
+                            if(loadout is "cloud" or "cloud_angel")p.armor[3].SetDefaults(ItemID.CloudinaBottle);
+                            if(loadout is "bundle" or "bundle_hermes")p.armor[3].SetDefaults(ItemID.BundleofBalloons);
+                            if(loadout is "hermes" or "bundle_hermes")p.armor[4].SetDefaults(ItemID.HermesBoots);
+                            if(loadout=="sand")p.armor[3].SetDefaults(ItemID.SandstorminaBottle);
+                            if(loadout=="blizzard")p.armor[3].SetDefaults(ItemID.BlizzardinaBottle);
+                            if(loadout is "angel" or "cloud_angel")p.armor[4].SetDefaults(ItemID.AngelWings);
+                        }
                         p.selectedItem=0;
                     }
-                    contactInjected=false;frames.Clear();settle=30;initialNavigation=(ActorControl.Driver as ServerAiNavigation)?.Current;
+                    contactInjected=false;frames.Clear();settle=30;held=false;stage=FlightStage.Ground;flightTicks=stalled=0;furthest=p.position.X;
+                    flightGoal=journey && caseId=="traverse" && File.Exists(FileAt("flight-reference")) ? doc.RootElement.GetProperty("flightGoalX").GetInt32():0;initialNavigation=(ActorControl.Driver as ServerAiNavigation)?.Current;
                     pending=new{caseId,offsetTiles=offset,surface,spawnX=Main.spawnTileX,spawnY=Main.spawnTileY,
                         seed=Main.ActiveWorldFileData.SeedText,worldWidth=Main.maxTilesX,worldHeight=Main.maxTilesY,
                         world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,
@@ -158,6 +203,22 @@ internal static class ServerAiNaturalFixture
                         var ph=NativeNavigation.Parameters(p);
                         var world=new NativeMotionWorld(o.State);
                         int row=(int)Math.Round(p.Bottom.Y/16),cx=(int)(p.Center.X/16);
+                        if(caseId=="local-replay")
+                        {
+                            var grid=Enumerable.Range(row-35,61).Select(y=>new string(Enumerable.Range(cx-40,100)
+                                .Select(x=>global::CompanionBridge.Common.Systems.TerrainReader.ReadDryCell(x,y)).ToArray()));
+                            File.WriteAllLines(FileAt("local-geometry.txt"),grid);
+                        }
+                        if(caseId=="slope-approach")
+                        {
+                            var launches=from action in SurfaceNavigator.UphillLaunches(o.State,dir,ph)
+                                where action.Hold>0 && action.ImpulseFrame<0
+                                let edge=PhysicsSimulator.Predict(o.State,dir,action.Hold,ph,world,rollingJump:true,
+                                    extraJumpFrame:action.ExtraFrame,extraCount:action.ExtraCount,extraHoldLimit:action.ExtraHold,
+                                    airStartFrame:action.AirStart,airHoldFrames:action.AirHold)
+                                select new{action,edge.Safe,edge.Reason,x=edge.Landing.Px,feet=edge.Landing.Py+42,frames=edge.Frames.Count};
+                            File.WriteAllText(FileAt("natural-launches.json"),JsonSerializer.Serialize(launches));
+                        }
                         var shore=from step in Enumerable.Range(-2,21)
                                   let tx=cx+step*dir
                                   select new{x=tx,cells=Enumerable.Range(row-4,10).Select(y=>{
@@ -181,11 +242,12 @@ internal static class ServerAiNaturalFixture
                         File.WriteAllText(FileAt("natural-probes-"+caseId+".json"),JsonSerializer.Serialize(probes));
                     }
                     File.WriteAllText(FileAt("natural-ready.json"),JsonSerializer.Serialize(new{fixture=pending,
-                        x=p.position.X,y=p.position.Y,o.State.Grounded,o.SafeSupport,o.Settled,gameUpdate=Main.GameUpdateCount}));
+                        x=p.position.X,y=p.position.Y,cloudEnabled=p.GetJumpState(ExtraJump.CloudInABottle).Enabled,cloudActive=p.GetJumpState(ExtraJump.CloudInABottle).Active,
+                        p.wingsLogic,p.wingTime,p.wingTimeMax,o.State.Grounded,o.SafeSupport,o.Settled,gameUpdate=Main.GameUpdateCount}));
                 }
                 if(caseId!=null&&settle==0)
                 {
-                    if(frames.Count>=12000)throw new InvalidOperationException("Natural trace budget exhausted");
+                    if(frames.Count>=(caseId=="traverse"?42000:12000))throw new InvalidOperationException("Natural trace budget exhausted");
                     var run=(ActorControl.Driver as ServerAiNavigation)?.Current;
                     var nav=ReferenceEquals(run,initialNavigation)?null:run?.Snapshot;
                     if(caseId is ("news-receive" or "news-change") && !contactInjected && File.Exists(FileAt("news-emit"))
@@ -226,9 +288,26 @@ internal static class ServerAiNaturalFixture
                         }
                         finally{enemy.active=false;}
                     }
+                    grounded=o.State.Grounded;
+                    if(flightGoal>0 && flightTicks>0)
+                    {
+                        if(p.position.X>furthest+1){furthest=p.position.X;stalled=0;}else stalled++;
+                        string stop=p.dead?"dead":p.Right.X>=flightGoal?"crossed_target_x":stalled>=1800?"no_forward_progress":
+                            flightTicks>=30000?"tick_limit":null;
+                        if(stop!=null)
+                        {
+                            File.WriteAllText(FileAt("flight-stop.json"),JsonSerializer.Serialize(new{stop,flightTicks,furthest,x=p.position.X,feet=p.Bottom.Y}));
+                            flightGoal=0;p.controlRight=p.controlJump=false;
+                        }
+                    }
                     frames.Add(new{tick=Main.GameUpdateCount,x=p.position.X,y=p.position.Y,vx=p.velocity.X,vy=p.velocity.Y,
+                        hermesEquipped=p.armor[4].type==ItemID.HermesBoots,
+                        cloudEnabled=p.GetJumpState(ExtraJump.CloudInABottle).Enabled,
+                        sandEnabled=p.GetJumpState(ExtraJump.SandstormInABottle).Enabled,sandActive=p.GetJumpState(ExtraJump.SandstormInABottle).Active,
+                        blizzardEnabled=p.GetJumpState(ExtraJump.BlizzardInABottle).Enabled,blizzardActive=p.GetJumpState(ExtraJump.BlizzardInABottle).Active,
+                        cloudActive=p.GetJumpState(ExtraJump.CloudInABottle).Active,p.wingsLogic,p.wingTime,p.wingTimeMax,
                         o.State.Grounded,o.SafeSupport,o.Settled,p.wet,life=p.statLife,platformStock=journey?p.inventory.Where(i=>i.type==ItemID.WoodPlatform).Sum(i=>i.stack):0,left=p.controlLeft,right=p.controlRight,jump=p.controlJump,
-                        status=nav?.Status,action=nav?.Action,frame=nav?.Frame,expectedPosition=nav?.ExpectedPosition,
+                        commandRight,commandJump,flightTicks,reason=nav?.Reason,searchExit=nav?.SearchExit,planNumber=nav?.PlanNumber,planKind=nav?.PlanKind,status=nav?.Status,action=nav?.Action,frame=nav?.Frame,expectedPosition=nav?.ExpectedPosition,
                         expectedVelocity=nav?.ExpectedVelocity,maxError=nav?.MaxError,gameUpdateMilliseconds=live?(double?)null:updateMilliseconds,hookCount=p.grapCount,navigation=journey?null:nav});
                 }
                 string finish=FileAt("natural-finish");

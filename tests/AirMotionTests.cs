@@ -22,6 +22,14 @@ public static class AirMotionTests
         Check(AirMotionModel.Strategy(Snapshot(wing:99,boots:1))==AirKind.Wings&&AirMotionModel.Select(Snapshot(wing:99,boots:1))==null,"unsupported wings never fall back to rockets");
         Check(AirMotionModel.Select(Snapshot(delay:1))==null,"existing rocket pulse with wings is not combined");
         var flat=new MotionOfflineTests.World();
+        foreach(int side in new[]{-1,1})
+        {
+            var equipped=PhysicsParameters.Basic with{Air=AirMotionModel.Angel};
+            var flying=new PhysicsState(1600,1400,side*4,-1,false,Air:AirMotionModel.Resources(Snapshot()));
+            var next=PhysicsSimulator.Step(flying,new(side,false),equipped,flat);
+            Check(Math.Abs(next.Vx-flying.Vx-side*equipped.AccRun*.4f)<.001f,
+                "equipped wings continue horizontal acceleration in air above normal run speed");
+        }
         var wing=PhysicsParameters.Basic with{Air=AirMotionModel.Angel};
         var boneStats=AirMotionModel.AngelStats with {FlyTime=170,AccRunSpeedOverride=7.5f};
         var bone=AirMotionModel.Select(Snapshot(wing:8,stats:boneStats));
@@ -29,6 +37,20 @@ public static class AirMotionTests
         Check(AirMotionModel.Select(Snapshot(wing:8,stats:boneStats with {HasDownHoverStats=true}))==null,"hover profile stays unsupported");
         var rocket=PhysicsParameters.Basic with{Air=AirMotionModel.Rocket};
         var resource=new AirResources(100,100,7,7,0,false,true,false);
+        foreach(int direction in new[]{-1,1})
+        {
+            var mixed=wing with{ExtraJump=ExtraJumpModel.Cloud,Fall=new(0,true)};
+            var start=new PhysicsState(1600,1558,direction*4,0,true,ExtraAvailable:true,Air:resource);
+            var cruise=PhysicsSimulator.Predict(start,direction,16,mixed,flat,rollingJump:true,
+                extraJumpFrame:17,airStartFrame:30,airHoldFrames:100,cruise:true);
+            Check(cruise.Safe && cruise.ExecuteFrames<cruise.Frames.Count,"cruise proves a separate braking tail");
+            var handoff=cruise.Frames[cruise.ExecuteFrames-1].State;
+            Check(direction*handoff.Vx>3 && handoff.ReleaseJump && handoff.Air.WingTime==100 &&
+                PhysicsSimulator.SupportedCheckpoint(handoff,flat),"landing preserves momentum and recharges for the next jump");
+            Check(cruise.Frames.Take(cruise.ExecuteFrames).Any(f=>f.State.ExtraActive) &&
+                cruise.Frames.Take(cruise.ExecuteFrames).Any(f=>f.State.AirPhase==AirPhase.Gliding &&
+                    f.Input.Direction==direction && f.Input.Jump && f.State.Air.WingTime==0),"extra jump feeds powered flight and exhausted glide");
+        }
         var air=new PhysicsState(1600,1400,0,-4, false,Air:resource);
         var up=PhysicsSimulator.Step(air,new(1,true),wing,flat);
         Check(up.AirPhase==AirPhase.Flying&&up.Air.WingTime==99&&Math.Abs(up.Vy+4.1f)<.001f,"wing ascent consumes one tick and bypasses gravity");
@@ -118,6 +140,19 @@ public static class AirMotionTests
                 Check(ReferenceEquals(AirMotionModel.Correct(flight,at,actual,ph,world,budgetMs:0),flight),"time slice cannot accept an unverified partial correction");
             }
         }
+        var firstImpulse=new NavigationAirImpulse("test/boost",8,-3,120);
+        var secondImpulse=new NavigationAirImpulse("test/dash",10,0,60);
+        var dual=PhysicsParameters.Basic with {Impulse=firstImpulse with{Next=secondImpulse}};
+        var cooling=air with{Grounded=false,Cooldowns=new(firstImpulse.Key,90,null),Air=null};
+        var launches=dual.Launches(cooling,1,2).ToArray();
+        Check(launches.Any(x=>x.ImpulseKey==secondImpulse.Key) && !launches.Any(x=>x.ImpulseKey==firstImpulse.Key),
+            "cooling action leaves another registered action usable");
+        var boosted=PhysicsSimulator.Step(cooling,new(1,false,ImpulseKey:secondImpulse.Key),dual,flat);
+        Check(ActionCooldown.Get(boosted.Cooldowns,firstImpulse.Key)==89 && ActionCooldown.Get(boosted.Cooldowns,secondImpulse.Key)==60,
+            "two movement resources retain independent cooldowns");
+        var groundOnly=dual with{GroundOnly=true};
+        Check(groundOnly.Launches(cooling,1,2).SequenceEqual(new[]{new LaunchInput(0)}),"ground-only fallback emits movement without launch input");
+        Check(wing.RiseBound(100)>wing.RiseBound(1),"greater wing resource widens candidate envelope");
         var labels=new HashSet<PhysicsState>{air,air with{Air=resource with{WingTime=99}},r,r with{Air=r.Air with{Delay=1}}};
         Check(labels.Count==4,"search labels retain all resource/cooldown dimensions");
         foreach(bool hazard in new[]{true,false})

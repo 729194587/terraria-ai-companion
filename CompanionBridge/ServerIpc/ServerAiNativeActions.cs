@@ -189,7 +189,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
             else if(operation=="move_on_rope")
             {
-                if(rope.Start(identity,args,out var run) is {} reason)return Reject(reason);
+                if(rope.Start(identity,args,out var run,child) is {} reason)return Reject(reason);
                 context=run;ActorControl.Driver=rope;
             }
             else if (operation is "sort_inventory" or "sort_container") context = new ActorContainer.SortAction(identity, operation, args);

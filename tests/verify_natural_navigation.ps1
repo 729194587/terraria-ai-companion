@@ -1,5 +1,7 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[string]$ReplayStops,[switch]$WalkReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[ValidateSet("basic","cloud","sand","blizzard","angel","cloud_angel","hermes","bundle","bundle_hermes")][string]$JourneyLoadout,[string]$ReplayStops,[switch]$WalkReference,[switch]$FlightReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central","traverse","bank-replay","local-replay","slope-entry","slope-approach")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback)
 $ErrorActionPreference='Stop'
+if($FlightReference){$JourneyLoadout="cloud_angel";$JourneyCase="traverse"}
+if($JourneyLoadout){$LongJourney=$true}
 if($WatchWestStop){$Watch=$true}
 if($Watch -and ($WalkReference -or $ReplayStops)){throw "Watch runs live navigation journeys."}
 if($BroadcastFeedback -or $DeathFeedback -or $TravelContact -or $JourneyCase -or $EastWall -or $WestDescent -or $ShoreStarts -or $Watch -or $ReplayStops -or $WalkReference){$LongJourney=$true}
@@ -26,6 +28,7 @@ if($WorldPath){
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
 [IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')
 [IO.File]::WriteAllText("$profile/isolated-natural-world",'Native generated-terrain navigation diagnostic; no Tile writes.')
+if($FlightReference){[IO.File]::WriteAllText("$profile/flight-reference","Continuous right, full cloud jump and wing flight")}
 $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dotnet.exe'))
 $info.WorkingDirectory=$TModLoaderPath
 $info.UseShellExecute=$false
@@ -36,6 +39,8 @@ $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
 if($Watch){foreach($a in @('-ip','127.0.0.1','-companionwatchtest')){$info.ArgumentList.Add($a)}}
 $info.ArgumentList.Add('-companionnaturaltest')
+if($JourneyCase -in @("traverse","local-replay","slope-entry","slope-approach")){$info.ArgumentList.Add("-companiontraversetest")}
+if($JourneyLoadout){$info.ArgumentList.Add("-companionjourneyloadout");$info.ArgumentList.Add($JourneyLoadout)}
 if($LongJourney){$info.ArgumentList.Add('-companionjourneytest')}
 if(!$WorldPath){foreach($argument in @('-autocreate','1','-seed',$Seed,'-worldname','NaturalExploration','-difficulty','0')){$info.ArgumentList.Add($argument)}}
 $process=[Diagnostics.Process]::Start($info)
@@ -120,12 +125,26 @@ try {
     # A concurrently running user server owns server.log; native tML chooses
     # server2.log etc. Filter every candidate strictly by this process/world/time.
     $events=@(Get-ChildItem -LiteralPath (Join-Path $TModLoaderPath 'tModLoader-Logs') -Filter 'server*.log' | ForEach-Object {
-        Get-ServerAiRunEvents -Lines (Get-Content -LiteralPath $_.FullName) -ProcessId $process.Id -WorldSession $bound.binding.world -StartedUtc $startedUtc -ExitedUtc $exitedUtc
+        try {$lines=Get-Content -LiteralPath $_.FullName}
+        catch [System.Management.Automation.ItemNotFoundException] {return} # Another isolated server rotated this file.
+        Get-ServerAiRunEvents -Lines $lines -ProcessId $process.Id -WorldSession $bound.binding.world -StartedUtc $startedUtc -ExitedUtc $exitedUtc
     })
     # Persist only this process/world/time window, never search a shared log as evidence.
     $events|ForEach-Object {$_|ConvertTo-Json -Compress -Depth 12}|Set-Content -LiteralPath "$profile/server.log"
     $lifecycle=Assert-ServerAiRunTeardown -Events $events
-    $report=@{mode='native generated terrain; no constructed matrix/no LLM';sourceWorld=$WorldPath;initialWorldSHA256=$initialWorldHash;packageSHA256=(Get-FileHash -LiteralPath $package).Hash;binding=$bound.binding;spawn=$lifecycle.spawn;teardown=$lifecycle.teardown;results=(Get-Content -LiteralPath "$profile/natural-results.json" -Raw|ConvertFrom-Json)}
+    $report=@{mode='native generated terrain; no constructed matrix/no LLM';journeyLoadout=$JourneyLoadout;sourceWorld=$WorldPath;initialWorldSHA256=$initialWorldHash;packageSHA256=(Get-FileHash -LiteralPath $package).Hash;binding=$bound.binding;spawn=$lifecycle.spawn;teardown=$lifecycle.teardown;results=(Get-Content -LiteralPath "$profile/natural-results.json" -Raw|ConvertFrom-Json)}
+    if($JourneyLoadout){
+        foreach($scenario in $report.results.scenarios){
+            if($null -eq $scenario.cloudEnabled -or $null -eq $scenario.wingSlot -or
+                $scenario.cloudEnabled -ne ($JourneyLoadout -in @("cloud","cloud_angel","bundle","bundle_hermes")) -or
+                ($JourneyLoadout -in @("hermes","bundle_hermes") -and !$scenario.hermesEquipped) -or
+                ($JourneyLoadout -in @("sand","bundle","bundle_hermes") -and !$scenario.sandEnabled) -or
+                ($JourneyLoadout -in @("blizzard","bundle","bundle_hermes") -and !$scenario.blizzardEnabled) -or
+                $scenario.wingSlot -ne $(if($JourneyLoadout -in @("angel","cloud_angel")){2}else{0})){
+                throw "Natural trace does not confirm the requested loadout: $JourneyLoadout"
+            }
+        }
+    }
     $report|ConvertTo-Json -Depth 60|Set-Content -LiteralPath "$profile/result.json"
     Write-Output "Natural native results: $profile/result.json"
 } finally {

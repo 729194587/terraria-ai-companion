@@ -10,7 +10,13 @@ namespace CompanionBridge;
 
 public sealed class CompanionBridge : Mod
 {
-    public override object Call(params object[] args)=>ServerIpc.BossExtensions.Register(args);
+    public override object Call(params object[] args)=>args switch
+    {
+        ["RegisterNavigationAirAction", INavigationAirAction adapter] => NavigationAirActions.Register(adapter),
+        ["RegisterNavigationExtraJump", ExtraJump jump, float duration, float acceleration, float speed]
+            => ExtraJumpModel.Register(jump.FullName,duration,acceleration,speed),
+        _ => ServerIpc.BossExtensions.Register(args)
+    };
     public override void HandlePacket(BinaryReader reader, int whoAmI) => AtomicMultiplayer.Receive(reader, whoAmI, SpectatorSystem.Receive);
     internal static ModKeybind ToggleAutoMoveKeybind { get; private set; }
     internal static ControlState Controls { get; } = new();
@@ -69,6 +75,8 @@ public sealed class CompanionBridge : Mod
     {
         ServerIpc.ServerAiSystem.UnloadRuntime();
         ServerIpc.BossExtensions.Reset();
+        NavigationAirActions.Reset();
+        ExtraJumpModel.ResetExtensions();
         StopControl();
         Server?.Dispose();
         Server = null;

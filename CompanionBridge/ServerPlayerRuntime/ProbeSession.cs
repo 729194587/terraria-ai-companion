@@ -403,6 +403,7 @@ public sealed class ProbePlayer : ModPlayer
     {
         CompanionBridge.ServerIpc.MovementDiscoveryFixture.AtRunSpeeds(Player);
         ActorControl.BeforeMovement(Player);
+        CompanionBridge.ServerIpc.ServerAiNaturalFixture.SampleTravelInput(Player);
     }
     public override void PostUpdateBuffs() => CompanionBridge.ServerIpc.ServerAiTerrainFixture.AfterBuffs(Player);
     public override void SaveData(Terraria.ModLoader.IO.TagCompound tag)

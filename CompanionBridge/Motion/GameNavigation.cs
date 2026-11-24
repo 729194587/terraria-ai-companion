@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Collections.Generic;
 using Terraria;
 using Terraria.ID;
@@ -58,12 +59,11 @@ internal sealed class NativeNavigation
         Reject(p.powerrun, "power_run");
         bool modeled=ExtraJumpModel.Select(movement)!=null;
         Reject(movement.ActiveExtraJump&&!modeled,"extra_jump_active");
-        Reject(movement.PotentialExtraJump&&!modeled,"extra_jump_available");
         bool airRequested=AirMotionModel.Strategy(movement)!=AirKind.None;
-        Reject(airRequested&&ph.Air==null,"unsupported_air_profile");
+        Reject(airRequested&&ph.Air==null&&!ph.GroundOnly,"unsupported_air_profile");
         Reject(airRequested&&(p.slowFall||p.empressBrooch||p.chilled),"unmodeled_air_effect");
         Reject(ph.Air!=null&&!ph.Air.Valid(AirMotionModel.Resources(movement)),"invalid_air_resources");
-        Reject(ph.Air!=null&&!ph.Matches(PhysicsParameters.Basic)&&!ph.Matches(PhysicsParameters.Swiftness),"unsupported_air_physics");
+        Reject(ph.GroundOnly && (p.velocity.Y != 0 || p.wet), "unsupported_airborne_state");
         Reject(p.honeyWet,"honey_wet");
         Reject(p.lavaWet,"lava_wet");
         Reject(p.shimmerWet,"shimmer_wet");
@@ -81,14 +81,20 @@ internal sealed class NativeNavigation
         bool airborneWing=air?.Kind==AirKind.Wings && p.velocity.Y!=0 && !p.merman && !p.mount.Active;
         float speed=airborneWing && Math.Abs(p.accRunSpeed-air.AirRunSpeed)<.001f?PhysicsParameters.Basic.AccRunSpeed:p.accRunSpeed;
         float acceleration=airborneWing?p.runAcceleration/air.AirAcceleration:p.runAcceleration;
-        var observed=new PhysicsParameters(acceleration,p.maxRunSpeed,speed,p.runSlowdown,p.gravity,p.maxFallSpeed,
-            Player.jumpSpeed,Player.jumpHeight,AirMotionModel.Strategy(m)==AirKind.None?ExtraJumpModel.Select(m):null,air,FallProfile(p));
+        var activeJump=ExtraJumpModel.Kind(Array.Find(m.ExtraJumps,j=>j.Active)?.FullName);
+        var observed=new PhysicsParameters(acceleration/(activeJump?.Acceleration??1),p.maxRunSpeed/(activeJump?.Speed??1),speed,p.runSlowdown,p.gravity,p.maxFallSpeed,
+            Player.jumpSpeed,Player.jumpHeight,ExtraJumpModel.Select(m),air,FallProfile(p));
         var basic=PhysicsParameters.Basic;
         bool stockDry=Math.Abs(observed.Gravity-basic.Gravity)<.001f&&Math.Abs(observed.MaxFall-basic.MaxFall)<.001f
             &&Math.Abs(observed.JumpSpeed-basic.JumpSpeed)<.001f&&observed.JumpHeight==basic.JumpHeight;
         bool wade=observed.Air==null&&observed.ExtraJump==null&&!p.ignoreWater&&!p.waterWalk&&!p.waterWalk2
             &&!p.trident&&!p.merman&&!p.accFlipper&&!p.canFloatInWater
             &&(stockDry||observed.UsesWaterProfile);
+        // An unmodeled jump or wing can still leave ordinary supported walking intact.
+        bool groundOnly = AirMotionModel.Strategy(m) != AirKind.None && air == null;
+        if (groundOnly) return observed with {GroundOnly=true, ExtraJump=null, Air=null};
+        observed=observed with{Impulse=NavigationAirActions.Capture(p).Action,
+            NoAirRepress=!m.BlockExtraJumps && m.ExtraJumps.Any(j=>j.Enabled) && observed.ExtraJump==null};
         return wade?observed with{CanWade=true,Gravity=basic.Gravity,MaxFall=basic.MaxFall,
             JumpSpeed=basic.JumpSpeed,JumpHeight=basic.JumpHeight}:observed;
     }

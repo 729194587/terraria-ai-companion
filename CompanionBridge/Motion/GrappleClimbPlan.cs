@@ -57,7 +57,7 @@ internal sealed record GrappleClimbPlan(LandingRegion Landing,int AnchorX,int An
     internal static IEnumerable<GrappleClimbPlan> Options(PhysicsState start,LandingRegion landing,
         PhysicsParameters physics,IMotionWorld world,ISurfaceTerrain terrain)
     {
-        if(physics.Air!=null||(!physics.IsBasic&&!physics.Matches(PhysicsParameters.Swiftness))
+        if(physics.GroundOnly||physics.Air?.Kind==AirKind.RocketBoots||(!physics.IsBasic&&!physics.Matches(PhysicsParameters.Swiftness))
             ||start.Py+42-landing.SurfaceY is <144 or >192||!PhysicsSimulator.Settled(start,world))yield break;
         foreach(var plan in FromLaunch(start,landing,physics,world,terrain))yield return plan;
         int toward=Math.Sign((landing.MinPlayerLeftX+landing.MaxPlayerLeftX)/2-start.Px);
@@ -148,10 +148,10 @@ internal sealed record GrappleClimbPlan(LandingRegion Landing,int AnchorX,int An
                 if(length<11)return null;
                 var next=world.Move(s,11*dx/length,11*dy/length,1);
                 if(!world.SafeSweep(s,next,out _)||allowed!=null&&!allowed(next)||next.Py>=s.Py)return null;
-                s=next;
+                s=next with {Air=s.Air};
                 float feet=s.Py+42;
                 if(feet>Landing.SurfaceY+ReleaseBelowShelf)continue;
-                var release=world.Move(s,s.Vx,s.Vy+.01f,1);
+                var release=world.Move(s,s.Vx,s.Vy+.01f,1) with {Air=s.Air};
                 if(world.SafeSweep(s,release,out _)&&(allowed==null||allowed(release))
                     &&Tail(release,physics,(world as ISurfaceTerrain)?.MotionAt(release)??world) is {} tail
                     &&(allowed==null||!tail.Frames.Exists(f=>!allowed(f.State))))return tail;

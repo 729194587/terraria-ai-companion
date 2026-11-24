@@ -57,7 +57,7 @@ internal sealed class ServerGrappleClimb(GrappleClimbPlan plan,PhysicsParameters
                 // Preview only the native release tick using the measured pull
                 // velocity and its audited +0.01 detach adjustment. Replan
                 // from the actual result after Terraria has removed the hook.
-                var release=world.Move(state,state.Vx,state.Vy+.01f,1);
+                var release=world.Move(state,state.Vx,state.Vy+.01f,1) with {Air=state.Air};
                 if(world.SafeSweep(state,release,out _)&&plan.Tail(release,physics,world) is {} preview
                     &&(allowed==null||!preview.Frames.Exists(f=>!allowed(f.State))))
                 {
@@ -156,7 +156,7 @@ internal sealed class ServerGrappleClimb(GrappleClimbPlan plan,PhysicsParameters
         var movement=NativeMovementReader.Capture(p);
         return (allowed==null||allowed(state))&&!p.dead&&!p.ghost&&!p.noItems&&!p.CCed&&!p.tongued&&!p.mount.Active&&p.gravDir==1
         &&!p.wet&&!p.pulley&&!p.webbed&&!p.stoned&&!p.frozen&&!p.sliding&&!p.slowFall
-        &&p.wingsLogic==0&&p.rocketBoots==0
+        &&AirMotionModel.Select(movement)==physics.Air&&p.rocketBoots==0
         &&ExtraJumpModel.Select(movement)==physics.ExtraJump
         &&!movement.ExtraJumps.Any(j=>j.Active||j.Enabled&&physics.ExtraJump==null)
         &&p.width==PhysicsSimulator.PlayerW&&p.height==PhysicsSimulator.PlayerH

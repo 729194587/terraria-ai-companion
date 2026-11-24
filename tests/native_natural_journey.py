@@ -48,6 +48,9 @@ async def walk_reference(bridge, start, target):
             % (direction,hold,updates), limits=Limits(seconds=20,calls=1,actions=1))
         action = result.get('value') or result.get('lastAction') or {}
         if not action.get('completed'):
+            if action.get('reason')=='unchanged_ineffective_action' and not hold:
+                stuck+=1
+                continue
             return step+1, action.get('reason',result['status']), gained
         evidence = action['evidence']
         new_x = evidence['endPosition']['X']
@@ -85,6 +88,19 @@ async def verify(profile, port, reference=False, watch=False, shore_starts=False
     columns = {row['x']: row for row in survey['columns']}
     rows = []
     routes=[('west', -165, -485), ('central', -145, 145), ('east', 165, 485)]
+    if journey_case in ("local-replay","slope-entry","slope-approach"):
+        assert survey["seed"]=="20261028"
+        replay_start={"local-replay":2818,"slope-entry":44620//16,"slope-approach":43769//16}[journey_case]
+        routes=[(journey_case,replay_start-survey["spawnX"],2869-survey["spawnX"])]
+    if journey_case == "bank-replay":
+        assert survey["seed"] == "20261028"
+        routes=[("bank-replay", 2287-survey["spawnX"],2340-survey["spawnX"])]
+    if journey_case == "traverse":
+        landings = [x for x in sorted(columns) if x+1 in columns and columns[x]["y"] == columns[x+1]["y"]
+                    and all(columns[t]["clear"] and not columns[t]["half"] and not columns[t]["slope"] for t in (x,x+1))]
+        start, goal = landings[0], landings[-1]
+        assert goal-start >= 1000, (start, goal)
+        routes = [("traverse", start-survey["spawnX"], goal-survey["spawnX"])]
     if travel_contact:
         routes=[('contact-light',-145,-109),('contact-heavy',-145,-109)]
     if death_feedback:
@@ -100,7 +116,13 @@ async def verify(profile, port, reference=False, watch=False, shore_starts=False
             continue
         if (reference or watch or shore_starts) and name == 'central':
             continue
-        start, goal = (landing(columns, survey['spawnX'] + dx) for dx in (a, b))
+        if name in ("local-replay","slope-entry","slope-approach"):
+            start,goal=replay_start,2869
+            (profile/"natural-probe-direction").write_text("1")
+        else:
+            start, goal = (landing(columns, survey['spawnX'] + dx) for dx in (a, b))
+        if name=="bank-replay":
+            start=2287
         if east_wall:
             assert survey['seed']=='20261028'
             start,goal=2390,2402
@@ -116,6 +138,16 @@ async def verify(profile, port, reference=False, watch=False, shore_starts=False
         ready.unlink(missing_ok=True)
         request = profile/'natural-request.tmp'
         placement=dict(caseId=name, offsetTiles=start-survey['spawnX'], surfaceY=columns[start]['y'])
+        if name=="local-replay":
+            placement.update(startPixelX=45100,surfaceY=213,startFeetY=3408)
+        if name=="slope-approach":
+            placement.update(startPixelX=43769.176,surfaceY=218,startFeetY=3488)
+        if name=="slope-entry":
+            placement.update(startPixelX=44620,surfaceY=240,startFeetY=3840)
+        if name=="bank-replay":
+            # Last dry settled mixed-loadout frame from the 1,218-tile baseline.
+            placement.update(offsetTiles=2287-survey["spawnX"],startPixelX=36594.324,
+                             surfaceY=253,startFeetY=4050.3242)
         if east_wall:
             placement.update(startPixelX=38252,surfaceY=261)
         if shore_starts:
@@ -125,13 +157,30 @@ async def verify(profile, port, reference=False, watch=False, shore_starts=False
                 start=int(placement['startPixelX']//16)
                 placement['offsetTiles']=start-survey['spawnX']
                 heights=[columns[x]['y'] for x in range(min(start,goal),max(start,goal)+1) if x in columns]
+        flight_reference=(profile/"flight-reference").exists() and name=="traverse"
+        if flight_reference:
+            placement["flightGoalX"]=target["x"]
         request.write_text(json.dumps(placement))
         request.replace(profile/'natural-request.json')
         fixture = await wait_file(ready)
         assert fixture['Settled'] and fixture['SafeSupport'], fixture
+        if name in ("bank-replay","local-replay","slope-entry","slope-approach"):
+            assert abs(fixture["x"]-placement["startPixelX"])<.02 and abs(fixture["y"]+42-placement["startFeetY"])<.02, fixture
         if watch:
             await wait_camera(profile,fixture)
             await asyncio.sleep(2)
+        if flight_reference:
+            stop=await wait_file(profile/"flight-stop.json", 700)
+            (profile/"natural-finish").write_text(name)
+            frames=await wait_file(profile/f"natural-motion-{name}.json",30)
+            active=[f for f in frames if f["flightTicks"]>0][:stop["flightTicks"]]
+            assert len(active)==stop["flightTicks"] and all(f["commandRight"] for f in active)
+            rows.append(dict(case=name,target=target,**stop,cloudEnabled=fixture["cloudEnabled"],wingSlot=fixture["wingsLogic"],
+                             cloudActivations=sum(b["cloudActive"] and not a["cloudActive"] for a,b in zip(active,active[1:])),
+                             poweredWingTicks=sum(b["wingTime"]<a["wingTime"] for a,b in zip(active,active[1:])),
+                             glideTicks=sum(not f["Grounded"] and f["wingTime"]==0 and f["commandJump"] and f["vy"]>0 for f in active)))
+            (profile/"natural-results.json").write_text(json.dumps(dict(scenarios=rows),indent=2))
+            continue
         bridge = ServerAiBridge(port)
         if broadcast_feedback:
             from native_broadcast_feedback import exercise
@@ -161,6 +210,8 @@ async def verify(profile, port, reference=False, watch=False, shore_starts=False
             row=dict(case=name, target=target, arrived=arrived, stop=stop, inputs=count,
                      netTiles=round((last['x']-fixture['x'])*(1 if goal>start else -1)/16,2),
                      endX=last['x'], endFeetY=last['y']+42, healthDelta=life_delta)
+            row.update(cloudEnabled=last["cloudEnabled"],wingSlot=last["wingsLogic"],hermesEquipped=last.get("hermesEquipped"),
+                       sandEnabled=last["sandEnabled"],blizzardEnabled=last["blizzardEnabled"])
             rows.append(row)
             (profile/'natural-results.json').write_text(json.dumps(dict(scenarios=rows),indent=2))
             print(json.dumps(row),flush=True)
@@ -172,7 +223,7 @@ async def verify(profile, port, reference=False, watch=False, shore_starts=False
                 (target['x'], target['y']), limits=Limits(seconds=12,calls=1,actions=1))
             assert submitted['status'] == 'completed' and submitted['actions'] == 1, submitted
             task = submitted['value']['taskId']
-            async with asyncio.timeout(175):
+            async with asyncio.timeout(720 if journey_case=="traverse" else 175):
                 while True:
                     view = await manager.invoke('await_task', dict(taskId=task,milliseconds=10000))
                     if view['status'] != 'running':
@@ -199,10 +250,39 @@ async def verify(profile, port, reference=False, watch=False, shore_starts=False
                    endFeetY=frames[-1]['y']+42, ticks=frames[-1]['tick']-frames[0]['tick'],
                    dug=progress.get('dugTiles'), placed=progress.get('placedTiles'),
                    hookAttached=any(f['hookCount']>0 for f in frames))
+        for kind in ("sand","blizzard"):
+            if kind+"Active" in frames[0]:
+                row[kind+"Enabled"]=frames[0][kind+"Enabled"]
+                row[kind+"Activations"]=sum(b[kind+"Active"] and not a[kind+"Active"] for a,b in zip(frames,frames[1:]))
         first=next((i for i,f in enumerate(frames) if f.get("platformStock",60)<frames[0].get("platformStock",60)),None)
         row["firstPlatform"]=None if first is None else dict(x=frames[first]["x"],feet=frames[first]["y"]+42,
             everWet=any(f["wet"] for f in frames[:first+1]),ticks=frames[first]["tick"]-frames[0]["tick"])
+        row["bankAirUpdates"]=sum(f.get("planKind")=="bank_air_crossing" for f in frames)
+        row["travelExtraJumps"]=sum(b.get("planKind") in ("travel_jump","cruise_flight","running_jump") and any(
+            b.get(kind+"Active") and not a.get(kind+"Active") for kind in ("cloud","sand","blizzard"))
+            for a,b in zip(frames,frames[1:]))
+        if name=="traverse" and any(f["commandRight"] for f in frames):
+            first=next(i for i,f in enumerate(frames) if f["commandRight"])
+            moving=frames[first:]
+            row["crossTargetUpdates"]=next((i for i,f in enumerate(moving,1) if f["x"]+20>=target["x"]),None)
+            row["settleAtTargetUpdates"]=next((i for i,f in enumerate(moving,1) if f["Settled"] and
+                f["x"]<=target["x"]<=f["x"]+20 and abs(f["y"]+42-target["y"])<=.5),None)
+            transit=moving[:row["settleAtTargetUpdates"]]
+            launches=[a["vx"] for a,b in zip(transit,transit[1:])
+                      if a["Grounded"] and not b["Grounded"] and b["commandJump"]]
+            row["groundLaunches"]=len(launches)
+            row["stationaryLaunches"]=sum(abs(v)<.01 for v in launches)
+            row["rightHeldUpdates"]=sum(f["commandRight"] for f in transit)
+            row["cruiseGlideTicks"]=sum(f["planKind"]=="cruise_flight" and f["wingTime"]<=0 and
+                f["commandJump"] and not f["Grounded"] and f["vy"]>0 for f in moving)
+        row["hermesEquipped"]=frames[0].get("hermesEquipped")
+        row["peakGroundSpeed"]=max((abs(f["vx"]) for f in frames if f["Grounded"]),default=0)
         row.update(movement_metrics(frames))
+        if "cloudEnabled" in frames[0]:
+            row.update(cloudEnabled=frames[0]["cloudEnabled"], wingSlot=frames[0]["wingsLogic"],
+                       cloudActivations=sum(b["cloudActive"] and not a["cloudActive"] for a,b in zip(frames,frames[1:])),
+                       poweredWingTicks=sum(b["wingsLogic"] and b["wingTime"] < a["wingTime"] and not b["Grounded"]
+                                            for a,b in zip(frames,frames[1:])))
         leaf = (result.get('task',{}).get('lastResult') or {}).get('evidence') or {}
         nav = leaf.get('navigation') or {}
         graph = nav.get('SurfaceGraph') or {}
@@ -213,6 +293,19 @@ async def verify(profile, port, reference=False, watch=False, shore_starts=False
         rows.append(row)
         (profile/'natural-results.json').write_text(json.dumps(dict(scenarios=rows),indent=2))
         print(json.dumps(row), flush=True)
+        if name in ("slope-entry","slope-approach") and row.get("cloudEnabled") and row.get("wingSlot")==2:
+            assert result["completed"] and row["placed"]==0 and row["dug"]==0, row
+            assert row["cloudActivations"] and row["poweredWingTicks"], row
+            assert any(f.get("planKind")=="uphill_air_continuation" for f in frames), row
+        if name=="traverse" and survey["seed"]=="20261028" and row.get("wingSlot")==2:
+            assert result["completed"] and row["placed"]==0 and row["dug"]==0, row
+            assert row["poweredWingTicks"]>0, row
+            if row.get("cloudEnabled"):
+                assert row["travelExtraJumps"]>0 and row["cruiseGlideTicks"]>0, row
+                assert row["crossTargetUpdates"]<=row["settleAtTargetUpdates"], row
+        if name=="bank-replay" and row.get("cloudEnabled") and row.get("wingSlot")==2:
+            assert result["completed"] and row["placed"]==0 and row["bankAirUpdates"]>0, row
+            assert row["cloudActivations"] and row["poweredWingTicks"], row
         if travel_contact:
             loss=frames[0]['life']-min(f['life'] for f in frames)
             assert loss>0, row
@@ -310,7 +403,7 @@ if __name__ == '__main__':
     parser.add_argument('--replay-stops',type=Path)
     parser.add_argument('--walk-reference',action='store_true')
     parser.add_argument('--watch',action='store_true')
-    parser.add_argument('--journey-case',choices=('east','west','central'))
+    parser.add_argument('--journey-case',choices=('east','west','central','traverse','bank-replay','local-replay','slope-entry','slope-approach'))
     parser.add_argument('--broadcast-feedback',action='store_true')
     parser.add_argument('--death-feedback',action='store_true')
     parser.add_argument('--travel-contact',action='store_true')

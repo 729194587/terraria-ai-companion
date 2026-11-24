@@ -62,6 +62,32 @@ public static class ExtraJumpNavigationTests
             if(scenario=="normal")Check(versions==1&&task.Snapshot.RecoveryCount==0,"expected resource transitions retain plan revision");
             else Check(injected&&task.Snapshot.RecoveryCount>=1&&task.Snapshot.RecoveryReplans>=1,"deviation settles and replans: "+scenario);
         }
+        var bundle=ExtraJumpModel.Kind("Terraria/SandstormInABottleJump") with {
+            Next=ExtraJumpModel.Kind("Terraria/BlizzardInABottleJump") with {Next=ExtraJumpModel.Cloud}};
+        var sandRoute=StateSpacePlanner.Plan(start,goal,PhysicsParameters.Basic with{
+            ExtraJump=ExtraJumpModel.Kind("Terraria/SandstormInABottleJump")},world,maxExpansions:128,budgetMs:5000);
+        Check(sandRoute.ReachedGoal,"sandstorm reaches a nearby raised landing without overshooting it");
+        var partial=start with {Grounded=false,Vy=2,RemainingJumps=bundle.Next.Mask,ExtraAvailable=true};
+        var bundlePhysics=PhysicsParameters.Basic with {ExtraJump=bundle};
+        var first=PhysicsSimulator.Step(partial,new(1,true),bundlePhysics,flat);
+        Check(first.ActiveJump==bundle.Next.Bit && first.RemainingJumps==ExtraJumpModel.Cloud.Bit,
+            "midair plan consumes the next available native jump");
+        Check(!ExtraJumpModel.MatchesResource(first,first with{RemainingJumps=bundle.Bit}),
+            "same number of remaining jumps cannot hide different jump identity");
+        var finalJump=PhysicsSimulator.Step(first with {JumpFramesLeft=0,ReleaseJump=true},new(1,true),bundlePhysics,flat);
+        Check(finalJump.ActiveJump==ExtraJumpModel.Cloud.Bit && finalJump.RemainingJumps==0,
+            "last jump consumes the cloud charge");
+        var recharged=PhysicsSimulator.Step(start with{RemainingJumps=0},default,bundlePhysics,flat);
+        Check(recharged.RemainingJumps==bundle.Mask,"supported rest refreshes all equipped jump types");
+        var unknown=PhysicsParameters.Basic with {NoAirRepress=true};
+        Check(PhysicsSimulator.Step(start,new(1,true),unknown,flat).Vy<0,"unknown extra jump preserves ordinary ground launch");
+        try {PhysicsSimulator.Step(partial,new(1,true),unknown,flat);Check(false,"unknown midair launch must be refused");}
+        catch(UnsafeMotionException){Check(true,"unknown midair launch refused");}
+        Check(ExtraJumpModel.Register("ExampleMod/Boost",1.25f,1.5f,2),"mod registers a vanilla-style jump definition");
+        var registered=ExtraJumpModel.Select(Snapshot(start,"ExampleMod/Boost"));
+        Check(registered?.Speed==2 && registered.Bit!=0 && registered.HoldFrames(ph)==18,"equipped registry type receives its own resource bit");
+        ExtraJumpModel.ResetExtensions();
+        Check(ExtraJumpModel.Select(Snapshot(start,"ExampleMod/Boost"))==null,"unload removes the adapter");
         var tracker2=new MobilityTracker();var before=tracker2.Sample(ph,20,42,false,Array.Empty<string>(),0,1,1,movement:Snapshot(start));
         var changed=tracker2.Sample(ph,20,42,false,Array.Empty<string>(),1,1,1,movement:Snapshot(start with{ExtraAvailable=false}));
         Check(changed.Revision>before.Revision,"unexpected resource loss still invalidates");

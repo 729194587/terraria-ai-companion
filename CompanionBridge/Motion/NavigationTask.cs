@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace CompanionBridge.Motion;
 
@@ -162,6 +163,9 @@ internal sealed class NavigationTask
             _observedWorld=world;_observedTerrainPose=state;_observedTerrain=terrain;
         }
         if(!Continuous&&_updates>NavigationTripProgress.UpdateLimit)return Fail("navigation_trip_update_budget");
+        if (_recovering && _recoveryFrames==1 && _recoveryInputsReleased==true && !state.Grounded
+            && ph.Air?.Kind==AirKind.Wings && region!=null && QuotedRoute==null)
+            TryResumeFlight(session,generation,state,ph,region,world);
         if (_recovering) { _watchdog.Observe(NavigationActivity.Recovery);_neutralIssued=true; return default; }
         if (_confirming) return default; // Observe natural braking/fall, never replay or replan in air.
         if (!ph.IsSupportedGroundPhysics) return Fail("unsupported landing-region physics");
@@ -225,8 +229,8 @@ internal sealed class NavigationTask
                 // Try a verified flat prefix for a distant goal before expanding the
                 // surface graph. Once a graph search starts, keep advancing it.
                 bool shortApproach=!surface||region.Distance(state)<=64
-                    || region.Distance(state)>SurfaceGraph.InitialRadius*16 && _pendingSearch==null && _surfaceSearch==null;
-                if(region!=null && state.Py+42-region.SurfaceY>=144 &&
+                    || ph.ExtraJump==null && region.Distance(state)>SurfaceGraph.InitialRadius*16 && _pendingSearch==null && _surfaceSearch==null;
+                if(region!=null && (ph.ExtraJump==null || ph.Air!=null || Math.Abs(state.Vx)<=.1f) && state.Py+42-region.SurfaceY>=144 && (ph.Air==null || ph.RiseBound(state.Air?.WingTime??0) < state.Py+42-region.SurfaceY) &&
                     _pendingSearch==null && _surfaceSearch==null && TryGrapple?.Invoke(state,ph,world)==true)
                 {
                     Snapshot=Snapshot with{Status="running",Reason="grapple navigation"};
@@ -239,10 +243,19 @@ internal sealed class NavigationTask
                         return Fail("exploration_quote_changed");
                     _route=QuotedRoute.Route with{Actions=new(QuotedRoute.Route.Actions)};
                 }
-                else _route=surface&&AllowedPose==null&&_surfaceSearch==null
-                    ?PoolCrossing.TryPlan(state,region,ph,world):null;
+                else if(AllowedPose==null)
+                {
+                    _route=surface && _surfaceSearch==null?TryCruise(state,region,ph,world)??TryRunningJump(state,region,ph,world):null;
+                    _route??=_knowledge.TakeBankCrossing(state,region,ph) ??
+                        (surface&&_surfaceSearch==null?PoolCrossing.TryPlan(state,region,ph,world):null);
+                }
+                else _route=null;
                 if(_route==null && surface && AllowedPose==null && _surfaceSearch==null)
-                    _route=SafeGroundWalk.TryDescend(state,region,ph,world)??SafeGroundWalk.TryAscend(state,region,ph,world);
+                {
+                    _route=SafeGroundWalk.TryDescend(state,region,ph,world);
+                    if(_route==null && ph.ExtraJump==null && ph.Air?.Kind!=AirKind.Wings)
+                        _route=SafeGroundWalk.TryAscend(state,region,ph,world);
+                }
                 _route ??= shortApproach&&_enableSafeGroundWalk&&(region==null||Continuous||PreferFlatRegion)
                     ?SafeGroundWalk.TryPlan(state,walkTarget,region==null?_direction:walkDirection,ph,world,region):null;
                 if (_route != null && RejectRemembered(state, _route.Actions[0]))
@@ -287,7 +300,7 @@ internal sealed class NavigationTask
                 bool grappleFallback=_route.SearchExit=="no_route_in_coverage"
                     ||_route.SearchExit=="safe_partial"&&_route.Actions.Count>0
                     &&_route.Actions.TrueForAll(edge=>edge.Landing.Py>=state.Py-LandingRegion.FeetTolerance);
-                if(grappleFallback&&TryGrapple?.Invoke(state,ph,world)==true)
+                if(grappleFallback&&Math.Abs(state.Vx)<=.1f&&_route.Kind is not ("cruise_flight" or "running_jump")&&TryGrapple?.Invoke(state,ph,world)==true)
                 {
                     DiscardSearch();_route=null;
                     Snapshot=Snapshot with {Status="running",Reason="grapple navigation"};
@@ -342,7 +355,7 @@ internal sealed class NavigationTask
         Publish();
         if (_executor.FailureKind == MotionFailureKind.RouteDeviation)
         { BeginRecovery(state, _executor.Snapshot.Reason); _neutralIssued=_recovering; return default; }
-        if(!crossing&&Continuous&&_region!=null&&_routeIndex==_route.Actions.Count-1&&!_route.ReachedGoal
+        if(!crossing&&_route.Kind is not ("cruise_flight" or "running_jump")&&Continuous&&_region!=null&&_routeIndex==_route.Actions.Count-1&&!_route.ReachedGoal
             &&world is ISurfaceTerrain&&_routePhysics==ph)
             PlanAhead(ph,world);
         _motionStart=state;_motionIssued=true;
@@ -483,6 +496,107 @@ internal sealed class NavigationTask
         => _failures.RejectKnown(start,edge,Clock)||_trip.Reject(edge.Landing)
             || AllowedPose!=null && (!AllowedPose(start)||edge.Frames.Exists(f=>!AllowedPose(f.State)));
 
+    private Route TryRunningJump(PhysicsState state,LandingRegion goal,PhysicsParameters ph,IMotionWorld world)
+    {
+        if(ph.Air!=null || ph.ExtraJump==null || ph.GroundOnly || ph.NoAirRepress || !state.Grounded || state.Wet ||
+            (ph.ExtraJump.Next==null && ph.AccRunSpeed<=ph.MaxRun))return null;
+        float target=Math.Clamp(state.Px,goal.MinPlayerLeftX,goal.MaxPlayerLeftX);
+        if(Math.Abs(target-state.Px)<SurfaceGraph.InitialRadius*16)return null;
+        long started=System.Diagnostics.Stopwatch.GetTimestamp();
+        int dir=Math.Sign(target-state.Px);
+        var terrain=(ISurfaceTerrain)world;
+        var run=new System.Collections.Generic.List<PredictedFrame>();
+        var launch=state;
+        var right=new PhysicsInput(dir,false);
+        // Keep the last supported stance before a wall or ledge. A short runway
+        // is still usable; never assume the boots have already reached top speed.
+        try
+        {
+            for(int i=0;i<240 && dir*launch.Vx<Math.Max(ph.MaxRun,ph.AccRunSpeed)-.05f;i++)
+            {
+                if(i%32==0)world=terrain.MotionAt(launch);
+                var next=PhysicsSimulator.Step(launch,right,ph,world);
+                if(!world.SafeSweep(launch,next,out _) || next.Wet || !PhysicsSimulator.SupportedCheckpoint(next,world) ||
+                    dir*(next.Px-launch.Px)<=.01f || dir*(target-next.Px)<64)break;
+                run.Add(new(right,next));launch=next;
+            }
+        }
+        catch(UnsafeMotionException){return null;}
+        int count=0;
+        for(var jump=ph.ExtraJump;jump!=null;jump=jump.Next)count++;
+        int hold=Math.Min(ph.JumpHeight+1,180);
+        int coast=(int)Math.Clamp(ph.JumpSpeed/ph.Gravity,1,45);
+        foreach(int runLength in new[]{run.Count,run.Count/2,0}.Distinct())
+        {
+            launch=runLength==0?state:run[runLength-1].State;
+            var launchWorld=terrain.MotionAt(launch);
+            for(int jumps=count;jumps>=0;jumps--)
+            foreach(int delay in jumps==0?new[]{0}:new[]{-coast,coast,coast*2,coast*3,1})
+            {
+                var hop=PhysicsSimulator.Predict(launch,dir,hold,ph,launchWorld,rollingJump:true,
+                    extraJumpFrame:jumps>0?hold+Math.Abs(delay):-1,extraCount:jumps,extraCoast:Math.Max(1,Math.Abs(delay)),
+                    flightGoal:goal,reserveFinalJump:delay<0);
+                if(!hop.Safe)continue;
+                var end=hop.Frames[hop.ExecuteFrames-1].State;
+                bool arrived=goal.Arrived(hop.Landing,terrain.MotionAt(hop.Landing));
+                if(arrived)end=hop.Landing;
+                if(!arrived && (dir*(end.Px-launch.Px)<24 || goal.Distance(end)>=goal.Distance(state) ||
+                    Math.Abs(target-end.Px)<16))continue;
+                var frames=run.GetRange(0,runLength);
+                frames.AddRange(hop.Frames);
+                var edge=hop with{Frames=frames,Landing=end,ExtraJumpFrame=hop.ExtraJumpFrame<0?-1:runLength+hop.ExtraJumpFrame,
+                    ExecuteFrames=arrived?frames.Count:runLength+hop.ExecuteFrames};
+                if(RejectRemembered(state,edge))continue;
+                return new(new(){edge},0,System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                    ReachedGoal:arrived,Kind:"running_jump",SearchExit:arrived?"goal_reached":"safe_partial");
+            }
+        }
+        return null;
+    }
+
+    private Route TryCruise(PhysicsState state,LandingRegion goal,PhysicsParameters ph,IMotionWorld world)
+    {
+        float target=Math.Clamp(state.Px,goal.MinPlayerLeftX,goal.MaxPlayerLeftX);
+        if(Math.Abs(target-state.Px)<SurfaceGraph.InitialRadius*16 || state.Wet || ph.GroundOnly || ph.NoAirRepress ||
+            ph.Air?.Kind!=AirKind.Wings || state.Air?.WingTime is not >0 || !state.Grounded)return null;
+        int dir=Math.Sign(target-state.Px);
+        int hold=Math.Min(180,ph.JumpHeight+1),extraFrame=-1,count=0,airFrame=hold+1;
+        for(var jump=ph.ExtraJump;jump!=null;jump=jump.Next)
+        {
+            if(extraFrame<0)extraFrame=hold+1;
+            count++;airFrame+=jump.HoldFrames(ph)+2;
+        }
+        long started=System.Diagnostics.Stopwatch.GetTimestamp();
+        int power=(int)Math.Ceiling(state.Air.WingTime);
+        Prediction Fly(int duration)=>PhysicsSimulator.Predict(state,dir,hold,ph,world,rollingJump:true,extraJumpFrame:extraFrame,
+            extraCount:Math.Max(1,count),airStartFrame:airFrame,airHoldFrames:duration,flightGoal:goal,cruise:true);
+        var flight=Fly(power);
+        if(!flight.Safe || flight.Frames.Count==0)return null;
+        bool arrived=goal.Arrived(flight.Landing,((ISurfaceTerrain)world).MotionAt(flight.Landing));
+        if(!arrived)
+        {
+            var checkpoint=flight.Frames[flight.ExecuteFrames-1].State;
+            if(dir*(checkpoint.Px-state.Px)<32 || goal.Distance(checkpoint)>=goal.Distance(state) ||
+                Math.Abs(checkpoint.Px-target)<16)return null;
+            flight=flight with{Landing=checkpoint};
+        }
+        else
+        {
+            // Reduce powered ascent on final approach when a shorter, fully
+            // simulated arc reaches the same settled footprint sooner.
+            for(int duration=power/2;duration>0;duration/=2)
+            {
+                var shorter=Fly(duration);
+                if(!shorter.Safe || shorter.Frames.Count>=flight.Frames.Count ||
+                    !goal.Arrived(shorter.Landing,((ISurfaceTerrain)world).MotionAt(shorter.Landing)))continue;
+                flight=shorter;
+            }
+            flight=flight with{ExecuteFrames=flight.Frames.Count};
+        }
+        if(RejectRemembered(state,flight))return null;
+        return new(new(){flight},0,System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds,ReachedGoal:arrived,Kind:"cruise_flight",SearchExit:arrived?"goal_reached":"safe_partial");
+    }
+
     private void ExtendWalkingStride(PhysicsParameters ph,IMotionWorld world)
     {
         if(!Continuous || _region==null || QuotedRoute!=null || AllowedPose!=null
@@ -532,7 +646,7 @@ internal sealed class NavigationTask
             int hold=old.ExtraJumpFrame>=0||old.AirStartFrame>=0?old.InitialHold:old.Frames.FindAll(f=>f.Input.Jump).Count;
             int stride=old.Jump?24:old.Frames.FindAll(f=>f.Input.Direction!=0).Count;
             var fresh=PhysicsSimulator.Predict(state,old.Frames[0].Input.Direction,hold,ph,world,
-                walkFrames:stride,rollingJump:true,extraJumpFrame:old.ExtraJumpFrame,airStartFrame:old.AirStartFrame,airHoldFrames:old.AirHoldFrames,walkingGoal:_region);
+                walkFrames:stride,rollingJump:true,extraJumpFrame:old.ExtraJumpFrame,airStartFrame:old.AirStartFrame,airHoldFrames:old.AirHoldFrames,walkingGoal:_region,extraCount:old.ExtraCount,extraHoldLimit:old.ExtraHold,impulseFrame:old.ImpulseFrame,impulseKey:old.ImpulseKey,flightGoal:old.FlightGoal);
             if(fresh.Safe&&old.ExecuteFrames<=fresh.Frames.Count)
             {
                 var end=fresh.Frames[old.ExecuteFrames-1].State;
@@ -610,6 +724,28 @@ internal sealed class NavigationTask
         _recoveryReason=reason; _recoveryPosition=state; _recoveryInputsReleased=null;
         Snapshot=Snapshot with {Status="recovering",Reason="release and verify actual checkpoint",ActualLanding=null,
             RecoveryCount=_recoveries,RecoveryReason=reason,RecoveryPosition=state,RecoveryInputsReleased=null};
+    }
+
+    // After releasing a deviating flight, resume only a suffix verified from the
+    // observed airborne pose and current resources through a settled landing.
+    private void TryResumeFlight(int session,int generation,PhysicsState state,PhysicsParameters ph,
+        LandingRegion goal,IMotionWorld world)
+    {
+        int direction=Math.Sign(Math.Clamp(state.Px,goal.MinPlayerLeftX,goal.MaxPlayerLeftX)-state.Px);
+        var timer=System.Diagnostics.Stopwatch.StartNew();
+        foreach(int hold in new[]{8,16,32})
+        {
+            if(timer.Elapsed.TotalMilliseconds>=3) return;
+            var edge=PhysicsSimulator.Predict(state,direction,hold,ph,world,airStartFrame:0,airHoldFrames:hold);
+            if(!edge.Safe || goal.Distance(edge.Landing)>=goal.Distance(state)
+                || RejectRemembered(state,edge) || !PhysicsSimulator.Settled(edge.Landing,world)) continue;
+            _route=new(new(){edge},0,timer.Elapsed.TotalMilliseconds,ReachedGoal:goal.Contains(edge.Landing),Kind:"flight_recovery");
+            _routeIndex=0;_edgeStart=state;_routePhysics=ph;_planMobilityRevision=_mobilityRevision;
+            _executor.Begin(session,direction,generation);
+            _executor.LoadPlan(edge);
+            _recovering=false;_executing=true;_recoveryReplans++;
+            return;
+        }
     }
 
     private void ObserveRecovery(PhysicsState state, IMotionWorld world, bool inputsReleased)
