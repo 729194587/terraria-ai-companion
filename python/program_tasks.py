@@ -13,7 +13,7 @@ from control import BridgeError, NotAdmittedError
 from lua_action_results import action_results
 
 NAMES = frozenset({'submit_task', 'query_task', 'await_task', 'cancel_task', 'resume_task'})
-OPERATIONS = ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')
+OPERATIONS = ('mine_target', 'navigate_to', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')
 
 
 def available(bridge):
@@ -46,7 +46,7 @@ def validate(name, args):
     return args
 
 
-def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=False, boss=False, members=False, strategy=False, collection=False, exploration=False, placement=False, building=False):
+def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=False, boss=False, members=False, strategy=False, collection=False, navigation=False, exploration=False, placement=False, building=False):
     rows = []
     for name in sorted(NAMES):
         properties = {'taskId': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'}}
@@ -67,6 +67,9 @@ def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=
                     description+=' boss_encounter 先配武器，再用 discover_bosses 的 admissible 和 reason 选择原版或扩展根的 entityRef。受理后专服自主交战；通过 query_task 查看 verifiedHits、verifiedDamage 和 deathProof。'
                 else:
                     description += f' boss_encounter 支持{roots}。先配武器，再传 scan_entities 根实体行的 details.entityRef。受理后专服自主交战，可查询或取消。'
+            if navigation:
+                operations.append('navigate_to')
+                description += ' 远途导航用 navigate_to，一次提交最终落脚点 x/y（世界像素），可在 Program 结束后继续赶路。'
             if collection:
                 operations.append('collect_drops')
             if exploration:

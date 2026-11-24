@@ -51,6 +51,7 @@ return function(options)
     end
     local p = readPlayer()
     if not p then return finish('player_unavailable') end
+    local startLife = p.player.life
     local world, generation, slot = p.worldSessionId, p.actorGeneration, p.actorSlot
     if type(world) ~= 'string' or type(generation) ~= 'number' or type(slot) ~= 'number'
         or p.player.source ~= 'server_ai_player' then return finish('server_ai_identity_required') end
@@ -196,7 +197,7 @@ return function(options)
         report.decisions[#report.decisions+1]={step=step,direction=direction,targetX=target or json.null,
             basis=target and 'observed_bounded_2d_candidate_native_plan_required' or rejected,candidates=candidates}
         if not target then return finish(rejected == 'revisit_limit' and rejected or 'no_safe_direction') end
-        local beforeX, beforeY, beforeLife = player.position.x, player.position.y, player.life
+        local beforeX, beforeY = player.position.x, player.position.y
         log('explore step='..tostring(step)..' direction='..tostring(direction)..' targetX='..tostring(target))
         local action=api('navigate_to_x',{targetX=target})
         if not action.valid or not action.completed or action.endEvidenceStatus ~= 'known' then
@@ -219,7 +220,9 @@ return function(options)
         report.steps[#report.steps+1]={step=step,direction=direction,targetX=target,fromX=beforeX,toX=afterX,fromY=beforeY,toY=p.player.position.y,
             movedPixels=moved,newHorizontalPixels=novel,gameUpdate=p.gameUpdate}
         log('explore progress='..tostring(moved)..' novel='..tostring(novel))
-        if p.player.life < beforeLife or p.player.dead then return finish('health_decreased') end
+        if p.player.dead then return finish('actor_unavailable') end
+        local reserve=max(math.floor(p.player.lifeMax/4),startLife-math.floor(startLife/3))
+        if p.player.life < startLife and p.player.life <= reserve then return finish('health_decreased') end
         if direction*(afterX-beforeX) < 24 then return finish('no_progress') end
         if report.noNovelSteps >= 3 then return finish('no_new_ground') end
         view=api('observe_terrain',{})

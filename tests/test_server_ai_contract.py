@@ -491,6 +491,17 @@ class ManifestTests(unittest.TestCase):
         self.assertNotIn('combatCandidates',previous['example'])
         self.assertNotEqual(previous['example'],'return api("configure_combat_loadout",{})')
 
+    def test_persistent_navigation_follows_navigation_capability(self):
+        for enabled in (False, True):
+            caps = FULL - {'server_ai_navigation_v1'}
+            if enabled:
+                caps.add('server_ai_navigation_v1')
+            tools = {row['function']['name']: row['function'] for row in server_definitions(bridge(caps))}
+            operations = tools['submit_task']['parameters']['properties']['operation']['enum']
+            self.assertEqual(enabled, 'navigate_to' in operations)
+        args = dict(operation='navigate_to', arguments=dict(x=100000, y=3200))
+        self.assertEqual(program_tasks.validate('submit_task', args), args)
+
     def test_place_item_is_capability_gated_and_only_callable_as_task(self):
         import program_tasks
 

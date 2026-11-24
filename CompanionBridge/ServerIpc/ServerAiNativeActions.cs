@@ -84,7 +84,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         =>StartCore(id,"place_tile",JsonSerializer.SerializeToElement(new{x=at.X,y=at.Y}),"auto-torch",true);
     private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child,bool continuous=false,
         NavigationKnowledge knowledge=null,AiAtomicActions.CombatAdmission admission=null,AiAtomicActions.RespawnPlan rejoin=null,
-        bool buildTravel=false,MapWindow? explorationWindow=null)
+        bool buildTravel=false,MapWindow? explorationWindow=null,
+        NavigationQuote explorationQuote=null)
     {
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
@@ -202,7 +203,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 movementOnly:child && args.TryGetProperty("movementOnly",out var movementOnly) && movementOnly.GetBoolean());ActorControl.Driver=navigation;}
             else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge,
                 movementOnly:buildTravel);
-                if(child&&explorationWindow is {} window)navigation.RestrictToExplored(window);
+                if(child&&explorationWindow is {} window)navigation.RestrictToExplored(window,explorationQuote);
                 ActorControl.Driver=navigation;}
             else if(operation=="place_rope")
             {
@@ -456,6 +457,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var task=(TaskSlot)h.Context;var result=task.Stop(identity with{GameUpdate=Main.GameUpdateCount},status,reason);
         return TaskResult(task,result,h.Identity);
     }
+    public ulong ProgressVersion(object handle) =>
+        handle is Handle { Context: TaskSlot slot } ? slot.Task.ProgressVersion : 0;
+
     private static Result TaskResult(TaskSlot task,Result result,AiReadOnlyProtocol.Identity identity)
     {
         bool owned=Owned(identity),released=owned&&Released((Player)identity.Actor);
@@ -482,12 +486,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         private readonly NavigationKnowledge knowledge=new();
         internal NavigationKnowledge Knowledge=>knowledge;
         private readonly bool buildTravel;
+        internal NavigationQuote ExplorationQuote {get;set;}
         internal MapWindow? ExplorationWindow {get;set;}
         internal ChildExecutor(ServerAiNativeActions owner,bool continuous,bool buildTravel=false){this.owner=owner;this.continuous=continuous;this.buildTravel=buildTravel;}
         public string Validate(string op,JsonElement args)=>owner.Validate(op,args);
         public ulong ProgressVersion(object handle)=>handle is Handle {Context:ServerAiNavigation.Run run}?run.ProgressVersion:0;
         public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>
-            owner.StartCore(id,op,args,taskId,true,continuous,knowledge,buildTravel:buildTravel,explorationWindow:ExplorationWindow);
+            owner.StartCore(id,op,args,taskId,true,continuous,knowledge,buildTravel:buildTravel,explorationWindow:ExplorationWindow,explorationQuote:ExplorationQuote);
         public Result Poll(AiReadOnlyProtocol.Identity id,object value)
         {
             var r=owner.Poll(id,value);

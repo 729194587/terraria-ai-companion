@@ -225,6 +225,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
                 ||cell.Liquid.Amount>0&&(!allowWater||ty<y||cell.Liquid.Kind!=LiquidKind.Water))return false;
             if(shape=='.'&&TerrainReader.ReadCell(tx,ty)!='.')continue; // a previously admitted virtual removal
             var tile=Main.tile[tx,ty];
+            if(allowWater&&shape=='.'&&NativePlacementSurvey.Replaceable(tile,false))continue;
             if(tile.HasUnactuatedTile&&(TileID.Sets.Falling[tile.TileType]
                 ||Main.tileFrameImportant[tile.TileType]&&!(allowPlatforms&&TileID.Sets.Platforms[tile.TileType])))return false;
         }
@@ -294,7 +295,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         if(IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||view.Cell(x,y)!='.'||!SafeVirtualNeighbours(x,y,view,true,water)
             ||Player.noBuilding||Player.CCed||Player.noItems||Player.frozen||Player.stoned)return false;
         var item=Player.inventory[material.Slot];
-        if(!SafeMaterial(item)||item.createTile!=material.Type||item.stack<=0||Main.tile[x,y].HasTile&&Cell(x,y)=='.'
+        if(!SafeMaterial(item)||item.createTile!=material.Type||item.stack<=0||Main.tile[x,y].HasTile&&Cell(x,y)=='.'&&!(water&&NativePlacementSurvey.Replaceable(Main.tile[x,y],false))
             ||water&&(item.createTile!=TileID.Platforms||PlacementBodyOverlap(x,y)))return false;
         // Keep the existing Simple placement reach check. Future work poses in
         // this template move toward the cell; cells outside current reach are
@@ -317,14 +318,13 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
 
     internal static bool WaterPlacementStillSafe(Player player,int x,int y,int direction,int stock)
     {
-        if(direction is not (-1 or 1)||!WorldGen.InWorld(x,y,2)||Main.tile[x,y].HasTile
+        if(direction is not (-1 or 1)||!WorldGen.InWorld(x,y,2)||Main.tile[x,y].HasTile&&!NativePlacementSurvey.Replaceable(Main.tile[x,y],false)
             ||PlacementBodyOverlap(x,y)
             ||!player.InInteractionRange(x,y,Terraria.DataStructures.TileReachCheckSettings.Simple))return false;
         var stance=ServerAiNavigation.Observe(player);
-        if(!stance.Settled||Math.Abs(Feet(stance.State)-y*16)>LandingRegion.FeetTolerance)return false;
+        if(!stance.Settled||Math.Abs(Feet(stance.State)-y*16)>32)return false;
         var view=new LocalTerrainView(TerrainReader.ReadEnvironment);
-        int span=LocalEditGeometry.FlatWaterSpan(view,x,y,direction);
-        return span>0&&span<=stock
+        return stock>0&&LocalEditGeometry.WaterDeckCell(view,x,y)
             &&SafeVirtualNeighbours(x,y,view,true,allowWater:true)
             &&(view.Cell(x-1,y) is '#' or '='||view.Cell(x+1,y) is '#' or '='||view.Cell(x,y+1)=='#');
     }

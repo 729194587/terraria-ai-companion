@@ -144,7 +144,7 @@ def server_definitions(bridge, supported=None):
                                                  strategy='server_ai_boss_strategy_v1' in capabilities,
                                                  members='server_ai_boss_members_v1' in capabilities,
                                                  combat='server_ai_combat_v1' in capabilities, weapon_button='server_ai_weapon_button_v1' in capabilities,
-                                                 collection='collect_drops' in supported, exploration='explore_frontier' in supported,
+                                                 collection='collect_drops' in supported, navigation='navigate_to' in supported, exploration='explore_frontier' in supported,
                                                  placement='place_item' in supported, building='build_place' in supported)
     return definitions
 

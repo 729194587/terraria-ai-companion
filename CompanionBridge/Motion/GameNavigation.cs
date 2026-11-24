@@ -95,6 +95,15 @@ internal sealed class NativeNavigation
 
     internal static FallSafety FallProfile(Player p)=>new(p.extraFall,p.noFallDmg||p.equippedWings!=null,p.statLife);
 
+    // A travel order can spend up to one third of its starting life, with a
+    // quarter of maximum life in reserve. Starting wounded still permits escape.
+    internal static bool ExceedsTravelBudget(Player p,int startLife,int projectedDamage=0)
+    {
+        int remaining=p.statLife-projectedDamage;
+        int reserve=Math.Max(p.statLifeMax2/4,startLife-startLife/3);
+        return remaining<startLife && remaining<=reserve;
+    }
+
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
         LandingRegion region = null, bool combatSwing = false)
     {
@@ -124,7 +133,7 @@ internal sealed class NativeNavigation
         if(!_profile.Supported)return Fail("unsupported navigation state: "+string.Join("; ",_profile.UnsupportedEffects));
         if (_session != session || _generation != generation) _life = p.statLife;
         _session = session; _generation = generation;
-        if (!combatSwing && p.statLife < _life) return Fail("life decreased");
+        if (!combatSwing && ExceedsTravelBudget(p,_life)) return Fail("travel damage budget exhausted");
         _life = p.statLife;
         var state = State(p);
         if(_planRevision!=_profile.Revision)
@@ -133,7 +142,7 @@ internal sealed class NativeNavigation
             else Controller.Cancel();
         }
         _planRevision=_profile.Revision;
-        _world = new NativeMotionWorld(state,_captureContacts);
+        _world = new NativeMotionWorld(state,_captureContacts,p.breath);
         Task.LiveFallStart=Controller.LiveFallStart=p.fallStart;
         long started = Stopwatch.GetTimestamp();
         var input = _navigation
@@ -155,7 +164,7 @@ internal sealed class NativeNavigation
     {
         if (!_paired) return;
         _paired = false;
-        if ((!combatSwing && p.statLife < _life) || p.dead) { Fail("life decreased/dead"); return; }
+        if ((!combatSwing && ExceedsTravelBudget(p,_life)) || p.dead) { Fail("life decreased/dead"); return; }
         if (_navigation) { Task.After(State(p), _world, inputsReleased: !p.controlLeft && !p.controlRight && !p.controlJump
             && !p.controlDown && !p.controlUp && !p.controlUseItem && !p.controlUseTile); Diagnostics.Observe(Snapshot); }
         else Controller.After(State(p), _world);

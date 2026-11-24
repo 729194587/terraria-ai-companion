@@ -1092,10 +1092,10 @@ DEFS['ActionReceipt'] = obj({
     'effectVerified': nullable(B),
 }, optional=(*RECEIPT_FLAGS, 'targetContainer'), closed=False)
 RAW_TASK_ACTION = {
-    **ACTION_CORE, 'operation': enum('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place'), 'status': ACTION_STATUS, 'generation': I, 'durationMs': I,
+    **ACTION_CORE, 'operation': enum(*TASK_NAMES), 'status': ACTION_STATUS, 'generation': I, 'durationMs': I,
     'requestedInputs': NULL, 'executionState': S, 'task': GAME_TASK,
-    'evidence': any_of(ref('GameTaskEvidence'), native_preflight('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place'), NULL),
-    **{key: target_schema(key, ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')) for key in TARGETS if key != 'targetContainer'},
+    'evidence': any_of(ref('GameTaskEvidence'), native_preflight(*TASK_NAMES), NULL),
+    **{key: target_schema(key, TASK_NAMES) for key in TARGETS if key != 'targetContainer'},
 }
 DEFS['RawProgramTaskAction'] = obj({**RAW_TASK_ACTION, 'targetContainer': NULL}, optional=('targetContainer',))
 
@@ -1341,19 +1341,19 @@ def action_ref(name):
 DEFS.update({'Action_' + name: action_variants(name) for name in ACTION_EVIDENCE})
 DEFS['ProgramTaskUnknownOutcome'] = obj({
     'valid': const(False), 'status': const('unknown'), 'completed': const(False),
-    'operation': enum('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place'), 'actionId': S, 'reason': S, 'retryAllowed': const(False), **STOP_CONTINUATION,
+    'operation': enum(*TASK_NAMES), 'actionId': S, 'reason': S, 'retryAllowed': const(False), **STOP_CONTINUATION,
 }, optional=STOP_CONTINUATION)
 DEFS['ProgramTaskOrigin'] = any_of(obj({'goalId': S, 'goalRunId': S}), obj({
     'chatId': nullable(any_of(I, S)), 'programId': S, 'runId': nullable(S),
     'mcp_session_id': S, 'mcp_request_id': any_of(I, S), 'mcp_tool_name': S,
 }, optional=('mcp_session_id', 'mcp_request_id', 'mcp_tool_name')))
 PROGRAM_TASK_BASE = {
-    'taskId': S, 'operation': enum('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place'),
+    'taskId': S, 'operation': enum(*TASK_NAMES),
     'status': enum('submitting', 'running', 'completed', 'failed', 'cancelled', 'timeout', 'unknown'),
     'valid': B, 'completed': B, 'dispatchState': enum('unknown', 'admitted', 'not_admitted'),
     'origin': nullable(ref('ProgramTaskOrigin')), 'retryAllowed': const(False),
     'action': ref('RawProgramTaskAction'),
-    'result': any_of(action_ref('mine_target'), action_ref('combat_attack'), action_ref('boss_encounter'), action_ref('collect_drops'), action_ref('explore_frontier'), action_ref('place_item'), action_ref('build_place'), ref('ProgramTaskUnknownOutcome')), 'resultSequence': I,
+    'result': any_of(*(action_ref(name) for name in TASK_NAMES), ref('ProgramTaskUnknownOutcome')), 'resultSequence': I,
 }
 PROGRAM_TASK_OPTIONAL = ('action', 'result', 'resultSequence')
 DEFS['ProgramTaskView'] = obj(PROGRAM_TASK_BASE, optional=PROGRAM_TASK_OPTIONAL)

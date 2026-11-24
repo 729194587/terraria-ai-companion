@@ -71,28 +71,17 @@ internal static class LocalEditGeometry
         return y==supportRow&&cell.Liquid.Kind==LiquidKind.Water?cell.Shape:cell.DryShape;
     }
 
-    internal static int FlatWaterSpan(LocalTerrainView view,int x,int row,int direction)
+    // Verify only the new deck column. Every placed platform becomes the next
+    // native attachment point, even when the far bank is outside this window.
+    internal static bool WaterDeckCell(LocalTerrainView view,int x,int row)
     {
-        // One finite edit window. Require an observed flat bank and a simple
-        // water surface wholly below the level body corridor.
-        const int window=12;
-        float? firstSurface=null;
-        for(int step=0;step<window;step++,x+=direction)
-        {
-            for(int y=row-3;y<row;y++)if(view.DryCell(x,y)!='.')return 0;
-            var cell=view.Environment(x,row);
-            if(step>0&&cell.DryShape is '#' or '=')return step;
-            if(cell.Shape!='.')return 0;
-            var below=view.Environment(x,row+1);
-            if(below.Shape is not ('.' or '#')
-                ||below.Liquid.Kind is not (LiquidKind.None or LiquidKind.Water))return 0;
-            var liquid=cell.Liquid.Amount>0?cell.Liquid:below.Liquid;
-            if(liquid.Kind!=LiquidKind.Water)return 0;
-            float surface=(cell.Liquid.Amount>0?0:16)+(256-liquid.Amount)/16f;
-            firstSurface??=surface;
-            if(Math.Abs(surface-firstSurface.Value)>4)return 0;
-        }
-        return 0;
+        for(int y=row-3;y<row;y++)if(view.DryCell(x,y)!='.')return false;
+        var deck=view.Environment(x,row);
+        var below=view.Environment(x,row+1);
+        return deck.Shape=='.'&&below.Shape is ('.' or '#' or '=' or 'h' or '1' or '2' or '3' or '4')
+            &&deck.Liquid.Kind is (LiquidKind.None or LiquidKind.Water)
+            &&below.Liquid.Kind is (LiquidKind.None or LiquidKind.Water)
+            &&(deck.Liquid.Kind==LiquidKind.Water||below.Liquid.Kind==LiquidKind.Water);
     }
     internal static PhysicsState? FallLanding(PhysicsState pose,Func<int,int,char> read,
         PhysicsParameters physics,float maxDrop)
@@ -257,8 +246,7 @@ internal sealed class LocalEditEvaluation : IDisposable
                         bool water=view.LiquidAtSupport(x,row);
                         if(water)
                         {
-                            int span=LocalEditGeometry.FlatWaterSpan(view,x,row,direction);
-                            if(material.Shape!='='||span==0||span>material.Count-used)continue;
+                            if(material.Shape!='='||!LocalEditGeometry.WaterDeckCell(view,x,row))continue;
                         }
                         var branch=view.Fork();
                         char BranchLanding(int tx,int ty)=>LocalEditGeometry.LandingCell(branch,tx,ty,row);
@@ -279,7 +267,7 @@ internal sealed class LocalEditEvaluation : IDisposable
                 yield return 0;
                 if(goal.Contains(pose))break;
             }
-            plans.AddRange(unsafeTail?emitted.Where(p=>p.OpenExit):emitted);
+            plans.AddRange(unsafeTail?emitted.Where(p=>p.OpenExit||p.WaterPlatform&&p.Actions.All(a=>a.Kind!=LocalEditKind.Mine)):emitted);
         }
         // Each real cut is followed by actual observation. A cut may release
         // support only if its own counterfactual has a safe landing.

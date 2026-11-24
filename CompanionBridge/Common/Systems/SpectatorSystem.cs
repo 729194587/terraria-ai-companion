@@ -36,7 +36,25 @@ public sealed class SpectatorSystem : ModSystem
         if (!Main.dedServ) toggle = KeybindLoader.RegisterKeybind(Mod, "WatchAI", "End");
     }
     public override void Unload() { toggle = null; Reset(); }
-    public override void OnWorldUnload() => Reset();
+    // Only the local test launcher creates this marker in a fresh viewer profile.
+    private static bool DemoViewer=>!Main.dedServ&&Program.LaunchParameters.ContainsKey("-companionwatchviewer")
+        &&File.Exists(Path.Combine(Main.SavePath,"isolated-watch-viewer"));
+    private static bool autoWatch;
+    private static ulong lastCameraWrite;
+    public override void PostSetupContent()
+    {
+        if(!DemoViewer)return;
+        Directory.CreateDirectory(Main.PlayerPath);
+        var path=Path.Combine(Main.PlayerPath,"Observer.plr");
+        if(!File.Exists(path))
+        {
+            var observer=new Player {name="Observer"};
+            Player.SavePlayer(new Terraria.IO.PlayerFileData(path,false){Player=observer,
+                Metadata=Terraria.IO.FileMetadata.FromCurrentSettings(Terraria.IO.FileType.Player)},skipMapSave:true);
+        }
+    }
+    public override void OnWorldLoad(){autoWatch=DemoViewer;lastCameraWrite=0;}
+    public override void OnWorldUnload() {autoWatch=false;Reset();}
     private static void Reset()
     {
         session = Guid.Empty;
@@ -102,6 +120,8 @@ public sealed class SpectatorSystem : ModSystem
             if (Main.netMode == NetmodeID.Server && f.Sender >= 0) Serve(f);
             else if (Watching && f.Sender == -1 && f.Session == session) Accept(f);
         }
+        if(autoWatch&&Main.netMode==NetmodeID.MultiplayerClient&&!Main.gameMenu&&Main.LocalPlayer.active&&!Main.LocalPlayer.dead)
+        {autoWatch=false;Toggle();}
         if (!Watching) return;
         if (Main.gameMenu || Netplay.Disconnect || Main.LocalPlayer.dead || Main.GameUpdateCount-lastReply > TimeoutTicks)
             Stop("连接失效或角色不可用，已退出");
@@ -164,6 +184,17 @@ public sealed class SpectatorSystem : ModSystem
             for (int y=Netplay.GetSectionY(area.Top); y<=Netplay.GetSectionY(area.Bottom-1); y++)
                 if (!Main.sectionManager.SectionLoaded(x,y)) return;
         Main.screenPosition = focus - new Vector2(Main.screenWidth,Main.screenHeight)*0.5f;
+        if(Program.LaunchParameters.ContainsKey("-companionwatchviewer")&&Main.GameUpdateCount-lastCameraWrite>=30&&DemoViewer)
+        {
+            var marker=Path.Combine(Main.SavePath,"watch-camera.json");
+            lastCameraWrite=Main.GameUpdateCount;
+            try
+            {
+                File.WriteAllText(marker+".tmp",System.Text.Json.JsonSerializer.Serialize(new{x=focus.X,y=focus.Y,world}));
+                File.Move(marker+".tmp",marker,true);
+            }
+            catch(IOException) { /* Retry on the next camera sample if the launcher is reading. */ }
+        }
         if (!showing) { showing=true; Main.NewText("[观战] 正在跟随 AI：" + actor.name); }
     }
 }

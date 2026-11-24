@@ -32,7 +32,15 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
     private IEnumerator<int> planning;
     private MapPoint planningStart;
     private long planningRevision;
-    private TravelProfile planningProfile;
+    private PhysicsParameters planningPhysics;
+    private PhysicsState planningPose;
+    private readonly NavigationSearchMemory quoteMemory=new(cacheSafe:true);
+    private sealed record Passage(PhysicsState Start,PhysicsState End,int Updates,Route Movement,GrappleClimbPlan Hook,Prediction HookTail=null);
+    private sealed record QuotedTrip(LandingRegion Goal,Passage Outbound,Passage Return,long Terrain);
+    private readonly Dictionary<MapPoint,QuotedTrip> quotes=new();
+    private bool searchLimited;
+    private double maxPlanningSliceMs;
+    private int planningSlices,outboundQueries,outboundReached,returnsReached;
     private bool acquired;
     private bool AllowDig=>args.TryGetProperty("allowDig",out var v)&&v.GetBoolean();
     internal FrontierExplorationTask(string id,AiReadOnlyProtocol.Identity identity,JsonElement args,ServerAiNativeActions.ChildExecutor executor):base(id)
@@ -44,7 +52,7 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
         Math.Abs(actor.Bottom.Y-trip.Anchor.Y*16)<=.5f;
     private object Evidence(bool returned=false)=>new{segments=trip?.Segments??0,newTiles=trip?.NewTiles??0,returned,
         anchorLeft,anchorFeetY=(trip?.Anchor.Y??0)*16,actualLeft=actor.position.X,actualFeetY=actor.Bottom.Y,
-        mapRevision=map?.Revision??0,candidates=trip?.Choices.Select(c=>new{x=c.Stance.X,y=c.Stance.Y,gain=c.Gain,
+        mapRevision=map?.Revision??0,planningSlices,maxPlanningSliceMs,outboundQueries,outboundReached,returnsReached,candidates=trip?.Choices.Select(c=>new{x=c.Stance.X,y=c.Stance.Y,gain=c.Gain,
             outboundUpdates=c.Outbound,returnUpdates=c.Return}).ToArray()};
     internal override object Progress=>Evidence();
     internal override Result Prepare(AiReadOnlyProtocol.Identity frame)
@@ -54,7 +62,7 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
         life=actor.statLife;
         if(!GameNavigation.Ordinary(actor)||!ServerAiNavigation.Observe(actor).Settled||
             Math.Abs(actor.Bottom.Y-At.Y*16)>.5f)return Failed("exploration_requires_settled_flat_anchor");
-        if(NativeNavigationWorld.CheckHazards(frame,life) is {} danger)return Failed(danger);
+        if(NativeNavigationWorld.CheckHazards(frame,life,travelling:true) is {} danger)return Failed(danger);
         AiMapRuntime.Tick(true);
         anchorLeft=actor.position.X;
         trip=new(map,At,args.GetProperty("radiusTiles").GetInt32(),args.GetProperty("maxSegments").GetInt32());
@@ -84,33 +92,135 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
         var tool=ActorMining.ChooseTool(actor,identity.World,identity.Generation,p.X,p.Y,true,out int slot,out float updates);
         return new(shape,tool==ActorMining.Failure.None&&ActorMining.SupportedPick(actor.inventory[slot])?(int)Math.Ceiling(updates):0);
     }
-    private TravelProfile Profile()
+    private LandingRegion Region(MapPoint p)=>p==trip.Anchor
+        ?new(anchorLeft-1,anchorLeft+1,p.Y*16):new(p.X*16,p.X*16+15,p.Y*16);
+
+    private long TerrainStamp(Passage outbound,Passage back)
     {
-        var ph=NativeNavigation.Parameters(actor);
-        int rise=ph.Air!=null&&actor.wingTime>0 || ph.ExtraJump!=null&&NativeMotionWorld.Observe(actor).ExtraAvailable?3:1;
-        return new(rise,3,24+(int)Math.Ceiling(16/ph.MaxRun));
+        var hash=new HashCode();
+        foreach(var passage in new[]{outbound,back})
+        {
+            if(passage==null)continue;
+            var pose=passage.Start;
+            if(passage.Hook is {} hook)
+            {
+                var world=new NativeMotionWorld(pose);
+                hash.Add(ActorGrapple.Selected(actor));
+                hash.Add(hook.Unchanged(world));
+                hash.Add(world.TerrainSignature(pose,passage.HookTail));
+                if(hook.Approach!=null)hash.Add(world.TerrainSignature(pose,hook.Approach));
+                continue;
+            }
+            foreach(var edge in passage.Movement.Actions)
+            {
+                hash.Add(new NativeMotionWorld(pose).TerrainSignature(pose,edge));
+                pose=edge.Landing;
+            }
+        }
+        return hash.ToHashCode();
     }
+
+    private IEnumerable<int> FindPassage(PhysicsState start,LandingRegion goal,Action<Passage> accept)
+    {
+        bool Known(PhysicsState pose)=>KnownPose(map,trip.Window,pose);
+        var world=new NativeMotionWorld(start);
+        if(ActorGrapple.Selected(actor)!=null && !ActorGrapple.HasHook(actor) && !actor.noItems && !actor.CCed)
+        {
+            bool KnownCell(int x,int y)=>trip.Window.Contains(new(x,y)) && map.Get(x,y)!=0;
+            foreach(var hook in GrappleClimbPlan.Options(start,goal,planningPhysics,world,world))
+            {
+                yield return 1;
+                if(hook==null||!Known(start)||map.Get(hook.AnchorX,hook.AnchorY)!=2)continue;
+                var launch=hook.Approach?.Landing??start;
+                if(!GrappleClimbPlan.ClearShot(launch,hook.AnchorX,hook.AnchorY,world,KnownCell))continue;
+                if(hook.Preview(start,planningPhysics,world,Known) is not {} tail)continue;
+                accept(new(start,tail.Landing,145+(hook.Approach?.ExecuteFrames??0),null,hook,tail));
+                yield break;
+            }
+        }
+        var query=new LandingRouteQuote();
+        foreach(int work in query.Find(start,goal,planningPhysics,p=>new NativeMotionWorld(p),
+            (from,edge)=>!Known(from)||edge.Frames.Exists(f=>!Known(f.State)),start==planningPose?quoteMemory:null))
+            yield return work;
+        searchLimited|=query.BudgetLimited;
+        if(query.Route is {} route)
+            accept(new(start,route.Actions[^1].Landing,route.Actions.Sum(e=>e.ExecuteFrames),route,null));
+    }
+
+    private IEnumerable<int> Quote(MapPoint? observation,Action<ExplorationLeg,int> accept)
+    {
+        if(!observation.HasValue && Home)yield break;
+        var target=observation??trip.Anchor;
+        var goal=Region(target);
+        outboundQueries++;
+        Passage outward=null,back=null;
+        foreach(int work in FindPassage(planningPose,goal,p=>outward=p))yield return work;
+        if(outward==null)yield break;
+        outboundReached++;
+        if(observation.HasValue)
+        {
+            foreach(int work in FindPassage(outward.End,Region(trip.Anchor),p=>back=p))yield return work;
+            if(back==null)yield break;
+            returnsReached++;
+        }
+        // Searches may span live terrain changes. Replay both proofs against
+        // current collision and retain their footprints through child admission.
+        long stamp=TerrainStamp(outward,back);
+        foreach(var passage in new[]{outward,back})
+        {
+            if(passage==null)continue;
+            if(passage.Hook is {} hook)
+            {
+                if(ActorGrapple.Selected(actor)==null||!hook.Unchanged(new NativeMotionWorld(passage.Start)))yield break;
+                continue;
+            }
+            var pose=passage.Start;
+            foreach(var edge in passage.Movement.Actions)
+            {
+                if(!Replay(pose,edge,planningPhysics))yield break;
+                pose=edge.Landing;
+                yield return 1;
+            }
+        }
+        if(stamp!=TerrainStamp(outward,back))yield break;
+        quotes[target]=new(goal,outward,back,stamp);
+        accept(new(planningStart,target,outward.Updates,null),back?.Updates??0);
+    }
+
+    private bool Replay(PhysicsState state,Prediction edge,PhysicsParameters physics)
+    {
+        var world=new NativeMotionWorld(state);
+        int direction=edge.Frames[0].Input.Direction;
+        int stride=edge.Jump?24:edge.Frames.Count(f=>f.Input.Direction!=0);
+        var proof=PhysicsSimulator.Predict(state,direction,edge.InitialHold,physics,world,walkFrames:stride,
+            rollingJump:true,extraJumpFrame:edge.ExtraJumpFrame,airStartFrame:edge.AirStartFrame,
+            airHoldFrames:edge.AirHoldFrames,walkingGoal:new(edge.Frames[^1].State.Px,edge.Frames[^1].State.Px,
+                edge.Frames[^1].State.Py+PhysicsSimulator.PlayerH));
+        return proof.Safe && proof.Frames.SequenceEqual(edge.Frames)
+            && proof.Frames.TrueForAll(f=>KnownPose(map,trip.Window,f.State));
+    }
+
     private long Signature(ExplorationLeg edge)
     {
-        var world=new NativeMotionWorld(NativeMotionWorld.Observe(actor));
         var hash=new HashCode();
-        hash.Add(NativeNavigation.Parameters(actor));hash.Add(actor.wingTime);
+        hash.Add(map.ChunkRevision(edge.From.X,edge.From.Y));
+        hash.Add(map.ChunkRevision(edge.To.X,edge.To.Y));
+        hash.Add(NativeNavigation.Parameters(actor));
+        hash.Add(NativeMotionWorld.Observe(actor));
+        hash.Add(ActorGrapple.Selected(actor));
         if(AllowDig)hash.Add(ActorMining.CapabilityStamp(actor));
-        for(int y=Math.Min(edge.From.Y,edge.To.Y)-4;y<=Math.Max(edge.From.Y,edge.To.Y);y++)
-        for(int x=Math.Min(edge.From.X,edge.To.X)-1;x<=Math.Max(edge.From.X,edge.To.X)+2;x++)
-            if(map.Get(x,y)!=0)hash.Add(world.ReadSurfaceCell(x,y).Signature);
         return hash.ToHashCode();
     }
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)
     {
         if(!ReferenceEquals(map,AiMapRuntime.Map))return Stop(frame,"unknown","exploration_map_changed");
-        if(NativeNavigationWorld.CheckHazards(frame,life) is {} danger)return Stop(frame,"cancelled",danger);
+        if(NativeNavigationWorld.CheckHazards(frame,life,travelling:true) is {} danger)return Stop(frame,"cancelled",danger);
         foreach(var shot in Main.projectile)
         {
             if(!shot.active||!shot.hostile||shot.damage<=0)continue;
             var threat=SceneThreat.Project(new(actor.position.X,actor.position.Y,actor.width,actor.height),new(actor.velocity.X,actor.velocity.Y),
                 new(shot.position.X,shot.position.Y,shot.width,shot.height),new(shot.velocity.X,shot.velocity.Y),shot.extraUpdates);
-            if(threat.ContactAfterTicks!=null)return Stop(frame,"cancelled","exploration_projectile_approaching");
+            if(threat.ContactAfterTicks!=null && NativeNavigation.ExceedsTravelBudget(actor,life,shot.damage))return Stop(frame,"cancelled","exploration_projectile_approaching");
         }
         if(action!=null)
         {
@@ -122,18 +232,21 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
                 acquired|=stop.InputsAcquired;
                 action=null;trip.ReturnNow();return Running();
             }
-            if(!action.Started && Signature(leg)!=quotedSignature)
+            if(!action.Started && (Signature(leg)!=quotedSignature || leg.Cut is {} tile && Inspect(tile,true).MiningUpdates==0 ||
+                quotes.TryGetValue(leg.Cut==null?leg.To:trip.Anchor,out var quoteBeforeStart) && TerrainStamp(quoteBeforeStart.Outbound,quoteBeforeStart.Return)!=quoteBeforeStart.Terrain))
             {
                 base.Stop(frame,"cancelled","exploration_quote_changed");
                 action=null;return Running();
             }
+            bool starting=!action.Started;
             var result=RunChild(action,frame,600);
+            if(starting && action.Started)trip.Attempt();
             if(result==null)return Running();
             acquired|=result.InputsAcquired;action=null;
             if(!result.InputsReleased||result.Status is "unknown" or "cancelled")return result;
             if(result.Status!="completed")
             {
-                trip.Reject(leg,(long)frame.GameUpdate,quotedSignature);
+                if(result.Status!="timeout" && result.ReasonDetail!="exploration_quote_changed")trip.Reject(leg,(long)frame.GameUpdate,quotedSignature);
                 if(!ServerAiNavigation.Observe(actor).Settled)return result;
             }
             else if(expectedLanding!=null)
@@ -150,18 +263,28 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
         if(frame.GameUpdate<nextObservation)return Running();
         var observation=ServerAiNavigation.Observe(actor);
         if(!observation.Settled || !GameNavigation.Ordinary(actor))return End("failed","exploration_stance_unconfirmed");
-        var profile=Profile();
+        var physics=NativeNavigation.Parameters(actor);
         int remaining=(int)Math.Max(0,(long)deadline-(long)frame.GameUpdate);
-        if(planning==null || At!=planningStart || planningRevision!=map.Revision || profile!=planningProfile)
+        if(!trip.Returning && trip.Departed && remaining<=reservedReturn)
+        {
+            planning?.Dispose();planning=null;trip.ReturnNow();
+        }
+        if(planning==null || At!=planningStart || planningRevision!=map.Revision || physics!=planningPhysics || observation.State!=planningPose)
         {
             planning?.Dispose();
-            planningStart=At;planningRevision=map.Revision;planningProfile=profile;
-            var costs=new ExplorationCostmap(map,trip.Window,profile,p=>Inspect(p,true));
+            planningStart=At;planningRevision=map.Revision;planningPhysics=physics;planningPose=observation.State;
+            quotes.Clear();quoteMemory.Clear();searchLimited=false;
+            var costs=new ExplorationCostmap(map,trip.Window,new(1,3,24+(int)Math.Ceiling(16/physics.MaxRun)),p=>Inspect(p,true))
+                {Navigation=Quote,AllowExcavation=AllowDig};
             planning=trip.Plan(costs,At,(long)frame.GameUpdate,remaining,Signature).GetEnumerator();
         }
         long started=Stopwatch.GetTimestamp();
-        for(int work=0;planning.MoveNext();work++)
-            if(work>=31 || Stopwatch.GetElapsedTime(started).TotalMilliseconds>=2)return Running();
+        planningSlices++;
+        bool pending;
+        for(int work=0;(pending=planning.MoveNext());work++)
+            if(work>=31 || Stopwatch.GetElapsedTime(started).TotalMilliseconds>=2)break;
+        maxPlanningSliceMs=Math.Max(maxPlanningSliceMs,Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        if(pending)return Running();
         planning.Dispose();planning=null;
         leg=trip.Next;
         if(!trip.Returning && trip.Choices.Count>0)
@@ -171,51 +294,37 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
             if(remaining<choice.Outbound+reservedReturn){trip.ReturnNow();return Running();}
         }
         bool finalAlignment=trip.Returning&&At==trip.Anchor;
+        if(trip.Returning&&Home && !trip.Departed && searchLimited)return End("unknown","exploration_route_unconfirmed");
         if(trip.Returning&&Home)
             return trip.NewTiles>0&&trip.Departed?new("completed","frontier_observed_and_returned",Evidence(true),true,true,acquired)
                 :new("failed","frontier_no_new_tiles",Evidence(true),true,false,acquired);
-        if(finalAlignment)leg=new(At,At,24,null);
+        if(finalAlignment && !Home && !quotes.ContainsKey(At))
+            return End("unknown","exploration_anchor_alignment_unconfirmed");
+        if(leg==null && searchLimited)return End("unknown","exploration_route_unconfirmed");
         if(leg==null)return End("failed",trip.Returning?"frontier_return_unavailable":"frontier_unavailable");
         if(remaining<leg.Updates)return End("timeout","exploration_budget_exhausted");
-        if(!finalAlignment)
-        {
-            var live=new ExplorationCostmap(map,trip.Window,profile,p=>Inspect(p,true));
-            if(live.Edge(leg.From,leg.To)!=leg)return Reject(frame);
-        }
-        float left=finalAlignment?anchorLeft:leg.To.X*16+3;
-        var target=new LandingRegion(left-1,left+1,leg.To.Y*16);
-        var pose=new PhysicsState(left,target.SurfaceY-42,0,0,true);
-        var world=new NativeMotionWorld(observation.State);
-        if(leg.Cut==null && (!world.SafeLanding(pose)||!KnownPose(map,trip.Window,pose)))
-            return finalAlignment?End("failed","exploration_anchor_changed"):Reject(frame);
-        if(leg.To.Y>leg.From.Y)
-        {
-            // Price directionally, then prove the reverse rise with spent air resources
-            // before committing to the descent. Keep the native footprint inside memory.
-            var back=new LandingRegion(actor.position.X-1,actor.position.X+1,actor.Bottom.Y);
-            var route=StateSpacePlanner.Plan(pose,back,NativeNavigation.Parameters(actor),world,budgetMs:4);
-            if(!route.ReachedGoal || route.Actions.Any(e=>e.Frames.Any(f=>!KnownPose(map,trip.Window,f.State))))return Reject(frame);
-        }
         string op;JsonElement parameters;
         expectedLanding=null;
         if(leg.Cut is {} cut)
         {
+            if(!Home && (!quotes.TryGetValue(trip.Anchor,out var returnProof)
+                || TerrainStamp(returnProof.Outbound,null)!=returnProof.Terrain))return Running();
             if(trip.Returning || Inspect(cut,true).MiningUpdates==0)return Reject(frame);
             op="mine_tile";parameters=JsonSerializer.SerializeToElement(new{x=cut.X,y=cut.Y});
         }
         else
         {
             op="navigate_to_landing_region";
-            var window=trip.Window;
-            // Include body width, braking distance and headroom for a local jump.
-            executor.ExplorationWindow=new MapWindow(Math.Max(window.Left,Math.Min(leg.From.X,leg.To.X)-1),
-                Math.Max(window.Top,Math.Min(leg.From.Y,leg.To.Y)-9),
-                Math.Min(window.Right,Math.Max(leg.From.X,leg.To.X)+2),Math.Max(leg.From.Y,leg.To.Y));
-            expectedLanding=target;
-            parameters=NativeNavigationWorld.RegionArguments(target);
+            if(!quotes.TryGetValue(leg.To,out var quote)||TerrainStamp(quote.Outbound,quote.Return)!=quote.Terrain)
+                return Running();
+            executor.ExplorationWindow=trip.Window;
+            executor.ExplorationQuote=new(planningPose,planningPhysics,quote.Goal,quote.Outbound.Movement,
+                ()=>TerrainStamp(quote.Outbound,quote.Return)==quote.Terrain,quote.Outbound.Hook);
+            expectedLanding=quote.Goal;
+            parameters=NativeNavigationWorld.RegionArguments(quote.Goal);
         }
         quotedSignature=Signature(leg);
-        trip.Attempt();action=new(executor,op,parameters,taskId+"/"+(++sequence));
+        action=new(executor,op,parameters,taskId+"/"+(++sequence));
         return Running();
     }
     internal static bool KnownPose(AiMap map,MapWindow bounds,PhysicsState s)

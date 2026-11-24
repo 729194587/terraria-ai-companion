@@ -8,6 +8,7 @@ internal sealed class NavigationTask
 {
     internal int? LiveFallStart { set=>_executor.LiveFallStart=value; }
     internal ulong ProgressVersion { get; private set; }
+    internal NavigationQuote QuotedRoute {get;set;}
     internal Func<PhysicsState,bool> AllowedPose {get;set;}
     internal Func<PhysicsState,PhysicsParameters,IMotionWorld,bool> TryGrapple { get; set; }
     private readonly LocalMotionController _executor = new();
@@ -173,6 +174,9 @@ internal sealed class NavigationTask
                     || !world.SafeSweep(state, state, out _))
                 { Unconfirmed("recovery_checkpoint_changed"); return default; }
                 _resumePending=false;
+                // The trip owns retries and directional cooldowns. Preserve the
+                // actual hook failure once neutral input and support are confirmed.
+                if(QuotedRoute?.Grapple!=null)return Fail(_recoveryReason??"grapple_recovery");
             }
             if (!state.Grounded) return Fail("replan requires grounded player");
             string landingRejection = world.LandingRejection(state);
@@ -196,6 +200,18 @@ internal sealed class NavigationTask
                 }
             }
             else _waitedForWingRefill=false;
+            // A frontier quote also proves the return. Recheck its footprint
+            // before chaining a maneuver, even if the outbound edge still fits.
+            if(QuotedRoute is {} proof && (ph!=proof.Physics||!proof.TerrainCurrent()))
+            {
+                if(!PhysicsSimulator.Settled(state,world) && _route!=null && _routeIndex<_route.Actions.Count)
+                {
+                    BeginRecovery(state,"exploration_quote_changed");
+                    _rememberFailedEdge=false;
+                    return default;
+                }
+                return Fail("exploration_quote_changed");
+            }
             if (!TryContinue(state,ph,world))
             {
                 if (recoveryReplan) { _recoveryReplans++; Snapshot=Snapshot with {RecoveryReplans=_recoveryReplans}; }
@@ -206,13 +222,34 @@ internal sealed class NavigationTask
                 float walkTarget=region==null?targetX:(region.MinPlayerLeftX+region.MaxPlayerLeftX)/2;
                 int walkDirection=walkTarget>=state.Px?1:-1;
                 bool surface=Continuous&&region!=null&&world is ISurfaceTerrain;
-                // Cleared edit corridors and precise final braking retain the
-                // existing fully simulated shortcut. Larger/special terrain is
-                // organised by the graph, not a succession of flat prefixes.
-                bool shortApproach=!surface||region.Distance(state)<=64;
-                _route = shortApproach&&_enableSafeGroundWalk&&(region==null||Continuous||PreferFlatRegion)
+                // Try a verified flat prefix for a distant goal before expanding the
+                // surface graph. Once a graph search starts, keep advancing it.
+                bool shortApproach=!surface||region.Distance(state)<=64
+                    || region.Distance(state)>SurfaceGraph.InitialRadius*16 && _pendingSearch==null && _surfaceSearch==null;
+                if(region!=null && state.Py+42-region.SurfaceY>=144 &&
+                    _pendingSearch==null && _surfaceSearch==null && TryGrapple?.Invoke(state,ph,world)==true)
+                {
+                    Snapshot=Snapshot with{Status="running",Reason="grapple navigation"};
+                    return default;
+                }
+                if(QuotedRoute!=null)
+                {
+                    if(QuotedRoute.Grapple!=null)return Fail("exploration_quote_changed");
+                    if(state!=QuotedRoute.Start||region!=QuotedRoute.Goal||_actions>0||recoveryReplan)
+                        return Fail("exploration_quote_changed");
+                    _route=QuotedRoute.Route with{Actions=new(QuotedRoute.Route.Actions)};
+                }
+                else _route=surface&&AllowedPose==null&&_surfaceSearch==null
+                    ?PoolCrossing.TryPlan(state,region,ph,world):null;
+                if(_route==null && surface && AllowedPose==null && _surfaceSearch==null)
+                    _route=SafeGroundWalk.TryDescend(state,region,ph,world)??SafeGroundWalk.TryAscend(state,region,ph,world);
+                _route ??= shortApproach&&_enableSafeGroundWalk&&(region==null||Continuous||PreferFlatRegion)
                     ?SafeGroundWalk.TryPlan(state,walkTarget,region==null?_direction:walkDirection,ph,world,region):null;
-                if (_route != null && RejectRemembered(state, _route.Actions[0])) _route=null;
+                if (_route != null && RejectRemembered(state, _route.Actions[0]))
+                {
+                    if(QuotedRoute!=null)return Fail("exploration_quote_changed");
+                    _route=null;
+                }
                 if(_route==null)
                 {
                     _watchdog.Observe(NavigationActivity.Search);
@@ -225,7 +262,7 @@ internal sealed class NavigationTask
                             DiscardSearch();
                             _searchStart=state;_searchPhysics=ph;_searchTerrain=terrain;
                             _searchFailures=_failures.Version;
-                            if(surface)_surfaceSearch=new(_knowledge.Surfaces,state,region,ph,world,(ISurfaceTerrain)world,_knowledge.Search,RejectRemembered,_trip.Detour,_historicalPreference);
+                            if(surface)_surfaceSearch=new(_knowledge.Surfaces,state,region,ph,world,(ISurfaceTerrain)world,_knowledge.Search,RejectRemembered,_trip.Detour,_historicalPreference,allowTravelPrefix:true);
                             else _pendingSearch=new(state,targetX,region,ph,world,goalDirection:region==null?_direction:null,rejectEdge:RejectRemembered,
                                     detourCheckpoint:_trip.Detour,historicalPreference:_historicalPreference,learning:_knowledge.Search);
                         }
@@ -238,10 +275,10 @@ internal sealed class NavigationTask
                     }
                     else
                         _route = region != null ? StateSpacePlanner.Plan(state, region, ph, world, budgetMs: _searchBudgetMilliseconds, rejectEdge: RejectRemembered, detourCheckpoint: _trip.Detour, historicalPreference: _historicalPreference)
-                            : StateSpacePlanner.Plan(state, targetX, ph, world, goalDirection: _direction, rejectEdge: RejectRemembered, detourCheckpoint: _trip.Detour, historicalPreference: _historicalPreference);
+                            : StateSpacePlanner.Plan(state, targetX, ph, world, budgetMs: _searchBudgetMilliseconds, goalDirection: _direction, rejectEdge: RejectRemembered, detourCheckpoint: _trip.Detour, historicalPreference: _historicalPreference);
                     _searches++;
                 }
-                else _fastWalks++;
+                else if(_route.Kind=="safe_ground_walk")_fastWalks++;
                 _planningMilliseconds+=_route.Milliseconds;
                 _plans++;
                 Snapshot = Snapshot with { Action = "plan", Expansions = _route.Expansions,
@@ -253,7 +290,7 @@ internal sealed class NavigationTask
                 if(grappleFallback&&TryGrapple?.Invoke(state,ph,world)==true)
                 {
                     DiscardSearch();_route=null;
-                    Snapshot=Snapshot with {Status="running",Reason="bounded native grapple candidate selected"};
+                    Snapshot=Snapshot with {Status="running",Reason="grapple navigation"};
                     return default;
                 }
                 if (_route.Actions.Count == 0)
@@ -283,6 +320,7 @@ internal sealed class NavigationTask
             }
             DiscardSearch();
             _edgeStart=state;
+            ExtendWalkingStride(ph,world);
             var edge=Edge;
             if(AllowedPose!=null && (!AllowedPose(state)||edge.Frames.Exists(f=>!AllowedPose(f.State))))
                 return Fail("exploration_route_outside_known_terrain");
@@ -292,12 +330,19 @@ internal sealed class NavigationTask
             _executing = true;
         }
         _watchdog.Observe(NavigationActivity.Movement);
+        bool crossing=_route.Kind==PoolCrossing.Kind;
+        if(crossing)
+        {
+            if(world is not IPoolMotionWorld pool||pool.Breath<PoolCrossing.Reserve+_executor.RemainingFrames)
+                return Fail("pool crossing breath reserve changed");
+            world=pool.PoolWorld(state);
+        }
         var input = _executor.Before(session, Edge.Frames[0].Input.Direction,
             state, ph, world, generation);
         Publish();
         if (_executor.FailureKind == MotionFailureKind.RouteDeviation)
         { BeginRecovery(state, _executor.Snapshot.Reason); _neutralIssued=_recovering; return default; }
-        if(Continuous&&_region!=null&&_routeIndex==_route.Actions.Count-1&&!_route.ReachedGoal
+        if(!crossing&&Continuous&&_region!=null&&_routeIndex==_route.Actions.Count-1&&!_route.ReachedGoal
             &&world is ISurfaceTerrain&&_routePhysics==ph)
             PlanAhead(ph,world);
         _motionStart=state;_motionIssued=true;
@@ -313,7 +358,8 @@ internal sealed class NavigationTask
         if (_recovering) { ObserveRecovery(state, world, inputsReleased); return; }
         if (!_executing) return;
         if(_confirming){ConfirmLanding(state,world);return;}
-        _executor.After(state, world);
+        var frameWorld=_route.Kind==PoolCrossing.Kind&&world is IPoolMotionWorld pool?pool.PoolWorld(state):world;
+        _executor.After(state, frameWorld);
         Publish();
         if (Snapshot.Status == "failed")
         {
@@ -434,7 +480,36 @@ internal sealed class NavigationTask
     }
 
     private bool RejectRemembered(PhysicsState start, Prediction edge)
-        => _failures.RejectKnown(start,edge,Clock)||_trip.Reject(edge.Landing);
+        => _failures.RejectKnown(start,edge,Clock)||_trip.Reject(edge.Landing)
+            || AllowedPose!=null && (!AllowedPose(start)||edge.Frames.Exists(f=>!AllowedPose(f.State)));
+
+    private void ExtendWalkingStride(PhysicsParameters ph,IMotionWorld world)
+    {
+        if(!Continuous || _region==null || QuotedRoute!=null || AllowedPose!=null
+            || _route.ReachedGoal || _routeIndex!=_route.Actions.Count-1
+            || _route.Kind is not ("surface_graph" or "downhill_walk")
+            || world is not ISurfaceTerrain terrain)return;
+        var edge=Edge;
+        if(edge.Jump || edge.ExecuteFrames!=edge.Frames.Count)return;
+        int moveFrames=edge.Frames.FindIndex(f=>f.Input.Direction==0);
+        if(moveFrames<=0)return;
+        var checkpoint=edge.Frames[moveFrames-1].State;
+        int dir=edge.Frames[0].Input.Direction;
+        float target=Math.Clamp(checkpoint.Px,_region.MinPlayerLeftX,_region.MaxPlayerLeftX);
+        if(dir*(target-checkpoint.Px)<96 || !PhysicsSimulator.SupportedCheckpoint(checkpoint,world)
+            || edge.Frames.Exists(f=>f.State.Wet || f.Input.Down))return;
+        var ahead=terrain.MotionAt(checkpoint);
+        var next=PhysicsSimulator.Predict(checkpoint,dir,0,ph,ahead,walkFrames:36);
+        if(!next.Safe || !PhysicsSimulator.Settled(next.Landing,ahead)
+            || next.Frames.Exists(f=>f.State.Wet) || dir*(target-next.Landing.Px)<0
+            || _region.Distance(next.Landing)>=_region.Distance(checkpoint))return;
+        var moving=edge with{ExecuteFrames=moveFrames,Landing=checkpoint};
+        var braking=next with{ExecuteFrames=next.Frames.Count};
+        if(RejectRemembered(_edgeStart,moving)||RejectRemembered(checkpoint,braking))return;
+        _route=_route with{Actions=new(){moving,braking}};
+        _routeIndex=0;
+        DiscardAhead();
+    }
 
     private bool TryContinue(PhysicsState state,PhysicsParameters ph,IMotionWorld world)
     {
@@ -457,7 +532,7 @@ internal sealed class NavigationTask
             int hold=old.ExtraJumpFrame>=0||old.AirStartFrame>=0?old.InitialHold:old.Frames.FindAll(f=>f.Input.Jump).Count;
             int stride=old.Jump?24:old.Frames.FindAll(f=>f.Input.Direction!=0).Count;
             var fresh=PhysicsSimulator.Predict(state,old.Frames[0].Input.Direction,hold,ph,world,
-                walkFrames:stride,rollingJump:true,extraJumpFrame:old.ExtraJumpFrame,airStartFrame:old.AirStartFrame,airHoldFrames:old.AirHoldFrames);
+                walkFrames:stride,rollingJump:true,extraJumpFrame:old.ExtraJumpFrame,airStartFrame:old.AirStartFrame,airHoldFrames:old.AirHoldFrames,walkingGoal:_region);
             if(fresh.Safe&&old.ExecuteFrames<=fresh.Frames.Count)
             {
                 var end=fresh.Frames[old.ExecuteFrames-1].State;
@@ -560,6 +635,10 @@ internal sealed class NavigationTask
             _failedEdge=null;
             _recovering=false; _resumePending=true; _route=null;
             float forward=Progress(state); _stalled=Checkpoint(state,verifiedAction:false)?0:_stalled+1;
+            // A failed prediction can still leave the native player safely
+            // standing on the next ledge. Count retries at a stuck location,
+            // without accumulating them across verified forward landings.
+            if(Continuous && forward>=_furthest+16)_consecutiveRecoveries=0;
             _furthest=Math.Max(_furthest,forward);
             Snapshot=Snapshot with {Status="running",Reason="safe recovery checkpoint; replan from actual state",
                 ActualLanding=new(state.Px,state.Py),RecoveryReplans=_recoveryReplans,FailedEdgeCount=_failures.Count};

@@ -8,7 +8,7 @@ using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Motion;
 
-internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
+internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain, IPoolMotionWorld
 {
     public IMotionWorld MotionAt(PhysicsState pose)=>new NativeMotionWorld(pose);
     public SurfaceCell ReadSurfaceCell(int x,int y)
@@ -30,9 +30,23 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
     private readonly int _left, _top;
     private readonly bool _captureContacts;
     public NavigationBlockingTile[] LastHorizontalContact {get;private set;}
-    internal NativeMotionWorld(PhysicsState start,bool captureContacts=false)
+    private readonly bool allowOrdinaryWater;
+    public int Breath { get; }
+    public IMotionWorld PoolWorld(PhysicsState start)=>new NativeMotionWorld(start,_captureContacts,Breath,true);
+    public bool WaterAhead(PhysicsState start,int direction)
     {
-        _captureContacts=captureContacts;
+        int cx=FallSafety.Row(start.Px+10),row=FallSafety.Row(start.Py+42);
+        for(int dx=0;dx<=4;dx++)
+            for(int y=row-2;y<=row+3;y++)
+            {
+                int x=cx+direction*dx;
+                if(TerrainReader.Loaded(x,y)&&Main.tile[x,y].LiquidAmount>0&&Main.tile[x,y].LiquidType==LiquidID.Water)return true;
+            }
+        return false;
+    }
+    internal NativeMotionWorld(PhysicsState start,bool captureContacts=false,int breath=0,bool allowOrdinaryWater=false)
+    {
+        _captureContacts=captureContacts;Breath=breath;this.allowOrdinaryWater=allowOrdinaryWater;
         _left = (int)Math.Floor((start.Px + 10) / 16) - 22;
         _top = (int)Math.Floor((start.Py + 42) / 16) - 17;
     }
@@ -84,7 +98,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
         {
             Check(Math.Min(start.Px, end.Px) - 2, Math.Min(start.Py, end.Py) - 2,
                 Math.Max(start.Px, end.Px) + 22, Math.Max(start.Py, end.Py) + 44, true);
-            reason = NativeLiquidRisk.Rejection(start,end);
+            reason = NativeLiquidRisk.Rejection(start,end,allowOrdinaryWater);
             return reason==null;
         }
         catch (UnsafeMotionException error) { reason = error.Message; return false; }

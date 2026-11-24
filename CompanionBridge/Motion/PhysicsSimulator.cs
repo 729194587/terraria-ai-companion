@@ -209,6 +209,9 @@ internal static class PhysicsSimulator
             (vy,resources,phase)=ph.Air.Step(s,input,ph,vy,jfl,launched);
         }
         else vy = Math.Min(vy + gravity, maxFall);
+        // Player.Update IL_7490..74c6 shortens the remaining held jump on exit
+        // from ordinary water, after JumpMovement and before dry collision.
+        if(s.Wet&&!wet)jfl=Math.Min(jfl,jumpHeight/5);
         var moved = input.Down?world.MoveThroughPlatform(s,vx,vy,gravity):wet?world.MoveInWater(s,vx,vy,gravity):world.Move(s,vx,vy,gravity);
         if (vy < 0 && Math.Abs(moved.Vy - vy) > 0.01f) jfl = 0;
         return moved with { JumpFramesLeft = jfl, ReleaseJump = !input.Jump,
@@ -220,7 +223,7 @@ internal static class PhysicsSimulator
     // moving prefix and replans, so an open flat surface does not become stop/start.
     internal static Prediction Predict(PhysicsState start, int direction, int hold,
         PhysicsParameters ph, IMotionWorld world, int walkFrames = WalkFrames, bool rollingJump = false,
-        int extraJumpFrame=-1,int airStartFrame=-1,int airHoldFrames=0,bool allowStationaryHop=false,bool drop=false)
+        int extraJumpFrame=-1,int airStartFrame=-1,int airHoldFrames=0,bool allowStationaryHop=false,bool drop=false,LandingRegion walkingGoal=null)
     {
         var frames = new List<PredictedFrame>();
         bool brakingOnly = direction == 0 && hold == 0 && walkFrames == 0;
@@ -292,7 +295,7 @@ internal static class PhysicsSimulator
                     ? allowStationaryHop || start.Py - s.Py >= 4
                     : direction * (s.Px - start.Px) >= (hold > 0 ? 24 : 4)
                         || hold > 0 && s.Py <= start.Py - 16 && direction * (s.Px - start.Px) > 0;
-                bool safe = (!drop || airborneBelow && s.Py-start.Py is >=16 and <=96) && (brakingOnly || progress)
+                bool safe = (!drop || airborneBelow && s.Py-start.Py is >=16 and <=96) && (brakingOnly || progress || hold==0 && walkingGoal?.Contains(s)==true)
                     && world.SafeLanding(s)&&(extraJumpFrame<0||f>=extraJumpFrame)&&(airStartFrame<0||f>=airStartFrame);
                 if(airStartFrame>=0)safe&=frames.Exists(p=>p.State.AirPhase is AirPhase.Flying or AirPhase.Gliding or AirPhase.RocketPulse);
                 int execute = movingLandingFrames > 0 ? movingLandingFrames : frames.Count;

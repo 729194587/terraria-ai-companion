@@ -93,6 +93,14 @@ internal static class ServerAiTerrainFixture
         // Explicit disturbance inside the existing copied-world/main-thread gate.
         // This is not a production steering or recovery path.
         var active=(ActorControl.Driver as ServerAiNavigation)?.Current;
+        if(caseName=="frontier_changed-1" && !recoveryFired && active?.Status=="running" && active.Updates>=2)
+        {
+            for(int tx=recoveryLeft+12;tx<=recoveryLeft+34;tx++)
+            for(int ty=recoveryFloor;ty<recoveryFloor+12;ty++)Main.tile[tx,ty].ClearTile();
+            recoveryFired=true;
+            File.WriteAllText(Path.Combine(Main.SavePath,"frontier-bank-removed.json"),
+                JsonSerializer.Serialize(new{p.position.X,tick=Main.GameUpdateCount}));
+        }
         if(recoveryMode=="turnaround"&&!recoveryFired)
         {
             // One recorded initial condition in the copied-world fixture.
@@ -159,13 +167,13 @@ internal static class ServerAiTerrainFixture
         if(direction!=1&&direction!=-1)throw new ArgumentException("Invalid terrain direction");
         bool experiment=scene=="experiment_platform"&&Program.LaunchParameters.ContainsKey("-companionnavexperiment");
         if(!experiment&&scene is not ("flat" or "step_up" or "step_down" or "slope_up" or "slope_down" or "short_gap" or "low_obstacle" or "wide_gap" or "high_wall" or "platform_up" or "platform_down" or "high_platform"
-            or "obstacle_one" or "solid_up_three" or "solid_up_five" or "shaft_up" or "shaft_ceiling" or "alternating" or "no_landing" or "descent_five" or "hazard_target" or "extra_up" or "extra_chain" or "wing_chain"))
+            or "obstacle_one" or "solid_up_three" or "solid_up_five" or "shaft_up" or "shaft_ceiling" or "alternating" or "no_landing" or "descent_five" or "hazard_target" or "extra_up" or "extra_chain" or "wing_chain" or "frontier_gap" or "frontier_shaft" or "frontier_changed" or "frontier_high" or "frontier_hook" or "frontier_nohook"))
             throw new ArgumentException("Unknown terrain scene");
         if(Program.LaunchParameters.ContainsKey("-companionnavexperiment"))
             ServerNavigationReplayFixture.Prepare(doc.RootElement);
         mobilityMode=doc.RootElement.TryGetProperty("mobility",out var mobility)?mobility.GetString():null;
         if(mobilityMode!=null&&(!Program.LaunchParameters.ContainsKey("-companionmobilitytest")
-            ||mobilityMode is not ("basic" or "swiftness" or "add" or "remove" or "rapid" or "expiry" or "unknown" or "equipment" or "cloud" or "cloud_fail" or "cloud_offset" or "angel" or "bone" or "demon")))
+            ||mobilityMode is not ("basic" or "hermes" or "swiftness" or "add" or "remove" or "rapid" or "expiry" or "unknown" or "equipment" or "cloud" or "cloud_fail" or "cloud_offset" or "angel" or "bone" or "demon")))
             throw new ArgumentException("Invalid isolated mobility scene");
         if((mobilityMode?.StartsWith("cloud")==true||scene.StartsWith("extra_"))&&!Program.LaunchParameters.ContainsKey("-companionextrajumptest"))
             throw new InvalidOperationException("Missing extra jump fixture flag");
@@ -199,6 +207,10 @@ internal static class ServerAiTerrainFixture
             if(scene=="slope_down"&&q>=4)
             {surface+=Math.Min(q-4,4);if(q<8)slope=direction==1?1:2;}
             if(scene=="short_gap"&&q>=4&&q<=6||scene=="wide_gap"&&q>=4&&q<=20)surface+=10;
+            if((scene is "frontier_gap" or "frontier_changed") && q is >=5 and <=11 || scene=="frontier_shaft" && q>=5)surface+=12;
+            bool hookShaft=scene is "frontier_hook" or "frontier_nohook";
+            if(hookShaft && q>=2)surface+=10;
+            if(scene=="frontier_high" && q>=6)surface-=8;
             if(scene=="low_obstacle"&&q>=4&&q<=5)surface-=2;
             if(scene=="obstacle_one"&&q>=4&&q<=5)surface--;
             if(scene=="solid_up_three"&&q>=4)surface-=3;
@@ -209,7 +221,8 @@ internal static class ServerAiTerrainFixture
                 surface+=q switch {>=3 and <=5 or >=15 and <=17=>12,>=18=>-16,>=6=>-8,_=>0};
             if(scene=="high_wall"&&q>=4&&q<=6)surface-=12;
             var tile=Main.tile[tx,ty];tile.ClearEverything();
-            if(ty>=surface){tile.HasTile=true;tile.TileType=TileID.Dirt;if(ty==surface)tile.Slope=(SlopeType)slope;}
+            if(scene is "frontier_gap" or "frontier_shaft" or "frontier_changed" or "frontier_high" or "frontier_hook" or "frontier_nohook")tile.WallType=WallID.DirtUnsafe;
+            if(ty>=surface||hookShaft&&q==5&&ty==floor-8){tile.HasTile=true;tile.TileType=TileID.Dirt;if(ty==surface)tile.Slope=(SlopeType)slope;}
             if(recoveryMode=="turnaround")
             {
                 if(tx==2085 && ty is >=205 and <=210 || tx is >=2085 and <=2094 && ty==205
@@ -255,11 +268,30 @@ internal static class ServerAiTerrainFixture
             foreach(var item in p.armor)item.TurnToAir();
             if(mobilityMode is "swiftness" or "remove" or "rapid" or "expiry")p.AddBuff(BuffID.Swiftness,36000,true);
             if(mobilityMode=="unknown")p.AddBuff(BuffID.WellFed,36000,true);
+            if(mobilityMode=="hermes")p.armor[3].SetDefaults(ItemID.HermesBoots);
             if(mobilityMode=="equipment")p.armor[0].SetDefaults(ItemID.CopperHelmet);
             if(mobilityMode is "angel" or "bone")p.armor[3].SetDefaults(mobilityMode=="angel"?ItemID.AngelWings:ItemID.BoneWings);
             if(mobilityMode=="demon")p.armor[3].SetDefaults(ItemID.DemonWings);
             if(mobilityMode.StartsWith("cloud"))p.armor[3].SetDefaults(ItemID.CloudinaBottle);
         }
+        if(scene is "frontier_gap" or "frontier_shaft" or "frontier_changed" or "frontier_high" or "frontier_hook" or "frontier_nohook")
+        {
+            var old=AiMapRuntime.Map??throw new InvalidOperationException("No character map for frontier fixture");
+            AiMapRuntime.Map=new AiMap(old.World,old.Character,old.Width,old.Height);
+            for(int y=floor-20;y<=floor+18;y++)
+            for(int x=left-20;x<=left+20;x++)
+            {
+                // Only the far bank (or shaft bottom) has anything left to observe.
+                if(scene is "frontier_hook" or "frontier_nohook")
+                {
+                    if(x==left+8 && y==floor+8)continue;
+                }
+                else if(x==left+16 && y==floor+(scene=="frontier_shaft"?10:scene=="frontier_high"?-10:-2))continue;
+                AiMapRuntime.Remember(x,y);
+            }
+        }
+        if(scene is "frontier_hook" or "frontier_nohook")
+            p.miscEquips[4].SetDefaults(scene=="frontier_hook"?ItemID.GrapplingHook:ItemID.None);
         if(environment) ProbeEnvironment(p, left, floor-4);
         pending=new{scene,direction,startX=p.position.X,startY=p.position.Y,targetX=recoveryMode=="turnaround"?33217.027f:p.position.X+direction*192,
             floor,originTileX=left,world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,

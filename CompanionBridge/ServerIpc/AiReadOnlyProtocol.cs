@@ -15,12 +15,17 @@ internal sealed class AiReadOnlyProtocol
     internal sealed record Identity(object Actor, string World, long Generation, int Slot, object State, int SelectedSlot = -1, ulong GameUpdate = 0, bool CanAct = true)
     {
         [System.Text.Json.Serialization.JsonIgnore]
+        internal long MessageSequence {get;init;}
+        internal Func<long,object> ReadMessages {get;init;}
+        internal object LifeEvent { get; init; }
+        [System.Text.Json.Serialization.JsonIgnore]
         internal Lease RequestLease { get; init; }
     }
     internal sealed record Binding(string actor, string world, long generation, int slot);
     internal sealed record Lease(Identity Identity, Binding Binding)
     {
         // Engine payload is opaque to the transport. At most one quote per bound connection.
+        internal long MessageCursor=Identity.MessageSequence;
         internal object MerchantQuote;
         internal IDialogue Dialogue;
         internal void EndDialogue()
@@ -77,7 +82,7 @@ internal sealed class AiReadOnlyProtocol
             bool reading = op == "query" && query != null;
             bool speaking = op=="say" && say!=null;
             bool turning=op=="reply_turn"&&say!=null;
-            if (op is not ("bind" or "state") && !reading && !speaking && !turning && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+            if (op is not ("bind" or "state" or "life_status") && !reading && !speaking && !turning && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             foreach (string field in names)
                 if (field == "actionId" && !execution || field=="operation" && op!="start" && !reading || field=="arguments" && op is not ("start" or "retreat") && !reading
                     || field == "expiresAtUnixMs" && op is not ("start" or "say")
@@ -126,8 +131,17 @@ internal sealed class AiReadOnlyProtocol
                 leases.Add(connection, new(current, binding));
                 var capabilities=actions?.Capabilities.ToList();
                 if(query!=null){capabilities ??= new(); capabilities.Add("server_ai_material_plan_v1");capabilities.Add("server_ai_item_sources_v1");capabilities.Add("server_ai_item_info_v1");capabilities.Add("server_ai_build_diff_v1");capabilities.Add("server_ai_housing_inspect_v1");capabilities.Add("server_ai_npc_housing_v1");if (actions?.SupportsMerchantShop == true) capabilities.Add("server_ai_merchant_shop_v1");capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_scene_region_v1");capabilities?.Add("server_ai_map_v1");capabilities.Add("server_ai_map_chunks_v1");}
-                if(say!=null)capabilities?.Add("server_ai_chat_v2");
+                if(current.ReadMessages!=null)capabilities?.Add("server_ai_messages_v1");
+                if(say!=null){capabilities?.Add("server_ai_chat_v2");capabilities?.Add("server_ai_life_status_v1");}
                 return JsonSerializer.Serialize(Reply(true, data: capabilities==null?null:new { capabilities, compatibility = actions?.Compatibility }, binding: binding));
+            }
+            // Read-only across native respawn of the same object. Action leases stay generation-bound.
+            if (op=="life_status" && ReferenceEquals(lease.Identity.Actor,current.Actor)
+                && lease.Identity.World==current.World && lease.Identity.Slot==current.Slot)
+            {
+                var messages=current.ReadMessages?.Invoke(lease.MessageCursor);
+                lease.MessageCursor=current.MessageSequence;
+                return JsonSerializer.Serialize(Reply(true,new { generation=current.Generation, ready=current.CanAct, death=current.LifeEvent,messages },lease.Binding));
             }
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)

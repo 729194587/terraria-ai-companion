@@ -32,7 +32,7 @@ internal static class ServerLiquidFixture
         File.Delete(request);
         int x=Main.spawnTileX,floor=Main.spawnTileY+8;
         scene=null;
-        if(mode is "bridge" or "detour" or "hazard" or "mine" or "flood" or "wade_one" or "wade_deep" or "wade_long")
+        if(mode is "bridge" or "detour" or "hazard" or "mine" or "flood" or "wade_one" or "wade_deep" or "wade_long" or "wade_pool" or "bridge_long")
         {
             PrepareScene(p,mode,x,floor);
             return;
@@ -161,15 +161,15 @@ internal static class ServerLiquidFixture
     {
         scene=mode;gateOpened=false;samples=0;
         bool wade=mode.StartsWith("wade_",StringComparison.Ordinal);
-        int depth=mode=="wade_deep"?2:wade?1:4;
-        int right=x+(mode=="wade_long"?20:mode=="wade_deep"?13:8);
+        int depth=mode is "bridge" or "bridge_long"?18:mode=="wade_pool"?4:mode=="wade_deep"?2:wade?1:4;
+        int right=x+(mode=="bridge_long"?24:mode=="wade_long"?20:mode is "wade_deep" or "wade_pool"?13:8);
         bool tunnel=mode is "mine" or "flood";
         for(int tx=x-28;tx<=x+28;tx++)
-            for(int ty=floor-23;ty<=floor+8;ty++)
+            for(int ty=floor-23;ty<=floor+Math.Max(8,depth+1);ty++)
             {
                 var tile=Main.tile[tx,ty];
                 tile.ClearEverything();
-                bool roof=mode!="detour"&&(!wade||mode!="wade_deep"||tx<=x+6)&&ty<=floor-4;
+                bool roof=mode!="detour"&&(!wade||mode is not ("wade_deep" or "wade_pool" or "bridge_long")||tx<=x+6)&&ty<=floor-4;
                 bool gap=!tunnel&&tx>=x+3&&tx<=right&&ty>=floor&&ty<floor+depth;
                 if(roof||ty>=floor&&!gap||tunnel&&tx==x+3&&ty>=floor-3&&ty<floor)
                 {tile.HasTile=true;tile.TileType=TileID.Stone;}
@@ -187,7 +187,7 @@ internal static class ServerLiquidFixture
         else
         {
             p.inventory[4].SetDefaults(ItemID.WoodPlatform);
-            p.inventory[4].stack=16;
+            p.inventory[4].stack=mode=="bridge_long"?40:16;
         }
         p.position=new((x+2)*16-4,floor*16-p.height);
         p.velocity=Vector2.Zero;minY=p.position.Y;
@@ -213,7 +213,7 @@ internal static class ServerLiquidFixture
         string path=Path.Combine(Main.SavePath,"liquid-edit-"+scene+".jsonl");
         File.AppendAllText(path,JsonSerializer.Serialize(new
         {
-            minY,x=p.position.X,y=p.position.Y,p.wet,p.lavaWet,p.honeyWet,p.shimmerWet,vy=p.velocity.Y,p.statLife,gateOpened,
+            minY,x=p.position.X,y=p.position.Y,p.wet,p.lavaWet,p.honeyWet,p.shimmerWet,vy=p.velocity.Y,p.statLife,p.breath,p.breathMax,gateOpened,
             inflow=Main.tile[x+4,floor-1].LiquidAmount,
             wetCorridor=gateOpened&&NativeLiquidRisk.WaterContact(new((x+4)*16,floor*16-42,0,0,true)),
             platforms=Enumerable.Range(x+3,6).Count(tx=>Main.tile[tx,floor].HasTile&&Main.tile[tx,floor].TileType==TileID.Platforms),

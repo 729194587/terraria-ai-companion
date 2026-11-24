@@ -52,21 +52,25 @@ internal static class ServerGrappleFixture
             string mode=File.ReadAllText(scene).Trim();
             File.Delete(scene);
             int x=Main.spawnTileX,floor=Main.spawnTileY+8,shelf=floor-10;
+            if (mode == "world_journey") x = 48;
+            int targetOffset = mode switch { "world_journey" => Main.maxTilesX - 96, "long_journey" => 480, "waypoint" => 16, _ => 5 };
+            int shelfEnd = Math.Max(12, targetOffset + 2);
             sceneMode=mode;disturbed=false;replacement=-1;
-            anchorX=x;anchorY=shelf-9;
-            for(int tx=x-25;tx<=x+25;tx++)
+            anchorX=x+(mode=="diagonal"?1:0);anchorY=shelf-9;
+            for(int tx=x-25;tx<=x+Math.Max(25,shelfEnd+4);tx++)
                 for(int ty=floor-25;ty<=floor+2;ty++)
                 {
                     var tile=Main.tile[tx,ty];
                     tile.ClearEverything();
-                    if(ty>=floor||tx==anchorX&&ty==anchorY||tx>=x+2&&tx<=x+12&&ty==shelf)
+                    if(ty>=floor||tx==anchorX&&ty==anchorY||tx>=x+2&&tx<=x+shelfEnd&&ty==shelf)
                     {tile.HasTile=true;tile.TileType=TileID.Stone;}
                 }
             p.miscEquips[4].SetDefaults(mode switch{"no_hook"=>ItemID.None,"unsupported"=>ItemID.IvyWhip,_=>ItemID.GrapplingHook});
-            p.position=new(x*16-2,floor*16-p.height);
+            p.armor[3].SetDefaults(mode=="cloud_hook"?ItemID.CloudinaBottle:ItemID.None);
+            p.position=new(x*16-2-(mode=="approach"?96:0),floor*16-p.height);
             p.velocity=Vector2.Zero;
             File.WriteAllText(Path.Combine(Main.SavePath,"grapple-scene-ready.json"),
-                JsonSerializer.Serialize(new{x=(x+5)*16,y=shelf*16,anchorX,anchorY}));
+                JsonSerializer.Serialize(new{x=(x+targetOffset)*16,y=shelf*16,anchorX,anchorY}));
             return;
         }
         if(sceneMode!=null)

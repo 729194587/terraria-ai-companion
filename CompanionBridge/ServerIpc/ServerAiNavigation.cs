@@ -30,7 +30,12 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         internal ulong FinalObservationTick;
         internal NavigationKnowledge Knowledge;
         internal ServerGrappleClimb Climb;
+        internal bool BrakeAtShore;
         internal bool GrappleAttempted;
+        internal System.Collections.Generic.IEnumerator<GrappleClimbPlan> GrappleSearch;
+        internal PhysicsState? GrappleStart;
+        internal PhysicsParameters GrapplePhysics;
+        internal ulong GrappleSearchTick;
         internal BossEvasion Evasion;
         internal readonly System.Collections.Generic.HashSet<(int,int)> OpenedDoors=new();
         internal bool Combat, MovementOnly;
@@ -60,9 +65,11 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     private int session;
     private bool executing, injected, suppressStaleGrapple;
     internal Run Current;
-    internal void RestrictToExplored(MapWindow window)
+    internal void RestrictToExplored(MapWindow window,NavigationQuote quote)
     {
         var map=AiMapRuntime.Map;
+        navigation.Task.QuotedRoute=quote;
+        navigation.Task.TryGrapple=quote?.Grapple==null?null:TryGrapple;
         navigation.Task.AllowedPose=p=>ReferenceEquals(map,AiMapRuntime.Map)&&FrontierExplorationTask.KnownPose(map,window,p);
     }
     public bool Running => Current?.Status=="running";
@@ -85,6 +92,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Actor busy.");
         navigation.Cancel();
         navigation.Task.AllowedPose=null;
+        navigation.Task.QuotedRoute=null;
         knowledge?.Bind(identity.Actor,identity.World,identity.Generation,identity.Slot);
         navigation.Task.SetKnowledge(knowledge);
         navigation.Task.Continuous=continuous;
@@ -92,21 +100,42 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         Current=new Run{Identity=identity,ActionId=actionId,Target=target,Region=region,StartX=p.position.X,
             Session=checked(++session),Generation=checked((int)identity.Generation),Knowledge=knowledge,Combat=combat,MovementOnly=movementOnly,CombatLife=p.statLife};
         ActorControl.Driver=this;
-        navigation.Task.TryGrapple=continuous&&region!=null?TryGrapple:null;
+        navigation.Task.TryGrapple=region!=null&&!combat&&!movementOnly?TryGrapple:null;
         return Current;
     }
 
     private bool TryGrapple(PhysicsState state,PhysicsParameters physics,IMotionWorld world)
     {
         var run=Current;
-        if(run.GrappleAttempted||run.Knowledge?.GrappleAttempted==true||world is not ISurfaceTerrain terrain)return false;
+        if(run.GrappleAttempted||navigation.Task.QuotedRoute==null&&run.Knowledge?.GrappleAttempted==true||world is not ISurfaceTerrain terrain)return false;
         var p=(Player)run.Identity.Actor;
         if(ActorGrapple.Selected(p) is not {} item||ActorGrapple.HasHook(p)||p.noItems||p.CCed||p.tongued)return false;
-        var plan=GrappleClimbPlan.Find(state,run.Region,physics,world,terrain);
-        if(plan==null)return false;
+        var quoted=navigation.Task.QuotedRoute;
+        if(quoted!=null && (quoted.Grapple==null||quoted.Start!=state||quoted.Physics!=physics
+            ||!quoted.TerrainCurrent()))return false;
+        var plan=quoted?.Grapple;
+        if(plan==null)
+        {
+            if(run.GrappleStart!=state||run.GrapplePhysics!=physics
+                ||run.GrappleSearch==null && Main.GameUpdateCount-run.GrappleSearchTick>=60)
+            {
+                run.GrappleSearch?.Dispose();
+                run.GrappleStart=state;run.GrapplePhysics=physics;
+                run.GrappleSearch=GrappleClimbPlan.Toward(state,run.Region,physics,world,terrain).GetEnumerator();
+            }
+            if(run.GrappleSearch==null)return false;
+            if(run.GrappleSearch.MoveNext())
+            {
+                plan=run.GrappleSearch.Current;
+                if(plan==null)return true;
+            }
+            run.GrappleSearch.Dispose();run.GrappleSearch=null;
+            run.GrappleSearchTick=Main.GameUpdateCount;
+            if(plan==null)return false;
+        }
         run.GrappleAttempted=true;
         if(run.Knowledge!=null)run.Knowledge.GrappleAttempted=true;
-        run.Climb=new(plan,physics,item);
+        run.Climb=new(plan,physics,item,navigation.Task.AllowedPose);
         return true;
     }
 
@@ -122,6 +151,18 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
             ServerCombatFixture.PlannerEnd(start);
             return;
         }
+        var run=Current;
+        // Hand work back to the root while the actor still has a dry foothold.
+        // Deck-alignment children and proved shore-to-shore actions own their inputs.
+        if(!run.BrakeAtShore&&run.Climb==null&&run.Region!=null&&run.Region==run.Knowledge?.ShoreGoal
+            &&navigation.Task.Continuous&&navigation.Snapshot.ReachedGoal!=true&&navigation.Snapshot.PlanKind!=PoolCrossing.Kind&&!p.wet
+            &&Math.Sign(run.Target-run.StartX)*(p.position.X-run.StartX)>=16&&Math.Abs(p.velocity.Y)<.01f)
+        {
+            var pose=NativeMotionWorld.Observe(p);
+            int side=Math.Sign(Math.Clamp(pose.Px,run.Region.MinPlayerLeftX,run.Region.MaxPlayerLeftX)-pose.Px);
+            if(side!=0&&pose.Grounded&&new NativeMotionWorld(pose).WaterAhead(pose,side))run.BrakeAtShore=true;
+        }
+        if(run.BrakeAtShore){Apply(p,default);return;}
         var input=Current.Climb is {} climb
             ?climb.Before(p,navigation,Current.Session,Current.Generation,nativePull:false)
             :navigation.Before(p,Current.Session,Current.Target>=Current.StartX?1:-1,Current.Generation,
@@ -159,6 +200,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
     internal void Stop(string status,string reason)
     {
         if(Current==null)return;
+        Current.GrappleSearch?.Dispose();Current.GrappleSearch=null;
         var climb=Current.Climb;
         if(climb!=null)
         {
@@ -179,7 +221,9 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         }
         Current.Status=status;Current.Reason=reason;Current.Snapshot=navigation.Snapshot;
         navigation.Cancel();Release(!Current.Combat);
+        navigation.Task.QuotedRoute=null;
         navigation.Task.AllowedPose=null;
+        navigation.Task.QuotedRoute=null;
         if(ServerAiNativeActions.Owned(Current.Identity))
         {
             try
@@ -250,6 +294,11 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                     NetworkStateSync.Full(p);
                     return;
                 }
+                if(run.BrakeAtShore)
+                {
+                    if(Observe(p).Settled)Stop("cancelled","native_navigation_work_checkpoint");
+                    NetworkStateSync.Tick(p);return;
+                }
                 if(run.Climb is {} climb)
                 {
                     climb.After(run.Identity,run.Session,run.Generation);
@@ -262,7 +311,11 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                         run.Climb=null;
                         navigation.Task.RecoverGrapple(state,climb.Failure);
                     }
-                    else if(climb.Complete)run.Climb=null;
+                    else if(climb.Complete)
+                    {
+                        run.Climb=null;run.GrappleAttempted=false;
+                        if(run.Knowledge!=null)run.Knowledge.GrappleAttempted=false;
+                    }
                     NetworkStateSync.Tick(p);
                     return;
                 }
@@ -285,6 +338,11 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
                         &&(run.Target>=run.StartX?1:-1)*(run.Target-p.position.X)<=12;
                     Stop(arrived?"completed":"unknown",arrived?"native_navigation_arrival_verified":"arrival_not_settled");
                 }
+                else if(navigation.Task.Continuous&&run.Region!=null&&run.Knowledge!=null&&!run.MovementOnly
+                    &&run.Snapshot.Reason=="local search deferred"&&run.Snapshot.SearchWaitUpdates>=90
+                    &&Math.Abs(p.position.X-run.StartX)>32&&Observe(p) is {Settled:true} shore
+                    &&new NativeMotionWorld(shore.State).WaterAhead(shore.State,Math.Sign(run.Target-p.position.X)))
+                    Stop("cancelled","native_navigation_work_checkpoint");
                 else if(navigation.Task.Continuous&&run.Snapshot.ActualMovingUpdates>=1800&&run.ProgressVersion>0&&Observe(p).Settled)
                     Stop("cancelled","native_navigation_work_checkpoint");
                 else if(!navigation.Task.Continuous&&run.Updates>=1800)Stop("timeout","navigation_frame_budget");

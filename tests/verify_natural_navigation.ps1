@@ -1,5 +1,8 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[string]$ReplayStops,[switch]$WalkReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback)
 $ErrorActionPreference='Stop'
+if($WatchWestStop){$Watch=$true}
+if($Watch -and ($WalkReference -or $ReplayStops)){throw "Watch runs live navigation journeys."}
+if($BroadcastFeedback -or $DeathFeedback -or $TravelContact -or $JourneyCase -or $EastWall -or $WestDescent -or $ShoreStarts -or $Watch -or $ReplayStops -or $WalkReference){$LongJourney=$true}
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
 $TModLoaderPath=$selectedEngine.Path
@@ -15,8 +18,6 @@ if(!$PythonExecutable){$PythonExecutable=Join-Path $repo '.local/lua-venv/Script
 if(!(Test-Path -LiteralPath $package)){throw 'Build CompanionBridge first.'}
 $profile=Join-Path $repo ('.local/natural-native-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds" | Out-Null
-$oldLogs=Join-Path $TModLoaderPath 'tModLoader-Logs'
-if(Test-Path -LiteralPath $oldLogs){Copy-Item -LiteralPath $oldLogs -Destination "$profile/previous-installation-logs" -Recurse}
 if($WorldPath){
     Copy-Item -LiteralPath $WorldPath -Destination "$profile/Worlds/test.wld"
     $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
@@ -33,7 +34,9 @@ $info.RedirectStandardInput=$true
 $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
+if($Watch){foreach($a in @('-ip','127.0.0.1','-companionwatchtest')){$info.ArgumentList.Add($a)}}
 $info.ArgumentList.Add('-companionnaturaltest')
+if($LongJourney){$info.ArgumentList.Add('-companionjourneytest')}
 if(!$WorldPath){foreach($argument in @('-autocreate','1','-seed',$Seed,'-worldname','NaturalExploration','-difficulty','0')){$info.ArgumentList.Add($argument)}}
 $process=[Diagnostics.Process]::Start($info)
 $startedUtc=$process.StartTime.ToUniversalTime()
@@ -81,8 +84,30 @@ try {
     }
     Copy-Item -LiteralPath $loadedWorld -Destination "$profile/source.wld"
     $initialWorldHash=(Get-FileHash -LiteralPath "$profile/source.wld").Hash
-    $probeScript=if($AutonomousNavigation){'tests/native_natural_landing.py'}elseif($Trip){'tests/native_trip_navigation.py'}elseif($Scene){'tests/native_natural_scene.py'}elseif($LandingRegions){'tests/native_natural_landing.py'}else{'tests/native_natural_navigation.py'}
+    $probeScript=if($LongJourney){'tests/native_natural_journey.py'}elseif($AutonomousNavigation){'tests/native_natural_landing.py'}elseif($Trip){'tests/native_trip_navigation.py'}elseif($Scene){'tests/native_natural_scene.py'}elseif($LandingRegions){'tests/native_natural_landing.py'}else{'tests/native_natural_navigation.py'}
     $probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile,'--offsets')+@($Offsets|ForEach-Object {"$_"})
+    if($LongJourney){$probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile)}
+    if($Watch){
+        $viewer=Join-Path $profile 'viewer'
+        New-Item -ItemType Directory -Path "$viewer/Mods" | Out-Null
+        Copy-Item -LiteralPath "$profile/Mods/CompanionBridge.tmod","$profile/Mods/enabled.json" -Destination "$viewer/Mods"
+        [IO.File]::WriteAllText("$viewer/isolated-watch-viewer",'Disposable local observer')
+        $viewerArgs=@('-tmlsavedirectory',('"{0}"' -f $viewer),'-modpath',('"{0}/Mods"' -f $viewer),
+            '-join','127.0.0.1','-port',"$Port",'-plr',('"{0}/Players/Observer.plr"' -f $viewer),'-companionwatchviewer')
+        Start-Process -FilePath (Join-Path $TModLoaderPath 'start-tModLoader.bat') -WorkingDirectory $TModLoaderPath -ArgumentList $viewerArgs
+        Write-Output "Waiting for the game camera at 127.0.0.1:$Port"
+        $probeArgs+='--watch'
+        if($WatchWestStop){$probeArgs+=@('--watch-west-stop',(Resolve-Path -LiteralPath $WatchWestStop).Path)}
+    }
+    if($BroadcastFeedback){$probeArgs+="--broadcast-feedback"}
+    if($DeathFeedback){$probeArgs+="--death-feedback"}
+    if($TravelContact){$probeArgs+="--travel-contact"}
+    if($JourneyCase){$probeArgs+=@("--journey-case",$JourneyCase)}
+    if($EastWall){$probeArgs+="--east-wall"}
+    if($WestDescent){$probeArgs+="--west-descent"}
+    if($ShoreStarts){$probeArgs+="--shore-starts"}
+    if($WalkReference){$probeArgs+='--walk-reference'}
+    if($ReplayStops){$probeArgs+=@('--replay-stops',(Resolve-Path -LiteralPath $ReplayStops).Path)}
     if($HelperSource){$probeArgs+=@('--helper-source',(Resolve-Path -LiteralPath $HelperSource).Path)}
     if($AutonomousNavigation){$probeArgs+='--autonomous'}
     & $PythonExecutable @probeArgs

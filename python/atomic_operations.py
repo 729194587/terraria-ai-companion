@@ -1751,7 +1751,13 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         action_id = action['actionId']
         track(dispatchState='admitted')
         deadline = asyncio.get_running_loop().time() + action['durationMs'] / 1000 + 1
+        navigation_lease = 0
         while action['status'] == 'running':
+            if server and name == 'navigate_to':
+                lease = (action.get('task') or {}).get('deadlineGameUpdate', 0)
+                if isinstance(lease, int) and lease > navigation_lease:
+                    navigation_lease = lease
+                    deadline = asyncio.get_running_loop().time() + action['durationMs'] / 1000 + 1
             if asyncio.get_running_loop().time() >= deadline:
                 stopped = await stop(bridge, action_id, action)
                 if stopped.get('valid') is not True:

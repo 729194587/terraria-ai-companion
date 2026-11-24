@@ -74,7 +74,10 @@ internal static class TerrainReader
         int type = tile.TileType;
         // Custom collision hooks cannot be inferred from vanilla tile flags.
         if (tile.HasUnactuatedTile && type >= TileID.Count) return '?';
-        bool harmful = tile.HasUnactuatedTile && (TileID.Sets.TouchDamageImmediate[type] > 0
+        // Vanilla lists cactus in the touch-damage table, but only applies
+        // its damage in worlds with The Constant's rules.
+        bool harmful = tile.HasUnactuatedTile && (type != TileID.Cactus || Main.dontStarveWorld)
+            && (TileID.Sets.TouchDamageImmediate[type] > 0
             || TileID.Sets.TouchDamageHot[type] || TileID.Sets.TouchDamageBleeding[type]
             || TileID.Sets.TouchDamageDestroyTile[type] || TileID.Sets.Boulders[type]);
         return TerrainClassifier.Classify(true, tile.HasTile, tile.IsActuated,

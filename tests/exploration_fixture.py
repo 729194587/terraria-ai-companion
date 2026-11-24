@@ -24,11 +24,11 @@ class ExplorationHost(AiHost):
             if not self.frozen:
                 self.x = request['arguments']['targetX']
             if self.damage:
-                self.life -= 1
+                self.life -= self.damage
         base = super().query(operation, args)
         base.update(gameUpdate=self.tick, observedAtUnixMs=1793080000000+self.tick, clock='server_utc_at_projection')
         if operation == 'get_player_state':
-            base['data']['player'].update(position=dict(x=self.x, y=self.y), life=self.life, dead=False)
+            base['data']['player'].update(position=dict(x=self.x, y=self.y), life=self.life, lifeMax=100, dead=False)
         elif operation == 'observe_terrain':
             left = math.floor((self.x+10)/16)-22
             top = math.floor((self.y+42)/16)-17

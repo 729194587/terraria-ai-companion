@@ -24,6 +24,9 @@ internal static class NativeSurvival
     private static readonly MethodInfo npcCollision=typeof(Player).GetMethod("Update_NPCCollision",BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public);
     private static readonly MethodInfo respawnTime=typeof(Player).GetMethod("GetRespawnTime",BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public);
     internal static int ExpectedRespawn(Player p,bool pvp=false)=>(int)respawnTime.Invoke(p,new object[]{pvp});
+    internal sealed record DeathRecord(string worldSession,long generation,ulong tick,string description,int npcIndex,int projectileIndex,int otherIndex,
+        int tileX,int feetTileY,float velocityX,float velocityY,int fallStart,double damage,object activity,long coinsLostCopper=0,object respawn=null);
+    internal static DeathRecord LastDeath {get;private set;}
     internal static long Pickups,Hurts,Deaths,Respawns;
     private static void Emit(string name,object detail)
     {
@@ -43,6 +46,8 @@ internal static class NativeSurvival
         if (VirtualPlayerEngineProbe.Engine.Selected == "2026.09.3.1")
             install(() => On_Player.PickupItem += CompanionBridge.ServerIpc.ServerItemDrop.Pickup,
                 () => On_Player.PickupItem -= CompanionBridge.ServerIpc.ServerItemDrop.Pickup);
+        var breath=Patch("breath");
+        install(()=>IL_Player.CheckDrowning+=breath,()=>IL_Player.CheckDrowning-=breath);
         var lethal=Patch("lethal");var dodge=Patch("dodge");
         var drops=Patch("death-drops");var spawn=Patch("spawn");var coins=Patch("coin-mouse");
         if (VirtualPlayerEngineProbe.ItemReceiptSupported)
@@ -64,7 +69,7 @@ internal static class NativeSurvival
         if(Owns(p))throw new InvalidOperationException("AI hardcore deletion cannot touch native active player files.");
         orig(p);
     }
-    internal static void Reset() { selected=managed=null;world=managedWorld=null;generation=managedGeneration=0;Pickups=Hurts=Deaths=Respawns=0;hostileDamage=null; }
+    internal static void Reset() { LastDeath=null;selected=managed=null;world=managedWorld=null;generation=managedGeneration=0;Pickups=Hurts=Deaths=Respawns=0;hostileDamage=null; }
     private static bool Binding(Player p,string session,long incarnation)
     {
         var view=ProbeSession.Reservation.Snapshot;
@@ -153,6 +158,8 @@ internal static class NativeSurvival
                 ProbeSession.ActorGeneration=checked(ProbeSession.ActorGeneration+1);
                 generation=managedGeneration=ProbeSession.ActorGeneration;
                 Respawns++;
+                if(LastDeath?.worldSession==world && LastDeath.generation==generation-1)
+                    LastDeath=LastDeath with {respawn=new {generation,tick=Main.GameUpdateCount,x=p.position.X,y=p.position.Y,life=p.statLife,lifeMax=p.statLifeMax2}};
                 NetMessage.SendData(MessageID.PlayerSpawn,-1,-1,null,p.whoAmI,(float)PlayerSpawnContext.ReviveFromDeath);
                 NetworkStateSync.Full(p);
                 Emit("native-respawn",new {generation,p.respawnTimer,p.statLife,p.statMana});
@@ -182,15 +189,33 @@ internal static class NativeSurvival
             Emit("native-hurt",new {before=life,after=p.statLife,damage=info.Damage,p.immuneTime,p.respawnTimer,p.dead});
         }
     }
+    private static string DeathDescription(Player p,PlayerDeathReason source)
+    {
+        // A modded localization failure must never interfere with native death.
+        try
+        {
+            string text=source.GetDeathText(p.name).ToString();
+            return text.Length>1024?text[..1024]:text;
+        }
+        catch(Exception){return null;}
+    }
     internal static void Kill(On_Player.orig_KillMe orig,Player p,PlayerDeathReason source,double damage,int direction,bool pvp)
     {
         if(!Owns(p)){orig(p,source,damage,direction,pvp);return;}
+        int deathX=(int)(p.position.X/16),deathY=(int)Math.Round(p.Bottom.Y/16);
+        var death=new DeathRecord(world,generation,Main.GameUpdateCount,DeathDescription(p,source),source.SourceNPCIndex,
+            source.SourceProjectileLocalIndex,source.SourceOtherIndex,deathX,deathY,p.velocity.X,p.velocity.Y,p.fallStart,damage,
+            CompanionBridge.ServerIpc.ServerAiSystem.CurrentActivity);
+        // Count this actor's inventory across native death settlement; personal banks are separate.
+        long carriedBefore=CompanionBridge.ServerIpc.MerchantPayment.Coins(p.inventory,p.inventory.Length);
         bool wasDead=p.dead;ActorMining.Retire(p);ActorItemUse.Retire(p);ActorControl.Retire(p);orig(p,source,damage,direction,pvp);
         if(!Owns(p))throw new InvalidOperationException("Kill callback changed AI ownership.");
         if(!wasDead&&p.dead)
         {
+            long carriedAfter=CompanionBridge.ServerIpc.MerchantPayment.Coins(p.inventory,p.inventory.Length);
+            LastDeath=death with {coinsLostCopper=Math.Max(0,carriedBefore-carriedAfter)};
             Deaths++;NetMessage.SendPlayerDeath(p.whoAmI,source,(int)damage,direction,pvp,-1,-1);
-            Emit("native-death",new {p.respawnTimer,nativeExpected=ExpectedRespawn(p,pvp),p.difficulty,generation});
+            Emit("native-death",new {deathX,deathY,LastDeath.coinsLostCopper,source.SourceNPCIndex,source.SourceProjectileLocalIndex,source.SourceOtherIndex,damage,p.respawnTimer,nativeExpected=ExpectedRespawn(p,pvp),p.difficulty,generation});
         }
     }
     internal static void DeadSnapshot(Player p,int remote,int ignore)

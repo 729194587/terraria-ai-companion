@@ -350,3 +350,59 @@ internal static class StateSpacePlanner
         }
     }
 }
+
+internal sealed record NavigationQuote(PhysicsState Start,PhysicsParameters Physics,LandingRegion Goal,
+    Route Route,Func<bool> TerrainCurrent,GrappleClimbPlan Grapple=null);
+
+// A complete landing quote can span several rolling collision windows. Only
+// simulated inputs count toward travel time. Slice boundaries never issue input.
+internal sealed class LandingRouteQuote
+{
+    internal Route Route { get; private set; }
+    internal bool BudgetLimited { get; private set; }
+    internal IEnumerable<int> Find(PhysicsState start,LandingRegion goal,PhysicsParameters physics,
+        Func<PhysicsState,IMotionWorld> worldAt,Func<PhysicsState,Prediction,bool> reject,
+        NavigationSearchMemory rootMemory=null)
+    {
+        var actions=new List<Prediction>();
+        var state=start;
+        int updates=0;
+        while(updates<600)
+        {
+            var world=worldAt(state);
+            float target=(goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2;
+            var route=SafeGroundWalk.TryPlan(state,target,target>=state.Px?1:-1,physics,world,goal);
+            if(route==null||reject(state,route.Actions[0]))
+            {
+                using var search=new StateSpacePlanner.Search(state,target,goal,physics,world,
+                    rejectEdge:reject,learning:state==start?rootMemory:null);
+                do
+                {
+                    route=search.Advance(8,1.25);
+                    yield return 1;
+                }while(!route.ReachedGoal&&!search.Finished&&search.TotalExpansions<48);
+                if(!route.ReachedGoal)
+                {
+                    BudgetLimited|=!search.Finished||route.SearchExit=="local_state_budget";
+                    if(route.Actions.Count==0)yield break;
+                    // A local search can reach the far bank before finding the
+                    // exact anchor pixel. Continue from its verified braking tail.
+                    var last=route.Actions[^1];
+                    var stopped=last.Frames[^1].State;
+                    if(goal.Distance(stopped)>=goal.Distance(state)-1)yield break;
+                    route.Actions[^1]=last with{Landing=stopped,ExecuteFrames=last.Frames.Count};
+                }
+            }
+            actions.AddRange(route.Actions);
+            updates+=route.Actions.Sum(e=>e.ExecuteFrames);
+            state=actions[^1].Landing;
+            if(route.ReachedGoal && updates<=600)
+            {
+                Route=new(actions,0,0,ReachedGoal:true,Kind:"landing_quote");
+                yield break;
+            }
+            yield return 1;
+        }
+        BudgetLimited=true;
+    }
+}

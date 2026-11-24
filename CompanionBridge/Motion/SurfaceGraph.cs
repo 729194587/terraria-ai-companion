@@ -311,11 +311,11 @@ internal sealed class SurfaceNavigator : IDisposable
     internal bool Finished {get;private set;}
     internal SurfaceNavigator(SurfaceGraph graph,PhysicsState start,LandingRegion goal,PhysicsParameters ph,
         IMotionWorld world,ISurfaceTerrain terrain,NavigationSearchMemory learning,
-        Func<PhysicsState,Prediction,bool> reject,Func<PhysicsState,bool> detour=null,Func<PhysicsState,int> preference=null)
+        Func<PhysicsState,Prediction,bool> reject,Func<PhysicsState,bool> detour=null,Func<PhysicsState,int> preference=null, bool allowTravelPrefix=false)
     {
         this.graph=graph;
         this.detour=detour;this.preference=preference;
-        steps=Run(start,goal,ph,world,terrain,learning,reject).GetEnumerator();
+        steps=Run(start,goal,ph,world,terrain,learning,reject,allowTravelPrefix).GetEnumerator();
     }
     internal Route Advance(int maxWork=512,double budgetMs=4)
     {
@@ -330,7 +330,7 @@ internal sealed class SurfaceNavigator : IDisposable
     public void Dispose()=>steps.Dispose();
 
     private IEnumerable<Route> Run(PhysicsState start,LandingRegion goal,PhysicsParameters ph,IMotionWorld world,
-        ISurfaceTerrain terrain,NavigationSearchMemory learning,Func<PhysicsState,Prediction,bool> reject)
+        ISurfaceTerrain terrain,NavigationSearchMemory learning,Func<PhysicsState,Prediction,bool> reject,bool allowTravelPrefix)
     {
         if(!ph.IsSupportedGroundPhysics)
         {
@@ -339,6 +339,45 @@ internal sealed class SurfaceNavigator : IDisposable
             yield break;
         }
         int cx=(int)Math.Floor((start.Px+10)/16),cy=(int)Math.Floor((start.Py+42)/16);
+        float goalX=Math.Clamp(start.Px,goal.MinPlayerLeftX,goal.MaxPlayerLeftX);
+        if(allowTravelPrefix && Math.Abs(goalX-start.Px)>SurfaceGraph.InitialRadius*16)
+        {
+            // The final feet height is not the required height of every intermediate
+            // step. First test ordinary movement toward the distant column against
+            // the actual collision world, including a safe landing and braking tail.
+            int direction=goalX>start.Px?1:-1;
+            var walk=PhysicsSimulator.Predict(start,direction,0,ph,world,walkFrames:60);
+            if(walk.Safe && direction*(walk.Landing.Px-start.Px)>=16
+                && Math.Abs(goalX-walk.Landing.Px)<Math.Abs(goalX-start.Px)
+                && PhysicsSimulator.Settled(walk.Landing,world))
+            {
+                walk=walk with{ExecuteFrames=walk.Frames.Count};
+                if(reject?.Invoke(start,walk)!=true)
+                {
+                    exit="safe_partial";Finished=true;
+                    yield return new(new(){walk},0,timer.Elapsed.TotalMilliseconds,Kind:"surface_graph",SearchExit:exit);
+                    yield break;
+                }
+            }
+            using var forward=new StateSpacePlanner.Search(start,goalX,null,ph,world,rejectEdge:reject,learning:learning);
+            while(!forward.Finished && forward.TotalExpansions<12)
+            {
+                var prefix=forward.Advance(maxExpansions:4,budgetMs:milliseconds);
+                if(prefix.Actions.Count>0)
+                {
+                    var last=prefix.Actions[^1];
+                    var rest=last.Frames[^1].State;
+                    if(Math.Abs(rest.Px-goalX)+16<=Math.Abs(start.Px-goalX) && PhysicsSimulator.Settled(rest,world))
+                    {
+                        prefix.Actions[^1]=last with{ExecuteFrames=last.Frames.Count,Landing=rest};
+                        exit="safe_partial";Finished=true;
+                        yield return prefix with{Kind="surface_graph",ReachedGoal=false,SearchExit=exit};
+                        yield break;
+                    }
+                }
+                yield return Waiting();
+            }
+        }
         var denied=new HashSet<int>(); // search-local exclusions, NOT execution failure memory
         var uncertain=new HashSet<int>();
         bool localBudget=false;
@@ -384,6 +423,12 @@ internal sealed class SurfaceNavigator : IDisposable
                     float d=goal.Distance(a.Rest(Math.Clamp((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2,a.Region.MinPlayerLeftX,a.Region.MaxPlayerLeftX)));
                     if(d<bestDistance){bestDistance=d;best=a;}
                     if(d==0){end=a;break;}
+                    // Beyond local coverage, a supported stance near the forward
+                    // rim is a subgoal. Its first connection still needs full
+                    // physics validation; draining the open set cannot reach a
+                    // final column outside this window.
+                    if(!goalInColumns && Math.Sign(goalX-start.Px)*(a.TileX-cx)>=radius-2)
+                    {best=a;break;}
                     int columns=(SurfaceGraph.HorizontalRange(ph)+15)/16+1;
                     for(int column=a.TileX-columns;column<=a.TileX+columns;column++)
                     {
@@ -434,7 +479,7 @@ internal sealed class SurfaceNavigator : IDisposable
                 if(waypoint.Contains(start)){denied.Add(next.To.Id);continue;}
                 using var physical=new StateSpacePlanner.Search(start,Math.Clamp(start.Px,waypoint.MinPlayerLeftX,waypoint.MaxPlayerLeftX),
                     waypoint,ph,world,rejectEdge:reject,detourCheckpoint:detour,historicalPreference:preference,learning:learning,
-                    requireInitialJump:next.Motion==SurfaceMotion.Jump);
+                    requireInitialJump:next.Motion==SurfaceMotion.Jump && !uncertain.Contains(next.To.Id));
                 bool reconsider=false;
                 while(true)
                 {
@@ -463,6 +508,8 @@ internal sealed class SurfaceNavigator : IDisposable
                         yield return route with{Kind="surface_graph",ReachedGoal=exit=="complete",SearchExit=exit};
                         yield break;
                     }
+                    if(physical.Finished && next.Motion==SurfaceMotion.Jump && uncertain.Add(next.To.Id))
+                    {reconsider=true;break;}
                     if(physical.Finished){localBudget|=route.SearchExit=="local_state_budget";break;}
                     yield return Waiting();
                 }

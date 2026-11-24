@@ -100,10 +100,16 @@ class ExplorationTests(unittest.IsolatedAsyncioTestCase):
         r = await self.run_loop()
         self.assertEqual('nearby_hostile', r['value']['reason'], r)
         self.assertFalse(self.starts())
-        self.host.threat = False; self.host.damage = True
+        self.host.threat = False; self.host.damage = 40
         r = await self.run_loop()
         self.assertEqual('health_decreased', r['value']['reason'], r)
         self.assertEqual(1, len(self.starts()))
+
+    async def test_light_damage_keeps_exploring(self):
+        self.host.damage = 1
+        result = await self.run_loop()
+        self.assertEqual('step_limit', result['value']['reason'], result)
+        self.assertEqual(3, len(self.starts()))
 
     async def test_action_budget_stops_without_second_start(self):
         r = await self.run_loop(actions=1)

@@ -22,6 +22,7 @@ public sealed class ServerAiSystem : ModSystem
     private bool spawnPending;
     private AiAtomicActions actions;
     private ServerTorchMaintenance torches;
+    internal static object CurrentActivity => current?.actions?.CurrentActivity;
     internal static bool AgentActive=>current?.actions?.HasActive==true;
     internal static ServerTileLighting Lighting {get;private set;}
     internal static void LoadRuntime(Mod owner)
@@ -35,11 +36,12 @@ public sealed class ServerAiSystem : ModSystem
         owner.Logger.Info($"Regional scene codecs prepared before IPC/world sampling: {System.Diagnostics.Stopwatch.GetElapsedTime(warm).TotalMilliseconds:F2}ms.");
         On_Netplay.StartServer += Started;
         Main.OnTickForThirdPartySoftwareOnly += IdleTick;
+        ServerGameMessages.Install();
         callbacks = true;
     }
     internal static void UnloadRuntime()
     {
-        if (callbacks) { On_Netplay.StartServer -= Started; Main.OnTickForThirdPartySoftwareOnly -= IdleTick; callbacks = false; }
+        if (callbacks) { ServerGameMessages.Uninstall(); On_Netplay.StartServer -= Started; Main.OnTickForThirdPartySoftwareOnly -= IdleTick; callbacks = false; }
         current?.Stop();
         runtime?.Unload(); runtime = null;
     }
@@ -93,7 +95,11 @@ public sealed class ServerAiSystem : ModSystem
         }
         catch (Exception e) { server?.Dispose(); server = null; Mod.Logger.Error("AI IPC unavailable; human paths remain available.", e); }
     }
-    public override void PostUpdatePlayers() => Pump(simulationUpdate:true);
+    public override void PostUpdatePlayers()
+    {
+        Pump(simulationUpdate:true);
+        if(Netplay.HasClients&&Program.LaunchParameters.ContainsKey("-companionwatchtest"))ServerAiNaturalFixture.Tick(live:true);
+    }
     private void Pump(bool simulationUpdate=false)
     {
         if (server == null) return;
@@ -163,7 +169,7 @@ public sealed class ServerAiSystem : ModSystem
             selectedItem = p.selectedItem >= 0 && p.selectedItem < inventory.Length ? inventory[p.selectedItem] : null,
             inventory
         };
-        return new(p, ProbeSession.WorldSession, ProbeSession.ActorGeneration, p.whoAmI, state, p.selectedItem, Main.GameUpdateCount, !p.dead && !p.ghost);
+        return new(p, ProbeSession.WorldSession, ProbeSession.ActorGeneration, p.whoAmI, state, p.selectedItem, Main.GameUpdateCount, !p.dead && !p.ghost){LifeEvent=NativeSurvival.LastDeath, MessageSequence=ServerGameMessages.Sequence, ReadMessages=ServerGameMessages.Since};
     }
     private static void Select(AiReadOnlyProtocol.Identity expected, int slot)
     {
@@ -198,6 +204,7 @@ public sealed class ServerAiSystem : ModSystem
         finally
         {
             server?.Dispose();server=null;actions=null;torches=null;Lighting=null;
+            ServerGameMessages.Reset();
             ServerContainerFixture.Reset();
             ServerCollectFixture.Reset();
             ServerAiActionFixture.Reset();ServerAiNaturalFixture.Reset();

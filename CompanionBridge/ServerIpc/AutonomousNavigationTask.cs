@@ -23,6 +23,8 @@ internal interface INavigationWorld
     object OpeningEvidence=>null;
     object Target{get;}
     bool ReplanAfterChange=>false;
+    bool CanInspectWaterBoundary=>false;
+    bool CanBuildWallStep=>false;
     bool RefreshApproachAfterOpening=>ReplanAfterChange;
     string ProgressKey=>null;
     bool PreferEdit(int remainingTiles)=>false;
@@ -97,7 +99,9 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
             {openingMode=false;phase="observe";return Running();}
             if(r.Status!="completed")
             {
-                if(!CanOpenAfterNavigation(r)||openingMode)return Describe(r);
+                bool stalledAtObstacle=r.Status=="timeout"&&r.Reason is ("navigation_progress_lease_expired" or "navigation_local_coverage_exhausted")
+                    &&r.InputsReleased&&(world.CanInspectWaterBoundary||world.CanBuildWallStep);
+                if((!CanOpenAfterNavigation(r)&&!stalledAtObstacle)||openingMode)return Describe(r);
                 openingMode=true;
             }
             phase=r.Status=="completed"&&world.ReplanAfterChange&&!openingMode?"observe":"reobserve";

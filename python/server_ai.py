@@ -222,6 +222,9 @@ class ServerAiBridge:
             raise BridgeError(reply.get("error", "AI request rejected"), status=reply.get("error"))
         return reply
 
+    def life_status(self):
+        return self._request('life_status')['data']
+
     def invalidate_replies(self, turn):
         with self._reply_turn_lock:
             self._reply_turn=max(self._reply_turn,turn)
@@ -332,7 +335,7 @@ class ServerAiBridge:
         """
         if op=='retreat' and 'server_ai_boss_strategy_v1' not in self.hello.get('capabilities',()):raise ValueError('Retreat unavailable')
         if op not in ('start', 'action', 'cancel','retreat') or (op == 'start' and (
-                parameters.get('operation') not in ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')
+                parameters.get('operation') not in ('mine_target', 'navigate_to', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')
                 or parameters['operation'] not in self.supported_atomic_operations)):
             raise ValueError('Unsupported task request')
         if not {'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_tasks_v1', 'server_ai_program_tasks_v1'} <= set(self.hello.get('capabilities', ())):

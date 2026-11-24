@@ -117,6 +117,7 @@ internal sealed class AiAtomicActions
         internal string Operation;
         internal JsonElement Arguments;
         internal int Duration;
+        internal ulong NavigationProgress;
         internal object Handle;
         internal CombatAdmission Combat;
         internal RespawnPlan Rejoin;
@@ -135,6 +136,7 @@ internal sealed class AiAtomicActions
     private string suppressedRef, cancelledCombatRef;
     private ulong suppressUntil, reflexBackoffUntil;
     private long sequence;
+    internal object CurrentActivity => active == null ? null : new { actionId=active.Id, operation=active.Operation, phase=active.Phase, arguments=active.Arguments.ValueKind==JsonValueKind.Undefined?(JsonElement?)null:active.Arguments };
     internal bool HasActive=>active!=null;
     internal bool BodyBlocked(AiReadOnlyProtocol.Identity current)=>Matches(blockedBody,current);
     internal bool SupportsCombat=>executor?.SupportsCombat==true;
@@ -414,6 +416,15 @@ internal sealed class AiAtomicActions
                 if (e.Handle == null) { e.Attempted = true; e.Handle = e.Rejoin!=null?executor.StartRejoin(current,e.Arguments,e.Id,e.Rejoin):e.Combat==null?executor.Start(current,e.Operation,e.Arguments,e.Id)
                     :executor.StartCombat(current,e.Arguments,e.Id,e.Combat); return; }
                 e.Result = executor.Poll(current, e.Handle);
+                if (e.Operation == "navigate_to" && e.Result.Status == "running")
+                {
+                    ulong progress = executor.ProgressVersion(e.Handle);
+                    if (progress > e.NavigationProgress)
+                    {
+                        e.NavigationProgress = progress;
+                        e.Deadline = clock() + e.Duration;
+                    }
+                }
                 if(!current.CanAct && e.Result.Status=="running" && e.Result.InputsReleased)
                     e.ReleasedLife=current;
                 e.Reason=e.Result.Reason;

@@ -9,6 +9,19 @@ from native_direct_input import wait_file
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'python'))
 from lua_runtime import LuaRuntime, Limits
 from server_ai import ServerAiBridge
+from program_tasks import coordinator
+
+
+async def run_move(source, bridge, cancel, profile, case):
+    pending = asyncio.create_task(LuaRuntime(bridge).execute(
+        source, limits=Limits(seconds=60, calls=1, actions=1), cancel=cancel))
+    if case == 'cancel':
+        signal = profile / 'grapple-cancel-now'
+        while not signal.exists() and not pending.done():
+            await asyncio.sleep(.005)
+        assert signal.exists(), 'Cancellation never observed native pull'
+        cancel.set()
+    return await pending
 
 
 async def verify(args):
@@ -22,7 +35,7 @@ async def verify(args):
     assert proof['released']
     print(f"Native hook proof passed: owner={proof['owner']} local={proof['local']} frames={len(proof['frames'])}")
     ready = args.profile / 'grapple-scene-ready.json'
-    for case in args.scenes or ['ledge', 'anchor', 'cancel', 'reuse', 'same_reuse', 'miss', 'timeout', 'no_hook', 'unsupported', 'generation']:
+    for case in args.scenes or ['ledge', 'diagonal', 'approach', 'cloud_hook', 'waypoint', 'anchor', 'cancel', 'reuse', 'same_reuse', 'miss', 'timeout', 'no_hook', 'unsupported', 'generation']:
         ready.unlink(missing_ok=True)
         request = args.profile / 'grapple-scene-request'
         temp = request.with_suffix('.tmp')
@@ -33,15 +46,26 @@ async def verify(args):
         cancel = asyncio.Event()
         try:
             source = "return api('navigate_to',{x=%s,y=%s})" % (scene['x'], scene['y'])
-            pending = asyncio.create_task(LuaRuntime(bridge).execute(
-                source, limits=Limits(seconds=60, calls=1, actions=1), cancel=cancel))
-            if case == 'cancel':
-                signal = args.profile / 'grapple-cancel-now'
-                while not signal.exists() and not pending.done():
-                    await asyncio.sleep(.005)
-                assert signal.exists(), 'Cancellation never observed native pull'
-                cancel.set()
-            result = await pending
+            if case in ('long_journey', 'world_journey'):
+                tasks = coordinator(bridge)
+                try:
+                    submitted = await LuaRuntime(bridge).execute(
+                        "return api('submit_task',{operation='navigate_to',arguments={x=%s,y=%s}})" %
+                        (scene['x'], scene['y']), limits=Limits(seconds=10, calls=1, actions=1))
+                    assert submitted['status'] == 'completed', submitted
+                    submission = submitted['value']
+                    assert submission['valid'] and submission['status'] == 'running', submission
+                    async with asyncio.timeout(1200 if case == 'world_journey' else 150):
+                        while True:
+                            view = await tasks.invoke('await_task', dict(taskId=submission['taskId'], milliseconds=30000))
+                            if view['status'] != 'running':
+                                break
+                    assert view['taskId'] == submission['taskId']
+                    result = dict(value=view['result'])
+                finally:
+                    await tasks.close()
+            else:
+                result = await run_move(source, bridge, cancel, args.profile, case)
         finally:
             bridge.close()
         (args.profile / f'grapple-{case}-receipt.json').write_text(json.dumps(result, indent=2))
@@ -50,11 +74,22 @@ async def verify(args):
         rows = [json.loads(line) for line in trace.read_text().splitlines()] if trace.exists() else []
         stages = [row['detail']['stage'] for row in rows]
         assert all(row['myPlayer'] == proof['local'] for row in rows)
-        if case == 'ledge':
+        if case in ('ledge', 'diagonal', 'approach', 'cloud_hook', 'waypoint', 'long_journey', 'world_journey'):
             assert action.get('completed'), (action.get('status'), action.get('reason'), args.profile)
             evidence = action['task']['lastResult']['evidence']
             assert all(evidence.get(k) for k in ('arrived', 'safeSupport', 'settled', 'grounded')), evidence
             assert stages == ['fired', 'latched', 'detached', 'settled'], rows
+            if case in ('long_journey', 'world_journey'):
+                task = action['task']
+                assert task['result']['evidence']['arrived'] and task['result']['effectVerified']
+                assert any(child['reason'] == 'native_navigation_work_checkpoint'
+                           for child in task['progress']['children']), task['progress']['settledChildren']
+            if case == 'waypoint':
+                assert rows[-1]['detail']['x'] < scene['x'] - 48
+            if case == 'diagonal':
+                assert abs(rows[2]['detail']['vx']) > .1, rows
+            if case == 'approach':
+                assert rows[0]['detail']['x'] > scene['anchorX']*16-90, rows
             assert rows[2]['detail']['vy'] < 0 and rows[0]['detail']['y'] - rows[2]['detail']['y'] > 90
             assert rows[-1]['detail']['vx'] == rows[-1]['detail']['vy'] == 0
         elif case in ('no_hook', 'unsupported'):

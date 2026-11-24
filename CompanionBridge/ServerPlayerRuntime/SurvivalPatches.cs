@@ -54,6 +54,15 @@ public static class SurvivalPatches
                 &&Call(At(m,0x116),"PickupItem")&&At(m,0xaa)!=null,operation);
             Guard(m,0x9f,0xaa,owns);
         }
+        else if(operation=="breath")
+        {
+            var read=m.Body.Instructions.SingleOrDefault(Local);
+            var branch=read?.Next?.Next?.Next;
+            Require(m.Name.Contains("CheckDrowning")&&read?.Next?.OpCode==OpCodes.Ldarg_0
+                &&read.Next.Next.Operand is FieldReference field&&field.FullName=="System.Int32 Terraria.Entity::whoAmI"
+                &&NotEqual(branch)&&Target(branch)!=null&&m.Body.Instructions.Any(i=>Call(i,"get_breathCDMax")),operation);
+            Guard(m,read,branch.Next,owns);
+        }
         else if(operation=="lethal")
         {
             Require(m.Name.Contains("Hurt")&&Local(At(m,0x97f))&&NotEqual(At(m,0x984))&&Target(At(m,0x984))==At(m,0x991)&&Call(At(m,0x98c),"KillMe")&&At(m,0x979)?.OpCode==OpCodes.Ldarg_0,operation);

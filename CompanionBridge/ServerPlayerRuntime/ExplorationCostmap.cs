@@ -10,6 +10,9 @@ internal readonly record struct TravelCell(char Shape,int MiningUpdates=0);
 internal sealed record ExplorationLeg(MapPoint From,MapPoint To,int Updates,MapPoint? Cut);
 internal sealed record ExplorationChoice(MapPoint Boundary,MapPoint Stance,int Gain,int Outbound,int Return,ExplorationLeg Next);
 
+// A null observation requests only a movement route back to the anchor.
+internal delegate IEnumerable<int> ExplorationRouteQuery(MapPoint? observation, Action<ExplorationLeg,int> accept);
+
 internal sealed class ExplorationCostmap
 {
     private readonly AiMap map;
@@ -97,6 +100,11 @@ internal sealed class ExplorationCostmap
     internal IEnumerable<int> Evaluate(MapPoint start,MapPoint anchor,IEnumerable<Frontier> clusters,
         int remaining,Func<ExplorationLeg,bool> blocked,Func<MapPoint,bool> visited)
     {
+        if(Navigation!=null)
+        {
+            foreach(int work in EvaluateNavigation(start,anchor,clusters,remaining,blocked,visited))yield return work;
+            yield break;
+        }
         var home=new Paths();
         foreach(int work in Search(home,anchor,true,blocked))yield return work;
         ReturnLeg=home.Next.GetValueOrDefault(start);
@@ -104,6 +112,22 @@ internal sealed class ExplorationCostmap
         var outbound=new Paths();
         foreach(int work in Search(outbound,start,false,blocked))yield return work;
         var choices=new Dictionary<MapPoint,ExplorationChoice>();
+        var borders=Borders(clusters);
+        foreach(var (p,distance) in outbound.Cost)
+        {
+            yield return 1;
+            if(p==start || visited(p) || !home.Cost.TryGetValue(p,out int back)||distance+back+45>remaining)continue;
+            var gains=Gains(p,borders);
+            foreach(var (key,gain) in gains)
+            {
+                var candidate=new ExplorationChoice(key,p,gain,distance,back,outbound.Next[p]);
+                if(!choices.TryGetValue(key,out var old)||Compare(candidate,old)<0)choices[key]=candidate;
+            }
+        }
+        Choices=choices.Values.OrderBy(x=>x,Comparer<ExplorationChoice>.Create(Compare)).Take(3).ToList();
+    }
+    private Dictionary<MapPoint,List<MapPoint>> Borders(IEnumerable<Frontier> clusters)
+    {
         var borders=new Dictionary<MapPoint,List<MapPoint>>();
         foreach(var cluster in clusters)
         foreach(var p in cluster.Unknown)
@@ -112,26 +136,95 @@ internal sealed class ExplorationCostmap
             if(!borders.TryGetValue(p,out var keys))borders[p]=keys=new();
             keys.Add(cluster.Key);
         }
-        foreach(var (p,distance) in outbound.Cost)
+        return borders;
+    }
+
+    private Dictionary<MapPoint,int> Gains(MapPoint p,Dictionary<MapPoint,List<MapPoint>> borders)
+    {
+        var eye=new MapPoint(p.X,p.Y-2);
+        var gains=new Dictionary<MapPoint,int>();
+        for(int y=-4;y<=4;y++)
+        for(int x=-4;x<=4;x++)
+        {
+            var target=new MapPoint(eye.X+x,eye.Y+y);
+            if(x*x+y*y>16 || !borders.TryGetValue(target,out var keys)||!Visible(eye,target))continue;
+            foreach(var key in keys)gains[key]=gains.GetValueOrDefault(key)+1;
+        }
+        return gains;
+    }
+
+    internal ExplorationRouteQuery Navigation { get; init; }
+    internal bool AllowExcavation { get; init; }
+    private IEnumerable<int> EvaluateNavigation(MapPoint start,MapPoint anchor,IEnumerable<Frontier> clusters,
+        int remaining,Func<ExplorationLeg,bool> blocked,Func<MapPoint,bool> visited)
+    {
+        foreach(int work in Navigation(null,(leg,_)=>{if(!blocked(leg))ReturnLeg=leg;}))yield return work;
+        if(clusters==null)yield break;
+        var borders=Borders(clusters);
+        var candidates=new List<(MapPoint Stance,MapPoint Key,int Gain,int Distance)>();
+        for(int y=bounds.Top;y<=bounds.Bottom;y++)
+        for(int x=bounds.Left;x<=bounds.Right;x++)
         {
             yield return 1;
-            if(p==start || visited(p) || !home.Cost.TryGetValue(p,out int back)||distance+back+45>remaining)continue;
-            var eye=new MapPoint(p.X,p.Y-2);
-            var gains=new Dictionary<MapPoint,int>();
-            for(int y=-4;y<=4;y++)
-            for(int x=-4;x<=4;x++)
-            {
-                var target=new MapPoint(eye.X+x,eye.Y+y);
-                if(x*x+y*y>16 || !borders.TryGetValue(target,out var keys)||!Visible(eye,target))continue;
-                foreach(var key in keys)gains[key]=gains.GetValueOrDefault(key)+1;
-            }
-            foreach(var (key,gain) in gains)
-            {
-                var candidate=new ExplorationChoice(key,p,gain,distance,back,outbound.Next[p]);
-                if(!choices.TryGetValue(key,out var old)||Compare(candidate,old)<0)choices[key]=candidate;
-            }
+            var p=new MapPoint(x,y);
+            if(p==start||visited(p)||!Supported(p))continue;
+            foreach(var (key,gain) in Gains(p,borders))
+                candidates.Add((p,key,gain,Math.Abs(x-start.X)+Math.Abs(y-start.Y)));
         }
-        Choices=choices.Values.OrderBy(x=>x,Comparer<ExplorationChoice>.Create(Compare)).Take(3).ToList();
+        var choices=new Dictionary<MapPoint,ExplorationChoice>();
+        // Nearby high-gain stances first. A quote is shared by all frontiers visible there.
+        var ranked=candidates.OrderByDescending(c=>(double)c.Gain/(1+c.Distance)).GroupBy(c=>c.Stance);
+        foreach(var batch in ranked.Chunk(3))
+        {
+            var pending=new List<IEnumerator<int>>();
+            try
+            {
+                foreach(var group in batch)
+                {
+                    var query=Navigation(group.Key,(leg,back)=>
+                    {
+                        if(blocked(leg)||leg.Updates+back+45>remaining)return;
+                        foreach(var c in group)
+                        {
+                            var choice=new ExplorationChoice(c.Key,c.Stance,c.Gain,leg.Updates,back,leg);
+                            if(!choices.TryGetValue(c.Key,out var old)||Compare(choice,old)<0)choices[c.Key]=choice;
+                        }
+                    });
+                    pending.Add(query.GetEnumerator());
+                }
+                while(pending.Count>0)
+                {
+                    for(int i=pending.Count-1;i>=0;i--)
+                    {
+                        if(pending[i].MoveNext())yield return 1;
+                        else {pending[i].Dispose();pending.RemoveAt(i);}
+                    }
+                }
+            }
+            finally {foreach(var query in pending)query.Dispose();}
+            if(choices.Count>0)break;
+        }
+        Choices=choices.Values.OrderBy(c=>c,Comparer<ExplorationChoice>.Create(Compare)).Take(3).ToList();
+        if(Choices.Count>0||!AllowExcavation)yield break;
+        // The geometric search can suggest a paid edit. Movement still needs a navigation quote.
+        var editPlan=new ExplorationCostmap(map,bounds,profile,inspect);
+        foreach(int work in editPlan.Evaluate(start,anchor,clusters,remaining,blocked,visited))yield return work;
+        foreach(var choice in editPlan.Choices)
+        {
+            if(choice.Next.Cut!=null && (start==anchor||ReturnLeg!=null))
+            {
+                int back=ReturnLeg?.Updates??0;
+                if(choice.Outbound+back+45<=remaining)Choices.Add(choice with{Return=back});
+                break;
+            }
+            if(choice.Next.Cut!=null)continue;
+            foreach(int work in Navigation(choice.Next.To,(leg,back)=>
+            {
+                if(!blocked(leg)&&leg.Updates+back+45<=remaining)
+                    Choices.Add(choice with{Next=leg,Outbound=leg.Updates,Return=back});
+            }))yield return work;
+            if(Choices.Count>0)break;
+        }
     }
     private static int Compare(ExplorationChoice a,ExplorationChoice b)
     {

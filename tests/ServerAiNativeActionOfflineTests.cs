@@ -10,6 +10,8 @@ public static class ServerAiNativeActionOfflineTests
     private sealed class Executor : AiAtomicActions.IExecutor
     {
         public bool SupportsCrafting => true;
+        internal ulong VerifiedProgress;
+        public ulong ProgressVersion(object handle)=>VerifiedProgress;
         internal int Starts,Cancels,Shutdowns;
         internal bool ThrowStart, ThrowCancel, CompleteOnCancel, UnknownOnCancel, KeepInputHeld;
         internal string CancelStatus;
@@ -41,8 +43,26 @@ public static class ServerAiNativeActionOfflineTests
         internal string Start(string operation="mine_tile",CancellationToken token=default){string id=Guid.NewGuid().ToString("N");Send("start",id,operation,token,
             operation=="move_input"?(object)new{horizontal="right",vertical="none",jumpHoldUpdates=8,maxUpdates=60}:operation=="navigate_to_landing_region"?(object)new{minPlayerLeftX=100,maxPlayerLeftX=140,surfaceY=200}:operation=="craft_recipe"?new{recipeId=12,recipeToken=new string('a',64),crafts=3}:null);Tick();Tick();return id;}
     }
+    public static void NavigationLease()
+    {
+        var journey = new Fixture();
+        string id = journey.Start("navigate_to");
+        for (int checkpoint = 1; checkpoint <= 3; checkpoint++)
+        {
+            journey.Time += 120000;
+            journey.Native.VerifiedProgress++;
+            journey.Tick();
+            Check(journey.Action(id).GetProperty("status").GetString()=="running",
+                "same destination stays active after verified navigation progress");
+        }
+        journey.Time += 180001;
+        journey.Tick();
+        Check(journey.Action(id).GetProperty("stopRequest").GetProperty("reason").GetString()=="execution_deadline",
+            "idle navigation still expires when its progress lease runs out");
+    }
     public static void Run()
     {
+        NavigationLease();
         {
             var f = new Fixture();
             string id = Guid.NewGuid().ToString("N");

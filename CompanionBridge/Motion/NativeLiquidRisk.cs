@@ -10,7 +10,7 @@ namespace CompanionBridge.Motion;
 // landing checks and revalidation of the next executed frame.
 internal static class NativeLiquidRisk
 {
-    internal static string Rejection(PhysicsState start,PhysicsState end)
+    internal static string Rejection(PhysicsState start,PhysicsState end,bool allowOrdinaryWater=false)
     {
         float left=Math.Min(start.Px,end.Px),top=Math.Min(start.Py,end.Py);
         float right=Math.Max(start.Px,end.Px)+PhysicsSimulator.PlayerW;
@@ -32,7 +32,7 @@ internal static class NativeLiquidRisk
                     // the head above water without relying on oxygen reserves.
                     // DrownCollision uses a head box from top - 2 to top + 10.
                     // This swept envelope uses the whole body width.
-                    if(liquid.OverlapsVertical(y,top-2,Math.Max(start.Py,end.Py)+10))
+                    if(!allowOrdinaryWater&&liquid.OverlapsVertical(y,top-2,Math.Max(start.Py,end.Py)+10))
                         return "submerged head requires unsupported swimming";
                     continue;
                 }

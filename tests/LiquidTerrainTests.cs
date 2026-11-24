@@ -43,7 +43,36 @@ public static class LiquidTerrainTests
         var jump=PhysicsSimulator.Step(new(3,0,0,0,true,Wet:true),new(1,true),dry,world);
         Check(jump.JumpFramesLeft==PhysicsParameters.WaterJumpHeight&&jump.Vy< -5.8f&&jump.Py==jump.Vy*.5f,
             "water jump uses native wet launch parameters and displacement");
+        var emerging=PhysicsSimulator.Step(new(5,0,0,-5,false,25,false,Wet:true),new(0,true),dry,world);
+        Check(!emerging.Wet && emerging.JumpFramesLeft==PhysicsParameters.WaterJumpHeight/5,
+            "emerging from ordinary water caps the remaining native jump hold");
+        var pool=new FlatPool();
+        var shore=new PhysicsState(0,0,0,0,true);
+        var goal=LandingRegion.AtDestination(180,42);
+        var across=PoolCrossing.TryPlan(shore,goal,dry,pool);
+        Check(across?.Kind==PoolCrossing.Kind&&across.Actions[0].Landing.Px>64
+            &&PhysicsSimulator.Settled(across.Actions[0].Landing,pool),"verify a complete traversal ending on a dry bank");
+        pool.Breath=30;
+        Check(PoolCrossing.TryPlan(shore,goal,dry,pool)==null,"no entry without enough breath to reach the opposite bank");
+        pool.Breath=200;pool.BlockExit=true;
+        Check(PoolCrossing.TryPlan(shore,goal,dry,pool)==null,"reject a submerged partial route at an impassable bank");
         Console.WriteLine($"Phase 4.6 liquid terrain: {checks} checks");
+    }
+
+    private sealed class FlatPool : IMotionWorld,IPoolMotionWorld
+    {
+        public int Breath {get;set;}=200;
+        public bool BlockExit;
+        public bool WaterAhead(PhysicsState s,int direction)=>true;
+        public IMotionWorld PoolWorld(PhysicsState s)=>this;
+        public bool WaterContact(PhysicsState s)=>s.Px>=16&&s.Px<=64;
+        public PhysicsState Move(PhysicsState s,float vx,float vy,float gravity)
+            =>new(s.Px+vx,0,vx,0,true);
+        public PhysicsState MoveInWater(PhysicsState s,float vx,float vy,float gravity)
+            =>Move(s,vx*.5f,vy,gravity) with{Vx=vx};
+        public bool SafeSweep(PhysicsState a,PhysicsState b,out string reason)
+        {reason=BlockExit&&b.Px>60?"blocked":null;return reason==null;}
+        public bool SafeLanding(PhysicsState s)=>s.Grounded&&!WaterContact(s);
     }
 
     private sealed class WaterBoundary : IMotionWorld
