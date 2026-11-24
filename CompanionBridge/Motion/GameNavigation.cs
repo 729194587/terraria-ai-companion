@@ -15,9 +15,8 @@ internal sealed class NativeNavigation
     private readonly NavigationDiagnostics Diagnostics;
     internal NavigationSnapshot Snapshot => CoreSnapshot with {Mobility=_profile};
     private bool _navigation;
-    private int _session, _generation;
+    private readonly TravelHealthBudget _health=new();
     private NativeMotionWorld _world;
-    private int _life;
     private bool _paired;
     private readonly MobilityTracker _mobility=new();
     private MobilityProfile _profile;
@@ -101,19 +100,14 @@ internal sealed class NativeNavigation
 
     internal static FallSafety FallProfile(Player p)=>new(p.extraFall,p.noFallDmg||p.equippedWings!=null,p.statLife);
 
-    // A travel order can spend up to one third of its starting life, with a
-    // quarter of maximum life in reserve. Starting wounded still permits escape.
     internal static bool ExceedsTravelBudget(Player p,int startLife,int projectedDamage=0)
-    {
-        int remaining=p.statLife-projectedDamage;
-        int reserve=Math.Max(p.statLifeMax2/4,startLife-startLife/3);
-        return remaining<startLife && remaining<=reserve;
-    }
+        =>TravelHealthBudget.Exceeded(startLife,p.statLife-projectedDamage,p.statLifeMax2);
 
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
         LandingRegion region = null, bool combatSwing = false)
     {
         _paired = false;
+        _health.Begin(session,generation,p.statLife);
         _navigation = targetX.HasValue || region != null;
         if (!_navigation)
         {
@@ -137,10 +131,7 @@ internal sealed class NativeNavigation
             ph.Air!=null&&(_navigation?Task.ExpectedState:Controller.ExpectedState) is {} expected&&!AirMotionModel.Matches(expected,State(p),true),
             ph.Air==null?null:new(p.runAcceleration,p.maxRunSpeed,p.accRunSpeed,p.runSlowdown,p.gravity,p.maxFallSpeed,Player.jumpSpeed,Player.jumpHeight));
         if(!_profile.Supported)return Fail("unsupported navigation state: "+string.Join("; ",_profile.UnsupportedEffects));
-        if (_session != session || _generation != generation) _life = p.statLife;
-        _session = session; _generation = generation;
-        if (!combatSwing && ExceedsTravelBudget(p,_life)) return Fail("travel damage budget exhausted");
-        _life = p.statLife;
+        if (!combatSwing && ExceedsTravelBudget(p,_health.StartLife)) return Fail("travel damage budget exhausted");
         var state = State(p);
         if(_planRevision!=_profile.Revision)
         {
@@ -170,14 +161,15 @@ internal sealed class NativeNavigation
     {
         if (!_paired) return;
         _paired = false;
-        if ((!combatSwing && ExceedsTravelBudget(p,_life)) || p.dead) { Fail("life decreased/dead"); return; }
+        if ((!combatSwing && ExceedsTravelBudget(p,_health.StartLife)) || p.dead) { Fail("life decreased/dead"); return; }
         if (_navigation) { Task.After(State(p), _world, inputsReleased: !p.controlLeft && !p.controlRight && !p.controlJump
             && !p.controlDown && !p.controlUp && !p.controlUseItem && !p.controlUseTile); Diagnostics.Observe(Snapshot); }
         else Controller.After(State(p), _world);
     }
 
-    private PhysicsInput Fail(string reason)
+    internal PhysicsInput Fail(string reason)
     {
+        _paired=false;
         var input = _navigation ? Task.Fail(reason) : Controller.Fail(reason);
         if (_navigation) Diagnostics.Observe(Snapshot);
         return input;
@@ -185,8 +177,8 @@ internal sealed class NativeNavigation
 
     internal void Cancel()
     {
-        _mobility.Reset();_profile=null;_planRevision=0;
-        _paired = false; _world = null; _session = _generation = 0;
+        _health.Reset();_mobility.Reset();_profile=null;_planRevision=0;
+        _paired = false; _world = null;
         Task.Cancel(); Diagnostics.Observe(Task.Snapshot); _navigation = false;
         Controller.Cancel();
     }
@@ -203,6 +195,7 @@ internal static class GameNavigation
     internal static FallSafety FallProfile(Player p)=>NativeNavigation.FallProfile(p);
     internal static PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null, LandingRegion region = null)
         => instance.Before(p, session, direction, generation, targetX, region);
+    internal static PhysicsInput Fail(string reason)=>instance.Fail(reason);
     internal static void After(Player p) => instance.After(p);
     internal static void Cancel() => instance.Cancel();
 }

@@ -288,6 +288,21 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('native', self.brain.phase)
         self.assertEqual(404, (await self.tool('guide')).status_code)
 
+    async def test_hybrid_native_agent_receives_client_broadcast(self):
+        from test_game_messages import notice
+        self.ai.hello['capabilities'].extend(['server_ai_life_status_v1','server_ai_messages_v1'])
+        async def serve(app,port,events):
+            message=notice(27,"fixture broadcast")
+            app.brain.receive(message)
+            app.brain.receive(message)
+            self.assertIs(app.brain.agent.llm,self.llm)
+            self.assertEqual([message],app.brain.agent.recent_game_context()['recentGameEvents'])
+        with (patch('agent.LLMClient',return_value=self.llm),patch('agent.Bridge',return_value=self.chat),
+              patch('server_ai.ServerAiBridge',return_value=self.ai) as connect,
+              patch('external_mcp.serve_host',side_effect=serve)):
+            await run(18777,2,server_ai=True,mcp_port=18790,mcp_digest=self.app.digest,with_native_agent=True)
+            connect.assert_called_once()
+
     async def test_external_only_host_does_not_construct_llm(self):
         with (patch('agent.LLMClient') as llm, patch('agent.Bridge', return_value=self.chat),
               patch('server_ai.ServerAiBridge', return_value=self.ai), patch('external_mcp.serve_host') as serve):

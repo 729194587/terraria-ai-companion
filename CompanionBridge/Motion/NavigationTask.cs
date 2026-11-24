@@ -1,5 +1,7 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace CompanionBridge.Motion;
 
@@ -17,6 +19,8 @@ internal sealed class NavigationTask
     private int _searches,_fastWalks,_deferredSearches,_consecutiveRecoveries;
     private StateSpacePlanner.Search _pendingSearch;
     private SurfaceNavigator _surfaceSearch;
+    private IEnumerator<Route> _travelSearch;
+    private (PhysicsState,PhysicsParameters,long,int) _travelScope;
     private SurfaceGraphSnapshot _surfaceSnapshot;
     private PhysicsState _searchStart;
     private PhysicsParameters _searchPhysics;
@@ -43,7 +47,7 @@ internal sealed class NavigationTask
         _sharedKnowledge=knowledge!=null;
         _knowledge=knowledge??new();
     }
-    private void DiscardSearch(){_pendingSearch?.Dispose();_pendingSearch=null;_surfaceSearch?.Dispose();_surfaceSearch=null;}
+    private void DiscardSearch(){_travelSearch?.Dispose();_travelSearch=null;_pendingSearch?.Dispose();_pendingSearch=null;_surfaceSearch?.Dispose();_surfaceSearch=null;}
     private void DiscardAhead(){_aheadSearch?.Dispose();_aheadSearch=null;_aheadRoute=null;_aheadEdge=-1;}
 
     internal bool Continuous { get; set; }
@@ -245,7 +249,30 @@ internal sealed class NavigationTask
                 }
                 else if(AllowedPose==null)
                 {
-                    _route=surface && _surfaceSearch==null?TryCruise(state,region,ph,world)??TryRunningJump(state,region,ph,world):null;
+                    _route=null;
+                    if(surface && _surfaceSearch==null)
+                    {
+                        var scope=(state,ph,terrain,_failures.Version);
+                        if(_travelSearch==null || _travelScope!=scope)
+                        {
+                            _travelSearch?.Dispose();
+                            _travelScope=scope;
+                            _travelSearch=TravelCandidates(state,region,ph,world).GetEnumerator();
+                        }
+                        long sliceStart=Stopwatch.GetTimestamp();
+                        bool finished=AdvanceTravel(_travelSearch,out _route);
+                        double elapsed=Stopwatch.GetElapsedTime(sliceStart).TotalMilliseconds;
+                        if(_route==null)_planningMilliseconds+=elapsed;
+                        else _route=_route with{Milliseconds=elapsed};
+                        if(!finished)
+                        {
+                            _deferredSearches++;
+                            Snapshot=Snapshot with{Status="running",Reason="travel search deferred"};
+                            return default;
+                        }
+                        _travelSearch.Dispose();
+                        _travelSearch=null;
+                    }
                     _route??=_knowledge.TakeBankCrossing(state,region,ph) ??
                         (surface&&_surfaceSearch==null?PoolCrossing.TryPlan(state,region,ph,world):null);
                 }
@@ -496,13 +523,28 @@ internal sealed class NavigationTask
         => _failures.RejectKnown(start,edge,Clock)||_trip.Reject(edge.Landing)
             || AllowedPose!=null && (!AllowedPose(start)||edge.Frames.Exists(f=>!AllowedPose(f.State)));
 
-    private Route TryRunningJump(PhysicsState state,LandingRegion goal,PhysicsParameters ph,IMotionWorld world)
+    internal IEnumerable<Route> TravelCandidates(PhysicsState state,LandingRegion goal,PhysicsParameters ph,IMotionWorld world)
+        =>TryCruise(state,goal,ph,world).Concat(TryRunningJump(state,goal,ph,world));
+
+    internal static bool AdvanceTravel(IEnumerator<Route> candidates,out Route route)
+    {
+        long started=Stopwatch.GetTimestamp();
+        route=null;
+        do
+        {
+            if(!candidates.MoveNext())return true;
+            route=candidates.Current;
+            if(route!=null)return true;
+        } while(Stopwatch.GetElapsedTime(started).TotalMilliseconds<4);
+        return false;
+    }
+
+    private IEnumerable<Route> TryRunningJump(PhysicsState state,LandingRegion goal,PhysicsParameters ph,IMotionWorld world)
     {
         if(ph.Air!=null || ph.ExtraJump==null || ph.GroundOnly || ph.NoAirRepress || !state.Grounded || state.Wet ||
-            (ph.ExtraJump.Next==null && ph.AccRunSpeed<=ph.MaxRun))return null;
+            (ph.ExtraJump.Next==null && ph.AccRunSpeed<=ph.MaxRun))yield break;
         float target=Math.Clamp(state.Px,goal.MinPlayerLeftX,goal.MaxPlayerLeftX);
-        if(Math.Abs(target-state.Px)<SurfaceGraph.InitialRadius*16)return null;
-        long started=System.Diagnostics.Stopwatch.GetTimestamp();
+        if(Math.Abs(target-state.Px)<SurfaceGraph.InitialRadius*16)yield break;
         int dir=Math.Sign(target-state.Px);
         var terrain=(ISurfaceTerrain)world;
         var run=new System.Collections.Generic.List<PredictedFrame>();
@@ -510,9 +552,10 @@ internal sealed class NavigationTask
         var right=new PhysicsInput(dir,false);
         // Keep the last supported stance before a wall or ledge. A short runway
         // is still usable; never assume the boots have already reached top speed.
-        try
+        for(int i=0;i<240 && dir*launch.Vx<Math.Max(ph.MaxRun,ph.AccRunSpeed)-.05f;i++)
         {
-            for(int i=0;i<240 && dir*launch.Vx<Math.Max(ph.MaxRun,ph.AccRunSpeed)-.05f;i++)
+            if(i%16==0)yield return null;
+            try
             {
                 if(i%32==0)world=terrain.MotionAt(launch);
                 var next=PhysicsSimulator.Step(launch,right,ph,world);
@@ -520,8 +563,8 @@ internal sealed class NavigationTask
                     dir*(next.Px-launch.Px)<=.01f || dir*(target-next.Px)<64)break;
                 run.Add(new(right,next));launch=next;
             }
+            catch(UnsafeMotionException){yield break;}
         }
-        catch(UnsafeMotionException){return null;}
         int count=0;
         for(var jump=ph.ExtraJump;jump!=null;jump=jump.Next)count++;
         int hold=Math.Min(ph.JumpHeight+1,180);
@@ -533,6 +576,7 @@ internal sealed class NavigationTask
             for(int jumps=count;jumps>=0;jumps--)
             foreach(int delay in jumps==0?new[]{0}:new[]{-coast,coast,coast*2,coast*3,1})
             {
+                yield return null;
                 var hop=PhysicsSimulator.Predict(launch,dir,hold,ph,launchWorld,rollingJump:true,
                     extraJumpFrame:jumps>0?hold+Math.Abs(delay):-1,extraCount:jumps,extraCoast:Math.Max(1,Math.Abs(delay)),
                     flightGoal:goal,reserveFinalJump:delay<0);
@@ -547,18 +591,19 @@ internal sealed class NavigationTask
                 var edge=hop with{Frames=frames,Landing=end,ExtraJumpFrame=hop.ExtraJumpFrame<0?-1:runLength+hop.ExtraJumpFrame,
                     ExecuteFrames=arrived?frames.Count:runLength+hop.ExecuteFrames};
                 if(RejectRemembered(state,edge))continue;
-                return new(new(){edge},0,System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                yield return new(new(){edge},0,0,
                     ReachedGoal:arrived,Kind:"running_jump",SearchExit:arrived?"goal_reached":"safe_partial");
+                yield break;
             }
         }
-        return null;
+        yield break;
     }
 
-    private Route TryCruise(PhysicsState state,LandingRegion goal,PhysicsParameters ph,IMotionWorld world)
+    private IEnumerable<Route> TryCruise(PhysicsState state,LandingRegion goal,PhysicsParameters ph,IMotionWorld world)
     {
         float target=Math.Clamp(state.Px,goal.MinPlayerLeftX,goal.MaxPlayerLeftX);
         if(Math.Abs(target-state.Px)<SurfaceGraph.InitialRadius*16 || state.Wet || ph.GroundOnly || ph.NoAirRepress ||
-            ph.Air?.Kind!=AirKind.Wings || state.Air?.WingTime is not >0 || !state.Grounded)return null;
+            ph.Air?.Kind!=AirKind.Wings || state.Air?.WingTime is not >0 || !state.Grounded)yield break;
         int dir=Math.Sign(target-state.Px);
         int hold=Math.Min(180,ph.JumpHeight+1),extraFrame=-1,count=0,airFrame=hold+1;
         for(var jump=ph.ExtraJump;jump!=null;jump=jump.Next)
@@ -566,18 +611,17 @@ internal sealed class NavigationTask
             if(extraFrame<0)extraFrame=hold+1;
             count++;airFrame+=jump.HoldFrames(ph)+2;
         }
-        long started=System.Diagnostics.Stopwatch.GetTimestamp();
         int power=(int)Math.Ceiling(state.Air.WingTime);
         Prediction Fly(int duration)=>PhysicsSimulator.Predict(state,dir,hold,ph,world,rollingJump:true,extraJumpFrame:extraFrame,
             extraCount:Math.Max(1,count),airStartFrame:airFrame,airHoldFrames:duration,flightGoal:goal,cruise:true);
         var flight=Fly(power);
-        if(!flight.Safe || flight.Frames.Count==0)return null;
+        if(!flight.Safe || flight.Frames.Count==0)yield break;
         bool arrived=goal.Arrived(flight.Landing,((ISurfaceTerrain)world).MotionAt(flight.Landing));
         if(!arrived)
         {
             var checkpoint=flight.Frames[flight.ExecuteFrames-1].State;
             if(dir*(checkpoint.Px-state.Px)<32 || goal.Distance(checkpoint)>=goal.Distance(state) ||
-                Math.Abs(checkpoint.Px-target)<16)return null;
+                Math.Abs(checkpoint.Px-target)<16)yield break;
             flight=flight with{Landing=checkpoint};
         }
         else
@@ -586,6 +630,7 @@ internal sealed class NavigationTask
             // simulated arc reaches the same settled footprint sooner.
             for(int duration=power/2;duration>0;duration/=2)
             {
+                yield return null;
                 var shorter=Fly(duration);
                 if(!shorter.Safe || shorter.Frames.Count>=flight.Frames.Count ||
                     !goal.Arrived(shorter.Landing,((ISurfaceTerrain)world).MotionAt(shorter.Landing)))continue;
@@ -593,8 +638,8 @@ internal sealed class NavigationTask
             }
             flight=flight with{ExecuteFrames=flight.Frames.Count};
         }
-        if(RejectRemembered(state,flight))return null;
-        return new(new(){flight},0,System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds,ReachedGoal:arrived,Kind:"cruise_flight",SearchExit:arrived?"goal_reached":"safe_partial");
+        if(RejectRemembered(state,flight))yield break;
+        yield return new(new(){flight},0,0,ReachedGoal:arrived,Kind:"cruise_flight",SearchExit:arrived?"goal_reached":"safe_partial");
     }
 
     private void ExtendWalkingStride(PhysicsParameters ph,IMotionWorld world)

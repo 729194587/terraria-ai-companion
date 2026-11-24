@@ -68,7 +68,7 @@ internal static class ServerAiTerrainFixture
         var o=ServerAiNavigation.Observe(p);
         var nav=run.Snapshot;
         frames.Add(new{tick=Main.GameUpdateCount,x=p.position.X,y=p.position.Y,vx=p.velocity.X,vy=p.velocity.Y,
-            o.State.Grounded,o.SafeSupport,o.Settled,left=p.controlLeft,right=p.controlRight,jump=p.controlJump,
+            p.statLife,o.State.Grounded,o.SafeSupport,o.Settled,left=p.controlLeft,right=p.controlRight,jump=p.controlJump,
             injectedInput=inputTick.HasValue?new{tick=inputTick,left=inputLeft,right=inputRight,jump=inputJump}:null,
             expectedPosition=nav?.ExpectedPosition,expectedVelocity=nav?.ExpectedVelocity,
             action=nav?.Action,frame=nav?.Frame,status=nav?.Status,maxError=nav?.MaxError,
@@ -103,6 +103,8 @@ internal static class ServerAiTerrainFixture
             File.WriteAllText(Path.Combine(Main.SavePath,"frontier-bank-removed.json"),
                 JsonSerializer.Serialize(new{p.position.X,tick=Main.GameUpdateCount}));
         }
+        if(recoveryMode=="damage" && active?.Status=="running" && active.Updates is >=8 and <=12)
+            p.statLife-=Math.Max(1,p.statLifeMax2/10);
         if(recoveryMode=="turnaround"&&!recoveryFired)
         {
             // One recorded initial condition in the copied-world fixture.
@@ -119,7 +121,7 @@ internal static class ServerAiTerrainFixture
             if(!Program.LaunchParameters.ContainsKey("-companionextrajumptest"))throw new InvalidOperationException("Missing extra jump diagnostic gate");
             p.position.X-=32;mobilityChanged=true;
         }
-        if (recoveryMode!=null&&recoveryMode!="turnaround"&&!recoveryFired&&active?.Status=="running"&&active.Updates>=8
+        if (recoveryMode!=null&&recoveryMode is not ("turnaround" or "damage")&&!recoveryFired&&active?.Status=="running"&&active.Updates>=8
             &&active.Snapshot is {Status:"running",Frame:>=4,Action:"walk" or "jump"})
         {
             if(!Program.LaunchParameters.ContainsKey("-companionnavrecoverytest"))
@@ -183,7 +185,7 @@ internal static class ServerAiTerrainFixture
         mobilityRestored=false;
         recoveryMode=doc.RootElement.TryGetProperty("recovery",out var mode)?mode.GetString():null;
         if(recoveryMode!=null && (!Program.LaunchParameters.ContainsKey("-companionnavrecoverytest")
-            || scene!="flat" || direction!=1 || recoveryMode is not ("offset" or "low_wall" or "high_wall" or "air" or "cancel_air" or "turnaround")))
+            || scene!="flat" || direction!=1 || recoveryMode is not ("offset" or "low_wall" or "high_wall" or "air" or "cancel_air" or "turnaround" or "damage")))
             throw new ArgumentException("Invalid isolated navigation recovery scene");
         recoveryFired=false;recoveryLeft=Main.spawnTileX;recoveryFloor=Main.spawnTileY+8;
         bool region=doc.RootElement.TryGetProperty("region",out var regionFlag)&&regionFlag.GetBoolean();

@@ -18,6 +18,9 @@ internal sealed record GrappleClimbPlan(LandingRegion Landing,int AnchorX,int An
     internal float AimY=>AnchorY*16+8;
     internal bool Unchanged(ISurfaceTerrain terrain)=>Stamp(terrain,Left,Top,Right,Bottom)==Terrain;
 
+    internal static bool Supports(PhysicsParameters physics)=>!physics.GroundOnly && !physics.NoAirRepress
+        && physics.Air?.Kind!=AirKind.RocketBoots && (physics.IsBasic || physics.Matches(PhysicsParameters.Swiftness));
+
     internal static GrappleClimbPlan Find(PhysicsState start,LandingRegion landing,
         PhysicsParameters physics,IMotionWorld world,ISurfaceTerrain terrain)
         =>Options(start,landing,physics,world,terrain).FirstOrDefault(p=>p!=null);
@@ -57,7 +60,7 @@ internal sealed record GrappleClimbPlan(LandingRegion Landing,int AnchorX,int An
     internal static IEnumerable<GrappleClimbPlan> Options(PhysicsState start,LandingRegion landing,
         PhysicsParameters physics,IMotionWorld world,ISurfaceTerrain terrain)
     {
-        if(physics.GroundOnly||physics.Air?.Kind==AirKind.RocketBoots||(!physics.IsBasic&&!physics.Matches(PhysicsParameters.Swiftness))
+        if(!Supports(physics)||start.ExtraActive||start.Wet
             ||start.Py+42-landing.SurfaceY is <144 or >192||!PhysicsSimulator.Settled(start,world))yield break;
         foreach(var plan in FromLaunch(start,landing,physics,world,terrain))yield return plan;
         int toward=Math.Sign((landing.MinPlayerLeftX+landing.MaxPlayerLeftX)/2-start.Px);

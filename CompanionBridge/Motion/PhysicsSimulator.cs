@@ -111,6 +111,9 @@ internal sealed record PhysicsParameters(float AccRun, float MaxRun, float AccRu
 // not feet or velocity, and damages only above 25 + extraFall rows.
 internal readonly record struct FallSafety(int ExtraFall,bool Immune,int Life=0)
 {
+    // Life annotates rejected landings. Only protection changes trajectory safety.
+    public bool Equals(FallSafety other)=>ExtraFall==other.ExtraFall && Immune==other.Immune;
+    public override int GetHashCode()=>HashCode.Combine(ExtraFall,Immune);
     // Terrain observation / simulation horizon. Immunity does not certify a landing.
     internal const int LookaheadPixels=48*16;
     internal static int Row(float top)=>(int)(top/16f);

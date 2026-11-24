@@ -44,6 +44,7 @@ $sources = @(
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/ExtraJumpModel.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/AirMotionModel.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/TravelHealthBudget.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MobilityProfile.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MovementSnapshot.cs'),
     (Join-Path $PSScriptRoot 'MovementSnapshotTests.cs'),
@@ -96,6 +97,10 @@ if ($MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $Wor
     $motionSources = $sources | Where-Object {
         ((Split-Path (Split-Path $_ -Parent) -Leaf) -eq 'Motion' -and [IO.Path]::GetFileNameWithoutExtension($_) -ne 'PlatformDropAction') -or [IO.Path]::GetFileNameWithoutExtension($_) -in $dependencies
     }
+    if ($MobilityOnly) {
+        $motionSources += Join-Path $repo 'CompanionBridge/Motion/NavigationAirActions.cs'
+        $motionSources += Join-Path $PSScriptRoot 'AirActionFaultTests.cs'
+    }
     if ($NavigationExperimentOutput) {
         $motionSources += Join-Path $PSScriptRoot 'navigation_experiments/NavigationExperiment.cs'
         Add-Type -Path $motionSources -ReferencedAssemblies $references -CompilerOptions '/define:NAVIGATION_EXPERIMENT','/optimize+'
@@ -103,7 +108,7 @@ if ($MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $Wor
         return
     }
     Add-Type -Path $motionSources -ReferencedAssemblies $references
-    if ($MobilityOnly) { [MobilityProfileTests]::Run(); [ExtraJumpNavigationTests]::Run(); [AirMotionTests]::Run() }
+    if ($MobilityOnly) { [AirActionFaultTests]::Run(); [MobilityProfileTests]::Run(); [ExtraJumpNavigationTests]::Run(); [AirMotionTests]::Run() }
     elseif ($PlannerOnly) { [PlannerCorrectnessTests]::Run() }
     elseif ($VerticalOnly) { [VerticalNavigationTests]::Run() }
     elseif ($LocalEditsOnly) { [LocalTerrainPlanningTests]::Run() }
@@ -116,6 +121,7 @@ if ($MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $Wor
     else { [MotionOfflineTests]::AuditLandingBudget($BudgetRepetitions, $BudgetColdOnly.IsPresent) }
     return
 }
+$sources += Join-Path $repo 'CompanionBridge/Motion/NavigationAirActions.cs'
 if ($AuthorityNetworkOnly) {
     $sources += (Join-Path $repo 'CompanionBridge/Common/Systems/AtomicMultiplayer.cs')
     $sources += (Join-Path $PSScriptRoot 'AuthorityNetworkOfflineTests.cs')

@@ -35,10 +35,7 @@ internal sealed class ServerGrappleClimb(GrappleClimbPlan plan,PhysicsParameters
         bool attached=WantsNativePull(p);
         if(!Valid(p,state,world)||(life!=0&&p.statLife<life))
             return Fail("grapple_conditions_changed");
-        // Life regeneration changes the damage diagnostic, not the movement
-        // profile. Damage and fall immunity still have their own checks.
-        var currentPhysics=physics with{Fall=physics.Fall with{Life=p.statLife}};
-        if(!nativePull&&!attached&&(!navigation.Ordinary(p)||NativeNavigation.Parameters(p)!=currentPhysics))
+        if(!nativePull&&!attached&&(!navigation.Ordinary(p)||NativeNavigation.Parameters(p)!=physics))
             return Fail("grapple_mobility_changed");
         if(phase is Phase.Latch or Phase.Pull && shot?.Active==null)return Fail("grapple_projectile_lost");
         if(phase==Phase.Pull&&shot.Active.ai[0]!=2)return Fail("grapple_attachment_lost");
@@ -151,15 +148,17 @@ internal sealed class ServerGrappleClimb(GrappleClimbPlan plan,PhysicsParameters
         }
     }
 
+    internal static bool ActorEligible(Player p)=>!p.dead&&!p.ghost&&!p.noItems&&!p.CCed&&!p.tongued&&!p.mount.Active&&p.gravDir==1
+        &&!p.wet&&!p.pulley&&!p.webbed&&!p.stoned&&!p.frozen&&!p.sliding&&!p.slowFall
+        &&p.width==PhysicsSimulator.PlayerW&&p.height==PhysicsSimulator.PlayerH;
+
     private bool Valid(Player p,PhysicsState state,NativeMotionWorld world)
     {
         var movement=NativeMovementReader.Capture(p);
-        return (allowed==null||allowed(state))&&!p.dead&&!p.ghost&&!p.noItems&&!p.CCed&&!p.tongued&&!p.mount.Active&&p.gravDir==1
-        &&!p.wet&&!p.pulley&&!p.webbed&&!p.stoned&&!p.frozen&&!p.sliding&&!p.slowFall
-        &&AirMotionModel.Select(movement)==physics.Air&&p.rocketBoots==0
+        return (allowed==null||allowed(state))&&ActorEligible(p)
+        &&GrappleClimbPlan.Supports(physics)&&AirMotionModel.Select(movement)==physics.Air
         &&ExtraJumpModel.Select(movement)==physics.ExtraJump
-        &&!movement.ExtraJumps.Any(j=>j.Active||j.Enabled&&physics.ExtraJump==null)
-        &&p.width==PhysicsSimulator.PlayerW&&p.height==PhysicsSimulator.PlayerH
+        &&!movement.ExtraJumps.Any(j=>j.Active||!movement.BlockExtraJumps&&j.Enabled&&physics.ExtraJump==null)
         &&ReferenceEquals(ActorGrapple.Selected(p),item)&&item.shootSpeed==shootSpeed
         &&plan.Unchanged(world)&&world.SafeSweep(state,state,out _)
         &&(shot!=null||!ActorGrapple.HasHook(p));

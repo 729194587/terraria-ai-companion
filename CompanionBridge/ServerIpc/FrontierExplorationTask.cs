@@ -125,7 +125,7 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
         bool Known(PhysicsState pose)=>KnownPose(map,trip.Window,pose);
         var world=new NativeMotionWorld(start);
         Passage hookPassage=null;
-        if(ActorGrapple.Selected(actor)!=null && !ActorGrapple.HasHook(actor) && !actor.noItems && !actor.CCed)
+        if(ActorGrapple.Selected(actor)!=null && !ActorGrapple.HasHook(actor) && ServerGrappleClimb.ActorEligible(actor))
         {
             bool KnownCell(int x,int y)=>trip.Window.Contains(new(x,y)) && map.Get(x,y)!=0;
             foreach(var hook in GrappleClimbPlan.Options(start,goal,planningPhysics,world,world))

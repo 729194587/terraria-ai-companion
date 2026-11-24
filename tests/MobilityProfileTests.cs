@@ -8,10 +8,38 @@ public static class MobilityProfileTests
     public static void Run()
     {
         MovementSnapshotTests.Run();
+        var budget=new TravelHealthBudget();
+        foreach(int life in new[]{100,90,80,70,60})
+        {
+            budget.Begin(0,0,life);
+            Check(TravelHealthBudget.Exceeded(budget.StartLife,life,100)==(life==60),"accumulate separate travel hits");
+        }
+        budget.Begin(0,1,60);
+        Check(budget.StartLife==60,"new generation starts a fresh budget");
+        budget.Begin(1,1,80);
+        Check(budget.StartLife==80,"new session starts a fresh budget");
         var tracker=new MobilityTracker();var p=PhysicsParameters.Basic;
         var a=tracker.Sample(p,20,42,false,Array.Empty<string>(),10,1,7);
         var b=tracker.Sample(p,20,42,false,Array.Empty<string>(),11,1,7);
         Check(a.Supported&&a.AvailableModes.Length==2&&a.Revision==b.Revision&&b.SourceTick==11,"sampling tick alone does not invalidate profile");
+        var healed=p with{Fall=new(0,false,90)};
+        Check(tracker.Sample(healed,20,42,false,Array.Empty<string>(),12,1,7).Revision==a.Revision
+            && p==healed && p.GetHashCode()==healed.GetHashCode(),"health is diagnostic, not route identity");
+        Check(tracker.Sample(healed with{Fall=new(1,false,90)},20,42,false,Array.Empty<string>(),12,1,7).Revision>a.Revision,
+            "extra fall protection invalidates route");
+        Check(!GrappleClimbPlan.Supports(p with{NoAirRepress=true}) && !GrappleClimbPlan.Supports(p with{Air=AirMotionModel.Rocket})
+            && GrappleClimbPlan.Supports(p with{Air=AirMotionModel.Angel,ExtraJump=ExtraJumpModel.Cloud}),
+            "grapple accepts modeled wings and jumps, rejects unsupported repress and rocket-only");
+        var jumps=new ExtraJumpModel("first",2,2,Next:ExtraJumpModel.Cloud);
+        var wing=healed with{Air=AirMotionModel.Angel,ExtraJump=jumps};
+        var pose=new PhysicsState(0,0,0,0,false,ExtraAvailable:true,RemainingJumps:1,Air:new(40,40,0,0,0,false,false,false));
+        foreach(var launch in SurfaceNavigator.UphillLaunches(pose,1,wing))
+            if(launch.AirStart>=0 && launch.ExtraFrame>=0)
+                Check(launch.ExtraCount==1 && launch.AirStart==launch.ExtraFrame+ExtraJumpModel.Cloud.HoldFrames(wing)+2,
+                    "spent first jump excluded from wing activation timing");
+        var spent=pose with{ExtraAvailable=false,RemainingJumps=-1};
+        foreach(var launch in SurfaceNavigator.UphillLaunches(spent,1,wing))
+            Check(launch.ExtraFrame<0,"no modeled jump remains on this airborne observation");
         var c=tracker.Sample(PhysicsParameters.Swiftness,20,42,true,Array.Empty<string>(),12,1,7);
         Check(c.Supported&&c.Revision>a.Revision&&c.EffectivePhysics.MaxRun==3.75f,"measured numeric effect changes supported profile revision");
         Check(tracker.Sample(p,20,42,true,Array.Empty<string>(),13,1,7).Supported,"buff name does not override effective basic physics");

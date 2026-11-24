@@ -330,22 +330,30 @@ internal sealed class SurfaceNavigator : IDisposable
     private Route Waiting()=>new(new(),0,timer.Elapsed.TotalMilliseconds,TimeBudgetReached:true,Kind:"surface_graph",SearchExit:"surface_budget");
     public void Dispose()=>steps.Dispose();
 
-    internal static IEnumerable<LaunchInput> UphillLaunches(PhysicsState start,int direction,PhysicsParameters ph)
+    internal static IEnumerable<LaunchInput> UphillLaunches(PhysicsState start,int direction,PhysicsParameters ph,int holdStep=4)
     {
-        foreach(var action in ph.Launches(start,direction,4))
+        foreach(var action in ph.Launches(start,direction,holdStep))
             if(action.AirStart<0 || ph.Air?.Kind!=AirKind.Wings)yield return action;
         if(ph.GroundOnly || ph.Air?.Kind!=AirKind.Wings || start.Air?.WingTime is not >0)yield break;
         int hold=Math.Min(ph.JumpHeight,180);
         int extraFrame=hold+1;
         int available=(int)Math.Min(start.Air.WingTime,120);
+        int mask=start.RemainingJumps;
+        if(mask<0)mask=(start.ExtraAvailable||start.Grounded)?ph.ExtraJump?.Mask??0:0;
         // On a long flight a few more powered updates can move the landing from
         // below a lip onto its upper surface. Include the exact remaining duration.
         for(int time=8;time<available+8;time+=8)
         {
             int power=Math.Min(time,available);
             yield return new(hold,AirStart:extraFrame,AirHold:power);
-            if(ph.ExtraJump!=null)
-                yield return new(hold,ExtraFrame:extraFrame,AirStart:extraFrame+ph.ExtraJump.HoldFrames(ph)+2,AirHold:power);
+            int count=0,wingFrame=extraFrame;
+            for(var jump=ph.ExtraJump;jump!=null;jump=jump.Next)
+            {
+                if((mask&jump.Bit)==0)continue;
+                count++;
+                wingFrame+=jump.HoldFrames(ph)+2;
+                yield return new(hold,ExtraFrame:extraFrame,ExtraCount:count,AirStart:wingFrame,AirHold:power);
+            }
         }
     }
 
@@ -365,7 +373,7 @@ internal sealed class SurfaceNavigator : IDisposable
         {
             // An overhead platform can be a single jump even when it is outside
             // the initial graph window. Prove the complete landing before scanning.
-            foreach(var launch in ph.Launches(start,0,2))
+            foreach(var launch in UphillLaunches(start,0,ph,2))
             {
                 if(launch.Hold==0)continue;
                 if(YieldWork())yield return Waiting();

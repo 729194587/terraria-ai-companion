@@ -350,6 +350,7 @@ class Agent:
         self.bridge, self.llm = bridge, llm
         self.chat_bridge = bridge if chat_bridge is None else chat_bridge
         self.server_ai = chat_bridge is not None
+        self.polling_server_messages = False
         if self.server_ai and not {'server_ai_atomic_v1','server_ai_reads_v1','server_ai_actions_v1','server_ai_chat_v2'}.issubset(
                 getattr(bridge,'hello',{}).get('capabilities',[])):
             raise BridgeError('Server AI Agent requires the explicit native AI backend; human fallback is forbidden')
@@ -513,7 +514,7 @@ class Agent:
 
     def receive(self, event):
         if event.get("type") == "game_message":
-            if (self.server_ai and 'server_ai_messages_v1' in self.bridge.hello['capabilities']
+            if (self.polling_server_messages
                     and event.get('source') == 'chat_helper'):
                 return  # The observer client can also see messages addressed only to itself.
             if any(old["eventId"] == event["eventId"] for old in self._game_events):
@@ -1554,6 +1555,7 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
             life_reader = await asyncio.to_thread(connect_execution)
             if life_reader.binding != execution.binding:
                 raise BridgeError('Life observer and execution identities differ')
+            agent.polling_server_messages = 'server_ai_messages_v1' in life_reader.hello['capabilities']
         next_life_check = 0
         while True:
             if life_reader and loop.time() >= next_life_check:

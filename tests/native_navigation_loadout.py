@@ -31,7 +31,9 @@ async def measure(profile, port, scene, loadout):
         bridge.close()
     (profile / f"{name}-receipt.json").write_text(json.dumps(result, indent=2))
     action = result.get("value") or result.get("lastAction") or {}
-    assert action.get("status") in ("failed", "completed", "stalled", "timeout", "cancelled"), (name, result)
+    assert action.get("status") in ("failed", "completed", "stalled", "timeout", "cancelled") or (loadout=="activate_fault" and action.get("status")=="unknown"), (name, result)
+    if loadout=="activate_fault":
+        assert "air action activation failed" in action.get("reasonDetail",""),action
     end = action["endEvidence"]
     assert end["inputsReleased"] and end["actorSlot"] == fixture["slot"]
     assert end["worldSessionId"] == fixture["world"] and end["actorGeneration"] == fixture["generation"]
@@ -50,6 +52,10 @@ async def measure(profile, port, scene, loadout):
         assert samples[-1]["grapCount"] == 0
         assert all(evidence.get(k) for k in ("arrived", "grounded", "settled", "safeSupport"))
         assert abs(evidence["feetY"] - y) <= 2 and abs(evidence["x"] + 10 - x) <= 24
+    if scene=="bottle64" and loadout=="bundle_angel":
+        last_jump=max(i for i,frame in enumerate(samples) if frame["sand"] or frame["blizzard"] or frame["Active"])
+        assert any(now["jumpInput"] and now["wingTime"]<prev["wingTime"] and now["feetY"]<prev["feetY"]
+                   for prev,now in zip(samples[last_jump:],samples[last_jump+1:])), "no powered ascent after the jump chain"
     return dict(scene=scene, loadout=loadout, arrived=arrived, status=action["status"], reason=action["reason"],
                 target=[x,y], start=[start["x"],start["feetY"]], end=[samples[-1]["x"],samples[-1]["feetY"]],
                 horizontalInput=any(f["horizontalInput"] for f in samples),
@@ -59,7 +65,7 @@ async def measure(profile, port, scene, loadout):
                 extraJump=any(f["Active"] or f["blizzard"] or f["sand"] for f in samples),
                 flight=any(f["wingsLogic"] and f["wingTime"] < f["wingTimeMax"]
                            and f["feetY"] < start["feetY"] for f in samples),
-                dashCount=samples[-1]["dashCount"], attached=any(f["grapCount"] > 0 for f in samples),
+                faults=samples[-1]["faults"],dashCount=samples[-1]["dashCount"], attached=any(f["grapCount"] > 0 for f in samples),
                 climbed=any(f["pulley"] for f in samples), platformsUsed=start["platforms"]-samples[-1]["platforms"])
 
 
@@ -86,6 +92,35 @@ async def verify(args):
     await wait_file(args.profile / "action-fixture.json", 90)
     rows = []
     for scene in args.scenes or TARGETS:
+        if scene == "grapple_combo":
+            row=await measure(args.profile,args.port,"frontier_nohook","limited_angel_rocket_hook")
+            assert row["arrived"] and row["attached"],row
+            rows.append(row)
+            print(row,flush=True)
+            (args.profile / "loadout-results.json").write_text(json.dumps(rows,indent=2))
+            continue
+        if scene == "adapter_faults":
+            for mode in ("capture_fault","activate_fault"):
+                row=await measure(args.profile,args.port,"wide_gap",mode)
+                assert row["faults"]==1 and not row["arrived"],row
+                rows.append(row)
+                print(row,flush=True)
+                (args.profile / "loadout-results.json").write_text(json.dumps(rows,indent=2))
+            continue
+        if scene == "travel_budget":
+            for loadout in ("bundle","bundle_angel"):
+                await measure(args.profile,args.port,"flat",loadout)
+                times=await wait_file(args.profile / f"flat-{loadout}-budget.json")
+                print(f"{loadout}: {len(times)} native planning slices, max {max(times):.3f} ms",flush=True)
+                assert max(times)<50, times
+            continue
+        if scene == "bundle_wings":
+            row = await measure(args.profile,args.port,"bottle64","bundle_angel")
+            rows.append(row)
+            (args.profile / "loadout-results.json").write_text(json.dumps(rows,indent=2))
+            assert row["arrived"] and len(set(row["jumps"])) >= 2 and row["flight"], row
+            print(row,flush=True)
+            continue
         if scene == "shaft_routes":
             for loadout in ("shaft_rope", "shaft_platform", "bundle", "shaft_blocked", "shaft_bundle"):
                 row = await measure(args.profile, args.port, "extra_up", loadout)
@@ -131,5 +166,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--scenes", nargs="+", choices=(*TARGETS,'bottles','shaft_routes'))
+    parser.add_argument("--scenes", nargs="+", choices=(*TARGETS,'bottles','shaft_routes','bundle_wings','travel_budget','adapter_faults','grapple_combo'))
     asyncio.run(verify(parser.parse_args()))

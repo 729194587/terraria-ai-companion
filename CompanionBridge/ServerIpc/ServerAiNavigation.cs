@@ -109,7 +109,7 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         var run=Current;
         if(run.GrappleAttempted||navigation.Task.QuotedRoute==null&&run.Knowledge?.GrappleAttempted==true||world is not ISurfaceTerrain terrain)return false;
         var p=(Player)run.Identity.Actor;
-        if(ActorGrapple.Selected(p) is not {} item||ActorGrapple.HasHook(p)||p.noItems||p.CCed||p.tongued)return false;
+        if(ActorGrapple.Selected(p) is not {} item||ActorGrapple.HasHook(p)||!ServerGrappleClimb.ActorEligible(p)||!GrappleClimbPlan.Supports(physics))return false;
         var quoted=navigation.Task.QuotedRoute;
         if(quoted!=null && (quoted.Grapple==null||quoted.Start!=state||quoted.Physics!=physics
             ||!quoted.TerrainCurrent()))return false;
@@ -186,7 +186,8 @@ internal sealed class ServerAiNavigation : ActorControl.IMovementDriver
         else p.controlUseItem=p.controlUseTile=false;
         ServerCombatFixture.EvasionInput(p);
         ServerAiTerrainFixture.RecordInput(p);
-        if(input.ImpulseKey!=null)NavigationAirActions.Activate(p,input);
+        if(input.ImpulseKey!=null && !NavigationAirActions.Activate(p,input))
+            Stop("failed","air action activation failed: "+input.ImpulseKey);
         injected=true;
     }
     private bool Release(bool brake=false)
