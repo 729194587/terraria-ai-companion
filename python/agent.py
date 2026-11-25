@@ -1567,7 +1567,16 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
                 next_life_check = loop.time()+0.25
             try:
                 event = await asyncio.wait_for(events.get(), timeout=0.2)
-                agent.receive(event)
+                if event.get('type') == 'autonomy_command':
+                    if server_ai and life_reader and 'server_ai_autonomy_v1' in life_reader.hello['capabilities']:
+                        state = await asyncio.to_thread(life_reader.control_autonomy, event['command'])
+                        description = 'enabled' if state['enabled'] else 'disabled' if state['released'] else 'stopping'
+                    else:
+                        description = 'unavailable on this backend'
+                    await asyncio.to_thread(bridge.command, 'autonomy_notice', text='Autonomy: '+description,
+                                            chatId=event['eventId'])
+                else:
+                    agent.receive(event)
             except asyncio.TimeoutError:
                 if bridge._failure:
                     raise bridge._failure

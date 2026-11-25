@@ -19,8 +19,47 @@ internal sealed class AiReadOnlyProtocol
         internal Func<long,object> ReadMessages {get;init;}
         internal object LifeEvent { get; init; }
         [System.Text.Json.Serialization.JsonIgnore]
+        internal AutonomyGrant Autonomy { get; init; }
         internal Lease RequestLease { get; init; }
     }
+    internal sealed record AutonomyGrant(Guid Version, Binding Binding, CancellationToken ControlSession)
+    {
+        internal bool Revoked { get; set; }
+        internal bool Valid => !Revoked && !ControlSession.IsCancellationRequested;
+        internal bool Released = true;
+    }
+    private Guid? autonomyController;
+    private AutonomyGrant grant;
+    private bool autonomyEnabled;
+
+    private void ResetAutonomy()
+    {
+        if (grant != null) grant.Revoked = true;
+        autonomyEnabled = false;
+        autonomyController = null;
+    }
+
+    private object ControlAutonomy(Guid controller, string command, Identity current, CancellationToken disconnected)
+    {
+        if (autonomyController.HasValue && autonomyController != controller)
+            throw new InvalidOperationException("different control session");
+        if (command is "pause" or "off" && grant != null) grant.Revoked = true;
+        if (command == "off") autonomyEnabled = false;
+        if (command == "on")
+        {
+            autonomyController = controller;
+            autonomyEnabled = true;
+        }
+        if (command == "grant" && autonomyEnabled && current.CanAct && !disconnected.IsCancellationRequested
+            && (grant == null || grant.Released) && (grant == null || !grant.Valid || grant.Binding.generation != current.Generation))
+        {
+            if (grant != null) grant.Revoked = true;
+            grant = new(Guid.NewGuid(), new(ActorId(current), current.World, current.Generation, current.Slot), disconnected);
+        }
+        return new { enabled = autonomyEnabled, released = grant?.Released != false,
+            version = command == "grant" && grant?.Valid == true ? grant.Version.ToString("N") : null };
+    }
+
     internal sealed record Binding(string actor, string world, long generation, int slot);
     internal sealed record Lease(Identity Identity, Binding Binding)
     {
@@ -60,8 +99,8 @@ internal sealed class AiReadOnlyProtocol
         foreach (var lease in leases.Values)
             if (lease.Dialogue is { IsCurrent: false }) lease.EndDialogue();
     }
-    internal void Clear() { foreach(var f in replyFences.Values)f.Revoke();replyFences.Clear();foreach (var lease in leases.Values) { lease.EndDialogue(); lease.MerchantQuote = null; } leases.Clear(); speech.Clear(); actor = null; actorId = null; actions?.Clear(); }
-    internal void Forget(Guid connection) { RevokeReplies(connection);replyFences.TryRemove(connection,out _);if (leases.Remove(connection,out var lease)) { lease.EndDialogue(); lease.MerchantQuote = null; } foreach(var key in speech.Keys.Where(k=>k.Item1==connection).ToArray())speech.Remove(key); actions?.Forget(connection); }
+    internal void Clear() { ResetAutonomy(); grant = null; foreach(var f in replyFences.Values)f.Revoke();replyFences.Clear();foreach (var lease in leases.Values) { lease.EndDialogue(); lease.MerchantQuote = null; } leases.Clear(); speech.Clear(); actor = null; actorId = null; actions?.Clear(); }
+    internal void Forget(Guid connection) { if (connection == autonomyController) ResetAutonomy(); RevokeReplies(connection);replyFences.TryRemove(connection,out _);if (leases.Remove(connection,out var lease)) { lease.EndDialogue(); lease.MerchantQuote = null; } foreach(var key in speech.Keys.Where(k=>k.Item1==connection).ToArray())speech.Remove(key); actions?.Forget(connection); }
 
     internal string Handle(Guid connection, string line, Func<Identity> capture, CancellationToken disconnected = default,
         Func<Identity,string,JsonElement,object> query = null, Func<Identity,string,object> say = null)
@@ -74,17 +113,18 @@ internal sealed class AiReadOnlyProtocol
             var root = doc.RootElement;
             var names = new HashSet<string>(StringComparer.Ordinal);
             foreach (var p in root.EnumerateObject())
-                if (!names.Add(p.Name) || p.Name is not ("v" or "id" or "op" or "binding" or "actionId" or "operation" or "arguments" or "expiresAtUnixMs" or "text" or "messageId" or "replyTurn")) throw new FormatException();
+                if (!names.Add(p.Name) || p.Name is not ("v" or "id" or "op" or "binding" or "actionId" or "operation" or "arguments" or "expiresAtUnixMs" or "text" or "messageId" or "replyTurn" or "autonomyVersion" or "command")) throw new FormatException();
             id = root.GetProperty("id").GetString();
             if (string.IsNullOrWhiteSpace(id) || id.Length > 64 || root.GetProperty("v").GetInt32() != 1) throw new FormatException();
             string op = root.GetProperty("op").GetString();
             bool execution = op is "start" or "action" or "cancel" or "retreat";
+            bool controlling = op == "autonomy" && actions != null;
             bool reading = op == "query" && query != null;
             bool speaking = op=="say" && say!=null;
             bool turning=op=="reply_turn"&&say!=null;
-            if (op is not ("bind" or "state" or "life_status") && !reading && !speaking && !turning && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
+            if (op is not ("bind" or "state" or "life_status") && !controlling && !reading && !speaking && !turning && (!execution || actions == null)) return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             foreach (string field in names)
-                if (field == "actionId" && !execution || field=="operation" && op!="start" && !reading || field=="arguments" && op is not ("start" or "retreat") && !reading
+                if (field == "command" && !controlling || field == "autonomyVersion" && op != "start" || field == "actionId" && !execution || field=="operation" && op!="start" && !reading || field=="arguments" && op is not ("start" or "retreat") && !reading
                     || field == "expiresAtUnixMs" && op is not ("start" or "say")
                     || field is "text" or "messageId" && !speaking || field=="replyTurn"&&!speaking&&!turning) throw new FormatException();
             long replyTurn=0;
@@ -131,9 +171,17 @@ internal sealed class AiReadOnlyProtocol
                 leases.Add(connection, new(current, binding));
                 var capabilities=actions?.Capabilities.ToList();
                 if(query!=null){capabilities ??= new(); capabilities.Add("server_ai_material_plan_v1");capabilities.Add("server_ai_item_sources_v1");capabilities.Add("server_ai_item_info_v1");capabilities.Add("server_ai_build_diff_v1");capabilities.Add("server_ai_housing_inspect_v1");capabilities.Add("server_ai_npc_housing_v1");if (actions?.SupportsMerchantShop == true) capabilities.Add("server_ai_merchant_shop_v1");capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_scene_region_v1");capabilities?.Add("server_ai_map_v1");capabilities.Add("server_ai_map_chunks_v1");}
+                if (actions != null && query != null && say != null) capabilities.Add("server_ai_autonomy_v1");
                 if(current.ReadMessages!=null)capabilities?.Add("server_ai_messages_v1");
                 if(say!=null){capabilities?.Add("server_ai_chat_v2");capabilities?.Add("server_ai_life_status_v1");}
                 return JsonSerializer.Serialize(Reply(true, data: capabilities==null?null:new { capabilities, compatibility = actions?.Compatibility }, binding: binding));
+            }
+            if (controlling && ReferenceEquals(lease.Identity.Actor, current.Actor)
+                && lease.Binding.world == current.World && lease.Binding.slot == current.Slot)
+            {
+                string command = root.GetProperty("command").GetString();
+                if (command is not ("on" or "off" or "status" or "pause" or "grant")) throw new FormatException();
+                return JsonSerializer.Serialize(Reply(true, ControlAutonomy(connection, command, current, disconnected), lease.Binding));
             }
             // Read-only across native respawn of the same object. Action leases stay generation-bound.
             if (op=="life_status" && ReferenceEquals(lease.Identity.Actor,current.Actor)

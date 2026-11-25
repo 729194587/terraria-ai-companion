@@ -222,6 +222,9 @@ class ServerAiBridge:
             raise BridgeError(reply.get("error", "AI request rejected"), status=reply.get("error"))
         return reply
 
+    def control_autonomy(self, command):
+        return self._request('autonomy', command=command)['data']
+
     def life_status(self):
         return self._request('life_status')['data']
 

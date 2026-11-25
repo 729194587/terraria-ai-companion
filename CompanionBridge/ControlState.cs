@@ -57,7 +57,9 @@ internal sealed class ControlState
     private ControlMode _mode;
     private bool _wasCanControl;
     private bool _controlBlocked;
-    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "send_chat" or "send_ai_chat" or "authorize_ai_reply" or "get_movement" or "cancel_move" or "query_atomic";
+    private static bool IsReadOrChat(string cmd) => cmd is "get_state" or "get_terrain" or "get_navigation" or "get_observation" or "autonomy_notice" or "send_chat" or "send_ai_chat" or "authorize_ai_reply" or "get_movement" or "cancel_move" or "query_atomic";
+    private string _autonomyCommand;
+    internal void ObserveAutonomyCommand(string id) { lock (_gate) _autonomyCommand = id; }
     private string _latestChatId;
     private string _latestAiChatId;
     internal void ObserveChat(string id) { lock (_gate) _latestChatId = id; }
@@ -80,6 +82,7 @@ internal sealed class ControlState
             if (_session != 0) throw new InvalidOperationException("Controller already connected.");
             _session = ++_nextSession;
             _lastId = 0;
+            _autonomyCommand = null;
             _latestChatId = null;
             _latestAiChatId = null;
             return _session;
@@ -119,12 +122,12 @@ internal sealed class ControlState
     internal void Update(bool canControl, long now, PlayerSnapshot snapshot = null,
         TerrainSnapshot terrain = null, NavigationSnapshot navigation = null, Action<string> sendChat = null,
         EntityPerception entities = null, Func<ObservationSnapshot> readObservation = null,
-        string worldSessionId = null, Func<ControlRequest, object> queryAtomic = null)
+        string worldSessionId = null, Func<ControlRequest, object> queryAtomic = null, Action<string> displayNotice = null)
     {
         lock (_gate)
         {
             if (!canControl && (_wasCanControl || _mode != ControlMode.None)) RevokeControl(snapshot, now);
-            if(snapshot?.InWorld!=true)_latestAiChatId=null;
+            if(snapshot?.InWorld!=true) { _latestAiChatId=null; _autonomyCommand=null; }
             _wasCanControl = canControl;
             if (canControl) _controlBlocked = false;
             else if (snapshot?.InWorld == true) _controlBlocked = true;
@@ -202,6 +205,14 @@ internal sealed class ControlState
                     pending.Completion.TrySetResult(Reply(request.Id, observation != null,
                         observationFailed ? "observation_failed" : observation != null ? "observation" : "not_ready") with
                         { Observation = observation, ControlGeneration = _generation });
+                    continue;
+                }
+                if (request.Cmd == "autonomy_notice")
+                {
+                    bool valid = pending.Session == _session && snapshot?.InWorld == true && displayNotice != null
+                        && request.ChatId != null && request.ChatId == _autonomyCommand;
+                    if (valid) displayNotice(request.Text);
+                    pending.Completion.TrySetResult(Reply(request.Id, valid, valid ? "displayed" : "superseded"));
                     continue;
                 }
                 if (request.Cmd is "send_chat" or "send_ai_chat" or "authorize_ai_reply")
@@ -448,7 +459,7 @@ internal sealed class ControlState
             || !root.TryGetProperty("cmd", out var cmd) || cmd.ValueKind != JsonValueKind.String
             || cmd.GetString() is not ("move_right" or "stop" or "get_state" or "get_terrain" or "input"
                 or "terrain_step" or "get_navigation" or "navigate" or "send_chat" or "get_observation"
-                or "move_for" or "renew_move" or "cancel_move" or "get_movement" or "start_atomic" or "query_atomic" or "begin_local_turn" or "send_ai_chat" or "authorize_ai_reply"))
+                or "move_for" or "renew_move" or "cancel_move" or "get_movement" or "start_atomic" or "query_atomic" or "begin_local_turn" or "autonomy_notice" or "send_ai_chat" or "authorize_ai_reply"))
             throw new FormatException("Expected v=1, positive id and a supported cmd.");
         if (cmd.GetString() == "begin_local_turn")
         {
@@ -488,7 +499,7 @@ internal sealed class ControlState
             expectedGeneration = expected;
         }
         string text = null, chatId = null;
-        if (cmd.GetString() is "send_chat" or "send_ai_chat" or "authorize_ai_reply")
+        if (cmd.GetString() is "autonomy_notice" or "send_chat" or "send_ai_chat" or "authorize_ai_reply")
         {
             if (!root.TryGetProperty("text", out var t) || t.ValueKind != JsonValueKind.String
                 || string.IsNullOrWhiteSpace(text = t.GetString()) || text.Length > 400

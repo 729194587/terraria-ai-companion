@@ -79,3 +79,19 @@ public sealed class ChatBridgeSystem : ModSystem
         On_ChatHelper.ShowCachedMessages -= ReplayCached;
     }
 }
+
+public sealed class AgentCommand : ModCommand
+{
+    public override CommandType Type => CommandType.Chat;
+    public override string Command => "agent";
+    public override string Usage => "/agent autonomy on|off|status";
+    public override string Description => "Control autonomous play for the bound server AI.";
+    public override void Action(CommandCaller caller, string input, string[] args)
+    {
+        if (args.Length != 2 || args[0] != "autonomy" || args[1] is not ("on" or "off" or "status"))
+            caller.Reply(Usage);
+        else if (Main.netMode != NetmodeID.MultiplayerClient || Main.gameMenu ||
+                 CompanionBridge.Server?.PublishAutonomyCommand(args[1]) != true)
+            caller.Reply("Autonomy requires a connected server AI Agent.");
+    }
+}
