@@ -178,74 +178,29 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.mode.act.assert_awaited_once()
             self.assertTrue(self.mode.hold)
 
-    async def test_discovery_while_moving_waits_for_release(self):
+    async def test_discovery_returns_to_main_model_and_survives_timeout_and_detour(self):
         await self.mode.command('on')
-        self.mode.version='v3'
-        self.mode.objective='original route'
-        stop_requested=asyncio.Event()
-        release=asyncio.Event()
-        async def terminal():
-            await release.wait()
-            return dict(actionId='owned',status='cancelled',inputsReleased=True,endEvidenceStatus='known')
-        async def cancel(action_id):
-            self.assertEqual(action_id,'owned')
-            stop_requested.set()
-            return await terminal()
-        self.agent.llm.complete.return_value=dict(tool_calls=[dict(function=dict(name='review_discovery',
-            arguments=json.dumps(dict(choice='investigate',reason='inspect crystal'))))])
-        hit=dict(kind='life_crystal',typeId=12,status='complete',anchor=dict(x=25,y=3),tiles=[],
-                 bounds=dict(x=25,y=3,width=2,height=2),contentKey='Heart')
-        scan=dict(gameUpdate=99,bounds=dict(minX=3,maxX=47,minY=0,maxY=29),complete=True,
-                  truncated=False,unknownCells=0,items=[hit])
-        with patch('autonomous_mode.SCAN_SECONDS',.001), patch('autonomous_mode.atomic.dispatch',
-                new_callable=AsyncMock,return_value=dict(valid=True,data=dict(resources=scan))) as read:
-            movement=asyncio.create_task(self.mode.travel(terminal(),'navigate_to',dict(x=900,y=120),
-                'v3',lambda:'owned',cancel))
-            await asyncio.wait_for(stop_requested.wait(),1)
-            self.assertFalse(movement.done())
-            self.assertIsNone(self.mode.exploration)
-            release.set()
-            self.assertTrue((await movement)['inputsReleased'])
-            self.assertEqual(self.mode.exploration['arguments'],dict(x=900,y=120))
-            self.assertEqual(read.await_args.args[2]['layers'],['resources'])
-        payload=json.loads(self.agent.llm.complete.await_args.args[0][1]['content'])
-        self.assertEqual(payload['samples'][0]['findings'][0]['anchor'],hit['anchor'])
-        self.assertEqual(payload['samples'][0]['gameUpdate'],99)
-
-    async def test_slow_ignore_keeps_scanning_without_duplicate_model_calls(self):
-        self.mode.version='v'
-        release_model=asyncio.Event()
-        reviewed=asyncio.Event()
-        repeated=asyncio.Event()
-        arrived=asyncio.Event()
-        hit=dict(kind='chest',typeId=21,contentKey='Chest',anchor=dict(x=9,y=4),status='complete',
-                 bounds=dict(x=9,y=4,width=2,height=2),tiles=[dict(x=9,y=4)])
-        scans=0
-        async def scan(*args):
-            nonlocal scans
-            scans+=1
-            if scans>=4:
-                repeated.set()
-            return dict(valid=True,data=dict(resources=dict(gameUpdate=scans,items=[hit],complete=True,
-                truncated=False,unknownCells=0,bounds=dict(minX=0,maxX=15,minY=0,maxY=10))))
-        async def review(*args):
-            await release_model.wait()
-            reviewed.set()
-            return dict(tool_calls=[dict(function=dict(name='review_discovery',arguments=json.dumps(
-                dict(choice='continue',reason='stay on course'))))])
-        self.agent.llm.complete.side_effect=review
-        cancel=AsyncMock()
-        with patch('autonomous_mode.SCAN_SECONDS',.001),patch('autonomous_mode.atomic.dispatch',side_effect=scan):
-            travel=asyncio.create_task(self.mode.travel(arrived.wait(),'navigate_to_x',dict(targetX=901),
-                                                       'v',lambda:'active',cancel))
-            await asyncio.wait_for(repeated.wait(),2)
-            self.assertFalse(travel.done())
-            release_model.set()
-            await asyncio.wait_for(reviewed.wait(),2)
-            arrived.set()
-            await travel
-        cancel.assert_not_awaited()
-        self.agent.llm.complete.assert_awaited_once()
+        self.mode.tools.return_value=[dict(function=dict(name=n)) for n in ('explore','navigate_to','mine_target')]
+        calls = [('explore',dict(direction='right')), ('navigate_to',dict(x=50,y=32)),
+                 ('mine_target',dict(x=10,y=2)), ('explore',dict(direction='left'))]
+        replies = [dict(tool_calls=[dict(function=dict(name=n, arguments=json.dumps(dict(a,objective=n))))])
+                   for n,a in calls]
+        event = dict(items=[dict(anchor=dict(x=10,y=2))],gameUpdate=4)
+        result = dict(direction='right',returnReason='discovery',findings=[event],progress=dict(completedSegments=1))
+        self.mode.act=AsyncMock(side_effect=[dict(status='completed',completed=True,inputsReleased=True,
+            explorationResult=result)] + [dict(status='completed',completed=True,inputsReleased=True)]*3)
+        self.agent.llm.complete.side_effect=[replies[0],LLMError('timeout',retryable=True),*replies[1:]]
+        with patch('autonomous_mode.MODEL_BACKOFF',(0,0)):
+            for _ in range(4):
+                await self.cycle()
+        payloads=[json.loads(call.args[0][1]['content']) for call in self.agent.llm.complete.await_args_list]
+        self.assertEqual(payloads[1],payloads[2])
+        for payload in payloads[1:]:
+            self.assertEqual(payload['explorationContext']['direction'],'right')
+            self.assertEqual(payload['explorationContext']['investigating'],[event])
+        self.assertEqual(payloads[-1]['explorationContext']['lastInvestigation']['operation'],'mine_target')
+        self.assertEqual(len(self.mode.stalled),2)  # only the two mocked, effectless detour actions
+        self.assertEqual(self.mode.act.await_count,4)
 
     async def test_action_transport_error_holds_without_model_or_body_replay(self):
         self.agent.llm.complete.return_value=self.navigate(12)

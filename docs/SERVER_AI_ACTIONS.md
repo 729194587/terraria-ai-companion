@@ -16,7 +16,11 @@ Lua Agent 调用 Python 宿主，宿主根据能力与 Schema 分发到 Server A
 
 `observe_scene` 的可选 `resources` 层和 Lua 的 `sense_world({resources=true})` 提供局部资源扫描。普通宝箱和生命水晶使用左上角 Tile 锚点及 2×2 占用范围，梳妆台为 3×2。矿脉返回四邻接的同种矿石、范围和最多 64 个具体 Tile。边界截断、缺格或帧不匹配的对象标记为 `incomplete`。掉落物携带实体引用。自主观察另附历史记录、最近观测时间和新发现或状态变化，扫描本身不会写入探索地图。
 
-自主导航期间，Agent 每隔至少 0.5 秒读取一次局部资源层。首次发现、对象补全、完整矿脉形状变化和已知资源消失可以触发模型评估。忽略发现会让当前导航继续。选择调查时，宿主按动作 ID 取消导航，取得终态和输入释放回执，再重新观察并决定调查动作。调查期间模型可以看到原探索目标和目标坐标。
+自主模型可以调用宿主工具 `explore({direction:"right",objective:"勘察东侧地面"})`，方向可选 left、right、up、down。每段根据当前角色左边缘、脚底高度和本地 45×29 的落脚区间生成目标，再以当前授权提交普通 `navigate_to`。水平短段优先取约 12 Tile 的正向位移；上下探索选取实际存在的高低落区。每次探索最多 6 段、每段 12 秒、总计 45 秒，到期后等待当前子任务终态与输入释放。
+
+出发基线、移动中的采样与段末检查均使用角色中心的 120×68 Tile 资源层。移动中的采样间隔至少 0.5 秒。发现新对象、对象补全或状态变化时，宿主安全结束当前段，将精确 Tile、采样时间与覆盖交回主决策。模型可以忽略后重新调用 explore，也可以先调查、挖掘或交互，再依据原方向和最新调查回执决定续行。普通目的地导航直接等待原生终态。
+
+探索回执的 `returnReason` 区分 discovery、blocked、budget_reached、interrupted、observation_incomplete 与 outcome_unknown。回执保留实际位移（世界像素）、各段目标、子任务 ID、终态和释放证据。用 `tests/verify_server_ai_native.ps1 -DirectionalExplore investigate -Atomic -KeepProfile` 可在复制世界复现采矿续行；参数 continue 验证忽略及接管，live 使用项目配置的实际模型。每个隔离目录的 autonomy.json 记录主决策输入、模型输出、各段回执和资源覆盖。
 
 可重试的模型请求失败后，Agent 分别等待 1 秒、3 秒重试。重试耗尽会显示 `model_blocked` 和错误原因。反复尝试同一失败目标或交替执行多个无进展目标会进入 `no_progress`。场景变化或再次输入 `/agent autonomy on` 可触发新决策。动作结果或输入释放不确定时，宿主暂停自主调度。
 
