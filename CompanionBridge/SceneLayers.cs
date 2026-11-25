@@ -25,8 +25,8 @@ internal sealed class SceneLayers
         foreach(var layer in layers.EnumerateArray())
             if(layer.ValueKind!=JsonValueKind.String||!Names.Contains(layer.GetString(),StringComparer.Ordinal)||!names.Add(layer.GetString()))
                 throw new FormatException("Invalid or duplicate scene layer name.");
-        if(region&&names.Any(n=>!Names.Take(4).Contains(n)))
-            throw new FormatException("Regional scene supports map, geometry, objects and hazards only; action candidates require local observation.");
+        if(region&&names.Any(n=>n!="resources"&&!Names.Take(4).Contains(n)))
+            throw new FormatException("Regional scene supports map, geometry, objects, hazards and resources; action candidates require local observation.");
         return new(names);
     }
     internal void Add(Dictionary<string,object> response,string layer,Func<object> build)

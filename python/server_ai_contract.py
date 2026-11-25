@@ -192,7 +192,7 @@ def argument_usage(bridge, name, arguments):
         for key in ('mode', 'scale', 'category'):
             value = arguments.get(key)
             if value in schema['properties'].get(key, {}).get('enum', ()):
-                scoped = usage_help(name, schema, {key: value})
+                scoped = usage_help(name, schema, {key: value}, bridge.hello['capabilities'])
                 schema = {'properties': scoped['parameters'], 'required': scoped['required']}
                 lookup += f',forArgs={{{key}="{value}"}}'
                 break
@@ -223,7 +223,7 @@ def api_help(bridge, arguments):
         return {'valid': True, 'status': 'ok', 'categories': signature_index(bridge, definitions)}
     if 'forArgs' in arguments:
         try:
-            usage = usage_help(name, definitions[name]['parameters'], arguments['forArgs'])
+            usage = usage_help(name, definitions[name]['parameters'], arguments['forArgs'], bridge.hello['capabilities'])
         except ValueError as error:
             return {'valid': False, 'status': 'bad_argument', 'reason': str(error)}
         return {'valid': True, 'status': 'ok', 'name': name, **usage}

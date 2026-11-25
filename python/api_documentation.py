@@ -260,7 +260,7 @@ def read_usage_help(name, schema, supplied):
 ARGUMENT_HELP_APIS = frozenset(atomic.READ_PARAMETER_RULES) | {'inspect_inventory', 'observe_scene'}
 
 
-def usage_help(name, schema, supplied):
+def usage_help(name, schema, supplied, capabilities=()):
     """Project one read usage without querying the game or relaxing dispatch validation."""
     if name in atomic.READ_PARAMETER_RULES:
         return read_usage_help(name, schema, supplied)
@@ -304,7 +304,9 @@ def usage_help(name, schema, supplied):
             reads = 'if q.data.status~="ok" then return q.data end\n' + reads
     else:
         mode = args.get('scale', 'local')
-        layers = args.get('layers') or (atomic.REGION_DEFAULT_LAYERS if mode == 'region' else atomic.SCENE_LAYERS)
+        layers = args.get('layers') or (atomic.REGION_DEFAULT_LAYERS if mode == 'region' else atomic.SCENE_LAYERS[:-1])
+        if set(args.get('layers', ())) - set(props['layers']['items']['enum']):
+            raise ValueError('Unavailable scene layer')
         paths = ['data.'+layer for layer in layers]
         status = 'Check valid/available, coverage and the requested collections’ truncation flags.'
         reads = 'return {' + ','.join(layer+'=q.data.'+layer for layer in layers) + ',coverage=q.data.coverage}'
@@ -320,8 +322,11 @@ def usage_help(name, schema, supplied):
         parameters[selector] = {**parameters[selector], 'enum': [mode]}
     if name == 'observe_scene' and mode == 'region':
         layer = props['layers']
-        parameters['layers'] = {**layer, 'items': {**layer['items'], 'enum': list(atomic.REGION_LAYERS)}}
-        parameters['layers']['maxItems'] = len(atomic.REGION_LAYERS)
+        names = [n for n in atomic.REGION_LAYERS if n != 'resources' or 'server_ai_region_resources_v1' in capabilities]
+        if set(args.get('layers', ())) - set(names):
+            raise ValueError('Unavailable regional layer')
+        parameters['layers'] = {**layer, 'items': {**layer['items'], 'enum': names}}
+        parameters['layers']['maxItems'] = len(names)
         status += (f' Default dimensions {atomic.REGION_DEFAULT_WIDTH}x{atomic.REGION_DEFAULT_HEIGHT};'
                    f' width * height <= {atomic.REGION_MAX_AREA}.')
     if name == 'inspect_inventory':
@@ -335,7 +340,10 @@ def usage_help(name, schema, supplied):
             for label in state.get('enum', [state.get('const', 'full')]):
                 fields[label] = dict(required=branch['required'], optional=sorted(props.keys() - branch['required']))
     else:
-        branch = results.DEFS['SceneRegional' if mode == 'region' else 'SceneLocal']
+        variant = 'SceneRegional' if mode == 'region' else 'SceneLocal'
+        if 'resources' in layers:
+            variant += 'Resources'
+        branch = results.DEFS[variant]
         fields = list(branch['required'])
         for condition in branch['allOf']:
             if condition['if']['properties']['includedLayers']['contains']['const'] in layers:

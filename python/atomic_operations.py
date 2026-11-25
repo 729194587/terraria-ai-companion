@@ -52,7 +52,7 @@ SCENE_EXCLUDED_PARAMS = {'local': ('width', 'height'), 'region': ('maxRegions', 
 REGION_DEFAULT_LAYERS = ('geometry', 'objects', 'hazards')
 REGION_DEFAULT_WIDTH, REGION_DEFAULT_HEIGHT, REGION_MAX_AREA = 120, 68, 8192
 INVENTORY_MODE_ARGUMENTS = {'item': 'item', 'slots': 'slots'}
-REGION_LAYERS = ("map", "geometry", "objects", "hazards")
+REGION_LAYERS = ("map", "geometry", "objects", "hazards", "resources")
 SCENE_TEXT_CONTRACT = (
     "actor.bodyTileBounds为宿主按实际碰撞框计算的Tile范围，minX/minY/maxX/maxY均为包含端点；右/下边缘恰在Tile分界线时不包含边缘外的格。actor.mapTile是中心格，不是身体左上角；范围未裁剪至观察窗口，也不表示其中格为空或安全。"
     "observe_scene schemaVersion=2：固定图例/对象分组解释由本契约统一给出；三类候选的validation提升到集合级，matchedCount=0时省略validation。"
@@ -324,7 +324,7 @@ SERVER_DESCRIPTION_SUFFIXES = {
 
 SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时，指定width或height即使用region；也可显式传scale="region"使用区域默认尺寸。'
     'width=45..128、height=29..96，面积<=8192 Tile；以AI中心为中心，非摄像机/视觉可见性。'
-    'schemaVersion=3，默认geometry/objects/hazards；仅可选这三层及map，无导航/放置target。'
+    'schemaVersion=3，默认geometry/objects/hazards；可选map，有server_ai_region_resources_v1时可选resources，无导航/放置target。'
     'geometry.grid及map.terrain为encodingVersion=2无损逐Tile字典行编码：palette下标从0开始；rows[].encoding为rle或hex_indices。'
     'rle的data交替[count,paletteIndex]；hex_indices的data是ASCII字符串，每格固定indexDigits个十六进制字符；'
     'Lua第x格（从1开始）取palette[tonumber(string.sub(row.data,(x-1)*row.indexDigits+1,x*row.indexDigits),16)+1]。'
@@ -1585,6 +1585,9 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_doors_v1')
     if name == 'place_rope' and 'server_ai_place_rope_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_place_rope_v1; no rope placement RPC started')
+    if (name == 'observe_scene' and arguments.get('scale') == 'region' and 'resources' in arguments.get('layers', ())
+            and 'server_ai_region_resources_v1' not in bridge.hello.get('capabilities', ())):
+        raise PreDispatchRejected('Regional resource scanning unavailable')
     if name == 'observe_scene' and 'resources' in arguments.get('layers', ()) and 'server_ai_resources_v1' not in bridge.hello.get('capabilities', ()):
         raise PreDispatchRejected('Resource scanning unavailable')
     if name == 'observe_scene' and 'server_ai_scene_v1' not in bridge.hello.get('capabilities', []):

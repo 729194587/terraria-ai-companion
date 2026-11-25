@@ -507,12 +507,6 @@ def scene_variant(regional, resources=False):
         properties.update(schemaVersion=const(2), coverage=obj(SCENE_COVERAGE), sample=obj(SCENE_SAMPLE))
         rows = obj({**ORIGIN, 'rows': array(S)})
         layers = {
-            'resources': obj({'source': const('local_resource_scan'), 'gameUpdate': TICK,
-                'unknownCells': COUNT, 'scannedTiles': COUNT, 'bounds': ref('TileBounds'),
-                'complete': B, 'truncated': B, 'matchedCount': COUNT,
-                'items': array(obj({'kind': enum('chest','life_crystal','ore_component','drop'),
-                    'typeId': I, 'contentKey': S, 'anchor': ref('TilePoint'), 'bounds': ref('TileRect'),
-                    'tiles': array(ref('TilePoint')), 'status': enum('complete','incomplete'), 'entityRef': nullable(S)},optional=('entityRef',)))}),
             'map': rows, 'geometry': rows, 'objects': scene_list(ref('SceneObjectLocal')),
             'hazards': obj(SCENE_HAZARDS),
             'landingRegions': scene_list(obj({'id': S, 'target': ref('LandingRegion'), 'feetDeltaY': N}),
@@ -536,8 +530,13 @@ def scene_variant(regional, resources=False):
             'objectPlacementCandidates': {'objectPlacementMaterial': obj(fields(
                 integers='itemType stack', booleans='supported definitionSupported', strings='anchorMeaning'))},
         }
-    if not regional and not resources:
-        del layers['resources']
+    if resources:
+        layers['resources'] = obj({'source': const('region_resource_scan' if regional else 'local_resource_scan'), 'gameUpdate': TICK,
+                'unknownCells': COUNT, 'scannedTiles': COUNT, 'bounds': ref('TileBounds'),
+                'complete': B, 'truncated': B, 'matchedCount': COUNT,
+                'items': array(obj({'kind': enum('chest','life_crystal','ore_component','drop'),
+                    'typeId': I, 'contentKey': S, 'anchor': ref('TilePoint'), 'bounds': ref('TileRect'),
+                    'tiles': array(ref('TilePoint')), 'status': enum('complete','incomplete'), 'entityRef': nullable(S)},optional=('entityRef',)))})
     properties['includedLayers'] = {**array(enum(*layers)), 'minItems': 1, 'uniqueItems': True}
     extra = {name: schema for companion in companions.values() for name, schema in companion.items()}
     schema = obj({**properties, **layers, **extra}, optional=(*layers, *extra))
@@ -555,6 +554,7 @@ def scene_variant(regional, resources=False):
 DEFS['SceneLocal'] = scene_variant(False)
 DEFS['SceneLocalResources'] = scene_variant(False,resources=True)
 DEFS['SceneRegional'] = scene_variant(True)
+DEFS['SceneRegionalResources'] = scene_variant(True, resources=True)
 
 # These action records use the default C# serializer (PascalCase), unlike
 # inspect_tile and observe_scene. Anonymous object member names stay as written.
@@ -1431,7 +1431,8 @@ def schema_for(name, *, capabilities=()):
     schema = REGISTRY[name]
     if name == 'observe_scene':
         local = ref('SceneLocalResources' if 'server_ai_resources_v1' in capabilities else 'SceneLocal')
-        view = any_of(local, ref('SceneRegional')) if 'server_ai_scene_region_v1' in capabilities else local
+        regional = 'SceneRegionalResources' if 'server_ai_region_resources_v1' in capabilities else 'SceneRegional'
+        view = any_of(local, ref(regional)) if 'server_ai_scene_region_v1' in capabilities else local
         schema = any_of(observation(view), PRE_DISPATCH)
     if name == 'stop_action' and capabilities:
         operations = operations_for_capabilities(capabilities)

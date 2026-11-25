@@ -222,9 +222,10 @@ internal static class ServerSceneReader
             layers.Add(response,"geometry",()=>new{rows=geometry.Value,originX=ox,originY=oy});
         }
         layers.Add(response,"resources",()=>new {
-            source="local_resource_scan",gameUpdate=tick,unknownCells=unknown,scannedTiles=sampled,
+            source=scope.Region?"region_resource_scan":"local_resource_scan",gameUpdate=tick,unknownCells=unknown,scannedTiles=sampled,
             bounds=new{minX=ox,minY=oy,maxX=ox+width-1,maxY=oy+height-1},
-            complete=unknown==0 && findings.Count<=objectCap,truncated=findings.Count>objectCap,
+            complete=unknown==0 && !objectGroupingTruncated && findings.Count<=objectCap,
+            truncated=samplingStopped||objectGroupingTruncated||findings.Count>objectCap,
             matchedCount=findings.Count,items=findings.OrderBy(f=>Math.Abs(f.Anchor.X-ox-actorX)+Math.Abs(f.Anchor.Y-oy-actorY)).Take(objectCap)
         });
         layers.Add(response,"objects",()=>

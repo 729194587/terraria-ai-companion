@@ -9,7 +9,7 @@ from server_ai_contract import api_help
 
 class RegionArguments(unittest.TestCase):
     def test_limits_and_action_layers(self):
-        for args in (dict(scale='region'),dict(scale='region',width=128,height=64),dict(scale='region',width=85,height=96,layers=['map'])):
+        for args in (dict(scale='region'),dict(scale='region',layers=['resources'],width=120,height=68),dict(scale='region',width=128,height=64),dict(scale='region',width=85,height=96,layers=['map'])):
             self.assertEqual(args,atomic.validate('observe_scene',args))
         for args in (dict(width=120), dict(height=40), dict(width=100,height=40,layers=['objects'],maxObjects=32)):
             self.assertEqual(dict(args, scale='region'), atomic.validate('observe_scene', args))
@@ -52,6 +52,22 @@ class RegionRuntime(unittest.IsolatedAsyncioTestCase):
         self.assertIn('map', doc['dataFields'])
         self.assertNotIn('objectCounts', doc['dataFields'])
         self.assertFalse(api_help(self.bridge, dict(name='observe_scene', forArgs=dict(width=128,height=96)))['valid'])
+
+    async def test_regional_resource_capability_and_result_variant(self):
+        self.enable()
+        caps=self.bridge.hello['capabilities']
+        caps.extend(['server_ai_resources_v1','server_ai_scene_region_v1'])
+        args=dict(layers=['resources'],scale='region')
+        help_args=dict(name='observe_scene',forArgs=args)
+        self.assertFalse(api_help(self.bridge,help_args)['valid'])
+        with self.assertRaises(atomic.PreDispatchRejected):
+            await atomic.dispatch(self.bridge,'observe_scene',args)
+        caps.append('server_ai_region_resources_v1')
+        self.assertIn('resources',api_help(self.bridge,help_args)['dataFields'])
+        import api_result_contracts as results
+        schema=results.schema_for('observe_scene',capabilities=caps)
+        self.assertEqual(schema['$defs']['SceneRegionalResources']['properties']['resources']
+                         ['properties']['source']['const'],'region_resource_scan')
 
     async def test_map_help_selects_mode_and_decodes_first_row(self):
         self.enable()

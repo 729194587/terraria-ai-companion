@@ -31,7 +31,7 @@ local region = api('observe_scene', {
 })
 ```
 
-宽度范围为 45..128 Tile，高度为 29..96 Tile，最多 8192 Tile。L1 使用 schemaVersion 3，默认返回 geometry、objects 和 hazards，也可请求 map。
+宽度范围为 45..128 Tile，高度为 29..96 Tile，最多 8192 Tile。L1 使用 schemaVersion 3，默认返回 geometry、objects 和 hazards，也可请求 map。有 `server_ai_region_resources_v1` 时可单独请求 resources，读取同一游戏更新内的 Tile 与掉落物。资源层的 bounds、scannedTiles、unknownCells、truncated 和场景 sample.elapsedMilliseconds 共同说明本次覆盖；数量截断、聚类截断或未采样均不能证明对象消失。。
 
 L1 面向区域理解与资源定位，不生成落脚、放置或可执行目标令牌。需要执行动作时，Agent 使用当前局部观察和相应动作 API。
 
