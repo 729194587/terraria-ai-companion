@@ -33,6 +33,9 @@ async def run(args):
             assert len(chest['tiles'])==4 and chest['bounds']==dict(**chest['anchor'],width=2,height=2)
             assert any(h['kind']=='ore_component' and h['tiles'] for h in hits)
             assert any(h['kind']=='drop' and h.get('entityRef') for h in hits)
+            resource_view=await program('semantic-resources',
+                "return sense_world({trees=false,ores=false,drops=false,resources=true,maxObjects=16}).resources")
+            assert {h['kind'] for h in resource_view['value']['items']} >= {'chest','ore_component','drop'}
             kinds=s['objectCounts']['observed']
             for kind in ('tree_component','ore_component','chest','door','workbench','npc','drop'):assert kinds.get(kind,0)>0,(kind,s)
             assert all(not o['complete'] for o in s['objects']['items'] if o['kind']=='tree_component')
@@ -50,7 +53,7 @@ async def run(args):
             assert any(o['kind']=='ore_vein' for o in old_objects['value']['objects'])
             old_grid=await program('old-grid',"return api('observe_terrain',{})")
             grid=old_grid['value']['data']['terrain']
-            positions=[dict(x=grid['originX']+x,y=grid['originY']+y) for y,row in enumerate(grid['rows']) for x,ch in enumerate(row) if ch=='!']
+            positions=[dict(x=cell['x'],y=cell['y']) for cell in grid['liquids'] if cell['amount']>0]
             assert positions
             points='{'+','.join('{x=%d,y=%d}'%(p['x'],p['y']) for p in positions)+'}'
             old_hazards=await program('old-hazards',"local points="+points+"; local result={}; for _,p in ipairs(points) do result[#result+1]=api('inspect_tile',p) end; return result")

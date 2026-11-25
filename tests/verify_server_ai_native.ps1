@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile,[switch]$ItemInfo,[switch]$ItemSources,[switch]$MaterialPlan,[string[]]$ModPackages,[switch]$CompatibilityQueries)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Autonomy,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile,[switch]$ItemInfo,[switch]$ItemSources,[switch]$MaterialPlan,[string[]]$ModPackages,[switch]$CompatibilityQueries)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -9,6 +9,7 @@ if($BenchmarkSpec){
     $BenchmarkSpec=(Resolve-Path -LiteralPath $BenchmarkSpec).Path
     $Actions=$true
 }
+if($Autonomy){$Actions=$true}
 if($MaterialPlan){$Actions=$true;$Crafting=$true}
 if(($Tasks -or $AutonomousNavigation -or $NavigationSafety) -and !$Actions){throw 'Task validation requires isolated Actions fixture.'}
 if($Inventory -and !$Actions){throw 'Inventory validation requires isolated Actions fixture.'}
@@ -32,7 +33,7 @@ Assert-CompanionPackage -Package $package -Engine $selectedEngine
 if($TalkToNpc){$MerchantJourney=$true;$NurseLua=$TalkToNpc -eq 'Nurse'}
 if($MerchantJourney){$MerchantLua=$true;$Terrain=$true}
 if($ReforgeLua -or $NurseLua){$MerchantLua=$true}
-if(!$PythonExecutable){$PythonExecutable=if($Atomic -or $NpcHome -or $MerchantLua -or $ItemInfo -or $ItemSources -or $MaterialPlan){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
+if(!$PythonExecutable){$PythonExecutable=if($Autonomy -or $Atomic -or $NpcHome -or $MerchantLua -or $ItemInfo -or $ItemSources -or $MaterialPlan){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
 if(!(Test-Path -LiteralPath $package)){throw 'Build CompanionBridge first.'}
 $profile=if($BenchmarkSpec){[IO.Path]::GetFullPath($BenchmarkProfile)}else{Join-Path $repo ('.local/companion-'+$(if($Atomic){'g82'}else{'g81'})+'-native-'+[guid]::NewGuid().ToString('N'))}
 New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds" | Out-Null
@@ -57,6 +58,13 @@ $info.RedirectStandardInput=$true
 $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
+if($Autonomy){
+    $info.ArgumentList.Add("-companionautonomytest")
+    if(!$LiveModel){
+        $info.ArgumentList.Add("-companioncombattest")
+        $info.ArgumentList.Add("-companionregroupobservers")
+    }
+}
 if($TcpCapacity){$info.ArgumentList.Add('-maxplayers');$info.ArgumentList.Add('2')}
 if($Tasks -or $AutonomousNavigation -or $NavigationSafety){$info.ArgumentList.Add("-companiontasktest")}
 if($Inventory){$info.ArgumentList.Add("-companioninventorytest")}
@@ -106,6 +114,14 @@ try {
         Start-Sleep -Milliseconds 100
     }
     if(!$bound.ok){throw 'Native actor never became available'}
+    if ($Autonomy) {
+        $options = @()
+        if ($LiveModel){$options += '--live-model'}
+        & $PythonExecutable (Join-Path $repo 'tests/native_autonomy.py') --port $IpcPort --game-port $Port --profile $profile @options
+        if ($LASTEXITCODE -ne 0){throw "Autonomous Mode native verification failed: $profile"}
+        Write-Output "Autonomous Mode native evidence: $profile/autonomy.json"
+        return
+    }
     if ($ItemInfo -or $ItemSources -or $MaterialPlan) {
         $bound.data | ConvertTo-Json -Depth 8 | Set-Content "$profile/handshake.json"
         foreach ($mod in $enabled) {

@@ -1,4 +1,4 @@
-param([switch]$LiquidOnly,[switch]$WorldJourneyOnly,[switch]$GrappleOnly,[switch]$AirOnly,[switch]$MobilityOnly,[switch]$TripOnly,[switch]$RecoveryOnly, [switch]$PlannerOnly, [switch]$SafeGroundWalkOnly, [switch]$MiningSupportOnly, [switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
+param([switch]$AutonomyChatOnly,[switch]$LiquidOnly,[switch]$WorldJourneyOnly,[switch]$GrappleOnly,[switch]$AirOnly,[switch]$MobilityOnly,[switch]$TripOnly,[switch]$RecoveryOnly, [switch]$PlannerOnly, [switch]$SafeGroundWalkOnly, [switch]$MiningSupportOnly, [switch]$MotionOnly, [string]$ObservationSamplePath, [switch]$LandingBudgetAudit,
     [int]$BudgetRepetitions = 100, [switch]$BudgetColdOnly, [switch]$LandingProtocolHost, [switch]$LandingOnly, [switch]$AuthorityNetworkOnly,
     [switch]$InventoryOnly, [switch]$BridgeOnly, [switch]$ServerReadsOnly, [switch]$NavigationOnly,[switch]$SurfaceGraphOnly,[switch]$LocalEditsOnly,[switch]$SceneOnly,[switch]$VerticalOnly,[string]$NavigationExperimentOutput)
 $ErrorActionPreference = 'Stop'
@@ -84,10 +84,11 @@ $sources = @(
     (Join-Path $PSScriptRoot 'PlayerHookOfflineTests.cs')
 )
 $references = Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName
-if ($MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $WorldJourneyOnly -or $TripOnly -or $GrappleOnly -or $AirOnly -or $PlannerOnly -or $NavigationExperimentOutput -or $SurfaceGraphOnly -or $LandingBudgetAudit) {
+if ($AutonomyChatOnly -or $MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $WorldJourneyOnly -or $TripOnly -or $GrappleOnly -or $AirOnly -or $PlannerOnly -or $NavigationExperimentOutput -or $SurfaceGraphOnly -or $LandingBudgetAudit) {
     $dependencies = @('AirMotionTests','PlannerCorrectnessTests','MotionOfflineTests','SurfaceGraphTests','ControlState','AtomicParameters',
         'SceneLayers','AiChatInput','HotbarSlots','GameMessageCapture','ObservationSnapshot','TerrainSnapshot',
         'SceneGeometry','SceneRegion','EntitySnapshot')
+    if ($AutonomyChatOnly) { $dependencies += 'TcpControlServer','AiChatOfflineTests' }
     if ($MobilityOnly) { $dependencies += 'MobilityProfileTests','ExtraJumpNavigationTests','MovementSnapshotTests' }
     if ($VerticalOnly) { $dependencies += 'VerticalNavigationTests' }
     if ($WorldJourneyOnly -or $TripOnly) { $dependencies += 'NavigationTripTests' }
@@ -97,7 +98,7 @@ if ($MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $Wor
     $motionSources = $sources | Where-Object {
         ((Split-Path (Split-Path $_ -Parent) -Leaf) -eq 'Motion' -and [IO.Path]::GetFileNameWithoutExtension($_) -ne 'PlatformDropAction') -or [IO.Path]::GetFileNameWithoutExtension($_) -in $dependencies
     }
-    if ($MobilityOnly) {
+    if ($MobilityOnly -or $AutonomyChatOnly) {
         $motionSources += Join-Path $repo 'CompanionBridge/Motion/NavigationAirActions.cs'
         $motionSources += Join-Path $PSScriptRoot 'AirActionFaultTests.cs'
     }
@@ -108,6 +109,7 @@ if ($MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $Wor
         return
     }
     Add-Type -Path $motionSources -ReferencedAssemblies $references
+    if ($AutonomyChatOnly) { [AiChatOfflineTests]::Run(); return }
     if ($MobilityOnly) { [AirActionFaultTests]::Run(); [MobilityProfileTests]::Run(); [ExtraJumpNavigationTests]::Run(); [AirMotionTests]::Run() }
     elseif ($PlannerOnly) { [PlannerCorrectnessTests]::Run() }
     elseif ($VerticalOnly) { [VerticalNavigationTests]::Run() }
