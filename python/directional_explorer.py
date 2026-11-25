@@ -120,7 +120,7 @@ async def run(mode, direction, version, baseline):
                 reason, detail = 'observation_incomplete', 'no forward landing in partially known geometry'
             break
         authorized()
-        segment_deadline = min(deadline, time.monotonic()+SEGMENT_SECONDS)
+        segment_deadline = time.monotonic() + SEGMENT_SECONDS
         record, rejected = await mode.submit_owned('navigate_to', target, version)
         if record is None:
             last = rejected
@@ -134,7 +134,7 @@ async def run(mode, direction, version, baseline):
         try:
             authorized()
             if not record['done'].is_set():
-                remaining = max(0., segment_deadline - time.monotonic())
+                remaining = max(0., min(segment_deadline, deadline) - time.monotonic())
                 try:
                     await asyncio.wait_for(record['done'].wait(), remaining)
                 except asyncio.TimeoutError:
@@ -165,7 +165,16 @@ async def run(mode, direction, version, baseline):
             detected = await sense()
         except (BridgeError, OSError) as error:
             detected, detail = 'observation_incomplete', str(error)
+            segment['observationError'] = detail
         segment['finish'] = finish
+        if expired and last['status'] in ('cancelled','completed'):
+            # Release and observation may finish after both deadlines. Classify by
+            # the deadline that ended the wait, retaining any findings from sense().
+            if segment_deadline < deadline:
+                reason, detail = 'segment_time_limit', 'navigation segment time limit reached'
+            else:
+                reason, detail = 'budget_reached', 'exploration time budget reached'
+            break
         if detected == 'discovery':
             reason = detail = detected
             break
@@ -177,14 +186,13 @@ async def run(mode, direction, version, baseline):
             if detail == 'exploration budget reached':
                 detail = 'segment-end resource scan incomplete'
             break
-        if expired:
-            break
         if finish == segment['start']:
             reason, detail = 'blocked', 'navigation completed without observed displacement'
             break
 
     result.update(returnReason=reason, reason=detail, lastActionResult=mode.receipt_fields(last))
     normal = reason in ('discovery','budget_reached')
-    status = 'completed' if normal else {'outcome_unknown':'unknown','interrupted':'cancelled'}.get(reason,'failed')
+    status = 'completed' if normal else {'outcome_unknown':'unknown','interrupted':'cancelled',
+                                         'segment_time_limit':'timeout'}.get(reason,'failed')
     return dict(status=status, completed=normal, inputsReleased=reason!='outcome_unknown',
                 reason=detail, explorationResult=result)

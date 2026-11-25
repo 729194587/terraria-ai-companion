@@ -65,7 +65,9 @@ class DirectionTests(unittest.IsolatedAsyncioTestCase):
                 asyncio.get_running_loop().call_later(.005,done.set)
             return record,None
         async def cancel(name, args):
+            self.assertEqual(name,'cancel_task')
             self.assertEqual(args['taskId'], records[-1]['view']['taskId'])
+            order.append('cancel')
             records[-1]['view']['result'].update(status='cancelled',reason='explicit_cancel')
             records[-1]['done'].set()
         async def terminal(record):
@@ -95,9 +97,10 @@ class DirectionTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(asyncio.CancelledError):
                     await task
                 self.assertTrue(records[-1]['done'].is_set())
-                self.assertEqual(order,['submit'])
+                self.assertEqual(order,['submit','cancel'])
                 return
-            result=(await task)['explorationResult']
+            self.receipt = await task
+            result=self.receipt['explorationResult']
             self.assertEqual(result['baseline']['gameUpdate'],100)
             self.order, self.caps = order, caps
             return result
@@ -105,6 +108,8 @@ class DirectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_multiple_segments_recompute_then_return_budget(self):
         result=await self.trip()
         self.assertEqual(result['returnReason'],'budget_reached')
+        self.assertEqual(self.receipt['status'],'completed')
+        self.assertTrue(all(s['receipt']['status']=='completed' for s in result['segments']))
         self.assertEqual(result['progress']['completedSegments'],2)
         self.assertEqual(self.order,['submit','terminal','scan']*2)
         self.assertEqual(len(result['coverage']),2)
@@ -142,11 +147,28 @@ class DirectionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_segment_deadline_stops_movement_and_collects_terminal(self):
         with patch.object(explorer,'SEGMENT_SECONDS',.003):
-            result = await self.trip(hang=True)
-        self.assertEqual(result['returnReason'],'budget_reached')
+            result = await self.trip(hang=True, found_at=1)
+        self.assertEqual(result['returnReason'],'segment_time_limit')
+        self.assertEqual(self.receipt['status'],'timeout')
+        self.assertFalse(self.receipt['completed'])
         self.assertEqual(result['lastActionResult']['status'],'cancelled')
         self.assertTrue(result['lastActionResult']['inputsReleased'])
-        self.assertEqual(len(result['segments']),1)
+        self.assertEqual(len(result['findings']),1)
+        self.assertEqual(self.order,['submit','cancel','terminal','scan'])
+
+    async def test_trip_deadline_expires_during_navigation(self):
+        # Keep admission inside the trip budget even on a slow test host.
+        with patch.object(explorer,'time',SimpleNamespace(monotonic=lambda: 0.)), patch.object(explorer,'TRIP_SECONDS',.003):
+            result = await self.trip(hang=True)
+        self.assertEqual(result['returnReason'],'budget_reached')
+        self.assertEqual(result['progress']['completedSegments'],0)
+        self.assertEqual(self.order,['submit','cancel','terminal','scan'])
+
+    async def test_segment_timeout_requires_release_before_observation(self):
+        with patch.object(explorer,'SEGMENT_SECONDS',.003):
+            result = await self.trip(hang=True, release=False)
+        self.assertEqual(result['returnReason'],'outcome_unknown')
+        self.assertEqual(self.order,['submit','cancel','terminal'])
 
     async def test_revocation_cleans_up_independent_task(self):
         await self.trip(revoke=True)
