@@ -32,3 +32,17 @@ class ResourceTests(unittest.TestCase):
         h.observe(scan(1))
         self.assertEqual(h.observe(scan(2))['items'][0]['freshness'],'updated')
         self.assertEqual(len(h.records),1)
+
+    def test_new_tiles_connect_two_previously_separate_veins(self):
+        h=ResourceHistory()
+        def ore(start, end):
+            pts=[dict(x=x,y=5) for x in range(start,end+1)]
+            return dict(kind='ore_component',typeId=7,contentKey='Copper',anchor=pts[0],
+                        bounds=dict(x=start,y=5,width=len(pts),height=1),status='complete',tiles=pts)
+        scan=dict(gameUpdate=1,complete=True,truncated=False,unknownCells=0,
+                  bounds=dict(minX=0,maxX=10,minY=0,maxY=10))
+        h.observe(dict(scan,items=[ore(2,3),ore(5,6)]))
+        merged=h.observe(dict(scan,gameUpdate=2,items=[ore(2,6)]))
+        self.assertEqual(merged['items'][0]['freshness'],'updated')
+        self.assertFalse(merged['changes'])
+        self.assertEqual(len(h.records),1)

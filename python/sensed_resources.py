@@ -14,14 +14,18 @@ class ResourceHistory:
         for hit in scan['items']:
             anchor = hit['anchor']
             key = (hit['kind'], hit['typeId'], hit.get('entityRef') or (anchor['x'], anchor['y']))
-            if hit['kind'] == 'ore_component' and key not in self.records:
-                tiles = {(p['x'],p['y']) for p in hit['tiles']}
-                for prior, record in reversed(self.records.items()):
-                    if (prior[:2] == key[:2] and prior not in seen and record['state'] != 'absent_at_last_location'
-                            and any((p['x'],p['y']) in tiles for p in record['hit']['tiles'])):
-                        key = prior
-                        break
             previous = self.records.get(key)
+            if hit['kind'] == 'ore_component':
+                tiles = {(p['x'],p['y']) for p in hit['tiles']}
+                # A wider scan can connect two components clipped by earlier windows.
+                for prior in list(self.records):
+                    if prior == key or prior[:2] != key[:2] or prior in seen:
+                        continue
+                    record = self.records[prior]
+                    if (record['state'] != 'absent_at_last_location'
+                            and any((p['x'],p['y']) in tiles for p in record['hit']['tiles'])):
+                        previous = previous or record
+                        del self.records[prior]
             freshness = 'new' if previous is None else (
                 'updated' if previous['hit'] != hit or previous['state'] == 'absent_at_last_location' else 'known')
             self.records[key] = dict(hit=dict(hit), lastSeen=tick, state='observed')
