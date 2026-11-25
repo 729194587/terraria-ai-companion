@@ -67,6 +67,17 @@ internal static class ServerAiActionFixture
                         }
                         p.inventory[4].SetDefaults(ItemID.SuspiciousLookingEye);
                     }
+                    if(Program.LaunchParameters.ContainsKey("-companiondirectiontest"))
+                    {
+                        // A flat disposable corridor with one mineable ore beyond the initial 120-Tile view.
+                        for(int tx=left-80;tx<=left+220;tx++)for(int ty=floor-40;ty<=floor+36;ty++)
+                        {
+                            var tile=Main.tile[tx,ty];
+                            tile.ClearEverything();
+                            if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
+                        }
+                        var ore=Main.tile[left+90,floor];ore.TileType=TileID.Copper;
+                    }
                     if(Program.LaunchParameters.ContainsKey("-companionperceptiontest"))
                     {
                         // Explicit extra flag inside the existing copied-world fixture only.

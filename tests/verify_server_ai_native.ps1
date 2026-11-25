@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Autonomy,[ValidateSet('continue','investigate')][string]$TravelReview,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile,[switch]$ItemInfo,[switch]$ItemSources,[switch]$MaterialPlan,[string[]]$ModPackages,[switch]$CompatibilityQueries)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Autonomy,[Alias('TravelReview')][ValidateSet('continue','investigate','live')][string]$DirectionalExplore,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile,[switch]$ItemInfo,[switch]$ItemSources,[switch]$MaterialPlan,[string[]]$ModPackages,[switch]$CompatibilityQueries)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -9,8 +9,9 @@ if($BenchmarkSpec){
     $BenchmarkSpec=(Resolve-Path -LiteralPath $BenchmarkSpec).Path
     $Actions=$true
 }
-if($TravelReview -and $LiveModel){throw 'TravelReview uses a scripted discovery decision.'}
-if($TravelReview){$Autonomy=$true}
+if($DirectionalExplore -eq 'live'){$LiveModel=$true}
+elseif($DirectionalExplore -and $LiveModel){throw 'Choose -DirectionalExplore live for real model acceptance.'}
+if($DirectionalExplore){$Autonomy=$true}
 if($Autonomy){$Actions=$true}
 if($MaterialPlan){$Actions=$true;$Crafting=$true}
 if(($Tasks -or $AutonomousNavigation -or $NavigationSafety) -and !$Actions){throw 'Task validation requires isolated Actions fixture.'}
@@ -62,6 +63,7 @@ $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
 if($Autonomy){
     $info.ArgumentList.Add("-companionautonomytest")
+    if($DirectionalExplore){$info.ArgumentList.Add("-companiondirectiontest")}
     if(!$LiveModel){
         $info.ArgumentList.Add("-companioncombattest")
         $info.ArgumentList.Add("-companionregroupobservers")
@@ -119,7 +121,7 @@ try {
     if ($Autonomy) {
         $options = @()
         if ($LiveModel){$options += '--live-model'}
-        if ($TravelReview){$options += '--travel-review',$TravelReview}
+        if ($DirectionalExplore){$options += '--directional-explore',$DirectionalExplore}
         & $PythonExecutable (Join-Path $repo 'tests/native_autonomy.py') --port $IpcPort --game-port $Port --profile $profile @options
         if ($LASTEXITCODE -ne 0){throw "Autonomous Mode native verification failed: $profile"}
         Write-Output "Autonomous Mode native evidence: $profile/autonomy.json"
