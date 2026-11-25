@@ -9,7 +9,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'python'))
 from native_direct_input import wait_file
 from native_server_ai_agent import ChatSink
 from agent import Agent
-from autonomous_mode import AutonomousMode, INSTRUCTIONS
+from autonomous_mode import AutonomousMode, INSTRUCTIONS, REVIEW
 from control import autonomy_version
 from llm import LLMClient
 from server_ai import ServerAiBridge
@@ -17,10 +17,20 @@ import atomic_operations as atomic
 
 
 class FixtureModel:
-    def __init__(self):
+    def __init__(self, travel_review=None):
+        self.travel_review=travel_review
+        self.reviews=[]
         self.samples=[]
         self.travelling=False
     async def complete(self,messages,tools):
+        if messages[0]['content']==REVIEW:
+            event=json.loads(messages[1]['content'])
+            self.reviews.append(event)
+            new_crystal=any(h['kind']=='life_crystal' and h['anchor']['x']>self.samples[0]['resources']['bounds']['maxX']
+                            for sample in event['samples'] for h in sample['findings'])
+            choice=self.travel_review if len(self.samples)==1 and self.travel_review and new_crystal else 'continue'
+            return dict(tool_calls=[dict(function=dict(name='review_discovery',arguments=json.dumps(dict(
+                choice=choice,reason='reviewed the newly scanned Tiles'))))])
         if messages[0]['content'] != INSTRUCTIONS:
             # Run the normal manual Agent / Lua / native reply path.
             if any(m['role']=='tool' for m in messages):
@@ -34,13 +44,24 @@ class FixtureModel:
             if boss['admissible']:
                 return dict(tool_calls=[dict(id='boss',function=dict(name='submit_task',arguments=json.dumps(dict(
                     objective='join the active encounter',operation='boss_encounter',arguments=dict(entityRef=boss['entityRef'])))))])
+        if self.travel_review and len(self.samples)==1:
+            return dict(tool_calls=[dict(function=dict(name='navigate_to',arguments=json.dumps(dict(
+                objective='explore east past the buried crystals',x=int(observation['player']['position']['x']+250),
+                y=int(observation['localScene']['actor']['feetY'])))))])
+        if self.travel_review and len(self.samples)==3 and observation.get('originalExploration'):
+            route=observation['originalExploration']
+            return dict(tool_calls=[dict(function=dict(name=route['operation'],arguments=json.dumps(
+                dict(**route['arguments'],objective=route['objective'],originalRoute='replace'))))])
         if self.travelling:
             target=observation['player']['position']['x']-200
             return dict(tool_calls=[dict(id='task',function=dict(name='submit_task',arguments=json.dumps(dict(
                 objective='survey the western ground',operation='navigate_to',arguments=dict(x=int(target),y=int(observation['localScene']['actor']['feetY']))))))])
         if len(self.samples)>1:
-            if any(hit['kind']=='life_crystal' and hit['status']=='complete' and hit['freshness']=='new'
-                   for hit in observation['resources']['items']):
+            discovery = observation.get('travelDiscovery') or {}
+            found = [h for sample in discovery.get('samples',[]) for h in sample['findings']]
+            if (discovery.get('choice')=='investigate' or any(hit['kind']=='life_crystal' for hit in found)
+                    or any(hit['kind']=='life_crystal' and hit['status']=='complete' and hit['freshness']=='new'
+                           for hit in observation['resources']['items'])):
                 return dict(tool_calls=[dict(id='prepare',function=dict(name='select_hotbar_slot',arguments=json.dumps(
                     dict(objective='prepare the pick for the newly discovered life crystal',slot=2))))])
             return dict(content='rest')
@@ -56,7 +77,7 @@ async def run(args):
         while not (profile/'action-fixture.json').exists():
             await asyncio.sleep(.1)
     bridge,controller=ServerAiBridge(args.port),ServerAiBridge(args.port)
-    llm=LLMClient() if args.live_model else FixtureModel()
+    llm=LLMClient() if args.live_model else FixtureModel(args.travel_review)
     agent=Agent(bridge,llm,chat_bridge=ChatSink())
     model_calls=[]
     complete=llm.complete
@@ -88,12 +109,37 @@ async def run(args):
                     report.setdefault('cycles',[]).append(dict(phase=mode.phase,objective=mode.objective,receipt=mode.progress))
                     mode.worker=None
                 await asyncio.sleep(.25)
+        if args.travel_review:
+            movement=report['cycles'][0]['receipt']
+            before,after=llm.samples[:2]
+            reviews=[s for s in llm.reviews if s['actionId']==movement['actionId']]
+            assert any(h['anchor']['x']>before['resources']['bounds']['maxX']
+                       for r in reviews for s in r['samples'] for h in s['findings']),reviews
+            assert movement['inputsReleased'] and after['previousReceipt']['actionId']==movement['actionId'],movement
+            if args.travel_review=='investigate':
+                assert movement['status']=='cancelled' and after['originalExploration']['arguments']==movement['arguments']
+                assert report['cycles'][1]['receipt']['operation']=='select_hotbar_slot' and mode.progress['completed']
+                async with asyncio.timeout(45):
+                    while mode.worker is None:
+                        await mode.pulse(await asyncio.to_thread(controller.life_status))
+                        await asyncio.sleep(.05)
+                    await mode.worker
+                assert llm.samples[-1]['originalExploration']==after['originalExploration']
+                assert mode.progress['completed'] and mode.progress['arguments']==movement['arguments'],mode.progress
+                assert mode.progress['actionId']!=movement['actionId']
+                report['resumed']=mode.progress
+            else:
+                assert movement['completed'],movement
+            report.update(reviews=reviews,passed=True)
+            await mode.command('off')
+            return
         if not args.live_model:
             first,second=llm.samples[:2]
             def findings(obs): return obs['resources']['items']
             assert any(h['kind']=='chest' and h['status']=='complete' and len(h['tiles'])==4 for h in findings(first))
             assert any(h['kind']=='life_crystal' and h['status']=='incomplete' for h in findings(first))
-            assert any(h['kind']=='life_crystal' and h['status']=='complete' and h['freshness']=='new' for h in findings(second))
+            during=[h for review in llm.reviews for sample in review['samples'] for h in sample['findings']]
+            assert any(h['kind']=='life_crystal' and h['freshness']=='new' for h in findings(second)+during)
             navigation=report['cycles'][0]['receipt']
             assert navigation.get('completed') and navigation.get('inputsReleased'),navigation
             assert mode.progress['operation']=='select_hotbar_slot' and mode.progress['completed'],mode.progress
@@ -282,5 +328,6 @@ if __name__=='__main__':
     parser.add_argument('--port',type=int,required=True)
     parser.add_argument('--game-port',type=int,required=True)
     parser.add_argument('--profile',type=Path,required=True)
+    parser.add_argument('--travel-review',choices=['continue','investigate'])
     parser.add_argument('--live-model',action='store_true')
     asyncio.run(run(parser.parse_args()))

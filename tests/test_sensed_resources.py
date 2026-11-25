@@ -46,3 +46,19 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(merged['items'][0]['freshness'],'updated')
         self.assertFalse(merged['changes'])
         self.assertEqual(len(h.records),1)
+
+    def test_clipped_complete_clipped_object_not_announced_again(self):
+        h=ResourceHistory()
+        hit=dict(kind='chest',typeId=21,anchor=dict(x=3,y=5),contentKey='Chest',
+                 bounds=dict(x=3,y=5,width=2,height=2))
+        scan=dict(gameUpdate=1,complete=True,truncated=False,unknownCells=0,
+                  bounds=dict(minX=0,maxX=10,minY=0,maxY=10))
+        def events(status,tiles):
+            return h.observe(dict(scan,items=[dict(hit,status=status,tiles=tiles)]))['discoveries']
+        tile=dict(x=3,y=5)
+        self.assertTrue(events('incomplete',[tile]))
+        self.assertTrue(events('complete',[tile,dict(x=4,y=5)]))
+        self.assertFalse(events('incomplete',[tile]))
+        self.assertFalse(events('complete',[tile,dict(x=4,y=5)]))
+        self.assertTrue(h.observe(dict(scan,items=[]))['changes'])
+        self.assertTrue(events('complete',[tile,dict(x=4,y=5)]))

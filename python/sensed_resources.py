@@ -10,6 +10,7 @@ class ResourceHistory:
     def observe(self, scan):
         tick = scan['gameUpdate']
         current = []
+        discoveries = []
         seen = set()
         for hit in scan['items']:
             anchor = hit['anchor']
@@ -28,7 +29,14 @@ class ResourceHistory:
                         del self.records[prior]
             freshness = 'new' if previous is None else (
                 'updated' if previous['hit'] != hit or previous['state'] == 'absent_at_last_location' else 'known')
-            self.records[key] = dict(hit=dict(hit), lastSeen=tick, state='observed')
+            # Clipping the same object at the edge of consecutive windows is not a new discovery.
+            signature = previous.get('completeShape') if previous else None
+            complete_shape = signature
+            if hit['status'] == 'complete' and hit['kind'] != 'drop':
+                complete_shape = sorted((p['x'],p['y']) for p in hit.get('tiles',()))
+            if (previous is None or previous['state']=='absent_at_last_location' or complete_shape != signature):
+                discoveries.append(dict(hit, freshness=freshness))
+            self.records[key] = dict(hit=dict(hit), lastSeen=tick, state='observed', completeShape=complete_shape)
             self.records.move_to_end(key)
             seen.add(key)
             current.append(dict(hit, freshness=freshness))
@@ -44,7 +52,7 @@ class ResourceHistory:
                        and footprint['y'] + footprint['height'] - 1 <= bounds['maxY'])
             if covered and record['state'] != 'absent_at_last_location':
                 record.update(state='absent_at_last_location', checkedAt=tick)
-                changes.append(dict(kind=key[0], anchor=record['hit']['anchor'], state=record['state']))
+                changes.append(dict(record['hit'], state=record['state'], lastSeen=record['lastSeen']))
             elif not covered and record['state'] == 'observed':
                 record['state'] = 'needs_revalidation'
         while len(self.records) > self.limit:
@@ -52,4 +60,4 @@ class ResourceHistory:
         historical = [dict(kind=r['hit']['kind'], contentKey=r['hit']['contentKey'], anchor=r['hit']['anchor'],
                            state=r['state'], lastSeen=r['lastSeen'])
                       for k,r in reversed(self.records.items()) if k not in seen][:12]
-        return {**scan, 'items': current, 'historical': historical, 'changes': changes[:16]}
+        return {**scan, 'items': current, 'historical': historical, 'changes': changes[:16], 'discoveries': discoveries}

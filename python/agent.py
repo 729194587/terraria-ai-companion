@@ -663,6 +663,11 @@ class Agent:
         self._waiting_respawn = False
         event, self._deferred_chat = self._deferred_chat, None
         if self.autonomy and self.autonomy.enabled:
+            # The task monitor can receive a released cancellation before the life poll sees death.
+            # A verified new generation may make a fresh decision with that terminal receipt.
+            if (self.autonomy.progress.get('status')=='cancelled'
+                    and self.autonomy.progress.get('inputsReleased') is True):
+                self.autonomy.hold = False
             self.autonomy.force_decision = True
             self.autonomy.last_attempt = None
             self.autonomy.next_check = 0
