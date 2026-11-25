@@ -18,6 +18,8 @@ L0 默认范围为角色附近 45×29 Tile，schemaVersion 为 2。可按需选�
 
 通过 `layers` 请求所需层。响应中的 `includedLayers` 表示实际返回内容；集合各自包含计数、完整性和截断信息。
 
+具备 `server_ai_directional_landings_v1` 时，单独请求 `landingRegions` 可传 `landingDirection`。left/right 将当前窗口朝前扩展 16 格至 61×29，up/down 朝前扩展 24 格至 45×53。实际范围见 bounds。
+
 ## L1：区域场景
 
 具备 `server_ai_scene_region_v1` 能力时，可请求更大范围：

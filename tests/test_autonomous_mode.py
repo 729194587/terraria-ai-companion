@@ -178,6 +178,23 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.mode.act.assert_awaited_once()
             self.assertTrue(self.mode.hold)
 
+    async def test_incomplete_baseline_waits_for_coverage_and_resumes(self):
+        await self.mode.command('on')
+        self.scene['resources']['complete']=False
+        self.mode.tools.return_value=[dict(function=dict(name='explore'))]
+        call=dict(tool_calls=[dict(function=dict(name='explore',arguments=json.dumps(dict(direction='right',objective='survey'))))])
+        self.agent.llm.complete.side_effect=[call,dict(content='reassess')]
+        result=dict(returnReason='observation_incomplete',findings=[],baseline=dict(complete=False))
+        self.mode.act=AsyncMock(return_value=dict(status='failed',inputsReleased=True,explorationResult=result))
+        for _ in range(4):
+            await self.cycle()
+        self.assertEqual(self.mode.phase,'observation_incomplete')
+        self.assertFalse(self.mode.stalled)
+        self.mode.act.assert_awaited_once()
+        self.scene['resources']['complete']=True
+        await self.cycle()
+        self.assertEqual(self.agent.llm.complete.await_count,2)
+
     async def test_discovery_returns_to_main_model_and_survives_timeout_and_detour(self):
         await self.mode.command('on')
         self.mode.tools.return_value=[dict(function=dict(name=n)) for n in ('explore','navigate_to','mine_target')]
@@ -201,6 +218,9 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payloads[-1]['explorationContext']['lastInvestigation']['operation'],'mine_target')
         self.assertEqual(len(self.mode.stalled),2)  # only the two mocked, effectless detour actions
         self.assertEqual(self.mode.act.await_count,4)
+        for call in self.mode.act.await_args_list:
+            if call.args[0]=='explore':
+                self.assertIs(call.kwargs['baseline'], self.scene['resources'])
 
     async def test_action_transport_error_holds_without_model_or_body_replay(self):
         self.agent.llm.complete.return_value=self.navigate(12)

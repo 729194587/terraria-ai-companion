@@ -53,6 +53,18 @@ class RegionRuntime(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('objectCounts', doc['dataFields'])
         self.assertFalse(api_help(self.bridge, dict(name='observe_scene', forArgs=dict(width=128,height=96)))['valid'])
 
+    async def test_directional_landings_are_local_and_capability_gated(self):
+        self.enable()
+        args=dict(landingDirection='up',layers=['landingRegions'])
+        self.assertEqual(atomic.validate('observe_scene',args),args)
+        for invalid in (dict(args,scale='region'),dict(args,layers=['resources']),dict(args,landingDirection='auto')):
+            with self.assertRaises(ValueError):
+                atomic.validate('observe_scene',invalid)
+        with self.assertRaises(atomic.PreDispatchRejected):
+            await atomic.dispatch(self.bridge,'observe_scene',args)
+        self.bridge.hello['capabilities'].append('server_ai_directional_landings_v1')
+        self.assertTrue((await atomic.dispatch(self.bridge,'observe_scene',args))['valid'])
+
     async def test_regional_resource_capability_and_result_variant(self):
         self.enable()
         caps=self.bridge.hello['capabilities']

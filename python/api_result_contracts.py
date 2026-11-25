@@ -533,10 +533,10 @@ def scene_variant(regional, resources=False):
     if resources:
         layers['resources'] = obj({'source': const('region_resource_scan' if regional else 'local_resource_scan'), 'gameUpdate': TICK,
                 'unknownCells': COUNT, 'scannedTiles': COUNT, 'bounds': ref('TileBounds'),
-                'complete': B, 'truncated': B, 'matchedCount': COUNT,
+                'complete': B, 'truncated': B, 'objectGroupingTruncated': B, 'matchedCount': COUNT,
                 'items': array(obj({'kind': enum('chest','life_crystal','ore_component','drop'),
                     'typeId': I, 'contentKey': S, 'anchor': ref('TilePoint'), 'bounds': ref('TileRect'),
-                    'tiles': array(ref('TilePoint')), 'status': enum('complete','incomplete'), 'entityRef': nullable(S)},optional=('entityRef',)))})
+                    'tiles': array(ref('TilePoint')), 'status': enum('complete','incomplete'), 'entityRef': nullable(S)},optional=('entityRef',)))}, optional=('objectGroupingTruncated',))
     properties['includedLayers'] = {**array(enum(*layers)), 'minItems': 1, 'uniqueItems': True}
     extra = {name: schema for companion in companions.values() for name, schema in companion.items()}
     schema = obj({**properties, **layers, **extra}, optional=(*layers, *extra))

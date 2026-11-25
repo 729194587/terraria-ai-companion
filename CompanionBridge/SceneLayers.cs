@@ -17,6 +17,11 @@ internal sealed class SceneLayers
     {
         if(args.ValueKind!=JsonValueKind.Object)throw new FormatException("Scene arguments must be an object.");
         bool region=SceneScope.Read(args).Region;
+        if(args.TryGetProperty("landingDirection",out var direction) &&
+            (region || direction.ValueKind!=JsonValueKind.String || direction.GetString() is not ("left" or "right" or "up" or "down")
+             || !args.TryGetProperty("layers",out var only) || only.ValueKind!=JsonValueKind.Array
+             || only.GetArrayLength()!=1 || only[0].ValueKind!=JsonValueKind.String || only[0].GetString()!="landingRegions"))
+            throw new FormatException("landingDirection requires a local landingRegions-only read and a cardinal direction.");
         if(!args.TryGetProperty("layers",out var layers))return new(region?new[]{"geometry","objects","hazards"}:Names.Take(7));
         if(args.EnumerateObject().Count(p=>p.Name=="layers")!=1||layers.ValueKind!=JsonValueKind.Array
             ||layers.GetArrayLength()<1||layers.GetArrayLength()>Names.Length)

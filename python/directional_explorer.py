@@ -9,8 +9,7 @@ DIRECTIONS = ('left', 'right', 'up', 'down')
 MAX_SEGMENTS = 6
 SEGMENT_SECONDS = 12
 TRIP_SECONDS = 45
-SCAN_SECONDS = .5
-STEP_PIXELS = 12 * 16
+STEP_PIXELS = 32 * 16
 
 
 def position(actor):
@@ -30,7 +29,7 @@ def destination(scene, direction):
         landing = max(low, min(high, desired))
         dx, dy = landing - left, region['surfaceY'] - feet
         advance = {'right': dx, 'left': -dx, 'down': dy, 'up': -dy}[direction]
-        if advance < 16:
+        if not 16 <= advance <= STEP_PIXELS:
             continue
         # AtDestination(x,y) accepts player-left in [x-width,x]. Keep the current
         # stance outside that interval even on the platform we already occupy.
@@ -38,25 +37,46 @@ def destination(scene, direction):
         lateral = direction in ('left', 'right')
         if lateral and x-width <= left <= x:
             continue
-        score = (abs(advance-STEP_PIXELS) + abs(dy) if lateral else abs(dx)+advance)
+        score = abs(advance-STEP_PIXELS) + (abs(dy) if lateral else abs(dx))
         options.append((score, x, round(region['surfaceY'])))
     if options:
         _, x, y = min(options)
         return dict(x=x, y=y)
 
 
-async def run(mode, direction, version):
+def scan_coverage(scan):
+    return {k: scan[k] for k in (
+        'source','gameUpdate','bounds','requestedTiles','scannedTiles','unknownCells','complete',
+        'samplingBudgetReached','unknownByReason','objectGroupingTruncated','truncated',
+        'elapsedMilliseconds','observedAtUnixMs','position') if k in scan}
+
+
+async def landing_scene(bridge, direction):
+    args = dict(layers=['landingRegions'])
+    if 'server_ai_directional_landings_v1' in bridge.hello.get('capabilities', ()):
+        args['landingDirection'] = direction
+    for cap in (12, 24):
+        reply = await atomic.dispatch(bridge, 'observe_scene', dict(args, maxRegions=cap))
+        if not reply.get('valid'):
+            raise BridgeError('local landing observation unavailable')
+        scene = reply['data']
+        if not scene['landingRegions']['truncated']:
+            return scene
+    raise BridgeError('landingRegions.truncated after expanding maxRegions from 12 to 24')
+
+
+async def run(mode, direction, version, baseline):
     bridge = mode.agent.bridge
     binding = dict(bridge.binding)
     deadline = time.monotonic() + TRIP_SECONDS
     segments, samples, findings = [], [], []
-    start = finish = None
+    start = finish = baseline['position']
     reason = 'budget_reached'
     detail = 'exploration budget reached'
     last = {}
     result = dict(direction=direction, objective=mode.objective, coordinateUnit='world_pixels',
-                  start=None, finish=None, segments=segments, findings=findings, coverage=samples,
-                  progress=dict(completedSegments=0, dx=None, dy=None), lastActionResult={})
+                  start=start, finish=finish, baseline=scan_coverage(baseline), segments=segments, findings=findings, coverage=samples,
+                  progress=dict(completedSegments=0, dx=0., dy=0.), lastActionResult={})
     # Publish in-flight evidence so that revocation can finish this same receipt.
     mode.progress['explorationResult'] = result
 
@@ -68,11 +88,8 @@ async def run(mode, direction, version):
         nonlocal finish
         scan = await mode.resource_scan(version)
         finish = result['finish'] = scan['position']
-        if start:
-            result['progress'].update(dx=finish['leftX']-start['leftX'], dy=finish['feetY']-start['feetY'])
-        coverage = {k:v for k,v in scan.items() if k in (
-            'source','gameUpdate','bounds','requestedTiles','scannedTiles','unknownCells','complete',
-            'truncated','elapsedMilliseconds','observedAtUnixMs','position')}
+        result['progress'].update(dx=finish['leftX']-start['leftX'], dy=finish['feetY']-start['feetY'])
+        coverage = scan_coverage(scan)
         samples.append(coverage)
         if scan['discoveries'] or scan['changes']:
             findings.append(dict(**coverage, items=scan['discoveries'], changes=scan['changes']))
@@ -82,28 +99,25 @@ async def run(mode, direction, version):
 
     for _ in range(MAX_SEGMENTS):
         authorized()
+        if not baseline['complete']:
+            reason, detail = 'observation_incomplete', 'initial resource baseline incomplete'
+            break
         try:
-            local = await atomic.dispatch(bridge, 'observe_scene', dict(layers=['landingRegions'], maxRegions=24))
-            if not local.get('valid'):
-                raise BridgeError('local landing observation unavailable')
-            scene = local['data']
-            finish = position(scene['actor'])
-            if start is None:
-                start = result['start'] = result['finish'] = finish
-            # Recheck both departure and segment boundaries against the model's baseline.
-            detected = await sense() if not segments else None
+            scene = await landing_scene(bridge, direction)
         except (BridgeError, OSError) as error:
             reason, detail = 'observation_incomplete', str(error)
             break
-        if detected:
-            reason = detail = detected
-            break
+        finish = position(scene['actor'])
+        if not segments:
+            start = result['start'] = result['finish'] = finish
         if time.monotonic() >= deadline:
             break
         target = destination(scene, direction)
         if target is None:
-            reason = 'blocked'
-            detail = 'no forward landing in current local candidates'
+            if scene['coverage']['geometryComplete']:
+                reason, detail = 'blocked', 'no forward landing in current local candidates'
+            else:
+                reason, detail = 'observation_incomplete', 'no forward landing in partially known geometry'
             break
         authorized()
         segment_deadline = min(deadline, time.monotonic()+SEGMENT_SECONDS)
@@ -116,25 +130,15 @@ async def run(mode, direction, version):
         task_id = record['view']['taskId']
         segment = dict(start=finish, target=target, taskId=task_id)
         segments.append(segment)
-        planned = None
+        expired = False
         try:
-            while not record['done'].is_set():
-                authorized()
-                remaining = segment_deadline-time.monotonic()
-                if remaining <= 0:
-                    planned = 'budget_reached'
-                    break
+            authorized()
+            if not record['done'].is_set():
+                remaining = max(0., segment_deadline - time.monotonic())
                 try:
-                    await asyncio.wait_for(record['done'].wait(), min(remaining, SCAN_SECONDS))
+                    await asyncio.wait_for(record['done'].wait(), remaining)
                 except asyncio.TimeoutError:
-                    if time.monotonic() >= segment_deadline:
-                        continue
-                    try:
-                        planned = await sense()
-                    except (BridgeError, OSError) as error:
-                        planned, detail = 'observation_incomplete', str(error)
-                    if planned:
-                        break
+                    expired = True
         finally:
             if not record['done'].is_set():
                 try:
@@ -152,7 +156,7 @@ async def run(mode, direction, version):
                 ('cancelled','completed','failed','timeout')):
             reason, detail = 'outcome_unknown', last.get('reason','missing terminal release')
             break
-        if last['status']=='cancelled' and (not planned or last.get('reason')!='explicit_cancel'):
+        if last['status']=='cancelled' and (not expired or last.get('reason')!='explicit_cancel'):
             reason, detail = 'interrupted', last.get('reason','navigation interrupted')
             break
         authorized()
@@ -162,13 +166,18 @@ async def run(mode, direction, version):
         except (BridgeError, OSError) as error:
             detected, detail = 'observation_incomplete', str(error)
         segment['finish'] = finish
+        if detected == 'discovery':
+            reason = detail = detected
+            break
         if last['status'] in ('failed','timeout'):
             reason, detail = 'blocked', last.get('reason','navigation failed')
             break
-        if findings or planned or detected:
-            reason = 'discovery' if findings else planned or detected
-            if reason != 'observation_incomplete' or detail=='exploration budget reached':
-                detail = reason
+        if detected:
+            reason = detected
+            if detail == 'exploration budget reached':
+                detail = 'segment-end resource scan incomplete'
+            break
+        if expired:
             break
         if finish == segment['start']:
             reason, detail = 'blocked', 'navigation completed without observed displacement'

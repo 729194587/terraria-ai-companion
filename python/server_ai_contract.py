@@ -134,6 +134,7 @@ def server_definitions(bridge, supported=None):
                                       bed_spawn='server_ai_bed_spawn_v1' in capabilities, combat_inventory="server_ai_combat_inventory_v1" in capabilities,
                                       summon_loadout="server_ai_combat_summon_loadout_v1" in capabilities,
                                       dual_weapons="server_ai_combat_secondary_v1" in capabilities, scene_region='server_ai_scene_region_v1' in capabilities,
+                                      directional_landings='server_ai_directional_landings_v1' in capabilities,
                                       general_dialogue='server_ai_general_npc_dialogue_v1' in capabilities,
                                       general_operations='server_ai_general_operations_v1' in capabilities,
                                       mining_opening='server_ai_mining_opening_v1' in capabilities,

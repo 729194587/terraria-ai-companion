@@ -162,7 +162,7 @@ async def directional_run(agent, mode, controller, report, args):
     discovered = mined = resumed = False
     initial = None
     async with asyncio.timeout(420 if case=='live' else 180):
-        for _ in range(14):
+        while len(cycles)<14:
             before = mode.progress
             while mode.worker is None:
                 await mode.pulse(await asyncio.to_thread(controller.life_status))
@@ -180,6 +180,19 @@ async def directional_run(agent, mode, controller, report, args):
                 initial = observation['resources']['bounds']
             result = receipt.get('explorationResult')
             if result:
+                baseline = observation['resources']
+                assert result['baseline']['gameUpdate']==baseline['gameUpdate']
+                assert result['baseline']['bounds']==baseline['bounds']
+                assert len(result['coverage'])==len(result['segments']), result
+                for segment, sample in zip(result['segments'], result['coverage']):
+                    assert segment['receipt']['inputsReleased'] and segment['receipt']['endEvidenceStatus']=='known'
+                    assert segment['finish']==sample['position']
+                for sample in [result['baseline'], *result['coverage']]:
+                    assert sample['requestedTiles']==8160
+                    assert sum(sample['unknownByReason'].values())==sample['unknownCells']
+                    assert isinstance(sample['samplingBudgetReached'],bool)
+                    assert isinstance(sample['objectGroupingTruncated'],bool)
+                    assert isinstance(sample['truncated'],bool)
                 if discovered and (case=='continue' or mined) and abs(result['progress']['dx'] or 0)>=4:
                     proof = result['lastActionResult']
                     assert proof['inputsReleased'] and proof['actionId']!=report['discoveryTask']

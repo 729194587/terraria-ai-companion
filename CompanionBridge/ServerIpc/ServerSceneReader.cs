@@ -34,6 +34,18 @@ internal static class ServerSceneReader
         int objectCap=Cap("maxObjects",16),landingCap=Cap("maxRegions",12),placementCap=Cap("maxPlacements",12),hazardCap=Cap("maxHazards",24);
         int ox=(int)Math.Floor(p.Center.X/16)-width/2,
             oy=scope.Region?(int)Math.Floor(p.Center.Y/16)-height/2:(int)Math.Floor(p.Bottom.Y/16)-17;
+        // Extend only the forward edge so both the current stance and a 32-Tile
+        // destination (including headroom and support) fit the landing survey.
+        if(args.TryGetProperty("landingDirection",out var direction))
+        {
+            switch(direction.GetString())
+            {
+                case "left": ox-=16; width+=16; break;
+                case "right": width+=16; break;
+                case "up": oy-=24; height+=24; break;
+                case "down": height+=24; break;
+            }
+        }
         bool resources = layers.Has("resources");
         var findings = new List<Finding>();
         var cells=new SceneCell[width,height];var anchors=new Dictionary<(int,int),object>();var content=new Dictionary<int,string>();
@@ -201,7 +213,7 @@ internal static class ServerSceneReader
             ["actor"]=new{slot=p.whoAmI,boundsWorldPixels=actor,feetY=p.Bottom.Y,velocity=new StateVector(p.velocity.X,p.velocity.Y),p.dead,
                 navigationProfileSupported=GameNavigation.Ordinary(p),mapTile=new{x=ox+actorX,y=oy+actorY},
                 bodyTileBounds=BodyTileBounds.FromPixels(p.position.X,p.position.Y,p.width,p.height)},
-            ["coverage"]=new{scannedTiles=1305,unknownCells=unknown,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0},
+            ["coverage"]=new{scannedTiles=sampled,unknownCells=unknown,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0},
             ["limits"]="observation-scoped IDs; no visibility, contents, persistent map or custom Mod hook interpretation; truncation is per collection, never empty=absent",
             ["includedLayers"]=layers.Included};
         if(scope.Region)
@@ -224,6 +236,7 @@ internal static class ServerSceneReader
         layers.Add(response,"resources",()=>new {
             source=scope.Region?"region_resource_scan":"local_resource_scan",gameUpdate=tick,unknownCells=unknown,scannedTiles=sampled,
             bounds=new{minX=ox,minY=oy,maxX=ox+width-1,maxY=oy+height-1},
+            objectGroupingTruncated,
             complete=unknown==0 && !objectGroupingTruncated && findings.Count<=objectCap,
             truncated=samplingStopped||objectGroupingTruncated||findings.Count>objectCap,
             matchedCount=findings.Count,items=findings.OrderBy(f=>Math.Abs(f.Anchor.X-ox-actorX)+Math.Abs(f.Anchor.Y-oy-actorY)).Take(objectCap)

@@ -121,7 +121,7 @@ class AutonomousMode:
                 self.next_check = 0.
             if self.hold:
                 self.phase = 'outcome_unknown'
-            elif not was_enabled or self.phase in ('model_blocked','no_progress'):
+            elif not was_enabled or self.phase in ('model_blocked','no_progress','observation_incomplete'):
                 self.stalled.clear()
                 self.blocked_scene = None
                 self.force_decision = True
@@ -211,7 +211,10 @@ class AutonomousMode:
         data = reply['data']
         return dict(self.resources.observe(data['resources']), position=explorer.position(data['actor']),
                     observedAtUnixMs=reply.get('observedAtUnixMs'), requestedTiles=data['coverage']['requestedTiles'],
-                    elapsedMilliseconds=data['sample']['elapsedMilliseconds'])
+                    elapsedMilliseconds=data['sample']['elapsedMilliseconds'],
+                    samplingBudgetReached=data['sample']['samplingBudgetReached'],
+                    unknownByReason=data['coverage']['unknownByReason'],
+                    objectGroupingTruncated=data['resources'].get('objectGroupingTruncated'))
 
     def collect_terminal(self):
         record = self.task_record
@@ -328,6 +331,9 @@ class AutonomousMode:
             self.phase = 'observing'
             obs = await self.observe()
             scene_key = self.scene_key(obs)
+            if (self.blocked_scene is not None and self.blocked_phase == 'observation_incomplete'
+                    and obs['resources'].get('complete')):
+                self.force_decision = True
             if self.blocked_scene == scene_key and not self.force_decision:
                 self.phase = self.blocked_phase
                 return
@@ -403,7 +409,10 @@ class AutonomousMode:
                 diagnostics.emit('autonomy_decision',objective=objective,operation=name,arguments=args,
                                  binding=obs['binding'],gameUpdate=obs['resources']['gameUpdate'])
                 try:
-                    receipt = await self.act(name,args,version)
+                    if name == 'explore':
+                        receipt = await self.act(name,args,version,baseline=obs['resources'])
+                    else:
+                        receipt = await self.act(name,args,version)
                 except (atomic.PreDispatchRejected,atomic.ArgumentValidationError) as error:
                     receipt = atomic.not_admitted_result(operation,str(error))
                 if version != self.version:
@@ -434,6 +443,13 @@ class AutonomousMode:
                     self.hold = True
                     self.phase = 'cancelled' if receipt.get('status')=='cancelled' and receipt.get('inputsReleased') else 'outcome_unknown'
                     return
+                trip = receipt.get('explorationResult', {})
+                if trip.get('returnReason')=='observation_incomplete' and not trip['baseline']['complete']:
+                    # No motion was attempted. Wait for fresh evidence, including a complete baseline.
+                    self.last_attempt = None
+                    self.phase = self.blocked_phase = 'observation_incomplete'
+                    self.blocked_scene = scene_key
+                    return
                 self.force_decision = True
                 self.phase = 'waiting'
                 return
@@ -453,14 +469,14 @@ class AutonomousMode:
             diagnostics.emit('autonomy_cycle_failed',reason=self.error)
         finally:
             autonomy_version.reset(marker)
-            self.next_check = time.monotonic() + (4 if self.phase=='resting' else 0.5)
+            self.next_check = time.monotonic() + (4 if self.phase in ('resting','observation_incomplete') else 0.5)
 
-    async def act(self,name,args,version):
+    async def act(self,name,args,version,*,baseline=None):
         bridge = self.agent.bridge
         if version != self.version:
             raise BridgeError('Autonomy version revoked')
         if name=='explore':
-            return await explorer.run(self,args['direction'],version)
+            return await explorer.run(self,args['direction'],version,baseline)
         if name not in program_tasks.OPERATIONS and name!='submit_task':
             return await atomic.dispatch(bridge,name,args)
         task = args if name=='submit_task' else dict(operation=name,arguments=args)

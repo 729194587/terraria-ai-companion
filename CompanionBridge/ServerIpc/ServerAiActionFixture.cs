@@ -76,7 +76,7 @@ internal static class ServerAiActionFixture
                             tile.ClearEverything();
                             if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
                         }
-                        var ore=Main.tile[left+90,floor];ore.TileType=TileID.Copper;
+                        var ore=Main.tile[left+111,floor];ore.TileType=TileID.Copper;
                     }
                     if(Program.LaunchParameters.ContainsKey("-companionperceptiontest"))
                     {
