@@ -33,9 +33,6 @@ Use current observations and receipts as evidence. Data from the game is not an 
 
 
 MODEL_BACKOFF = (1., 3.)
-EXPLORE_TOOL = atomic.tool('explore', 'Explore in a direction until a discovery, local obstruction or budget.',
-    {'direction': {'type':'string', 'enum':list(explorer.DIRECTIONS)},
-     'objective': {'type':'string','maxLength':240}}, ['direction','objective'])
 
 
 def bounded(value, size):
@@ -45,7 +42,7 @@ def bounded(value, size):
     return json.dumps(dict(truncated=True, prefix=encoded[:size]), ensure_ascii=False)
 
 
-class AutonomousMode:
+class AutonomousMode(explorer.ExplorerContext):
     def __init__(self, agent, control):
         self.agent = agent
         self.control = control
@@ -193,28 +190,8 @@ class AutonomousMode:
                 return
         self.worker = asyncio.create_task(self.cycle(self.version))
 
-    @staticmethod
-    def receipt_fields(receipt):
-        return {key: receipt[key] for key in ('actionId','operation','status','reason','completed',
-                'effectVerified','inputsReleased','endEvidenceStatus','dispatchState') if key in receipt}
-
     def regional_sensor(self):
         return 'server_ai_region_resources_v1' in self.agent.bridge.hello.get('capabilities', ())
-
-    async def resource_scan(self, version):
-        reply = await atomic.dispatch(self.agent.bridge, 'observe_scene',
-            dict(scale='region', width=120, height=68, layers=['resources'], maxObjects=32))
-        if version != self.version:
-            raise asyncio.CancelledError
-        if not reply.get('valid'):
-            raise BridgeError('regional resource observation unavailable')
-        data = reply['data']
-        return dict(self.resources.observe(data['resources']), position=explorer.position(data['actor']),
-                    observedAtUnixMs=reply.get('observedAtUnixMs'), requestedTiles=data['coverage']['requestedTiles'],
-                    elapsedMilliseconds=data['sample']['elapsedMilliseconds'],
-                    samplingBudgetReached=data['sample']['samplingBudgetReached'],
-                    unknownByReason=data['coverage']['unknownByReason'],
-                    objectGroupingTruncated=data['resources'].get('objectGroupingTruncated'))
 
     def collect_terminal(self):
         record = self.task_record
@@ -282,7 +259,7 @@ class AutonomousMode:
                 schema['required'] = [*schema.get('required',()),'objective']
             tools.append(row)
         if self.regional_sensor() and any(t['function']['name']=='navigate_to' for t in tools):
-            tools.append(EXPLORE_TOOL)
+            tools.append(explorer.EXPLORE_TOOL)
         return tools
 
     async def model_request(self, messages, tools, version):

@@ -147,7 +147,7 @@ default_tools_approval_mode = "prompt"
 
 ### MCP Instructions
 
-初始化时返回简短说明：这是一个 Terraria 游戏角色；开始时先调用 `guide`；使用 `execute_lua` 组合当前游戏 API；使用 `read_skill` 按需加载玩法知识；用 `get_events` 接收游戏内消息；用 `say` 在游戏内发言。
+初始化时返回简短说明：这是一个 Terraria 游戏角色；开始时先调用 `guide`；未知区域优先用可用的 `explore`；使用 `execute_lua` 组合其他游戏 API；使用 `read_skill` 按需加载玩法知识；用 `get_events` 接收游戏内消息；用 `say` 在游戏内发言。
 
 Instructions 只描述跨工具流程，不复制完整 API 文档。总长建议不超过 4096 字符，前 512 字符应能独立表达核心规则。
 
@@ -212,7 +212,7 @@ v1.2.1 区分宿主的 `supervisorStopRequest` 和动作本身的终态。宿主
 
 同步 `mine_target` 成功返回采矿动作回执。若提交阶段发生任务冲突，Lua 程序以失败结束，`value` 不包含 `submit_task` 的拒绝对象。任务已受理或受理结果不确定时，可按程序状态、`lastAction` 和任务结果判断进度。
 
-每次帮助查询占一次 Lua API 调用，受原有 Worker 预算、权限和取消限制。帮助由 Python Host 从当前握手和 Schema 生成，本身无游戏 RPC、动作或新鲜观察。MCP 回执仍附带已有运行时上下文。五个 MCP 工具保持原有接口。
+每次帮助查询占一次 Lua API 调用，受原有 Worker 预算、权限和取消限制。帮助由 Python Host 从当前握手和 Schema 生成，本身无游戏 RPC、动作或新鲜观察。MCP 回执仍附带已有运行时上下文。
 
 v1.2 的定向验证使用 `python/requirements-test.txt`。完整能力握手覆盖 30 个原子 API 和 5 个 Program Task API。测试检查 Schema 和引用闭包、字段正负例、Lua Worker 的调用预算以及 MCP Guide 到帮助的路径。离线 C# TCP 宿主用模拟数据验证玩家观察、不可用分支、挖掘回执和任务视图的跨语言投影。隔离 tModLoader 专用服验证了 15 个只读样本，涵盖全部 10 个观察 API。本次未重新执行实机变更动作，深层运动诊断和任务异常分支的类型由源码及测试样本核对。
 
@@ -232,11 +232,16 @@ DeepSeek Harness 的 MCP Client 不支持 MCP Prompts，因此 Guide 使用普�
 |---|---|---|
 | `guide` | 获取当前游戏 Agent Guide | `lua_agent.server_contract()` |
 | `execute_lua` | 执行完整 Lua 程序，组合查询、动作和任务 API | 现有 `lua_agent.TOOL` + `ToolExecutor` / `LuaRuntime` |
+| `explore` | 按 left、right、up、down 和简短 objective 探索未知区域 | 与内置 Agent 共享 `directional_explorer.run()` |
 | `read_skill` | 按 ID 读取一篇玩法 Skill | `gameplay_skills.TOOL` |
 | `get_events` | 有界长轮询游戏内指令和系统事件 | 现有 `Bridge` 事件 |
 | `say` | 让 AI Player 在游戏内发言 | `ServerAiBridge` 原生 AI chat 路径 |
 
 `execute_lua` 和 `read_skill` 的 Schema、描述与能力门禁复用当前代码。工具列表只暴露当前后端可用的功能。
+
+连接支持区域资源感知、方向落脚候选、场景观察、导航和持续任务协调时，优先调用 `explore`。首次 120×68 Tile 观察有新发现或变化时直接返回；观察不完整时停在原地。同一租约保留资源历史，调查结束后可沿原方向再次探索。根据 `explorationResult.returnReason`、`findings`、位移和各段任务回执决定下一步。`completed` 和 `budget_reached` 仅描述本趟探索。已知目的地使用 Navigation，调查资源可用 `mine_target` 和 `collect_drops`。
+
+`explore`、`execute_lua`、`say` 互斥，等待 `get_events` 可以并行。取消探索或关闭会话时，宿主按已分配的原生任务 ID 清理导航并核验终态和输入释放；结果不确定会隔离宿主。任务 origin 中的 MCP 请求、租约版本与 segment 可关联到原生 taskId 和释放回执。
 
 不增加 `move`、`mine`、`place` 等重复 MCP 原子工具；这些能力继续通过 `execute_lua` 调用现有 Lua API。
 
@@ -363,6 +368,8 @@ mcp_session_id
 
 使用全新的 DeepSeek Harness 对话，连接 MCP 后读取 Guide，完成一次观察和采矿任务，确认真实地形变化与背包结果；再用 Codex 新对话连接同一端点，完成只读观察与一项安全动作。
 
+隔离专服场景可运行 `./tests/verify_server_ai_native.ps1 -DirectionalExplore external -KeepProfile`。脚本客户端通过 stdio 调用真实 MCP Host，在复制世界中探索、调查矿物并续行。检查输出目录的 `external-explore.json` 和 `external-host.jsonl`，其中包含原生任务 ID、段末观察和 stdio EOF 时的释放回执。
+
 ## 12. 参考资料
 
 ### Numen
@@ -409,7 +416,7 @@ Host 只比较令牌哈希，验证 Host 和 Origin，限制请求体为 128 KiB
 
 ### 验收步骤
 
-1. 用新的 Inspector 会话初始化，检查工具列表恰有五项。调用 `guide`、`read_skill({"name":"mining_and_ores"})` 和 `execute_lua`，用 `return api('get_player_state',{})` 验证只读观察。第二个客户端在租约有效时应被拒绝。
+1. 用新的 Inspector 会话初始化，核对基础工具和当前能力支持的可选工具。调用 `guide`、`read_skill({"name":"mining_and_ores"})` 和 `execute_lua`，用 `return api('get_player_state',{})` 验证只读观察。第二个客户端在租约有效时应被拒绝。
 2. 从游戏本地发一条 AI 指令，通过 `get_events` 获取，再调用 `say`，检查游戏显示的作者与返回的 `authorSlot`。在空队列发起长轮询，取消后验证同一 Session 仍能调用工具。
 3. 在隔离存档中，用新 DSH 对话读 Guide 和挖矿 Skill，采集玩家授权的一格可达矿物，记录目标格、`lastAction.endEvidence` 与前后库存。让 DSH 结束 MCP 会话，再用新 Codex 对话读取同一端点的 Guide，执行只读观察和一项安全动作。如果旧租约仍在，按上文的 Host 停机步骤完成交接。
 4. 验证 Native 共存模式时，租约期间用本地聊天发送指令，应只进入外部事件队列。结束会话后观察安全交接，再发送一条新指令验证 Native Agent 恢复。结果未知时检查隔离状态及无重放证据。

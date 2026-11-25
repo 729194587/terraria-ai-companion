@@ -24,6 +24,7 @@ from starlette.responses import JSONResponse, Response
 import agent_diagnostics as diagnostics
 import agent_trace as tracing
 from control import BridgeError
+from external_brain import EXPLORER_GUIDE
 
 
 INSTRUCTIONS = (
@@ -32,6 +33,7 @@ INSTRUCTIONS = (
     '可用时用 memory 自主记忆或召回。用 get_events 读取玩家指令与系统消息，用 say 回复当前授权的游戏聊天。'
     '遵守玩家授权、运行预算及宿主回执，unknown 时停止变更。'
     '单次 execute_lua 取消会清理 Program；已受理的独立 Task 需显式取消。'
+    '工具列表包含 explore 时：' + EXPLORER_GUIDE
 )
 MAX_BODY = 128 * 1024
 MAX_REQUESTS = 16

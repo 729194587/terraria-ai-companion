@@ -174,6 +174,8 @@ class ServerAiBridge:
         # a say that is already awaiting its game-thread response on this socket.
         with self._wire_lock:
             if _guard is not None and not _guard():
+                if op == 'start':
+                    raise NotAdmittedError('Task authorization revoked before send')
                 raise BridgeError('AI reply superseded before send',status='superseded')
             if self._retired_binding:
                 raise BridgeError('Action identity/outcome unresolved: stale_binding')

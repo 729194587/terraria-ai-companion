@@ -5,6 +5,7 @@ from pathlib import Path
 import secrets
 import socket
 import sys
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -17,6 +18,8 @@ except ImportError as error:
     raise unittest.SkipTest('install python/requirements-mcp.txt to verify External Brain') from error
 
 import test_server_ai_agent as fixture
+import directional_explorer
+from external_brain import explorer_available
 from agent import is_server_ai_chat, run
 from control import BridgeError
 from external_brain import BrainHost
@@ -24,10 +27,54 @@ from external_mcp import ExternalMcp, token_digest
 
 
 MOVE = "return api('navigate_to_x',{targetX=180})"
+EXPLORE = dict(direction='right', objective='survey the corridor')
+
+
+class ExplorerGame(fixture.AiHost):
+    extra_capabilities = ('server_ai_navigation_v1', 'server_ai_program_tasks_v1', 'server_ai_tasks_v1',
+                          'server_ai_region_resources_v1', 'server_ai_scene_region_v1',
+                          'server_ai_resources_v1', 'server_ai_directional_landings_v1')
+
+    def __init__(self):
+        super().__init__()
+        self.scene = self.perception = True
+        self.complete = True
+        self.hits = []
+        self.x = 100
+        self.action_transform = self.arrive
+
+    def arrive(self, action):
+        if action['operation'] != 'navigate_to' or action['status'] != 'completed':
+            return
+        target = action['targetTask']
+        self.x = target['x'] - 10
+        arrival = dict(target=target, arrived=True, grounded=True, safeSupport=True, settled=True,
+                       x=self.x, feetY=target['y'])
+        action['evidence']['task'] = dict(taskId=action['actionId'], taskName='navigate_to', status='completed',
+            currentChild=None, result=dict(inputsReleased=True, effectVerified=True, evidence=arrival))
+
+    def query(self, operation, args):
+        if operation != 'observe_scene':
+            return super().query(operation, args)
+        data = dict(actor=dict(boundsWorldPixels=dict(x=self.x, width=20), feetY=200))
+        if args.get('scale') == 'region':
+            assert (args['width'], args['height'], args['layers']) == (120, 68, ['resources'])
+            data.update(resources=dict(items=self.hits, gameUpdate=33, complete=self.complete, truncated=False,
+                unknownCells=int(not self.complete), bounds=dict(minX=0, maxX=119, minY=0, maxY=67)),
+                coverage=dict(requestedTiles=8160, unknownByReason={}),
+                sample=dict(elapsedMilliseconds=1, samplingBudgetReached=False))
+        else:
+            data['landingRegions'] = dict(truncated=False, items=[dict(target=dict(
+                minPlayerLeftX=self.x, maxPlayerLeftX=self.x+600, surfaceY=200))])
+        return dict(available=True, worldSessionId=self.binding['world'], actorGeneration=self.binding['generation'],
+                    actorSlot=self.binding['slot'], gameUpdate=33, clock='server_utc_at_projection',
+                    observedAtUnixMs=1793070000123, data=data)
 
 
 class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        if self._testMethodName.startswith('test_explore'):
+            self.host_type = ExplorerGame
         await fixture.ServerAiAgentTests.asyncSetUp(self)
         if self._testMethodName == 'test_external_private_memory':
             from agent_memory import Notebook
@@ -93,6 +140,127 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
         self.chathost.emit(event_id, text)
         self.brain.receive(await asyncio.wait_for(self.events.get(), 2))
 
+    async def test_explore_schema_baseline_history_and_resumption(self):
+        await self.initialize()
+        listing = await self.http.post(self.url, headers=self.headers, json=self.request('tools/list', {}))
+        schema = next(t['inputSchema'] for t in listing.json()['result']['tools'] if t['name'] == 'explore')
+        self.assertEqual(set(schema['properties']), {'direction', 'objective'})
+        guide = (await self.tool('guide', {'full': True})).json()['result']['structuredContent']
+        self.assertIn('explore(direction,objective)', guide['instructions'])
+        for bad in ({}, dict(EXPLORE, direction='east'), dict(EXPLORE, objective=' '),
+                    dict(EXPLORE, objective='x'*241), dict(EXPLORE, distance=512)):
+            self.assertTrue((await self.tool('explore', bad)).json()['result']['isError'])
+        for cap in ExplorerGame.extra_capabilities:
+            with patch.dict(self.ai.hello, capabilities=[c for c in self.ai.hello['capabilities'] if c != cap]):
+                self.assertFalse(explorer_available(self.agent))
+        for op in ('observe_scene', 'navigate_to'):
+            with patch.object(self.ai, 'supported_atomic_operations', self.ai.supported_atomic_operations - {op}):
+                self.assertFalse(explorer_available(self.agent))
+        with patch.object(self.agent, 'program_tasks', None):
+            self.assertFalse(explorer_available(self.agent))
+        tile = dict(x=20, y=12)
+        self.aihost.hits = [dict(kind='chest', typeId=21, contentKey='chest', anchor=tile, tiles=[tile],
+                                 bounds=dict(**tile,width=1,height=1), status='complete')]
+
+        async def explore():
+            response = (await self.tool('explore', EXPLORE)).json()['result']
+            self.assertFalse(response['isError'], response)
+            return response['structuredContent']['explorationResult']
+
+        with patch.object(directional_explorer, 'run', wraps=directional_explorer.run) as shared:
+            first = await explore()
+            shared.assert_awaited_once()
+        self.assertEqual(('discovery', []), (first['returnReason'], first['segments']))
+        self.assertEqual(tile, first['findings'][0]['items'][0]['anchor'])
+        self.aihost.complete = False
+        self.assertEqual('observation_incomplete', (await explore())['returnReason'])
+        self.aihost.complete = True
+        # Inspect the discovered resource through the ordinary Lua entry, then resume.
+        self.assertFalse((await self.tool('execute_lua', dict(source="return api('get_player_state')"))).json()['result']['isError'])
+        with patch.object(directional_explorer, 'MAX_SEGMENTS', 2):
+            resumed = await explore()
+        self.assertEqual((2, []), (resumed['progress']['completedSegments'], resumed['findings']))
+        await self.http.delete(self.url, headers=self.headers)
+        await self.initialize()
+        self.assertEqual('discovery', (await explore())['returnReason'])
+        self.aihost.hits = []
+        self.assertEqual('absent_at_last_location', (await explore())['findings'][0]['changes'][0]['state'])
+
+    async def test_explore_cancel_during_admission(self):
+        await self.initialize()
+        self.aihost.mode = 'pending'
+        gate = threading.Event()
+        original = self.ai.task_request
+        def delayed_ack(op, task_id, **kwargs):
+            reply = original(op, task_id, **kwargs)
+            if op == 'start':
+                gate.wait(5)
+            return reply
+        with patch.object(self.ai, 'task_request', delayed_ack):
+            job = asyncio.create_task(self.tool('explore', EXPLORE, request_id=76))
+            await self.until(lambda: self.aihost.action is not None)
+            self.assertTrue((await self.tool('execute_lua', dict(source='return 1'))).json()['result']['isError'])
+            self.assertTrue((await self.tool('say', dict(text='busy'))).json()['result']['isError'])
+            self.assertFalse((await self.tool('get_events')).json()['result']['isError'])
+            await self.http.post(self.url, headers=self.headers, json=dict(jsonrpc='2.0',
+                method='notifications/cancelled', params=dict(requestId=76)))
+            gate.set()
+            await job
+            await self.until(lambda: not self.brain.execution_busy)
+        self.check_explorer_stop('external', True)
+
+    def check_explorer_stop(self, phase, released):
+        self.assertEqual(phase, self.brain.phase)
+        starts = [r['actionId'] for r in self.aihost.sent if r['op'] == 'start']
+        self.assertEqual([self.brain.last_outcome['taskId']], starts)
+        self.assertEqual(starts, [r['actionId'] for r in self.aihost.sent if r['op'] == 'cancel'])
+        self.assertEqual(released, self.brain.last_outcome['releaseConfirmed'])
+        if released:
+            self.assertTrue(self.brain.last_outcome['receipt']['inputsReleased'])
+            self.assertEqual('known', self.brain.last_outcome['receipt']['endEvidenceStatus'])
+        record = self.agent.program_tasks.records[starts[0]]['view']
+        self.assertEqual((1, 'explore'), (record['origin']['segment'], record['origin']['mcp_tool_name']))
+
+    async def test_explore_delete_during_navigation(self):
+        await self.initialize()
+        self.aihost.mode = 'pending'
+        job = asyncio.create_task(self.tool('explore', EXPLORE))
+        await self.until(lambda: self.aihost.polls > 0)
+        await self.http.delete(self.url, headers=self.headers)
+        await job
+        self.check_explorer_stop('native', True)
+
+    async def test_explore_revoked_before_wire_send(self):
+        await self.initialize()
+        entered, resume = threading.Event(), threading.Event()
+        send = self.ai.task_request
+        def queued(op, task_id, **kwargs):
+            if op == 'start':
+                entered.set()
+                resume.wait(5)
+            return send(op, task_id, **kwargs)
+        with patch.object(self.ai, 'task_request', queued):
+            job = asyncio.create_task(self.tool('explore', EXPLORE))
+            await self.until(entered.is_set)
+            closing = asyncio.create_task(self.http.delete(self.url, headers=self.headers))
+            await self.until(lambda: self.brain.phase == 'releasing')
+            resume.set()
+            await asyncio.gather(job, closing)
+        self.assertEqual('native', self.brain.phase)
+        self.assertFalse(any(r['op'] == 'start' for r in self.aihost.sent))
+        self.assertEqual('not_admitted', self.brain.last_outcome['receipt']['dispatchState'])
+
+    async def test_explore_http_disconnect_unconfirmed_isolates(self):
+        await self.initialize()
+        self.aihost.mode = 'cancel_unknown'
+        job = asyncio.create_task(self.tool('explore', EXPLORE))
+        await self.until(lambda: self.aihost.polls > 0)
+        job.cancel()
+        await asyncio.gather(job, return_exceptions=True)
+        await self.until(lambda: self.app.session is None)
+        self.check_explorer_stop('isolated', False)
+        self.assertEqual(409, (await self.initialize()).status_code)
+
     async def test_mod_managed_http_ready_and_parent_pipe_shutdown(self):
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0))
@@ -137,7 +305,7 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
             response = await self.tool(tool_name, args)
             return response.json()['result']
         guide = (await call('guide',full=True))['structuredContent']
-        self.assertEqual(self.agent.history[0]['content'],guide['instructions'])
+        self.assertTrue(guide['instructions'].endswith(self.agent.history[0]['content']))
         self.assertIn('值得主动记',guide['instructions'])
         self.assertEqual([],guide['privateNotes'])
         await self.game_chat('m1','矿石放东箱')

@@ -12,6 +12,34 @@ TRIP_SECONDS = 45
 STEP_PIXELS = 32 * 16
 
 
+EXPLORE_TOOL = atomic.tool('explore', 'Explore in a direction until a discovery, local obstruction or budget.',
+    {'direction': {'type':'string', 'enum':list(DIRECTIONS)},
+     'objective': {'type':'string','minLength':1,'maxLength':240}}, ['direction','objective'])
+
+
+class ExplorerContext:
+    """Shared observation and receipt format for lease-specific navigation hosts."""
+    @staticmethod
+    def receipt_fields(receipt):
+        return {key: receipt[key] for key in ('actionId','operation','status','reason','completed',
+                'effectVerified','inputsReleased','endEvidenceStatus','dispatchState') if key in receipt}
+
+    async def resource_scan(self, version):
+        reply = await atomic.dispatch(self.agent.bridge, 'observe_scene',
+            dict(scale='region', width=120, height=68, layers=['resources'], maxObjects=32))
+        if version != self.version:
+            raise asyncio.CancelledError
+        if not reply.get('valid'):
+            raise BridgeError('regional resource observation unavailable')
+        data = reply['data']
+        return dict(self.resources.observe(data['resources']), position=position(data['actor']),
+                    observedAtUnixMs=reply.get('observedAtUnixMs'), requestedTiles=data['coverage']['requestedTiles'],
+                    elapsedMilliseconds=data['sample']['elapsedMilliseconds'],
+                    samplingBudgetReached=data['sample']['samplingBudgetReached'],
+                    unknownByReason=data['coverage']['unknownByReason'],
+                    objectGroupingTruncated=data['resources'].get('objectGroupingTruncated'))
+
+
 def position(actor):
     return dict(leftX=actor['boundsWorldPixels']['x'], feetY=actor['feetY'])
 
@@ -65,7 +93,7 @@ async def landing_scene(bridge, direction):
     raise BridgeError('landingRegions.truncated after expanding maxRegions from 12 to 24')
 
 
-async def run(mode, direction, version, baseline):
+async def run(mode, direction, version, baseline, *, report_initial_findings=False):
     bridge = mode.agent.bridge
     binding = dict(bridge.binding)
     deadline = time.monotonic() + TRIP_SECONDS
@@ -99,6 +127,11 @@ async def run(mode, direction, version, baseline):
 
     for _ in range(MAX_SEGMENTS):
         authorized()
+        if not segments and report_initial_findings and (baseline['discoveries'] or baseline['changes']):
+            findings.append(dict(**scan_coverage(baseline), items=baseline['discoveries'], changes=baseline['changes']))
+            if baseline['complete']:
+                reason = detail = 'discovery'
+                break
         if not baseline['complete']:
             reason, detail = 'observation_incomplete', 'initial resource baseline incomplete'
             break

@@ -165,7 +165,7 @@ class TaskCoordinator:
         if self.on_ready is not None and not self.closed:
             self.on_ready()
 
-    async def submit(self, args, origin=None, *, task_id=None, authorize=None):
+    async def submit(self, args, origin=None, *, task_id=None, authorize=None, dispatch_guard=None):
         operation = args['operation']
         if operation == 'explore_frontier' and operation not in self.bridge.supported_atomic_operations:
             return atomic.not_admitted_result(operation, 'exploration_capability_unavailable')
@@ -207,19 +207,22 @@ class TaskCoordinator:
             correlation = {key: origin[key] for key in tracing.MCP_CORRELATION if origin and key in origin}
             if correlation:
                 monitor_context.run(tracing.context.set, correlation)
-            record['monitor'] = monitor_context.run(asyncio.create_task, self._run(record, authorize))
+            record['monitor'] = monitor_context.run(asyncio.create_task, self._run(record, authorize, dispatch_guard))
         # This shield is essential: Program cancellation does not cancel admission/Task.
         await record['ack'].wait()
         return copy.deepcopy(record['view'])
 
-    async def _run(self, record, authorize=None):
+    async def _run(self, record, authorize=None, dispatch_guard=None):
         try:
             view = record['view']
             if authorize is not None and not authorize():
                 self._finish(record, atomic.not_admitted_result(view['operation'], 'goal_authorization_revoked'))
                 return
-            reply = await asyncio.to_thread(self.bridge.task_request, 'start', view['taskId'],
-                operation=view['operation'], arguments=record['args']['arguments'], expiresAtUnixMs=int(time.time()*1000)+1800)
+            start = dict(operation=view['operation'], arguments=record['args']['arguments'],
+                         expiresAtUnixMs=int(time.time()*1000)+1800)
+            if dispatch_guard is not None:
+                start['_guard'] = dispatch_guard
+            reply = await asyncio.to_thread(self.bridge.task_request, 'start', view['taskId'], **start)
             if (reply.get('operation') != view['operation'] or reply.get('targetTask') != record['args']['arguments']
                     or reply.get('status') not in ('running', 'completed', 'failed', 'cancelled', 'timeout', 'unknown')):
                 raise BridgeError('Task admission target/operation mismatch; outcome unknown')
