@@ -643,6 +643,10 @@ class Agent:
         birth = death.get('respawn')
         if not birth or birth['generation'] != generation+1 or birth['generation'] != snapshot['generation']:
             raise BridgeError('Unverified native respawn')
+        if self.autonomy and self.autonomy.enabled:
+            authority = await self.autonomy.control_request('status')
+            if not authority['released']:
+                return
         successor = await asyncio.to_thread(connect)
         if successor.binding != dict(binding,generation=birth['generation']):
             successor.close()
@@ -1582,6 +1586,14 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
             if 'server_ai_autonomy_v1' in life_reader.hello['capabilities'] and 'autonomy_commands_v1' in bridge.hello['capabilities']:
                 agent.autonomy = AutonomousMode(agent, life_reader)
             agent.polling_server_messages = 'server_ai_messages_v1' in life_reader.hello['capabilities']
+        async def autonomy_notice(event_id, description):
+            try:
+                await asyncio.to_thread(bridge.command, 'autonomy_notice', text='Autonomy: '+description, chatId=event_id)
+            except BridgeError as error:
+                if error.status != 'superseded':
+                    raise
+
+        pending_stop_notice = None
         next_life_check = 0
         while True:
             if life_reader and loop.time() >= next_life_check:
@@ -1589,6 +1601,9 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
                 await agent.observe_life(life, connect_execution)
                 if agent.autonomy:
                     await agent.autonomy.pulse(life)
+                    if pending_stop_notice and agent.autonomy.phase == 'off' and agent.autonomy.released:
+                        await autonomy_notice(pending_stop_notice, agent.autonomy.status())
+                        pending_stop_notice = None
                 execution = agent.bridge
                 if execution._closed and not agent._waiting_respawn and life['generation']==execution.binding['generation']:
                     raise BridgeError('Execution connection closed without native death')
@@ -1600,12 +1615,9 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
                         description = await agent.autonomy.command(event['command'])
                     else:
                         description = 'unavailable on this backend'
-                    try:
-                        await asyncio.to_thread(bridge.command, 'autonomy_notice', text='Autonomy: '+description,
-                                                chatId=event['eventId'])
-                    except BridgeError as error:
-                        if error.status != 'superseded':
-                            raise
+                    pending_stop_notice = (event['eventId'] if agent.autonomy and
+                                           agent.autonomy.phase == 'stopping' else None)
+                    await autonomy_notice(event['eventId'], description)
                 elif (agent.autonomy and is_server_ai_chat(event)
                       and (agent.autonomy.enabled or not agent.autonomy.released or agent.autonomy.pending_manual)):
                     await agent.autonomy.manual(event)

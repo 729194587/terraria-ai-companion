@@ -29,6 +29,8 @@ internal sealed class AiReadOnlyProtocol
         internal bool Revoked { get; set; }
         internal bool Valid => !Revoked && !ControlSession.IsCancellationRequested;
         internal bool Released = true;
+        internal bool BackgroundBusy { get; set; }
+        internal bool InputsReleased => Released && !BackgroundBusy;
     }
     private Guid? autonomyController;
     private Identity controlIdentity;
@@ -46,7 +48,11 @@ internal sealed class AiReadOnlyProtocol
     internal void ObserveAutonomyIdentity(Identity current)
     {
         if (controlIdentity != null && (current == null || !ReferenceEquals(controlIdentity.Actor,current.Actor)
-            || controlIdentity.World != current.World || controlIdentity.Slot != current.Slot)) ResetAutonomy();
+            || controlIdentity.World != current.World || controlIdentity.Slot != current.Slot))
+        {
+            ResetAutonomy();
+            grant = null;
+        }
     }
 
     private object ControlAutonomy(Guid controller, string command, Identity current, CancellationToken disconnected)
@@ -62,12 +68,12 @@ internal sealed class AiReadOnlyProtocol
             autonomyEnabled = true;
         }
         if (command == "grant" && autonomyEnabled && current.CanAct && !disconnected.IsCancellationRequested
-            && (grant == null || grant.Released) && (grant == null || !grant.Valid || grant.Binding.generation != current.Generation))
+            && (grant == null || grant.InputsReleased) && (grant == null || !grant.Valid || grant.Binding.generation != current.Generation))
         {
             if (grant != null) grant.Revoked = true;
             grant = new(Guid.NewGuid(), new(ActorId(current), current.World, current.Generation, current.Slot), disconnected);
         }
-        return new { enabled = autonomyEnabled, released = grant?.Released != false,
+        return new { enabled = autonomyEnabled, released = grant?.InputsReleased != false,
             version = command == "grant" && current.CanAct && actions.CanSchedule(current) && grant?.Binding.generation == current.Generation && grant.Valid == true ? grant.Version.ToString("N") : null };
     }
 
@@ -201,7 +207,7 @@ internal sealed class AiReadOnlyProtocol
                 var messages=current.ReadMessages?.Invoke(lease.MessageCursor);
                 lease.MessageCursor=current.MessageSequence;
                 return JsonSerializer.Serialize(Reply(true,new { generation=current.Generation, ready=current.CanAct, death=current.LifeEvent,messages,
-                    autonomy=connection==autonomyController?new{enabled=autonomyEnabled,released=grant?.Released!=false}:null,
+                    autonomy=connection==autonomyController?new{enabled=autonomyEnabled,released=grant?.InputsReleased!=false}:null,
                     teamBosses=autonomyEnabled && connection==autonomyController && current.CanAct?current.ReadTeamBosses?.Invoke():null },lease.Binding));
             }
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)

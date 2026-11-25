@@ -42,6 +42,7 @@ class AutonomousMode:
         self.pending_manual = None
         self.objective = ''
         self.progress = {}
+        self.task_record = None
         self.error = None
         self.team_bosses = []
         self.resources = ResourceHistory()
@@ -60,6 +61,8 @@ class AutonomousMode:
 
     async def pause(self, command, phase):
         self.version = None
+        if self.phase == 'acting':
+            self.progress.update(status='interrupted', reason=phase)
         self.phase = phase
         self.last_attempt = None
         await self.control_request(command)  # Fence queued starts before waiting on host cleanup.
@@ -83,6 +86,8 @@ class AutonomousMode:
                 self.last_attempt = None
         else:
             await self.control_request('status')
+            if self.phase == 'stopping' and not self.enabled and self.released:
+                self.phase = 'off'
         return self.status()
 
     def status(self):
@@ -143,7 +148,16 @@ class AutonomousMode:
                 return
         self.worker = asyncio.create_task(self.cycle(self.version))
 
+    @staticmethod
+    def receipt_fields(receipt):
+        return {key: receipt[key] for key in ('actionId','operation','status','reason','completed',
+                'effectVerified','inputsReleased','endEvidenceStatus','dispatchState') if key in receipt}
+
     async def observe(self):
+        record = self.task_record
+        if record and record['done'].is_set():
+            self.progress.update(self.receipt_fields(record['view']['result']))
+            self.task_record = None
         bridge = self.agent.bridge
         scene = await atomic.dispatch(bridge, 'observe_scene', dict(layers=['resources','landingRegions','objects','hazards'],
                                       maxObjects=12, maxRegions=5, maxHazards=4))
@@ -163,7 +177,8 @@ class AutonomousMode:
     def scene_key(obs):
         # Game ticks, per-read scene IDs and observation timestamps are not discoveries.
         return (obs['localScene']['actor']['mapTile'], obs['player'].get('life'),
-                tuple((h['kind'],h['typeId'],h['anchor'],h['status']) for h in obs['resources']['items']),
+                tuple((h['kind'],h['typeId'],h['anchor'],h['status'],h.get('bounds'),h.get('tiles'),h.get('entityRef'))
+                      for h in obs['resources']['items']),
                 tuple(h['entityRef'] for h in obs['activeTeamBosses']),
                 tuple(h['entityRef'] for h in (obs['nearbyBosses'] or {}).get('candidates',())))
 
@@ -198,6 +213,7 @@ class AutonomousMode:
             messages = [dict(role='system',content=INSTRUCTIONS),
                         dict(role='user',content=json.dumps(obs,ensure_ascii=False))]
             self.phase = 'deciding'
+            remaining_reads = 8
             for _ in range(min(6,self.agent.max_model_calls)):
                 reply = await self.agent.llm.complete(messages, tools)
                 if version != self.version:
@@ -206,17 +222,28 @@ class AutonomousMode:
                 if not calls:
                     self.phase = 'resting'
                     return
-                if len(calls)!=1:
-                    raise ValueError('Choose one tool per decision step')
+                if len(calls) > 1 or calls[0]['function']['name'] in atomic.READS:
+                    messages.append(reply)
+                    for call in calls:
+                        operation = call['function']['name']
+                        if operation not in available or operation not in atomic.READS:
+                            value = dict(valid=False, reason='Submit one physical action in its own turn')
+                        elif remaining_reads == 0:
+                            value = dict(valid=False, reason='Observation budget exhausted')
+                        else:
+                            remaining_reads -= 1
+                            try:
+                                arguments = json.loads(call['function']['arguments'])
+                                value = await atomic.dispatch(self.agent.bridge, operation, arguments)
+                            except (atomic.PreDispatchRejected, ValueError, TypeError) as error:
+                                value = dict(valid=False, reason=str(error)[:240])
+                        messages.append(dict(role='tool', tool_call_id=call['id'], content=bounded(value, 10000)))
+                    continue
                 call = calls[0]
                 name = call['function']['name']
                 args = json.loads(call['function']['arguments'])
                 if name not in available or not isinstance(args,dict):
                     raise ValueError('Unavailable autonomy operation')
-                if name in atomic.READS:
-                    value = await atomic.dispatch(self.agent.bridge,name,args)
-                    messages.extend([reply,dict(role='tool',tool_call_id=call['id'],content=bounded(value,10000))])
-                    continue
                 objective = args.pop('objective')
                 if not isinstance(objective,str) or not 0<len(objective.strip())<=240:
                     raise ValueError('Expected a short objective')
@@ -229,12 +256,15 @@ class AutonomousMode:
                 self.last_attempt = attempt
                 self.objective = objective
                 self.phase = 'acting'
+                self.task_record = None
+                self.progress = dict(operation=args['operation'] if name=='submit_task' else name,
+                                     arguments=args, status='requested')
                 diagnostics.emit('autonomy_decision',objective=objective,operation=name,arguments=args,
                                  binding=obs['binding'],gameUpdate=obs['resources']['gameUpdate'])
                 receipt = await self.act(name,args,version)
-                self.progress = {k:receipt[k] for k in ('actionId','operation','status','reason','completed',
-                    'effectVerified','inputsReleased','endEvidenceStatus','dispatchState') if k in receipt}
-                self.progress['arguments'] = args
+                self.progress.update(self.receipt_fields(receipt))
+                if version != self.version:
+                    return
                 diagnostics.emit('autonomy_receipt',objective=objective,receipt=self.progress)
                 if receipt.get('status')=='unknown':
                     self.hold = True
@@ -266,6 +296,8 @@ class AutonomousMode:
         if not view.get('taskId'):
             return view
         record = self.mailbox.records[view['taskId']]
+        self.task_record = record
+        self.progress['actionId'] = view['taskId']
         await record['done'].wait()
         self.mailbox.consume(record['sequence'])
         return record['view']['result']

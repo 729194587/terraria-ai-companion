@@ -952,7 +952,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     private void CheckItem(Action<NativeItemInput.Intent> runNative)
     {
         ulong tick = Main.GameUpdateCount;
-        if (checking != null || fault != null || !ServerAiNativeActions.Owned(identity)
+        if (identity.Autonomy?.Valid == false || checking != null || fault != null || !ServerAiNativeActions.Owned(identity)
             || !NativeSurvival.Owns(player) || player.dead || player.ghost || player.noItems || player.CCed
             || !ItemContextValid() || !ValidWeapon()
             || !inputs.BeginItemCheck(tick)) return;

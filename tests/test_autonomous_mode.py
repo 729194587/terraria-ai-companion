@@ -4,7 +4,7 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'python'))
 from autonomous_mode import AutonomousMode
@@ -76,3 +76,37 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         await started.wait()
         await self.mode.command('off')
         self.mode.act.assert_not_awaited()
+
+    async def test_respawn_team_boss_preempts_rest_and_uses_new_decision(self):
+        mode=self.mode
+        await mode.command('on')
+        mode.progress=dict(actionId='old-boss',operation='boss_encounter',status='cancelled')
+        mode.next_check=float('inf')
+        mode.force_decision=False
+        fresh=dict(entityRef='fresh-root',teammateRef='online-ally')
+        self.scene['activeTeamBosses']=[fresh]
+        mode.tools.return_value=[dict(function=dict(name='submit_task'))]
+        call=dict(objective='assist my teammate',operation='boss_encounter',arguments=dict(entityRef='fresh-root'))
+        self.agent.llm.complete.return_value=dict(tool_calls=[dict(function=dict(name='submit_task',arguments=json.dumps(call)))])
+        mode.act=AsyncMock(return_value=dict(status='completed',inputsReleased=True,actionId='new-boss'))
+        await mode.pulse(dict(self.life,teamBosses=[fresh]))
+        await mode.worker
+        observed=json.loads(self.agent.llm.complete.await_args.args[0][1]['content'])
+        self.assertEqual(observed['activeTeamBosses'],[fresh])
+        mode.act.assert_awaited_once_with('submit_task',dict(operation='boss_encounter',arguments=dict(entityRef='fresh-root')),'v3')
+        self.assertEqual(mode.progress['actionId'],'new-boss')
+
+    async def test_batched_reads_cannot_start_batched_actions(self):
+        await self.mode.command('on')
+        def call(name):
+            return dict(id=name,function=dict(name=name,arguments='{}'))
+        self.mode.tools.return_value=[dict(function=dict(name=n)) for n in ('get_player_state','navigate_to')]
+        self.agent.llm.complete.side_effect=[dict(role='assistant',tool_calls=[call('get_player_state'),call('navigate_to')]),
+                                             dict(content='rest')]
+        self.mode.act=AsyncMock()
+        with patch('autonomous_mode.atomic.dispatch',new_callable=AsyncMock,return_value={'valid':True}) as dispatch:
+            await self.mode.pulse(self.life)
+            await self.mode.worker
+            dispatch.assert_awaited_once_with(self.agent.bridge,'get_player_state',{})
+        self.mode.act.assert_not_awaited()
+        self.assertEqual(len(self.agent.llm.complete.await_args.args[0]),5)

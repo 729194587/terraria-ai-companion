@@ -147,7 +147,7 @@ internal sealed class AiAtomicActions
     internal bool SupportsContainers=>executor?.SupportsContainers==true;
     private bool CombatActive=>active?.Operation is CombatProtocol.Operation or CombatProtocol.Boss;
     internal Func<bool> MaintenanceBusy {get;set;}
-    internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = lastCombat = blockedBody = reflexBackoff = null; suppressedRef=cancelledCombatRef=null; }
+    internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = lastCombat = blockedBody = reflexBackoff = uncertainManual = null; suppressedRef=cancelledCombatRef=null; }
     internal void Forget(Guid connection) { if (active?.Owner == connection) active.Cancel = true; }
     private static bool Matches(Entry e, AiReadOnlyProtocol.Identity current) => e!=null && current != null
         && ReferenceEquals(e.Actor, current.Actor) && e.World == current.World && e.Generation == current.Generation && e.Slot == current.Slot;
@@ -187,6 +187,12 @@ internal sealed class AiAtomicActions
         if(!SupportsCombat||current?.CanAct!=true)return;
         if(entityRef==null||CombatActive||!ReflexTargetAllowed(current,entityRef)
             ||Matches(reflexBackoff,current)&&current.GameUpdate<reflexBackoffUntil)return;
+        var owner = active?.Autonomy ?? current.Autonomy;
+        if (owner != null)
+        {
+            if (!owner.Valid || owner.Binding.generation != current.Generation || owner.BackgroundBusy) return;
+            current = current with { Autonomy = owner };
+        }
         if(CombatConflict(current,entityRef,out var admission)!=null)return;
         Admit(Guid.Empty,Guid.NewGuid().ToString("N"),actorId,current,CombatProtocol.Operation,
             JsonSerializer.SerializeToElement(new{entityRef,threat}),35000,default,admission:admission);
@@ -250,7 +256,7 @@ internal sealed class AiAtomicActions
         bool combat=operation==CombatProtocol.Operation;
         if(operation==CombatProtocol.Boss && executor?.SupportsBossEncounter!=true)return new(Error:"unsupported_operation");
         if(BodyBlocked(current))return new(Error:"body_release_unconfirmed");
-        if (current.Autonomy != null && (active != null || !current.Autonomy.Released)) return new(Error:"action_busy");
+        if (current.Autonomy != null && (active != null || !current.Autonomy.InputsReleased)) return new(Error:"action_busy");
         if(active!=null&&!combat)return new(Error:"action_busy");
         bool selecting = operation == "select_hotbar_slot";
         bool container = IsContainerOperation(operation);

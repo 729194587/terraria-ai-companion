@@ -96,16 +96,28 @@ internal sealed partial class NativeCombatWorld
         return new(ok && released?"completed":"unknown",ok && released?"native_summon_verified":"summon_native_unconfirmed",evidence,released,ok && released);
     }
 
+    internal static AiReadOnlyProtocol.AutonomyGrant LoadoutGrant(Identity frame) =>
+        frame != null && MatchesLoadout(frame) ? configuredActor.Autonomy : null;
+
     internal static void TickMaintenance(Identity frame,bool busy)
     {
         try
         {
             if(Maintaining)
             {
-                current.AdvanceMaintenance(frame,busy);
+                if (current.ActorBinding.Autonomy?.Valid == false)
+                    current.EndMaintenance(false);
+                else
+                    current.AdvanceMaintenance(frame,busy);
                 return;
             }
             if(summonRole==null || maintenanceUnknown || !MatchesLoadoutFrame(frame) || frame.GameUpdate<nextCheck)return;
+            var owner = LoadoutGrant(frame);
+            if (owner != null)
+            {
+                if (!owner.Valid || !owner.InputsReleased) return;
+                frame = frame with { Autonomy = owner };
+            }
             nextCheck=frame.GameUpdate+12;
             if(SummonPaused(frame)){maintenanceStatus="summon_paused";return;}
             if(busy || !ServerAiNativeActions.BodyIdle(frame)){maintenanceStatus="body_busy";return;}
@@ -117,6 +129,7 @@ internal sealed partial class NativeCombatWorld
                 maintenance=true,slot=candidate.Slot,item=candidate.Item,started=frame.GameUpdate,
                 restoreSlot=p.selectedItem,restoreItem=p.HeldItem,
                 Weapon=new(candidate.Slot,candidate.Item.type,candidate.Item.Name)};
+            if (owner != null) owner.BackgroundBusy = true;
             current=cast;
             maintenanceStatus="summon_cast";
             if(p.selectedItem!=cast.slot)ActorItemUse.Select(p,frame.World,frame.Generation,cast.slot);
@@ -168,6 +181,8 @@ internal sealed partial class NativeCombatWorld
             if(restore && Owned() && ValidWeapon() && restoreSlot!=slot && restoreSlot is >=0 and <10
                 && ReferenceEquals(player.inventory[restoreSlot],restoreItem))
                 ActorItemUse.Select(player,identity.World,identity.Generation,restoreSlot);
+            if (identity.Autonomy != null && Owned() && ServerAiNativeActions.Released(player))
+                identity.Autonomy.BackgroundBusy = false;
         }
         catch(Exception e)
         {

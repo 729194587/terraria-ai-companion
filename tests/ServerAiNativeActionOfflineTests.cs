@@ -46,8 +46,9 @@ public static class ServerAiNativeActionOfflineTests
     public static void Autonomy()
     {
         var f = new Fixture();
+        using var session = new CancellationTokenSource();
         JsonElement Request(object request) => JsonDocument.Parse(f.Protocol.Handle(f.Owner,
-            JsonSerializer.Serialize(request), () => f.Current)).RootElement.Clone();
+            JsonSerializer.Serialize(request), () => f.Current, session.Token)).RootElement.Clone();
         JsonElement Control(string command) => Request(new {v=1,id="r",op="autonomy",binding=f.Binding,command}).GetProperty("data");
         JsonElement Start(string id,string version) => Request(new {v=1,id="r",op="start",binding=f.Binding,
             actionId=id,operation="mine_tile",arguments=new{x=20,y=10},autonomyVersion=version,
@@ -62,6 +63,17 @@ public static class ServerAiNativeActionOfflineTests
         f.Tick();
         Check(f.Native.Cancels==1 && Control("status").GetProperty("released").GetBoolean(),"release confirmed");
         Check(Start(Guid.NewGuid().ToString("N"),version).GetProperty("error").GetString()=="autonomy_revoked","late start refused");
+        string renewed=Control("grant").GetProperty("version").GetString();
+        Check(renewed!=version,"renewal uses a fresh version");
+        session.Cancel();
+        Check(Start(Guid.NewGuid().ToString("N"),renewed).GetProperty("error").GetString()=="autonomy_revoked",
+            "disconnected control session cannot dispatch");
+        f.Current=f.Current with {Generation=2};
+        Check(Start(Guid.NewGuid().ToString("N"),renewed).GetProperty("error").GetString()=="stale_binding",
+            "old generation refused");
+        f.Current=f.Current with {Generation=1};
+        f.Protocol.ObserveAutonomyIdentity(null);
+        Check(!Control("status").GetProperty("enabled").GetBoolean(),"identity loss clears authorization");
         string manual=f.Start();
         Control("off"); f.Tick();
         Check(f.Action(manual).GetProperty("status").GetString()=="running","off leaves manual work running");

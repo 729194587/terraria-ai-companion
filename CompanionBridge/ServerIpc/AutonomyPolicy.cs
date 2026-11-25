@@ -42,7 +42,7 @@ internal static class AutonomyPolicy
         {
             if (operation is "mine_tile" or "hammer_tile" or "mine_target") return ProtectedTile(x,y);
             var tile = Main.tile[x,y];
-            if (operation == "open_container" && tile.HasTile && tile.TileType is TileID.Containers or TileID.Containers2)
+            if (operation is ("open_container" or "interact_tile") && tile.HasTile && tile.TileType is TileID.Containers or TileID.Containers2)
             {
                 var anchor = Terraria.ObjectData.TileObjectData.TopLeft(x,y);
                 if (WorldGen.IsChestRigged(anchor.X,anchor.Y)) return true;

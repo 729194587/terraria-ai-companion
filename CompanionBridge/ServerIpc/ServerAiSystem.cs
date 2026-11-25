@@ -129,7 +129,8 @@ public sealed class ServerAiSystem : ModSystem
                 {
                     var threat=NativeCombatWorld.Threat(actor,r=>actions.ReflexTargetAllowed(actor,r));
                     threatened=threat.HasValue;
-                    server.Reflex(actor,threat?.entityRef,threat?.threat);
+                    if (threat.HasValue)
+                        server.Reflex(actor with { Autonomy = NativeCombatWorld.LoadoutGrant(actor) },threat.Value.entityRef,threat.Value.threat);
                 }
                 catch(Exception e){Mod.Logger.Error("Combat threat evaluation failed.",e);}
             }:null);
