@@ -89,6 +89,44 @@ internal static class ExcavationSelfTest
             Set(x+2,y-2,TileID.Copper);
             var half=Main.tile[x+2,y-2];half.IsHalfBlock=true;
             var seed=ExcavationCell.Capture(x+2,y-2);
+            var failures=new ExcavationStanceSearch();
+            var batch=new[]{seed};
+            var work=(x-6,x+8,y-8,y+4);
+            var origin=(x-22,x+22,y-17,y+11);
+            var original=pose.State;
+            var landing=new LandingRegion(original.Px-2,original.Px+2,y*16);
+            var physics=NativeNavigation.Parameters(player);
+            int capability=ActorMining.CapabilityStamp(player);
+            failures.Observe(work,origin,capability,physics,1);
+            failures.Attempt(landing,batch);
+            failures.RejectOpeningMove(landing);
+            check(failures.OpeningMoveLimited(new(landing.MinPlayerLeftX+2,landing.MaxPlayerLeftX+2,y*16))
+                &&!failures.OpeningMoveLimited(new(landing.MinPlayerLeftX,landing.MaxPlayerLeftX,y*16+16)),
+                "Adjacent ore children must remember an unsuccessful opening move but allow a different floor.");
+            failures.Charge(900,true);
+            player.position.X+=16;
+            var rolled=ServerAiNavigation.Observe(player).State;
+            check(new NativeMotionWorld(original).TerrainSignature(original)!=new NativeMotionWorld(rolled).TerrainSignature(rolled)
+                &&!failures.Observe(work,origin,ActorMining.CapabilityStamp(player),NativeNavigation.Parameters(player),1)
+                &&failures.Tried(landing,batch)&&failures.Attempts==1&&failures.TravelExhausted,
+                "Crossing one tile rolls the route signature but must retain the failed stance and spent travel budget.");
+            player.position.X=original.Px;
+            check(failures.Tried(new(landing.MinPlayerLeftX+8,landing.MaxPlayerLeftX+8,y*16),batch)
+                &&!failures.Tried(new(landing.MinPlayerLeftX+16,landing.MaxPlayerLeftX+16,y*16),batch)
+                &&!failures.Tried(new(landing.MinPlayerLeftX,landing.MaxPlayerLeftX,y*16-8),batch)
+                &&!failures.Tried(landing,new[]{ExcavationCell.Capture(x+3,y-2)}),
+                "Near-identical landings for one batch share an attempt; other positions, floors and batches remain eligible.");
+            Set(x+1,y-1,TileID.Dirt);
+            check(failures.Observe(work,origin,capability,physics,1)&&!failures.Tried(landing,batch)
+                &&failures.TravelExhausted,"A real obstacle change reopens candidates without refunding spent work.");
+            Set(x+1,y-1,-1);
+            failures.Observe(work,origin,capability,physics,1);
+            failures.Attempt(landing,batch);
+            check(failures.Observe(work,origin,capability+1,physics,1)&&failures.Attempts==0,
+                "Changing mining capability invalidates prior work-position refusals.");
+            failures.Attempt(landing,batch);
+            check(failures.Observe(work,origin,capability+1,physics,0)&&failures.Attempts==0,
+                "Removing a pending target invalidates the previous batch scope.");
             var single=new NativeMineTargetWorld(identity,JsonSerializer.SerializeToElement(new{x=seed.X,y=seed.Y}));
             var copper=NativeExcavation.Choose(identity,pose.State,new[]{seed},
                 new LocalTerrainView(CompanionBridge.Common.Systems.TerrainReader.ReadEnvironment),ordered:false);

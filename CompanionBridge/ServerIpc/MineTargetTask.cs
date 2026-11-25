@@ -6,6 +6,7 @@ namespace CompanionBridge.ServerIpc;
 internal interface IMineTargetWorld : INavigationWorld
 {
     bool CanMine();
+    void RejectMove(JsonElement arguments){}
     bool INavigationWorld.Arrived()=>CanMine();
     string INavigationWorld.NoRouteReason=>"no_safe_mining_stance_in_local_window";
     JsonElement MineArguments();
@@ -24,6 +25,9 @@ internal sealed class MineTargetTask : AutonomousNavigationTask
     {
         if(!compactHistory)return base.ChildView(slot);
         var result=slot.Record.Result;
+        if(slot.Task is NativeActionTask move&&move.Name=="navigate_to_landing_region"
+            &&result.InputsReleased&&result.Status is ("failed" or "timeout"))
+            world.RejectMove(move.Arguments);
         return new{operation=slot.Record.Name,result.Status,result.Reason,result.InputsReleased,result.EffectVerified,
             arguments=(slot.Task as NativeActionTask)?.Arguments};
     }

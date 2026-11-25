@@ -25,7 +25,7 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         internal object View()=>new{x=Cell.X,y=Cell.Y,typeId=Cell.Type,status=Status,proof=Proof,changeReason=ChangeReason};
     }
 
-    private sealed record WorkPose(LandingRegion Region,int Coverage,float Mining,float LowerBound);
+    private sealed record WorkPose(LandingRegion Region,ExcavationCell[] Batch,int Coverage,float Mining,float LowerBound);
     private const int DiscoveryLimit=128;
     private readonly List<Target> targets=new();
     private readonly Queue<(int X,int Y)> frontier=new();
@@ -34,7 +34,12 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
     private ExcavationCell openingTarget;
     private bool discoveryTruncated,routeBudgetReached;
     private string openingFailure;
-    private readonly HashSet<LandingRegion> failedStances=new();
+    private readonly ExcavationStanceSearch stanceSearch=new();
+    private ulong lastUpdate;
+    private PhysicsState? exhaustedAt;
+    private readonly HashSet<LandingRegion> localRouteProbes=new();
+    private (int Left,int Right,int Top,int Bottom) departureBounds;
+    private (int Left,int Right,int Top,int Bottom) workBounds;
     private readonly Player player=(Player)identity.Actor;
     private readonly int initialLife=((Player)identity.Actor).statLife;
     private CompanionTask active;
@@ -44,7 +49,6 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
     private IEnumerator<int> search;
     private WorkPose destination;
     private PhysicsState searchStart;
-    private PhysicsParameters searchPhysics;
     private long terrain;
     private int capability,searchTargetCount,invalidations,sequence,seedX,seedY,seedType;
     private string stage="preflight",outcome="running";
@@ -87,17 +91,39 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         }
     }
 
-    internal override void Start(AiReadOnlyProtocol.Identity frame)=>stage="discover";
+    internal override void Start(AiReadOnlyProtocol.Identity frame)
+    {
+        stage="discover";lastUpdate=frame.GameUpdate;
+        var departure=ServerAiNavigation.Observe(player).State;
+        int x=(int)((departure.Px+10)/16),y=(int)((departure.Py+42)/16);
+        departureBounds=(x-22,x+22,y-17,y+11);
+    }
 
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)
     {
         if(NativeNavigationWorld.CheckHazards(identity,initialLife) is {} danger)return Stop(frame,"cancelled",danger);
         if(!ActorMining.Healthy(player)||stage is not ("mining" or "opening")&&!GameNavigation.Ordinary(player))
             return Stop(frame,"cancelled","actor_cannot_mine");
+        ulong elapsed=frame.GameUpdate-lastUpdate;
+        lastUpdate=frame.GameUpdate;
+        if(stage is "planning" or "navigating" or "approaching" or "opening")
+        {
+            stanceSearch.Charge(elapsed,stage!="opening"||active?.Phase=="navigating");
+            if(stanceSearch.WorkExhausted)return Stop(frame,"timeout","excavation_work_search_budget_exhausted");
+            if(stanceSearch.TravelExhausted&&(stage is "navigating" or "approaching"||stage=="opening"&&active?.Phase=="navigating"))
+            {
+                var stopped=base.Stop(frame,"timeout","excavation_route_search_budget_exhausted");
+                if(stopped.Status=="unknown"||!stopped.InputsReleased)
+                    return stopped with{Evidence=Evidence(outcome="unknown")};
+                routeBudgetReached=true;openingTarget=null;active=null;stage="observe";
+            }
+        }
         if(stage=="discover")
         {
             Discover();
             if(frontier.Count>0)return Running();
+            workBounds=(targets.Min(t=>t.Cell.X)-8,targets.Max(t=>t.Cell.X)+8,
+                targets.Min(t=>t.Cell.Y)-10,targets.Max(t=>t.Cell.Y)+8);
             stage="observe";
         }
         if(active!=null)
@@ -131,14 +157,14 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
                 if(result.Status!="completed"&&result.Reason!="excavation_needs_replan"&&!changedDuringRun)
                     return Finish(result.Status,result.Reason);
                 if(result.Evidence is MiningRunReceipt {verified.Length:>0})
-                {failedStances.Clear();invalidations=0;}
+                {stanceSearch.Mined();invalidations=0;}
                 else if(++invalidations>=AutonomousNavigationTask.MaxConsecutiveInvalidations)
                     return Finish("failed","excavation_replan_budget_exhausted");
             }
             else if(stage=="opening")
             {
                 openingTarget=null;
-                if(result.Status=="completed"){attemptedOpenings.Clear();failedStances.Clear();}
+                if(result.Status=="completed"){stanceSearch.Mined();}
                 else if(result.Status=="failed"&&result.Reason!="no_safe_mining_stance_in_local_window")
                     openingFailure=result.Reason;
                 else if(result.Status=="timeout"&&result.InputsReleased){routeBudgetReached=true;openingFailure=result.Reason;}
@@ -146,9 +172,8 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             }
             else if(result.Status!="completed")
             {
-                if(result.Status!="failed")return Finish(result.Status,result.Reason);
-                failedStances.Add(destination.Region);
-                if(failedStances.Count>=6)routeBudgetReached=true;
+                if(result.Status=="timeout")routeBudgetReached=true;
+                else if(result.Status!="failed")return Finish(result.Status,result.Reason);
             }
             stage="observe";
         }
@@ -166,16 +191,16 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         var physics=NativeNavigation.Parameters(player);
         int currentCapability=ActorMining.CapabilityStamp(player);
         long currentTerrain=world.TerrainSignature(pose);
-        if(search==null||pose!=searchStart||physics!=searchPhysics||currentTerrain!=terrain||currentCapability!=capability
-            ||searchTargetCount!=pending.Length)
+        // The navigation graph follows the actor. Negative work-position evidence instead
+        // watches world coordinates around the vein and the original approach.
+        bool changed=RefreshStances(currentCapability,physics,pending.Length);
+        if(changed||search==null||pose!=searchStart||currentTerrain!=terrain)
         {
             int? next=pose==searchStart&&currentCapability==capability&&pending.Length==expectedPending?continuationSlot:null;
             continuationSlot=null;
-            if(currentTerrain!=terrain||currentCapability!=capability||searchTargetCount!=pending.Length)
-            {failedStances.Clear();routeBudgetReached=false;}
-            if(currentCapability!=capability||searchTargetCount!=pending.Length){attemptedOpenings.Clear();openingFailure=null;}
+            if(changed||pose!=searchStart||currentTerrain!=terrain)localRouteProbes.Clear();
             ReleaseSearch();
-            searchStart=pose;searchPhysics=physics;terrain=currentTerrain;capability=currentCapability;searchTargetCount=pending.Length;
+            searchStart=pose;terrain=currentTerrain;capability=currentCapability;searchTargetCount=pending.Length;
             var here=world.SafeLanding(pose)?NativeExcavation.Choose(identity,pose,pending,new(TerrainReader.ReadEnvironment),ordered:false,continuationSlot:next):null;
             if(here!=null)
             {
@@ -198,18 +223,24 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         var timer=Stopwatch.StartNew();
         for(int work=0;work<16&&timer.Elapsed.TotalMilliseconds<3;work++)
         {
-            if(search.MoveNext())continue;
+            if(!stanceSearch.TravelExhausted&&search.MoveNext())continue;
+            if(stanceSearch.TravelExhausted){routeBudgetReached=true;destination=null;}
             ReleaseSearch();
             if(destination==null)
             {
                 openingTarget=pending.Where(c=>!attemptedOpenings.Contains(c))
                     .OrderBy(c=>Math.Abs(c.X*16-player.Center.X)+Math.Abs(c.Y*16-player.Center.Y)).FirstOrDefault();
-                if(openingTarget==null)return Finish(routeBudgetReached?"timeout":"failed",
-                    routeBudgetReached?"excavation_route_search_budget_exhausted":openingFailure??"excavation_no_work_position");
+                if(openingTarget==null)
+                {
+                    if(routeBudgetReached)return Finish("timeout","excavation_route_search_budget_exhausted");
+                    if(discoveryTruncated)return Finish("timeout","excavation_discovery_budget_exhausted");
+                    return Finish("failed",openingFailure??"excavation_no_work_position");
+                }
                 StartSingle(openingTarget);
                 return Running();
             }
             var region=destination.Region;
+            stanceSearch.Attempt(region,destination.Batch);
             var arguments=JsonSerializer.SerializeToElement(new{minPlayerLeftX=region.MinPlayerLeftX,
                 maxPlayerLeftX=region.MaxPlayerLeftX,surfaceY=region.SurfaceY});
             stage=InLocalSearch(pose,region)?"navigating":"approaching";
@@ -220,12 +251,32 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         return Running();
     }
 
+    private bool RefreshStances(int currentCapability,PhysicsParameters physics,int pending)
+    {
+        if(!stanceSearch.Observe(workBounds,departureBounds,currentCapability,physics,pending))return false;
+        exhaustedAt=null;localRouteProbes.Clear();attemptedOpenings.Clear();openingFailure=null;routeBudgetReached=false;
+        if(openingTarget!=null)attemptedOpenings.Add(openingTarget);
+        return true;
+    }
+
     private void StartSingle(ExcavationCell cell)
     {
         attemptedOpenings.Add(cell);
         openingTarget=cell;
         var goal=JsonSerializer.SerializeToElement(new{x=cell.X,y=cell.Y});
-        var single=new NativeMineTargetWorld(identity,goal,(x,y)=>targets.Any(t=>t.Cell.X==x&&t.Cell.Y==y),knowledge);
+        // A protected single-target child may edit terrain before a failed move.
+        // Bind that refusal to the post-edit terrain, not the parent's last observation.
+        ulong? observedUpdate=null;
+        ExcavationStanceSearch CurrentSearch()
+        {
+            if(observedUpdate!=Main.GameUpdateCount)
+            {
+                RefreshStances(ActorMining.CapabilityStamp(player),NativeNavigation.Parameters(player),searchTargetCount);
+                observedUpdate=Main.GameUpdateCount;
+            }
+            return stanceSearch;
+        }
+        var single=new NativeMineTargetWorld(identity,goal,(x,y)=>targets.Any(t=>t.Cell.X==x&&t.Cell.Y==y),knowledge,CurrentSearch);
         active=new MineTargetTask(taskId+"/opening-"+(++sequence),single,native,compactHistory:true);
         stage="opening";
     }
@@ -239,7 +290,8 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
 
     private IEnumerable<int> FindWorkPosition(PhysicsState start,NativeMotionWorld world,PhysicsParameters physics,ExcavationCell[] pending)
     {
-        if(failedStances.Count>=6||attemptedOpenings.Count>0)yield break;
+        if(stanceSearch.Attempts>=6){routeBudgetReached=true;yield break;}
+        if(exhaustedAt==start)yield break;
         var candidates=new List<WorkPose>();
         WorkPose approach=null;
         int left=(pending.Min(c=>c.X)-6)*16-10,right=(pending.Max(c=>c.X)+7)*16-10;
@@ -253,11 +305,12 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             // A distant landing is a travel goal only. The actor's collision window
             // cannot validate it; probe the destination in its own native window.
             bool local=InLocalSearch(start,region);
-            if(failedStances.Contains(region)||region.Contains(start)
+            if(region.Contains(start)
                 ||!(local?world:new NativeMotionWorld(stance)).SafeLanding(stance))continue;
             var quote=NativeExcavation.Choose(identity,stance,pending,new(TerrainReader.ReadEnvironment),ordered:false);
             if(quote==null)continue;
-            var candidate=new WorkPose(region,quote.Coverage,quote.TotalUpdates,region.Distance(start)/physics.MaxRun);
+            if(stanceSearch.Tried(region,quote.Cells)){routeBudgetReached=true;continue;}
+            var candidate=new WorkPose(region,quote.Cells,quote.Coverage,quote.TotalUpdates,region.Distance(start)/physics.MaxRun);
             if(local)candidates.Add(candidate);
             else if(approach==null||candidate.Coverage>approach.Coverage||candidate.Coverage==approach.Coverage
                 &&candidate.LowerBound+candidate.Mining<approach.LowerBound+approach.Mining)approach=candidate;
@@ -266,13 +319,14 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         knowledge.Bind(player,identity.World,identity.Generation,identity.Slot);
         knowledge.ObservePhysics(physics);
         knowledge.Search.Scope(terrain,physics,(long)Main.GameUpdateCount);
-        int tried=0;
         foreach(var candidate in candidates.OrderByDescending(c=>c.Coverage).ThenBy(c=>c.LowerBound+c.Mining))
         {
             float x=(candidate.Region.MinPlayerLeftX+candidate.Region.MaxPlayerLeftX)/2;
 
-            if(tried>=32){routeBudgetReached=true;break;}
-            tried++;
+            // Starting the same search after a child settles must not spend the
+            // same 32 route probes again. A different origin can have new routes.
+            if(localRouteProbes.Contains(candidate.Region))continue;
+            if(localRouteProbes.Count>=32){routeBudgetReached=true;break;}
             var route=SafeGroundWalk.TryPlan(start,x,x>=start.Px?1:-1,physics,world,candidate.Region);
             yield return 0;
             if(route?.ReachedGoal!=true)
@@ -284,15 +338,16 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
                     route=navigator.Advance(budgetMs:2);
                     yield return 0;
                 }
-                if(!navigator.Finished||route?.TimeBudgetReached==true)routeBudgetReached=true;
+                if(!navigator.Finished||route?.TimeBudgetReached==true||route?.SearchExit=="safe_partial")routeBudgetReached=true;
             }
-            if(route?.ReachedGoal!=true)continue;
+            if(route?.ReachedGoal!=true){localRouteProbes.Add(candidate.Region);continue;}
             destination=candidate;
             yield break;
         }
         // Travel through the normal rolling navigator. On arrival Tick observes the
         // live pose and quotes the remaining ore anew before starting a mining run.
         destination??=approach;
+        if(destination==null)exhaustedAt=start;
     }
 
     protected override object ChildView(TaskSlot slot)
@@ -329,7 +384,7 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             else if(t.Proof!=null&&present)t.ChangeReason="replaced_after_verified_cut";
         }
     }
-    private object Evidence(string outcome)=>new{outcome,seedX,seedY,typeId=seedType,discoveryComplete=!discoveryTruncated&&frontier.Count==0,targets=targets.Select(t=>t.View()).ToArray()};
+    private object Evidence(string outcome)=>new{outcome,seedX,seedY,typeId=seedType,workSearchUpdates=stanceSearch.WorkUpdates,routeSearchUpdates=stanceSearch.TravelUpdates,stanceAttempts=stanceSearch.Attempts,discoveryComplete=!discoveryTruncated&&frontier.Count==0,targets=targets.Select(t=>t.View()).ToArray()};
     private Result Finish(string status,string reason)
     {
         ReleaseSearch();RefreshTargets();
@@ -361,5 +416,68 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         // Only copy already-owned strike receipts. The replacement binding
         // must never be used to refresh the old world's remaining tiles.
         if(hadChild)Record(lastResult);
+    }
+}
+
+// Failure scope and attempt accounting are independent of the rolling route planner.
+internal sealed class ExcavationStanceSearch
+{
+    private (long Terrain,int Capability,PhysicsParameters Physics,int Pending)? scope;
+    private readonly List<(LandingRegion Region,ExcavationCell[] Batch)> attempts=new();
+    private readonly List<LandingRegion> failedOpeningMoves=new();
+    internal int Attempts=>attempts.Count;
+
+    internal bool OpeningMoveLimited(LandingRegion region)=>TravelExhausted||failedOpeningMoves.Count>=16
+        ||failedOpeningMoves.Any(prior=>SameLanding(prior,region));
+    internal void RejectOpeningMove(LandingRegion region)
+    {
+        if(!OpeningMoveLimited(region))failedOpeningMoves.Add(region);
+    }
+
+    // Charge actual search and child updates, including unsuccessful opening attempts.
+    // A scope invalidation restores candidates but never refunds spent updates.
+    internal ulong WorkUpdates { get; private set; }
+    internal ulong TravelUpdates { get; private set; }
+    internal bool WorkExhausted=>WorkUpdates>=1800;
+    internal bool TravelExhausted=>TravelUpdates>=900;
+    internal void Charge(ulong elapsed,bool travel)
+    {
+        WorkUpdates+=elapsed;
+        if(travel)TravelUpdates+=elapsed;
+    }
+    internal void Mined(){WorkUpdates=TravelUpdates=0;}
+
+    internal bool Observe((int,int,int,int) work,(int,int,int,int) departure,int capability,PhysicsParameters physics,int pending)
+    {
+        long terrain=TerrainSignature(work,TerrainSignature(departure,1469598103934665603));
+        var observed=(terrain,capability,physics,pending);
+        if(scope==observed)return false;
+        scope=observed;
+        attempts.Clear();failedOpeningMoves.Clear();
+        return true;
+    }
+
+    internal void Attempt(LandingRegion region,ExcavationCell[] batch)=>attempts.Add((region,batch));
+
+    // Adjacent half-tile samples overlap most of the player's 20px body. Keep
+    // alternative floors and samples offering a different first batch eligible.
+    internal bool Tried(LandingRegion region,ExcavationCell[] batch)=>attempts.Any(a=>
+        SameLanding(a.Region,region)&&a.Batch.SequenceEqual(batch));
+
+    private static bool SameLanding(LandingRegion prior,LandingRegion region)=>
+        Math.Abs(prior.SurfaceY-region.SurfaceY)<=LandingRegion.FeetTolerance
+        &&Math.Abs(prior.MinPlayerLeftX-region.MinPlayerLeftX)<=8
+        &&Math.Abs(prior.MaxPlayerLeftX-region.MaxPlayerLeftX)<=8;
+
+    private static long TerrainSignature((int Left,int Right,int Top,int Bottom) bounds,long hash)
+    {
+        for(int x=bounds.Left;x<=bounds.Right;x++)
+        for(int y=bounds.Top;y<=bounds.Bottom;y++)
+        {
+            var cell=TerrainReader.ReadEnvironment(x,y);
+            long stamp=(long)(cell.TileType.GetValueOrDefault(-1)+1)<<32 | (long)cell.Shape<<16 | (uint)cell.Liquid.Stamp;
+            hash=unchecked((hash^stamp^(cell.Actuated?1L<<56:0))*1099511628211);
+        }
+        return hash;
     }
 }

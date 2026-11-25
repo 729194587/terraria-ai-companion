@@ -18,6 +18,16 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
     private readonly Func<int,int,bool> protectedOre;
     private readonly NavigationKnowledge navigation;
     private bool searchLimited;
+    private readonly Func<ExcavationStanceSearch> clusterSearch;
+    private static LandingRegion MoveRegion(JsonElement args)=>new(args.GetProperty("minPlayerLeftX").GetSingle(),
+        args.GetProperty("maxPlayerLeftX").GetSingle(),args.GetProperty("surfaceY").GetSingle());
+    public void RejectMove(JsonElement args)=>clusterSearch?.Invoke().RejectOpeningMove(MoveRegion(args));
+    private bool Limited(LandingRegion region)
+    {
+        if(clusterSearch?.Invoke().OpeningMoveLimited(region)!=true)return false;
+        searchLimited=true;
+        return true;
+    }
     private Player Player=>(Player)identity.Actor;
     private int x,y,type,slot,miningCapability;
     private Item item;
@@ -35,7 +45,13 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
     private NativeNavigationEdits edits;
     public string SearchDetail { get; private set; }
     public object OpeningEvidence=>edits?.OpeningEvidence;
-    internal NativeMineTargetWorld(AiReadOnlyProtocol.Identity identity,JsonElement args,Func<int,int,bool> protectedOre=null,NavigationKnowledge navigation=null){this.navigation=navigation??new();this.protectedOre=protectedOre;this.identity=identity;this.args=args.Clone();initialLife=Player.statLife;}
+    internal NativeMineTargetWorld(AiReadOnlyProtocol.Identity identity,JsonElement args,Func<int,int,bool> protectedOre=null,
+        NavigationKnowledge navigation=null,Func<ExcavationStanceSearch> clusterSearch=null)
+    {
+        this.identity=identity;this.args=args.Clone();this.protectedOre=protectedOre;
+        this.navigation=navigation??new();this.clusterSearch=clusterSearch;
+        initialLife=Player.statLife;
+    }
     public string InterruptionReason()=>NativeNavigationWorld.CheckHazards(identity,initialLife);
 
     public object Target=>new{x,y,typeId=type,toolSlot=slot,scope="one specified tile; bounded local opening"};
@@ -122,6 +138,11 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
     public void ReleasePlanning(){scan?.Dispose();scan=null;}
     public JsonElement? FindApproach()
     {
+        if(clusterSearch?.Invoke().TravelExhausted==true)
+        {
+            ReleasePlanning();searchLimited=true;
+            return null; // Let the caller check for a safe cut at the current pose.
+        }
         var pose=ServerAiNavigation.Observe(Player).State;
         if(scan==null||scanPose!=pose)
         {
@@ -187,6 +208,7 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
         int tried=0;
         foreach(var region in ranked)
         {
+            if(Limited(region))continue;
             if(++tried>16){searchLimited=true;break;}
             float px=Math.Clamp(observed.State.Px,region.MinPlayerLeftX,region.MaxPlayerLeftX);
             // Distant regions are only waypoints; native rolling travel and
@@ -232,6 +254,7 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
         {SearchDetail+="; reachable target has unsafe removal neighbours";return null;}
         var step=edits.FindOpening(x*16+8,y*16,remainingTiles,mining:true);
         SearchDetail=edits.SearchDetail;
+        if(step?.Operation=="navigate_to_landing_region"&&Limited(MoveRegion(step.Arguments)))return null;
         return step;
     }
     public string RevalidateOpening()=>edits.RevalidateOpening();

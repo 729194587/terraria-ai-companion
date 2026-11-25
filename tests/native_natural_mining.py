@@ -8,6 +8,12 @@ from native_landing_regions import Limits, LuaRuntime, ServerAiBridge, wait_file
 from agent import read_runtime_inventory
 
 
+REGRESSION_VEINS = {
+    ('1606771215', 'enclosed'): (2092, 484, 13),
+    ('20261028', 'change-stance'): (2213, 519, 15),
+}
+
+
 async def read_fixture(path):
     # The server publishes the large motion trace with File.WriteAllText.
     # The directory entry can appear while the JSON body is still being written.
@@ -52,6 +58,10 @@ async def run(args):
                                                on_result=capture)
                 row.setdefault('receipt', result.get('lastAction'))
                 row['after'] = await read_runtime_inventory(bridge)
+            # Pin the two regression veins to their surveyed coordinates and seed.
+            # Other worlds can use the same case labels with different terrain.
+            seed = str(fixture['fixture']['seed'])
+            scenario = (seed, case)
             rows.append(row)
             (profile / 'natural-results.json').write_text(json.dumps(dict(scenarios=rows)), encoding='utf8')
             receipt = row.get('receipt') or {}
@@ -62,6 +72,31 @@ async def run(args):
                 if receipt['status'] == 'completed':
                     assert evidence['discoveryComplete'] and len(evidence['targets']) == start['count']
                     assert all(t['status'] == 'verified' and t['proof']['Strikes'] > 0 for t in evidence['targets'])
+            if scenario in REGRESSION_VEINS:
+                assert (start['x'], start['y'], start['count']) == REGRESSION_VEINS[scenario]
+                assert fixture['Settled'], fixture
+                task = receipt['task']
+                targets = evidence['targets']
+                assert task['observedGameUpdate'] < task['deadlineGameUpdate'], receipt['reason']
+                assert evidence['discoveryComplete'] and len(targets) == start['count']
+                assert len({(t['x'], t['y']) for t in targets}) == len(targets)
+                if case == 'change-stance':
+                    assert receipt['status'] == 'completed' and len(targets) == 15
+                    assert any(c['taskName'] == 'navigate_to_landing_region' and c['status'] == 'completed'
+                               for c in task['progress']['children'])
+                elif receipt['status'] != 'completed':
+                    assert receipt['status'] in {'timeout', 'failed'}
+                    assert receipt['reason'] in {'excavation_work_search_budget_exhausted',
+                                                 'excavation_route_search_budget_exhausted',
+                                                 'excavation_no_work_position'}
+                    assert any(t['status'] == 'pending' for t in targets)
+                for target in targets:
+                    proof = target['proof']
+                    if target['status'] == 'verified':
+                        assert (proof['X'], proof['Y'], proof['Type']) == (target['x'], target['y'], target['typeId'])
+                        assert proof['Strikes'] > 0
+                    elif target['status'] == 'pending':
+                        assert proof is None
         finally:
             bridge.close()
         (profile / 'natural-finish').write_text(case)
