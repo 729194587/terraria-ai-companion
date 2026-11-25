@@ -18,16 +18,18 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     private readonly AiReadOnlyProtocol.Identity identity;
     private PhysicsState openingOrigin;
     private readonly bool rolling;
+    private readonly bool miningAccess;
     private readonly Func<int,int,bool> protectedCell;
     private readonly Player Player;
     private (int X,int Y,int Slot,Item Item,int Type,PhysicsState Pose)? placement;
     private int waterPlacementDirection;
 
     internal NativeNavigationEdits(AiReadOnlyProtocol.Identity identity, PhysicsState origin,
-        Func<int,int,bool> protectedCell=null,bool rolling=false)
+        Func<int,int,bool> protectedCell=null,bool rolling=false,bool miningAccess=false)
     {
         this.identity=identity;
         this.rolling=rolling;
+        this.miningAccess=miningAccess;
         openingOrigin=origin;
         this.protectedCell=protectedCell ?? ((_,_)=>false);
         Player=(Player)identity.Actor;
@@ -54,7 +56,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     private static IEnumerable<int> Columns(float left,float right)
         =>Enumerable.Range(Grid(left),(int)Math.Ceiling(right/TileSize)-Grid(left));
 
-    internal NavigationStep FindOpening(float targetCenter, float targetFeet, int remainingTiles)
+    internal NavigationStep FindOpening(float targetCenter, float targetFeet, int remainingTiles,bool mining=false)
     {
         placement=null; openingTile=null; expectedLanding=null; SearchFailure=null;armedInventory=null;openingRun=false;
         int x=Grid(targetCenter), y=Grid(targetFeet);
@@ -71,6 +73,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             ||Feet(pose)-Feet(openingOrigin)>=MaxDepthTiles*TileSize)
         {SearchFailure="navigation_edit_window_exceeded";SearchDetail+="; excavation window exceeded";return null;}
         var world=new NativeMotionWorld(pose);
+        if(mining && world.SafeLanding(pose) && FindMiningAccess(pose,x,y,remainingTiles) is {} access)return access;
         if(targetFeet>Feet(pose)&&LocalEditGeometry.LowerWalkLanding(pose,NativeNavigation.Parameters(Player),world,
             targetCenter,targetFeet,FallSafety.LookaheadPixels) is {} lower)
         {
@@ -80,6 +83,8 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         }
         if(!world.SafeFlatLanding(pose)||Math.Abs(Feet(pose)-(float)Math.Round(Feet(pose)/TileSize)*TileSize)>LandingRegion.FeetTolerance)
         {SearchDetail+="; terrain edits require a flat starting stance";return null;}
+        if(mining&&targetFeet>Feet(pose)&&Math.Abs(targetCenter-(pose.Px+10))<=3*TileSize
+            &&CanStartDescent(pose)&&PlanDown(pose,remainingTiles) is {} descent)return descent;
         bool aligned=targetCenter>=pose.Px&&targetCenter<=pose.Px+PhysicsSimulator.PlayerW;
         if(aligned)
         {
@@ -90,6 +95,44 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         var across=PlanAcross(pose,direction,remainingTiles);
         if(across!=null||targetFeet<=Feet(pose))return across;
         return PlanDown(pose,remainingTiles);
+    }
+
+    // Clear only the first intervening ordinary block on the short approach
+    // to the selected ore. Reobserve after this one native action.
+    private NavigationStep FindMiningAccess(PhysicsState pose,int x,int y,int remaining)
+    {
+        int fromX=Grid(Player.Center.X),fromY=Grid(Player.Center.Y);
+        int length=Math.Max(Math.Abs(x-fromX),Math.Abs(y-fromY));
+        if(length is <2 or >10)return null;
+        for(int i=1;i<length;i++)
+        {
+            int tx=fromX+(int)Math.Round((x-fromX)*i/(double)length);
+            int ty=fromY+(int)Math.Round((y-fromY)*i/(double)length);
+            char shape=TerrainReader.ReadDryCell(tx,ty);
+            if(shape=='.')continue;
+            if(shape is not ('#' or 'h' or >= '1' and <= '4')||TileID.Sets.Ore[Main.tile[tx,ty].TileType]||IsTargetCell(tx,ty))return null;
+            var block=new[]{(tx,ty)};
+            bool supported=MotionSupport.SafeLanding(pose,(cx,cy)=>(cx,cy)==(tx,ty)?'.':TerrainReader.ReadDryCell(cx,cy));
+            var landing=supported?pose:LandingAfterCut(pose,block);
+            if(landing==null)return null;
+            var step=PlanCut(block,remaining);
+            if(step==null)return null;
+            expectedDrop=!supported;
+            expectedLanding=landing;
+            SearchDetail+=$"; access cut ({tx},{ty})";
+            return step;
+        }
+        return null;
+    }
+
+    internal bool CanStartDescent(PhysicsState pose)
+    {
+        int row=Grid(Feet(pose));
+        var view=new LocalTerrainView(Environment);
+        var floor=Columns(pose.Px,pose.Px+PhysicsSimulator.PlayerW)
+            .Where(tx=>view.DryCell(tx,row)!='.').Select(tx=>(tx,row)).ToArray();
+        return floor.Length>0&&floor.All(c=>!IsTargetCell(c.tx,c.row)&&SafeExcavation(c.tx,c.row,view,miningAccess))
+            &&LandingAfterCut(pose,floor).HasValue;
     }
 
     private NavigationStep PlanDown(PhysicsState pose,int remainingTiles)
@@ -371,8 +414,8 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             if(IsTargetCell(tx,ty)||!WorldGen.InWorld(tx,ty,2)
                 ||Math.Abs(tx-Grid(openingOrigin.Px+PhysicsSimulator.PlayerW/2f))>MaxWidthTiles
                 ||ty<Grid(openingOrigin.Py)||ty>=(int)Math.Round(Feet(openingOrigin)/TileSize)+MaxDepthTiles
-                ||!SafeExcavation(tx,ty,view))
-            {SearchDetail+=$"; protected, hazardous or unsupported blocker ({tx},{ty})";return null;}
+                ||!SafeExcavation(tx,ty,view,miningAccess))
+            {SearchDetail+=$"; protected, hazardous or unsupported blocker ({tx},{ty}); shape={view.DryCell(tx,ty)}, type={view.Environment(tx,ty).TileType}";return null;}
             var failure=ActorMining.ChooseTool(p,identity.World,identity.Generation,tx,ty,true,out int toolSlot,out float updates);
             if(failure!=ActorMining.Failure.None||p.inventory[toolSlot].pick<=0)
             {SearchDetail+=$"; blocker ({tx},{ty}): {AiActionReasons.Mining("failed",failure.ToString())}";return null;}
@@ -387,10 +430,11 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         return new("mine_tile",JsonSerializer.SerializeToElement(new{x=first.X,y=first.Y,plannedToolSlot=nextSlot}));
     }
 
-    internal static bool SafeExcavation(int x,int y,LocalTerrainView view)
+    internal static bool SafeExcavation(int x,int y,LocalTerrainView view,bool shaped=false)
     {
         var target=view.Environment(x,y);
-        if(target.DryShape!='#'||target.TileType is not int type
+        bool solid=target.DryShape=='#'||shaped&&target.DryShape is ('h' or >= '1' and <= '4');
+        if(!solid||target.TileType is not int type
             ||Main.tileFrameImportant[type]||TileID.Sets.Falling[type])return false;
         return SafeRemovalNeighbours(x,y,view);
     }
@@ -454,7 +498,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             ||SceneMineTargets.NavigationShape(cut.X,cut.Y)!=cut.Shape||SceneMineTargets.Revision(cut.X,cut.Y)!=cut.Revision)
             return "mining_opening_tile_changed";
         if(armedMiningCapability!=ActorMining.CapabilityStamp(Player))return "navigation_mining_capability_changed";
-        if(!SafeExcavation(cut.X,cut.Y,new(Environment))||!OpeningSettled())return "mining_opening_pose_or_safety_changed";
+        if(!SafeExcavation(cut.X,cut.Y,new(Environment),miningAccess)||!OpeningSettled())return "mining_opening_pose_or_safety_changed";
         var pose=ServerAiNavigation.Observe(Player).State;
         if(expectedLanding==null||Math.Abs(pose.Px-cutPose.Px)>.1f||Math.Abs(pose.Py-cutPose.Py)>.1f
             ||(expectedDrop&&(LandingAfterCut(pose,new[]{(cut.X,cut.Y)}) is not {} landing

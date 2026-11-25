@@ -15,6 +15,8 @@ internal interface INavigationWorld
     string Revalidate();
     bool Arrived();
     JsonElement? FindApproach();
+    bool RetryApproach()=>false;
+    bool ScanningApproaches=>false;
     NavigationStep FindRopeRoute()=>null;
     NavigationStep FindOpening(int remainingTiles)=>null;
     string RevalidateOpening()=>null;
@@ -104,6 +106,7 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
                 bool stalledAtObstacle=r.Status=="timeout"&&r.Reason is ("navigation_progress_lease_expired" or "navigation_local_coverage_exhausted")
                     &&r.InputsReleased&&(world.CanInspectWaterBoundary||world.CanBuildWallStep);
                 if((!CanOpenAfterNavigation(r)&&!stalledAtObstacle)||openingMode)return Describe(r);
+                if(world.RetryApproach()){phase="observe";return Running();}
                 openingMode=true;
             }
             phase=r.Status=="completed"&&world.ReplanAfterChange&&!openingMode?"observe":"reobserve";
@@ -178,12 +181,13 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
             {
                 return StartChild(frame,"navigate_to_landing_region",approach,"navigating",MovementLeaseUpdates);
             }
+            if(world.ScanningApproaches)return Running();
             openingMode=true;
         }
         var opening=world.FindOpening(LocalCutTileLimit);
         if(world.PlanningFailure is {} planningFailure)return Describe(planningFailure);
         if(world.PlanningPending)return Running();
-        if(opening==null)return Describe(AiActionReasons.NavigationSearchIncomplete(world.NoRouteReason)
+        if(opening==null)return Describe(world.NoRouteReason=="mining_stance_search_budget_exhausted"||AiActionReasons.NavigationSearchIncomplete(world.NoRouteReason)
             ?new Result("timeout",world.NoRouteReason,null,true,InputsAcquired:acquired):Failed(world.NoRouteReason));
         if(opening.Batch!=null)
         {

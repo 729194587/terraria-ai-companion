@@ -43,7 +43,7 @@ internal static class ExcavationSelfTest
             }
             ulong tick=0;
             var hitTrace=new List<object>();
-            (Result Result,JsonElement View,int Runs,bool HeldBetween) Cluster(string name,Action onFirst=null,bool stop=false)
+            (Result Result,JsonElement View,int Runs,bool HeldBetween) Cluster(string name,Action onFirst=null,bool stop=false,bool abandon=false)
             {
                 Ore();
                 var previous=ActorMining.Current;
@@ -71,6 +71,12 @@ internal static class ExcavationSelfTest
                     if(sawFirst||ReferenceEquals(previous,ActorMining.Current)||ActorMining.Current?.Batch?.Verified.Count!=1)continue;
                     sawFirst=true;held=player.controlUseItem;
                     onFirst?.Invoke();
+                    if(abandon)
+                    {
+                        result=root.Abandon();
+                        ActorMining.Stop(player,world,generation); // original fixture still owns this actor
+                        return (result,JsonSerializer.SerializeToElement(root.View()),1,held);
+                    }
                     if(stop)
                     {
                         result=root.Stop(update,"cancelled","explicit_stop");
@@ -79,6 +85,15 @@ internal static class ExcavationSelfTest
                 }
                 throw new InvalidOperationException("Cluster fixture did not reach a terminal state.");
             }
+            Ore();
+            Set(x+2,y-2,TileID.Copper);
+            var half=Main.tile[x+2,y-2];half.IsHalfBlock=true;
+            var seed=ExcavationCell.Capture(x+2,y-2);
+            var single=new NativeMineTargetWorld(identity,JsonSerializer.SerializeToElement(new{x=seed.X,y=seed.Y}));
+            var copper=NativeExcavation.Choose(identity,pose.State,new[]{seed},
+                new LocalTerrainView(CompanionBridge.Common.Systems.TerrainReader.ReadEnvironment),ordered:false);
+            check(single.Prepare()==null&&single.CanMine()&&copper?.Cells.Length==1,
+                "Single and cluster must admit the same reachable half-block copper without weakening clearance rules.");
             Ore();
             var ranged=ExcavationCell.Capture(x+4,y-2);
             var shortPick=player.inventory[0];
@@ -129,10 +144,19 @@ internal static class ExcavationSelfTest
                 &&stopProof.GetProperty("targets").EnumerateArray().Count(t=>t.GetProperty("status").GetString()=="verified")==1
                 &&Main.tile[x+3,y-2].HasTile&&Main.tile[x+4,y-2].HasTile,"Stopping must retain the first proof and release before later strikes.");
 
+            var stale=Cluster("binding-lost",abandon:true);
+            var staleProof=stale.View.GetProperty("result").GetProperty("evidence");
+            check(stale.Result.Status=="unknown"&&!stale.Result.InputsReleased
+                &&staleProof.GetProperty("outcome").GetString()=="unknown"
+                &&staleProof.GetProperty("targets").EnumerateArray().Count(t=>t.GetProperty("status").GetString()=="verified")==1,
+                "Binding loss retains observed strikes without asserting control release.");
+
             var partial=Cluster("external",()=>WorldGen.KillTile(x+3,y-2));
             var partialProof=partial.View.GetProperty("result").GetProperty("evidence");
             check(partial.Result.Status=="failed"&&partial.Result.InputsReleased&&partial.Runs==2
                 &&partialProof.GetProperty("outcome").GetString()=="partial"
+                &&partialProof.GetProperty("targets").EnumerateArray().Single(t=>t.GetProperty("status").GetString()=="changed")
+                    .GetProperty("changeReason").GetString()=="removed_externally"
                 &&partialProof.GetProperty("targets").EnumerateArray().Count(t=>t.GetProperty("status").GetString()=="verified")==2,
                 "External destruction must not count as owned progress: "+partial.View);
 
@@ -179,14 +203,20 @@ internal static class ExcavationSelfTest
         var executor=new ServerAiNativeActions();
         var identity=new AiReadOnlyProtocol.Identity(p,world,generation,p.whoAmI,new{},p.selectedItem,Main.GameUpdateCount,true);
         var update=typeof(Main).GetMethod("Update",BindingFlags.Instance|BindingFlags.NonPublic,null,new[]{typeof(GameTime)},null);
-        void Frame()=>update.Invoke(Main.instance,new object[]{new GameTime()});
+        void Frame()
+        {
+            // Match the natural mining diagnostic: isolate terrain movement
+            // from unrelated randomly spawned hostile NPCs in this world copy.
+            foreach(var npc in Main.npc)if(npc.active&&!npc.friendly&&!npc.townNPC)npc.active=false;
+            update.Invoke(Main.instance,new object[]{new GameTime()});
+        }
         try
         {
-            for(int dx=-6;dx<=16;dx++)
+            for(int dx=-6;dx<=32;dx++)
             for(int dy=-6;dy<=2;dy++)
             {
                 var tile=Main.tile[x+dx,y+dy];tile.ClearEverything();
-                if(dy>=0||dy==-2&&dx is >=2 and <=8)
+                if(dy>=0||dy==-2&&dx is >=2 and <=22)
                 {tile.HasTile=true;tile.TileType=dy>=0?TileID.Stone:TileID.Iron;}
             }
             p.position=new Vector2(x*16,y*16-42);p.velocity=Vector2.Zero;p.releaseJump=true;
@@ -195,7 +225,7 @@ internal static class ExcavationSelfTest
             float start=p.position.X;
             var handle=executor.Start(identity,"mine_target",JsonSerializer.SerializeToElement(new{x=x+2,y=y-2,cluster=true}),Guid.NewGuid().ToString("N"));
             Result result=null;
-            for(int n=0;n<1500;n++)
+            for(int n=0;n<2600;n++)
             {
                 Frame();result=executor.Poll(identity,handle);
                 if(result.Status!="running")break;
@@ -205,10 +235,12 @@ internal static class ExcavationSelfTest
                 "Native cluster should navigate to another work position and finish: "+task);
             var children=task.GetProperty("progress").GetProperty("children").EnumerateArray().ToArray();
             var runs=children.Where(c=>c.GetProperty("taskName").GetString()=="excavate_tiles").ToArray();
-            check(runs.Length>=2&&children.Any(c=>c.GetProperty("taskName").GetString()=="navigate_to_landing_region")
-                &&runs.Sum(c=>c.GetProperty("result").GetProperty("evidence").GetProperty("verified").GetArrayLength())==7,
-                "Native multi-position cluster must keep a single root and prove all seven tiles.");
-            return new{multiPositionExcavation=true,movedPixels=p.position.X-start,workRuns=runs.Length,verifiedTiles=7};
+            var targets=task.GetProperty("result").GetProperty("evidence").GetProperty("targets");
+            check(targets.GetArrayLength()==21&&targets.EnumerateArray().All(t=>
+                t.GetProperty("status").GetString()=="verified"&&t.GetProperty("proof").GetProperty("Strikes").GetInt32()>0)
+                &&runs.Length>=2,
+                "Native multi-position cluster must keep a single root and prove all 21 tiles.");
+            return new{multiPositionExcavation=true,movedPixels=p.position.X-start,workRuns=runs.Length,verifiedTiles=21};
         }
         finally
         {

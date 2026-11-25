@@ -16,8 +16,20 @@ internal sealed class MineTargetTask : AutonomousNavigationTask
 {
     private readonly IMineTargetWorld world;
 
-    internal MineTargetTask(string id,IMineTargetWorld world,AiAtomicActions.IExecutor native)
-        :base(id,world,native){this.world=world;}
+    private readonly bool compactHistory;
+    private object workPosition;
+    internal object MiningSteps=>new{workPosition,steps=children.ToArray(),omitted=settledChildren-children.Count};
+
+    protected override object ChildView(TaskSlot slot)
+    {
+        if(!compactHistory)return base.ChildView(slot);
+        var result=slot.Record.Result;
+        return new{operation=slot.Record.Name,result.Status,result.Reason,result.InputsReleased,result.EffectVerified,
+            arguments=(slot.Task as NativeActionTask)?.Arguments};
+    }
+
+    internal MineTargetTask(string id,IMineTargetWorld world,AiAtomicActions.IExecutor native,bool compactHistory=false)
+        :base(id,world,native){this.world=world;this.compactHistory=compactHistory;}
 
     internal override string Name=>"mine_target";
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)
@@ -34,6 +46,7 @@ internal sealed class MineTargetTask : AutonomousNavigationTask
         }
         var navigation=base.Tick(frame);
         if(navigation.Status!="completed")return navigation;
+        workPosition=navigation.Evidence;
         phase="mining";
         child=new NativeActionTask(native,"mine_tile",world.MineArguments(),taskId+"/mine");
         RunChild(child,frame,600);

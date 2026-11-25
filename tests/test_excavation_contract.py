@@ -34,6 +34,14 @@ class ExcavationContractTests(unittest.TestCase):
                                   currentChild=None, worldSessionId='world', actorGeneration=2, actorSlot=254,
                                   result=result))
         self.assertTrue(atomic.verified_server_mine_task(action, evidence))
+        large = deepcopy(evidence)
+        batch = large['task']['result']['evidence']
+        batch['targets'] = [dict(x=x, y=20, typeId=6, status='verified',
+                                 proof=dict(X=x, Y=20, Type=6, Update=12, Strikes=2))
+                            for x in range(10, 31)]
+        self.assertTrue(atomic.verified_server_mine_task(action, large))
+        batch['discoveryComplete'] = False
+        self.assertFalse(atomic.verified_server_mine_task(action, large))
         for mutation in (
             lambda task: task.update(actorGeneration=3),
             lambda task: task['result'].update(inputsReleased=False),
@@ -46,3 +54,18 @@ class ExcavationContractTests(unittest.TestCase):
                 altered = deepcopy(evidence)
                 mutation(altered['task'])
                 self.assertFalse(atomic.verified_server_mine_task(action, altered))
+
+    def test_verbose_navigation_retains_terminal_ore_proofs(self):
+        from lua_runtime import bounded_action
+        from lua_worker import VALUE_BYTES
+        proof = dict(outcome='partial', targets=[dict(x=1, y=2, status='pending')])
+        task = dict(taskName='mine_target', result=dict(evidence=proof),
+                    progress=dict(settledChildren=1, children=['x' * VALUE_BYTES]))
+        result = dict(task=task, evidence=dict(task=task), targetTask=dict(cluster=True),
+                      inputsReleased=True, status='failed')
+        compact = bounded_action(result)
+        self.assertTrue(compact['inputsReleased'])
+        self.assertTrue(compact['task']['historyOmitted'])
+        self.assertEqual(compact['task']['result']['evidence'], proof)
+        self.assertEqual(compact['task']['progress']['omittedChildren'], 1)
+        self.assertEqual(len(task['progress']['children']), 1)

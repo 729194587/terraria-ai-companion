@@ -38,6 +38,21 @@ def bounded_action(result):
         encode(result, VALUE_BYTES)
         return result
     except ValueLimit:
+        # Preserve the terminal ore certificate when verbose navigation history
+        # cannot fit in one Lua message. The host still retains the raw receipt.
+        task = result.get('task')
+        if (isinstance(task, dict) and task.get('taskName') == 'mine_target'
+                and (result.get('targetTask') or {}).get('cluster') is True):
+            progress = dict(task.get('progress') or {})
+            progress.update(children=[], childrenTruncated=True, omittedChildren=progress.get('settledChildren'))
+            progress.pop('excavation', None)  # terminal result contains the canonical copy
+            summary = dict(task, progress=progress, lastResult=None, historyOmitted=True)
+            compact = dict(result, task=summary, evidence=dict(result.get('evidence') or {}, task=summary))
+            try:
+                encode(compact, VALUE_BYTES)
+                return compact
+            except ValueLimit:
+                pass
         return {'valid': result.get('valid'), 'status': result.get('status'),
                 'actionId': result.get('actionId'), 'reason': 'action_receipt_limit',
                 'payloadOmitted': True}
@@ -489,9 +504,13 @@ class LuaRuntime:
                             await report_terminal(out['status'], result, reconcile=released)
                             continue
                         break
+                    reply = terminal_result if synchronous_task else result
+                    if synchronous_task:
+                        summary = out['lastAction'].get('task')
+                        if isinstance(summary, dict) and summary.get('historyOmitted'):
+                            reply = out['lastAction']
                     active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
-                        encode({'type': 'result', 'id': sequence,
-                                'value': terminal_result if synchronous_task else result})))
+                        encode({'type': 'result', 'id': sequence, 'value': reply})))
                     active_role = 'send'
                     await watch(active)
                     active = None

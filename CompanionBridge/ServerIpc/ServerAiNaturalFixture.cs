@@ -115,6 +115,8 @@ internal static class ServerAiNaturalFixture
                     npc.active=false;
                     if(live)NetMessage.SendData(MessageID.SyncNPC,number:npc.whoAmI);
                 }
+                if(Program.LaunchParameters.ContainsKey("-companionnaturalminingtest")&&!File.Exists(FileAt("natural-veins.json")))
+                    File.WriteAllText(FileAt("natural-veins.json"),JsonSerializer.Serialize(NaturalMiningSurvey.Find()));
                 string request=FileAt("natural-request.json");
                 if(File.Exists(request))
                 {
@@ -127,8 +129,9 @@ internal static class ServerAiNaturalFixture
                     int tx=Main.spawnTileX+offset, surface=-1;
                     if(tx<32||tx>Main.maxTilesX-32)throw new ArgumentException("Natural start outside world");
                     journey=Program.LaunchParameters.ContainsKey("-companionjourneytest");
-                    int firstY=journey?doc.RootElement.GetProperty("surfaceY").GetInt32():40;
-                    int limit=journey?firstY+1:Math.Min(Main.maxTilesY-40,(int)Main.worldSurface+100);
+                    bool fixedSurface=journey||Program.LaunchParameters.ContainsKey("-companionnaturalminingtest")&&doc.RootElement.TryGetProperty("surfaceY",out _);
+                    int firstY=fixedSurface?doc.RootElement.GetProperty("surfaceY").GetInt32():40;
+                    int limit=fixedSurface?firstY+1:Math.Min(Main.maxTilesY-40,(int)Main.worldSurface+100);
                     if(firstY<40||limit>Main.maxTilesY-40)throw new ArgumentException("Invalid start surface");
                     float startX=tx*16;
                     if(journey && doc.RootElement.TryGetProperty("startPixelX",out var pixel))

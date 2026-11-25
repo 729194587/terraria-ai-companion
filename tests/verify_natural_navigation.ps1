@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[ValidateSet("basic","cloud","sand","blizzard","angel","cloud_angel","hermes","bundle","bundle_hermes")][string]$JourneyLoadout,[string]$ReplayStops,[switch]$WalkReference,[switch]$FlightReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central","traverse","bank-replay","local-replay","slope-entry","slope-approach")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$Mining,[string[]]$MiningCases,[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[ValidateSet("basic","cloud","sand","blizzard","angel","cloud_angel","hermes","bundle","bundle_hermes")][string]$JourneyLoadout,[string]$ReplayStops,[switch]$WalkReference,[switch]$FlightReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central","traverse","bank-replay","local-replay","slope-entry","slope-approach")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback)
 $ErrorActionPreference='Stop'
 if($FlightReference){$JourneyLoadout="cloud_angel";$JourneyCase="traverse"}
 if($JourneyLoadout){$LongJourney=$true}
@@ -39,6 +39,7 @@ $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
 if($Watch){foreach($a in @('-ip','127.0.0.1','-companionwatchtest')){$info.ArgumentList.Add($a)}}
 $info.ArgumentList.Add('-companionnaturaltest')
+if($Mining){$info.ArgumentList.Add('-companionnaturalminingtest')}
 if($JourneyCase -in @("traverse","local-replay","slope-entry","slope-approach")){$info.ArgumentList.Add("-companiontraversetest")}
 if($JourneyLoadout){$info.ArgumentList.Add("-companionjourneyloadout");$info.ArgumentList.Add($JourneyLoadout)}
 if($LongJourney){$info.ArgumentList.Add('-companionjourneytest')}
@@ -89,9 +90,10 @@ try {
     }
     Copy-Item -LiteralPath $loadedWorld -Destination "$profile/source.wld"
     $initialWorldHash=(Get-FileHash -LiteralPath "$profile/source.wld").Hash
-    $probeScript=if($LongJourney){'tests/native_natural_journey.py'}elseif($AutonomousNavigation){'tests/native_natural_landing.py'}elseif($Trip){'tests/native_trip_navigation.py'}elseif($Scene){'tests/native_natural_scene.py'}elseif($LandingRegions){'tests/native_natural_landing.py'}else{'tests/native_natural_navigation.py'}
+    $probeScript=if($Mining){'tests/native_natural_mining.py'}elseif($LongJourney){'tests/native_natural_journey.py'}elseif($AutonomousNavigation){'tests/native_natural_landing.py'}elseif($Trip){'tests/native_trip_navigation.py'}elseif($Scene){'tests/native_natural_scene.py'}elseif($LandingRegions){'tests/native_natural_landing.py'}else{'tests/native_natural_navigation.py'}
     $probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile,'--offsets')+@($Offsets|ForEach-Object {"$_"})
-    if($LongJourney){$probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile)}
+    if($LongJourney -or $Mining){$probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile)}
+    if($MiningCases){$probeArgs+=@('--cases')+$MiningCases}
     if($Watch){
         $viewer=Join-Path $profile 'viewer'
         New-Item -ItemType Directory -Path "$viewer/Mods" | Out-Null

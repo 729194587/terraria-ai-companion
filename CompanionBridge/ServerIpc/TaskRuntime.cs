@@ -27,6 +27,7 @@ internal abstract class CompanionTask
     internal virtual void Start(AiReadOnlyProtocol.Identity frame){}
     internal abstract Result Tick(AiReadOnlyProtocol.Identity frame);
     internal abstract Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason);
+    internal virtual object AbandonEvidence=>null;
     internal virtual void Abandon(){}
     internal static Result Running()=>new("running","task_running",null,true,InputsAcquired:false);
     internal static Result Failed(string reason)=>new("failed",reason,null,true,InputsAcquired:false);
@@ -100,7 +101,7 @@ internal sealed class TaskSlot
         catch(Exception e){return Finish(new("unknown","task_cleanup_unconfirmed",null,false,ReasonDetail:e.Message));}
     }
     internal Result Abandon()
-    {if(Record.Result!=null)return Record.Result;Task.Abandon();return Finish(new("unknown","actor_binding_changed",null,false));}
+    {if(Record.Result!=null)return Record.Result;Task.Abandon();return Finish(new("unknown","actor_binding_changed",Task.AbandonEvidence,false));}
     internal static object Receipt(Result r)=>r==null?null:new{status=r.Status,reason=r.Reason,evidence=r.Evidence,inputsReleased=r.InputsReleased,effectVerified=r.EffectVerified,inputsAcquired=r.InputsAcquired,reasonDetail=r.ReasonDetail};
     internal object View()=>new{taskId=Record.Id,taskName=Record.Name,parentTaskId=Record.ParentId,phase=Record.Phase,status=Record.Status,
         worldSessionId=identity.World,actorGeneration=identity.Generation,actorSlot=identity.Slot,observedGameUpdate=lastTick,deadlineGameUpdate=Record.Deadline,currentChild=Task.CurrentChild,progress=Task.Progress,lastResult=Task.LastResult,reason=Record.Reason,result=Receipt(Record.Result)};
@@ -128,12 +129,13 @@ internal abstract class AbstractCompanionTask : CompanionTask
         if(r.Status=="running")return null;
         lastResult=r;if(r.Status=="completed")completedChildren++;RecordChild();return r;
     }
+    protected virtual object ChildView(TaskSlot slot)=>slot.View();
     private void RecordChild()
     {
         settledProgress+=child.Task.ProgressVersion;
         settledChildren++;
         if(children.Count>=ChildHistoryCapacity)children.RemoveAt(0);
-        children.Add(child.View());child=null;
+        children.Add(ChildView(child));child=null;
     }
     internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)
     {
@@ -154,6 +156,7 @@ internal sealed class NativeActionTask : CompanionTask
     {this.executor=executor;this.operation=operation;this.args=args.Clone();this.id=id;Name=taskName??operation;}
     internal string RequestId=>id;
     internal bool Started=>attempted;
+    internal System.Text.Json.JsonElement Arguments=>args;
     internal override ulong ProgressVersion=>handle==null?0:executor.ProgressVersion(handle);
     internal override string Name{get;}
     internal override void Start(AiReadOnlyProtocol.Identity frame){attempted=true;handle=executor.Start(frame,operation,args,id);}

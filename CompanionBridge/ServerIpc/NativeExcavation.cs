@@ -11,7 +11,7 @@ namespace CompanionBridge.ServerIpc;
 
 internal static class NativeExcavation
 {
-    internal const int MaxTargets=18;
+    internal const int BatchLimit=18;
     private const int ToolHandoffUpdates=1;
     internal sealed record Plan(ExcavationCell[] Cells,int Slot,float RunUpdates,int Coverage,float TotalUpdates,int? NextSlot);
     private readonly record struct ToolRun(int Tool,int End,float Cost,float Total,int? NextTool)
@@ -20,10 +20,14 @@ internal static class NativeExcavation
             ||Total==other.Value.Total&&End>other.Value.End;
     }
 
-    internal static bool SafeCut(PhysicsState pose,ExcavationCell cell,LocalTerrainView view)
-        =>cell.Matches()&&view.Cell(cell.X,cell.Y)=='#'&&!view.LiquidNear(cell.X,cell.Y)
-            &&NativeNavigationEdits.SafeExcavation(cell.X,cell.Y,view)
-            &&MotionSupport.SafeLanding(pose,(x,y)=>x==cell.X&&y==cell.Y?'.':view.DryCell(x,y));
+    internal static bool SafeCut(PhysicsState pose,ExcavationCell cell,LocalTerrainView view,bool clearance)
+        =>cell.Matches()&&(!clearance||(view.Cell(cell.X,cell.Y)=='#'&&!view.LiquidNear(cell.X,cell.Y)
+            &&NativeNavigationEdits.SafeExcavation(cell.X,cell.Y,view)))
+            &&SafeOrePose(pose,cell.X,cell.Y,view);
+
+    internal static bool SafeOrePose(PhysicsState pose,int x,int y,LocalTerrainView view)
+        =>view.DryCell(x,y) is not ('?' or '!') && MotionSupport.SafeLanding(pose,view.DryCell)
+            &&MotionSupport.SafeLanding(pose,(tx,ty)=>tx==x&&ty==y?'.':view.DryCell(tx,ty));
 
     internal static Plan Choose(AiReadOnlyProtocol.Identity identity,PhysicsState pose,
         IEnumerable<ExcavationCell> targets,LocalTerrainView view,bool ordered,int? continuationSlot=null)
@@ -35,7 +39,7 @@ internal static class NativeExcavation
         var eligible=new List<(ExcavationCell Cell,int[] Hits)>();
         foreach(var cell in targets)
         {
-            if(!SafeCut(pose,cell,view))
+            if(!SafeCut(pose,cell,view,ordered))
             {
                 if(ordered)break;
                 continue;
@@ -55,6 +59,7 @@ internal static class NativeExcavation
                 continue;
             }
             eligible.Add((cell,hits));
+            if(eligible.Count==BatchLimit)break;
         }
         if(eligible.Count==0)return null;
 
@@ -103,11 +108,11 @@ internal static class NativeExcavation
             :null;
     }
 
-    internal static bool SafeAtLivePose(Player player,PhysicsState expected,ExcavationCell cell)
+    internal static bool SafeAtLivePose(Player player,PhysicsState expected,ExcavationCell cell,bool clearance)
     {
         var now=ServerAiNavigation.Observe(player);
-        return now.Settled&&Math.Abs(now.State.Px-expected.Px)<=1&&Math.Abs(now.State.Py-expected.Py)<=1
-            &&SafeCut(now.State,cell,new(TerrainReader.ReadEnvironment));
+        return now.Settled&&new NativeMotionWorld(now.State).SafeLanding(now.State)&&Math.Abs(now.State.Px-expected.Px)<=1&&Math.Abs(now.State.Py-expected.Py)<=1
+            &&SafeCut(now.State,cell,new(TerrainReader.ReadEnvironment),clearance);
     }
 }
 
@@ -121,8 +126,9 @@ internal sealed class MiningRunTask(AiReadOnlyProtocol.Identity identity,NativeE
     internal override string Name=>"excavate_tiles";
     internal override string Phase=>context?.Batch.Draining==true?"draining":"mining";
     internal override object Progress=>context==null?null:Receipt();
+    internal override object AbandonEvidence=>Progress;
     private MiningRunReceipt Receipt()=>new(plan.Cells.Length,context.Batch.Verified.ToArray(),
-        context.Batch.Estimate,context.Ticks,context.Strikes,context.Type);
+        context.Batch.Estimate,context.Ticks,context.Strikes,context.Type,pose.Px,pose.Py+PhysicsSimulator.PlayerH);
     internal override void Start(AiReadOnlyProtocol.Identity frame)
     {
         ServerAiNativeActions.Require(identity);
@@ -130,7 +136,7 @@ internal sealed class MiningRunTask(AiReadOnlyProtocol.Identity identity,NativeE
         if(capability!=ActorMining.CapabilityStamp(player))return;
         var batch=new ActorMining.Batch(plan.Cells,
             cell=>(identity.Autonomy == null || identity.Autonomy.Valid && !AutonomyPolicy.ProtectedTile(cell.X,cell.Y))
-                &&(corridorUnchanged?.Invoke()??true)&&NativeExcavation.SafeAtLivePose(player,pose,cell),plan.RunUpdates);
+                &&(corridorUnchanged?.Invoke()??true)&&NativeExcavation.SafeAtLivePose(player,pose,cell,corridorUnchanged!=null),plan.RunUpdates);
         try{context=ActorMining.StartBatch(player,identity.World,identity.Generation,batch,plan.Slot);}
         catch
         {
@@ -144,7 +150,7 @@ internal sealed class MiningRunTask(AiReadOnlyProtocol.Identity identity,NativeE
     {
         ServerAiNativeActions.Require(identity);
         if(context==null)return Failed("excavation_needs_replan");
-        if(!ReferenceEquals(ActorMining.Current,context))return new("unknown","native_context_changed",null,false);
+        if(!ReferenceEquals(ActorMining.Current,context))return new("unknown","native_context_changed",Receipt(),false);
         var phase=context.Phase;
         if(phase==ActionPhase.Running)return Running();
         var p=(Player)identity.Actor;

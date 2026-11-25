@@ -381,7 +381,7 @@ def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=
             f['description'] += '服务器可在局部范围内串行挖开阻挡格，等待原生落脚并重新规划；开路有明确预算，可能已移除部分地形。查看 task.progress 的 clearedTiles、opening 和 search。'
         if name == 'mine_target':
             if excavation:
-                f['description'] += '设置 cluster=true 采集种子所在的同种四连通矿簇，上限18格。逐格结果见 task.result.evidence.targets。'
+                f['description'] += '设置 cluster=true 采集种子所在的同种四连通矿簇，每批最多18格；有界发现最多128格，截断时报告未完成。逐格结果见 task.result.evidence.targets。'
             else:
                 f['parameters']['properties'].pop('cluster', None)
         if name == 'observe_scene':
@@ -1036,7 +1036,7 @@ def verified_excavation_task(action, task, goal):
             or type(ore) is not int or ('typeId' in goal and ore != goal['typeId'])):
         return False
     targets = batch.get('targets')
-    if not isinstance(targets, list) or not 1 <= len(targets) <= 18:
+    if not isinstance(targets, list) or batch.get('discoveryComplete') is False or not 1 <= len(targets) <= 128:
         return False
     cells = set()
     for target in targets:
