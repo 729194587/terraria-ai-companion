@@ -14,6 +14,7 @@ from observation import ObservationValidationError, validate_observation
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 MAX_REQUEST_BYTES = 4096
+autonomy_version = ContextVar('autonomy_version', default=None)
 command_owner = ContextVar('bridge_command_owner', default=None)
 
 

@@ -9,7 +9,7 @@ import uuid
 import atomic_operations as atomic
 import agent_diagnostics as diagnostics
 import agent_trace as tracing
-from control import BridgeError, NotAdmittedError
+from control import BridgeError, NotAdmittedError, autonomy_version
 from lua_action_results import action_results
 
 NAMES = frozenset({'submit_task', 'query_task', 'await_task', 'cancel_task', 'resume_task'})
@@ -202,6 +202,8 @@ class TaskCoordinator:
             # Never inherit a Program's command_owner, evidence bundle or Run
             # reply context into the independent task/result notification.
             monitor_context = contextvars.Context()
+            if autonomy_version.get() is not None:
+                monitor_context.run(autonomy_version.set, autonomy_version.get())
             correlation = {key: origin[key] for key in tracing.MCP_CORRELATION if origin and key in origin}
             if correlation:
                 monitor_context.run(tracing.context.set, correlation)

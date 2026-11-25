@@ -9,7 +9,7 @@ import time
 import uuid
 from concurrent.futures import Future, TimeoutError as FutureTimeout
 
-from control import BridgeError, NotAdmittedError, command_owner
+from control import BridgeError, NotAdmittedError, command_owner, autonomy_version
 import agent_trace as tracing
 
 
@@ -180,6 +180,8 @@ class ServerAiBridge:
             if self._closed:raise BridgeError('Server AI connection closed; action outcome may be unknown')
             self._request_id+=1;request_id=str(self._request_id)
             request={'v':1,'id':request_id,'op':op,**values}
+            if op == 'start' and autonomy_version.get() is not None:
+                request['autonomyVersion'] = autonomy_version.get()
             if op!='bind':request['binding']=self.binding
             compact = (op, request.get("operation")) in {("query", "build_diff"), ("start", "build_place")}
             wire=(json.dumps(request,ensure_ascii=False,separators=(",", ":") if compact else None)+'\n').encode('utf-8')

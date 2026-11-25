@@ -129,7 +129,8 @@ internal sealed class MiningRunTask(AiReadOnlyProtocol.Identity identity,NativeE
         var player=(Player)identity.Actor;
         if(capability!=ActorMining.CapabilityStamp(player))return;
         var batch=new ActorMining.Batch(plan.Cells,
-            cell=>(corridorUnchanged?.Invoke()??true)&&NativeExcavation.SafeAtLivePose(player,pose,cell),plan.RunUpdates);
+            cell=>(identity.Autonomy == null || identity.Autonomy.Valid && !AutonomyPolicy.ProtectedTile(cell.X,cell.Y))
+                &&(corridorUnchanged?.Invoke()??true)&&NativeExcavation.SafeAtLivePose(player,pose,cell),plan.RunUpdates);
         try{context=ActorMining.StartBatch(player,identity.World,identity.Generation,batch,plan.Slot);}
         catch
         {

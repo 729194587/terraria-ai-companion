@@ -120,6 +120,7 @@ internal sealed class AiAtomicActions
         internal ulong NavigationProgress;
         internal object Handle;
         internal CombatAdmission Combat;
+        internal AiReadOnlyProtocol.AutonomyGrant Autonomy;
         internal RespawnPlan Rejoin;
         internal AiReadOnlyProtocol.Identity ReleasedLife;
         internal NativeResult Result;
@@ -246,6 +247,7 @@ internal sealed class AiAtomicActions
         bool combat=operation==CombatProtocol.Operation;
         if(operation==CombatProtocol.Boss && executor?.SupportsBossEncounter!=true)return new(Error:"unsupported_operation");
         if(BodyBlocked(current))return new(Error:"body_release_unconfirmed");
+        if (current.Autonomy != null && (active != null || !current.Autonomy.Released)) return new(Error:"action_busy");
         if(active!=null&&!combat)return new(Error:"action_busy");
         bool selecting = operation == "select_hotbar_slot";
         bool container = IsContainerOperation(operation);
@@ -317,6 +319,8 @@ internal sealed class AiAtomicActions
             Combat = admission, Operation = operation, Arguments = arguments.Clone(), Duration = duration,
             PurchaseLease = operation is "open_npc_dialogue" or "close_npc_dialogue" or "buy_npc_item" or "sell_npc_item" or "heal_at_nurse" or "reforge_item" ? current.RequestLease : null,
             Key = key, Target = HotbarSlots.ToInventorySlot(key), Deadline = clock() + (lease ?? duration), Disconnected = disconnected };
+        active.Autonomy = current.Autonomy;
+        if (active.Autonomy != null) active.Autonomy.Released = false;
         entries.Add(id, active);
         if(CombatActive)lastCombat=active;
         return new(new { action = Snapshot(active) });
@@ -336,6 +340,7 @@ internal sealed class AiAtomicActions
             worldSessionId = e.World, actorId = e.ActorId, actorGeneration = e.Generation, actorSlot = e.Slot,
             inputsAcquired = e.Handle != null && e.Result?.InputsAcquired != false, inputsReleased = e.Handle == null || e.Result?.InputsReleased == true,
             effectVerified = e.Result?.EffectVerified == true, operation = e.Operation, observationSequence = sequence };
+        if (e.Autonomy != null) e.Autonomy.Released = known && (e.Handle == null || e.Result?.InputsReleased == true);
         if (ReferenceEquals(active, e)) active = null;
         if(e.Operation==CombatProtocol.Operation)
         {
@@ -385,7 +390,7 @@ internal sealed class AiAtomicActions
         try { current = capture(); } catch { current = null; }
         if (!Matches(e, current))
         {
-            if(e.ReleasedLife is {} old && current?.CanAct==true && ReferenceEquals(old.Actor,current.Actor)
+            if(e.Autonomy == null && e.ReleasedLife is {} old && current?.CanAct==true && ReferenceEquals(old.Actor,current.Actor)
                 && old.World==current.World && old.Slot==current.Slot && current.Generation==old.Generation+1
                 && !e.Cancel && !e.Disconnected.IsCancellationRequested && clock()<e.Deadline
                 && executor.AfterRespawn(e.Handle,current) is {} plan)
@@ -402,6 +407,15 @@ internal sealed class AiAtomicActions
             }
             if(IsTask(e.Operation)&&e.Handle!=null){try{e.Result=executor.BindingLost(e.Handle);}catch{}}
             End(e,"unknown","actor_binding_changed",current,false);return;
+        }
+        if (e.Autonomy != null)
+        {
+            if (!e.Autonomy.Valid || !current.CanAct)
+            {
+                Stop(e, "cancelled", current.CanAct ? "autonomy_revoked" : "actor_not_alive", current);
+                return;
+            }
+            current = current with { Autonomy = e.Autonomy };
         }
         if (!current.CanAct && executor?.WaitingForRespawn(e.Handle,current)!=true) { Stop(e, "cancelled", "actor_not_alive", current); return; }
         if (e.Cancel || e.Disconnected.IsCancellationRequested) { Stop(e, "cancelled", "connection_cancelled", current); return; }

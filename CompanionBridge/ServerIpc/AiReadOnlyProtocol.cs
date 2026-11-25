@@ -20,6 +20,7 @@ internal sealed class AiReadOnlyProtocol
         internal object LifeEvent { get; init; }
         [System.Text.Json.Serialization.JsonIgnore]
         internal AutonomyGrant Autonomy { get; init; }
+        [System.Text.Json.Serialization.JsonIgnore]
         internal Lease RequestLease { get; init; }
     }
     internal sealed record AutonomyGrant(Guid Version, Binding Binding, CancellationToken ControlSession)
@@ -194,6 +195,13 @@ internal sealed class AiReadOnlyProtocol
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)
                 return JsonSerializer.Serialize(Reply(false, error: "stale_binding"));
+            if (root.TryGetProperty("autonomyVersion", out var version))
+            {
+                if (grant == null || !grant.Valid || grant.Binding != requested
+                    || !Guid.TryParseExact(version.GetString(), "N", out var token) || token != grant.Version)
+                    return JsonSerializer.Serialize(Reply(false, binding: requested, error: "autonomy_revoked", dispatchState: "not_admitted"));
+                current = current with { Autonomy = grant };
+            }
             current = current with { RequestLease = lease };
             var replyFence=replyFences.GetOrAdd(connection,_=>new());
             if(turning)

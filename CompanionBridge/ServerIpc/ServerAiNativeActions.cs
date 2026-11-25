@@ -90,6 +90,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
             new{operation,mutationAttempted=false,effectStatus="not_started"},true,InputsAcquired:false,ReasonDetail:detail));
+        if (identity.Autonomy != null)
+        {
+            if (!identity.Autonomy.Valid) return Reject("autonomy_revoked");
+            if (AutonomyPolicy.Refuses(identity, p, operation, args)) return Reject("autonomy_progression_trigger");
+        }
         if(NativeCombatWorld.Running||ActorControl.Running||ActorItemUse.Running||ActorMining.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
             return Reject("actor_busy");
         if(p.dead||p.ghost||(operation!="teleport_to_pylon" && (p.gravDir!=1||p.mount.Active)))return Reject("unsupported_actor_state");
