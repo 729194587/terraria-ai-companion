@@ -417,7 +417,7 @@ def scene_object(regional):
     return any_of(
         obj({**SCENE_OBJECT_FIELDS, **targets, 'kind': const('ore_component'), 'details': tile_details},
             optional=('target',)),
-        obj({**SCENE_OBJECT_FIELDS, 'kind': enum('tree_component', 'chest'),
+        obj({**SCENE_OBJECT_FIELDS, 'kind': enum('tree_component', 'chest','life_crystal'),
              'details': tile_details}),
         *(obj({**SCENE_OBJECT_FIELDS, 'kind': const(kind), 'details': tile_details,
                'furniture': furniture(kind)}, optional=('furniture',)) for kind in ('door', 'workbench', 'chair')),
@@ -480,7 +480,7 @@ SCENE_COUNTS = {'observed': dictionary(COUNT), 'returned': dictionary(COUNT)}
 CANDIDATE_VALIDATION = {'validation': S}
 
 
-def scene_variant(regional):
+def scene_variant(regional, resources=False):
     properties = dict(SCENE_BASE)
     if regional:
         properties.update(
@@ -536,6 +536,8 @@ def scene_variant(regional):
             'objectPlacementCandidates': {'objectPlacementMaterial': obj(fields(
                 integers='itemType stack', booleans='supported definitionSupported', strings='anchorMeaning'))},
         }
+    if not regional and not resources:
+        del layers['resources']
     properties['includedLayers'] = {**array(enum(*layers)), 'minItems': 1, 'uniqueItems': True}
     extra = {name: schema for companion in companions.values() for name, schema in companion.items()}
     schema = obj({**properties, **layers, **extra}, optional=(*layers, *extra))
@@ -551,6 +553,7 @@ def scene_variant(regional):
 
 
 DEFS['SceneLocal'] = scene_variant(False)
+DEFS['SceneLocalResources'] = scene_variant(False,resources=True)
 DEFS['SceneRegional'] = scene_variant(True)
 
 # These action records use the default C# serializer (PascalCase), unlike
@@ -1426,8 +1429,10 @@ def missing_for(exposed_names):
 def schema_for(name, *, capabilities=()):
     """Return one independent, self-contained result schema; unknown names raise KeyError."""
     schema = REGISTRY[name]
-    if name == 'observe_scene' and 'server_ai_scene_region_v1' in capabilities:
-        schema = any_of(observation(any_of(ref('SceneLocal'), ref('SceneRegional'))), PRE_DISPATCH)
+    if name == 'observe_scene':
+        local = ref('SceneLocalResources' if 'server_ai_resources_v1' in capabilities else 'SceneLocal')
+        view = any_of(local, ref('SceneRegional')) if 'server_ai_scene_region_v1' in capabilities else local
+        schema = any_of(observation(view), PRE_DISPATCH)
     if name == 'stop_action' and capabilities:
         operations = operations_for_capabilities(capabilities)
         schema = stop_schema(operations, 'mine_target' in operations and 'server_ai_program_tasks_v1' in capabilities)

@@ -15,6 +15,7 @@ import time
 import agent_trace as tracing
 import cost_metrics
 import atomic_operations
+from autonomous_mode import AutonomousMode
 import gameplay_skills
 import agent_memory
 import sqlite3
@@ -398,6 +399,7 @@ class Agent:
         self._news_review = None
         self._news_scene = None
         self._death_context = None
+        self.autonomy = None
         self._waiting_respawn = False
         self._deferred_chat = None
         self._last_player_chat = None
@@ -561,6 +563,8 @@ class Agent:
             return
         if self._last_player_chat and is_stop_request(self._last_player_chat['text']):
             return
+        if self.autonomy and self.autonomy.enabled and not self.autonomy.manual_busy():
+            return
         if self._news_review is None or self._news_review.done():
             self._news_review = asyncio.create_task(self._review_news(items[0]['sequence']))
             self._tasks.add(self._news_review)
@@ -618,10 +622,14 @@ class Agent:
             return
         if not self._waiting_respawn:
             self._waiting_respawn = True
+            if self.autonomy and self.autonomy.enabled:
+                await self.autonomy.pause('pause', 'waiting_respawn')
             if self._news_review:
                 self._news_review.cancel()
             self._death_context = {'death':death, 'playerRequest':self._last_player_chat,
                                   'goalAtDeath':self.goals.latest() if self.goals else None}
+            if self.autonomy and self.autonomy.enabled:
+                self._death_context['autonomy'] = dict(objective=self.autonomy.objective, progress=self.autonomy.progress)
             self._invalidate_turn('actor_died')
             if self.goals:
                 self.goals.revoke()
@@ -650,6 +658,13 @@ class Agent:
         self._death_context['death'] = death
         self._waiting_respawn = False
         event, self._deferred_chat = self._deferred_chat, None
+        if self.autonomy and self.autonomy.enabled:
+            self.autonomy.force_decision = True
+            self.autonomy.last_attempt = None
+            self.autonomy.next_check = 0
+            if event:
+                self.autonomy.pending_manual = event
+            return
         if event:
             self._start_turn(event)
         elif self._last_player_chat and not is_stop_request(self._last_player_chat['text']):
@@ -1410,6 +1425,15 @@ class Agent:
 
     async def close(self):
         self._closing = True
+        if self.autonomy:
+            try:
+                await self.autonomy.pause('off','stopping')
+            except (OSError, BridgeError):
+                if self.autonomy.worker:
+                    self.autonomy.worker.cancel()
+                    await asyncio.gather(self.autonomy.worker, return_exceptions=True)
+            if self.autonomy.mailbox:
+                await self.autonomy.mailbox.close()
         self._invalidate_turn('cancelled')
         if self.server_ai and not self.bridge._closed:
             try:
@@ -1555,12 +1579,16 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
             life_reader = await asyncio.to_thread(connect_execution)
             if life_reader.binding != execution.binding:
                 raise BridgeError('Life observer and execution identities differ')
+            if 'server_ai_autonomy_v1' in life_reader.hello['capabilities'] and 'autonomy_commands_v1' in bridge.hello['capabilities']:
+                agent.autonomy = AutonomousMode(agent, life_reader)
             agent.polling_server_messages = 'server_ai_messages_v1' in life_reader.hello['capabilities']
         next_life_check = 0
         while True:
             if life_reader and loop.time() >= next_life_check:
                 life = await asyncio.to_thread(life_reader.life_status)
                 await agent.observe_life(life, connect_execution)
+                if agent.autonomy:
+                    await agent.autonomy.pulse(life)
                 execution = agent.bridge
                 if execution._closed and not agent._waiting_respawn and life['generation']==execution.binding['generation']:
                     raise BridgeError('Execution connection closed without native death')
@@ -1568,13 +1596,19 @@ async def run(port, timeout, local_input=False, *, server_ai=False, ai_port=1877
             try:
                 event = await asyncio.wait_for(events.get(), timeout=0.2)
                 if event.get('type') == 'autonomy_command':
-                    if server_ai and life_reader and 'server_ai_autonomy_v1' in life_reader.hello['capabilities']:
-                        state = await asyncio.to_thread(life_reader.control_autonomy, event['command'])
-                        description = 'enabled' if state['enabled'] else 'disabled' if state['released'] else 'stopping'
+                    if agent.autonomy:
+                        description = await agent.autonomy.command(event['command'])
                     else:
                         description = 'unavailable on this backend'
-                    await asyncio.to_thread(bridge.command, 'autonomy_notice', text='Autonomy: '+description,
-                                            chatId=event['eventId'])
+                    try:
+                        await asyncio.to_thread(bridge.command, 'autonomy_notice', text='Autonomy: '+description,
+                                                chatId=event['eventId'])
+                    except BridgeError as error:
+                        if error.status != 'superseded':
+                            raise
+                elif (agent.autonomy and is_server_ai_chat(event)
+                      and (agent.autonomy.enabled or not agent.autonomy.released or agent.autonomy.pending_manual)):
+                    await agent.autonomy.manual(event)
                 else:
                     agent.receive(event)
             except asyncio.TimeoutError:

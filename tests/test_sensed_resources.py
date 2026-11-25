@@ -20,3 +20,15 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(len(h.observe(empty)['changes']),1)
         self.assertFalse(h.observe(empty)['changes'])
         self.assertEqual(h.observe(scan)['items'][0]['freshness'],'updated')
+
+    def test_ore_window_shift_keeps_one_record(self):
+        h=ResourceHistory()
+        def scan(x):
+            pts=[dict(x=i,y=4) for i in range(x,x+2)]
+            return dict(gameUpdate=x,complete=True,truncated=False,unknownCells=0,
+                        bounds=dict(minX=x,maxX=x+1,minY=0,maxY=10), items=[dict(kind='ore_component',
+                        typeId=7,contentKey='Copper',anchor=pts[0],bounds=dict(x=x,y=4,width=2,height=1),
+                        status='incomplete',tiles=pts)])
+        h.observe(scan(1))
+        self.assertEqual(h.observe(scan(2))['items'][0]['freshness'],'updated')
+        self.assertEqual(len(h.records),1)

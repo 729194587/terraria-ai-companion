@@ -114,6 +114,7 @@ public sealed class ServerAiSystem : ModSystem
             }
             WorldCharacterSelfTest.Tick();
             var actor=Capture();
+            server.ObserveAutonomyIdentity(actor);
             ActorContainer.Tick(actor);
             ServerContainerFixture.Tick(actor);
             ServerCollectFixture.Tick(actor);
@@ -169,7 +170,8 @@ public sealed class ServerAiSystem : ModSystem
             selectedItem = p.selectedItem >= 0 && p.selectedItem < inventory.Length ? inventory[p.selectedItem] : null,
             inventory
         };
-        return new(p, ProbeSession.WorldSession, ProbeSession.ActorGeneration, p.whoAmI, state, p.selectedItem, Main.GameUpdateCount, !p.dead && !p.ghost){LifeEvent=NativeSurvival.LastDeath, MessageSequence=ServerGameMessages.Sequence, ReadMessages=ServerGameMessages.Since};
+        var identity = new AiReadOnlyProtocol.Identity(p, ProbeSession.WorldSession, ProbeSession.ActorGeneration, p.whoAmI, state, p.selectedItem, Main.GameUpdateCount, !p.dead && !p.ghost){LifeEvent=NativeSurvival.LastDeath, MessageSequence=ServerGameMessages.Sequence, ReadMessages=ServerGameMessages.Since};
+        return identity with { ReadTeamBosses = () => ServerRegroup.ActiveTeamBosses(identity) };
     }
     private static void Select(AiReadOnlyProtocol.Identity expected, int slot)
     {

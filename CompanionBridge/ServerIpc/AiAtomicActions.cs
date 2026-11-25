@@ -139,6 +139,9 @@ internal sealed class AiAtomicActions
     private long sequence;
     internal object CurrentActivity => active == null ? null : new { actionId=active.Id, operation=active.Operation, phase=active.Phase, arguments=active.Arguments.ValueKind==JsonValueKind.Undefined?(JsonElement?)null:active.Arguments };
     internal bool HasActive=>active!=null;
+    private Entry uncertainManual;
+    internal bool CanSchedule(AiReadOnlyProtocol.Identity frame) =>
+        active == null && !BodyBlocked(frame) && !Matches(uncertainManual,frame);
     internal bool BodyBlocked(AiReadOnlyProtocol.Identity current)=>Matches(blockedBody,current);
     internal bool SupportsCombat=>executor?.SupportsCombat==true;
     internal bool SupportsContainers=>executor?.SupportsContainers==true;
@@ -340,6 +343,7 @@ internal sealed class AiAtomicActions
             worldSessionId = e.World, actorId = e.ActorId, actorGeneration = e.Generation, actorSlot = e.Slot,
             inputsAcquired = e.Handle != null && e.Result?.InputsAcquired != false, inputsReleased = e.Handle == null || e.Result?.InputsReleased == true,
             effectVerified = e.Result?.EffectVerified == true, operation = e.Operation, observationSequence = sequence };
+        if (e.Autonomy == null && status == "unknown") uncertainManual = e;
         if (e.Autonomy != null) e.Autonomy.Released = known && (e.Handle == null || e.Result?.InputsReleased == true);
         if (ReferenceEquals(active, e)) active = null;
         if(e.Operation==CombatProtocol.Operation)

@@ -17,6 +17,7 @@ internal sealed class AiReadOnlyProtocol
         [System.Text.Json.Serialization.JsonIgnore]
         internal long MessageSequence {get;init;}
         internal Func<long,object> ReadMessages {get;init;}
+        internal Func<object> ReadTeamBosses { get; init; }
         internal object LifeEvent { get; init; }
         [System.Text.Json.Serialization.JsonIgnore]
         internal AutonomyGrant Autonomy { get; init; }
@@ -30,6 +31,7 @@ internal sealed class AiReadOnlyProtocol
         internal bool Released = true;
     }
     private Guid? autonomyController;
+    private Identity controlIdentity;
     private AutonomyGrant grant;
     private bool autonomyEnabled;
 
@@ -38,6 +40,13 @@ internal sealed class AiReadOnlyProtocol
         if (grant != null) grant.Revoked = true;
         autonomyEnabled = false;
         autonomyController = null;
+        controlIdentity = null;
+    }
+
+    internal void ObserveAutonomyIdentity(Identity current)
+    {
+        if (controlIdentity != null && (current == null || !ReferenceEquals(controlIdentity.Actor,current.Actor)
+            || controlIdentity.World != current.World || controlIdentity.Slot != current.Slot)) ResetAutonomy();
     }
 
     private object ControlAutonomy(Guid controller, string command, Identity current, CancellationToken disconnected)
@@ -48,6 +57,7 @@ internal sealed class AiReadOnlyProtocol
         if (command == "off") autonomyEnabled = false;
         if (command == "on")
         {
+            controlIdentity = current;
             autonomyController = controller;
             autonomyEnabled = true;
         }
@@ -58,7 +68,7 @@ internal sealed class AiReadOnlyProtocol
             grant = new(Guid.NewGuid(), new(ActorId(current), current.World, current.Generation, current.Slot), disconnected);
         }
         return new { enabled = autonomyEnabled, released = grant?.Released != false,
-            version = command == "grant" && grant?.Valid == true ? grant.Version.ToString("N") : null };
+            version = command == "grant" && current.CanAct && actions.CanSchedule(current) && grant?.Binding.generation == current.Generation && grant.Valid == true ? grant.Version.ToString("N") : null };
     }
 
     internal sealed record Binding(string actor, string world, long generation, int slot);
@@ -190,7 +200,9 @@ internal sealed class AiReadOnlyProtocol
             {
                 var messages=current.ReadMessages?.Invoke(lease.MessageCursor);
                 lease.MessageCursor=current.MessageSequence;
-                return JsonSerializer.Serialize(Reply(true,new { generation=current.Generation, ready=current.CanAct, death=current.LifeEvent,messages },lease.Binding));
+                return JsonSerializer.Serialize(Reply(true,new { generation=current.Generation, ready=current.CanAct, death=current.LifeEvent,messages,
+                    autonomy=connection==autonomyController?new{enabled=autonomyEnabled,released=grant?.Released!=false}:null,
+                    teamBosses=autonomyEnabled && connection==autonomyController && current.CanAct?current.ReadTeamBosses?.Invoke():null },lease.Binding));
             }
             if (!ReferenceEquals(lease.Identity.Actor, current.Actor)
                 || lease.Identity.World != current.World || lease.Identity.Generation != current.Generation || lease.Identity.Slot != current.Slot)
