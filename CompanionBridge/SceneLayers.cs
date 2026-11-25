@@ -8,7 +8,7 @@ namespace CompanionBridge;
 // One additive read option; factories run only for explicitly included layers.
 internal sealed class SceneLayers
 {
-    private static readonly string[] Names={"map","geometry","objects","hazards","landingRegions","placementCandidates","objectPlacementCandidates"};
+    private static readonly string[] Names={"map","geometry","objects","hazards","landingRegions","placementCandidates","objectPlacementCandidates","resources"};
     private readonly HashSet<string> selected;
     private SceneLayers(IEnumerable<string> names){selected=new(names,StringComparer.Ordinal);}
     internal string[] Included=>Names.Where(Has).ToArray();
@@ -17,7 +17,7 @@ internal sealed class SceneLayers
     {
         if(args.ValueKind!=JsonValueKind.Object)throw new FormatException("Scene arguments must be an object.");
         bool region=SceneScope.Read(args).Region;
-        if(!args.TryGetProperty("layers",out var layers))return new(region?new[]{"geometry","objects","hazards"}:Names);
+        if(!args.TryGetProperty("layers",out var layers))return new(region?new[]{"geometry","objects","hazards"}:Names.Take(7));
         if(args.EnumerateObject().Count(p=>p.Name=="layers")!=1||layers.ValueKind!=JsonValueKind.Array
             ||layers.GetArrayLength()<1||layers.GetArrayLength()>Names.Length)
             throw new FormatException("layers must be a nonempty unique array of supported scene layer names.");

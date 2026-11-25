@@ -3,9 +3,9 @@ return function(options)
     options = options or {}
     for k in pairs(options) do
         assert(k == 'maxObjects' or k == 'radius' or k == 'trees' or k == 'ores'
-            or k == 'drops' or k == 'oreNames' or k == 'dropTypes', 'sense_world: unknown option')
+            or k == 'resources' or k == 'drops' or k == 'oreNames' or k == 'dropTypes', 'sense_world: unknown option')
     end
-    for _,k in ipairs({'trees','ores','drops'}) do
+    for _,k in ipairs({'trees','ores','drops','resources'}) do
         assert(options[k] == nil or type(options[k]) == 'boolean', 'sense_world: category must be boolean')
     end
     local trees, ores, drops = options.trees ~= false, options.ores ~= false, options.drops ~= false
@@ -63,6 +63,11 @@ return function(options)
         return #report.sources
     end
     source(view,'observe_terrain')
+    if options.resources then
+        local scene=read('observe_scene',{layers={'resources'},maxObjects=cap})
+        report.resources=scene.data.resources
+        source(scene,'observe_scene')
+    end
     local types, treeType = {}, nil
     local names={}
     if trees then names[#names+1]='Trees' end

@@ -507,6 +507,12 @@ def scene_variant(regional):
         properties.update(schemaVersion=const(2), coverage=obj(SCENE_COVERAGE), sample=obj(SCENE_SAMPLE))
         rows = obj({**ORIGIN, 'rows': array(S)})
         layers = {
+            'resources': obj({'source': const('local_resource_scan'), 'gameUpdate': TICK,
+                'unknownCells': COUNT, 'scannedTiles': COUNT, 'bounds': ref('TileBounds'),
+                'complete': B, 'truncated': B, 'matchedCount': COUNT,
+                'items': array(obj({'kind': enum('chest','life_crystal','ore_component','drop'),
+                    'typeId': I, 'contentKey': S, 'anchor': ref('TilePoint'), 'bounds': ref('TileRect'),
+                    'tiles': array(ref('TilePoint')), 'status': enum('complete','incomplete'), 'entityRef': nullable(S)},optional=('entityRef',)))}),
             'map': rows, 'geometry': rows, 'objects': scene_list(ref('SceneObjectLocal')),
             'hazards': obj(SCENE_HAZARDS),
             'landingRegions': scene_list(obj({'id': S, 'target': ref('LandingRegion'), 'feetDeltaY': N}),

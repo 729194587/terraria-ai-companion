@@ -47,7 +47,7 @@ CONTAINER_TRANSFER_ARGS = {
 }
 INVENTORY_GUARDS = {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN,
                     "destinationToken": INVENTORY_TOKEN}
-SCENE_LAYERS = ["map", "geometry", "objects", "hazards", "landingRegions", "placementCandidates", "objectPlacementCandidates"]
+SCENE_LAYERS = ["map", "geometry", "objects", "hazards", "landingRegions", "placementCandidates", "objectPlacementCandidates", "resources"]
 SCENE_EXCLUDED_PARAMS = {'local': ('width', 'height'), 'region': ('maxRegions', 'maxPlacements')}
 REGION_DEFAULT_LAYERS = ('geometry', 'objects', 'hazards')
 REGION_DEFAULT_WIDTH, REGION_DEFAULT_HEIGHT, REGION_MAX_AREA = 120, 68, 8192
@@ -85,7 +85,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     {"recipeId":{"type":"integer","minimum":0,"maximum":100000},"recipeToken":INVENTORY_TOKEN,"crafts":{"type":"integer","minimum":1,"maximum":20}},["recipeId","recipeToken","crafts"]),tool("observe_scene", "服务器AI局部45×29二维侧视语义图：几何/对象/危险来源、可直接用于导航的landingRegions.items[].target和相互独立的placementCandidates（单格place_tile）/objectPlacementCandidates（工作台place_object，含完整footprint/support）候选。geometry/map共用originX/originY，Lua用string.sub解析行。单次游戏线程采样；候选不保证可达/放置成功，树组件不是整树计数；检查coverage与各集合truncated。可选layers为非空、无重复的白名单数组，未传返回全部七层；data.includedLayers列出实际层，未请求字段省略。objects附带objectCounts，放置候选附带对应Material；身份、范围、角色、coverage和sample始终保留。objectPlacementCandidates.diagnostics区分已检查排除、unknownCount及notCheckedCount；matchedCount仍为通过筛选且截断前的数目。" + SCENE_TEXT_CONTRACT,
     {**{key:{"type":"integer","minimum":1,"maximum":64 if key=="maxHazards" else 24 if key=="maxRegions" else 32}
      for key in ("maxObjects","maxRegions","maxPlacements","maxHazards")},
-     "layers":{"type":"array","items":{"type":"string","enum":SCENE_LAYERS},"minItems":1,"maxItems":7,"uniqueItems":True},
+     "layers":{"type":"array","items":{"type":"string","enum":SCENE_LAYERS},"minItems":1,"maxItems":8,"uniqueItems":True},
      "scale":{"type":"string","enum":["local","region"]},
      "width":{"type":"integer","minimum":45,"maximum":128},
      "height":{"type":"integer","minimum":29,"maximum":96}}),tool("get_player_state", "读取真实玩家位置/速度/生命和地面支撑及运动模型支持状态。"),
@@ -337,7 +337,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时，指定width或hei
     'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
 
 
-def server_tools(supported, *, map_chunks=False, bulk_purchase=False, bed_spawn=False, scene_region=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False):
+def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=False, bed_spawn=False, scene_region=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
     definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')]
     for definition in definitions:
@@ -384,6 +384,12 @@ def server_tools(supported, *, map_chunks=False, bulk_purchase=False, bed_spawn=
             else:
                 f['parameters']['properties'].pop('cluster', None)
         if name == 'observe_scene':
+            if not resources:
+                layers = f['parameters']['properties']['layers']
+                layers['items']['enum'].remove('resources')
+                layers['maxItems'] = 7
+            else:
+                f['description'] += ' Optional local resources layer gives bounded through-wall hits and exact observed Tiles; check completeness and revalidate before acting.'
             f['description'] += ('data.lighting 在 available=true 时提供角色中心的原生 Tile 光照估计。'
                 'hazards.entities.items可带observedGameUpdate、observationRef、velocity和threat。'
                 'observationRef仅本次场景有效。threat是在12游戏更新内按恒速和弹幕extraUpdates推算的包围盒接触，'
@@ -1579,6 +1585,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_doors_v1')
     if name == 'place_rope' and 'server_ai_place_rope_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_place_rope_v1; no rope placement RPC started')
+    if name == 'observe_scene' and 'resources' in arguments.get('layers', ()) and 'server_ai_resources_v1' not in bridge.hello.get('capabilities', ()):
+        raise PreDispatchRejected('Resource scanning unavailable')
     if name == 'observe_scene' and 'server_ai_scene_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_scene_v1; no scene query started')
     if name == 'observe_scene' and any(k in arguments for k in ('scale','width','height')) and 'server_ai_scene_region_v1' not in bridge.hello.get('capabilities', []):

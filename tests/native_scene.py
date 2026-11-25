@@ -26,6 +26,13 @@ async def run(args):
             s=r['value']['data']
             assert len(s['map']['rows'])==29 and all(len(row)==45 for row in s['map']['rows'])
             assert s['sample']['sameGameUpdate'] and s['gameUpdate']==r['value']['gameUpdate']
+            resources=(await program('resources',"return api('observe_scene',{layers={'resources'},maxObjects=32})"))['value']['data']
+            assert not {'map','geometry','objects'} & resources.keys()
+            hits=resources['resources']['items']
+            chest=next(h for h in hits if h['kind']=='chest' and h['status']=='complete')
+            assert len(chest['tiles'])==4 and chest['bounds']==dict(**chest['anchor'],width=2,height=2)
+            assert any(h['kind']=='ore_component' and h['tiles'] for h in hits)
+            assert any(h['kind']=='drop' and h.get('entityRef') for h in hits)
             kinds=s['objectCounts']['observed']
             for kind in ('tree_component','ore_component','chest','door','workbench','npc','drop'):assert kinds.get(kind,0)>0,(kind,s)
             assert all(not o['complete'] for o in s['objects']['items'] if o['kind']=='tree_component')

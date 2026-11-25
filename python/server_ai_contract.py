@@ -130,7 +130,7 @@ def server_definitions(bridge, supported=None):
     if supported is None:
         supported = exposed_operations(bridge)
     capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
-    definitions = atomic.server_tools(supported, map_chunks='server_ai_map_chunks_v1' in capabilities, bulk_purchase='server_ai_merchant_bulk_purchase_v1' in capabilities,
+    definitions = atomic.server_tools(supported, resources='server_ai_resources_v1' in capabilities, map_chunks='server_ai_map_chunks_v1' in capabilities, bulk_purchase='server_ai_merchant_bulk_purchase_v1' in capabilities,
                                       bed_spawn='server_ai_bed_spawn_v1' in capabilities, combat_inventory="server_ai_combat_inventory_v1" in capabilities,
                                       summon_loadout="server_ai_combat_summon_loadout_v1" in capabilities,
                                       dual_weapons="server_ai_combat_secondary_v1" in capabilities, scene_region='server_ai_scene_region_v1' in capabilities,
@@ -246,9 +246,11 @@ def api_help(bridge, arguments):
             'returnsSchema': returns_schema, 'limits': row['limits']}
 
 
-def helper_reference(supported):
+def helper_reference(supported, capabilities=()):
     lines = []
     if SEMANTIC_APIS <= supported:
+        if 'server_ai_resources_v1' in capabilities:
+            lines.append("sense_world({resources=true}) also returns the bounded local resource scan in resources.")
         lines.append("sense_world(options)是只读Lua组合，不是api：trees/ores/drops默认true；maxObjects=1..16默认8，radius=1..1600像素默认640（仅掉落）；oreNames须非空唯一，可用Copper/Tin/Iron/Lead/Silver/Tungsten/Gold/Platinum/Demonite/Crimtane/Meteorite/Hellstone/Cobalt/Palladium/Mythril/Orichalcum/Adamantite/Titanium/Chlorophyte；dropTypes须非空唯一、最多32个0..65535观察/解析的类型ID，过滤器要求对应类别开启。例sense_world({trees=true,ores=false,drops=false,maxObjects=4})；未查询类别不是不存在，树干片段不是整树；来源非同帧，保留未知/截断；树查询最多3+maxObjects次、K种矿最多2+K+maxObjects次、仅掉落2次API。")
     else:
         lines.append('sense_world虽由Worker注入，但当前后端缺少依赖，勿调用。')
@@ -261,7 +263,7 @@ def helper_reference(supported):
     return '\n'.join(lines)
 
 
-def runtime_reference(supported):
+def runtime_reference(supported, capabilities=()):
     limits = Limits()
     libraries = '; '.join(name+'.'+('/'.join(members)) for name, members in LIBRARIES.items())
     text = f'''游戏查询和动作统一通过execute_lua({{source="完整程序"}})提交Lua 5.4；源码≤{SOURCE_BYTES} UTF-8字节，无Markdown围栏。
@@ -277,7 +279,7 @@ log(message)最多32条、每条512 UTF-8字节，不占API次数；log/value是
 行动结果{{valid,status,completed,reason,evidence,endEvidence,endEvidenceStatus}}只有valid且completed及known结束证据才可称动作完成；输入释放成功不证明效果确定，unknown保持unknown并隔离连接/阻止后续变更，不重连重放。failed/timeout/cancelled默认终止程序，不回滚先前效果。
 程序completed只表示正常返回，value仅为正常返回值；核对programCompleted/actionSuccess/lastAction/taskOutcome，taskOutcome=unknown不声称目标完成。actionResults按sequence保留宿主动作回执，总限32KiB，phase=cleanup表示清理观察而非重执行；summaryOnly为有损摘要，omittedCount为整条省略数，summaryOnlyCount为仅摘要数，truncated明确超限。依据已完成项及失败/unknown如实说明部分进度和停止原因；可见结果不授权继续或重试。历史valueExpired/logsExpired不是当前观察。
 '''
-    return text + helper_reference(supported)
+    return text + helper_reference(supported, capabilities)
 
 
 ROLE_PRINCIPLES = '''你通过玩家本地主动聊天与其对话并控制独立服务器AI Player。普通聊天和知识问答直接回答；游戏状态问题按需只读观察。无需!ai前缀，旧!ai兼容；用玩家语言简短回复，最多400字符。宿主以AI身份广播回复；始终以绑定AI的状态行动。
@@ -370,7 +372,7 @@ def server_contract(bridge, tool, *, compact=False):
                     +'\n模块用于复用游戏流程，玩法知识查 read_skill，参数与回执查 api("help")。'
                     +'\nCapability Manifest\n'+manifest_text
                     +'\nAPI Contract\n'+api_reference
-                    +'\nLua Runtime Reference\n'+runtime_reference(supported)
+                    +'\nLua Runtime Reference\n'+runtime_reference(supported, bridge.hello.get('capabilities', ()))
                     +('' if compact else '\n'+help_reference)
                     +'\n示例（含动作的例子仅在授权后使用）\n'+'\n'.join(examples))
     projected_tool = json.loads(json.dumps(tool))
