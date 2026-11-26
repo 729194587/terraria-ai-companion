@@ -93,6 +93,7 @@ public sealed class VirtualPlayerEngineProbe
         NativeItemOwnership.Install(Install);
         ActorMining.Install(Install);
         InstallOptional("ImproveGame vein mining", () => DedicatedContentAdapters.InstallVeinMining(Install));
+        InstallOptional("ImproveGame potion buffs", () => ImproveGamePotionBuffs.Install(Install));
         ActorPlacement.Install(Install);
         ActorItemUse.Install(Install);
         NativeItemInput.Install(Install);

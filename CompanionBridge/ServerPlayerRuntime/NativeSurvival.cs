@@ -47,6 +47,10 @@ internal static class NativeSurvival
             install(() => On_Player.PickupItem += CompanionBridge.ServerIpc.ServerItemDrop.Pickup,
                 () => On_Player.PickupItem -= CompanionBridge.ServerIpc.ServerItemDrop.Pickup);
         var breath=Patch("breath");
+        ILContext.Manipulator countdown = il => SurvivalPatches.BuffClock(il.Method, il.Module.ImportReference(predicate), true);
+        ILContext.Manipulator expired = il => SurvivalPatches.BuffClock(il.Method, il.Module.ImportReference(predicate), false);
+        install(() => IL_Player.UpdateBuffs += countdown, () => IL_Player.UpdateBuffs -= countdown);
+        install(() => IL_Player.Update += expired, () => IL_Player.Update -= expired);
         install(()=>IL_Player.CheckDrowning+=breath,()=>IL_Player.CheckDrowning-=breath);
         var lethal=Patch("lethal");var dodge=Patch("dodge");
         var drops=Patch("death-drops");var spawn=Patch("spawn");var coins=Patch("coin-mouse");
