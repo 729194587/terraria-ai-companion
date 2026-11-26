@@ -37,6 +37,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
     private bool wallPlacementIssued;
     private sealed record WallPlatform(int X,int Y,int Side,int Slot,int ItemType,int JumpFrames);
     private readonly HashSet<(int,int)> triedWallPlatforms=new();
+    internal bool ContinuingSpecialRoute=>wallPlatform!=null||bridgeTip.HasValue||bankCrossing!=null;
     public bool CanBuildWallStep=>PlanWallPlatform()!=null;
     private readonly HashSet<(int X,int Row)> attemptedBridgeStarts=new();
     private readonly Queue<object> decisions=new();
@@ -104,7 +105,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
     {
         if(!WorldGen.InWorld((int)(x/16),(int)(y/16),2))return "invalid_navigation_destination";
         if(!GameNavigation.Ordinary(player))return "unsupported_navigation_profile";
-        edits=new(identity,ServerAiNavigation.Observe(player).State,rolling:true);
+        edits=new(identity,ServerAiNavigation.Observe(player).State,(x,y)=>identity.Autonomy!=null&&AutonomyPolicy.ProtectedTile(x,y),rolling:true);
         return null;
     }
 
@@ -507,7 +508,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
 
     public void ReleasePlanning()
     {evaluation?.Dispose();evaluation=null;movement?.Dispose();movement=null;ready=false;preferDryBank=false;selected=null;PlanningPending=false;}
-    private long InventoryStamp()
+    internal long InventoryStamp()
     {
         unchecked
         {
@@ -520,7 +521,15 @@ internal sealed class NativeNavigationWorld : INavigationWorld
             return hash;
         }
     }
+    private double planningMs,maxSliceMs;
+    public object PlanningTime=>new{planningMs,maxSliceMs};
     private void Evaluate(int remaining,bool force)
+    {
+        var timer=System.Diagnostics.Stopwatch.StartNew();
+        try{EvaluateSlice(remaining,force);}
+        finally{double ms=timer.Elapsed.TotalMilliseconds;planningMs+=ms;maxSliceMs=Math.Max(ms,maxSliceMs);}
+    }
+    private void EvaluateSlice(int remaining,bool force)
     {
         if(!GameNavigation.Ordinary(player))
         {

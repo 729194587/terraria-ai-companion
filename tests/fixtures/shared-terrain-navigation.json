@@ -1,0 +1,4939 @@
+{
+  "baseline": "f26a632183156b06353be565f3db194f0bde45a4",
+  "worldSHA256": "918e33d72ae761f990caa31e0734dd04ab375b3b4f4582702fcbf087d00707f0",
+  "controlled": {
+    "shared": {
+      "nav_detour": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34824,
+          "goalY": 3184,
+          "oreX": 2176,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 166,
+              "planningMs": 103.86,
+              "maxSliceMs": 10.13,
+              "cuts": 0,
+              "places": 0,
+              "moves": 2,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 192,
+              "planningMs": 104.24,
+              "maxSliceMs": 7.54,
+              "cuts": 0,
+              "places": 0,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": null,
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34672.195,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34781.95,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34814.23,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34814.23,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "movement",
+            "movement": {
+              "Movement": 124,
+              "Clearance": 0,
+              "Target": 0,
+              "Cuts": 0,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 0,
+              "Total": 124
+            },
+            "clearance": {
+              "Movement": 123,
+              "Clearance": 19,
+              "Target": 0,
+              "Cuts": 1,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 4,
+              "Total": 146
+            },
+            "actions": [
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34781.164,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34781.164,
+                "fromY": 3142,
+                "toX": 34813.445,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": null,
+            "dependencies": {
+              "count": 90,
+              "left": 2165,
+              "right": 2177,
+              "top": 190,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "nav_fast": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34664,
+          "goalY": 3248,
+          "oreX": 2169,
+          "oreY": 204,
+          "tool": 2176,
+          "prefix": 15,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 482,
+              "planningMs": 1427.1,
+              "maxSliceMs": 5.63,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 67,
+              "planningMs": 86.02,
+              "maxSliceMs": 5.67,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 1,
+            "baseline": {
+              "updates": 274,
+              "planningMs": 740.86,
+              "maxSliceMs": 7.65,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 66,
+              "planningMs": 82.49,
+              "maxSliceMs": 3.82,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 2,
+            "baseline": {
+              "updates": 270,
+              "planningMs": 714.89,
+              "maxSliceMs": 8.14,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 66,
+              "planningMs": 76.14,
+              "maxSliceMs": 3.4,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": null,
+        "children": [
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2167,
+            "Y": 199,
+            "TileType": 1,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2166,
+            "Y": 199,
+            "TileType": 1,
+            "destroyedByActor": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34656,
+        "finalFeet": 3248,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": {
+              "Movement": 116,
+              "Clearance": 0,
+              "Target": 0,
+              "Cuts": 0,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 0,
+              "Total": 116
+            },
+            "clearance": {
+              "Movement": 20,
+              "Clearance": 20,
+              "Target": 0,
+              "Cuts": 2,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 8,
+              "Total": 48
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2167,
+                "Y": 199,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2166,
+                "Y": 199,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3206
+              }
+            ],
+            "predictedGoal": null,
+            "dependencies": {
+              "count": 29,
+              "left": 2165,
+              "right": 2168,
+              "top": 196,
+              "bottom": 204
+            }
+          }
+        ]
+      },
+      "nav_slow": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34664,
+          "goalY": 3248,
+          "oreX": 2169,
+          "oreY": 204,
+          "tool": 3509,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 324,
+              "planningMs": 664.27,
+              "maxSliceMs": 5.36,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 218,
+              "planningMs": 135.92,
+              "maxSliceMs": 3.34,
+              "cuts": 0,
+              "places": 0,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 1,
+            "baseline": {
+              "updates": 330,
+              "planningMs": 676.55,
+              "maxSliceMs": 4.46,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 220,
+              "planningMs": 152.94,
+              "maxSliceMs": 3.7,
+              "cuts": 0,
+              "places": 0,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 2,
+            "baseline": {
+              "updates": 328,
+              "planningMs": 669.32,
+              "maxSliceMs": 4.14,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 220,
+              "planningMs": 153.65,
+              "maxSliceMs": 4.13,
+              "cuts": 0,
+              "places": 0,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": null,
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34745.83,
+            "y": 3206,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34729.633,
+            "y": 3206,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34657.043,
+            "y": 3206,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34657.043,
+        "finalFeet": 3248,
+        "decisions": [
+          {
+            "choice": "movement",
+            "movement": {
+              "Movement": 116,
+              "Clearance": 0,
+              "Target": 0,
+              "Cuts": 0,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 0,
+              "Total": 116
+            },
+            "clearance": {
+              "Movement": 20,
+              "Clearance": 92,
+              "Target": 0,
+              "Cuts": 2,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 8,
+              "Total": 120
+            },
+            "actions": null,
+            "predictedGoal": null,
+            "dependencies": null
+          },
+          {
+            "choice": "movement",
+            "movement": {
+              "Movement": 76,
+              "Clearance": 0,
+              "Target": 0,
+              "Cuts": 0,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 0,
+              "Total": 76
+            },
+            "clearance": null,
+            "actions": [
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34745.83,
+                "fromY": 3206,
+                "toX": 34731.477,
+                "toY": 3206
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34731.477,
+                "fromY": 3206,
+                "toX": 34658.887,
+                "toY": 3206
+              }
+            ],
+            "predictedGoal": null,
+            "dependencies": {
+              "count": 32,
+              "left": 2166,
+              "right": 2172,
+              "top": 200,
+              "bottom": 204
+            }
+          }
+        ]
+      },
+      "nav_thin": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34824,
+          "goalY": 3184,
+          "oreX": 2176,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 226,
+              "planningMs": 170.7,
+              "maxSliceMs": 5.69,
+              "cuts": 3,
+              "places": 0,
+              "moves": 2,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 265,
+              "planningMs": 174.77,
+              "maxSliceMs": 4.91,
+              "cuts": 3,
+              "places": 0,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": null,
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34672.195,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2169,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2169,
+            "Y": 197,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2169,
+            "Y": 198,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34704.477,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34814.23,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34814.23,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 123,
+              "Clearance": 57,
+              "Target": 0,
+              "Cuts": 3,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 12,
+              "Total": 192
+            },
+            "actions": [
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 196,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 197,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 198,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34702.633,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34702.633,
+                "fromY": 3142,
+                "toX": 34812.387,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": null,
+            "dependencies": {
+              "count": 63,
+              "left": 2165,
+              "right": 2177,
+              "top": 195,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "nav_sequential": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34872,
+          "goalY": 3184,
+          "oreX": 2179,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 976,
+              "planningMs": 107.83,
+              "maxSliceMs": 5.49,
+              "cuts": 6,
+              "places": 0,
+              "moves": 2,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 377,
+              "planningMs": 174.18,
+              "maxSliceMs": 4.75,
+              "cuts": 6,
+              "places": 0,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 1,
+            "baseline": {
+              "updates": 973,
+              "planningMs": 107.62,
+              "maxSliceMs": 4.01,
+              "cuts": 6,
+              "places": 0,
+              "moves": 2,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 373,
+              "planningMs": 156.45,
+              "maxSliceMs": 4.56,
+              "cuts": 6,
+              "places": 0,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 2,
+            "baseline": {
+              "updates": 1048,
+              "planningMs": 115.46,
+              "maxSliceMs": 4.29,
+              "cuts": 6,
+              "places": 0,
+              "moves": 2,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 368,
+              "planningMs": 143.49,
+              "maxSliceMs": 5.82,
+              "cuts": 6,
+              "places": 0,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": null,
+        "children": [
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2168,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2168,
+            "Y": 197,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2168,
+            "Y": 198,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34672.195,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34744.785,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2173,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2173,
+            "Y": 197,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2173,
+            "Y": 198,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34852.535,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34852.535,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 140,
+              "Clearance": 114,
+              "Target": 0,
+              "Cuts": 6,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 24,
+              "Total": 278
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 196,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 197,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 198,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34742.94,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 196,
+                "fromX": 34742.94,
+                "fromY": 3142,
+                "toX": 34742.94,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 197,
+                "fromX": 34742.94,
+                "fromY": 3142,
+                "toX": 34742.94,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 198,
+                "fromX": 34742.94,
+                "fromY": 3142,
+                "toX": 34742.94,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34742.94,
+                "fromY": 3142,
+                "toX": 34852.695,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": null,
+            "dependencies": {
+              "count": 73,
+              "left": 2165,
+              "right": 2179,
+              "top": 195,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "nav_support": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34856,
+          "goalY": 3184,
+          "oreX": 2178,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 8
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 244,
+              "planningMs": 99.7,
+              "maxSliceMs": 3.35,
+              "cuts": 0,
+              "places": 2,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 261,
+              "planningMs": 211.43,
+              "maxSliceMs": 4.2,
+              "cuts": 0,
+              "places": 3,
+              "moves": 2,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 1,
+            "baseline": {
+              "updates": 245,
+              "planningMs": 107.35,
+              "maxSliceMs": 3.73,
+              "cuts": 0,
+              "places": 2,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 278,
+              "planningMs": 294.6,
+              "maxSliceMs": 5.61,
+              "cuts": 0,
+              "places": 3,
+              "moves": 2,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 2,
+            "baseline": {
+              "updates": 241,
+              "planningMs": 89.64,
+              "maxSliceMs": 4.63,
+              "cuts": 0,
+              "places": 2,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 279,
+              "planningMs": 297.26,
+              "maxSliceMs": 6.9,
+              "cuts": 0,
+              "places": 3,
+              "moves": 2,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": null,
+        "children": [
+          {
+            "action": "place_tile",
+            "reason": "native_tile_placed_and_consumed",
+            "released": true,
+            "x": 2168,
+            "y": 199,
+            "typeId": 0,
+            "placedByActor": true,
+            "consumedCount": 1,
+            "targetPresent": true
+          },
+          {
+            "action": "place_tile",
+            "reason": "native_tile_placed_and_consumed",
+            "released": true,
+            "x": 2169,
+            "y": 199,
+            "typeId": 0,
+            "placedByActor": true,
+            "consumedCount": 1,
+            "targetPresent": true
+          },
+          {
+            "action": "place_tile",
+            "reason": "native_tile_placed_and_consumed",
+            "released": true,
+            "x": 2170,
+            "y": 199,
+            "typeId": 0,
+            "placedByActor": true,
+            "consumedCount": 1,
+            "targetPresent": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34765.754,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34838.344,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          }
+        ],
+        "placed": [
+          2168,
+          2169,
+          2170
+        ],
+        "finalLeft": 34838.344,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 116,
+              "Clearance": 0,
+              "Target": 0,
+              "Cuts": 0,
+              "Placement": 69,
+              "Places": 3,
+              "Alteration": 12,
+              "Total": 197
+            },
+            "actions": [
+              {
+                "kind": "Place",
+                "X": 2168,
+                "Y": 199,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2169,
+                "Y": 199,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2170,
+                "Y": 199,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34765.754,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34765.754,
+                "fromY": 3142,
+                "toX": 34838.344,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": null,
+            "dependencies": {
+              "count": 66,
+              "left": 2165,
+              "right": 2178,
+              "top": 196,
+              "bottom": 200
+            }
+          },
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 116,
+              "Clearance": 0,
+              "Target": 0,
+              "Cuts": 0,
+              "Placement": 46,
+              "Places": 2,
+              "Alteration": 8,
+              "Total": 170
+            },
+            "actions": [
+              {
+                "kind": "Place",
+                "X": 2169,
+                "Y": 199,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2170,
+                "Y": 199,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34765.754,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34765.754,
+                "fromY": 3142,
+                "toX": 34838.344,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": null,
+            "dependencies": {
+              "count": 65,
+              "left": 2165,
+              "right": 2178,
+              "top": 196,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "ore_support": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34856,
+          "goalY": 3184,
+          "oreX": 2178,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 8
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 902,
+              "planningMs": 213.02,
+              "maxSliceMs": 7.68,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            },
+            "candidate": {
+              "updates": 357,
+              "planningMs": 174.28,
+              "maxSliceMs": 4.89,
+              "cuts": 0,
+              "places": 3,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 1,
+            "baseline": {
+              "updates": 902,
+              "planningMs": 198.55,
+              "maxSliceMs": 4.86,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            },
+            "candidate": {
+              "updates": 352,
+              "planningMs": 152.14,
+              "maxSliceMs": 4.97,
+              "cuts": 0,
+              "places": 3,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 2,
+            "baseline": {
+              "updates": 902,
+              "planningMs": 182.59,
+              "maxSliceMs": 5.0,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            },
+            "candidate": {
+              "updates": 350,
+              "planningMs": 145.63,
+              "maxSliceMs": 4.73,
+              "cuts": 0,
+              "places": 3,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2178,
+            "y": 197,
+            "typeId": 6,
+            "status": "verified",
+            "proof": {
+              "X": 2178,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            },
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34672.195,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "place_tile",
+            "reason": "native_tile_placed_and_consumed",
+            "released": true,
+            "x": 2168,
+            "y": 199,
+            "typeId": 0,
+            "placedByActor": true,
+            "consumedCount": 1,
+            "targetPresent": true
+          },
+          {
+            "action": "place_tile",
+            "reason": "native_tile_placed_and_consumed",
+            "released": true,
+            "x": 2169,
+            "y": 199,
+            "typeId": 0,
+            "placedByActor": true,
+            "consumedCount": 1,
+            "targetPresent": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34704.477,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "place_tile",
+            "reason": "native_tile_placed_and_consumed",
+            "released": true,
+            "x": 2170,
+            "y": 199,
+            "typeId": 0,
+            "placedByActor": true,
+            "consumedCount": 1,
+            "targetPresent": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34736.758,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34769.04,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "excavate_tiles",
+            "reason": "excavation_run_verified",
+            "released": true
+          }
+        ],
+        "placed": [
+          2168,
+          2169,
+          2170
+        ],
+        "finalLeft": 34769.04,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 129,
+              "Clearance": 0,
+              "Target": 23,
+              "Cuts": 0,
+              "Placement": 69,
+              "Places": 3,
+              "Alteration": 12,
+              "Total": 233
+            },
+            "actions": [
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2168,
+                "Y": 199,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34702.633,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2169,
+                "Y": 199,
+                "fromX": 34702.633,
+                "fromY": 3142,
+                "toX": 34702.633,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2170,
+                "Y": 199,
+                "fromX": 34702.633,
+                "fromY": 3142,
+                "toX": 34702.633,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34702.633,
+                "fromY": 3142,
+                "toX": 34734.914,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34734.914,
+                "fromY": 3142,
+                "toX": 34767.195,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2178,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 39
+            },
+            "dependencies": {
+              "count": 58,
+              "left": 2165,
+              "right": 2179,
+              "top": 196,
+              "bottom": 200
+            }
+          },
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 105,
+              "Clearance": 0,
+              "Target": 23,
+              "Cuts": 0,
+              "Placement": 46,
+              "Places": 2,
+              "Alteration": 8,
+              "Total": 182
+            },
+            "actions": [
+              {
+                "kind": "Place",
+                "X": 2169,
+                "Y": 199,
+                "fromX": 34672.195,
+                "fromY": 3142,
+                "toX": 34672.195,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34672.195,
+                "fromY": 3142,
+                "toX": 34704.477,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2170,
+                "Y": 199,
+                "fromX": 34704.477,
+                "fromY": 3142,
+                "toX": 34704.477,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34704.477,
+                "fromY": 3142,
+                "toX": 34736.758,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34736.758,
+                "fromY": 3142,
+                "toX": 34769.04,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2178,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 39
+            },
+            "dependencies": {
+              "count": 52,
+              "left": 2166,
+              "right": 2179,
+              "top": 196,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "ore_stock": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34856,
+          "goalY": 3184,
+          "oreX": 2178,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 1
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 902,
+              "planningMs": 181.95,
+              "maxSliceMs": 4.98,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            },
+            "candidate": {
+              "updates": 902,
+              "planningMs": 229.64,
+              "maxSliceMs": 4.94,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2178,
+            "y": 197,
+            "typeId": 6,
+            "status": "pending",
+            "proof": null,
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "excavation_route_search_budget_exhausted",
+            "released": true,
+            "x": 34588.23,
+            "y": 3142,
+            "arrived": false,
+            "settled": true,
+            "safeSupport": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34588.23,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "approach",
+            "movement": null,
+            "clearance": null,
+            "actions": null,
+            "predictedGoal": null,
+            "dependencies": null
+          }
+        ]
+      },
+      "ore_gear": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34872,
+          "goalY": 3184,
+          "oreX": 2179,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 138,
+              "planningMs": 362.14,
+              "maxSliceMs": 6.23,
+              "cuts": 1,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "cancelled",
+              "reason": "selected_item_changed",
+              "released": true
+            },
+            "candidate": {
+              "updates": 141,
+              "planningMs": 382.76,
+              "maxSliceMs": 6.28,
+              "cuts": 1,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "cancelled",
+              "reason": "selected_item_changed",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2179,
+            "y": 197,
+            "typeId": 6,
+            "status": "pending",
+            "proof": null,
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "mine_tile",
+            "reason": "selected_item_changed",
+            "released": true,
+            "X": 2168,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34656,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 140,
+              "Clearance": 114,
+              "Target": 23,
+              "Cuts": 6,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 24,
+              "Total": 301
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 196,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 197,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 198,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34688.28,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34688.28,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 196,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 197,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 198,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34752.844,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34752.844,
+                "fromY": 3142,
+                "toX": 34785.125,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2179,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 43
+            },
+            "dependencies": {
+              "count": 67,
+              "left": 2165,
+              "right": 2180,
+              "top": 195,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "ore_target": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34872,
+          "goalY": 3184,
+          "oreX": 2179,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 136,
+              "planningMs": 347.54,
+              "maxSliceMs": 5.86,
+              "cuts": 1,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "failed",
+              "reason": "excavation_target_changed",
+              "released": true
+            },
+            "candidate": {
+              "updates": 141,
+              "planningMs": 374.93,
+              "maxSliceMs": 5.47,
+              "cuts": 1,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "failed",
+              "reason": "excavation_target_changed",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2179,
+            "y": 197,
+            "typeId": 6,
+            "status": "changed",
+            "proof": null,
+            "changeReason": "identity_changed"
+          }
+        ],
+        "children": [
+          {
+            "action": "mine_tile",
+            "reason": "navigation_route_changed",
+            "released": true,
+            "X": 2168,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34656,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 140,
+              "Clearance": 114,
+              "Target": 23,
+              "Cuts": 6,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 24,
+              "Total": 301
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 196,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 197,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 198,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34688.28,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34688.28,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 196,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 197,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 198,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34752.844,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34752.844,
+                "fromY": 3142,
+                "toX": 34785.125,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2179,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 43
+            },
+            "dependencies": {
+              "count": 67,
+              "left": 2165,
+              "right": 2180,
+              "top": 195,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "nav_cancel": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34872,
+          "goalY": 3184,
+          "oreX": 2179,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 49,
+              "planningMs": 109.52,
+              "maxSliceMs": 4.62,
+              "cuts": 1,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "released": true
+            },
+            "candidate": {
+              "updates": 44,
+              "planningMs": 138.2,
+              "maxSliceMs": 5.82,
+              "cuts": 1,
+              "places": 0,
+              "moves": 0,
+              "batches": 0,
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "released": true
+            }
+          }
+        ],
+        "targets": null,
+        "children": [
+          {
+            "action": "mine_tile",
+            "reason": "explicit_stop",
+            "released": true,
+            "X": 2168,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34656,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 140,
+              "Clearance": 114,
+              "Target": 0,
+              "Cuts": 6,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 24,
+              "Total": 278
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 196,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 197,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 198,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34742.94,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 196,
+                "fromX": 34742.94,
+                "fromY": 3142,
+                "toX": 34742.94,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 197,
+                "fromX": 34742.94,
+                "fromY": 3142,
+                "toX": 34742.94,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 198,
+                "fromX": 34742.94,
+                "fromY": 3142,
+                "toX": 34742.94,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34742.94,
+                "fromY": 3142,
+                "toX": 34852.695,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": null,
+            "dependencies": {
+              "count": 73,
+              "left": 2165,
+              "right": 2179,
+              "top": 195,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "ore_stop_place": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34856,
+          "goalY": 3184,
+          "oreX": 2178,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 8
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 902,
+              "planningMs": 183.51,
+              "maxSliceMs": 4.79,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            },
+            "candidate": {
+              "updates": 95,
+              "planningMs": 65.54,
+              "maxSliceMs": 4.4,
+              "cuts": 0,
+              "places": 1,
+              "moves": 1,
+              "batches": 0,
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2178,
+            "y": 197,
+            "typeId": 6,
+            "status": "pending",
+            "proof": null,
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34672.195,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "place_tile",
+            "reason": "explicit_stop",
+            "released": true,
+            "x": 2168,
+            "y": 199,
+            "typeId": 0,
+            "placedByActor": true,
+            "consumedCount": 1,
+            "targetPresent": true
+          }
+        ],
+        "placed": [
+          2168
+        ],
+        "finalLeft": 34672.195,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 129,
+              "Clearance": 0,
+              "Target": 23,
+              "Cuts": 0,
+              "Placement": 69,
+              "Places": 3,
+              "Alteration": 12,
+              "Total": 233
+            },
+            "actions": [
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2168,
+                "Y": 199,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34702.633,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2169,
+                "Y": 199,
+                "fromX": 34702.633,
+                "fromY": 3142,
+                "toX": 34702.633,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2170,
+                "Y": 199,
+                "fromX": 34702.633,
+                "fromY": 3142,
+                "toX": 34702.633,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34702.633,
+                "fromY": 3142,
+                "toX": 34734.914,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34734.914,
+                "fromY": 3142,
+                "toX": 34767.195,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2178,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 42
+            },
+            "dependencies": {
+              "count": 58,
+              "left": 2165,
+              "right": 2179,
+              "top": 196,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "nav_deck": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34728,
+          "goalY": 3184,
+          "oreX": 2178,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 8
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 151,
+              "planningMs": 37.09,
+              "maxSliceMs": 3.35,
+              "cuts": 0,
+              "places": 2,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 166,
+              "planningMs": 100.54,
+              "maxSliceMs": 4.57,
+              "cuts": 0,
+              "places": 2,
+              "moves": 3,
+              "batches": 0,
+              "status": "completed",
+              "reason": "navigation_destination_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": null,
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34672.195,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34686.547,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "place_tile",
+            "reason": "native_tile_placed_and_consumed",
+            "released": true,
+            "x": 2168,
+            "y": 199,
+            "typeId": 0,
+            "placedByActor": true,
+            "consumedCount": 1,
+            "targetPresent": true
+          },
+          {
+            "action": "place_tile",
+            "reason": "native_tile_placed_and_consumed",
+            "released": true,
+            "x": 2169,
+            "y": 199,
+            "typeId": 0,
+            "placedByActor": true,
+            "consumedCount": 1,
+            "targetPresent": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34718.83,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          }
+        ],
+        "placed": [
+          2168,
+          2169
+        ],
+        "finalLeft": 34718.83,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 83,
+              "Clearance": 0,
+              "Target": 0,
+              "Cuts": 0,
+              "Placement": 46,
+              "Places": 2,
+              "Alteration": 8,
+              "Total": 137
+            },
+            "actions": [
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34684.703,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2168,
+                "Y": 199,
+                "fromX": 34684.703,
+                "fromY": 3142,
+                "toX": 34684.703,
+                "toY": 3142
+              },
+              {
+                "kind": "Place",
+                "X": 2169,
+                "Y": 199,
+                "fromX": 34684.703,
+                "fromY": 3142,
+                "toX": 34684.703,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34684.703,
+                "fromY": 3142,
+                "toX": 34716.984,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": null,
+            "dependencies": {
+              "count": 34,
+              "left": 2165,
+              "right": 2171,
+              "top": 196,
+              "bottom": 200
+            }
+          },
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 35,
+              "Clearance": 0,
+              "Target": 0,
+              "Cuts": 0,
+              "Placement": 23,
+              "Places": 1,
+              "Alteration": 4,
+              "Total": 62
+            },
+            "actions": [
+              {
+                "kind": "Place",
+                "X": 2169,
+                "Y": 199,
+                "fromX": 34686.547,
+                "fromY": 3142,
+                "toX": 34686.547,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34686.547,
+                "fromY": 3142,
+                "toX": 34718.83,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": null,
+            "dependencies": {
+              "count": 24,
+              "left": 2167,
+              "right": 2171,
+              "top": 196,
+              "bottom": 200
+            }
+          }
+        ]
+      }
+    },
+    "mining": {
+      "direct": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34712,
+          "goalY": 3184,
+          "oreX": 2169,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 27,
+              "planningMs": 0,
+              "maxSliceMs": 0,
+              "cuts": 0,
+              "places": 0,
+              "moves": 0,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 27,
+              "planningMs": 0,
+              "maxSliceMs": 0,
+              "cuts": 0,
+              "places": 0,
+              "moves": 0,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2169,
+            "y": 197,
+            "typeId": 6,
+            "status": "verified",
+            "proof": {
+              "X": 2169,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            },
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "excavate_tiles",
+            "reason": "excavation_run_verified",
+            "released": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34656,
+        "finalFeet": 3184,
+        "decisions": []
+      },
+      "detour": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34824,
+          "goalY": 3184,
+          "oreX": 2176,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 1
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 132,
+              "planningMs": 50.57,
+              "maxSliceMs": 5.52,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 131,
+              "planningMs": 49.37,
+              "maxSliceMs": 6.46,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 1,
+            "baseline": {
+              "updates": 125,
+              "planningMs": 36.54,
+              "maxSliceMs": 3.7,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 124,
+              "planningMs": 30.61,
+              "maxSliceMs": 3.9,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 2,
+            "baseline": {
+              "updates": 123,
+              "planningMs": 36.56,
+              "maxSliceMs": 3.58,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 119,
+              "planningMs": 27.23,
+              "maxSliceMs": 3.63,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2176,
+            "y": 197,
+            "typeId": 6,
+            "status": "verified",
+            "proof": {
+              "X": 2176,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            },
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34765.754,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "excavate_tiles",
+            "reason": "excavation_run_verified",
+            "released": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34765.754,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "movement",
+            "movement": {
+              "Movement": 64,
+              "Clearance": 0,
+              "Target": 23,
+              "Cuts": 0,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 0,
+              "Total": 87
+            },
+            "clearance": {
+              "Movement": 93,
+              "Clearance": 19,
+              "Target": 23,
+              "Cuts": 1,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 4,
+              "Total": 139
+            },
+            "actions": null,
+            "predictedGoal": null,
+            "dependencies": null
+          }
+        ]
+      },
+      "fast": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34664,
+          "goalY": 3248,
+          "oreX": 2169,
+          "oreY": 204,
+          "tool": 2176,
+          "prefix": 15,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 72,
+              "planningMs": 68.91,
+              "maxSliceMs": 3.45,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 70,
+              "planningMs": 64.82,
+              "maxSliceMs": 3.46,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 1,
+            "baseline": {
+              "updates": 73,
+              "planningMs": 70.91,
+              "maxSliceMs": 3.98,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 70,
+              "planningMs": 63.79,
+              "maxSliceMs": 3.57,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 2,
+            "baseline": {
+              "updates": 72,
+              "planningMs": 67.67,
+              "maxSliceMs": 3.56,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 73,
+              "planningMs": 76.59,
+              "maxSliceMs": 4.45,
+              "cuts": 2,
+              "places": 0,
+              "moves": 0,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2169,
+            "y": 204,
+            "typeId": 6,
+            "status": "verified",
+            "proof": {
+              "X": 2169,
+              "Y": 204,
+              "Type": 6,
+              "Update": 1,
+              "Strikes": 1
+            },
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2167,
+            "Y": 199,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2166,
+            "Y": 199,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "excavate_tiles",
+            "reason": "excavation_run_verified",
+            "released": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34656,
+        "finalFeet": 3248,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": {
+              "Movement": 60,
+              "Clearance": 0,
+              "Target": 10,
+              "Cuts": 0,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 0,
+              "Total": 70
+            },
+            "clearance": {
+              "Movement": 20,
+              "Clearance": 20,
+              "Target": 10,
+              "Cuts": 2,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 8,
+              "Total": 58
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2167,
+                "Y": 199,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2166,
+                "Y": 199,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3206
+              }
+            ],
+            "predictedGoal": {
+              "X": 2169,
+              "Y": 204,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 7
+            },
+            "dependencies": {
+              "count": 38,
+              "left": 2165,
+              "right": 2170,
+              "top": 196,
+              "bottom": 205
+            }
+          }
+        ]
+      },
+      "slow": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34664,
+          "goalY": 3248,
+          "oreX": 2169,
+          "oreY": 204,
+          "tool": 3509,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 136,
+              "planningMs": 74.6,
+              "maxSliceMs": 3.54,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 135,
+              "planningMs": 71.19,
+              "maxSliceMs": 3.54,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 1,
+            "baseline": {
+              "updates": 137,
+              "planningMs": 75.97,
+              "maxSliceMs": 3.51,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 138,
+              "planningMs": 80.04,
+              "maxSliceMs": 3.45,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 2,
+            "baseline": {
+              "updates": 135,
+              "planningMs": 72.02,
+              "maxSliceMs": 3.44,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 141,
+              "planningMs": 89.11,
+              "maxSliceMs": 3.8,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2169,
+            "y": 204,
+            "typeId": 6,
+            "status": "verified",
+            "proof": {
+              "X": 2169,
+              "Y": 204,
+              "Type": 6,
+              "Update": 31,
+              "Strikes": 3
+            },
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34745.83,
+            "y": 3206,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "excavate_tiles",
+            "reason": "excavation_run_verified",
+            "released": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34745.83,
+        "finalFeet": 3248,
+        "decisions": [
+          {
+            "choice": "movement",
+            "movement": {
+              "Movement": 60,
+              "Clearance": 0,
+              "Target": 46,
+              "Cuts": 0,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 0,
+              "Total": 106
+            },
+            "clearance": {
+              "Movement": 20,
+              "Clearance": 62,
+              "Target": 46,
+              "Cuts": 2,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 8,
+              "Total": 136
+            },
+            "actions": null,
+            "predictedGoal": null,
+            "dependencies": null
+          }
+        ]
+      },
+      "thin": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34824,
+          "goalY": 3184,
+          "oreX": 2176,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 303,
+              "planningMs": 246.41,
+              "maxSliceMs": 6.66,
+              "cuts": 3,
+              "places": 0,
+              "moves": 3,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 298,
+              "planningMs": 228.54,
+              "maxSliceMs": 4.97,
+              "cuts": 3,
+              "places": 0,
+              "moves": 3,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 1,
+            "baseline": {
+              "updates": 302,
+              "planningMs": 236.05,
+              "maxSliceMs": 5.35,
+              "cuts": 3,
+              "places": 0,
+              "moves": 3,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 284,
+              "planningMs": 166.08,
+              "maxSliceMs": 4.96,
+              "cuts": 3,
+              "places": 0,
+              "moves": 3,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 2,
+            "baseline": {
+              "updates": 288,
+              "planningMs": 180.85,
+              "maxSliceMs": 4.92,
+              "cuts": 3,
+              "places": 0,
+              "moves": 3,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 282,
+              "planningMs": 154.81,
+              "maxSliceMs": 4.69,
+              "cuts": 3,
+              "places": 0,
+              "moves": 3,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2176,
+            "y": 197,
+            "typeId": 6,
+            "status": "verified",
+            "proof": {
+              "X": 2176,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            },
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34672.195,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2169,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2169,
+            "Y": 197,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2169,
+            "Y": 198,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34704.477,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34736.758,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "excavate_tiles",
+            "reason": "excavation_run_verified",
+            "released": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34736.758,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 94,
+              "Clearance": 57,
+              "Target": 23,
+              "Cuts": 3,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 12,
+              "Total": 186
+            },
+            "actions": [
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 196,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 197,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 198,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34702.633,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34702.633,
+                "fromY": 3142,
+                "toX": 34734.914,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2176,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 6
+            },
+            "dependencies": {
+              "count": 51,
+              "left": 2165,
+              "right": 2177,
+              "top": 195,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "sequential": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34872,
+          "goalY": 3184,
+          "oreX": 2179,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 459,
+              "planningMs": 408.01,
+              "maxSliceMs": 5.38,
+              "cuts": 6,
+              "places": 0,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 443,
+              "planningMs": 349.54,
+              "maxSliceMs": 6.28,
+              "cuts": 6,
+              "places": 0,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "excavation_cluster_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2179,
+            "y": 197,
+            "typeId": 6,
+            "status": "verified",
+            "proof": {
+              "X": 2179,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            },
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2168,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2168,
+            "Y": 197,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2168,
+            "Y": 198,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34688.28,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34720.562,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2173,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2173,
+            "Y": 197,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2173,
+            "Y": 198,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34752.844,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34785.125,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "excavate_tiles",
+            "reason": "excavation_run_verified",
+            "released": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34785.125,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 140,
+              "Clearance": 114,
+              "Target": 23,
+              "Cuts": 6,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 24,
+              "Total": 301
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 196,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 197,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 198,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34688.28,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34688.28,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 196,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 197,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 198,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34752.844,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34752.844,
+                "fromY": 3142,
+                "toX": 34785.125,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2179,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 36
+            },
+            "dependencies": {
+              "count": 67,
+              "left": 2165,
+              "right": 2180,
+              "top": 195,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "single": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34872,
+          "goalY": 3184,
+          "oreX": 2179,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 455,
+              "planningMs": 391.63,
+              "maxSliceMs": 6.34,
+              "cuts": 6,
+              "places": 0,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "mine_target_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 446,
+              "planningMs": 356.95,
+              "maxSliceMs": 4.85,
+              "cuts": 6,
+              "places": 0,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "mine_target_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 1,
+            "baseline": {
+              "updates": 456,
+              "planningMs": 394.76,
+              "maxSliceMs": 6.01,
+              "cuts": 6,
+              "places": 0,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "mine_target_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 441,
+              "planningMs": 339.58,
+              "maxSliceMs": 5.71,
+              "cuts": 6,
+              "places": 0,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "mine_target_verified",
+              "released": true
+            }
+          },
+          {
+            "repeat": 2,
+            "baseline": {
+              "updates": 448,
+              "planningMs": 358.53,
+              "maxSliceMs": 5.34,
+              "cuts": 6,
+              "places": 0,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "mine_target_verified",
+              "released": true
+            },
+            "candidate": {
+              "updates": 444,
+              "planningMs": 347.39,
+              "maxSliceMs": 5.1,
+              "cuts": 6,
+              "places": 0,
+              "moves": 4,
+              "batches": 1,
+              "status": "completed",
+              "reason": "mine_target_verified",
+              "released": true
+            }
+          }
+        ],
+        "targets": null,
+        "children": [
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2168,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2168,
+            "Y": 197,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2168,
+            "Y": 198,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34688.28,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34720.562,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2173,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2173,
+            "Y": 197,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2173,
+            "Y": 198,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34752.844,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34785.125,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "native_tile_destroyed",
+            "released": true,
+            "X": 2179,
+            "Y": 197,
+            "TileType": 6,
+            "destroyedByActor": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34785.125,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 140,
+              "Clearance": 114,
+              "Target": 23,
+              "Cuts": 6,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 24,
+              "Total": 301
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 196,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 197,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 198,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34688.28,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34688.28,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 196,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 197,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 198,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34752.844,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34752.844,
+                "fromY": 3142,
+                "toX": 34785.125,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2179,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 49
+            },
+            "dependencies": {
+              "count": 67,
+              "left": 2165,
+              "right": 2180,
+              "top": 195,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "dead_end": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34872,
+          "goalY": 3184,
+          "oreX": 2179,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 902,
+              "planningMs": 813.17,
+              "maxSliceMs": 5.9,
+              "cuts": 0,
+              "places": 0,
+              "moves": 2,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            },
+            "candidate": {
+              "updates": 902,
+              "planningMs": 798.59,
+              "maxSliceMs": 5.6,
+              "cuts": 0,
+              "places": 0,
+              "moves": 2,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2179,
+            "y": 197,
+            "typeId": 6,
+            "status": "pending",
+            "proof": null,
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "navigation_stalled",
+            "released": true,
+            "x": 34640.168,
+            "y": 3142,
+            "arrived": false,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "excavation_route_search_budget_exhausted",
+            "released": true,
+            "x": 34655.324,
+            "y": 3142,
+            "arrived": false,
+            "settled": true,
+            "safeSupport": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34655.324,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "approach",
+            "movement": null,
+            "clearance": null,
+            "actions": null,
+            "predictedGoal": null,
+            "dependencies": null
+          },
+          {
+            "choice": "approach",
+            "movement": null,
+            "clearance": null,
+            "actions": null,
+            "predictedGoal": null,
+            "dependencies": null
+          }
+        ]
+      },
+      "path_changed": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34872,
+          "goalY": 3184,
+          "oreX": 2179,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 908,
+              "planningMs": 1106.24,
+              "maxSliceMs": 6.15,
+              "cuts": 1,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            },
+            "candidate": {
+              "updates": 907,
+              "planningMs": 1139.61,
+              "maxSliceMs": 5.33,
+              "cuts": 1,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2179,
+            "y": 197,
+            "typeId": 6,
+            "status": "pending",
+            "proof": null,
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "mine_tile",
+            "reason": "navigation_route_changed",
+            "released": true,
+            "X": 2168,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          },
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "navigation_stalled",
+            "released": true,
+            "x": 34640.168,
+            "y": 3142,
+            "arrived": false,
+            "settled": true,
+            "safeSupport": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34640.168,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 140,
+              "Clearance": 114,
+              "Target": 23,
+              "Cuts": 6,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 24,
+              "Total": 301
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 196,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 197,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2168,
+                "Y": 198,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34656,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34688.28,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34688.28,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 196,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 197,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2173,
+                "Y": 198,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34720.562,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34720.562,
+                "fromY": 3142,
+                "toX": 34752.844,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34752.844,
+                "fromY": 3142,
+                "toX": 34785.125,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2179,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 70
+            },
+            "dependencies": {
+              "count": 67,
+              "left": 2165,
+              "right": 2180,
+              "top": 195,
+              "bottom": 200
+            }
+          },
+          {
+            "choice": "approach",
+            "movement": null,
+            "clearance": null,
+            "actions": null,
+            "predictedGoal": null,
+            "dependencies": null
+          }
+        ]
+      },
+      "stop_clearing": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34824,
+          "goalY": 3184,
+          "oreX": 2176,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 114,
+              "planningMs": 147.58,
+              "maxSliceMs": 4.37,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "released": true
+            },
+            "candidate": {
+              "updates": 112,
+              "planningMs": 141.4,
+              "maxSliceMs": 4.41,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2176,
+            "y": 197,
+            "typeId": 6,
+            "status": "pending",
+            "proof": null,
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34672.195,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "explicit_stop",
+            "released": true,
+            "X": 2169,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": false
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34672.195,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 94,
+              "Clearance": 57,
+              "Target": 23,
+              "Cuts": 3,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 12,
+              "Total": 186
+            },
+            "actions": [
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 196,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 197,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 198,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34702.633,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34702.633,
+                "fromY": 3142,
+                "toX": 34734.914,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2176,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 35
+            },
+            "dependencies": {
+              "count": 51,
+              "left": 2165,
+              "right": 2177,
+              "top": 195,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "stop_after_cut": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34824,
+          "goalY": 3184,
+          "oreX": 2176,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 115,
+              "planningMs": 149.62,
+              "maxSliceMs": 4.79,
+              "cuts": 1,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "released": true
+            },
+            "candidate": {
+              "updates": 113,
+              "planningMs": 144.39,
+              "maxSliceMs": 4.65,
+              "cuts": 1,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2176,
+            "y": 197,
+            "typeId": 6,
+            "status": "pending",
+            "proof": null,
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "native_navigation_arrival_verified",
+            "released": true,
+            "x": 34672.195,
+            "y": 3142,
+            "arrived": true,
+            "settled": true,
+            "safeSupport": true
+          },
+          {
+            "action": "mine_tile",
+            "reason": "explicit_stop",
+            "released": true,
+            "X": 2169,
+            "Y": 196,
+            "TileType": 0,
+            "destroyedByActor": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34672.195,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 94,
+              "Clearance": 57,
+              "Target": 23,
+              "Cuts": 3,
+              "Placement": 0,
+              "Places": 0,
+              "Alteration": 12,
+              "Total": 186
+            },
+            "actions": [
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34656,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 196,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 197,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Mine",
+                "X": 2169,
+                "Y": 198,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34670.35,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34670.35,
+                "fromY": 3142,
+                "toX": 34702.633,
+                "toY": 3142
+              },
+              {
+                "kind": "Move",
+                "X": 0,
+                "Y": 0,
+                "fromX": 34702.633,
+                "fromY": 3142,
+                "toX": 34734.914,
+                "toY": 3142
+              }
+            ],
+            "predictedGoal": {
+              "X": 2176,
+              "Y": 197,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 35
+            },
+            "dependencies": {
+              "count": 51,
+              "left": 2165,
+              "right": 2177,
+              "top": 195,
+              "bottom": 200
+            }
+          }
+        ]
+      },
+      "falling_sand": {
+        "start": {
+          "X": 34656,
+          "Y": 3142,
+          "goalX": 34824,
+          "goalY": 3184,
+          "oreX": 2176,
+          "oreY": 197,
+          "tool": 1320,
+          "prefix": 0,
+          "stock": 0
+        },
+        "runs": [
+          {
+            "repeat": 0,
+            "baseline": {
+              "updates": 902,
+              "planningMs": 1049.4,
+              "maxSliceMs": 5.66,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            },
+            "candidate": {
+              "updates": 902,
+              "planningMs": 1103.99,
+              "maxSliceMs": 7.96,
+              "cuts": 0,
+              "places": 0,
+              "moves": 1,
+              "batches": 0,
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "released": true
+            }
+          }
+        ],
+        "targets": [
+          {
+            "x": 2176,
+            "y": 197,
+            "typeId": 6,
+            "status": "pending",
+            "proof": null,
+            "changeReason": null
+          }
+        ],
+        "children": [
+          {
+            "action": "navigate_to_landing_region",
+            "reason": "navigation_stalled",
+            "released": true,
+            "x": 34666.246,
+            "y": 3142,
+            "arrived": false,
+            "settled": true,
+            "safeSupport": true
+          }
+        ],
+        "placed": [],
+        "finalLeft": 34666.246,
+        "finalFeet": 3184,
+        "decisions": [
+          {
+            "choice": "approach",
+            "movement": null,
+            "clearance": null,
+            "actions": null,
+            "predictedGoal": null,
+            "dependencies": null
+          }
+        ]
+      }
+    }
+  },
+  "packages": {
+    "shared": [
+      "abf84266dea8fd01143167437321502e23737f71e49d4b76968f6d2b1411807b",
+      "0d77346075662a096132c6f871aa16802975913df054a95dbda44e08b0058656"
+    ],
+    "mining": [
+      "abf84266dea8fd01143167437321502e23737f71e49d4b76968f6d2b1411807b",
+      "0d77346075662a096132c6f871aa16802975913df054a95dbda44e08b0058656"
+    ]
+  },
+  "modWorldSHA256": "998A070989418FEDCAE47D28D9A3928C4D34DF6183F82AC646135F10BEC2EEEC",
+  "natural": {
+    "worldSHA256": "A9FEB51BB2B71BAF4C04FEC9C8617EC5683DC94CF7A0506EB200139802701223",
+    "seed": "20261028",
+    "start": {
+      "offset": 107,
+      "floor": 520,
+      "x": 2213,
+      "y": 519,
+      "count": 15,
+      "type": 6
+    },
+    "x": 35344,
+    "y": 8278,
+    "inventoryBefore": [
+      {
+        "contentKey": "Terraria/CopperShortsword",
+        "name": "Copper Shortsword",
+        "count": 1,
+        "prefix": 0,
+        "stacks": [
+          {
+            "inventorySlot": 0,
+            "hotbarKey": 1,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "contentKey": "Terraria/CopperPickaxe",
+        "name": "Copper Pickaxe",
+        "count": 1,
+        "prefix": 0,
+        "stacks": [
+          {
+            "inventorySlot": 1,
+            "hotbarKey": 2,
+            "count": 1
+          }
+        ]
+      },
+      {
+        "contentKey": "Terraria/CopperAxe",
+        "name": "Copper Axe",
+        "count": 1,
+        "prefix": 0,
+        "stacks": [
+          {
+            "inventorySlot": 2,
+            "hotbarKey": 3,
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "selected": {
+      "inventorySlot": 0,
+      "hotbarKey": 1,
+      "contentKey": "Terraria/CopperShortsword",
+      "name": "Copper Shortsword",
+      "count": 1,
+      "prefix": 0,
+      "empty": false
+    },
+    "runs": [
+      {
+        "ticks": 1096,
+        "planningMs": 158.74909999999994,
+        "maxSliceMs": 10.964,
+        "actualCuts": 0,
+        "navigationDispatches": 4,
+        "released": true,
+        "status": "completed",
+        "reason": "excavation_cluster_verified",
+        "packageSHA256": "ABF84266DEA8FD01143167437321502E23737F71E49D4B76968F6D2B1411807B",
+        "proofs": 15,
+        "batches": 5
+      },
+      {
+        "ticks": 1088,
+        "planningMs": 116.01380000000002,
+        "maxSliceMs": 12.4038,
+        "actualCuts": 0,
+        "navigationDispatches": 4,
+        "released": true,
+        "status": "completed",
+        "reason": "excavation_cluster_verified",
+        "packageSHA256": "0D77346075662A096132C6F871AA16802975913DF054A95DBDA44E08B0058656",
+        "proofs": 15,
+        "batches": 5
+      }
+    ]
+  }
+}

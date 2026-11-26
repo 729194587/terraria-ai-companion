@@ -121,7 +121,7 @@ internal abstract class AbstractCompanionTask : CompanionTask
     protected AbstractCompanionTask(string id){taskId=id;}
     internal override object CurrentChild=>child?.View();
     internal override object LastResult=>TaskSlot.Receipt(lastResult);
-    protected Result RunChild(CompanionTask task,AiReadOnlyProtocol.Identity frame,ulong budget)
+    internal Result RunChild(CompanionTask task,AiReadOnlyProtocol.Identity frame,ulong budget)
     {
         if(child==null)child=new(task,task is NativeActionTask leaf?leaf.RequestId:taskId+"/"+(++sequence),taskId,frame,budget);
         else if(!ReferenceEquals(child.Task,task))throw new InvalidOperationException("An active child cannot be replaced");
@@ -139,9 +139,14 @@ internal abstract class AbstractCompanionTask : CompanionTask
     }
     internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)
     {
-        var r=child?.Stop(frame,status,reason);
-        if(child!=null){lastResult=r;RecordChild();}
+        var r=StopChild(frame,status,reason);
         return r?.Status=="unknown"||r?.InputsReleased==false?r:new(status,reason,null,true,InputsAcquired:r?.InputsAcquired??false);
+    }
+    internal Result StopChild(AiReadOnlyProtocol.Identity frame,string status,string reason)
+    {
+        if(child==null)return null;
+        var result=child.Stop(frame,status,reason);
+        lastResult=result;RecordChild();return result;
     }
     internal override void Abandon(){child?.Abandon();if(child!=null){lastResult=child.Record.Result;RecordChild();}}
 }

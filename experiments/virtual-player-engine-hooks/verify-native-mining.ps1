@@ -1,6 +1,6 @@
 param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27837,[switch]$Failure,
     [string]$PackagePath,[ValidateSet('VirtualPlayerEngineProbe','CompanionBridge')][string]$ModName='VirtualPlayerEngineProbe',
-    [switch]$TerrainApproach)
+    [switch]$TerrainApproach,[switch]$SharedRoutes)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'probe-paths.ps1')
 $paths=Get-ProbePaths
@@ -19,6 +19,13 @@ Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value ('["'+$ModName+'"]'
 $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",
     '-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-miningselftest')
 if($Failure){$arguments+='-miningfailureselftest'}
+if($TerrainApproach -or $SharedRoutes){
+    @{worldSHA256=(Get-FileHash -LiteralPath "$profile/Worlds/test.wld").Hash
+      modWorldSHA256=if(Test-Path -LiteralPath "$profile/Worlds/test.twld"){(Get-FileHash -LiteralPath "$profile/Worlds/test.twld").Hash}
+      packageSHA256=(Get-FileHash -LiteralPath "$profile/Mods/$ModName.tmod").Hash} |
+        ConvertTo-Json | Set-Content -LiteralPath "$profile/fixture-source.json"
+}
+if($SharedRoutes){$TerrainApproach=$true;$arguments+='-sharedterrainselftest'}
 if($TerrainApproach){$arguments+='-terrainapproachselftest'}
 if($ModName -eq 'CompanionBridge'){
     $ipcPort=$Port+1

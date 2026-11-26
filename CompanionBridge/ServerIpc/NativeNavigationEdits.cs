@@ -218,7 +218,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
 
     private bool PlacementAllowed(int x,int y,Item item)
     {
-        if(IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||Main.tile[x,y].HasTile
+        if(IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||Main.tile[x,y].HasTile||PlacementBodyOverlap(x,y)
             ||TerrainReader.ReadDryCell(x,y)!='.'||!SafeCutNeighbours(x,y,allowPlatforms:true)
             ||!ActorPlacement.Supported(item)||!Main.tileSolid[item.createTile]
             ||TileID.Sets.Falling[item.createTile]
@@ -333,6 +333,8 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         return new("excavate_tiles",default,new MiningRunTask(identity,plan,pose,()=>Stamp()==before));
     }
     public bool Place(PhysicsState pose,int x,int y,LocalMaterial material,LocalTerrainView view)
+        =>Place(pose,x,y,material,view,projectReach:false);
+    internal bool Place(PhysicsState pose,int x,int y,LocalMaterial material,LocalTerrainView view,bool projectReach)
     {
         bool water=view.LiquidAtSupport(x,y);
         if(IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||view.Cell(x,y)!='.'||!SafeVirtualNeighbours(x,y,view,true,water)
@@ -340,10 +342,8 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         var item=Player.inventory[material.Slot];
         if(!SafeMaterial(item)||item.createTile!=material.Type||item.stack<=0||Main.tile[x,y].HasTile&&Cell(x,y)=='.'&&!(water&&NativePlacementSurvey.Replaceable(Main.tile[x,y],false))
             ||water&&(item.createTile!=TileID.Platforms||PlacementBodyOverlap(x,y)))return false;
-        // Keep the existing Simple placement reach check. Future work poses in
-        // this template move toward the cell; cells outside current reach are
-        // conservatively reconsidered only after an actual movement checkpoint.
-        if(!Player.InInteractionRange(x,y,Terraria.DataStructures.TileReachCheckSettings.Simple))return false;
+        var actor=projectReach?ActorMining.ProjectReachPose(Player,pose.Px,pose.Py):Player;
+        if(!actor.InInteractionRange(x,y,TileReachCheckSettings.Simple))return false;
         return view.Cell(x-1,y) is '#' or '='||view.Cell(x+1,y) is '#' or '='||view.Cell(x,y+1)=='#';
     }
 

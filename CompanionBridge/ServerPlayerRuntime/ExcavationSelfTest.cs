@@ -89,7 +89,7 @@ internal static class ExcavationSelfTest
             Set(x+2,y-2,TileID.Copper);
             var half=Main.tile[x+2,y-2];half.IsHalfBlock=true;
             var seed=ExcavationCell.Capture(x+2,y-2);
-            var failures=new ExcavationStanceSearch();
+            var failures=new TerrainRouteMemory();
             var batch=new[]{seed};
             var work=(x-6,x+8,y-8,y+4);
             var origin=(x-22,x+22,y-17,y+11);

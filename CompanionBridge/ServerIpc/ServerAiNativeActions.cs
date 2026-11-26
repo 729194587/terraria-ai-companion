@@ -188,7 +188,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     :operation=="explore_frontier" ? new FrontierExplorationTask(actionId,identity,args,executor)
                     :operation=="build_place" ? new BuildPlaceTask(actionId,args,executor)
                     :operation=="place_item" ? new NativeActionTask(executor,"place_item_native",args,actionId,operation)
-                    :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
+                    :new DestinationNavigationTask(actionId,identity,args,executor,executor.Knowledge);
                 ulong budget=operation switch {CombatProtocol.Boss=>BossEncounterTask.Budget,CombatProtocol.Operation=>CombatController.Budget,"collect_drops"=>CollectDropsTask.Budget,
                     "explore_frontier"=>FrontierExplorationTask.Budget,"build_place"=>10800,"place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},budget);

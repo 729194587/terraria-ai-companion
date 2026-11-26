@@ -105,13 +105,19 @@ internal static partial class ActorMining
         try{rangeContext=c;return inRange(c.Actor,c.Item);}finally{rangeContext=null;}
     }
     private static readonly MethodInfo shallowCopy=typeof(object).GetMethod("MemberwiseClone",BindingFlags.Instance|BindingFlags.NonPublic);
+    internal static Player ProjectReachPose(Player actor,float px,float py)
+    {
+        var projection=(Player)shallowCopy.Invoke(actor,null);
+        projection.position=new(px,py);
+        return projection;
+    }
     internal static bool QueryReach(Player actor,string world,long generation,Item item,int x,int y,float px,float py)
     {
         ActorItemUse.Capture(actor,world,generation);
         if(!float.IsFinite(px)||!float.IsFinite(py))return false;
         // Detached, shallow field projection ONLY for the audited read-only native range
         // method. Never installed in Main.player; never update/move the real Player.
-        var projection=(Player)shallowCopy.Invoke(actor,null);projection.position=new(px,py);
+        var projection=ProjectReachPose(actor,px,py);
         var c=new Context{Actor=actor,World=world,Generation=generation,Item=item,X=x,Y=y};
         if(rangeContext!=null)throw new InvalidOperationException("Reentrant mining reach query");
         try

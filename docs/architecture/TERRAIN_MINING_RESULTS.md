@@ -132,3 +132,69 @@ python -c "import sys; from pathlib import Path; sys.path.insert(0,'tests'); fro
 **通过。** 两个正式包各通过 12 个受控场景、22 次任务，换位铁矿各完成三次。便宜绕行零清障。快镐开路 58 对绕行 70，慢镐绕行 106 对开路 136。连续双墙的单格与矿簇入口均逐动作核对。挖掘中取消留下零格破坏，首格后取消留下一个破坏证明。远端墙变化后重规划并在预算内终止。受控回执均确认输入释放。局部地形离线检查 238 项、导航租约检查 4 项通过。
 
 **失败与未执行。** 初测的起始装备一致性检查未通过，随机词缀样本从正式对照中排除。正式定向回归没有失败项。未运行全量测试、其余自然矿簇和战斗压力测试。三次重复仅支持本夹具上的比较。
+
+## 共享导航专服对照
+
+直接基线为 `f26a632183156b06353be565f3db194f0bde45a4`。tModLoader 2026.09.3.1 上，两个包各执行 25 个受控场景、45 次任务。基线导出只同步专服夹具和滚动规划计时器。比较器核对开始前的世界、附属存档与包哈希，以及每对任务的站位、目标、工具、词缀和支撑库存。换位铁矿还核对完整初始背包、选中槽、翅膀及云跳状态。[逐次测量和原生回执](../../tests/fixtures/shared-terrain-navigation.json)
+
+表内为基线 → 开发版。多次运行取各项中位数。累计规划与最长片以毫秒计，统计游戏线程的接近规划和滚动地形候选评估。移动子任务的内部搜索、逐帧执行及输入释放计入任务更新数。每次运行各自的最长片都保存在 JSON 中。
+
+| 场景 | 每版次数 | 任务更新 | 累计规划 ms | 最长规划片 ms | 导航次数 | 实挖障碍 | 实放支撑 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 目的地绕障 | 1 | 166 → 192 | 103.86 → 104.24 | 10.13 → 7.54 | 2 → 3 | 0 → 0 | 0 → 0 |
+| 目的地快镐 | 3 | 274 → 66 | 740.86 → 82.49 | 7.65 → 3.82 | 0 → 0 | 2 → 2 | 0 → 0 |
+| 目的地慢镐 | 3 | 328 → 220 | 669.32 → 152.94 | 4.46 → 3.70 | 0 → 3 | 2 → 0 | 0 → 0 |
+| 目的地薄墙 | 1 | 226 → 265 | 170.70 → 174.77 | 5.69 → 4.91 | 2 → 3 | 3 → 3 | 0 → 0 |
+| 目的地双墙 | 3 | 976 → 373 | 107.83 → 156.45 | 4.29 → 4.75 | 2 → 3 | 6 → 6 | 0 → 0 |
+| 目的地跨沟 | 3 | 244 → 278 | 99.70 → 294.60 | 3.73 → 5.61 | 3 → 2 | 0 → 0 | 2 → 3 |
+| 目的地落在新支撑上 | 1 | 151 → 166 | 37.09 → 100.54 | 3.35 → 4.57 | 3 → 3 | 0 → 0 | 2 → 2 |
+| 单格矿双墙 | 3 | 455 → 444 | 391.63 → 347.39 | 6.01 → 5.10 | 4 → 4 | 6 → 6 | 0 → 0 |
+| 矿簇入口双墙 | 1 | 459 → 443 | 408.01 → 349.54 | 5.38 → 6.28 | 4 → 4 | 6 → 6 | 0 → 0 |
+| 采矿跨沟 | 3 | 902 → 352 | 198.55 → 152.14 | 5 → 4.89 | 1 → 4 | 0 → 0 | 0 → 3 |
+| 自然换位铁矿 | 1 | 1096 → 1088 | 158.75 → 116.01 | 10.96 → 12.40 | 4 → 4 | 0 → 0 | 0 → 0 |
+
+**取舍与执行。** 同一处薄地板，目的地快镐报价为开路 48、绕行 116，实挖两格。慢镐开路升至 120，角色改走绕行，零清障。矿物夹具保持快镐 58 对 70、慢镐 136 对 106。双墙目的地从 (2168,196–198) 开始逐格破坏，经过两个实际落脚，再破坏 (2173,196–198)。六次破坏都有执行者证明。单格与矿簇入口也逐动作核对了预测坐标和真实落脚。自然铁矿两版均为四次导航、五批采集、15 格目标证明。
+
+**增加的成本。** 目的地薄墙由基线的一批原生清障改为三次逐动作清障，另多一个移动子任务。目的地绕障多一个停稳检查点。跨沟时基线分段放两块后交回原生移动，开发版为完整干地行走轨迹放三块，角色首次切换到材料槽后能力签名改变，余程重新报价。该夹具中，这带来了额外的搜索、原生放置和停稳时间。对于采矿，同样的三块支撑将原先耗尽预算的任务变为可验证的采集。规划对每个缺口试走剩余步幅，已能证明通行就停止耗材。沟中目的地另验证了两次放置各消耗一件，角色最终左缘 34718.83、脚底 3184，停在刚铺的支撑上。
+
+**失效与预算。** 工具被移除、目标被外部更换、第二道墙变成不可清除和首格清障后取消均只留下已发生的一次障碍破坏。被替换目标标为 changed；未经开采的目标保留 pending。放置后取消保留一块已消耗支撑的回执。只有一块材料时，采矿未进行地形改造，耗尽原有 900 更新的接近预算后停止。以上任务均核对终态输入释放。
+
+### 复现命令
+
+`$world` 为受控专服原始存档，SHA-256 为 `918e33d72ae761f990caa31e0734dd04ab375b3b4f4582702fcbf087d00707f0`。`$ironWorld` 为种子 20261028 对应的自然世界副本，SHA-256 为 `a9feb51bb2b71baf4c04fec9c8617ec5683dc94cf7a0506eb200139802701223`。`$py` 指向项目 Lua 测试环境的 Python。脚本每次复制输入世界并打印结果目录。
+
+```powershell
+python tests/prepare_shared_navigation_baseline.py .local/shared-base
+./scripts/build-companion.ps1 -OutputPath .local/shared-new
+. ./scripts/engine-profile.ps1
+$engine = Resolve-CompanionEngine
+$src = (Resolve-Path .local/shared-base/CompanionBridge).Path
+$out = [IO.Path]::GetFullPath('.local/shared-control')
+Push-Location $engine.Path
+try { & ./dotnet/dotnet.exe tModLoader.dll -server -build $src -tmlsavedirectory $out } finally { Pop-Location }
+$baseline = Join-Path $out 'Mods/CompanionBridge.tmod'
+$candidate = '.local/shared-new/Mods/CompanionBridge.tmod'
+foreach ($package in $baseline,$candidate) {
+    ./experiments/virtual-player-engine-hooks/verify-native-mining.ps1 -SharedRoutes -ModName CompanionBridge -WorldPath $world -PackagePath $package
+    ./experiments/virtual-player-engine-hooks/verify-native-mining.ps1 -TerrainApproach -ModName CompanionBridge -WorldPath $world -PackagePath $package
+    ./tests/verify_natural_navigation.ps1 -Mining -MiningCases change-stance -WorldPath $ironWorld -PackagePath $package -PythonExecutable $py
+}
+python tests/verify_shared_navigation.py --world $world --shared $sharedBase $sharedNew --mining $miningBase $miningNew --natural $naturalBaseJson $naturalNewJson --output .local/comparison.json
+./tests/verify_server_ai_native.ps1 -Actions -NavigationSafety -NavigationSafetyCases surface_detour,drop13,long -WorldPath $world -PackagePath $candidate -PythonExecutable $py
+./tests/verify_navigation_recovery_native.ps1 -Grapple -Scenes ledge,cancel -WorldPath $world -PackagePath $candidate -PythonExecutable $py
+./tests/verify_navigation_recovery_native.ps1 -Wings -Scenes angel,bone -WorldPath $world -PackagePath $candidate -PythonExecutable $py
+./tests/run_csharp_tests.ps1 -LocalEditsOnly
+./tests/run_csharp_tests.ps1 -MiningSupportOnly
+./tests/run_csharp_tests.ps1 -WorldJourneyOnly
+./tests/run_csharp_tests.ps1 -GrappleOnly
+./tests/run_csharp_tests.ps1 -AirOnly
+./tests/run_server_ai_ipc_tests.ps1 -NavigationLeaseOnly
+$env:PYTHONPATH = "python;tests"
+& $py -m unittest -q test_mine_target test_excavation_contract test_navigation_recovery test_landing_navigation
+```
+
+**其余通过项。** 交付包构建为零错误、零警告。专服自然埋藏铁矿验证 5 格、埋藏铜矿验证 11 格、大矿脉验证 22 格；封闭矿脉按预算终止，保留 13 个待采目标并释放输入。普通地表绕行、13 格落差和 49.95 秒长途均在最终目标安全停稳，长途使用一个续程检查点。钩爪验证发射、挂接、脱钩落稳以及取消清理；天使翼与骨翼单段均确认消耗翼时并落稳。离线局部改造 238 项、采矿支撑 30 项、钩爪几何 14 项、空中运动 75 项、导航租约 4 项及 6321.1 格旅程通过。
+
+**既有失败。** `-Wings -Scenes angel,bone_chain` 在两个版本均到达骨翼连续飞行的最终安全落区，但轨迹缺少中途停稳且翼时全满的帧，`native_wings.py` 的中途断言失败。Python 定向组 23 项通过 22 项，剩余的客户端 TCP 落区测试依赖 `-LandingProtocolHost`；直接在基线重放也因离线编译缺少 `CompanionBridge.ServerIpc` 引用而报 CS0234。以上分别保留为失败项。
+
+**未执行。** 全量测试、全部装备组合、跨版本模组兼容和战斗压力测试。
