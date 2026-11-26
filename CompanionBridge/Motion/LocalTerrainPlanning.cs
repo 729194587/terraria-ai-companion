@@ -189,8 +189,10 @@ internal sealed class LocalEditEvaluation : IDisposable
         // An unfinished corridor must not displace a verified complete detour.
         var best=complete??(movementComplete?null:usable.OrderByDescending(p=>p.Actions.Count(a=>a.Kind==LocalEditKind.Move))
             .ThenBy(p=>p.Cost.Total).FirstOrDefault());
-        return best!=null&&(!movementCost.HasValue||best.Cost.Total+8<movementCost.Value)?best:null;
+        return best!=null&&PreferClearance(best.Cost.Total,movementCost)?best:null;
     }
+
+    internal static bool PreferClearance(float edit,float? movement)=>movement==null||edit+8<movement.Value;
 
     private IEnumerable<int> Run(PhysicsState start,LandingRegion goal,PhysicsParameters ph,ILocalEditSource source,int maxChanges)
     {

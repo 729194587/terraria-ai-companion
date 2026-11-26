@@ -40,7 +40,7 @@ internal static class OverlayMotionSelfTest
         try
         {
             ActorControl.Driver=replay;
-            foreach(string action in new[]{"walk","jump","step_down","fall"})
+            foreach(string action in new[]{"walk","walk_decor","jump","step_down","fall"})
             {
                 for(int tx=x-4;tx<=x+16;tx++)
                 for(int ty=y-14;ty<=y+3;ty++)Set(tx,ty,ty>=y?TileID.Stone:-1);
@@ -48,6 +48,12 @@ internal static class OverlayMotionSelfTest
                 var cuts=action=="fall"?new[]{(x,y),(x+1,y),(x,y+1),(x+1,y+1),(x,y+2),(x+1,y+2)}:
                     fall?new[]{(x,y),(x+1,y)}:new[]{(x+2,y-2)};
                 foreach(var (tx,ty) in cuts)Set(tx,ty,TileID.Dirt);
+                if(action=="walk_decor")
+                {
+                    Set(x,y-1,TileID.LargePiles);
+                    Set(x+2,y-1,TileID.ImmatureHerbs);
+                    Set(x+3,y-1,TileID.Pots);
+                }
                 p.position=new Vector2(x*16,y*16-42);p.velocity=Vector2.Zero;
                 p.releaseJump=true;p.jump=0;replay.Input=default;frame();
                 var start=NativeMotionWorld.Observe(p);

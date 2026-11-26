@@ -61,7 +61,9 @@ internal static class TerrainReader
     internal static char ReadDryCell(int x,int y)=>ReadEnvironment(x,y).DryShape;
 
     internal static bool OrdinaryOverlayCell(TerrainCell cell)
-        =>!cell.Actuated && (cell.TileType==null || cell.TileType is
+        =>!cell.Actuated && (cell.TileType==null
+            || cell.Shape=='.' && cell.TileType is TileID.LargePiles or TileID.ImmatureHerbs or TileID.Pots
+            || cell.TileType is
             TileID.Dirt or TileID.Stone or TileID.Grass or TileID.Mud or TileID.ClayBlock
             || cell.TileType is int type && type<TileID.Count && TileID.Sets.Ore[type]);
 

@@ -181,7 +181,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     :operation=="mine_target"
                     ?args.TryGetProperty("cluster",out var cluster)&&cluster.GetBoolean()
                         ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge)
-                        :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
+                        :ExcavationTask.IsOre(identity,args)
+                            ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge,singleOre:true)
+                            :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
                     :operation=="collect_drops" ? new CollectDropsTask(actionId,args,executor)
                     :operation=="explore_frontier" ? new FrontierExplorationTask(actionId,identity,args,executor)
                     :operation=="build_place" ? new BuildPlaceTask(actionId,args,executor)

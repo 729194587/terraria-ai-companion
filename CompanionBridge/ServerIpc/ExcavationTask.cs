@@ -12,8 +12,8 @@ using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
 
 namespace CompanionBridge.ServerIpc;
 
-internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity identity,JsonElement args,
-    AiAtomicActions.IExecutor native,NavigationKnowledge knowledge) : AbstractCompanionTask(id)
+internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identity identity,JsonElement args,
+    AiAtomicActions.IExecutor native,NavigationKnowledge knowledge,bool singleOre=false) : AbstractCompanionTask(id)
 {
     private sealed class Target(ExcavationCell cell)
     {
@@ -33,7 +33,7 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
     private readonly HashSet<ExcavationCell> attemptedOpenings=new();
     private ExcavationCell openingTarget;
     private bool discoveryTruncated,routeBudgetReached;
-    private string openingFailure;
+    private NativeMineTargetWorld directTarget;
     private readonly ExcavationStanceSearch stanceSearch=new();
     private ulong lastUpdate;
     private PhysicsState? exhaustedAt;
@@ -67,6 +67,11 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         seedType=Main.tile[seedX,seedY].TileType;
         if(!TileID.Sets.Ore[seedType]||Main.tileFrameImportant[seedType])return Failed("excavation_seed_not_ore");
 
+        if(singleOre)
+        {
+            directTarget=new NativeMineTargetWorld(identity,args);
+            if(directTarget.Prepare() is {} failure)return Failed(failure);
+        }
         AddTarget(seedX,seedY);
         return null;
     }
@@ -74,6 +79,7 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
     private void AddTarget(int x,int y)
     {
         targets.Add(new(ExcavationCell.Capture(x,y)));
+        if(singleOre)return;
         frontier.Enqueue((x-1,y));frontier.Enqueue((x+1,y));frontier.Enqueue((x,y-1));frontier.Enqueue((x,y+1));
         seen.Add((x,y));
     }
@@ -102,20 +108,21 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)
     {
         if(NativeNavigationWorld.CheckHazards(identity,initialLife) is {} danger)return Stop(frame,"cancelled",danger);
-        if(!ActorMining.Healthy(player)||stage is not ("mining" or "opening")&&!GameNavigation.Ordinary(player))
+        if(!ActorMining.Healthy(player)||stage is not ("mining" or "opening" or "clearing")&&!GameNavigation.Ordinary(player))
             return Stop(frame,"cancelled","actor_cannot_mine");
         ulong elapsed=frame.GameUpdate-lastUpdate;
         lastUpdate=frame.GameUpdate;
-        if(stage is "planning" or "navigating" or "approaching" or "opening")
+        updates[Category(stage)]=updates.GetValueOrDefault(Category(stage))+elapsed;
+        if(stage is "planning" or "navigating" or "approaching" or "clearing" or "settling" or "opening")
         {
-            stanceSearch.Charge(elapsed,stage!="opening"||active?.Phase=="navigating");
+            stanceSearch.Charge(elapsed,stage is "planning" or "navigating" or "approaching");
             if(stanceSearch.WorkExhausted)return Stop(frame,"timeout","excavation_work_search_budget_exhausted");
             if(stanceSearch.TravelExhausted&&(stage is "navigating" or "approaching"||stage=="opening"&&active?.Phase=="navigating"))
             {
                 var stopped=base.Stop(frame,"timeout","excavation_route_search_budget_exhausted");
                 if(stopped.Status=="unknown"||!stopped.InputsReleased)
                     return stopped with{Evidence=Evidence(outcome="unknown")};
-                routeBudgetReached=true;openingTarget=null;active=null;stage="observe";
+                return Finish("timeout","excavation_route_search_budget_exhausted");
             }
         }
         if(stage=="discover")
@@ -128,15 +135,26 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         }
         if(active!=null)
         {
-            if(stage=="opening"&&CurrentChild==null&&!openingTarget.Matches())
-            {active=null;openingTarget=null;stage="observe";return Running();}
-            if(stage!="mining"&&stage!="opening"&&(capability!=ActorMining.CapabilityStamp(player)
+            if(stage=="opening"&&active is NativeActionTask {Started:false}
+                &&(!openingTarget.Matches()||directTarget.Revalidate()!=null||!directTarget.CanMine()))
+            {base.Stop(frame,"cancelled","excavation_needs_replan");active=null;openingTarget=null;stage="observe";return Running();}
+            if(active is NativeActionTask {Started:false} && selected!=null && !ReadyStep())
+            {base.Stop(frame,"cancelled","excavation_needs_replan");InvalidatePlan();return Running();}
+            if(selected!=null && !PlanCellsMatch(stage=="clearing"))
+            {
+                bool hadChild=CurrentChild!=null;
+                var stopped=base.Stop(frame,"cancelled","excavation_needs_replan");
+                if(hadChild)Record(lastResult);
+                if(stopped.Status=="unknown"||!stopped.InputsReleased)return stopped with{Evidence=Evidence("unknown")};
+                InvalidatePlan();return Running();
+            }
+            if(stage is not ("mining" or "opening" or "clearing")&&(capability!=ActorMining.CapabilityStamp(player)
                 ||targets.Any(t=>!t.Changed&&t.Proof==null&&!t.Cell.Matches())))
             {
                 var stopped=base.Stop(frame,"cancelled","excavation_needs_replan");
                 if(stopped.Status=="unknown"||!stopped.InputsReleased)
                 {outcome="unknown";return stopped with{Evidence=Evidence(outcome)};}
-                active=null;stage="observe";return Running();
+                InvalidatePlan();return Running();
             }
             var result=RunChild(active,frame,stage=="mining"?605UL:900UL);
             if(result==null)return Running();
@@ -147,7 +165,25 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
                 outcome="unknown";
                 return result with{Evidence=Evidence(outcome)};
             }
-            if(stage=="mining")
+            if(stage is "navigating" or "approaching" && result.Status!="completed")navigationFailures++;
+            if(selected!=null)
+            {
+                if(result.Status=="completed"&&result.EffectVerified)
+                {
+                    var step=selected.Actions[stepIndex];
+                    if(stage=="clearing")
+                    {
+                        if(Main.tile[step.X,step.Y].HasTile)return Finish("failed","excavation_clearance_changed");
+                        selected.Dependencies[(step.X,step.Y)]=new('.',default);
+                    }
+                    stepIndex++;
+                    stage="settling";
+                    return Running();
+                }
+                if(result.Status is not ("failed" or "timeout"))return Finish(result.Status,result.Reason);
+                InvalidatePlan();
+            }
+            else if(stage=="mining")
             {
                 continuationSlot=result.Status=="completed"?activePlan.NextSlot:null;
                 expectedPending=searchTargetCount-activePlan.Cells.Length;
@@ -157,18 +193,16 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
                 if(result.Status!="completed"&&result.Reason!="excavation_needs_replan"&&!changedDuringRun)
                     return Finish(result.Status,result.Reason);
                 if(result.Evidence is MiningRunReceipt {verified.Length:>0})
-                {stanceSearch.Mined();invalidations=0;}
+                {stanceSearch.Mined();invalidations=0;cutsSinceOre=0;}
                 else if(++invalidations>=AutonomousNavigationTask.MaxConsecutiveInvalidations)
                     return Finish("failed","excavation_replan_budget_exhausted");
             }
             else if(stage=="opening")
             {
                 openingTarget=null;
-                if(result.Status=="completed"){stanceSearch.Mined();}
-                else if(result.Status=="failed"&&result.Reason!="no_safe_mining_stance_in_local_window")
-                    openingFailure=result.Reason;
-                else if(result.Status=="timeout"&&result.InputsReleased){routeBudgetReached=true;openingFailure=result.Reason;}
-                else if(result.Status!="failed")return Finish(result.Status,result.Reason);
+                if(result.Status!="completed")return Finish(result.Status,result.Reason);
+                if(singleOre)return result with{Reason="mine_target_verified"};
+                stanceSearch.Mined();cutsSinceOre=0;
             }
             else if(result.Status!="completed")
             {
@@ -187,6 +221,11 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         var observed=ServerAiNavigation.Observe(player);
         if(!observed.Settled)return Running();
         var pose=observed.State;
+        if(selected!=null)
+        {
+            if(!ContinuePlan(pose))InvalidatePlan();
+            else return Running();
+        }
         var world=new NativeMotionWorld(pose);
         var physics=NativeNavigation.Parameters(player);
         int currentCapability=ActorMining.CapabilityStamp(player);
@@ -202,7 +241,11 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             ReleaseSearch();
             searchStart=pose;terrain=currentTerrain;capability=currentCapability;searchTargetCount=pending.Length;
             var here=world.SafeLanding(pose)?NativeExcavation.Choose(identity,pose,pending,new(TerrainReader.ReadEnvironment),ordered:false,continuationSlot:next):null;
-            if(here!=null)
+            if(singleOre && directTarget.CanMine())
+            {
+                StartSingle(pending[0]);return Running();
+            }
+            if(!singleOre&&here!=null)
             {
                 stage="mining";activePlan=here;active=new MiningRunTask(identity,here,pose);
                 return Running();
@@ -214,47 +257,48 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
                 &&c.X*16<pose.Px+20&&(c.X+1)*16>pose.Px&&!attemptedOpenings.Contains(c));
             if(support!=null&&new NativeNavigationEdits(identity,pose).LandingAfterCut(pose,new[]{(support.X,support.Y)}).HasValue)
             {
-                StartSingle(support);
-                return Running();
+                if(TrySupport(support))return Running();
             }
-            search=FindWorkPosition(pose,world,physics,pending).GetEnumerator();
+            localPlan=null;localWalk=null;nativeCost=null;
+            search=FindApproach(pose,world,physics,pending).GetEnumerator();
         }
         stage="planning";
         var timer=Stopwatch.StartNew();
-        for(int work=0;work<16&&timer.Elapsed.TotalMilliseconds<3;work++)
+        try
         {
-            if(!stanceSearch.TravelExhausted&&search.MoveNext())continue;
-            if(stanceSearch.TravelExhausted){routeBudgetReached=true;destination=null;}
-            ReleaseSearch();
-            if(destination==null)
+            for(int work=0;work<16&&timer.Elapsed.TotalMilliseconds<3;work++)
             {
-                openingTarget=pending.Where(c=>!attemptedOpenings.Contains(c))
-                    .OrderBy(c=>Math.Abs(c.X*16-player.Center.X)+Math.Abs(c.Y*16-player.Center.Y)).FirstOrDefault();
-                if(openingTarget==null)
-                {
-                    if(routeBudgetReached)return Finish("timeout","excavation_route_search_budget_exhausted");
-                    if(discoveryTruncated)return Finish("timeout","excavation_discovery_budget_exhausted");
-                    return Finish("failed",openingFailure??"excavation_no_work_position");
-                }
-                StartSingle(openingTarget);
+                if(!stanceSearch.TravelExhausted&&search.MoveNext())continue;
+                if(stanceSearch.TravelExhausted){routeBudgetReached=true;destination=null;}
+                ReleaseSearch();
+                if(!stanceSearch.TravelExhausted&&SelectLocalPlan())return Running();
+                if(destination==null)
+                    return routeBudgetReached||stanceSearch.TravelExhausted
+                        ?Finish("timeout","excavation_route_search_budget_exhausted")
+                        :Finish("failed",unsupported?"excavation_unsupported_terrain":"excavation_no_plan_in_search_window");
+                var region=destination.Region;
+                stanceSearch.Attempt(region,destination.Batch);
+                var arguments=JsonSerializer.SerializeToElement(new{minPlayerLeftX=region.MinPlayerLeftX,
+                    maxPlayerLeftX=region.MaxPlayerLeftX,surfaceY=region.SurfaceY});
+                navigationDispatches++;
+                stage=InLocalSearch(pose,region)?"navigating":"approaching";
+                active=new NativeActionTask(native,"navigate_to_landing_region",arguments,taskId+"/"+stage+"-"+(++sequence));
+
                 return Running();
             }
-            var region=destination.Region;
-            stanceSearch.Attempt(region,destination.Batch);
-            var arguments=JsonSerializer.SerializeToElement(new{minPlayerLeftX=region.MinPlayerLeftX,
-                maxPlayerLeftX=region.MaxPlayerLeftX,surfaceY=region.SurfaceY});
-            stage=InLocalSearch(pose,region)?"navigating":"approaching";
-            active=new NativeActionTask(native,"navigate_to_landing_region",arguments,taskId+"/"+stage+"-"+(++sequence));
-
             return Running();
         }
-        return Running();
+        finally
+        {
+            double ms=timer.Elapsed.TotalMilliseconds;
+            planningMs+=ms;maxSliceMs=Math.Max(maxSliceMs,ms);
+        }
     }
 
     private bool RefreshStances(int currentCapability,PhysicsParameters physics,int pending)
     {
         if(!stanceSearch.Observe(workBounds,departureBounds,currentCapability,physics,pending))return false;
-        exhaustedAt=null;localRouteProbes.Clear();attemptedOpenings.Clear();openingFailure=null;routeBudgetReached=false;
+        exhaustedAt=null;localRouteProbes.Clear();attemptedOpenings.Clear();routeBudgetReached=false;
         if(openingTarget!=null)attemptedOpenings.Add(openingTarget);
         return true;
     }
@@ -263,21 +307,7 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
     {
         attemptedOpenings.Add(cell);
         openingTarget=cell;
-        var goal=JsonSerializer.SerializeToElement(new{x=cell.X,y=cell.Y});
-        // A protected single-target child may edit terrain before a failed move.
-        // Bind that refusal to the post-edit terrain, not the parent's last observation.
-        ulong? observedUpdate=null;
-        ExcavationStanceSearch CurrentSearch()
-        {
-            if(observedUpdate!=Main.GameUpdateCount)
-            {
-                RefreshStances(ActorMining.CapabilityStamp(player),NativeNavigation.Parameters(player),searchTargetCount);
-                observedUpdate=Main.GameUpdateCount;
-            }
-            return stanceSearch;
-        }
-        var single=new NativeMineTargetWorld(identity,goal,(x,y)=>targets.Any(t=>t.Cell.X==x&&t.Cell.Y==y),knowledge,CurrentSearch);
-        active=new MineTargetTask(taskId+"/opening-"+(++sequence),single,native,compactHistory:true);
+        active=new NativeActionTask(native,"mine_tile",directTarget.MineArguments(),taskId+"/mine-"+(++sequence));
         stage="opening";
     }
 
@@ -310,7 +340,8 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             var quote=NativeExcavation.Choose(identity,stance,pending,new(TerrainReader.ReadEnvironment),ordered:false);
             if(quote==null)continue;
             if(stanceSearch.Tried(region,quote.Cells)){routeBudgetReached=true;continue;}
-            var candidate=new WorkPose(region,quote.Cells,quote.Coverage,quote.TotalUpdates,region.Distance(start)/physics.MaxRun);
+            var first=NativeExcavation.Choose(identity,stance,quote.Cells.Take(1),new(TerrainReader.ReadEnvironment),false);
+            var candidate=new WorkPose(region,quote.Cells,quote.Coverage,first.RunUpdates,region.Distance(start)/physics.MaxRun);
             if(local)candidates.Add(candidate);
             else if(approach==null||candidate.Coverage>approach.Coverage||candidate.Coverage==approach.Coverage
                 &&candidate.LowerBound+candidate.Mining<approach.LowerBound+approach.Mining)approach=candidate;
@@ -319,7 +350,8 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
         knowledge.Bind(player,identity.World,identity.Generation,identity.Slot);
         knowledge.ObservePhysics(physics);
         knowledge.Search.Scope(terrain,physics,(long)Main.GameUpdateCount);
-        foreach(var candidate in candidates.OrderByDescending(c=>c.Coverage).ThenBy(c=>c.LowerBound+c.Mining))
+        foreach(var candidate in candidates.OrderBy(c=>Math.Floor((c.LowerBound+c.Mining)/8))
+            .ThenByDescending(c=>c.Coverage).ThenBy(c=>c.LowerBound+c.Mining))
         {
             float x=(candidate.Region.MinPlayerLeftX+candidate.Region.MaxPlayerLeftX)/2;
 
@@ -341,27 +373,27 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
                 if(!navigator.Finished||route?.TimeBudgetReached==true||route?.SearchExit=="safe_partial")routeBudgetReached=true;
             }
             if(route?.ReachedGoal!=true){localRouteProbes.Add(candidate.Region);continue;}
+            nativeCost=new(route.Actions.Sum(a=>a.ExecuteFrames),0,candidate.Mining,0);
             destination=candidate;
             yield break;
         }
         // Travel through the normal rolling navigator. On arrival Tick observes the
         // live pose and quotes the remaining ore anew before starting a mining run.
         destination??=approach;
-        if(destination==null)exhaustedAt=start;
+        if(destination==null&&localPlan==null&&localWalk==null)exhaustedAt=start;
     }
 
-    protected override object ChildView(TaskSlot slot)
-    {
-        if(slot.Task is not MineTargetTask single)return base.ChildView(slot);
-        var record=slot.Record;
-        var result=record.Result;
-        return new{taskName=record.Name,taskId=record.Id,status=result.Status,reason=result.Reason,
-            target=openingTarget is {} c?new{x=c.X,y=c.Y}:null,destination=destination?.Region,
-            inputsReleased=result.InputsReleased,effectVerified=result.EffectVerified,reasonDetail=result.ReasonDetail,
-            steps=single.MiningSteps};
-    }
     private void Record(Result result)
     {
+        if(stage=="clearing"&&selected!=null&&result?.Evidence!=null)
+        {
+            var cut=selected.Actions[stepIndex];
+            var evidence=JsonSerializer.SerializeToElement(result.Evidence);
+            if(evidence.TryGetProperty("destroyedByActor",out var owned)&&owned.GetBoolean()
+                &&evidence.GetProperty("X").GetInt32()==cut.X&&evidence.GetProperty("Y").GetInt32()==cut.Y
+                &&evidence.GetProperty("TileType").GetInt32()==cut.Type)
+            {actualCuts++;cutsSinceOre++;}
+        }
         if(stage=="opening"&&openingTarget!=null&&result is {Status:"completed",EffectVerified:true,InputsReleased:true})
         {
             var e=JsonSerializer.SerializeToElement(result.Evidence);
@@ -384,7 +416,7 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             else if(t.Proof!=null&&present)t.ChangeReason="replaced_after_verified_cut";
         }
     }
-    private object Evidence(string outcome)=>new{outcome,seedX,seedY,typeId=seedType,workSearchUpdates=stanceSearch.WorkUpdates,routeSearchUpdates=stanceSearch.TravelUpdates,stanceAttempts=stanceSearch.Attempts,discoveryComplete=!discoveryTruncated&&frontier.Count==0,targets=targets.Select(t=>t.View()).ToArray()};
+    private object Evidence(string outcome)=>new{outcome,seedX,seedY,typeId=seedType,approach=ApproachEvidence(),workSearchUpdates=stanceSearch.WorkUpdates,routeSearchUpdates=stanceSearch.TravelUpdates,stanceAttempts=stanceSearch.Attempts,discoveryComplete=!discoveryTruncated&&frontier.Count==0,targets=targets.Select(t=>t.View()).ToArray()};
     private Result Finish(string status,string reason)
     {
         ReleaseSearch();RefreshTargets();
@@ -405,6 +437,8 @@ internal sealed class ExcavationTask(string id,AiReadOnlyProtocol.Identity ident
             outcome="unknown";
             return stopped with{Evidence=Evidence(outcome)};
         }
+        if(singleOre&&stage=="opening"&&hadChild&&lastResult is {Status:"completed",InputsReleased:true,EffectVerified:true}&&directTarget.TargetAbsent())
+            return lastResult with{Reason="mine_target_verified"};
         active=null;
         return Finish(status,reason);
     }
