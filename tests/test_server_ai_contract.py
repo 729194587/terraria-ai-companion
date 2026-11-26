@@ -35,7 +35,7 @@ FULL_ACTIONS = FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_
             'server_ai_combat_v1', 'server_ai_weapon_button_v1', 'server_ai_combat_primary_v1',
             'server_ai_boss_encounter_v1', 'server_ai_boss_strategy_v1', 'server_ai_open_item_v1', 'server_ai_drop_item_v1', 'server_ai_inventory_favorite_v1', 'server_ai_personal_inventory_v1',
             'server_ai_pylons_v1', 'server_ai_regroup_v1', 'server_ai_dismiss_summon_v1', 'server_ai_doors_v1', 'server_ai_interact_tile_v1', 'server_ai_hammer_v1',
-            'server_ai_collect_drops_v1', 'server_ai_place_item_v1', 'server_ai_build_place_v1',
+            'server_ai_collect_drops_v1', 'server_ai_place_item_v1', 'server_ai_build_place_v1', 'server_ai_frontier_exploration_v1',
             'server_ai_material_plan_v1', 'server_ai_item_sources_v1', 'server_ai_item_info_v1', 'server_ai_build_diff_v1', 'server_ai_merchant_shop_v1', 'server_ai_merchant_purchase_v1',
             'server_ai_merchant_sale_v1', 'server_ai_npc_dialogue_v1', 'server_ai_merchant_bulk_purchase_v1',
             'server_ai_nurse_v1', 'server_ai_reforge_v1',
@@ -169,7 +169,7 @@ class ResultRegistryTests(unittest.TestCase):
         # Shared/client names intentionally unavailable to Server AI, even with all capabilities.
         unavailable = {'attack_entity', 'drop_through_platform', 'get_player_status', 'get_world_state',
                        'observe_exploration', 'place_wall'}
-        task_only = {'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'}
+        task_only = {'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place', 'explore_frontier'}
         scoped = {'inspect_inventory', 'observe_scene', 'query_map', 'scan_entities'}
         registered = [entry['function']['name'] for entry in atomic.TOOLS] + sorted(program_tasks.NAMES)
         self.assertCountEqual(registered, set(registered))
@@ -207,7 +207,7 @@ class ResultRegistryTests(unittest.TestCase):
                     self.assertEqual('ok' if name in scoped else 'bad_argument', partial['status'])
             if caps == FULL_ACTIONS:
                 submit = api_help(b, {'name': 'submit_task'})['parameters']['properties']
-                self.assertEqual(task_only | {'mine_target'}, set(submit['operation']['enum']))
+                self.assertEqual(task_only | {'mine_target', 'navigate_to'}, set(submit['operation']['enum']))
 
     def test_guide_only_advertises_available_argument_help(self):
         for caps, names in [(BASE, set()), (BASE | {'server_ai_map_v1'}, {'query_map'}),
@@ -292,6 +292,9 @@ class ResultRegistryTests(unittest.TestCase):
             self.assertEqual('ok', help_result['status'])
             Draft202012Validator.check_schema(help_result['returnsSchema'])
         combat = bridge(FULL_ACTIONS)
+        without_frontier = bridge(FULL_ACTIONS - {'server_ai_frontier_exploration_v1'})
+        self.assertNotIn('explore_frontier', without_frontier.supported_atomic_operations)
+        self.assertNotIn('explore_frontier', api_help(without_frontier, {'name': 'submit_task'})['parameters']['properties']['operation']['enum'])
         self.assertEqual(set(definitions) | set(combat.supported_atomic_operations), registered_names())
         self.assertEqual({'future_api'}, missing_for(set(definitions) | {'future_api'}))
         self.assertNotIn('Action_mine_tile', schema_for('stop_action', capabilities=BASE)['$defs'])
@@ -604,7 +607,10 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual('Not exposed', next(c for c in capability_manifest(b)['categories'] if c['category']=='直接身体输入')['status'])
 
     def test_limited_boundaries_and_shared_schemas(self):
-        b = bridge(BASE | set(OPTIONAL) | {'server_ai_scene_region_v1', 'server_ai_general_operations_v1'})
+        b = bridge(BASE | set(OPTIONAL) | {
+            'server_ai_scene_region_v1', 'server_ai_general_operations_v1', 'server_ai_resources_v1',
+            'server_ai_directional_landings_v1', 'server_ai_map_chunks_v1',
+        })
         manifest, definitions, _ = contract_parts(server_contract(b)[0])
         defs = {t['function']['name']: t['function'] for t in definitions}
         for name, f in defs.items():
@@ -626,6 +632,10 @@ class ManifestTests(unittest.TestCase):
         }.items():
             for fact in facts:self.assertIn(fact, defs[name]['description'])
         old = bridge(BASE | set(OPTIONAL))
+        self.assertNotIn('includeChunks', api_help(old, {'name': 'query_map'})['parameters']['properties'])
+        old_scene = api_help(old, {'name': 'observe_scene'})['parameters']['properties']
+        self.assertNotIn('landingDirection', old_scene)
+        self.assertNotIn('resources', old_scene['layers']['items']['enum'])
         _, old_definitions, _ = contract_parts(server_contract(old)[0])
         old_defs = {t['function']['name']: t['function']['description'] for t in old_definitions}
         self.assertIn('默认样式的原版工作台', old_defs['place_object'])
