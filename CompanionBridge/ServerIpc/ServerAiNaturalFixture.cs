@@ -192,7 +192,9 @@ internal static class ServerAiNaturalFixture
                     }
                     contactInjected=false;frames.Clear();settle=30;held=false;stage=FlightStage.Ground;flightTicks=stalled=0;furthest=p.position.X;
                     flightGoal=journey && caseId=="traverse" && File.Exists(FileAt("flight-reference")) ? doc.RootElement.GetProperty("flightGoalX").GetInt32():0;initialNavigation=(ActorControl.Driver as ServerAiNavigation)?.Current;
-                    pending=new{caseId,offsetTiles=offset,surface,spawnX=Main.spawnTileX,spawnY=Main.spawnTileY,
+                    if(caseId=="small-copper"&&doc.RootElement.TryGetProperty("protectCopper",out var protect)&&protect.GetBoolean())
+                        NavigationProtection.Reserve(new(2176,571,2176,571));
+                    pending=new{caseId,copperReserved=caseId=="small-copper"&&NavigationProtection.Reserved(2176,571),offsetTiles=offset,surface,spawnX=Main.spawnTileX,spawnY=Main.spawnTileY,
                         seed=Main.ActiveWorldFileData.SeedText,worldWidth=Main.maxTilesX,worldHeight=Main.maxTilesY,
                         world=ProbeSession.WorldSession,generation=ProbeSession.ActorGeneration,slot=p.whoAmI,
                         terrainWrites=false,initialStateInjection=true,npcCombat=caseId.StartsWith("contact-")?"single controlled zombie contact":"excluded"};

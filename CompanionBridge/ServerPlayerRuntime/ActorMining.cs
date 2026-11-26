@@ -35,11 +35,15 @@ internal static partial class ActorMining
         internal FurnitureCell[] Furniture=Array.Empty<FurnitureCell>();
         internal HammerWork Hammer;
         internal Batch Batch;
+        internal bool OreTask;
+        internal readonly List<VeinBreakProof> ChainBreaks=new();
         internal ActionPhase Phase=ActionPhase.Running;internal Failure Reason;internal string Detail="";
     }
     internal sealed class Batch(ExcavationCell[] cells,Func<ExcavationCell,bool> safe,float estimate)
     {
         internal readonly ExcavationCell[] Cells=cells;
+        internal IReadOnlyDictionary<(int,int),ExcavationCell> ChainTargets;
+        internal bool Complete=>Index==Cells.Length;
         internal readonly Func<ExcavationCell,bool> Safe=safe;
         internal readonly float Estimate=estimate;
         internal readonly List<ExcavationProof> Verified=new();
@@ -379,6 +383,49 @@ internal static partial class ActorMining
     }
     public static bool Allowed(Player p)=>executing!=null&&ReferenceEquals(executing.Actor,p)&&Bound(executing)
         &&NativeSurvival.Owns(p)&&!p.dead&&Held(executing);
+    internal static int VeinMinerSlot(int sender, Point center, int type)
+    {
+        var c=executing;
+        if(!Program.IsMainThread || c==null || !c.Destroyed || c.ExternalChange || c.Pick<=0
+            || c.X!=center.X || c.Y!=center.Y || c.ExpectedType!=type || !Allowed(c.Actor) || !InInputScope(c.Actor))
+            return sender;
+        return c.Actor.whoAmI;
+    }
+    [ThreadStatic] private static Context veinPacket;
+    internal static bool InAiVeinPacket=>veinPacket!=null;
+
+    internal static void RunVeinPacket(Point center,int type,int slot,Action<Point,int> run)
+    {
+        var actor=executing;
+        if(actor==null||!InInputScope(actor.Actor)){run(center,type);return;}
+        // Only the synchronous packet for this confirmed seed may issue secondary removals.
+        if(veinPacket!=null||actor.NavigationEdit||!TileID.Sets.Ore[type]||actor.Actor.whoAmI!=slot
+            ||VeinMinerSlot(-1,center,type)!=slot)return;
+        veinPacket=actor;
+        try{run(center,type);}
+        finally{veinPacket=null;}
+    }
+
+    internal static void BreakVeinCell(int x,int y,bool fail,bool effectOnly,bool noItem)
+    {
+        var c=veinPacket;
+        if(c==null){WorldGen.KillTile(x,y,fail,effectOnly,noItem);return;}
+        if(c!=executing||!Allowed(c.Actor)||!InInputScope(c.Actor)||fail||effectOnly||noItem||
+            NavigationProtection.Reserved(x,y))return;
+        var tile=Main.tile[x,y];
+        if(!tile.HasUnactuatedTile||tile.TileType!=c.ExpectedType||!WorldGen.CanKillTile(x,y))return;
+        var view=new CompanionBridge.Motion.LocalTerrainView(CompanionBridge.Common.Systems.TerrainReader.ReadEnvironment);
+        if(!NativeNavigationEdits.SafeRemovalNeighbours(x,y,view)||
+            !NativeExcavation.SafeOrePose(ServerAiNavigation.Observe(c.Actor).State,x,y,view))return;
+        var before=ExcavationCell.Capture(x,y);
+        if(c.Batch?.ChainTargets is {} targets&&(!targets.TryGetValue((x,y),out var expected)||expected!=before))return;
+        WorldGen.KillTile(x,y,fail,effectOnly,noItem);
+        if(!Main.tile[x,y].HasTile)
+            c.ChainBreaks.Add(new(before,SceneMineTargets.Revision(x,y),c.X,c.Y,c.Actor.whoAmI,c.Id,c.Ticks));
+    }
+    private static bool ChainVerified(Context c,ExcavationCell cell)=>!Main.tile[cell.X,cell.Y].HasTile&&
+        c.ChainBreaks.Any(b=>b.Before==cell&&b.AfterRevision==SceneMineTargets.Revision(cell.X,cell.Y));
+
     public static bool InInputScope(Player p)=>executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeItemInput.Active(p);
     private static void UseMiningTools(On_Player.orig_ItemCheck_UseMiningTools orig,Player p,Item item)
     {
@@ -498,12 +545,14 @@ internal static partial class ActorMining
             var batch=c.Batch;
             if(batch==null)
             {
+                if(c.OreTask&&!c.Destroyed&&NavigationProtection.ProtectedOre(c.X,c.Y))
+                {End(c,ActionPhase.Failed,Failure.TargetProtected);return;}
                 if(c.NavigationEdit&&!c.Destroyed&&!NavigationProtection.CanCutNow(c.X,c.Y))
                 {End(c,ActionPhase.Failed,Failure.TargetProtected,"navigation_protected_structure");return;}
                 if(c.ExternalChange||(c.Destroyed?Main.tile[c.X,c.Y].HasTile:!TargetUnchanged(c))){End(c,ActionPhase.Failed,Failure.TargetChanged);return;}
                 if(!c.Destroyed&&!InRange(c)){End(c,ActionPhase.Failed,Failure.OutOfRange);return;}
             }
-            else if(!batch.Draining&&!c.Destroyed&&(c.ExternalChange||!TargetUnchanged(c)||batch.Cells.Skip(batch.Index).Any(cell=>!cell.Matches())
+            else if(!batch.Draining&&!c.Destroyed&&(c.ExternalChange||!TargetUnchanged(c)||batch.Cells.Skip(batch.Index).Any(cell=>!cell.Matches()&&!ChainVerified(c,cell))
                 ||batch.Verified.Any(proof=>Main.tile[proof.X,proof.Y].HasTile)
                 ||CapabilityStamp(p)!=batch.Capability||!batch.Safe(batch.Target)||!InRange(c)))
                 batch.Draining=true;
@@ -519,15 +568,18 @@ internal static partial class ActorMining
             if(!Held(c)){End(c,ActionPhase.Cancelled,Failure.ItemChanged);return;}
             if(batch!=null)
             {
-                if(c.Destroyed&&!c.ExternalChange&&!Main.tile[c.X,c.Y].HasTile&&batch.Verified.Count==batch.Index)
+                if(c.Destroyed&&!c.ExternalChange&&!Main.tile[c.X,c.Y].HasTile&&!batch.Draining)
                 {
-                    batch.Verified.Add(new(c.X,c.Y,c.TileType,c.Ticks,c.Strikes-batch.PreviousStrikes));
+                    batch.Verified.Add(new(c.X,c.Y,c.TileType,c.Ticks,c.Strikes-batch.PreviousStrikes,c.Id));
                     batch.PreviousStrikes=c.Strikes;
                     ClearProgress(p,c.X,c.Y);
                     AiMapRuntime.Remember(c.X,c.Y);
-                    if(batch.Index+1<batch.Cells.Length)
+                    batch.Index++;
+                    while(!batch.Complete&&ChainVerified(c,batch.Target))batch.Index++;
+                    if(batch.Complete)batch.Draining=true;
+                    else
                     {
-                        var next=batch.Cells[++batch.Index];
+                        var next=batch.Target;
                         if(next.Matches())
                         {
                             CaptureTarget(c,next.X,next.Y);
@@ -536,7 +588,7 @@ internal static partial class ActorMining
                         else batch.Draining=true;
                     }
                 }
-                bool complete=batch.Verified.Count==batch.Cells.Length;
+                bool complete=batch.Complete;
                 if(!complete&&c.ExternalChange)batch.Draining=true;
                 if((complete||batch.Draining)&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0)
                 {

@@ -60,6 +60,24 @@ public sealed class NavigationProtection : ModSystem
         }
         return false;
     }
+    internal static bool ProtectedOre(int x,int y)
+    {
+        if(Reserved(x,y))return true;
+        for(int tx=x-1;tx<=x+1;tx++)
+        for(int ty=y-1;ty<=y+1;ty++)
+        {
+            if(tx==x&&ty==y)continue;
+            var t=Main.tile[tx,ty];
+            if(!t.HasTile||!Main.tileFrameImportant[t.TileType])continue;
+            // Explicit ore mining may dislodge unreserved cave debris. An AI-triggered
+            // secondary cut still uses the stricter navigation collateral check.
+            if(t.TileType is (TileID.Pots or TileID.LargePiles or TileID.LargePiles2 or TileID.SmallPiles)
+                &&!Reserved(tx,ty))continue;
+            if(NativeNavigationEdits.SupportsFurniture(x,y,tx,ty,t.TileType,TerrainReader.ReadCell(tx,ty)))return true;
+        }
+        return false;
+    }
+
     internal static bool NaturalObstacle(int type)=>type is TileID.Dirt or TileID.Stone or TileID.Grass
         or TileID.Mud or TileID.ClayBlock or TileID.SnowBlock or TileID.IceBlock or TileID.Sandstone
         or TileID.HardenedSand or TileID.JungleGrass or TileID.CorruptGrass or TileID.CrimsonGrass

@@ -38,6 +38,8 @@ internal static class TerrainApproachSelfTest
             "ore_support","ore_stock","ore_gear","ore_target","nav_cancel","ore_stop_place","nav_deck"}
             :new[]{"direct","detour","fast","slow","thin","sequential","single","dead_end",
                 "path_changed","stop_clearing","stop_after_cut","falling_sand"};
+        bool improve=Terraria.ModLoader.ModLoader.HasMod("ImproveGame");
+        if(improve&&shared&&!platform)scenes=scenes.Append("cluster_chair").ToArray();
         foreach(string name in scenes)
         for(int repeat=0;repeat<(name is "fast" or "slow" or "thin" or "detour" or "single" or "nav_fast" or "nav_slow"
             or "nav_sequential" or "nav_support" or "ore_support"?3:1);repeat++)
@@ -68,7 +70,7 @@ internal static class TerrainApproachSelfTest
                 for(int dy=0;dy<18;dy++)Set(dx,dy,-1);
             }
             else if(scene=="detour")Set(4,-1,TileID.Dirt);
-            else if(scene!="direct")
+            else if(scene is not ("direct" or "chair"))
             {
                 foreach(int dx in ore==13?new[]{2,7}:new[]{3})
                 for(int dy=-14;dy<0;dy++)Set(dx,dy,dx==7&&scene=="dead_end"?TileID.LihzahrdBrick:TileID.Dirt);
@@ -78,6 +80,14 @@ internal static class TerrainApproachSelfTest
             if(scene is "marked" or "nofill")NavigationProtection.Reserve(protectedArea);
             if(scene=="housing")
                 for(int dy=-14;dy<0;dy++){var tile=Main.tile[x+3,y+dy];tile.WallType=WallID.Wood;}
+            bool checkIncidentalOre=name=="nav_sequential"&&improve;
+            if(checkIncidentalOre){Set(2,-8,TileID.Copper);Set(2,-9,TileID.Copper);}
+            if(scene=="chair")
+            {
+                ore=3;oreY=0;
+                Set(ore+1,0,TileID.Iron);
+                if(!WorldGen.PlaceTile(x+ore+1,y-1,TileID.Chairs,mute:true,forced:true))throw new InvalidOperationException("Missing fixture chair");
+            }
             if(!nav)Set(ore,oreY,TileID.Iron);
             if(platform&&name.StartsWith("cluster_"))Set(ore,oreY+1,TileID.Iron);
             int goalX=scene is "fast" or "slow"?0:scene is "deck" or "landing"?4:ore;
@@ -152,7 +162,11 @@ internal static class TerrainApproachSelfTest
                     }
                 }while(result.Status=="running"&&ticks<2800);
                 var task=JsonSerializer.SerializeToElement(result.Evidence).GetProperty("task");
-                var row=new{scene=name,repeat,ticks,start,finalX=p.position.X,finalFeet=p.Bottom.Y,
+                int? untouchedVein=checkIncidentalOre?new[]{-8,-9}.Count(dy=>Main.tile[x+2,y+dy].HasTile&&Main.tile[x+2,y+dy].TileType==TileID.Copper):null;
+                if(checkIncidentalOre&&untouchedVein!=2)throw new InvalidOperationException("Navigation clearance damaged unrelated copper.");
+                bool? chairIntact=scene=="chair"?ActorMining.FurnitureAt(x+ore+1,y-1).Length==2&&Main.tile[x+ore+1,y].TileType==TileID.Iron&&Main.tile[x+ore+1,y].HasTile:null;
+                if(chairIntact==false)throw new InvalidOperationException("Mining destroyed chair or its ore support.");
+                var row=new{untouchedVein,chairIntact,scene=name,repeat,ticks,start,finalX=p.position.X,finalFeet=p.Bottom.Y,
                     placed=gap?Enumerable.Range(2,gapEnd-1).Where(dx=>Main.tile[x+dx,y].HasTile).Select(dx=>x+dx).ToArray():Array.Empty<int>(),
                     stockLeft=p.inventory[1].stack,tool=p.inventory[0].type,prefix=p.inventory[0].prefix,injected,clearedAtChange,
                     controlsReleased=!p.controlLeft&&!p.controlRight&&!p.controlJump&&!p.controlUseItem,result.Status,result.Reason,result.InputsReleased,

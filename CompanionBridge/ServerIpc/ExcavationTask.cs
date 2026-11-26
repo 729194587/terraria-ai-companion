@@ -19,10 +19,13 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
     {
         internal readonly ExcavationCell Cell=cell;
         internal ExcavationProof Proof;
+        internal VeinBreakProof Chain;
+        internal bool Protected;
+        internal bool Verified=>Proof!=null||Chain!=null;
         internal string ChangeReason;
         internal bool Changed=>ChangeReason!=null;
-        internal string Status=>Changed?"changed":Proof==null?"pending":"verified";
-        internal object View()=>new{x=Cell.X,y=Cell.Y,typeId=Cell.Type,status=Status,proof=Proof,changeReason=ChangeReason};
+        internal string Status=>Changed?"changed":Verified?"verified":Protected?"protected":"pending";
+        internal object View()=>new{x=Cell.X,y=Cell.Y,typeId=Cell.Type,status=Status,proof=Proof,chainProof=Chain,source=Chain!=null?"improvegame_chain":Proof!=null?"native_pick":null,changeReason=ChangeReason};
     }
 
     private const int DiscoveryLimit=128;
@@ -150,7 +153,7 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
                 &&(!openingTarget.Matches()||directTarget.Revalidate()!=null||!directTarget.CanMine()))
             {base.Stop(frame,"cancelled","excavation_needs_replan");active=null;openingTarget=null;stage="observe";return Running();}
             if(stage is not ("mining" or "opening" or "clearing" or "placing")&&(capability!=ActorMining.CapabilityStamp(player)
-                ||targets.Any(t=>!t.Changed&&t.Proof==null&&!t.Cell.Matches())))
+                ||targets.Any(t=>!t.Changed&&!t.Verified&&!t.Cell.Matches())))
             {
                 var stopped=base.Stop(frame,"cancelled","excavation_needs_replan");
                 if(stopped.Status=="unknown"||!stopped.InputsReleased)
@@ -173,7 +176,7 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
                 expectedPending=searchTargetCount-activePlan.Cells.Length;
                 activePlan=null;
                 bool changedDuringRun=result.Status=="failed"&&result.Reason=="target_changed"
-                    &&targets.Any(t=>t.Proof==null&&!t.Changed&&!t.Cell.Matches());
+                    &&targets.Any(t=>!t.Verified&&!t.Changed&&!t.Cell.Matches());
                 if(result.Status!="completed"&&result.Reason!="excavation_needs_replan"&&!changedDuringRun)
                     return Finish(result.Status,result.Reason);
                 if(result.Evidence is MiningRunReceipt {verified.Length:>0})
@@ -200,7 +203,7 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
         if(pending.Length==0&&discoveryTruncated)return Finish("timeout","excavation_discovery_budget_exhausted");
         if(pending.Length==0)return targets.Count>0&&targets.All(t=>t.Status=="verified")
             ?Finish("completed","excavation_cluster_verified")
-            :Finish("failed","excavation_target_changed");
+            :Finish("failed",targets.Any(t=>t.Protected)?"excavation_protected_targets":"excavation_target_changed");
 
         var observed=ServerAiNavigation.Observe(player);
         if(!observed.Settled)return Running();
@@ -226,7 +229,7 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
             }
             if(!singleOre&&here!=null)
             {
-                stage="mining";activePlan=here;active=new MiningRunTask(identity,here,pose);
+                stage="mining";activePlan=here;active=new MiningRunTask(identity,here,pose,chainTargets:pending);
                 return Running();
             }
             // A fixed-stance run cannot include the final supporting ore. A
@@ -298,32 +301,44 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
     {
         attemptedOpenings.Add(cell);
         openingTarget=cell;
-        active=new NativeActionTask(native,"mine_tile",directTarget.MineArguments(),taskId+"/mine-"+(++sequence));
+        active=new NativeActionTask(native,"mine_tile",JsonSerializer.SerializeToElement(new{x=cell.X,y=cell.Y,mineTargetOre=true}),taskId+"/mine-"+(++sequence));
         stage="opening";
     }
 
     private void Record(Result result)
     {
-        if(stage=="opening"&&openingTarget!=null&&result is {Status:"completed",EffectVerified:true,InputsReleased:true})
+        if(stage=="opening"&&openingTarget!=null&&result?.Evidence!=null)
         {
             var e=JsonSerializer.SerializeToElement(result.Evidence);
-            if(e.GetProperty("destroyedByActor").GetBoolean()&&e.GetProperty("X").GetInt32()==openingTarget.X
+            if(e.TryGetProperty("chainBreaks",out var chain))RecordChain(chain.Deserialize<VeinBreakProof[]>());
+            if(result is {Status:"completed",EffectVerified:true,InputsReleased:true}&&e.GetProperty("destroyedByActor").GetBoolean()&&e.GetProperty("X").GetInt32()==openingTarget.X
                 &&e.GetProperty("Y").GetInt32()==openingTarget.Y&&e.GetProperty("TileType").GetInt32()==openingTarget.Type)
                 targets.Single(t=>t.Cell==openingTarget).Proof=new(openingTarget.X,openingTarget.Y,openingTarget.Type,
-                    e.GetProperty("Ticks").GetInt32(),e.GetProperty("Strikes").GetInt32());
+                    e.GetProperty("Ticks").GetInt32(),e.GetProperty("Strikes").GetInt32(),e.GetProperty("nativeActionId").GetGuid());
             return;
         }
         if(stage!="mining"||result?.Evidence is not MiningRunReceipt run)return;
+        RecordChain(run.chainBreaks);
         foreach(var proof in run.verified)
             targets.Single(t=>t.Cell.X==proof.X&&t.Cell.Y==proof.Y).Proof=proof;
+    }
+    private void RecordChain(VeinBreakProof[] cuts)
+    {
+        if(cuts==null)return;
+        foreach(var cut in cuts)
+        {
+            var target=targets.Find(t=>t.Cell==cut.Before);
+            if(target!=null&&!target.Changed&&!target.Verified)target.Chain=cut;
+        }
     }
     private void RefreshTargets()
     {
         foreach(var t in targets.Where(t=>!t.Changed))
         {
+            t.Protected=!t.Verified&&NavigationProtection.ProtectedOre(t.Cell.X,t.Cell.Y);
             bool present=Main.tile[t.Cell.X,t.Cell.Y].HasTile;
-            if(t.Proof==null&&!t.Cell.Matches())t.ChangeReason=present?"identity_changed":"removed_externally";
-            else if(t.Proof!=null&&present)t.ChangeReason="replaced_after_verified_cut";
+            if(!t.Verified&&!t.Cell.Matches())t.ChangeReason=present?"identity_changed":"removed_externally";
+            else if(t.Verified&&(present||t.Chain is {} cut&&cut.AfterRevision!=SceneMineTargets.Revision(t.Cell.X,t.Cell.Y)))t.ChangeReason="replaced_after_verified_cut";
         }
     }
     private object Evidence(string outcome)=>new{outcome,seedX,seedY,typeId=seedType,approach=ApproachEvidence(),workSearchUpdates=stanceSearch.WorkUpdates,routeSearchUpdates=stanceSearch.TravelUpdates,stanceAttempts=stanceSearch.Attempts,discoveryComplete=!discoveryTruncated&&frontier.Count==0,targets=targets.Select(t=>t.View()).ToArray()};
@@ -331,9 +346,9 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
     {
         ReleaseSearch();RefreshTargets();
         outcome=status=="unknown"?"unknown":status=="completed"?"completed":status=="cancelled"?"interrupted"
-            :targets.Any(t=>t.Proof!=null)?"partial":"failed";
+            :targets.Any(t=>t.Verified)?"partial":"failed";
         return new(status,reason,Evidence(outcome),true,status=="completed",
-            InputsAcquired:completedChildren>0||lastResult?.InputsAcquired==true||targets.Any(t=>t.Proof!=null));
+            InputsAcquired:completedChildren>0||lastResult?.InputsAcquired==true||targets.Any(t=>t.Verified));
     }
     private void ReleaseSearch(){search?.Dispose();search=null;}
     internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)

@@ -1,5 +1,6 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$Mining,[string[]]$MiningCases,[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[ValidateSet("basic","cloud","sand","blizzard","angel","cloud_angel","hermes","bundle","bundle_hermes")][string]$JourneyLoadout,[string]$ReplayStops,[switch]$WalkReference,[switch]$FlightReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central","traverse","bank-replay","local-replay","slope-entry","slope-approach")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$Mining,[string[]]$MiningCases,[ValidateSet('On','Off')][string]$ImproveGameVeinMining,[ValidateSet('Single','Cluster','Protected')][string]$VeinCase='Single',[string]$WorkshopRoot='D:/steam/steamapps/workshop/content/1281930',[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[ValidateSet("basic","cloud","sand","blizzard","angel","cloud_angel","hermes","bundle","bundle_hermes")][string]$JourneyLoadout,[string]$ReplayStops,[switch]$WalkReference,[switch]$FlightReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central","traverse","bank-replay","local-replay","slope-entry","slope-approach")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback)
 $ErrorActionPreference='Stop'
+if($ImproveGameVeinMining){$Mining=$true;$MiningCases=@('small-copper')}
 if($FlightReference){$JourneyLoadout="cloud_angel";$JourneyCase="traverse"}
 if($JourneyLoadout){$LongJourney=$true}
 if($WatchWestStop){$Watch=$true}
@@ -26,7 +27,16 @@ if($WorldPath){
     if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
 }
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
-[IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')
+$enabledMods=@('CompanionBridge')
+if($ImproveGameVeinMining){
+    foreach($file in @('2797518634/2026.3/ImproveGame.tmod','3403460014/2026.3/SilkyUIFramework.tmod')){
+        Copy-Item -LiteralPath (Join-Path $WorkshopRoot $file) -Destination "$profile/Mods"
+        $enabledMods += [IO.Path]::GetFileNameWithoutExtension($file)
+    }
+    New-Item -ItemType Directory "$profile/ModConfigs" | Out-Null
+    @{SimpleVeinMining=($ImproveGameVeinMining -eq 'On')} | ConvertTo-Json | Set-Content "$profile/ModConfigs/ImproveGame_ImproveConfigs.json"
+}
+[IO.File]::WriteAllText("$profile/Mods/enabled.json",(ConvertTo-Json -InputObject $enabledMods -Compress))
 [IO.File]::WriteAllText("$profile/isolated-natural-world",'Native generated-terrain navigation diagnostic; no Tile writes.')
 if($FlightReference){[IO.File]::WriteAllText("$profile/flight-reference","Continuous right, full cloud jump and wing flight")}
 $info=[Diagnostics.ProcessStartInfo]::new((Join-Path $TModLoaderPath 'dotnet/dotnet.exe'))
@@ -93,6 +103,9 @@ try {
     $probeScript=if($Mining){'tests/native_natural_mining.py'}elseif($LongJourney){'tests/native_natural_journey.py'}elseif($AutonomousNavigation){'tests/native_natural_landing.py'}elseif($Trip){'tests/native_trip_navigation.py'}elseif($Scene){'tests/native_natural_scene.py'}elseif($LandingRegions){'tests/native_natural_landing.py'}else{'tests/native_natural_navigation.py'}
     $probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile,'--offsets')+@($Offsets|ForEach-Object {"$_"})
     if($LongJourney -or $Mining){$probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile)}
+    if($ImproveGameVeinMining){
+        $probeArgs+=@('--vein-mining',$ImproveGameVeinMining,'--vein-case',$VeinCase)
+    }
     if($MiningCases){$probeArgs+=@('--cases')+$MiningCases}
     if($Watch){
         $viewer=Join-Path $profile 'viewer'

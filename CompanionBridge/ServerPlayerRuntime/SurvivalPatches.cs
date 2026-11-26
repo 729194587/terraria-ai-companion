@@ -45,6 +45,29 @@ public static class SurvivalPatches
         il.InsertBefore(entry, Instruction.Create(OpCodes.Brfalse, skip));
     }
 
+    // Enable just the native countdown or expired-slot sweep for the bound actor.
+    // All other local-player branches in Player.Update/UpdateBuffs remain native.
+    internal static void BuffClock(MethodDefinition m, MethodReference owns, bool countdown)
+    {
+        var guards = m.Body.Instructions.Where(i => NotEqual(i) && Local(i.Previous)
+            && i.Previous.Previous?.Operand is FieldReference f && f.FullName == "System.Int32 Terraria.Entity::whoAmI"
+            && i.Previous.Previous.Previous?.OpCode == OpCodes.Ldarg_0);
+        bool Matches(Instruction branch)
+        {
+            if (countdown)
+                return branch.Next?.Operand is FieldReference f && f.Name == "TimeLeftDoesNotDecrease"
+                    && Target(branch)?.Previous?.OpCode == OpCodes.Stind_I4;
+            if (branch.Next?.OpCode != OpCodes.Ldc_I4_0 || Target(branch) is not {} end) return false;
+            var block = m.Body.Instructions.Skip(m.Body.Instructions.IndexOf(branch) + 1)
+                .Take(36).TakeWhile(i => i != end).ToArray();
+            return block.LastOrDefault()?.Next == end && block.Any(i => Call(i,"DelBuff"))
+                && block.Any(i => i.Operand is FieldReference field && field.Name == "buffTime")
+                && block.Any(i => Call(i,"get_maxBuffs"));
+        }
+        var gate = guards.Single(Matches);
+        Guard(m, gate.Previous.Previous.Previous, gate.Next, owns);
+    }
+
     public static void Patch(MethodDefinition m,string operation,MethodReference owns)
     {
         Require(!m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.FullName==owns.FullName),operation+" duplicate");

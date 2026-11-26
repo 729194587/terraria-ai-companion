@@ -460,14 +460,17 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             if(cell.DryShape is '?' or '!')return false;
             if((tx==x&&ty==y)||cell.TileType is not int type)continue;
             if(!cell.Actuated&&TileID.Sets.Falling[type]&&tx==x&&ty==y-1)return false;
-            if(!Main.tileFrameImportant[type])continue;
-            var data=TileObjectData.GetTileData(Main.tile[tx,ty]);
-            // Cuttable, pass-through vegetation can be reframed without moving
-            // solid support or destroying a multi-tile object.
-            if(cell.Shape=='.'&&Main.tileCut[type]&&(data==null||data.Width*data.Height==1))continue;
-            if(!TileID.Sets.Platforms[type]&&AffectsAnchor(x,y,tx,ty,data))return false;
+            if(SupportsFurniture(x,y,tx,ty,type,cell.Shape))return false;
         }
         return true;
+    }
+
+    internal static bool SupportsFurniture(int x,int y,int tx,int ty,int type,char shape)
+    {
+        if(!Main.tileFrameImportant[type]||TileID.Sets.Platforms[type])return false;
+        var data=TileObjectData.GetTileData(Main.tile[tx,ty]);
+        if(shape=='.'&&Main.tileCut[type]&&(data==null||data.Width*data.Height==1))return false;
+        return AffectsAnchor(x,y,tx,ty,data);
     }
 
     private static bool AffectsAnchor(int x,int y,int tx,int ty,TileObjectData data)

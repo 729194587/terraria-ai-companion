@@ -2,7 +2,7 @@ using Terraria;
 
 namespace CompanionBridge.ServerIpc;
 
-internal sealed record ExcavationCell(int X,int Y,int Type,string Shape,long Revision)
+internal sealed partial record ExcavationCell
 {
     internal static ExcavationCell Capture(int x,int y)
     {

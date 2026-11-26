@@ -28,17 +28,6 @@ internal static class ServerAiTerrainFixture
     private static object inputPhysics;
     private static bool recoveryFired;
     private static int recoveryLeft,recoveryFloor;
-    // Dedicated Actor timers do not count down (Player.UpdateBuffs is local-only).
-    // Reconstruct ONLY the audited local expiry phase: native buff effects have
-    // run, then the counter expires and the slot is deleted before run speeds.
-    internal static void AfterBuffs(Player p)
-    {
-        if(!Program.LaunchParameters.ContainsKey("-companionterraintest")
-            ||!Program.LaunchParameters.ContainsKey("-companionmobilitytest")||mobilityMode!="expiry"
-            ||!mobilityChanged||!ReferenceEquals(p,ProbeSession.Actor))return;
-        int index=p.FindBuffIndex(BuffID.Swiftness);
-        if(index>=0&&--p.buffTime[index]<=0)p.DelBuff(index);
-    }
     internal static void RecordInput(Player p)
     {
         if(!Program.LaunchParameters.ContainsKey("-companionterraintest"))return;

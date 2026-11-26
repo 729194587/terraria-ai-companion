@@ -1,0 +1,270 @@
+{
+  "worldSHA256": "918E33D72AE761F990CAA31E0734DD04AB375B3B4F4582702FCBF087D00707F0",
+  "packageSHA256": "4DCD6BD1719B41EC739FCFB4C77C6F9A671BE41515C82C06A9D6AD5CCA9EC302",
+  "cases": {
+    "Single-Off": {
+      "status": "completed",
+      "reason": "mine_target_verified",
+      "inputsReleased": true,
+      "start": {
+        "offset": 73,
+        "floor": 571,
+        "x": 2175,
+        "y": 571,
+        "count": 2,
+        "type": 7
+      },
+      "reserved": false,
+      "tilesBefore": [
+        7,
+        7
+      ],
+      "tilesAfter": [
+        null,
+        7
+      ],
+      "copperBefore": 0,
+      "copperAfter": 1,
+      "native": {
+        "X": 2175,
+        "Y": 571,
+        "TileType": 7,
+        "nativeActionId": "e0d6b2cd-bf23-43d9-9ed8-aaff5811a3f9",
+        "Strikes": 3,
+        "destroyedByActor": true,
+        "targetAbsent": true,
+        "chainBreaks": []
+      }
+    },
+    "Single-On": {
+      "status": "completed",
+      "reason": "mine_target_verified",
+      "inputsReleased": true,
+      "start": {
+        "offset": 73,
+        "floor": 571,
+        "x": 2175,
+        "y": 571,
+        "count": 2,
+        "type": 7
+      },
+      "reserved": false,
+      "tilesBefore": [
+        7,
+        7
+      ],
+      "tilesAfter": [
+        null,
+        null
+      ],
+      "copperBefore": 0,
+      "copperAfter": 2,
+      "native": {
+        "X": 2175,
+        "Y": 571,
+        "TileType": 7,
+        "nativeActionId": "52da6b94-ec90-45f4-ab3a-93fcff0cb2ff",
+        "Strikes": 3,
+        "destroyedByActor": true,
+        "targetAbsent": true,
+        "chainBreaks": [
+          {
+            "Before": {
+              "X": 2176,
+              "Y": 571,
+              "Type": 7,
+              "Shape": "True:7:Solid:False:False",
+              "Revision": 3
+            },
+            "AfterRevision": 4,
+            "SeedX": 2175,
+            "SeedY": 571,
+            "ActorSlot": 254,
+            "ActionId": "52da6b94-ec90-45f4-ab3a-93fcff0cb2ff",
+            "Update": 31
+          }
+        ]
+      }
+    },
+    "Cluster-Off": {
+      "status": "completed",
+      "reason": "excavation_cluster_verified",
+      "inputsReleased": true,
+      "start": {
+        "offset": 73,
+        "floor": 571,
+        "x": 2175,
+        "y": 571,
+        "count": 2,
+        "type": 7
+      },
+      "reserved": false,
+      "tilesBefore": [
+        7,
+        7
+      ],
+      "tilesAfter": [
+        null,
+        null
+      ],
+      "copperBefore": 0,
+      "copperAfter": 2,
+      "targets": [
+        {
+          "x": 2175,
+          "y": 571,
+          "typeId": 7,
+          "status": "verified",
+          "proof": {
+            "X": 2175,
+            "Y": 571,
+            "Type": 7,
+            "Update": 31,
+            "Strikes": 3,
+            "ActionId": "27339dcf-5d32-4ca9-bd44-59d9cc411f4e"
+          },
+          "chainProof": null,
+          "source": "native_pick",
+          "changeReason": null
+        },
+        {
+          "x": 2176,
+          "y": 571,
+          "typeId": 7,
+          "status": "verified",
+          "proof": {
+            "X": 2176,
+            "Y": 571,
+            "Type": 7,
+            "Update": 76,
+            "Strikes": 3,
+            "ActionId": "27339dcf-5d32-4ca9-bd44-59d9cc411f4e"
+          },
+          "chainProof": null,
+          "source": "native_pick",
+          "changeReason": null
+        }
+      ]
+    },
+    "Cluster-On": {
+      "status": "completed",
+      "reason": "excavation_cluster_verified",
+      "inputsReleased": true,
+      "start": {
+        "offset": 73,
+        "floor": 571,
+        "x": 2175,
+        "y": 571,
+        "count": 2,
+        "type": 7
+      },
+      "reserved": false,
+      "tilesBefore": [
+        7,
+        7
+      ],
+      "tilesAfter": [
+        null,
+        null
+      ],
+      "copperBefore": 0,
+      "copperAfter": 2,
+      "targets": [
+        {
+          "x": 2175,
+          "y": 571,
+          "typeId": 7,
+          "status": "verified",
+          "proof": {
+            "X": 2175,
+            "Y": 571,
+            "Type": 7,
+            "Update": 31,
+            "Strikes": 3,
+            "ActionId": "b861dc7b-544e-4460-9a21-e37d5fa94d88"
+          },
+          "chainProof": null,
+          "source": "native_pick",
+          "changeReason": null
+        },
+        {
+          "x": 2176,
+          "y": 571,
+          "typeId": 7,
+          "status": "verified",
+          "proof": null,
+          "chainProof": {
+            "Before": {
+              "X": 2176,
+              "Y": 571,
+              "Type": 7,
+              "Shape": "True:7:Solid:False:False",
+              "Revision": 2
+            },
+            "AfterRevision": 4,
+            "SeedX": 2175,
+            "SeedY": 571,
+            "ActorSlot": 254,
+            "ActionId": "b861dc7b-544e-4460-9a21-e37d5fa94d88",
+            "Update": 31
+          },
+          "source": "improvegame_chain",
+          "changeReason": null
+        }
+      ]
+    },
+    "Protected-On": {
+      "status": "failed",
+      "reason": "excavation_protected_targets",
+      "inputsReleased": true,
+      "start": {
+        "offset": 73,
+        "floor": 571,
+        "x": 2175,
+        "y": 571,
+        "count": 2,
+        "type": 7
+      },
+      "reserved": true,
+      "tilesBefore": [
+        7,
+        7
+      ],
+      "tilesAfter": [
+        null,
+        7
+      ],
+      "copperBefore": 0,
+      "copperAfter": 1,
+      "targets": [
+        {
+          "x": 2175,
+          "y": 571,
+          "typeId": 7,
+          "status": "verified",
+          "proof": {
+            "X": 2175,
+            "Y": 571,
+            "Type": 7,
+            "Update": 31,
+            "Strikes": 3,
+            "ActionId": "7e04e71e-3fce-4dfd-88ee-c9c0973b92e4"
+          },
+          "chainProof": null,
+          "source": "native_pick",
+          "changeReason": null
+        },
+        {
+          "x": 2176,
+          "y": 571,
+          "typeId": 7,
+          "status": "protected",
+          "proof": null,
+          "chainProof": null,
+          "source": null,
+          "changeReason": null
+        }
+      ]
+    }
+  }
+}

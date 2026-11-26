@@ -274,9 +274,12 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
                 if(!WorldGen.InWorld(x,y,2))return Reject("invalid_target",JsonSerializer.Serialize(ActorMining.TargetDiagnostic(x,y)));
                 bool clearance=child&&args.TryGetProperty("navigationEdit",out _);
+                bool oreTask=child&&args.TryGetProperty("mineTargetOre",out _);
+                if(oreTask&&NavigationProtection.ProtectedOre(x,y))return Reject("excavation_protected_targets");
                 if(clearance&&!NavigationProtection.CanCutNow(x,y))return Reject("navigation_protected_structure");
                 ActorMining.Start(p,identity.World,identity.Generation,x,y,
                     child&&args.TryGetProperty("plannedToolSlot",out var planned)?planned.GetInt32():null);context=ActorMining.Current;
+                if(oreTask&&ActorMining.Current!=null)ActorMining.Current.OreTask=true;
                 if(clearance&&ActorMining.Current!=null)ActorMining.Current.NavigationEdit=true;
             }
             var handle=new Handle(identity,operation,context);
@@ -412,7 +415,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             furnitureCells=mine.Furniture.Length,furnitureAbsent=mine.Furniture.Length>0&&furnitureAbsent,
             targetChanged=mine.ExternalChange||(!mine.Destroyed&&mine.TargetCaptured&&!ActorMining.TargetUnchanged(mine)),
             targetUnchanged=!mine.ExternalChange&&mine.Transforms==0&&!mine.Destroyed&&ActorMining.TargetUnchanged(mine),
-            destroyedByActor=destroyed,effectStatus=destroyed?"native_tile_destroyed":mine.Ticks==0?"not_started":"not_confirmed"},
+            chainBreaks=mine.ChainBreaks.ToArray(),destroyedByActor=destroyed,effectStatus=destroyed?"native_tile_destroyed":mine.Ticks==0?"not_started":"not_confirmed"},
             Released(p)&&p.itemAnimation==0&&p.itemTime==0,phase=="completed"&&destroyed,InputsAcquired:mine.Ticks>0,ReasonDetail:string.IsNullOrWhiteSpace(mine.Detail)?null:mine.Detail);
     }
     public Result Cancel(AiReadOnlyProtocol.Identity identity,object value)
