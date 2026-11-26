@@ -92,6 +92,7 @@ public sealed class VirtualPlayerEngineProbe
         NativeSurvival.Install(Install, InstallOptional);
         NativeItemOwnership.Install(Install);
         ActorMining.Install(Install);
+        InstallOptional("ImproveGame vein mining", () => DedicatedContentAdapters.InstallVeinMining(Install));
         ActorPlacement.Install(Install);
         ActorItemUse.Install(Install);
         NativeItemInput.Install(Install);

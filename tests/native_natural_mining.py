@@ -25,6 +25,16 @@ async def read_fixture(path):
                 await asyncio.sleep(0.1)
 
 
+def copper_tiles(bridge):
+    cells = [bridge.command('query_atomic', operation='inspect_tile', arguments=dict(x=x, y=571))['data']['data']['cell']
+             for x in (2175, 2176)]
+    return [cell['tileType'] if cell['hasTile'] else None for cell in cells]
+
+
+def copper_count(inventory):
+    return sum(item['count'] for item in inventory['items'] if item['contentKey'] == 'Terraria/CopperOre')
+
+
 async def run(args):
     profile = args.profile
     assert (profile / 'isolated-natural-world').is_file()
@@ -45,9 +55,16 @@ async def run(args):
                                    arguments=dict(layers=['resources']))['data']['data']
             ores = [r for r in scene['resources']['items'] if r['kind'] == 'ore_component']
             row = dict(case=case, fixture=fixture, observed=ores, start=start)
+            if args.vein_mining:
+                assert fixture['Settled'] and (start['x'], start['y'], start['count']) == (2175, 571, 2)
+                row['tilesBefore'] = copper_tiles(bridge)
+                assert row['tilesBefore'] == [7, 7]
             if fixture['Settled']:
                 row['before'] = await read_runtime_inventory(bridge)
                 source = 'return api("mine_target",{x=%d,y=%d,cluster=true})' % (start['x'], start['y'])
+
+                if args.vein_mining:
+                    source = 'return api("mine_target",{x=2175,y=571})'
 
                 def capture(name, arguments, receipt):
                     if name == 'mine_target':
@@ -58,6 +75,15 @@ async def run(args):
                                                on_result=capture)
                 row.setdefault('receipt', result.get('lastAction'))
                 row['after'] = await read_runtime_inventory(bridge)
+                if args.vein_mining:
+                    expected = 2 if args.vein_mining == 'On' else 1
+                    for _ in range(30):
+                        delta = copper_count(row['after']) - copper_count(row['before'])
+                        if delta >= expected:
+                            break
+                        await asyncio.sleep(0.1)
+                        row['after'] = await read_runtime_inventory(bridge)
+                    row['tilesAfter'] = copper_tiles(bridge)
             # Pin the two regression veins to their surveyed coordinates and seed.
             # Other worlds can use the same case labels with different terrain.
             seed = str(fixture['fixture']['seed'])
@@ -66,7 +92,11 @@ async def run(args):
             (profile / 'natural-results.json').write_text(json.dumps(dict(scenarios=rows)), encoding='utf8')
             receipt = row.get('receipt') or {}
             print(case, receipt.get('reason', 'unsettled'), flush=True)
-            if fixture['Settled']:
+            if args.vein_mining:
+                assert receipt.get('inputsReleased') and receipt['status'] == 'completed', receipt
+                assert row['tilesAfter'] == [None, None if expected == 2 else 7]
+                assert copper_count(row['after']) - copper_count(row['before']) == expected
+            elif fixture['Settled']:
                 assert receipt.get('inputsReleased') is True and receipt['status'] != 'unknown', receipt
                 evidence = receipt['task']['result']['evidence']
                 if receipt['status'] == 'completed':
@@ -107,5 +137,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile', type=Path, required=True)
     parser.add_argument('--port', type=int, required=True)
+    parser.add_argument('--vein-mining', choices=['On', 'Off'])
     parser.add_argument('--cases', nargs='+')
     asyncio.run(run(parser.parse_args()))

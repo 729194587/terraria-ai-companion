@@ -373,6 +373,14 @@ internal static partial class ActorMining
     }
     public static bool Allowed(Player p)=>executing!=null&&ReferenceEquals(executing.Actor,p)&&Bound(executing)
         &&NativeSurvival.Owns(p)&&!p.dead&&Held(executing);
+    internal static int VeinMinerSlot(int sender, Point center, int type)
+    {
+        var c=executing;
+        if(!Program.IsMainThread || c==null || !c.Destroyed || c.ExternalChange || c.Pick<=0
+            || c.X!=center.X || c.Y!=center.Y || c.ExpectedType!=type || !Allowed(c.Actor) || !InInputScope(c.Actor))
+            return sender;
+        return c.Actor.whoAmI;
+    }
     public static bool InInputScope(Player p)=>executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeItemInput.Active(p);
     private static void UseMiningTools(On_Player.orig_ItemCheck_UseMiningTools orig,Player p,Item item)
     {
