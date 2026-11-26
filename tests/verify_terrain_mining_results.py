@@ -76,6 +76,17 @@ def check_controlled(scene, row, observation):
             moves = [a["kind"] for a in choice["actions"]]
             assert "Mine" in moves[moves.index("Move") + 1:] and row["actualCuts"] == 6
             assert len({a["fromX"] for a in choice["actions"] if a["kind"] == "Mine"}) >= 2
+            # The final child collects the ore. Match every preceding cut and landing
+            # to the complete prediction recorded before the first cut.
+            assert row["omittedChildren"] == 0
+            for action, child in zip(choice["actions"], row["children"][:-1], strict=True):
+                assert child["status"] == "completed", scene
+                if action["kind"] == "Mine":
+                    assert child["operation"] == "mine_tile" and child["destroyedByActor"], scene
+                    assert (child["X"], child["Y"]) == (action["X"], action["Y"]), scene
+                else:
+                    assert action["kind"] == "Move" and child["operation"] == "navigate_to_landing_region", scene
+                    assert abs(child["x"] - action["toX"]) <= 2 and abs(child["y"] - action["toY"]) <= 0.5, scene
     if scene in {"fast", "slow"}:
         assert (choice["clearance"]["Total"] + 8 < choice["movement"]["Total"]) == (scene == "fast")
 

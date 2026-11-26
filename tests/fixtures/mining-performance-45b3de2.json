@@ -1,0 +1,263 @@
+{
+  "directRevision": "45b3de2af49d72fc07a8375ddae000e019548ad6",
+  "historicalRevision": "fe6190efd8250b2dbe8e8f16e11f36c41e4fcce2",
+  "engineSHA256": "BF2CA4D53512D064FAE664170A0D21ECC5E2ED51B5E917D871EC78CC449263E9",
+  "controlledWorldSHA256": "918E33D72AE761F990CAA31E0734DD04AB375B3B4F4582702FCBF087D00707F0",
+  "runColumns": ["taskId", "taskUpdates", "planningMs", "maxSliceMs", "navigationDispatches", "oreBatches", "ordinaryCuts", "failedNavigations", "phaseUpdates"],
+  "samples": {
+    "direct": {
+      "iron": [
+        ["a549e0aeda4142a5816e59cf6c5b4596", 1144, 174.936, 11.874, 4, 5, 0, 0, {"waiting": 1, "ore": 690, "planning": 277, "movement": 175}],
+        ["61a30d32c3f44c33a8694a2098657080", 1140, 152.678, 15.54, 4, 5, 0, 0, {"waiting": 1, "ore": 690, "planning": 275, "movement": 173}],
+        ["6c00bd20e11d4ee294b1a724975a8927", 1149, 197.959, 20.216, 4, 5, 0, 0, {"waiting": 1, "ore": 690, "planning": 281, "movement": 176}]
+      ],
+      "single": [
+        ["93c9b3cb948743c6aff6ffb8b310f703", 461, 419.97, 5.081, 4, 1, 6, 0, {"waiting": 13, "planning": 144, "clearance": 126, "movement": 152, "ore": 25}],
+        ["545acc1ef81448cda4de470b20ff07ed", 449, 368.303, 7.011, 4, 1, 6, 0, {"waiting": 13, "planning": 132, "clearance": 126, "movement": 152, "ore": 25}],
+        ["a021a5a7eb954f8fa125da13666531c4", 456, 386.693, 4.66, 4, 1, 6, 0, {"waiting": 13, "planning": 139, "clearance": 126, "movement": 152, "ore": 25}]
+      ],
+      "navigationChildUpdates": [
+        [25, 69, 36, 37],
+        [25, 67, 36, 37],
+        [25, 70, 36, 37]
+      ],
+      "packageSHA256": "31AAFF951C0BE0ED27E8C9CA0B20B9BF58AFF6B635AF1D927F9B6AF7A3CE02C6"
+    },
+    "final": {
+      "iron": [
+        ["a9c0c87ecec7457eaee4e39598f0fb0d", 1093, 155.892, 24.7, 4, 5, 0, 0, {"waiting": 1, "ore": 690, "planning": 264, "movement": 137}],
+        ["4b85a02ac2fb41809cde74a3b6597868", 1092, 125.232, 11.174, 4, 5, 0, 0, {"waiting": 1, "ore": 690, "planning": 261, "movement": 139}],
+        ["846c30014e8f4fc38c54b19e111f75be", 1098, 182.757, 16.984, 4, 5, 0, 0, {"waiting": 1, "ore": 690, "planning": 269, "movement": 137}]
+      ],
+      "single": [
+        ["e25f968fe9b94cb9a2685c60678b6a6f", 455, 393.126, 4.936, 4, 1, 6, 0, {"waiting": 13, "planning": 138, "clearance": 126, "movement": 152, "ore": 25}],
+        ["e144e25ebe9741209521270a1e325088", 454, 393.452, 5.22, 4, 1, 6, 0, {"waiting": 13, "planning": 137, "clearance": 126, "movement": 152, "ore": 25}],
+        ["fd1c771e891841d1b593ed4e348f02f3", 454, 388.598, 5.864, 4, 1, 6, 0, {"waiting": 13, "planning": 137, "clearance": 126, "movement": 152, "ore": 25}]
+      ],
+      "navigationChildUpdates": [
+        [25, 41, 26, 37],
+        [25, 43, 26, 37],
+        [25, 41, 26, 37]
+      ],
+      "packageSHA256": "D5B26722BFD507B63AD28BAE4E123C18DA66026691451EC87F79ECA57DB99037"
+    }
+  },
+  "naturalWorkPositions": {
+    "direct": [
+      [35344, 8320, 1, 46],
+      [35358.35, 8320, 2, 91],
+      [35375.227, 8304, 2, 91],
+      [35407.508, 8304, 8, 361],
+      [35423.656, 8320, 2, 91]
+    ],
+    "final": [
+      [35344, 8320, 1, 46],
+      [35358.35, 8320, 2, 91],
+      [35390.633, 8304, 6, 271],
+      [35406.83, 8304, 4, 181],
+      [35422.977, 8320, 2, 91]
+    ],
+    "historical": [
+      [35344, 8320, 1, 46],
+      [35391.12, 8304, 8, 361],
+      [35423.402, 8320, 6, 271]
+    ]
+  },
+  "candidateExcavationTaskGitBlob": "160618735f1d8ef3d414360a3a6f4f7fc858a375",
+  "naturalFixtureGitBlob": "9c4bdc76ffedad52f8450fa6730e44954694c784",
+  "naturalInitial": {
+    "worldSHA256": "A9FEB51BB2B71BAF4C04FEC9C8617EC5683DC94CF7A0506EB200139802701223",
+    "seed": "20261028",
+    "start": {"offset": 107, "floor": 520, "x": 2213, "y": 519, "count": 15, "type": 6},
+    "x": 35344,
+    "y": 8278,
+    "inventory": [
+      [0, "Terraria/CopperShortsword", 0, 1],
+      [1, "Terraria/CopperPickaxe", 0, 1],
+      [2, "Terraria/CopperAxe", 0, 1]
+    ]
+  },
+  "workPositionColumns": ["leftPixels", "feetPixels", "verifiedOre", "activeMiningUpdates"],
+  "singlePredictionColumns": ["kind", "tileX", "tileY", "predictedLeft", "predictedTop"],
+  "singlePrediction": [["Mine", 2168, 196, 34656, 3142], ["Mine", 2168, 197, 34656, 3142], ["Mine", 2168, 198, 34656, 3142], ["Move", 0, 0, 34688.28, 3142], ["Move", 0, 0, 34720.562, 3142], ["Mine", 2173, 196, 34720.562, 3142], ["Mine", 2173, 197, 34720.562, 3142], ["Mine", 2173, 198, 34720.562, 3142], ["Move", 0, 0, 34752.844, 3142], ["Move", 0, 0, 34785.125, 3142]],
+  "timerColumns": ["calls", "inclusiveMs"],
+  "candidateQuoteColumns": ["leftPixels", "coverage", "movementLowerBoundPlusFirstOreUpdates"],
+  "directProbes": {
+    "naturalPackageSHA256": "D162FF33497A54DE81BBE1144F3DEE78AB23331D63F19BF20A798944C97237C9",
+    "ironTimers": {
+      "local": [11, 21.354],
+      "work": [4052, 115.945],
+      "landing": [3992, 12.58],
+      "batchQuote": [84, 6.221],
+      "firstQuote": [49, 0.577],
+      "ground": [4, 2.34],
+      "edge": [4, 4.761],
+      "flat": [2, 0.147],
+      "cutQuote": [5, 0.079],
+      "goalQuote": [48, 1.509],
+      "fall": [1, 0.111],
+      "surface": [48, 87.804]
+    },
+    "naturalProbes": [
+      {
+        "startLeft": 35344,
+        "selected": [35358, 2, 50],
+        "cheapestCandidates": [
+          [35358, 2, 50],
+          [35366, 2, 52.667],
+          [35374, 4, 60.5],
+          [35382, 4, 63.167],
+          [35390, 8, 65.833],
+          [35398, 8, 68.5],
+          [35422, 13, 81.833],
+          [35430, 13, 84.5]
+        ]
+      },
+      {
+        "startLeft": 35358.35,
+        "selected": [35374, 2, 55.716],
+        "cheapestCandidates": [
+          [35374, 2, 55.716],
+          [35382, 2, 58.383],
+          [35390, 6, 61.049],
+          [35398, 6, 63.716],
+          [35414, 10, 63.883],
+          [35406, 10, 66.383],
+          [35422, 11, 77.049],
+          [35430, 11, 79.716]
+        ]
+      },
+      {
+        "startLeft": 35375.227,
+        "selected": [35406, 8, 55.591],
+        "cheapestCandidates": [
+          [35390, 4, 50.258],
+          [35398, 4, 52.924],
+          [35406, 8, 55.591],
+          [35414, 8, 63.424],
+          [35422, 10, 66.091],
+          [35430, 10, 68.758],
+          [35470, 1, 103.424],
+          [35478, 1, 106.091]
+        ]
+      },
+      {
+        "startLeft": 35407.508,
+        "selected": [35422, 2, 55.331],
+        "cheapestCandidates": [
+          [35422, 2, 55.331],
+          [35430, 2, 57.997],
+          [35438, 2, 60.664],
+          [35454, 2, 60.831],
+          [35446, 2, 63.331],
+          [35462, 2, 63.497]
+        ]
+      }
+    ],
+    "single": [
+      {
+        "trial": ["11dea09f2a6e4f37ac8c269a60392a96", 458, 405.355, 6.279, 4, 1, 6, 0, {"waiting": 13, "planning": 141, "clearance": 126, "movement": 152, "ore": 25}],
+        "timers": {
+          "edge": [90, 29.545],
+          "local": [106, 36.428],
+          "flat": [30, 2.434],
+          "cutQuote": [76, 0.401],
+          "goalQuote": [139, 1.285],
+          "fall": [15, 0.467],
+          "bypass": [8, 0.763],
+          "work": [872, 367.343],
+          "landing": [675, 1.1],
+          "batchQuote": [23, 0.268],
+          "firstQuote": [15, 0.129],
+          "ground": [5, 0.423],
+          "surface": [192, 364.947]
+        }
+      },
+      {
+        "trial": ["8b24f83fa2744953ae7746fcbec68aa7", 454, 395.973, 8.516, 4, 1, 6, 0, {"waiting": 13, "planning": 137, "clearance": 126, "movement": 152, "ore": 25}],
+        "timers": {
+          "edge": [90, 19.974],
+          "local": [106, 24.728],
+          "flat": [30, 2.044],
+          "cutQuote": [76, 0.231],
+          "goalQuote": [139, 0.731],
+          "fall": [15, 0.314],
+          "bypass": [8, 0.424],
+          "work": [872, 370.155],
+          "landing": [675, 0.62],
+          "batchQuote": [23, 0.113],
+          "firstQuote": [15, 0.046],
+          "ground": [5, 0.337],
+          "surface": [192, 368.718]
+        }
+      },
+      {
+        "trial": ["c6523f95d6f3477982b6c3f5922032d8", 456, 401.504, 6.164, 4, 1, 6, 0, {"waiting": 13, "planning": 139, "clearance": 126, "movement": 152, "ore": 25}],
+        "timers": {
+          "edge": [90, 24.996],
+          "local": [106, 31.573],
+          "flat": [30, 2.347],
+          "cutQuote": [76, 0.299],
+          "goalQuote": [139, 0.962],
+          "fall": [15, 0.364],
+          "bypass": [8, 0.444],
+          "work": [872, 368.882],
+          "landing": [675, 0.77],
+          "batchQuote": [23, 0.102],
+          "firstQuote": [15, 0.048],
+          "ground": [5, 0.271],
+          "surface": [192, 367.328]
+        }
+      }
+    ],
+    "controlledPackageSHA256": "8F94A54A15ACC045A00E63C2E3D1425E0955D4079519E09B4AA2BB07E7F0AC05"
+  },
+  "historicalProbes": {
+    "controlledPackageSHA256": "E5699986AAF25947D88C8C297CE7E0D0C95E32DCDBD04545D7D4E665AFCF2B4B",
+    "single": [
+      {
+        "trial": ["a3cc45f656a148a088d4fada03bd2818", 475, 129.981, 3.771, 6, 1, 6, 0, null],
+        "timers": {
+          "scan": [182, 127.949],
+          "ground": [7, 1.146],
+          "surface": [78, 89.533],
+          "opening": [8, 0.894]
+        }
+      },
+      {
+        "trial": ["0bce3ed1a24d4166bf7feae352138a11", 478, 125.466, 3.235, 6, 1, 6, 0, null],
+        "timers": {
+          "scan": [185, 124.655],
+          "ground": [7, 1.129],
+          "surface": [81, 95.641],
+          "opening": [8, 0.573]
+        }
+      },
+      {
+        "trial": ["9b67ced08282419ba610ba33d0ae1123", 478, 133.215, 2.171, 6, 1, 6, 0, null],
+        "timers": {
+          "scan": [185, 132.266],
+          "ground": [7, 1.407],
+          "surface": [81, 96.14],
+          "opening": [8, 0.685]
+        }
+      }
+    ],
+    "archivedIron": ["c674bddac3ec4c03b7b7830f861487b3", 942, null, null, 2, 3, 0, 0, null]
+  },
+  "regressionColumns": ["scene", "runs", "expectedTerminal", "firstChoice", "movementQuote", "clearanceQuote", "cuts", "replans", "allInputsReleased"],
+  "finalDirectedRegressions": [
+    ["direct", 1, "completed", null, null, null, 0, 0, true],
+    ["detour", 3, "completed", "movement", 87, 139, 0, 0, true],
+    ["fast", 3, "completed", "clearance", 70, 58, 2, 0, true],
+    ["slow", 3, "completed", "movement", 106, 136, 0, 0, true],
+    ["thin", 3, "completed", "clearance", null, 186, 3, 0, true],
+    ["sequential", 1, "completed", "clearance", null, 301, 6, 0, true],
+    ["single", 3, "completed", "clearance", null, 301, 6, 0, true],
+    ["dead_end", 1, "timeout", "approach", null, null, 0, 0, true],
+    ["path_changed", 1, "timeout", "clearance", null, 301, 1, 1, true],
+    ["stop_clearing", 1, "cancelled", "clearance", null, 186, 0, 0, true],
+    ["stop_after_cut", 1, "cancelled", "clearance", null, 186, 1, 0, true],
+    ["falling_sand", 1, "timeout", "approach", null, null, 0, 0, true]
+  ]
+}

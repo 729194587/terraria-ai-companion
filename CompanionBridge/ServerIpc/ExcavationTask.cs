@@ -350,7 +350,10 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
         knowledge.Bind(player,identity.World,identity.Generation,identity.Slot);
         knowledge.ObservePhysics(physics);
         knowledge.Search.Scope(terrain,physics,(long)Main.GameUpdateCount);
-        foreach(var candidate in candidates.OrderBy(c=>Math.Floor((c.LowerBound+c.Mining)/8))
+        // Anchor the eight-update coverage tie-break to this search. A common
+        // first-strike cost must not split otherwise near-equal work positions.
+        float cheapest=candidates.Count==0?0:candidates.Min(c=>c.LowerBound+c.Mining);
+        foreach(var candidate in candidates.OrderBy(c=>Math.Floor((c.LowerBound+c.Mining-cheapest)/8))
             .ThenByDescending(c=>c.Coverage).ThenBy(c=>c.LowerBound+c.Mining))
         {
             float x=(candidate.Region.MinPlayerLeftX+candidate.Region.MaxPlayerLeftX)/2;

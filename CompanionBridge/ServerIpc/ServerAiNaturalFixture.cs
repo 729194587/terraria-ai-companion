@@ -157,6 +157,14 @@ internal static class ServerAiNaturalFixture
                     p.controlLeft=p.controlRight=p.controlJump=p.controlDown=p.controlUp=p.controlUseItem=p.controlUseTile=false;
                     p.jump=0;p.releaseJump=true;p.fallStart=surface;p.statLife=p.statLifeMax2;
                     Array.Clear(p.buffType);Array.Clear(p.buffTime);
+                    if(caseId=="change-stance"&&Program.LaunchParameters.ContainsKey("-companionnaturalminingtest"))
+                    {
+                        // Fresh native characters roll starter prefixes. Fix the comparison loadout.
+                        p.inventory[0].SetDefaults(ItemID.CopperShortsword);
+                        p.inventory[1].SetDefaults(ItemID.CopperPickaxe);
+                        p.inventory[2].SetDefaults(ItemID.CopperAxe);
+                        p.selectedItem=0;
+                    }
                     if(journey)
                     {
                         foreach(var item in p.inventory.Concat(p.armor).Concat(p.miscEquips))item.TurnToAir();
