@@ -87,6 +87,27 @@ public static class MotionOfflineTests
         public bool SafeFlatLanding(PhysicsState s) => SafeLanding(s) && MotionSupport.SafeFlatLanding(s, Tile);
     }
 
+    // Execute each input from the previous replay state. Continue past the
+    // handoff to validate the independent braking proof, then return the
+    // executed prefix endpoint as the start of the next route action.
+    internal static PhysicsState ReplayChecked(PhysicsState start, Prediction edge,
+        PhysicsParameters physics, IMotionWorld world)
+    {
+        Check(edge.Safe && edge.ExecuteFrames > 0 && edge.ExecuteFrames <= edge.Frames.Count, "Invalid replay edge");
+        var state = start;
+        var handoff = start;
+        for (int i = 0; i < edge.Frames.Count; i++)
+        {
+            var frame = edge.Frames[i];
+            var next = PhysicsSimulator.Step(state, frame.Input, physics, world);
+            Check(next == frame.State && world.SafeSweep(state, next, out _), "Unsafe or divergent physics replay");
+            if (i + 1 == edge.ExecuteFrames) handoff = next;
+            state = next;
+        }
+        Check(handoff == edge.Landing && PhysicsSimulator.Settled(state, world), "Invalid handoff or braking tail");
+        return handoff;
+    }
+
     // Opt-in audit: run before other tests so the first sample includes planner JIT.
     // A nonempty partial route is deliberately NOT counted as a complete route.
     public static void AuditLandingBudget(int repetitions = 100, bool coldOnly = false)
@@ -118,14 +139,7 @@ public static class MotionOfflineTests
                     double elapsed = timer.Elapsed.TotalMilliseconds;
                     var actual = start;
                     foreach (var edge in route.Actions)
-                        foreach (var frame in edge.Frames.Take(edge.ExecuteFrames))
-                        {
-                            var previous = actual;
-                            actual = PhysicsSimulator.Step(actual, frame.Input, PhysicsParameters.Basic, world);
-                            Check(world.SafeSweep(previous, actual, out _), "Audit route replay must be safe");
-                            Check(Math.Abs(actual.Px - frame.State.Px) < 0.001f && Math.Abs(actual.Py - frame.State.Py) < 0.001f,
-                                "Audit route must replay the actual production predictions");
-                        }
+                        actual = ReplayChecked(actual, edge, PhysicsParameters.Basic, world);
                     bool complete = route.Actions.Count > 0 && goal.Arrived(actual, world);
                     Check(route.ReachedGoal == complete, "Goal diagnostic must agree with physical route replay");
                     Console.WriteLine(JsonSerializer.Serialize(new { scene = scene.Name, budget, repeat,

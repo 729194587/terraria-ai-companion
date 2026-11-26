@@ -14,6 +14,7 @@ from observation import ObservationValidationError, validate_observation
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 MAX_REQUEST_BYTES = 4096
+autonomy_version = ContextVar('autonomy_version', default=None)
 command_owner = ContextVar('bridge_command_owner', default=None)
 
 
@@ -68,6 +69,13 @@ class Bridge:
                 frame = self._read()
                 if frame.get("v") != 1:
                     raise BridgeError("Response version mismatch")
+                if frame.get("type") == "autonomy_command":
+                    if (not isinstance(frame.get("eventId"), str) or not frame["eventId"]
+                            or frame.get("command") not in ("on", "off", "status")):
+                        raise BridgeError("Malformed autonomy command")
+                    if self.on_event:
+                        self.on_event(frame)
+                    continue
                 if frame.get("type") == "game_message":
                     if (not isinstance(frame.get("eventId"), str) or not frame["eventId"]
                             or not isinstance(frame.get("text"), str) or not frame["text"].strip() or len(frame["text"]) > 1024

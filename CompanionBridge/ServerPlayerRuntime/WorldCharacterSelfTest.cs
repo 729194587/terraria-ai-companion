@@ -10,7 +10,8 @@ namespace VirtualPlayerEngineProbe;
 // Only the explicitly marked private headless fixture may inject item states.
 internal static class WorldCharacterSelfTest
 {
-    private static bool ran;
+    private static bool ran, cycling;
+    private static long respawnGeneration;
     private static string previousHash;
     private static bool Enabled=>Program.LaunchParameters.ContainsKey("-worldcharacterselftest")
         &&File.Exists(Path.Combine(Main.SavePath,"isolated-world-character-fixture"));
@@ -33,6 +34,21 @@ internal static class WorldCharacterSelfTest
                 p.armor[0].SetDefaults(ItemID.IronHelmet);p.dye[0].SetDefaults(ItemID.RedDye);
                 p.selectedItem=6;
                 AiMapRuntime.Map.Remember(1,1,3);
+                if (Program.LaunchParameters.ContainsKey("-worldcharactercycle"))
+                {
+                    string id = WorldCharacterPersistence.ProfileId;
+                    cycling = true;
+                    try { ProbeSession.Finish("fixture explicit despawn", keepReservation: true); }
+                    finally { cycling = false; }
+                    Check(ProbeSession.Actor == null && !WorldCharacterPersistence.Ready, "Despawn retained the binding.");
+                    WorldCharacterPersistence.SpawnRequested();
+                    var restored = ProbeSession.Actor;
+                    respawnGeneration = ProbeSession.ActorGeneration;
+                    Check(WorldCharacterPersistence.Ready && restored != null && !ReferenceEquals(p, restored)
+                        && respawnGeneration > generation && restored.whoAmI == p.whoAmI
+                        && id == WorldCharacterPersistence.ProfileId && restored.inventory[6].stack == 173,
+                        "Explicit respawn failed to restore the world profile on a new binding.");
+                }
             }
             else
             {
@@ -56,7 +72,7 @@ internal static class WorldCharacterSelfTest
         catch(Exception e){Report("fixture-failed",ProbeSession.Actor,e.Message);Netplay.Disconnect=true;}
     }
     internal static void Saved(Player p)
-    {if(Enabled&&ran)Report(Round==4?"unexpected-save-success":"world-character-native-passed",p,null);}
+    {if(Enabled&&ran&&!cycling)Report(Round==4?"unexpected-save-success":"world-character-native-passed",p,null);}
     internal static void SaveFailed(Player p,Exception error)
     {
         if(!Enabled||!ran)return;
@@ -69,7 +85,7 @@ internal static class WorldCharacterSelfTest
     private static void Report(string result,Player p,string error)
     {
         File.WriteAllText(Path.Combine(Main.SavePath,"world-character-result.json"),JsonSerializer.Serialize(new{
-            result,round=Round,error,world=Main.ActiveWorldFileData?.UniqueId,profileId=WorldCharacterPersistence.ProfileId,
+            result,round=Round,error,respawnGeneration,world=Main.ActiveWorldFileData?.UniqueId,profileId=WorldCharacterPersistence.ProfileId,
             actorPublished=ProbeSession.Actor!=null,wood=p?.inventory[6].stack,armor=p?.armor[0].type,prefix=p?.inventory[1].prefix,
             selectedItem=p?.selectedItem,marker=p?.GetModPlayer<ProbePlayer>().PersistentMarker,
             dead=p?.dead,life=p?.statLife,ownerThread=Program.IsMainThread}));

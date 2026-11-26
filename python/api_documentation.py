@@ -101,6 +101,9 @@ for _, item in ipairs(q.data.inventory) do
     end
 end
 return counts''',
+    'plan_materials': 'return api("plan_materials",{typeId=4956,count=1})',
+    'query_item_sources': 'return api("query_item_sources",{typeId=38})',
+    'query_item_info': 'return api("query_item_info",{typeId=8})',
     'resolve_content': 'return api("resolve_content",{kind="item",query="Terraria/Torch"})',
     'query_recipes': 'return api("query_recipes",{resultType=8,availableOnly=false})',
     'scan_entities': '''local q=api("scan_entities",{category="npc",radius=320})
@@ -193,7 +196,10 @@ PREREQUISITES = {
 }
 RELATED = {
     'inspect_inventory': ('hold_inventory_item','inspect_container'),
-    'resolve_content': ('query_recipes','scan_tiles'),
+    'plan_materials': ('resolve_content', 'query_recipes', 'query_item_sources'),
+    'query_item_sources': ('resolve_content', 'query_item_info'),
+    'query_item_info': ('resolve_content',),
+    'resolve_content': ('query_item_info','query_recipes','scan_tiles'),
     'query_recipes': ('resolve_content','craft_recipe'),
     'craft_recipe': ('query_recipes','inspect_inventory'),
     'inspect_container': ('open_container','deposit_container_item','withdraw_container_item'),
@@ -204,6 +210,9 @@ RELATED = {
 }
 RETURN_NOTES = {
     'inspect_inventory': '必填 mode。data.inventory 是槽位行数组；row.slot 是游戏槽位编号，Lua 数组下标从 1 开始。',
+    'plan_materials': 'count 是目标背包总量。steps 按先材料后产物排列，recipeIds 为候选，recipeId 为选中项。inventoryUsed 是已抵扣背包，deficits 是仍需外部获取的材料及数量。cycle 表示循环需外部起点。按配方标称用量估算，不保证条件满足或路径全局最优。',
+    'query_item_sources': 'sources 每行是 NPC 专属掉落表的一条原生报告。probability 为规则条件成立时的报告概率（1 为必掉），数量含两端。同一 NPC 可有多行。条件附类型和可用的本地化文本，未判定当前是否满足。排除全局掉落和开袋奖励。空数组表示没有匹配报告。',
+    'query_item_info': 'typeId 取自 resolve_content 当前候选。data.tooltip 是普通本地化描述行数组，data.extraTooltip 仅有扩展时返回，可含多行。stats.valueCopper 以铜币为单位。未注册的 ID 返回 available=false。',
     'resolve_content': '检查 data.status 和 data.candidates；唯一精确匹配时取 typeId。',
     'query_recipes': 'data.items 含 output.count、ingredients、stations、conditions 和 hasOutputSpace；检查 truncated 和 offset。',
     'craft_recipe': 'evidence.completedCrafts 为完成次数，producedCount 为件数；完成时核对 inventoryVerified。部分制作保留原生回执。',
@@ -251,7 +260,7 @@ def read_usage_help(name, schema, supplied):
 ARGUMENT_HELP_APIS = frozenset(atomic.READ_PARAMETER_RULES) | {'inspect_inventory', 'observe_scene'}
 
 
-def usage_help(name, schema, supplied):
+def usage_help(name, schema, supplied, capabilities=()):
     """Project one read usage without querying the game or relaxing dispatch validation."""
     if name in atomic.READ_PARAMETER_RULES:
         return read_usage_help(name, schema, supplied)
@@ -295,7 +304,9 @@ def usage_help(name, schema, supplied):
             reads = 'if q.data.status~="ok" then return q.data end\n' + reads
     else:
         mode = args.get('scale', 'local')
-        layers = args.get('layers') or (atomic.REGION_DEFAULT_LAYERS if mode == 'region' else atomic.SCENE_LAYERS)
+        layers = args.get('layers') or (atomic.REGION_DEFAULT_LAYERS if mode == 'region' else atomic.SCENE_LAYERS[:-1])
+        if set(args.get('layers', ())) - set(props['layers']['items']['enum']):
+            raise ValueError('Unavailable scene layer')
         paths = ['data.'+layer for layer in layers]
         status = 'Check valid/available, coverage and the requested collections’ truncation flags.'
         reads = 'return {' + ','.join(layer+'=q.data.'+layer for layer in layers) + ',coverage=q.data.coverage}'
@@ -311,8 +322,11 @@ def usage_help(name, schema, supplied):
         parameters[selector] = {**parameters[selector], 'enum': [mode]}
     if name == 'observe_scene' and mode == 'region':
         layer = props['layers']
-        parameters['layers'] = {**layer, 'items': {**layer['items'], 'enum': list(atomic.REGION_LAYERS)}}
-        parameters['layers']['maxItems'] = len(atomic.REGION_LAYERS)
+        names = [n for n in atomic.REGION_LAYERS if n != 'resources' or 'server_ai_region_resources_v1' in capabilities]
+        if set(args.get('layers', ())) - set(names):
+            raise ValueError('Unavailable regional layer')
+        parameters['layers'] = {**layer, 'items': {**layer['items'], 'enum': names}}
+        parameters['layers']['maxItems'] = len(names)
         status += (f' Default dimensions {atomic.REGION_DEFAULT_WIDTH}x{atomic.REGION_DEFAULT_HEIGHT};'
                    f' width * height <= {atomic.REGION_MAX_AREA}.')
     if name == 'inspect_inventory':
@@ -326,7 +340,10 @@ def usage_help(name, schema, supplied):
             for label in state.get('enum', [state.get('const', 'full')]):
                 fields[label] = dict(required=branch['required'], optional=sorted(props.keys() - branch['required']))
     else:
-        branch = results.DEFS['SceneRegional' if mode == 'region' else 'SceneLocal']
+        variant = 'SceneRegional' if mode == 'region' else 'SceneLocal'
+        if 'resources' in layers:
+            variant += 'Resources'
+        branch = results.DEFS[variant]
         fields = list(branch['required'])
         for condition in branch['allOf']:
             if condition['if']['properties']['includedLayers']['contains']['const'] in layers:

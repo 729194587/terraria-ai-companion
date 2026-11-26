@@ -31,7 +31,8 @@ internal sealed record SurfaceEdge(SurfaceNode From,SurfaceNode To,SurfaceMotion
 internal sealed record SurfaceGraphSnapshot(string Exit,int Radius,int TileReads,int Nodes,
     int CandidateEdges,int VerifiedEdges,int Expansions,int SliceWork,double SliceMilliseconds,
     int ChangedTiles,int RetainedNodes,int RangeExpansions,LandingRegion Waypoint=null,
-    float? EstimatedRouteUpdates=null,bool CandidateReachedGoal=false);
+    float? EstimatedRouteUpdates=null,bool CandidateReachedGoal=false,int PhysicalSearches=0,int PhysicalSlices=0,
+    int PhysicalExpansions=0,Dictionary<string,int> LastPhysicalRejections=null);
 
 // Per-root cache. Raw stance intervals are kept even when the graph uses fewer
 // samples on ordinary flat spans. A tile alone never certifies a stance.
@@ -211,6 +212,9 @@ internal sealed class SurfaceGraph
 
     internal bool KeySample(SurfaceNode n,PhysicsState start,LandingRegion goal)
     {
+#if NAVIGATION_EXPERIMENT
+        if(NavigationExperiment.AllStances)return true;
+#endif
         if(n.Kind!=SurfaceKind.Solid||Math.Abs(n.X-start.Px)<48||Math.Abs(n.X-goal.MinPlayerLeftX)<64)return true;
         // Flat interior reduction only. Keep every narrow support, boundary,
         // height transition and obstacle-adjacent tile.
@@ -222,13 +226,19 @@ internal sealed class SurfaceGraph
         return n.TileX%4==0;
     }
 
-    internal SurfaceEdge Candidate(SurfaceNode a,SurfaceNode b,PhysicsParameters ph)
+    internal static int HorizontalRange(PhysicsParameters ph,float wingTicks=0)
+    {
+#if NAVIGATION_EXPERIMENT
+        if(NavigationExperiment.HorizontalRange is int range)return range;
+#endif
+        return ph.ReachX(wingTicks);
+    }
+
+    internal SurfaceEdge Candidate(SurfaceNode a,SurfaceNode b,PhysicsParameters ph,float wingTicks=0)
     {
         float dx=Math.Abs(a.X-b.X),dy=b.Region.SurfaceY-a.Region.SurfaceY;
-        float extraRise=ph.ExtraJump==null?0:ph.JumpSpeed*ph.ExtraJump.HoldFrames(ph)+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity);
-        if(ph.Air!=null)extraRise+=ph.JumpSpeed*16;
-        if(a.Id==b.Id||dx>(ph.ExtraJump==null&&ph.Air==null?144:256)||dy>FallSafety.LookaheadPixels
-            ||dy<-(ph.JumpSpeed*ph.JumpHeight+ph.JumpSpeed*ph.JumpSpeed/(2*ph.Gravity)+16+extraRise))return null;
+        if(a.Id==b.Id||dx>HorizontalRange(ph,wingTicks)||dy>FallSafety.LookaheadPixels
+            ||dy<-ph.RiseBound(wingTicks))return null;
         if(dy>16&&!ph.Fall.Safe(a.Region.SurfaceY-PhysicsSimulator.PlayerH,b.Region.SurfaceY-PhysicsSimulator.PlayerH))
         {
             int row=FallSafety.Row(b.Region.SurfaceY+1);
@@ -292,19 +302,21 @@ internal sealed class SurfaceNavigator : IDisposable
     private LandingRegion waypoint;
     private float? estimatedRouteUpdates;
     private bool candidateReachedGoal;
+    private int physicalSearches,physicalSlices,physicalExpansions;
+    private Dictionary<string,int> lastPhysicalRejections;
     private readonly SurfaceGraph graph;
     private readonly Func<PhysicsState,bool> detour;
     private readonly Func<PhysicsState,int> preference;
     internal SurfaceGraphSnapshot Snapshot=>new(exit,radius,reads,graph.Nodes.Count(),candidates,verified,expanded,
-        work,timer.Elapsed.TotalMilliseconds,graph.ChangedTiles,graph.RetainedNodes,rangeExpansions,waypoint,estimatedRouteUpdates,candidateReachedGoal);
+        work,timer.Elapsed.TotalMilliseconds,graph.ChangedTiles,graph.RetainedNodes,rangeExpansions,waypoint,estimatedRouteUpdates,candidateReachedGoal,physicalSearches,physicalSlices,physicalExpansions,lastPhysicalRejections);
     internal bool Finished {get;private set;}
     internal SurfaceNavigator(SurfaceGraph graph,PhysicsState start,LandingRegion goal,PhysicsParameters ph,
         IMotionWorld world,ISurfaceTerrain terrain,NavigationSearchMemory learning,
-        Func<PhysicsState,Prediction,bool> reject,Func<PhysicsState,bool> detour=null,Func<PhysicsState,int> preference=null)
+        Func<PhysicsState,Prediction,bool> reject,Func<PhysicsState,bool> detour=null,Func<PhysicsState,int> preference=null, bool allowTravelPrefix=false)
     {
         this.graph=graph;
         this.detour=detour;this.preference=preference;
-        steps=Run(start,goal,ph,world,terrain,learning,reject).GetEnumerator();
+        steps=Run(start,goal,ph,world,terrain,learning,reject,allowTravelPrefix).GetEnumerator();
     }
     internal Route Advance(int maxWork=512,double budgetMs=4)
     {
@@ -318,8 +330,35 @@ internal sealed class SurfaceNavigator : IDisposable
     private Route Waiting()=>new(new(),0,timer.Elapsed.TotalMilliseconds,TimeBudgetReached:true,Kind:"surface_graph",SearchExit:"surface_budget");
     public void Dispose()=>steps.Dispose();
 
+    internal static IEnumerable<LaunchInput> UphillLaunches(PhysicsState start,int direction,PhysicsParameters ph,int holdStep=4)
+    {
+        foreach(var action in ph.Launches(start,direction,holdStep))
+            if(action.AirStart<0 || ph.Air?.Kind!=AirKind.Wings)yield return action;
+        if(ph.GroundOnly || ph.Air?.Kind!=AirKind.Wings || start.Air?.WingTime is not >0)yield break;
+        int hold=Math.Min(ph.JumpHeight,180);
+        int extraFrame=hold+1;
+        int available=(int)Math.Min(start.Air.WingTime,120);
+        int mask=start.RemainingJumps;
+        if(mask<0)mask=(start.ExtraAvailable||start.Grounded)?ph.ExtraJump?.Mask??0:0;
+        // On a long flight a few more powered updates can move the landing from
+        // below a lip onto its upper surface. Include the exact remaining duration.
+        for(int time=8;time<available+8;time+=8)
+        {
+            int power=Math.Min(time,available);
+            yield return new(hold,AirStart:extraFrame,AirHold:power);
+            int count=0,wingFrame=extraFrame;
+            for(var jump=ph.ExtraJump;jump!=null;jump=jump.Next)
+            {
+                if((mask&jump.Bit)==0)continue;
+                count++;
+                wingFrame+=jump.HoldFrames(ph)+2;
+                yield return new(hold,ExtraFrame:extraFrame,ExtraCount:count,AirStart:wingFrame,AirHold:power);
+            }
+        }
+    }
+
     private IEnumerable<Route> Run(PhysicsState start,LandingRegion goal,PhysicsParameters ph,IMotionWorld world,
-        ISurfaceTerrain terrain,NavigationSearchMemory learning,Func<PhysicsState,Prediction,bool> reject)
+        ISurfaceTerrain terrain,NavigationSearchMemory learning,Func<PhysicsState,Prediction,bool> reject,bool allowTravelPrefix)
     {
         if(!ph.IsSupportedGroundPhysics)
         {
@@ -328,6 +367,230 @@ internal sealed class SurfaceNavigator : IDisposable
             yield break;
         }
         int cx=(int)Math.Floor((start.Px+10)/16),cy=(int)Math.Floor((start.Py+42)/16);
+        float goalX=Math.Clamp(start.Px,goal.MinPlayerLeftX,goal.MaxPlayerLeftX);
+        float rise=start.Py+PhysicsSimulator.PlayerH-goal.SurfaceY;
+        if(start.Grounded && goalX==start.Px && ph.ExtraJump!=null && rise>0 && rise<=ph.RiseBound(start.Air?.WingTime??0))
+        {
+            // An overhead platform can be a single jump even when it is outside
+            // the initial graph window. Prove the complete landing before scanning.
+            foreach(var launch in UphillLaunches(start,0,ph,2))
+            {
+                if(launch.Hold==0)continue;
+                if(YieldWork())yield return Waiting();
+                var jump=PhysicsSimulator.Predict(start,0,launch.Hold,ph,world,
+                    extraJumpFrame:launch.ExtraFrame,airStartFrame:launch.AirStart,
+                    airHoldFrames:launch.AirHold,extraCount:launch.ExtraCount,extraHoldLimit:launch.ExtraHold);
+                if(!jump.Safe || !goal.Arrived(jump.Landing,world) || reject?.Invoke(start,jump)==true)continue;
+                exit="goal_reached";Finished=true;
+                yield return new(new(){jump with{ExecuteFrames=jump.Frames.Count}},0,timer.Elapsed.TotalMilliseconds,
+                    ReachedGoal:true,Kind:"surface_graph",SearchExit:exit);
+                yield break;
+            }
+        }
+        bool uphill=allowTravelPrefix && rise>LandingRegion.FeetTolerance && goalX!=start.Px &&
+            start.Grounded && !start.Wet && (ph.ExtraJump!=null || ph.Air?.Kind==AirKind.Wings);
+        var ascent=uphill?SafeGroundWalk.TryAscend(start,goal,ph,world):null;
+        if(uphill && (ascent!=null || !PhysicsSimulator.Predict(start,Math.Sign(goalX-start.Px),0,ph,world,walkFrames:36).Safe))
+        {
+            int direction=Math.Sign(goalX-start.Px);
+            Route best=null;
+            float bestRate=0;
+            // Measure remaining distance around rock when the goal is inside the local window.
+            // Open air contributes geometric distance only. Every executable edge still needs physics.
+            (int X,int Y) BodyCell(float px,float py)=>((int)Math.Floor((px+10)/16),(int)Math.Floor((py+21)/16));
+            var origin=BodyCell(start.Px,start.Py);
+            var destination=BodyCell(goalX,goal.SurfaceY-PhysicsSimulator.PlayerH);
+            var distances=new Dictionary<(int X,int Y),int>();
+            // Center the coverage on the segment so a long flight can see both its
+            // launch and the terrain beyond its landing within one bounded window.
+            int span=2*(SurfaceGraph.MaximumRadius-SurfaceGraph.InitialRadius);
+            if(Math.Abs(origin.X-destination.X)<=span && Math.Abs(origin.Y-destination.Y)<=span)
+            {
+                var queue=new Queue<(int X,int Y)>();
+                var visited=new HashSet<(int X,int Y)>{destination};
+                queue.Enqueue(destination);
+                distances[destination]=0;
+                int margin=SurfaceGraph.InitialRadius;
+                int left=Math.Min(origin.X,destination.X)-margin,right=Math.Max(origin.X,destination.X)+margin;
+                int top=Math.Min(origin.Y,destination.Y)-margin,bottom=Math.Max(origin.Y,destination.Y)+margin;
+                var offsets=new (int X,int Y)[]{(0,-1),(1,0),(-1,0),(0,1)};
+                while(queue.TryDequeue(out var cell))
+                {
+                    if(YieldWork())yield return Waiting();
+                    foreach(var offset in offsets)
+                    {
+                        var next=(X:cell.X+offset.X,Y:cell.Y+offset.Y);
+                        if(next.X<left||next.X>right||next.Y<top||next.Y>bottom||!visited.Add(next))continue;
+                        if(terrain.ReadSurfaceCell(next.X,next.Y).Shape is not ('.' or '='))continue;
+                        distances[next]=distances[cell]+1;
+                        queue.Enqueue(next);
+                    }
+                }
+            }
+            float Gain(PhysicsState from,PhysicsState to)
+            {
+                if(distances.TryGetValue(BodyCell(from.Px,from.Py),out int before) &&
+                    distances.TryGetValue(BodyCell(to.Px,to.Py),out int after))
+                    return (before-after)*16;
+                return goal.Distance(from)-goal.Distance(to);
+            }
+            var quickestArrival=new Dictionary<PhysicsState,int>();
+            foreach(var launch in UphillLaunches(start,direction,ph))
+            {
+                if(launch.ImpulseFrame>=0 || launch.Hold==0 && ascent==null)continue;
+                if(YieldWork())yield return Waiting();
+                var first=launch.Hold==0?ascent.Actions[0]:PhysicsSimulator.Predict(start,direction,launch.Hold,ph,world,
+                    rollingJump:true,extraJumpFrame:launch.ExtraFrame,extraCount:launch.ExtraCount,
+                    extraHoldLimit:launch.ExtraHold,airStartFrame:launch.AirStart,airHoldFrames:launch.AirHold,flightGoal:goal);
+                if(!first.Safe || reject?.Invoke(start,first)==true)continue;
+                var stance=first.Landing;
+                if(quickestArrival.TryGetValue(stance,out int previous) && previous<=first.Frames.Count)continue;
+                quickestArrival[stance]=first.Frames.Count;
+                var ahead=terrain.MotionAt(stance);
+                if(!PhysicsSimulator.Settled(stance,ahead))continue;
+                first=first with{ExecuteFrames=first.Frames.Count};
+                bool arrived=goal.Arrived(stance,ahead);
+                // A short first flight can reach a perch from which a second powered
+                // launch clears the rock. Validate it with resources at THAT landing.
+                var follows=distances.Count>0?UphillLaunches(stance,direction,ph):
+                    new LaunchInput[]{new(0),new(ph.JumpHeight)};
+                foreach(var follow in follows)
+                {
+                    if(YieldWork())yield return Waiting();
+                    var actions=new List<Prediction>{first};
+                    var end=stance;
+                    int frames=first.Frames.Count;
+                    if(!arrived)
+                    {
+                        if(follow.ImpulseFrame>=0)continue;
+                        var next=PhysicsSimulator.Predict(stance,direction,follow.Hold,ph,ahead,walkFrames:36,
+                            rollingJump:true,walkingGoal:goal,extraJumpFrame:follow.ExtraFrame,extraCount:follow.ExtraCount,
+                            extraHoldLimit:follow.ExtraHold,airStartFrame:follow.AirStart,airHoldFrames:follow.AirHold,flightGoal:goal);
+                        if(!next.Safe || !PhysicsSimulator.Settled(next.Landing,ahead) ||
+                            reject?.Invoke(stance,next)==true || Gain(stance,next.Landing)<=0)continue;
+                        actions.Add(next with{ExecuteFrames=next.Frames.Count});
+                        frames+=next.Frames.Count;
+                        end=next.Landing;
+                    }
+                    bool complete=goal.Arrived(end,ahead);
+                    float rate=Gain(start,end)/Math.Max(1,frames);
+                    if(best?.ReachedGoal==true && !complete || rate<=bestRate && !(complete && best?.ReachedGoal!=true))continue;
+                    bestRate=rate;
+                    best=new(actions,0,0,ReachedGoal:complete,Kind:launch.Hold==0?"uphill_ground_continuation":"uphill_air_continuation",
+                        SearchExit:complete?"goal_reached":"safe_partial");
+                    if(arrived)break;
+                }
+            }
+            if(best!=null)
+            {
+                Finished=true;exit=best.SearchExit;
+                yield return best with{Milliseconds=timer.Elapsed.TotalMilliseconds};
+                yield break;
+            }
+        }
+        if(allowTravelPrefix && Math.Abs(goalX-start.Px)>SurfaceGraph.InitialRadius*16)
+        {
+            // The final feet height is not the required height of every intermediate
+            // step. First test ordinary movement toward the distant column against
+            // the actual collision world, including a safe landing and braking tail.
+            int direction=goalX>start.Px?1:-1;
+            var walk=PhysicsSimulator.Predict(start,direction,0,ph,world,walkFrames:60);
+            if(walk.Safe && direction*(walk.Landing.Px-start.Px)>=16
+                && Math.Abs(goalX-walk.Landing.Px)<Math.Abs(goalX-start.Px)
+                && PhysicsSimulator.Settled(walk.Landing,world))
+            {
+                walk=walk with{ExecuteFrames=walk.Frames.Count};
+                if(reject?.Invoke(start,walk)!=true)
+                {
+                    var best=walk;
+                    float rate=goal.Distance(start)-goal.Distance(walk.Landing);
+                    rate/=walk.Frames.Count;
+                    if(start.Grounded && !start.Wet && ph.ExtraJump!=null)
+                    {
+                        // An unobstructed walking route is also a candidate for assisted travel.
+                        // Compare complete movement and braking costs from the same real stance.
+                        foreach(var launch in ph.Launches(start,direction,4))
+                        {
+                            if(launch.Hold==0 || launch.AirStart>=0 || launch.ImpulseFrame>=0)continue;
+                            if(YieldWork())yield return Waiting();
+                            var hop=PhysicsSimulator.Predict(start,direction,launch.Hold,ph,world,
+                                rollingJump:true,extraJumpFrame:launch.ExtraFrame,extraCount:launch.ExtraCount,
+                                extraHoldLimit:launch.ExtraHold);
+                            if(!hop.Safe || !PhysicsSimulator.Settled(hop.Landing,world) ||
+                                direction*(hop.Landing.Px-goalX)>0 || reject?.Invoke(start,hop)==true)continue;
+                            float hopRate=(goal.Distance(start)-goal.Distance(hop.Landing))/hop.Frames.Count;
+                            if(hopRate<=rate || hop.Frames.Any(frame=>frame.State.Wet))continue;
+                            // Keep a usable exit from a fast landing. Otherwise the next
+                            // navigation update may have to backtrack to a viable takeoff.
+                            var landingWorld=terrain.MotionAt(hop.Landing);
+                            var onward=PhysicsSimulator.Predict(hop.Landing,direction,0,ph,landingWorld,walkFrames:24);
+                            if(!onward.Safe || onward.Frames.Any(frame=>frame.State.Wet) ||
+                                !PhysicsSimulator.Settled(onward.Landing,landingWorld) ||
+                                reject?.Invoke(hop.Landing,onward)==true)continue;
+                            best=hop with{ExecuteFrames=hop.Frames.Count};rate=hopRate;
+                        }
+                    }
+                    exit="safe_partial";Finished=true;
+                    yield return new(new(){best},0,timer.Elapsed.TotalMilliseconds,
+                        Kind:best.Jump?"travel_jump":"surface_graph",SearchExit:exit);
+                    yield break;
+                }
+            }
+            // At a blocked face the best launch stance can be behind the actor.
+            // Commit a retreat only with a verified crossing beyond the original obstruction.
+            if(start.Grounded && !start.Wet && (ph.ExtraJump!=null || ph.Air?.Kind==AirKind.Wings))
+            {
+                foreach(int stride in new[]{0,12,24,36,60,90})
+                {
+                    if(YieldWork())yield return Waiting();
+                    Prediction retreat=null;
+                    if(stride>0)
+                    {
+                        retreat=PhysicsSimulator.Predict(start,-direction,0,ph,world,walkFrames:stride);
+                        if(!retreat.Safe || !PhysicsSimulator.Settled(retreat.Landing,world) ||
+                            reject?.Invoke(start,retreat)==true)continue;
+                    }
+                    var launchAt=retreat?.Landing??start;
+                    var local=terrain.MotionAt(launchAt);
+                    foreach(var action in ph.Launches(launchAt,direction,4))
+                    {
+                        if(action.Hold==0 || action.ImpulseFrame>=0)continue;
+                        if(YieldWork())yield return Waiting();
+                        var flight=PhysicsSimulator.Predict(launchAt,direction,action.Hold,ph,local,
+                            rollingJump:true,extraJumpFrame:action.ExtraFrame,extraCount:action.ExtraCount,
+                            extraHoldLimit:action.ExtraHold,airStartFrame:action.AirStart,airHoldFrames:action.AirHold);
+                        if(!flight.Safe || !PhysicsSimulator.Settled(flight.Landing,local) ||
+                            direction*(flight.Landing.Px-start.Px)<32 || goal.Distance(flight.Landing)+16>=goal.Distance(start)
+                            || reject?.Invoke(launchAt,flight)==true)continue;
+                        var actions=new List<Prediction>();
+                        if(retreat!=null)actions.Add(retreat with{ExecuteFrames=retreat.Frames.Count});
+                        actions.Add(flight with{ExecuteFrames=flight.Frames.Count});
+                        Finished=true;exit=goal.Arrived(flight.Landing,local)?"complete":"safe_partial";
+                        yield return new(actions,0,timer.Elapsed.TotalMilliseconds,ReachedGoal:exit=="complete",
+                            Kind:"clear_launch_approach",SearchExit:exit);
+                        yield break;
+                    }
+                }
+            }
+            using var forward=new StateSpacePlanner.Search(start,goalX,null,ph,world,rejectEdge:reject,learning:learning);
+            while(!forward.Finished && forward.TotalExpansions<12)
+            {
+                var prefix=forward.Advance(maxExpansions:4,budgetMs:milliseconds);
+                if(prefix.Actions.Count>0)
+                {
+                    var last=prefix.Actions[^1];
+                    var rest=last.Frames[^1].State;
+                    if(Math.Abs(rest.Px-goalX)+16<=Math.Abs(start.Px-goalX) && PhysicsSimulator.Settled(rest,world))
+                    {
+                        prefix.Actions[^1]=last with{ExecuteFrames=last.Frames.Count,Landing=rest};
+                        exit="safe_partial";Finished=true;
+                        yield return prefix with{Kind="surface_graph",ReachedGoal=false,SearchExit=exit};
+                        yield break;
+                    }
+                }
+                yield return Waiting();
+            }
+        }
         var denied=new HashSet<int>(); // search-local exclusions, NOT execution failure memory
         var uncertain=new HashSet<int>();
         bool localBudget=false;
@@ -373,13 +636,20 @@ internal sealed class SurfaceNavigator : IDisposable
                     float d=goal.Distance(a.Rest(Math.Clamp((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2,a.Region.MinPlayerLeftX,a.Region.MaxPlayerLeftX)));
                     if(d<bestDistance){bestDistance=d;best=a;}
                     if(d==0){end=a;break;}
-                    for(int column=a.TileX-(ph.ExtraJump==null&&ph.Air==null?10:17);column<=a.TileX+(ph.ExtraJump==null&&ph.Air==null?10:17);column++)
+                    // Beyond local coverage, a supported stance near the forward
+                    // rim is a subgoal. Its first connection still needs full
+                    // physics validation; draining the open set cannot reach a
+                    // final column outside this window.
+                    if(!goalInColumns && Math.Sign(goalX-start.Px)*(a.TileX-cx)>=radius-2)
+                    {best=a;break;}
+                    int columns=(SurfaceGraph.HorizontalRange(ph,start.Air?.WingMax??0)+15)/16+1;
+                    for(int column=a.TileX-columns;column<=a.TileX+columns;column++)
                     {
                         if(!byColumn.TryGetValue(column,out var neighbors))continue;
                         foreach(var b in neighbors)
                         {
                             if(closed.Contains(b.Id)||(a.Id==-1||a.Region.Contains(start))&&denied.Contains(b.Id))continue;
-                            var edge=graph.Candidate(a,b,ph);candidates++;
+                            var edge=graph.Candidate(a,b,ph,start.Air?.WingMax??0);candidates++;
                             if(edge!=null)
                             {
                                 float launchCost=0;
@@ -420,15 +690,19 @@ internal sealed class SurfaceNavigator : IDisposable
                 if(connection+1<path.Count&&path[connection+1].Motion==SurfaceMotion.Jump)
                     waypoint=path[connection+1].Launch??next.Landing;
                 if(waypoint.Contains(start)){denied.Add(next.To.Id);continue;}
+                physicalSearches++;
                 using var physical=new StateSpacePlanner.Search(start,Math.Clamp(start.Px,waypoint.MinPlayerLeftX,waypoint.MaxPlayerLeftX),
                     waypoint,ph,world,rejectEdge:reject,detourCheckpoint:detour,historicalPreference:preference,learning:learning,
-                    requireInitialJump:next.Motion==SurfaceMotion.Jump);
+                    requireInitialJump:next.Motion==SurfaceMotion.Jump && !uncertain.Contains(next.To.Id));
                 bool reconsider=false;
                 while(true)
                 {
                     // The native simulator stays on this thread. Its internal
                     // candidate iterator retains exact velocities/jump state.
                     var route=physical.Advance(maxExpansions:8,budgetMs:Math.Max(.1,milliseconds-timer.Elapsed.TotalMilliseconds));
+                    physicalSlices++;
+                    physicalExpansions=physical.TotalExpansions;
+                    lastPhysicalRejections=route.Rejections;
                     if(route.Actions.Count>0)
                     {
                         // A safe prefix does not verify the selected connection.
@@ -451,6 +725,8 @@ internal sealed class SurfaceNavigator : IDisposable
                         yield return route with{Kind="surface_graph",ReachedGoal=exit=="complete",SearchExit=exit};
                         yield break;
                     }
+                    if(physical.Finished && next.Motion==SurfaceMotion.Jump && uncertain.Add(next.To.Id))
+                    {reconsider=true;break;}
                     if(physical.Finished){localBudget|=route.SearchExit=="local_state_budget";break;}
                     yield return Waiting();
                 }

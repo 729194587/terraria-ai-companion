@@ -10,7 +10,8 @@ import unittest
 from unittest.mock import patch
 from jsonschema import Draft202012Validator
 
-from test_agent import Model, final, event
+from test_agent import Model, final, event, tool
+from player_goals import GoalStore
 from test_lua_agent import program
 from agent import Agent
 from agent_run import facts_reply, goal_outcome, task_outcome
@@ -37,6 +38,8 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.ready=Path(self.directory.name)/'ready'
         self.stop=Path(self.directory.name)/'stop'
         Path(str(self.ready)+'.live').touch()
+        if self._testMethodName.startswith('test_frontier_'):
+            Path(str(self.ready)+'.advance.frontier').touch()
         self.process=subprocess.Popen(['pwsh','-NoProfile','-File',str(Path(__file__).with_name('run_api_contract_host.ps1')),
             '-ReadyPath',str(self.ready),'-StopPath',str(self.stop)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,
             creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -337,6 +340,139 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('仍在执行',self.bridge.reply_receipts[-1]['text'])
         self.assertNotEqual('[AI] 生命值为73。',self.bridge.reply_receipts[-1]['text'])
         self.assertEqual(1,await self.starts())
+
+    async def test_frontier_goal_wakes_and_reports_verified_return(self):
+        args = {'radiusTiles': 10, 'maxSegments': 6}
+        model = Model(tool('schedule_exploration', json.dumps(args)), final('已登记'), final('已返回'))
+        store = GoalStore(Path(self.directory.name) / 'goals.sqlite3')
+        self.agent = Agent(self.bridge, model, chat_bridge=Authorizer(), goal_store=store,
+                           lua_store=ProgramStore(Path(self.directory.name)/'programs'))
+        self.receive(self.agent, 1, '探索附近十格并安全返回，最多向外走六段')
+        await self.agent.task
+        await self.wait_for(lambda: any(r['ack'].is_set() for r in self.manager.records.values()))
+        self.assertEqual('running', store.latest()['state'])
+        self.complete()
+        await self.wait_for(lambda: store.latest()['state'] == 'completed')
+        view = next(iter(self.manager.records.values()))['view']
+        Draft202012Validator(schema_for('query_task')).validate(view)
+        self.assertIn('探索新增 3 格', facts_reply([view['result']]))
+        self.assertEqual(1, await self.starts())
+
+    async def test_frontier_lua_missing_return_is_unknown(self):
+        await self.assert_frontier_unconfirmed('no_return')
+
+    async def test_frontier_completed_off_anchor_is_unknown(self):
+        await self.assert_frontier_unconfirmed('off_anchor')
+
+    async def assert_frontier_unconfirmed(self, fixture):
+        Path(str(self.ready)+'.advance.'+fixture).touch()
+        run = await self.runtime.execute("return api('submit_task',{operation='explore_frontier',arguments={radiusTiles=6,maxSegments=2}})")
+        self.assertEqual('completed',run['status'],run)
+        task_id = run['value']['taskId']
+        self.complete()
+        view = await self.manager.invoke('await_task', {'taskId':task_id, 'milliseconds':5000})
+        self.assertEqual('unknown',view['result']['status'],view)
+        self.assertFalse(view['result']['completed'])
+        self.assertEqual(1, await self.starts())
+
+    async def test_frontier_releases_before_new_player_commission(self):
+        steps = [{'operation':'mine_target','arguments':{'x':x,'y':20}} for x in (10,11)]
+        model = Model(tool('schedule_exploration','{"radiusTiles":8,"maxSegments":4}'),final('已登记'),
+                      tool('schedule_player_goal',json.dumps({'steps':steps})),final('已登记'),final('回执'),final('回执'))
+        store = GoalStore(Path(self.directory.name)/'goals.sqlite3')
+        self.agent = Agent(self.bridge,model,chat_bridge=Authorizer(),goal_store=store,
+                           lua_store=ProgramStore(Path(self.directory.name)/'programs'))
+        self.receive(self.agent,1,'自主探索并返回')
+        await self.agent.task
+        await self.wait_for(lambda: any(r['ack'].is_set() for r in self.manager.records.values()))
+        first = next(iter(self.manager.records.values()))
+        self.assertNotIn('action',self.manager.projection()['active'][0])
+        self.receive(self.agent,2,'改为依次挖除 (10,20) 和 (11,20)')
+        await self.agent.task
+        self.assertTrue(first['view']['result']['inputsReleased'])
+        self.assertEqual('cancelled',first['view']['status'])
+        self.complete()
+        await self.wait_for(lambda:store.latest()['state']=='completed')
+        self.assertEqual(3,await self.starts())
+
+    async def start_commission(self):
+        steps = [{'operation':'mine_target','arguments':{'x':x,'y':20}} for x in (10,11)]
+        model = Model(tool('schedule_player_goal', json.dumps({'steps':steps})),
+                      final('已登记'), final('收到回执'), final('收到回执'))
+        store = GoalStore(Path(self.directory.name) / 'goals.sqlite3')
+        self.agent = Agent(self.bridge, model, chat_bridge=Authorizer(), goal_store=store,
+                           lua_store=ProgramStore(Path(self.directory.name)/'programs'))
+        self.receive(self.agent, 1, '依次挖除 (10,20) 和 (11,20) 两格')
+        await self.agent.task
+        await self.wait_for(lambda: any(r['ack'].is_set() for r in self.manager.records.values()))
+        return store
+
+    async def test_persistent_goal_continues_without_chat(self):
+        store = await self.start_commission()
+        self.assertEqual(('running', 0), (store.latest()['state'],store.latest()['progress']))
+        def deliver_twice(task_id, result):
+            store.settle(task_id, result)
+            store.settle(task_id, result)
+        self.manager.on_goal_result = deliver_twice
+        self.complete()
+        await self.wait_for(lambda:store.latest()['state']=='completed')
+        for record in self.manager.records.values():
+            store.settle(record['view']['taskId'], record['view']['result'])
+        self.agent._wake_task_results()
+        self.assertEqual(2, GoalStore(store.path).latest()['progress'])
+        self.assertEqual(2, await self.starts())
+        self.assertEqual(1, len(self.agent._seen))
+
+    async def test_stop_revokes_pending_goal(self):
+        store = await self.start_commission()
+        self.receive(self.agent, 2, '停止')
+        await self.agent.task
+        await self.wait_for(lambda:store.latest()['state']=='cancelled')
+        self.complete()
+        self.agent._wake_task_results()
+        self.assertEqual(1, await self.starts())
+        self.assertIsNone(GoalStore(store.path).next_step(self.agent._goal_binding()))
+
+    async def test_restart_wakes_durable_ready_goal_without_chat(self):
+        path = Path(self.directory.name) / 'goals.sqlite3'
+        binding = json.dumps(self.bridge.binding, sort_keys=True)
+        steps = [{'operation':'mine_target','arguments':{'x':x,'y':20}} for x in (10,11)]
+        GoalStore(path).create({'steps':steps}, binding, 'previous-chat', 0, '挖除两格', {'mine_target'}, 2)
+        store = GoalStore(path)
+        self.agent = Agent(self.bridge, Model(), chat_bridge=Authorizer(), goal_store=store,
+                           lua_store=ProgramStore(Path(self.directory.name)/'programs'))
+        self.complete()
+        self.agent._wake_task_results()
+        await self.wait_for(lambda:store.latest()['state']=='completed')
+        self.assertEqual(2, await self.starts())
+        self.assertEqual([], self.agent.llm.requests)
+        self.assertIsNone(self.agent._active_turn_id)
+
+    async def test_recovered_intent_without_ack_is_never_replayed(self):
+        path = Path(self.directory.name) / 'goals.sqlite3'
+        store = GoalStore(path)
+        binding = json.dumps(self.bridge.binding, sort_keys=True)
+        steps = [{'operation':'mine_target','arguments':{'x':x,'y':20}} for x in (10,11)]
+        store.create({'steps':steps}, binding, 'previous-chat', 0, '依次挖除两格', {'mine_target'}, 2)
+        self.assertTrue(store.claim(store.next_step(binding), binding))
+        # Simulate the host dying exactly between durable admission and native ACK.
+        self.agent = Agent(self.bridge, Model(), chat_bridge=Authorizer(), goal_store=GoalStore(path),
+                           lua_store=ProgramStore(Path(self.directory.name)/'programs'))
+        self.agent._wake_task_results()
+        await self.wait_for(lambda:store.latest()['state']=='reconcile')
+        self.assertEqual(0, await self.starts())
+        self.assertEqual(0, store.latest()['progress'])
+        self.assertTrue(store.holds_body())
+        self.assertIsNone(GoalStore(store.path).next_step(self.agent._goal_binding()))
+
+    async def test_uncertain_goal_receipt_fences_next_step(self):
+        store = await self.start_commission()
+        Path(str(self.ready)+'.advance.unreleased').touch()
+        self.complete()
+        await self.wait_for(lambda:store.latest()['state']=='reconcile')
+        self.assertEqual(0, store.latest()['progress'])
+        self.assertIsNone(GoalStore(store.path).next_step(self.agent._goal_binding()))
+        self.assertEqual(1, await self.starts())
 
     async def test_new_chat_keeps_task_and_stop_cancels_without_model(self):
         model=Model(program(SUBMIT+"return api('await_task',{taskId=t.taskId,milliseconds=30000})"),final('new'))

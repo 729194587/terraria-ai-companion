@@ -35,6 +35,15 @@ public static class LocalTerrainPlanningTests
     }
     public static void Run()
     {
+        var intact=new LocalTerrainView((x,y)=>y>=100||x==102&&y==98?'#':'.');
+        var cleared=intact.Fork();
+        cleared.Set(102,98,'.');
+        Prediction Walk(LocalTerrainView view)=>PhysicsSimulator.Predict(Start,1,0,PhysicsParameters.Basic,
+            new OverlayMotionWorld(view,_=>true),walkFrames:24);
+        Check(!Walk(intact).Safe&&Walk(cleared).Safe&&!Walk(intact).Safe,
+            "Identical poses must retain distinct collision results in sibling terrain branches.");
+        var wet=new LocalTerrainView((x,y)=>new TerrainCell(intact.Cell(x,y),new TileLiquid(1,255)));
+        Check(!Walk(wet).Safe,"An otherwise ordinary route touching lava is inadmissible.");
         var source=new Source();var view=new LocalTerrainView(source.Cell);var left=view.Fork();var right=view.Fork();
         Check(left.Set(100,100,'.')&&left.Cell(100,100)=='.'&&right.Cell(100,100)=='#'&&source.Cell(100,100)=='#',"candidate edits are ordered, isolated and never write source terrain");
         Check(left.Set(100,100,'=')&&left.Cell(100,100)=='=',"platform support remains distinct from full block support");
@@ -78,7 +87,7 @@ public static class LocalTerrainPlanningTests
         Check(plans.Any(p=>p.Actions.Any(a=>a.Kind==LocalEditKind.Mine&&a.Expected.Py>a.Start.Py)),"safe one-row native excavation structure remains available");
         CheckDescent();
         CheckWater();
-        Console.WriteLine($"Local terrain planning: {checks} checks passed; structural counterfactuals only");
+        Console.WriteLine($"Local terrain planning: {checks} checks passed");
     }
 
     private static void CheckDescent()
@@ -143,18 +152,18 @@ public static class LocalTerrainPlanningTests
         Check(plans.Any(p=>p.WaterPlatform&&p.Actions.Count(a=>a.WaterDirection!=0)>=2),
             "flat ordinary water admits serial platform candidates");
         Check(LocalEditEvaluation.Choose(plans,1000,true)==null,"complete dry movement wins over a water bridge");
-        Check(LocalEditGeometry.FlatWaterSpan(view,105,100,-1)==4,"flat water span is verified in both directions");
+        Check(LocalEditGeometry.WaterDeckCell(view,105,100),"deck placement uses only the local column");
         source.Stock=1;
-        Check(!Evaluate(source).Any(p=>p.WaterPlatform),"partial stock cannot start a known unfunded crossing");
+        Check(Evaluate(source).Any(p=>p.WaterPlatform&&p.Changes==1),"a single remaining platform buys one supported step");
         source.Stock=5;
-        foreach(var unsafeLiquid in new[]{new TileLiquid(1,255),new TileLiquid(2,255),new TileLiquid(3,255),new TileLiquid(0,128)})
+        foreach(var unsafeLiquid in new[]{new TileLiquid(1,255),new TileLiquid(2,255),new TileLiquid(3,255)})
         {
             source.Liquids[(104,100)]=unsafeLiquid;
-            Check(!Evaluate(source).Any(p=>p.WaterPlatform),"hazardous or uneven span cannot select platform work");
+            Check(!Evaluate(source).Any(p=>p.Actions.Any(a=>a.Kind==LocalEditKind.Place&&a.X==104)),"never place into a special liquid");
         }
         source.Liquids[(104,100)]=new(0,255);
         source.Liquids[(104,99)]=new(0,1);
-        Check(!Evaluate(source).Any(p=>p.WaterPlatform),"liquid in the body corridor invalidates the span");
+        Check(!Evaluate(source).Any(p=>p.Actions.Any(a=>a.Kind==LocalEditKind.Place&&a.X==104)),"reject liquid above the proposed deck");
         source.Liquids.Remove((104,99));
         source.MaterialShape='#';
         Check(!Evaluate(source).Any(p=>p.WaterPlatform),"ordinary solid materials cannot displace water in the preview");

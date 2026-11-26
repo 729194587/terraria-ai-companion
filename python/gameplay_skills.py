@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+import json
 import re
 
 from atomic_operations import tool
@@ -85,8 +86,18 @@ class SkillRegistry:
         content = raw.decode('utf-8').strip()
         if not content:
             raise ValueError('Gameplay skill body is empty')
-        return {'valid': True, 'name': skill.name, 'description': skill.description,
-                'game_version': skill.game_version, 'scope': skill.scope, 'content': content}
+        result = {'valid': True, 'name': skill.name, 'description': skill.description,
+                  'game_version': skill.game_version, 'scope': skill.scope, 'content': content}
+        knowledge_path = skill.path.with_name('knowledge.json')
+        if knowledge_path.exists():
+            self._check_file(knowledge_path)
+            if knowledge_path.stat().st_size + skill.path.stat().st_size > MAX_SKILL_BYTES:
+                raise ValueError('Gameplay skill and knowledge exceed size limit')
+            knowledge = json.loads(knowledge_path.read_text(encoding='utf-8'))
+            if knowledge.get('game_version') != skill.game_version:
+                raise ValueError('Gameplay knowledge version differs from skill version')
+            result['knowledge'] = knowledge
+        return result
 
 
 @lru_cache(maxsize=1)

@@ -58,3 +58,13 @@ return world
 该 helper 负责发现与整理候选，不负责全局寻矿、路径规划、工具选择、移动、挖掘或拾取。相关行动由导航、任务和原子 API 完成。
 
 实现：`python/lua/semantic.lua`、`python/lua_worker.py`、`python/server_ai_contract.py`。
+
+## 物品信息
+
+先通过 `resolve_content({kind="item", query=...})` 取得当前加载环境的 `candidates[].typeId`，再调用 `api("query_item_info", {typeId=id})`。成功时 `data` 包含本地化名称、内容键、Mod 内部名称、基础物品样本属性及普通描述行数组 `tooltip`。价值以铜币计，斧力已换算为游戏内百分比。未知的正整数 ID 返回 `available=false` 和 `reason="unknown_item_type"`。
+
+实现从运行时本地化表读取描述。实现 `IHoldShiftTooltipItem` 的物品还会读取普通提示、风味文本和独立的多行 `extraTooltip`；没有扩展文本时省略该字段。查询不执行客户端悬停绘制或玩家状态相关的 UI 钩子。客户端支持已加载的内容 Mod。Server AI 从专服当前加载的内容注册表读取物品，具体能力及降级原因见绑定握手。
+
+同一个 `typeId` 可传给 `api("query_item_sources", {typeId=id})`。每条 `data.sources[]` 记录对应指定 NPC 的一条直接掉落报告，包含来源内容键、本地化名称、NPC 类型及变种 net ID、Boss 标记、条件成立时的原生报告概率（0 到 1）、最小和最大数量，以及条件的类型和本地化描述。相同 NPC 的不同规则各占一行。条件描述可能为空，查询不会执行掉落或判断玩家是否符合条件。
+
+索引来自当前加载的 `Main.ItemDropsDB`，无需安装 Recipe Browser。覆盖能生成报告的 NPC 专属规则；全局掉落、开袋奖励和自定义击杀代码中的物品生成不在查询范围内。已注册物品无匹配报告时返回空数组。

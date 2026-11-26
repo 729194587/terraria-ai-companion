@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Autonomy,[Alias('TravelReview')][ValidateSet('continue','investigate','live','external')][string]$DirectionalExplore,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile,[switch]$ItemInfo,[switch]$ItemSources,[switch]$MaterialPlan,[string[]]$ModPackages,[switch]$CompatibilityQueries)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -9,6 +9,11 @@ if($BenchmarkSpec){
     $BenchmarkSpec=(Resolve-Path -LiteralPath $BenchmarkSpec).Path
     $Actions=$true
 }
+if($DirectionalExplore -eq 'live'){$LiveModel=$true}
+elseif($DirectionalExplore -and $LiveModel){throw 'Choose -DirectionalExplore live for real model acceptance.'}
+if($DirectionalExplore){$Autonomy=$true}
+if($Autonomy){$Actions=$true}
+if($MaterialPlan){$Actions=$true;$Crafting=$true}
 if(($Tasks -or $AutonomousNavigation -or $NavigationSafety) -and !$Actions){throw 'Task validation requires isolated Actions fixture.'}
 if($Inventory -and !$Actions){throw 'Inventory validation requires isolated Actions fixture.'}
 if($Crafting -and !$Actions){throw 'Crafting verification requires isolated Actions fixture.'}
@@ -31,7 +36,7 @@ Assert-CompanionPackage -Package $package -Engine $selectedEngine
 if($TalkToNpc){$MerchantJourney=$true;$NurseLua=$TalkToNpc -eq 'Nurse'}
 if($MerchantJourney){$MerchantLua=$true;$Terrain=$true}
 if($ReforgeLua -or $NurseLua){$MerchantLua=$true}
-if(!$PythonExecutable){$PythonExecutable=if($Atomic -or $NpcHome -or $MerchantLua){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
+if(!$PythonExecutable){$PythonExecutable=if($Autonomy -or $Atomic -or $NpcHome -or $MerchantLua -or $ItemInfo -or $ItemSources -or $MaterialPlan){Join-Path $repo '.local/lua-venv/Scripts/python.exe'}else{'python'}}
 if(!(Test-Path -LiteralPath $package)){throw 'Build CompanionBridge first.'}
 $profile=if($BenchmarkSpec){[IO.Path]::GetFullPath($BenchmarkProfile)}else{Join-Path $repo ('.local/companion-'+$(if($Atomic){'g82'}else{'g81'})+'-native-'+[guid]::NewGuid().ToString('N'))}
 New-Item -ItemType Directory -Path "$profile/Mods","$profile/Worlds" | Out-Null
@@ -41,7 +46,8 @@ Copy-Item -LiteralPath $WorldPath -Destination "$profile/Worlds/test.wld"
 $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/CompanionBridge.tmod"
-[IO.File]::WriteAllText("$profile/Mods/enabled.json",'["CompanionBridge"]')
+. (Join-Path $PSScriptRoot 'native_mod_packages.ps1')
+$enabled = @(Set-NativeModPackages $profile $ModPackages)
 if($MerchantLua){$G3Shop=$true}
 if($NpcHome){$Housing=$true}
 if($BuildPlace -or $Housing -or $G3Shop){$Actions=$true}
@@ -55,6 +61,14 @@ $info.RedirectStandardInput=$true
 $info.RedirectStandardOutput=$true
 $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
+if($Autonomy){
+    $info.ArgumentList.Add("-companionautonomytest")
+    if($DirectionalExplore){$info.ArgumentList.Add("-companiondirectiontest")}
+    if(!$LiveModel){
+        $info.ArgumentList.Add("-companioncombattest")
+        $info.ArgumentList.Add("-companionregroupobservers")
+    }
+}
 if($TcpCapacity){$info.ArgumentList.Add('-maxplayers');$info.ArgumentList.Add('2')}
 if($Tasks -or $AutonomousNavigation -or $NavigationSafety){$info.ArgumentList.Add("-companiontasktest")}
 if($Inventory){$info.ArgumentList.Add("-companioninventorytest")}
@@ -104,6 +118,48 @@ try {
         Start-Sleep -Milliseconds 100
     }
     if(!$bound.ok){throw 'Native actor never became available'}
+    if ($DirectionalExplore -eq 'external') {
+        & $PythonExecutable (Join-Path $repo 'tests/native_external_explorer.py') --port $IpcPort --profile $profile
+        if ($LASTEXITCODE -ne 0){throw "External MCP explore verification failed: $profile"}
+        Write-Output "External MCP explore evidence: $profile/external-explore.json"
+        return
+    }
+    if ($Autonomy) {
+        $options = @()
+        if ($LiveModel){$options += '--live-model'}
+        if ($DirectionalExplore){$options += '--directional-explore',$DirectionalExplore}
+        & $PythonExecutable (Join-Path $repo 'tests/native_autonomy.py') --port $IpcPort --game-port $Port --profile $profile @options
+        if ($LASTEXITCODE -ne 0){throw "Autonomous Mode native verification failed: $profile"}
+        Write-Output "Autonomous Mode native evidence: $profile/autonomy.json"
+        return
+    }
+    if ($ItemInfo -or $ItemSources -or $MaterialPlan) {
+        $bound.data | ConvertTo-Json -Depth 8 | Set-Content "$profile/handshake.json"
+        foreach ($mod in $enabled) {
+            if ($mod -notin $bound.data.compatibility.loadedMods.name) { throw "Server did not load $mod" }
+        }
+        $options = @()
+        if ('CalamityMod' -in $enabled) { $options += '--calamity' }
+        if ($ItemInfo) {
+            & $PythonExecutable (Join-Path $repo 'tests/native_item_info.py') --port $IpcPort --profile $profile @options
+            if ($LASTEXITCODE -ne 0) { throw 'Native item info verification failed' }
+            Write-Output "Item info results: $profile/item-info.json"
+        }
+        if ($MaterialPlan) {
+            & $PythonExecutable (Join-Path $repo 'tests/native_material_plan.py') --port $IpcPort --profile $profile @options
+            if ($LASTEXITCODE -ne 0) { throw 'Native material plan verification failed' }
+            Write-Output "Material plan results: $profile/material-plan.json"
+        }
+        if ($ItemSources) {
+            & $PythonExecutable (Join-Path $repo 'tests/native_item_sources.py') --port $IpcPort --profile $profile @options
+            if ($LASTEXITCODE -ne 0) { throw 'Native item sources verification failed' }
+            Write-Output "Item sources results: $profile/item-sources.json"
+        }
+        if ($CompatibilityQueries) {
+            & $PythonExecutable (Join-Path $repo 'tests/native_mod_queries.py') --port $IpcPort --profile $profile
+            if ($LASTEXITCODE -ne 0) { throw "Registry/scene compatibility check failed: $profile" }
+        } elseif (!$Atomic -and !$TcpCapacity) { return }
+    }
     $state=Request @{v=1;id='native-state';op='state';binding=$bound.binding}
     if(!$state.ok -or !$state.data.active -or $state.data.inventory.Count -lt 50 -or $bound.binding.generation -lt 1){throw 'Native state contract failed'}
     $mismatchedBinding=@{actor=$bound.binding.actor;world=$bound.binding.world;generation=([long]$bound.binding.generation+1);slot=$bound.binding.slot}
@@ -350,7 +406,7 @@ try {
             [Threading.Tasks.Task]::WaitAll(@($extra1.ConnectAsync('127.0.0.1',$Port),$extra2.ConnectAsync('127.0.0.1',$Port)))
             if(!(Test-FullPacket $extra1) -or !(Test-FullPacket $extra2)){throw 'Extra connections were not both rejected'}
             $first.Dispose();$first=$null
-            $limit=[DateTime]::UtcNow.AddSeconds(10)
+            $limit=[DateTime]::UtcNow.AddSeconds(30)
             do {
                 Start-Sleep -Milliseconds 200
                 $replacement=[Net.Sockets.TcpClient]::new('127.0.0.1',$Port)

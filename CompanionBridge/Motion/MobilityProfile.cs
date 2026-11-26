@@ -42,8 +42,17 @@ internal sealed class MobilityTracker
                 &&(previous.Movement.Wings.TimeMax!=movement.Wings.TimeMax||previous.Movement.Rockets.TimeMax!=movement.Rockets.TimeMax)
             ||!previous.UnsupportedEffects.SequenceEqual(unsupported)
             ||(movement==null?previous.Movement!=null:!movement.SamePlanningAssumptions(previous.Movement,expectedExtraJump,ph.CanWade)))revision++;
+        var modes = new System.Collections.Generic.List<string>();
+        if (unsupported.Length == 0)
+        {
+            modes.Add("ground_walk");
+            if (!ph.GroundOnly) modes.Add("ground_jump");
+            if (ph.ExtraJump != null) modes.Add("extra_jump");
+            if (ph.Air != null) modes.Add(ph.Air.Kind==AirKind.Wings ? "wings" : "rocket_pulse");
+            for (var action=ph.Impulse;action!=null;action=action.Next) modes.Add(action.Key);
+        }
         previous=new(revision,tick,session,generation,variant,ph,width,height,
-            unsupported.Length==0?(ph.Air!=null?new[]{"ground_walk","ground_jump",ph.Air.Kind==AirKind.Wings?"wings":"rocket_pulse"}:ph.ExtraJump!=null?new[]{"ground_walk","ground_jump","extra_jump"}:new[]{"ground_walk","ground_jump"}):Array.Empty<string>(),unsupported,expiryTail,movement,observedPhysics);
+            modes.ToArray(),unsupported,expiryTail,movement,observedPhysics);
         previousSwiftnessTime=swiftness?swiftnessTime:0;
         return previous;
     }

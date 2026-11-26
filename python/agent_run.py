@@ -32,15 +32,18 @@ def task_outcome(actions, program_completed=True, action_state=None, active_task
 
     A verified mine_target proves its submitted excavation scope.
     """
-    tasks = [a for a in actions if a.get('operation') == 'mine_target']
-    from atomic_operations import verified_server_mine_task
+    tasks = [a for a in actions if a.get('operation') in ('mine_target', 'explore_frontier')]
+    from atomic_operations import verified_server_mine_task, verified_exploration
     def verified(a):
         end = a.get('endEvidence') or {}
         raw = {**a, 'generation': a.get('actionGeneration'),
                'worldSessionId': end.get('worldSessionId'), 'actorSlot': end.get('actorSlot')}
+        evidence = a.get('evidence') or {}
+        proof = (verified_exploration(raw, evidence.get('task')) if a.get('operation') == 'explore_frontier'
+                 else verified_server_mine_task(raw, evidence))
         return (a.get('valid') is True and a.get('completed') is True and a.get('status') == 'completed'
                 and a.get('endEvidenceStatus') == 'known' and end.get('inputsReleased') is True
-                and end.get('effectVerified') is True and verified_server_mine_task(raw, a.get('evidence') or {}))
+                and end.get('effectVerified') is True and proof)
     successes = [a for a in tasks if verified(a)]
     def has_partial_excavation(a):
         target = a.get('targetTask') or {}
@@ -108,6 +111,10 @@ def facts_reply(actions=(), program=None, tasks=None, error=None):
     if completed:
         ops = ','.join(dict.fromkeys(a.get('operation', 'action') for a in completed))
         clauses.append('已核验动作：' + ops[:64] + '。')
+        for action in completed:
+            if action.get('operation') == 'explore_frontier' and task_outcome([action]) == 'completed':
+                proof = action['task']['result']['evidence']
+                clauses.append(f"探索新增 {proof['newTiles']} 格，已安全返回出发点。")
     children = []
     for row in rows:
         task = row.get('task') or (row.get('evidence') or {}).get('task') or {}

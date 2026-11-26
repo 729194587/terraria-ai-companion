@@ -54,7 +54,7 @@ namespace Terraria
         public int direction = 1, selectedItem, itemAnimation, itemTime, statLife = 100, statLifeMax2 = 100, team;
         public int chest = -1, chestX, chestY;
         public bool NativeInteractionRange = true;
-        public bool autoPaint, releaseUseTile, tileInteractAttempted;
+        public bool controlUseTile, autoPaint, releaseUseTile, tileInteractAttempted;
         public bool noBuilding, NativeItemRange = true;
         public bool IsTargetTileInItemRange(Item item) => NativeItemRange;
         public bool InInteractionRange(int x,int y,Terraria.DataStructures.TileReachCheckSettings settings) => NativeInteractionRange;
@@ -254,7 +254,7 @@ namespace Terraria.ModLoader
         public virtual void PostItemCheck() { }
     }
     public sealed class TestMod { public TestLogger Logger = new(); }
-    public sealed class TestLogger { public void Info(string text) { } }
+    public sealed class TestLogger { public void Warn(string text) { } public void Info(string text) { } }
     public sealed class ModKeybind { public bool JustPressed; }
 }
 namespace Terraria.GameContent { public static class ContentSamples { public static System.Collections.Generic.Dictionary<int,Terraria.Item> ItemsByType = new(); } }
@@ -317,6 +317,7 @@ namespace CompanionBridge
 {
     internal sealed class CompanionBridge
     {
+        internal Terraria.ModLoader.TestLogger Logger {get;}=new();
         public Terraria.ModLoader.ModPacket GetPacket(int capacity) => new();
         internal static ControlState Controls { get; } = new();
         internal static bool AutoMoveEnabled => Controls.IsMoving;
@@ -332,6 +333,7 @@ namespace CompanionBridge.Motion
     // planner below are production classes. Count cancellation at the hook boundary.
     internal static class GameNavigation
     {
+        internal static PhysicsInput Fail(string reason)=>Task.Fail(reason);
         internal static FallSafety FallProfile(Terraria.Player player)=>default;
         internal static NavigationSnapshot Snapshot => Task.Snapshot;
         internal static NavigationTask Task = new();

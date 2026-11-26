@@ -16,13 +16,25 @@ internal sealed record AirFeedback(AirKind Kind,AirPhase Phase,bool Confirmed,in
 // Ordinary non-hover wing branches of Player.WingMovement and WingAirLogicTweaks.
 internal sealed record AirMotionModel(AirKind Kind,float AirRunSpeed=6.25f,float AirAcceleration=1,float RiseLimit=1.5f)
 {
+    internal System.Collections.Generic.IEnumerable<LaunchInput> Launches(int hold,AirResources resources)
+    {
+        if(Kind==AirKind.RocketBoots)
+        {
+            for(int delay=0;delay<=16;delay+=8) yield return new(hold,AirStart:hold+1+delay,AirHold:1);
+            yield break;
+        }
+        for(int time=8;time<=40;time+=8) yield return new(hold,AirStart:hold+1,AirHold:time);
+        if(resources?.WingTime>40) yield return new(hold,AirStart:hold+1,AirHold:(int)Math.Min(resources.WingTime,64));
+        if(resources?.WingTime>64) yield return new(hold,AirStart:hold+1,AirHold:(int)Math.Min(resources.WingTime,120));
+    }
     internal static readonly AirMotionModel Angel=new(AirKind.Wings),Rocket=new(AirKind.RocketBoots);
     internal static readonly WingBaseSnapshot AngelStats=new(100,6.25f,1,false,-1,1);
     internal static AirKind Strategy(MovementSnapshot m)=>m.Wings.FunctionalSlot!=0?AirKind.Wings:
         m.Rockets.Boots!=0?AirKind.RocketBoots:AirKind.None;
     internal static AirMotionModel Select(MovementSnapshot m)
     {
-        if(!m.BlockExtraJumps&&m.ExtraJumps.Any(j=>j.Enabled)||m.ActiveExtraJump)return null;
+        if ((!m.BlockExtraJumps && m.ExtraJumps.Any(j => j.Enabled) || m.ActiveExtraJump)
+            && (Strategy(m) != AirKind.Wings || ExtraJumpModel.Select(m) == null)) return null;
         return Strategy(m) switch
         {
             AirKind.Wings when m.Rockets.Delay==0=>OrdinaryWing(m.Wings),

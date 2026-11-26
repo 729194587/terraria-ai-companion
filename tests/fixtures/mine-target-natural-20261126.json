@@ -1,0 +1,975 @@
+{
+  "engine": "2026.9.3.1",
+  "base": "b98924c573bb4c8b4c945502fa315a0bbb4d5b35",
+  "worlds": [
+    {
+      "seed": "1606771215",
+      "sourceWorldSHA256": "918E33D72AE761F990CAA31E0734DD04AB375B3B4F4582702FCBF087D00707F0",
+      "cases": [
+        {
+          "case": "enclosed",
+          "start": {
+            "offset": -15,
+            "floor": 478,
+            "x": 2092,
+            "y": 484,
+            "count": 13,
+            "type": 167
+          },
+          "fixturePosition": {
+            "x": 33376,
+            "y": 7606,
+            "Grounded": true,
+            "Settled": true
+          },
+          "taskId": "a97393c739dd4636a9cf78bebbac69b9",
+          "terminalGameUpdate": 1240,
+          "rootDeadlineGameUpdate": 2907,
+          "search": {
+            "workSearchUpdates": 1031,
+            "routeSearchUpdates": 900,
+            "stanceAttempts": 0
+          },
+          "receipt": {
+            "status": "timeout",
+            "reason": "excavation_route_search_budget_exhausted",
+            "inputsReleased": true,
+            "effectVerified": false
+          },
+          "outcome": "failed",
+          "discoveryComplete": true,
+          "counts": {
+            "verified": 0,
+            "changed": 0,
+            "pending": 13
+          },
+          "inventoryBefore": {},
+          "inventoryAfter": {},
+          "omittedSteps": 0,
+          "children": [
+            {
+              "taskName": "navigate_to_landing_region",
+              "status": "failed",
+              "reason": "native_navigation_failed",
+              "observedGameUpdate": 394,
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/approaching-1",
+              "inputsReleased": true,
+              "effectVerified": false,
+              "startX": 33376,
+              "x": 33381.53,
+              "y": 7606,
+              "targetRegion": {
+                "minPlayerLeftX": 33484,
+                "maxPlayerLeftX": 33488,
+                "surfaceY": 7872
+              },
+              "safeSupport": true,
+              "grounded": true,
+              "settled": true,
+              "arrived": false,
+              "inputReleased": true,
+              "navigation": {
+                "TargetRegion": {
+                  "MinPlayerLeftX": 33484,
+                  "MaxPlayerLeftX": 33488,
+                  "SurfaceY": 7872
+                },
+                "TargetX": 33484,
+                "Status": "failed",
+                "Reason": "navigation_recovery_limit",
+                "SearchExit": "safe_partial"
+              }
+            },
+            {
+              "taskName": "navigate_to_landing_region",
+              "status": "failed",
+              "reason": "native_navigation_failed",
+              "observedGameUpdate": 874,
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/approaching-2",
+              "inputsReleased": true,
+              "effectVerified": false,
+              "startX": 33381.53,
+              "x": 33387.062,
+              "y": 7606,
+              "targetRegion": {
+                "minPlayerLeftX": 33500,
+                "maxPlayerLeftX": 33504,
+                "surfaceY": 7872
+              },
+              "safeSupport": true,
+              "grounded": true,
+              "settled": true,
+              "arrived": false,
+              "inputReleased": true,
+              "navigation": {
+                "TargetRegion": {
+                  "MinPlayerLeftX": 33500,
+                  "MaxPlayerLeftX": 33504,
+                  "SurfaceY": 7872
+                },
+                "TargetX": 33500,
+                "Status": "failed",
+                "Reason": "navigation_recovery_limit",
+                "SearchExit": "safe_partial"
+              }
+            },
+            {
+              "taskName": "mine_target",
+              "status": "failed",
+              "reason": "native_navigation_failed",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/1",
+              "target": {
+                "x": 2092,
+                "y": 484
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [
+                  {
+                    "operation": "mine_tile",
+                    "Status": "completed",
+                    "Reason": "native_tile_destroyed",
+                    "InputsReleased": true,
+                    "EffectVerified": true,
+                    "arguments": {
+                      "x": 2088,
+                      "y": 478,
+                      "plannedToolSlot": 1
+                    }
+                  },
+                  {
+                    "operation": "navigate_to_landing_region",
+                    "Status": "failed",
+                    "Reason": "native_navigation_failed",
+                    "InputsReleased": true,
+                    "EffectVerified": false,
+                    "arguments": {
+                      "minPlayerLeftX": 33401.062,
+                      "maxPlayerLeftX": 33405.062,
+                      "surfaceY": 7648
+                    }
+                  }
+                ],
+                "omitted": 0
+              },
+              "reasonDetail": "navigation_recovery_limit | opening window ±12x/8 down from start; target=(2092,484); actor tile=(2087,478); remaining cuts=18; blocker (2090,481): out_of_range; horizontal: cleared, navigate one tile toward target | stage=navigating; cleared=1; openingMoves=1; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/2",
+              "target": {
+                "x": 2093,
+                "y": 483
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2093,483); actor tile=(2087,478); remaining cuts=18; protected, hazardous or unsupported blocker (2089,478); shape=#, type=30; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/3",
+              "target": {
+                "x": 2091,
+                "y": 485
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2091,485); actor tile=(2087,478); remaining cuts=18; blocker (2089,481): out_of_range; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/4",
+              "target": {
+                "x": 2093,
+                "y": 484
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2093,484); actor tile=(2087,478); remaining cuts=18; protected, hazardous or unsupported blocker (2089,478); shape=#, type=30; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/5",
+              "target": {
+                "x": 2092,
+                "y": 485
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2092,485); actor tile=(2087,478); remaining cuts=18; blocker (2090,481): out_of_range; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/6",
+              "target": {
+                "x": 2091,
+                "y": 486
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2091,486); actor tile=(2087,478); remaining cuts=18; blocker (2089,481): out_of_range; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/7",
+              "target": {
+                "x": 2094,
+                "y": 484
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2094,484); actor tile=(2087,478); remaining cuts=18; protected, hazardous or unsupported blocker (2089,478); shape=#, type=30; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/8",
+              "target": {
+                "x": 2093,
+                "y": 485
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2093,485); actor tile=(2087,478); remaining cuts=18; blocker (2090,480): out_of_range; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/9",
+              "target": {
+                "x": 2092,
+                "y": 486
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2092,486); actor tile=(2087,478); remaining cuts=18; blocker (2089,481): out_of_range; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/10",
+              "target": {
+                "x": 2094,
+                "y": 485
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2094,485); actor tile=(2087,478); remaining cuts=18; protected, hazardous or unsupported blocker (2089,478); shape=#, type=30; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/11",
+              "target": {
+                "x": 2093,
+                "y": 486
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2093,486); actor tile=(2087,478); remaining cuts=18; blocker (2090,481): out_of_range; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/12",
+              "target": {
+                "x": 2094,
+                "y": 486
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2094,486); actor tile=(2087,478); remaining cuts=18; blocker (2090,480): out_of_range; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            },
+            {
+              "taskName": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "taskId": "a97393c739dd4636a9cf78bebbac69b9/13",
+              "target": {
+                "x": 2094,
+                "y": 487
+              },
+              "steps": {
+                "workPosition": null,
+                "steps": [],
+                "omitted": 0
+              },
+              "reasonDetail": "opening window ±12x/8 down from start; target=(2094,487); actor tile=(2087,478); remaining cuts=18; horizontal: cleared, navigate one tile toward target | stage=observe; cleared=0; openingMoves=0; localCutLimit=18",
+              "inputsReleased": true,
+              "effectVerified": false
+            }
+          ],
+          "targets": [
+            {
+              "x": 2092,
+              "y": 484,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2093,
+              "y": 484,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2092,
+              "y": 485,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2094,
+              "y": 484,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2093,
+              "y": 483,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2093,
+              "y": 485,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2091,
+              "y": 485,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2092,
+              "y": 486,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2094,
+              "y": 485,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2093,
+              "y": 486,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2091,
+              "y": 486,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2094,
+              "y": 486,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            },
+            {
+              "x": 2094,
+              "y": 487,
+              "typeId": 167,
+              "status": "pending",
+              "proof": null,
+              "changeReason": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "seed": "20261028",
+      "sourceWorldSHA256": "A9FEB51BB2B71BAF4C04FEC9C8617EC5683DC94CF7A0506EB200139802701223",
+      "cases": [
+        {
+          "case": "change-stance",
+          "start": {
+            "offset": 107,
+            "floor": 520,
+            "x": 2213,
+            "y": 519,
+            "count": 15,
+            "type": 6
+          },
+          "fixturePosition": {
+            "x": 35344,
+            "y": 8278,
+            "Grounded": true,
+            "Settled": true
+          },
+          "taskId": "0a0855be0e0d436fa282ac116134f982",
+          "terminalGameUpdate": 1139,
+          "rootDeadlineGameUpdate": 2892,
+          "search": {
+            "workSearchUpdates": 0,
+            "routeSearchUpdates": 0,
+            "stanceAttempts": 1
+          },
+          "receipt": {
+            "status": "completed",
+            "reason": "excavation_cluster_verified",
+            "inputsReleased": true,
+            "effectVerified": true
+          },
+          "outcome": "completed",
+          "discoveryComplete": true,
+          "counts": {
+            "verified": 15,
+            "changed": 0,
+            "pending": 0
+          },
+          "inventoryBefore": {},
+          "inventoryAfter": {
+            "Terraria/IronOre": 14
+          },
+          "omittedSteps": 0,
+          "children": [
+            {
+              "taskName": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 242,
+              "taskId": "0a0855be0e0d436fa282ac116134f982/1",
+              "inputsReleased": true,
+              "effectVerified": true,
+              "requested": 1,
+              "verified": [
+                {
+                  "X": 2213,
+                  "Y": 519,
+                  "Type": 6,
+                  "Update": 31,
+                  "Strikes": 3
+                }
+              ],
+              "estimatedUpdates": 46,
+              "actualUpdates": 46,
+              "strikes": 3,
+              "toolType": 3509,
+              "workLeftX": 35344,
+              "workFeetY": 8320
+            },
+            {
+              "taskName": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 407,
+              "taskId": "0a0855be0e0d436fa282ac116134f982/navigating-1",
+              "inputsReleased": true,
+              "effectVerified": true,
+              "startX": 35344,
+              "x": 35391.12,
+              "y": 8262,
+              "targetRegion": {
+                "minPlayerLeftX": 35388,
+                "maxPlayerLeftX": 35392,
+                "surfaceY": 8304
+              },
+              "safeSupport": true,
+              "grounded": true,
+              "settled": true,
+              "arrived": true,
+              "inputReleased": true,
+              "navigation": {
+                "TargetRegion": {
+                  "MinPlayerLeftX": 35388,
+                  "MaxPlayerLeftX": 35392,
+                  "SurfaceY": 8304
+                },
+                "TargetX": 35388,
+                "Status": "arrived",
+                "Reason": "landing region verified on safe settled ground",
+                "SearchExit": "complete"
+              }
+            },
+            {
+              "taskName": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 771,
+              "taskId": "0a0855be0e0d436fa282ac116134f982/2",
+              "inputsReleased": true,
+              "effectVerified": true,
+              "requested": 8,
+              "verified": [
+                {
+                  "X": 2214,
+                  "Y": 519,
+                  "Type": 6,
+                  "Update": 31,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2215,
+                  "Y": 519,
+                  "Type": 6,
+                  "Update": 76,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2214,
+                  "Y": 518,
+                  "Type": 6,
+                  "Update": 121,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2216,
+                  "Y": 519,
+                  "Type": 6,
+                  "Update": 166,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2215,
+                  "Y": 518,
+                  "Type": 6,
+                  "Update": 211,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2216,
+                  "Y": 518,
+                  "Type": 6,
+                  "Update": 256,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2216,
+                  "Y": 517,
+                  "Type": 6,
+                  "Update": 301,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2216,
+                  "Y": 516,
+                  "Type": 6,
+                  "Update": 346,
+                  "Strikes": 3
+                }
+              ],
+              "estimatedUpdates": 361,
+              "actualUpdates": 361,
+              "strikes": 24,
+              "toolType": 3509,
+              "workLeftX": 35391.12,
+              "workFeetY": 8304
+            },
+            {
+              "taskName": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 865,
+              "taskId": "0a0855be0e0d436fa282ac116134f982/navigating-2",
+              "inputsReleased": true,
+              "effectVerified": true,
+              "startX": 35391.12,
+              "x": 35423.402,
+              "y": 8278,
+              "targetRegion": {
+                "minPlayerLeftX": 35420,
+                "maxPlayerLeftX": 35424,
+                "surfaceY": 8320
+              },
+              "safeSupport": true,
+              "grounded": true,
+              "settled": true,
+              "arrived": true,
+              "inputReleased": true,
+              "navigation": {
+                "TargetRegion": {
+                  "MinPlayerLeftX": 35420,
+                  "MaxPlayerLeftX": 35424,
+                  "SurfaceY": 8320
+                },
+                "TargetX": 35420,
+                "Status": "arrived",
+                "Reason": "landing region verified on safe settled ground",
+                "SearchExit": null
+              }
+            },
+            {
+              "taskName": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 1139,
+              "taskId": "0a0855be0e0d436fa282ac116134f982/3",
+              "inputsReleased": true,
+              "effectVerified": true,
+              "requested": 6,
+              "verified": [
+                {
+                  "X": 2217,
+                  "Y": 518,
+                  "Type": 6,
+                  "Update": 31,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2217,
+                  "Y": 517,
+                  "Type": 6,
+                  "Update": 76,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2218,
+                  "Y": 517,
+                  "Type": 6,
+                  "Update": 121,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2217,
+                  "Y": 516,
+                  "Type": 6,
+                  "Update": 166,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2218,
+                  "Y": 516,
+                  "Type": 6,
+                  "Update": 211,
+                  "Strikes": 3
+                },
+                {
+                  "X": 2217,
+                  "Y": 515,
+                  "Type": 6,
+                  "Update": 256,
+                  "Strikes": 3
+                }
+              ],
+              "estimatedUpdates": 271,
+              "actualUpdates": 271,
+              "strikes": 18,
+              "toolType": 3509,
+              "workLeftX": 35423.402,
+              "workFeetY": 8320
+            }
+          ],
+          "targets": [
+            {
+              "x": 2213,
+              "y": 519,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2213,
+                "Y": 519,
+                "Type": 6,
+                "Update": 31,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2214,
+              "y": 519,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2214,
+                "Y": 519,
+                "Type": 6,
+                "Update": 31,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2215,
+              "y": 519,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2215,
+                "Y": 519,
+                "Type": 6,
+                "Update": 76,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2214,
+              "y": 518,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2214,
+                "Y": 518,
+                "Type": 6,
+                "Update": 121,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2216,
+              "y": 519,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2216,
+                "Y": 519,
+                "Type": 6,
+                "Update": 166,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2215,
+              "y": 518,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2215,
+                "Y": 518,
+                "Type": 6,
+                "Update": 211,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2216,
+              "y": 518,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2216,
+                "Y": 518,
+                "Type": 6,
+                "Update": 256,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2217,
+              "y": 518,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2217,
+                "Y": 518,
+                "Type": 6,
+                "Update": 31,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2216,
+              "y": 517,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2216,
+                "Y": 517,
+                "Type": 6,
+                "Update": 301,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2217,
+              "y": 517,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2217,
+                "Y": 517,
+                "Type": 6,
+                "Update": 76,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2216,
+              "y": 516,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2216,
+                "Y": 516,
+                "Type": 6,
+                "Update": 346,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2218,
+              "y": 517,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2218,
+                "Y": 517,
+                "Type": 6,
+                "Update": 121,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2217,
+              "y": 516,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2217,
+                "Y": 516,
+                "Type": 6,
+                "Update": 166,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2218,
+              "y": 516,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2218,
+                "Y": 516,
+                "Type": 6,
+                "Update": 211,
+                "Strikes": 3
+              },
+              "changeReason": null
+            },
+            {
+              "x": 2217,
+              "y": 515,
+              "typeId": 6,
+              "status": "verified",
+              "proof": {
+                "X": 2217,
+                "Y": 515,
+                "Type": 6,
+                "Update": 256,
+                "Strikes": 3
+              },
+              "changeReason": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "packageSHA256": "351A3AC2F0E97CD4A296A3A80668D25BD430A8EF68428F66A361EB98C3FF7739"
+}

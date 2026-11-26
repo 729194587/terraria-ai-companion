@@ -116,6 +116,7 @@ internal sealed class AiReadOnlyServer : IDisposable
             actions?.Tick(capture, select);
         }
     }
+    internal void ObserveAutonomyIdentity(AiReadOnlyProtocol.Identity current) => protocol.ObserveAutonomyIdentity(current);
     internal void Reflex(AiReadOnlyProtocol.Identity actor,string entityRef,string threat)
         =>actions.Reflex(actor,protocol.ActorId(actor),entityRef,threat);
     private void AssertOwner() { if (ownerThread != Environment.CurrentManagedThreadId) throw new InvalidOperationException("IPC dispatch requires the simulation thread."); }

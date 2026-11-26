@@ -35,7 +35,7 @@ internal sealed class NavigationFailureMemory
         Expire(update);
         if(edges.Count>=Capacity)edges.RemoveAt(0);
         var footprint=world==null?p:p with{Frames=new(p.Frames){new(default,actualLanding)}};
-        var detail=world==null?null:new Failure(p.AirStartFrame>=0?p.AirMode.ToString():p.ExtraJumpFrame>=0?"extra_jump":p.Jump?"jump":"walk",key.Direction,key.Hold,key.Stride,at,p.Landing,actualLanding,reason,
+        var detail=world==null?null:new Failure(p.ImpulseKey??(p.AirStartFrame>=0?p.AirMode.ToString():p.ExtraJumpFrame>=0?"extra_jump":p.Jump?"jump":"walk"),key.Direction,key.Hold,key.Stride,at,p.Landing,actualLanding,reason,
             world.TerrainSignature(at,footprint),physics,update+LifetimeUpdates,p.ExtraJumpFrame,p.AirStartFrame,p.AirHoldFrames);
         edges.Add(new(at, key.Direction, key.Hold, key.Stride, update + LifetimeUpdates,footprint,detail,p.ExtraJumpFrame,p.AirStartFrame,p.AirHoldFrames));
         Version++;
@@ -60,6 +60,7 @@ internal sealed class NavigationFailureMemory
         if (edges.Count==0) return false;
         var key = Signature(p);
         return edges.Any(e => e.Direction == key.Direction && e.Hold == key.Hold && e.Stride == key.Stride&&e.ExtraJumpFrame==p.ExtraJumpFrame
+            &&e.Prediction.ExtraHold==p.ExtraHold && e.Prediction.ExtraCount==p.ExtraCount && e.Prediction.ImpulseKey==p.ImpulseKey && e.Prediction.ImpulseFrame==p.ImpulseFrame
             &&e.AirStartFrame==p.AirStartFrame&&e.AirHoldFrames==p.AirHoldFrames
             && (e.Detail!=null?start==e.At
                 : Math.Abs(start.Px - e.At.Px) <= 32 && Math.Abs(start.Py - e.At.Py) <= 8

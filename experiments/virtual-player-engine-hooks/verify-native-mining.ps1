@@ -1,5 +1,6 @@
 param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27837,[switch]$Failure,
-    [string]$PackagePath,[ValidateSet('VirtualPlayerEngineProbe','CompanionBridge')][string]$ModName='VirtualPlayerEngineProbe')
+    [string]$PackagePath,[ValidateSet('VirtualPlayerEngineProbe','CompanionBridge')][string]$ModName='VirtualPlayerEngineProbe',
+    [switch]$TerrainApproach)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'probe-paths.ps1')
 $paths=Get-ProbePaths
@@ -18,6 +19,7 @@ Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value ('["'+$ModName+'"]'
 $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",
     '-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-miningselftest')
 if($Failure){$arguments+='-miningfailureselftest'}
+if($TerrainApproach){$arguments+='-terrainapproachselftest'}
 if($ModName -eq 'CompanionBridge'){
     $ipcPort=$Port+1
     if(@(Get-NetTCPConnection -LocalPort $ipcPort -State Listen -ErrorAction SilentlyContinue).Count){throw 'Diagnostic IPC port is in use.'}
@@ -28,7 +30,7 @@ $process=Start-Process -FilePath (Join-Path $TModLoaderPath 'dotnet/dotnet.exe')
     -RedirectStandardOutput "$profile/stdout.log" -RedirectStandardError "$profile/stderr.log"
 try{
     $null=$process.Handle
-    $deadline=[DateTime]::UtcNow.AddSeconds(90)
+    $deadline=[DateTime]::UtcNow.AddSeconds($(if($TerrainApproach){300}else{90}))
     $resultPath=Join-Path $profile 'mining-native-result.json'
     while(!$process.HasExited -and !(Test-Path -LiteralPath $resultPath) -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 300}
     Write-Output "Native diagnostic profile: $profile"

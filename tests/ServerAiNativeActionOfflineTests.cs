@@ -9,6 +9,9 @@ public static class ServerAiNativeActionOfflineTests
     private static void Check(bool ok,string text){if(!ok)throw new Exception(text);checks++;Console.WriteLine("PASS AI native-adapter fixture: "+text);}
     private sealed class Executor : AiAtomicActions.IExecutor
     {
+        public bool SupportsCrafting => true;
+        internal ulong VerifiedProgress;
+        public ulong ProgressVersion(object handle)=>VerifiedProgress;
         internal int Starts,Cancels,Shutdowns;
         internal bool ThrowStart, ThrowCancel, CompleteOnCancel, UnknownOnCancel, KeepInputHeld;
         internal string CancelStatus;
@@ -40,8 +43,63 @@ public static class ServerAiNativeActionOfflineTests
         internal string Start(string operation="mine_tile",CancellationToken token=default){string id=Guid.NewGuid().ToString("N");Send("start",id,operation,token,
             operation=="move_input"?(object)new{horizontal="right",vertical="none",jumpHoldUpdates=8,maxUpdates=60}:operation=="navigate_to_landing_region"?(object)new{minPlayerLeftX=100,maxPlayerLeftX=140,surfaceY=200}:operation=="craft_recipe"?new{recipeId=12,recipeToken=new string('a',64),crafts=3}:null);Tick();Tick();return id;}
     }
+    public static void Autonomy()
+    {
+        var f = new Fixture();
+        using var session = new CancellationTokenSource();
+        JsonElement Request(object request) => JsonDocument.Parse(f.Protocol.Handle(f.Owner,
+            JsonSerializer.Serialize(request), () => f.Current, session.Token)).RootElement.Clone();
+        JsonElement Control(string command) => Request(new {v=1,id="r",op="autonomy",binding=f.Binding,command}).GetProperty("data");
+        JsonElement Start(string id,string version) => Request(new {v=1,id="r",op="start",binding=f.Binding,
+            actionId=id,operation="mine_tile",arguments=new{x=20,y=10},autonomyVersion=version,
+            expiresAtUnixMs=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()+1000});
+        Check(!Control("status").GetProperty("enabled").GetBoolean(),"default off");
+        Control("on");
+        string version=Control("grant").GetProperty("version").GetString();
+        string id=Guid.NewGuid().ToString("N");
+        Check(Start(id,version).GetProperty("ok").GetBoolean(),"bound version admits work");
+        f.Tick(); f.Tick();
+        Check(!Control("pause").GetProperty("released").GetBoolean(),"pause waits for native stop");
+        f.Tick();
+        Check(f.Native.Cancels==1 && Control("status").GetProperty("released").GetBoolean(),"release confirmed");
+        Check(Start(Guid.NewGuid().ToString("N"),version).GetProperty("error").GetString()=="autonomy_revoked","late start refused");
+        string renewed=Control("grant").GetProperty("version").GetString();
+        Check(renewed!=version,"renewal uses a fresh version");
+        session.Cancel();
+        Check(Start(Guid.NewGuid().ToString("N"),renewed).GetProperty("error").GetString()=="autonomy_revoked",
+            "disconnected control session cannot dispatch");
+        f.Current=f.Current with {Generation=2};
+        Check(Start(Guid.NewGuid().ToString("N"),renewed).GetProperty("error").GetString()=="stale_binding",
+            "old generation refused");
+        f.Current=f.Current with {Generation=1};
+        f.Protocol.ObserveAutonomyIdentity(null);
+        Check(!Control("status").GetProperty("enabled").GetBoolean(),"identity loss clears authorization");
+        string manual=f.Start();
+        Control("off"); f.Tick();
+        Check(f.Action(manual).GetProperty("status").GetString()=="running","off leaves manual work running");
+    }
+
+    public static void NavigationLease()
+    {
+        var journey = new Fixture();
+        string id = journey.Start("navigate_to");
+        for (int checkpoint = 1; checkpoint <= 3; checkpoint++)
+        {
+            journey.Time += 120000;
+            journey.Native.VerifiedProgress++;
+            journey.Tick();
+            Check(journey.Action(id).GetProperty("status").GetString()=="running",
+                "same destination stays active after verified navigation progress");
+        }
+        journey.Time += 180001;
+        journey.Tick();
+        Check(journey.Action(id).GetProperty("stopRequest").GetProperty("reason").GetString()=="execution_deadline",
+            "idle navigation still expires when its progress lease runs out");
+    }
     public static void Run()
     {
+        Autonomy();
+        NavigationLease();
         {
             var f = new Fixture();
             string id = Guid.NewGuid().ToString("N");

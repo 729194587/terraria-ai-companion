@@ -128,7 +128,8 @@ internal static class SceneGeometry
         if(sources.Contains("honey"))return 'H';
         return 'M';
     }
-    internal static SceneObject[] Objects(SceneCell[,] cells,int ox,int oy,Func<int,int,object> oreTarget=null,float actorX=0,float actorY=0,int maxGroups=int.MaxValue)
+    internal static SceneObject[] Objects(SceneCell[,] cells,int ox,int oy,Func<int,int,object> oreTarget=null,float actorX=0,float actorY=0,int maxGroups=int.MaxValue,
+        Action<SceneCell,List<(int x,int y)>,bool> observeGroup=null)
     {
         int w=cells.GetLength(0),h=cells.GetLength(1);var seen=new HashSet<(int,int)>();var output=new List<SceneObject>();
         var anchors=new Dictionary<(string,int,int,int),List<(int,int)>>();
@@ -167,6 +168,7 @@ internal static class SceneGeometry
         return output.ToArray();
         void Add(SceneCell c,List<(int x,int y)> group,bool complete)
         {
+            observeGroup?.Invoke(c,group,complete);
             int minX=group.Min(p=>p.x),maxX=group.Max(p=>p.x),minY=group.Min(p=>p.y),maxY=group.Max(p=>p.y);
             var bottom=group.OrderByDescending(p=>p.y).ThenBy(p=>p.x).First();
             output.Add(new("o"+(output.Count+1),c.Kind,c.Facts.TileType,c.ContentKey,new(minX+ox,minY+oy,maxX-minX+1,maxY-minY+1),

@@ -25,12 +25,18 @@ async def verify(args):
         print(f"Native rope {label}: {action.get('status')} {action.get('reason')}", flush=True)
 
     async def setup(mode):
+        nonlocal bridge
         ready = profile / "rope-motion-ready.json"
         ready.unlink(missing_ok=True)
         temp = profile / "rope-motion-request.tmp"
         temp.write_text(mode)
         temp.replace(profile / "rope-motion-request")
-        return await wait_file(ready)
+        scene = await wait_file(ready)
+        # The fixture replaces terrain outside the agent session. A failed
+        # move from the previous layout has no bearing on this layout.
+        bridge.close()
+        bridge = ServerAiBridge(args.port)
+        return scene
 
     async def move(label, feet, finish="hold", status="completed", reason=None, updates=250, column=None):
         source = "return api('move_on_rope',{ropeX=%d,targetFeetY=%s,finish='%s',maxUpdates=%d})" % (

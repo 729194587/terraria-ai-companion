@@ -44,9 +44,10 @@ internal static class ActorCrafting
         Actor();consumeNative(r);
         currentStep.Batches.Add(new{consumed=Consumed.Select(i=>new{typeId=i.type,count=i.stack}).ToArray()});
     }
+    internal static bool Initialized { get; private set; }
     internal static void Initialize()
     {
-        // Called only after the existing exact engine fingerprint / isolation checks.
+        Initialized = false;
         T Copy<T>(MethodInfo method,string kind) where T:Delegate
         {
             using var d=new DynamicMethodDefinition(method);
@@ -70,6 +71,7 @@ internal static class ActorCrafting
             CraftingPatches.Patch(d.Definition,"condition",d.Definition.Module.ImportReference(typeof(ActorCrafting).GetMethod(nameof(Actor),Flags)),null,null);
             conditions[c]=(Func<bool>)d.Generate().CreateDelegate(typeof(Func<bool>),predicate.Target);
         }
+        Initialized = true;
     }
     private static T InScope<T>(AiReadOnlyProtocol.Identity identity,Func<Player,T> action)
     {

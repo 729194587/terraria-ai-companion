@@ -29,6 +29,12 @@ internal static class AiMapRuntime
         if(Map==null||p==null||!WorldCharacterPersistence.Ready||p.dead||p.ghost||!p.active||ProbeSession.Quarantined)return;
         if(!force&&lastTick!=ulong.MaxValue&&Main.GameUpdateCount-lastTick<15)return;
         lastTick=Main.GameUpdateCount;
+        Map.BeginSample();
+        try { Sample(p); }
+        finally { Map.EndSample(); }
+    }
+    private static void Sample(Player p)
+    {
         int cx=Math.Clamp((int)(p.Center.X/16),0,Map.Width-1),cy=Math.Clamp((int)(p.Center.Y/16),0,Map.Height-1);
         int left=Math.Max(0,cx-60),right=Math.Min(Map.Width-1,cx+59),top=Math.Max(0,cy-34),bottom=Math.Min(Map.Height-1,cy+33);
         var torches=new System.Collections.Generic.List<(int x,int y)>();
@@ -51,6 +57,6 @@ internal static class AiMapRuntime
     {
         if(Map==null||x<0||y<0||x>=Map.Width||y>=Map.Height)return;
         var t=Main.tile[x,y];byte value=t.LiquidAmount>0?(byte)(4+t.LiquidType):t.HasTile&&!t.IsActuated&&Main.tileSolidTop[t.TileType]?(byte)3:Solid(x,y)?(byte)2:(byte)1;
-        Map.Remember(x,y,value);
+        Map.Remember(x,y,value,checked((long)Main.GameUpdateCount));
     }
 }

@@ -7,6 +7,46 @@ namespace CompanionBridge.Motion;
 // A conservative one-edge producer, not another executor or a replacement search.
 internal static class SafeGroundWalk
 {
+    internal static Route TryAscend(PhysicsState start,LandingRegion goal,PhysicsParameters ph,IMotionWorld world)
+    {
+        if(goal.SurfaceY>=start.Py+PhysicsSimulator.PlayerH-LandingRegion.FeetTolerance ||
+            start.Wet || !PhysicsSimulator.SupportedCheckpoint(start,world))return null;
+        float target=Math.Clamp(start.Px,goal.MinPlayerLeftX,goal.MaxPlayerLeftX);
+        if(Math.Abs(target-start.Px)<16)return null;
+        int direction=Math.Sign(target-start.Px);
+        var watch=Stopwatch.StartNew();
+        foreach(int hold in new[]{0,8,ph.JumpHeight})
+        {
+            var edge=PhysicsSimulator.Predict(start,direction,hold,ph,world,walkFrames:30,walkingGoal:goal);
+            if(!edge.Safe || edge.Landing.Py>start.Py-4 || edge.Frames.Any(f=>f.State.Wet)
+                || direction*(edge.Landing.Px-start.Px)<4 || goal.Distance(edge.Landing)>=goal.Distance(start)
+                || (direction>0?edge.Landing.Px>goal.MaxPlayerLeftX:edge.Landing.Px<goal.MinPlayerLeftX))continue;
+            return new(new(){edge with{ExecuteFrames=edge.Frames.Count}},0,watch.Elapsed.TotalMilliseconds,
+                ReachedGoal:goal.Arrived(edge.Landing,world),Kind:"uphill_approach");
+        }
+        return null;
+    }
+
+    internal static Route TryDescend(PhysicsState start,LandingRegion goal,PhysicsParameters ph,IMotionWorld world)
+    {
+        if(!ph.IsSupportedGroundPhysics || goal.SurfaceY<=start.Py+PhysicsSimulator.PlayerH+LandingRegion.FeetTolerance
+            || !PhysicsSimulator.SupportedCheckpoint(start,world) || start.Wet)return null;
+        var watch=Stopwatch.StartNew();
+        int direction=Math.Sign((goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2-start.Px);
+        if(direction==0)return null;
+        foreach(int stride in new[]{36,24,12,6})
+        {
+            var edge=PhysicsSimulator.Predict(start,direction,0,ph,world,walkFrames:stride,walkingGoal:goal);
+            if(!edge.Safe || edge.Landing.Py<=start.Py+1 || edge.Frames.Any(f=>f.State.Wet)
+                || goal.Distance(edge.Landing)>=goal.Distance(start)
+                || (direction>0?edge.Landing.Px>goal.MaxPlayerLeftX:edge.Landing.Px<goal.MinPlayerLeftX))continue;
+            // Execute the braking tail before selecting the next stair.
+            edge=edge with{ExecuteFrames=edge.Frames.Count};
+            return new(new(){edge},0,watch.Elapsed.TotalMilliseconds,ReachedGoal:goal.Arrived(edge.Landing,world),Kind:"downhill_walk");
+        }
+        return null;
+    }
+
     internal static Route TryPlan(PhysicsState start,float targetX,int direction,PhysicsParameters ph,IMotionWorld world,LandingRegion region=null)
     {
         var watch=Stopwatch.StartNew();
@@ -18,7 +58,7 @@ internal static class SafeGroundWalk
         foreach(int stride in strides)
         {
             // Includes the original complete braking/stable-support proof.
-            var edge=PhysicsSimulator.Predict(start,direction,0,ph,world,walkFrames:stride);
+            var edge=PhysicsSimulator.Predict(start,direction,0,ph,world,walkFrames:stride,walkingGoal:region);
             if(!edge.Safe||edge.Jump||edge.Frames.Count==0)continue;
             bool flat=true;
             foreach(var frame in edge.Frames)

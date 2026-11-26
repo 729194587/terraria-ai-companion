@@ -11,12 +11,117 @@ from agent_run import AgentRun, interruption
 from agent_tools import ToolExecutor
 import atomic_operations as atomic
 from control import BridgeError
+import directional_explorer as explorer
 import evidence
 import agent_memory
 import gameplay_skills
 import lua_agent
+import program_tasks
+from sensed_resources import ResourceHistory
 from server_ai_contract import server_definitions
 from lua_runtime import LuaRuntime
+
+
+EXPLORER_GUIDE = (
+    '未知区域优先调用 MCP explore(direction,objective)，避免用 Lua 循环查询、导航和扫描。'
+    '已知目的地使用 navigate_to；调查发现时优先用 mine_target、collect_drops 等现有任务。'
+    '根据 explorationResult 的 returnReason、findings、实际位移和原生回执决定调查、沿原方向续行或改向。'
+    'completed 或 budget_reached 只描述本次有界探索，整体目标仍需核验。'
+)
+
+
+def explorer_available(agent):
+    bridge = agent.bridge
+    required = {'server_ai_navigation_v1', 'server_ai_perception_v1', 'server_ai_scene_v1', 'server_ai_scene_region_v1',
+                'server_ai_resources_v1', 'server_ai_region_resources_v1', 'server_ai_directional_landings_v1'}
+    tasks = agent.program_tasks
+    return (tasks is not None and tasks.bridge is bridge and not tasks.closed and program_tasks.available(bridge)
+            and required.issubset(bridge.hello['capabilities'])
+            and {'observe_scene', 'navigate_to'}.issubset(bridge.supported_atomic_operations))
+
+
+class ExternalExplorer(explorer.ExplorerContext):
+    """One MCP call. Only the resource history and coordinator outlive the call."""
+
+    def __init__(self, host, objective):
+        self.host = host
+        self.agent = host.agent
+        self.mailbox = self.agent.program_tasks
+        self.resources = host.resources
+        self.objective = objective
+        self.progress = {}
+        self.task_id = None
+        self.call = asyncio.current_task()
+        self.origin = {k: v for k, v in tracing.context.get().items() if k in tracing.MCP_CORRELATION}
+        self.origin.update(source='external_explore', leaseVersion=host.lease_version)
+
+    @property
+    def version(self):
+        host = self.host
+        if (host.phase == 'external' and not self.call.cancelling() and not host.bridge._closed
+                and host.bridge is self.agent.bridge and host.bridge.binding == host.lease_binding
+                and self.mailbox is self.agent.program_tasks):
+            return host.lease_version
+
+    async def submit_owned(self, operation, arguments, version):
+        task = program_tasks.validate('submit_task', dict(operation=operation, arguments=arguments))
+        # submit registers this ID before its first cancellable wait for native acknowledgement.
+        self.task_id = uuid.uuid4().hex
+        origin = dict(self.origin, segment=len(self.progress['explorationResult']['segments']) + 1)
+        def authorized():
+            return self.version == version
+        view = await self.mailbox.submit(task, origin, task_id=self.task_id,
+                                         authorize=authorized, dispatch_guard=authorized)
+        if not view.get('taskId'):
+            self.task_id = None
+            return None, view
+        return self.mailbox.records[self.task_id], None
+
+    async def terminal(self, record):
+        # After a stop request the native monitor must still produce a terminal receipt.
+        await asyncio.wait_for(record['done'].wait(), self.host.bridge.timeout + 2)
+        receipt = record['view']['result']
+        if not self.released(receipt):
+            self.host.isolate()
+            return {**receipt, 'status': 'unknown', 'dispatchState': 'unknown'}
+        return receipt
+
+    def released(self, receipt):
+        if receipt.get('dispatchState') == 'not_admitted':
+            return receipt.get('inputsAcquired') is False
+        return (receipt.get('actionId') == self.task_id and receipt.get('inputsReleased') is True
+                and self.host._safe_terminal(receipt))
+
+    async def drain(self):
+        record = self.mailbox.records.get(self.task_id)
+        if record is None:
+            return  # Cancellation while waiting for the admission lock: never registered.
+        try:
+            if not record['done'].is_set():
+                await self.mailbox.invoke('cancel_task', dict(taskId=self.task_id))
+            receipt = await self.terminal(record)
+            safe = self.released(receipt)
+        except Exception as error:
+            receipt = dict(status='unknown', reason=str(error))
+            safe = False
+        if not safe:
+            self.host.isolate()
+        outcome = dict(taskId=self.task_id, receipt=self.receipt_fields(receipt), releaseConfirmed=safe)
+        self.host.last_outcome = outcome
+        diagnostics.emit('mcp_explore_cleanup', **outcome)
+
+    async def run(self, direction):
+        version = self.host.lease_version
+        if self.version != version:
+            raise BridgeError('External explorer binding unavailable', status='stale_binding')
+        try:
+            baseline = await self.resource_scan(version)
+            result = await explorer.run(self, direction, version, baseline, report_initial_findings=True)
+            if result['status'] == 'unknown':
+                self.host.isolate()
+            return result
+        finally:
+            await self.drain()
 
 
 class BrainHost:
@@ -25,6 +130,8 @@ class BrainHost:
         self.bridge = agent.bridge
         self.is_chat = is_chat
         self.guide, native_tools = lua_agent.server_contract(self.bridge, compact=True)
+        if explorer_available(agent):
+            native_tools = [*native_tools, explorer.EXPLORE_TOOL]
         if agent.notebook is not None:
             self.guide += agent_memory.MEMORY_RULES
             native_tools = [*native_tools, agent_memory.TOOL]
@@ -44,6 +151,7 @@ class BrainHost:
         self.evicted = 0
         self.dropped = 0
         self.phase = 'native'
+        self.lease_version = 0
         self.last_outcome = None
         self.active_program = None
         self.execution_busy = False
@@ -74,6 +182,9 @@ class BrainHost:
             return False
         self.delivered_chat = None
         self.phase = 'acquiring'
+        self.lease_version += 1
+        self.lease_binding = dict(self.bridge.binding)
+        self.resources = ResourceHistory()
         self.agent._brain_paused = True
         self.agent._active_turn_id = None
         self.agent._invalidate_turn('external_brain_handoff')
@@ -166,7 +277,8 @@ class BrainHost:
     async def invoke(self, name, args):
         if self.phase != 'external':
             raise ValueError('External Brain lease is unavailable')
-        if self.bridge._closed or getattr(self.bridge, '_lua_poisoned', False):
+        if (self.bridge._closed or getattr(self.bridge, '_lua_poisoned', False)
+                or self.agent.bridge is not self.bridge or self.bridge.binding != self.lease_binding):
             self.isolate()
             raise ValueError('Server AI state is unresolved; restart only after inspecting the Actor')
         if name == 'guide':
@@ -179,6 +291,8 @@ class BrainHost:
                 return {'functions': [definitions[n] for n in names if n in definitions],
                         'unavailable': [n for n in names if n not in definitions]}
             instructions = self.agent.history[0]['content'] if args.get('full') else self.guide
+            if explorer_available(self.agent):
+                instructions = EXPLORER_GUIDE + '\n' + instructions
             return {'instructions': '外部驾驶时，execute_lua 的顶层 events 与 value 一起读取。回复中已交付的消息不会在 get_events 重发。\n' + instructions, **self.memory_context()}
         if name == 'memory' and self.agent.notebook is not None:
             chat = self.delivered_chat
@@ -201,12 +315,21 @@ class BrainHost:
                 return await self.runtime_context()
             finally:
                 self.polling = False
-        if name not in ('execute_lua', 'say'):
+        if name not in ('execute_lua', 'say', 'explore') or name == 'explore' and not explorer_available(self.agent):
             raise ValueError('Unknown MCP tool')
         if self.execution_busy:
             raise ValueError('An execution tool is already active')
         self.execution_busy = True
         try:
+            if name == 'explore':
+                if (set(args) != {'direction', 'objective'} or args['direction'] not in explorer.DIRECTIONS
+                        or not isinstance(args['objective'], str) or not args['objective'].strip()
+                        or len(args['objective']) > 240):
+                    raise ValueError('explore requires direction and a short objective (1..240 characters)')
+                trip = ExternalExplorer(self, args['objective'])
+                result = await trip.run(args['direction'])
+                diagnostics.emit('mcp_explore_result', explorationResult=result['explorationResult'])
+                return {**result, **await self.runtime_context()}
             if name == 'say':
                 chat_id = self.agent._active_turn_id
                 if chat_id is None:

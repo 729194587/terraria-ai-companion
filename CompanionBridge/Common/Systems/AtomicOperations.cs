@@ -113,6 +113,12 @@ internal static class AtomicOperations
                 int x = a.GetProperty("x").GetInt32(), y = a.GetProperty("y").GetInt32();
                 data = AtomicQueries.InspectTile(p, x, y); break;
             case "scan_entities": data = AtomicQueries.ScanEntities(p, a, Ref); break;
+            case "query_item_sources":
+            case "query_item_info":
+                int typeId = a.GetProperty("typeId").GetInt32();
+                data = request.Operation == "query_item_sources" ? ItemSourcesQuery.Read(typeId) : ItemInfoQuery.Read(typeId);
+                if (data == null) return new { available = false, reason = "unknown_item_type" };
+                break;
             case "resolve_content": data = AtomicQueries.Resolve(a); break;
             case "get_player_status": data = AtomicQueries.PlayerStatus(ObservationReader.ReadPlayer(p)); break;
             default: throw new ArgumentException("Unsupported query");

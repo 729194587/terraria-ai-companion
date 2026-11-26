@@ -54,6 +54,30 @@ internal static class ServerAiActionFixture
                     x=left+8;y=floor-2;
                     for(int tx=x;tx<=x+1;tx++){var tile=Main.tile[tx,y];tile.HasTile=true;tile.TileType=TileID.Stone;}
                     var cancelTile=Main.tile[x,y-1];cancelTile.HasTile=true;cancelTile.TileType=TileID.Stone;
+                    if(Program.LaunchParameters.ContainsKey("-companionautonomytest"))
+                    {
+                        // Entirely buried diagnostic objects in the disposable world.
+                        foreach(int dx in new[]{-6,22,25})
+                        for(int col=0;col<2;col++)for(int row=0;row<2;row++)
+                        {
+                            var tile=Main.tile[left+dx+col,floor+4+row];
+                            tile.ClearEverything();tile.HasTile=true;
+                            tile.TileType=dx<0?TileID.Containers:TileID.Heart;
+                            tile.TileFrameX=(short)(18*col);tile.TileFrameY=(short)(18*row);
+                        }
+                        p.inventory[4].SetDefaults(ItemID.SuspiciousLookingEye);
+                    }
+                    if(Program.LaunchParameters.ContainsKey("-companiondirectiontest"))
+                    {
+                        // A flat disposable corridor with one mineable ore beyond the initial 120-Tile view.
+                        for(int tx=left-80;tx<=left+220;tx++)for(int ty=floor-40;ty<=floor+36;ty++)
+                        {
+                            var tile=Main.tile[tx,ty];
+                            tile.ClearEverything();
+                            if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
+                        }
+                        var ore=Main.tile[left+111,floor];ore.TileType=TileID.Copper;
+                    }
                     if(Program.LaunchParameters.ContainsKey("-companionperceptiontest"))
                     {
                         // Explicit extra flag inside the existing copied-world fixture only.
@@ -109,6 +133,15 @@ internal static class ServerAiActionFixture
                     initialized=true;NetworkStateSync.Full(p);
                     File.WriteAllText(Path.Combine(Main.SavePath,"action-fixture.json"),JsonSerializer.Serialize(new{targetX=p.position.X+64,mineX=x,mineY=y,
                         initialLife=p.statLife,initialAppleStack=2,perceptionNpcSlot=perceptionNpc?.whoAmI,mode="isolated copied world; diagnostic native Main.Update frames; no clients"}));
+                }
+            }
+            if (Program.LaunchParameters.ContainsKey("-companionautonomytest") && ServerAiSystem.AgentActive)
+            {
+                string marker=Path.Combine(Main.SavePath,"autonomy-test-death");
+                if (File.Exists(marker))
+                {
+                    File.Delete(marker);
+                    NativeSurvival.Debug(ProbeSession.Actor,ProbeSession.WorldSession,ProbeSession.ActorGeneration,true);
                 }
             }
             // One deterministic external edit, only in the explicit copied-world Building test.

@@ -8,7 +8,7 @@ using CompanionBridge.Common.Systems;
 
 namespace CompanionBridge.Motion;
 
-internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
+internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain, IPoolMotionWorld
 {
     public IMotionWorld MotionAt(PhysicsState pose)=>new NativeMotionWorld(pose);
     public SurfaceCell ReadSurfaceCell(int x,int y)
@@ -30,9 +30,23 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
     private readonly int _left, _top;
     private readonly bool _captureContacts;
     public NavigationBlockingTile[] LastHorizontalContact {get;private set;}
-    internal NativeMotionWorld(PhysicsState start,bool captureContacts=false)
+    private readonly bool allowOrdinaryWater;
+    public int Breath { get; }
+    public IMotionWorld PoolWorld(PhysicsState start)=>new NativeMotionWorld(start,_captureContacts,Breath,true);
+    public bool WaterAhead(PhysicsState start,int direction)
     {
-        _captureContacts=captureContacts;
+        int cx=FallSafety.Row(start.Px+10),row=FallSafety.Row(start.Py+42);
+        for(int dx=0;dx<=4;dx++)
+            for(int y=row-2;y<=row+3;y++)
+            {
+                int x=cx+direction*dx;
+                if(TerrainReader.Loaded(x,y)&&Main.tile[x,y].LiquidAmount>0&&Main.tile[x,y].LiquidType==LiquidID.Water)return true;
+            }
+        return false;
+    }
+    internal NativeMotionWorld(PhysicsState start,bool captureContacts=false,int breath=0,bool allowOrdinaryWater=false)
+    {
+        _captureContacts=captureContacts;Breath=breath;this.allowOrdinaryWater=allowOrdinaryWater;
         _left = (int)Math.Floor((start.Px + 10) / 16) - 22;
         _top = (int)Math.Floor((start.Py + 42) / 16) - 17;
     }
@@ -70,7 +84,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
         for (int x = (int)Math.Floor(left / 16); x < (int)Math.Ceiling(right / 16); x++)
             for (int y = (int)Math.Floor(top / 16); y < (int)Math.Ceiling(bottom / 16); y++)
             {
-                if (x < _left || x >= _left + 45 || y < _top || y >= _top + 17 + FallSafety.LookaheadPixels/16 + 5)
+                if (x < _left-64 || x >= _left + 45+64 || y < _top-64 || y >= _top + 17 + FallSafety.LookaheadPixels/16 + 5)
                     throw new UnsafeMotionException($"outside local prediction window at ({x},{y})");
                 char cell = TerrainReader.ReadCell(x, y);
                 if (cell == '?') throw new UnsafeMotionException($"unknown terrain at ({x},{y})");
@@ -84,7 +98,7 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
         {
             Check(Math.Min(start.Px, end.Px) - 2, Math.Min(start.Py, end.Py) - 2,
                 Math.Max(start.Px, end.Px) + 22, Math.Max(start.Py, end.Py) + 44, true);
-            reason = NativeLiquidRisk.Rejection(start,end);
+            reason = NativeLiquidRisk.Rejection(start,end,allowOrdinaryWater);
             return reason==null;
         }
         catch (UnsafeMotionException error) { reason = error.Message; return false; }
@@ -177,14 +191,20 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain
     internal static PhysicsState Observe(Player player)
     {
         var state=new PhysicsState(player.position.X,player.position.Y,player.velocity.X,player.velocity.Y,
-            false,player.jump,player.releaseJump,Wet:player.wet);
+            false,player.jump,player.releaseJump,Wet:player.wet,Cooldowns:NavigationAirActions.Capture(player).Cooldowns);
         var movement=NativeMovementReader.Capture(player);
         var model=ExtraJumpModel.Select(movement);
         if(AirMotionModel.Select(movement)!=null)state=state with{Air=AirMotionModel.Resources(movement)};
         if(model!=null)
         {
-            var jump=Array.Find(movement.ExtraJumps,j=>j.FullName==model.FullName);
-            state=state with{ExtraAvailable=jump.Available,ExtraActive=jump.Active,ExtraUsed=jump.Active||!jump.Available};
+            int remaining=0,active=0;
+            foreach(var jump in movement.ExtraJumps)
+            {
+                if(!jump.Enabled || model.Find(jump.FullName) is not {} kind)continue;
+                if(jump.Available)remaining|=kind.Bit;
+                if(jump.Active)active|=kind.Bit;
+            }
+            state=state with{ExtraAvailable=remaining!=0,ExtraActive=active!=0,ExtraUsed=remaining==0,RemainingJumps=remaining,ActiveJump=active};
         }
         if(player.width!=PhysicsSimulator.PlayerW||player.height!=PhysicsSimulator.PlayerH||player.gravDir!=1)
             return state;

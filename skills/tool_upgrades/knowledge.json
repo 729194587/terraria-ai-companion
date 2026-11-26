@@ -1,0 +1,33 @@
+{
+  "game_version": "Terraria 1.4.4.9",
+  "records": {
+    "Terraria/MoltenPickaxe": {
+      "kind": "item", "names": ["熔岩镐", "Molten Pickaxe", "熔岩鎬"],
+      "method": "craft", "station": "铁砧或铅砧", "verify": "查询目标配方与站点邻接状态",
+      "source": "https://terraria.wiki.gg/wiki/Molten_Pickaxe"
+    },
+    "Terraria/HellstoneBar": {
+      "kind": "item", "names": ["狱石锭", "Hellstone Bar", "獄石錠"],
+      "method": "craft", "stationTile": "Terraria/Hellforge", "verify": "查询锭配方与熔炉邻接状态",
+      "source": "https://terraria.wiki.gg/wiki/Hellstone_Bar"
+    },
+    "Terraria/Hellstone": {
+      "kind": "item", "names": ["狱石", "Hellstone", "獄石"],
+      "method": "mine", "tile": "Terraria/Hellstone", "region": "地狱", "minPickaxePower": 65,
+      "hazard": "接触有灼烧危险，地狱挖除后释放熔岩", "verify": "复查矿格、工具、站位和液体，拾取后核实入包",
+      "source": "https://terraria.wiki.gg/wiki/Hellstone"
+    },
+    "Terraria/Obsidian": {
+      "kind": "item", "names": ["黑曜石", "Obsidian", "黑耀石"],
+      "method": "mine", "tile": "Terraria/Obsidian", "environment": "水与熔岩接触处", "minPickaxePower": 55,
+      "hazard": "形成处可能仍有熔岩", "verify": "确认已形成的方块、工具和安全站位，拾取后核实入包",
+      "source": "https://terraria.wiki.gg/wiki/Obsidian"
+    },
+    "Terraria/Hellforge": {
+      "kind": "tile", "names": ["地狱熔炉", "Hellforge"],
+      "method": "locate", "region": "地狱废屋", "hazard": "附近可能有熔岩",
+      "verify": "现场确认站点，再读狱石锭配方的邻接状态",
+      "source": "https://terraria.wiki.gg/wiki/Hellforge#History"
+    }
+  }
+}

@@ -17,7 +17,11 @@ public static class SurvivalPatches
     private static void Require(bool valid,string name) { if(!valid)throw new InvalidOperationException("Unsupported native survival IL: "+name); }
     private static void Guard(MethodDefinition m,int entryOffset,int targetOffset,MethodReference owns)
     {
-        var entry=At(m,entryOffset);var target=At(m,targetOffset);var il=m.Body.GetILProcessor();
+        Guard(m, At(m, entryOffset), At(m, targetOffset), owns);
+    }
+    private static void Guard(MethodDefinition m, Instruction entry, Instruction target, MethodReference owns)
+    {
+        var il=m.Body.GetILProcessor();
         var guard=Instruction.Create(OpCodes.Ldarg_0);
         foreach(var i in m.Body.Instructions.ToArray())
         {
@@ -50,6 +54,15 @@ public static class SurvivalPatches
                 &&Call(At(m,0x116),"PickupItem")&&At(m,0xaa)!=null,operation);
             Guard(m,0x9f,0xaa,owns);
         }
+        else if(operation=="breath")
+        {
+            var read=m.Body.Instructions.SingleOrDefault(Local);
+            var branch=read?.Next?.Next?.Next;
+            Require(m.Name.Contains("CheckDrowning")&&read?.Next?.OpCode==OpCodes.Ldarg_0
+                &&read.Next.Next.Operand is FieldReference field&&field.FullName=="System.Int32 Terraria.Entity::whoAmI"
+                &&NotEqual(branch)&&Target(branch)!=null&&m.Body.Instructions.Any(i=>Call(i,"get_breathCDMax")),operation);
+            Guard(m,read,branch.Next,owns);
+        }
         else if(operation=="lethal")
         {
             Require(m.Name.Contains("Hurt")&&Local(At(m,0x97f))&&NotEqual(At(m,0x984))&&Target(At(m,0x984))==At(m,0x991)&&Call(At(m,0x98c),"KillMe")&&At(m,0x979)?.OpCode==OpCodes.Ldarg_0,operation);
@@ -57,11 +70,27 @@ public static class SurvivalPatches
         }
         else if(operation=="dodge")
         {
-            var plan=new[]{(0x196,0x1a1,0x1a3,"FreeDodge"),(0x1b7,0x1c2,0x1c4,"NinjaDodge"),
-                (0x1ea,0x1f5,0x1f7,"BrainOfConfusionDodge"),(0x237,0x242,0x244,"ShadowDodge"),(0x25c,0x267,0x269,"ConsumableDodge")};
-            Require(m.Name.Contains("Hurt")&&plan.All(p=>At(m,p.Item1)?.OpCode==OpCodes.Ldarg_0&&Local(At(m,p.Item2)?.Previous)&&NotEqual(At(m,p.Item2))&&Target(At(m,p.Item2))!=null
-                &&At(m,p.Item3)!=null&&m.Body.Instructions.Any(i=>Call(i,p.Item4))),operation);
-            foreach(var p in plan)Guard(m,p.Item1,p.Item3,owns);
+            // Other IL adapters can move these blocks. Identify the guarded call in its
+            // branch region, then bypass only the validated local-player comparison.
+            string[] names = ["FreeDodge", "NinjaDodge", "BrainOfConfusionDodge", "ShadowDodge", "ConsumableDodge"];
+            var instructions = m.Body.Instructions;
+            var guards = instructions.Where(i => NotEqual(i) && Local(i.Previous)
+                && i.Previous.Previous?.Operand is FieldReference field && field.Name == "whoAmI"
+                && i.Previous.Previous.OpCode == OpCodes.Ldfld && i.Previous.Previous.Previous?.OpCode == OpCodes.Ldarg_0
+                && Target(i) is {} end && instructions.IndexOf(end) > instructions.IndexOf(i)).ToArray();
+            var plan = names.Select(name => guards.Where(branch =>
+            {
+                for (var i = branch.Next; i != null && i != Target(branch); i = i.Next)
+                    if (Call(i, name)) return true;
+                return false;
+            }).ToArray()).ToArray();
+            Require(m.Name.Contains("Hurt") && plan.All(matches => matches.Length == 1)
+                && plan.Select(matches => matches[0]).Distinct().Count() == names.Length, operation);
+            foreach (var matches in plan)
+            {
+                var branch = matches[0];
+                Guard(m, branch.Previous.Previous.Previous, branch.Next, owns);
+            }
         }
         else if(operation=="death-drops")
         {

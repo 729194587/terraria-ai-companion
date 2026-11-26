@@ -251,6 +251,8 @@ def observation(data):
     return any_of(extend(ref('ObservationEnvelope'), {'data': data}), ref('ObservationUnavailable'))
 
 
+PLAN_AMOUNT = {'typeId': I, 'contentKey': S, 'count': COUNT}
+
 NPC_HOME_STATE = {**fields(strings='entityRef', integers='type slot homeTileX homeTileY',
                            booleans='active townNPC homeless managerHasRoom'), 'managerHomeTile': nullable(ref('TilePoint'))}
 FUNDS = obj({name: COUNT for name in ('carriedCopper', 'piggyBank', 'safe', 'defendersForge', 'voidVault', 'totalCopper')})
@@ -261,9 +263,11 @@ READ_DATA_SCHEMAS = {
     'query_map': obj({
         **QUERY_METADATA, **fields(integers='schemaVersion originX originY cellSize width height',
                                    strings='worldUid characterId legend knowledge visibility'),
+        **fields(integers='mapRevision worldWidth worldHeight chunkSize', strings='observationSession'),
+        'chunks': array(obj(fields(integers='x y contentRevision knownCount lastSeenTick',strings='lastSeenSession'))),
         'mode': enum('overview', 'region'), 'rows': array(S),
         'exploredRatio': desc(N, 'Proportion of known map cells in this last-known memory, not live observation.'),
-    }),
+    }, optional=('mapRevision','worldWidth','worldHeight','chunkSize','observationSession','chunks')),
     'scan_entities': obj({
         **QUERY_METADATA, **COLLECTION, 'items': array(SCANNED_ENTITY), 'radiusPixels': N, 'sort': S,
         'complete': B, 'status': enum('not_found', 'ok'), 'originWorldPixels': ref('WorldPoint'), 'scope': S,
@@ -318,6 +322,25 @@ OBSERVATIONS = {
         'status': enum('partial_unloaded', 'not_found', 'ok'), 'bounds': ref('TileBounds'),
         'scannedCount': COUNT, 'sort': S, 'coordinates': S,
     })),
+    'plan_materials': observation(obj({
+        **QUERY_METADATA, **PLAN_AMOUNT, 'inventoryUsed': array(obj(PLAN_AMOUNT)),
+        'deficits': array(obj({**PLAN_AMOUNT, 'reason': enum('no_recipe', 'cycle')})),
+        'steps': array(obj({'typeId': I, 'contentKey': S, 'recipeId': I, 'recipeIds': array(I),
+                            'batches': COUNT, 'outputPerBatch': COUNT, 'inputs': array(obj(PLAN_AMOUNT)),
+                            'stations': array(S), 'conditions': array(S)})),
+    })),
+    'query_item_sources': observation(obj({
+        **QUERY_METADATA, 'typeId': I, 'contentKey': S,
+        'sources': array(obj({'netId': I, 'npcType': I, 'name': S, 'contentKey': S, 'boss': B,
+                              'probability': N, 'minStack': I, 'maxStack': I,
+                              'conditions': array(obj({'id': S, 'description': nullable(S)}))})),
+    })),
+    'query_item_info': observation(obj({
+        **QUERY_METADATA, 'typeId': I, 'contentKey': S, 'name': S, 'mod': S,
+        'stats': obj(fields(integers='damage defense pickPower axePower hammerPower rarity valueCopper maxStack mana useTime useAnimation crit healLife healMana',
+                            numbers='knockBack', booleans='accessory consumable')),
+        'tooltip': array(S), 'extraTooltip': S,
+    }, optional=('extraTooltip',))),
     'resolve_content': observation(obj({
         **QUERY_METADATA, **COLLECTION, 'status': enum('not_found', 'ambiguous', 'ok'),
         'kind': enum('tile', 'wall', 'item'), 'mode': enum('search', 'exact'), 'scope': S,
@@ -394,7 +417,7 @@ def scene_object(regional):
     return any_of(
         obj({**SCENE_OBJECT_FIELDS, **targets, 'kind': const('ore_component'), 'details': tile_details},
             optional=('target',)),
-        obj({**SCENE_OBJECT_FIELDS, 'kind': enum('tree_component', 'chest'),
+        obj({**SCENE_OBJECT_FIELDS, 'kind': enum('tree_component', 'chest','life_crystal'),
              'details': tile_details}),
         *(obj({**SCENE_OBJECT_FIELDS, 'kind': const(kind), 'details': tile_details,
                'furniture': furniture(kind)}, optional=('furniture',)) for kind in ('door', 'workbench', 'chair')),
@@ -457,7 +480,7 @@ SCENE_COUNTS = {'observed': dictionary(COUNT), 'returned': dictionary(COUNT)}
 CANDIDATE_VALIDATION = {'validation': S}
 
 
-def scene_variant(regional):
+def scene_variant(regional, resources=False):
     properties = dict(SCENE_BASE)
     if regional:
         properties.update(
@@ -507,6 +530,13 @@ def scene_variant(regional):
             'objectPlacementCandidates': {'objectPlacementMaterial': obj(fields(
                 integers='itemType stack', booleans='supported definitionSupported', strings='anchorMeaning'))},
         }
+    if resources:
+        layers['resources'] = obj({'source': const('region_resource_scan' if regional else 'local_resource_scan'), 'gameUpdate': TICK,
+                'unknownCells': COUNT, 'scannedTiles': COUNT, 'bounds': ref('TileBounds'),
+                'complete': B, 'truncated': B, 'objectGroupingTruncated': B, 'matchedCount': COUNT,
+                'items': array(obj({'kind': enum('chest','life_crystal','ore_component','drop'),
+                    'typeId': I, 'contentKey': S, 'anchor': ref('TilePoint'), 'bounds': ref('TileRect'),
+                    'tiles': array(ref('TilePoint')), 'status': enum('complete','incomplete'), 'entityRef': nullable(S)},optional=('entityRef',)))}, optional=('objectGroupingTruncated',))
     properties['includedLayers'] = {**array(enum(*layers)), 'minItems': 1, 'uniqueItems': True}
     extra = {name: schema for companion in companions.values() for name, schema in companion.items()}
     schema = obj({**properties, **layers, **extra}, optional=(*layers, *extra))
@@ -522,7 +552,9 @@ def scene_variant(regional):
 
 
 DEFS['SceneLocal'] = scene_variant(False)
+DEFS['SceneLocalResources'] = scene_variant(False,resources=True)
 DEFS['SceneRegional'] = scene_variant(True)
+DEFS['SceneRegionalResources'] = scene_variant(True, resources=True)
 
 # These action records use the default C# serializer (PascalCase), unlike
 # inspect_tile and observe_scene. Anonymous object member names stay as written.
@@ -744,7 +776,7 @@ TARGETS = {
     'targetRecipe': ('craft_recipe',),
     'targetInventory': ('manage_trash','switch_equipment_loadout','set_inventory_favorite','drop_inventory_item','dismiss_summon','open_inventory_item','configure_combat_loadout', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item',
                         'equip_item', 'unequip_item'),
-    'targetTask': ('interact_tile','reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','set_team','teleport_to_pylon','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'),
+    'targetTask': ('interact_tile','reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','set_team','teleport_to_pylon','teleport_to_teammate','navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place'),
 }
 MINE_ARGUMENTS = any_of(obj({**TILE_XY, 'cluster': B}, optional=('cluster',)),
                         obj({'target': ref('MineToken'), 'cluster': B}, optional=('cluster',)))
@@ -768,13 +800,16 @@ DEFS['EndEvidence'] = any_of(
 )
 DEFS['StopRequest'] = obj({'status': TERMINAL_STATUS, 'reason': S})
 
-TASK_NAMES = ('navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place')
+TASK_NAMES = ('navigate_to', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')
 TASK_CHILDREN = ('hold_inventory_item', 'navigate_to_x', 'place_item_native', 'navigate_to_landing_region', 'mine_tile', 'place_tile', 'excavate_tiles')
 TASK_EVIDENCE = {
     'navigate_to': obj({'target': ref('WorldPoint'), 'x': PIXEL, 'y': PIXEL, 'feetY': PIXEL,
                         **fields(booleans='arrived grounded safeSupport settled')}),
     'mine_target': ref('MiningEvidence'),
 }
+DEFS['ExplorationEvidence'] = obj({'segments': COUNT, 'newTiles': COUNT, 'returned': B, 'mapRevision': COUNT,
+    **fields(numbers='actualLeft anchorLeft actualFeetY anchorFeetY'),
+    'candidates': nullable(array(obj(fields(integers='x y gain outboundUpdates returnUpdates'))))})
 DEFS['CollectionEvidence'] = obj({
     'collected': array(obj({'typeId': I, 'count': COUNT})),
     'remaining': array(obj({'entityRef': S, 'typeId': I, 'count': COUNT, 'x': N, 'y': N, 'reason': S})),
@@ -908,7 +943,7 @@ def native_preflight(*operations):
 
 DEFS['TaskReceipt'] = obj({
     'status': TERMINAL_STATUS, 'reason': S, 'reasonDetail': nullable(S),
-    'evidence': any_of(*TASK_LEAF_EVIDENCE, TASK_EVIDENCE['navigate_to'], ref('ExcavationEvidence'), ref('CombatProgress'), ref('BossEncounterProgress'), ref('CollectionEvidence'),
+    'evidence': any_of(*TASK_LEAF_EVIDENCE, TASK_EVIDENCE['navigate_to'], ref('ExcavationEvidence'), ref('CombatProgress'), ref('BossEncounterProgress'), ref('ExplorationEvidence'), ref('CollectionEvidence'),
                        native_preflight(*TASK_CHILDREN), NULL),
     **fields(booleans='inputsReleased effectVerified inputsAcquired'),
 })
@@ -920,7 +955,7 @@ DEFS['GameTaskView'] = obj({
     **GAME_TASK_BASE, 'taskName': enum(*TASK_NAMES, *TASK_CHILDREN), **IDENTITY,
     'parentTaskId': nullable(S), 'observedGameUpdate': TICK, 'deadlineGameUpdate': TICK,
     'currentChild': nullable(ref('GameTaskView')),
-    'progress': nullable(any_of(ref('TaskProgress'), BUILD_PROGRESS, ref('ExcavationProgress'), ref('MiningRunEvidence'), ref('CombatProgress'), ref('BossEncounterProgress'), ref('CollectionEvidence'))),
+    'progress': nullable(any_of(ref('TaskProgress'), BUILD_PROGRESS, ref('ExcavationProgress'), ref('MiningRunEvidence'), ref('CombatProgress'), ref('BossEncounterProgress'), ref('ExplorationEvidence'), ref('CollectionEvidence'))),
     'lastResult': nullable(ref('TaskReceipt')), 'result': nullable(ref('TaskReceipt')),
 })
 DEFS['AcceptedGameTask'] = obj({
@@ -1021,6 +1056,7 @@ ACTION_EVIDENCE = {
     'mine_target': 'GameTaskEvidence',
     'combat_attack': 'GameTaskEvidence',
     'boss_encounter': 'GameTaskEvidence',
+    'explore_frontier': 'GameTaskEvidence',
     'collect_drops': 'GameTaskEvidence',
     'place_item': 'GameTaskEvidence',
     'build_place': 'GameTaskEvidence',
@@ -1065,10 +1101,10 @@ DEFS['ActionReceipt'] = obj({
     'effectVerified': nullable(B),
 }, optional=(*RECEIPT_FLAGS, 'targetContainer'), closed=False)
 RAW_TASK_ACTION = {
-    **ACTION_CORE, 'operation': enum('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'), 'status': ACTION_STATUS, 'generation': I, 'durationMs': I,
+    **ACTION_CORE, 'operation': enum(*TASK_NAMES), 'status': ACTION_STATUS, 'generation': I, 'durationMs': I,
     'requestedInputs': NULL, 'executionState': S, 'task': GAME_TASK,
-    'evidence': any_of(ref('GameTaskEvidence'), native_preflight('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'), NULL),
-    **{key: target_schema(key, ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place')) for key in TARGETS if key != 'targetContainer'},
+    'evidence': any_of(ref('GameTaskEvidence'), native_preflight(*TASK_NAMES), NULL),
+    **{key: target_schema(key, TASK_NAMES) for key in TARGETS if key != 'targetContainer'},
 }
 DEFS['RawProgramTaskAction'] = obj({**RAW_TASK_ACTION, 'targetContainer': NULL}, optional=('targetContainer',))
 
@@ -1128,6 +1164,8 @@ TASK_COMPLETION_PROOF = {
             'if': matches(kind=const('chest')),
             'then': matches(chestVerified=TRUE),
         })),
+    'explore_frontier': matches(taskName=const('explore_frontier'), status=const('completed'), phase=const('terminal'),
+        result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence=matches(returned=TRUE, newTiles={'minimum':1}, segments={'minimum':1}))),
     'collect_drops': matches(taskName=const('collect_drops'), status=const('completed'), phase=const('terminal'),
         result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence={
             **matches(remaining={'maxItems': 0}, unavailable={'maxItems': 0}, pickupUnconfirmed=FALSE),
@@ -1312,19 +1350,19 @@ def action_ref(name):
 DEFS.update({'Action_' + name: action_variants(name) for name in ACTION_EVIDENCE})
 DEFS['ProgramTaskUnknownOutcome'] = obj({
     'valid': const(False), 'status': const('unknown'), 'completed': const(False),
-    'operation': enum('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'), 'actionId': S, 'reason': S, 'retryAllowed': const(False), **STOP_CONTINUATION,
+    'operation': enum(*TASK_NAMES), 'actionId': S, 'reason': S, 'retryAllowed': const(False), **STOP_CONTINUATION,
 }, optional=STOP_CONTINUATION)
-DEFS['ProgramTaskOrigin'] = obj({
+DEFS['ProgramTaskOrigin'] = any_of(obj({'goalId': S, 'goalRunId': S}), obj({
     'chatId': nullable(any_of(I, S)), 'programId': S, 'runId': nullable(S),
     'mcp_session_id': S, 'mcp_request_id': any_of(I, S), 'mcp_tool_name': S,
-}, optional=('mcp_session_id', 'mcp_request_id', 'mcp_tool_name'))
+}, optional=('mcp_session_id', 'mcp_request_id', 'mcp_tool_name')))
 PROGRAM_TASK_BASE = {
-    'taskId': S, 'operation': enum('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'),
+    'taskId': S, 'operation': enum(*TASK_NAMES),
     'status': enum('submitting', 'running', 'completed', 'failed', 'cancelled', 'timeout', 'unknown'),
     'valid': B, 'completed': B, 'dispatchState': enum('unknown', 'admitted', 'not_admitted'),
     'origin': nullable(ref('ProgramTaskOrigin')), 'retryAllowed': const(False),
     'action': ref('RawProgramTaskAction'),
-    'result': any_of(action_ref('mine_target'), action_ref('combat_attack'), action_ref('boss_encounter'), action_ref('collect_drops'), action_ref('place_item'), action_ref('build_place'), ref('ProgramTaskUnknownOutcome')), 'resultSequence': I,
+    'result': any_of(*(action_ref(name) for name in TASK_NAMES), ref('ProgramTaskUnknownOutcome')), 'resultSequence': I,
 }
 PROGRAM_TASK_OPTIONAL = ('action', 'result', 'resultSequence')
 DEFS['ProgramTaskView'] = obj(PROGRAM_TASK_BASE, optional=PROGRAM_TASK_OPTIONAL)
@@ -1391,8 +1429,11 @@ def missing_for(exposed_names):
 def schema_for(name, *, capabilities=()):
     """Return one independent, self-contained result schema; unknown names raise KeyError."""
     schema = REGISTRY[name]
-    if name == 'observe_scene' and 'server_ai_scene_region_v1' in capabilities:
-        schema = any_of(observation(any_of(ref('SceneLocal'), ref('SceneRegional'))), PRE_DISPATCH)
+    if name == 'observe_scene':
+        local = ref('SceneLocalResources' if 'server_ai_resources_v1' in capabilities else 'SceneLocal')
+        regional = 'SceneRegionalResources' if 'server_ai_region_resources_v1' in capabilities else 'SceneRegional'
+        view = any_of(local, ref(regional)) if 'server_ai_scene_region_v1' in capabilities else local
+        schema = any_of(observation(view), PRE_DISPATCH)
     if name == 'stop_action' and capabilities:
         operations = operations_for_capabilities(capabilities)
         schema = stop_schema(operations, 'mine_target' in operations and 'server_ai_program_tasks_v1' in capabilities)

@@ -83,6 +83,7 @@ class Handler(socketserver.StreamRequestHandler):
             data = None
             if op == 'bind':
                 data = dict(capabilities=['server_ai_atomic_v1', 'atomic_operations_v1', 'hotbar_keys_v1'])
+                data['capabilities'].extend(getattr(h, 'extra_capabilities', ()))
                 if h.direct_input:
                     data['capabilities'].append('server_ai_direct_input_v1')
                 if h.reads:
@@ -164,6 +165,8 @@ class Handler(socketserver.StreamRequestHandler):
                     h.action['targetTile'] = copy.deepcopy(r['arguments'])
                 if r['operation'] == 'navigate_to_landing_region':
                     h.action['targetRegion'] = copy.deepcopy(r['arguments'])
+                if r['operation'] == 'navigate_to':
+                    h.action['targetTask'] = copy.deepcopy(r['arguments'])
                 data = dict(action=copy.deepcopy(h.action))
             elif op in ('action', 'cancel'):
                 if h.mode == 'change_on_poll':

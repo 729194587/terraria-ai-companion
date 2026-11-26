@@ -56,7 +56,16 @@ internal static class TerrainReader
     internal static bool Loaded(int x,int y)=>WorldGen.InWorld(x,y,1)
         &&(Main.netMode!=NetmodeID.MultiplayerClient||Main.sectionManager?.TileLoaded(x,y)==true);
     internal static char ReadCell(int x,int y)=>Loaded(x,y)?ReadShape(Main.tile[x,y]):'?';
+    internal static bool UnsupportedMotionSurface(int type)=>type>=0 && (TileID.Sets.IceSkateSlippery[type] ||
+        type is TileID.HoneyBlock or TileID.Cobweb or TileID.Asphalt or TileID.SlimeBlock or TileID.FrozenSlimeBlock);
     internal static char ReadDryCell(int x,int y)=>ReadEnvironment(x,y).DryShape;
+
+    internal static bool OrdinaryOverlayCell(TerrainCell cell)
+        =>!cell.Actuated && (cell.TileType==null
+            || cell.Shape=='.' && cell.TileType is TileID.LargePiles or TileID.ImmatureHerbs or TileID.Pots
+            || cell.TileType is
+            TileID.Dirt or TileID.Stone or TileID.Grass or TileID.Mud or TileID.ClayBlock
+            || cell.TileType is int type && type<TileID.Count && TileID.Sets.Ore[type]);
 
     internal static TerrainCell ReadEnvironment(int x, int y)
     {
@@ -72,7 +81,10 @@ internal static class TerrainReader
         int type = tile.TileType;
         // Custom collision hooks cannot be inferred from vanilla tile flags.
         if (tile.HasUnactuatedTile && type >= TileID.Count) return '?';
-        bool harmful = tile.HasUnactuatedTile && (TileID.Sets.TouchDamageImmediate[type] > 0
+        // Vanilla lists cactus in the touch-damage table, but only applies
+        // its damage in worlds with The Constant's rules.
+        bool harmful = tile.HasUnactuatedTile && (type != TileID.Cactus || Main.dontStarveWorld)
+            && (TileID.Sets.TouchDamageImmediate[type] > 0
             || TileID.Sets.TouchDamageHot[type] || TileID.Sets.TouchDamageBleeding[type]
             || TileID.Sets.TouchDamageDestroyTile[type] || TileID.Sets.Boulders[type]);
         return TerrainClassifier.Classify(true, tile.HasTile, tile.IsActuated,

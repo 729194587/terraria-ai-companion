@@ -91,7 +91,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     private static string Reference(string world, long generation, NPC n) =>
         world + ":" + generation + ":npc:" + n.whoAmI + ":" + n.GetGlobalNPC<AtomicNpcIdentity>().Token;
 
-    private static bool Enemy(NPC n, Player p) => n != null && n.active && n.life > 0 && n.damage > 0
+    private static bool Enemy(NPC n, Player p) => n != null && n.active && n.life > 0 && (n.damage > 0 || n.defDamage > 0)
         && !n.friendly && !n.townNPC && !n.boss && n.realLife < 0 && !NPCID.Sets.ShouldBeCountedAsBoss[n.type]
         && n.CanBeChasedBy(p);
 
@@ -490,7 +490,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     private static string ThreatReason(Identity frame,Player p,NPC n,string reference,float workVelocityX,out int urgency)
     {
         urgency=int.MaxValue;
-        if(!Enemy(n,p) || ContactTick(p,n,workVelocityX) is not int contact || !Visible(p,n))return null;
+        if(!Enemy(n,p) || n.damage <= 0 || ContactTick(p,n,workVelocityX) is not int contact || !Visible(p,n))return null;
         urgency=contact;
         var hurt=recentHurt;
         bool recent=ReferenceEquals(hurt.actor,p)&&hurt.world==frame.World&&hurt.generation==frame.Generation
@@ -952,7 +952,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     private void CheckItem(Action<NativeItemInput.Intent> runNative)
     {
         ulong tick = Main.GameUpdateCount;
-        if (checking != null || fault != null || !ServerAiNativeActions.Owned(identity)
+        if (identity.Autonomy?.Valid == false || checking != null || fault != null || !ServerAiNativeActions.Owned(identity)
             || !NativeSurvival.Owns(player) || player.dead || player.ghost || player.noItems || player.CCed
             || !ItemContextValid() || !ValidWeapon()
             || !inputs.BeginItemCheck(tick)) return;

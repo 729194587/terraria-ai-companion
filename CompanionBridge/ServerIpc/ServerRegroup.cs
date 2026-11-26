@@ -52,6 +52,19 @@ internal static class ServerRegroup
     internal static Player Recipient(Identity frame,string token) =>
         Online(frame).FirstOrDefault(s=>s.Token==token && Eligibility((Player)frame.Actor,s.Player)==null)?.Player;
 
+    internal static object ActiveTeamBosses(Identity frame)
+    {
+        var actor = (Player)frame.Actor;
+        var team = Online(frame).Where(s => Eligibility(actor,s.Player)==null).ToArray();
+        if (team.Length==0) return Array.Empty<object>();
+        return Main.npc.Where(n=>n.active && n.life>0 && (n.boss || BossMembers.Supported(n.type)))
+            .Select(n=>new { npc=n,member=team.FirstOrDefault(s=>n.target==s.Player.whoAmI || n.playerInteraction[s.Player.whoAmI]) })
+            .Where(pair=>pair.member!=null).Take(12).Select(pair=>new {
+                entityRef=NativeCombatWorld.Reference(frame,pair.npc),typeId=pair.npc.type,teammateRef=pair.member.Token,
+                x=pair.member.Player.Center.X,y=pair.member.Player.Bottom.Y,source="active_boss_target_or_player_hit"
+            }).ToArray();
+    }
+
     internal static object Discover(Identity frame)
     {
         var p = (Player)frame.Actor;

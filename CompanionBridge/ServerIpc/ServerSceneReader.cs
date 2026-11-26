@@ -17,6 +17,8 @@ namespace CompanionBridge.ServerIpc;
 internal static class ServerSceneReader
 {
     private static long sequence;
+    private sealed record Finding(string Kind, int TypeId, string ContentKey, SceneTilePoint Anchor,
+        TileBounds Bounds, SceneTilePoint[] Tiles, string Status, string EntityRef = null);
     private sealed record MineCell(int X,int Y);
     private static readonly HashSet<int> Ores=new(){TileID.Copper,TileID.Tin,TileID.Iron,TileID.Lead,TileID.Silver,TileID.Tungsten,
         TileID.Gold,TileID.Platinum,TileID.Demonite,TileID.Crimtane,TileID.Meteorite,TileID.Hellstone,TileID.Cobalt,TileID.Palladium,
@@ -32,6 +34,20 @@ internal static class ServerSceneReader
         int objectCap=Cap("maxObjects",16),landingCap=Cap("maxRegions",12),placementCap=Cap("maxPlacements",12),hazardCap=Cap("maxHazards",24);
         int ox=(int)Math.Floor(p.Center.X/16)-width/2,
             oy=scope.Region?(int)Math.Floor(p.Center.Y/16)-height/2:(int)Math.Floor(p.Bottom.Y/16)-17;
+        // Extend only the forward edge so both the current stance and a 32-Tile
+        // destination (including headroom and support) fit the landing survey.
+        if(args.TryGetProperty("landingDirection",out var direction))
+        {
+            switch(direction.GetString())
+            {
+                case "left": ox-=16; width+=16; break;
+                case "right": width+=16; break;
+                case "up": oy-=24; height+=24; break;
+                case "down": height+=24; break;
+            }
+        }
+        bool resources = layers.Has("resources");
+        var findings = new List<Finding>();
         var cells=new SceneCell[width,height];var anchors=new Dictionary<(int,int),object>();var content=new Dictionary<int,string>();
         string Key(int type){if(!content.TryGetValue(type,out var key))content[type]=key=TileLoader.GetTile(type)?.FullName??"Terraria/"+TileID.Search.GetName(type);return key;}
         int unknown=0,uninterpreted=0,unknownNavigation=0,sampled=0;
@@ -62,18 +78,25 @@ internal static class ServerSceneReader
                 if(c.TouchDamage>0)sources.Add("touch_damage");if(c.Hot)sources.Add("touch_hot");
                 if(c.Bleeding)sources.Add("touch_bleeding");if(c.DestroyOnTouch)sources.Add("touch_destroy");if(c.Boulder)sources.Add("boulder_tile");
                 int type=c.TileType??-1;
-                if(type>=0&&(TileID.Sets.IceSkateSlippery[type]||type is TileID.HoneyBlock or TileID.Cobweb or TileID.Asphalt or TileID.SlimeBlock or TileID.FrozenSlimeBlock))sources.Add("unsupported_motion_surface");
+                if(TerrainReader.UnsupportedMotionSurface(type))sources.Add("unsupported_motion_surface");
             }
-            if((layers.Has("map")||layers.Has("objects"))&&c.HasTile&&c.TileType is int t)
+            if((resources||layers.Has("map")||layers.Has("objects"))&&c.HasTile&&c.TileType is int t)
             {
                 if(t<TileID.Count&&TileID.Sets.IsATreeTrunk[t])kind="tree_component";
                 else if(Ores.Contains(t))kind="ore_component";
                 else if(t is TileID.Containers or TileID.Containers2 or TileID.Dressers)kind="chest";
+                else if(resources && t==TileID.Heart)kind="life_crystal";
                 else if(t is TileID.OpenDoor or TileID.ClosedDoor)kind="door";
                 else if(t==TileID.Chairs)kind="chair";
                 else if(t==TileID.WorkBenches)kind="workbench";
                 else if(t==TileID.Torches)kind="light_source";
-                if(layers.Has("objects")&&kind is ("chest" or "door" or "workbench" or "chair"))
+                if (resources && kind is "chest" or "life_crystal")
+                {
+                    int objectWidth=t==TileID.Dressers?3:2;
+                    ax=x+ox-c.FrameX/18%objectWidth;
+                    ay=y+oy-c.FrameY/18%2;
+                }
+                else if(layers.Has("objects")&&kind is ("chest" or "door" or "workbench" or "chair"))
                 {
                     var left=TileObjectData.TopLeft(x+ox,y+oy);
                     ax=left.X;ay=left.Y;
@@ -91,15 +114,37 @@ internal static class ServerSceneReader
             if(nav=='?')unknownNavigation++;
             if(sources.Contains("unsupported_motion_surface"))nav='!';
             bool placementFacts=layers.Has("objectPlacementCandidates")&&c.TileType is int placementType&&placementType>=0&&placementType<TileID.Count;
-            cells[x,y]=new(c,nav,kind,(layers.Has("objects")||layers.Has("hazards"))&&c.TileType is int material&&(kind!=null||sources.Count>0)?Key(material):null,ax,ay,sources.ToArray(),
+            cells[x,y]=new(c,nav,kind,(resources||layers.Has("objects")||layers.Has("hazards"))&&c.TileType is int material&&(kind!=null||sources.Count>0)?Key(material):null,ax,ay,sources.ToArray(),
                 placementFacts&&Main.tileCut[c.TileType.Value],placementFacts&&TileID.Sets.BreakableWhenPlacing[c.TileType.Value],furniture);
         }
         var actor=new WorldRect(p.position.X,p.position.Y,p.width,p.height);
         bool Intersects(Entity e)=>e.position.X<(ox+width)*16&&e.position.X+e.width>ox*16&&e.position.Y<(oy+height)*16&&e.position.Y+e.height>oy*16;
         var bodies=layers.Has("placementCandidates")||layers.Has("objectPlacementCandidates")?Main.player.Where(other=>other.active&&!other.dead&&!other.ghost&&Intersects(other)).Select(other=>new WorldRect(other.position.X,other.position.Y,other.width,other.height)).ToList():new List<WorldRect>();
         if(!bodies.Contains(actor))bodies.Add(actor);
-        var objects=layers.Has("objects")?SceneGeometry.Objects(cells,ox,oy,scope.Region?null:(tx,ty)=>new MineCell(tx,ty),p.Center.X,p.Center.Y,
-            scope.Region?SceneRegion.MaxObjectGroups:int.MaxValue).ToList():new List<SceneObject>();
+        var objects=layers.Has("objects")||resources?SceneGeometry.Objects(cells,ox,oy,scope.Region||!layers.Has("objects")?null:(tx,ty)=>new MineCell(tx,ty),p.Center.X,p.Center.Y,
+            scope.Region?SceneRegion.MaxObjectGroups:int.MaxValue,resources?ObserveResource:null).ToList():new List<SceneObject>();
+        void ObserveResource(SceneCell cell,List<(int x,int y)> group,bool complete)
+        {
+            if (cell.Kind is not ("chest" or "life_crystal" or "ore_component")) return;
+            int left=group.Min(pt=>pt.x)+ox, top=group.Min(pt=>pt.y)+oy;
+            var bounds=new TileBounds(left,top,group.Max(pt=>pt.x)+ox-left+1,group.Max(pt=>pt.y)+oy-top+1);
+            var anchor=new SceneTilePoint(cell.AnchorX??left,cell.AnchorY??top);
+            if (cell.Kind!="ore_component")
+            {
+                int w=cell.Facts.TileType==TileID.Dressers?3:2;
+                bounds=new(anchor.X,anchor.Y,w,2);
+                complete=group.Count==w*2 && group.All(pt=>{
+                    var t=cells[pt.x,pt.y].Facts;
+                    int dx=pt.x+ox-anchor.X,dy=pt.y+oy-anchor.Y;
+                    return dx>=0 && dx<w && dy>=0 && dy<2 && !t.Actuated && t.Knowledge=="read"
+                        && t.FrameX==cell.Facts.FrameX/(18*w)*(18*w)+18*dx
+                        && t.FrameY==cell.Facts.FrameY/36*36+18*dy;
+                });
+            }
+            var tiles=group.Take(64).Select(pt=>new SceneTilePoint(pt.x+ox,pt.y+oy)).ToArray();
+            findings.Add(new(cell.Kind,cell.Facts.TileType.Value,cell.ContentKey,anchor,bounds,tiles,
+                complete&&tiles.Length==group.Count?"complete":"incomplete"));
+        }
         bool objectGroupingTruncated=scope.Region&&objects.Count>=SceneRegion.MaxObjectGroups;
         var dynamicHazards=new List<(double? Contact, float Distance, object Value)>();
         var actorVelocity = new StateVector(p.velocity.X, p.velocity.Y);
@@ -138,8 +183,18 @@ internal static class ServerSceneReader
             if(layers.Has("hazards")&&classification.Kind is ("hostile_creature" or "unknown"))
                 AddHazard(n, "npc", n.type, n.damage, classification.Kind, entityRef, classification.Basis);
         }
-        if(layers.Has("map")||layers.Has("objects"))for(int i=0;i<Main.item.Length;i++)
-        {var item=Main.item[i];if(item.active&&!item.IsAir&&Intersects(item))EntityObject(item,"drop",item.type,item.ModItem?.FullName??"Terraria/"+ItemID.Search.GetName(item.type),new{slot=i,item.stack,pickup="not evaluated"},'$');}
+        if(resources||layers.Has("map")||layers.Has("objects"))for(int i=0;i<Main.item.Length;i++)
+        {
+            var item=Main.item[i];
+            if(!item.active||item.IsAir||!Intersects(item))continue;
+            string key=item.ModItem?.FullName??"Terraria/"+ItemID.Search.GetName(item.type);
+            EntityObject(item,"drop",item.type,key,new{slot=i,item.stack,pickup="not evaluated"},'$');
+            if(resources)
+            {
+                var at=new SceneTilePoint((int)Math.Floor(item.Center.X/16),(int)Math.Floor(item.Center.Y/16));
+                findings.Add(new("drop",item.type,key,at,new(at.X,at.Y,1,1),new[]{at},"complete",ServerDrops.Reference(identity,i,item)));
+            }
+        }
         if(layers.Has("map")||layers.Has("objects"))foreach(var other in Main.player)if(other.active&&!ReferenceEquals(other,p)&&Intersects(other))EntityObject(other,"player",null,"Terraria/Player",new{slot=other.whoAmI,other.dead,other.ghost},'P');
         if(layers.Has("map")||layers.Has("hazards"))foreach(var projectile in Main.projectile)if(projectile.active&&projectile.hostile&&Intersects(projectile))
         {
@@ -158,7 +213,7 @@ internal static class ServerSceneReader
             ["actor"]=new{slot=p.whoAmI,boundsWorldPixels=actor,feetY=p.Bottom.Y,velocity=new StateVector(p.velocity.X,p.velocity.Y),p.dead,
                 navigationProfileSupported=GameNavigation.Ordinary(p),mapTile=new{x=ox+actorX,y=oy+actorY},
                 bodyTileBounds=BodyTileBounds.FromPixels(p.position.X,p.position.Y,p.width,p.height)},
-            ["coverage"]=new{scannedTiles=1305,unknownCells=unknown,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0},
+            ["coverage"]=new{scannedTiles=sampled,unknownCells=unknown,uninterpretedCollisionCells=uninterpreted,unknownNavigationCells=unknownNavigation,geometryComplete=unknown==0&&uninterpreted==0&&unknownNavigation==0},
             ["limits"]="observation-scoped IDs; no visibility, contents, persistent map or custom Mod hook interpretation; truncation is per collection, never empty=absent",
             ["includedLayers"]=layers.Included};
         if(scope.Region)
@@ -178,6 +233,14 @@ internal static class ServerSceneReader
             layers.Add(response,"map",()=>new{rows=SceneGeometry.MapRows(cells,geometry.Value,actorX,actorY,entityMarkers),originX=ox,originY=oy});
             layers.Add(response,"geometry",()=>new{rows=geometry.Value,originX=ox,originY=oy});
         }
+        layers.Add(response,"resources",()=>new {
+            source=scope.Region?"region_resource_scan":"local_resource_scan",gameUpdate=tick,unknownCells=unknown,scannedTiles=sampled,
+            bounds=new{minX=ox,minY=oy,maxX=ox+width-1,maxY=oy+height-1},
+            objectGroupingTruncated,
+            complete=unknown==0 && !objectGroupingTruncated && findings.Count<=objectCap,
+            truncated=samplingStopped||objectGroupingTruncated||findings.Count>objectCap,
+            matchedCount=findings.Count,items=findings.OrderBy(f=>Math.Abs(f.Anchor.X-ox-actorX)+Math.Abs(f.Anchor.Y-oy-actorY)).Take(objectCap)
+        });
         layers.Add(response,"objects",()=>
         {
             float Distance(SceneObject o)=>Math.Abs((o.ObservedBounds.X+o.ObservedBounds.Width/2f)*16-p.Center.X)+Math.Abs((o.ObservedBounds.Y+o.ObservedBounds.Height/2f)*16-p.Center.Y);

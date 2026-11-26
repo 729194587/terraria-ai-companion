@@ -122,11 +122,13 @@ BOOTSTRAP = '''
             local exports = assert(load(m.source, "terraria."..m.name, "t", private))()
             assert(type(exports) == "table" and type(exports[m.export]) == "function", "invalid module exports")
             for k in pairs(exports) do assert(k == m.export, "unregistered module export") end
-            env.terraria[m.name] = {[m.export]=function(...)
+            env.terraria[m.namespace] = env.terraria[m.namespace] or {}
+            assert(env.terraria[m.namespace][m.export] == nil, "duplicate module export")
+            env.terraria[m.namespace][m.export] = function(...)
                 local report = exports[m.export](...)
                 module_done(report)
                 return report
-            end}
+            end
         end
         local f, err = load(source, "companion.lua", "t", env)
         if not f then error(err, 0) end

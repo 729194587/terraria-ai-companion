@@ -98,6 +98,8 @@ public sealed class CompanionPlayer : ModPlayer
             Player.controlLeft = predicted.Direction < 0;
             Player.controlRight = predicted.Direction > 0;
             Player.controlJump = predicted.Jump;
+            if(predicted.ImpulseKey!=null && !NavigationAirActions.Activate(Player,predicted))
+                GameNavigation.Fail("air action activation failed: "+predicted.ImpulseKey);
             Player.controlDown = false;
             Player.controlUp = false;
             return;

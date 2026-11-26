@@ -403,6 +403,7 @@ public sealed class ProbePlayer : ModPlayer
     {
         CompanionBridge.ServerIpc.MovementDiscoveryFixture.AtRunSpeeds(Player);
         ActorControl.BeforeMovement(Player);
+        CompanionBridge.ServerIpc.ServerAiNaturalFixture.SampleTravelInput(Player);
     }
     public override void PostUpdateBuffs() => CompanionBridge.ServerIpc.ServerAiTerrainFixture.AfterBuffs(Player);
     public override void SaveData(Terraria.ModLoader.IO.TagCompound tag)
@@ -492,7 +493,7 @@ public sealed class ProbeCommand : ModCommand
                     caller.Reply(status,Color.LightCyan);return;
                 }
                 else if (action == "allocator") ProbeSession.Allocator();
-                else if (action == "spawn") ProbeSession.Spawn();
+                else if (action == "spawn") WorldCharacterPersistence.SpawnRequested();
                 else if (action == "save") CharacterStore.Save(copy.Length == 2 ? copy[1] : null);
                 else if (action == "load") CharacterStore.Load(copy.Length == 2 ? copy[1] : null);
                 else if (action == "fixture") CharacterSelfTest.Seed();

@@ -72,6 +72,14 @@ public static class AiChatOfflineTests
         server.PublishLocalAiCommand(0,"local","!ai 查询状态");
         using var compatible=JsonDocument.Parse(reader.ReadLine());
         Check(compatible.RootElement.GetProperty("text").GetString()=="查询状态","slash commands do not emit tasks; legacy prefixed tasks remain compatible over TCP");
+        Check(server.PublishAutonomyCommand("status"), "control command queued");
+        using var control = JsonDocument.Parse(reader.ReadLine());
+        var frame = control.RootElement;
+        Check(frame.GetProperty("type").GetString() == "autonomy_command", "separate control event");
+        var notice = state.Enqueue(session, new(9, "autonomy_notice", ChatId:frame.GetProperty("eventId").GetString(), Text:"off"), 0);
+        string displayed = null;
+        state.Update(true, 0, new(true,new(100,200),new(0,0),100,100), displayNotice:t=>displayed=t);
+        Check(notice.Result.Status=="displayed" && displayed=="off", "status returns on local control channel");
         Console.WriteLine($"AI chat offline: {checks} checks; real loopback, no graphical game.");
     }
 }

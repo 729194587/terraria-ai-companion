@@ -17,8 +17,11 @@ internal static class CombatProtocol
 internal sealed class AiAtomicActions
 {
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
+    internal object Compatibility => executor?.Compatibility;
+    internal bool SupportsCrafting => executor?.SupportsCrafting == true;
     internal bool SupportsMerchantShop => executor?.SupportsMerchantPurchase == true;
-    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_crafting_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"})
+    internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"})
+        .Concat(SupportsCrafting ? new[]{"server_ai_crafting_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsPersonalInventory ? new[]{"server_ai_personal_inventory_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsInventoryFavorite ? new[]{"server_ai_inventory_favorite_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsItemDrop ? new[]{"server_ai_drop_item_v1"} : Array.Empty<string>())
@@ -39,6 +42,7 @@ internal sealed class AiAtomicActions
         .Concat(executor.SupportsBuildPlace ? new[]{"server_ai_build_place_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsPlacement ? new[]{"server_ai_place_item_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsCollection ? new[]{"server_ai_collect_drops_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsExploration ? new[]{"server_ai_frontier_exploration_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsSorting ? new[]{"server_ai_sorting_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsLoadout ? new[]{"server_ai_combat_primary_v1","server_ai_combat_secondary_v1","server_ai_combat_summon_loadout_v1","server_ai_combat_inventory_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsBossEncounter ? new[]{"server_ai_boss_encounter_v1","server_ai_boss_members_v1","server_ai_boss_strategy_v1"} : Array.Empty<string>())
@@ -66,6 +70,8 @@ internal sealed class AiAtomicActions
         bool SupportsHammer=>false;
         bool SupportsTileInteraction=>false;
         bool SupportsDoors=>false;
+        object Compatibility=>null;
+        bool SupportsCrafting=>false;
         bool SupportsPylons=>false;
         bool SupportsRegroup=>false;
         RespawnPlan AfterRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>null;
@@ -78,6 +84,7 @@ internal sealed class AiAtomicActions
         bool SupportsContainers=>false;
         bool SupportsSorting=>false;
         bool SupportsCollection=>false;
+        bool SupportsExploration=>false;
         bool SupportsPlacement=>false;
         bool SupportsNpcDialogue=>false;
         bool SupportsMerchantPurchase=>false;
@@ -110,8 +117,10 @@ internal sealed class AiAtomicActions
         internal string Operation;
         internal JsonElement Arguments;
         internal int Duration;
+        internal ulong NavigationProgress;
         internal object Handle;
         internal CombatAdmission Combat;
+        internal AiReadOnlyProtocol.AutonomyGrant Autonomy;
         internal RespawnPlan Rejoin;
         internal AiReadOnlyProtocol.Identity ReleasedLife;
         internal NativeResult Result;
@@ -128,20 +137,24 @@ internal sealed class AiAtomicActions
     private string suppressedRef, cancelledCombatRef;
     private ulong suppressUntil, reflexBackoffUntil;
     private long sequence;
+    internal object CurrentActivity => active == null ? null : new { actionId=active.Id, operation=active.Operation, phase=active.Phase, arguments=active.Arguments.ValueKind==JsonValueKind.Undefined?(JsonElement?)null:active.Arguments };
     internal bool HasActive=>active!=null;
+    private Entry uncertainManual;
+    internal bool CanSchedule(AiReadOnlyProtocol.Identity frame) =>
+        active == null && !BodyBlocked(frame) && !Matches(uncertainManual,frame);
     internal bool BodyBlocked(AiReadOnlyProtocol.Identity current)=>Matches(blockedBody,current);
     internal bool SupportsCombat=>executor?.SupportsCombat==true;
     internal bool SupportsContainers=>executor?.SupportsContainers==true;
     private bool CombatActive=>active?.Operation is CombatProtocol.Operation or CombatProtocol.Boss;
     internal Func<bool> MaintenanceBusy {get;set;}
-    internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = lastCombat = blockedBody = reflexBackoff = null; suppressedRef=cancelledCombatRef=null; }
+    internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = lastCombat = blockedBody = reflexBackoff = uncertainManual = null; suppressedRef=cancelledCombatRef=null; }
     internal void Forget(Guid connection) { if (active?.Owner == connection) active.Cancel = true; }
     private static bool Matches(Entry e, AiReadOnlyProtocol.Identity current) => e!=null && current != null
         && ReferenceEquals(e.Actor, current.Actor) && e.World == current.World && e.Generation == current.Generation && e.Slot == current.Slot;
     private static bool IsContainerOperation(string operation) =>
         operation is "open_container" or "close_container" or "deposit_container_item" or "withdraw_container_item"
         or "sort_inventory" or "sort_container" or "quick_stack_nearby" or "quick_stack_container" or "loot_all" or "deposit_all" or "restock";
-    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to" or "collect_drops" or "build_place" or "place_item" or CombatProtocol.Operation or CombatProtocol.Boss;
+    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to" or "collect_drops" or "explore_frontier" or "build_place" or "place_item" or CombatProtocol.Operation or CombatProtocol.Boss;
     internal object CombatState(AiReadOnlyProtocol.Identity current) =>
         new{action=Matches(lastCombat,current)?Snapshot(lastCombat):null};
 
@@ -174,6 +187,12 @@ internal sealed class AiAtomicActions
         if(!SupportsCombat||current?.CanAct!=true)return;
         if(entityRef==null||CombatActive||!ReflexTargetAllowed(current,entityRef)
             ||Matches(reflexBackoff,current)&&current.GameUpdate<reflexBackoffUntil)return;
+        var owner = active?.Autonomy ?? current.Autonomy;
+        if (owner != null)
+        {
+            if (!owner.Valid || owner.Binding.generation != current.Generation || owner.BackgroundBusy) return;
+            current = current with { Autonomy = owner };
+        }
         if(CombatConflict(current,entityRef,out var admission)!=null)return;
         Admit(Guid.Empty,Guid.NewGuid().ToString("N"),actorId,current,CombatProtocol.Operation,
             JsonSerializer.SerializeToElement(new{entityRef,threat}),35000,default,admission:admission);
@@ -237,9 +256,11 @@ internal sealed class AiAtomicActions
         bool combat=operation==CombatProtocol.Operation;
         if(operation==CombatProtocol.Boss && executor?.SupportsBossEncounter!=true)return new(Error:"unsupported_operation");
         if(BodyBlocked(current))return new(Error:"body_release_unconfirmed");
+        if (current.Autonomy != null && (active != null || !current.Autonomy.InputsReleased)) return new(Error:"action_busy");
         if(active!=null&&!combat)return new(Error:"action_busy");
         bool selecting = operation == "select_hotbar_slot";
         bool container = IsContainerOperation(operation);
+        if (operation == "craft_recipe" && !SupportsCrafting) return new(Error:"unsupported_operation");
         if (operation is ("sort_inventory" or "sort_container") && executor?.SupportsSorting != true)
             return new(Error: "unsupported_operation");
         if (container && !SupportsContainers) return new(Error: "unsupported_operation");
@@ -264,7 +285,8 @@ internal sealed class AiAtomicActions
         if (operation == "build_place" && executor?.SupportsBuildPlace != true) return new(Error: "unsupported_operation");
         if (operation == "place_item" && executor?.SupportsPlacement != true) return new(Error: "unsupported_operation");
         if (operation == "collect_drops" && executor?.SupportsCollection != true) return new(Error: "unsupported_operation");
-        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("interact_tile" or "reforge_item" or "heal_at_nurse" or "sell_npc_item" or "buy_npc_item" or "open_npc_dialogue" or "close_npc_dialogue" or "assign_npc_home" or "dismiss_summon" or "set_team" or "teleport_to_pylon" or "teleport_to_teammate" or "manage_trash" or "switch_equipment_loadout" or "set_inventory_favorite" or "drop_inventory_item" or "open_inventory_item" or "open_door" or "close_door" or "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "build_place" or "place_item" or CombatProtocol.Boss or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
+        if (operation == "explore_frontier" && executor?.SupportsExploration != true) return new(Error: "unsupported_operation");
+        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("interact_tile" or "reforge_item" or "heal_at_nurse" or "sell_npc_item" or "buy_npc_item" or "open_npc_dialogue" or "close_npc_dialogue" or "assign_npc_home" or "dismiss_summon" or "set_team" or "teleport_to_pylon" or "teleport_to_teammate" or "manage_trash" or "switch_equipment_loadout" or "set_inventory_favorite" or "drop_inventory_item" or "open_inventory_item" or "open_door" or "close_door" or "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "explore_frontier" or "build_place" or "place_item" or CombatProtocol.Boss or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
         int key = 0;
         if (selecting)
         {
@@ -288,7 +310,7 @@ internal sealed class AiAtomicActions
         long remaining = root.GetProperty("expiresAtUnixMs").GetInt64() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (remaining <= 0) return new(Error: "request_expired");
         if (remaining > 2000) return new(Error: "invalid_deadline");
-        int duration = operation switch { CombatProtocol.Boss => arguments.TryGetProperty("durationSeconds",out var seconds)?seconds.GetInt32()*1000:300000, CombatProtocol.Operation=>35000, "navigate_to"=>180000, "mine_target"=>55000, "collect_drops"=>35000, "build_place"=>180000, "place_item"=>12000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
+        int duration = operation switch { CombatProtocol.Boss => arguments.TryGetProperty("durationSeconds",out var seconds)?seconds.GetInt32()*1000:300000, CombatProtocol.Operation=>35000, "explore_frontier"=>120000, "navigate_to"=>180000, "mine_target"=>55000, "collect_drops"=>35000, "build_place"=>180000, "place_item"=>12000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
         CombatAdmission admission=null;
         if(combat&&CombatConflict(current,arguments.GetProperty("entityRef").GetString(),out admission) is {} conflict)
             return new(Error:conflict);
@@ -306,6 +328,8 @@ internal sealed class AiAtomicActions
             Combat = admission, Operation = operation, Arguments = arguments.Clone(), Duration = duration,
             PurchaseLease = operation is "open_npc_dialogue" or "close_npc_dialogue" or "buy_npc_item" or "sell_npc_item" or "heal_at_nurse" or "reforge_item" ? current.RequestLease : null,
             Key = key, Target = HotbarSlots.ToInventorySlot(key), Deadline = clock() + (lease ?? duration), Disconnected = disconnected };
+        active.Autonomy = current.Autonomy;
+        if (active.Autonomy != null) active.Autonomy.Released = false;
         entries.Add(id, active);
         if(CombatActive)lastCombat=active;
         return new(new { action = Snapshot(active) });
@@ -325,6 +349,8 @@ internal sealed class AiAtomicActions
             worldSessionId = e.World, actorId = e.ActorId, actorGeneration = e.Generation, actorSlot = e.Slot,
             inputsAcquired = e.Handle != null && e.Result?.InputsAcquired != false, inputsReleased = e.Handle == null || e.Result?.InputsReleased == true,
             effectVerified = e.Result?.EffectVerified == true, operation = e.Operation, observationSequence = sequence };
+        if (e.Autonomy == null && status == "unknown") uncertainManual = e;
+        if (e.Autonomy != null) e.Autonomy.Released = known && (e.Handle == null || e.Result?.InputsReleased == true);
         if (ReferenceEquals(active, e)) active = null;
         if(e.Operation==CombatProtocol.Operation)
         {
@@ -374,7 +400,7 @@ internal sealed class AiAtomicActions
         try { current = capture(); } catch { current = null; }
         if (!Matches(e, current))
         {
-            if(e.ReleasedLife is {} old && current?.CanAct==true && ReferenceEquals(old.Actor,current.Actor)
+            if(e.Autonomy == null && e.ReleasedLife is {} old && current?.CanAct==true && ReferenceEquals(old.Actor,current.Actor)
                 && old.World==current.World && old.Slot==current.Slot && current.Generation==old.Generation+1
                 && !e.Cancel && !e.Disconnected.IsCancellationRequested && clock()<e.Deadline
                 && executor.AfterRespawn(e.Handle,current) is {} plan)
@@ -392,6 +418,15 @@ internal sealed class AiAtomicActions
             if(IsTask(e.Operation)&&e.Handle!=null){try{e.Result=executor.BindingLost(e.Handle);}catch{}}
             End(e,"unknown","actor_binding_changed",current,false);return;
         }
+        if (e.Autonomy != null)
+        {
+            if (!e.Autonomy.Valid || !current.CanAct)
+            {
+                Stop(e, "cancelled", current.CanAct ? "autonomy_revoked" : "actor_not_alive", current);
+                return;
+            }
+            current = current with { Autonomy = e.Autonomy };
+        }
         if (!current.CanAct && executor?.WaitingForRespawn(e.Handle,current)!=true) { Stop(e, "cancelled", "actor_not_alive", current); return; }
         if (e.Cancel || e.Disconnected.IsCancellationRequested) { Stop(e, "cancelled", "connection_cancelled", current); return; }
         if (clock() >= e.Deadline) { Stop(e, "timeout", "execution_deadline", current); return; }
@@ -405,6 +440,15 @@ internal sealed class AiAtomicActions
                 if (e.Handle == null) { e.Attempted = true; e.Handle = e.Rejoin!=null?executor.StartRejoin(current,e.Arguments,e.Id,e.Rejoin):e.Combat==null?executor.Start(current,e.Operation,e.Arguments,e.Id)
                     :executor.StartCombat(current,e.Arguments,e.Id,e.Combat); return; }
                 e.Result = executor.Poll(current, e.Handle);
+                if (e.Operation == "navigate_to" && e.Result.Status == "running")
+                {
+                    ulong progress = executor.ProgressVersion(e.Handle);
+                    if (progress > e.NavigationProgress)
+                    {
+                        e.NavigationProgress = progress;
+                        e.Deadline = clock() + e.Duration;
+                    }
+                }
                 if(!current.CanAct && e.Result.Status=="running" && e.Result.InputsReleased)
                     e.ReleasedLife=current;
                 e.Reason=e.Result.Reason;

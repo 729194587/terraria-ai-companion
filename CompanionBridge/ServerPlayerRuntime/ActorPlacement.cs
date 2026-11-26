@@ -132,8 +132,14 @@ internal static class ActorPlacement
     {
         var c=use.Placement;
         var (eventsBefore,before)=observation;
-        if(c.NativeClearEvents>0&&!c.Placed)c.UncertainNativeEffect=true;
-        if(c.NativeEvents==eventsBefore&&before!=ReadTarget(c))
+        var after=ReadTarget(c);
+        // ItemCheck can spend the first press clearing replaceable water plants.
+        // Only recognize our own clear at the requested cell with stock intact.
+        bool clearedForBridge=c.WaterBridgeDirection!=0 && c.NativeClearEvents==1 && !c.ExternalChange
+            && !c.Placed && !after.active && c.ConsumedCount==0 && use.Actor.inventory[use.Slot].stack==use.InitialStack;
+        if(clearedForBridge)c.InitialTile=null;
+        if(c.NativeClearEvents>0&&!c.Placed&&!clearedForBridge)c.UncertainNativeEffect=true;
+        if(c.NativeEvents==eventsBefore&&before!=after&&!(clearedForBridge&&before.Active))
         {
             c.UncertainNativeEffect=true;
             NetMessage.SendTileSquare(-1,c.X,c.Y,1);
@@ -251,6 +257,8 @@ internal static class ActorPlacement
             int left=c.X-(c.Object?c.Shape.OriginX:0),top=c.Y-(c.Object?c.Shape.OriginY:0);
             for(int y=top;y<top+(c.Object?c.Shape.Height:1);y++)for(int x=left;x<left+(c.Object?c.Shape.Width:1);x++)AiMapRuntime.Remember(x,y);}
         else {use.Phase=c.Placed||c.ConsumedCount!=0||c.UncertainNativeEffect?"unknown":"failed";
-            use.Reason=c.Placed?"native_placement_consumption_unconfirmed":c.Rope!=null?"native_rope_placement_refused":"native_placement_refused";}
+            use.Reason=c.Placed?"native_placement_consumption_unconfirmed":
+                c.WaterBridgeDirection!=0&&c.NativeClearEvents==1&&!c.UncertainNativeEffect?"navigation_water_placement_changed":
+                c.Rope!=null?"native_rope_placement_refused":"native_placement_refused";}
     }
 }

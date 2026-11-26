@@ -14,7 +14,7 @@ FIELDS = ("input_tokens", "output_tokens", "cached_input_tokens", "non_cached_in
 TOOLS = {"get_state", "get_observation", "get_exploration_observation", "move", "stop_movement",
          "execute_lua", "transfer_inventory_item", "swap_inventory_slots", "hold_inventory_item", "get_player_status", "resolve_content", "observe_exploration", "wait",
          "get_player_state", "observe_terrain", "inspect_tile", "scan_tiles", "scan_entities", "inspect_inventory", "get_world_state",
-         "mine_wall", "place_wall", "hammer_tile",
+         "mine_wall", "place_wall", "hammer_tile", "schedule_player_goal", "schedule_exploration",
          "drop_through_platform", "navigate_to_x", "navigate_to_landing_region", "select_hotbar_slot", "use_item", "mine_tile", "attack_entity", "interact_tile", "place_tile", "stop_action"}
 
 

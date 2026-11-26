@@ -18,6 +18,8 @@ L0 默认范围为角色附近 45×29 Tile，schemaVersion 为 2。可按需选�
 
 通过 `layers` 请求所需层。响应中的 `includedLayers` 表示实际返回内容；集合各自包含计数、完整性和截断信息。
 
+具备 `server_ai_directional_landings_v1` 时，单独请求 `landingRegions` 可传 `landingDirection`。left/right 将当前窗口朝前扩展 16 格至 61×29，up/down 朝前扩展 24 格至 45×53。实际范围见 bounds。
+
 ## L1：区域场景
 
 具备 `server_ai_scene_region_v1` 能力时，可请求更大范围：
@@ -31,7 +33,7 @@ local region = api('observe_scene', {
 })
 ```
 
-宽度范围为 45..128 Tile，高度为 29..96 Tile，最多 8192 Tile。L1 使用 schemaVersion 3，默认返回 geometry、objects 和 hazards，也可请求 map。
+宽度范围为 45..128 Tile，高度为 29..96 Tile，最多 8192 Tile。L1 使用 schemaVersion 3，默认返回 geometry、objects 和 hazards，也可请求 map。有 `server_ai_region_resources_v1` 时可单独请求 resources，读取同一游戏更新内的 Tile 与掉落物。资源层的 bounds、scannedTiles、unknownCells、truncated 和场景 sample.elapsedMilliseconds 共同说明本次覆盖；数量截断、聚类截断或未采样均不能证明对象消失。。
 
 L1 面向区域理解与资源定位，不生成落脚、放置或可执行目标令牌。需要执行动作时，Agent 使用当前局部观察和相应动作 API。
 

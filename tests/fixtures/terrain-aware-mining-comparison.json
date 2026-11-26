@@ -1,0 +1,6295 @@
+{
+  "baseline": "fe6190efd8250b2dbe8e8f16e11f36c41e4fcce2",
+  "candidateRevision": "f76300c34ceca3e5529c7549f6fde66f29dedd4d",
+  "engine": "2026.9.3.1",
+  "engineSHA256": "BF2CA4D53512D064FAE664170A0D21ECC5E2ED51B5E917D871EC78CC449263E9",
+  "parity": [
+    {
+      "action": "walk",
+      "frames": 35,
+      "positionError": 0,
+      "velocityError": 0,
+      "dependencies": 22,
+      "reach": true
+    },
+    {
+      "action": "walk_decor",
+      "frames": 35,
+      "positionError": 0,
+      "velocityError": 0,
+      "dependencies": 22,
+      "reach": true
+    },
+    {
+      "action": "jump",
+      "frames": 47,
+      "positionError": 0,
+      "velocityError": 0,
+      "dependencies": 43,
+      "reach": true
+    },
+    {
+      "action": "step_down",
+      "frames": 2,
+      "positionError": 0,
+      "velocityError": 0,
+      "dependencies": 17,
+      "reach": true
+    },
+    {
+      "action": "fall",
+      "frames": 17,
+      "positionError": 0,
+      "velocityError": 9.536743e-07,
+      "dependencies": 23,
+      "reach": true
+    }
+  ],
+  "natural": {
+    "buried": {
+      "control": {
+        "seed": "1606771215",
+        "start": {
+          "offset": -56,
+          "floor": 420,
+          "x": 2044,
+          "y": 424,
+          "count": 11,
+          "type": 7
+        },
+        "x": 32720,
+        "y": 6678,
+        "worldSHA256": "918E33D72AE761F990CAA31E0734DD04AB375B3B4F4582702FCBF087D00707F0",
+        "packageSHA256": "7DEDB1184A9E9508CD2458305737C2751579CFCD040794533FF3CCF7CC6A7557",
+        "inventoryBefore": {},
+        "inventoryAfter": {
+          "Terraria/CopperOre": 10
+        },
+        "settledPoses": [
+          {
+            "tick": 661,
+            "x": 32720,
+            "y": 6678,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 818,
+            "x": 32720,
+            "y": 6694,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 888,
+            "x": 32720,
+            "y": 6710,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1025,
+            "x": 32720,
+            "y": 6726,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1382,
+            "x": 32720,
+            "y": 6742,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1756,
+            "x": 32720,
+            "y": 6758,
+            "SafeSupport": true,
+            "life": 100
+          }
+        ],
+        "taskId": "3cb351645ec241fca1f25cc550580596",
+        "status": "completed",
+        "reason": "excavation_cluster_verified",
+        "released": true,
+        "effectVerified": true,
+        "ticks": 1260,
+        "proofs": [
+          {
+            "X": 2044,
+            "Y": 424,
+            "Type": 7,
+            "Update": 49,
+            "Strikes": 3
+          },
+          {
+            "X": 2043,
+            "Y": 424,
+            "Type": 7,
+            "Update": 33,
+            "Strikes": 3
+          },
+          {
+            "X": 2044,
+            "Y": 425,
+            "Type": 7,
+            "Update": 49,
+            "Strikes": 3
+          },
+          {
+            "X": 2042,
+            "Y": 424,
+            "Type": 7,
+            "Update": 81,
+            "Strikes": 3
+          },
+          {
+            "X": 2043,
+            "Y": 423,
+            "Type": 7,
+            "Update": 129,
+            "Strikes": 3
+          },
+          {
+            "X": 2043,
+            "Y": 425,
+            "Type": 7,
+            "Update": 33,
+            "Strikes": 3
+          },
+          {
+            "X": 2044,
+            "Y": 426,
+            "Type": 7,
+            "Update": 49,
+            "Strikes": 3
+          },
+          {
+            "X": 2042,
+            "Y": 425,
+            "Type": 7,
+            "Update": 81,
+            "Strikes": 3
+          },
+          {
+            "X": 2043,
+            "Y": 426,
+            "Type": 7,
+            "Update": 33,
+            "Strikes": 3
+          },
+          {
+            "X": 2041,
+            "Y": 425,
+            "Type": 7,
+            "Update": 129,
+            "Strikes": 3
+          },
+          {
+            "X": 2042,
+            "Y": 426,
+            "Type": 7,
+            "Update": 81,
+            "Strikes": 3
+          }
+        ],
+        "pending": [],
+        "children": [
+          {
+            "operation": "mine_target",
+            "status": "completed",
+            "reason": "mine_target_verified",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1238,
+            "workLeftX": 32720,
+            "workFeetY": 6768
+          },
+          {
+            "operation": "mine_target",
+            "status": "completed",
+            "reason": "mine_target_verified",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1595,
+            "workLeftX": 32720,
+            "workFeetY": 6784
+          },
+          {
+            "operation": "mine_target",
+            "status": "completed",
+            "reason": "mine_target_verified",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1921,
+            "workLeftX": 32720,
+            "workFeetY": 6800
+          }
+        ],
+        "omittedChildren": 0
+      },
+      "candidate": {
+        "seed": "1606771215",
+        "start": {
+          "offset": -56,
+          "floor": 420,
+          "x": 2044,
+          "y": 424,
+          "count": 11,
+          "type": 7
+        },
+        "x": 32720,
+        "y": 6678,
+        "worldSHA256": "918E33D72AE761F990CAA31E0734DD04AB375B3B4F4582702FCBF087D00707F0",
+        "packageSHA256": "A5DA84D333E8FA8CE5470BB03951FA0BD9CA37C0892AC332F137CC2ACEAE4AE3",
+        "inventoryBefore": {},
+        "inventoryAfter": {
+          "Terraria/CopperOre": 10
+        },
+        "settledPoses": [
+          {
+            "tick": 293,
+            "x": 32720,
+            "y": 6678,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 459,
+            "x": 32720,
+            "y": 6694,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 578,
+            "x": 32720,
+            "y": 6710,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 772,
+            "x": 32720,
+            "y": 6726,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1067,
+            "x": 32720,
+            "y": 6742,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1401,
+            "x": 32720,
+            "y": 6758,
+            "SafeSupport": true,
+            "life": 100
+          }
+        ],
+        "taskId": "fe86d469b01b4c629ab99c0f7b1007af",
+        "status": "completed",
+        "reason": "excavation_cluster_verified",
+        "released": true,
+        "effectVerified": true,
+        "ticks": 1262,
+        "proofs": [
+          {
+            "X": 2044,
+            "Y": 424,
+            "Type": 7,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2043,
+            "Y": 424,
+            "Type": 7,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2044,
+            "Y": 425,
+            "Type": 7,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2042,
+            "Y": 424,
+            "Type": 7,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2043,
+            "Y": 423,
+            "Type": 7,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2043,
+            "Y": 425,
+            "Type": 7,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2044,
+            "Y": 426,
+            "Type": 7,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2042,
+            "Y": 425,
+            "Type": 7,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2043,
+            "Y": 426,
+            "Type": 7,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2041,
+            "Y": 425,
+            "Type": 7,
+            "Update": 166,
+            "Strikes": 3
+          },
+          {
+            "X": 2042,
+            "Y": 426,
+            "Type": 7,
+            "Update": 121,
+            "Strikes": 3
+          }
+        ],
+        "pending": [],
+        "children": [
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 439,
+            "X": 2046,
+            "Y": 420,
+            "Ticks": 31,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "cancelled",
+            "reason": "excavation_needs_replan",
+            "observedGameUpdate": 457,
+            "X": 2045,
+            "Y": 420,
+            "Ticks": 16,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 558,
+            "X": 2046,
+            "Y": 421,
+            "Ticks": 31,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 592,
+            "X": 2045,
+            "Y": 421,
+            "Ticks": 31,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 642,
+            "workLeftX": 32720,
+            "workFeetY": 6752
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 737,
+            "X": 2046,
+            "Y": 422,
+            "Ticks": 31,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 786,
+            "X": 2045,
+            "Y": 422,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 926,
+            "workLeftX": 32720,
+            "workFeetY": 6768
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 1032,
+            "X": 2046,
+            "Y": 423,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 1081,
+            "X": 2045,
+            "Y": 423,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1266,
+            "workLeftX": 32720,
+            "workFeetY": 6784
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 1366,
+            "X": 2046,
+            "Y": 424,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 1415,
+            "X": 2045,
+            "Y": 424,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1555,
+            "workLeftX": 32720,
+            "workFeetY": 6800
+          }
+        ],
+        "omittedChildren": 0,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 4,
+              "Clearance": 124,
+              "Target": 46,
+              "Cuts": 4,
+              "Alteration": 16,
+              "Total": 190
+            },
+            "predictedGoal": {
+              "X": 2043,
+              "Y": 423,
+              "Type": 7,
+              "Shape": "True:7:Solid:False:False",
+              "Revision": 5
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2046,
+                "Y": 420,
+                "fromX": 32720,
+                "fromY": 6678,
+                "toX": 32720,
+                "toY": 6678
+              },
+              {
+                "kind": "Mine",
+                "X": 2045,
+                "Y": 420,
+                "fromX": 32720,
+                "fromY": 6678,
+                "toX": 32720,
+                "toY": 6694
+              },
+              {
+                "kind": "Mine",
+                "X": 2046,
+                "Y": 421,
+                "fromX": 32720,
+                "fromY": 6694,
+                "toX": 32720,
+                "toY": 6694
+              },
+              {
+                "kind": "Mine",
+                "X": 2045,
+                "Y": 421,
+                "fromX": 32720,
+                "fromY": 6694,
+                "toX": 32720,
+                "toY": 6710
+              }
+            ],
+            "dependencies": {
+              "count": 53,
+              "left": 2040,
+              "right": 2047,
+              "top": 417,
+              "bottom": 427
+            },
+            "capability": -1132729373,
+            "gameUpdate": 405
+          },
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 2,
+              "Clearance": 62,
+              "Target": 46,
+              "Cuts": 2,
+              "Alteration": 8,
+              "Total": 118
+            },
+            "predictedGoal": {
+              "X": 2043,
+              "Y": 423,
+              "Type": 7,
+              "Shape": "True:7:Solid:False:False",
+              "Revision": 5
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2046,
+                "Y": 421,
+                "fromX": 32720,
+                "fromY": 6694,
+                "toX": 32720,
+                "toY": 6694
+              },
+              {
+                "kind": "Mine",
+                "X": 2045,
+                "Y": 421,
+                "fromX": 32720,
+                "fromY": 6694,
+                "toX": 32720,
+                "toY": 6710
+              }
+            ],
+            "dependencies": {
+              "count": 49,
+              "left": 2040,
+              "right": 2047,
+              "top": 418,
+              "bottom": 427
+            },
+            "capability": -1132729373,
+            "gameUpdate": 524
+          },
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 2,
+              "Clearance": 77,
+              "Target": 46,
+              "Cuts": 2,
+              "Alteration": 8,
+              "Total": 133
+            },
+            "predictedGoal": {
+              "X": 2044,
+              "Y": 424,
+              "Type": 7,
+              "Shape": "True:7:Solid:False:False",
+              "Revision": 1
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2046,
+                "Y": 422,
+                "fromX": 32720,
+                "fromY": 6710,
+                "toX": 32720,
+                "toY": 6710
+              },
+              {
+                "kind": "Mine",
+                "X": 2045,
+                "Y": 422,
+                "fromX": 32720,
+                "fromY": 6710,
+                "toX": 32720,
+                "toY": 6726
+              }
+            ],
+            "dependencies": {
+              "count": 45,
+              "left": 2040,
+              "right": 2047,
+              "top": 419,
+              "bottom": 427
+            },
+            "capability": -1132729373,
+            "gameUpdate": 703
+          },
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 2,
+              "Clearance": 92,
+              "Target": 46,
+              "Cuts": 2,
+              "Alteration": 8,
+              "Total": 148
+            },
+            "predictedGoal": {
+              "X": 2044,
+              "Y": 425,
+              "Type": 7,
+              "Shape": "True:7:Solid:False:False",
+              "Revision": 3
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2046,
+                "Y": 423,
+                "fromX": 32720,
+                "fromY": 6726,
+                "toX": 32720,
+                "toY": 6726
+              },
+              {
+                "kind": "Mine",
+                "X": 2045,
+                "Y": 423,
+                "fromX": 32720,
+                "fromY": 6726,
+                "toX": 32720,
+                "toY": 6742
+              }
+            ],
+            "dependencies": {
+              "count": 40,
+              "left": 2040,
+              "right": 2047,
+              "top": 420,
+              "bottom": 427
+            },
+            "capability": -1132729373,
+            "gameUpdate": 983
+          },
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 2,
+              "Clearance": 92,
+              "Target": 46,
+              "Cuts": 2,
+              "Alteration": 8,
+              "Total": 148
+            },
+            "predictedGoal": {
+              "X": 2044,
+              "Y": 426,
+              "Type": 7,
+              "Shape": "True:7:Solid:False:False",
+              "Revision": 7
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2046,
+                "Y": 424,
+                "fromX": 32720,
+                "fromY": 6742,
+                "toX": 32720,
+                "toY": 6742
+              },
+              {
+                "kind": "Mine",
+                "X": 2045,
+                "Y": 424,
+                "fromX": 32720,
+                "fromY": 6742,
+                "toX": 32720,
+                "toY": 6758
+              }
+            ],
+            "dependencies": {
+              "count": 32,
+              "left": 2041,
+              "right": 2047,
+              "top": 421,
+              "bottom": 427
+            },
+            "capability": -1132729373,
+            "gameUpdate": 1317
+          }
+        ],
+        "navigationDispatches": 0,
+        "navigationFailures": 0,
+        "actualCuts": 10,
+        "replans": 1,
+        "planningMs": 158.6344,
+        "maxSliceMs": 13.0964,
+        "updates": {
+          "waiting": 20,
+          "planning": 344,
+          "clearance": 390,
+          "ore": 507
+        }
+      }
+    },
+    "change-stance": {
+      "control": {
+        "seed": "20261028",
+        "start": {
+          "offset": 107,
+          "floor": 520,
+          "x": 2213,
+          "y": 519,
+          "count": 15,
+          "type": 6
+        },
+        "x": 35344,
+        "y": 8278,
+        "worldSHA256": "A9FEB51BB2B71BAF4C04FEC9C8617EC5683DC94CF7A0506EB200139802701223",
+        "packageSHA256": "7DEDB1184A9E9508CD2458305737C2751579CFCD040794533FF3CCF7CC6A7557",
+        "inventoryBefore": {},
+        "inventoryAfter": {
+          "Terraria/IronOre": 14
+        },
+        "settledPoses": [
+          {
+            "tick": 397,
+            "x": 35344,
+            "y": 8278,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 605,
+            "x": 35391.12,
+            "y": 8262,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1031,
+            "x": 35391.2,
+            "y": 8262,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1064,
+            "x": 35423.402,
+            "y": 8278,
+            "SafeSupport": true,
+            "life": 100
+          }
+        ],
+        "taskId": "c674bddac3ec4c03b7b7830f861487b3",
+        "status": "completed",
+        "reason": "excavation_cluster_verified",
+        "released": true,
+        "effectVerified": true,
+        "ticks": 942,
+        "proofs": [
+          {
+            "X": 2213,
+            "Y": 519,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2214,
+            "Y": 519,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2215,
+            "Y": 519,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2214,
+            "Y": 518,
+            "Type": 6,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2216,
+            "Y": 519,
+            "Type": 6,
+            "Update": 166,
+            "Strikes": 3
+          },
+          {
+            "X": 2215,
+            "Y": 518,
+            "Type": 6,
+            "Update": 211,
+            "Strikes": 3
+          },
+          {
+            "X": 2216,
+            "Y": 518,
+            "Type": 6,
+            "Update": 256,
+            "Strikes": 3
+          },
+          {
+            "X": 2217,
+            "Y": 518,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2216,
+            "Y": 517,
+            "Type": 6,
+            "Update": 301,
+            "Strikes": 3
+          },
+          {
+            "X": 2217,
+            "Y": 517,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2216,
+            "Y": 516,
+            "Type": 6,
+            "Update": 346,
+            "Strikes": 3
+          },
+          {
+            "X": 2218,
+            "Y": 517,
+            "Type": 6,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2217,
+            "Y": 516,
+            "Type": 6,
+            "Update": 166,
+            "Strikes": 3
+          },
+          {
+            "X": 2218,
+            "Y": 516,
+            "Type": 6,
+            "Update": 211,
+            "Strikes": 3
+          },
+          {
+            "X": 2217,
+            "Y": 515,
+            "Type": 6,
+            "Update": 256,
+            "Strikes": 3
+          }
+        ],
+        "pending": [],
+        "children": [
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 447,
+            "workLeftX": 35344,
+            "workFeetY": 8320
+          },
+          {
+            "operation": "navigate_to_landing_region",
+            "status": "completed",
+            "reason": "native_navigation_arrival_verified",
+            "observedGameUpdate": 607,
+            "x": 35391.12,
+            "y": 8262,
+            "arrived": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 970,
+            "workLeftX": 35391.12,
+            "workFeetY": 8304
+          },
+          {
+            "operation": "navigate_to_landing_region",
+            "status": "completed",
+            "reason": "native_navigation_arrival_verified",
+            "observedGameUpdate": 1066,
+            "x": 35423.402,
+            "y": 8278,
+            "arrived": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1339,
+            "workLeftX": 35423.402,
+            "workFeetY": 8320
+          }
+        ],
+        "omittedChildren": 0
+      },
+      "candidate": {
+        "seed": "20261028",
+        "start": {
+          "offset": 107,
+          "floor": 520,
+          "x": 2213,
+          "y": 519,
+          "count": 15,
+          "type": 6
+        },
+        "x": 35344,
+        "y": 8278,
+        "worldSHA256": "A9FEB51BB2B71BAF4C04FEC9C8617EC5683DC94CF7A0506EB200139802701223",
+        "packageSHA256": "A5DA84D333E8FA8CE5470BB03951FA0BD9CA37C0892AC332F137CC2ACEAE4AE3",
+        "inventoryBefore": {},
+        "inventoryAfter": {
+          "Terraria/IronOre": 15
+        },
+        "settledPoses": [
+          {
+            "tick": 343,
+            "x": 35344,
+            "y": 8278,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 470,
+            "x": 35344.08,
+            "y": 8278,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 491,
+            "x": 35358.35,
+            "y": 8278,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 724,
+            "x": 35390.51,
+            "y": 8262,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 725,
+            "x": 35390.473,
+            "y": 8262,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 748,
+            "x": 35375.227,
+            "y": 8262,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 910,
+            "x": 35375.305,
+            "y": 8262,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 943,
+            "x": 35407.508,
+            "y": 8262,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1361,
+            "x": 35407.586,
+            "y": 8262,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1377,
+            "x": 35415.582,
+            "y": 8278,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1379,
+            "x": 35415.66,
+            "y": 8278,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1395,
+            "x": 35423.656,
+            "y": 8278,
+            "SafeSupport": true,
+            "life": 100
+          }
+        ],
+        "taskId": "3def537b205e4c818ea2322f71329b82",
+        "status": "completed",
+        "reason": "excavation_cluster_verified",
+        "released": true,
+        "effectVerified": true,
+        "ticks": 1147,
+        "proofs": [
+          {
+            "X": 2213,
+            "Y": 519,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2214,
+            "Y": 519,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2215,
+            "Y": 519,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2214,
+            "Y": 518,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2216,
+            "Y": 519,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2215,
+            "Y": 518,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2216,
+            "Y": 518,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2217,
+            "Y": 518,
+            "Type": 6,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2216,
+            "Y": 517,
+            "Type": 6,
+            "Update": 166,
+            "Strikes": 3
+          },
+          {
+            "X": 2217,
+            "Y": 517,
+            "Type": 6,
+            "Update": 211,
+            "Strikes": 3
+          },
+          {
+            "X": 2216,
+            "Y": 516,
+            "Type": 6,
+            "Update": 256,
+            "Strikes": 3
+          },
+          {
+            "X": 2218,
+            "Y": 517,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2217,
+            "Y": 516,
+            "Type": 6,
+            "Update": 301,
+            "Strikes": 3
+          },
+          {
+            "X": 2218,
+            "Y": 516,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2217,
+            "Y": 515,
+            "Type": 6,
+            "Update": 346,
+            "Strikes": 3
+          }
+        ],
+        "pending": [],
+        "children": [
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 393,
+            "workLeftX": 35344,
+            "workFeetY": 8320
+          },
+          {
+            "operation": "navigate_to_landing_region",
+            "status": "completed",
+            "reason": "native_navigation_arrival_verified",
+            "observedGameUpdate": 494,
+            "x": 35358.35,
+            "y": 8278,
+            "arrived": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 587,
+            "workLeftX": 35358.35,
+            "workFeetY": 8320
+          },
+          {
+            "operation": "navigate_to_landing_region",
+            "status": "completed",
+            "reason": "native_navigation_arrival_verified",
+            "observedGameUpdate": 750,
+            "x": 35375.227,
+            "y": 8262,
+            "arrived": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 843,
+            "workLeftX": 35375.227,
+            "workFeetY": 8304
+          },
+          {
+            "operation": "navigate_to_landing_region",
+            "status": "completed",
+            "reason": "native_navigation_arrival_verified",
+            "observedGameUpdate": 945,
+            "x": 35407.508,
+            "y": 8262,
+            "arrived": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1308,
+            "workLeftX": 35407.508,
+            "workFeetY": 8304
+          },
+          {
+            "operation": "navigate_to_landing_region",
+            "status": "completed",
+            "reason": "native_navigation_arrival_verified",
+            "observedGameUpdate": 1397,
+            "x": 35423.656,
+            "y": 8278,
+            "arrived": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1490,
+            "workLeftX": 35423.656,
+            "workFeetY": 8320
+          }
+        ],
+        "omittedChildren": 0,
+        "decisions": [
+          {
+            "choice": "movement",
+            "movement": {
+              "Movement": 24,
+              "Clearance": 0,
+              "Target": 46,
+              "Cuts": 0,
+              "Alteration": 0,
+              "Total": 70
+            },
+            "clearance": null,
+            "predictedGoal": null,
+            "actions": null,
+            "dependencies": null,
+            "capability": 1152940045,
+            "gameUpdate": 467
+          },
+          {
+            "choice": "movement",
+            "movement": {
+              "Movement": 57,
+              "Clearance": 0,
+              "Target": 46,
+              "Cuts": 0,
+              "Alteration": 0,
+              "Total": 103
+            },
+            "clearance": null,
+            "predictedGoal": null,
+            "actions": null,
+            "dependencies": null,
+            "capability": 1152940045,
+            "gameUpdate": 679
+          },
+          {
+            "choice": "movement",
+            "movement": {
+              "Movement": 35,
+              "Clearance": 0,
+              "Target": 46,
+              "Cuts": 0,
+              "Alteration": 0,
+              "Total": 81
+            },
+            "clearance": null,
+            "predictedGoal": null,
+            "actions": null,
+            "dependencies": null,
+            "capability": 1152940045,
+            "gameUpdate": 907
+          },
+          {
+            "choice": "movement",
+            "movement": {
+              "Movement": 88,
+              "Clearance": 0,
+              "Target": 46,
+              "Cuts": 0,
+              "Alteration": 0,
+              "Total": 134
+            },
+            "clearance": null,
+            "predictedGoal": null,
+            "actions": null,
+            "dependencies": null,
+            "capability": 1152940045,
+            "gameUpdate": 1358
+          }
+        ],
+        "navigationDispatches": 4,
+        "navigationFailures": 0,
+        "actualCuts": 0,
+        "replans": 0,
+        "planningMs": 207.0819999999999,
+        "maxSliceMs": 18.3423,
+        "updates": {
+          "waiting": 1,
+          "ore": 690,
+          "planning": 280,
+          "movement": 175
+        }
+      }
+    },
+    "large-vein": {
+      "control": {
+        "seed": "20261028",
+        "start": {
+          "offset": -31,
+          "floor": 466,
+          "x": 2071,
+          "y": 466,
+          "count": 22,
+          "type": 6
+        },
+        "x": 33136,
+        "y": 7414,
+        "worldSHA256": "A9FEB51BB2B71BAF4C04FEC9C8617EC5683DC94CF7A0506EB200139802701223",
+        "packageSHA256": "7DEDB1184A9E9508CD2458305737C2751579CFCD040794533FF3CCF7CC6A7557",
+        "inventoryBefore": {},
+        "inventoryAfter": {
+          "Terraria/IronOre": 20
+        },
+        "settledPoses": [
+          {
+            "tick": 970,
+            "x": 33136,
+            "y": 7414,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1838,
+            "x": 33136,
+            "y": 7446,
+            "SafeSupport": true,
+            "life": 100
+          }
+        ],
+        "taskId": "6a40f61a657745ed92850a188d3a9846",
+        "status": "completed",
+        "reason": "excavation_cluster_verified",
+        "released": true,
+        "effectVerified": true,
+        "ticks": 1007,
+        "proofs": [
+          {
+            "X": 2071,
+            "Y": 466,
+            "Type": 6,
+            "Update": 46,
+            "Strikes": 3
+          },
+          {
+            "X": 2070,
+            "Y": 466,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2071,
+            "Y": 467,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2069,
+            "Y": 466,
+            "Type": 6,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2070,
+            "Y": 465,
+            "Type": 6,
+            "Update": 166,
+            "Strikes": 3
+          },
+          {
+            "X": 2070,
+            "Y": 467,
+            "Type": 6,
+            "Update": 211,
+            "Strikes": 3
+          },
+          {
+            "X": 2072,
+            "Y": 467,
+            "Type": 6,
+            "Update": 256,
+            "Strikes": 3
+          },
+          {
+            "X": 2069,
+            "Y": 467,
+            "Type": 6,
+            "Update": 301,
+            "Strikes": 3
+          },
+          {
+            "X": 2073,
+            "Y": 467,
+            "Type": 6,
+            "Update": 346,
+            "Strikes": 3
+          },
+          {
+            "X": 2068,
+            "Y": 467,
+            "Type": 6,
+            "Update": 391,
+            "Strikes": 3
+          },
+          {
+            "X": 2069,
+            "Y": 468,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2074,
+            "Y": 467,
+            "Type": 6,
+            "Update": 436,
+            "Strikes": 3
+          },
+          {
+            "X": 2073,
+            "Y": 466,
+            "Type": 6,
+            "Update": 481,
+            "Strikes": 3
+          },
+          {
+            "X": 2073,
+            "Y": 468,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2068,
+            "Y": 468,
+            "Type": 6,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2075,
+            "Y": 467,
+            "Type": 6,
+            "Update": 526,
+            "Strikes": 3
+          },
+          {
+            "X": 2074,
+            "Y": 466,
+            "Type": 6,
+            "Update": 571,
+            "Strikes": 3
+          },
+          {
+            "X": 2073,
+            "Y": 465,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2075,
+            "Y": 466,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2074,
+            "Y": 465,
+            "Type": 6,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2073,
+            "Y": 464,
+            "Type": 6,
+            "Update": 166,
+            "Strikes": 3
+          },
+          {
+            "X": 2075,
+            "Y": 465,
+            "Type": 6,
+            "Update": 211,
+            "Strikes": 3
+          }
+        ],
+        "pending": [],
+        "children": [
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1561,
+            "workLeftX": 33136,
+            "workFeetY": 7456
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1789,
+            "workLeftX": 33136,
+            "workFeetY": 7456
+          },
+          {
+            "operation": "mine_target",
+            "status": "completed",
+            "reason": "mine_target_verified",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1977,
+            "workLeftX": 33136,
+            "workFeetY": 7488
+          }
+        ],
+        "omittedChildren": 0
+      },
+      "candidate": {
+        "seed": "20261028",
+        "start": {
+          "offset": -31,
+          "floor": 466,
+          "x": 2071,
+          "y": 466,
+          "count": 22,
+          "type": 6
+        },
+        "x": 33136,
+        "y": 7414,
+        "worldSHA256": "A9FEB51BB2B71BAF4C04FEC9C8617EC5683DC94CF7A0506EB200139802701223",
+        "packageSHA256": "A5DA84D333E8FA8CE5470BB03951FA0BD9CA37C0892AC332F137CC2ACEAE4AE3",
+        "inventoryBefore": {},
+        "inventoryAfter": {
+          "Terraria/IronOre": 19
+        },
+        "settledPoses": [
+          {
+            "tick": 259,
+            "x": 33136,
+            "y": 7414,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1125,
+            "x": 33136,
+            "y": 7446,
+            "SafeSupport": true,
+            "life": 100
+          }
+        ],
+        "taskId": "b40413907d9845e29283b57a9a18a67e",
+        "status": "completed",
+        "reason": "excavation_cluster_verified",
+        "released": true,
+        "effectVerified": true,
+        "ticks": 1005,
+        "proofs": [
+          {
+            "X": 2071,
+            "Y": 466,
+            "Type": 6,
+            "Update": 46,
+            "Strikes": 3
+          },
+          {
+            "X": 2070,
+            "Y": 466,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2071,
+            "Y": 467,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2069,
+            "Y": 466,
+            "Type": 6,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2070,
+            "Y": 465,
+            "Type": 6,
+            "Update": 166,
+            "Strikes": 3
+          },
+          {
+            "X": 2070,
+            "Y": 467,
+            "Type": 6,
+            "Update": 211,
+            "Strikes": 3
+          },
+          {
+            "X": 2072,
+            "Y": 467,
+            "Type": 6,
+            "Update": 256,
+            "Strikes": 3
+          },
+          {
+            "X": 2069,
+            "Y": 467,
+            "Type": 6,
+            "Update": 301,
+            "Strikes": 3
+          },
+          {
+            "X": 2073,
+            "Y": 467,
+            "Type": 6,
+            "Update": 346,
+            "Strikes": 3
+          },
+          {
+            "X": 2068,
+            "Y": 467,
+            "Type": 6,
+            "Update": 391,
+            "Strikes": 3
+          },
+          {
+            "X": 2069,
+            "Y": 468,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2074,
+            "Y": 467,
+            "Type": 6,
+            "Update": 436,
+            "Strikes": 3
+          },
+          {
+            "X": 2073,
+            "Y": 466,
+            "Type": 6,
+            "Update": 481,
+            "Strikes": 3
+          },
+          {
+            "X": 2073,
+            "Y": 468,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2068,
+            "Y": 468,
+            "Type": 6,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2075,
+            "Y": 467,
+            "Type": 6,
+            "Update": 526,
+            "Strikes": 3
+          },
+          {
+            "X": 2074,
+            "Y": 466,
+            "Type": 6,
+            "Update": 571,
+            "Strikes": 3
+          },
+          {
+            "X": 2073,
+            "Y": 465,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2075,
+            "Y": 466,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2074,
+            "Y": 465,
+            "Type": 6,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2073,
+            "Y": 464,
+            "Type": 6,
+            "Update": 166,
+            "Strikes": 3
+          },
+          {
+            "X": 2075,
+            "Y": 465,
+            "Type": 6,
+            "Update": 211,
+            "Strikes": 3
+          }
+        ],
+        "pending": [],
+        "children": [
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 850,
+            "workLeftX": 33136,
+            "workFeetY": 7456
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1078,
+            "workLeftX": 33136,
+            "workFeetY": 7456
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 1126,
+            "X": 2071,
+            "Y": 466,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1264,
+            "workLeftX": 33136,
+            "workFeetY": 7488
+          }
+        ],
+        "omittedChildren": 0,
+        "decisions": [],
+        "navigationDispatches": 0,
+        "navigationFailures": 0,
+        "actualCuts": 0,
+        "replans": 0,
+        "planningMs": 0,
+        "maxSliceMs": 0,
+        "updates": {
+          "waiting": 2,
+          "ore": 1002
+        }
+      }
+    },
+    "enclosed": {
+      "control": {
+        "seed": "1606771215",
+        "start": {
+          "offset": -15,
+          "floor": 478,
+          "x": 2092,
+          "y": 484,
+          "count": 13,
+          "type": 167
+        },
+        "x": 33376,
+        "y": 7606,
+        "worldSHA256": "918E33D72AE761F990CAA31E0734DD04AB375B3B4F4582702FCBF087D00707F0",
+        "packageSHA256": "7DEDB1184A9E9508CD2458305737C2751579CFCD040794533FF3CCF7CC6A7557",
+        "inventoryBefore": {},
+        "inventoryAfter": {},
+        "settledPoses": [
+          {
+            "tick": 854,
+            "x": 33376,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 956,
+            "x": 33376.047,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 957,
+            "x": 33376.125,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 958,
+            "x": 33376.22,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 969,
+            "x": 33377.383,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 979,
+            "x": 33377.43,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 980,
+            "x": 33377.508,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 981,
+            "x": 33377.6,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 992,
+            "x": 33378.766,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1002,
+            "x": 33378.812,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1003,
+            "x": 33378.89,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1004,
+            "x": 33378.984,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1015,
+            "x": 33380.15,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1024,
+            "x": 33380.195,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1025,
+            "x": 33380.273,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1026,
+            "x": 33380.367,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1037,
+            "x": 33381.53,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1178,
+            "x": 33381.58,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1179,
+            "x": 33381.656,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1180,
+            "x": 33381.75,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1191,
+            "x": 33382.914,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1239,
+            "x": 33382.96,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1240,
+            "x": 33383.04,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1241,
+            "x": 33383.133,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1252,
+            "x": 33384.297,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1300,
+            "x": 33384.344,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1301,
+            "x": 33384.42,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1302,
+            "x": 33384.516,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1313,
+            "x": 33385.68,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1365,
+            "x": 33385.727,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1366,
+            "x": 33385.805,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1367,
+            "x": 33385.9,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1378,
+            "x": 33387.062,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1560,
+            "x": 33387.11,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1561,
+            "x": 33387.188,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1562,
+            "x": 33387.28,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1573,
+            "x": 33388.445,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1575,
+            "x": 33388.492,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1576,
+            "x": 33388.57,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1577,
+            "x": 33388.664,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1588,
+            "x": 33389.83,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1590,
+            "x": 33389.875,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1591,
+            "x": 33389.953,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1592,
+            "x": 33390.047,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1603,
+            "x": 33391.21,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1605,
+            "x": 33391.258,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1606,
+            "x": 33391.336,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1607,
+            "x": 33391.43,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1619,
+            "x": 33394.223,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1717,
+            "x": 33394.3,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1750,
+            "x": 33426.504,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1757,
+            "x": 33426.582,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1785,
+            "x": 33453.58,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          }
+        ],
+        "taskId": "947592c9afb941aeaf6fc3ba45ee7f04",
+        "status": "timeout",
+        "reason": "excavation_route_search_budget_exhausted",
+        "released": true,
+        "effectVerified": false,
+        "ticks": 1140,
+        "proofs": [],
+        "pending": [
+          [
+            2092,
+            484
+          ],
+          [
+            2093,
+            484
+          ],
+          [
+            2092,
+            485
+          ],
+          [
+            2094,
+            484
+          ],
+          [
+            2093,
+            483
+          ],
+          [
+            2093,
+            485
+          ],
+          [
+            2091,
+            485
+          ],
+          [
+            2092,
+            486
+          ],
+          [
+            2094,
+            485
+          ],
+          [
+            2093,
+            486
+          ],
+          [
+            2091,
+            486
+          ],
+          [
+            2094,
+            486
+          ],
+          [
+            2094,
+            487
+          ]
+        ],
+        "children": [
+          {
+            "operation": "mine_target",
+            "status": "failed",
+            "reason": "native_navigation_failed",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "navigate_to_landing_region",
+            "status": "timeout",
+            "reason": "excavation_route_search_budget_exhausted",
+            "observedGameUpdate": 1844,
+            "x": 33453.58,
+            "y": 7606,
+            "arrived": false
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "timeout",
+            "reason": "mining_stance_search_budget_exhausted",
+            "observedGameUpdate": null
+          }
+        ],
+        "omittedChildren": 2
+      },
+      "candidate": {
+        "seed": "1606771215",
+        "start": {
+          "offset": -15,
+          "floor": 478,
+          "x": 2092,
+          "y": 484,
+          "count": 13,
+          "type": 167
+        },
+        "x": 33376,
+        "y": 7606,
+        "worldSHA256": "918E33D72AE761F990CAA31E0734DD04AB375B3B4F4582702FCBF087D00707F0",
+        "packageSHA256": "A5DA84D333E8FA8CE5470BB03951FA0BD9CA37C0892AC332F137CC2ACEAE4AE3",
+        "inventoryBefore": {},
+        "inventoryAfter": {},
+        "settledPoses": [
+          {
+            "tick": 276,
+            "x": 33376,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 380,
+            "x": 33376.047,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 381,
+            "x": 33376.125,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 382,
+            "x": 33376.22,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 393,
+            "x": 33377.383,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 402,
+            "x": 33377.43,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 403,
+            "x": 33377.508,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 404,
+            "x": 33377.6,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 415,
+            "x": 33378.766,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 424,
+            "x": 33378.812,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 425,
+            "x": 33378.89,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 426,
+            "x": 33378.984,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 437,
+            "x": 33380.15,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 448,
+            "x": 33380.195,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 449,
+            "x": 33380.273,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 450,
+            "x": 33380.367,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 461,
+            "x": 33381.53,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 589,
+            "x": 33381.58,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 590,
+            "x": 33381.656,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 591,
+            "x": 33381.75,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 602,
+            "x": 33382.914,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 652,
+            "x": 33382.96,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 653,
+            "x": 33383.04,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 654,
+            "x": 33383.133,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 665,
+            "x": 33384.297,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 714,
+            "x": 33384.344,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 715,
+            "x": 33384.42,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 716,
+            "x": 33384.516,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 727,
+            "x": 33385.68,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 767,
+            "x": 33385.727,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 768,
+            "x": 33385.805,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 769,
+            "x": 33385.9,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 780,
+            "x": 33387.062,
+            "y": 7606,
+            "SafeSupport": true,
+            "life": 100
+          }
+        ],
+        "taskId": "d0960c191ff74e92999992f874dfe695",
+        "status": "timeout",
+        "reason": "excavation_route_search_budget_exhausted",
+        "released": true,
+        "effectVerified": false,
+        "ticks": 594,
+        "proofs": [],
+        "pending": [
+          [
+            2092,
+            484
+          ],
+          [
+            2093,
+            484
+          ],
+          [
+            2092,
+            485
+          ],
+          [
+            2094,
+            484
+          ],
+          [
+            2093,
+            483
+          ],
+          [
+            2093,
+            485
+          ],
+          [
+            2091,
+            485
+          ],
+          [
+            2092,
+            486
+          ],
+          [
+            2094,
+            485
+          ],
+          [
+            2093,
+            486
+          ],
+          [
+            2091,
+            486
+          ],
+          [
+            2094,
+            486
+          ],
+          [
+            2094,
+            487
+          ]
+        ],
+        "children": [
+          {
+            "operation": "navigate_to_landing_region",
+            "status": "failed",
+            "reason": "native_navigation_failed",
+            "observedGameUpdate": 461,
+            "x": 33381.53,
+            "y": 7606,
+            "arrived": false
+          },
+          {
+            "operation": "navigate_to_landing_region",
+            "status": "failed",
+            "reason": "native_navigation_failed",
+            "observedGameUpdate": 780,
+            "x": 33387.062,
+            "y": 7606,
+            "arrived": false
+          }
+        ],
+        "omittedChildren": 0,
+        "decisions": [
+          {
+            "choice": "approach",
+            "movement": null,
+            "clearance": null,
+            "predictedGoal": null,
+            "actions": null,
+            "dependencies": null,
+            "capability": 250429796,
+            "gameUpdate": 370
+          },
+          {
+            "choice": "approach",
+            "movement": null,
+            "clearance": null,
+            "predictedGoal": null,
+            "actions": null,
+            "dependencies": null,
+            "capability": 250429796,
+            "gameUpdate": 552
+          },
+          {
+            "choice": "none",
+            "movement": null,
+            "clearance": null,
+            "predictedGoal": null,
+            "actions": null,
+            "dependencies": null,
+            "capability": 250429796,
+            "gameUpdate": 870
+          }
+        ],
+        "navigationDispatches": 2,
+        "navigationFailures": 2,
+        "actualCuts": 0,
+        "replans": 0,
+        "planningMs": 355.4304,
+        "maxSliceMs": 20.021,
+        "updates": {
+          "waiting": 1,
+          "planning": 273,
+          "movement": 319
+        }
+      }
+    },
+    "buried-iron": {
+      "control": {
+        "seed": "20261028",
+        "start": {
+          "offset": -65,
+          "floor": 343,
+          "x": 2037,
+          "y": 349,
+          "count": 5,
+          "type": 6
+        },
+        "x": 32592,
+        "y": 5446,
+        "worldSHA256": "A9FEB51BB2B71BAF4C04FEC9C8617EC5683DC94CF7A0506EB200139802701223",
+        "packageSHA256": "7DEDB1184A9E9508CD2458305737C2751579CFCD040794533FF3CCF7CC6A7557",
+        "inventoryBefore": {},
+        "inventoryAfter": {
+          "Terraria/IronOre": 5
+        },
+        "settledPoses": [
+          {
+            "tick": 2032,
+            "x": 32592,
+            "y": 5446,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 2173,
+            "x": 32592,
+            "y": 5462,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 2254,
+            "x": 32592,
+            "y": 5478,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 2350,
+            "x": 32592,
+            "y": 5494,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 2446,
+            "x": 32592,
+            "y": 5510,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 2494,
+            "x": 32592,
+            "y": 5526,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 2791,
+            "x": 32592,
+            "y": 5558,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 2876,
+            "x": 32592,
+            "y": 5574,
+            "SafeSupport": true,
+            "life": 100
+          }
+        ],
+        "taskId": "5c9f3180a17a4a779e6ba163342e56c0",
+        "status": "completed",
+        "reason": "excavation_cluster_verified",
+        "released": true,
+        "effectVerified": true,
+        "ticks": 858,
+        "proofs": [
+          {
+            "X": 2037,
+            "Y": 349,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2036,
+            "Y": 349,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2038,
+            "Y": 349,
+            "Type": 6,
+            "Update": 46,
+            "Strikes": 3
+          },
+          {
+            "X": 2037,
+            "Y": 350,
+            "Type": 6,
+            "Update": 46,
+            "Strikes": 3
+          },
+          {
+            "X": 2038,
+            "Y": 350,
+            "Type": 6,
+            "Update": 46,
+            "Strikes": 3
+          }
+        ],
+        "pending": [],
+        "children": [
+          {
+            "operation": "mine_target",
+            "status": "completed",
+            "reason": "mine_target_verified",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 2649,
+            "workLeftX": 32592,
+            "workFeetY": 5568
+          },
+          {
+            "operation": "mine_target",
+            "status": "completed",
+            "reason": "mine_target_verified",
+            "observedGameUpdate": null
+          },
+          {
+            "operation": "mine_target",
+            "status": "completed",
+            "reason": "mine_target_verified",
+            "observedGameUpdate": null
+          }
+        ],
+        "omittedChildren": 0
+      },
+      "candidate": {
+        "seed": "20261028",
+        "start": {
+          "offset": -65,
+          "floor": 343,
+          "x": 2037,
+          "y": 349,
+          "count": 5,
+          "type": 6
+        },
+        "x": 32592,
+        "y": 5446,
+        "worldSHA256": "A9FEB51BB2B71BAF4C04FEC9C8617EC5683DC94CF7A0506EB200139802701223",
+        "packageSHA256": "A5DA84D333E8FA8CE5470BB03951FA0BD9CA37C0892AC332F137CC2ACEAE4AE3",
+        "inventoryBefore": {},
+        "inventoryAfter": {
+          "Terraria/IronOre": 5
+        },
+        "settledPoses": [
+          {
+            "tick": 364,
+            "x": 32592,
+            "y": 5446,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 527,
+            "x": 32592,
+            "y": 5462,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 595,
+            "x": 32592,
+            "y": 5478,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 693,
+            "x": 32592,
+            "y": 5494,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 791,
+            "x": 32592,
+            "y": 5510,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 889,
+            "x": 32592,
+            "y": 5526,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1186,
+            "x": 32592,
+            "y": 5558,
+            "SafeSupport": true,
+            "life": 100
+          },
+          {
+            "tick": 1271,
+            "x": 32592,
+            "y": 5574,
+            "SafeSupport": true,
+            "life": 100
+          }
+        ],
+        "taskId": "e6df8105ffc84cc396faa37aa38d1b5c",
+        "status": "completed",
+        "reason": "excavation_cluster_verified",
+        "released": true,
+        "effectVerified": true,
+        "ticks": 921,
+        "proofs": [
+          {
+            "X": 2037,
+            "Y": 349,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2036,
+            "Y": 349,
+            "Type": 6,
+            "Update": 76,
+            "Strikes": 3
+          },
+          {
+            "X": 2038,
+            "Y": 349,
+            "Type": 6,
+            "Update": 121,
+            "Strikes": 3
+          },
+          {
+            "X": 2037,
+            "Y": 350,
+            "Type": 6,
+            "Update": 31,
+            "Strikes": 3
+          },
+          {
+            "X": 2038,
+            "Y": 350,
+            "Type": 6,
+            "Update": 46,
+            "Strikes": 3
+          }
+        ],
+        "pending": [],
+        "children": [
+          {
+            "operation": "mine_tile",
+            "status": "cancelled",
+            "reason": "excavation_needs_replan",
+            "observedGameUpdate": 447,
+            "X": 2038,
+            "Y": 343,
+            "Ticks": 16,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 541,
+            "X": 2037,
+            "Y": 343,
+            "Ticks": 31,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 575,
+            "X": 2038,
+            "Y": 344,
+            "Ticks": 31,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 609,
+            "X": 2037,
+            "Y": 344,
+            "Ticks": 31,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 658,
+            "X": 2038,
+            "Y": 345,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 707,
+            "X": 2037,
+            "Y": 345,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 756,
+            "X": 2038,
+            "Y": 346,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 805,
+            "X": 2037,
+            "Y": 346,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 854,
+            "X": 2038,
+            "Y": 347,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 903,
+            "X": 2037,
+            "Y": 347,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1043,
+            "workLeftX": 32592,
+            "workFeetY": 5568
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 1138,
+            "X": 2038,
+            "Y": 348,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 1187,
+            "X": 2037,
+            "Y": 348,
+            "Ticks": 46,
+            "destroyedByActor": true
+          },
+          {
+            "operation": "excavate_tiles",
+            "status": "completed",
+            "reason": "excavation_run_verified",
+            "observedGameUpdate": 1237,
+            "workLeftX": 32592,
+            "workFeetY": 5600
+          },
+          {
+            "operation": "mine_tile",
+            "status": "completed",
+            "reason": "native_tile_destroyed",
+            "observedGameUpdate": 1285,
+            "X": 2038,
+            "Y": 350,
+            "Ticks": 46,
+            "destroyedByActor": true
+          }
+        ],
+        "omittedChildren": 0,
+        "decisions": [
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 10,
+              "Clearance": 400,
+              "Target": 46,
+              "Cuts": 10,
+              "Alteration": 40,
+              "Total": 496
+            },
+            "predictedGoal": {
+              "X": 2037,
+              "Y": 349,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 1
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2038,
+                "Y": 343,
+                "fromX": 32592,
+                "fromY": 5446,
+                "toX": 32592,
+                "toY": 5446
+              },
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 343,
+                "fromX": 32592,
+                "fromY": 5446,
+                "toX": 32592,
+                "toY": 5462
+              },
+              {
+                "kind": "Mine",
+                "X": 2038,
+                "Y": 344,
+                "fromX": 32592,
+                "fromY": 5462,
+                "toX": 32592,
+                "toY": 5462
+              },
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 344,
+                "fromX": 32592,
+                "fromY": 5462,
+                "toX": 32592,
+                "toY": 5478
+              },
+              {
+                "kind": "Mine",
+                "X": 2038,
+                "Y": 345,
+                "fromX": 32592,
+                "fromY": 5478,
+                "toX": 32592,
+                "toY": 5478
+              },
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 345,
+                "fromX": 32592,
+                "fromY": 5478,
+                "toX": 32592,
+                "toY": 5494
+              },
+              {
+                "kind": "Mine",
+                "X": 2038,
+                "Y": 346,
+                "fromX": 32592,
+                "fromY": 5494,
+                "toX": 32592,
+                "toY": 5494
+              },
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 346,
+                "fromX": 32592,
+                "fromY": 5494,
+                "toX": 32592,
+                "toY": 5510
+              },
+              {
+                "kind": "Mine",
+                "X": 2038,
+                "Y": 347,
+                "fromX": 32592,
+                "fromY": 5510,
+                "toX": 32592,
+                "toY": 5510
+              },
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 347,
+                "fromX": 32592,
+                "fromY": 5510,
+                "toX": 32592,
+                "toY": 5526
+              }
+            ],
+            "dependencies": {
+              "count": 49,
+              "left": 2035,
+              "right": 2039,
+              "top": 340,
+              "bottom": 351
+            },
+            "capability": 292102773,
+            "gameUpdate": 429
+          },
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 10,
+              "Clearance": 369,
+              "Target": 46,
+              "Cuts": 9,
+              "Alteration": 36,
+              "Total": 461
+            },
+            "predictedGoal": {
+              "X": 2037,
+              "Y": 349,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 1
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 343,
+                "fromX": 32592,
+                "fromY": 5446,
+                "toX": 32592,
+                "toY": 5462
+              },
+              {
+                "kind": "Mine",
+                "X": 2038,
+                "Y": 344,
+                "fromX": 32592,
+                "fromY": 5462,
+                "toX": 32592,
+                "toY": 5462
+              },
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 344,
+                "fromX": 32592,
+                "fromY": 5462,
+                "toX": 32592,
+                "toY": 5478
+              },
+              {
+                "kind": "Mine",
+                "X": 2038,
+                "Y": 345,
+                "fromX": 32592,
+                "fromY": 5478,
+                "toX": 32592,
+                "toY": 5478
+              },
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 345,
+                "fromX": 32592,
+                "fromY": 5478,
+                "toX": 32592,
+                "toY": 5494
+              },
+              {
+                "kind": "Mine",
+                "X": 2038,
+                "Y": 346,
+                "fromX": 32592,
+                "fromY": 5494,
+                "toX": 32592,
+                "toY": 5494
+              },
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 346,
+                "fromX": 32592,
+                "fromY": 5494,
+                "toX": 32592,
+                "toY": 5510
+              },
+              {
+                "kind": "Mine",
+                "X": 2038,
+                "Y": 347,
+                "fromX": 32592,
+                "fromY": 5510,
+                "toX": 32592,
+                "toY": 5510
+              },
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 347,
+                "fromX": 32592,
+                "fromY": 5510,
+                "toX": 32592,
+                "toY": 5526
+              }
+            ],
+            "dependencies": {
+              "count": 48,
+              "left": 2035,
+              "right": 2039,
+              "top": 340,
+              "bottom": 351
+            },
+            "capability": 292102773,
+            "gameUpdate": 507
+          },
+          {
+            "choice": "clearance",
+            "movement": null,
+            "clearance": {
+              "Movement": 15,
+              "Clearance": 92,
+              "Target": 46,
+              "Cuts": 2,
+              "Alteration": 8,
+              "Total": 161
+            },
+            "predictedGoal": {
+              "X": 2037,
+              "Y": 350,
+              "Type": 6,
+              "Shape": "True:6:Solid:False:False",
+              "Revision": 4
+            },
+            "actions": [
+              {
+                "kind": "Mine",
+                "X": 2038,
+                "Y": 348,
+                "fromX": 32592,
+                "fromY": 5526,
+                "toX": 32592,
+                "toY": 5526
+              },
+              {
+                "kind": "Mine",
+                "X": 2037,
+                "Y": 348,
+                "fromX": 32592,
+                "fromY": 5526,
+                "toX": 32592,
+                "toY": 5558
+              }
+            ],
+            "dependencies": {
+              "count": 26,
+              "left": 2036,
+              "right": 2039,
+              "top": 345,
+              "bottom": 351
+            },
+            "capability": 292102773,
+            "gameUpdate": 1089
+          }
+        ],
+        "navigationDispatches": 0,
+        "navigationFailures": 0,
+        "actualCuts": 12,
+        "replans": 1,
+        "planningMs": 95.43670000000002,
+        "maxSliceMs": 12.1068,
+        "updates": {
+          "waiting": 18,
+          "planning": 167,
+          "clearance": 501,
+          "ore": 234
+        }
+      }
+    }
+  },
+  "control": {
+    "packageSHA256": "8c4569c4731879bae0553be9ae20e46d3594675be10e2cb898b89ca5d71d807c",
+    "cases": {
+      "direct": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 27,
+            "planningMs": 0,
+            "maxProbeMs": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "6223750fd2ab4bd790bc5c5ebda9d9cd",
+          "status": "completed",
+          "reason": "excavation_cluster_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 27,
+          "proofs": [
+            {
+              "X": 2169,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 31,
+              "workLeftX": 34656,
+              "workFeetY": 3184
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 0,
+          "maxProbeMs": 0
+        },
+        "ticks": {
+          "median": 27,
+          "minimum": 27,
+          "maximum": 27
+        },
+        "planningMs": {
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "detour": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 180,
+            "planningMs": 192.98049999999998,
+            "maxProbeMs": 24.7936
+          },
+          {
+            "status": "completed",
+            "ticks": 150,
+            "planningMs": 71.25279999999998,
+            "maxProbeMs": 2.3937
+          },
+          {
+            "status": "completed",
+            "ticks": 149,
+            "planningMs": 66.7415,
+            "maxProbeMs": 2.271
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "1754a428264541bd9aa85a9cb1962c05",
+          "status": "completed",
+          "reason": "excavation_cluster_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 180,
+          "proofs": [
+            {
+              "X": 2176,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 190,
+              "x": 34733.51,
+              "y": 3126,
+              "arrived": true
+            },
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 215,
+              "workLeftX": 34733.51,
+              "workFeetY": 3168
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 192.98049999999998,
+          "maxProbeMs": 24.7936
+        },
+        "ticks": {
+          "median": 150,
+          "minimum": 149,
+          "maximum": 180
+        },
+        "planningMs": {
+          "median": 71.25279999999998,
+          "minimum": 66.7415,
+          "maximum": 192.98049999999998
+        }
+      },
+      "fast": {
+        "tool": 2176,
+        "prefix": 15,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 386,
+            "planningMs": 896.1985,
+            "maxProbeMs": 7.5456
+          },
+          {
+            "status": "completed",
+            "ticks": 308,
+            "planningMs": 552.9832999999996,
+            "maxProbeMs": 9.1849
+          },
+          {
+            "status": "completed",
+            "ticks": 307,
+            "planningMs": 539.6129,
+            "maxProbeMs": 5.5805
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "c9c0ce553b0c4777a65b23621ed0da03",
+          "status": "completed",
+          "reason": "excavation_cluster_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 386,
+          "proofs": [
+            {
+              "X": 2169,
+              "Y": 204,
+              "Type": 6,
+              "Update": 1,
+              "Strikes": 1
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 900,
+              "x": 34703.25,
+              "y": 3206,
+              "arrived": true
+            },
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 912,
+              "workLeftX": 34703.25,
+              "workFeetY": 3248
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 896.1985,
+          "maxProbeMs": 7.5456
+        },
+        "ticks": {
+          "median": 308,
+          "minimum": 307,
+          "maximum": 386
+        },
+        "planningMs": {
+          "median": 552.9832999999996,
+          "minimum": 539.6129,
+          "maximum": 896.1985
+        }
+      },
+      "slow": {
+        "tool": 3509,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 347,
+            "planningMs": 549.317,
+            "maxProbeMs": 5.0872
+          },
+          {
+            "status": "completed",
+            "ticks": 347,
+            "planningMs": 570.6482999999995,
+            "maxProbeMs": 6.1698
+          },
+          {
+            "status": "completed",
+            "ticks": 344,
+            "planningMs": 551.6380999999997,
+            "maxProbeMs": 6.9267
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "729852f2695642e1b3d9a923b84b5a33",
+          "status": "completed",
+          "reason": "excavation_cluster_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 347,
+          "proofs": [
+            {
+              "X": 2169,
+              "Y": 204,
+              "Type": 6,
+              "Update": 31,
+              "Strikes": 3
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 1838,
+              "x": 34679.13,
+              "y": 3206,
+              "arrived": true
+            },
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 1886,
+              "workLeftX": 34679.13,
+              "workFeetY": 3248
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 549.317,
+          "maxProbeMs": 5.0872
+        },
+        "ticks": {
+          "median": 347,
+          "minimum": 344,
+          "maximum": 347
+        },
+        "planningMs": {
+          "median": 551.6380999999997,
+          "minimum": 549.317,
+          "maximum": 570.6482999999995
+        }
+      },
+      "thin": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "timeout",
+            "ticks": 951,
+            "planningMs": 932.4586999999993,
+            "maxProbeMs": 10.1999
+          },
+          {
+            "status": "timeout",
+            "ticks": 951,
+            "planningMs": 998.8675,
+            "maxProbeMs": 14.1087
+          },
+          {
+            "status": "timeout",
+            "ticks": 951,
+            "planningMs": 958.4548000000008,
+            "maxProbeMs": 9.7938
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "46339d7857e044429bab3df6addc3dce",
+          "status": "timeout",
+          "reason": "excavation_route_search_budget_exhausted",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 951,
+          "proofs": [],
+          "pending": [
+            [
+              2176,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "observedGameUpdate": 3490,
+              "x": 34671.523,
+              "y": 3142,
+              "arrived": false
+            },
+            {
+              "operation": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "observedGameUpdate": null
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 932.4586999999993,
+          "maxProbeMs": 10.1999
+        },
+        "ticks": {
+          "median": 951,
+          "minimum": 951,
+          "maximum": 951
+        },
+        "planningMs": {
+          "median": 958.4548000000008,
+          "minimum": 932.4586999999993,
+          "maximum": 998.8675
+        }
+      },
+      "sequential": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "timeout",
+            "ticks": 905,
+            "planningMs": 786.38,
+            "maxProbeMs": 9.3021
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "c8b4a0ed1f8f4894885b30f17b01cdee",
+          "status": "timeout",
+          "reason": "excavation_route_search_budget_exhausted",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 905,
+          "proofs": [],
+          "pending": [
+            [
+              2179,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "observedGameUpdate": 6355,
+              "x": 34628.65,
+              "y": 3142,
+              "arrived": false
+            },
+            {
+              "operation": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "observedGameUpdate": null
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 786.38,
+          "maxProbeMs": 9.3021
+        },
+        "ticks": {
+          "median": 905,
+          "minimum": 905,
+          "maximum": 905
+        },
+        "planningMs": {
+          "median": 786.38,
+          "minimum": 786.38,
+          "maximum": 786.38
+        }
+      },
+      "single": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 484,
+            "planningMs": 166.43209999999993,
+            "maxProbeMs": 5.1522
+          },
+          {
+            "status": "completed",
+            "ticks": 484,
+            "planningMs": 166.01080000000005,
+            "maxProbeMs": 3.267
+          },
+          {
+            "status": "completed",
+            "ticks": 484,
+            "planningMs": 164.01600000000022,
+            "maxProbeMs": 3.5896
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "309a0ad98c5e4e629116933cc5f4c2cb",
+          "status": "completed",
+          "reason": "mine_target_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 484,
+          "proofs": [
+            {
+              "X": 2179,
+              "Y": 197,
+              "TileType": 6,
+              "Ticks": 23,
+              "Strikes": 2
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 6460,
+              "workLeftX": 34656,
+              "workFeetY": 3184
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 6537,
+              "x": 34672.195,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 6565,
+              "x": 34688.39,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 6593,
+              "x": 34704.586,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 6614,
+              "X": 2173,
+              "Y": 197,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 6689,
+              "x": 34720.78,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 6717,
+              "x": 34736.977,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 6742,
+              "workLeftX": 34736.977,
+              "workFeetY": 3184
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 6822,
+              "x": 34787.37,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 6847,
+              "X": 2179,
+              "Y": 197,
+              "Ticks": 23,
+              "destroyedByActor": true
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 166.43209999999993,
+          "maxProbeMs": 5.1522
+        },
+        "ticks": {
+          "median": 484,
+          "minimum": 484,
+          "maximum": 484
+        },
+        "planningMs": {
+          "median": 166.01080000000005,
+          "minimum": 164.01600000000022,
+          "maximum": 166.43209999999993
+        }
+      },
+      "dead_end": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "timeout",
+            "ticks": 905,
+            "planningMs": 785.8552000000009,
+            "maxProbeMs": 7.5399
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "6c14c6139ec84c37981d80740d5adbc5",
+          "status": "timeout",
+          "reason": "excavation_route_search_budget_exhausted",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 905,
+          "proofs": [],
+          "pending": [
+            [
+              2179,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "failed",
+              "reason": "navigation_stalled",
+              "observedGameUpdate": 8718,
+              "x": 34640.168,
+              "y": 3142,
+              "arrived": false
+            },
+            {
+              "operation": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "observedGameUpdate": null
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 785.8552000000009,
+          "maxProbeMs": 7.5399
+        },
+        "ticks": {
+          "median": 905,
+          "minimum": 905,
+          "maximum": 905
+        },
+        "planningMs": {
+          "median": 785.8552000000009,
+          "minimum": 785.8552000000009,
+          "maximum": 785.8552000000009
+        }
+      },
+      "path_changed": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "timeout",
+            "ticks": 905,
+            "planningMs": 766.0013000000013,
+            "maxProbeMs": 6.7348
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "371b21bf6b7e4e97b190f040f488ba34",
+          "status": "timeout",
+          "reason": "excavation_route_search_budget_exhausted",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 905,
+          "proofs": [],
+          "pending": [
+            [
+              2179,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "failed",
+              "reason": "navigation_stalled",
+              "observedGameUpdate": 9617,
+              "x": 34640.168,
+              "y": 3142,
+              "arrived": false
+            },
+            {
+              "operation": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "observedGameUpdate": null
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 766.0013000000013,
+          "maxProbeMs": 6.7348
+        },
+        "ticks": {
+          "median": 905,
+          "minimum": 905,
+          "maximum": 905
+        },
+        "planningMs": {
+          "median": 766.0013000000013,
+          "minimum": 766.0013000000013,
+          "maximum": 766.0013000000013
+        }
+      },
+      "stop_clearing": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "cancelled",
+            "ticks": 906,
+            "planningMs": 916.0090000000006,
+            "maxProbeMs": 6.5156
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "302cc6dff4204583809c1afd92ecf9df",
+          "status": "cancelled",
+          "reason": "explicit_stop",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 906,
+          "proofs": [],
+          "pending": [
+            [
+              2176,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "observedGameUpdate": 10546,
+              "x": 34671.523,
+              "y": 3142,
+              "arrived": false
+            },
+            {
+              "operation": "mine_target",
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "observedGameUpdate": null
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 916.0090000000006,
+          "maxProbeMs": 6.5156
+        },
+        "ticks": {
+          "median": 906,
+          "minimum": 906,
+          "maximum": 906
+        },
+        "planningMs": {
+          "median": 916.0090000000006,
+          "minimum": 916.0090000000006,
+          "maximum": 916.0090000000006
+        }
+      },
+      "stop_after_cut": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "cancelled",
+            "ticks": 907,
+            "planningMs": 928.0391999999995,
+            "maxProbeMs": 8.2546
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "5ead5c84e9c14b589b10314006df925e",
+          "status": "cancelled",
+          "reason": "explicit_stop",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 907,
+          "proofs": [],
+          "pending": [
+            [
+              2176,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "observedGameUpdate": 11456,
+              "x": 34671.523,
+              "y": 3142,
+              "arrived": false
+            },
+            {
+              "operation": "mine_target",
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "observedGameUpdate": null
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 928.0391999999995,
+          "maxProbeMs": 8.2546
+        },
+        "ticks": {
+          "median": 907,
+          "minimum": 907,
+          "maximum": 907
+        },
+        "planningMs": {
+          "median": 928.0391999999995,
+          "minimum": 928.0391999999995,
+          "maximum": 928.0391999999995
+        }
+      },
+      "falling_sand": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "timeout",
+            "ticks": 926,
+            "planningMs": 935.0118999999992,
+            "maxProbeMs": 9.4925
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "26dd7aa8e08441229275135a98341fd5",
+          "status": "timeout",
+          "reason": "excavation_route_search_budget_exhausted",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 926,
+          "proofs": [],
+          "pending": [
+            [
+              2176,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "observedGameUpdate": 12367,
+              "x": 34649.445,
+              "y": 3142,
+              "arrived": false
+            },
+            {
+              "operation": "mine_target",
+              "status": "timeout",
+              "reason": "mining_stance_search_budget_exhausted",
+              "observedGameUpdate": null
+            }
+          ],
+          "omittedChildren": 0,
+          "planningMs": 935.0118999999992,
+          "maxProbeMs": 9.4925
+        },
+        "ticks": {
+          "median": 926,
+          "minimum": 926,
+          "maximum": 926
+        },
+        "planningMs": {
+          "median": 935.0118999999992,
+          "minimum": 935.0118999999992,
+          "maximum": 935.0118999999992
+        }
+      }
+    }
+  },
+  "candidate": {
+    "packageSHA256": "a5da84d333e8fa8ce5470bb03951fa0bd9ca37c0892ac332f137cc2aceae4ae3",
+    "cases": {
+      "direct": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 27,
+            "planningMs": 0,
+            "maxSliceMs": 0,
+            "actualCuts": 0,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "265acb0bcc8f4311bfde9c21ed9ffb01",
+          "status": "completed",
+          "reason": "excavation_cluster_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 27,
+          "proofs": [
+            {
+              "X": 2169,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 31,
+              "workLeftX": 34656,
+              "workFeetY": 3184
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [],
+          "navigationDispatches": 0,
+          "navigationFailures": 0,
+          "actualCuts": 0,
+          "replans": 0,
+          "planningMs": 0,
+          "maxSliceMs": 0,
+          "updates": {
+            "waiting": 1,
+            "ore": 25
+          }
+        },
+        "ticks": {
+          "median": 27,
+          "minimum": 27,
+          "maximum": 27
+        },
+        "planningMs": {
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "detour": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 161,
+            "planningMs": 136.97250000000003,
+            "maxSliceMs": 16.6392,
+            "actualCuts": 0,
+            "navigationFailures": 0
+          },
+          {
+            "status": "completed",
+            "ticks": 142,
+            "planningMs": 74.2326,
+            "maxSliceMs": 4.7416,
+            "actualCuts": 0,
+            "navigationFailures": 0
+          },
+          {
+            "status": "completed",
+            "ticks": 138,
+            "planningMs": 76.65780000000001,
+            "maxSliceMs": 4.6673,
+            "actualCuts": 0,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "c5804bcd836e4324a15404ceb8952e26",
+          "status": "completed",
+          "reason": "excavation_cluster_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 161,
+          "proofs": [
+            {
+              "X": 2176,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 171,
+              "x": 34765.754,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 196,
+              "workLeftX": 34765.754,
+              "workFeetY": 3184
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "movement",
+              "movement": {
+                "Movement": 64,
+                "Clearance": 0,
+                "Target": 23,
+                "Cuts": 0,
+                "Alteration": 0,
+                "Total": 87
+              },
+              "clearance": {
+                "Movement": 93,
+                "Clearance": 19,
+                "Target": 23,
+                "Cuts": 1,
+                "Alteration": 4,
+                "Total": 139
+              },
+              "predictedGoal": null,
+              "actions": null,
+              "dependencies": null,
+              "capability": -1645137549,
+              "gameUpdate": 67
+            }
+          ],
+          "navigationDispatches": 1,
+          "navigationFailures": 0,
+          "actualCuts": 0,
+          "replans": 0,
+          "planningMs": 136.97250000000003,
+          "maxSliceMs": 16.6392,
+          "updates": {
+            "waiting": 1,
+            "planning": 30,
+            "movement": 104,
+            "ore": 25
+          }
+        },
+        "ticks": {
+          "median": 142,
+          "minimum": 138,
+          "maximum": 161
+        },
+        "planningMs": {
+          "median": 76.65780000000001,
+          "minimum": 74.2326,
+          "maximum": 136.97250000000003
+        }
+      },
+      "fast": {
+        "tool": 2176,
+        "prefix": 15,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 102,
+            "planningMs": 180.2087,
+            "maxSliceMs": 6.3528,
+            "actualCuts": 2,
+            "navigationFailures": 0
+          },
+          {
+            "status": "completed",
+            "ticks": 102,
+            "planningMs": 177.02809999999997,
+            "maxSliceMs": 5.8773,
+            "actualCuts": 2,
+            "navigationFailures": 0
+          },
+          {
+            "status": "completed",
+            "ticks": 103,
+            "planningMs": 178.74200000000008,
+            "maxSliceMs": 4.7579,
+            "actualCuts": 2,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "28146044c1c74ab7a56c3e55f8daee49",
+          "status": "completed",
+          "reason": "excavation_cluster_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 102,
+          "proofs": [
+            {
+              "X": 2169,
+              "Y": 204,
+              "Type": 6,
+              "Update": 1,
+              "Strikes": 1
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 554,
+              "X": 2167,
+              "Y": 199,
+              "Ticks": 10,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 567,
+              "X": 2166,
+              "Y": 199,
+              "Ticks": 10,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 590,
+              "workLeftX": 34656,
+              "workFeetY": 3248
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "clearance",
+              "movement": {
+                "Movement": 60,
+                "Clearance": 0,
+                "Target": 10,
+                "Cuts": 0,
+                "Alteration": 0,
+                "Total": 70
+              },
+              "clearance": {
+                "Movement": 20,
+                "Clearance": 20,
+                "Target": 10,
+                "Cuts": 2,
+                "Alteration": 8,
+                "Total": 58
+              },
+              "predictedGoal": {
+                "X": 2169,
+                "Y": 204,
+                "Type": 6,
+                "Shape": "True:6:Solid:False:False",
+                "Revision": 7
+              },
+              "actions": [
+                {
+                  "kind": "Mine",
+                  "X": 2167,
+                  "Y": 199,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2166,
+                  "Y": 199,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3206
+                }
+              ],
+              "dependencies": {
+                "count": 38,
+                "left": 2165,
+                "right": 2170,
+                "top": 196,
+                "bottom": 205
+              },
+              "capability": -642554948,
+              "gameUpdate": 541
+            }
+          ],
+          "navigationDispatches": 0,
+          "navigationFailures": 0,
+          "actualCuts": 2,
+          "replans": 0,
+          "planningMs": 180.2087,
+          "maxSliceMs": 6.3528,
+          "updates": {
+            "waiting": 14,
+            "planning": 51,
+            "clearance": 24,
+            "ore": 12
+          }
+        },
+        "ticks": {
+          "median": 102,
+          "minimum": 102,
+          "maximum": 103
+        },
+        "planningMs": {
+          "median": 178.74200000000008,
+          "minimum": 177.02809999999997,
+          "maximum": 180.2087
+        }
+      },
+      "slow": {
+        "tool": 3509,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 166,
+            "planningMs": 185.72469999999996,
+            "maxSliceMs": 4.9276,
+            "actualCuts": 0,
+            "navigationFailures": 0
+          },
+          {
+            "status": "completed",
+            "ticks": 165,
+            "planningMs": 182.979,
+            "maxSliceMs": 5.7133,
+            "actualCuts": 0,
+            "navigationFailures": 0
+          },
+          {
+            "status": "completed",
+            "ticks": 162,
+            "planningMs": 172.42229999999998,
+            "maxSliceMs": 4.3273,
+            "actualCuts": 0,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "8e537a81867c4c4cbcb126be312b16d7",
+          "status": "completed",
+          "reason": "excavation_cluster_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 166,
+          "proofs": [
+            {
+              "X": 2169,
+              "Y": 204,
+              "Type": 6,
+              "Update": 31,
+              "Strikes": 3
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 925,
+              "x": 34745.83,
+              "y": 3206,
+              "arrived": true
+            },
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 973,
+              "workLeftX": 34745.83,
+              "workFeetY": 3248
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "movement",
+              "movement": {
+                "Movement": 60,
+                "Clearance": 0,
+                "Target": 46,
+                "Cuts": 0,
+                "Alteration": 0,
+                "Total": 106
+              },
+              "clearance": {
+                "Movement": 20,
+                "Clearance": 62,
+                "Target": 46,
+                "Cuts": 2,
+                "Alteration": 8,
+                "Total": 136
+              },
+              "predictedGoal": null,
+              "actions": null,
+              "dependencies": null,
+              "capability": 1721271552,
+              "gameUpdate": 862
+            }
+          ],
+          "navigationDispatches": 1,
+          "navigationFailures": 0,
+          "actualCuts": 0,
+          "replans": 0,
+          "planningMs": 185.72469999999996,
+          "maxSliceMs": 4.9276,
+          "updates": {
+            "waiting": 1,
+            "planning": 53,
+            "movement": 63,
+            "ore": 48
+          }
+        },
+        "ticks": {
+          "median": 165,
+          "minimum": 162,
+          "maximum": 166
+        },
+        "planningMs": {
+          "median": 182.979,
+          "minimum": 172.42229999999998,
+          "maximum": 185.72469999999996
+        }
+      },
+      "thin": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 313,
+            "planningMs": 284.0045,
+            "maxSliceMs": 5.9271,
+            "actualCuts": 3,
+            "navigationFailures": 0
+          },
+          {
+            "status": "completed",
+            "ticks": 309,
+            "planningMs": 269.04509999999993,
+            "maxSliceMs": 6.7155,
+            "actualCuts": 3,
+            "navigationFailures": 0
+          },
+          {
+            "status": "completed",
+            "ticks": 308,
+            "planningMs": 263.95660000000004,
+            "maxSliceMs": 6.3994,
+            "actualCuts": 3,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "541f3365ce1b41f7b21d9e540b55d12c",
+          "status": "completed",
+          "reason": "excavation_cluster_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 313,
+          "proofs": [
+            {
+              "X": 2176,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 1454,
+              "x": 34672.195,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 1476,
+              "X": 2169,
+              "Y": 196,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 1498,
+              "X": 2169,
+              "Y": 197,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 1520,
+              "X": 2169,
+              "Y": 198,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 1559,
+              "x": 34704.477,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 1598,
+              "x": 34736.758,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 1625,
+              "workLeftX": 34736.758,
+              "workFeetY": 3184
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "clearance",
+              "movement": null,
+              "clearance": {
+                "Movement": 94,
+                "Clearance": 57,
+                "Target": 23,
+                "Cuts": 3,
+                "Alteration": 12,
+                "Total": 186
+              },
+              "predictedGoal": {
+                "X": 2176,
+                "Y": 197,
+                "Type": 6,
+                "Shape": "True:6:Solid:False:False",
+                "Revision": 6
+              },
+              "actions": [
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2169,
+                  "Y": 196,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2169,
+                  "Y": 197,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2169,
+                  "Y": 198,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34702.633,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34702.633,
+                  "fromY": 3142,
+                  "toX": 34734.914,
+                  "toY": 3142
+                }
+              ],
+              "dependencies": {
+                "count": 51,
+                "left": 2165,
+                "right": 2177,
+                "top": 195,
+                "bottom": 200
+              },
+              "capability": 1485044174,
+              "gameUpdate": 1425
+            }
+          ],
+          "navigationDispatches": 3,
+          "navigationFailures": 0,
+          "actualCuts": 3,
+          "replans": 0,
+          "planningMs": 284.0045,
+          "maxSliceMs": 5.9271,
+          "updates": {
+            "waiting": 9,
+            "planning": 111,
+            "movement": 104,
+            "clearance": 63,
+            "ore": 25
+          }
+        },
+        "ticks": {
+          "median": 309,
+          "minimum": 308,
+          "maximum": 313
+        },
+        "planningMs": {
+          "median": 269.04509999999993,
+          "minimum": 263.95660000000004,
+          "maximum": 284.0045
+        }
+      },
+      "sequential": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 467,
+            "planningMs": 458.42679999999996,
+            "maxSliceMs": 9.4417,
+            "actualCuts": 6,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "1787b49e154646348ac0315096013b48",
+          "status": "completed",
+          "reason": "excavation_cluster_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 467,
+          "proofs": [
+            {
+              "X": 2179,
+              "Y": 197,
+              "Type": 6,
+              "Update": 12,
+              "Strikes": 2
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 2428,
+              "X": 2168,
+              "Y": 196,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 2450,
+              "X": 2168,
+              "Y": 197,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 2472,
+              "X": 2168,
+              "Y": 198,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 2511,
+              "x": 34688.28,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 2550,
+              "x": 34720.562,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 2572,
+              "X": 2173,
+              "Y": 196,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 2594,
+              "X": 2173,
+              "Y": 197,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 2616,
+              "X": 2173,
+              "Y": 198,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 2655,
+              "x": 34752.844,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 2694,
+              "x": 34785.125,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "excavate_tiles",
+              "status": "completed",
+              "reason": "excavation_run_verified",
+              "observedGameUpdate": 2721,
+              "workLeftX": 34785.125,
+              "workFeetY": 3184
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "clearance",
+              "movement": null,
+              "clearance": {
+                "Movement": 140,
+                "Clearance": 114,
+                "Target": 23,
+                "Cuts": 6,
+                "Alteration": 24,
+                "Total": 301
+              },
+              "predictedGoal": {
+                "X": 2179,
+                "Y": 197,
+                "Type": 6,
+                "Shape": "True:6:Solid:False:False",
+                "Revision": 36
+              },
+              "actions": [
+                {
+                  "kind": "Mine",
+                  "X": 2168,
+                  "Y": 196,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2168,
+                  "Y": 197,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2168,
+                  "Y": 198,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34688.28,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34688.28,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2173,
+                  "Y": 196,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2173,
+                  "Y": 197,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2173,
+                  "Y": 198,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34752.844,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34752.844,
+                  "fromY": 3142,
+                  "toX": 34785.125,
+                  "toY": 3142
+                }
+              ],
+              "dependencies": {
+                "count": 67,
+                "left": 2165,
+                "right": 2180,
+                "top": 195,
+                "bottom": 200
+              },
+              "capability": 30010094,
+              "gameUpdate": 2406
+            }
+          ],
+          "navigationDispatches": 4,
+          "navigationFailures": 0,
+          "actualCuts": 6,
+          "replans": 0,
+          "planningMs": 458.42679999999996,
+          "maxSliceMs": 9.4417,
+          "updates": {
+            "waiting": 13,
+            "planning": 150,
+            "clearance": 126,
+            "movement": 152,
+            "ore": 25
+          }
+        },
+        "ticks": {
+          "median": 467,
+          "minimum": 467,
+          "maximum": 467
+        },
+        "planningMs": {
+          "median": 458.42679999999996,
+          "minimum": 458.42679999999996,
+          "maximum": 458.42679999999996
+        }
+      },
+      "single": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "completed",
+            "ticks": 467,
+            "planningMs": 449.3437,
+            "maxSliceMs": 6.0509,
+            "actualCuts": 6,
+            "navigationFailures": 0
+          },
+          {
+            "status": "completed",
+            "ticks": 465,
+            "planningMs": 449.86879999999996,
+            "maxSliceMs": 6.7849,
+            "actualCuts": 6,
+            "navigationFailures": 0
+          },
+          {
+            "status": "completed",
+            "ticks": 471,
+            "planningMs": 465.1225999999999,
+            "maxSliceMs": 8.0196,
+            "actualCuts": 6,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "4ec07e617f644ff097b0b9b2af4de13e",
+          "status": "completed",
+          "reason": "mine_target_verified",
+          "released": true,
+          "effectVerified": true,
+          "ticks": 467,
+          "proofs": [
+            {
+              "X": 2179,
+              "Y": 197,
+              "TileType": 6,
+              "Ticks": 23,
+              "Strikes": 2
+            }
+          ],
+          "pending": [],
+          "children": [
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 2899,
+              "X": 2168,
+              "Y": 196,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 2921,
+              "X": 2168,
+              "Y": 197,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 2943,
+              "X": 2168,
+              "Y": 198,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 2982,
+              "x": 34688.28,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 3021,
+              "x": 34720.562,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 3043,
+              "X": 2173,
+              "Y": 196,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 3065,
+              "X": 2173,
+              "Y": 197,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 3087,
+              "X": 2173,
+              "Y": 198,
+              "Ticks": 19,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 3126,
+              "x": 34752.844,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 3165,
+              "x": 34785.125,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "completed",
+              "reason": "native_tile_destroyed",
+              "observedGameUpdate": 3192,
+              "X": 2179,
+              "Y": 197,
+              "Ticks": 23,
+              "destroyedByActor": true
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "clearance",
+              "movement": null,
+              "clearance": {
+                "Movement": 140,
+                "Clearance": 114,
+                "Target": 23,
+                "Cuts": 6,
+                "Alteration": 24,
+                "Total": 301
+              },
+              "predictedGoal": {
+                "X": 2179,
+                "Y": 197,
+                "Type": 6,
+                "Shape": "True:6:Solid:False:False",
+                "Revision": 49
+              },
+              "actions": [
+                {
+                  "kind": "Mine",
+                  "X": 2168,
+                  "Y": 196,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2168,
+                  "Y": 197,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2168,
+                  "Y": 198,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34688.28,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34688.28,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2173,
+                  "Y": 196,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2173,
+                  "Y": 197,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2173,
+                  "Y": 198,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34752.844,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34752.844,
+                  "fromY": 3142,
+                  "toX": 34785.125,
+                  "toY": 3142
+                }
+              ],
+              "dependencies": {
+                "count": 67,
+                "left": 2165,
+                "right": 2180,
+                "top": 195,
+                "bottom": 200
+              },
+              "capability": -1621915641,
+              "gameUpdate": 2877
+            }
+          ],
+          "navigationDispatches": 4,
+          "navigationFailures": 0,
+          "actualCuts": 6,
+          "replans": 0,
+          "planningMs": 449.3437,
+          "maxSliceMs": 6.0509,
+          "updates": {
+            "waiting": 13,
+            "planning": 150,
+            "clearance": 126,
+            "movement": 152,
+            "ore": 25
+          }
+        },
+        "ticks": {
+          "median": 467,
+          "minimum": 465,
+          "maximum": 471
+        },
+        "planningMs": {
+          "median": 449.86879999999996,
+          "minimum": 449.3437,
+          "maximum": 465.1225999999999
+        }
+      },
+      "dead_end": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "timeout",
+            "ticks": 902,
+            "planningMs": 866.1972000000002,
+            "maxSliceMs": 10.0074,
+            "actualCuts": 0,
+            "navigationFailures": 1
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "b533c1459ef8404ca734a96376d3427b",
+          "status": "timeout",
+          "reason": "excavation_route_search_budget_exhausted",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 902,
+          "proofs": [],
+          "pending": [
+            [
+              2179,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "failed",
+              "reason": "navigation_stalled",
+              "observedGameUpdate": 5036,
+              "x": 34640.168,
+              "y": 3142,
+              "arrived": false
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "approach",
+              "movement": null,
+              "clearance": null,
+              "predictedGoal": null,
+              "actions": null,
+              "dependencies": null,
+              "capability": 1058230546,
+              "gameUpdate": 4378
+            }
+          ],
+          "navigationDispatches": 1,
+          "navigationFailures": 1,
+          "actualCuts": 0,
+          "replans": 0,
+          "planningMs": 866.1972000000002,
+          "maxSliceMs": 10.0074,
+          "updates": {
+            "waiting": 1,
+            "planning": 242,
+            "movement": 658
+          }
+        },
+        "ticks": {
+          "median": 902,
+          "minimum": 902,
+          "maximum": 902
+        },
+        "planningMs": {
+          "median": 866.1972000000002,
+          "minimum": 866.1972000000002,
+          "maximum": 866.1972000000002
+        }
+      },
+      "path_changed": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "timeout",
+            "ticks": 908,
+            "planningMs": 1321.6262000000006,
+            "maxSliceMs": 18.2784,
+            "actualCuts": 1,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "98c17066535a443db8ac4354e836ca31",
+          "status": "timeout",
+          "reason": "excavation_route_search_budget_exhausted",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 908,
+          "proofs": [],
+          "pending": [
+            [
+              2179,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "mine_tile",
+              "status": "cancelled",
+              "reason": "excavation_needs_replan",
+              "observedGameUpdate": 5202,
+              "X": 2168,
+              "Y": 196,
+              "Ticks": 2,
+              "destroyedByActor": true
+            },
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "observedGameUpdate": 5953,
+              "x": 34633.445,
+              "y": 3142,
+              "arrived": false
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "clearance",
+              "movement": null,
+              "clearance": {
+                "Movement": 140,
+                "Clearance": 114,
+                "Target": 23,
+                "Cuts": 6,
+                "Alteration": 24,
+                "Total": 301
+              },
+              "predictedGoal": {
+                "X": 2179,
+                "Y": 197,
+                "Type": 6,
+                "Shape": "True:6:Solid:False:False",
+                "Revision": 70
+              },
+              "actions": [
+                {
+                  "kind": "Mine",
+                  "X": 2168,
+                  "Y": 196,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2168,
+                  "Y": 197,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2168,
+                  "Y": 198,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34656,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34688.28,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34688.28,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2173,
+                  "Y": 196,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2173,
+                  "Y": 197,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2173,
+                  "Y": 198,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34720.562,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34720.562,
+                  "fromY": 3142,
+                  "toX": 34752.844,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34752.844,
+                  "fromY": 3142,
+                  "toX": 34785.125,
+                  "toY": 3142
+                }
+              ],
+              "dependencies": {
+                "count": 67,
+                "left": 2165,
+                "right": 2180,
+                "top": 195,
+                "bottom": 200
+              },
+              "capability": 1908787859,
+              "gameUpdate": 5198
+            },
+            {
+              "choice": "approach",
+              "movement": null,
+              "clearance": null,
+              "predictedGoal": null,
+              "actions": null,
+              "dependencies": null,
+              "capability": 1908787859,
+              "gameUpdate": 5440
+            }
+          ],
+          "navigationDispatches": 1,
+          "navigationFailures": 0,
+          "actualCuts": 1,
+          "replans": 1,
+          "planningMs": 1321.6262000000006,
+          "maxSliceMs": 18.2784,
+          "updates": {
+            "waiting": 3,
+            "planning": 386,
+            "clearance": 4,
+            "movement": 514
+          }
+        },
+        "ticks": {
+          "median": 908,
+          "minimum": 908,
+          "maximum": 908
+        },
+        "planningMs": {
+          "median": 1321.6262000000006,
+          "minimum": 1321.6262000000006,
+          "maximum": 1321.6262000000006
+        }
+      },
+      "stop_clearing": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "cancelled",
+            "ticks": 137,
+            "planningMs": 258.12649999999996,
+            "maxSliceMs": 8.155,
+            "actualCuts": 0,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "3d399ff26cdc408dad120fc1d01ff7ec",
+          "status": "cancelled",
+          "reason": "explicit_stop",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 137,
+          "proofs": [],
+          "pending": [
+            [
+              2176,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 6092,
+              "x": 34672.195,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "observedGameUpdate": 6095,
+              "X": 2169,
+              "Y": 196,
+              "Ticks": 0,
+              "destroyedByActor": false
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "clearance",
+              "movement": null,
+              "clearance": {
+                "Movement": 94,
+                "Clearance": 57,
+                "Target": 23,
+                "Cuts": 3,
+                "Alteration": 12,
+                "Total": 186
+              },
+              "predictedGoal": {
+                "X": 2176,
+                "Y": 197,
+                "Type": 6,
+                "Shape": "True:6:Solid:False:False",
+                "Revision": 35
+              },
+              "actions": [
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2169,
+                  "Y": 196,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2169,
+                  "Y": 197,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2169,
+                  "Y": 198,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34702.633,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34702.633,
+                  "fromY": 3142,
+                  "toX": 34734.914,
+                  "toY": 3142
+                }
+              ],
+              "dependencies": {
+                "count": 51,
+                "left": 2165,
+                "right": 2177,
+                "top": 195,
+                "bottom": 200
+              },
+              "capability": -679934912,
+              "gameUpdate": 6063
+            }
+          ],
+          "navigationDispatches": 1,
+          "navigationFailures": 0,
+          "actualCuts": 0,
+          "replans": 0,
+          "planningMs": 258.12649999999996,
+          "maxSliceMs": 8.155,
+          "updates": {
+            "waiting": 3,
+            "planning": 103,
+            "movement": 28,
+            "clearance": 2
+          }
+        },
+        "ticks": {
+          "median": 137,
+          "minimum": 137,
+          "maximum": 137
+        },
+        "planningMs": {
+          "median": 258.12649999999996,
+          "minimum": 258.12649999999996,
+          "maximum": 258.12649999999996
+        }
+      },
+      "stop_after_cut": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "cancelled",
+            "ticks": 137,
+            "planningMs": 252.17869999999996,
+            "maxSliceMs": 7.6043,
+            "actualCuts": 1,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "d3022b143ae04436bb09b7f064066f53",
+          "status": "cancelled",
+          "reason": "explicit_stop",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 137,
+          "proofs": [],
+          "pending": [
+            [
+              2176,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "completed",
+              "reason": "native_navigation_arrival_verified",
+              "observedGameUpdate": 6232,
+              "x": 34672.195,
+              "y": 3142,
+              "arrived": true
+            },
+            {
+              "operation": "mine_tile",
+              "status": "cancelled",
+              "reason": "explicit_stop",
+              "observedGameUpdate": 6236,
+              "X": 2169,
+              "Y": 196,
+              "Ticks": 1,
+              "destroyedByActor": true
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "clearance",
+              "movement": null,
+              "clearance": {
+                "Movement": 94,
+                "Clearance": 57,
+                "Target": 23,
+                "Cuts": 3,
+                "Alteration": 12,
+                "Total": 186
+              },
+              "predictedGoal": {
+                "X": 2176,
+                "Y": 197,
+                "Type": 6,
+                "Shape": "True:6:Solid:False:False",
+                "Revision": 35
+              },
+              "actions": [
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34656,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2169,
+                  "Y": 196,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2169,
+                  "Y": 197,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Mine",
+                  "X": 2169,
+                  "Y": 198,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34670.35,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34670.35,
+                  "fromY": 3142,
+                  "toX": 34702.633,
+                  "toY": 3142
+                },
+                {
+                  "kind": "Move",
+                  "X": 0,
+                  "Y": 0,
+                  "fromX": 34702.633,
+                  "fromY": 3142,
+                  "toX": 34734.914,
+                  "toY": 3142
+                }
+              ],
+              "dependencies": {
+                "count": 51,
+                "left": 2165,
+                "right": 2177,
+                "top": 195,
+                "bottom": 200
+              },
+              "capability": 1929843732,
+              "gameUpdate": 6203
+            }
+          ],
+          "navigationDispatches": 1,
+          "navigationFailures": 0,
+          "actualCuts": 1,
+          "replans": 0,
+          "planningMs": 252.17869999999996,
+          "maxSliceMs": 7.6043,
+          "updates": {
+            "waiting": 3,
+            "planning": 102,
+            "movement": 28,
+            "clearance": 3
+          }
+        },
+        "ticks": {
+          "median": 137,
+          "minimum": 137,
+          "maximum": 137
+        },
+        "planningMs": {
+          "median": 252.17869999999996,
+          "minimum": 252.17869999999996,
+          "maximum": 252.17869999999996
+        }
+      },
+      "falling_sand": {
+        "tool": 1320,
+        "prefix": 0,
+        "runs": [
+          {
+            "status": "timeout",
+            "ticks": 902,
+            "planningMs": 928.4591000000003,
+            "maxSliceMs": 9.3373,
+            "actualCuts": 0,
+            "navigationFailures": 0
+          }
+        ],
+        "firstReceipt": {
+          "taskId": "fbe097b1e6f3499bb5ec061995d32c30",
+          "status": "timeout",
+          "reason": "excavation_route_search_budget_exhausted",
+          "released": true,
+          "effectVerified": false,
+          "ticks": 902,
+          "proofs": [],
+          "pending": [
+            [
+              2176,
+              197
+            ]
+          ],
+          "children": [
+            {
+              "operation": "navigate_to_landing_region",
+              "status": "timeout",
+              "reason": "excavation_route_search_budget_exhausted",
+              "observedGameUpdate": 7141,
+              "x": 34671.523,
+              "y": 3142,
+              "arrived": false
+            }
+          ],
+          "omittedChildren": 0,
+          "decisions": [
+            {
+              "choice": "approach",
+              "movement": null,
+              "clearance": null,
+              "predictedGoal": null,
+              "actions": null,
+              "dependencies": null,
+              "capability": -597609491,
+              "gameUpdate": 6497
+            }
+          ],
+          "navigationDispatches": 1,
+          "navigationFailures": 0,
+          "actualCuts": 0,
+          "replans": 0,
+          "planningMs": 928.4591000000003,
+          "maxSliceMs": 9.3373,
+          "updates": {
+            "waiting": 1,
+            "planning": 255,
+            "movement": 645
+          }
+        },
+        "ticks": {
+          "median": 902,
+          "minimum": 902,
+          "maximum": 902
+        },
+        "planningMs": {
+          "median": 928.4591000000003,
+          "minimum": 928.4591000000003,
+          "maximum": 928.4591000000003
+        }
+      }
+    }
+  }
+}

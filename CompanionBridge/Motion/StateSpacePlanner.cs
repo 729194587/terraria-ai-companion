@@ -195,6 +195,9 @@ internal static class StateSpacePlanner
                 }
                 expansions++;
                 TotalExpansions=expansions;
+#if NAVIGATION_EXPERIMENT
+                NavigationExperiment.Expanded++;
+#endif
                 // Region goals also need an in-place ascent, e.g. a platform above
                 // the player in a narrow shaft. Horizontal crossing keeps its existing
                 // candidates; all variants use the same sweep, drop and braking proof.
@@ -205,23 +208,23 @@ internal static class StateSpacePlanner
                 foreach (int dir in directions)
                 {
                     // BuildHoldOptions from upstream: walk then 2-frame hold increments.
-                    int ordinaryOptions=(ph.JumpHeight+1)/2;
-                    int extraOptions=ph.ExtraJump!=null&&(cur.ExtraAvailable||cur.Grounded)?4:0;
-                    int airOptions=ph.Air?.Kind==AirKind.Wings?5:ph.Air?.Kind==AirKind.RocketBoots?3:0;
-                    for (int option = 0; option <= ordinaryOptions+extraOptions+airOptions; option++)
+#if NAVIGATION_EXPERIMENT
+                    int holdStep=NavigationExperiment.HoldStep;
+#else
+                    const int holdStep=2;
+#endif
+                    foreach (var action in ph.Launches(cur,dir,holdStep))
                     {
-                        if (dir == 0 && option == 0) continue;
+                        int hold=action.Hold;
+                        if (dir == 0 && hold == 0) continue;
                         if(watch.Elapsed.TotalMilliseconds>=budgetMs)
                         {
                             yield return Result("time_budget");
                             sliceStart=expansions;
                             budgetMs=sliceMilliseconds;maxExpansions=sliceNodes;
                         }
-                        int hold = option>ordinaryOptions?ph.JumpHeight:Math.Min(option * 2, ph.JumpHeight);
-                        int extraFrame=option>ordinaryOptions&&option<=ordinaryOptions+extraOptions?hold+1+(option-ordinaryOptions-1)*8:-1;
-                        int airOption=option-ordinaryOptions-extraOptions-1;
-                        int airStart=airOption>=0?hold+1+(ph.Air.Kind==AirKind.RocketBoots?airOption*8:0):-1;
-                        int airHold=airOption>=0?(ph.Air.Kind==AirKind.Wings?(airOption+1)*8:1):0;
+                        int extraFrame=action.ExtraFrame, airStart=action.AirStart, airHold=action.AirHold;
+                        int impulseFrame=action.ImpulseFrame;
                         if(requireInitialJump&&cur==start&&hold==0)
                         {Reject("graph launch requires jump");continue;}
                         foreach (int stride in hold == 0 ? new[] { 24, 6 } : new[] { 24 })
@@ -232,9 +235,12 @@ internal static class StateSpacePlanner
                                 sliceStart=expansions;
                                 budgetMs=sliceMilliseconds;maxExpansions=sliceNodes;
                             }
-                            var edge = learning==null
-                                ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold)
+                            var edge = learning==null||impulseFrame>=0||action.ExtraCount>1||action.ExtraHold>=0
+                                ?PhysicsSimulator.Predict(cur,dir,hold,ph,world,walkFrames:stride,rollingJump:true,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold,impulseFrame:impulseFrame,impulseKey:action.ImpulseKey,extraCount:action.ExtraCount,extraHoldLimit:action.ExtraHold)
                                 :learning.Predict(cur,dir,hold,stride,ph,world,extraFrame,airStart,airHold);
+#if NAVIGATION_EXPERIMENT
+                            NavigationExperiment.Observe(edge,extraFrame,airStart);
+#endif
                             if (!edge.Safe)
                             {
                                 if (cur == start && dir == sign && hold == 0 && edge.Reason == "walking blocked")
@@ -256,10 +262,10 @@ internal static class StateSpacePlanner
                             if (rejectEdge?.Invoke(cur, edge) == true)
                             { Reject("recently failed local edge"); continue; }
                             var next = edge.Landing;
-                            float verticalSpan=ph.ExtraJump!=null||ph.Air!=null?208:StandardVerticalSpan;
+                            float verticalSpan=Math.Max(StandardVerticalSpan,ph.RiseBound(cur.Air?.WingTime??0));
                             bool descentHandoff=next.Py-start.Py>verticalSpan&&next.Py-cur.Py>16
                                 &&region!=null&&region.SurfaceY>cur.Py+PhysicsSimulator.PlayerH;
-                            if (Math.Abs(next.Px - start.Px) > (ph.ExtraJump!=null||ph.Air!=null?288:192)
+                            if (Math.Abs(next.Px - start.Px) > Math.Max(192,ph.ReachX(cur.Air?.WingTime??0)+32)
                                 || Math.Abs(next.Py - start.Py)>verticalSpan&&!descentHandoff)
                             { Reject("outside route span"); continue; }
                             // Prefer walking when it makes comparable progress. Braking at
@@ -337,5 +343,61 @@ internal static class StateSpacePlanner
             Finished=true;
             yield return Result(reachedGoal?"goal_reached":"local_frontier_exhausted");
         }
+    }
+}
+
+internal sealed record NavigationQuote(PhysicsState Start,PhysicsParameters Physics,LandingRegion Goal,
+    Route Route,Func<bool> TerrainCurrent,GrappleClimbPlan Grapple=null);
+
+// A complete landing quote can span several rolling collision windows. Only
+// simulated inputs count toward travel time. Slice boundaries never issue input.
+internal sealed class LandingRouteQuote
+{
+    internal Route Route { get; private set; }
+    internal bool BudgetLimited { get; private set; }
+    internal IEnumerable<int> Find(PhysicsState start,LandingRegion goal,PhysicsParameters physics,
+        Func<PhysicsState,IMotionWorld> worldAt,Func<PhysicsState,Prediction,bool> reject,
+        NavigationSearchMemory rootMemory=null)
+    {
+        var actions=new List<Prediction>();
+        var state=start;
+        int updates=0;
+        while(updates<600)
+        {
+            var world=worldAt(state);
+            float target=(goal.MinPlayerLeftX+goal.MaxPlayerLeftX)/2;
+            var route=SafeGroundWalk.TryPlan(state,target,target>=state.Px?1:-1,physics,world,goal);
+            if(route==null||reject(state,route.Actions[0]))
+            {
+                using var search=new StateSpacePlanner.Search(state,target,goal,physics,world,
+                    rejectEdge:reject,learning:state==start?rootMemory:null);
+                do
+                {
+                    route=search.Advance(8,1.25);
+                    yield return 1;
+                }while(!route.ReachedGoal&&!search.Finished&&search.TotalExpansions<48);
+                if(!route.ReachedGoal)
+                {
+                    BudgetLimited|=!search.Finished||route.SearchExit=="local_state_budget";
+                    if(route.Actions.Count==0)yield break;
+                    // A local search can reach the far bank before finding the
+                    // exact anchor pixel. Continue from its verified braking tail.
+                    var last=route.Actions[^1];
+                    var stopped=last.Frames[^1].State;
+                    if(goal.Distance(stopped)>=goal.Distance(state)-1)yield break;
+                    route.Actions[^1]=last with{Landing=stopped,ExecuteFrames=last.Frames.Count};
+                }
+            }
+            actions.AddRange(route.Actions);
+            updates+=route.Actions.Sum(e=>e.ExecuteFrames);
+            state=actions[^1].Landing;
+            if(route.ReachedGoal && updates<=600)
+            {
+                Route=new(actions,0,0,ReachedGoal:true,Kind:"landing_quote");
+                yield break;
+            }
+            yield return 1;
+        }
+        BudgetLimited=true;
     }
 }

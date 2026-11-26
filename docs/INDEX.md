@@ -42,6 +42,7 @@
 | [Server AI 语义场景](LOCAL_SEMANTIC_SCENE.md) | 局部与区域场景观察 |
 | [局部语义世界](L1_SEMANTIC_WORLD.md) | Tile、实体和内容的组合查询 |
 | [Server AI 地图记忆](AI_MAP_V1.md) | 持久化探索地图 |
+| [自主探索实现与验收](architecture/R3_AUTONOMOUS_EXPLORATION_IMPLEMENTATION.md) | Frontier、局部通行成本、往返委托和离线回放 |
 | [模型状态投影](MODEL_STATE_PROJECTION.md) | 模型请求中的观察投影与历史压缩 |
 | [游戏系统消息](GAME_MESSAGES.md) | Terraria 系统提示事件 |
 
@@ -74,6 +75,9 @@
 - [战斗架构历史审计](COMBAT_ARCHITECTURE_AUDIT.md)：Combat MVP 早期架构快照。
 - [Numen 参考研究](architecture/NUMEN_ADAPTATION_ROADMAP.md)：外部项目的架构参考与适配思路。
 - [架构审查计划](architecture/ARCHITECTURE_AUDIT_PLAN.md)：Agent 与游戏运行时的后续审查问题。
+- [R3-A1 Agent 自主能力审计](architecture/R3_A1_AGENT_AUTONOMY_AUDIT.md)：跨轮目标、世界认知、探索导航的证据与 R3 实施优先级。
+- [R3-B0 Terraria 游戏知识架构研究](architecture/R3_B0_GAME_KNOWLEDGE.md)：Numen 与官方 Wiki 研究、知识检索和实时状态结合方案，以及分阶段验收。
+- [R3-B1 游戏知识最小闭环实施规格](architecture/R3_B1_GAME_KNOWLEDGE_SPEC.md)：以熔岩镐为例，定义备料、核仓、探索、制作及逐步验收条件。
 - [原生执行架构](NATIVE_EXECUTION_REFACTOR.md)：原生执行、Actor 适配与效果核验。
 
 专题文档记录所属模块的设计与实现。阶段实施记录保留当时的代码基线和验证结果，当前接口以对应模块说明和源码为准。

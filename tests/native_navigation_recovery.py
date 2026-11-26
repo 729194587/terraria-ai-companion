@@ -61,6 +61,16 @@ async def verify(args):
         finally:bridge.close()
         (p/f'recovery-{scene}-receipt.json').write_text(json.dumps(dict(source=source,fixture=fixture,receipt=receipt),indent=2))
         trace=await wait_file(p/f'terrain-motion-flat-1-{scene}.json')
+        if scene=='damage':
+            lives=[frame["statLife"] for frame in trace]
+            losses=sum(b<a for a,b in zip(lives,lives[1:]))
+            assert action.get("reasonDetail")=="travel damage budget exhausted",action
+            assert losses>=3 and action["status"]=="failed" and action["endEvidence"]["inputsReleased"],action
+            row=dict(scene=scene,losses=losses,startLife=lives[0],endLife=lives[-1],inputsReleased=True)
+            rows.append(row)
+            (p/'recovery-results.json').write_text(json.dumps(rows,indent=2))
+            print(row,flush=True)
+            continue
         if scene=='turnaround':
             nav=action['evidence']['navigation']
             assert action['completed'] and action['endEvidenceStatus']=='known' and action['endEvidence']['inputsReleased'],nav
@@ -139,5 +149,5 @@ if __name__=='__main__':
     parser.add_argument('--profile',type=Path,required=True)
     parser.add_argument('--baseline',action='store_true')
     parser.add_argument('--autonomous',action='store_true')
-    parser.add_argument('--scenes',nargs='+',choices=['offset','low_wall','high_wall','air','cancel_air','turnaround'])
+    parser.add_argument('--scenes',nargs='+',choices=['offset','low_wall','high_wall','air','cancel_air','turnaround','damage'])
     asyncio.run(verify(parser.parse_args()))

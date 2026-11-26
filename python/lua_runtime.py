@@ -38,6 +38,21 @@ def bounded_action(result):
         encode(result, VALUE_BYTES)
         return result
     except ValueLimit:
+        # Preserve the terminal ore certificate when verbose navigation history
+        # cannot fit in one Lua message. The host still retains the raw receipt.
+        task = result.get('task')
+        if (isinstance(task, dict) and task.get('taskName') == 'mine_target'
+                and (result.get('targetTask') or {}).get('cluster') is True):
+            progress = dict(task.get('progress') or {})
+            progress.update(children=[], childrenTruncated=True, omittedChildren=progress.get('settledChildren'))
+            progress.pop('excavation', None)  # terminal result contains the canonical copy
+            summary = dict(task, progress=progress, lastResult=None, historyOmitted=True)
+            compact = dict(result, task=summary, evidence=dict(result.get('evidence') or {}, task=summary))
+            try:
+                encode(compact, VALUE_BYTES)
+                return compact
+            except ValueLimit:
+                pass
         return {'valid': result.get('valid'), 'status': result.get('status'),
                 'actionId': result.get('actionId'), 'reason': 'action_receipt_limit',
                 'payloadOmitted': True}
@@ -134,6 +149,7 @@ class LuaRuntime:
         self.bridge = bridge
         self.evidence_root = evidence_root
         self.last_result = None
+        self.before_player_action = None
 
     async def execute(self, source, *, chat_id=None, limits=Limits(), cancel=None,
                       allow_actions=True, on_result=None):
@@ -415,6 +431,13 @@ class LuaRuntime:
                     active = None
                     continue
                 synchronous_task = name == 'mine_target' and program_tasks.available(self.bridge)
+                if (self.before_player_action and allow_actions and not halted
+                        and out['actions'] < limits.actions and (name in atomic.BUDGETED_ACTIONS or name in ('submit_task','resume_task'))):
+                    if not await self.before_player_action():
+                        raise Interrupted('previous_task_release_unconfirmed')
+                    self.before_player_action = None
+                if name == 'cancel_task' and not allow_actions:
+                    raise Interrupted('read_only_turn')
                 if (allow_actions and not halted and handoff is None and name in atomic.BUDGETED_ACTIONS
                         and (guidance := recovery.blocked(name, args)) is not None):
                     result = {'valid': False, 'status': 'failed', 'completed': False,
@@ -481,9 +504,13 @@ class LuaRuntime:
                             await report_terminal(out['status'], result, reconcile=released)
                             continue
                         break
+                    reply = terminal_result if synchronous_task else result
+                    if synchronous_task:
+                        summary = out['lastAction'].get('task')
+                        if isinstance(summary, dict) and summary.get('historyOmitted'):
+                            reply = out['lastAction']
                     active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
-                        encode({'type': 'result', 'id': sequence,
-                                'value': terminal_result if synchronous_task else result})))
+                        encode({'type': 'result', 'id': sequence, 'value': reply})))
                     active_role = 'send'
                     await watch(active)
                     active = None

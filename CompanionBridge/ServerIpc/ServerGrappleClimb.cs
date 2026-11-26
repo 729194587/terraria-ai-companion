@@ -9,14 +9,15 @@ namespace CompanionBridge.ServerIpc;
 
 // The grapple phase owns a single native projectile. Only the unhooked
 // movement tail is predicted; attached movement always runs in Terraria.
-internal sealed class ServerGrappleClimb(GrappleClimbPlan plan,PhysicsParameters physics,Item item)
+internal sealed class ServerGrappleClimb(GrappleClimbPlan plan,PhysicsParameters physics,Item item,Func<PhysicsState,bool> allowed=null)
 {
-    private enum Phase { Fire,Latch,Pull,Detach,Tail,Settle }
-    private Phase phase;
+    private enum Phase { Approach,Fire,Latch,Pull,Detach,Tail,Settle }
+    private Phase phase=plan.Approach==null?Phase.Fire:Phase.Approach;
+    private bool approaching;
     private ActorGrapple shot;
     private readonly LocalMotionController tail=new();
     private readonly float shootSpeed=item.shootSpeed;
-    private int frames,deadline=35,stationary,settled;
+    private int frames,deadline=35+(plan.Approach?.ExecuteFrames??0),stationary,settled;
     private float lastY=float.PositiveInfinity;
     private int life;
     internal string Failure { get; private set; }
@@ -53,14 +54,26 @@ internal sealed class ServerGrappleClimb(GrappleClimbPlan plan,PhysicsParameters
                 // Preview only the native release tick using the measured pull
                 // velocity and its audited +0.01 detach adjustment. Replan
                 // from the actual result after Terraria has removed the hook.
-                var release=world.Move(state,state.Vx,state.Vy+.01f,1);
-                if(world.SafeSweep(state,release,out _)&&plan.Tail(release,physics,world)!=null)
+                var release=world.Move(state,state.Vx,state.Vy+.01f,1) with {Air=state.Air};
+                if(world.SafeSweep(state,release,out _)&&plan.Tail(release,physics,world) is {} preview
+                    &&(allowed==null||!preview.Frames.Exists(f=>!allowed(f.State))))
                 {
                     phase=Phase.Detach;
                     return new(0,true);
                 }
                 if(feet<plan.Landing.SurfaceY+40)return Fail("grapple_no_safe_release");
             }
+        }
+        if(phase==Phase.Approach)
+        {
+            if(!approaching)
+            {
+                tail.Begin(session,plan.Approach.Frames[0].Input.Direction,generation);
+                tail.LoadPlan(plan.Approach);
+                approaching=true;
+            }
+            var input=tail.Before(session,plan.Approach.Frames[0].Input.Direction,state,physics,world,generation);
+            return tail.Terminal?Fail("grapple_approach_invalidated"):input;
         }
         if(phase==Phase.Tail)
         {
@@ -77,13 +90,27 @@ internal sealed class ServerGrappleClimb(GrappleClimbPlan plan,PhysicsParameters
         var state=NativeMotionWorld.Observe(p);
         var world=new NativeMotionWorld(state);
         if(Failure!=null)return;
-        if(++frames>deadline||frames>145){Fail("grapple_phase_timeout");return;}
+        if(++frames>deadline||frames>145+(plan.Approach?.ExecuteFrames??0)){Fail("grapple_phase_timeout");return;}
         if(!Valid(p,state,world)||(life!=0&&p.statLife<life)){Fail("grapple_conditions_changed");return;}
+        life=p.statLife;
         switch(phase)
         {
+            case Phase.Approach:
+                if(!approaching)break;
+                tail.After(state,world);
+                if(tail.Terminal){Fail("grapple_approach_deviation");break;}
+                if(tail.NeedsPlan)
+                {
+                    if(!PhysicsSimulator.Settled(state,world) || Math.Abs(state.Px-plan.Approach.Landing.Px)>6
+                        || (plan with{Approach=null}).Preview(state,physics,world,allowed)==null)
+                    {Fail("grapple_launch_not_settled");break;}
+                    tail.Cancel();phase=Phase.Fire;
+                }
+                break;
             case Phase.Fire:
                 if(!PhysicsSimulator.Settled(state,world)){Fail("grapple_launch_not_settled");break;}
-                life=p.statLife;
+                if(!GrappleClimbPlan.ClearShot(state,plan.AnchorX,plan.AnchorY,world,null))
+                {Fail("grapple_firing_lane_changed");break;}
                 shot=ActorGrapple.Fire(identity,item,new Vector2(plan.AimX,plan.AimY));
                 if(shot==null){Fail("grapple_fire_refused");break;}
                 phase=Phase.Latch;
@@ -103,7 +130,7 @@ internal sealed class ServerGrappleClimb(GrappleClimbPlan plan,PhysicsParameters
                 if(!Release()){Fail("grapple_cleanup_unconfirmed");break;}
                 Log("detached",state);
                 var prediction=plan.Tail(state,physics,world);
-                if(prediction==null){Fail("grapple_no_safe_handoff");break;}
+                if(prediction==null||allowed!=null&&prediction.Frames.Exists(f=>!allowed(f.State))){Fail("grapple_no_safe_handoff");break;}
                 tail.Begin(session,plan.Direction,generation);
                 tail.LoadPlan(prediction);
                 phase=Phase.Tail;deadline=frames+prediction.Frames.Count+8;
@@ -121,15 +148,21 @@ internal sealed class ServerGrappleClimb(GrappleClimbPlan plan,PhysicsParameters
         }
     }
 
-    private bool Valid(Player p,PhysicsState state,NativeMotionWorld world)
-        => !p.dead&&!p.ghost&&!p.noItems&&!p.CCed&&!p.tongued&&!p.mount.Active&&p.gravDir==1
+    internal static bool ActorEligible(Player p)=>!p.dead&&!p.ghost&&!p.noItems&&!p.CCed&&!p.tongued&&!p.mount.Active&&p.gravDir==1
         &&!p.wet&&!p.pulley&&!p.webbed&&!p.stoned&&!p.frozen&&!p.sliding&&!p.slowFall
-        &&p.wingsLogic==0&&p.rocketBoots==0
-        &&!NativeMovementReader.Capture(p).ExtraJumps.Any(j=>j.Enabled||j.Active)
-        &&p.width==PhysicsSimulator.PlayerW&&p.height==PhysicsSimulator.PlayerH
+        &&p.width==PhysicsSimulator.PlayerW&&p.height==PhysicsSimulator.PlayerH;
+
+    private bool Valid(Player p,PhysicsState state,NativeMotionWorld world)
+    {
+        var movement=NativeMovementReader.Capture(p);
+        return (allowed==null||allowed(state))&&ActorEligible(p)
+        &&GrappleClimbPlan.Supports(physics)&&AirMotionModel.Select(movement)==physics.Air
+        &&ExtraJumpModel.Select(movement)==physics.ExtraJump
+        &&!movement.ExtraJumps.Any(j=>j.Active||!movement.BlockExtraJumps&&j.Enabled&&physics.ExtraJump==null)
         &&ReferenceEquals(ActorGrapple.Selected(p),item)&&item.shootSpeed==shootSpeed
         &&plan.Unchanged(world)&&world.SafeSweep(state,state,out _)
         &&(shot!=null||!ActorGrapple.HasHook(p));
+    }
 
     private PhysicsInput Fail(string reason){Failure=reason;return default;}
     internal bool Release()

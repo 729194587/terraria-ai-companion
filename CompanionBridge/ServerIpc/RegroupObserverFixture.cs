@@ -77,6 +77,18 @@ public sealed class RegroupObserverFixture : ModSystem
                     teamText = Language.GetTextValue(Lang.mp[22].Key, actor.name),
                     teleportText = Language.GetTextValue("Game.HasTeleportedTo", actor.name, "Observer1"),
                     teamColor = new int[] {color.R,color.G,color.B} };
+            case "autonomy-boss" when Program.LaunchParameters.ContainsKey("-companionautonomytest"):
+                var peer = Main.player[slots[0]];
+                Main.dayTime = false;
+                Main.time = 1200;
+                int bossSlot = NPC.NewNPC(peer.GetSource_Misc("isolated_team_encounter"),
+                    (int)peer.Center.X+120,(int)peer.Center.Y-80,NPCID.EyeofCthulhu,Target:peer.whoAmI);
+                var boss = Main.npc[bossSlot];
+                boss.playerInteraction[peer.whoAmI] = true;
+                return new {bossSlot, peer=peer.whoAmI, spawn=BossMembers.Id(boss).Token};
+            case "autonomy-death" when Program.LaunchParameters.ContainsKey("-companionautonomytest"):
+                NativeSurvival.Debug(ProbeSession.Actor,ProbeSession.WorldSession,ProbeSession.ActorGeneration,true);
+                return new { generation=ProbeSession.ActorGeneration };
             case "fence":
                 foreach (int slot in slots)
                     ChatHelper.SendChatMessageToClient(NetworkText.FromLiteral(command.GetProperty("marker").GetString()), Color.White, slot);

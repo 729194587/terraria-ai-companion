@@ -61,6 +61,13 @@ internal static class MiningSelfTest
             On_NetMessage.SendData+=Packets;
             Main.gameMenu=false;ProbeSession.Spawn();var p=ProbeSession.Actor;
             string world=ProbeSession.WorldSession;long generation=ProbeSession.ActorGeneration;
+            if(Environment.GetCommandLineArgs().Contains("-terrainapproachselftest"))
+            {
+                var cases=TerrainApproachSelfTest.Run(p,world,generation);
+                ProbeSession.Finish("terrain approach fixture complete",true);
+                File.WriteAllText(report,JsonSerializer.Serialize(new{result="passed",cases}));
+                return;
+            }
             var wrapped=typeof(Player).GetMethod("ItemCheckWrapped",BindingFlags.Instance|BindingFlags.NonPublic|BindingFlags.Public);
             void Frame()=>NativeSurvival.Run(p,()=>wrapped.Invoke(p,new object[]{p.whoAmI}));
             int x=(int)(p.position.X/16)+3,y=(int)(p.position.Y/16)+1;

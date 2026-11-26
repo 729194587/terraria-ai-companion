@@ -60,6 +60,8 @@ async def verify(args):
             e=action['evidence'];assert all(e.get(k) for k in ('arrived','grounded','safeSupport','settled'))
             assert all(abs(e['velocityBeforeRelease'][k])<=.1 for k in ('X','Y'))
             assert row['maxPredictionError']<.01, row
+            if mode=='hermes':
+                assert max(abs(f['vx']) for f in trace)>3.5, 'Boots never accelerated beyond ordinary running speed'
             if 'jump' in mode or 'region' in mode:assert e['navigation']['CompletedJumps']>=1
             if mode in ('add','remove','rapid','expiry'):
                 assert e['navigation']['RecoveryCount']>=1 and e['navigation']['RecoveryReplans']>=1

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using CompanionBridge;
 using CompanionBridge.Motion;
 
+namespace CompanionBridge.ServerIpc { internal static class ServerDrops { internal static string Reference(AiReadOnlyProtocol.Identity id,int slot,Terraria.Item item)=>"drop:"+slot; } }
 internal static class SceneReaderFixture
 {
     internal static SceneCell[,] Cells;
@@ -63,7 +64,7 @@ namespace Terraria.ID
         public const int Torches=4,Copper=7,Tin=166,Iron=6,Lead=167,Silver=9,Tungsten=168,Gold=8,Platinum=169,
             Demonite=22,Crimtane=204,Meteorite=37,Hellstone=58,Cobalt=107,Palladium=221,Mythril=108,Orichalcum=222,
             Adamantite=111,Titanium=223,Chlorophyte=211,Containers=21,Containers2=467,Dressers=88,OpenDoor=11,ClosedDoor=10,
-            Chairs=15,WorkBenches=18,HoneyBlock=229,Cobweb=51,Asphalt=234,SlimeBlock=196,FrozenSlimeBlock=197,Count=693;
+            Heart=12,Chairs=15,WorkBenches=18,HoneyBlock=229,Cobweb=51,Asphalt=234,SlimeBlock=196,FrozenSlimeBlock=197,Count=693;
         public static Search Search=new();
         public static class Sets{public static bool[] IceSkateSlippery=new bool[1000],IsATreeTrunk=new bool[1000],BreakableWhenPlacing=new bool[1000];}
     }

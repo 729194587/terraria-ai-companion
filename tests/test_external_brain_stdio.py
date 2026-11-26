@@ -22,7 +22,37 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOLS = {'guide', 'execute_lua', 'read_skill', 'get_events', 'say'}
 
 
-class StdioBrainTests(unittest.IsolatedAsyncioTestCase):
+class StdioClient:
+    request_id = 0
+
+    async def send(self, child, method, params=None, *, notification=False):
+        frame = {'jsonrpc': '2.0', 'method': method, 'params': params or {}}
+        if not notification:
+            self.request_id += 1
+            frame['id'] = self.request_id
+        child.stdin.write((json.dumps(frame) + '\n').encode())
+        await child.stdin.drain()
+        return frame.get('id')
+
+    async def request(self, child, method, params=None):
+        request_id = await self.send(child, method, params)
+        line = await asyncio.wait_for(child.stdout.readline(), 15)
+        assert line, 'MCP subprocess closed before sending a response'
+        message = json.loads(line.decode('utf-8', errors='strict'))
+        assert (message['jsonrpc'], message['id']) == ('2.0', request_id), message
+        assert 'error' not in message, message
+        return message['result']
+
+    async def initialize(self, child):
+        info = await self.request(child, 'initialize', {
+            'protocolVersion': '2025-11-25', 'capabilities': {},
+            'clientInfo': {'name': 'stdio-test', 'version': '1'},
+        })
+        assert info['serverInfo']['name'] == 'terraria'
+        await self.send(child, 'notifications/initialized', notification=True)
+
+
+class StdioBrainTests(StdioClient, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.ai = AiHost()
         self.ai.actions = self.ai.chat = True
@@ -69,32 +99,6 @@ class StdioBrainTests(unittest.IsolatedAsyncioTestCase):
                 child.kill()
                 await child.communicate()
                 self.fail('MCP subprocess failed to exit after stdin EOF')
-
-    async def send(self, child, method, params=None, *, notification=False):
-        frame = {'jsonrpc': '2.0', 'method': method, 'params': params or {}}
-        if not notification:
-            self.request_id += 1
-            frame['id'] = self.request_id
-        child.stdin.write((json.dumps(frame) + '\n').encode())
-        await child.stdin.drain()
-        return frame.get('id')
-
-    async def request(self, child, method, params=None):
-        request_id = await self.send(child, method, params)
-        line = await asyncio.wait_for(child.stdout.readline(), 15)
-        self.assertTrue(line, 'MCP subprocess closed before sending a response')
-        message = json.loads(line.decode('utf-8', errors='strict'))
-        self.assertEqual(('2.0', request_id), (message['jsonrpc'], message['id']), message)
-        self.assertNotIn('error', message)
-        return message['result']
-
-    async def initialize(self, child):
-        info = await self.request(child, 'initialize', {
-            'protocolVersion': '2025-11-25', 'capabilities': {},
-            'clientInfo': {'name': 'stdio-test', 'version': '1'},
-        })
-        self.assertEqual('terraria', info['serverInfo']['name'])
-        await self.send(child, 'notifications/initialized', notification=True)
 
     async def test_token_free_tools_and_cross_transport_exclusivity(self):
         async with self.host() as child:

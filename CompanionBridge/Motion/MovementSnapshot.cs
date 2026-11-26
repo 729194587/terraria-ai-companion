@@ -40,7 +40,7 @@ internal sealed record MovementSnapshot
     internal bool SamePlanningAssumptions(MovementSnapshot other,bool expectedExtraJump=false,bool canWade=false)=>other!=null
         &&(jumps.SequenceEqual(other.jumps)||expectedExtraJump&&jumps.Length==other.jumps.Length
             &&jumps.Zip(other.jumps,(a,b)=>a.FullName==b.FullName&&a.Order==b.Order&&a.Enabled==b.Enabled
-                &&(a.FullName==ExtraJumpModel.Cloud.FullName||a==b)).All(s=>s))&&BlockExtraJumps==other.BlockExtraJumps
+                &&(ExtraJumpModel.Kind(a.FullName)!=null||a==b)).All(s=>s))&&BlockExtraJumps==other.BlockExtraJumps
         &&Wings.FunctionalSlot==other.Wings.FunctionalSlot&&Wings.RegisteredSlots==other.Wings.RegisteredSlots&&Wings.BaseStats==other.Wings.BaseStats
         &&Rockets.Boots==other.Rockets.Boots&&Mount==other.Mount
         &&GrappleCount==other.GrappleCount&&GrappleListComplete==other.GrappleListComplete&&hooks.SequenceEqual(other.hooks)

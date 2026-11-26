@@ -63,12 +63,13 @@ internal static class AtomicParameters
             {
                 case "list_pylons": case "list_teammates": case "discover_bosses": case "query_combat_loadout": case "inspect_container": case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
                 case "observe_scene":
-                    if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers","scale","width","height"}).Any())throw new FormatException("Unexpected scene parameter.");
+                    if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers","scale","width","height","landingDirection"}).Any())throw new FormatException("Unexpected scene parameter.");
                     foreach(string key in keys.Where(k=>k is "maxObjects" or "maxRegions" or "maxPlacements" or "maxHazards"))Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
                     SceneLayers.Read(args);
                     break;
                 case "query_map":
-                    if(keys.Except(new[]{"mode","centerX","centerY","width","height","cellSize"}).Any()||!keys.Contains("mode"))throw new FormatException("Invalid map parameters.");
+                    if(keys.Except(new[]{"mode","centerX","centerY","width","height","cellSize","includeChunks"}).Any()||!keys.Contains("mode"))throw new FormatException("Invalid map parameters.");
+                    if(keys.Contains("includeChunks"))args.GetProperty("includeChunks").GetBoolean();
                     string mapMode=args.GetProperty("mode").GetString();
                     if(mapMode is not ("overview" or "region"))throw new FormatException("Invalid map mode.");
                     if(mapMode=="overview"&&keys.Count!=1)throw new FormatException("Overview takes only mode.");
@@ -84,6 +85,9 @@ internal static class AtomicParameters
                     if(keys.Contains("offset"))Integer("offset",0,100000);
                     if(keys.Contains("availableOnly")&&args.GetProperty("availableOnly").ValueKind is not (JsonValueKind.True or JsonValueKind.False))throw new FormatException("Invalid availableOnly.");
                     break;
+                case "plan_materials": Fields("typeId","count"); Integer("typeId",1,int.MaxValue); Integer("count",1,int.MaxValue); break;
+                case "query_item_sources":
+                case "query_item_info": Fields("typeId"); Integer("typeId", 1, int.MaxValue); break;
                 case "resolve_content":
                     if (keys.Except(new[] { "kind", "query", "mode", "maxResults" }).Any()
                         || !keys.Contains("kind") || !keys.Contains("query")) throw new FormatException("Invalid resolver parameters.");
@@ -275,6 +279,10 @@ internal static class AtomicParameters
             case "teleport_to_pylon": Fields("pylonRef"); if(!Guid.TryParseExact(args.GetProperty("pylonRef").GetString(),"N",out _))throw new FormatException("Invalid pylon reference."); break;
             case "teleport_to_teammate": Fields("teammateRef"); if(!Guid.TryParseExact(args.GetProperty("teammateRef").GetString(),"N",out _))throw new FormatException("Invalid teammate reference."); break;
             case "open_door": case "close_door": case "place_item": case "place_object": case "place_rope": goto case "place_tile";
+            case "explore_frontier":
+                if(keys.Except(new[]{"radiusTiles","maxSegments","allowDig"}).Any())throw new FormatException("Unexpected exploration parameter.");
+                Integer("radiusTiles",4,64);Integer("maxSegments",1,64);
+                if(keys.Contains("allowDig"))args.GetProperty("allowDig").GetBoolean();break;
             case "collect_drops":
                 if (keys.Except(new[]{"radiusPixels","typeIds","entityRef"}).Any()) throw new FormatException("Unexpected collect_drops parameter.");
                 if (keys.Contains("radiusPixels")) Integer("radiusPixels", 16, 960);

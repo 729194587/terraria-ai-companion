@@ -43,15 +43,41 @@ public static class NavigationTripTests
         public bool SafeSweep(PhysicsState start,PhysicsState end,out string reason)=>Inner.SafeSweep(start,end,out reason);
         public bool SafeLanding(PhysicsState state)=>Inner.SafeLanding(state);
     }
+    public static void WorldJourney()
+    {
+        var start = new PhysicsState(1600,1558,0,0,true);
+        float farX = start.Px + 6320*16;
+        var region = new LandingRegion(farX,farX+20,1600);
+        var flat = new MotionOfflineTests.RegionWorld();
+        flat.Collision.WallX = float.PositiveInfinity;
+        VerifyFlatJourney(start,region,flat,60000);
+    }
+
+    private static void VerifyFlatJourney(PhysicsState start, LandingRegion region,
+        MotionOfflineTests.RegionWorld flat, int updateLimit)
+    {
+        var nav=new NavigationTask(enableSafeGroundWalk:true){Continuous=true};
+        var actual=start;
+        for(int n=0;n<updateLimit&&!nav.Terminal;n++)
+        {
+            var input=nav.Before(806,3,region,actual,Ph,flat);
+            actual=PhysicsSimulator.Step(actual,input,Ph,flat);
+            nav.After(actual,flat,input==default);
+        }
+        Check(nav.Snapshot.Status=="arrived"&&region.Arrived(actual,flat)
+            &&nav.Snapshot.TripUpdates>NavigationTripProgress.UpdateLimit&&nav.Snapshot.FastWalkPlans>1,
+            "continuous region trip uses verified rolling prefixes beyond legacy update limit");
+        Console.WriteLine($"Flat journey reached {(actual.Px-start.Px)/16:F1} tiles in {nav.Snapshot.TripUpdates} updates");
+    }
     public static void Run()
     {
         foreach(int direction in new[]{1,-1})
         {
-            var task=new NavigationTask();var w=new MotionOfflineTests.World();var s=new PhysicsState(1600,1558,0,0,true);
+            var task=new NavigationTask(searchBudgetMilliseconds:1000);var w=new MotionOfflineTests.World();var s=new PhysicsState(1600,1558,0,0,true);
             float target=s.Px+direction*1536;int frames=0;
             while(!task.Terminal&&frames++<=NavigationTripProgress.UpdateLimit)
             {var input=task.Before(801,3,target,s,Ph,w);s=PhysicsSimulator.Step(s,input,Ph,w);task.After(s,w,input==default);}
-            Check(task.Snapshot.Status=="arrived"&&direction*(target-s.Px)<=12&&Math.Abs(s.Vx)<=.1f,"one 1536px goal arrives safely");
+            Check(task.Snapshot.Status=="arrived"&&direction*(target-s.Px)<=12&&Math.Abs(s.Vx)<=.1f,$"one 1536px goal arrives safely: {task.Snapshot.Status} {task.Snapshot.Reason} x={s.Px} vx={s.Vx} searches={task.Snapshot.SearchNumber}");
             Check(task.Snapshot.Session==801&&task.Snapshot.Generation==3&&task.Snapshot.ContinuedEdges>0,"same identity follows revalidated prefixes");
             Check(task.Snapshot.PlanNumber<task.Snapshot.CompletedActions&&task.Snapshot.TripUpdates<=1800,"prefix retention reduces fresh planning");
             Console.WriteLine(JsonSerializer.Serialize(new{scenario="long_flat",direction,frames,x=s.Px,target,task.Snapshot.Status,
@@ -112,17 +138,7 @@ public static class NavigationTripTests
         var region=new LandingRegion(7500,7520,1600);
         var flat=new MotionOfflineTests.RegionWorld();
         flat.Collision.WallX=float.PositiveInfinity;
-        nav=new(enableSafeGroundWalk:true){Continuous=true};
-        actual=start;
-        for(int n=0;n<2500&&!nav.Terminal;n++)
-        {
-            var input=nav.Before(806,3,region,actual,Ph,flat);
-            actual=PhysicsSimulator.Step(actual,input,Ph,flat);
-            nav.After(actual,flat,input==default);
-        }
-        Check(nav.Snapshot.Status=="arrived"&&region.Arrived(actual,flat)
-            &&nav.Snapshot.TripUpdates>NavigationTripProgress.UpdateLimit&&nav.Snapshot.FastWalkPlans>1,
-            "continuous region trip uses verified rolling prefixes beyond legacy update limit");
+        VerifyFlatJourney(start,region,flat,2500);
         var narrow=new LandingRegion(1614,1618,1600);
         var approach=SafeGroundWalk.TryPlan(start,1616,1,Ph,flat,narrow);
         Check(approach is {ReachedGoal:true}&&narrow.Arrived(approach.Actions[0].Landing,flat),

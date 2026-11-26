@@ -64,7 +64,7 @@ async def verify_edits(args, mode):
     bridge = ServerAiBridge(args.port)
     try:
         source = "return api('navigate_to',{x=%s,y=%s})" % (scene["x"], scene["y"])
-        result = await LuaRuntime(bridge).execute(source, limits=Limits(seconds=60, calls=1, actions=1))
+        result = await LuaRuntime(bridge).execute(source, limits=Limits(seconds=150 if mode=="bridge_long" else 60, calls=1, actions=1))
     finally:
         bridge.close()
     (args.profile / f"liquid-edit-{mode}-receipt.json").write_text(json.dumps(result, indent=2))
@@ -80,9 +80,11 @@ async def verify_edits(args, mode):
     assert not any(r["lavaWet"] or (mode != "flood" and r["wet"]) for r in rows), rows[-3:]
     if mode == "hazard":
         assert rows and len({r["statLife"] for r in rows}) == 1, rows[-3:]
-    if mode in ("bridge", "detour", "mine"):
+    if mode in ("bridge", "bridge_long", "detour", "mine"):
         assert action["completed"], action
-        if mode == "bridge":
+        if mode in ("bridge", "bridge_long"):
+            if mode == "bridge_long":
+                assert progress["placedTiles"] >= 18, progress
             assert progress["placedTiles"] >= 2 and rows[-1]["waterPlatforms"] >= 2, (progress, rows[-3:])
             assert progress["dugTiles"] == 0 and "navigate_to_landing_region" in names, names
         elif mode == "detour":
@@ -140,6 +142,9 @@ async def verify_wading(args, mode):
     assert not progress["dugTiles"] and not progress["placedTiles"], (progress["dugTiles"], progress["placedTiles"])
     assert all(child["status"] == "completed" for child in progress["children"]), [
         (child["status"], child["reason"]) for child in progress["children"]]
+    if mode == "wade_pool":
+        assert progress["planning"]["choice"] == "pool_crossing", progress["planning"]
+        assert any(row["breath"] < row["breathMax"] for row in wet), "expected actual native oxygen consumption"
     if mode == "wade_deep":
         assert max(row["y"] for row in wet) >= scene["startY"] + 31 and any(row["vy"] < -1 for row in wet), wet
     if mode == "wade_long":
@@ -150,7 +155,7 @@ async def verify_wading(args, mode):
 
 async def verify(args):
     await wait_file(args.profile / "action-fixture.json", 90)
-    for mode in args.scenes or ("puddle", "bridge", "detour", "mine", "hazard", "flood", "wade_one", "wade_deep", "wade_long"):
+    for mode in args.scenes or ("puddle", "bridge", "detour", "mine", "hazard", "flood", "wade_one", "wade_deep", "wade_long", "wade_pool", "bridge_long"):
         if mode == "puddle":
             await verify_puddle(args)
         elif mode.startswith("wade_"):
@@ -163,5 +168,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--scenes", nargs="+", choices=("puddle", "bridge", "detour", "mine", "hazard", "flood", "wade_one", "wade_deep", "wade_long"))
+    parser.add_argument("--scenes", nargs="+", choices=("puddle", "bridge", "detour", "mine", "hazard", "flood", "wade_one", "wade_deep", "wade_long", "wade_pool", "bridge_long"))
     asyncio.run(verify(parser.parse_args()))

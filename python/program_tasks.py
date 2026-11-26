@@ -9,11 +9,11 @@ import uuid
 import atomic_operations as atomic
 import agent_diagnostics as diagnostics
 import agent_trace as tracing
-from control import BridgeError, NotAdmittedError
+from control import BridgeError, NotAdmittedError, autonomy_version
 from lua_action_results import action_results
 
 NAMES = frozenset({'submit_task', 'query_task', 'await_task', 'cancel_task', 'resume_task'})
-OPERATIONS = ('mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place')
+OPERATIONS = ('mine_target', 'navigate_to', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')
 
 
 def available(bridge):
@@ -46,7 +46,7 @@ def validate(name, args):
     return args
 
 
-def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=False, boss=False, members=False, strategy=False, collection=False, placement=False, building=False):
+def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=False, boss=False, members=False, strategy=False, collection=False, navigation=False, exploration=False, placement=False, building=False):
     rows = []
     for name in sorted(NAMES):
         properties = {'taskId': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'}}
@@ -67,8 +67,14 @@ def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=
                     description+=' boss_encounter 先配武器，再用 discover_bosses 的 admissible 和 reason 选择原版或扩展根的 entityRef。受理后专服自主交战；通过 query_task 查看 verifiedHits、verifiedDamage 和 deathProof。'
                 else:
                     description += f' boss_encounter 支持{roots}。先配武器，再传 scan_entities 根实体行的 details.entityRef。受理后专服自主交战，可查询或取消。'
+            if navigation:
+                operations.append('navigate_to')
+                description += ' 远途导航用 navigate_to，一次提交最终落脚点 x/y（世界像素），可在 Program 结束后继续赶路。'
             if collection:
                 operations.append('collect_drops')
+            if exploration:
+                operations.append('explore_frontier')
+                description += ' explore_frontier 按 radiusTiles/maxSegments 寻找可返回的未知边界，沿途复核，返回后报告 newTiles；默认禁止挖掘。'
             if placement:
                 operations.append('place_item')
                 description += ' place_item 使用当前选中的快捷栏物品在绝对 Tile 坐标 x/y 放置。终态回执核验占地、消耗和箱子存储记录。'
@@ -108,6 +114,7 @@ def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=
 class TaskCoordinator:
     def __init__(self, bridge, on_ready=None):
         self.bridge, self.on_ready = bridge, on_ready
+        self.on_goal_result = None
         self.records = {}
         self.sequence = 0
         self.consumed = 0
@@ -126,7 +133,15 @@ class TaskCoordinator:
             view = {k:copy.deepcopy(v) for k,v in batch[item['sequence']-1]['view'].items() if k not in ('action','result')}
             view.update(result=item['result'], resultSummaryOnly=item['summaryOnly'])
             results.append(view)
-        return {'active': [copy.deepcopy(r['view']) for r in self.records.values()
+        def active_view(record):
+            view = record['view']
+            if view['operation'] != 'explore_frontier':
+                return copy.deepcopy(view)
+            task = (view.get('action') or {}).get('task') or {}
+            summary = {k: copy.deepcopy(v) for k, v in view.items() if k not in ('action', 'result')}
+            summary.update(phase=task.get('phase'), exploration=copy.deepcopy(task.get('progress')))
+            return summary
+        return {'active': [active_view(r) for r in self.records.values()
                            if not r['done'].is_set() or r['view']['status'] == 'unknown'],
                 'results': results, 'throughSequence': batch[-1]['sequence'] if batch else self.consumed,
                 'latestSequence': self.sequence, 'remainingResultCount': len(pending)-len(results),
@@ -143,13 +158,17 @@ class TaskCoordinator:
         record['view'].update(status=result['status'], valid=result.get('valid') is True,
             completed=result.get('completed') is True, result=copy.deepcopy(result), resultSequence=self.sequence)
         record['done'].set()
+        if self.on_goal_result is not None and (record['view']['origin'] or {}).get('goalId'):
+            self.on_goal_result(record['view']['taskId'], result)
         diagnostics.emit('game_task_result', taskId=record['view']['taskId'], origin=record['view']['origin'],
                          resultSequence=self.sequence, result=result)
         if self.on_ready is not None and not self.closed:
             self.on_ready()
 
-    async def submit(self, args, origin=None):
+    async def submit(self, args, origin=None, *, task_id=None, authorize=None, dispatch_guard=None):
         operation = args['operation']
+        if operation == 'explore_frontier' and operation not in self.bridge.supported_atomic_operations:
+            return atomic.not_admitted_result(operation, 'exploration_capability_unavailable')
         if operation in ('collect_drops', 'place_item', 'build_place') and operation not in getattr(self.bridge, 'supported_atomic_operations', ()):
             return atomic.not_admitted_result('submit_task', 'collection_capability_unavailable' if operation == 'collect_drops' else 'placement_capability_unavailable')
         try:
@@ -171,7 +190,11 @@ class TaskCoordinator:
                     del self.records[key]
             if len(self.records) >= 64:
                 return atomic.not_admitted_result('submit_task', 'task_receipt_capacity')
-            task_id = uuid.uuid4().hex
+            if authorize is not None and not authorize():
+                return atomic.not_admitted_result(operation, 'goal_authorization_revoked')
+            task_id = task_id or uuid.uuid4().hex
+            if task_id in self.records:
+                raise ValueError('Duplicate task admission')
             record = {'args': copy.deepcopy(args), 'done': asyncio.Event(), 'ack': asyncio.Event(), 'lock': asyncio.Lock(),
                       'view': {'taskId': task_id, 'operation': operation, 'status': 'submitting',
                                'valid': False, 'completed': False, 'dispatchState': 'unknown', 'origin': origin, 'retryAllowed': False}}
@@ -179,19 +202,27 @@ class TaskCoordinator:
             # Never inherit a Program's command_owner, evidence bundle or Run
             # reply context into the independent task/result notification.
             monitor_context = contextvars.Context()
+            if autonomy_version.get() is not None:
+                monitor_context.run(autonomy_version.set, autonomy_version.get())
             correlation = {key: origin[key] for key in tracing.MCP_CORRELATION if origin and key in origin}
             if correlation:
                 monitor_context.run(tracing.context.set, correlation)
-            record['monitor'] = monitor_context.run(asyncio.create_task, self._run(record))
+            record['monitor'] = monitor_context.run(asyncio.create_task, self._run(record, authorize, dispatch_guard))
         # This shield is essential: Program cancellation does not cancel admission/Task.
         await record['ack'].wait()
         return copy.deepcopy(record['view'])
 
-    async def _run(self, record):
+    async def _run(self, record, authorize=None, dispatch_guard=None):
         try:
             view = record['view']
-            reply = await asyncio.to_thread(self.bridge.task_request, 'start', view['taskId'],
-                operation=view['operation'], arguments=record['args']['arguments'], expiresAtUnixMs=int(time.time()*1000)+1800)
+            if authorize is not None and not authorize():
+                self._finish(record, atomic.not_admitted_result(view['operation'], 'goal_authorization_revoked'))
+                return
+            start = dict(operation=view['operation'], arguments=record['args']['arguments'],
+                         expiresAtUnixMs=int(time.time()*1000)+1800)
+            if dispatch_guard is not None:
+                start['_guard'] = dispatch_guard
+            reply = await asyncio.to_thread(self.bridge.task_request, 'start', view['taskId'], **start)
             if (reply.get('operation') != view['operation'] or reply.get('targetTask') != record['args']['arguments']
                     or reply.get('status') not in ('running', 'completed', 'failed', 'cancelled', 'timeout', 'unknown')):
                 raise BridgeError('Task admission target/operation mismatch; outcome unknown')

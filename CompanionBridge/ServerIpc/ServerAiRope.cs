@@ -16,6 +16,8 @@ internal sealed class ServerAiRope : ActorControl.IMovementDriver
         internal readonly int RopeX=x, MaxUpdates=maxUpdates;
         internal readonly double TargetFeetY=target;
         internal readonly bool Land=land;
+        internal int LedgeDirection;
+        internal bool Leaving;
         internal int LastRope, Updates, Stable, Idle, Health;
         internal float StartFeetY, FeetY;
         internal bool Attached, AttachedObserved, Grounded, SafeSupport, Settled, InputReleased;
@@ -26,14 +28,26 @@ internal sealed class ServerAiRope : ActorControl.IMovementDriver
     private bool executing, injected;
     public bool Running=>Current?.Status=="running";
     public bool Matches(Player p)=>ReferenceEquals(Current?.Identity.Actor,p);
-    private static int Head(double top)=>(int)Math.Floor((top-8)/16);
+    internal static int Head(double top)=>(int)Math.Floor((top-8)/16);
     private static bool Aligned(Player p,int x)=>(int)Math.Floor(p.Center.X/16)==x;
-    private static bool Rope(int x,int y)=>TerrainReader.Loaded(x,y)&&ActorRope.IsRope(Main.tile[x,y]);
+    internal static bool Rope(int x,int y)=>TerrainReader.Loaded(x,y)&&ActorRope.IsRope(Main.tile[x,y]);
     private static bool Supported(Player p)=>p.width==20&&p.height==42&&p.gravDir==1&&!p.mount.Active
         &&!p.CCed&&!p.frozen&&!p.stoned&&!p.webbed&&!p.tongued&&!p.wet&&!p.lavaWet&&!p.honeyWet&&!p.shimmerWet
         &&!p.shimmering&&!p.sleeping.isSleeping&&!p.sitting.isSitting&&p.grappling[0]==-1;
 
-    internal string Start(AiReadOnlyProtocol.Identity identity,JsonElement args,out Run run)
+    internal static bool SideExitClear(int col,int row,int side)
+    {
+        for(int offset=0;offset<=4;offset++)
+        {
+            int x=col+side*offset;
+            if(!TerrainReader.Loaded(x,row) || offset>=2 && TerrainReader.ReadDryCell(x,row)!='#')return false;
+            for(int y=row-10;y<row;y++)
+                if(TerrainReader.ReadDryCell(x,y)!='.')return false;
+        }
+        return true;
+    }
+
+    internal string Start(AiReadOnlyProtocol.Identity identity,JsonElement args,out Run run,bool child=false)
     {
         ServerAiNativeActions.Require(identity);
         run=null;
@@ -47,6 +61,12 @@ internal sealed class ServerAiRope : ActorControl.IMovementDriver
         if(Math.Abs(target-p.Bottom.Y)>384)return "rope_target_out_of_range";
         var candidate=new Run(identity,x,target,land,args.GetProperty("maxUpdates").GetInt32())
         {StartFeetY=p.Bottom.Y,Health=p.statLife,LastRope=end};
+        if(child && args.TryGetProperty("ledgeDirection",out var dir))
+        {
+            candidate.LedgeDirection=dir.GetInt32();
+            if(Math.Abs(candidate.LedgeDirection)!=1 || !SideExitClear(x,(int)(target+32)/16,candidate.LedgeDirection))
+                return "rope_landing_exit_unavailable";
+        }
         if(land)
         {
             if(target<=p.Bottom.Y+.5f)return "rope_landing_requires_descent";
@@ -109,6 +129,16 @@ internal sealed class ServerAiRope : ActorControl.IMovementDriver
         if(injected)throw new InvalidOperationException("Duplicate rope input boundary.");
         int head=Head(p.position.Y);
         if(!Supported(p)||p.statLife<r.Health){Stop("failed","rope_actor_state_changed");return;}
+        if(r.LedgeDirection!=0 && (r.Leaving || r.Attached && Math.Abs(r.FeetY-r.TargetFeetY)<=4 && r.Settled))
+        {
+            int side=r.LedgeDirection, row=(int)(r.TargetFeetY+32)/16;
+            if(!SideExitClear(r.RopeX,row,side)){Stop("failed","rope_landing_changed");return;}
+            Release(p);
+            p.controlJump=p.pulley;
+            float remaining=side*((r.RopeX+2*side)*16+8-p.Center.X);
+            p.controlRight=remaining>0 && side>0;p.controlLeft=remaining>0 && side<0;
+            r.Leaving=true;r.Updates++;injected=true;return;
+        }
         if(!Aligned(p,r.RopeX)){Stop("failed","rope_alignment_lost");return;}
         bool exited=r.Land&&r.AttachedObserved&&head>r.LastRope;
         if(!exited&&!Continuous(r,head)){Stop("failed","rope_interrupted");return;}
@@ -189,12 +219,14 @@ internal sealed class ServerAiRope : ActorControl.IMovementDriver
                     ?!p.pulley&&r.Grounded&&r.SafeSupport&&Math.Abs(r.FeetY-r.TargetFeetY)<=.5f
                     :r.Attached&&Math.Abs(r.FeetY-r.TargetFeetY)<=4);
                 bool neutral=!p.controlUp&&!p.controlDown;
+                if(r.LedgeDirection!=0)arrived=r.Leaving && !p.pulley && r.Settled && r.SafeSupport && r.Grounded
+                    && Math.Abs(r.FeetY-r.TargetFeetY-32)<=.5f;
                 r.Stable=arrived&&neutral?r.Stable+1:0;
-                if(r.Stable>=2)Stop("completed",r.Land?"native_rope_landing_verified":"native_rope_hold_verified");
+                if(r.Stable>=2)Stop("completed",r.Land||r.Leaving?"native_rope_landing_verified":"native_rope_hold_verified");
                 else if(r.Updates>=r.MaxUpdates)Stop("timeout","rope_update_budget");
                 else if(!r.AttachedObserved&&r.Updates>=20)Stop("failed","rope_attach_unconfirmed");
-                else if(r.AttachedObserved&&!r.Attached&&(!r.Land||Head(p.position.Y)<=r.LastRope))Stop("failed","rope_attachment_lost");
-                else if(Math.Abs(r.FeetY-before)>.05f)r.Idle=0;
+                else if(!r.Leaving&&r.AttachedObserved&&!r.Attached&&(!r.Land||Head(p.position.Y)<=r.LastRope))Stop("failed","rope_attachment_lost");
+                else if(Math.Abs(r.FeetY-before)>.05f || r.Leaving && Math.Abs(p.velocity.X)>.05f)r.Idle=0;
                 else if(!arrived&&++r.Idle>=20)Stop("failed","rope_movement_blocked");
                 if(Running)NetworkStateSync.Tick(p);
             }
@@ -207,7 +239,7 @@ internal sealed class ServerAiRope : ActorControl.IMovementDriver
         }
     }
 
-    internal object Evidence()=>new{ropeX=Current.RopeX,targetFeetY=Current.TargetFeetY,finish=Current.Land?"land":"hold",
+    internal object Evidence()=>new{ropeX=Current.RopeX,targetFeetY=Current.TargetFeetY,finish=Current.LedgeDirection!=0?"ledge":Current.Land?"land":"hold",
         maxUpdates=Current.MaxUpdates,updates=Current.Updates,startFeetY=Current.StartFeetY,feetY=Current.FeetY,
         attached=Current.Attached,attachmentObserved=Current.AttachedObserved,grounded=Current.Grounded,
         safeSupport=Current.SafeSupport,settled=Current.Settled,inputReleased=Current.InputReleased};

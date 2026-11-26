@@ -36,10 +36,12 @@ internal sealed class LocalMotionController
     private int _session, _direction, _generation, _frame, _hold, _badFrames, _supportedLandingFrames;
     private float _maxError;
     private bool _airborne;
+    private int? _lastSupportedRow;
     private AirFeedback _airFeedback;
     internal NavigationSnapshot Snapshot { get; private set; } = new(0, "idle", "none", "not started", 0, 0, null, null, 0);
     internal bool Terminal => Snapshot.Status is "failed" or "landed";
     internal bool NeedsPlan => _plan == null;
+    internal int RemainingFrames=>_plan==null?0:_plan.ExecuteFrames-_frame;
     internal PhysicsState? ExpectedState=>_plan!=null&&_frame>0?_plan.Frames[_frame-1].State:null;
     internal bool NeedsLandingConfirmation { get; private set; }
     internal MotionFailureKind FailureKind { get; private set; }
@@ -48,6 +50,7 @@ internal sealed class LocalMotionController
     {
         _plan = plan;
         _airFeedback=null;
+        _lastSupportedRow=null;
         NeedsLandingConfirmation=false;
         FailureKind=MotionFailureKind.None;
         _frame = 0; _badFrames = 0; _supportedLandingFrames = 0; _maxError = 0; _airborne = false;
@@ -64,6 +67,7 @@ internal sealed class LocalMotionController
     internal void Cancel()
     {
         _plan = null;
+        _lastSupportedRow=null;
         _airFeedback=null;
         NeedsLandingConfirmation=false;
         FailureKind=MotionFailureKind.None;
@@ -103,12 +107,33 @@ internal sealed class LocalMotionController
             _frame = 0; _badFrames = 0; _supportedLandingFrames = 0; _maxError = 0; _airborne = false;
         }
         _plan=AirMotionModel.Correct(_plan,_frame,state,parameters,world);
-        var landing=_plan.Frames[^1].State;
-        if(LiveFallStart is int from&&state.Vy>=0&&state.JumpFramesLeft==0&&landing.Py>state.Py+LandingRegion.FeetTolerance
-            &&(!world.SafeLanding(landing)||!parameters.Fall.Safe(state.Grounded?FallSafety.Row(state.Py):from,landing.Py)
-                &&!world.NegatesFallDamage(landing)))
-            return Fail("live descent landing no longer safe",MotionFailureKind.RouteDeviation);
         var next = _plan.Frames[_frame];
+        if(state.Grounded && world.SafeLanding(state))_lastSupportedRow=FallSafety.Row(state.Py);
+        if(LiveFallStart is int from && state.Vy>=0 && state.JumpFramesLeft==0)
+        {
+            // A walking plan can cross several ledges. The native fall counter
+            // applies to this flight only, up to its first ground contact.
+            int fallStart=state.Grounded?FallSafety.Row(state.Py):Math.Max(from,_lastSupportedRow??from);
+            int contact=_frame;
+            if(state.Grounded)
+            {
+                while(contact<_plan.Frames.Count && _plan.Frames[contact].State.Grounded)
+                {
+                    fallStart=FallSafety.Row(_plan.Frames[contact].State.Py);
+                    contact++;
+                }
+            }
+            while(contact<_plan.Frames.Count && !_plan.Frames[contact].State.Grounded)contact++;
+            if(contact<_plan.Frames.Count)
+            {
+                var landing=_plan.Frames[contact].State;
+                if(landing.Py>state.Py+LandingRegion.FeetTolerance)
+                {
+                    if(!parameters.Fall.Safe(fallStart,landing.Py) && !world.NegatesFallDamage(landing))
+                        return Fail("predicted fall damage at next ground contact",MotionFailureKind.RouteDeviation);
+                }
+            }
+        }
         // Recheck the immediate step against the current world and actual velocity.
         try
         {
@@ -135,6 +160,8 @@ internal sealed class LocalMotionController
         float error = Math.Max(Math.Abs(expected.Px - actual.Px), Math.Abs(expected.Py - actual.Py));
         _maxError = Math.Max(_maxError, error);
         float velocityError = Math.Max(Math.Abs(expected.Vx - actual.Vx), Math.Abs(expected.Vy - actual.Vy));
+        if(_plan.Frames[_frame].Input.ImpulseKey is {} key && Math.Abs(ActionCooldown.Get(expected.Cooldowns,key)-ActionCooldown.Get(actual.Cooldowns,key))>1)
+        { Fail("air impulse cooldown did not match",MotionFailureKind.RouteDeviation);return; }
         if(_plan.AirMode!=AirKind.None)
         {
             bool confirmed=AirMotionModel.Matches(expected,actual)&&error<=6&&velocityError<=1.5f;

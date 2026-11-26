@@ -48,8 +48,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsHammer => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
     public bool SupportsTileInteraction => ServerTileInteraction.Available;
     public bool SupportsDoors=>true;
-    public bool SupportsPylons=>SupportsCollection;
-    public bool SupportsRegroup=>SupportsCollection;
+    private static bool TargetEngine => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsPylons=>TargetEngine;
+    public bool SupportsRegroup=>TargetEngine;
     public AiAtomicActions.RespawnPlan AfterRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>
         handle is Handle {Context:TaskSlot {Task:BossEncounterTask boss}} ? boss.AfterRespawn(frame) : null;
     public object StartRejoin(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.RespawnPlan plan)
@@ -62,8 +63,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public object StartCombat(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,AiAtomicActions.CombatAdmission admission)
         =>StartCore(frame,CombatProtocol.Operation,args,id,false,admission:admission);
     public bool SupportsContainers=>true;
+    public object Compatibility => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Compatibility();
+    public bool SupportsCrafting => ActorCrafting.Initialized;
     public bool SupportsSorting=>ActorSorting.Available;
-    public bool SupportsCollection => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
+    public bool SupportsCollection => TargetEngine && VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.ItemReceiptSupported;
+    public bool SupportsExploration=>TargetEngine;
     public bool SupportsReforge => MerchantShop.VanillaServicesSupported;
     public bool SupportsNurse => NurseService.Supported;
     public bool SupportsMerchantSale => SupportsMerchantPurchase && MerchantShop.SaleSupported;
@@ -79,11 +83,18 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     internal object StartMaintenancePlacement(AiReadOnlyProtocol.Identity id,Microsoft.Xna.Framework.Point at)
         =>StartCore(id,"place_tile",JsonSerializer.SerializeToElement(new{x=at.X,y=at.Y}),"auto-torch",true);
     private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child,bool continuous=false,
-        NavigationKnowledge knowledge=null,AiAtomicActions.CombatAdmission admission=null,AiAtomicActions.RespawnPlan rejoin=null,bool buildTravel=false)
+        NavigationKnowledge knowledge=null,AiAtomicActions.CombatAdmission admission=null,AiAtomicActions.RespawnPlan rejoin=null,
+        bool buildTravel=false,MapWindow? explorationWindow=null,
+        NavigationQuote explorationQuote=null)
     {
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
             new{operation,mutationAttempted=false,effectStatus="not_started"},true,InputsAcquired:false,ReasonDetail:detail));
+        if (identity.Autonomy != null)
+        {
+            if (!identity.Autonomy.Valid) return Reject("autonomy_revoked");
+            if (AutonomyPolicy.Refuses(identity, p, operation, args)) return Reject("autonomy_progression_trigger");
+        }
         if(NativeCombatWorld.Running||ActorControl.Running||ActorItemUse.Running||ActorMining.Running||p.itemAnimation!=0||p.itemTime!=0||p.reuseDelay!=0||p.channel)
             return Reject("actor_busy");
         if(p.dead||p.ghost||(operation!="teleport_to_pylon" && (p.gravDir!=1||p.mount.Active)))return Reject("unsupported_actor_state");
@@ -159,7 +170,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(AiAtomicActions.IsTask(operation))
             {
                 if(child)throw new InvalidOperationException("Nested root task denied");
-                var executor=new ChildExecutor(this,continuous:operation!="build_place",buildTravel:operation=="build_place");
+                bool pureTravel=operation is "build_place" or "explore_frontier";
+                var executor=new ChildExecutor(this,continuous:!pureTravel,buildTravel:pureTravel);
                 CompanionTask task=operation==CombatProtocol.Operation
                     ?new CombatController(new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),
                         args.TryGetProperty("threat",out _)?ReflexTargetAllowed??((_,_)=>true):null,admission,alternate:args.TryGetProperty("button",out var button) && button.GetString()=="right"),
@@ -169,19 +181,22 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     :operation=="mine_target"
                     ?args.TryGetProperty("cluster",out var cluster)&&cluster.GetBoolean()
                         ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge)
-                        :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
+                        :ExcavationTask.IsOre(identity,args)
+                            ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge,singleOre:true)
+                            :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
                     :operation=="collect_drops" ? new CollectDropsTask(actionId,args,executor)
+                    :operation=="explore_frontier" ? new FrontierExplorationTask(actionId,identity,args,executor)
                     :operation=="build_place" ? new BuildPlaceTask(actionId,args,executor)
                     :operation=="place_item" ? new NativeActionTask(executor,"place_item_native",args,actionId,operation)
                     :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
                 ulong budget=operation switch {CombatProtocol.Boss=>BossEncounterTask.Budget,CombatProtocol.Operation=>CombatController.Budget,"collect_drops"=>CollectDropsTask.Budget,
-                    "build_place"=>10800,"place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
+                    "explore_frontier"=>FrontierExplorationTask.Budget,"build_place"=>10800,"place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},budget);
             }
             else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
             else if(operation=="move_on_rope")
             {
-                if(rope.Start(identity,args,out var run) is {} reason)return Reject(reason);
+                if(rope.Start(identity,args,out var run,child) is {} reason)return Reject(reason);
                 context=run;ActorControl.Driver=rope;
             }
             else if (operation is "sort_inventory" or "sort_container") context = new ActorContainer.SortAction(identity, operation, args);
@@ -194,7 +209,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             else if(operation=="navigate_to_x"){context=navigation.Start(identity,args.GetProperty("targetX").GetSingle(),actionId,
                 movementOnly:child && args.TryGetProperty("movementOnly",out var movementOnly) && movementOnly.GetBoolean());ActorControl.Driver=navigation;}
             else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge,
-                movementOnly:buildTravel);ActorControl.Driver=navigation;}
+                movementOnly:buildTravel);
+                if(child&&explorationWindow is {} window)navigation.RestrictToExplored(window,explorationQuote);
+                ActorControl.Driver=navigation;}
             else if(operation=="place_rope")
             {
                 if(p.noBuilding||p.CCed||p.noItems||p.frozen||p.stoned)return Reject("unsupported_placement_state");
@@ -447,6 +464,9 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var task=(TaskSlot)h.Context;var result=task.Stop(identity with{GameUpdate=Main.GameUpdateCount},status,reason);
         return TaskResult(task,result,h.Identity);
     }
+    public ulong ProgressVersion(object handle) =>
+        handle is Handle { Context: TaskSlot slot } ? slot.Task.ProgressVersion : 0;
+
     private static Result TaskResult(TaskSlot task,Result result,AiReadOnlyProtocol.Identity identity)
     {
         bool owned=Owned(identity),released=owned&&Released((Player)identity.Actor);
@@ -466,17 +486,20 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         var task=(TaskSlot)h.Context;var result=task.Abandon();return result with{Evidence=new{task=task.View()}};
     }
     // Native contexts only: no AiAtomicActions.Handle/registry/IPC start per child.
-    private sealed class ChildExecutor : AiAtomicActions.IExecutor
+    internal sealed class ChildExecutor : AiAtomicActions.IExecutor
     {
         private readonly ServerAiNativeActions owner;
         private readonly bool continuous;
         private readonly NavigationKnowledge knowledge=new();
         internal NavigationKnowledge Knowledge=>knowledge;
         private readonly bool buildTravel;
+        internal NavigationQuote ExplorationQuote {get;set;}
+        internal MapWindow? ExplorationWindow {get;set;}
         internal ChildExecutor(ServerAiNativeActions owner,bool continuous,bool buildTravel=false){this.owner=owner;this.continuous=continuous;this.buildTravel=buildTravel;}
         public string Validate(string op,JsonElement args)=>owner.Validate(op,args);
         public ulong ProgressVersion(object handle)=>handle is Handle {Context:ServerAiNavigation.Run run}?run.ProgressVersion:0;
-        public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>owner.StartCore(id,op,args,taskId,true,continuous,knowledge,buildTravel:buildTravel);
+        public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>
+            owner.StartCore(id,op,args,taskId,true,continuous,knowledge,buildTravel:buildTravel,explorationWindow:ExplorationWindow,explorationQuote:ExplorationQuote);
         public Result Poll(AiReadOnlyProtocol.Identity id,object value)
         {
             var r=owner.Poll(id,value);

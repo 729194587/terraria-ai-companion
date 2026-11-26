@@ -91,6 +91,19 @@ public static class SurfaceGraphTests
             }
             Check(t.Reads==10,"resumed scanning reads new cells instead of repeating the first cell");
         }
+        {
+            var world=new Terrain{Floor=true};
+            var start=new PhysicsState(1600,1558,0,0,true);
+            var goal=LandingRegion.AtDestination(2400,1800);
+            using var travel=new SurfaceNavigator(new(),start,goal,PhysicsParameters.Basic,world,world,
+                new(),null,allowTravelPrefix:true);
+            var route=travel.Advance();
+            Check(route.Actions.Count>0 && !route.ReachedGoal && travel.Finished,
+                "a distant lower goal admits a proved horizontal prefix");
+            var last=route.Actions[^1];
+            Check(last.Landing.Px>start.Px+16 && PhysicsSimulator.Settled(last.Landing,world)
+                && last.ExecuteFrames==last.Frames.Count, "prefix ends on observed support after its braking tail");
+        }
         foreach(char shape in new[]{'#','=','h','1','2','3','4','a','b'})
         {
             var t=new Terrain();t.Tiles[(100,100)]=shape;

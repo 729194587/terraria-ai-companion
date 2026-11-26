@@ -8,7 +8,7 @@ namespace CompanionBridge;
 // One additive read option; factories run only for explicitly included layers.
 internal sealed class SceneLayers
 {
-    private static readonly string[] Names={"map","geometry","objects","hazards","landingRegions","placementCandidates","objectPlacementCandidates"};
+    private static readonly string[] Names={"map","geometry","objects","hazards","landingRegions","placementCandidates","objectPlacementCandidates","resources"};
     private readonly HashSet<string> selected;
     private SceneLayers(IEnumerable<string> names){selected=new(names,StringComparer.Ordinal);}
     internal string[] Included=>Names.Where(Has).ToArray();
@@ -17,7 +17,12 @@ internal sealed class SceneLayers
     {
         if(args.ValueKind!=JsonValueKind.Object)throw new FormatException("Scene arguments must be an object.");
         bool region=SceneScope.Read(args).Region;
-        if(!args.TryGetProperty("layers",out var layers))return new(region?new[]{"geometry","objects","hazards"}:Names);
+        if(args.TryGetProperty("landingDirection",out var direction) &&
+            (region || direction.ValueKind!=JsonValueKind.String || direction.GetString() is not ("left" or "right" or "up" or "down")
+             || !args.TryGetProperty("layers",out var only) || only.ValueKind!=JsonValueKind.Array
+             || only.GetArrayLength()!=1 || only[0].ValueKind!=JsonValueKind.String || only[0].GetString()!="landingRegions"))
+            throw new FormatException("landingDirection requires a local landingRegions-only read and a cardinal direction.");
+        if(!args.TryGetProperty("layers",out var layers))return new(region?new[]{"geometry","objects","hazards"}:Names.Take(7));
         if(args.EnumerateObject().Count(p=>p.Name=="layers")!=1||layers.ValueKind!=JsonValueKind.Array
             ||layers.GetArrayLength()<1||layers.GetArrayLength()>Names.Length)
             throw new FormatException("layers must be a nonempty unique array of supported scene layer names.");
@@ -25,8 +30,8 @@ internal sealed class SceneLayers
         foreach(var layer in layers.EnumerateArray())
             if(layer.ValueKind!=JsonValueKind.String||!Names.Contains(layer.GetString(),StringComparer.Ordinal)||!names.Add(layer.GetString()))
                 throw new FormatException("Invalid or duplicate scene layer name.");
-        if(region&&names.Any(n=>!Names.Take(4).Contains(n)))
-            throw new FormatException("Regional scene supports map, geometry, objects and hazards only; action candidates require local observation.");
+        if(region&&names.Any(n=>n!="resources"&&!Names.Take(4).Contains(n)))
+            throw new FormatException("Regional scene supports map, geometry, objects, hazards and resources; action candidates require local observation.");
         return new(names);
     }
     internal void Add(Dictionary<string,object> response,string layer,Func<object> build)
