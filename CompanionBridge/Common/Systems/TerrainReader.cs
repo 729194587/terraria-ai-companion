@@ -60,6 +60,11 @@ internal static class TerrainReader
         type is TileID.HoneyBlock or TileID.Cobweb or TileID.Asphalt or TileID.SlimeBlock or TileID.FrozenSlimeBlock);
     internal static char ReadDryCell(int x,int y)=>ReadEnvironment(x,y).DryShape;
 
+    internal static bool OrdinaryOverlayCell(TerrainCell cell)
+        =>!cell.Actuated && (cell.TileType==null || cell.TileType is
+            TileID.Dirt or TileID.Stone or TileID.Grass or TileID.Mud or TileID.ClayBlock
+            || cell.TileType is int type && type<TileID.Count && TileID.Sets.Ore[type]);
+
     internal static TerrainCell ReadEnvironment(int x, int y)
     {
         return Loaded(x,y)?ReadEnvironment(Main.tile[x,y]):new('?',default);

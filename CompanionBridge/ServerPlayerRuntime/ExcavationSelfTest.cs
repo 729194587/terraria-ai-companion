@@ -260,6 +260,7 @@ internal static class ExcavationSelfTest
             p.position=new Vector2(x*16,y*16-42);p.velocity=Vector2.Zero;p.releaseJump=true;
             p.inventory[0]=new Item(ItemID.BonePickaxe);
             for(int i=0;i<4;i++)Frame();
+            var parity=OverlayMotionSelfTest.Run(p,world,generation,x,y,Frame,check);
             float start=p.position.X;
             var handle=executor.Start(identity,"mine_target",JsonSerializer.SerializeToElement(new{x=x+2,y=y-2,cluster=true}),Guid.NewGuid().ToString("N"));
             Result result=null;
@@ -278,7 +279,7 @@ internal static class ExcavationSelfTest
                 t.GetProperty("status").GetString()=="verified"&&t.GetProperty("proof").GetProperty("Strikes").GetInt32()>0)
                 &&runs.Length>=2,
                 "Native multi-position cluster must keep a single root and prove all 21 tiles.");
-            return new{multiPositionExcavation=true,movedPixels=p.position.X-start,workRuns=runs.Length,verifiedTiles=21};
+            return new{multiPositionExcavation=true,movedPixels=p.position.X-start,workRuns=runs.Length,verifiedTiles=21,parity};
         }
         finally
         {

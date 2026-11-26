@@ -5,8 +5,7 @@ using System.Linq;
 
 namespace CompanionBridge.Motion;
 
-// Structural counterfactuals only. Neither this view nor its plans implement
-// IMotionWorld: native Collision always reads the real world after execution.
+// Branch-local edits. Native collision always reads the real world.
 internal sealed class LocalTerrainView
 {
     private readonly Func<int,int,TerrainCell> read;
