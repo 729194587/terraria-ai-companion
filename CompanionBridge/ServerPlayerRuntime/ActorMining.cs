@@ -31,7 +31,7 @@ internal static partial class ActorMining
         internal object InvalidTarget;
         internal int OriginalSlot, SourceSlot, LastStrikeTick;
         internal Item Displaced;
-        internal bool SelectionChanged,KillingTarget;
+        internal bool SelectionChanged,KillingTarget,NavigationEdit;
         internal FurnitureCell[] Furniture=Array.Empty<FurnitureCell>();
         internal HammerWork Hammer;
         internal Batch Batch;
@@ -244,11 +244,11 @@ internal static partial class ActorMining
         }
     }
 
-    internal static int CapabilityStamp(Player player)
+    internal static int CapabilityStamp(Player player,int? selectedSlot=null,bool includeBindings=true)
     {
         var stamp=new HashCode();
         stamp.Add(player.pickSpeed);
-        stamp.Add(player.selectedItem);
+        if(includeBindings)stamp.Add(selectedSlot??player.selectedItem);
         stamp.Add(Healthy(player));
         stamp.Add(Main.getGoodWorld);
         for(int slot=0;slot<Math.Min(50,player.inventory.Length);slot++)
@@ -256,7 +256,7 @@ internal static partial class ActorMining
             var item=player.inventory[slot];
             if(!SupportedTool(item))continue;
             stamp.Add(slot);
-            stamp.Add(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item));
+            if(includeBindings)stamp.Add(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item));
             stamp.Add(item.type);
             stamp.Add(item.prefix);
             stamp.Add(item.pick);
@@ -498,6 +498,8 @@ internal static partial class ActorMining
             var batch=c.Batch;
             if(batch==null)
             {
+                if(c.NavigationEdit&&!c.Destroyed&&!NavigationProtection.CanCutNow(c.X,c.Y))
+                {End(c,ActionPhase.Failed,Failure.TargetProtected,"navigation_protected_structure");return;}
                 if(c.ExternalChange||(c.Destroyed?Main.tile[c.X,c.Y].HasTile:!TargetUnchanged(c))){End(c,ActionPhase.Failed,Failure.TargetChanged);return;}
                 if(!c.Destroyed&&!InRange(c)){End(c,ActionPhase.Failed,Failure.OutOfRange);return;}
             }

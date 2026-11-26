@@ -124,7 +124,7 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
             var result=route.Tick(this,frame);
             stage=route.Phase;
             if(result==null)return Running();
-            if(result.Status!="completed"&&route.MoveRegion is {} rejected)stanceSearch.RejectOpeningMove(rejected);
+            if(result.Status!="completed"&&route.FailedRegion is {} rejected)stanceSearch.RejectOpeningMove(rejected);
             CollectRoute();
             if(result.Status=="unknown"||!result.InputsReleased)return result with{Evidence=Evidence(outcome="unknown")};
             if(result.Status!="completed")

@@ -135,7 +135,7 @@ def compare(old, new, shared):
 
 
 def main(args):
-    report = dict(baseline=BASELINE, worldSHA256=sha(args.world), controlled={}, packages={})
+    report = dict(baseline=args.baseline_revision, worldSHA256=sha(args.world), controlled={}, packages={})
     for kind, pair in (("shared", args.shared), ("mining", args.mining)):
         inputs = [read(p / "fixture-source.json") for p in pair]
         assert all(m["worldSHA256"].lower() == report["worldSHA256"] for m in inputs), kind
@@ -168,6 +168,7 @@ if __name__ == "__main__":
     parser.add_argument("--shared", nargs=2, type=Path, required=True, metavar=("BASE", "NEW"))
     parser.add_argument("--mining", nargs=2, type=Path, required=True, metavar=("BASE", "NEW"))
     parser.add_argument("--natural", nargs=2, type=Path, metavar=("BASE", "NEW"))
+    parser.add_argument("--baseline-revision", default=BASELINE, help="Revision of the supplied baseline profiles")
     parser.add_argument("--world", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     main(parser.parse_args())

@@ -332,7 +332,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
                 if(!world.SafeSweep(predicted,next,out _) || next.Py>=predicted.Py)break;
                 predicted=next;
                 int row=(int)Math.Ceiling((next.Py+PhysicsSimulator.PlayerH+4)/16);
-                if(feet-row<2 || triedWallPlatforms.Contains((col,row)) || Main.tile[col,row].HasTile
+                if(NavigationProtection.Reserved(col,row)||feet-row<2 || triedWallPlatforms.Contains((col,row)) || Main.tile[col,row].HasTile
                     || Main.tile[col,row].LiquidAmount!=0 || !WorldGen.SolidTile(wall,row))continue;
                 best=new(col,row,side,material.Slot,player.inventory[material.Slot].type,frame);
             }
@@ -345,7 +345,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
     {
         var step=wallPlatform;
         var item=player.inventory[step.Slot];
-        return item.type==step.ItemType && item.createTile==TileID.Platforms && item.stack>0
+        return !NavigationProtection.Reserved(step.X,step.Y)&&item.type==step.ItemType && item.createTile==TileID.Platforms && item.stack>0
             && player.Bottom.Y<=step.Y*16 && player.Right.X>step.X*16 && player.Left.X<(step.X+1)*16
             && !Main.tile[step.X,step.Y].HasTile && Main.tile[step.X,step.Y].LiquidAmount==0
             && WorldGen.SolidTile(step.X+step.Side,step.Y)

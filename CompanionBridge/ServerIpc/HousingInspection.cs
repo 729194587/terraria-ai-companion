@@ -55,6 +55,7 @@ internal static class HousingInspection
         occupied = Flag("roomOccupied");
         roomOccupied = occupied == true;
         evil = occupied == true ? null : Flag("roomEvil");
+        if(occupied==true||score>0)NavigationProtection.Reserve(new(WorldGen.roomX1,WorldGen.roomY1,WorldGen.roomX2,WorldGen.roomY2));
         if (score <= 0) return Result("invalid", "score", occupied == true ? "occupied" : evil == true ? "evil" : "no_home_tile");
         candidate = new Microsoft.Xna.Framework.Point(WorldGen.bestX, WorldGen.bestY);
         homeTile = new { x = WorldGen.bestX, y = WorldGen.bestY };

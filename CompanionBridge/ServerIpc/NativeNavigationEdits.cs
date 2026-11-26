@@ -38,7 +38,13 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     internal PhysicsState Waypoint { get; private set; }
     internal float Cost { get; private set; }
     internal bool Edited { get; private set; }
-    private bool IsTargetCell(int x,int y)=>protectedCell(x,y);
+    internal object ProtectedEdit {get;private set;}
+    private bool IsTargetCell(int x,int y)
+    {
+        if(!NavigationProtection.Reserved(x,y))return protectedCell(x,y);
+        ProtectedEdit??=new{x,y};
+        return true;
+    }
     private PhysicsState? expectedLanding;
     private PhysicsState cutPose;
     private (int X,int Y,int Slot,Item Item,string Shape,long Revision)? openingTile;
@@ -50,7 +56,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     private readonly List<object> drops=new();
     internal string SearchFailure { get; private set; }
     public string SearchDetail{get;private set;}
-    public object OpeningEvidence=>new{drops=drops.ToArray()};
+    public object OpeningEvidence=>new{drops=drops.ToArray(),protectedEdit=ProtectedEdit};
     private static float Feet(PhysicsState p)=>p.Py+PhysicsSimulator.PlayerH;
     private static int Grid(float coordinate)=>(int)Math.Floor(coordinate/TileSize);
     private static IEnumerable<int> Columns(float left,float right)
@@ -131,7 +137,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         var view=new LocalTerrainView(Environment);
         var floor=Columns(pose.Px,pose.Px+PhysicsSimulator.PlayerW)
             .Where(tx=>view.DryCell(tx,row)!='.').Select(tx=>(tx,row)).ToArray();
-        return floor.Length>0&&floor.All(c=>!IsTargetCell(c.tx,c.row)&&SafeExcavation(c.tx,c.row,view,miningAccess))
+        return floor.Length>0&&floor.All(c=>!IsTargetCell(c.tx,c.row)&&NavigationProtection.NaturalObstacle(Main.tile[c.tx,c.row].TileType)&&SafeExcavation(c.tx,c.row,view,miningAccess))
             &&LandingAfterCut(pose,floor).HasValue;
     }
 
@@ -253,6 +259,13 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
             &&TileID.Sets.TouchDamageImmediate[type]==0&&!TileID.Sets.TouchDamageHot[type]
             &&!TileID.Sets.TouchDamageBleeding[type]&&!TileID.Sets.TouchDamageDestroyTile[type]&&!TileID.Sets.Boulders[type];
     }
+    internal long EquipmentStamp()
+    {
+        var stamp=new HashCode();
+        stamp.Add(ActorMining.CapabilityStamp(Player,includeBindings:false));stamp.Add(Player.blockRange);stamp.Add(Player.noBuilding);
+        foreach(var material in Materials)stamp.Add(material);
+        return stamp.ToHashCode();
+    }
     public IReadOnlyList<LocalMaterial> Materials=>Enumerable.Range(0,10).Where(slot=>SafeMaterial(Player.inventory[slot])).Select(slot=>
         {
             var item=Player.inventory[slot];
@@ -276,7 +289,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     }
     public LocalEditQuote Mine(PhysicsState pose,int x,int y,LocalTerrainView view)
     {
-        if(!ActorMining.Healthy(Player)||IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||view.Cell(x,y)!='#'||!Main.tile[x,y].HasUnactuatedTile
+        if(!ActorMining.Healthy(Player)||IsTargetCell(x,y)||!WorldGen.InWorld(x,y,2)||!NavigationProtection.NaturalObstacle(Main.tile[x,y].TileType)||view.Cell(x,y)!='#'||!Main.tile[x,y].HasUnactuatedTile
             ||!SafeExcavation(x,y,view)
             ||Math.Abs(x-Grid(openingOrigin.Px+10))>MaxWidthTiles||y<Grid(openingOrigin.Py)
             ||y>=(int)Math.Round(Feet(openingOrigin)/16)+MaxDepthTiles)return null;
@@ -309,7 +322,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
 
     private NavigationStep ArmRun(PhysicsState pose,ExcavationCell[] cells)
     {
-        if(cells.Any(c=>IsTargetCell(c.X,c.Y)
+        if(cells.Any(c=>IsTargetCell(c.X,c.Y)||!NavigationProtection.NaturalObstacle(c.Type)
             ||Math.Abs(c.X-Grid(openingOrigin.Px+PhysicsSimulator.PlayerW/2f))>MaxWidthTiles
             ||c.Y<Grid(openingOrigin.Py)||c.Y>=(int)Math.Round(Feet(openingOrigin)/TileSize)+MaxDepthTiles))return null;
         var plan=NativeExcavation.Choose(identity,pose,cells,new(Environment),ordered:true);
@@ -398,7 +411,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         armedInventory=ItemStamp(Player.inventory[action.Slot]);
         armedMiningCapability=ActorMining.CapabilityStamp(Player);
         expectedDrop=landing.HasValue;expectedLanding=landing??now.State;
-        return new("mine_tile",JsonSerializer.SerializeToElement(new{x=action.X,y=action.Y,plannedToolSlot=action.Slot}));
+        return new("mine_tile",JsonSerializer.SerializeToElement(new{x=action.X,y=action.Y,navigationEdit=true,plannedToolSlot=action.Slot}));
     }
 
     private NavigationStep PlanCut((int X,int Y)[] blocks,int remainingTiles)
@@ -411,7 +424,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         var view=new LocalTerrainView(Environment);
         foreach(var (tx,ty) in blocks)
         {
-            if(IsTargetCell(tx,ty)||!WorldGen.InWorld(tx,ty,2)
+            if(IsTargetCell(tx,ty)||!WorldGen.InWorld(tx,ty,2)||!NavigationProtection.NaturalObstacle(Main.tile[tx,ty].TileType)
                 ||Math.Abs(tx-Grid(openingOrigin.Px+PhysicsSimulator.PlayerW/2f))>MaxWidthTiles
                 ||ty<Grid(openingOrigin.Py)||ty>=(int)Math.Round(Feet(openingOrigin)/TileSize)+MaxDepthTiles
                 ||!SafeExcavation(tx,ty,view,miningAccess))
@@ -427,7 +440,7 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         cutPose=ServerAiNavigation.Observe(p).State;
         openingTile=(first.X,first.Y,nextSlot,p.inventory[nextSlot],SceneMineTargets.NavigationShape(first.X,first.Y),SceneMineTargets.Revision(first.X,first.Y));
         armedMiningCapability=ActorMining.CapabilityStamp(p);
-        return new("mine_tile",JsonSerializer.SerializeToElement(new{x=first.X,y=first.Y,plannedToolSlot=nextSlot}));
+        return new("mine_tile",JsonSerializer.SerializeToElement(new{x=first.X,y=first.Y,navigationEdit=true,plannedToolSlot=nextSlot}));
     }
 
     internal static bool SafeExcavation(int x,int y,LocalTerrainView view,bool shaped=false)

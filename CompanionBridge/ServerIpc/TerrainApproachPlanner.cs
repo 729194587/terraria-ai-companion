@@ -30,7 +30,7 @@ internal sealed class TerrainApproachPlanner(AiReadOnlyProtocol.Identity identit
             float x=(endRegion.MinPlayerLeftX+endRegion.MaxPlayerLeftX)/2;
             var flat=SafeGroundWalk.TryPlan(pose,x,x>=pose.Px?1:-1,physics,world,endRegion);
             yield return 0;
-            if(flat?.ReachedGoal==true)
+            if(flat?.ReachedGoal==true&&!stanceSearch.OpeningMoveLimited(Region(flat.Actions[^1].Landing)))
             {
                 nativeCost=new(flat.Actions.Sum(a=>a.ExecuteFrames),0,0,0);
                 Destination=new(endRegion,Array.Empty<ExcavationCell>(),1,0,nativeCost.Total);
@@ -39,7 +39,7 @@ internal sealed class TerrainApproachPlanner(AiReadOnlyProtocol.Identity identit
         }
         if(goal.InWindow(pose))
         {
-            local=new TerrainRouteSearch(identity,pose,physics,goal,corridor,remainingChanges);
+            local=new TerrainRouteSearch(identity,pose,physics,goal,corridor,remainingChanges,stanceSearch);
             foreach(var slice in local.Run())yield return slice;
             localWalk=Eligible(local.Walk);localPlan=Eligible(local.Clearance);
             unsupported=local.Unsupported;
@@ -58,6 +58,7 @@ internal sealed class TerrainApproachPlanner(AiReadOnlyProtocol.Identity identit
                     yield return 0;
                     if(!edge.Safe)continue;
                     var region=Region(edge.Landing);
+                    if(stanceSearch.OpeningMoveLimited(region))continue;
                     if(goal.Region is {} end&&!end.Contains(edge.Landing)&&edge.Landing.Py>pose.Py
                         &&Math.Abs(edge.Landing.Py+42-end.SurfaceY)<=LandingRegion.FeetTolerance)
                     {
@@ -115,7 +116,7 @@ internal sealed class TerrainApproachPlanner(AiReadOnlyProtocol.Identity identit
             dependencies=Selected==null?null:new{count=Selected.Dependencies.Count,
                 left=Selected.Dependencies.Keys.Min(k=>k.X),right=Selected.Dependencies.Keys.Max(k=>k.X),
                 top=Selected.Dependencies.Keys.Min(k=>k.Y),bottom=Selected.Dependencies.Keys.Max(k=>k.Y)},
-            search=local?.Evidence,capability,gameUpdate=Main.GameUpdateCount};
+            search=local?.Evidence,protectedEdit=corridor.ProtectedEdit,capability,gameUpdate=Main.GameUpdateCount};
     }
     internal static bool InLocalSearch(PhysicsState start,LandingRegion region)
     {
@@ -185,7 +186,7 @@ internal sealed class TerrainApproachPlanner(AiReadOnlyProtocol.Identity identit
                 }
                 if(!navigator.Finished||route?.TimeBudgetReached==true||route?.SearchExit=="safe_partial")routeBudgetReached=true;
             }
-            if(route?.ReachedGoal!=true){localRouteProbes.Add(candidate.Region);continue;}
+            if(route?.ReachedGoal!=true||stanceSearch.OpeningMoveLimited(Region(route.Actions[^1].Landing))){localRouteProbes.Add(candidate.Region);continue;}
             nativeCost=new(route.Actions.Sum(a=>a.ExecuteFrames),0,candidate.Mining,0);
             Destination=candidate;
             yield break;

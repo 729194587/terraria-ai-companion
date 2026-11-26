@@ -52,12 +52,13 @@ internal sealed class DestinationNavigationTask : AutonomousNavigationTask
             var result=route.Tick(this,frame);
             if(route.Cuts+route.Places>before)VerifiedTerrainEffect();
             if(result==null)return Running();
-            if(result.Status!="completed"&&route.MoveRegion is {} region)memory.RejectOpeningMove(region);
+            if(result.Status!="completed")route.RememberFailedMove(memory,edits.EquipmentStamp());
             CollectRoute();
             if(result.Status=="unknown"||!result.InputsReleased)return Describe(result);
             if(result.Status!="completed")
             {
                 if(result.Status is not ("failed" or "timeout"))return Describe(result);
+                scope=null;
                 if(++replans>=MaxConsecutiveInvalidations)return Describe(new("timeout","navigation_edit_replan_budget_exhausted",null,true));
             }
             return Running();
@@ -71,6 +72,7 @@ internal sealed class DestinationNavigationTask : AutonomousNavigationTask
         {ReleaseSearch();return null;}
         var world=new NativeMotionWorld(pose);
         var stamp=(pose,physics,world.TerrainSignature(pose),journey.InventoryStamp());
+        if(memory.HasDestinationFailures&&memory.ObserveDestination(physics,edits.EquipmentStamp()))scope=null;
         if(scope!=stamp)
         {
             ReleaseSearch();scope=stamp;probes.Clear();

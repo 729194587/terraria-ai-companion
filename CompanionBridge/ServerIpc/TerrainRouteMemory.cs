@@ -12,9 +12,25 @@ internal sealed class TerrainRouteMemory
     private (long Terrain,int Capability,PhysicsParameters Physics,int Pending)? scope;
     private readonly List<(LandingRegion Region,ExcavationCell[] Batch)> attempts=new();
     private readonly List<LandingRegion> failedOpeningMoves=new();
+    private sealed record FailedMove(LandingRegion Landing,PhysicsParameters Physics,long Equipment,
+        Dictionary<(int X,int Y),TerrainCell> Cells);
+    private readonly List<FailedMove> destinationMoves=new();
+
+    internal void RejectDestinationMove(LandingRegion landing,PhysicsParameters physics,long equipment,
+        Dictionary<(int X,int Y),TerrainCell> dependencies)
+    {
+        if(!OpeningMoveLimited(landing))destinationMoves.Add(new(landing,physics,equipment,new(dependencies)));
+    }
+
+    // These keys belong to the failed trajectory, independent of the actor's current window.
+    internal bool ObserveDestination(PhysicsParameters physics,long equipment)=>
+        destinationMoves.RemoveAll(f=>f.Physics!=physics||f.Equipment!=equipment||
+            f.Cells.Any(c=>TerrainReader.ReadEnvironment(c.Key.X,c.Key.Y)!=c.Value))>0;
+    internal bool HasDestinationFailures=>destinationMoves.Count!=0;
     internal int Attempts=>attempts.Count;
 
-    internal bool OpeningMoveLimited(LandingRegion region)=>TravelExhausted||failedOpeningMoves.Count>=16
+    internal bool OpeningMoveLimited(LandingRegion region)=>TravelExhausted||failedOpeningMoves.Count+destinationMoves.Count>=16
+        ||destinationMoves.Any(f=>SameLanding(f.Landing,region))
         ||failedOpeningMoves.Any(prior=>SameLanding(prior,region));
     internal void RejectOpeningMove(LandingRegion region)
     {

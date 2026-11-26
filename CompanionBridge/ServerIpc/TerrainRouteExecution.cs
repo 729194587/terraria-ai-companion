@@ -16,12 +16,17 @@ internal sealed class TerrainRouteExecution(AiReadOnlyProtocol.Identity identity
 {
     private readonly Player player=(Player)identity.Actor;
     private int index,recorded=-1;
+    private int expectedCapability=capability,placementCapability;
+    internal void RememberFailedMove(TerrainRouteMemory memory,long equipment)
+    {
+        if(FailedRegion!=null)memory.RejectDestinationMove(FailedRegion,physics,equipment,plan.Dependencies);
+    }
     private NativeActionTask active;
+    internal LandingRegion FailedRegion {get;private set;}
     internal int Cuts,Places,Moves,MoveFailures;
     internal bool Acquired;
     internal string Phase {get;private set;}="settling";
     private LocalEditAction Step=>index<plan.Actions.Length?plan.Actions[index]:null;
-    internal LandingRegion MoveRegion=>Step is {Kind:LocalEditKind.Move} move?TerrainApproachPlanner.Region(move.Expected):null;
     private static TerrainCell After(LocalEditAction step)=>step.Kind==LocalEditKind.Mine
         ?new('.',default):new(step.Shape,default,step.Type);
 
@@ -36,8 +41,13 @@ internal sealed class TerrainRouteExecution(AiReadOnlyProtocol.Identity identity
             if(active?.Started==true&&step.Kind!=LocalEditKind.Move&&point==(step.X,step.Y)&&cell==After(step))continue;
             return false;
         }
+        for(int i=index;i<plan.Actions.Length;i++)
+        {
+            var edit=plan.Actions[i];
+            if(edit.Kind!=LocalEditKind.Move&&NavigationProtection.Reserved(edit.X,edit.Y))return false;
+        }
         if(active?.Started==true&&step.Kind!=LocalEditKind.Move)return true;
-        if(physics!=NativeNavigation.Parameters(player)||capability!=ActorMining.CapabilityStamp(player))return false;
+        if(physics!=NativeNavigation.Parameters(player)||expectedCapability!=ActorMining.CapabilityStamp(player))return false;
         if(plan.Cost.Places>0)
         {
             foreach(var group in plan.Actions.Skip(index).Where(a=>a.Kind==LocalEditKind.Place).GroupBy(a=>a.Slot))
@@ -84,25 +94,36 @@ internal sealed class TerrainRouteExecution(AiReadOnlyProtocol.Identity identity
             if(!result.InputsReleased)return result with{Status="unknown",EffectVerified=false};
             if(result.Status!="completed"||!result.EffectVerified)
             {
-                if(step.Kind==LocalEditKind.Move)MoveFailures++;
+                if(step.Kind==LocalEditKind.Move){MoveFailures++;FailedRegion=TerrainApproachPlanner.Region(step.Expected);}
                 return result.Status=="completed"?Changed(owner,frame):result;
             }
             if(step.Kind!=LocalEditKind.Move)
             {
                 if(recorded!=index||edits.Environment(step.X,step.Y)!=After(step))return Changed(owner,frame);
                 plan.Dependencies[(step.X,step.Y)]=After(step);
+                if(step.Kind==LocalEditKind.Place)expectedCapability=placementCapability;
             }
             index++;Phase="settling";return null;
         }
         var observed=ServerAiNavigation.Observe(player);
         if(!observed.Settled)return null;
-        if(index>0&&!TerrainApproachPlanner.Region(plan.Actions[index-1].Expected).Contains(observed.State))return Changed(owner,frame);
+        if(index>0)
+        {
+            var previous=plan.Actions[index-1];
+            var landing=TerrainApproachPlanner.Region(previous.Expected);
+            if(!landing.Contains(observed.State))
+            {
+                if(previous.Kind==LocalEditKind.Move){MoveFailures++;FailedRegion=landing;}
+                return Changed(owner,frame);
+            }
+        }
         if(step==null)return new("completed","navigation_route_verified",null,true,true,Acquired);
         if(!TerrainApproachPlanner.Region(step.Start).Contains(observed.State))return Changed(owner,frame);
         var armed=edits.Arm(step with{Start=observed.State});
         if(armed==null)return Changed(owner,frame);
         Phase=step.Kind switch{LocalEditKind.Mine=>"clearing",LocalEditKind.Place=>"placing",_=>"navigating"};
         if(step.Kind==LocalEditKind.Move)Moves++;
+        if(step.Kind==LocalEditKind.Place)placementCapability=ActorMining.CapabilityStamp(player,step.Slot);
         active=new(native,armed.Operation,armed.Arguments,routeId+"/"+index);
         return null;
     }

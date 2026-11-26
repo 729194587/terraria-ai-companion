@@ -97,6 +97,42 @@ internal static class ExcavationSelfTest
             var landing=new LandingRegion(original.Px-2,original.Px+2,y*16);
             var physics=NativeNavigation.Parameters(player);
             int capability=ActorMining.CapabilityStamp(player);
+            // Search the same flat destination before, during and after a recorded refusal.
+            var shortWalk=new LandingRegion(original.Px-34,original.Px-30,y*16);
+            var destination=new TerrainRouteMemory();
+            TerrainRouteSearch.Plan Walk()
+            {
+                var route=new TerrainRouteSearch(identity,original,physics,new(shortWalk),new(identity,original),0,destination);
+                foreach(var _ in route.Run()){}
+                return route.Walk;
+            }
+            var walk=Walk();
+            check(walk!=null,"Expected a predicted flat route to the destination.");
+            var refused=TerrainApproachPlanner.Region(walk.Actions[^1].Expected);
+            destination.RejectDestinationMove(refused,physics,capability,walk.Dependencies);
+            check(Walk()==null,"An unchanged failed destination should be excluded from the actual route search.");
+            var dep=walk.Dependencies.First(d=>d.Key.Y==y&&d.Value.TileType==TileID.Stone).Key;
+            Set(dep.X,dep.Y,TileID.Dirt);
+            check(destination.ObserveDestination(physics,capability)&&Walk()!=null,"Changing a watched floor must reopen the route.");
+            Set(dep.X,dep.Y,TileID.Stone);
+            var secondLanding=new LandingRegion(landing.MinPlayerLeftX+40,landing.MaxPlayerLeftX+40,y*16);
+            var equipment=new NativeNavigationEdits(identity,original);
+            var savedLoadout=(player.selectedItem,player.inventory[1]);
+            long gear=equipment.EquipmentStamp();
+            destination.RejectDestinationMove(landing,physics,gear,new(){[(x+5,y)]=CompanionBridge.Common.Systems.TerrainReader.ReadEnvironment(x+5,y)});
+            destination.RejectDestinationMove(secondLanding,physics,gear,new(){[(x+6,y)]=CompanionBridge.Common.Systems.TerrainReader.ReadEnvironment(x+6,y)});
+            destination.Charge(87,true);
+            player.selectedItem=(savedLoadout.selectedItem+1)%10;player.position.X+=32;Set(x+4,y-4,TileID.Dirt);
+            check(!destination.ObserveDestination(NativeNavigation.Parameters(player),equipment.EquipmentStamp())
+                &&destination.OpeningMoveLimited(landing)&&destination.OpeningMoveLimited(secondLanding),
+                "Rolling the window or changing unrelated terrain must preserve both destination refusals.");
+            player.selectedItem=savedLoadout.selectedItem;player.position.X=original.Px;Set(x+4,y-4,-1);Set(x+5,y,TileID.Dirt);
+            check(destination.ObserveDestination(physics,equipment.EquipmentStamp())&&!destination.OpeningMoveLimited(landing)
+                &&destination.OpeningMoveLimited(secondLanding),"Only the destination trajectory with changed terrain reopens.");
+            player.inventory[1]=new Item(ItemID.WoodPlatform,3);
+            check(destination.ObserveDestination(physics,equipment.EquipmentStamp())&&!destination.OpeningMoveLimited(secondLanding)
+                &&destination.TravelUpdates==87&&destination.WorkUpdates==87,"Capability invalidation must keep the spent route budget.");
+            player.inventory[1]=savedLoadout.Item2;Set(x+5,y,TileID.Stone);
             failures.Observe(work,origin,capability,physics,1);
             failures.Attempt(landing,batch);
             failures.RejectOpeningMove(landing);
@@ -127,6 +163,23 @@ internal static class ExcavationSelfTest
             failures.Attempt(landing,batch);
             check(failures.Observe(work,origin,capability+1,physics,0)&&failures.Attempts==0,
                 "Removing a pending target invalidates the previous batch scope.");
+            // Exercise native object frames, including the floor supporting each chest column.
+            int seatX=x+8,chestX=x+11;
+            check(WorldGen.PlaceTile(seatX,y-1,TileID.Chairs,mute:true,forced:true)
+                &&!NavigationProtection.CanCutNow(seatX,y)&&!NavigationProtection.CanCutNow(seatX,y-1),
+                "Navigation must preserve furniture and its native support.");
+            check(WorldGen.PlaceChest(chestX,y-1)>=0&&!NavigationProtection.CanCutNow(chestX,y)
+                &&!NavigationProtection.CanCutNow(chestX+1,y),"Both native chest supports must be protected.");
+            WorldGen.KillTile(seatX,y-1,noItem:true);WorldGen.KillTile(chestX,y-1,noItem:true);
+            var reserved=new NavigationProtection.Area(x+6,y-2,x+6,y);
+            var protection=Terraria.ModLoader.ModContent.GetInstance<NavigationProtection>();
+            var tag=new Terraria.ModLoader.IO.TagCompound();
+            NavigationProtection.Reserve(reserved);protection.SaveWorldData(tag);NavigationProtection.Remove(reserved);
+            check(NavigationProtection.CanCutNow(x+6,y),"Unmarked native stone remains a candidate.");
+            protection.LoadWorldData(tag);
+            check(!NavigationProtection.CanCutNow(x+6,y)&&NavigationProtection.Reserved(x+6,y-1),
+                "Restoring world reservations must protect both the shell and empty interior.");
+            NavigationProtection.Remove(reserved);
             var single=new NativeMineTargetWorld(identity,JsonSerializer.SerializeToElement(new{x=seed.X,y=seed.Y}));
             var copper=NativeExcavation.Choose(identity,pose.State,new[]{seed},
                 new LocalTerrainView(CompanionBridge.Common.Systems.TerrainReader.ReadEnvironment),ordered:false);

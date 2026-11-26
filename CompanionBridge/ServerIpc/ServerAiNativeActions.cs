@@ -228,9 +228,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
                 if(child&&operation=="place_tile"&&args.TryGetProperty("plannedPlacementSlot",out var plannedSlot))
+                {
+                    if(NavigationProtection.Reserved(x,y))return Reject("navigation_protected_structure");
                     ActorItemUse.Select(p,identity.World,identity.Generation,plannedSlot.GetInt32());
+                }
                 string error=ActorPlacement.Prepare(p,x,y,operation=="place_object",out var placement);
                 if(error!=null)return Reject(error,operation=="place_object"?ActorObjectPlacement.PreflightDetail(p,x,y,error):null);
+                placement.NavigationEdit=child&&args.TryGetProperty("plannedPlacementSlot",out _);
                 ActorItemUse.StartPlacement(p,identity.World,identity.Generation,placement);
                 if(child&&operation=="place_tile"&&args.TryGetProperty("waterBridgeDirection",out var direction))
                     ActorItemUse.Current.Placement.WaterBridgeDirection=direction.GetInt32();
@@ -269,8 +273,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
                 if(!WorldGen.InWorld(x,y,2))return Reject("invalid_target",JsonSerializer.Serialize(ActorMining.TargetDiagnostic(x,y)));
+                bool clearance=child&&args.TryGetProperty("navigationEdit",out _);
+                if(clearance&&!NavigationProtection.CanCutNow(x,y))return Reject("navigation_protected_structure");
                 ActorMining.Start(p,identity.World,identity.Generation,x,y,
                     child&&args.TryGetProperty("plannedToolSlot",out var planned)?planned.GetInt32():null);context=ActorMining.Current;
+                if(clearance&&ActorMining.Current!=null)ActorMining.Current.NavigationEdit=true;
             }
             var handle=new Handle(identity,operation,context);
             if(!child)active=handle;

@@ -12,7 +12,7 @@ namespace CompanionBridge.ServerIpc;
 // Each candidate must reach the supplied goal. Each edge owns its
 // overlay, captured reads and settled poses. No cross-overlay route cache.
 internal sealed class TerrainRouteSearch(AiReadOnlyProtocol.Identity identity, PhysicsState start,
-    PhysicsParameters physics, TerrainRouteGoal goal, NativeNavigationEdits edits,int remainingChanges)
+    PhysicsParameters physics, TerrainRouteGoal goal, NativeNavigationEdits edits,int remainingChanges,TerrainRouteMemory memory)
 {
     internal sealed record Cost(float Movement,float Clearance,float Target,int Cuts,float Placement=0,int Places=0)
     {
@@ -44,7 +44,9 @@ internal sealed class TerrainRouteSearch(AiReadOnlyProtocol.Identity identity, P
     }
     private OverlayMotionWorld World(LocalTerrainView view)=>new(view,TerrainReader.OrdinaryOverlayCell);
     private float Distance(PhysicsState pose)=>goal.Distance(pose);
-    private readonly LocalMaterial[] materials=edits.Materials.Where(m=>m.Shape=='#' && TerrainReader.OrdinaryOverlayCell(new TerrainCell(m.Shape,default,m.Type))).OrderBy(m=>m.Updates).ToArray();
+    private readonly LocalMaterial[] materials=edits.Materials
+        .Where(m=>TerrainReader.OrdinaryOverlayCell(new TerrainCell(m.Shape,default,m.Type)))
+        .OrderBy(m=>m.Updates+LocalEditEvaluation.MaterialPrice(m.Shape)).ThenByDescending(m=>m.Shape=='=').ToArray();
 
     private bool Goal(Node node)
     {
@@ -104,7 +106,7 @@ internal sealed class TerrainRouteSearch(AiReadOnlyProtocol.Identity identity, P
             for(int y=box.MinY;y<=box.MaxY;y++)
             {
                 int x=direction>0?i:box.MaxX-(i-box.MinX);
-                if(node.View.Cell(x,y)=='.')continue;
+                if(node.View.Cell(x,y) is '.' or '=')continue;
                 node=Cut(node,x,y,false);
                 if(node==null)return null;
                 if(Goal(node))return node;
@@ -128,7 +130,7 @@ internal sealed class TerrainRouteSearch(AiReadOnlyProtocol.Identity identity, P
                 var placed=node.View.Fork();
                 if(!placed.Set(x,row,material.Shape,material.Type)||!World(placed).SafeLanding(node.Pose))return null;
                 this.placed++;
-                node=node with{View=placed,Places=node.Places+1,Placement=node.Placement+material.Updates+LocalEditEvaluation.MaterialCost,
+                node=node with{View=placed,Places=node.Places+1,Placement=node.Placement+material.Updates+LocalEditEvaluation.MaterialPrice(material.Shape),
                     Actions=new(node.Actions){new(LocalEditKind.Place,node.Pose,node.Pose,x,row,material.Slot,material.Type,material.Shape)}};
             }
         }
@@ -138,6 +140,7 @@ internal sealed class TerrainRouteSearch(AiReadOnlyProtocol.Identity identity, P
             Unsupported|=edge.Reason.StartsWith("unsupported",StringComparison.Ordinal);
             return null;
         }
+        if(memory.OpeningMoveLimited(TerrainApproachPlanner.Region(edge.Landing)))return null;
         reached=Math.Max(reached,Math.Abs(edge.Landing.Px-start.Px));
         return node with{Pose=edge.Landing,Movement=node.Movement+edge.Frames.Count,Reads=reads,
             Actions=new(node.Actions){new(LocalEditKind.Move,node.Pose,edge.Landing)}};
