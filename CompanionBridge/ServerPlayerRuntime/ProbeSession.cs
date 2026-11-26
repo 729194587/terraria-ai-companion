@@ -392,6 +392,7 @@ public sealed class ProbePlayer : ModPlayer
     internal long PreUpdates, PostUpdates;
     internal string PersistentMarker = "";
     public override void PreUpdate() => PreUpdates++;
+    public override void PreUpdateBuffs() => ImproveGamePotionBuffs.Current?.Refresh(Player);
     public override void PostUpdate() => PostUpdates++;
     public override void PostUpdateMiscEffects()
     {
@@ -405,7 +406,6 @@ public sealed class ProbePlayer : ModPlayer
         ActorControl.BeforeMovement(Player);
         CompanionBridge.ServerIpc.ServerAiNaturalFixture.SampleTravelInput(Player);
     }
-    public override void PostUpdateBuffs() => CompanionBridge.ServerIpc.ServerAiTerrainFixture.AfterBuffs(Player);
     public override void SaveData(Terraria.ModLoader.IO.TagCompound tag)
     {
         if (Mod.Name == "VirtualPlayerEngineProbe" || ReferenceEquals(Player, ProbeSession.Actor)) tag["g31Marker"] = PersistentMarker;

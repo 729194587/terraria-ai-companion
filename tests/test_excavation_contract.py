@@ -34,6 +34,18 @@ class ExcavationContractTests(unittest.TestCase):
                                   currentChild=None, worldSessionId='world', actorGeneration=2, actorSlot=254,
                                   result=result))
         self.assertTrue(atomic.verified_server_mine_task(action, evidence))
+        linked = deepcopy(evidence)
+        native, secondary, _ = linked['task']['result']['evidence']['targets']
+        native['proof']['ActionId'] = 'pick-action'
+        chain = dict(Before=dict(X=11, Y=20, Type=6, Revision=8), AfterRevision=9,
+                     ActorSlot=254, ActionId='pick-action', SeedX=10, SeedY=20, Update=12)
+        secondary.update(source='improvegame_chain', proof=None, chainProof=chain)
+        self.assertTrue(atomic.verified_server_mine_task(action, linked))
+        for wrong in (dict(ActorSlot=3), dict(ActionId='other'), dict(SeedX=12), dict(AfterRevision=8), dict(Update=1)):
+            secondary['chainProof'] = {**chain, **wrong}
+            self.assertFalse(atomic.verified_server_mine_task(action, linked))
+        secondary.update(chainProof=chain, proof=targets[1]['proof'])
+        self.assertFalse(atomic.verified_server_mine_task(action, linked))
         large = deepcopy(evidence)
         batch = large['task']['result']['evidence']
         batch['targets'] = [dict(x=x, y=20, typeId=6, status='verified',

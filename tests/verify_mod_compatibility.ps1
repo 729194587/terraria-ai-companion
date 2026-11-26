@@ -1,6 +1,6 @@
 param([string]$WorkshopRoot = 'D:/steam/steamapps/workshop/content/1281930',
       [string]$PackagePath, [string[]]$Cases = @('Vanilla','Calamity','RecipeBrowser','Quality','Combined'),
-      [int]$Port = 28960, [switch]$Crafting, [ValidateSet('Actions','Restore','Combat','Equipment','Network')][string]$Scenario = 'Actions')
+      [int]$Port = 28960, [switch]$Crafting, [ValidateSet('Actions','Restore','Combat','Equipment','Network','PotionBuffs')][string]$Scenario = 'Actions')
 $ErrorActionPreference = 'Stop'
 $mods = @{
     Calamity = @('2824688072/2026.6/CalamityMod.tmod','2824688266/2025.12/CalamityModMusic.tmod')
@@ -15,6 +15,13 @@ foreach ($case in $Cases) {
     $paths = @($mods[$case] | ForEach-Object { Join-Path $WorkshopRoot $_ })
     Write-Output "Testing $case"
     try {
+        if ($Scenario -eq 'PotionBuffs') {
+            & "$PSScriptRoot/verify_server_ai_direct_input_native.ps1" -TestScript native_potion_buffs.py -KeepProfile -Port $Port -IpcPort ($Port+1) -PackagePath $PackagePath -ModPackages $paths
+            if ($case -eq 'Quality') {
+                & "$PSScriptRoot/verify_server_ai_direct_input_native.ps1" -TestScript native_potion_buffs.py -KeepProfile -Port $Port -IpcPort ($Port+1) -PackagePath $PackagePath -ModPackages $paths -DisablePotionSharing
+            }
+            continue
+        }
         if ($Scenario -eq 'Network') {
             & "$PSScriptRoot/verify_server_ai_native.ps1" -KeepProfile -ItemInfo -CompatibilityQueries -TcpCapacity -Port $Port -IpcPort ($Port+1) -PackagePath $PackagePath -ModPackages $paths
             continue

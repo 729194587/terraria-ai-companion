@@ -1039,16 +1039,37 @@ def verified_excavation_task(action, task, goal):
     if not isinstance(targets, list) or batch.get('discoveryComplete') is False or not 1 <= len(targets) <= 128:
         return False
     cells = set()
+    native_hits = set()
+    chain_seeds = []
     for target in targets:
         if not isinstance(target, dict) or target.get('status') != 'verified' or target.get('typeId') != ore:
             return False
         cell = (target.get('x'), target.get('y'))
-        proof = target.get('proof')
-        if (not all(type(value) is int for value in cell) or cell in cells or not isinstance(proof, dict)
-                or (proof.get('X'), proof.get('Y'), proof.get('Type')) != (*cell, ore)
-                or not all(type(proof.get(k)) is int and proof[k] > 0 for k in ('Update', 'Strikes'))):
+        if not all(type(v) is int for v in cell) or cell in cells:
             return False
         cells.add(cell)
+        proof = target.get('proof')
+        chain = target.get('chainProof')
+        if target.get('source') == 'improvegame_chain':
+            if proof is not None or not isinstance(chain, dict):
+                return False
+            before = chain.get('Before')
+            if (not isinstance(before, dict) or (before.get('X'), before.get('Y'), before.get('Type')) != (*cell, ore)
+                    or type(before.get('Revision')) is not int or type(chain.get('AfterRevision')) is not int
+                    or chain['AfterRevision'] <= before['Revision'] or chain.get('ActorSlot') != action.get('actorSlot')
+                    or not isinstance(chain.get('ActionId'), str) or not chain['ActionId']
+                    or not all(type(chain.get(k)) is int for k in ('SeedX', 'SeedY', 'Update'))):
+                return False
+            chain_seeds.append((chain['SeedX'], chain['SeedY'], chain['ActionId'], chain['Update']))
+        else:
+            if (target.get('source', 'native_pick') != 'native_pick' or chain is not None or not isinstance(proof, dict)
+                    or (proof.get('X'), proof.get('Y'), proof.get('Type')) != (*cell, ore)
+                    or not all(type(proof.get(k)) is int and proof[k] > 0 for k in ('Update', 'Strikes'))):
+                return False
+            if isinstance(proof.get('ActionId'), str):
+                native_hits.add((*cell, proof['ActionId'], proof['Update']))
+    if any(origin not in native_hits for origin in chain_seeds):
+        return False
     if seed not in cells:
         return False
     frontier = [seed]

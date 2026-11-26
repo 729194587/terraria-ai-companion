@@ -1,0 +1,641 @@
+{
+  "source": {
+    "modWorldSHA256": "998A070989418FEDCAE47D28D9A3928C4D34DF6183F82AC646135F10BEC2EEEC",
+    "packageSHA256": "3B4B726697D0B4803981C9E2B7790F7576E7525CFE7EE0F5CFF6C36AB1B58326",
+    "worldSHA256": "918E33D72AE761F990CAA31E0734DD04AB375B3B4F4582702FCBF087D00707F0"
+  },
+  "scenarios": {
+    "nav_platform": {
+      "updates": 255,
+      "planningMs": 227.3,
+      "maxSliceMs": 13.04,
+      "cuts": 0,
+      "places": 3,
+      "moves": 2,
+      "batches": 0,
+      "status": "completed",
+      "reason": "navigation_destination_verified",
+      "released": true,
+      "consumed": 3,
+      "platformsPresent": [
+        2168,
+        2169,
+        2170
+      ],
+      "remaining": 5,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [
+        {
+          "x": 2168,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2169,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2170,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        }
+      ],
+      "targets": []
+    },
+    "single_platform": {
+      "updates": 296,
+      "planningMs": 113.58,
+      "maxSliceMs": 8.48,
+      "cuts": 0,
+      "places": 3,
+      "moves": 4,
+      "batches": 1,
+      "status": "completed",
+      "reason": "mine_target_verified",
+      "released": true,
+      "consumed": 3,
+      "platformsPresent": [
+        2168,
+        2169,
+        2170
+      ],
+      "remaining": 5,
+      "placedFromDeck": true,
+      "minedFromDeck": false,
+      "nativePlaces": [
+        {
+          "x": 2168,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2169,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2170,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        }
+      ],
+      "targets": []
+    },
+    "cluster_platform": {
+      "updates": 323,
+      "planningMs": 115.4,
+      "maxSliceMs": 4.85,
+      "cuts": 0,
+      "places": 3,
+      "moves": 4,
+      "batches": 1,
+      "status": "completed",
+      "reason": "excavation_cluster_verified",
+      "released": true,
+      "consumed": 3,
+      "platformsPresent": [
+        2168,
+        2169,
+        2170
+      ],
+      "remaining": 5,
+      "placedFromDeck": true,
+      "minedFromDeck": false,
+      "nativePlaces": [
+        {
+          "x": 2168,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2169,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2170,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        }
+      ],
+      "targets": [
+        {
+          "x": 2178,
+          "y": 197,
+          "status": "verified",
+          "strikes": 2
+        },
+        {
+          "x": 2178,
+          "y": 198,
+          "status": "verified",
+          "strikes": 2
+        }
+      ]
+    },
+    "nav_mixed": {
+      "updates": 236,
+      "planningMs": 144.91,
+      "maxSliceMs": 4.26,
+      "cuts": 0,
+      "places": 3,
+      "moves": 2,
+      "batches": 0,
+      "status": "completed",
+      "reason": "navigation_destination_verified",
+      "released": true,
+      "consumed": 3,
+      "platformsPresent": [
+        2168,
+        2169,
+        2170
+      ],
+      "remaining": 5,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [
+        {
+          "x": 2168,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2169,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2170,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        }
+      ],
+      "targets": []
+    },
+    "nav_existing": {
+      "updates": 246,
+      "planningMs": 190.01,
+      "maxSliceMs": 5.39,
+      "cuts": 0,
+      "places": 3,
+      "moves": 2,
+      "batches": 0,
+      "status": "completed",
+      "reason": "navigation_destination_verified",
+      "released": true,
+      "consumed": 3,
+      "platformsPresent": [
+        2168,
+        2169,
+        2170
+      ],
+      "remaining": 5,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [
+        {
+          "x": 2168,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2169,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2170,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        }
+      ],
+      "targets": []
+    },
+    "nav_landing": {
+      "updates": 164,
+      "planningMs": 101.18,
+      "maxSliceMs": 4.97,
+      "cuts": 0,
+      "places": 2,
+      "moves": 3,
+      "batches": 0,
+      "status": "completed",
+      "reason": "navigation_destination_verified",
+      "released": true,
+      "consumed": 2,
+      "platformsPresent": [
+        2168,
+        2169
+      ],
+      "remaining": 6,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [
+        {
+          "x": 2168,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2169,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        }
+      ],
+      "targets": []
+    },
+    "cluster_workdeck": {
+      "updates": 353,
+      "planningMs": 90.57,
+      "maxSliceMs": 4.71,
+      "cuts": 0,
+      "places": 5,
+      "moves": 4,
+      "batches": 1,
+      "status": "completed",
+      "reason": "excavation_cluster_verified",
+      "released": true,
+      "consumed": 5,
+      "platformsPresent": [
+        2168,
+        2169,
+        2170,
+        2171,
+        2172
+      ],
+      "remaining": 3,
+      "placedFromDeck": true,
+      "minedFromDeck": true,
+      "nativePlaces": [
+        {
+          "x": 2168,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2169,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2170,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2171,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        },
+        {
+          "x": 2172,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        }
+      ],
+      "targets": [
+        {
+          "x": 2178,
+          "y": 197,
+          "status": "verified",
+          "strikes": 2
+        },
+        {
+          "x": 2178,
+          "y": 198,
+          "status": "verified",
+          "strikes": 2
+        }
+      ]
+    },
+    "cluster_short": {
+      "updates": 902,
+      "planningMs": 222.5,
+      "maxSliceMs": 4.69,
+      "cuts": 0,
+      "places": 0,
+      "moves": 1,
+      "batches": 0,
+      "status": "timeout",
+      "reason": "excavation_route_search_budget_exhausted",
+      "released": true,
+      "consumed": 0,
+      "platformsPresent": [],
+      "remaining": 1,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [],
+      "targets": [
+        {
+          "x": 2178,
+          "y": 197,
+          "status": "pending",
+          "strikes": 0
+        },
+        {
+          "x": 2178,
+          "y": 198,
+          "status": "pending",
+          "strikes": 0
+        }
+      ]
+    },
+    "cluster_missing": {
+      "updates": 101,
+      "planningMs": 76.43,
+      "maxSliceMs": 5.12,
+      "cuts": 0,
+      "places": 1,
+      "moves": 1,
+      "batches": 0,
+      "status": "unknown",
+      "reason": "placement_stack_changed",
+      "released": true,
+      "consumed": 1,
+      "platformsPresent": [
+        2168
+      ],
+      "remaining": 0,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [
+        {
+          "x": 2168,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        }
+      ],
+      "targets": [
+        {
+          "x": 2178,
+          "y": 197,
+          "status": "pending",
+          "strikes": 0
+        },
+        {
+          "x": 2178,
+          "y": 198,
+          "status": "pending",
+          "strikes": 0
+        }
+      ]
+    },
+    "cluster_broken": {
+      "updates": 101,
+      "planningMs": 74.93,
+      "maxSliceMs": 4.4,
+      "cuts": 0,
+      "places": 1,
+      "moves": 1,
+      "batches": 0,
+      "status": "unknown",
+      "reason": "placement_target_changed",
+      "released": true,
+      "consumed": 1,
+      "platformsPresent": [],
+      "remaining": 7,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [
+        {
+          "x": 2168,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": false
+        }
+      ],
+      "targets": [
+        {
+          "x": 2178,
+          "y": 197,
+          "status": "pending",
+          "strikes": 0
+        },
+        {
+          "x": 2178,
+          "y": 198,
+          "status": "pending",
+          "strikes": 0
+        }
+      ]
+    },
+    "cluster_stop": {
+      "updates": 98,
+      "planningMs": 69.53,
+      "maxSliceMs": 4.92,
+      "cuts": 0,
+      "places": 1,
+      "moves": 1,
+      "batches": 0,
+      "status": "cancelled",
+      "reason": "explicit_stop",
+      "released": true,
+      "consumed": 1,
+      "platformsPresent": [
+        2168
+      ],
+      "remaining": 7,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [
+        {
+          "x": 2168,
+          "y": 199,
+          "typeId": 19,
+          "consumedCount": 1,
+          "targetPresent": true
+        }
+      ],
+      "targets": [
+        {
+          "x": 2178,
+          "y": 197,
+          "status": "pending",
+          "strikes": 0
+        },
+        {
+          "x": 2178,
+          "y": 198,
+          "status": "pending",
+          "strikes": 0
+        }
+      ]
+    },
+    "nav_natural": {
+      "updates": 257,
+      "planningMs": 144.25,
+      "maxSliceMs": 4.64,
+      "cuts": 3,
+      "places": 0,
+      "moves": 3,
+      "batches": 0,
+      "status": "completed",
+      "reason": "navigation_destination_verified",
+      "released": true,
+      "consumed": 0,
+      "platformsPresent": [],
+      "remaining": 0,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [],
+      "targets": []
+    },
+    "nav_marked": {
+      "updates": 1037,
+      "planningMs": 74.99,
+      "maxSliceMs": 5.18,
+      "cuts": 0,
+      "places": 0,
+      "moves": 1,
+      "batches": 0,
+      "status": "failed",
+      "reason": "navigation_local_frontier_exhausted",
+      "released": true,
+      "consumed": 0,
+      "platformsPresent": [],
+      "remaining": 0,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [],
+      "targets": []
+    },
+    "cluster_marked": {
+      "updates": 902,
+      "planningMs": 1067.02,
+      "maxSliceMs": 6.06,
+      "cuts": 0,
+      "places": 0,
+      "moves": 1,
+      "batches": 0,
+      "status": "timeout",
+      "reason": "excavation_route_search_budget_exhausted",
+      "released": true,
+      "consumed": 0,
+      "platformsPresent": [],
+      "remaining": 0,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [],
+      "targets": [
+        {
+          "x": 2176,
+          "y": 197,
+          "status": "pending",
+          "strikes": 0
+        },
+        {
+          "x": 2176,
+          "y": 198,
+          "status": "pending",
+          "strikes": 0
+        }
+      ]
+    },
+    "nav_housing": {
+      "updates": 1210,
+      "planningMs": 88.11,
+      "maxSliceMs": 5.88,
+      "cuts": 0,
+      "places": 0,
+      "moves": 1,
+      "batches": 0,
+      "status": "failed",
+      "reason": "navigation_local_frontier_exhausted",
+      "released": true,
+      "consumed": 0,
+      "platformsPresent": [],
+      "remaining": 0,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [],
+      "targets": []
+    },
+    "nav_nofill": {
+      "updates": 880,
+      "planningMs": 38.0,
+      "maxSliceMs": 4.02,
+      "cuts": 0,
+      "places": 0,
+      "moves": 1,
+      "batches": 0,
+      "status": "failed",
+      "reason": "navigation_local_frontier_exhausted",
+      "released": true,
+      "consumed": 0,
+      "platformsPresent": [],
+      "remaining": 8,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [],
+      "targets": []
+    },
+    "nav_livemark": {
+      "updates": 1333,
+      "planningMs": 282.81,
+      "maxSliceMs": 4.91,
+      "cuts": 0,
+      "places": 0,
+      "moves": 2,
+      "batches": 0,
+      "status": "failed",
+      "reason": "navigation_local_frontier_exhausted",
+      "released": true,
+      "consumed": 0,
+      "platformsPresent": [],
+      "remaining": 0,
+      "placedFromDeck": false,
+      "minedFromDeck": false,
+      "nativePlaces": [],
+      "targets": []
+    }
+  }
+}

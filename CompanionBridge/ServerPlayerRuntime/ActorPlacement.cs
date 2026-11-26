@@ -18,7 +18,7 @@ internal static class ActorPlacement
         internal int WaterBridgeDirection;
         internal ushort? InitialTile;
         internal ActorRope.Target Rope;
-        internal bool Placed,ExternalChange,Object,UncertainNativeEffect,NativeObjectPlacement;
+        internal bool NavigationEdit,Placed,ExternalChange,Object,UncertainNativeEffect,NativeObjectPlacement;
         internal ActorObjectPlacement.Shape Shape;
         internal string SupportSnapshot, ObjectFrames;
         internal bool Unified;
@@ -215,6 +215,7 @@ internal static class ActorPlacement
     internal static string Validate(ActorItemUse.Context use)
     {
         var c=use.Placement;var p=use.Actor;
+        if(c.NavigationEdit&&!c.Placed&&NavigationProtection.Reserved(c.X,c.Y))return "navigation_protected_structure";
         if(c.Unified&&use.Ticks==0)
         {
             if(!ActorRope.InReach(p,use.Item,c.Rope?.X??c.X,c.Rope?.Y??c.Y))return "placement_out_of_range";

@@ -1,6 +1,6 @@
 param([string]$TModLoaderPath='D:/steam/steamapps/common/tModLoader',[string]$WorldPath,[int]$Port=27837,[switch]$Failure,
     [string]$PackagePath,[ValidateSet('VirtualPlayerEngineProbe','CompanionBridge')][string]$ModName='VirtualPlayerEngineProbe',
-    [switch]$TerrainApproach)
+    [switch]$TerrainApproach,[switch]$SharedRoutes,[switch]$PlatformRoutes,[switch]$ImproveGame,[string]$WorkshopRoot='D:/steam/steamapps/workshop/content/1281930')
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'probe-paths.ps1')
 $paths=Get-ProbePaths
@@ -15,10 +15,27 @@ $modWorld=[IO.Path]::ChangeExtension($WorldPath,'.twld')
 if(Test-Path -LiteralPath $modWorld){Copy-Item -LiteralPath $modWorld -Destination "$profile/Worlds/test.twld"}
 $package=if($PackagePath){(Resolve-Path -LiteralPath $PackagePath).Path}else{$paths.Package}
 Copy-Item -LiteralPath $package -Destination "$profile/Mods/$ModName.tmod"
-Set-Content -LiteralPath "$profile/Mods/enabled.json" -Value ('["'+$ModName+'"]')
+$enabled=@($ModName)
+if($ImproveGame){
+    foreach($file in @('2797518634/2026.3/ImproveGame.tmod','3403460014/2026.3/SilkyUIFramework.tmod')){
+        Copy-Item -LiteralPath (Join-Path $WorkshopRoot $file) -Destination "$profile/Mods"
+        $enabled += [IO.Path]::GetFileNameWithoutExtension($file)
+    }
+    New-Item -ItemType Directory "$profile/ModConfigs" | Out-Null
+    @{SimpleVeinMining=$true} | ConvertTo-Json | Set-Content "$profile/ModConfigs/ImproveGame_ImproveConfigs.json"
+}
+ConvertTo-Json -InputObject $enabled -Compress | Set-Content "$profile/Mods/enabled.json"
 $arguments=@('"tModLoader.dll"','-server','-world',('"'+$profile+'/Worlds/test.wld"'),'-port',"$Port",
     '-tmlsavedirectory',('"'+$profile+'"'),'-modpath',('"'+$profile+'/Mods"'),'-miningselftest')
 if($Failure){$arguments+='-miningfailureselftest'}
+if($TerrainApproach -or $SharedRoutes -or $PlatformRoutes){
+    @{worldSHA256=(Get-FileHash -LiteralPath "$profile/Worlds/test.wld").Hash
+      modWorldSHA256=if(Test-Path -LiteralPath "$profile/Worlds/test.twld"){(Get-FileHash -LiteralPath "$profile/Worlds/test.twld").Hash}
+      packageSHA256=(Get-FileHash -LiteralPath "$profile/Mods/$ModName.tmod").Hash} |
+        ConvertTo-Json | Set-Content -LiteralPath "$profile/fixture-source.json"
+}
+if($PlatformRoutes){$TerrainApproach=$true;$arguments+='-platformroutesselftest'}
+if($SharedRoutes){$TerrainApproach=$true;$arguments+='-sharedterrainselftest'}
 if($TerrainApproach){$arguments+='-terrainapproachselftest'}
 if($ModName -eq 'CompanionBridge'){
     $ipcPort=$Port+1

@@ -36,6 +36,7 @@ internal interface INavigationWorld
     bool PlanningPending=>false;
     Result PlanningFailure=>null;
     object PlanningEvidence=>null;
+    object PlanningTime=>null;
     object BankAirEvidence=>null;
     void ReleasePlanning(){}
 }
@@ -49,7 +50,8 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
     private const ulong MovementLeaseUpdates=1800;
     private const ulong SettleUpdates=90;
     protected string phase="preflight";
-    private int clearedTiles, dugTiles, placedTiles, openingMoves, invalidatedEdits, sequence;
+    protected int clearedTiles, dugTiles, placedTiles, openingMoves;
+    private int invalidatedEdits,sequence;
     private ulong settleDeadline;
     private bool openingMode;
     private readonly Dictionary<string,int> checkpoints=new();
@@ -67,10 +69,10 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
     internal override string Name=>"navigate_to";
     internal override string Phase=>phase;
     internal override ulong ProgressVersion=>ChildProgress+(ulong)progressWatch.VerifiedEffects;
-    internal override object Progress=>new{stage=phase,completedChildren,settledChildren,
+    internal override object Progress=>new{stage=Phase,completedChildren,settledChildren,
         children=children.ToArray(),childrenTruncated=settledChildren>children.Count,omittedChildren=settledChildren-children.Count,
         target=world.Target,clearedTiles,dugTiles,placedTiles,openingMoves,openingMode,search=world.SearchDetail,
-        opening=world.OpeningEvidence,planning=world.PlanningEvidence,bankAir=world.BankAirEvidence,activity=progressWatch.Activity.ToString(),verifiedTerrainActions=progressWatch.VerifiedEffects};
+        terrainRoute=TerrainEvidence,opening=world.OpeningEvidence,planning=world.PlanningEvidence,rollingPlanning=world.PlanningTime,bankAir=world.BankAirEvidence,activity=progressWatch.Activity.ToString(),verifiedTerrainActions=progressWatch.VerifiedEffects};
     internal override Result Prepare(AiReadOnlyProtocol.Identity frame)=>(world.InterruptionReason()??world.Prepare()) is {} why?Describe(Failed(why)):null;
     internal override void Start(AiReadOnlyProtocol.Identity frame){phase="observe";}
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)
@@ -82,6 +84,7 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
             var stopped=Stop(frame,"failed",error);
             return Describe(stopped.Status=="unknown"?stopped:stopped with{Status="failed",Reason=error});
         }
+        if(TickTerrainRoute(frame) is {} terrainResult)return terrainResult;
         if(phase is "opening_tile" or "placing_support" && child is NativeActionTask leafOpening&&!leafOpening.Started
             &&world.RevalidateOpening() is {} stale)
         {
@@ -200,7 +203,9 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
         openingMoves++;
         return StartChild(frame,opening.Operation,opening.Arguments,"navigating",360);
     }
-    private Result StartChild(AiReadOnlyProtocol.Identity frame,string operation,JsonElement args,string stage,ulong budget)
+    protected virtual Result TickTerrainRoute(AiReadOnlyProtocol.Identity frame)=>null;
+    protected virtual object TerrainEvidence=>null;
+    protected Result StartChild(AiReadOnlyProtocol.Identity frame,string operation,JsonElement args,string stage,ulong budget)
     {
         phase=stage;child=new NativeActionTask(native,operation,args,taskId+"/"+stage+"-"+(++sequence));
         RunChild(child,frame,budget);return Running();
@@ -214,6 +219,7 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
             &&evidence.TryGetProperty("failureKind",out var kind)
             &&kind.GetString() is "no_route" or "no_progress";
     }
+    protected void VerifiedTerrainEffect()=>progressWatch.Observe(NavigationActivity.VerifiedEffect);
     private void RecordRun(MiningRunReceipt run)
     {
         clearedTiles+=run.verified.Length;

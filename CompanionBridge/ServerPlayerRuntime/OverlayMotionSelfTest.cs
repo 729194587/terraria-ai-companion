@@ -20,7 +20,7 @@ internal static class OverlayMotionSelfTest
         public void BeforeMovement(Player p)
         {
             p.controlRight=Input.Direction>0;p.controlLeft=Input.Direction<0;
-            p.controlJump=Input.Jump;p.controlDown=false;
+            p.controlJump=Input.Jump;p.controlDown=Input.Down;
         }
         public void Retire(Player p){}
     }
@@ -40,12 +40,22 @@ internal static class OverlayMotionSelfTest
         try
         {
             ActorControl.Driver=replay;
-            foreach(string action in new[]{"walk","walk_decor","jump","step_down","fall"})
+            foreach(string action in new[]{"walk","walk_decor","jump","step_down","fall","platform_walk","platform_rise","platform_drop"})
             {
                 for(int tx=x-4;tx<=x+16;tx++)
                 for(int ty=y-14;ty<=y+3;ty++)Set(tx,ty,ty>=y?TileID.Stone:-1);
+                bool platform=action.StartsWith("platform_"),drop=action=="platform_drop",rise=action=="platform_rise";
+                if(platform)
+                {
+                    for(int dx=-3;dx<=14;dx++)
+                    {
+                        Set(x+dx,y,rise?TileID.Stone:TileID.Platforms);
+                        if(drop){Set(x+dx,y+1,-1);Set(x+dx,y+2,-1);}
+                        if(rise)Set(x+dx,y-2,TileID.Platforms);
+                    }
+                }
                 bool fall=action is "step_down" or "fall";
-                var cuts=action=="fall"?new[]{(x,y),(x+1,y),(x,y+1),(x+1,y+1),(x,y+2),(x+1,y+2)}:
+                var cuts=platform?Array.Empty<(int,int)>():action=="fall"?new[]{(x,y),(x+1,y),(x,y+1),(x+1,y+1),(x,y+2),(x+1,y+2)}:
                     fall?new[]{(x,y),(x+1,y)}:new[]{(x+2,y-2)};
                 foreach(var (tx,ty) in cuts)Set(tx,ty,TileID.Dirt);
                 if(action=="walk_decor")
@@ -62,9 +72,9 @@ internal static class OverlayMotionSelfTest
                 var view=new LocalTerrainView(TerrainReader.ReadEnvironment);
                 var ph=NativeNavigation.Parameters(p);
                 var overlay=new OverlayMotionWorld(view,TerrainReader.OrdinaryOverlayCell);
-                Prediction Predict()=>PhysicsSimulator.Predict(start,fall?0:1,action=="jump"?5:0,ph,overlay,walkFrames:fall?0:24);
+                Prediction Predict()=>PhysicsSimulator.Predict(start,fall||drop||rise?0:1,rise?ph.JumpHeight:action=="jump"?5:0,ph,overlay,walkFrames:fall||drop?0:24,drop:drop,allowStationaryHop:rise);
                 if(!fall && action=="walk")check(!Predict().Safe,"Walk crossed the uncut wall.");
-                foreach(char unsupported in new[]{'h','1','2','3','4','=','?','!'})
+                foreach(char unsupported in new[]{'h','1','2','3','4','a','b','?','!'})
                 {
                     var unsupportedWorld=new OverlayMotionWorld(new LocalTerrainView((tx,ty)=>
                         tx==x && ty==y?unsupported:view.Cell(tx,ty)),_=>true);
@@ -85,6 +95,12 @@ internal static class OverlayMotionSelfTest
                     positionError=Math.Max(positionError,Math.Max(Math.Abs(p.position.X-expected.State.Px),Math.Abs(p.position.Y-expected.State.Py)));
                     velocityError=Math.Max(velocityError,Math.Max(Math.Abs(p.velocity.X-expected.State.Vx),Math.Abs(p.velocity.Y-expected.State.Vy)));
                 }
+                if(platform)
+                {
+                    float feet=prediction.Landing.Py+42;
+                    int row=rise?y-2:drop?y+3:y;
+                    check(Math.Abs(feet-row*16)<=.5f,"Wrong one-way platform landing: "+action);
+                }
                 var actual=NativeMotionWorld.Observe(p);
                 var goal=new LandingRegion(prediction.Landing.Px-2,prediction.Landing.Px+2,prediction.Landing.Py+42);
                 check(positionError<=6 && velocityError<=1.5f && goal.Arrived(actual,native) && life<=p.statLife
@@ -102,7 +118,7 @@ internal static class OverlayMotionSelfTest
                 Set(origin+dx,y-2,dx<=22?TileID.Iron:-1);
             }
             p.position=startPosition;p.velocity=Vector2.Zero;p.releaseJump=true;p.jump=0;
-            p.controlJump=p.controlLeft=p.controlRight=false;ActorControl.Driver=driver;
+            p.controlDown=p.controlJump=p.controlLeft=p.controlRight=false;ActorControl.Driver=driver;
         }
         return rows;
     }

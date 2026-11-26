@@ -92,6 +92,8 @@ public sealed class VirtualPlayerEngineProbe
         NativeSurvival.Install(Install, InstallOptional);
         NativeItemOwnership.Install(Install);
         ActorMining.Install(Install);
+        DedicatedContentAdapters.InstallVeinMining(Install); // AI mining requires a guarded chain when ImproveGame is loaded.
+        InstallOptional("ImproveGame potion buffs", () => ImproveGamePotionBuffs.Install(Install));
         ActorPlacement.Install(Install);
         ActorItemUse.Install(Install);
         NativeItemInput.Install(Install);

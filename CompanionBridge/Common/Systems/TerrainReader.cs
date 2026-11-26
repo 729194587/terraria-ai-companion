@@ -62,6 +62,7 @@ internal static class TerrainReader
 
     internal static bool OrdinaryOverlayCell(TerrainCell cell)
         =>!cell.Actuated && (cell.TileType==null
+            || cell.Shape=='=' && cell.TileType==TileID.Platforms
             || cell.Shape=='.' && cell.TileType is TileID.LargePiles or TileID.ImmatureHerbs or TileID.Pots
             || cell.TileType is
             TileID.Dirt or TileID.Stone or TileID.Grass or TileID.Mud or TileID.ClayBlock

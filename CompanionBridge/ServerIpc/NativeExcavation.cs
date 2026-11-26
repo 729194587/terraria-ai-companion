@@ -119,7 +119,7 @@ internal static class NativeExcavation
 // One tool lease and one native ItemCheck stream, with explicit receipts for
 // each removal. The parent owns retries, work poses and remaining targets.
 internal sealed class MiningRunTask(AiReadOnlyProtocol.Identity identity,NativeExcavation.Plan plan,PhysicsState pose,
-    Func<bool> corridorUnchanged=null) : CompanionTask
+    Func<bool> corridorUnchanged=null,ExcavationCell[] chainTargets=null) : CompanionTask
 {
     private ActorMining.Context context;
     private readonly int capability=ActorMining.CapabilityStamp((Player)identity.Actor);
@@ -128,16 +128,21 @@ internal sealed class MiningRunTask(AiReadOnlyProtocol.Identity identity,NativeE
     internal override object Progress=>context==null?null:Receipt();
     internal override object AbandonEvidence=>Progress;
     private MiningRunReceipt Receipt()=>new(plan.Cells.Length,context.Batch.Verified.ToArray(),
-        context.Batch.Estimate,context.Ticks,context.Strikes,context.Type,pose.Px,pose.Py+PhysicsSimulator.PlayerH);
+        context.Batch.Estimate,context.Ticks,context.Strikes,context.Type,pose.Px,pose.Py+PhysicsSimulator.PlayerH,context.ChainBreaks.ToArray());
     internal override void Start(AiReadOnlyProtocol.Identity frame)
     {
         ServerAiNativeActions.Require(identity);
         var player=(Player)identity.Actor;
         if(capability!=ActorMining.CapabilityStamp(player))return;
         var batch=new ActorMining.Batch(plan.Cells,
-            cell=>(identity.Autonomy == null || identity.Autonomy.Valid && !AutonomyPolicy.ProtectedTile(cell.X,cell.Y))
-                &&(corridorUnchanged?.Invoke()??true)&&NativeExcavation.SafeAtLivePose(player,pose,cell,corridorUnchanged!=null),plan.RunUpdates);
-        try{context=ActorMining.StartBatch(player,identity.World,identity.Generation,batch,plan.Slot);}
+            cell=>(corridorUnchanged!=null||!NavigationProtection.ProtectedOre(cell.X,cell.Y))&&(identity.Autonomy == null || identity.Autonomy.Valid && !AutonomyPolicy.ProtectedTile(cell.X,cell.Y))
+                &&(corridorUnchanged==null||NavigationProtection.CanCutNow(cell.X,cell.Y)&&corridorUnchanged())&&NativeExcavation.SafeAtLivePose(player,pose,cell,corridorUnchanged!=null),plan.RunUpdates);
+        if(chainTargets!=null)batch.ChainTargets=chainTargets.ToDictionary(c=>(c.X,c.Y));
+        try
+        {
+            context=ActorMining.StartBatch(player,identity.World,identity.Generation,batch,plan.Slot);
+            if(context!=null)context.NavigationEdit=corridorUnchanged!=null;
+        }
         catch
         {
             // TaskSlot calls Stop after a failed start. Keep the lease only if
@@ -155,7 +160,7 @@ internal sealed class MiningRunTask(AiReadOnlyProtocol.Identity identity,NativeE
         if(phase==ActionPhase.Running)return Running();
         var p=(Player)identity.Actor;
         bool released=!p.controlUseItem&&!p.channel&&p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0;
-        bool complete=phase==ActionPhase.Completed&&context.Batch.Verified.Count==plan.Cells.Length;
+        bool complete=phase==ActionPhase.Completed&&context.Batch.Complete;
         var evidence=Receipt();
         string status=complete?"completed":phase switch
         {

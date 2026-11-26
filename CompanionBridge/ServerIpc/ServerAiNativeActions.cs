@@ -188,7 +188,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     :operation=="explore_frontier" ? new FrontierExplorationTask(actionId,identity,args,executor)
                     :operation=="build_place" ? new BuildPlaceTask(actionId,args,executor)
                     :operation=="place_item" ? new NativeActionTask(executor,"place_item_native",args,actionId,operation)
-                    :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
+                    :new DestinationNavigationTask(actionId,identity,args,executor,executor.Knowledge);
                 ulong budget=operation switch {CombatProtocol.Boss=>BossEncounterTask.Budget,CombatProtocol.Operation=>CombatController.Budget,"collect_drops"=>CollectDropsTask.Budget,
                     "explore_frontier"=>FrontierExplorationTask.Budget,"build_place"=>10800,"place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},budget);
@@ -228,9 +228,13 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
                 if(child&&operation=="place_tile"&&args.TryGetProperty("plannedPlacementSlot",out var plannedSlot))
+                {
+                    if(NavigationProtection.Reserved(x,y))return Reject("navigation_protected_structure");
                     ActorItemUse.Select(p,identity.World,identity.Generation,plannedSlot.GetInt32());
+                }
                 string error=ActorPlacement.Prepare(p,x,y,operation=="place_object",out var placement);
                 if(error!=null)return Reject(error,operation=="place_object"?ActorObjectPlacement.PreflightDetail(p,x,y,error):null);
+                placement.NavigationEdit=child&&args.TryGetProperty("plannedPlacementSlot",out _);
                 ActorItemUse.StartPlacement(p,identity.World,identity.Generation,placement);
                 if(child&&operation=="place_tile"&&args.TryGetProperty("waterBridgeDirection",out var direction))
                     ActorItemUse.Current.Placement.WaterBridgeDirection=direction.GetInt32();
@@ -269,8 +273,14 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             {
                 int x=args.GetProperty("x").GetInt32(),y=args.GetProperty("y").GetInt32();
                 if(!WorldGen.InWorld(x,y,2))return Reject("invalid_target",JsonSerializer.Serialize(ActorMining.TargetDiagnostic(x,y)));
+                bool clearance=child&&args.TryGetProperty("navigationEdit",out _);
+                bool oreTask=child&&args.TryGetProperty("mineTargetOre",out _);
+                if(oreTask&&NavigationProtection.ProtectedOre(x,y))return Reject("excavation_protected_targets");
+                if(clearance&&!NavigationProtection.CanCutNow(x,y))return Reject("navigation_protected_structure");
                 ActorMining.Start(p,identity.World,identity.Generation,x,y,
                     child&&args.TryGetProperty("plannedToolSlot",out var planned)?planned.GetInt32():null);context=ActorMining.Current;
+                if(oreTask&&ActorMining.Current!=null)ActorMining.Current.OreTask=true;
+                if(clearance&&ActorMining.Current!=null)ActorMining.Current.NavigationEdit=true;
             }
             var handle=new Handle(identity,operation,context);
             if(!child)active=handle;
@@ -405,7 +415,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             furnitureCells=mine.Furniture.Length,furnitureAbsent=mine.Furniture.Length>0&&furnitureAbsent,
             targetChanged=mine.ExternalChange||(!mine.Destroyed&&mine.TargetCaptured&&!ActorMining.TargetUnchanged(mine)),
             targetUnchanged=!mine.ExternalChange&&mine.Transforms==0&&!mine.Destroyed&&ActorMining.TargetUnchanged(mine),
-            destroyedByActor=destroyed,effectStatus=destroyed?"native_tile_destroyed":mine.Ticks==0?"not_started":"not_confirmed"},
+            chainBreaks=mine.ChainBreaks.ToArray(),destroyedByActor=destroyed,effectStatus=destroyed?"native_tile_destroyed":mine.Ticks==0?"not_started":"not_confirmed"},
             Released(p)&&p.itemAnimation==0&&p.itemTime==0,phase=="completed"&&destroyed,InputsAcquired:mine.Ticks>0,ReasonDetail:string.IsNullOrWhiteSpace(mine.Detail)?null:mine.Detail);
     }
     public Result Cancel(AiReadOnlyProtocol.Identity identity,object value)

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace CompanionBridge.Motion;
 
-// Dry full-block contact only. Step assist and diagonal corner contacts are
+// Dry full blocks and level one-way platform tops. Step assist and diagonal corner contacts are
 // deliberately outside this model. Reject those edges before they can be priced.
 internal sealed class OverlayMotionWorld(LocalTerrainView view, Func<TerrainCell,bool> supported) : IMotionWorld
 {
@@ -13,7 +13,7 @@ internal sealed class OverlayMotionWorld(LocalTerrainView view, Func<TerrainCell
     {
         var cell=view.Environment(x,y);
         Dependencies[(x,y)]=cell;
-        if(cell.Shape is not ('.' or '#')||cell.Liquid.Amount!=0||!supported(cell))
+        if(cell.Shape is not ('.' or '#' or '=')||cell.Liquid.Amount!=0||!supported(cell))
             throw new UnsafeMotionException($"unsupported overlay terrain ({x},{y})");
         return cell.Shape;
     }
@@ -38,7 +38,16 @@ internal sealed class OverlayMotionWorld(LocalTerrainView view, Func<TerrainCell
     private static int End(float px)=>(int)Math.Ceiling(px/16);
 
     public PhysicsState Move(PhysicsState start,float vx,float vy,float gravity)
+        =>MoveCore(start,vx,vy,gravity,false);
+    public PhysicsState MoveThroughPlatform(PhysicsState start,float vx,float vy,float gravity)
+        =>MoveCore(start,vx,vy,gravity,true);
+    private PhysicsState MoveCore(PhysicsState start,float vx,float vy,float gravity,bool down)
     {
+        bool Floor(int x,int y)
+        {
+            char shape=Read(x,y);
+            return shape=='#'||!down&&shape=='=';
+        }
         if(!float.IsFinite(vx)||!float.IsFinite(vy)||Math.Abs(vx)>=16||Math.Abs(vy)>=16)
             throw new UnsafeMotionException("unsupported overlay velocity");
         float px=start.Px+vx;
@@ -55,8 +64,8 @@ internal sealed class OverlayMotionWorld(LocalTerrainView view, Func<TerrainCell
             bool held=false,lower=false;
             for(int x=left;x<right;x++)
             {
-                held|=Read(x,Tile(feet))=='#';
-                lower|=Read(x,Tile(feet)+1)=='#';
+                held|=Floor(x,Tile(feet));
+                lower|=Floor(x,Tile(feet)+1);
             }
             if(!held&&lower)return new(px,start.Py+16,0,0,true);
         }
@@ -67,7 +76,7 @@ internal sealed class OverlayMotionWorld(LocalTerrainView view, Func<TerrainCell
             if(vy>0)
             {
                 int row=Tile(feet+vy);
-                if(row*16>=feet&&Read(x,row)=='#')
+                if(row*16>=feet&&Floor(x,row))
                 {
                     // A newly entered column at a simultaneous corner may
                     // resolve horizontally instead in Collision.TileCollision.
@@ -79,7 +88,7 @@ internal sealed class OverlayMotionWorld(LocalTerrainView view, Func<TerrainCell
             else if(vy<0 && Tile(start.Py+vy)<End(start.Py) && Read(x,Tile(start.Py+vy))=='#')
                 throw new UnsafeMotionException("unsupported overlay ceiling contact");
         }
-        if(start.Grounded&&vx!=0&&vy>0&&!contact)
+        if(start.Grounded&&!down&&vx!=0&&vy>0&&!contact)
             throw new UnsafeMotionException("unsupported native step down");
         return new(px,start.Py+dy,vx,dy,contact);
     }

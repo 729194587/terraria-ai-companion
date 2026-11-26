@@ -62,6 +62,8 @@ internal sealed class BuildPlaceTask : AbstractCompanionTask
 
     private void Record(Target t,string status,string reason,Result placement=null,NativePlacementSurvey.Result survey=null)
     {
+        if(status is "matched" or "placed")
+            NavigationProtection.Reserve(new(t.Left,t.Top,t.Left+t.Width-1,t.Top+t.Height-1));
         results[t]=new(t.Layer,t.X,t.Y,t.Material?.type,status,reason,CompactEvidence(placement),survey?.Blocker,survey?.Status);
     }
 

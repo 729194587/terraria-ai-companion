@@ -14,6 +14,8 @@ internal sealed class LocalTerrainView
     internal LocalTerrainView(Func<int,int,TerrainCell> read){this.read=read;edits=new();}
     private LocalTerrainView(LocalTerrainView other){read=other.read;edits=new(other.edits);}
     internal LocalTerrainView Fork()=>new(this);
+    internal bool SameEdits(LocalTerrainView other)=>edits.Count==other.edits.Count
+        &&edits.All(entry=>other.edits.TryGetValue(entry.Key,out var value)&&value==entry.Value);
     internal TerrainCell Environment(int x,int y)
     {
         var cell=read(x,y);
@@ -164,7 +166,8 @@ internal sealed record LocalEditPlan(LocalEditAction[] Actions,LocalPlanCost Cos
 // own an overlay and material ledger. Every yield retains the exact cursor.
 internal sealed class LocalEditEvaluation : IDisposable
 {
-    internal const int MaxSteps=4,MaxChanges=18;
+    internal const int MaxSteps=4,MaxChanges=18,MaterialCost=8,AlterationCost=4;
+    internal static int MaterialPrice(char shape)=>shape=='='?MaterialCost-2:MaterialCost;
     private readonly IEnumerator<int> steps;
     private readonly List<LocalEditPlan> plans=new();
     internal LocalEditPlan[] Plans=>plans.ToArray();
@@ -264,7 +267,7 @@ internal sealed class LocalEditEvaluation : IDisposable
                 var further=pose with{Px=pose.Px+direction*16};
                 bool open=goal.Contains(pose)||LocalEditGeometry.Across(pose,further.Px).All(c=>view.DryCell(c.X,c.Y)=='.')
                     &&LocalEditGeometry.LandingBand(further,Landing);
-                if(changes>0)emitted.Add(new(actions.ToArray(),new(movement,mining,placing,used*8,changes*4,goal.Distance(pose)/ph.MaxRun),open));
+                if(changes>0)emitted.Add(new(actions.ToArray(),new(movement,mining,placing,used*MaterialPrice(material?.Shape??'#'),changes*AlterationCost,goal.Distance(pose)/ph.MaxRun),open));
                 yield return 0;
                 if(goal.Contains(pose))break;
             }
