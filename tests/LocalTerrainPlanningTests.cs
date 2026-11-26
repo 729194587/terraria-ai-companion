@@ -35,6 +35,15 @@ public static class LocalTerrainPlanningTests
     }
     public static void Run()
     {
+        var intact=new LocalTerrainView((x,y)=>y>=100||x==102&&y==98?'#':'.');
+        var cleared=intact.Fork();
+        cleared.Set(102,98,'.');
+        Prediction Walk(LocalTerrainView view)=>PhysicsSimulator.Predict(Start,1,0,PhysicsParameters.Basic,
+            new OverlayMotionWorld(view,_=>true),walkFrames:24);
+        Check(!Walk(intact).Safe&&Walk(cleared).Safe&&!Walk(intact).Safe,
+            "Identical poses must retain distinct collision results in sibling terrain branches.");
+        var wet=new LocalTerrainView((x,y)=>new TerrainCell(intact.Cell(x,y),new TileLiquid(1,255)));
+        Check(!Walk(wet).Safe,"An otherwise ordinary route touching lava is inadmissible.");
         var source=new Source();var view=new LocalTerrainView(source.Cell);var left=view.Fork();var right=view.Fork();
         Check(left.Set(100,100,'.')&&left.Cell(100,100)=='.'&&right.Cell(100,100)=='#'&&source.Cell(100,100)=='#',"candidate edits are ordered, isolated and never write source terrain");
         Check(left.Set(100,100,'=')&&left.Cell(100,100)=='=',"platform support remains distinct from full block support");
@@ -78,7 +87,7 @@ public static class LocalTerrainPlanningTests
         Check(plans.Any(p=>p.Actions.Any(a=>a.Kind==LocalEditKind.Mine&&a.Expected.Py>a.Start.Py)),"safe one-row native excavation structure remains available");
         CheckDescent();
         CheckWater();
-        Console.WriteLine($"Local terrain planning: {checks} checks passed; structural counterfactuals only");
+        Console.WriteLine($"Local terrain planning: {checks} checks passed");
     }
 
     private static void CheckDescent()

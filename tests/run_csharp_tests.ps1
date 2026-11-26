@@ -65,6 +65,7 @@ $sources = @(
     (Join-Path $repo 'CompanionBridge/Motion/GrappleClimbPlan.cs'),
     (Join-Path $PSScriptRoot 'GrappleClimbTests.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/LocalTerrainPlanning.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/OverlayMotionWorld.cs'),
     (Join-Path $PSScriptRoot 'LocalTerrainPlanningTests.cs'),
     (Join-Path $PSScriptRoot 'SurfaceGraphTests.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/NavigationProgressWatchdog.cs'),
@@ -84,7 +85,7 @@ $sources = @(
     (Join-Path $PSScriptRoot 'PlayerHookOfflineTests.cs')
 )
 $references = Get-ChildItem (Join-Path $PSHOME 'ref') -Filter '*.dll' | Select-Object -ExpandProperty FullName
-if ($AutonomyChatOnly -or $MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -or $LiquidOnly -or $WorldJourneyOnly -or $TripOnly -or $GrappleOnly -or $AirOnly -or $PlannerOnly -or $NavigationExperimentOutput -or $SurfaceGraphOnly -or $LandingBudgetAudit) {
+if ($AutonomyChatOnly -or $MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -or $SafeGroundWalkOnly -or $LiquidOnly -or $WorldJourneyOnly -or $TripOnly -or $GrappleOnly -or $AirOnly -or $PlannerOnly -or $NavigationExperimentOutput -or $SurfaceGraphOnly -or $LandingBudgetAudit) {
     $dependencies = @('AirMotionTests','PlannerCorrectnessTests','MotionOfflineTests','SurfaceGraphTests','ControlState','AtomicParameters',
         'SceneLayers','AiChatInput','HotbarSlots','GameMessageCapture','ObservationSnapshot','TerrainSnapshot',
         'SceneGeometry','SceneRegion','EntitySnapshot')
@@ -93,6 +94,7 @@ if ($AutonomyChatOnly -or $MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -o
     if ($VerticalOnly) { $dependencies += 'VerticalNavigationTests' }
     if ($WorldJourneyOnly -or $TripOnly) { $dependencies += 'NavigationTripTests' }
     if ($LocalEditsOnly) { $dependencies += 'LocalTerrainPlanningTests' }
+    if ($SafeGroundWalkOnly) { $dependencies += 'SafeGroundWalkTests' }
     if ($LiquidOnly) { $dependencies += 'LiquidTerrainTests' }
     if ($GrappleOnly) { $dependencies += 'GrappleClimbTests' }
     $motionSources = $sources | Where-Object {
@@ -114,6 +116,7 @@ if ($AutonomyChatOnly -or $MobilityOnly -or $VerticalOnly -or $LocalEditsOnly -o
     elseif ($PlannerOnly) { [PlannerCorrectnessTests]::Run() }
     elseif ($VerticalOnly) { [VerticalNavigationTests]::Run() }
     elseif ($LocalEditsOnly) { [LocalTerrainPlanningTests]::Run() }
+    elseif ($SafeGroundWalkOnly) { [SafeGroundWalkTests]::Run() }
     elseif ($LiquidOnly) { [LiquidTerrainTests]::Run() }
     elseif ($WorldJourneyOnly) { [NavigationTripTests]::WorldJourney() }
     elseif ($TripOnly) { [NavigationTripTests]::Run() }
@@ -133,7 +136,6 @@ if ($AuthorityNetworkOnly) {
 }
 Add-Type -Path $sources -ReferencedAssemblies $references
 if ($RecoveryOnly) { [NavigationRecoveryTests]::Run(); return }
-if ($SafeGroundWalkOnly) { [SafeGroundWalkTests]::Run(); return }
 if ($MiningSupportOnly) { [MiningSupportImpactTests]::Run((Join-Path $PSScriptRoot 'fixtures/mining-support-play2.json')); return }
 if ($SceneOnly) { [SceneGeometryTests]::Run(); return }
 if ($NavigationOnly) { [LiquidTerrainTests]::Run(); [GrappleClimbTests]::Run(); [LocalTerrainPlanningTests]::Run(); [SurfaceGraphTests]::Run(); [MobilityProfileTests]::Run(); [ExtraJumpNavigationTests]::Run(); [AirMotionTests]::Run(); [NavigationTripTests]::Run(); [NavigationRecoveryTests]::Run(); [PlannerCorrectnessTests]::Run(); [NavigationPerceptionTests]::Run(); [NavigationLandingConfirmationTests]::Run(); [MotionOfflineTests]::Run(); [PlayerHookOfflineTests]::Run(); return }
