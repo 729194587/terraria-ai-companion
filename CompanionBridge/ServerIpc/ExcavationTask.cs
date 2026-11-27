@@ -323,6 +323,7 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
         if(stanceSearch.Attempts>=6){routeBudgetReached=true;yield break;}
         if(exhaustedAt==start)yield break;
         var candidates=new List<WorkPose>();
+        var shaftMouths=new List<PhysicsState>();
         WorkPose approach=null;
         int left=(pending.Min(c=>c.X)-6)*16-10,right=(pending.Max(c=>c.X)+7)*16-10;
         int top=(pending.Min(c=>c.Y)-6)*16,bottom=(pending.Max(c=>c.Y)+6)*16;
@@ -338,7 +339,16 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
             if(region.Contains(start)
                 ||!(local?world:new NativeMotionWorld(stance)).SafeLanding(stance))continue;
             var quote=NativeExcavation.Choose(identity,stance,pending,new(TerrainReader.ReadEnvironment),ordered:false);
-            if(quote==null)continue;
+            if(quote==null)
+            {
+                // A buried vein can be beyond pick range at every surface stance.
+                // Keep half-tile offsets: a 20px player can fit over two diggable
+                // columns between tree roots while a tile-centred stance spans three.
+                int column=(x+10)/16;
+                if(pending.Any(c=>Math.Abs(c.X-column)<=2 && c.Y*16>feet && c.Y*16-feet<=8*16))
+                    shaftMouths.Add(stance);
+                continue;
+            }
             if(stanceSearch.Tried(region,quote.Cells)){routeBudgetReached=true;continue;}
             var first=NativeExcavation.Choose(identity,stance,quote.Cells.Take(1),new(TerrainReader.ReadEnvironment),false);
             var candidate=new WorkPose(region,quote.Cells,quote.Coverage,first.RunUpdates,region.Distance(start)/physics.MaxRun);
@@ -383,6 +393,22 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
         // Travel through the normal rolling navigator. On arrival Tick observes the
         // live pose and quotes the remaining ore anew before starting a mining run.
         destination??=approach;
+        if(destination==null&&localPlan==null&&localWalk==null)
+        {
+            foreach(var stance in shaftMouths.OrderBy(s=>pending.Min(c=>Math.Abs(c.X*16+8-s.Px-10)))
+                .ThenBy(s=>Region(s).Distance(start)))
+            {
+                var region=Region(stance);
+                if(stanceSearch.Tried(region,pending))continue;
+                var probe=new OreApproachSearch(identity,stance,physics,pending,CorridorAt(stance),
+                    LocalEditEvaluation.MaxChanges-cutsSinceOre);
+                foreach(var slice in probe.ProbeDescent())yield return slice;
+                if(probe.Clearance is not {} plan)continue;
+                // Travel only. On arrival the live pose and remaining targets are quoted again.
+                destination=new(region,pending,1,plan.Cost.Total,region.Distance(start)/physics.MaxRun);
+                break;
+            }
+        }
         if(destination==null&&localPlan==null&&localWalk==null)exhaustedAt=start;
     }
 

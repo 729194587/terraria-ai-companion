@@ -133,13 +133,35 @@ internal sealed class OreApproachSearch(AiReadOnlyProtocol.Identity identity, Ph
         return null;
     }
 
-    internal IEnumerable<int> Run()
+    private Node Root()
     {
         if(!physics.IsBasic||physics.Air!=null||physics.ExtraJump!=null||physics.Impulse!=null||start.Wet)
-        {Unsupported=true;yield break;}
+        {Unsupported=true;return null;}
         reads=new();
         var root=new Node(start,new LocalTerrainView(Read),new(),0,0,0,reads);
-        if(!World(root.View).SafeLanding(start)){Unsupported=true;yield break;}
+        if(!World(root.View).SafeLanding(start)){Unsupported=true;return null;}
+        return root;
+    }
+    private IEnumerable<int> Descend(Node shaft)
+    {
+        reads=new(shaft.Reads);
+        while(shaft.Cuts<remainingCuts)
+        {
+            var lower=Down(shaft);
+            yield return 0;
+            if(lower==null||Goal(lower)||lower.Pose.Py<=shaft.Pose.Py)yield break;
+            shaft=lower;
+        }
+    }
+    internal IEnumerable<int> ProbeDescent()
+    {
+        if(Root() is {} root)
+            foreach(var slice in Descend(root))yield return slice;
+    }
+    internal IEnumerable<int> Run()
+    {
+        var root=Root();
+        if(root==null)yield break;
         var frontier=new List<Node>{root};
         int expanded=0;
         for(int depth=0;depth<LocalEditEvaluation.MaxSteps&&frontier.Count>0;depth++)
@@ -156,15 +178,7 @@ internal sealed class OreApproachSearch(AiReadOnlyProtocol.Identity identity, Ph
                 // the original width, depth, per-cut reach and total cut limit.
                 if(above&&node.Cuts==0&&Math.Abs(nearest.X*16-node.Pose.Px)<=4*16)
                 {
-                    reads=new(node.Reads);
-                    var shaft=node;
-                    while(shaft.Cuts<remainingCuts)
-                    {
-                        var lower=Down(shaft);
-                        yield return 0;
-                        if(lower==null||Goal(lower)||lower.Pose.Py<=shaft.Pose.Py)break;
-                        shaft=lower;
-                    }
+                    foreach(var slice in Descend(node))yield return slice;
                 }
                 foreach(var (stride,hold,clear) in new[]{(24,0,false),(16,0,false),(24,5,false),(24,physics.JumpHeight,false),(24,0,true),(16,0,true),(0,0,true),(-16,0,false)})
                 {

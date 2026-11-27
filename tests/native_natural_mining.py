@@ -31,8 +31,8 @@ def copper_tiles(bridge):
     return [cell['tileType'] if cell['hasTile'] else None for cell in cells]
 
 
-def copper_count(inventory):
-    return sum(item['count'] for item in inventory['items'] if item['contentKey'] == 'Terraria/CopperOre')
+def item_count(inventory, key):
+    return sum(item['count'] for item in inventory['items'] if item['contentKey'] == key)
 
 
 async def run(args):
@@ -40,13 +40,21 @@ async def run(args):
     assert (profile / 'isolated-natural-world').is_file()
     rows = []
     cases = await read_fixture(profile / 'natural-veins.json')
+    if args.cases and 'buried-tin' in args.cases:
+        catalog = await read_fixture(profile / 'natural-catalog.json')
+        assert str(catalog['seed']) == '20261127' and not args.vein_mining
+        cases['buried-tin'] = dict(x=1950, y=265, count=7, floor=265,
+                                   offset=1932-catalog['spawnX'], startPixelX=30924.334)
     if args.cases:
         cases = {case: cases[case] for case in args.cases}
     for case, start in cases.items():
         ready = profile / 'natural-ready.json'
         ready.unlink(missing_ok=True)
         request = profile / 'natural-request.tmp'
-        request.write_text(json.dumps(dict(caseId=case, offsetTiles=start['offset'], surfaceY=start['floor'])))
+        spawn = dict(caseId=case, offsetTiles=start['offset'], surfaceY=start['floor'])
+        if 'startPixelX' in start:
+            spawn['startPixelX'] = start['startPixelX']
+        request.write_text(json.dumps(spawn))
         request.replace(profile / 'natural-request.json')
         fixture = await read_fixture(ready)
         bridge = ServerAiBridge(args.port)
@@ -55,12 +63,18 @@ async def run(args):
                                    arguments=dict(layers=['resources']))['data']['data']
             ores = [r for r in scene['resources']['items'] if r['kind'] == 'ore_component']
             row = dict(case=case, fixture=fixture, observed=ores, start=start)
+            if case == 'buried-tin':
+                assert fixture['Settled'] and fixture['x'] == start['startPixelX'] and fixture['y'] == 4198, fixture
             if args.vein_mining:
                 assert fixture['Settled'] and (start['x'], start['y'], start['count']) == (2175, 571, 2)
                 row['tilesBefore'] = copper_tiles(bridge)
                 assert row['tilesBefore'] == [7, 7]
             if fixture['Settled']:
                 row['before'] = await read_runtime_inventory(bridge)
+                if case == 'buried-tin':
+                    assert item_count(row['before'], 'Terraria/CopperPickaxe') == 1
+                    assert {i['contentKey'] for i in row['before']['items']} <= {
+                        'Terraria/CopperPickaxe', 'Terraria/CopperAxe', 'Terraria/CopperShortsword', 'Terraria/DirtBlock'}
                 source = 'return api("mine_target",{x=%d,y=%d,cluster=true})' % (start['x'], start['y'])
 
                 if args.vein_mining:
@@ -75,15 +89,17 @@ async def run(args):
                                                on_result=capture)
                 row.setdefault('receipt', result.get('lastAction'))
                 row['after'] = await read_runtime_inventory(bridge)
-                if args.vein_mining:
-                    expected = 2 if args.vein_mining == 'On' else 1
+                if args.vein_mining or case == 'buried-tin':
+                    expected = 7 if case == 'buried-tin' else (2 if args.vein_mining == 'On' else 1)
+                    key = 'Terraria/TinOre' if case == 'buried-tin' else 'Terraria/CopperOre'
                     for _ in range(30):
-                        delta = copper_count(row['after']) - copper_count(row['before'])
+                        delta = item_count(row['after'], key) - item_count(row['before'], key)
                         if delta >= expected:
                             break
                         await asyncio.sleep(0.1)
                         row['after'] = await read_runtime_inventory(bridge)
-                    row['tilesAfter'] = copper_tiles(bridge)
+                    if args.vein_mining:
+                        row['tilesAfter'] = copper_tiles(bridge)
             # Pin the two regression veins to their surveyed coordinates and seed.
             # Other worlds can use the same case labels with different terrain.
             seed = str(fixture['fixture']['seed'])
@@ -95,13 +111,17 @@ async def run(args):
             if args.vein_mining:
                 assert receipt.get('inputsReleased') and receipt['status'] == 'completed', receipt
                 assert row['tilesAfter'] == [None, None if expected == 2 else 7]
-                assert copper_count(row['after']) - copper_count(row['before']) == expected
+                assert item_count(row['after'], key) - item_count(row['before'], key) == expected
             elif fixture['Settled']:
                 assert receipt.get('inputsReleased') is True and receipt['status'] != 'unknown', receipt
                 evidence = receipt['task']['result']['evidence']
                 if receipt['status'] == 'completed':
                     assert evidence['discoveryComplete'] and len(evidence['targets']) == start['count']
                     assert all(t['status'] == 'verified' and t['proof']['Strikes'] > 0 for t in evidence['targets'])
+                if case == 'buried-tin':
+                    assert receipt['status'] == 'completed' and {t['typeId'] for t in evidence['targets']} == {166}, receipt
+                    assert len({(t['x'], t['y']) for t in evidence['targets']}) == 7
+                    assert item_count(row['after'], key) - item_count(row['before'], key) == expected
             if scenario in REGRESSION_VEINS:
                 assert (start['x'], start['y'], start['count']) == REGRESSION_VEINS[scenario]
                 assert fixture['Settled'], fixture

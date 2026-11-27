@@ -134,7 +134,7 @@ internal static class ServerAiNaturalFixture
                     int limit=fixedSurface?firstY+1:Math.Min(Main.maxTilesY-40,(int)Main.worldSurface+100);
                     if(firstY<40||limit>Main.maxTilesY-40)throw new ArgumentException("Invalid start surface");
                     float startX=tx*16;
-                    if(journey && doc.RootElement.TryGetProperty("startPixelX",out var pixel))
+                    if(fixedSurface && doc.RootElement.TryGetProperty("startPixelX",out var pixel))
                     {
                         startX=pixel.GetSingle();
                         if((int)Math.Floor(startX/16)!=tx)throw new ArgumentException("Replay start column mismatch");

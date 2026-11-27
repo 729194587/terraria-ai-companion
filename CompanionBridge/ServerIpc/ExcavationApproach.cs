@@ -45,11 +45,13 @@ internal sealed partial class ExcavationTask
         StartSingle(cell);return true;
     }
 
+    private NativeNavigationEdits CorridorAt(PhysicsState pose)=>new(identity,pose,(x,y)=>targets.Any(t=>t.Cell.X==x&&t.Cell.Y==y)
+        ||identity.Autonomy!=null&&AutonomyPolicy.ProtectedTile(x,y));
+
     private IEnumerable<int> FindApproach(PhysicsState pose,NativeMotionWorld world,PhysicsParameters physics,ExcavationCell[] pending)
     {
         planPhysics=physics;
-        corridor=new(identity,pose,(x,y)=>targets.Any(t=>t.Cell.X==x&&t.Cell.Y==y)
-            ||identity.Autonomy!=null&&AutonomyPolicy.ProtectedTile(x,y));
+        corridor=CorridorAt(pose);
         if(pending.Any(c=>Math.Abs(c.X*16-pose.Px)<=16*18&&Math.Abs(c.Y*16-pose.Py)<=16*14))
         {
             var local=new OreApproachSearch(identity,pose,physics,pending,corridor,LocalEditEvaluation.MaxChanges-cutsSinceOre);
