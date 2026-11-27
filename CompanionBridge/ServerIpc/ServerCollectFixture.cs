@@ -61,8 +61,9 @@ internal static class ServerCollectFixture
             for (int i = 0; i < 59; i++) player.inventory[i] = new Item();
             player.position = new Vector2(x * 16, floor * 16 - player.height);
             player.velocity = Vector2.Zero;
-            if (command == "seed-full")
+            if (command is "seed-full" or "seed-full-contact" or "seed-stackable")
                 for (int i = 0; i < 50; i++) player.inventory[i] = new Item(ItemID.DirtBlock, 9999);
+            if (command == "seed-stackable") player.inventory[49] = new Item(ItemID.Wood, 9992);
             if (command == "seed-partial") player.inventory[49] = new Item(ItemID.Wood, 9996);
             if (command == "seed-partial")
                 for (int i = 0; i < 49; i++) player.inventory[i] = new Item(ItemID.DirtBlock, 9999);
@@ -76,9 +77,11 @@ internal static class ServerCollectFixture
             {
                 foreach(int type in batchTypes)Spawn(player,type,1,x+3,floor,600);
             }
+            else if (command is "seed-full-contact" or "seed-stackable")
+                Spawn(player, ItemID.Wood, 7, x, floor, keepTime: 120);
             else if (command != "seed-stone")
                 Spawn(player, ItemID.Wood, 7, x + (command == "seed-timeout" ? 58 : command == "seed-identity" ? 3 : 10), floor - (command == "seed-step" ? 1 : 0), command == "seed-identity" ? 600 : 0);
-            if (command is not ("seed-identity" or "seed-batch"))
+            if (command is not ("seed-identity" or "seed-batch" or "seed-full-contact" or "seed-stackable"))
                 Spawn(player, ItemID.StoneBlock, 5, x + (command == "seed-stone" ? 3 : command == "seed-region" ? 10 : 15),
                     floor - (command == "seed-step" ? 1 : 0), command == "seed-stone" ? 600 : 0);
             NetworkStateSync.Full(player);
@@ -189,7 +192,10 @@ internal static class ServerCollectFixture
             inputsReleased = ServerAiNativeActions.Released(player),
             hazardProof, mineX=x+4,mineY=floor-1,
             items = Main.item.Select((item, slot) => new { item, slot }).Where(row => row.item.active)
-                .Select(row => new { row.slot, type = row.item.type, stack = row.item.stack, owner = row.item.playerIndexTheItemIsReservedFor, grabbed = row.item.beingGrabbed }).ToArray(),
+                .Select(row => new { row.slot, type = row.item.type, stack = row.item.stack, owner = row.item.playerIndexTheItemIsReservedFor,
+                    grabbed = row.item.beingGrabbed, row.item.keepTime, row.item.noGrabDelay, row.item.ownIgnore,
+                    room = player.ItemSpace(row.item).CanTakeItem, contact = player.Hitbox.Intersects(row.item.Hitbox),
+                    itemX = row.item.Center.X, itemY = row.item.Center.Y }).ToArray(),
             inventory = player.inventory.Select((item, slot) => new { slot, item.type, item.stack }).ToArray(),
             clients = Netplay.Clients.Where(client => client.State == 10).Select(client => new {
                 slot = client.Id, items = Main.player[client.Id].inventory.Select(item => new { item.type, item.stack }).ToArray()
@@ -197,13 +203,13 @@ internal static class ServerCollectFixture
         }));
     }
 
-    private static void Spawn(Player player, int type, int stack, int tx, int ty, int grabDelay = 0)
+    private static void Spawn(Player player, int type, int stack, int tx, int ty, int grabDelay = 0, int keepTime = 1800)
     {
         int slot = Item.NewItem(new EntitySource_Misc("collect_fixture"), new Rectangle(tx * 16, ty * 16 - 20, 1, 1), type, stack);
         var item = Main.item[slot];
         item.velocity = Vector2.Zero;
         item.noGrabDelay = grabDelay;
-        item.keepTime = 1800;
+        item.keepTime = keepTime;
         item.playerIndexTheItemIsReservedFor = player.whoAmI;
         NetMessage.SendData(MessageID.SyncItem, -1, -1, null, slot);
     }

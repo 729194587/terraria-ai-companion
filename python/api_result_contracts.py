@@ -737,8 +737,9 @@ DEFS.update({
         'mutationAttempted': B, 'mutationGameUpdate': TICK, 'observedGameUpdate': TICK,
         'effectStatus': enum('complete', 'partial', 'none', 'unknown'), 'movedCount': nullable(COUNT),
         'moves': array(obj(fields(integers='inventorySlot chestIndex containerSlot typeId prefix count'))),
-        'blocked': array(obj(fields(integers='slot remaining', strings='reason'))),
-    }),
+        'sourceContainer': nullable(obj(fields(integers='x y chestIndex'))),
+        'blocked': array(obj(fields(integers='slot remaining typeId', strings='reason contentKey'), optional=('typeId', 'contentKey'))),
+    }, optional=('sourceContainer',)),
     'ContainerTransferSlot': obj({**fields(integers='typeId stack prefix maxStack', booleans='favorited')}),
     'ContainerTransferPair': obj({'source': ref('ContainerTransferSlot'), 'destination': ref('ContainerTransferSlot')}),
     'ContainerTransferEvidence': obj({

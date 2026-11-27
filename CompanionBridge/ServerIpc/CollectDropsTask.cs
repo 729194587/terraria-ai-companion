@@ -172,7 +172,7 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
             if (target.Reason == null && frame.GameUpdate < waitUntil
                 && Reach(player.Hitbox, target.Drop.Item)) return Running();
             if (target.Reason == null && frame.GameUpdate >= waitUntil)
-                target.Reason = PickupBlock(target.Drop.Item) ?? "native_pickup_not_observed";
+                target.Reason = TemporaryPickupBlock(target.Drop.Item) ?? PickupBlock(target.Drop.Item) ?? "native_pickup_not_observed";
             target = null;
         }
 
@@ -278,6 +278,7 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
 
     private string TemporaryPickupBlock(Item item) => item.noGrabDelay > 0 ? "pickup_cooldown"
         : item.shimmerTime != 0 ? "pickup_shimmering"
+        : item.playerIndexTheItemIsReservedFor == Main.maxPlayers && item.keepTime > 0 ? "pickup_owner_pending"
         : item.playerIndexTheItemIsReservedFor != player.whoAmI
             && item.playerIndexTheItemIsReservedFor != Main.maxPlayers ? "reserved_for_other_player" : null;
 

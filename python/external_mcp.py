@@ -186,7 +186,13 @@ class McpBrain:
         while not self.closed:
             await asyncio.sleep(1)
             session = self.session
-            if self.brain.bridge._closed or getattr(self.brain.agent.chat_bridge, '_failure', None):
+            unavailable = self.brain.bridge._closed or getattr(self.brain.agent.chat_bridge, '_failure', None)
+            if not unavailable:
+                try:
+                    await self.brain.poll_pickup_notices()
+                except (BridgeError, OSError):
+                    unavailable = True
+            if unavailable:
                 self.brain.isolate()
                 if session is not None:
                     await asyncio.shield(self.revoke(session, 'game_connection_unavailable'))

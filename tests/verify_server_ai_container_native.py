@@ -766,9 +766,13 @@ def main():
     mode.add_argument("--sorting", action="store_true")
     mode.add_argument("--personal", action="store_true")
     mode.add_argument("--collect", action="store_true")
+    parser.add_argument("--pickup-feedback", action="store_true",
+                        help="Run just the scripted MCP capacity cases for --collect or --batches")
     parser.add_argument("--port", default=27941, type=int)
     parser.add_argument("--ipc-port", default=27942, type=int)
     args = parser.parse_args()
+    if args.pickup_feedback and not (args.collect or args.batches):
+        parser.error("--pickup-feedback requires --collect or --batches")
     args.engine = args.engine.resolve()
     if args.port == args.ipc_port:
         parser.error("Game and IPC ports must be distinct.")
@@ -812,7 +816,10 @@ def main():
             clients.append(Client(args.port, "ChestObserverA"))
             clients.append(Client(args.port, "ChestObserverB"))
             bridge = ServerAiBridge(port=args.ipc_port)
-            if args.collect:
+            if args.pickup_feedback:
+                from native_pickup_feedback import verify_feedback
+                report = asyncio.run(verify_feedback(profile, args.ipc_port, ground=args.collect))
+            elif args.collect:
                 report = asyncio.run(verify_collect(profile, bridge, clients, args.engine / "tModLoader-Logs/server.log"))
             else:
                 report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches, sorting=args.sorting, personal=args.personal))

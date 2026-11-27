@@ -585,7 +585,7 @@ class Agent:
                 chat = self._last_player_chat
                 if chat and is_stop_request(chat['text']):
                     return
-                notices = [e for e in self._game_events if e['source'] in ('server_direct','server_broadcast')
+                notices = [e for e in self._game_events if e['source'] in ('server_direct','server_broadcast','inventory_full')
                            and int(e['eventId'].rsplit(':',1)[1]) >= first]
                 observation = dict(notices=notices,scene=self._news_scene,playerRequest=chat,
                                    goal=self.goals.latest() if self.goals else None)

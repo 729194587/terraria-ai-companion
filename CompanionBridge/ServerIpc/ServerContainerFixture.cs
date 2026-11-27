@@ -160,10 +160,11 @@ internal static class ServerContainerFixture
                     foreach (int offset in new[]{8, 20, 42})
                         Main.chest[Chest.FindChest(x + offset, y)].item[1] = new Item(ItemID.StoneBlock, 5);
                     break;
+                case "batch-fit-bag":
                 case "batch-fill-bag":
                     for (int slot = 0; slot < 50; slot++) player.inventory[slot] = new Item(ItemID.StoneBlock, 9999);
                     player.inventory[10] = new Item(ItemID.Wood, 9997);
-                    Main.chest[index].item[0] = new Item(ItemID.Wood, 9);
+                    Main.chest[index].item[0] = new Item(ItemID.Wood, command == "batch-fit-bag" ? 2 : 9);
                     break;
                 case "batch-fill-chest":
                     for (int slot = 0; slot < 40; slot++) Main.chest[index].item[slot] = new Item(ItemID.StoneBlock, 9999);

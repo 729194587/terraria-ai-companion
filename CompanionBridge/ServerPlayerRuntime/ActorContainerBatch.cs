@@ -85,7 +85,12 @@ internal static partial class ActorContainer
                 movedCount = status is "unknown" or "running" ? (int?)null : moves.Sum(move => move.Count),
                 moves = verified ? moves.Select(move => new { inventorySlot = move.InventorySlot, chestIndex = move.ChestIndex,
                     containerSlot = move.ContainerSlot, typeId = move.TypeId, prefix = move.Prefix, count = move.Count }).ToArray() : [],
-                blocked = verified ? blocked.Select(row => new { slot = row.Slot, remaining = row.Remaining, reason = row.Reason }).ToArray() : []
+                sourceContainer = verified && incoming ? new { x = session.Target.X, y = session.Target.Y, chestIndex = session.Target.Index } : null,
+                blocked = verified ? blocked.Select(row => {
+                    var item = (incoming ? chests[0] : inventory).Items[row.Slot];
+                    return new { slot = row.Slot, remaining = row.Remaining, reason = row.Reason, typeId = item.type,
+                        contentKey = item.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(item.type) };
+                }).ToArray() : []
             }, ServerAiNativeActions.Released(player), verified && (moves.Count > 0 || blocked.Count == 0), InputsAcquired: false);
 
         internal Result Poll(bool cancel = false)
@@ -226,7 +231,14 @@ internal static partial class ActorContainer
                 var destinations = restock ? existing : LootSlots(source).ToArray();
                 Fill(chest, slot, inventory, destinations, allowEmpty: !restock || source.ammo != 0,
                     ammoOnlyEmpty: restock);
-                if (!source.IsAir) Block(slot, source);
+                if (!source.IsAir)
+                {
+                    // A partially filled matching stack may refuse a move through a mod hook.
+                    bool noRoom = !restock && !destinations.Any(i => inventory.Items[i].IsAir ||
+                        SameKind(source, inventory.Items[i]) && inventory.Items[i].prefix == source.prefix &&
+                        inventory.Items[i].stack < inventory.Items[i].maxStack);
+                    Block(slot, source, noRoom);
+                }
             }
         }
 
@@ -258,8 +270,9 @@ internal static partial class ActorContainer
             }
         }
 
-        private void Block(int slot, Item source) =>
-            blocked.Add(new(slot, source.stack, moves.Count >= MoveLimit ? "batch_move_limit" : "capacity_or_stacking_rule"));
+        private void Block(int slot, Item source, bool noRoom = false) =>
+            blocked.Add(new(slot, source.stack, moves.Count >= MoveLimit ? "batch_move_limit"
+                : noRoom ? "inventory_full" : "capacity_or_stacking_rule"));
 
         private void Move(Storage from, int sourceSlot, Storage to, int destinationSlot)
         {

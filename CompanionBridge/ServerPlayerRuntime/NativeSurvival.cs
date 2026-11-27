@@ -150,6 +150,7 @@ internal static class NativeSurvival
                 try { updateAbigail(p); }
                 finally { UpdatingAbigail=null; }
             }
+            CompanionBridge.ServerIpc.ServerDrops.Rearm(p);
             ActorControl.Update(orig,p,index);
             if(!Owns(p))throw new InvalidOperationException("Actor replaced during native update.");
             if(!p.dead&&!p.ghost)npcCollision.Invoke(p,null); // Original local-only update region was skipped for this AI.

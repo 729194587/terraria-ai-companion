@@ -139,7 +139,7 @@ TOOLS = [LIT_TERRAIN, tool("query_map", "查询AI独立探索记忆，绝非实�
     tool("withdraw_container_item", "仅服务器AI。从当前箱子的指定槽取到指定普通背包槽。传最新 inspect_inventory(mode=slots) 和 inspect_container 的三种Token。目标容量不足时，只取出可容纳数量，回执failed且effectStatus=partial。", CONTAINER_TRANSFER_ARGS, list(CONTAINER_TRANSFER_ARGS)),
     tool("quick_stack_nearby", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到600像素内已有同类物品且无人占用的原版箱子。"),
     tool("quick_stack_container", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到当前箱子的已有同类物品。需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
-    tool("loot_all", "服务器AI。按拾取规则从当前箱子批量取出，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
+    tool("loot_all", "服务器AI。按拾取规则从当前箱子批量取出，需要新鲜容器Token。movedCount 是实际取出数，blocked 是仍留在原箱的物资。容量不足时可腾出空间，重新检查原箱后补拿。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("deposit_all", "服务器AI。批量存入普通背包10..49中未收藏物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("explore_frontier", "有界调查未知区域并回到出发落区。仅在玩家要求探索时提交。范围与行程预算必填，allowDig 默认关闭，开启需要玩家允许清障。", {
         "radiusTiles": {"type":"integer","minimum":4,"maximum":64},

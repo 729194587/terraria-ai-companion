@@ -156,6 +156,7 @@ class BrainHost:
         self.events = deque(maxlen=64)
         self.seen = deque(maxlen=256)
         self.event_ready = asyncio.Event()
+        self.server_message_lock = asyncio.Lock()
         self.evicted = 0
         self.dropped = 0
         self.phase = 'native'
@@ -167,7 +168,7 @@ class BrainHost:
 
     def receive(self, event):
         system = event.get('type') == 'game_message'
-        if system or self.phase == 'native':
+        if self.phase == 'native' or system and event.get('source') != 'inventory_full':
             self.agent.receive(event)
         if self.phase not in ('acquiring', 'external', 'releasing') or not (system or self.is_chat(event)):
             return
@@ -184,6 +185,22 @@ class BrainHost:
             self.dropped += event.get('droppedBefore', 0)
         self.events.append(dict(event))
         self.event_ready.set()
+
+    async def poll_pickup_notices(self):
+        if self.phase != 'external' or 'server_ai_messages_v1' not in self.bridge.hello['capabilities']:
+            return
+        version = self.lease_version
+        async with self.server_message_lock:
+            if self.phase != 'external' or self.lease_version != version:
+                return
+            snapshot = await asyncio.to_thread(self.bridge.life_status)
+            if (self.phase != 'external' or self.lease_version != version or
+                    snapshot['generation'] != self.lease_binding['generation']):
+                return
+            for row in (snapshot.get('messages') or {}).get('items', []):
+                if row['source'] == 'inventory_full':
+                    self.receive(dict(type='game_message', source=row['source'], text=row['text'],
+                                      eventId=f"{self.lease_binding['world']}:{row['sequence']}", gameUpdate=row['tick']))
 
     def reserve(self):
         if self.phase != 'native':
@@ -433,6 +450,7 @@ class BrainHost:
             return {'privateNotesError': 'notebook_unavailable'}
 
     async def runtime_context(self):
+        await self.poll_pickup_notices()
         inventory = await self.agent.runtime_inventory()
         context = {
             'runtimeInventory': inventory,

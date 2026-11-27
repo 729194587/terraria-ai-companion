@@ -52,8 +52,38 @@ internal static class ServerDrops
 
     internal static CollectDropsTask Current { get; set; }
 
-    public static bool Allows(Player player, Item item) =>
-        Current == null || !NativeSurvival.Owns(player) || Current.Allows(item);
+    private static long reportedGeneration;
+    internal static void Rearm(Player player)
+    {
+        if (reportedGeneration != 0 && (reportedGeneration != ProbeSession.ActorGeneration ||
+            Array.FindIndex(player.inventory, 0, 50, i => i.IsAir) >= 0))
+            reportedGeneration = 0;
+    }
+
+    public static bool Allows(Player player, Item item)
+    {
+        if (!ReferenceEquals(player, ProbeSession.Actor)) return true;
+        if (Current != null && NativeSurvival.Owns(player) && !Current.Allows(item)) return false;
+        // Full players may never win FindOwner. Count only contact with an otherwise eligible, unclaimed drop.
+        if (item.playerIndexTheItemIsReservedFor == Main.maxPlayers && item.keepTime == 0 && item.ownIgnore != player.whoAmI &&
+            item.noGrabDelay == 0 && item.shimmerTime == 0 && (!item.shimmered || item.velocity.Length() < 0.2) &&
+            player.Hitbox.Intersects(item.Hitbox) && reportedGeneration != ProbeSession.ActorGeneration &&
+            NativeSurvival.Owns(player) && player.CanAcceptItemIntoInventory(item) && ItemLoader.CanPickup(item, player))
+            ReportRemainder(player, item, 0);
+        return true;
+    }
+
+    internal static void ReportRemainder(Player player, Item item, int received)
+    {
+        if (reportedGeneration == ProbeSession.ActorGeneration || player.dead || player.ghost || !item.active || item.IsAir ||
+            item.uniqueStack && player.HasItem(item.type) || player.ItemSpace(item).CanTakeItem) return;
+        var tile = item.Center.ToTileCoordinates();
+        string key = item.ModItem?.FullName ?? "Terraria/" + Terraria.ID.ItemID.Search.GetName(item.type);
+        ServerGameMessages.InventoryFull($"背包放不下 {key}。这次拾取 {received} 个，地面 ({tile.X},{tile.Y}) 还剩 {item.stack} 个。可先存放多余物资，腾出空间后回原处补捡。");
+        reportedGeneration = ProbeSession.ActorGeneration;
+    }
+
+    internal static void ResetPickupNotice() => reportedGeneration = 0;
 
     internal static Item Pickup(On_Player.orig_PickupItem orig, Player player, int playerIndex, int itemIndex, Item item)
     {

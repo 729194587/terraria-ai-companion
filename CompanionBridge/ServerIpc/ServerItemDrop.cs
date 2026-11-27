@@ -109,8 +109,12 @@ internal static class ServerItemDrop
     internal static Item Pickup(On_Player.orig_PickupItem orig,Player player,int playerIndex,int index,Item item)
     {
         var confirm=BeforePickup(player,index,item);
+        int before = item.stack;
         var remaining=ServerDrops.Pickup(orig,player,playerIndex,index,item);
         confirm?.Invoke(remaining);
+        if (NativeSurvival.Owns(player) && ReferenceEquals(Main.item[index], remaining) &&
+            remaining.active && !remaining.IsAir && remaining.stack <= before)
+            ServerDrops.ReportRemainder(player, remaining, before - remaining.stack);
         return remaining;
     }
 

@@ -30,6 +30,8 @@ def guidance(operation, reason, *, detail=None):
         kind, next_step = 'out_of_range', '重新观察目标和角色。距离可能已变化；可安全接近时先移动并确认位置，再核对交互条件。若目标仍忙，停止重复尝试。'
     elif 'out_of_range' in reason:
         kind, next_step = 'out_of_range', '重新观察角色和目标位置，先安全接近并确认位移，再尝试该目标。'
+    elif operation == 'loot_all' and reason in ('container_batch_partial', 'container_batch_blocked'):
+        kind, next_step = 'container_remainder', '已取走的数量见 movedCount。blocked 中的物资仍在原箱。若原因为 inventory_full，可先腾出空间，再检查原箱并用新的 containerToken 补拿。'
     elif reason in SEARCH_LIMITS:
         kind, next_step = 'search_incomplete', '重新观察地形，选择更近且已知安全的落脚点作为下一段目标。'
     elif reason in STANCE_FAILURES:
@@ -101,6 +103,16 @@ class Recovery:
         else:
             return None
         row = guidance(name, reason, detail=reply.get('reasonDetail'))
+        if row['kind'] == 'container_remainder':
+            evidence = reply.get('evidence') or {}
+            source = evidence.get('sourceContainer')
+            remaining = evidence.get('blocked') or []
+            if (isinstance(source, dict) and {'x', 'y'} <= source.keys() and type(evidence.get('movedCount')) is int
+                    and isinstance(remaining, list) and remaining
+                    and all(isinstance(item, dict) and item.get('contentKey') and 'remaining' in item for item in remaining)):
+                examples = '、'.join(f"{item['contentKey']} ×{item['remaining']}" for item in remaining[:3])
+                more = f" 等 {len(remaining)} 个物品槽" if len(remaining) > 3 else ''
+                row['detail'] = f"本次共取出 {evidence['movedCount']} 个，原箱 ({source['x']},{source['y']}) 还剩 {examples}{more}。"
         if reason == 'no_progress' or (reply.get('continuationAllowed') is True
                 and reason not in ('actor_busy', 'active_task_conflict')):
             count, old = self.attempts.pop(key, (0, {}))
