@@ -1114,6 +1114,10 @@ DEFS['ActionReceipt'] = obj({
     'inputsReleased': desc(nullable(B), 'Release of native inputs does not prove the world effect.'),
     'effectVerified': nullable(B),
 }, optional=(*RECEIPT_FLAGS, 'targetContainer'), closed=False)
+DEFS['ActionReceipt']['allOf'] = [
+    {'if': matches(status=const('cancelled')), 'then': matches(cancelled=const(True))},
+    {'if': matches(status=enum('failed', 'timeout')), 'then': matches(cancelled=const(False))},
+]
 RAW_TASK_ACTION = {
     **ACTION_CORE, 'operation': enum(*TASK_NAMES), 'status': ACTION_STATUS, 'generation': I, 'durationMs': I,
     'requestedInputs': NULL, 'executionState': S, 'task': GAME_TASK,
@@ -1283,24 +1287,30 @@ DEFS['CompletedReceiptFields'] = matches(
     completed=TRUE, valid=TRUE, cancelled=FALSE, dispatchState=const('admitted'),
     endEvidenceStatus=const('known'), worldSessionId={'minLength': 1}, actorId={'minLength': 1},
     actionGeneration=I, actorSlot=I)
+DEFS['CompletedReceiptFields']['properties'].update(STOP_CONTINUATION)
+DEFS['CompletedReceiptFields']['not'] = {'required': ['continuationScope']}
 DEFS['ReleasedEffect'] = matches(phase=const('ServerAI_game_thread_inputs_released'),
                                  inputsReleased=TRUE, effectVerified=TRUE, gameUpdate=COUNT)
+DEFS['CompletedInputReceiptFields'] = {
+    **ref('CompletedReceiptFields'),
+    **matches(inputsAcquired=B, inputsReleased=TRUE, effectVerified=TRUE, endEvidence=ref('ReleasedEffect')),
+}
 
 
 def completed_receipt(name):
     proof = {'evidence': SUCCESSFUL_PROOF[name],
              **{key: {'not': NULL} for key, names in TARGETS.items() if name in names}}
     if name == 'select_hotbar_slot':
+        base = 'CompletedReceiptFields'
         proof.update(inputsAcquired=FALSE, inputsReleased=NULL, effectVerified=NULL,
                      endEvidence=matches(phase=const('ServerAI_game_thread_no_input'),
                                          selectionVerified=TRUE, gameUpdate=COUNT))
     else:
-        proof.update(inputsAcquired=B, inputsReleased=TRUE, effectVerified=TRUE,
-                     endEvidence={**ref('ReleasedEffect'), **matches(operation=const(name))})
+        base = 'CompletedInputReceiptFields'
+        proof['endEvidence'] = matches(operation=const(name))
     if name in TASK_COMPLETION_PROOF:
         proof['task'] = ref('TaskProof_' + name)
-    return {**ref('CompletedReceiptFields'), **matches(**proof), 'properties': {**proof, **STOP_CONTINUATION},
-            'not': {'required': ['continuationScope']}}
+    return {**ref(base), **matches(**proof)}
 
 
 DEFS['ActionRefusal'] = refusal()
@@ -1325,14 +1335,6 @@ def action_variants(name):
         'if': {'properties': {'status': const('completed')}, 'required': ['status']},
         'then': completed_receipt(name),
         'else': {'properties': {'completed': const(False)}},
-    })
-    admitted['allOf'].append({
-        'if': matches(status=const('cancelled')),
-        'then': matches(cancelled=TRUE),
-    })
-    admitted['allOf'].append({
-        'if': matches(status=enum('failed', 'timeout')),
-        'then': matches(cancelled=FALSE),
     })
     if name in atomic.CONTAINER_BATCHES:
         admitted['allOf'].append({

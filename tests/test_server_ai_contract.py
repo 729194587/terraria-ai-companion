@@ -617,7 +617,10 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual('Not exposed', next(c for c in capability_manifest(b)['categories'] if c['category']=='直接身体输入')['status'])
 
     def test_limited_boundaries_and_shared_schemas(self):
-        b = bridge(BASE | set(OPTIONAL) | {'server_ai_scene_region_v1', 'server_ai_general_operations_v1'})
+        b = bridge(BASE | set(OPTIONAL) | {
+            'server_ai_scene_region_v1', 'server_ai_general_operations_v1', 'server_ai_resources_v1',
+            'server_ai_directional_landings_v1', 'server_ai_map_chunks_v1', 'server_ai_passages_v1',
+        })
         manifest, definitions, _ = contract_parts(server_contract(b)[0])
         defs = {t['function']['name']: t['function'] for t in definitions}
         for name, f in defs.items():
@@ -639,6 +642,11 @@ class ManifestTests(unittest.TestCase):
         }.items():
             for fact in facts:self.assertIn(fact, defs[name]['description'])
         old = bridge(BASE | set(OPTIONAL))
+        self.assertNotIn('includeChunks', api_help(old, {'name': 'query_map'})['parameters']['properties'])
+        old_scene = api_help(old, {'name': 'observe_scene'})['parameters']['properties']
+        self.assertNotIn('landingDirection', old_scene)
+        self.assertNotIn('includePassages', old_scene)
+        self.assertNotIn('resources', old_scene['layers']['items']['enum'])
         _, old_definitions, _ = contract_parts(server_contract(old)[0])
         old_defs = {t['function']['name']: t['function']['description'] for t in old_definitions}
         self.assertIn('默认样式的原版工作台', old_defs['place_object'])
