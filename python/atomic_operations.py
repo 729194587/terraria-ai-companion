@@ -1225,14 +1225,23 @@ def verified_server_combat(action, task, result, proof):
     requested = action.get('targetTask') or {}
     target = proof.get('target') or {}
     hit = proof.get('lastHit')
-    if proof.get('source') != 'reflex' or result.get('reason') != 'combat_threats_cleared':
-        return (target.get('EntityRef') == requested.get('entityRef')
+    if proof.get('source') != 'reflex':
+        return (isinstance(requested.get('entityRef'), str) and target.get('EntityRef') == requested['entityRef']
                 and defeated(hit) and proof.get('life') == hit['LifeAfter'])
 
     encounters = proof.get('encounters')
-    if (not requested.get('threat') or requested['threat'] != proof.get('threat')
-            or not isinstance(encounters, list) or not encounters):
+    if (result.get('reason') != 'combat_threats_cleared'
+            or not requested.get('threat') or requested['threat'] != proof.get('threat')
+            or not isinstance(encounters, list)):
         return False
+    if not encounters:
+        defense = proof.get('defense')
+        if not isinstance(defense, dict):
+            return False
+        ticks = [defense.get(key) for key in ('dangerUpdate', 'acquiredAt', 'quietSince')]
+        end = (action.get('endEvidence') or {}).get('gameUpdate')
+        return ('entityRef' in requested and requested['entityRef'] is None and proof.get('target') is None and hit is None
+                and all(type(t) is int for t in [*ticks, end]) and ticks[0] <= ticks[1] <= ticks[2] <= end)
     kills = set()
     previous_kill_tick = -1
     for encounter in encounters:
@@ -1252,9 +1261,9 @@ def verified_server_combat(action, task, result, proof):
             kills.add(reference)
         elif reason not in ('combat_target_replaced', 'combat_target_invalidated',
                              'combat_target_out_of_range', 'combat_approach_failed', 'combat_shot_blocked',
-                             'combat_firing_navigation_no_route'):
+                             'combat_firing_navigation_no_route', 'combat_firing_navigation_timeout'):
             return False
-    return (encounters[0]['Target']['EntityRef'] == requested.get('entityRef')
+    return ((requested.get('entityRef') is None or encounters[0]['Target']['EntityRef'] == requested.get('entityRef'))
             and encounters[-1]['Target'] == target and encounters[-1].get('LastHit') == hit)
 
 

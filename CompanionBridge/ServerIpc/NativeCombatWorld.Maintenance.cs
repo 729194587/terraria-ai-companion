@@ -34,7 +34,7 @@ internal sealed partial class NativeCombatWorld
     private static object MaintenanceState()=>new {status=maintenanceStatus,confirmedCasts};
     private bool ItemContextValid()=>maintenance
         ? ReferenceEquals(current,this) && (manualSummon || MatchesLoadout(identity) && summonRole?.Type==item.type)
-        : SameSpawn(Main.npc[Target.Slot]) && StillEligible(npc);
+        : Target!=null && SameSpawn(Main.npc[Target.Slot]) && StillEligible(npc);
 
     private static bool SafeToCast(Player p)=>!p.noItems && !p.CCed && GameNavigation.Ordinary(p)
         && !ServerTorchMaintenance.Threatened(p);

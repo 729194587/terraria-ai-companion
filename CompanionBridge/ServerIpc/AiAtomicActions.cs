@@ -48,7 +48,7 @@ internal sealed class AiAtomicActions
         .Concat(executor.SupportsBossEncounter ? new[]{"server_ai_boss_encounter_v1","server_ai_boss_members_v1","server_ai_boss_strategy_v1"} : Array.Empty<string>())
         .Concat(SupportsCombat?new[]{"server_ai_combat_v1","server_ai_weapon_button_v1"}:Array.Empty<string>()).ToArray();
     internal sealed record RespawnPlan(string PreviousTaskId,string EntityRef, Func<AiReadOnlyProtocol.Identity, NativeResult> Prepare);
-    internal sealed record CombatAdmission(ulong Update,string InterruptedAction,Func<bool> SameWeapon,float? WorkVelocityX=null);
+    internal sealed record CombatAdmission(ulong Update,string InterruptedAction,Func<bool> SameWeapon,float? WorkVelocityX=null,string DangerRef=null);
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
     {
@@ -145,7 +145,7 @@ internal sealed class AiAtomicActions
     internal bool BodyBlocked(AiReadOnlyProtocol.Identity current)=>Matches(blockedBody,current);
     internal bool SupportsCombat=>executor?.SupportsCombat==true;
     internal bool SupportsContainers=>executor?.SupportsContainers==true;
-    private bool CombatActive=>active?.Operation is CombatProtocol.Operation or CombatProtocol.Boss;
+    internal bool CombatActive=>active?.Operation is CombatProtocol.Operation or CombatProtocol.Boss;
     internal Func<bool> MaintenanceBusy {get;set;}
     internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = lastCombat = blockedBody = reflexBackoff = uncertainManual = null; suppressedRef=cancelledCombatRef=null; }
     internal void Forget(Guid connection) { if (active?.Owner == connection) active.Cancel = true; }
@@ -158,16 +158,18 @@ internal sealed class AiAtomicActions
     internal object CombatState(AiReadOnlyProtocol.Identity current) =>
         new{action=Matches(lastCombat,current)?Snapshot(lastCombat):null};
 
-    private string CombatConflict(AiReadOnlyProtocol.Identity current, string target,out CombatAdmission admission)
+    private string CombatConflict(AiReadOnlyProtocol.Identity current, string target,out CombatAdmission admission,string dangerRef=null)
     {
         admission=null;
         if (BodyBlocked(current)) return "body_release_unconfirmed";
         if (MaintenanceBusy?.Invoke()==true) return "action_busy";
-        admission=new(current.GameUpdate,active?.Id,executor.CapturePrimary(current),executor.WorkVelocityX(current));
+        admission=new(current.GameUpdate,active?.Id,executor.CapturePrimary(current),executor.WorkVelocityX(current),dangerRef);
         if (active==null) return executor.CanTransferBody(current)?null:"actor_busy";
         if (CombatActive || !Matches(active,current) || active.Cancel || active.Disconnected.IsCancellationRequested)
             return "action_busy";
-        string invalid=executor.ValidateCombatAdmission(current,target);
+        // Reflex just observed a bound native danger on this update. Its
+        // handoff is valid even when the actor can only dodge.
+        string invalid=dangerRef==null?executor.ValidateCombatAdmission(current,target):null;
         if(invalid!=null)return invalid;
         var previous=active;
         Stop(previous,"cancelled",CombatProtocol.Interrupt,current);
@@ -182,10 +184,11 @@ internal sealed class AiAtomicActions
     internal bool ReflexTargetAllowed(AiReadOnlyProtocol.Identity current,string entityRef)
         =>entityRef!=cancelledCombatRef&&(entityRef!=suppressedRef||current.GameUpdate>=suppressUntil);
 
-    internal void Reflex(AiReadOnlyProtocol.Identity current,string actorId,string entityRef,string threat)
+    internal void Reflex(AiReadOnlyProtocol.Identity current,string actorId,string entityRef,string threat,string dangerRef=null)
     {
         if(!SupportsCombat||current?.CanAct!=true)return;
-        if(entityRef==null||CombatActive||!ReflexTargetAllowed(current,entityRef)
+        dangerRef??=entityRef;
+        if(dangerRef==null||CombatActive||!ReflexTargetAllowed(current,dangerRef)
             ||Matches(reflexBackoff,current)&&current.GameUpdate<reflexBackoffUntil)return;
         var owner = active?.Autonomy ?? current.Autonomy;
         if (owner != null)
@@ -193,7 +196,7 @@ internal sealed class AiAtomicActions
             if (!owner.Valid || owner.Binding.generation != current.Generation || owner.BackgroundBusy) return;
             current = current with { Autonomy = owner };
         }
-        if(CombatConflict(current,entityRef,out var admission)!=null)return;
+        if(CombatConflict(current,entityRef,out var admission,dangerRef)!=null)return;
         Admit(Guid.Empty,Guid.NewGuid().ToString("N"),actorId,current,CombatProtocol.Operation,
             JsonSerializer.SerializeToElement(new{entityRef,threat}),35000,default,admission:admission);
     }
@@ -357,7 +360,7 @@ internal sealed class AiAtomicActions
             if(status=="unknown")blockedBody=e;
             if(current!=null)
             {
-                suppressedRef=executor?.CurrentCombatTarget(e.Handle)??e.Arguments.GetProperty("entityRef").GetString();
+                suppressedRef=executor?.CurrentCombatTarget(e.Handle)??e.Combat?.DangerRef??e.Arguments.GetProperty("entityRef").GetString();
                 if(e.Owner==Guid.Empty&&status!="completed")
                 {
                     reflexBackoff=e;

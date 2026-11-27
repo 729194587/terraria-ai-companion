@@ -34,7 +34,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     private int targetEpoch;
     private CombatBallistics.Kind? ShotKind=>CombatBallistics.Family(item);
     private bool Summoning => SummonRoot(item) != 0;
-    private bool Ranged=>ShotKind!=null || Summoning;
+    private bool Ranged=>item!=null && (ShotKind!=null || Summoning);
     private bool summonAttempted, summonShootObserved;
     private bool? observedBuff;
     private int? observedRootIdentity;
@@ -83,6 +83,10 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     public CombatHit LastHit { get; private set; }
     public int ItemChecks => inputs.ItemChecks;
     public int CombinedUpdates => inputs.CombinedUpdates;
+    private ulong? acquiredAt,firstAttack,firstEvasion;
+    public string DangerRef {get;private set;}
+    public object Defense => reflexAllowed==null?null:new {dangerUpdate=admission?.Update,acquiredAt,firstAttack,firstEvasion,quietSince=clearSince,
+        noSafeRoute=Evasion.NoRoute,movement=Evasion.Reason};
     internal static bool Running => current != null;
 
     internal static string Reference(Identity identity, NPC n) =>
@@ -91,7 +95,8 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     private static string Reference(string world, long generation, NPC n) =>
         world + ":" + generation + ":npc:" + n.whoAmI + ":" + n.GetGlobalNPC<AtomicNpcIdentity>().Token;
 
-    private static bool Enemy(NPC n, Player p) => n != null && n.active && n.life > 0 && (n.damage > 0 || n.defDamage > 0)
+    private static bool Archer(NPC n) => n.type is NPCID.SkeletonArcher or NPCID.GoblinArcher;
+    private static bool Enemy(NPC n, Player p) => n != null && n.active && n.life > 0 && (n.damage > 0 || n.defDamage > 0 || Archer(n))
         && !n.friendly && !n.townNPC && !n.boss && n.realLife < 0 && !NPCID.Sets.ShouldBeCountedAsBoss[n.type]
         && n.CanBeChasedBy(p);
 
@@ -370,8 +375,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
         return Effective(p,enemy,second,currentSlot==second.Slot)?second:first;
     }
 
-    private static bool MiningSwing(Identity frame) => Configured(frame)
-        && ActorMining.Running && ActorMining.Current is {} mining && ReferenceEquals(mining.Actor,frame.Actor)
+    private static bool MiningSwing(Identity frame) => ActorMining.Running && ActorMining.Current is {} mining && ReferenceEquals(mining.Actor,frame.Actor)
         && mining.World==frame.World && mining.Generation==frame.Generation;
 
     private static string NativeResources(Player p, Item weapon)
@@ -487,41 +491,66 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
             ReflexContact.Horizon + Math.Clamp(p.itemTime,0,12));
     }
 
-    private static string ThreatReason(Identity frame,Player p,NPC n,string reference,float workVelocityX,out int urgency)
+    internal static bool ContactPath(Player p,NPC n)=>n.noTileCollide || Visible(p,n);
+
+    private static string ThreatReason(Identity frame,Player p,NPC n,string reference,float workVelocityX,out int urgency,bool retaining=false)
     {
         urgency=int.MaxValue;
-        if(!Enemy(n,p) || n.damage <= 0 || ContactTick(p,n,workVelocityX) is not int contact || !Visible(p,n))return null;
-        urgency=contact;
+        bool targeted=n.HasValidTarget && n.target==p.whoAmI;
+        if(targeted && Archer(n) && InRange(p,n,retaining?ReflexContact.RangedLeave:ReflexContact.RangedEnter) && Visible(p,n))
+        {
+            urgency=ReflexContact.Horizon+2;
+            return "ranged_npc_firing_lane";
+        }
+        if(n.damage<=0 || !ContactPath(p,n))return null;
+        int? contact=ContactTick(p,n,workVelocityX);
+        urgency=contact??ReflexContact.Horizon+1;
         var hurt=recentHurt;
         bool recent=ReferenceEquals(hurt.actor,p)&&hurt.world==frame.World&&hurt.generation==frame.Generation
             &&frame.GameUpdate>=hurt.tick&&frame.GameUpdate-hurt.tick<=45 && reference==hurt.entityRef;
-        if(recent)return "recent_native_npc_damage";
-        return contact<=1 || n.HasValidTarget&&n.target==p.whoAmI ? "projected_npc_contact" : null;
+        if(contact.HasValue)
+            return recent?"recent_native_npc_damage":"projected_npc_contact";
+        var offset=n.Center-p.Center;
+        return (targeted || recent) && ReflexContact.Near(new(offset.X,offset.Y),new((n.width+p.width)*.5f,(n.height+p.height)*.5f),
+            new(n.velocity.X-workVelocityX,n.velocity.Y-p.velocity.Y),retaining)?"nearby_npc_contact":null;
     }
 
-    internal static (string entityRef, string threat)? Threat(Identity identity,Func<string,bool> allowed=null,bool combatSwing=false,float? workVelocityX=null)
+    internal readonly record struct Danger(string entityRef,string threat,string dangerRef);
+    internal static Danger? Threat(Identity identity,Func<string,bool> allowed=null,bool combatSwing=false,float? workVelocityX=null,
+        IReadOnlySet<string> skipped=null)
     {
         if (identity?.CanAct != true || !ServerAiNativeActions.Owned(identity)) return null;
         var p = (Player)identity.Actor;
         if (!GameNavigation.Ordinary(p,combatSwing || MiningSwing(identity)) || p.noItems || p.CCed) return null;
-        (string entityRef,string threat)? nearest=null;
+        Danger? nearest=null;
+        Danger? movementOnly=null;
         int best = int.MaxValue;
         for (int i = 0; i < Main.maxNPCs; i++)
         {
             var n = Main.npc[i];
-            if (!Enemy(n,p)) continue;
+            if (!n.active || n.life<=0 || n.friendly || n.townNPC || n.boss || n.realLife>=0
+                || NPCID.Sets.ShouldBeCountedAsBoss[n.type] || !InRange(p,n,AcquireRange)) continue;
             string reference=Reference(identity,n);
             if(allowed?.Invoke(reference)==false)continue;
             var reason=ThreatReason(identity,p,n,reference,workVelocityX??p.velocity.X,out int contact);
             if(reason==null || contact>=best)continue;
-            if(!combatSwing && Choose(identity,n,handoff:true).Error is {} refusal)
+            if(!Enemy(n,p) || skipped?.Contains(reference)==true && !InWeaponReach(identity,n))
             {
-                if(MatchesLoadout(identity))lastRefusal=new(refusal,identity.GameUpdate,reference);
+                movementOnly??=new(null,reason,reference);
                 continue;
             }
-            best=contact;nearest=(reference,reason);
+            best=contact;nearest=new(reference,reason,reference);
         }
-        return nearest;
+        if(nearest.HasValue || movementOnly.HasValue)return nearest??movementOnly;
+        string ProjectileRef(Projectile q)=>$"{identity.World}:{identity.Generation}:projectile:{q.whoAmI}:{q.GetGlobalProjectile<CombatProjectile>().SpawnUpdate}";
+        var shot=BossEvasion.Incoming(p,q=>allowed?.Invoke(ProjectileRef(q))!=false);
+        return shot==null?null:new(null,"projected_hostile_projectile",ProjectileRef(shot));
+    }
+
+    private static bool InWeaponReach(Identity frame,NPC n)
+    {
+        var choice=Choose(frame,n);
+        return choice.Error==null && Effective((Player)frame.Actor,n,choice,false);
     }
 
     private void BindTarget(NPC next,string reference)
@@ -532,6 +561,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
         Target=new(next.whoAmI,next.type,reference);
         if(!bossEncounter)lastMelee=lastSummon=LastHit=null;
         pendingSlot=-1;targetEpoch++;attemptedFiringPositions.Clear();
+        approachSince=null;
         missedSwings=0;
         clearSince=null;
     }
@@ -539,26 +569,38 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     public string Prepare()
     {
         ServerAiNativeActions.Require(identity);
-        npc = Resolve(identity, entityRef,bossEncounter);
+        if(reflexAllowed!=null)
+        {
+            var frame=identity with {GameUpdate=Main.GameUpdateCount};
+            var danger=Threat(frame,r=>reflexAllowed(frame,r) && (entityRef==null || r==entityRef),workVelocityX:admission?.WorkVelocityX);
+            if(danger==null)return "combat_target_unavailable";
+            DangerRef=danger.Value.dangerRef;
+            npc=danger.Value.entityRef==null?null:Resolve(frame,danger.Value.entityRef);
+        }
+        else npc = Resolve(identity, entityRef,bossEncounter);
         if(bossEncounter && !Configured(identity))return "boss_loadout_required";
-        if (npc == null) return bossEncounter?"boss_root_unavailable_or_unsupported":"combat_target_unavailable";
-        if(reflexAllowed!=null&&ThreatReason(identity with{GameUpdate=Main.GameUpdateCount},player,npc,entityRef,WorkVelocityX,out _)==null)
-            return "combat_target_unavailable";
+        if (npc == null && reflexAllowed==null) return bossEncounter?"boss_root_unavailable_or_unsupported":"combat_target_unavailable";
         if(bossEncounter)
         {
             Members=new(identity,npc);
             if(Members.Start() is {} error)return error;
             npc=Members.Select(player,npc)??npc;
         }
-        BindTarget(npc,Reference(identity,npc));
         if(admission?.SameWeapon?.Invoke()==false)return "combat_weapon_changed";
+        if (!GameNavigation.Ordinary(player) || player.noItems || player.CCed) return "combat_actor_state_unsupported";
+        if (!ServerAiNativeActions.BodyIdle(identity)) return "actor_busy";
+        if(npc==null)return null;
+        BindTarget(npc,Reference(identity,npc));
         var choice=Choose(identity,npc,preferHeld:reflexAllowed==null && !bossEncounter);
-        if(choice.Error!=null)return choice.Error;
+        if(choice.Error!=null)
+        {
+            if(reflexAllowed==null)return choice.Error;
+            lastRefusal=new(choice.Error,Main.GameUpdateCount,Target.EntityRef);
+            return null;
+        }
         slot=choice.Slot;
         item=choice.Item;
         if(alternate && Summoning)return "combat_alternate_not_attack";
-        if (!GameNavigation.Ordinary(player) || player.noItems || player.CCed) return "combat_actor_state_unsupported";
-        if (!ServerAiNativeActions.BodyIdle(identity)) return "actor_busy";
 
         Weapon = new(slot, item.type, item.Name);
         return null;
@@ -567,14 +609,21 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     public void Acquire()
     {
         if (current != null) throw new InvalidOperationException("Combat input already owned.");
-        if(!Owned() || !ServerAiNativeActions.BodyIdle(identity) || !ReferenceEquals(player.inventory[slot],item))
+        if(!Owned() || !ServerAiNativeActions.BodyIdle(identity) || item!=null && !ReferenceEquals(player.inventory[slot],item))
             throw new InvalidOperationException("Combat weapon handoff changed.");
+        if(item!=null)SelectWeapon();
+        defenseOrigin=player.position.X;
+        acquiredAt=Main.GameUpdateCount;
+        current = this;
+        if(bossEncounter)ServerCombatFixture.ArenaAcquired(player);
+    }
+
+    private void SelectWeapon()
+    {
         int previousSlot=player.selectedItem;
         if(player.selectedItem!=slot)ActorItemUse.Select(player,identity.World,identity.Generation,slot);
         if(!ValidWeapon())throw new InvalidOperationException("Combat weapon selection unconfirmed.");
         RecordSelection(previousSlot);
-        current = this;
-        if(bossEncounter)ServerCombatFixture.ArenaAcquired(player);
     }
 
     private void RecordSelection(int previousSlot)
@@ -642,20 +691,20 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     }
 
     private ulong? clearSince;
-    private float WorkVelocityX => admission?.WorkVelocityX ?? player.velocity.X;
+    private float defenseOrigin;
     private bool StillEligible(NPC n)
     {
         if(bossEncounter)return Members.Attackable(n);
         if(reflexAllowed==null)return Enemy(n,player);
         if(!Enemy(n,player))return false;
         var frame=identity with {GameUpdate=Main.GameUpdateCount};
-        if(ThreatReason(frame,player,n,Target.EntityRef,WorkVelocityX,out _)!=null)
+        if(ThreatReason(frame,player,n,Target.EntityRef,player.velocity.X,out _,retaining:true)!=null)
         {
             clearSince=null;
             return true;
         }
         clearSince??=frame.GameUpdate;
-        return frame.GameUpdate-clearSince.Value<3 || FinishingDodge();
+        return frame.GameUpdate-clearSince.Value<ReflexContact.QuietUpdates;
     }
 
     private bool FinishingDodge() => approach?.Evasion!=null && approach.Status=="running"
@@ -664,29 +713,37 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     public string Retarget(Identity frame,IReadOnlySet<string> skipped)
     {
         ServerAiNativeActions.Require(frame);
-        if(!ValidWeapon())return "combat_weapon_changed";
+        if(fault!=null || approach?.Status=="unknown"||approach?.Reason=="native_navigation_exception")
+            return "combat_native_unconfirmed";
+        if(item!=null && !ValidWeapon() || admission?.SameWeapon?.Invoke()==false)return "combat_weapon_changed";
         if(!GameNavigation.Ordinary(player,combatSwing:true)||player.noItems||player.CCed)
             return "combat_actor_state_unsupported";
-        if(approach?.Status=="unknown"||approach?.Reason=="native_navigation_exception")
-            return "combat_native_unconfirmed";
-        bool Allowed(string reference)=>reflexAllowed(frame,reference);
-        var candidate=Threat(frame,r=>!skipped.Contains(r)&&Allowed(r),combatSwing:true,workVelocityX:WorkVelocityX);
-        if(candidate==null)
-            return skipped.Count>0&&Threat(frame,Allowed,combatSwing:true,workVelocityX:WorkVelocityX)!=null
-                ? "combat_threat_unreachable" : "combat_threats_cleared";
-        var next=Resolve(frame,candidate.Value.entityRef);
-        if(next==null)return "combat_native_unconfirmed";
-        if(approach?.Status=="running")navigation.Stop("cancelled","combat_retarget");
-        if(approach?.Status=="unknown")return "combat_native_unconfirmed";
-        approach=null;
-        // Drain the existing native swing without using it against the new NPC.
-        // A new press is still gated by the original animation and item timers.
-        drainSwing=player.itemAnimation>0;
-        BindTarget(next,candidate.Value.entityRef);
-        return null;
+        if(Target!=null)
+        {
+            if(approach?.Status=="running" && approach.Evasion==null)navigation.Stop("cancelled","combat_retarget");
+            if(approach?.Status=="unknown")return "combat_native_unconfirmed";
+            if(approach?.Evasion==null)approach=null;
+            npc=null;
+            Target=null;
+            targetEpoch++;
+            drainSwing=player.itemAnimation>0;
+            player.channel=false;
+        }
+        var candidate=Threat(frame,r=>reflexAllowed(frame,r),combatSwing:true,skipped:skipped);
+        if(candidate.HasValue)DangerRef=candidate.Value.dangerRef;
+        if(candidate?.entityRef is {} reference)
+        {
+            BindTarget(Resolve(frame,reference),reference);
+            return null;
+        }
+        if(candidate.HasValue)clearSince=null;
+        else clearSince??=frame.GameUpdate;
+        if(Evade() || candidate.HasValue || frame.GameUpdate-clearSince.Value<ReflexContact.QuietUpdates)return null;
+        return approach?.Status=="unknown"?"combat_native_unconfirmed":"combat_threats_cleared";
     }
 
     internal readonly BossEvasion Evasion=navigation!=null?new():null;
+    private ulong? approachSince;
     internal bool Evade()
     {
         if(Evasion==null || ServerCombatFixture.Baseline)return false;
@@ -695,7 +752,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
             if(approach?.Status=="running")navigation.Stop("cancelled","boss_movement_unsupported");
             return false;
         }
-        int toward=npc.Center.X<player.Center.X?-1:1;
+        int toward=npc==null?player.direction:npc.Center.X<player.Center.X?-1:1;
         Evasion.PreferredDirection=Ranged || !bossEncounter?-toward:toward;
         bool needed=Evasion.Needed(player,npc,Ranged && !bossWaiting,bossEncounter,reflexAllowed!=null);
         if(approach?.Evasion!=null && !needed)
@@ -711,6 +768,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
             approach=navigation.StartCombat(identity,player.position.X,actionId);
             approach.Evasion=Evasion;
         }
+        firstEvasion??=Main.GameUpdateCount;
         return true;
     }
 
@@ -718,7 +776,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     {
         phase = "reassess";
         if(alternateUnavailable)return "combat_no_secondary_use";
-        if (!ValidWeapon()) return "combat_weapon_changed";
+        if (item!=null && !ValidWeapon() || reflexAllowed!=null && admission?.SameWeapon?.Invoke()==false) return "combat_weapon_changed";
         if (!GameNavigation.Ordinary(player,combatSwing:true) || player.noItems || player.CCed) return "combat_actor_state_unsupported";
         if (!InRange(player, npc, AcquireRange)) return "combat_target_out_of_range";
         if (approach?.Status == "unknown" || approach?.Reason == "native_navigation_exception")
@@ -726,16 +784,34 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
             if (approach.ReasonDetail != null) throw new InvalidOperationException(approach.ReasonDetail);
             return "combat_native_unconfirmed";
         }
-        if(clearSince.HasValue)
+        if(item==null && !clearSince.HasValue)
         {
+            var choice=Choose(identity,npc);
+            if(choice.Error==null && player.itemAnimation==0 && player.itemTime==0 && player.reuseDelay==0)
+            {
+                slot=choice.Slot;
+                item=choice.Item;
+                Weapon=new(slot,item.type,item.Name);
+                SelectWeapon();
+            }
+        }
+        if(item==null || clearSince.HasValue)
+        {
+            if(Evade()){phase=Evasion.Reason??"evade";return null;}
             if(approach?.Status=="running" && !FinishingDodge())navigation.Stop("cancelled","combat_contact_cleared");
             if(approach?.Status=="unknown")return "combat_native_unconfirmed";
-            phase="release_defense";
+            phase=item==null?"unarmed_defense":"release_defense";
             return null;
         }
         if(ReassessWeapon(out var waiting) is {} failure)return failure;
         if(Evade()){phase=Evasion.Reason??"evade";return null;}
         if(waiting){phase="switch_weapon";return null;}
+        if(reflexAllowed!=null && (spentLast || ShotRefusal(player,item)!=null))
+        {
+            if(approach?.Status=="running")navigation.Stop("cancelled","combat_resource_unavailable");
+            phase="unarmed_defense";
+            return approach?.Status=="unknown"?"combat_native_unconfirmed":null;
+        }
         if (Summoning)
         {
             int rootType=SummonRoot(item);
@@ -768,10 +844,16 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
             if(approach?.Status=="running")navigation.Stop("cancelled","yoyo_in_range");
             phase="attack";return null;
         }
-        if(Ranged)return StepRanged(out phase);
+        if(Ranged)
+        {
+            var result=StepRanged(out phase);
+            if(result!=null || phase!="approach"){approachSince=null;return result;}
+            return ApproachExpired()?"combat_approach_failed":null;
+        }
         if (approach?.Status is "failed" or "timeout") return "combat_approach_failed";
         bool swingRange=CanSwing();
-        if(reflexAllowed!=null){phase=swingRange?"attack":"await_contact";return null;}
+        if(swingRange)approachSince=null;
+        else if(ApproachExpired())return "combat_approach_failed";
         float horizontal=Math.Abs(player.Center.X-npc.Center.X);
         // A jumping enemy can leave the swing envelope after the planner
         // settles. Reassess on subsequent ticks while it is airborne.
@@ -795,6 +877,12 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
         // misses twice, close the remaining gap on the next approach.
         float standOff=Math.Max(0,halfWidth+(missedSwings<2?0:-8));
         float targetX = Math.Clamp(npc.Center.X + side*standOff - player.width / 2f, 32, Main.maxTilesX * 16 - 64);
+        if(reflexAllowed!=null && Math.Abs(targetX-defenseOrigin)>ReflexContact.RangedEnter)
+        {
+            if(approach?.Status=="running")navigation.Stop("cancelled","combat_approach_limit");
+            if(approach?.Status=="unknown")return "combat_native_unconfirmed";
+            return swingRange?null:"combat_target_out_of_range";
+        }
         if (approach?.Status == "completed" && Math.Abs(targetX - approach.Target) < 1)
         {
             // The regular horizontal arrival window may leave the actor at the
@@ -811,6 +899,15 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
             plannedAt = Main.GameUpdateCount;
         }
         return null;
+    }
+
+    private bool ApproachExpired()
+    {
+        if(reflexAllowed==null)return false;
+        approachSince??=Main.GameUpdateCount;
+        // Two seconds without reaching a strike or firing position. Continue
+        // tracking local danger and reconsider this spawn if a shot opens.
+        return Main.GameUpdateCount-approachSince.Value>=120;
     }
 
     private string StepRanged(out string phase)
@@ -839,7 +936,6 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
             if(approach?.Status=="unknown")return "combat_native_unconfirmed";
             phase="attack";return null;
         }
-        if(reflexAllowed!=null){phase="await_contact";return null;}
         phase="approach";
         if(approach?.Status=="failed"&&AiActionReasons.NavigationRecoveryKind(approach.Snapshot?.Reason)!="no_route")
             return "combat_approach_failed";
@@ -885,6 +981,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
             for(int offset=0;offset<=8;offset+=8)
             {
                 float feet=y*16+half*8, center=x*16+offset+4, px=center-player.width*.5f;
+                if(reflexAllowed!=null && Math.Abs(px-defenseOrigin)>ReflexContact.RangedEnter)continue;
                 var pose=new PhysicsState(px,feet-player.height,0,0,true,0,true);
                 if(Math.Abs(px-start.Px)<8&&Math.Abs(pose.Py-start.Py)<1)continue;
                 bool left=center<targetX;
@@ -916,9 +1013,9 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
         return chooseLeft?(bestLeft,true,null):(bestRight,false,null);
     }
 
-    private bool ValidWeapon() => spentLast && player.selectedItem==slot && player.inventory[slot].IsAir ||
+    private bool ValidWeapon() => item!=null && (spentLast && player.selectedItem==slot && player.inventory[slot].IsAir ||
         player.selectedItem == slot && ReferenceEquals(player.HeldItem, item)
-        && item.type == Weapon.TypeId && WeaponSupported(item);
+        && item.type == Weapon.TypeId && WeaponSupported(item));
 
     private bool CanSwing() => Math.Abs(player.Center.X - npc.Center.X) <= (player.width + npc.width) / 2 + SwingGap
         && Math.Abs(player.Center.Y - npc.Center.Y) <= (player.height + npc.height) / 2 + 10 && Visible(player, npc);
@@ -1007,6 +1104,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
             else press=!bossWaiting&&!waitingSwitch&&player.itemAnimation==0&&ready&&player.releaseUseItem&&CanSwing();
             if (press && ShortSword(item)) firing=new(item.shoot,AmmoID.None,item.shootSpeed);
             ServerCombatFixture.EvasionPress(press);
+            if(press)firstAttack??=tick;
             var previousHit=LastHit;
             if (press || player.itemAnimation > 0)
             {

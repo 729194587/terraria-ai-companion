@@ -248,13 +248,14 @@ internal static partial class ServerCombatFixture
         if(yoyoType!=0 && target?.active==true)
             target.velocity.X=target.Center.X<yoyoTargetX-20?1.5f:target.Center.X>yoyoTargetX+20?-1.5f:
                 target.velocity.X==0?1.5f:target.velocity.X;
+        if(defenseCase!=null)SampleDefense(p);
         if(memberCase!=null)AdvanceMemberFixture(p);
         if(whole)WholeTick(p);
         else if(pattern!=null)AdvanceEvasion(p);
         else if(target?.type==NPCID.EyeofCthulhu && target.active && !p.dead)
         {p.immune=true;p.immuneTime=60;}
         foreach(var projectile in Main.projectile)
-            if(!manualSummonScene && !ReferenceEquals(projectile,occupyingMinion)&&projectile.active&&projectile.friendly&&(!projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
+            if(!manualSummonScene && !ReferenceEquals(projectile,occupyingMinion)&&!(defenseCase!=null && ReferenceEquals(projectile,hazard))&&projectile.active&&projectile.friendly&&(!projectile.TryGetGlobalProjectile<CombatProjectile>(out var trace)
                 ||trace.Flight is not {Verified:true}))projectile.active=false;
         foreach(var npc in Main.npc)
             if(npc.active&&npc.townNPC)npc.active=false;
@@ -315,6 +316,7 @@ internal static partial class ServerCombatFixture
         }
         catch(IOException){return;} // Windows can briefly lock the atomically renamed request.
         if(mode.StartsWith("evasion-")){EvasionScene(p,mode);return;}
+        if(mode.StartsWith("self-")){SelfDefenseScene(p,mode.Substring(5));return;}
         if(mode.StartsWith("whole-")){WholeScene(p,mode);return;}
         if(mode.StartsWith("members-")){MemberRequest(p,mode);return;}
         if(mode=="weapon-census")
@@ -727,7 +729,9 @@ internal static partial class ServerCombatFixture
             p.inventory[54].stack=mode=="dual-flight"?1:99;
             if(mode=="dual-empty")p.inventory[54].TurnToAir();
             bool reflex=mode=="dual-reflex";
-            int distance=reflex?100:mode=="dual-flight"?320:170;
+            // The stationary slime has no projected contact. Start inside
+            // the five-tile hitbox margin for the autonomous switch case.
+            int distance=reflex?88:mode=="dual-flight"?320:170;
             target=SpawnDefense(p,-distance,mode=="dual-empty"?18:160,threatening:reflex);
             if(mode=="dual-flight")target.life=1;
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{

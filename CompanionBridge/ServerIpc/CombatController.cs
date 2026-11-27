@@ -39,7 +39,11 @@ internal sealed record CombatProgress(string source,string threat,CombatTarget t
     CombatHit lastHit,int itemChecks,int combinedUpdates,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatEncounter[] encounters,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatSummonObservation summon,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatContributions contributions);
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] CombatContributions contributions)
+{
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public object defense {get;init;}
+}
 
 internal static class CombatStrikeEvidence
 {
@@ -80,6 +84,8 @@ internal interface ICombatWorld
     CombatHit LastHit { get; }
     CombatSummonObservation Summon => null;
     CombatContributions Contributions => null;
+    object Defense => null;
+    string DangerRef => null;
     int ItemChecks { get; }
     int CombinedUpdates { get; }
     string Prepare();
@@ -97,13 +103,16 @@ internal sealed class CombatController(ICombatWorld world, string source, string
     private string phase = "acquire_target";
     private int? life;
     private bool acquired;
+    private bool stopped;
     private readonly List<CombatEncounter> encounters = new();
     private readonly HashSet<string> skipped = new();
-    internal string TargetRef => world.Target?.EntityRef;
+    internal string TargetRef => world.Target?.EntityRef??world.DangerRef;
     internal override string Name => CombatProtocol.Operation;
     internal override string Phase => phase;
-    internal override object Progress => new CombatProgress(source,threat,world.Target,world.Weapon,life,world.LastHit,
-        world.ItemChecks,world.CombinedUpdates,source=="reflex" ? encounters.ToArray() : null,world.Summon,world.Contributions);
+    private CombatEncounter LastEncounter => encounters.Count>0?encounters[^1]:null;
+    internal override object Progress => new CombatProgress(source,threat,world.Target??(stopped?LastEncounter?.Target:null),world.Weapon,life,
+        world.Target!=null?world.LastHit:stopped?LastEncounter?.LastHit:null,
+        world.ItemChecks,world.CombinedUpdates,source=="reflex" ? encounters.ToArray() : null,world.Summon,world.Contributions){defense=world.Defense};
     internal override Result Prepare(Identity frame) => world.Prepare() is {} reason ? Failed(reason) : null;
     internal override void Start(Identity frame)
     {
@@ -113,6 +122,7 @@ internal sealed class CombatController(ICombatWorld world, string source, string
 
     internal override Result Tick(Identity frame)
     {
+        if(source=="reflex" && world.Target==null)return ContinueDefense(frame,null);
         var target = world.Observe();
         life = target.SameSpawn ? target.Life : null;
         phase = "verify_result";
@@ -126,18 +136,21 @@ internal sealed class CombatController(ICombatWorld world, string source, string
 
         string failure = world.Step(out phase);
         if (failure == null) return Running();
-        if (failure=="combat_firing_navigation_timeout")return Stop(frame,"timeout",failure);
-        if (source=="reflex" && failure is ("combat_target_out_of_range" or "combat_approach_failed" or "combat_shot_blocked" or "combat_firing_navigation_no_route"))
+        if (source=="reflex" && ApproachFailed(failure))
             return ContinueDefense(frame,failure);
+        if (failure=="combat_firing_navigation_timeout")return Stop(frame,"timeout",failure);
         return Stop(frame, failure == "combat_native_unconfirmed" ? "unknown" : "failed", failure);
     }
 
+    private static bool ApproachFailed(string reason) => reason is "combat_target_out_of_range" or "combat_approach_failed"
+        or "combat_shot_blocked" or "combat_firing_navigation_no_route" or "combat_firing_navigation_timeout";
+
     private Result ContinueDefense(Identity frame,string outcome)
     {
-        encounters.Add(new(world.Target,outcome,world.LastHit,world.Contributions));
+        if(world.Target!=null)encounters.Add(new(world.Target,outcome,world.LastHit,world.Contributions));
         // Exclude only targets whose approach failed; a temporarily invalid target
         // may become a real threat again while another target is being handled.
-        if(outcome is "combat_target_out_of_range" or "combat_approach_failed" or "combat_shot_blocked" or "combat_firing_navigation_no_route")skipped.Add(TargetRef);
+        if(ApproachFailed(outcome))skipped.Add(TargetRef);
         var next=world.Retarget(frame,skipped);
         if(next==null)
         {
@@ -152,6 +165,7 @@ internal sealed class CombatController(ICombatWorld world, string source, string
     internal override Result Stop(Identity frame, string status, string reason)
     {
         bool released = world.Release();
+        stopped=true;
         return new(status, reason, Progress, released, released && status == "completed", acquired);
     }
 

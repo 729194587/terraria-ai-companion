@@ -69,6 +69,11 @@ public static class CombatOfflineTests
         Check(Contact(80,-50,-6,3)!=null,"diving eye crosses actor");
         Check(Contact(80,-50,1,3)==null,"existing movement already avoids the dive");
         Check(Contact(30,0,-70,0)==1,"swept body catches contact between updates");
+        Check(Contact(90,0,-1,0)==null && ReflexContact.Near(new(90,0),new(18,28),new(-1,0),false),
+            "near slow ground enemy triggers before a predicted collision");
+        Check(ReflexContact.Near(new(30,-86),new(18,28),new(-1,1),false),"approaching flyer enters padded envelope");
+        Check(!ReflexContact.Near(new(90,0),new(18,28),new(4,0),false),"receding enemy cannot start work interruption");
+        Check(ReflexContact.Near(new(140,0),new(18,28),new(4,0),true),"knockback stays inside exit margin");
         var id = new Identity(new object(),"world",1,254,null);
         var frame = id with{GameUpdate=1};
         var next = id with{GameUpdate=2};
@@ -151,7 +156,7 @@ public static class CombatOfflineTests
             actions.Tick(()=>frame,null);actions.Tick(()=>next,null);
             actions.Reflex(next,"actor",null,null);
             Check(executor.StopReason==null,"no authoritative threat");
-            actions.Reflex(next,"actor","spawn-a","npc_targeting_actor_in_range");
+            actions.Reflex(next,"actor",null,"projected_hostile_projectile","shot-a");
             Check(executor.StopReason==CombatProtocol.Interrupt,"reflex requests combat interruption");
             var action=JsonSerializer.SerializeToElement(actions.CombatState(next)).GetProperty("action");
             if(released)
@@ -176,8 +181,15 @@ public static class CombatOfflineTests
                 Check(speech.RootElement.GetProperty("ok").GetBoolean()&&sent==1&&actions.HasActive,"chat during combat");
                 var cancel=JsonSerializer.SerializeToElement(new{actionId=combatId});
                 Check(actions.Handle(owner,"cancel",cancel,next,binding,default).Error==null&&!actions.HasActive,"bound Agent cancels reflex");
+                actions.Reflex(next with{GameUpdate=1000},"actor",null,"projected_hostile_projectile","shot-a");
+                Check(!actions.HasActive,"explicit cancel suppresses this projectile instance");
                 actions.Reflex(next with{GameUpdate=1000},"actor","spawn-a","npc_targeting_actor_in_range");
-                Check(!actions.HasActive,"explicit cancel suppresses reflex for that spawn");
+                Check(actions.HasActive,"a different threat can defend after projectile cancellation");
+                action=JsonSerializer.SerializeToElement(actions.CombatState(next)).GetProperty("action");
+                cancel=JsonSerializer.SerializeToElement(new{actionId=action.GetProperty("actionId").GetString()});
+                actions.Handle(owner,"cancel",cancel,next,binding,default);
+                actions.Reflex(next with{GameUpdate=2000},"actor","spawn-a","nearby_npc_contact");
+                Check(!actions.HasActive,"explicit cancel suppresses this enemy spawn");
             }
             else
             {

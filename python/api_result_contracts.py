@@ -788,7 +788,8 @@ TARGETS = {
 }
 MINE_ARGUMENTS = any_of(obj({**TILE_XY, 'cluster': B}, optional=('cluster',)),
                         obj({'target': ref('MineToken'), 'cluster': B}, optional=('cluster',)))
-COMBAT_ARGUMENTS = obj({'entityRef': S, 'threat': S, 'button': enum('left','right')}, optional=('threat','button'))
+COMBAT_ARGUMENTS = any_of(obj({'entityRef': S, 'threat': S, 'button': enum('left','right')}, optional=('threat','button')),
+                          obj({'entityRef': NULL, 'threat': S}))
 
 
 def target_schema(key, names):
@@ -832,6 +833,8 @@ COMBAT_HIT = obj({**fields(integers='LifeBefore LifeAfter DamageDone', booleans=
 COMBAT_CONTRIBUTIONS = obj({'Melee':nullable(COMBAT_HIT),'Summon':nullable(COMBAT_HIT)})
 DEFS['CombatProgress'] = obj({
     'source': enum('agent', 'reflex'), 'threat': nullable(S), 'life': nullable(I),
+    'defense': obj({**dict.fromkeys(('dangerUpdate','acquiredAt','firstAttack','firstEvasion','quietSince'), nullable(TICK)),
+                    'noSafeRoute':COUNT, 'movement':nullable(S)}),
     'target': nullable(COMBAT_TARGET),
     'weapon': nullable(obj({**fields(integers='Slot TypeId', strings='Name'), 'Selection':obj({
         **fields(integers='Version PreviousSlot SelectedUpdate AdmittedUpdate', strings='Role'),
@@ -844,7 +847,7 @@ DEFS['CombatProgress'] = obj({
                            integers='RootType VerifiedChildren UnconfirmedChildren'),
                    'ObservedRootIdentity': nullable(I), 'BuffObserved': nullable(B)}),
     'contributions':COMBAT_CONTRIBUTIONS,
-}, optional=('encounters', 'summon','contributions'))
+}, optional=('encounters', 'summon','contributions','defense'))
 DEFS['BossEncounterProgress'] = obj({
     'rejoined':COUNT,'regroupReason':nullable(S),'regroupProof':nullable(ref('WormholeEvidence')),'previousTaskId':nullable(S),'encounterId': S, 'source': const('boss'), 'target': nullable(COMBAT_TARGET),
     'weapon': DEFS['CombatProgress']['properties']['weapon'], 'life': nullable(I), 'lastHit': nullable(COMBAT_HIT),
@@ -1189,6 +1192,8 @@ TASK_COMPLETION_PROOF = {
                 Defeated=TRUE, LifeBefore={'minimum': 1}, LifeAfter={'maximum': 0}, DamageDone={'minimum': 1}))),
             matches(reason=const('combat_threats_cleared'), evidence=matches(
                 source=const('reflex'), encounters={'minItems': 1})),
+            matches(reason=const('combat_threats_cleared'), evidence=matches(source=const('reflex'),
+                encounters={'maxItems':0}, target=NULL, lastHit=NULL, defense=matches(quietSince=TICK))),
         ]}),
     'navigate_to': matches(taskName=const('navigate_to'), status=const('completed'), currentChild=NULL,
                            result=matches(inputsReleased=TRUE, effectVerified=TRUE, evidence=ARRIVED)),

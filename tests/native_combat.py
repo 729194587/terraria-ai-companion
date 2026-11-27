@@ -273,6 +273,78 @@ async def verify(args):
 
     try:
         case = os.environ.get('COMPANION_COMBAT_CASE')
+        if case in ('self-defense', 'work-bolt'):
+            cases = ('mine', 'travel') if case == 'work-bolt' else (
+                'wall', 'blocked', 'friendly', 'away', 'miss', 'bolt-off', 'bolt-on', 'through', 'dead',
+                'ground', 'flyer', 'archer', 'mixed', 'boundary', 'empty', 'no-mana', 'charge-off', 'charge-on')
+            for mode in cases:
+                previous = await observe()
+                seed = await scene('self-' + mode)
+                if case=='work-bolt':
+                    work = await manager.invoke('submit_task', {'operation':'mine_target' if mode=='mine' else 'navigate_to',
+                                                               'arguments':seed['workGoal']})
+                trace = await wait_file(profile / f'self-{mode}.json', 20)
+                rows = trace['samples']
+                results[mode] = {'seed': seed, 'trace': trace}
+                starts = [row for i,row in enumerate(rows) if row['running'] and (i == 0 or not rows[i-1]['running'])]
+                if mode in ('wall', 'blocked', 'friendly', 'away', 'miss'):
+                    assert not starts and (await observe()) == previous, mode
+                    continue
+                action = await wait_for(lambda a: previous is None or a['actionId'] != previous['actionId'])
+                done = await manager.invoke('await_task', {'taskId': action['actionId'], 'milliseconds': 5000})
+                results[mode]['done'] = done
+                assert done['result']['reason'] == 'combat_threats_cleared' and done['result']['inputsReleased'], done
+                assert done['valid'] and done['completed'], done
+                Draft202012Validator(schema_for('await_task')).validate(done)
+                proof = done['result']['task']['result']['evidence']
+                evidence = proof['defense']
+                assert len(starts) == 1 and proof['source'] == 'reflex' and trace['hitViolations'] == 0, (mode, starts)
+                assert seed['defenseStart'] <= evidence['dangerUpdate'] <= evidence['acquiredAt'] <= starts[0]['tick'], evidence
+                if mode in ('bolt-on', 'through', 'dead', 'mixed', 'empty', 'no-mana', 'mine', 'travel'):
+                    crossing = min((r for r in rows if r['boltX'] is not None), key=lambda r: abs(r['boltX']-r['x']))
+                    assert abs(crossing['boltX']-crossing['x']) < 10 and abs(crossing['boltY']-crossing['y']) > 21, crossing
+                    results[mode]['crossing'] = crossing
+                if mode == 'bolt-off':
+                    assert any(w['projectile'] > 0 for w in trace['wounds']), trace['wounds']
+                if mode=='charge-off':
+                    assert any(w['npc'] >= 0 for w in trace['wounds']), trace['wounds']
+                if mode=='charge-on':
+                    assert evidence['firstEvasion'] and not trace['wounds'] and proof['lastHit'] is None, proof
+                    assert any(abs(r['y']-rows[0]['y'])>16 for r in rows), mode
+                if mode in ('bolt-on', 'through', 'dead', 'empty', 'no-mana', 'mine', 'travel'):
+                    assert evidence['firstEvasion'] and not any(w['projectile'] > 0 for w in trace['wounds']), (mode, trace['wounds'])
+                    assert any(abs(r['y']-rows[0]['y']) > 16 for r in rows), mode
+                    assert proof['lastHit'] is None and evidence['firstAttack'] is None, proof
+                    if mode in ('bolt-on', 'dead'):
+                        assert action['targetTask']['entityRef'] is None and not proof['encounters'], proof
+                    if mode == 'dead':
+                        assert seed['sourceDead'], seed
+                if case=='work-bolt':
+                    old = await asyncio.to_thread(bridge.task_request, 'action', work['taskId'])
+                    assert old['status']=='cancelled' and old['reason']=='task_interrupt_combat', old
+                    assert old['endEvidence']['inputsReleased'] and trace['workBoltUpdate'] <= old['endEvidence']['gameUpdate'] <= evidence['acquiredAt'], old
+                    assert action['targetTask']['entityRef'] is None and not proof['encounters'], proof
+                    results[mode]['interrupted'] = old
+                if mode in ('ground', 'flyer', 'archer', 'mixed', 'boundary'):
+                    hits = trace['projectileHits']
+                    assert hits and all(h['nativeDamage'] and h['target']==seed['entityRef'] for h in hits), (mode,hits)
+                    assert evidence['firstAttack'] <= hits[0]['tick'], evidence
+                    assert all(w['tick'] > evidence['dangerUpdate'] for w in trace['wounds']), trace['wounds']
+                    if mode in ('ground','flyer'):
+                        assert seed['aiStyle'] >= 0 and seed['contact'] is None and proof['threat']=='nearby_npc_contact', (seed,proof)
+                    if mode=='archer':
+                        assert proof['threat']=='ranged_npc_firing_lane' and trace['hostileSpawns'], proof
+                        assert starts[0]['distance'] > 150 and starts[0]['contact'] is None, starts
+                    if mode=='mixed':
+                        assert proof['combinedUpdates'] and not trace['wounds'], (proof,trace['wounds'])
+                        assert any(h['launched'] >= evidence['firstEvasion'] for h in hits), hits
+                        kill = proof['encounters'][0]['LastHit']
+                        assert kill['Defeated'] and any(r['running'] and r['boltX'] is not None and
+                            r['tick']>kill['GameUpdate'] for r in rows), kill
+                    if mode=='boundary':
+                        distances = [r['distance'] for r in rows if r['distance'] is not None]
+                        assert min(distances)<95 and max(distances)>120 and len(proof['encounters'])==1, proof
+            return
         if case and case.startswith('boss-'):
             from native_boss_encounter import verify_encounter
             await verify_encounter(case[5:], bridge, lua, manager, scene, results, profile)
@@ -701,13 +773,23 @@ return {configured,api('query_combat_loadout',{})}
             invalid_spawn = await wait_file(profile/'ambush.json',20)
             finished = await manager.invoke('await_task',{'taskId':mining['taskId'],'milliseconds':30000})
             results['unarmedMining'] = finished
-            assert finished['completed'] and finished['result']['inputsReleased'], finished
+            assert finished['status']=='cancelled' and finished['result']['reason']=='task_interrupt_combat', finished
+            unarmed = await wait_for(lambda a: a['targetTask']['entityRef']==invalid_spawn['entityRef']
+                and ((a['task'].get('progress') or {}).get('defense') or {}).get('acquiredAt') is not None)
+            await scene('despawn')
+            cleared_defense = await manager.invoke('await_task',{'taskId':unarmed['actionId'],'milliseconds':5000})
+            assert cleared_defense['completed'] and cleared_defense['result']['inputsReleased'], cleared_defense
+            proof = cleared_defense['result']['task']['result']['evidence']
+            assert proof['weapon'] is None and proof['lastHit'] is None and proof['itemChecks']==0, proof
+            again = await asyncio.to_thread(bridge.task_request,'action',mining['taskId'])
+            assert again['endEvidence']==finished['action']['endEvidence'], again
+            results['unarmedDefense'] = cleared_defense
             query = await lua.execute("return api('query_combat_loadout',{})")
             unavailable = query['value']['data']
             results['unavailable'] = unavailable
             assert unavailable['primary']['reason']=='combat_primary_unavailable'
             assert unavailable['lastRefusal']['entityRef']==invalid_spawn['entityRef']
-            assert (await observe())['actionId']==launch['taskId']
+            assert (await observe())['actionId']==unarmed['actionId']
             cleared = await lua.execute("return api('configure_combat_loadout',{})")
             assert cleared['value']['completed'] and cleared['value']['evidence'].get('primary') is None, cleared
             return

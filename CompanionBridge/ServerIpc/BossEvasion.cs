@@ -32,10 +32,11 @@ internal sealed class BossEvasion
     internal int Decisions {get;private set;}
     internal int NoRoute {get;private set;}
 
-    private readonly record struct Threat(Vector2 Center,Vector2 Velocity,Vector2 Half,Projectile Beam,float Priority,float Gravity)
+    private readonly record struct Threat(Vector2 Center,Vector2 Velocity,Vector2 Half,Projectile Beam,float Priority,float Gravity,int LastFrame=Horizon,bool IsProjectile=false)
     {
         internal bool Hits(Vector2 from,Vector2 to,int frame)
         {
+            if(frame>LastFrame)return false;
             if(Beam!=null)
                 return Beam.Colliding(Beam.Hitbox,new Rectangle((int)(to.X-10),(int)(to.Y-21),20,42));
             // Sweep the relative motion, including projectile sub-updates, against the expanded body.
@@ -45,6 +46,48 @@ internal sealed class BossEvasion
             b.Y-=Gravity*frame*(frame+1)*.5f;
             return Collision.CheckAABBvLineCollision(-Half,Half*2,a,b);
         }
+    }
+    // Clip ordinary hostile trajectories at their first tile impact. Beams
+    // use their native hitbox and non-colliding shots can pass through walls.
+    private static int FlightFrames(Projectile q,int horizon,float gravity)
+    {
+        int updates=q.MaxUpdates;
+        int limit=Math.Min(horizon,(q.timeLeft+updates-1)/updates);
+        if(!q.tileCollide)return limit;
+        Vector2 pos=q.Center, velocity=q.velocity*updates;
+        var profile=new CombatBallistics.CollisionProfile(q.width,q.height,updates,true,new(.5f));
+        for(int frame=1;frame<=limit;frame++)
+        {
+            velocity.Y+=gravity;
+            var step=velocity/updates;
+            for(int i=0;i<updates;i++)
+            {
+                if(!CombatBallistics.ClearStep(pos,step,profile,dryOnly:false))return frame-1;
+                pos+=step;
+            }
+        }
+        return limit;
+    }
+
+    internal static Projectile Incoming(Player p,Func<Projectile,bool> allowed)
+    {
+        foreach(var q in Main.ActiveProjectiles)
+        {
+            if(!q.hostile || q.friendly || q.damage<=0)continue;
+            var speed=q.velocity*q.MaxUpdates;
+            float gravity=BossExtensions.Gravity(q.type);
+            var beam=q.type==ProjectileID.PhantasmalDeathray?q:null;
+            var threat=new Threat(q.Center,speed,new((q.width+p.width)*.5f,(q.height+p.height)*.5f),beam,0,gravity);
+            if(beam==null && Vector2.Distance(q.Center,p.Center)>threat.Half.Length()+
+                (speed-p.velocity).Length()*Horizon+Math.Abs(gravity)*Horizon*(Horizon+1)/2)continue;
+            for(int f=1;f<=Horizon;f++)
+                if(threat.Hits(p.Center+p.velocity*(f-1),p.Center+p.velocity*f,f))
+                {
+                    if(FlightFrames(q,f,gravity)>=f && allowed(q))return q;
+                    break;
+                }
+        }
+        return null;
     }
     private bool platforms,canDrop,kite;
     private Vector2 target;
@@ -61,21 +104,24 @@ internal sealed class BossEvasion
         canDrop=p.velocity.Y==0 && Math.Abs(p.Bottom.Y-MathF.Round(p.Bottom.Y/16)*16)<.5f && PlatformAt(p,0);
         platforms=canDrop;
         for(int offset=1;offset<=6 && !platforms;offset++)platforms=PlatformAt(p,-offset);
-        target=enemy.Center+enemy.velocity*8;
+        target=enemy==null?p.Center:enemy.Center+enemy.velocity*8;
         kite=bossEncounter && ranged && platforms && Vector2.Distance(enemy.Center,p.Center)<260;
         threats.Clear();
-        void Add(Vector2 c,Vector2 v,int w,int h,Projectile beam=null,float gravity=0)
+        void Add(Vector2 c,Vector2 v,int w,int h,Projectile beam=null,float gravity=0,Projectile shot=null,NPC body=null)
         {
             var half=new Vector2((w+p.width)*.5f,(h+p.height)*.5f);
             if(beam!=null || Vector2.DistanceSquared(c,p.Center)<=MathF.Pow(120+half.Length()+v.Length()*Horizon+Math.Abs(gravity)*Horizon*(Horizon+1)/2,2))
             {
+                if(reflex && body!=null && !NativeCombatWorld.ContactPath(p,body))return;
                 if(gravity!=0)CustomTrajectorySamples++;
                 var delta=c-p.Center;
                 var relative=v-p.velocity;
                 float time=Math.Clamp(-Vector2.Dot(delta,relative)/Math.Max(.001f,relative.LengthSquared()),0,Horizon);
                 float miss=(delta+time*relative).Length()-half.Length();
                 float priority=beam!=null?-1:Math.Max(0,miss)+time;
-                var threat=new Threat(c,v,half,beam,priority,gravity);
+                int frames=reflex && shot!=null?FlightFrames(shot,Horizon,gravity):Horizon;
+                if(frames<=0)return;
+                var threat=new Threat(c,v,half,beam,priority,gravity,frames,shot!=null);
                 if(threats.Count<MaxThreats){threats.Add(threat);return;}
                 Truncated++;
                 int worst=0;
@@ -84,19 +130,19 @@ internal sealed class BossEvasion
             }
         }
         foreach(var n in Main.ActiveNPCs)
-            if(!n.friendly&&!n.townNPC&&n.damage>0&&n.life>0)Add(n.Center,n.velocity,n.width,n.height,gravity:reflex?NativeCombatWorld.JumpGravity(n):0);
+            if(!n.friendly&&!n.townNPC&&n.damage>0&&n.life>0)
+                Add(n.Center,n.velocity,n.width,n.height,gravity:reflex?NativeCombatWorld.JumpGravity(n):0,body:n);
         foreach(var q in Main.ActiveProjectiles)
-            if(q.hostile&&q.damage>0)
+            if(q.hostile&&q.damage>0&&(!reflex || !q.friendly))
             {
                 if(BossExtensions.Conflicted(q.type))FallbackSamples++;
                 Add(q.Center,q.velocity*q.MaxUpdates,q.width,q.height,
-                q.type==ProjectileID.PhantasmalDeathray?q:null,BossExtensions.Gravity(q.type));
+                q.type==ProjectileID.PhantasmalDeathray?q:null,BossExtensions.Gravity(q.type),q);
             }
         if(path!=null && cursor<path.Frames.Count)return true;
         // Ordinary melee should still close to striking distance between imminent threats.
-        int reactionFrames=bossEncounter?Horizon:18;
         foreach(var threat in threats)
-            for(int f=1;f<=reactionFrames;f++)
+            for(int f=1;f<=(bossEncounter || reflex && threat.IsProjectile ? Horizon : ReflexContact.Horizon);f++)
                 if(threat.Hits(p.Center+p.velocity*(f-1),p.Center+p.velocity*f,f))return true;
         if(kite)return true;
         Reason=null;

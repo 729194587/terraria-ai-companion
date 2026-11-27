@@ -140,7 +140,7 @@ internal static class CombatBallistics
         }
         return false;
     }
-    internal static bool ClearStep(Vector2 center,Vector2 velocity,CollisionProfile profile)
+    internal static bool ClearStep(Vector2 center,Vector2 velocity,CollisionProfile profile,bool dryOnly=true)
     {
         var flags=(Collision.up,Collision.down,Collision.stair,Collision.stairFall,Collision.sloping,
             Collision.honey,Collision.shimmer,Collision.landMine);
@@ -152,7 +152,7 @@ internal static class CombatBallistics
             var slope=Collision.SlopeCollision(position,velocity,profile.Width,profile.Height,0,true);
             if(new Vector2(slope.X,slope.Y)!=position||new Vector2(slope.Z,slope.W)!=velocity)return false;
             // Water/honey/shimmer motion is outside the dry ballistic profile.
-            return !Collision.WetCollision(position,profile.Width,profile.Height)
+            return !dryOnly || !Collision.WetCollision(position,profile.Width,profile.Height)
                 &&!Collision.WetCollision(position+velocity,profile.Width,profile.Height);
         }
         finally
@@ -170,6 +170,7 @@ public sealed class CombatProjectile : GlobalProjectile
 {
     public override bool InstancePerEntity=>true;
     internal NativeCombatWorld.Shot Flight;
+    internal ulong SpawnUpdate { get; private set; }
     private int lifeBefore;
     private int memberBefore;
     private NPC carrier;
@@ -179,6 +180,8 @@ public sealed class CombatProjectile : GlobalProjectile
     private NativeCombatWorld.Shot HitSource => Flight is {PersistentRoot:true} ? assignment : Flight;
     public override void OnSpawn(Projectile projectile,IEntitySource source)
     {
+        SpawnUpdate=Main.GameUpdateCount;
+        if(projectile.hostile)ServerCombatFixture.HostileSpawn(projectile,source);
         lifeBefore=0;
         // Magic no longer carries an ammo source, but the native item-use
         // source still proves the projectile came from the held spell.

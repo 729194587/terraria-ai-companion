@@ -36,6 +36,18 @@ class ReasonProjectionTests(unittest.TestCase):
 
 
 class CombatReceiptTests(unittest.TestCase):
+    def test_projectile_only_clearance_requires_bound_quiet_observation_and_no_kill(self):
+        task = dict(taskName='combat_attack', taskId='defense', status='completed')
+        request = dict(entityRef=None, threat='projected_hostile_projectile')
+        action = dict(actionId='defense', task=task, targetTask=request, endEvidence={'gameUpdate': 70})
+        result = dict(reason='combat_threats_cleared', inputsReleased=True, effectVerified=True)
+        proof = dict(source='reflex', threat=request['threat'], target=None, lastHit=None, encounters=[],
+                     defense=dict(dangerUpdate=10, acquiredAt=12, quietSince=46))
+        self.assertTrue(atomic.verified_server_combat(action, task, result, proof))
+        for changed in (dict(lastHit={'Defeated':True}), dict(target={'EntityRef':'unrelated'}),
+                        dict(defense={}), dict(defense='evade'), dict(source='agent')):
+            self.assertFalse(atomic.verified_server_combat(action, task, result, {**proof, **changed}))
+
     def test_defense_resolves_separate_spawn_evidence_and_external_removal(self):
         a = {'Slot': 0, 'TypeId': 1, 'EntityRef': 'spawn-a'}
         b = {'Slot': 0, 'TypeId': 1, 'EntityRef': 'spawn-b'}

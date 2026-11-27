@@ -38,6 +38,7 @@ internal static partial class ServerCombatFixture
     internal static void EvasionHurt(Player.HurtInfo info,int amount)
     {
         if(Measuring){hurtCount++;hurtTotal+=amount;}
+        if(defenseCase!=null)wounds.Add(new{tick=Main.GameUpdateCount,amount,npc=info.DamageSource.SourceNPCIndex,projectile=info.DamageSource.SourceProjectileType});
         if(!Sampling)return;
         lostLife+=amount;
         wounds.Add(new{sample,amount,npc=info.DamageSource.SourceNPCIndex,projectile=info.DamageSource.SourceProjectileType});
@@ -126,5 +127,122 @@ internal static partial class ServerCombatFixture
         File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
             entityRef=NativeCombatWorld.Reference(Bound(p),target),initial=new{p.position.X,p.position.Y,p.statLife,p.selectedItem,
             arrows=p.inventory[54].stack,sword=p.inventory[0].type,bow=p.inventory[2].type,dx=target.Center.X-origin.X,pattern}}));
+    }
+
+    private static string defenseCase;
+    private static ulong defenseStart;
+    private static ulong? workBoltUpdate;
+    private static readonly List<object> hostileSpawns=new();
+    internal static void HostileSpawn(Projectile q,Terraria.DataStructures.IEntitySource source)
+    {
+        if(defenseCase!=null && source is Terraria.DataStructures.EntitySource_Parent {Entity:NPC n})
+            hostileSpawns.Add(new{tick=Main.GameUpdateCount,n.type,n.aiStyle,projectile=q.type,q.velocity.X,q.velocity.Y});
+    }
+
+    private static void SampleDefense(Player p)
+    {
+        ulong tick=Main.GameUpdateCount;
+        if(hazard==null && (defenseCase=="mine" && VirtualPlayerEngineProbe.ActorMining.Current is {Swings:>0} && p.itemAnimation>0
+            || defenseCase=="travel" && VirtualPlayerEngineProbe.ActorControl.Running && p.velocity.X>.5f && p.velocity.Y==0))
+        {
+            workBoltUpdate=tick;
+            hazard=LinearBolt(p,p.GetSource_Misc("isolated_work_bolt"),0,-6);
+        }
+        if(defenseCase=="boundary" && target.active)
+            target.Bottom=p.Bottom+new Vector2((tick-defenseStart)/8%2==0?-92:-124,0);
+        samples.Add(new{tick,x=p.Center.X,y=p.Center.Y,p.statLife,running=NativeCombatWorld.Running,
+            distance=target?.active==true?(float?)Vector2.Distance(p.Center,target.Center):null,
+            contact=target?.active==true?NativeCombatWorld.ContactTick(p,target,p.velocity.X):null,
+            boltX=hazard?.active==true?(float?)hazard.Center.X:null,boltY=hazard?.active==true?(float?)hazard.Center.Y:null});
+        if(tick-defenseStart<(defenseCase=="archer"?360u:180u))return;
+        File.WriteAllText(Path.Combine(Main.SavePath,"self-"+defenseCase+".json"),JsonSerializer.Serialize(new{
+            defenseStart,workBoltUpdate,samples,wounds,hostileSpawns,firstPress,hitTrace,projectileHits,hitViolations}));
+        // End the observation window for surviving native NPCs.
+        if(target!=null)target.active=false;
+        foreach(var n in defenseTargets)n.active=false;
+        defenseCase=null;
+        Baseline=false;
+    }
+
+    private static void SelfDefenseScene(Player p,string mode)
+    {
+        foreach(var n in defenseTargets)n.active=false;
+        defenseTargets.Clear();
+        if(target!=null)target.active=false;
+        target=null;hazard=null;
+        foreach(var q in Main.ActiveProjectiles)q.active=false;
+        int x=Main.spawnTileX,floor=Main.spawnTileY+8;
+        for(int dx=-36;dx<=36;dx++)for(int dy=-18;dy<=2;dy++)
+        {
+            var tile=Main.tile[x+dx,floor+dy];
+            tile.ClearEverything();
+            if(dy>=0 || mode=="wall" && dx==-7 || mode is "blocked" or "through" && dx==6)
+            {tile.HasTile=true;tile.TileType=TileID.Stone;}
+        }
+        Main.dayTime=false;Main.time=1800;
+        Main.rand=new UnifiedRandom(817);
+        p.Bottom=new(x*16+10,floor*16);p.velocity=Vector2.Zero;p.direction=-1;
+        p.ConsumedLifeCrystals=10;p.statLife=p.statLifeMax=p.statLifeMax2=300;
+        p.immune=false;p.immuneTime=0;Array.Clear(p.hurtCooldowns);
+        p.jump=0;p.releaseJump=true;p.itemAnimation=p.itemTime=p.reuseDelay=0;p.releaseUseItem=true;
+        for(int i=0;i<58;i++)p.inventory[i].TurnToAir();
+        p.selectedItem=0;
+        NativeCombatWorld.ClearLoadout();
+        if(mode is "ground" or "flyer" or "archer" or "mixed" or "wall" or "empty" or "boundary")
+            p.inventory[0].SetDefaults(ItemID.Minishark);
+        if(mode=="no-mana"){p.inventory[0].SetDefaults(ItemID.AmethystStaff);ManaPool(p,20,0);suppressManaRegen=true;}
+        if(mode!="empty"){p.inventory[54].SetDefaults(ItemID.MusketBall);p.inventory[54].stack=999;}
+        // A stream of Minishark hits can interrupt the archer's native draw.
+        // Give the actor one musket round, then observe the full enemy attack.
+        if(mode=="archer"){p.inventory[0].SetDefaults(ItemID.Musket);p.inventory[54].stack=1;}
+        if(mode=="mine")
+        {
+            p.inventory[1].SetDefaults(ItemID.CopperPickaxe);
+            var ore=Main.tile[x+3,floor-1];ore.HasTile=true;ore.TileType=TileID.Stone;
+        }
+        samples.Clear();wounds.Clear();hostileSpawns.Clear();hitTrace.Clear();projectileHits.Clear();shots.Clear();
+        workBoltUpdate=firstPress=null;hitViolations=0;
+        defenseCase=mode;defenseStart=Main.GameUpdateCount;Baseline=mode is "bolt-off" or "charge-off";
+        NPC Spawn(int type,int dx)
+        {
+            int slot=NPC.NewNPC(p.GetSource_Misc("isolated_self_defense"),(int)p.Center.X+dx,floor*16,type,Target:p.whoAmI);
+            var n=Main.npc[slot];
+            n.Bottom=p.Bottom+new Vector2(dx,type==NPCID.DemonEye?-32:0);n.target=p.whoAmI;
+            defenseTargets.Add(n);
+            return n;
+        }
+        if(mode is "ground" or "flyer" or "mixed" or "archer" or "wall" or "empty" or "no-mana" or "boundary" or "charge-off" or "charge-on")
+        {
+            bool archer=mode is "archer" or "wall";
+            target=Spawn(archer?NPCID.SkeletonArcher:mode=="flyer"?NPCID.DemonEye:NPCID.Zombie,archer?-248:-88);
+            if(archer){target.life=target.lifeMax=500;target.knockBackResist=0;}
+            if(mode=="mixed")target.life=18;
+            if(mode=="boundary"){target.aiStyle=-1;target.life=target.lifeMax=500;}
+            if(mode is "charge-off" or "charge-on")
+            {target.aiStyle=-1;target.velocity.X=4;target.noGravity=true;target.knockBackResist=0;}
+        }
+        bool sourceDead=false;
+        if(mode is "bolt-off" or "bolt-on" or "dead" or "mixed" or "friendly" or "away" or "miss" or "empty" or "no-mana" or "blocked" or "through")
+        {
+            NPC shooter=mode is "mixed" or "dead"?Spawn(NPCID.Zombie,270):null;
+            if(mode=="mixed"){shooter.aiStyle=-1;shooter.target=255;}
+            var source=shooter?.GetSource_FromAI()??p.GetSource_Misc("isolated_linear_bolt");
+            hazard=LinearBolt(p,source,mode=="miss"?-100:10,mode=="away"?6:-6);
+            hazard.tileCollide=mode=="blocked";
+            if(mode=="friendly"){hazard.hostile=false;hazard.friendly=true;}
+            if(mode=="dead"){shooter.StrikeNPC(new NPC.HitInfo{Damage=9999});sourceDead=!shooter.active;}
+        }
+        File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{mode,defenseStart,
+            entityRef=target==null?null:NativeCombatWorld.Reference(Bound(p),target),aiStyle=target?.aiStyle,
+            distance=target==null?(float?)null:Vector2.Distance(target.Center,p.Center),
+            contact=target==null?null:NativeCombatWorld.ContactTick(p,target,0),boltX=hazard?.Center.X,playerX=p.Center.X,
+            sourceDead,workGoal=mode=="mine"?new{x=x+3,y=floor-1}:new{x=(x+24)*16,y=floor*16}}));
+    }
+
+    private static Projectile LinearBolt(Player p,Terraria.DataStructures.IEntitySource source,int height,int vx)
+    {
+        int i=Projectile.NewProjectile(source,p.Center+new Vector2(176,height),new Vector2(vx,0),ProjectileID.DeathLaser,16,0,255);
+        var bolt=Main.projectile[i];bolt.aiStyle=-1;bolt.extraUpdates=0;bolt.tileCollide=false;
+        return bolt;
     }
 }
