@@ -27,7 +27,7 @@ def definition(operations):
 def exploration_definition():
     schema = atomic.SCHEMAS['explore_frontier']
     return atomic.tool('schedule_exploration',
-        '玩家明确授权自主探索时登记一次有界往返。radiusTiles 是以出发点为中心的 Tile 半径，'
+        '玩家明确要求探索后返回时登记一次有界往返。radiusTiles 是以出发点为中心的 Tile 半径，'
         'maxSegments 是外出尝试上限。默认仅移动，玩家明确允许清障才开启 allowDig。'
         '完成要求实际开图、返回安全锚点并释放输入。', schema['properties'], schema['required'])
 

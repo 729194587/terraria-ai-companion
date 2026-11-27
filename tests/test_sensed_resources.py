@@ -21,6 +21,25 @@ class ResourceTests(unittest.TestCase):
         self.assertFalse(h.observe(empty)['changes'])
         self.assertEqual(h.observe(scan)['items'][0]['freshness'],'updated')
 
+    def test_passing_a_clipped_vein_survives_window_shift_until_physical_change(self):
+        history = ResourceHistory()
+        scan = dict(bounds=dict(minX=0,minY=0,maxX=10,maxY=10), gameUpdate=1,
+                    complete=True,truncated=False,unknownCells=0)
+        def ore(*xs, status='complete'):
+            pts = [dict(x=x,y=4) for x in xs]
+            return dict(kind='ore_component', typeId=7, contentKey='Copper', anchor=pts[0],
+                        tiles=pts, bounds=dict(x=xs[0],y=4,width=len(xs),height=1), status=status)
+        seen = history.observe(dict(scan,items=[ore(3,4,status='incomplete')]))
+        history.pass_by(seen['discoveries'])
+        widened = history.observe(dict(scan,items=[ore(2,3,4,5)]))
+        self.assertFalse(widened['discoveries'])
+        self.assertEqual('passed',widened['items'][0]['decision'])
+        history.observe(dict(scan,items=[ore(5,status='incomplete')]))
+        self.assertFalse(history.observe(dict(scan,items=[ore(2,status='incomplete')]))['discoveries'])
+        mined = history.observe(dict(scan,items=[ore(2,3)]))
+        self.assertEqual(1,len(mined['discoveries']))
+        self.assertNotIn('decision',mined['items'][0])
+
     def test_ore_window_shift_keeps_one_record(self):
         h=ResourceHistory()
         def scan(x):

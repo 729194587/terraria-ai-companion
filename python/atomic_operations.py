@@ -139,7 +139,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
     tool("quick_stack_container", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到当前箱子的已有同类物品。需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("loot_all", "服务器AI。按拾取规则从当前箱子批量取出，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("deposit_all", "服务器AI。批量存入普通背包10..49中未收藏物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
-    tool("explore_frontier", "有界调查未知区域并回到出发落区。仅在玩家要求探索时提交。范围与行程预算必填，allowDig 默认关闭，开启需要玩家允许清障。", {
+    tool("explore_frontier", "有界调查未知区域并回到出发落区。仅在玩家要求探索并返回时提交。范围与行程预算必填，allowDig 默认关闭，开启需要玩家允许清障。", {
         "radiusTiles": {"type":"integer","minimum":4,"maximum":64},
         "maxSegments": {"type":"integer","minimum":1,"maximum":64},
         "allowDig": {"type":"boolean","default":False},

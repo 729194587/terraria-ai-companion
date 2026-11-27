@@ -29,6 +29,18 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
                         binding=self.agent.bridge.binding)
         self.mode.observe=AsyncMock(return_value=self.scene)
 
+    def test_daily_tool_projection_uses_directional_explore_without_round_trip_variant(self):
+        bridge = self.agent.bridge
+        bridge.hello = dict(capabilities=['server_ai_atomic_v1','server_ai_actions_v1','server_ai_tasks_v1',
+            'server_ai_program_tasks_v1','server_ai_region_resources_v1','server_ai_navigation_v1',
+            'server_ai_frontier_exploration_v1'])
+        bridge.supported_atomic_operations = {'mine_target','explore_frontier','navigate_to'}
+        bridge.task_request = Mock()
+        tools = {t['function']['name']:t['function'] for t in AutonomousMode.tools(self.mode)}
+        self.assertIn('explore', tools)
+        self.assertIn('navigate_to', tools)
+        self.assertNotIn('explore_frontier', str(tools['submit_task']))
+
     async def test_on_act_reobserve_and_rest(self):
         self.agent.llm.complete.side_effect=[
             dict(tool_calls=[dict(id='a',function=dict(name='navigate_to',arguments=json.dumps(dict(
@@ -202,7 +214,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
                  ('mine_target',dict(x=10,y=2)), ('explore',dict(direction='left'))]
         replies = [dict(tool_calls=[dict(function=dict(name=n, arguments=json.dumps(dict(a,objective=n))))])
                    for n,a in calls]
-        event = dict(items=[dict(anchor=dict(x=10,y=2))],gameUpdate=4)
+        event = dict(items=[dict(kind='ore_component', typeId=7, anchor=dict(x=10,y=2))],gameUpdate=4)
         result = dict(direction='right',returnReason='discovery',findings=[event],progress=dict(completedSegments=1))
         self.mode.act=AsyncMock(side_effect=[dict(status='completed',completed=True,inputsReleased=True,
             explorationResult=result)] + [dict(status='completed',completed=True,inputsReleased=True)]*3)
@@ -221,6 +233,19 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         for call in self.mode.act.await_args_list:
             if call.args[0]=='explore':
                 self.assertIs(call.kwargs['baseline'], self.scene['resources'])
+
+    async def test_initial_clue_survives_approach_before_first_directional_trip(self):
+        await self.mode.command('on')
+        clue = dict(items=[dict(kind='ore_component',typeId=7,anchor=dict(x=12,y=4))])
+        self.mode.pending_discoveries.append(clue)
+        self.agent.llm.complete.side_effect = [self.navigate(160), dict(content='assess')]
+        self.mode.act = AsyncMock(return_value=dict(status='completed',completed=True,inputsReleased=True))
+        await self.cycle()
+        await self.cycle()
+        observation = json.loads(self.agent.llm.complete.await_args.args[0][1]['content'])
+        context = observation['explorationContext']
+        self.assertEqual(context['investigating'], [clue])
+        self.assertEqual(context['lastInvestigation']['operation'], 'navigate_to')
 
     async def test_action_transport_error_holds_without_model_or_body_replay(self):
         self.agent.llm.complete.return_value=self.navigate(12)

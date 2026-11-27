@@ -1,5 +1,6 @@
 """Host-side short trips using native navigate_to and observation-scoped landing candidates."""
 import asyncio
+from collections import deque
 import time
 
 import atomic_operations as atomic
@@ -12,7 +13,7 @@ TRIP_SECONDS = 45
 STEP_PIXELS = 32 * 16
 
 
-EXPLORE_TOOL = atomic.tool('explore', 'Explore in a direction until a discovery, local obstruction or budget.',
+EXPLORE_TOOL = atomic.tool('explore', 'Survey in the preferred direction. After a confirmed dead end the daily explorer may branch to another observed landing.',
     {'direction': {'type':'string', 'enum':list(DIRECTIONS)},
      'objective': {'type':'string','minLength':1,'maxLength':240}}, ['direction','objective'])
 
@@ -44,7 +45,66 @@ def position(actor):
     return dict(leftX=actor['boundsWorldPixels']['x'], feetY=actor['feetY'])
 
 
-def destination(scene, direction):
+class RecentRoute:
+    """Recent *observed* travel and local failed approaches, in world pixels."""
+    def __init__(self):
+        self.legs = deque(maxlen=32)
+        self.dead_ends = deque(maxlen=16)
+
+    @staticmethod
+    def near(a, b):
+        return abs(a['leftX'] - b['leftX']) <= 32 and abs(a['feetY'] - b['feetY']) <= 24
+
+    @staticmethod
+    def along_retreat(point, leg):
+        # A short retreat down the same slope can be split into different length hops
+        # on the next scan. Compare against the corridor, allowing for uneven ground.
+        a, b = leg['start'], leg['finish']
+        dx, dy = b['leftX']-a['leftX'], b['feetY']-a['feetY']
+        length2 = dx*dx + dy*dy
+        if length2 < 32*32:
+            return None
+        t = ((point['leftX']-a['leftX'])*dx + (point['feetY']-a['feetY'])*dy) / length2
+        nearest = max(0., min(1., t))
+        if (abs(point['leftX']-a['leftX']-nearest*dx) <= 48
+                and abs(point['feetY']-a['feetY']-nearest*dy) <= 48):
+            return t
+
+    def rank(self, start, end):
+        visits = 0
+        for leg in self.legs:
+            # A failed approach can finish at the foot of the same obstruction.
+            if leg['blocked'] and (self.near(start, leg['start']) or self.near(start, leg['finish'])):
+                if self.near(end, leg['goal']):
+                    return None
+            if leg.get('retreat'):
+                origin = self.along_retreat(start, leg)
+                target = self.along_retreat(end, leg)
+                middle = {key: (start[key]+end[key])/2 for key in ('leftX','feetY')}
+                middle_t = self.along_retreat(middle, leg)
+                within = [t for t in (origin, middle_t, target) if t is not None]
+                if len(within) >= 2 and within[-1] < within[0]:
+                    return None
+            if self.near(end, leg['start']) or self.near(end, leg['finish']):
+                visits += 1
+            if self.near(start, leg['start']) and self.near(end, leg['finish']):
+                # Allow a retreat, but do not enter the same directed leg twice.
+                return None
+        return visits
+
+    def record(self, segment, direction, width, blocked):
+        start, finish = segment['start'], segment['finish']
+        target = segment['target']
+        leg = dict(direction=direction, start=start, finish=finish,
+                   goal=dict(leftX=target['x']-width/2, feetY=target['y']),
+                   blocked=blocked, retreat=segment.get('rerouted', False), taskId=segment['taskId'])
+        revisited = any(self.near(finish, previous[key]) for previous in self.legs
+                        for key in ('start', 'finish'))
+        segment['revisited'] = revisited
+        self.legs.append(leg)
+
+
+def destination(scene, direction, route=None):
     actor = scene['actor']
     left = actor['boundsWorldPixels']['x']
     width = actor['boundsWorldPixels']['width']
@@ -66,9 +126,11 @@ def destination(scene, direction):
         if lateral and x-width <= left <= x:
             continue
         score = abs(advance-STEP_PIXELS) + (abs(dy) if lateral else abs(dx))
-        options.append((score, x, round(region['surfaceY'])))
+        visits = route.rank(position(actor), dict(leftX=landing, feetY=region['surfaceY'])) if route else 0
+        if visits is not None:
+            options.append((visits, score, x, round(region['surfaceY'])))
     if options:
-        _, x, y = min(options)
+        _, _, x, y = min(options)
         return dict(x=x, y=y)
 
 
@@ -79,7 +141,14 @@ def scan_coverage(scan):
         'elapsedMilliseconds','observedAtUnixMs','position') if k in scan}
 
 
-async def landing_scene(bridge, direction):
+def usable_survey(scan, route):
+    # A regional resource scan proves presence even when clipped. Movement safety
+    # is established separately by live landing observation and native navigation.
+    return scan.get('complete') or (route is not None and scan.get('scannedTiles', 0) > 0
+                                    and scan.get('requestedTiles', scan['scannedTiles']) > scan.get('unknownCells', 0))
+
+
+async def landing_scene(bridge, direction, *, allow_partial=False):
     args = dict(layers=['landingRegions'])
     if 'server_ai_directional_landings_v1' in bridge.hello.get('capabilities', ()):
         args['landingDirection'] = direction
@@ -90,10 +159,34 @@ async def landing_scene(bridge, direction):
         scene = reply['data']
         if not scene['landingRegions']['truncated']:
             return scene
+    if allow_partial and scene['landingRegions']['items']:
+        return scene
     raise BridgeError('landingRegions.truncated after expanding maxRegions from 12 to 24')
 
 
-async def run(mode, direction, version, baseline, *, report_initial_findings=False):
+async def alternate_landing(bridge, direction, route, deadline, authorized):
+    options = []
+    for alternative in DIRECTIONS:
+        if time.monotonic() >= deadline:
+            break
+        if alternative == direction:
+            continue
+        authorized()
+        try:
+            scene = await landing_scene(bridge, alternative, allow_partial=True)
+        except (BridgeError, OSError):
+            continue
+        other = destination(scene, alternative, route)
+        if other:
+            end = dict(leftX=other['x']-scene['actor']['boundsWorldPixels']['width']/2, feetY=other['y'])
+            visits = route.rank(position(scene['actor']), end)
+            if visits is not None:
+                options.append((visits, alternative, other, scene))
+    if options:
+        return min(options, key=lambda option: option[:2])[1:]
+
+
+async def run(mode, direction, version, baseline, *, report_initial_findings=False, route=None):
     bridge = mode.agent.bridge
     binding = dict(bridge.binding)
     deadline = time.monotonic() + TRIP_SECONDS
@@ -122,9 +215,10 @@ async def run(mode, direction, version, baseline, *, report_initial_findings=Fal
         if scan['discoveries'] or scan['changes']:
             findings.append(dict(**coverage, items=scan['discoveries'], changes=scan['changes']))
             return 'discovery'
-        if not scan['complete']:
+        if not usable_survey(scan, route):
             return 'observation_incomplete'
 
+    requested_direction = direction
     for _ in range(MAX_SEGMENTS):
         authorized()
         if not segments and report_initial_findings and (baseline['discoveries'] or baseline['changes']):
@@ -132,11 +226,11 @@ async def run(mode, direction, version, baseline, *, report_initial_findings=Fal
             if baseline['complete']:
                 reason = detail = 'discovery'
                 break
-        if not baseline['complete']:
+        if not usable_survey(baseline, route):
             reason, detail = 'observation_incomplete', 'initial resource baseline incomplete'
             break
         try:
-            scene = await landing_scene(bridge, direction)
+            scene = await landing_scene(bridge, direction, allow_partial=route is not None)
         except (BridgeError, OSError) as error:
             reason, detail = 'observation_incomplete', str(error)
             break
@@ -145,14 +239,29 @@ async def run(mode, direction, version, baseline, *, report_initial_findings=Fal
             start = result['start'] = result['finish'] = finish
         if time.monotonic() >= deadline:
             break
-        target = destination(scene, direction)
+        target = destination(scene, direction, route)
+        if target is None and route is not None:
+            known_dead_end = any(d == direction and route.near(p, finish) for d,p in route.dead_ends)
+            if known_dead_end or destination(scene, direction):
+                branch = await alternate_landing(bridge, direction, route, deadline, authorized)
+                if branch:
+                    direction, target, scene = branch
+                    finish = position(scene['actor'])
+                    result.update(requestedDirection=requested_direction, direction=direction,
+                                  reroutedAt=finish)
+            elif scene['coverage']['geometryComplete']:
+                route.dead_ends.append((direction, finish))
         if target is None:
-            if scene['coverage']['geometryComplete']:
+            if route and destination(scene, direction):
+                reason, detail = 'blocked', 'recently failed or repeated approach; choose another direction'
+            elif scene['coverage']['geometryComplete']:
                 reason, detail = 'blocked', 'no forward landing in current local candidates'
             else:
                 reason, detail = 'observation_incomplete', 'no forward landing in partially known geometry'
             break
         authorized()
+        if time.monotonic() >= deadline:
+            break
         segment_deadline = time.monotonic() + SEGMENT_SECONDS
         record, rejected = await mode.submit_owned('navigate_to', target, version)
         if record is None:
@@ -161,7 +270,9 @@ async def run(mode, direction, version, baseline, *, report_initial_findings=Fal
             detail = rejected.get('reason',reason)
             break
         task_id = record['view']['taskId']
-        segment = dict(start=finish, target=target, taskId=task_id)
+        segment = dict(start=finish, direction=direction, target=target, taskId=task_id)
+        if finish == result.get('reroutedAt'):
+            segment['rerouted'] = True
         segments.append(segment)
         expired = False
         try:
@@ -200,6 +311,9 @@ async def run(mode, direction, version, baseline, *, report_initial_findings=Fal
             detected, detail = 'observation_incomplete', str(error)
             segment['observationError'] = detail
         segment['finish'] = finish
+        if route is not None and 'observationError' not in segment:
+            route.record(segment, direction, scene['actor']['boundsWorldPixels']['width'],
+                         expired or last['status'] in ('failed','timeout') or finish == segment['start'])
         if expired and last['status'] in ('cancelled','completed'):
             # Release and observation may finish after both deadlines. Classify by
             # the deadline that ended the wait, retaining any findings from sense().

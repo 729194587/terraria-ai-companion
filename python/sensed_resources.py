@@ -7,14 +7,24 @@ class ResourceHistory:
         self.records = OrderedDict()
         self.limit = limit
 
+    @staticmethod
+    def key(hit):
+        anchor = hit['anchor']
+        return hit['kind'], hit['typeId'], hit.get('entityRef') or (anchor['x'], anchor['y'])
+
+    def pass_by(self, hits):
+        for hit in hits:
+            record = self.records.get(self.key(hit))
+            if record is not None:
+                record['passed'] = True
+
     def observe(self, scan):
         tick = scan['gameUpdate']
         current = []
         discoveries = []
         seen = set()
         for hit in scan['items']:
-            anchor = hit['anchor']
-            key = (hit['kind'], hit['typeId'], hit.get('entityRef') or (anchor['x'], anchor['y']))
+            key = self.key(hit)
             previous = self.records.get(key)
             if hit['kind'] == 'ore_component':
                 tiles = {(p['x'],p['y']) for p in hit['tiles']}
@@ -24,7 +34,8 @@ class ResourceHistory:
                         continue
                     record = self.records[prior]
                     if (record['state'] != 'absent_at_last_location'
-                            and any((p['x'],p['y']) in tiles for p in record['hit']['tiles'])):
+                            and (tiles.intersection(record['completeShape'] or ())
+                                 or any((p['x'],p['y']) in tiles for p in record['hit']['tiles']))):
                         previous = previous or record
                         del self.records[prior]
             freshness = 'new' if previous is None else (
@@ -34,12 +45,19 @@ class ResourceHistory:
             complete_shape = signature
             if hit['status'] == 'complete' and hit['kind'] != 'drop':
                 complete_shape = sorted((p['x'],p['y']) for p in hit.get('tiles',()))
-            if (previous is None or previous['state']=='absent_at_last_location' or complete_shape != signature):
+            passed = bool(previous and previous.get('passed') and previous['state'] != 'absent_at_last_location')
+            # Resolving the clipped footprint of a passed object is not a world change.
+            changed_shape = complete_shape != signature and (signature is not None or not passed)
+            if previous is None or previous['state']=='absent_at_last_location' or changed_shape:
+                passed = False
                 discoveries.append(dict(hit, freshness=freshness))
-            self.records[key] = dict(hit=dict(hit), lastSeen=tick, state='observed', completeShape=complete_shape)
+            self.records[key] = dict(hit=dict(hit), lastSeen=tick, state='observed', completeShape=complete_shape, passed=passed)
             self.records.move_to_end(key)
             seen.add(key)
-            current.append(dict(hit, freshness=freshness))
+            item = dict(hit, freshness=freshness)
+            if passed:
+                item['decision'] = 'passed'
+            current.append(item)
         changes = []
         bounds = scan['bounds']
         for key, record in self.records.items():

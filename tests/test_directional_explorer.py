@@ -31,6 +31,38 @@ class DirectionTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(direction=direction):
                 self.assertEqual(explorer.destination(scene,direction),dict(zip(('x','y'),target)))
 
+    def test_failed_landing_changes_candidate_and_preserves_retreat(self):
+        route = explorer.RecentRoute()
+        start = dict(leftX=100, feetY=200)
+        failed = dict(start=start, finish=start, target=dict(x=510,y=200), taskId='failed')
+        route.record(failed, 'right', 20, True)
+        scene = local(targets=[(500,500,200),(320,320,216)])
+        self.assertEqual(explorer.destination(scene,'right',route),dict(x=330,y=216))
+        finish = dict(leftX=320,feetY=216)
+        leg = dict(start=start,finish=finish,target=dict(x=330,y=216),taskId='other')
+        route.record(leg,'right',20,False)
+        self.assertIsNone(route.rank(start,finish))
+        self.assertIsNotNone(route.rank(finish,start))
+        self.assertFalse(leg['revisited'])
+
+    def test_shorter_steps_do_not_reenter_a_retreat_from_a_dead_end(self):
+        route = explorer.RecentRoute()
+        route.record(dict(start=dict(leftX=480,feetY=300),finish=dict(leftX=80,feetY=160),
+                          target=dict(x=90,y=160), rerouted=True, taskId='retreat'), 'left', 20, False)
+        start = dict(leftX=80,feetY=160)
+        self.assertIsNone(route.rank(start,dict(leftX=180,feetY=188)))
+        self.assertIsNotNone(route.rank(start,dict(leftX=180,feetY=68)))
+        self.assertIsNotNone(route.rank(start,dict(leftX=0,feetY=160)))
+        self.assertIsNone(route.rank(dict(leftX=8,feetY=140),dict(leftX=270,feetY=230)))
+
+    def test_partial_regional_coverage_requires_actual_sample(self):
+        route = explorer.RecentRoute()
+        scan = dict(complete=False,scannedTiles=120)
+        self.assertTrue(explorer.usable_survey(scan, route))
+        self.assertFalse(explorer.usable_survey(scan, None))
+        self.assertFalse(explorer.usable_survey(dict(scan, unknownCells=120), route))
+        self.assertFalse(explorer.usable_survey(dict(scan, scannedTiles=0), route))
+
     async def trip(self, status='completed', found_at=None, complete=True, release=True, revoke=False,
                    hang=False, truncated=(), end_complete=True, empty_geometry=None):
         x=100

@@ -16,9 +16,11 @@ Lua Agent 调用 Python 宿主，宿主根据能力与 Schema 分发到 Server A
 
 `observe_scene` 的可选 `resources` 层和 Lua 的 `sense_world({resources=true})` 提供局部资源扫描。普通宝箱和生命水晶使用左上角 Tile 锚点及 2×2 占用范围，梳妆台为 3×2。矿脉返回四邻接的同种矿石、范围和最多 64 个具体 Tile。边界截断、缺格或帧不匹配的对象标记为 `incomplete`。掉落物携带实体引用。自主观察另附历史记录、最近观测时间和新发现或状态变化，扫描本身不会写入探索地图。
 
-自主模型可以调用宿主工具 `explore({direction:"right",objective:"勘察东侧地面"})`，方向可选 left、right、up、down。每段根据当前角色左边缘、脚底高度和沿所选方向扩展的局部落脚区间生成目标，再以当前授权提交普通 `navigate_to`。四个方向都以 32 Tile（512 世界像素）为目标推进距离，实际落点取决于地形。落区列表截断时将候选上限从 12 提到 24 重读一次，仍截断则返回 observation_incomplete。每次探索最多 6 段、每段 12 秒、总计 45 秒，到期后等待当前子任务终态与输入释放。
+自主模型可以调用宿主工具 `explore({direction:"right",objective:"勘察东侧地面"})`，方向可选 left、right、up、down。每段根据当前角色左边缘、脚底高度和沿所选方向扩展的局部落脚区间生成目标，再以当前授权提交普通 `navigate_to`。四个方向都以 32 Tile（512 世界像素）为目标推进距离，实际落点取决于地形。落区列表截断时将候选上限从 12 提到 24 重读一次，日常模式仍可使用已返回的落脚候选，由原生导航复核。外部方向工具保留完整列表要求。每次探索最多 6 段、每段 12 秒、总计 45 秒，到期后等待当前子任务终态与输入释放。
 
-探索直接复用主决策观察中的 120×68 Tile 资源基线。每段取得原生终态和输入释放证据后读取一次同范围资源层。段末发现新对象、对象补全或状态变化时，宿主停止派发新段，将精确 Tile、采样时间与覆盖交回主决策。模型可以忽略后重新调用 explore，也可以先调查、挖掘或交互，再依据原方向和最新调查回执决定续行。普通目的地导航直接等待原生终态。
+探索直接复用主决策观察中的 120×68 Tile 资源基线。每段取得原生终态和输入释放证据后读取一次同范围资源层。段末发现新对象、对象补全或状态变化时，宿主停止派发新段，将精确 Tile、采样时间与覆盖交回主决策。模型可以忽略后重新调用 explore，也可以先调查、挖掘或交互，再依据原方向和最新调查回执决定续行。模型选择继续探索时将已交付线索记为跳过，视窗边缘补全同一矿脉不会再次打断。完整矿形改变或现场确认消失、重新出现会更新线索。调查中的线索和最近调查回执随下一次决策交付。普通目的地导航直接等待原生终态。
+
+日常模式保留最近 32 段实际起终点、目标及失败入口。候选优先选择未访问落点，允许沿来路撤退；同向重复的局部路线和从障碍旁再次尝试的失败落点会被排除。首次确认方向无落点时交还模型；再次要求已受阻方向且仍无可用落点时，宿主检查其他方向的现场落点，回执记录 requestedDirection、实际 direction 和 reroutedAt。区域资源采样不完整时仍保留已观察事实及缺失范围。每步运动沿用原生导航的安全预检、清障、平台与释放。只有明确委托往返才使用 schedule_exploration。
 
 探索回执的 `returnReason` 区分 discovery、blocked、segment_time_limit、budget_reached、interrupted、observation_incomplete 与 outcome_unknown。单段 12 秒先到时，宿主取消该段，确认终态和输入释放，进行一次段末观察，再以 segment_time_limit 交回主决策；段末发现仍保存在 findings 中。整趟 45 秒预算或 6 段上限耗尽时返回 budget_reached。回执保留实际位移（世界像素）、各段目标、子任务 ID、终态和释放证据。用 `tests/verify_server_ai_native.ps1 -DirectionalExplore investigate -Atomic -KeepProfile` 可在复制世界复现采矿续行；参数 continue 验证忽略及接管，live 使用项目配置的实际模型。每个隔离目录的 autonomy.json 记录主决策输入、模型输出、各段回执和资源覆盖。探索回执把复用的 baseline 与段末 coverage 分开记录。每项的 requestedTiles、scannedTiles、unknownCells 和 unknownByReason 说明覆盖情况，samplingBudgetReached 与 objectGroupingTruncated 区分采样超时和对象分组上限，truncated 来自资源层。
 

@@ -1,7 +1,8 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$Mining,[string[]]$MiningCases,[ValidateSet('On','Off')][string]$ImproveGameVeinMining,[ValidateSet('Single','Cluster','Protected')][string]$VeinCase='Single',[string]$WorkshopRoot='D:/steam/steamapps/workshop/content/1281930',[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[ValidateSet("basic","cloud","sand","blizzard","angel","cloud_angel","hermes","bundle","bundle_hermes")][string]$JourneyLoadout,[string]$ReplayStops,[switch]$WalkReference,[switch]$FlightReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central","traverse","bank-replay","local-replay","slope-entry","slope-approach")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback)
+param([ValidateSet("west","east")][string]$AdventureStart,[switch]$AdventureMechanism,[string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$Mining,[string[]]$MiningCases,[ValidateSet('On','Off')][string]$ImproveGameVeinMining,[ValidateSet('Single','Cluster','Protected')][string]$VeinCase='Single',[string]$WorkshopRoot='D:/steam/steamapps/workshop/content/1281930',[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[ValidateSet("basic","cloud","sand","blizzard","angel","cloud_angel","hermes","bundle","bundle_hermes")][string]$JourneyLoadout,[string]$ReplayStops,[switch]$WalkReference,[switch]$FlightReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central","traverse","bank-replay","local-replay","slope-entry","slope-approach")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback)
 $ErrorActionPreference='Stop'
 if($ImproveGameVeinMining){$Mining=$true;$MiningCases=@('small-copper')}
 if($FlightReference){$JourneyLoadout="cloud_angel";$JourneyCase="traverse"}
+if($AdventureStart){$LongJourney=$true}
 if($JourneyLoadout){$LongJourney=$true}
 if($WatchWestStop){$Watch=$true}
 if($Watch -and ($WalkReference -or $ReplayStops)){throw "Watch runs live navigation journeys."}
@@ -130,8 +131,10 @@ try {
     if($ReplayStops){$probeArgs+=@('--replay-stops',(Resolve-Path -LiteralPath $ReplayStops).Path)}
     if($HelperSource){$probeArgs+=@('--helper-source',(Resolve-Path -LiteralPath $HelperSource).Path)}
     if($AutonomousNavigation){$probeArgs+='--autonomous'}
+    if($AdventureStart){$probeArgs=@((Join-Path $repo 'tests/native_continuous_adventure.py'),'--port',"$IpcPort",'--profile',$profile,'--start',$AdventureStart)}
+    if($AdventureMechanism){$probeArgs+='--mechanism'}
     & $PythonExecutable @probeArgs
-    if($LASTEXITCODE -ne 0){throw 'Natural deterministic Lua probe failed'}
+    if($LASTEXITCODE -ne 0){throw "Natural world probe failed in $profile"}
     $client.Dispose();$client=$null
     [IO.File]::WriteAllText("$profile/g81-test-stop",'The isolated harness requests native main-thread shutdown after read-only TCP assertions.')
     if(!$process.WaitForExit(20000)){throw 'Native graceful unload timed out'}
@@ -147,7 +150,7 @@ try {
     # Persist only this process/world/time window, never search a shared log as evidence.
     $events|ForEach-Object {$_|ConvertTo-Json -Compress -Depth 12}|Set-Content -LiteralPath "$profile/server.log"
     $lifecycle=Assert-ServerAiRunTeardown -Events $events
-    $report=@{mode='native generated terrain; no constructed matrix/no LLM';journeyLoadout=$JourneyLoadout;sourceWorld=$WorldPath;initialWorldSHA256=$initialWorldHash;packageSHA256=(Get-FileHash -LiteralPath $package).Hash;binding=$bound.binding;spawn=$lifecycle.spawn;teardown=$lifecycle.teardown;results=(Get-Content -LiteralPath "$profile/natural-results.json" -Raw|ConvertFrom-Json)}
+    $report=@{mode=$(if($AdventureMechanism){'scripted directional mechanism'}elseif($AdventureStart){'real model daily autonomy on natural terrain'}else{'native generated terrain; no constructed matrix/no LLM'});journeyLoadout=$JourneyLoadout;sourceWorld=$WorldPath;initialWorldSHA256=$initialWorldHash;packageSHA256=(Get-FileHash -LiteralPath $package).Hash;binding=$bound.binding;spawn=$lifecycle.spawn;teardown=$lifecycle.teardown;results=(Get-Content -LiteralPath "$profile/natural-results.json" -Raw|ConvertFrom-Json)}
     if($JourneyLoadout){
         foreach($scenario in $report.results.scenarios){
             if($null -eq $scenario.cloudEnabled -or $null -eq $scenario.wingSlot -or
