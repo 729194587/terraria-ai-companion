@@ -87,3 +87,5 @@ pwsh -NoProfile -File scripts/start-server-ai-agent.ps1
 ## 本地开发产物
 
 构建包、测试世界、profile、Trace 和运行日志通常保存在 `.local/`。模型凭据保存在本地环境配置中。
+
+在仓库根目录运行 `./scripts/cleanup-local.ps1` 可预览旧专服测试目录的大小、可回收空间和保留原因。脚本只处理列出的测试目录类型。`.local/` 也用于 Git 工作树、Python 环境和复验用的世界副本。工作树位置可用 `git worktree list` 查看。

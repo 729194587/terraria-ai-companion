@@ -4,6 +4,7 @@
 
 ## 阶段报告
 
+- [开荒外出和工作台验收](EARLY_GAME_FIELD_TESTS.md)（地表探索、遇敌续行、地下搜集、满包补拿与工作台）
 - [G81：Server AI IPC](G81_SERVER_AI_IPC.md)
 - [G82：Server AI 原子操作](G82_SERVER_AI_ATOMIC.md)
 - [G82：Server AI 读取接口](G82_STAGE2_SERVER_READS.md)

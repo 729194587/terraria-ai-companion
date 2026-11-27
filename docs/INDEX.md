@@ -9,6 +9,7 @@
 | [开发指南](DEVELOPMENT.md) | 环境配置、构建和测试 |
 | [工程设计](ENGINEERING.md) | Agent、游戏运行时、原生执行与身份模型 |
 | [开发路线图](DEVELOPMENT_ROADMAP.md) | 当前系统能力和后续工作重点 |
+| [开荒阶段验收记录](archive/EARLY_GAME_FIELD_TESTS.md) | 专服实测结果、失败复现与复验范围 |
 | [tModLoader 引擎配置](TML_ENGINE_MIGRATION.md) | 引擎版本、构建配置与角色迁移 |
 
 ## Agent 与运行时
