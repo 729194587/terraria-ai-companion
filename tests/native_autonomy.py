@@ -50,7 +50,7 @@ class FixtureModel:
                 return dict(tool_calls=[dict(function=dict(name=name, arguments=json.dumps(
                     dict(objective=objective, **arguments))))])
             context = observation.get('explorationContext') or {}
-            ore = next((h for sample in context.get('investigating', []) for h in sample['items']
+            ore = next((h for h in context.get('findings', [])
                         if h['kind']=='ore_component'), None)
             if self.direction_case=='investigate' and ore:
                 tile = ore['anchor']
@@ -59,7 +59,7 @@ class FixtureModel:
                     return choose('navigate_to','approach the newly observed ore',x=tile['x']*16-24,y=tile['y']*16)
                 if previous=='navigate_to':
                     return choose('mine_target','mine the observed ore',**tile)
-            return choose('explore','survey the east corridor',direction='right')
+            return choose('explore','survey the east corridor',direction='right',seek='ore_component')
         if len(self.samples)>1:
             if len(self.samples)==2 and any(hit['kind']=='life_crystal' and hit['status']=='complete'
                    for hit in observation['resources']['items']):
@@ -175,9 +175,11 @@ async def live_cave_run(mode, controller, report):
                 if mode.error:
                     raise RuntimeError(mode.error)
                 obs = await mode.observe()
-                site = obs['localScene']['passages'].get('returnTarget')
+                actor = obs['localScene']['actor']
+                bounds = actor['boundsWorldPixels']
+                site = dict(x=bounds['x']+bounds['width']/2, y=actor['feetY'])
                 cycles.append(dict(phase=mode.phase,receipt=dict(mode.progress),stance=site))
-                if site and site['y'] >= start+6*16 and mode.progress.get('inputsReleased'):
+                if site['y'] >= start+6*16 and mode.progress.get('inputsReleased'):
                     if below and abs(site['x']-below['x']) >= 4*16:
                         report.update(descendedTo=below,investigatedTo=site,passed=True)
                         return

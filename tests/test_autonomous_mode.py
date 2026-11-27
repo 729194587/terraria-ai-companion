@@ -178,23 +178,6 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.mode.act.assert_awaited_once()
             self.assertTrue(self.mode.hold)
 
-    async def test_incomplete_baseline_waits_for_coverage_and_resumes(self):
-        await self.mode.command('on')
-        self.scene['resources']['complete']=False
-        self.mode.tools.return_value=[dict(function=dict(name='explore'))]
-        call=dict(tool_calls=[dict(function=dict(name='explore',arguments=json.dumps(dict(direction='right',objective='survey'))))])
-        self.agent.llm.complete.side_effect=[call,dict(content='reassess')]
-        result=dict(returnReason='observation_incomplete',findings=[],baseline=dict(complete=False))
-        self.mode.act=AsyncMock(return_value=dict(status='failed',inputsReleased=True,explorationResult=result))
-        for _ in range(4):
-            await self.cycle()
-        self.assertEqual(self.mode.phase,'observation_incomplete')
-        self.assertFalse(self.mode.stalled)
-        self.mode.act.assert_awaited_once()
-        self.scene['resources']['complete']=True
-        await self.cycle()
-        self.assertEqual(self.agent.llm.complete.await_count,2)
-
     async def test_discovery_returns_to_main_model_and_survives_timeout_and_detour(self):
         await self.mode.command('on')
         self.mode.tools.return_value=[dict(function=dict(name=n)) for n in ('explore','navigate_to','mine_target')]
@@ -214,7 +197,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payloads[1],payloads[2])
         for payload in payloads[1:]:
             self.assertEqual(payload['explorationContext']['direction'],'right')
-            self.assertEqual(payload['explorationContext']['investigating'],[event])
+            self.assertEqual(payload['explorationContext']['findings'],event['items'])
         self.assertEqual(payloads[-1]['explorationContext']['lastInvestigation']['operation'],'mine_target')
         self.assertEqual(len(self.mode.stalled),2)  # only the two mocked, effectless detour actions
         self.assertEqual(self.mode.act.await_count,4)

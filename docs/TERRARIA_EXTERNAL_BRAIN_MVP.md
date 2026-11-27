@@ -232,20 +232,19 @@ DeepSeek Harness 的 MCP Client 不支持 MCP Prompts，因此 Guide 使用普�
 |---|---|---|
 | `guide` | 获取当前游戏 Agent Guide | `lua_agent.server_contract()` |
 | `execute_lua` | 执行完整 Lua 程序，组合查询、动作和任务 API | 现有 `lua_agent.TOOL` + `ToolExecutor` / `LuaRuntime` |
-| `explore` | 按 left、right、up、down 和简短 objective 探索未知区域 | 与内置 Agent 共享 `directional_explorer.run()` |
+| `explore` | 沿 left、right、up、down 分段探索，可选填 objective 或 seek | 与内置 Agent 共享 `directional_explorer.run()` |
+| `exploration_status` | 查询当前位置的资源与路线，或查看上一趟的逐段证据 | 传入 `lastTrip=true` 读取行程记录 |
 | `read_skill` | 按 ID 读取一篇玩法 Skill | `gameplay_skills.TOOL` |
 | `get_events` | 有界长轮询游戏内指令和系统事件 | 现有 `Bridge` 事件 |
 | `say` | 让 AI Player 在游戏内发言 | `ServerAiBridge` 原生 AI chat 路径 |
 
 `execute_lua` 和 `read_skill` 的 Schema、描述与能力门禁复用当前代码。工具列表只暴露当前后端可用的功能。
 
-连接支持区域资源感知、方向落脚候选、场景观察、导航和持续任务协调时，可调用 `explore`。默认在首次发现新资源、资源发生变化或发现新通道时返回。模型根据需要决定继续前进、采集或改道。可选 `seek` 指定值得停下的线索，例如 `passage`、`chest`、`ore_component` 或精确的 `Terraria/Iron`。途中其他资源仍进入 `findings`。初始采样宽度为 120×68 Tile。重试后覆盖仍不足时，角色留在原地。自由探索和寻找通道时，若全窗已采样且仅资源清单超出数量上限，仍可按新鲜地形选路，资源清单保留截断标记。
+调用 `explore({"direction":"right"})` 可沿给定方向连续探路。每段从角色实际脚下选择一个前方落区，用现有原生导航走过去，确认释放后观察，再从新位置推进。一次最多 6 段，每段目标最多约 32 格，单段等待上限 12 秒，整趟移动共用 45 秒预算。AiMap 随角色实际位置通过专服游戏更新揭示地形。预算用尽、没有前向位移、缺少可确认的落点、原生导航受阻或控制中断时，本次调用结束。
 
-遇到区域采样超时，宿主再读取一次 60×34 Tile 的近区，以近区实际覆盖决定能否行动。较大窗口已观察到的发现保存在 `widerSample` 中，探索回执的 `coverage` 分别报告两次采样范围。
+默认沿途记录资源和通道。可选 `seek` 是每段走完后检查的停止条件，例如 `chest`、`Terraria/Iron`、`passage`，或用 `any` 遇发现就停。可选 `objective` 记录此次意图。是否采集、下行、折返或继续由模型选择。路线和落点使用世界像素，资源锚点使用 Tile 坐标。
 
-外脑可以先调用只读的 `exploration_status()`。它在一个回复中提供候选路线及其近期足迹、附近未知格数、资源、危害和历史岔口。一次 `explore` 因发现停下时，`resumeOptions` 保存当时的位置、方向和目标。调查后仍可查询它；模型从该处沿原方向继续并实际前进后，对应记录移除。最多保留本次控制会话中六个续行位置。内置自主模式每轮会直接收到这些信息。
-
-服务器公布 `server_ai_passages_v1` 时，`explorationResult.passages` 包含洞口、露出的下行落点和分支。向下探索优先经过洞口中继点；出现已确认的局部碰撞或无路回执时，宿主从新位置观察并在剩余预算内最多尝试两次替代落点。`passageMemory` 保存本租约内近期岔口、回程位置及各出口的到访状态。可用 `navigate_to` 回到历史脚下坐标，复查地形后调查另一支。内置自主模式共用这一流程。玩家明确委托探完返回时，可使用另有返程验证的 `explore_frontier`。已知目的地使用 Navigation，调查资源可用 `mine_target` 和 `collect_drops`。
+`explorationResult` 默认只给出终点、位移、段数、结束原因、最多八个资源线索、近期通道线索及当前位置的出路。`partialResourceScan` 标记有未完整覆盖的资源观察。资源窗口采样超时后会尝试一次近区扫描，局部落点通过检查时可以继续。用 `exploration_status({"lastTrip":true})` 读取当前租约最近结束行程的逐段回执和采样覆盖；用 `exploration_status({})` 读取现场详情。需实际返回的委托可使用 `explore_frontier`。
 
 `explore`、`execute_lua`、`say` 互斥，等待 `get_events` 可以并行。取消探索或关闭会话时，宿主按已分配的原生任务 ID 清理导航并核验终态和输入释放；结果不确定会隔离宿主。任务 origin 中的 MCP 请求、租约版本与 segment 可关联到原生 taskId 和释放回执。
 

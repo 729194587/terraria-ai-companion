@@ -84,7 +84,7 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['isError'],result)
         view=result['structuredContent']
         self.assertEqual(view['passages']['routes'][0]['unknownNearbyTiles'],24)
-        self.assertEqual(view['resumeOptions'],[])
+        self.assertEqual(view['resources']['items'],[])
         self.assertEqual(self.aihost.x,100)
     async def asyncSetUp(self):
         if self._testMethodName.startswith('test_explore'):
@@ -162,7 +162,8 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
         schema = next(t['inputSchema'] for t in listing.json()['result']['tools'] if t['name'] == 'explore')
         self.assertEqual(set(schema['properties']), {'direction', 'objective', 'seek'})
         guide = (await self.tool('guide', {'full': True})).json()['result']['structuredContent']
-        self.assertIn('explore(direction,objective)', guide['instructions'])
+        self.assertIn('explore(direction)', guide['instructions'])
+        self.assertEqual(schema['required'],['direction'])
         for bad in ({}, dict(EXPLORE, direction='east'), dict(EXPLORE, objective=' '),
                     dict(EXPLORE, objective='x'*241), dict(EXPLORE, distance=512)):
             self.assertTrue((await self.tool('explore', bad)).json()['result']['isError'])
@@ -183,24 +184,21 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(response['isError'], response)
             return response['structuredContent']['explorationResult']
 
-        with patch.object(directional_explorer, 'run', wraps=directional_explorer.run) as shared:
-            first = await explore()
-            shared.assert_awaited_once()
-        self.assertEqual(('discovery', []), (first['returnReason'], first['segments']))
-        self.assertEqual(tile, first['findings'][0]['items'][0]['anchor'])
-        self.aihost.complete = False
-        self.assertEqual('observation_incomplete', (await explore())['returnReason'])
-        self.aihost.complete = True
-        # Inspect the discovered resource through the ordinary Lua entry, then resume.
-        self.assertFalse((await self.tool('execute_lua', dict(source="return api('get_player_state')"))).json()['result']['isError'])
-        with patch.object(directional_explorer, 'MAX_SEGMENTS', 2):
-            resumed = await explore()
-        self.assertEqual((2, []), (resumed['progress']['completedSegments'], resumed['findings']))
+        with patch.object(directional_explorer,'MAX_SEGMENTS',2):
+            result=await explore()
+            self.assertEqual(('budget_reached',2),(result['returnReason'],result['progress']['completedSegments']))
+            self.assertEqual(result['findings'][0]['anchor'],tile)
+            self.assertNotIn('segments',result)
+            details=(await self.tool('exploration_status',dict(lastTrip=True))).json()['result']['structuredContent']['lastTrip']
+            self.assertEqual(len(details['segments']),2)
+            self.assertTrue(all(s['receipt']['inputsReleased'] for s in details['segments']))
+            self.aihost.complete=False
+            partial=await explore()
+            self.assertTrue(partial['partialResourceScan'])
+            self.assertEqual(partial['findingCount'],0)
         await self.http.delete(self.url, headers=self.headers)
         await self.initialize()
-        self.assertEqual('discovery', (await explore())['returnReason'])
-        self.aihost.hits = []
-        self.assertEqual('absent_at_last_location', (await explore())['findings'][0]['changes'][0]['state'])
+        self.assertIsNone((await self.tool('exploration_status',dict(lastTrip=True))).json()['result']['structuredContent']['lastTrip'])
 
     async def test_explore_cancel_during_admission(self):
         await self.initialize()

@@ -36,7 +36,7 @@ async def verify_cave(client, child, report):
         request_id = await client.send(child,'tools/call',dict(name='explore',arguments=dict(direction='down',objective='investigate the cave opening',seek='passage')))
         msg = json.loads(await asyncio.wait_for(child.stdout.readline(),60))
         assert msg['id']==request_id and not msg['result']['isError'], msg
-        trip = msg['result']['structuredContent']['explorationResult']
+        trip = (await client.request(child,'tools/call',dict(name='exploration_status',arguments={'lastTrip':True})))['structuredContent']['lastTrip']
         report['trips'].append(trip)
         if trip['finish']['feetY'] >= entry['returnTarget']['y']+6*16:
             break
@@ -47,13 +47,10 @@ async def verify_cave(client, child, report):
     assert any(seg['receipt']['status']=='completed' and seg['receipt']['inputsReleased']
                for trip in report['trips'] for seg in trip['segments'])
     # Select offered arms and a remembered return point. No hidden fixture coordinates.
-    forks = [s for trip in report['trips'] for s in trip['passageMemory'] if s['kind']=='junction']
-    if underground['junction']:
-        forks.append(underground)
-    fork = next(s for s in reversed(forks) if {'left','right'} <= {e['direction'] for e in s['exits']})
+    assert underground['junction'] and {'left','right'} <= {e['direction'] for e in underground['exits']}, underground
     for direction in ('left','right'):
-        await go(fork['returnTarget'])
-        await go(next(e['target'] for e in fork['exits'] if e['direction']==direction))
+        await go(underground['returnTarget'])
+        await go(next(e['target'] for e in underground['exits'] if e['direction']==direction))
 
 
 async def verify(port, profile, cave=False):
@@ -83,13 +80,13 @@ async def verify(port, profile, cave=False):
                 await asyncio.wait_for(child.communicate(),15)
                 assert child.returncode == 0
                 return
-            args = dict(direction='right', objective='survey the eastern corridor')
+            args = dict(direction='right', objective='survey the eastern corridor', seek='ore_component')
             call = dict(name='explore', arguments=args)
             for _ in range(8):
                 request_id = await client.send(child, 'tools/call', call)
                 response = json.loads(await asyncio.wait_for(child.stdout.readline(), 60))
                 assert response['id'] == request_id and not response['result']['isError'], response
-                trip = response['result']['structuredContent']['explorationResult']
+                trip = (await client.request(child,'tools/call',dict(name='exploration_status',arguments={'lastTrip':True})))['structuredContent']['lastTrip']
                 report['trips'].append(trip)
                 if any(hit['kind'] == 'ore_component' for finding in trip['findings'] for hit in finding['items']):
                     break
@@ -114,12 +111,11 @@ async def verify(port, profile, cave=False):
                 proof = task['result']
                 report[operation] = dict(taskId=task['taskId'], status=proof['status'], inputsReleased=proof['inputsReleased'])
                 assert proof['completed'] and proof['inputsReleased'], report[operation]
-            # The removal itself is a meaningful baseline change; hand it back before moving.
-            removed = await client.request(child, 'tools/call', call)
-            change = removed['structuredContent']['explorationResult']
+            # The live scene is available on demand after an investigation.
+            obs = await client.request(child,'tools/call',dict(name='exploration_status',arguments={}))
+            change = obs['structuredContent']['resources']
             report['afterMining'] = change
-            assert not change['segments'] and any(h['anchor'] == ore['anchor'] for finding in change['findings']
-                                                  for h in finding['changes'])
+            assert any(h['anchor']==ore['anchor'] for h in change['changes'])
             # Close stdin while a new native segment is running. The client shares no
             # task handles with the host and observes admission through get_events.
             pending = await client.send(child, 'tools/call', call)

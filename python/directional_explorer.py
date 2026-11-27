@@ -4,7 +4,6 @@ import time
 
 import atomic_operations as atomic
 from control import BridgeError
-from passage_memory import PassageMemory, nearby
 
 DIRECTIONS = ('left', 'right', 'up', 'down')
 MAX_SEGMENTS = 6
@@ -13,11 +12,11 @@ TRIP_SECONDS = 45
 STEP_PIXELS = 32 * 16
 
 
-EXPLORE_TOOL = atomic.tool('explore', 'Explore in a direction until a discovery, local obstruction or budget.',
+EXPLORE_TOOL = atomic.tool('explore', 'Travel in short hops in one direction, observing along the way. Stops at the budget, an obstacle or an optional seek match.',
     {'direction': {'type':'string', 'enum':list(DIRECTIONS)},
      'objective': {'type':'string','minLength':1,'maxLength':240},
      'seek': {'type':'string','minLength':1,'maxLength':96,
-              'description':'Optional discovery to stop for: passage, a resource kind (ore_component, chest, life_crystal), or an exact contentKey such as Terraria/Iron. Default: any.'}}, ['direction','objective'])
+              'description':'Optional stop after a hop: any new finding, passage, a resource kind, or an exact contentKey. Omit to keep going.'}}, ['direction'])
 
 
 def valid_options(args):
@@ -62,46 +61,34 @@ def position(actor):
     return dict(leftX=actor['boundsWorldPixels']['x'], feetY=actor['feetY'])
 
 
-def destinations(scene, direction):
+def destination(scene, direction):
+    """Project one hop onto a real landing; native navigation tests traversability."""
     actor = scene['actor']
-    left = actor['boundsWorldPixels']['x']
-    width = actor['boundsWorldPixels']['width']
+    left, width = actor['boundsWorldPixels']['x'], actor['boundsWorldPixels']['width']
     feet = actor['feetY']
-    options = []
     survey = scene.get('passages', {})
+    step = survey.get('descentStep')
+    if direction == 'down' and step and 0 < step['y']-feet <= STEP_PIXELS:
+        return step
+    horizontal = direction in ('left', 'right')
+    sign = 1 if direction in ('right', 'down') else -1
+    desired = left + sign * STEP_PIXELS if horizontal else left
     connected = set(survey.get('connectedLandingIds', ()))
-    def offer(x, y, priority):
-        dx, dy = x-width/2-left, y-feet
-        lateral = direction in ('left','right')
-        advance = {'right':dx,'left':-dx,'down':dy,'up':-dy}[direction]
-        if 16 <= advance <= STEP_PIXELS and not (lateral and x-width <= left <= x):
-            score = abs(advance-STEP_PIXELS) + (abs(dy) if lateral else abs(dx))
-            options.append((priority,score,round(x),round(y)))
-
-    if direction == 'down' and survey.get('descentStep'):
-        step = survey['descentStep']
-        offer(step['x'], step['y'], -1)
-    for e in survey.get('exits', ()):
-        # Enter the observed passage by stages. Both upward and downward travel
-        # need a real landing. An open shaft has no navigation target.
-        if direction in ('up','down'):
-            offer(e['target']['x'], e['target']['y'], 0)
-    for route in survey.get('routes', ()):
-        if route['direction']==direction and route['kind']=='lateral_landing':
-            offer(route['target']['x'], route['target']['y'], 0)
+    candidates = []
     for row in scene['landingRegions']['items']:
-        if survey and direction in ('up','down') and row['id'] not in connected:
+        if survey and not horizontal and row['id'] not in connected:
             continue
         region = row['target']
-        low, high = region['minPlayerLeftX'], region['maxPlayerLeftX']
-        desired = left + {'right': STEP_PIXELS, 'left': -STEP_PIXELS}.get(direction, 0)
-        landing = max(low, min(high, desired))
-        offer(landing+width/2, region['surfaceY'], 1)
-    return [dict(x=x,y=y) for x,y in dict.fromkeys((x,y) for _,_,x,y in sorted(options))]
-
-
-def destination(scene, direction):
-    return next(iter(destinations(scene,direction)), None)
+        x = max(region['minPlayerLeftX'], min(region['maxPlayerLeftX'], desired))
+        y = region['surfaceY']
+        dx, dy = x-left, y-feet
+        advance = sign * (dx if horizontal else dy)
+        if 16 <= advance <= STEP_PIXELS:
+            cost = STEP_PIXELS-advance + abs(dy if horizontal else dx)
+            candidates.append((cost, round(x+width/2), round(y)))
+    if candidates:
+        _, x, y = min(candidates)
+        return dict(x=x, y=y)
 
 
 def scan_coverage(scan):
@@ -114,141 +101,93 @@ def scan_coverage(scan):
     return coverage
 
 
-def sufficient_scan(scan, seek):
-    if scan['complete']:
-        return True
-    # Dense underground resource lists can exceed the output cap even when
-    # every tile was sampled. Leave the list marked partial in the receipt.
-    return (seek in ('any','passage') and scan.get('truncated') is True and scan.get('unknownCells') == 0
-            and scan.get('scannedTiles',0) > 0 and scan['scannedTiles'] == scan.get('requestedTiles')
-            and not scan.get('samplingBudgetReached') and not scan.get('objectGroupingTruncated')
-            and scan.get('matchedCount',0) > len(scan.get('items',())))
-
-
 async def landing_scene(bridge, direction):
     args = dict(layers=['landingRegions'])
     if 'server_ai_passages_v1' in bridge.hello.get('capabilities', ()):
         args['includePassages'] = True
     if 'server_ai_directional_landings_v1' in bridge.hello.get('capabilities', ()):
         args['landingDirection'] = direction
-    for cap in (12, 24):
-        reply = await atomic.dispatch(bridge, 'observe_scene', dict(args, maxRegions=cap))
-        if not reply.get('valid'):
-            raise BridgeError('local landing observation unavailable')
-        scene = reply['data']
-        if not scene['landingRegions']['truncated']:
-            return scene
-    if scene.get('passages',{}).get('originResolved'):
-        return scene  # Exits were computed before limiting the landing list.
-    raise BridgeError('landingRegions.truncated after expanding maxRegions from 12 to 24')
+    reply = await atomic.dispatch(bridge, 'observe_scene', dict(args, maxRegions=24))
+    if not reply.get('valid'):
+        raise BridgeError('local landing observation unavailable')
+    return reply['data']
 
 
-async def run(mode, direction, version, baseline, *, report_initial_findings=False, seek='any'):
+def route_hints(scene):
+    return [{k:r[k] for k in ('direction','kind','target','visitState') if k in r}
+            for r in scene.get('passages',{}).get('routes',())]
+
+
+def brief(result):
+    """Small decision context; the host retains the original samples and receipts."""
+    finds = []
+    for event in result['findings']:
+        for hit in (*event['items'], *event.get('changes', ())):
+            item = {k:hit[k] for k in ('kind','contentKey','anchor','state') if k in hit}
+            if item not in finds:
+                finds.append(item)
+    passages = [e for segment in result.get('segments',()) for e in segment.get('passages',())]
+    samples = [result.get('baseline',{}), *result.get('coverage',())]
+    return dict(direction=result['direction'], finish=result.get('finish'), progress=result['progress'],
+                returnReason=result['returnReason'], reason=result.get('reason'), findings=finds[:8],
+                findingCount=len(finds), routes=result.get('routes',[]),
+                passageSightings=[{k:e[k] for k in ('kind','direction','target')} for e in passages[-3:]],
+                partialResourceScan=any(s.get('complete') is False or 'widerCoverage' in s for s in samples))
+
+
+async def run(mode, direction, version, baseline, *, seek=None):
     bridge = mode.agent.bridge
     binding = dict(bridge.binding)
     deadline = time.monotonic() + TRIP_SECONDS
     segments, samples, findings = [], [], []
     start = finish = baseline['position']
-    reason = 'budget_reached'
-    detail = 'exploration budget reached'
+    reason, detail = 'budget_reached', 'segment budget reached'
     last = {}
-    memory = mode.passage_memory
-    retries = 0
-    next_scene = None
     result = dict(direction=direction, objective=mode.objective, coordinateUnit='world_pixels',
-                  start=start, finish=finish, baseline=scan_coverage(baseline), segments=segments, findings=findings, coverage=samples,
-                  progress=dict(completedSegments=0, newStances=0, dx=0., dy=0.), lastActionResult={})
-    # Publish in-flight evidence so that revocation can finish this same receipt.
+                  start=start, finish=finish, baseline=scan_coverage(baseline), segments=segments,
+                  findings=findings, coverage=samples, progress=dict(completedSegments=0, dx=0., dy=0.),
+                  lastActionResult={}, seek=seek)
+    # Revocation finalizes the same in-flight receipt.
     mode.progress['explorationResult'] = result
-    result['seek'] = seek
-    result['baselineSufficient'] = bool(sufficient_scan(baseline,seek))
 
     def record_findings(scan):
-        stop = False
-        for sample in (scan.get('widerSample', {}),scan):
-            items, changes = sample.get('discoveries', []), sample.get('changes', [])
+        matched = False
+        for sample in (scan.get('widerSample',{}), scan):
+            items, changes = sample.get('discoveries',[]), sample.get('changes',[])
             if items or changes:
                 findings.append(dict(**scan_coverage(sample), items=items, changes=changes))
-                stop |= any(seek in ('any', h.get('kind'), h.get('contentKey')) for h in (*items,*changes))
-        return stop
+                matched |= seek=='any' or any(seek and seek in (h.get('kind'),h.get('contentKey')) for h in items)
+        return matched
 
     def authorized():
         if version != mode.version or mode.agent.bridge is not bridge or bridge.binding != binding:
             raise asyncio.CancelledError
 
-    def observe_passages(scene):
-        survey = scene.get('passages', {})
-        if survey:
-            tick = scene['gameUpdate']
-            result['passages'] = dict(gameUpdate=tick, **{k:v for k,v in survey.items() if k!='connectedLandingIds'})
-            if memory.observe(survey,tick):
-                result['passageDiscovery'] = dict(gameUpdate=tick, returnTarget=survey['returnTarget'],
-                                                  junction=survey['junction'], exits=survey['exits'],
-                                                  openShaft=survey.get('openShaft'))
-                return True
-        return False
-
-    async def sense():
-        nonlocal finish
-        scan = await mode.resource_scan(version)
-        finish = result['finish'] = scan['position']
-        result['progress'].update(dx=finish['leftX']-start['leftX'], dy=finish['feetY']-start['feetY'])
-        coverage = scan_coverage(scan)
-        samples.append(coverage)
-        if record_findings(scan):
-            return 'discovery'
-        if not sufficient_scan(scan,seek):
-            return 'observation_incomplete'
-
+    record_findings(baseline)
+    scene = None
     for _ in range(MAX_SEGMENTS):
         authorized()
-        if not segments and report_initial_findings and record_findings(baseline):
-            if result['baselineSufficient']:
-                reason = detail = 'discovery'
-                break
-        if not result['baselineSufficient']:
-            reason, detail = 'observation_incomplete', 'initial resource baseline incomplete'
-            break
         try:
-            if next_scene is None:
+            if scene is None:
                 scene = await landing_scene(bridge, direction)
-                new_passage = observe_passages(scene)
-            else:
-                scene, next_scene = next_scene, None
-                new_passage = False
         except (BridgeError, OSError) as error:
             reason, detail = 'observation_incomplete', str(error)
             break
+        authorized()
         finish = position(scene['actor'])
         if not segments:
             start = result['start'] = result['finish'] = finish
+        result['routes'] = route_hints(scene)
         if time.monotonic() >= deadline:
+            detail = 'travel time budget reached'
             break
-        survey = scene.get('passages', {})
-        tick = scene.get('gameUpdate', 0)
-        origin = dict(x=round(finish['leftX']+scene['actor']['boundsWorldPixels']['width']/2), y=round(finish['feetY']))
-        if new_passage and seek in ('any','passage'):
-            reason, detail = 'discovery', 'new passage to investigate'
-            break
-        choices = [p for p in destinations(scene,direction) if not memory.failed(origin,p,tick)]
-        step = survey.get('descentStep')
-        if direction == 'down' and step in choices:
-            target = step
-        else:
-            walked = [r['target'] for r in survey.get('routes', ()) if r['visitState']=='walked_nearby']
-            target = next((p for p in choices if not any(nearby(p,old,2) for old in (*walked,*memory.arrivals))),
-                          next(iter(choices), None))
+        target = destination(scene,direction)
         if target is None:
-            if last.get('status')=='failed':
-                reason, detail = 'blocked', last['reason']
-            elif direction == 'down' and survey.get('openShaft'):
-                reason, detail = 'observation_incomplete', 'shaft continues below the observed window; no confirmed lower landing'
-            elif (scene['landingRegions']['truncated'] or survey and not survey['originResolved']):
-                reason, detail = 'observation_incomplete', 'landing survey incomplete'
-            elif scene['coverage']['geometryComplete']:
-                reason, detail = 'blocked', 'no forward landing in current local candidates'
-            else:
-                reason, detail = 'observation_incomplete', 'no forward landing in partially known geometry'
+            survey = scene.get('passages',{})
+            complete = (scene['coverage']['geometryComplete'] and not scene['landingRegions']['truncated']
+                        and survey.get('originResolved',True) and not (direction=='down' and survey.get('openShaft')))
+            reason = 'blocked' if complete else 'observation_incomplete'
+            detail = 'no forward landing observed' if complete else 'no confirmed landing in partially observed terrain'
             break
         authorized()
         segment_deadline = time.monotonic() + SEGMENT_SECONDS
@@ -261,6 +200,7 @@ async def run(mode, direction, version, baseline, *, report_initial_findings=Fal
         task_id = record['view']['taskId']
         segment = dict(start=finish, target=target, taskId=task_id)
         segments.append(segment)
+        result['routes'] = []
         expired = False
         try:
             authorized()
@@ -293,58 +233,48 @@ async def run(mode, direction, version, baseline, *, report_initial_findings=Fal
         authorized()
         result['progress']['completedSegments'] += int(last['status']=='completed')
         try:
-            detected = await sense()
+            scan = await mode.resource_scan(version)
+            authorized()
+            finish = segment['finish'] = result['finish'] = scan['position']
+            samples.append(scan_coverage(scan))
+            result['progress'].update(dx=finish['leftX']-start['leftX'], dy=finish['feetY']-start['feetY'])
+            matched = record_findings(scan)
+            if seek and seek not in ('any','passage'):
+                hit = next((h for h in scan.get('items',()) if seek in (h.get('kind'),h.get('contentKey'))),None)
+                if hit and not matched:
+                    findings.append(dict(**scan_coverage(scan),items=[hit],changes=[]))
+                    matched = True
         except (BridgeError, OSError) as error:
-            detected, detail = 'observation_incomplete', str(error)
-            segment['observationError'] = detail
-        segment['finish'] = finish
-        if last['status']=='completed' and 'observationError' not in segment and finish != segment['start']:
-            point = dict(x=round(finish['leftX']+scene['actor']['boundsWorldPixels']['width']/2), y=round(finish['feetY']))
-            result['progress']['newStances'] += int(memory.arrived(point))
-            if survey and not expired:
-                try:
-                    next_scene = await landing_scene(bridge, direction)
-                    authorized()
-                    if observe_passages(next_scene) and seek in ('any','passage') and detected is None:
-                        detected = 'discovery'
-                except (BridgeError, OSError) as error:
-                    detected, detail = 'observation_incomplete', str(error)
-        if expired and last['status'] in ('cancelled','completed'):
-            # Release and observation may finish after both deadlines. Classify by
-            # the deadline that ended the wait, retaining any findings from sense().
-            if segment_deadline < deadline:
-                reason, detail = 'segment_time_limit', 'navigation segment time limit reached'
-            else:
-                reason, detail = 'budget_reached', 'exploration time budget reached'
+            reason, detail = 'observation_incomplete', str(error)
             break
-        if detected == 'discovery':
-            reason = detail = detected
+        if expired:
+            reason = 'segment_time_limit' if segment_deadline < deadline else 'budget_reached'
+            detail = 'navigation time budget reached'
             break
-        if last['status'] in ('failed','timeout'):
-            reason, detail = 'blocked', last.get('reason','navigation failed')
-            local_failure = detail in ('collision','navigation_local_frontier_exhausted','navigation_stalled',
-                                       'navigation_liquid_local_frontier_exhausted','navigation_repeated_edit_checkpoint')
-            if last['status']=='failed' and local_failure:
-                failed_at = samples[-1].get('gameUpdate',tick) if samples and 'observationError' not in segment else tick
-                memory.reject(origin,target,failed_at)
-                if not detected and retries < 2 and len(segments)<MAX_SEGMENTS:
-                    retries += 1
-                    continue
+        if last['status'] != 'completed':
+            reason = 'segment_time_limit' if last['status']=='timeout' else 'blocked'
+            detail = last.get('reason','navigation failed')
             break
-        if detected:
-            reason = detected
-            if detail == 'exploration budget reached':
-                detail = 'segment-end resource scan incomplete'
+        axis = 'leftX' if direction in ('left','right') else 'feetY'
+        advance = (finish[axis]-segment['start'][axis]) * (1 if direction in ('right','down') else -1)
+        if advance < 1:
+            reason, detail = 'blocked', 'no observed forward displacement'
             break
-        if finish == segment['start']:
-            reason, detail = 'blocked', 'navigation completed without observed displacement'
+        try:
+            scene = await landing_scene(bridge, direction)
+            authorized()
+        except (BridgeError, OSError) as error:
+            reason, detail = 'observation_incomplete', str(error)
             break
-        reason, detail = 'budget_reached', 'exploration budget reached'
+        result['routes'] = route_hints(scene)
+        passages = [e for e in scene.get('passages',{}).get('exits',()) if e['kind']!='open_landing']
+        if passages:
+            segment['passages'] = passages
+        if matched or (seek in ('passage','any') and passages):
+            reason, detail = 'discovery', 'requested observation found'
+            break
 
-    result.update(returnReason=reason, reason=detail, lastActionResult=mode.receipt_fields(last),
-                  passageMemory=memory.summary())
-    if reason not in ('outcome_unknown','interrupted'):
-        result['resumeOptions'] = memory.finish_trip(result)
+    result.update(returnReason=reason, reason=detail, lastActionResult=mode.receipt_fields(last))
     normal = reason in ('discovery','budget_reached')
     status = 'completed' if normal else {'outcome_unknown':'unknown','interrupted':'cancelled',
                                          'segment_time_limit':'timeout'}.get(reason,'failed')

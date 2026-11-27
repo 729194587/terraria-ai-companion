@@ -23,13 +23,9 @@ from lua_runtime import LuaRuntime
 
 
 EXPLORER_GUIDE = (
-    '未知区域优先调用 MCP explore(direction,objective)，避免用 Lua 循环查询、导航和扫描。'
-    '可先用 exploration_status 比较当前路线的实际足迹、附近未知格数、发现和先前中断的方向。'
-    '根据角色需要选择调查、经过或改道。已知目的地使用 navigate_to。'
-    '根据 explorationResult 的 returnReason、findings、实际位移和原生回执决定调查、沿原方向续行或改向。'
-    '各落点 target 使用世界像素。resumeOptions 保留发现时的位置和原探索方向，调查后可继续。'
-    '可选 seek 按线索种类或 contentKey 控制何时停下来。'
-    'completed 或 budget_reached 只描述本次有界探索，整体目标仍需核验。'
+    'explore(direction) 沿该方向连续走几段，返回实际位移、沿途发现、附近出路和结束原因。'
+    '可选 seek 指定希望提前停下的发现。调查、采集或继续由你决定。'
+    '用 exploration_status 查询现场，用 exploration_status(lastTrip=true) 查上次行程的详细回执。'
 )
 
 
@@ -44,14 +40,13 @@ def explorer_available(agent):
 
 
 class ExternalExplorer(explorer.ExplorerContext):
-    """One MCP call using the current lease's resource and passage history."""
+    """One MCP trip using the current lease's navigation and resource observations."""
 
     def __init__(self, host, objective):
         self.host = host
         self.agent = host.agent
         self.mailbox = self.agent.program_tasks
         self.resources = host.resources
-        self.passage_memory = host.passage_memory
         self.objective = objective
         self.progress = {}
         self.task_id = None
@@ -114,13 +109,13 @@ class ExternalExplorer(explorer.ExplorerContext):
         self.host.last_outcome = outcome
         diagnostics.emit('mcp_explore_cleanup', **outcome)
 
-    async def run(self, direction, seek='any'):
+    async def run(self, direction, seek=None):
         version = self.host.lease_version
         if self.version != version:
             raise BridgeError('External explorer binding unavailable', status='stale_binding')
         try:
             baseline = await self.resource_scan(version)
-            result = await explorer.run(self, direction, version, baseline, report_initial_findings=True, seek=seek)
+            result = await explorer.run(self, direction, version, baseline, seek=seek)
             if result['status'] == 'unknown':
                 self.host.isolate()
             return result
@@ -136,8 +131,8 @@ class BrainHost:
         self.guide, native_tools = lua_agent.server_contract(self.bridge, compact=True)
         if explorer_available(agent):
             native_tools = [*native_tools, explorer.EXPLORE_TOOL]
-            if 'server_ai_passages_v1' in self.bridge.hello['capabilities']:
-                native_tools.append(atomic.tool('exploration_status','Observe nearby route options, recent foot visits, map unknowns, findings and interrupted headings. Read-only.',{}))
+            native_tools.append(atomic.tool('exploration_status','Read current exploration details or the previous trip trace.',
+                {'lastTrip': {'type':'boolean','default':False}}))
         if agent.notebook is not None:
             self.guide += agent_memory.MEMORY_RULES
             native_tools = [*native_tools, agent_memory.TOOL]
@@ -191,7 +186,7 @@ class BrainHost:
         self.lease_version += 1
         self.lease_binding = dict(self.bridge.binding)
         self.resources = ResourceHistory()
-        self.passage_memory = explorer.PassageMemory()
+        self.last_trip = None
         self.agent._brain_paused = True
         self.agent._active_turn_id = None
         self.agent._invalidate_turn('external_brain_handoff')
@@ -330,31 +325,34 @@ class BrainHost:
         self.execution_busy = True
         try:
             if name == 'exploration_status':
-                if args or 'server_ai_passages_v1' not in self.bridge.hello['capabilities']:
-                    raise ValueError('exploration_status requires passage observations and takes no arguments')
+                if set(args)-{'lastTrip'} or type(args.get('lastTrip',False)) is not bool:
+                    raise ValueError('Expected optional boolean lastTrip')
+                if args.get('lastTrip'):
+                    return dict(lastTrip=self.last_trip)
                 context = ExternalExplorer(self,'')
                 version = context.version
-                scene = await atomic.dispatch(self.bridge,'observe_scene',dict(
-                    layers=['landingRegions','hazards'],includePassages=True,maxRegions=8,maxHazards=6))
+                query = dict(layers=['landingRegions','hazards'],maxRegions=8,maxHazards=6)
+                if 'server_ai_passages_v1' in self.bridge.hello['capabilities']:
+                    query['includePassages'] = True
+                scene = await atomic.dispatch(self.bridge,'observe_scene',query)
                 if not scene.get('valid') or version is None or version != context.version:
                     raise BridgeError('Current local exploration observation unavailable')
                 scan = await context.resource_scan(version)
                 local = scene['data']
                 survey = local.get('passages') or {}
-                self.passage_memory.observe(survey,local['gameUpdate'])
-                return dict(gameUpdate=local['gameUpdate'],actor=local['actor'],
+                return dict(gameUpdate=scene.get('gameUpdate'),actor=local['actor'],
                             passages={k:v for k,v in survey.items() if k!='connectedLandingIds'},
-                            hazards=local['hazards'],resources=scan,passageMemory=self.passage_memory.summary(),
-                            resumeOptions=list(self.passage_memory.resumptions),**await self.runtime_context())
+                            hazards=local.get('hazards'),resources=scan,**await self.runtime_context())
             if name == 'explore':
+                objective = args.get('objective',args.get('direction'))
                 if (not explorer.valid_options({k:v for k,v in args.items() if k!='objective'})
-                        or not isinstance(args.get('objective'), str) or not args['objective'].strip()
-                        or len(args['objective']) > 240):
-                    raise ValueError('explore requires direction and a short objective (1..240 characters)')
-                trip = ExternalExplorer(self, args['objective'])
-                result = await trip.run(args['direction'], args.get('seek','any'))
-                diagnostics.emit('mcp_explore_result', explorationResult=result['explorationResult'])
-                return {**result, **await self.runtime_context()}
+                        or not isinstance(objective,str) or not 0<len(objective.strip())<=240):
+                    raise ValueError('Expected direction and optional objective or seek')
+                trip = ExternalExplorer(self, objective)
+                result = await trip.run(args['direction'],args.get('seek'))
+                self.last_trip = result['explorationResult']
+                diagnostics.emit('mcp_explore_result', explorationResult=self.last_trip)
+                return {**result, 'explorationResult':explorer.brief(self.last_trip), **self.event_context()}
             if name == 'say':
                 chat_id = self.agent._active_turn_id
                 if chat_id is None:
@@ -434,6 +432,9 @@ class BrainHost:
             tasks = self.agent.program_tasks.projection()
             context['runtimeTasks'] = tasks
             self.agent.program_tasks.consume(tasks['throughSequence'])
+        return {**context, **self.event_context()}
+
+    def event_context(self):
         events = list(self.events)
         for event in reversed(events):
             if self.is_chat(event) and event['eventId'] == self.agent._active_turn_id:
@@ -441,6 +442,5 @@ class BrainHost:
                 break
         self.events.clear()
         self.event_ready.clear()
-        context.update(events=events, eventCoverage={'maxEvents': self.events.maxlen,
+        return dict(events=events, eventCoverage={'maxEvents': self.events.maxlen,
                        'evictedCount': self.evicted, 'serverDroppedCount': self.dropped})
-        return context
