@@ -19,6 +19,35 @@ public sealed class AiMap
     public const int ChunkSize=32;
     private readonly Guid session=Guid.NewGuid();
     private readonly Dictionary<(int X,int Y),Chunk> chunks=new();
+    // Recent foot tiles, scoped to this loaded character/world. Seeing a tile
+    // and walking through it are independent observations.
+    private readonly Queue<(int,int)> recentFootTiles=new();
+    private readonly Dictionary<(int,int),int> footCounts=new();
+    private (int,int)? lastFoot;
+    internal void RecordFeet(int x,int y)
+    {
+        if(lastFoot==(x,y))return;
+        lastFoot=(x,y);
+        recentFootTiles.Enqueue((x,y));
+        footCounts[(x,y)]=footCounts.GetValueOrDefault((x,y))+1;
+        if(recentFootTiles.Count<=4096)return;
+        var oldest=recentFootTiles.Dequeue();
+        if(--footCounts[oldest]==0)footCounts.Remove(oldest);
+    }
+    internal bool WalkedNear(int x,int y)
+    {
+        for(int i=x-1;i<=x+1;i++)for(int j=y-1;j<=y+1;j++)
+            if(footCounts.ContainsKey((i,j)))return true;
+        return false;
+    }
+    internal int UnknownAround(int x,int y)
+    {
+        int count=0;
+        for(int i=Math.Max(0,x-4);i<=Math.Min(Width-1,x+4);i++)
+        for(int j=Math.Max(0,y-4);j<=Math.Min(Height-1,y+4);j++)
+            if(Get(i,j)==0)count++;
+        return count;
+    }
     private long revision;
     private bool sampling,batchChanged;
     internal void BeginSample(){sampling=true;batchChanged=false;}

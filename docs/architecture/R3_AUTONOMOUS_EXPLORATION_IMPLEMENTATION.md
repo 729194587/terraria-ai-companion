@@ -23,6 +23,10 @@ Frontier 从地图记忆中选出能看见未知格的观察站位，按预计�
 
 ## 复核入口
 
+自由探索盲测使用种子 `20261127` 新生成的小世界，每次从新角色出生点开始。使用自然地形测试宿主推动无人专服的游戏帧，期间排除非城镇 NPC，不注入行进路线。两名独立 MCP 驾驶者均只收到“去附近探索”和连接说明。第一次向右走了约 32 格，段末广域扫描超时。增加近区重试后，第二名驾驶者先发现铁矿，自选继续向右寻找通道。四段导航实际推进 2038 世界像素，途中记录锡矿，在 `open_descent` 处停下。左侧落点有近期足迹，下方落点没有近期足迹且周围 9×9 格中有 38 格未知。四段均确认到达和输入释放。此次没有下行或采集动作。两次驾驶者不同，位移只描述各自的选择。
+
+方向探索另有洞穴专服用例。用当前源码构建 CompanionBridge，向 `tests/verify_server_ai_native.ps1` 传 `-DirectionalExplore cave -PackagePath <本次构建包>`。脚本客户端经 MCP 读取真实场景，用方向探索进入洞道，通过叉口观察给出的世界像素坐标实走两支。回执保存在独立世界副本目录的 `external-explore.json`。带 `-LiveModel` 时改由已配置模型根据自然语言委托选路，`autonomy.json` 记录实际决定和位置。
+
 - 边界和清障成本回放使用 `./tests/run_frontier_replay.ps1`。局部物理规划和精确返程用例使用 `./tests/run_csharp_tests.ps1 -PlannerOnly`。
 - 使用 `./scripts/build-companion.ps1 -OutputPath .local/frontier-motion-build` 构建当前源码。运行 `./tests/verify_navigation_recovery_native.ps1 -PackagePath .local/frontier-motion-build/Mods/CompanionBridge.tmod -Frontier` 验证普通到点跨沟、探索跨沟往返、同一高台换装云瓶前后的可达性、有钩与无钩的同井返程、单向井和途中移除对岸。每次运行使用独立世界副本，输出目录含任务回执与运动轨迹。
 - 使用同一专服脚本和包，传入 `-ExtraJump -Scenes cloud_root,cloud_chain` 或 `-Wings -Scenes bone_chain` 验证装备动作和连续高台。

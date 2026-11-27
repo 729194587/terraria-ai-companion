@@ -77,6 +77,17 @@ internal static class ServerAiActionFixture
                             if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
                         }
                         var ore=Main.tile[left+111,floor];ore.TileType=TileID.Copper;
+                        if(Program.LaunchParameters.ContainsKey("-companioncavetest"))
+                        {
+                            // Surface opening, a halfway ledge, and two roofed underground arms.
+                            for(int dx=-24;dx<=42;dx++)for(int dy=0;dy<10;dy++)
+                            {
+                                if(dy<4 && (dx<3 || dx>10))continue;
+                                var tile=Main.tile[left+dx,floor+dy];tile.ClearEverything();
+                                if(dy==5 && dx is >=3 and <=5)
+                                {tile.HasTile=true;tile.TileType=TileID.Platforms;}
+                            }
+                        }
                     }
                     if(Program.LaunchParameters.ContainsKey("-companionperceptiontest"))
                     {

@@ -22,7 +22,14 @@ survival, inventory, crafting, combat or building objective yourself. Resources 
 A hit is not a landing point. navigate_to x/y are landing surface WORLD PIXELS (16 per Tile).
 Use a fresh reachable stance or a local landing candidate. You can make bounded reads. Choose one
 physical action per decision and supply its objective. Plain text ends the cycle until conditions change.
-Use explore(direction,objective) for unknown destinations. The host navigates short segments and returns
+Use explore(direction,objective) for unknown destinations. Compare localScene.passages.routes using
+recent foot visits and the number of still-unknown map tiles around each proposed landing.
+Use your current needs, equipment, hazards and alternatives to choose what to investigate or pass by.
+openShaft has no observed floor; descentStep is an observed intermediate landing. A known landing
+can be targeted with navigate_to. All passage targets use world pixels. Consult resumeOptions after
+an investigation or detour to continue a previous heading from its observed position, or choose a new one.
+Geometry alone cannot establish traversal or return. Set optional seek to passage or a resource
+kind/contentKey to keep moving past unrelated discoveries. The host navigates short segments and returns
 new resource facts here. Decide whether to investigate, continue, or change direction. To investigate,
 choose normal navigation/inspection/mining or interaction tools; verify the effect. Picking a tool alone
 does not investigate a resource. For ore, mine_target accepts observed Tile x/y and uses native mining
@@ -58,6 +65,8 @@ class AutonomousMode(explorer.ExplorerContext):
         self.error = None
         self.team_bosses = []
         self.resources = ResourceHistory()
+        self.passage_memory = explorer.PassageMemory()
+        self.passage_binding = None
         self.last_scene = None
         self.force_decision = True
         self.next_check = 0.
@@ -87,6 +96,7 @@ class AutonomousMode(explorer.ExplorerContext):
         if command == 'off' or phase in ('yielding','waiting_respawn'):
             self.exploration = None
             self.pending_discoveries = []
+            self.passage_memory = explorer.PassageMemory()
         await self.control_request(command)  # Fence queued starts before waiting on host cleanup.
         if self.worker and not self.worker.done():
             self.worker.cancel()
@@ -214,17 +224,31 @@ class AutonomousMode(explorer.ExplorerContext):
         layers = ['landingRegions','objects','hazards']
         if not self.regional_sensor():
             layers.append('resources')
-        scene = await atomic.dispatch(bridge, 'observe_scene', dict(layers=layers,
-                                      maxObjects=12, maxRegions=5, maxHazards=4))
+        args = dict(layers=layers, maxObjects=12, maxRegions=5, maxHazards=4)
+        if 'server_ai_passages_v1' in bridge.hello.get('capabilities', ()):
+            args['includePassages'] = True
+        scene = await atomic.dispatch(bridge, 'observe_scene', args)
         memory = await atomic.dispatch(bridge,'query_map',dict(mode='region',width=64,height=40,cellSize=2))
         player = await atomic.dispatch(bridge,'get_player_state',{})
         bosses = await atomic.dispatch(bridge,'discover_bosses',{}) if 'discover_bosses' in bridge.supported_atomic_operations else {}
         if not all(r.get('valid') for r in (scene,memory,player)):
             raise BridgeError('Fresh scene, map and actor are required')
         local = dict(scene['data'])
+        if self.passage_binding != bridge.binding:
+            self.passage_memory = explorer.PassageMemory()
+            self.passage_binding = dict(bridge.binding)
+        if 'passages' in local:
+            survey = dict(local['passages'])
+            survey.pop('connectedLandingIds',None)
+            self.passage_memory.observe(survey, local['gameUpdate'])
+            local['passages'] = survey
         scan = (await self.resource_scan(self.version) if self.regional_sensor()
                 else self.resources.observe(local.pop('resources')))
         discoveries = scan.pop('discoveries')
+        wider = scan.get('widerSample',{})
+        if wider.get('discoveries') or wider.get('changes'):
+            self.pending_discoveries.append(dict(gameUpdate=wider['gameUpdate'],bounds=wider['bounds'],
+                items=wider['discoveries'],changes=wider['changes'],observedAtUnixMs=wider.get('observedAtUnixMs')))
         if discoveries or scan['changes']:
             self.pending_discoveries.append(dict(gameUpdate=scan['gameUpdate'], bounds=scan['bounds'],
                 items=discoveries, changes=scan['changes'], observedAtUnixMs=scan.get('observedAtUnixMs')))
@@ -235,12 +259,14 @@ class AutonomousMode(explorer.ExplorerContext):
         return dict(binding=dict(bridge.binding), localScene=local, resources=scan, historicalMap=memory['data'],
                     player=player['player'], nearbyBosses=bosses.get('data'), activeTeamBosses=self.team_bosses,
                     life=self.agent._death_context and self.agent._death_context['death'],
-                    objective=self.objective, previousReceipt=previous)
+                    objective=self.objective, previousReceipt=previous, passageMemory=self.passage_memory.summary(),
+                    resumeOptions=list(self.passage_memory.resumptions))
 
     @staticmethod
     def scene_key(obs):
         # Game ticks, per-read scene IDs and observation timestamps are not discoveries.
         return (obs['localScene']['actor']['mapTile'], obs['player'].get('life'), obs['player'].get('selectedSlot'),
+                obs['localScene'].get('passages'),
                 tuple((h['kind'],h['typeId'],h['anchor'],h['status'],h.get('bounds'),h.get('tiles'),h.get('entityRef'))
                       for h in obs['resources']['items']),
                 tuple(h['entityRef'] for h in obs['activeTeamBosses']),
@@ -296,6 +322,9 @@ class AutonomousMode(explorer.ExplorerContext):
         result = self.progress.get('explorationResult', {})
         displacement = result.get('progress', {})
         moved = any(abs(displacement.get(axis) or 0) >= 4 for axis in ('dx','dy'))
+        if operation=='explore' and 'newStances' in displacement:
+            moved = displacement['newStances'] > 0
+            changed = moved
         if (self.progress.get('completed') and (changed or self.progress.get('verifiedDelta'))
                 or result.get('returnReason')=='discovery' or moved):
             self.stalled.clear()
@@ -309,7 +338,7 @@ class AutonomousMode(explorer.ExplorerContext):
             obs = await self.observe()
             scene_key = self.scene_key(obs)
             if (self.blocked_scene is not None and self.blocked_phase == 'observation_incomplete'
-                    and obs['resources'].get('complete')):
+                    and explorer.sufficient_scan(obs['resources'],(self.progress.get('explorationResult') or {}).get('seek','any'))):
                 self.force_decision = True
             if self.blocked_scene == scene_key and not self.force_decision:
                 self.phase = self.blocked_phase
@@ -374,8 +403,8 @@ class AutonomousMode(explorer.ExplorerContext):
                     self.blocked_scene = scene_key
                     self.error = f"No progress: {self.stalled[-1]['reason']}"
                     return
-                if name=='explore' and (set(args)!={'direction'} or args['direction'] not in explorer.DIRECTIONS):
-                    raise ValueError('Expected one exploration direction')
+                if name=='explore' and not explorer.valid_options(args):
+                    raise ValueError('Expected exploration direction and optional discovery filter')
                 self.pending_discoveries.clear()
                 self.last_attempt = operation,arguments,self.progress_state(obs)
                 self.objective = objective
@@ -421,7 +450,7 @@ class AutonomousMode(explorer.ExplorerContext):
                     self.phase = 'cancelled' if receipt.get('status')=='cancelled' and receipt.get('inputsReleased') else 'outcome_unknown'
                     return
                 trip = receipt.get('explorationResult', {})
-                if trip.get('returnReason')=='observation_incomplete' and not trip['baseline']['complete']:
+                if trip.get('returnReason')=='observation_incomplete' and not trip.get('baselineSufficient',trip['baseline']['complete']):
                     # No motion was attempted. Wait for fresh evidence, including a complete baseline.
                     self.last_attempt = None
                     self.phase = self.blocked_phase = 'observation_incomplete'
@@ -453,7 +482,7 @@ class AutonomousMode(explorer.ExplorerContext):
         if version != self.version:
             raise BridgeError('Autonomy version revoked')
         if name=='explore':
-            return await explorer.run(self,args['direction'],version,baseline)
+            return await explorer.run(self,args['direction'],version,baseline,seek=args.get('seek','any'))
         if name not in program_tasks.OPERATIONS and name!='submit_task':
             return await atomic.dispatch(bridge,name,args)
         task = args if name=='submit_task' else dict(operation=name,arguments=args)

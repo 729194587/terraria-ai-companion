@@ -63,9 +63,11 @@ internal static class AtomicParameters
             {
                 case "list_pylons": case "list_teammates": case "discover_bosses": case "query_combat_loadout": case "inspect_container": case "observe_terrain": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
                 case "observe_scene":
-                    if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers","scale","width","height","landingDirection"}).Any())throw new FormatException("Unexpected scene parameter.");
+                    if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers","scale","width","height","landingDirection","includePassages"}).Any())throw new FormatException("Unexpected scene parameter.");
                     foreach(string key in keys.Where(k=>k is "maxObjects" or "maxRegions" or "maxPlacements" or "maxHazards"))Integer(key,1,key=="maxHazards"?64:key=="maxRegions"?24:32);
-                    SceneLayers.Read(args);
+                    var layers=SceneLayers.Read(args);
+                    if(keys.Contains("includePassages") && (args.GetProperty("includePassages").ValueKind is not (JsonValueKind.True or JsonValueKind.False)
+                        || !layers.Has("landingRegions")))throw new FormatException("includePassages requires local landingRegions.");
                     break;
                 case "query_map":
                     if(keys.Except(new[]{"mode","centerX","centerY","width","height","cellSize","includeChunks"}).Any()||!keys.Contains("mode"))throw new FormatException("Invalid map parameters.");

@@ -539,6 +539,14 @@ def scene_variant(regional, resources=False):
                     'tiles': array(ref('TilePoint')), 'status': enum('complete','incomplete'), 'entityRef': nullable(S)},optional=('entityRef',)))}, optional=('objectGroupingTruncated',))
     properties['includedLayers'] = {**array(enum(*layers)), 'minItems': 1, 'uniqueItems': True}
     extra = {name: schema for companion in companions.values() for name, schema in companion.items()}
+    if not regional:
+        foot_point = desc(obj({'x':I,'y':I}), 'World pixels at the feet')
+        extra['passages'] = obj({
+            'originResolved': B, 'returnTarget': nullable(foot_point), 'junction': B,
+            'openShaft': nullable(foot_point), 'descentStep': nullable(foot_point), 'connectedLandingIds': array(S),
+            'exits': array(obj({'kind': S,'direction': S,'target': foot_point,'landingId': S})),
+            'routes': array(obj({'kind': S,'direction': S,'target': foot_point,
+                                 'visitState': S,'unknownNearbyTiles': nullable(I)}))}, optional=('routes',))
     schema = obj({**properties, **layers, **extra}, optional=(*layers, *extra))
     schema['allOf'] = []
     for layer in layers:

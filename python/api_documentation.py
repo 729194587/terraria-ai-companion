@@ -308,6 +308,8 @@ def usage_help(name, schema, supplied, capabilities=()):
         if set(args.get('layers', ())) - set(props['layers']['items']['enum']):
             raise ValueError('Unavailable scene layer')
         paths = ['data.'+layer for layer in layers]
+        if args.get('includePassages'):
+            paths.append('data.passages')
         status = 'Check valid/available, coverage and the requested collections’ truncation flags.'
         reads = 'return {' + ','.join(layer+'=q.data.'+layer for layer in layers) + ',coverage=q.data.coverage}'
         if 'map' in layers:
@@ -348,6 +350,9 @@ def usage_help(name, schema, supplied, capabilities=()):
         for condition in branch['allOf']:
             if condition['if']['properties']['includedLayers']['contains']['const'] in layers:
                 fields.extend(condition['then']['required'])
+        if args.get('includePassages'):
+            fields.append('passages')
+            reads = 'return q.data.passages'
     return dict(mode=mode, parameters=parameters, required=required, dataFields=fields,
                 missing=[k for k in required if k not in supplied], paths=paths,
                 statusSemantics=status, example=prefix+reads, examples=[prefix+reads])

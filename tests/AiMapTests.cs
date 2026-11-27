@@ -15,6 +15,9 @@ public static class AiMapTests
         object Query(AiMap m,object a)=>m.Query(JsonSerializer.SerializeToElement(a),0,0);
         JsonElement Data(object a)=>JsonSerializer.SerializeToElement(a);
         var world=Guid.NewGuid();var map=new AiMap(world,"character-a",8400,2400);
+        map.RecordFeet(5,10);map.RecordFeet(55,10);
+        Check(map.WalkedNear(6,10)&&!map.WalkedNear(25,10)&&!map.WalkedNear(5,14),"observed footsteps, no interpolated path or stacked tunnel");
+        Check(map.UnknownAround(5,10)==81 && map.UnknownAround(0,0)==25,"visits independent of known terrain; clipped map edges");
         string legacy=Path.Combine(root,"v1.bin");
         using(var writer=new BinaryWriter(File.Create(legacy)))
         {

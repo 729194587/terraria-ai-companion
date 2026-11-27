@@ -66,16 +66,32 @@ class ExplorerGame(fixture.AiHost):
         else:
             data['landingRegions'] = dict(truncated=False, items=[dict(target=dict(
                 minPlayerLeftX=self.x, maxPlayerLeftX=self.x+600, surfaceY=200))])
+            if args.get('includePassages'):
+                data.update(gameUpdate=33,hazards={},passages=dict(originResolved=True,junction=False,
+                    returnTarget=dict(x=self.x+10,y=200),exits=[],routes=[dict(direction='right',kind='lateral_landing',
+                        target=dict(x=self.x+330,y=200),visitState='no_recent_visit',unknownNearbyTiles=24)]))
         return dict(available=True, worldSessionId=self.binding['world'], actorGeneration=self.binding['generation'],
                     actorSlot=self.binding['slot'], gameUpdate=33, clock='server_utc_at_projection',
                     observedAtUnixMs=1793070000123, data=data)
 
 
 class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
+    async def test_explore_status_reads_options_without_dispatch(self):
+        await self.initialize()
+        listing=(await self.http.post(self.url,headers=self.headers,json=self.request('tools/list',{}))).json()
+        self.assertIn('exploration_status',[tool['name'] for tool in listing['result']['tools']])
+        result=(await self.tool('exploration_status',{})).json()['result']
+        self.assertFalse(result['isError'],result)
+        view=result['structuredContent']
+        self.assertEqual(view['passages']['routes'][0]['unknownNearbyTiles'],24)
+        self.assertEqual(view['resumeOptions'],[])
+        self.assertEqual(self.aihost.x,100)
     async def asyncSetUp(self):
         if self._testMethodName.startswith('test_explore'):
             self.host_type = ExplorerGame
         await fixture.ServerAiAgentTests.asyncSetUp(self)
+        if self._testMethodName=='test_explore_status_reads_options_without_dispatch':
+            self.ai.hello['capabilities']=[*self.ai.hello['capabilities'],'server_ai_passages_v1']
         if self._testMethodName == 'test_external_private_memory':
             from agent_memory import Notebook
             from agent import Agent
@@ -144,7 +160,7 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
         await self.initialize()
         listing = await self.http.post(self.url, headers=self.headers, json=self.request('tools/list', {}))
         schema = next(t['inputSchema'] for t in listing.json()['result']['tools'] if t['name'] == 'explore')
-        self.assertEqual(set(schema['properties']), {'direction', 'objective'})
+        self.assertEqual(set(schema['properties']), {'direction', 'objective', 'seek'})
         guide = (await self.tool('guide', {'full': True})).json()['result']['structuredContent']
         self.assertIn('explore(direction,objective)', guide['instructions'])
         for bad in ({}, dict(EXPLORE, direction='east'), dict(EXPLORE, objective=' '),

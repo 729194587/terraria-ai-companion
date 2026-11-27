@@ -276,6 +276,12 @@ internal static class ServerSceneReader
         {
             var world=new NativeMotionWorld(new(p.position.X,p.position.Y,p.velocity.X,p.velocity.Y,TerrainReader.Read(p).Grounded));
             var landings=p.width==20&&p.height==42?SceneGeometry.Landings(cells,ox,oy,p.position.X,p.Bottom.Y,world.SafeFlatLanding):Array.Empty<SceneLanding>();
+            if(p.width==20&&p.height==42 && args.TryGetProperty("includePassages",out var passages) && passages.GetBoolean())
+            {
+                var map=AiMapRuntime.Map;
+                response["passages"]=ScenePassages.Read(cells,ox,oy,p.position.X,p.Bottom.Y,landings,
+                    map==null?null:map.WalkedNear,map==null?null:map.UnknownAround);
+            }
             return SceneGeometry.LimitLandings(landings,landingCap);
         });
         layers.Add(response,"placementCandidates",()=>

@@ -135,6 +135,7 @@ def server_definitions(bridge, supported=None):
                                       summon_loadout="server_ai_combat_summon_loadout_v1" in capabilities,
                                       dual_weapons="server_ai_combat_secondary_v1" in capabilities, scene_region='server_ai_scene_region_v1' in capabilities,
                                       directional_landings='server_ai_directional_landings_v1' in capabilities,
+                                      passages='server_ai_passages_v1' in capabilities,
                                       general_dialogue='server_ai_general_npc_dialogue_v1' in capabilities,
                                       general_operations='server_ai_general_operations_v1' in capabilities,
                                       mining_opening='server_ai_mining_opening_v1' in capabilities,
@@ -249,6 +250,10 @@ def api_help(bridge, arguments):
 
 def helper_reference(supported, capabilities=()):
     lines = []
+    if 'server_ai_passages_v1' in capabilities:
+        lines.append("探洞时可读 api('observe_scene',{layers={'landingRegions'},includePassages=true}).data.passages。"
+                     "possible_cave_entrance 表示相连的有顶开口，descentStep 是入口较低的中继落点，"
+                     "openShaft 表示视窗内未见井底。可用 navigate_to 到 descentStep 后复查，沿 exits 调查分支，记住岔口 returnTarget 用于折返。坐标为世界像素。")
     if SEMANTIC_APIS <= supported:
         if 'server_ai_resources_v1' in capabilities:
             lines.append("sense_world({resources=true}) also returns the bounded local resource scan in resources.")

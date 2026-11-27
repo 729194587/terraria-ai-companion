@@ -16,6 +16,34 @@ public static class SceneGeometryTests
     public static void Run()
     {
         {
+            var cave=new SceneCell[45,35];
+            for(int x=0;x<45;x++)for(int y=0;y<35;y++)
+                cave[x,y]=Cell(y<15 || (x>=20&&x<26&&y<25) || (x>=4&&x<41&&y>=19&&y<25)?'.':'#');
+            PassageSurvey Survey(int x,int y) {
+                float left=x*16-10,feet=y*16;
+                return ScenePassages.Read(cave,0,0,left,feet,SceneGeometry.Landings(cave,0,0,left,feet));
+            }
+            var entry=Survey(18,15);
+            var flat=Grid();
+            var choices=ScenePassages.Read(flat,0,0,150,224,SceneGeometry.Landings(flat,0,0,150,224),
+                (x,y)=>x<10,(x,y)=>x<10?0:40).Routes;
+            Check(choices.Any(r=>r.Direction=="left"&&r.VisitState=="walked_nearby"&&r.UnknownNearbyTiles==0)
+                &&choices.Any(r=>r.Direction=="right"&&r.VisitState=="no_recent_visit"&&r.UnknownNearbyTiles==40),
+                "both directions on one continuous landing carry independent travel and map evidence");
+            Check(entry.Exits.Any(e=>e.Kind=="possible_cave_entrance"&&e.Target.Y==25*16),"connected roofed lower opening");
+            var fork=Survey(23,25);
+            Check(fork.Junction&&fork.ReturnTarget!=null&&fork.Exits.Any(e=>e.Direction=="left")
+                &&fork.Exits.Any(e=>e.Direction=="right"),"shaft junction has two underground exits and return stance");
+            for(int x=20;x<26;x++)cave[x,15]=Cell('?');
+            Check(!Survey(18,15).Exits.Any(e=>e.Target.Y>15*16),"unknown separator hides lower cave");
+            for(int x=20;x<26;x++)cave[x,15]=new(new("read",CollisionKnowledge:"uninterpreted"),'.');
+            Check(!Survey(18,15).Exits.Any(e=>e.Target.Y>15*16),"uninterpreted collision cannot connect a shaft");
+            for(int x=20;x<26;x++)cave[x,15]=Cell('#');
+            Check(!Survey(18,15).Exits.Any(e=>e.Kind=="possible_cave_entrance"),"closed pocket cannot be an entrance");
+            for(int x=20;x<26;x++)for(int y=15;y<35;y++)cave[x,y]=Cell('.');
+            Check(Survey(18,15).OpenShaft!=null,"unobserved shaft bottom has no invented floor");
+        }
+        {
             var g=Grid();var group=new[]{(1,1),(1,2),(1,3),(2,3),(3,3)};
             foreach(var c in group.Append((3,1)))g[c.Item1,c.Item2]=Cell('#') with{Kind="ore_component"};
             var componentObjects=SceneGeometry.Objects(g,0,0,(x,y)=>new[]{x,y},56,24);

@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Autonomy,[Alias('TravelReview')][ValidateSet('continue','investigate','live','external')][string]$DirectionalExplore,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile,[switch]$ItemInfo,[switch]$ItemSources,[switch]$MaterialPlan,[string[]]$ModPackages,[switch]$CompatibilityQueries)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27841,[int]$IpcPort=27842,[string]$PackagePath,[switch]$Atomic,[switch]$Reads,[switch]$Actions,[switch]$Autonomy,[Alias('TravelReview')][ValidateSet('continue','investigate','live','external','cave')][string]$DirectionalExplore,[switch]$Agent,[switch]$LiveModel,[switch]$Perception,[switch]$Exploration,[string]$PythonExecutable,[switch]$Landing,[switch]$Semantic,[switch]$Terrain,[switch]$LandingRegions,[switch]$Placement,[switch]$Scene,[switch]$Crafting,[switch]$Inventory,[switch]$Tasks,[switch]$AutonomousNavigation,[switch]$NavigationSafety,[string[]]$NavigationSafetyCases,[switch]$VerticalNavigation,[switch]$BuildDiff,[switch]$BuildPlace,[switch]$Housing,[switch]$NpcHome,[switch]$G3Shop,[switch]$MerchantLua,[switch]$MerchantJourney,[ValidateSet('Merchant','Nurse')][string]$TalkToNpc,[switch]$NurseLua,[switch]$ReforgeLua,[switch]$TcpCapacity,[switch]$Mobility,[string]$BenchmarkSpec,[string]$BenchmarkProfile,[switch]$KeepProfile,[switch]$ItemInfo,[switch]$ItemSources,[switch]$MaterialPlan,[string[]]$ModPackages,[switch]$CompatibilityQueries)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -10,7 +10,7 @@ if($BenchmarkSpec){
     $Actions=$true
 }
 if($DirectionalExplore -eq 'live'){$LiveModel=$true}
-elseif($DirectionalExplore -and $LiveModel){throw 'Choose -DirectionalExplore live for real model acceptance.'}
+elseif($DirectionalExplore -and $DirectionalExplore -ne 'cave' -and $LiveModel){throw 'Choose the live or cave scenario for model acceptance.'}
 if($DirectionalExplore){$Autonomy=$true}
 if($Autonomy){$Actions=$true}
 if($MaterialPlan){$Actions=$true;$Crafting=$true}
@@ -64,6 +64,7 @@ foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test
 if($Autonomy){
     $info.ArgumentList.Add("-companionautonomytest")
     if($DirectionalExplore){$info.ArgumentList.Add("-companiondirectiontest")}
+    if($DirectionalExplore -eq 'cave'){$info.ArgumentList.Add("-companioncavetest")}
     if(!$LiveModel){
         $info.ArgumentList.Add("-companioncombattest")
         $info.ArgumentList.Add("-companionregroupobservers")
@@ -118,8 +119,10 @@ try {
         Start-Sleep -Milliseconds 100
     }
     if(!$bound.ok){throw 'Native actor never became available'}
-    if ($DirectionalExplore -eq 'external') {
-        & $PythonExecutable (Join-Path $repo 'tests/native_external_explorer.py') --port $IpcPort --profile $profile
+    if ($DirectionalExplore -in @('external','cave') -and !$LiveModel) {
+        $options = @()
+        if($DirectionalExplore -eq 'cave'){$options += '--cave'}
+        & $PythonExecutable (Join-Path $repo 'tests/native_external_explorer.py') --port $IpcPort --profile $profile @options
         if ($LASTEXITCODE -ne 0){throw "External MCP explore verification failed: $profile"}
         Write-Output "External MCP explore evidence: $profile/external-explore.json"
         return

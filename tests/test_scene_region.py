@@ -25,6 +25,19 @@ class RegionRuntime(unittest.IsolatedAsyncioTestCase):
     tearDown=scene.SceneTests.tearDown
     enable=scene.SceneTests.enable
 
+    async def test_passage_survey_is_local_and_capability_gated(self):
+        self.enable()
+        args=dict(layers=['landingRegions'],includePassages=True)
+        for invalid in (dict(args,scale='region'),dict(args,layers=['objects']),dict(args,includePassages='yes')):
+            with self.assertRaises(ValueError):
+                atomic.validate('observe_scene',invalid)
+        with self.assertRaises(atomic.PreDispatchRejected):
+            await atomic.dispatch(self.bridge,'observe_scene',args)
+        self.bridge.hello['capabilities'].append('server_ai_passages_v1')
+        help_doc=api_help(self.bridge,dict(name='observe_scene',forArgs=args))
+        self.assertIn('passages',help_doc['dataFields'])
+        self.assertTrue((await atomic.dispatch(self.bridge,'observe_scene',args))['valid'])
+
     def test_mode_parameters_match_validation_and_default_layers(self):
         self.enable()
         self.bridge.hello['capabilities'].append('server_ai_scene_region_v1')

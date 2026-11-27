@@ -48,7 +48,7 @@ CONTAINER_TRANSFER_ARGS = {
 INVENTORY_GUARDS = {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN,
                     "destinationToken": INVENTORY_TOKEN}
 SCENE_LAYERS = ["map", "geometry", "objects", "hazards", "landingRegions", "placementCandidates", "objectPlacementCandidates", "resources"]
-SCENE_EXCLUDED_PARAMS = {'local': ('width', 'height'), 'region': ('maxRegions', 'maxPlacements', 'landingDirection')}
+SCENE_EXCLUDED_PARAMS = {'local': ('width', 'height'), 'region': ('maxRegions', 'maxPlacements', 'landingDirection','includePassages')}
 REGION_DEFAULT_LAYERS = ('geometry', 'objects', 'hazards')
 REGION_DEFAULT_WIDTH, REGION_DEFAULT_HEIGHT, REGION_MAX_AREA = 120, 68, 8192
 INVENTORY_MODE_ARGUMENTS = {'item': 'item', 'slots': 'slots'}
@@ -87,6 +87,7 @@ TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Ti
      for key in ("maxObjects","maxRegions","maxPlacements","maxHazards")},
      "layers":{"type":"array","items":{"type":"string","enum":SCENE_LAYERS},"minItems":1,"maxItems":8,"uniqueItems":True},
      "landingDirection":{"type":"string","enum":["left","right","up","down"],"description":"Extend the local landingRegions-only survey in this direction."},
+     "includePassages":{"type":"boolean","description":"With local landingRegions return connected dry openings, cave entrance evidence, forks, unconfirmed shafts and foot targets in world pixels."},
      "scale":{"type":"string","enum":["local","region"]},
      "width":{"type":"integer","minimum":45,"maximum":128},
      "height":{"type":"integer","minimum":29,"maximum":96}}),tool("get_player_state", "读取真实玩家位置/速度/生命和地面支撑及运动模型支持状态。"),
@@ -338,7 +339,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时，指定width或hei
     'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
 
 
-def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=False, bed_spawn=False, scene_region=False, directional_landings=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False):
+def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=False, bed_spawn=False, scene_region=False, directional_landings=False, passages=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
     definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')]
     for definition in definitions:
@@ -385,6 +386,8 @@ def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=
             else:
                 f['parameters']['properties'].pop('cluster', None)
         if name == 'observe_scene':
+            if not passages:
+                f['parameters']['properties'].pop('includePassages',None)
             if not directional_landings:
                 f['parameters']['properties'].pop('landingDirection',None)
             if not resources:
@@ -721,6 +724,8 @@ def validate(name, arguments, *, server=False):
         if 'scale' not in arguments and ('width' in arguments or 'height' in arguments):
             arguments['scale'] = 'region'
         region = arguments.get('scale') == 'region'
+        if 'includePassages' in arguments and (region or 'landingRegions' not in arguments.get('layers',['landingRegions'])):
+            raise ValueError('includePassages requires local landingRegions')
         if 'landingDirection' in arguments and arguments.get('layers') != ['landingRegions']:
             raise ValueError('landingDirection requires a local landingRegions-only query')
         if not region and any(k in arguments for k in SCENE_EXCLUDED_PARAMS['local']):
@@ -1590,6 +1595,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_doors_v1')
     if name == 'place_rope' and 'server_ai_place_rope_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_place_rope_v1; no rope placement RPC started')
+    if name == 'observe_scene' and 'includePassages' in arguments and 'server_ai_passages_v1' not in bridge.hello.get('capabilities', ()):
+        raise PreDispatchRejected('Passage survey unavailable')
     if name == 'observe_scene' and 'landingDirection' in arguments and 'server_ai_directional_landings_v1' not in bridge.hello.get('capabilities', ()):
         raise PreDispatchRejected('Directional landing survey unavailable')
     if (name == 'observe_scene' and arguments.get('scale') == 'region' and 'resources' in arguments.get('layers', ())

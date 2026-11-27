@@ -27,6 +27,7 @@ internal static class AiMapRuntime
     {
         var p=ProbeSession.Actor;
         if(Map==null||p==null||!WorldCharacterPersistence.Ready||p.dead||p.ghost||!p.active||ProbeSession.Quarantined)return;
+        Map.RecordFeet((int)Math.Floor(p.Center.X/16),(int)Math.Floor(p.Bottom.Y/16));
         if(!force&&lastTick!=ulong.MaxValue&&Main.GameUpdateCount-lastTick<15)return;
         lastTick=Main.GameUpdateCount;
         Map.BeginSample();

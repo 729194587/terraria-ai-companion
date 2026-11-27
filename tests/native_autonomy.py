@@ -86,9 +86,11 @@ async def run(args):
         if messages[0]['content']==INSTRUCTIONS and len(messages)==2:
             report.setdefault('decisions',[]).append(json.loads(messages[1]['content']))
         start=asyncio.get_running_loop().time()
-        if args.directional_explore=='live' and messages[0]['content']==INSTRUCTIONS:
+        if args.directional_explore in ('live','cave') and args.live_model and messages[0]['content']==INSTRUCTIONS:
             # Give the real model a standing gameplay goal, without a route, tool sequence or Tile coordinates.
             goal = 'Build a supply of metal ore for early equipment. Survey the eastern corridor, gather worthwhile ore you discover, and keep scouting afterwards.'
+            if args.directional_explore=='cave':
+                goal = '看看附近有没有自然洞口，沿现成的通道下去调查一条地下支路。留意回程。'
             report['scenarioGoal'] = goal
             messages = [messages[0], dict(role='user',content=goal), *messages[1:]]
         reply=await complete(messages,tools)
@@ -100,6 +102,9 @@ async def run(args):
     try:
         assert not (await mode.control_request('status'))['enabled']
         await mode.command('on')
+        if args.directional_explore=='cave':
+            await live_cave_run(mode,controller,report)
+            return
         if args.directional_explore:
             await directional_run(agent, mode, controller, report, args)
             return
@@ -154,6 +159,37 @@ async def run(args):
         if args.live_model: await llm.close()
 
 
+async def live_cave_run(mode, controller, report):
+    start = (await mode.observe())['localScene']['actor']['feetY']
+    below = None
+    cycles = report['cycles'] = []
+    try:
+        async with asyncio.timeout(200):
+            while len(cycles)<8:
+                await mode.pulse(await asyncio.to_thread(controller.life_status))
+                if mode.worker is None:
+                    await asyncio.sleep(.1)
+                    continue
+                await mode.worker
+                mode.worker = None
+                if mode.error:
+                    raise RuntimeError(mode.error)
+                obs = await mode.observe()
+                site = obs['localScene']['passages'].get('returnTarget')
+                cycles.append(dict(phase=mode.phase,receipt=dict(mode.progress),stance=site))
+                if site and site['y'] >= start+6*16 and mode.progress.get('inputsReleased'):
+                    if below and abs(site['x']-below['x']) >= 4*16:
+                        report.update(descendedTo=below,investigatedTo=site,passed=True)
+                        return
+                    below = below or site
+                if mode.phase=='resting':
+                    break
+        raise AssertionError('No observed descent followed by lateral underground investigation')
+    finally:
+        await mode.command('off')
+        assert (await mode.control_request('status'))['released']
+
+
 async def directional_run(agent, mode, controller, report, args):
     case = args.directional_explore
     mode.objective = ('Explore the unsurveyed corridor extending east. When new ore is worth investigating, '
@@ -188,7 +224,8 @@ async def directional_run(agent, mode, controller, report, args):
                     assert segment['receipt']['inputsReleased'] and segment['receipt']['endEvidenceStatus']=='known'
                     assert segment['finish']==sample['position']
                 for sample in [result['baseline'], *result['coverage']]:
-                    assert sample['requestedTiles']==8160
+                    assert sample['requestedTiles']==8160 or (sample['requestedTiles']==2040 and
+                        sample['widerCoverage']['requestedTiles']==8160 and sample['widerCoverage']['samplingBudgetReached'])
                     assert sum(sample['unknownByReason'].values())==sample['unknownCells']
                     assert isinstance(sample['samplingBudgetReached'],bool)
                     assert isinstance(sample['objectGroupingTruncated'],bool)
@@ -208,9 +245,9 @@ async def directional_run(agent, mode, controller, report, args):
                     report['firstOre'] = evidence[0]
                     first_sample = next(f for f in result['findings'] if evidence[0] in f['items'])
                     rect = first_sample['bounds']
-                    assert (rect['maxX']-rect['minX']+1,rect['maxY']-rect['minY']+1)==(120,68)
+                    assert (rect['maxX']-rect['minX']+1,rect['maxY']-rect['minY']+1) in ((120,68),(60,34))
                     assert evidence[0]['anchor']['x'] > (first_sample['position']['leftX']+10)//16 + 22
-                    assert first_sample['source']=='region_resource_scan' and first_sample['scannedTiles']<=8160
+                    assert first_sample['source']=='region_resource_scan' and first_sample['scannedTiles']<=first_sample['requestedTiles']
             elif discovered and receipt.get('completed') and receipt['operation'] in ('mine_target','mine_tile'):
                 tile = report['firstOre']['anchor']
                 check = await atomic.dispatch(agent.bridge,'inspect_tile',tile)
@@ -382,6 +419,6 @@ if __name__=='__main__':
     parser.add_argument('--port',type=int,required=True)
     parser.add_argument('--game-port',type=int,required=True)
     parser.add_argument('--profile',type=Path,required=True)
-    parser.add_argument('--directional-explore',choices=['continue','investigate','live'])
+    parser.add_argument('--directional-explore',choices=['continue','investigate','live','cave'])
     parser.add_argument('--live-model',action='store_true')
     asyncio.run(run(parser.parse_args()))
