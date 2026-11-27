@@ -34,6 +34,7 @@ $info.WorkingDirectory=$TModLoaderPath;$info.UseShellExecute=$false;$info.Create
 $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
 foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest','-companionactionstest')){$info.ArgumentList.Add($arg)}
 if($TestScript -eq 'native_pylons.py'){$info.ArgumentList.Add('-companionpylontest')}
+if($TestScript -eq 'native_first_workbench.py'){$info.ArgumentList.Add('-companioncrafttest')}
 if($potionTest){$info.ArgumentList.Add('-companionpotiontest')}
 if($TestScript -eq 'native_regroup_observers.py'){$info.ArgumentList.Add('-companionregroupobservers')}
 if($TestScript -eq 'navigation_experiments/native.py'){

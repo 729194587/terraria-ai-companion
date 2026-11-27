@@ -41,9 +41,11 @@ internal static class ServerCraftingFixture
         {
             if(kind=="station_present"&&(!TileObject.CanPlace(left+2,floor-1,TileID.WorkBenches,0,1,out var data)||!TileObject.Place(data)))throw new InvalidOperationException("Native workbench fixture placement failed");
         }
-        else if(kind=="harvest")
+        else if(kind is "harvest" or "workbench_seven" or "workbench_ten")
         {
-            p.inventory[0]=new Item();Give(1,ItemID.CopperAxe,1);
+            p.inventory[0]=new Item();
+            if(kind!="harvest")Give(0,ItemID.Wood,kind=="workbench_seven"?7:10);
+            Give(1,ItemID.CopperAxe,1);
             if(!WorldGen.GrowTree(left-3,floor))throw new InvalidOperationException("Native crafting harvest tree failed");
         }
         else if(kind=="material_plan")
