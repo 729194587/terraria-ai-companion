@@ -43,7 +43,7 @@ if($TestScript -eq 'navigation_experiments/native.py'){
 }
 if($BossProbe){$info.ArgumentList.Add('-companionbossprobe');$info.ArgumentList.Add($BossProbe);$TestScript='native_boss_probe.py'}
 elseif($Combat){$info.ArgumentList.Add('-companioncombattest');$TestScript='native_combat.py'}
-elseif($Torch){$info.ArgumentList.Add('-companiontorchtest');$TestScript='native_auto_torch.py'}
+elseif($Torch){$info.ArgumentList.Add('-companiontorchtest');if($TestScript -eq 'native_direct_input.py'){$TestScript='native_auto_torch.py'}}
 elseif($Equipment){$info.ArgumentList.Add('-companionequipmenttest');if($TestScript -eq 'native_direct_input.py'){$TestScript='native_equipment.py'}}
 elseif($Scene){$info.ArgumentList.Add('-companionscenetest');$info.ArgumentList.Add('-companionperceptiontest');$info.ArgumentList.Add('-companionscenelighttest')}
 else{$info.ArgumentList.Add('-companiondirectinputtest')}

@@ -17,6 +17,46 @@ def local(x=100, y=200, targets=None):
 
 
 class DirectionTests(unittest.IsolatedAsyncioTestCase):
+    def test_brief_reports_an_observed_ore_tile_and_retires_it_when_absent(self):
+        anchor = dict(x=2175, y=291)
+        tiles = [dict(x=2176, y=291), dict(x=2176, y=292), dict(x=2175, y=292)]
+        ore = dict(kind='ore_component', contentKey='Terraria/Tin', anchor=anchor, tiles=tiles)
+        events = [dict(items=[ore])]
+        result = dict(direction='right', progress={}, returnReason='discovery', findings=events)
+        finding, = explorer.brief(result)['findings']
+        self.assertEqual(finding['anchor'], anchor)
+        self.assertEqual(finding['targetTile'], tiles[0])
+        self.assertNotIn(anchor, tiles)
+
+        events.append(dict(items=[dict(ore, tiles=tiles[1:])]))
+        updated, = explorer.brief(result)['findings']
+        self.assertEqual(updated['targetTile'], tiles[1])
+        events.append(dict(items=[], changes=[dict(ore, state='absent_at_last_location')]))
+        self.assertTrue(all('targetTile' not in item for item in explorer.brief(result)['findings']))
+
+    def test_brief_reserves_room_for_distinct_kinds_then_materials(self):
+        def ore(material, x):
+            return dict(kind='ore_component', contentKey=material, anchor=dict(x=x, y=20))
+
+        copper = [ore('Terraria/Copper', x) for x in range(10)]
+        chest = dict(kind='chest', contentKey='Terraria/Containers', anchor=dict(x=42, y=20))
+        iron = ore('Terraria/Iron', 11)
+        events = [dict(items=copper), dict(items=[iron, chest, copper[0]])]
+        result = dict(direction='right', progress={}, returnReason='budget_reached', findings=events)
+        summary = explorer.brief(result)
+        self.assertEqual(summary['findingCount'], 12)
+        self.assertEqual(summary['findings'], [copper[0], chest, iron, *copper[1:6]])
+        # Even more than eight different ore types must not displace a different kind.
+        events[0]['items'] = [ore(str(x), x) for x in range(10)]
+        self.assertIn(chest, explorer.brief(result)['findings'])
+
+    def test_brief_keeps_observation_order_when_all_findings_fit(self):
+        hits = [dict(kind=kind, anchor=dict(x=x, y=10))
+                for x, kind in enumerate(('ore_component', 'ore_component', 'chest'))]
+        result = dict(direction='right', progress={}, returnReason='discovery',
+                      findings=[dict(items=hits[:2]), dict(items=hits[1:])])
+        self.assertEqual(explorer.brief(result)['findings'], hits)
+
     def test_direction_is_relative_to_actual_left_and_feet(self):
         scene=local(targets=[(0,450,200),(80,115,160),(20,76,264)])
         self.assertGreater(explorer.destination(scene,'right')['x']-20,100)

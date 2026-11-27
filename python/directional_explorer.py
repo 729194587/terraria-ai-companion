@@ -12,11 +12,13 @@ TRIP_SECONDS = 45
 STEP_PIXELS = 32 * 16
 
 
-EXPLORE_TOOL = atomic.tool('explore', 'Travel in short hops in one direction, observing along the way. Stops at the budget, an obstacle or an optional seek match.',
+EXPLORE_TOOL = atomic.tool('explore', 'Travel in short hops in one direction, observing along the way. Stops at the budget, an obstacle or an optional seek match. Ore findings identify an observed mining tile with targetTile.',
     {'direction': {'type':'string', 'enum':list(DIRECTIONS)},
      'objective': {'type':'string','minLength':1,'maxLength':240},
      'seek': {'type':'string','minLength':1,'maxLength':96,
-              'description':'Optional stop after a hop: any new finding, passage, a resource kind, or an exact contentKey. Omit to keep going.'}}, ['direction'])
+              'description':('To find a treasure chest (宝箱), use "chest". After each hop, check for the exact '
+                             'resource kind or contentKey (e.g. "Terraria/Iron"). Use "passage" for a passage '
+                             'or "any" for any finding. Omit to keep exploring.')}}, ['direction'])
 
 
 def valid_options(args):
@@ -120,16 +122,34 @@ def route_hints(scene):
 
 def brief(result):
     """Small decision context; the host retains the original samples and receipts."""
-    finds = []
+    by_location = {}
     for event in result['findings']:
         for hit in (*event['items'], *event.get('changes', ())):
             item = {k:hit[k] for k in ('kind','contentKey','anchor','state') if k in hit}
-            if item not in finds:
-                finds.append(item)
+            anchor = item.get('anchor', {})
+            location = (item.get('kind'), item.get('contentKey'), anchor.get('x'), anchor.get('y'))
+            if item.get('kind') == 'ore_component':
+                if item.get('state') == 'absent_at_last_location':
+                    by_location.get((location, None), {}).pop('targetTile', None)
+                elif not item.get('state') and hit.get('tiles'):
+                    item['targetTile'] = hit['tiles'][0]
+            by_location[location, item.get('state')] = item
+    finds = list(by_location.values())
+    preview = finds
+    if len(finds) > 8:
+        first_by_kind = {}
+        first_by_content = {}
+        for index, item in enumerate(finds):
+            kind = item.get('kind')
+            first_by_kind.setdefault(kind, index)
+            first_by_content.setdefault((kind, item.get('contentKey')), index)
+        # Cover broad kinds, then distinct materials, then other sightings in observation order.
+        order = dict.fromkeys([*first_by_kind.values(), *first_by_content.values(), *range(len(finds))])
+        preview = [finds[index] for index in list(order)[:8]]
     passages = [e for segment in result.get('segments',()) for e in segment.get('passages',())]
     samples = [result.get('baseline',{}), *result.get('coverage',())]
     return dict(direction=result['direction'], finish=result.get('finish'), progress=result['progress'],
-                returnReason=result['returnReason'], reason=result.get('reason'), findings=finds[:8],
+                returnReason=result['returnReason'], reason=result.get('reason'), findings=preview,
                 findingCount=len(finds), routes=result.get('routes',[]),
                 passageSightings=[{k:e[k] for k in ('kind','direction','target')} for e in passages[-3:]],
                 partialResourceScan=any(s.get('complete') is False or 'widerCoverage' in s for s in samples))

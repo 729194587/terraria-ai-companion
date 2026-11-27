@@ -6,6 +6,7 @@ using Terraria;
 using Terraria.GameContent.Events;
 using Terraria.Graphics.Light;
 using Terraria.ID;
+using VirtualPlayerEngineProbe;
 
 namespace CompanionBridge.ServerIpc;
 
@@ -19,6 +20,11 @@ internal sealed class ServerTileLighting
     private delegate LightMaskMode Mask(Tile tile);
     private delegate void SkyPalette(Main.InfoToSetBackColor info,ref Color background,ref Color moon);
     private readonly LightMap map=new();
+    private LightMap viewMap;
+    private const int ViewWidth=119, ViewHeight=67;
+    private readonly char[] viewCells=new char[ViewWidth*ViewHeight];
+    private int visibleTileCount;
+    private (ulong Tick, Player Player, AiMap Memory, Point Center, int Direction, Vector3 Hand)? viewSample;
     private readonly Emission emission;
     private readonly Mask mask;
     private readonly SkyPalette palette;
@@ -61,7 +67,7 @@ internal sealed class ServerTileLighting
         var saved=(Main.tileColor,Main.ColorOfTheSkies,Main.eclipseLight);
         try
         {
-            if(!PrepareSky())return false;
+            if(!PrepareSky(center))return false;
             map.SetSize(right-left+1,bottom-top+1);
             for(int x=left;x<=right;x++)for(int y=top;y<=bottom;y++)
             {
@@ -84,7 +90,87 @@ internal sealed class ServerTileLighting
         finally{(Main.tileColor,Main.ColorOfTheSkies,Main.eclipseLight)=saved;}
     }
 
-    private bool PrepareSky()
+    internal object ReadTerrain(Player p)
+    {
+        SampleTerrain(p,AiMapRuntime.ActiveMap(p));
+        var actor=viewSample.Value.Center;
+        var rows=new string[ViewHeight];
+        for(int j=0;j<ViewHeight;j++)rows[j]=new string(viewCells,j*ViewWidth,ViewWidth);
+        return new{originX=actor.X-ViewWidth/2,originY=actor.Y-ViewHeight/2,width=ViewWidth,height=ViewHeight,
+            actor=new{x=actor.X,y=actor.Y},visibleTiles=visibleTileCount,rows};
+    }
+
+    // Background exploration and explicit observations consume the same mask.
+    // The extra margin admits light from just outside the displayed rectangle.
+    internal void SampleTerrain(Player p,AiMap memory,bool force=false)
+    {
+        const int padding=32;
+        const float visibleLight=.065f;
+        var actor=p.Center.ToTileCoordinates();
+        var hand=HandLight(p);
+        var key=(Main.GameUpdateCount,p,memory,actor,p.direction,hand);
+        if(!force && viewSample==key)return;
+        viewSample=null;
+        int originX=actor.X-ViewWidth/2,originY=actor.Y-ViewHeight/2;
+        int x0=Math.Max(2,originX-padding),y0=Math.Max(2,originY-padding);
+        int x1=Math.Min(Main.maxTilesX-3,originX+ViewWidth-1+padding);
+        int y1=Math.Min(Main.maxTilesY-3,originY+ViewHeight-1+padding);
+        var saved=(Main.tileColor,Main.ColorOfTheSkies,Main.eclipseLight);
+        try
+        {
+            if(!PrepareSky(actor))throw new QueryUnavailableException("incomplete_light_coverage");
+            viewMap??=new();
+            viewMap.SetSize(x1-x0+1,y1-y0+1);
+            for(int x=x0;x<=x1;x++)for(int y=y0;y<=y1;y++)
+            {
+                var color=Vector3.Zero;
+                emission(x,y,ref color);
+                viewMap[x-x0,y-y0]=color;
+                viewMap.SetMaskAt(x-x0,y-y0,mask(Main.tile[x,y]));
+            }
+            int hx=Math.Clamp(actor.X+p.direction,x0,x1)-x0,hy=Math.Clamp(actor.Y,y0,y1)-y0;
+            viewMap[hx,hy]=Vector3.Max(viewMap[hx,hy],hand);
+            viewMap.Blur();
+            Array.Fill(viewCells,'?');
+            visibleTileCount=0;
+            for(int y=Math.Max(y0,originY);y<=Math.Min(y1,originY+ViewHeight-1);y++)
+            for(int x=Math.Max(x0,originX);x<=Math.Min(x1,originX+ViewWidth-1);x++) {
+                if(!(Peak(viewMap[x-x0,y-y0])>=visibleLight))continue;
+                viewCells[(y-originY)*ViewWidth+x-originX]=TerrainGlyph(Main.tile[x,y]);
+                visibleTileCount++;
+            }
+        }
+        finally{(Main.tileColor,Main.ColorOfTheSkies,Main.eclipseLight)=saved;}
+        if(memory!=null)AiMapRuntime.RememberView(memory,originX,originY,ViewWidth,viewCells);
+        viewSample=key;
+    }
+
+    private static Vector3 HandLight(Player p)
+    {
+        var held=p.HeldItem;
+        if(p.dead || p.noItems || held.IsAir || (p.wet && held.noWet))return Vector3.Zero;
+        if(held.type<ItemID.Count && held.createTile==TileID.Torches) {
+            TorchID.TorchColor(held.placeStyle,out float r,out float g,out float b);
+            return new(r,g,b);
+        }
+        return held.type==ItemID.Glowstick ? new(.7f,1f,.8f) : Vector3.Zero;
+    }
+
+    private static char TerrainGlyph(Tile tile)
+    {
+        if(tile.HasUnactuatedTile) {
+            int type=tile.TileType;
+            if(type==TileID.Torches)return 't';
+            if(type is TileID.Containers or TileID.Containers2 or TileID.Dressers)return 'c';
+            if(TileID.Sets.Ore[type])return 'o';
+            if(Main.tileSolidTop[type])return '=';
+            if(Main.tileSolid[type])return '#';
+        }
+        if(tile.LiquidAmount>0)return tile.LiquidType switch{1=>'L',2=>'H',3=>'S',_=>'~'};
+        return '.';
+    }
+
+    private bool PrepareSky(Point center)
     {
         // Use the vanilla biome weights without running SceneMetrics nearby
         // effects or altering the active client's biome globals.

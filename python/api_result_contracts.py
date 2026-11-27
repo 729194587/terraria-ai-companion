@@ -260,6 +260,8 @@ PAYMENT = {'beforeFunds': FUNDS, 'afterFunds': FUNDS, 'bankNonCurrencyUnchanged'
 SHOP_LISTING = obj({'itemType': I, 'available': nullable(B), 'reason': nullable(S), 'unitPrice': nullable(COUNT),
                     'canAfford': nullable(B), 'canPurchase': B, 'currency': enum('copper','unknown'), 'stock': enum('unlimited','unknown')})
 READ_DATA_SCHEMAS = {
+    'look_around': obj({**fields(integers='originX originY width height visibleTiles'),
+                        'actor': ref('TilePoint'), 'rows': array(S)}),
     'query_map': obj({
         **QUERY_METADATA, **fields(integers='schemaVersion originX originY cellSize width height',
                                    strings='worldUid characterId legend knowledge visibility'),

@@ -63,7 +63,7 @@ internal sealed class FrontierExplorationTask : AbstractCompanionTask
         if(!GameNavigation.Ordinary(actor)||!ServerAiNavigation.Observe(actor).Settled||
             Math.Abs(actor.Bottom.Y-At.Y*16)>.5f)return Failed("exploration_requires_settled_flat_anchor");
         if(NativeNavigationWorld.CheckHazards(frame,life,travelling:true) is {} danger)return Failed(danger);
-        AiMapRuntime.Tick(true);
+        AiMapRuntime.Tick(ServerAiSystem.Lighting,force:true);
         anchorLeft=actor.position.X;
         trip=new(map,At,args.GetProperty("radiusTiles").GetInt32(),args.GetProperty("maxSegments").GetInt32());
         deadline=frame.GameUpdate+Budget-2;

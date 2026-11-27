@@ -1,4 +1,5 @@
 using System;
+using CompanionBridge.ServerIpc;
 using Terraria;
 using Terraria.ID;
 
@@ -9,19 +10,22 @@ internal static class AiMapNativeTest
 {
     internal static void Run(Player p,Action<bool,string> check)
     {
-        var original=p.position;var map=AiMapRuntime.Map;
+        var original=p.position;
+        var map=AiMapRuntime.Map=new AiMap(Guid.NewGuid(),"native-dark",Main.maxTilesX,Main.maxTilesY);
+        var lighting=new ServerTileLighting();
         int cx=Main.maxTilesX/2,cy=(int)Main.worldSurface+80;
         for(int x=cx-62;x<=cx+62;x++)for(int y=cy-36;y<=cy+36;y++)Main.tile[x,y].ClearEverything();
-        void Move(int x,int y){p.Center=new(x*16+8,y*16+8);AiMapRuntime.Tick(true);}
+        void Move(int x,int y){p.Center=new(x*16+8,y*16+8);AiMapRuntime.Tick(lighting,force:true);}
         try
         {
             Move(cx,cy);
-            check(map.Get(cx,cy)==1&&map.Get(cx+10,cy)==0,"underground rectangle revealed without illumination");
+            check(map.Get(cx,cy)==0&&map.Get(cx+10,cy)==0,"unlit underground terrain entered map memory");
             var torch=Main.tile[cx+2,cy];torch.HasTile=true;torch.TileType=TileID.Torches;torch.TileFrameX=0;
             Move(cx,cy);check(map.Get(cx+10,cy)==1,"torch did not enlarge underground reveal");
             map=AiMapRuntime.Map=new AiMap(Guid.NewGuid(),"native-occlusion",Main.maxTilesX,Main.maxTilesY);
-            for(int y=cy-34;y<=cy+33;y++){var t=Main.tile[cx+5,y];t.HasTile=true;t.TileType=TileID.Stone;}
-            Move(cx,cy);check(map.Get(cx+5,cy)==2&&map.Get(cx+8,cy+3)==0,"opaque wall did not block unseen cells");
+            for(int x=cx+5;x<=cx+17;x++)for(int y=cy-34;y<=cy+33;y++)
+            {var t=Main.tile[x,y];t.HasTile=true;t.TileType=TileID.Stone;}
+            Move(cx,cy);check(map.Get(cx+5,cy)==2&&map.Get(cx+22,cy+3)==0,"unlit cells beyond thick stone entered memory");
             var stone=Main.tile[cx-1,cy];stone.HasTile=true;stone.TileType=TileID.Stone;
             Move(cx,cy);check(map.Get(cx-1,cy)==2,"re-observation did not resample");
             Move(cx+200,cy);check(map.Get(cx+100,cy)==0,"teleport revealed intermediate path");

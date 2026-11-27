@@ -78,7 +78,8 @@ SHOP_TOKEN = {"type": "string", "pattern": "^[0-9a-f]{64}$", "minLength": 64, "m
 
 SALE_SOURCE = {"entityRef": MERCHANT_REF, "sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN}
 
-TOOLS = [tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地下视野采用遮挡/近身/可见原版火把近似。",
+LIT_TERRAIN = tool("look_around", "观察角色周围当前照亮的地形。视窗 119×67 格，含远处有光的通道。data.rows 按行从左到右，? 暗区，. 空地，# 实心，= 平台，~ 水，L 岩浆，H 蜂蜜，S 微光，t 火把，c 箱子，o 矿石。data.actor 和 originX/Y 为世界格坐标。")
+TOOLS = [LIT_TERRAIN, tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地形记忆与实际脚印分开；光照揭示规则见返回的visibility。",
     {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]},"includeChunks":{"type":"boolean"}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
     {"resultType":{"type":"integer","minimum":1},"availableOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":24},"offset":{"type":"integer","minimum":0,"maximum":100000}}),
     tool("craft_recipe", "按新鲜query_recipes的recipeId/recipeToken原生合成，crafts是配方执行次数1..20，不是产物件数；每次重查材料/制作站/空间。可能部分完成，不回滚或失败后自动重试。",
@@ -415,7 +416,7 @@ def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=
     return definitions
 
 READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
-READS |= {'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_pylons', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'query_item_info', 'query_item_sources', 'plan_materials', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
+READS |= {'look_around', 'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_pylons', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'query_item_info', 'query_item_sources', 'plan_materials', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
 BUDGETED_ACTIONS = ACTIONS - {'stop_action'}
@@ -428,6 +429,8 @@ def validate_backend(bridge, name, arguments):
     if name == 'build_place' and 'server_ai_build_place_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_build_place_v1')
     capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
+    if name == 'look_around' and 'server_ai_lit_terrain_v1' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_lit_terrain_v1')
     if name == 'query_map' and 'includeChunks' in arguments and 'server_ai_map_chunks_v1' not in capabilities:
         raise PreDispatchRejected('Requires server_ai_map_chunks_v1')
     if name == 'explore_frontier' and 'server_ai_frontier_exploration_v1' not in capabilities:
@@ -1646,7 +1649,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         capability = ('server_ai_' if server else '') + name.removeprefix('query_') + '_v1'
         if capability not in bridge.hello.get('capabilities', []):
             raise PreDispatchRejected(f'Requires {capability}', status='unsupported_operation')
-    if name in ('query_item_info', 'query_item_sources', 'plan_materials', 'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
+    if name in ('look_around', 'query_item_info', 'query_item_sources', 'plan_materials', 'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):

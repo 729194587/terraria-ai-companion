@@ -19,7 +19,7 @@ except ImportError as error:
 
 import test_server_ai_agent as fixture
 import directional_explorer
-from external_brain import explorer_available
+from external_brain import exploration_map_help, explorer_available
 from agent import is_server_ai_chat, run
 from control import BridgeError
 from external_brain import BrainHost
@@ -77,9 +77,18 @@ class ExplorerGame(fixture.AiHost):
 
 class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
     async def test_explore_status_reads_options_without_dispatch(self):
-        await self.initialize()
+        info = (await self.initialize()).json()['result']['instructions']
+        self.assertIn('explore(direction)', info)
+        self.assertNotIn('full=true', info)
         listing=(await self.http.post(self.url,headers=self.headers,json=self.request('tools/list',{}))).json()
-        self.assertIn('exploration_status',[tool['name'] for tool in listing['result']['tools']])
+        description = next(t['description'] for t in listing['result']['tools'] if t['name']=='exploration_status')
+        guide = (await self.tool('guide', {})).json()['result']['structuredContent']['instructions']
+        map_call = 'api("query_map",{mode="region"})'
+        for instructions in (info, description, guide):
+            self.assertIn('passages.routes[].visitState', instructions)
+            self.assertNotIn(map_call, instructions)
+        with patch.object(self.ai, 'supported_atomic_operations', self.ai.supported_atomic_operations | {'query_map'}):
+            self.assertIn(map_call, exploration_map_help(self.ai))
         result=(await self.tool('exploration_status',{})).json()['result']
         self.assertFalse(result['isError'],result)
         view=result['structuredContent']
@@ -161,6 +170,7 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
         listing = await self.http.post(self.url, headers=self.headers, json=self.request('tools/list', {}))
         schema = next(t['inputSchema'] for t in listing.json()['result']['tools'] if t['name'] == 'explore')
         self.assertEqual(set(schema['properties']), {'direction', 'objective', 'seek'})
+        self.assertIn('"chest"', schema['properties']['seek']['description'])
         guide = (await self.tool('guide', {'full': True})).json()['result']['structuredContent']
         self.assertIn('explore(direction)', guide['instructions'])
         self.assertEqual(schema['required'],['direction'])
@@ -344,10 +354,10 @@ class ExternalBrainTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual({'guide', 'execute_lua', 'read_skill', 'get_events', 'say'},
                                      {tool.name for tool in tools.tools})
                     guide = (await session.call_tool('guide', {})).structuredContent
-                    self.assertIn('return api("help")', guide['instructions'])
-                    self.assertIn('return api("help",{name="get_player_state"})', guide['instructions'])
-                    self.assertIn('returnsSchema', guide['instructions'])
-                    self.assertIn('Lua Runtime Reference', guide['instructions'])
+                    self.assertIn('get_player_state', guide['instructions'])
+                    self.assertIn('guide(names=', guide['instructions'])
+                    self.assertIn('mining_and_ores', guide['instructions'])
+                    self.assertNotIn('Lua Runtime Reference', guide['instructions'])
                     self.assertNotIn('"parameters":{"type":"object"', guide['instructions'])
                     self.assertLess(len(guide['instructions']), len(self.agent.history[0]['content']))
                     sent_before_help = len(self.aihost.sent)

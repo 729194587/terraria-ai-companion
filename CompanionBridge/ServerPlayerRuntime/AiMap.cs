@@ -188,7 +188,7 @@ public sealed class AiMap
             ["exploredRatio"]=(double)known/(w*h),
             ["legend"]="? unknown; space known empty/nonblocking; # solid; = platform; : mixed or partially known; ~ water; L lava; H honey; S shimmer. Liquid marker means presence, not full coverage.",
             ["knowledge"]="last_known_state; not live; square Tile cells (+X right,+Y down); overview strategic only; region zoom with cellSize=1",
-            ["visibility"]="server approximation v1: 120x68 actor viewport, opaque ray occlusion, surface daylight, underground radius 4, visible vanilla torches radius 14; no native lighting/mod light hooks"};
+            ["visibility"]="119x67 actor viewport; lit terrain shared with look_around; past observations retained; recent foot positions tracked separately"};
         if(mode=="region" && args.TryGetProperty("includeChunks",out var include) && include.GetBoolean())
         {
             var summary=new List<object>();

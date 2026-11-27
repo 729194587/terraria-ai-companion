@@ -98,7 +98,7 @@ HTTP 认证采用独立随机 Bearer Token：
           enabled: false
 ```
 
-使用默认游戏 Bridge 端口时，上面的配置会自动启动 Host。端口非默认时，可在 `args` 追加 `--port` 和 `--ai-port`。Harness 发现工具后，先调用 `mcp__terraria__guide`，再用 `mcp__terraria__execute_lua` 查询 `get_player_state`。示例关闭了 Harness 自动重连，游戏连接故障时可确认 Actor 状态后重启 Harness。
+使用默认游戏 Bridge 端口时，上面的配置会自动启动 Host。端口非默认时，可在 `args` 追加 `--port` 和 `--ai-port`。Harness 发现工具后可直接操作，也可调用 `mcp__terraria__guide` 查看已开放的 API 名称。示例关闭了 Harness 自动重连，游戏连接故障时可确认 Actor 状态后重启 Harness。
 
 ### 本机 Host & Play 的 Mod 开关（Windows）
 
@@ -147,32 +147,13 @@ default_tools_approval_mode = "prompt"
 
 ### MCP Instructions
 
-初始化时返回简短说明：这是一个 Terraria 游戏角色；开始时先调用 `guide`；未知区域优先用可用的 `explore`；使用 `execute_lua` 组合其他游戏 API；使用 `read_skill` 按需加载玩法知识；用 `get_events` 接收游戏内消息；用 `say` 在游戏内发言。
-
-Instructions 只描述跨工具流程，不复制完整 API 文档。总长建议不超过 4096 字符，前 512 字符应能独立表达核心规则。
+初始化时返回角色身份、工具用法与任务取消规则。外脑可直接根据玩家目标选择工具。握手支持方向探索时，首屏也会说明 `explore` 的用法。
 
 ### Guide
 
-新增 `guide` 工具，复用 Native Agent 的游戏契约来源，以精简形式呈现：
-
-```python
-lua_agent.server_contract(bridge, compact=True)
-```
-
-`lua_agent.server_contract` 返回 `(instructions, tools)`。MCP `guide` 返回精简的 `instructions`。MCP `tools/list` 继续复用 `execute_lua` 和 `read_skill` 的 Schema 与描述。
-
-Guide 应包含当前握手生成的：
-
-- Agent 角色原则和行动优先规则；
-- `available_skills` 索引；
-- 当前可调用的 API 分类与函数名；
-- 按需查询 API 详情的用法与示例；
-- Lua Runtime Reference、预算和结果语义；
-- 当前后端支持的任务能力。
-
-不要在 MCP 层手工维护第二份 API 清单或复制一套不同的游戏 System Prompt。能力以当前 Server AI bind handshake 为准。
-
-外部 Agent 在新对话开始时读取一次 Guide，后续按需加载 Skill。
+- `guide({})` 按当前连接列出可用游戏 API 的分类与函数名，并附上已注册的玩法攻略索引。有私人笔记时可读取同一角色的笔记索引。
+- `guide({"names":["get_player_state"]})` 返回指定函数的参数定义。需要返回结构或示例时，用 Lua 调用 `api("help",{name="get_player_state"})`。
+- `guide({"full":true})` 按需展开完整原生契约，包括 Lua Runtime Reference、动作与任务回执规则。
 
 ### Lua API Help
 
@@ -230,10 +211,11 @@ DeepSeek Harness 的 MCP Client 不支持 MCP Prompts，因此 Guide 使用普�
 
 | 工具 | 作用 | 实现来源 |
 |---|---|---|
-| `guide` | 获取当前游戏 Agent Guide | `lua_agent.server_contract()` |
+| `guide` | 查询能力索引、单项参数或完整契约 | 当前连接的能力分组与原生 API 定义 |
 | `execute_lua` | 执行完整 Lua 程序，组合查询、动作和任务 API | 现有 `lua_agent.TOOL` + `ToolExecutor` / `LuaRuntime` |
 | `explore` | 沿 left、right、up、down 分段探索，可选填 objective 或 seek | 与内置 Agent 共享 `directional_explorer.run()` |
 | `exploration_status` | 查询当前位置的资源与路线，或查看上一趟的逐段证据 | 传入 `lastTrip=true` 读取行程记录 |
+| `look_around` | 查看角色周围当前被照亮的地形侧视图 | 无参数。MCP 返回一张 PNG，附角色格坐标和图例。暗区保持未知，按需调用。 |
 | `read_skill` | 按 ID 读取一篇玩法 Skill | `gameplay_skills.TOOL` |
 | `get_events` | 有界长轮询游戏内指令和系统事件 | 现有 `Bridge` 事件 |
 | `say` | 让 AI Player 在游戏内发言 | `ServerAiBridge` 原生 AI chat 路径 |
@@ -244,7 +226,9 @@ DeepSeek Harness 的 MCP Client 不支持 MCP Prompts，因此 Guide 使用普�
 
 默认沿途记录资源和通道。可选 `seek` 是每段走完后检查的停止条件，例如 `chest`、`Terraria/Iron`、`passage`，或用 `any` 遇发现就停。可选 `objective` 记录此次意图。是否采集、下行、折返或继续由模型选择。路线和落点使用世界像素，资源锚点使用 Tile 坐标。
 
-`explorationResult` 默认只给出终点、位移、段数、结束原因、最多八个资源线索、近期通道线索及当前位置的出路。`partialResourceScan` 标记有未完整覆盖的资源观察。资源窗口采样超时后会尝试一次近区扫描，局部落点通过检查时可以继续。用 `exploration_status({"lastTrip":true})` 读取当前租约最近结束行程的逐段回执和采样覆盖；用 `exploration_status({})` 读取现场详情。需实际返回的委托可使用 `explore_frontier`。
+`explorationResult` 默认只给出终点、位移、段数、结束原因、最多八个资源线索、近期通道线索及当前位置的出路。去重后的线索超过八条时，先为每种 `kind` 选一条，再优先覆盖同类中的不同 `contentKey`，最后按观察顺序补足。`findingCount` 是去重后的总数。`partialResourceScan` 标记有未完整覆盖的资源观察。资源窗口采样超时后会尝试一次近区扫描，局部落点通过检查时可以继续。用 `exploration_status({"lastTrip":true})` 读取当前租约最近结束行程的逐段回执和采样覆盖；用 `exploration_status({})` 读取现场详情。需实际返回的委托可使用 `explore_frontier`。
+
+矿脉线索的 `anchor` 标识观察到的矿簇。需要采矿时，把 `targetTile` 的格坐标传给 `mine_target`。该坐标来自实际观测到的矿格；专服仍会核验矿格与采矿站位。已经确认消失的矿脉省略 `targetTile`。
 
 `explore`、`execute_lua`、`say` 互斥，等待 `get_events` 可以并行。取消探索或关闭会话时，宿主按已分配的原生任务 ID 清理导航并核验终态和输入释放；结果不确定会隔离宿主。任务 origin 中的 MCP 请求、租约版本与 segment 可关联到原生 taskId 和释放回执。
 

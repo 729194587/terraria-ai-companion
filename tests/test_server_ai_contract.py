@@ -36,6 +36,7 @@ FULL_ACTIONS = FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_
             'server_ai_boss_encounter_v1', 'server_ai_boss_strategy_v1', 'server_ai_open_item_v1', 'server_ai_drop_item_v1', 'server_ai_inventory_favorite_v1', 'server_ai_personal_inventory_v1',
             'server_ai_pylons_v1', 'server_ai_regroup_v1', 'server_ai_dismiss_summon_v1', 'server_ai_doors_v1', 'server_ai_interact_tile_v1', 'server_ai_hammer_v1',
             'server_ai_collect_drops_v1', 'server_ai_place_item_v1', 'server_ai_build_place_v1',
+            'server_ai_frontier_exploration_v1', 'server_ai_lit_terrain_v1',
             'server_ai_material_plan_v1', 'server_ai_item_sources_v1', 'server_ai_item_info_v1', 'server_ai_build_diff_v1', 'server_ai_merchant_shop_v1', 'server_ai_merchant_purchase_v1',
             'server_ai_merchant_sale_v1', 'server_ai_npc_dialogue_v1', 'server_ai_merchant_bulk_purchase_v1',
             'server_ai_nurse_v1', 'server_ai_reforge_v1',
@@ -169,7 +170,7 @@ class ResultRegistryTests(unittest.TestCase):
         # Shared/client names intentionally unavailable to Server AI, even with all capabilities.
         unavailable = {'attack_entity', 'drop_through_platform', 'get_player_status', 'get_world_state',
                        'observe_exploration', 'place_wall'}
-        task_only = {'combat_attack', 'boss_encounter', 'collect_drops', 'place_item', 'build_place'}
+        task_only = {'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place'}
         scoped = {'inspect_inventory', 'observe_scene', 'query_map', 'scan_entities'}
         registered = [entry['function']['name'] for entry in atomic.TOOLS] + sorted(program_tasks.NAMES)
         self.assertCountEqual(registered, set(registered))
@@ -207,7 +208,7 @@ class ResultRegistryTests(unittest.TestCase):
                     self.assertEqual('ok' if name in scoped else 'bad_argument', partial['status'])
             if caps == FULL_ACTIONS:
                 submit = api_help(b, {'name': 'submit_task'})['parameters']['properties']
-                self.assertEqual(task_only | {'mine_target'}, set(submit['operation']['enum']))
+                self.assertEqual(task_only | {'mine_target', 'navigate_to'}, set(submit['operation']['enum']))
 
     def test_guide_only_advertises_available_argument_help(self):
         for caps, names in [(BASE, set()), (BASE | {'server_ai_map_v1'}, {'query_map'}),
@@ -411,6 +412,18 @@ class ManifestTests(unittest.TestCase):
                 for invalid in ({}, {'typeId': 0}, {'typeId': '193'}, {'typeId': 2**31}, {'typeId': 1, 'x': 0}):
                     self.assertFalse(validator.is_valid(invalid))
                 Draft202012Validator.check_schema(help_doc['returnsSchema'])
+
+    def test_lit_terrain_is_an_actor_centered_capability_gated_read(self):
+        self.assertNotIn('look_around', exposed_operations(bridge(BASE)))
+        with self.assertRaises(atomic.PreDispatchRejected):
+            atomic.validate_backend(bridge(BASE), 'look_around', {})
+        enabled = bridge(BASE | {'server_ai_lit_terrain_v1'})
+        self.assertIn('look_around', exposed_operations(enabled) & atomic.READS)
+        detail = api_help(enabled, {'name': 'look_around'})
+        params = Draft202012Validator(detail['parameters'])
+        self.assertTrue(params.is_valid({}))
+        self.assertFalse(params.is_valid({'centerX': 400}))
+        Draft202012Validator.check_schema(detail['returnsSchema'])
 
     def test_pylon_capability_distinguishes_queries_and_actions(self):
         for caps, expected in ((BASE,set()), (BASE | {'server_ai_pylons_v1'},{'list_pylons'}),

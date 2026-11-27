@@ -89,6 +89,9 @@ def help_result_contract(name):
 
 
 READ_EXAMPLES = {
+    'look_around': '''local q=api("look_around",{})
+if not q.valid then return q end
+return {actor=q.data.actor,visible=q.data.visibleTiles,rows=q.data.rows}''',
     'get_player_state': '''local q=api("get_player_state",{})
 if not q.valid or not q.available then return q end
 return {player=q.player,motion=q.motion}''',

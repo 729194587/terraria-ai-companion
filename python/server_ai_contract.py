@@ -20,7 +20,7 @@ CATEGORIES = (
      'Limited', 'AI自身状态、背包和装备观察及快捷栏选择。'),
     ('功能装备变更', ('equip_item', 'unequip_item'),
      'Limited', '仅AI功能装备槽与普通背包；使用新鲜槽位令牌，按后续更新与动作回执核验。'),
-    ('世界感知', ('observe_terrain', 'observe_scene', 'inspect_tile', 'scan_tiles', 'scan_entities', 'resolve_content', 'query_item_info', 'query_item_sources', 'plan_materials', 'observe_exploration', 'get_world_state'),
+    ('世界感知', ('look_around', 'observe_terrain', 'observe_scene', 'inspect_tile', 'scan_tiles', 'scan_entities', 'resolve_content', 'query_item_info', 'query_item_sources', 'plan_materials', 'observe_exploration', 'get_world_state'),
      'Limited', '有界采样，保留身份、时效、未知和截断；可见不证明可达。'),
     ('探索记忆', ('query_map',), 'Limited', 'AI持久探索记忆，可能过时；不是脚本持久变量或实时地图。'),
     ('直接身体输入', ('move_input',), 'Limited', '原生方向/跳跃多更新输入；不是目标导航或装备运动适配。'),

@@ -118,7 +118,7 @@ public sealed class ServerAiSystem : ModSystem
             ActorContainer.Tick(actor);
             ServerContainerFixture.Tick(actor);
             ServerCollectFixture.Tick(actor);
-            if(actor!=null)AiMapRuntime.Tick();
+            if(actor!=null)AiMapRuntime.Tick(Lighting);
             bool reflex=simulationUpdate&&actor!=null&&(!ServerAiActionFixture.Enabled||ServerCombatFixture.Enabled);
             if(reflex && !actions.HasActive && !actions.BodyBlocked(actor) && torches?.Busy!=true)
                 NativeCombatWorld.AutoEquip(actor);

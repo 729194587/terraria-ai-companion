@@ -13,12 +13,11 @@ import atomic_operations as atomic
 from control import BridgeError
 import directional_explorer as explorer
 import evidence
-import agent_memory
 import gameplay_skills
 import lua_agent
 import program_tasks
 from sensed_resources import ResourceHistory
-from server_ai_contract import server_definitions
+from server_ai_contract import callable_categories, server_definitions
 from lua_runtime import LuaRuntime
 
 
@@ -37,6 +36,15 @@ def explorer_available(agent):
     return (tasks is not None and tasks.bridge is bridge and not tasks.closed and program_tasks.available(bridge)
             and required.issubset(bridge.hello['capabilities'])
             and {'observe_scene', 'navigate_to'}.issubset(bridge.supported_atomic_operations))
+
+
+def exploration_map_help(bridge):
+    hints = ''
+    if 'query_map' in bridge.supported_atomic_operations:
+        hints += '用 Lua api("query_map",{mode="region"}) 回看沿途照亮的地形，centerX、centerY 可指定先前的岔口（世界格坐标）。'
+    if 'server_ai_passages_v1' in bridge.hello['capabilities']:
+        hints += '回到岔口时，exploration_status() 的 passages.routes[].visitState 表示候选落点附近是否有近期脚印，选路时可供参考。'
+    return hints
 
 
 class ExternalExplorer(explorer.ExplorerContext):
@@ -128,17 +136,16 @@ class BrainHost:
         self.agent = agent
         self.bridge = agent.bridge
         self.is_chat = is_chat
-        self.guide, native_tools = lua_agent.server_contract(self.bridge, compact=True)
+        native_tools = list(agent.tools)
+        if 'look_around' in self.bridge.supported_atomic_operations:
+            native_tools.append(atomic.tool('look_around', '查看角色周围此刻有光的地形侧视图（PNG）。可辨认通道、平台、液体及亮处的宝箱和矿石。'))
         if explorer_available(agent):
-            native_tools = [*native_tools, explorer.EXPLORE_TOOL]
-            native_tools.append(atomic.tool('exploration_status','Read current exploration details or the previous trip trace.',
+            native_tools.append(explorer.EXPLORE_TOOL)
+            native_tools.append(atomic.tool('exploration_status','Read current exploration details or the previous trip trace.' + exploration_map_help(self.bridge),
                 {'lastTrip': {'type':'boolean','default':False}}))
-        if agent.notebook is not None:
-            self.guide += agent_memory.MEMORY_RULES
-            native_tools = [*native_tools, agent_memory.TOOL]
         self.delivered_chat = None
         self.tools = native_tools + [
-            atomic.tool('guide', '首次用 full=true 读取原生提示。之后查几个函数的参数用 names，例如 ["scan_entities","equip_item"]；用 Lua api("help",{name="equip_item"}) 查示例。', {
+            atomic.tool('guide', '默认列出可用 API 和攻略。用 names 查指定函数的参数，用 Lua api("help",{name=函数名}) 查示例和返回结构。full=true 展开完整参考。', {
                 'full': {'type': 'boolean'},
                 'names': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 12, 'uniqueItems': True}}),
             atomic.tool('get_events', '取走未交付的游戏内指令和系统消息。', {
@@ -292,9 +299,15 @@ class BrainHost:
                 definitions = {d['function']['name']: d['function'] for d in server_definitions(self.bridge)}
                 return {'functions': [definitions[n] for n in names if n in definitions],
                         'unavailable': [n for n in names if n not in definitions]}
-            instructions = self.agent.history[0]['content'] if args.get('full') else self.guide
+            if args.get('full'):
+                instructions = self.agent.history[0]['content']
+            else:
+                names = {row['function']['name'] for row in server_definitions(self.bridge)}
+                groups = callable_categories(self.bridge, names)
+                instructions = '\n'.join(f"{row['category']}  {', '.join(row['apis'])}" for row in groups)
+                instructions += '\n用 guide(names=[...]) 查参数。可用攻略由 read_skill 按名称加载。\n' + gameplay_skills.bundled_skills().render_index()
             if explorer_available(self.agent):
-                instructions = EXPLORER_GUIDE + '\n' + instructions
+                instructions = EXPLORER_GUIDE + exploration_map_help(self.bridge) + '\n' + instructions
             return {'instructions': '外部驾驶时，execute_lua 的顶层 events 与 value 一起读取。回复中已交付的消息不会在 get_events 重发。\n' + instructions, **self.memory_context()}
         if name == 'memory' and self.agent.notebook is not None:
             chat = self.delivered_chat
@@ -303,6 +316,12 @@ class BrainHost:
             return self.agent.notebook.invoke(args, chat, self.bridge.binding['world'])
         if name == 'read_skill':
             return gameplay_skills.bundled_skills().load(args)
+        if name == 'look_around' and name in self.bridge.supported_atomic_operations:
+            version = self.lease_version
+            view = await atomic.dispatch(self.bridge, name, args)
+            if self.phase != 'external' or self.lease_version != version:
+                raise ValueError('External Brain lease changed during observation')
+            return view
         if name == 'get_events':
             if self.polling:
                 raise ValueError('Another get_events call is already waiting')

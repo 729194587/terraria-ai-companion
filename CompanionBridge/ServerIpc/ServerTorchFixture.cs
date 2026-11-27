@@ -40,7 +40,8 @@ internal static class ServerTorchFixture
             for(int tx=x-50;tx<=x+60;tx++)for(int ty=y-33;ty<=y+32;ty++)
             {
                 var t=Main.tile[tx,ty];t.ClearEverything();
-                if(ty>=y||mode!="daylight"&&ty<=y-9||mode=="occluded"&&tx>=x-6&&tx<=x-3)
+                bool shaft=mode=="fork" && tx>=x-2 && tx<=x+2;
+                if(ty>=y||mode!="daylight"&&ty<=y-9&&!shaft||mode=="occluded"&&tx>=x-6&&tx<=x-3)
                 {t.HasTile=true;t.TileType=TileID.Stone;}
                 if(mode=="blocked"&&tx>=x-3&&tx<=x+3&&ty==y-1)
                 {t.HasTile=true;t.TileType=TileID.Rope;}
@@ -62,7 +63,7 @@ internal static class ServerTorchFixture
             p.position=new(x*16,y*16-p.height);p.velocity=Vector2.Zero;
             p.selectedItem=0;p.statLife=p.statLifeMax2;
             for(int i=0;i<50;i++)p.inventory[i].TurnToAir();
-            p.inventory[0].SetDefaults(ItemID.WoodenSword);
+            p.inventory[0].SetDefaults(mode is "held" or "fork" ? ItemID.Torch : ItemID.WoodenSword);
             p.inventory[1].SetDefaults(ItemID.CopperPickaxe);
             if(mode is not ("empty" or "nav" or "mine"))
             {p.inventory[15].SetDefaults(ItemID.Torch);p.inventory[15].stack=mode=="single"?1:4;}

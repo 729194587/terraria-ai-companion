@@ -106,7 +106,10 @@ class StdioBrainTests(StdioClient, unittest.IsolatedAsyncioTestCase):
             tools = await self.request(child, 'tools/list')
             self.assertEqual(TOOLS, {tool['name'] for tool in tools['tools']})
             guide = await self.request(child, 'tools/call', {'name': 'guide', 'arguments': {}})
-            self.assertIn('Lua Runtime Reference', guide['structuredContent']['instructions'])
+            index = guide['structuredContent']['instructions']
+            self.assertIn('get_player_state', index)
+            self.assertNotIn('Lua Runtime Reference', index)
+            self.assertNotIn('open_container', index)  # Unavailable on this bridge.
             value = await self.request(child, 'tools/call', {
                 'name': 'execute_lua', 'arguments': {'source': "return {life=api('get_player_state').player.life}"},
             })
