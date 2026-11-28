@@ -56,6 +56,14 @@ class LuaExplorer(explorer.OwnedExplorer):
             raise Interrupted('call_limit')
         self.out['calls'] += 1
 
+    def can_start_segment(self):
+        # Admission, landing/map verification and up to two resource samples.
+        return self.out['actions'] < self.limits.actions and self.out['calls']+5 <= self.limits.calls
+
+    async def read_map(self, args):
+        self.charge()
+        return await atomic.dispatch(self.agent.bridge, 'query_map', args, owner=self.owner)
+
     async def read_scene(self, args):
         self.charge()
         return await atomic.dispatch(self.agent.bridge, 'observe_scene', args, owner=self.owner)
@@ -91,7 +99,7 @@ class LuaExplorer(explorer.OwnedExplorer):
         return receipt
 
     async def travel(self, direction, seek):
-        self.objective = direction
+        self.objective = direction or 'explore'
         try:
             baseline = await self.resource_scan(self.owner)
             return await explorer.run(self, direction, self.owner, baseline, seek=seek)
@@ -470,13 +478,13 @@ class LuaRuntime:
                 if name == '_directional_explore':
                     if explored or halted or handoff is not None or not explorer.available(self.bridge):
                         raise Interrupted('exploration_unavailable')
-                    if not explorer.valid_options(args):
-                        raise ValueError('explore requires a direction and optional seek')
+                    if not explorer.valid_options(args,self.bridge):
+                        raise ValueError('Invalid explore direction or seek for this server')
                     origin = {k:v for k,v in tracing.context.get().items() if k in tracing.MCP_CORRELATION}
                     origin.update(chatId=chat_id, programId=out['runId'], source='lua_explore')
                     trip = LuaExplorer(self, owner, origin, out, limits, recovery, on_result)
                     explored = True
-                    active = asyncio.create_task(trip.travel(args['direction'], args.get('seek')))
+                    active = asyncio.create_task(trip.travel(args.get('direction'), args.get('seek')))
                     active_role = 'explore'
                     result = await watch(active)
                     active = None
@@ -593,7 +601,16 @@ class LuaRuntime:
                         on_result(result.get('operation', 'mine_target'), args if synchronous_task else {}, terminal_result)
                     if synchronous_task and terminal_result is not None:
                         out['lastAction'] = bounded_action(terminal_result)
-                        out['actionState'] = 'released' if safe_terminal(terminal_result) else 'unknown'
+                        # A bound refusal has no action or inputs to clean up. Preserve
+                        # the prior body state so a later investigation can use this lease.
+                        refused = (terminal_result.get('dispatchState')=='not_admitted'
+                                   and terminal_result.get('inputsAcquired') is False
+                                   and terminal_result.get('actionId') is None)
+                        if not refused:
+                            released = (safe_terminal(terminal_result) and terminal_result.get('inputsReleased') is True
+                                        and terminal_result.get('endEvidenceStatus')=='known'
+                                        and terminal_result.get('actionId')==result.get('taskId'))
+                            out['actionState'] = 'released' if released else 'unknown'
                     call_end(result.get('status'), result=result)
                     if result.get('status') == 'unknown':
                         out.update(status='action_unknown', actionState='unknown')

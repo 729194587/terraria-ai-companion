@@ -80,7 +80,7 @@ SALE_SOURCE = {"entityRef": MERCHANT_REF, "sourceSlot": INVENTORY_SLOT, "sourceT
 
 LIT_TERRAIN = tool("look_around", "观察角色周围当前照亮的地形。视窗 119×67 格，含远处有光的通道。data.rows 按行从左到右，? 暗区，. 空地，# 实心，= 平台，~ 水，L 岩浆，H 蜂蜜，S 微光，t 火把，c 箱子，o 矿石。data.actor 和 originX/Y 为世界格坐标。")
 TOOLS = [LIT_TERRAIN, tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地形记忆与实际脚印分开；光照揭示规则见返回的visibility。",
-    {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]},"includeChunks":{"type":"boolean"}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
+    {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]},"includeChunks":{"type":"boolean"},"includeVisits":{"type":"boolean","description":"Include actual foot tiles as a row-major, low-bit-first base64 bitmap at Tile resolution."}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
     {"resultType":{"type":"integer","minimum":1},"ingredientType":{"type":"integer","minimum":1,"maximum":2147483647,
      "description":"材料的物品 typeId；匹配直接用料和配方组替代材料。"},"availableOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":24},"offset":{"type":"integer","minimum":0,"maximum":100000}}),
     tool("craft_recipe", "按新鲜query_recipes的recipeId/recipeToken原生合成，crafts是配方执行次数1..20，不是产物件数；每次重查材料/制作站/空间。可能部分完成，不回滚或失败后自动重试。",
@@ -273,7 +273,7 @@ TOOLS.append(tool("build_diff", "只读比较蓝图和当前世界。origin 为�
 TOOLS.append(tool("build_place", "通过 submit_task 按蓝图施工，已匹配项跳过。", {"blueprint": BLUEPRINT}, ["blueprint"]))
 # Conditional inputs on otherwise flat read APIs. Unlisted fields are shared.
 READ_PARAMETER_RULES = {
-    'query_map': ('mode', dict.fromkeys(('centerX', 'centerY', 'width', 'height', 'cellSize', 'includeChunks'), ('region',))),
+    'query_map': ('mode', dict.fromkeys(('centerX', 'centerY', 'width', 'height', 'cellSize', 'includeChunks', 'includeVisits'), ('region',))),
     'scan_entities': ('category', {'npcFilter': ('npc',), 'typeIds': ('npc', 'item')}),
 }
 
@@ -354,7 +354,7 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时，指定width或hei
     'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
 
 
-def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=False, bed_spawn=False, scene_region=False, directional_landings=False, passages=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False, nearby_handoff=False, recipe_uses=False, target_reforge=False):
+def server_tools(supported, *, resources=False, map_chunks=False, exploration_v2=False, bulk_purchase=False, bed_spawn=False, scene_region=False, directional_landings=False, passages=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False, nearby_handoff=False, recipe_uses=False, target_reforge=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
     definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'follow_teammate', 'place_item', 'build_place')]
     for definition in definitions:
@@ -381,6 +381,8 @@ def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=
             f["description"] = "对80像素内原版普通木门、开关或拉杆交互一次。传 inspect_tile 的 data.interaction.target。重复点击会再次切换，电路效果另查。"
             if bed_spawn:
                 f["description"] += " 对原版床脚使用同一操作可设置或清除自己的出生点；interaction.active 表示此床已绑定。先核对目标状态。"
+        if name == 'query_map' and not exploration_v2:
+            f['parameters']['properties'].pop('includeVisits', None)
         if name == 'query_map' and not map_chunks:
             f['parameters']['properties'].pop('includeChunks', None)
         if name == 'drop_inventory_item' and not nearby_handoff:
@@ -469,6 +471,8 @@ def validate_backend(bridge, name, arguments):
             raise PreDispatchRejected('nearbyOnly requires teammateRef and server_ai_nearby_handoff_v1')
     if name == 'look_around' and 'server_ai_lit_terrain_v1' not in capabilities:
         raise PreDispatchRejected('Requires server_ai_lit_terrain_v1')
+    if name == 'query_map' and 'includeVisits' in arguments and 'server_ai_exploration_v2' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_exploration_v2')
     if name == 'query_map' and 'includeChunks' in arguments and 'server_ai_map_chunks_v1' not in capabilities:
         raise PreDispatchRejected('Requires server_ai_map_chunks_v1')
     if name == 'follow_teammate' and 'server_ai_follow_v2' not in capabilities:

@@ -213,7 +213,7 @@ DeepSeek Harness 的 MCP Client 不支持 MCP Prompts，因此 Guide 使用普�
 |---|---|---|
 | `guide` | 查询能力索引、单项参数或完整契约 | 当前连接的能力分组与原生 API 定义 |
 | `execute_lua` | 执行完整 Lua 程序，组合查询、动作和任务 API | 现有 `lua_agent.TOOL` + `ToolExecutor` / `LuaRuntime` |
-| `explore` | 沿 left、right、up、down 分段探索，可选填 objective 或 seek | 与内置 Agent 共享 `directional_explorer.run()` |
+| `explore` | 续接空间探索，可选填 direction 偏好、objective 或 seek | 与内置 Agent 共享 `directional_explorer.run()` |
 | `exploration_status` | 查询当前位置的资源与路线，或查看上一趟的逐段证据 | 传入 `lastTrip=true` 读取行程记录 |
 | `look_around` | 查看角色周围当前被照亮的地形侧视图 | 无参数。MCP 返回一张 PNG，附角色格坐标和图例。暗区保持未知，按需调用。 |
 | `read_skill` | 按 ID 读取一篇玩法 Skill | `gameplay_skills.TOOL` |
@@ -222,9 +222,9 @@ DeepSeek Harness 的 MCP Client 不支持 MCP Prompts，因此 Guide 使用普�
 
 `execute_lua` 和 `read_skill` 的 Schema、描述与能力门禁复用当前代码。工具列表只暴露当前后端可用的功能。
 
-调用 `explore({"direction":"right"})` 可沿给定方向连续探路。每段从角色实际脚下选择一个前方落区，用现有原生导航走过去，确认释放后观察，再从新位置推进。一次最多 6 段，每段目标最多约 32 格，单段等待上限 12 秒，整趟移动共用 45 秒预算。AiMap 随角色实际位置通过专服游戏更新揭示地形。预算用尽、没有前向位移、缺少可确认的落点、原生导航受阻或控制中断时，本次调用结束。
+`explore({})` 从实际位置继续本世界角色的空间探索。`direction` 是可选偏好。控制器从当前落区、先前保留的支路和已知地图边界选择目标，先尝试自然连通的空间，必要时交给 Navigation 开路。每次只追踪一个导航任务。45 秒是派发新段的检查预算；已有导航等待终态和释放。调查结果依据目标范围的脚印或边界格的揭示。已确认的导航失败会暂缓该目标。旧服务器仍使用带方向的分段调用。
 
-默认沿途记录资源和通道。可选 `seek` 是每段走完后检查的停止条件，例如 `chest`、`Terraria/Iron`、`passage`，或用 `any` 遇发现就停。可选 `objective` 记录此次意图。是否采集、下行、折返或继续由模型选择。路线和落点使用世界像素，资源锚点使用 Tile 坐标。
+可选 `seek` 支持 `chest`、`Terraria/Iron`、`passage` 或 `any`。在起点或段末发现匹配项后，宿主保存剩余目标并返回。`objective` 记录本次意图。路线和落点使用世界像素，资源锚点使用 Tile 坐标。
 
 `explorationResult` 默认只给出终点、位移、段数、结束原因、最多八个资源线索、近期通道线索及当前位置的出路。去重后的线索超过八条时，先为每种 `kind` 选一条，再优先覆盖同类中的不同 `contentKey`，最后按观察顺序补足。`findingCount` 是去重后的总数。`partialResourceScan` 标记有未完整覆盖的资源观察。资源窗口采样超时后会尝试一次近区扫描，局部落点通过检查时可以继续。用 `exploration_status({"lastTrip":true})` 读取当前租约最近结束行程的逐段回执和采样覆盖；用 `exploration_status({})` 读取现场详情。
 

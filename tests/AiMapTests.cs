@@ -7,7 +7,7 @@ using VirtualPlayerEngineProbe;
 public static class AiMapTests
 {
     public static void Restore(string root)
-    {var map=AiMap.Load(Path.Combine(root,"cross.bin"),Guid.Parse(File.ReadAllText(Path.Combine(root,"identity"))),"character-a",8400,2400);if(map.Get(1,0)!=4)throw new Exception("cross-process map differs");Console.WriteLine("AI map cross-process restore passed.");}
+    {var map=AiMap.Load(Path.Combine(root,"cross.bin"),Guid.Parse(File.ReadAllText(Path.Combine(root,"identity"))),"character-a",8400,2400);if(map.Get(1,0)!=4 || !map.Visited(55,10) || map.Visited(25,10) || map.WalkedNear(55,10))throw new Exception("cross-process map differs");Console.WriteLine("AI map cross-process restore passed.");}
     public static void Run(string root)
     {
         int checks=0;void Check(bool b,string m){if(!b)throw new Exception(m);checks++;}
@@ -18,6 +18,9 @@ public static class AiMapTests
         map.RecordFeet(5,10);map.RecordFeet(55,10);
         Check(map.WalkedNear(6,10)&&!map.WalkedNear(25,10)&&!map.WalkedNear(5,14),"observed footsteps, no interpolated path or stacked tunnel");
         Check(map.UnknownAround(5,10)==81 && map.UnknownAround(0,0)==25,"visits independent of known terrain; clipped map edges");
+        var visit=Data(Query(map,new{mode="region",width=64,height=16,cellSize=1,includeVisits=true}));
+        var bits=Convert.FromBase64String(visit.GetProperty("visitBits").GetString());
+        Check(visit.GetProperty("visitedCount").GetInt32()==2 && bits[(10*64+55)/8]==128,"visit bitmap packing");
         string legacy=Path.Combine(root,"v1.bin");
         using(var writer=new BinaryWriter(File.Create(legacy)))
         {
@@ -44,7 +47,19 @@ public static class AiMapTests
         var converted=Path.Combine(root,"converted.bin");
         AiMap.Load(v2,world,"legacy",64,1).Save(converted);
         using(var header=new BinaryReader(File.OpenRead(converted)))
-            Check(header.ReadString()=="CompanionBridge/AiMap" && header.ReadInt32()==3,"v2 was not upgraded");
+            Check(header.ReadString()=="CompanionBridge/AiMap" && header.ReadInt32()==4,"v2 was not upgraded");
+        string v3=Path.Combine(root,"v3.bin");
+        var packed=File.ReadAllBytes(converted);
+        using(var stream=new MemoryStream(packed))
+        using(var reader=new BinaryReader(stream))
+        {
+            reader.ReadString();
+            BitConverter.GetBytes(3).CopyTo(packed,stream.Position);
+        }
+        File.WriteAllBytes(v3,packed[..^sizeof(int)]); // v3 ends after the chunk metadata.
+        var oldCompressed=AiMap.Load(v3,world,"legacy",64,1);
+        Check(oldCompressed.Get(31,0)==3 && oldCompressed.Revision==7 && oldCompressed.VisitedCount==0,
+            "compressed v3 migration manufactured visits or lost map contents");
         var migrated=AiMap.Load(converted,world,"legacy",64,1);
         Check(migrated.Get(31,0)==3 && migrated.Revision==7 && migrated.ChunkRevision(31,0)==6,"v2 migration lost state");
         var reload=AiMap.Load(upgraded,world,"legacy",64,1);

@@ -96,6 +96,19 @@ public sealed class ServerAiSystem : ModSystem
         }
         catch (Exception e) { server?.Dispose(); server = null; Mod.Logger.Error("AI IPC unavailable; human paths remain available.", e); }
     }
+    public override void PreUpdatePlayers()
+    {
+        // Give the existing rescue/lease transfer one chance before a newly flooded
+        // navigation child rejects its submerged landing during this Player.Update.
+        if(server==null || !actions.BreathEnabled || !actions.HasActive
+            || ActorControl.Driver is not ServerAiNavigation {Running:true}
+            || ProbeSession.Actor is not {} player || player.breath>player.breathMax/8)return;
+        lock(EngineRuntime.Reservation.Gate)
+        {
+            var actor=Capture();
+            if(actor?.CanAct==true)server.SurfaceForAir(actor,()=>BreathRescue.NeedsAir(actor,beforeMovement:true));
+        }
+    }
     public override void PostUpdatePlayers()
     {
         Pump(simulationUpdate:true);

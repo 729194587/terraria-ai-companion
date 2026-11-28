@@ -157,7 +157,9 @@ async def verify_wading(args, mode):
 async def verify(args):
     await wait_file(args.profile / "action-fixture.json", 90)
     for mode in args.scenes or ("puddle", "bridge", "detour", "mine", "hazard", "flood", "wade_one", "wade_deep", "wade_long", "wade_pool", "bridge_long"):
-        if mode.startswith("breath_"):
+        if mode=="breath_explore":
+            await verify_breath_explore(args)
+        elif mode.startswith("breath_"):
             await verify_breath(args, mode)
         elif mode == "puddle":
             await verify_puddle(args)
@@ -165,6 +167,42 @@ async def verify(args):
             await verify_wading(args, mode)
         else:
             await verify_edits(args, mode)
+
+
+async def verify_breath_explore(args):
+    ready=args.profile/"liquid-edit-ready.json"
+    ready.unlink(missing_ok=True)
+    request=args.profile/"liquid-request"
+    temp=request.with_suffix(".tmp")
+    temp.write_text("breath_explore")
+    temp.replace(request)
+    await wait_file(ready)
+    bridge=ServerAiBridge(args.port)
+    manager=coordinator(bridge)
+    phases=[]
+    try:
+        # The liquid fixture floods only after the explorer's native movement starts.
+        run=asyncio.create_task(LuaRuntime(bridge,evidence_root=args.profile/"lua").execute(
+            "return explore()",limits=Limits(actions=1,seconds=120)))
+        while not run.done():
+            for task_id,record in manager.records.items():
+                view=record["view"]
+                action=view.get("action") or {}
+                phase=[task_id,action.get("executionState"),action.get("reason")]
+                if not phases or phases[-1]!=phase:
+                    phases.append(phase)
+            await asyncio.sleep(.02)
+        lua=await run
+        proof=lua.get("lastAction") or {}
+        result=dict(phases=phases,receipt=proof,trip=lua.get("value"),status=lua["status"])
+        (args.profile/"breath-explore.json").write_text(json.dumps(result),encoding="utf-8")
+        diagnostic=(phases,proof.get("reason"),str(args.profile/"breath-explore.json"))
+        assert len(manager.records)==1 and [proof["actionId"],"paused","task_interrupt_breath"] in phases,diagnostic
+        assert proof["inputsReleased"] and proof["completed"] and result["trip"]["progress"]["surveyedGoals"]==1,diagnostic
+        print("Native breath_explore passed",flush=True)
+    finally:
+        await manager.close()
+        bridge.close()
 
 
 async def verify_breath(args, mode):
@@ -243,5 +281,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--scenes", nargs="+", choices=("puddle", "bridge", "detour", "hazard", "mine", "flood", "wade_one", "wade_deep", "wade_long", "wade_pool", "bridge_long", "breath_shallow", "breath_roof", "breath_side", "breath_existing", "breath_build", "breath_gills", "breath_full", "breath_nearby", "breath_timing", "breath_sealed", "breath_work", "breath_cluster"))
+    parser.add_argument("--scenes", nargs="+", choices=("puddle", "bridge", "detour", "hazard", "mine", "flood", "wade_one", "wade_deep", "wade_long", "wade_pool", "bridge_long", "breath_shallow", "breath_roof", "breath_side", "breath_existing", "breath_build", "breath_gills", "breath_full", "breath_nearby", "breath_timing", "breath_sealed", "breath_work", "breath_cluster", "breath_explore"))
     asyncio.run(verify(parser.parse_args()))

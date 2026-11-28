@@ -1,0 +1,354 @@
+{
+  "breath": [
+    {
+      "profile": "navigation-recovery-native-ee79be55d9714f019e0fddf0062d55f8",
+      "packageSha256": "9aa7d52571947f5fd44857c87ba16b52ce48be1c3a3092b462ca40efea28a90c",
+      "resultSha256": "99b23650a6ae1dbc3b678b782a28f86c86d77424aa7525440905bf2c5ce8f6e9",
+      "phases": [
+        [
+          "baab432ac5af43a2b46b1a8c5faf38f8",
+          null,
+          null
+        ],
+        [
+          "baab432ac5af43a2b46b1a8c5faf38f8",
+          "accepted",
+          "accepted"
+        ],
+        [
+          "baab432ac5af43a2b46b1a8c5faf38f8",
+          "running",
+          "task_running"
+        ],
+        [
+          "baab432ac5af43a2b46b1a8c5faf38f8",
+          "terminal",
+          "native_navigation_landing_unconfirmed"
+        ]
+      ],
+      "luaStatus": "action_unknown",
+      "receipt": {
+        "actionId": "baab432ac5af43a2b46b1a8c5faf38f8",
+        "operation": "navigate_to",
+        "status": "unknown",
+        "reason": "native_navigation_landing_unconfirmed",
+        "reasonDetail": "replan requires safe foot support and body clearance: submerged head requires unsupported swimming; position=(33614,3462), velocity=(0,0); landing not confirmed | movement preferred or no admissible local edits | stage=navigating; cleared=0; openingMoves=0; localCutLimit=18",
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "endEvidenceStatus": "known"
+      },
+      "progress": null,
+      "samples": {
+        "liquid-edit-breath_explore": {
+          "sha256": "849ba30daf3c78228f60c8eac24114349af1eefd1a861c6faac28b90cb22e50e",
+          "count": 17,
+          "first": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": false,
+            "headWet": false,
+            "wet": false,
+            "breath": 200,
+            "statLife": 100
+          },
+          "last": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": true,
+            "headWet": true,
+            "wet": true,
+            "breath": 13,
+            "statLife": 100
+          },
+          "lowestBreath": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": true,
+            "headWet": true,
+            "wet": true,
+            "breath": 13,
+            "statLife": 100
+          },
+          "airAfterFlood": null
+        }
+      }
+    },
+    {
+      "profile": "navigation-recovery-native-c70ac93f153145d9b39c21fbc6f815b2",
+      "packageSha256": "548120ba3975aef07c20ce2771cc4eae2719697f5273ed44b0f3e9e83ef2a3bb",
+      "resultSha256": "693e10cf62e0cf567294bae6bbac3595b0335650aa5961c5082f45a91754dc6d",
+      "phases": [
+        [
+          "add7cf62bac24f769a336ede04c8beae",
+          null,
+          null
+        ],
+        [
+          "add7cf62bac24f769a336ede04c8beae",
+          "accepted",
+          "accepted"
+        ],
+        [
+          "add7cf62bac24f769a336ede04c8beae",
+          "running",
+          "task_running"
+        ],
+        [
+          "add7cf62bac24f769a336ede04c8beae",
+          "terminal",
+          "native_navigation_landing_unconfirmed"
+        ]
+      ],
+      "luaStatus": "action_unknown",
+      "receipt": {
+        "actionId": "add7cf62bac24f769a336ede04c8beae",
+        "operation": "navigate_to",
+        "status": "unknown",
+        "reason": "native_navigation_landing_unconfirmed",
+        "reasonDetail": "replan requires safe foot support and body clearance: submerged head requires unsupported swimming; position=(33614,3462), velocity=(0,0); landing not confirmed | movement preferred or no admissible local edits | stage=navigating; cleared=0; openingMoves=0; localCutLimit=18",
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "endEvidenceStatus": "known"
+      },
+      "progress": null,
+      "samples": {
+        "liquid-edit-breath_explore": {
+          "sha256": "bf361a0e6ef508607ac9cdfcd0668c337a6b03f76fe057d889da4d75f71d31a6",
+          "count": 17,
+          "first": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": false,
+            "headWet": false,
+            "wet": false,
+            "breath": 200,
+            "statLife": 100
+          },
+          "last": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": true,
+            "headWet": true,
+            "wet": true,
+            "breath": 13,
+            "statLife": 100
+          },
+          "lowestBreath": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": true,
+            "headWet": true,
+            "wet": true,
+            "breath": 13,
+            "statLife": 100
+          },
+          "airAfterFlood": null
+        }
+      }
+    },
+    {
+      "profile": "navigation-recovery-native-4ff4823ee2f44d938331c7d0d18aef52",
+      "packageSha256": "a4e5d497220b4fc99647ece4eb615894e079343efc1752cfbd32e97ce05a3f90",
+      "resultSha256": "20e4266ba9dc8c791eb5481241e5a04998668b6608c17e8d8fa6242dd9ff8be1",
+      "phases": [
+        [
+          "0881db03301a4792ae9b7d0af0a3251d",
+          null,
+          null
+        ],
+        [
+          "0881db03301a4792ae9b7d0af0a3251d",
+          "accepted",
+          "accepted"
+        ],
+        [
+          "0881db03301a4792ae9b7d0af0a3251d",
+          "paused",
+          "task_interrupt_breath"
+        ],
+        [
+          "0881db03301a4792ae9b7d0af0a3251d",
+          "running",
+          "task_running"
+        ],
+        [
+          "0881db03301a4792ae9b7d0af0a3251d",
+          "terminal",
+          "navigation_destination_verified"
+        ]
+      ],
+      "luaStatus": "completed",
+      "receipt": {
+        "actionId": "0881db03301a4792ae9b7d0af0a3251d",
+        "operation": "navigate_to",
+        "status": "completed",
+        "reason": "navigation_destination_verified",
+        "reasonDetail": null,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "endEvidenceStatus": "known"
+      },
+      "progress": {
+        "completedSegments": 1,
+        "newFootTiles": 16,
+        "dy": 0,
+        "surveyedGoals": 1,
+        "dx": -102.17599999999948
+      },
+      "samples": {
+        "liquid-edit-breath_explore": {
+          "sha256": "4ad6915cd7cd7f531aa842f9e4a2cb9ffc502486abc2afdc431ef83c569cb952",
+          "count": 60,
+          "first": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": false,
+            "headWet": false,
+            "wet": false,
+            "breath": 200,
+            "statLife": 100
+          },
+          "last": {
+            "x": 33511.824,
+            "y": 3462,
+            "gateOpened": true,
+            "headWet": false,
+            "wet": false,
+            "breath": 200,
+            "statLife": 100
+          },
+          "lowestBreath": {
+            "x": 33614,
+            "y": 3444.5698,
+            "gateOpened": true,
+            "headWet": true,
+            "wet": true,
+            "breath": 13,
+            "statLife": 100
+          },
+          "airAfterFlood": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": true,
+            "headWet": false,
+            "wet": false,
+            "breath": 190,
+            "statLife": 100
+          }
+        },
+        "liquid-edit-breath_work": {
+          "sha256": "331cfd7f1e7583fc0bdef93ff612d295f3f0200a3cc64de33a69d3f462e8cb95",
+          "count": 34,
+          "first": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": false,
+            "headWet": false,
+            "wet": false,
+            "breath": 200,
+            "statLife": 100
+          },
+          "last": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": true,
+            "headWet": false,
+            "wet": false,
+            "breath": 200,
+            "statLife": 100
+          },
+          "lowestBreath": {
+            "x": 33614,
+            "y": 3447.4749,
+            "gateOpened": true,
+            "headWet": true,
+            "wet": true,
+            "breath": 13,
+            "statLife": 100
+          },
+          "airAfterFlood": {
+            "x": 33614,
+            "y": 3462,
+            "gateOpened": true,
+            "headWet": false,
+            "wet": false,
+            "breath": 198,
+            "statLife": 100
+          }
+        }
+      },
+      "serverExitCode": 0
+    }
+  ],
+  "combat": {
+    "profile": "direct-input-native-705405a8d9ef4617801d4e34362d4e17",
+    "packageSha256": "0df7b41fbe1f2659e55596ef8eb456499caa0eda796ffe1277ed42b2d85eb842",
+    "resultSha256": "a529a57255a140c770f8833869816df894faa5ee6532766ae8bcfb7e8899171f",
+    "mine": {
+      "done": {
+        "actionId": "a316ab72e27b4356ac8a629d24b5d773",
+        "operation": "combat_attack",
+        "status": "completed",
+        "reason": "combat_threats_cleared",
+        "reasonDetail": null,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "endEvidenceStatus": "known"
+      },
+      "interrupted": {
+        "actionId": "3b841c313076408c97da46655fd5f6cd",
+        "operation": "mine_target",
+        "status": "completed",
+        "reason": "mine_target_verified",
+        "reasonDetail": null,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "endEvidenceStatus": "known"
+      },
+      "projectileCrossing": {
+        "tick": 43,
+        "x": 33626,
+        "y": 3431.539,
+        "statLife": 300,
+        "running": true,
+        "distance": null,
+        "contact": null,
+        "boltX": 33627.5,
+        "boltY": 3482.5
+      }
+    },
+    "travel": {
+      "done": {
+        "actionId": "5ecc1c28b7cc43ba8f84a3062c9fc1f8",
+        "operation": "combat_attack",
+        "status": "completed",
+        "reason": "combat_threats_cleared",
+        "reasonDetail": null,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "endEvidenceStatus": "known"
+      },
+      "interrupted": {
+        "actionId": "c284408b4eb94d60a7fa3f17bb00f130",
+        "operation": "navigate_to",
+        "status": "completed",
+        "reason": "navigation_destination_verified",
+        "reasonDetail": null,
+        "inputsAcquired": true,
+        "inputsReleased": true,
+        "endEvidenceStatus": "known"
+      },
+      "projectileCrossing": {
+        "tick": 295,
+        "x": 33706.273,
+        "y": 3431.539,
+        "statLife": 300,
+        "running": true,
+        "distance": null,
+        "contact": null,
+        "boltX": 33704.715,
+        "boltY": 3482.5
+      }
+    }
+  }
+}

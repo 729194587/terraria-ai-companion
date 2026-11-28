@@ -1,6 +1,6 @@
 # R3 自主探索实现与验收
 
-当前使用 `explore(direction)` 进行定向探索。每段在当前位置观察，按方向和可选的 `seek` 条件决定是否继续。下文 P0–P3 和往返验证是已移除的旧版任务的历史记录。[C5 委托规格](R3_C5_AUTONOMOUS_EXPLORATION_SPEC.md) · [C6 地图规格](R3_C6_EXPLORATION_MAP_SPEC.md)
+本文记录 Exploration V2 之前的定向探索。当前实现见[空间探索实现与实测](EXPLORATION_V2_RESULTS.md)。每段在当前位置观察，按方向和可选的 `seek` 条件决定是否继续。下文 P0–P3 和往返验证是已移除的旧版任务的历史记录。[C5 委托规格](R3_C5_AUTONOMOUS_EXPLORATION_SPEC.md) · [C6 地图规格](R3_C6_EXPLORATION_MAP_SPEC.md)
 
 | 阶段 | 实现 | 定向验证 |
 |---|---|---|

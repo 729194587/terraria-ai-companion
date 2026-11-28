@@ -1,4 +1,4 @@
-"""Host-side short trips using native navigate_to and observation-scoped landing candidates."""
+"""Shared exploration hosts and compatibility with directional-only servers."""
 import asyncio
 import time
 import uuid
@@ -15,13 +15,23 @@ TRIP_SECONDS = 45
 STEP_PIXELS = 32 * 16
 
 
-EXPLORE_TOOL = atomic.tool('explore', 'Travel in short hops in one direction, observing along the way. Stops at the budget, an obstacle or an optional seek match. Ore findings identify an observed mining tile with targetTile.',
+DIRECTIONAL_TOOL = atomic.tool('explore', 'Travel in short hops in one direction, observing along the way. Stops at the budget, an obstacle or an optional seek match. Ore findings identify an observed mining tile with targetTile.',
     {'direction': {'type':'string', 'enum':list(DIRECTIONS)},
      'objective': {'type':'string','minLength':1,'maxLength':240},
      'seek': {'type':'string','minLength':1,'maxLength':96,
               'description':('To find a treasure chest (宝箱), use "chest". After each hop, check for the exact '
                              'resource kind or contentKey (e.g. "Terraria/Iron"). Use "passage" for a passage '
                              'or "any" for any finding. Omit to keep exploring.')}}, ['direction'])
+
+
+EXPLORE_TOOL = atomic.tool('explore',
+    'Continue exploring unvisited landings and map frontiers. Direction is an optional preference. '
+    'Resume after investigating a finding by calling explore again. Ore findings include targetTile.',
+    DIRECTIONAL_TOOL['function']['parameters']['properties'])
+
+
+def exploration_tool(bridge):
+    return EXPLORE_TOOL if 'server_ai_exploration_v2' in bridge.hello['capabilities'] else DIRECTIONAL_TOOL
 
 
 REQUIRED_CAPABILITIES = frozenset({
@@ -33,16 +43,21 @@ REQUIRED_CAPABILITIES = frozenset({
 
 
 def supported(operations, capabilities):
-    return REQUIRED_CAPABILITIES.issubset(capabilities) and {'observe_scene', 'navigate_to', 'mine_target'} <= set(operations)
+    required_ops = {'observe_scene','navigate_to','mine_target'}
+    if 'server_ai_exploration_v2' in capabilities:
+        return ({'server_ai_passages_v1','server_ai_map_v1'} | (REQUIRED_CAPABILITIES -
+                {'server_ai_directional_landings_v1'})) <= set(capabilities) and required_ops | {'query_map'} <= set(operations)
+    return REQUIRED_CAPABILITIES.issubset(capabilities) and required_ops <= set(operations)
 
 
 def available(bridge):
     return program_tasks.available(bridge) and supported(bridge.supported_atomic_operations, bridge.hello['capabilities'])
 
 
-def valid_options(args):
+def valid_options(args, bridge=None):
     seek = args.get('seek', 'any')
-    return (set(args) <= {'direction','seek'} and args.get('direction') in DIRECTIONS
+    return (set(args) <= {'direction','seek'} and (args.get('direction') in DIRECTIONS or
+            'direction' not in args and bridge is not None and exploration_tool(bridge) is EXPLORE_TOOL)
             and isinstance(seek,str) and 0 < len(seek.strip()) <= 96)
 
 
@@ -61,6 +76,9 @@ class ExplorerContext:
         local = await self._resource_window(version,60,34)
         local['widerSample'] = dict(**scan_coverage(scan), discoveries=scan['discoveries'], changes=scan['changes'])
         return local
+
+    async def read_map(self, args):
+        return await atomic.dispatch(self.agent.bridge, 'query_map', args)
 
     async def read_scene(self, args):
         return await atomic.dispatch(self.agent.bridge, 'observe_scene', args)
@@ -88,7 +106,9 @@ class OwnedExplorer(ExplorerContext):
         task = program_tasks.validate('submit_task', dict(operation=operation, arguments=arguments))
         # submit registers this ID before its first cancellable wait for native acknowledgement.
         self.task_id = uuid.uuid4().hex
-        origin = dict(self.origin, segment=len(self.progress['explorationResult']['segments']) + 1)
+        segments = self.progress['explorationResult']['segments']
+        number = len(segments) if segments and 'taskId' not in segments[-1] else len(segments)+1
+        origin = dict(self.origin, segment=number)
         def authorized():
             return self.version == version
         view = await self.mailbox.submit(task, origin, task_id=self.task_id,
@@ -155,7 +175,7 @@ async def landing_scene(bridge, direction, read_scene=None):
     args = dict(layers=['landingRegions'])
     if 'server_ai_passages_v1' in bridge.hello.get('capabilities', ()):
         args['includePassages'] = True
-    if 'server_ai_directional_landings_v1' in bridge.hello.get('capabilities', ()):
+    if direction and 'server_ai_directional_landings_v1' in bridge.hello.get('capabilities', ()):
         args['landingDirection'] = direction
     args['maxRegions'] = 24
     reply = await read_scene(args) if read_scene else await atomic.dispatch(bridge, 'observe_scene', args)
@@ -205,6 +225,15 @@ def brief(result):
 
 
 async def run(mode, direction, version, baseline, *, seek=None):
+    if 'server_ai_exploration_v2' in mode.agent.bridge.hello['capabilities']:
+        from spatial_explorer import run_spatial
+        return await run_spatial(mode, direction, version, baseline, seek)
+    if direction not in DIRECTIONS:
+        raise ValueError('This server requires a direction')
+    return await run_directional(mode, direction, version, baseline, seek=seek)
+
+
+async def run_directional(mode, direction, version, baseline, *, seek=None):
     bridge = mode.agent.bridge
     read_scene = getattr(mode, 'read_scene', None)
     binding = dict(bridge.binding)

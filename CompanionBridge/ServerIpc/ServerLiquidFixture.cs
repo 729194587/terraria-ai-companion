@@ -16,7 +16,7 @@ internal static class ServerLiquidFixture
 {
     private static string scene;
     private static bool gateOpened, floodDrained;
-    private static bool FloodedWork(string mode)=>mode is "breath_work" or "breath_cluster";
+    private static bool FloodedWork(string mode)=>mode is "breath_work" or "breath_cluster" or "breath_explore";
     private static int samples;
     private static float minY;
 
@@ -206,8 +206,10 @@ internal static class ServerLiquidFixture
     {
         int x=Main.spawnTileX,floor=Main.spawnTileY+8;
         minY=Math.Min(minY,p.position.Y);
-        if(FloodedWork(scene) && !gateOpened && VirtualPlayerEngineProbe.ActorMining.Current is {Swings:>0} mining && p.itemAnimation>0
-            && (scene!="breath_cluster" || mining.Batch?.Verified.Count>0))
+        if(FloodedWork(scene) && !gateOpened && (scene=="breath_explore"
+            ? VirtualPlayerEngineProbe.ActorControl.Driver is ServerAiNavigation {Running:true}
+            : VirtualPlayerEngineProbe.ActorMining.Current is {Swings:>0} mining && p.itemAnimation>0
+              && (scene!="breath_cluster" || mining.Batch?.Verified.Count>0)))
         {
             gateOpened=true;
             for(int tx=x-8;tx<=x+8;tx++)
@@ -271,7 +273,7 @@ internal static class ServerLiquidFixture
         p.statLife=p.statLifeMax2;p.breath=mode=="breath_full"?p.breathMax:mode=="breath_timing"?100:14;
         if(FloodedWork(mode))
         {
-            for(int tx=x+3;tx<=x+(mode=="breath_cluster"?5:3);tx++)
+            for(int tx=x+3;mode!="breath_explore" && tx<=x+(mode=="breath_cluster"?5:3);tx++)
             {
                 var target=Main.tile[tx,floor-1];target.HasTile=true;
                 target.TileType=mode=="breath_cluster"?TileID.Copper:TileID.Stone;

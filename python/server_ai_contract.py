@@ -126,7 +126,7 @@ def server_definitions(bridge, supported=None):
     if supported is None:
         supported = exposed_operations(bridge)
     capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
-    definitions = atomic.server_tools(supported, resources='server_ai_resources_v1' in capabilities, map_chunks='server_ai_map_chunks_v1' in capabilities, bulk_purchase='server_ai_merchant_bulk_purchase_v1' in capabilities,
+    definitions = atomic.server_tools(supported, resources='server_ai_resources_v1' in capabilities, map_chunks='server_ai_map_chunks_v1' in capabilities, exploration_v2='server_ai_exploration_v2' in capabilities, bulk_purchase='server_ai_merchant_bulk_purchase_v1' in capabilities,
                                       bed_spawn='server_ai_bed_spawn_v1' in capabilities, combat_inventory="server_ai_combat_inventory_v1" in capabilities,
                                       summon_loadout="server_ai_combat_summon_loadout_v1" in capabilities,
                                       dual_weapons="server_ai_combat_secondary_v1" in capabilities, scene_region='server_ai_scene_region_v1' in capabilities,
@@ -287,7 +287,10 @@ def helper_reference(supported, capabilities=()):
         lines.append("sense_world(options)是只读Lua组合，不是api：trees/ores/drops默认true；maxObjects=1..16默认8，radius=1..1600像素默认640（仅掉落）；oreNames须非空唯一，可用Copper/Tin/Iron/Lead/Silver/Tungsten/Gold/Platinum/Demonite/Crimtane/Meteorite/Hellstone/Cobalt/Palladium/Mythril/Orichalcum/Adamantite/Titanium/Chlorophyte；dropTypes须非空唯一、最多32个0..65535观察/解析的类型ID，过滤器要求对应类别开启。例sense_world({trees=true,ores=false,drops=false,maxObjects=4})；未查询类别不是不存在，树干片段不是整树；来源非同帧，保留未知/截断；树查询最多3+maxObjects次、K种矿最多2+K+maxObjects次、仅掉落2次API。")
     else:
         lines.append('sense_world虽由Worker注入，但当前后端缺少依赖，勿调用。')
-    if directional_explorer.supported(supported, capabilities):
+    if directional_explorer.supported(supported, capabilities) and 'server_ai_exploration_v2' in capabilities:
+        lines.append('explore(direction?, seek?) 自动选择空间目标。explore() 继续上次探路，方向可作偏好。'
+                     'explore(nil,"chest") 找到宝箱后停下；资源调查完可再次调用。返回位置、已调查目标数、发现和停止原因。')
+    elif directional_explorer.supported(supported, capabilities):
         lines.append('explore(direction, seek?) 沿 left/right/up/down 连续探路。示例 explore("down","chest")。'
                      '省略 seek 会继续走；可找资源种类、contentKey、passage 或 any。一轮最多一趟，最多六段。'
                      '返回 progress、findings、routes、returnReason。实际到达和输入释放以导航回执为准。')
@@ -417,7 +420,7 @@ def compact_reference(bridge, supported):
     modules = lua_modules.directory(bridge)
     sections = ['当前能力目录（按类别查询）：' + (categories or '无')]
     if directional_explorer.available(bridge):
-        sections.append('定向探索可用 Lua 辅助函数 explore，用 {topic="lua"} 查用法。')
+        sections.append('探索可用 Lua 辅助函数 explore，用 {topic="lua"} 查用法。')
     if 'submit_task' in definitions:
         labels = {'mine_target': '挖矿', 'navigate_to': '导航', 'combat_attack': '攻击',
                   'boss_encounter': '挑战 Boss', 'collect_drops': '收集掉落物', 'follow_teammate': '跟随队友',

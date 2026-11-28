@@ -23,7 +23,7 @@ from lua_runtime import LuaRuntime
 
 
 EXPLORER_GUIDE = (
-    'explore(direction) 沿该方向连续走几段，返回实际位移、沿途发现、附近出路和结束原因。'
+    'explore() 续接本世界与角色的空间探索。direction 可指定宏观偏好；旧服务器使用 explore(direction)。'
     '可选 seek 指定希望提前停下的发现。调查、采集或继续由你决定。'
     '用 exploration_status 查询现场，用 exploration_status(lastTrip=true) 查上次行程的详细回执。'
 )
@@ -121,7 +121,7 @@ class BrainHost:
         if 'look_around' in self.bridge.supported_atomic_operations:
             native_tools.append(atomic.tool('look_around', '查看角色周围此刻有光的地形侧视图（PNG）。可辨认通道、平台、液体及亮处的宝箱和矿石。'))
         if explorer_available(agent):
-            native_tools.append(explorer.EXPLORE_TOOL)
+            native_tools.append(explorer.exploration_tool(self.bridge))
             native_tools.append(atomic.tool('exploration_status','Read current exploration details or the previous trip trace.' + exploration_map_help(self.bridge),
                 {'lastTrip': {'type':'boolean','default':False}}))
         self.delivered_chat = None
@@ -364,14 +364,14 @@ class BrainHost:
                             passages={k:v for k,v in survey.items() if k!='connectedLandingIds'},
                             hazards=local.get('hazards'),resources=scan,**await self.runtime_context())
             if name == 'explore':
-                objective = args.get('objective',args.get('direction'))
-                if (not explorer.valid_options({k:v for k,v in args.items() if k!='objective'})
+                objective = args.get('objective',args.get('direction','explore'))
+                if (not explorer.valid_options({k:v for k,v in args.items() if k!='objective'},self.bridge)
                         or not isinstance(objective,str) or not 0<len(objective.strip())<=240):
                     raise ValueError('Expected direction and optional objective or seek')
                 if not await self.agent.program_tasks.release_previous_follow(self.agent._active_turn_id):
                     raise BridgeError('Previous follow release unconfirmed')
                 trip = ExternalExplorer(self, objective)
-                result = await trip.run(args['direction'],args.get('seek'))
+                result = await trip.run(args.get('direction'),args.get('seek'))
                 self.last_trip = result['explorationResult']
                 diagnostics.emit('mcp_explore_result', explorationResult=self.last_trip)
                 return {**result, 'explorationResult':explorer.brief(self.last_trip), **self.event_context()}

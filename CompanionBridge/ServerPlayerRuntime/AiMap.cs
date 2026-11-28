@@ -16,7 +16,7 @@ public sealed class AiMap
     public int Width { get; }
     public int Height { get; }
     private readonly byte[] cells;
-    private const int FileVersion=3;
+    private const int FileVersion=4;
     public const int ChunkSize=32;
     private readonly Guid session=Guid.NewGuid();
     private readonly Dictionary<(int X,int Y),Chunk> chunks=new();
@@ -25,9 +25,23 @@ public sealed class AiMap
     private readonly Queue<(int,int)> recentFootTiles=new();
     private readonly Dictionary<(int,int),int> footCounts=new();
     private (int,int)? lastFoot;
+    // One bit per actual foot tile. Visits can precede the first light sample.
+    private readonly Dictionary<(int,int),byte[]> visits=new();
+    internal int VisitedCount { get; private set; }
+    internal bool Visited(int x,int y)
+    {
+        if(x<0 || x>=Width || y<0 || y>=Height ||
+            !visits.TryGetValue((x/ChunkSize,y/ChunkSize),out var bits))return false;
+        int offset=y%ChunkSize*ChunkSize+x%ChunkSize;
+        return (bits[offset/8] & (1<<(offset%8)))!=0;
+    }
     internal void RecordFeet(int x,int y)
     {
-        if(lastFoot==(x,y))return;
+        if(lastFoot==(x,y) || x<0 || y<0 || x>=Width || y>=Height)return;
+        var key=(x/ChunkSize,y/ChunkSize);
+        if(!visits.TryGetValue(key,out var bits))visits[key]=bits=new byte[ChunkSize*ChunkSize/8];
+        int offset=y%ChunkSize*ChunkSize+x%ChunkSize;
+        if(!Visited(x,y)){bits[offset/8]|=(byte)(1<<(offset%8));VisitedCount++;}
         lastFoot=(x,y);
         recentFootTiles.Enqueue((x,y));
         footCounts[(x,y)]=footCounts.GetValueOrDefault((x,y))+1;
@@ -105,6 +119,9 @@ public sealed class AiMap
             writer.Write(key.X);writer.Write(key.Y);writer.Write(chunk.Revision);
             writer.Write(chunk.Session.ToByteArray());writer.Write(chunk.SeenTick);
         }
+        writer.Write(visits.Count);
+        foreach(var ((cx,cy),bits) in visits)
+        {writer.Write(cx);writer.Write(cy);writer.Write(bits);}
         writer.Flush();stream.Flush(true);
     }
     public static AiMap Load(string path,Guid world,string character,int width,int height)
@@ -113,14 +130,14 @@ public sealed class AiMap
         long cellCount=(long)width*height;
         if(width<1||height<1||cellCount>40000000)throw new IOException("Invalid map dimensions.");
         int maxPacked=BrotliEncoder.GetMaxCompressedLength((int)cellCount);
-        if(new FileInfo(path).Length>Math.Max(cellCount,maxPacked)+40*maxChunks+1016)throw new IOException("Map exceeds size limit.");
+        if(new FileInfo(path).Length>Math.Max(cellCount,maxPacked)+(40+136)*maxChunks+1016)throw new IOException("Map exceeds size limit.");
         using var reader=new BinaryReader(File.OpenRead(path));
         if(reader.ReadString()!="CompanionBridge/AiMap")throw new IOException("Invalid map header.");
         int format=reader.ReadInt32();
-        if(format is not (1 or 2 or FileVersion)||reader.ReadString()!=world.ToString("N")||reader.ReadString()!=character
+        if(format is not (1 or 2 or 3 or FileVersion)||reader.ReadString()!=world.ToString("N")||reader.ReadString()!=character
             ||reader.ReadInt32()!=width||reader.ReadInt32()!=height)throw new IOException("Incompatible map or identity mismatch.");
         var map=new AiMap(world,character,width,height);
-        if(format==FileVersion)
+        if(format>=3)
         {
             int length=reader.ReadInt32();
             if(length<1||length>maxPacked||length>reader.BaseStream.Length-reader.BaseStream.Position)
@@ -155,6 +172,20 @@ public sealed class AiMap
                 if(id.Length!=16)throw new EndOfStreamException();
                 chunk.Session=new Guid(id);chunk.SeenTick=reader.ReadInt64();
                 if(chunk.Revision<0 || chunk.Revision>map.revision || chunk.SeenTick< -1)throw new IOException("Invalid chunk revision.");
+            }
+        }
+        if(format>=4)
+        {
+            int count=reader.ReadInt32();
+            if(count<0 || count>maxChunks)throw new IOException("Invalid visit count.");
+            for(int i=0;i<count;i++)
+            {
+                int cx=reader.ReadInt32(),cy=reader.ReadInt32();
+                var bits=reader.ReadBytes(ChunkSize*ChunkSize/8);
+                if(cx<0 || cx>(width-1)/ChunkSize || cy<0 || cy>(height-1)/ChunkSize ||
+                    bits.Length!=ChunkSize*ChunkSize/8 || !map.visits.TryAdd((cx,cy),bits))
+                    throw new IOException("Invalid visit chunk.");
+                foreach(byte value in bits)map.VisitedCount+=System.Numerics.BitOperations.PopCount(value);
             }
         }
         if(reader.BaseStream.Position!=reader.BaseStream.Length)throw new IOException("Trailing map data.");
@@ -220,6 +251,18 @@ public sealed class AiMap
                     knownCount=chunk.Counts.Sum(),lastSeenSession=chunk.Session,lastSeenTick=chunk.SeenTick});
             result["mapRevision"]=revision;result["observationSession"]=session;result["chunkSize"]=ChunkSize;
             result["worldWidth"]=Width;result["worldHeight"]=Height;result["chunks"]=summary;
+        }
+        if(mode=="region" && args.TryGetProperty("includeVisits",out var flag) && flag.GetBoolean())
+        {
+            var bits=new byte[(w*h+7)/8];
+            for(int y=0;y<h;y++)
+            for(int x=0;x<w;x++)
+            {
+                int offset=y*w+x;
+                if(Visited(ox+x,oy+y))bits[offset/8]|=(byte)(1<<(offset%8));
+            }
+            result["visitBits"]=Convert.ToBase64String(bits);
+            result["visitedCount"]=VisitedCount;
         }
         return result;
     }

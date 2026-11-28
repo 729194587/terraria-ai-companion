@@ -1,4 +1,4 @@
-param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$Mining,[string[]]$MiningCases,[ValidateSet('On','Off')][string]$ImproveGameVeinMining,[string]$WorkshopRoot='D:/steam/steamapps/workshop/content/1281930',[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[ValidateSet("basic","cloud","sand","blizzard","angel","cloud_angel","hermes","bundle","bundle_hermes")][string]$JourneyLoadout,[string]$ReplayStops,[switch]$WalkReference,[switch]$FlightReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central","traverse","bank-replay","local-replay","slope-entry","slope-approach")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback)
+param([string]$TModLoaderPath,[string]$EngineProfile,[string]$WorldPath,[int]$Port=27971,[int]$IpcPort=27972,[string]$PackagePath,[string]$PythonExecutable,[string]$HelperSource,[string]$Seed='20261028',[int[]]$Offsets=@(0,32,-32,64,-64),[switch]$Mining,[string[]]$MiningCases,[ValidateSet('On','Off')][string]$ImproveGameVeinMining,[string]$WorkshopRoot='D:/steam/steamapps/workshop/content/1281930',[switch]$LandingRegions,[switch]$Scene,[switch]$Trip,[switch]$AutonomousNavigation,[switch]$LongJourney,[ValidateSet("basic","cloud","sand","blizzard","angel","cloud_angel","hermes","bundle","bundle_hermes")][string]$JourneyLoadout,[string]$ReplayStops,[switch]$WalkReference,[switch]$FlightReference,[switch]$Watch,[switch]$ShoreStarts,[string]$WatchWestStop,[switch]$WestDescent,[switch]$EastWall,[ValidateSet("east","west","central","traverse","bank-replay","local-replay","slope-entry","slope-approach")][string]$JourneyCase,[switch]$TravelContact,[switch]$DeathFeedback,[switch]$BroadcastFeedback,[ValidateSet("v2","directional","driver")][string]$ExplorationAlgorithm,[ValidateRange(10,600)][int]$ExplorationSeconds=300,[string]$ExplorationSeat)
 $ErrorActionPreference='Stop'
 if($ImproveGameVeinMining){$Mining=$true;$MiningCases=@('small-copper')}
 if($FlightReference){$JourneyLoadout="cloud_angel";$JourneyCase="traverse"}
@@ -49,6 +49,7 @@ $info.RedirectStandardError=$true
 foreach($argument in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld",'-port',"$Port",'-tmlsavedirectory',$profile,'-modpath',"$profile/Mods",'-companionserverai','-companionengineprofile',$selectedEngine.Name,'-companionaiport',"$IpcPort",'-companionaiipctest')){$info.ArgumentList.Add($argument)}
 if($Watch){foreach($a in @('-ip','127.0.0.1','-companionwatchtest')){$info.ArgumentList.Add($a)}}
 $info.ArgumentList.Add('-companionnaturaltest')
+if($ExplorationAlgorithm){$info.ArgumentList.Add('-companionexplorationfield')}
 if($Mining){$info.ArgumentList.Add('-companionnaturalminingtest')}
 if($JourneyCase -in @("traverse","local-replay","slope-entry","slope-approach")){$info.ArgumentList.Add("-companiontraversetest")}
 if($JourneyLoadout){$info.ArgumentList.Add("-companionjourneyloadout");$info.ArgumentList.Add($JourneyLoadout)}
@@ -103,6 +104,14 @@ try {
     $probeScript=if($Mining){'tests/native_natural_mining.py'}elseif($LongJourney){'tests/native_natural_journey.py'}elseif($AutonomousNavigation){'tests/native_natural_landing.py'}elseif($Trip){'tests/native_trip_navigation.py'}elseif($Scene){'tests/native_natural_scene.py'}elseif($LandingRegions){'tests/native_natural_landing.py'}else{'tests/native_natural_navigation.py'}
     $probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile,'--offsets')+@($Offsets|ForEach-Object {"$_"})
     if($LongJourney -or $Mining){$probeArgs=@((Join-Path $repo $probeScript),'--port',"$IpcPort",'--profile',$profile)}
+    if($ExplorationAlgorithm){
+        $probeArgs=@((Join-Path $repo 'tests/native_exploration_v2.py'),'--port',"$IpcPort",'--profile',$profile,
+                     '--algorithm',$ExplorationAlgorithm,'--seconds',"$ExplorationSeconds")
+    }
+    if($ExplorationAlgorithm -eq 'driver'){
+        $probeArgs+=@('--seat',$ExplorationSeat)
+        $client.Dispose();$client=$null
+    }
     if($ImproveGameVeinMining){$probeArgs+=@('--vein-mining',$ImproveGameVeinMining)}
     if($MiningCases){$probeArgs+=@('--cases')+$MiningCases}
     if($Watch){
@@ -130,7 +139,7 @@ try {
     if($AutonomousNavigation){$probeArgs+='--autonomous'}
     & $PythonExecutable @probeArgs
     if($LASTEXITCODE -ne 0){throw 'Natural deterministic Lua probe failed'}
-    $client.Dispose();$client=$null
+    if($client){$client.Dispose();$client=$null}
     [IO.File]::WriteAllText("$profile/g81-test-stop",'The isolated harness requests native main-thread shutdown after read-only TCP assertions.')
     if(!$process.WaitForExit(20000)){throw 'Native graceful unload timed out'}
     if($process.ExitCode -ne 0){throw "Native server exited $($process.ExitCode)"}

@@ -45,10 +45,13 @@ internal sealed class BreathRescue
     private static bool Supported(Player p)=>p.active&&!p.dead&&!p.ghost&&!p.lavaWet&&!p.honeyWet&&!p.shimmerWet
         &&!p.shimmering&&p.gravDir==1&&!p.mount.Active&&!p.CCed;
 
-    internal static bool NeedsAir(Identity frame)
+    internal static bool NeedsAir(Identity frame,bool beforeMovement=false)
     {
         var p=(Player)frame.Actor;
-        if(frame.GameUpdate%12!=0||!Supported(p)||!p.wet||WaterBreathing(p)||p.breath>=p.breathMax||!HeadWet(p,p.position))return false;
+        // A sudden flood can invalidate the next navigation frame before Player.Update
+        // refreshes p.wet. The urgent pre-movement check reads the actual head collision.
+        if(!beforeMovement && (frame.GameUpdate%12!=0||!p.wet) || !Supported(p)
+            || WaterBreathing(p)||p.breath>=p.breathMax||!HeadWet(p,p.position))return false;
         if(ActorControl.Driver is ServerAiNavigation nav && nav.HasAirForPoolCrossing(p))return false;
         // A reed or another native effect can recover air while the head is wet.
         if(p.breathCD==0 && p.breath>0 && p.HeldItem.type==ItemID.BreathingReed)return false;

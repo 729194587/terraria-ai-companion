@@ -86,6 +86,25 @@ internal static class ServerAiNaturalFixture
         try
         {
             if(Program.LaunchParameters.ContainsKey("-companionactionstest"))throw new InvalidOperationException("Natural and constructed fixtures cannot mix");
+            // Field comparison uses the normal spawn, hostiles, survival and world time.
+            // Only supply the whole game frames a headless, clientless server lacks.
+            if(Program.LaunchParameters.ContainsKey("-companionexplorationfield"))
+            {
+                string manifest=FileAt("exploration-field.json");
+                if(!File.Exists(manifest))
+                {
+                    var p=ProbeSession.Actor;
+                    // Normalize the three ordinary starter tool prefixes in both fresh profiles.
+                    foreach(var item in p.inventory.Take(3))
+                        if(!item.IsAir)item.SetDefaults(item.type);
+                    File.WriteAllText(manifest,JsonSerializer.Serialize(new{
+                        seed=Main.ActiveWorldFileData.SeedText,spawnX=Main.spawnTileX,spawnY=Main.spawnTileY,
+                        starter=p.inventory.Take(3).Select(i=>new{i.type,i.stack,i.prefix}),
+                        hazards="normal",terrainEdits=false,teleported=false}));
+                }
+                if(!live)update.Invoke(Main.instance,new object[]{new GameTime()});
+                return;
+            }
             lock(ProbeSession.Reservation.Gate)
             {
                 var p=ProbeSession.Actor;NetworkStateSync.Require(p);

@@ -84,8 +84,9 @@ internal static class AtomicParameters
                         || !layers.Has("landingRegions")))throw new FormatException("includePassages requires local landingRegions.");
                     break;
                 case "query_map":
-                    if(keys.Except(new[]{"mode","centerX","centerY","width","height","cellSize","includeChunks"}).Any()||!keys.Contains("mode"))throw new FormatException("Invalid map parameters.");
+                    if(keys.Except(new[]{"mode","centerX","centerY","width","height","cellSize","includeChunks","includeVisits"}).Any()||!keys.Contains("mode"))throw new FormatException("Invalid map parameters.");
                     if(keys.Contains("includeChunks"))args.GetProperty("includeChunks").GetBoolean();
+                    if(keys.Contains("includeVisits"))args.GetProperty("includeVisits").GetBoolean();
                     string mapMode=args.GetProperty("mode").GetString();
                     if(mapMode is not ("overview" or "region"))throw new FormatException("Invalid map mode.");
                     if(mapMode=="overview"&&keys.Count!=1)throw new FormatException("Overview takes only mode.");

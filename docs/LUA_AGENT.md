@@ -1,6 +1,6 @@
 # Lua Agent
 
-专服聊天中的 Lua 可以调用 `explore("right")` 或 `explore("down", "chest")`。支持 left、right、up、down；省略 seek 会继续走，指定资源、passage 或 any 时会在段后观察匹配时停下。返回 progress、findings、routes 和 returnReason。脚本、主动模式和 MCP 外脑共用 Python 定向探索，每段由 C# 原生导航执行；调用仍受当前程序的时间、动作与观察预算约束。
+支持 Exploration V2 的专服可调用 `explore()` 继续探路，或用 `explore(nil, "chest")` 在发现宝箱时返回。`explore("right")` 表示宏观偏好，沿途可折返或升降。调查资源后再次调用会复核脚印和保存的支路。返回实际位置、progress、findings、routes 和 returnReason。Lua、自主模式和 MCP 共用选路与原生导航，Lua 仍受当前程序的时间、动作与观察预算约束。旧版专服使用 `explore(direction, seek?)`。
 
 Lua Agent 是模型与 Terraria 游戏 API 之间的程序执行接口。模型通过一次 `execute_lua` 提交 Lua 源码，在 Worker 中组织观察、查询和动作，并根据返回结果决定后续策略。
 

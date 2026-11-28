@@ -77,7 +77,49 @@ internal static class ServerAiActionFixture
                             if(ty>=floor){tile.HasTile=true;tile.TileType=TileID.Dirt;}
                         }
                         var ore=Main.tile[left+111,floor];ore.TileType=TileID.Copper;
-                        if(Program.LaunchParameters.ContainsKey("-companioncavetest"))
+                        if(Program.LaunchParameters.ContainsKey("-companionexplorationwall"))
+                        {
+                            // Two short rooms at the same elevation, with one mineable divider.
+                            for(int dx=-28;dx<=43;dx++)for(int dy=-24;dy<=18;dy++)
+                            {
+                                var tile=Main.tile[left+dx,floor+dy];
+                                tile.ClearEverything();
+                                if(dx is >=-7 and <=24 && dy is >=-6 and <0 && dx!=7)continue;
+                                tile.HasTile=true;
+                                tile.TileType=dx==7 && dy is >=-6 and <0 ? TileID.Dirt : TileID.LihzahrdBrick;
+                            }
+                            File.WriteAllText(Path.Combine(Main.SavePath,"divider.json"),JsonSerializer.Serialize(new{
+                                originX=left,floor,wallX=left+7,otherRoom=new[]{left+8,left+24}}));
+                        }
+                        else if(Program.LaunchParameters.ContainsKey("-companionexplorationmaze"))
+                        {
+                            // Two eastbound arms at different heights, a westward return on the
+                            // upper floor, a connecting shaft, and a chamber behind one dirt tile.
+                            for(int dx=-55;dx<=55;dx++)for(int dy=-31;dy<=18;dy++)
+                            {
+                                int stairFloor=-Math.Clamp((dx-11)/2,0,9);
+                                bool air=dx is >=-18 and <=25 && dy is >=-5 and <0
+                                    || dx is >=11 and <=31 && dy<stairFloor && dy>=stairFloor-5
+                                    || dx is >=-18 and <=31 && dy is >=-14 and <-9
+                                    || dx is >=-16 and <=-13 && dy is >=-14 and <0
+                                    || dx is >=-9 and <=10 && dy is >=1 and <6;
+                                var tile=Main.tile[left+dx,floor+dy];
+                                tile.ClearEverything();
+                                if(!air)
+                                {
+                                    tile.HasTile=true;
+                                    tile.TileType=dy==0 && dx is >=-9 and <=10 ? TileID.Dirt : TileID.LihzahrdBrick;
+                                }
+                                if(dx is >=-16 and <=-13 && dy==-7)
+                                {tile.HasTile=true;tile.TileType=TileID.Platforms;}
+                            }
+                            var sample=Main.tile[left+2,floor];
+                            sample.TileType=TileID.Copper;
+                            File.WriteAllText(Path.Combine(Main.SavePath,"maze.json"),JsonSerializer.Serialize(new{
+                                originX=left,floor,lowerEast=new[]{9,24,0},upperEast=new[]{8,28,-9},
+                                upperWest=new[]{-18,-7,-9},sealedChamber=new[]{-9,10,6}}));
+                        }
+                        else if(Program.LaunchParameters.ContainsKey("-companioncavetest"))
                         {
                             // Surface opening, a halfway ledge, and two roofed underground arms.
                             for(int dx=-24;dx<=42;dx++)for(int dy=0;dy<10;dy++)
