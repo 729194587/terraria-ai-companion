@@ -38,6 +38,7 @@ internal interface INavigationWorld
     object PlanningEvidence=>null;
     object BankAirEvidence=>null;
     void ReleasePlanning(){}
+    void AfterReflex(){}
 }
 internal class AutonomousNavigationTask : AbstractCompanionTask
 {
@@ -73,6 +74,11 @@ internal class AutonomousNavigationTask : AbstractCompanionTask
         opening=world.OpeningEvidence,planning=world.PlanningEvidence,bankAir=world.BankAirEvidence,activity=progressWatch.Activity.ToString(),verifiedTerrainActions=progressWatch.VerifiedEffects};
     internal override Result Prepare(AiReadOnlyProtocol.Identity frame)=>(world.InterruptionReason()??world.Prepare()) is {} why?Describe(Failed(why)):null;
     internal override void Start(AiReadOnlyProtocol.Identity frame){phase="observe";}
+    internal override void Resume(AiReadOnlyProtocol.Identity frame,ulong pausedUpdates)
+    {
+        child=null;openingMode=false;phase="observe";
+        world.AfterReflex();
+    }
     internal override Result Tick(AiReadOnlyProtocol.Identity frame)
     {
         if(world.InterruptionReason() is {} danger)return Stop(frame,"cancelled",danger);

@@ -16,9 +16,9 @@ Lua Agent 调用 Python 宿主，宿主根据能力与 Schema 分发到 Server A
 
 `observe_scene` 的可选 `resources` 层和 Lua 的 `sense_world({resources=true})` 提供局部资源扫描。普通宝箱和生命水晶使用左上角 Tile 锚点及 2×2 占用范围，梳妆台为 3×2。矿脉返回四邻接的同种矿石、范围和最多 64 个具体 Tile。边界截断、缺格或帧不匹配的对象标记为 `incomplete`。掉落物携带实体引用。自主观察另附历史记录、最近观测时间和新发现或状态变化，扫描本身不会写入探索地图。
 
-自主模型可以调用宿主工具 `explore({direction:"right",objective:"勘察东侧地面"})`，方向可选 left、right、up、down。每段根据当前角色左边缘、脚底高度和沿所选方向扩展的局部落脚区间生成目标，再以当前授权提交普通 `navigate_to`。四个方向都以 32 Tile（512 世界像素）为目标推进距离，实际落点取决于地形。落区列表截断时将候选上限从 12 提到 24 重读一次，仍截断则返回 observation_incomplete。每次探索最多 6 段、每段 12 秒、总计 45 秒，到期后等待当前子任务终态与输入释放。
+专服聊天 Lua 的 `explore("right", "chest")`、自主模式和 MCP 外脑的 `explore` 工具共用宿主的定向探索逻辑。方向可选 left、right、up、down。每段按角色当前位置和局部落脚区间选择目标，由原生 `navigate_to` 推进，目标距离为 32 格（512 世界像素），实际位移取决于地形。每趟最多 6 段，每段限时 12 秒，整趟限时 45 秒。到期会取消当前导航并等待输入释放。
 
-探索直接复用主决策观察中的 120×68 Tile 资源基线。每段取得原生终态和输入释放证据后读取一次同范围资源层。段末发现新对象、对象补全或状态变化时，宿主停止派发新段，将精确 Tile、采样时间与覆盖交回主决策。模型可以忽略后重新调用 explore，也可以先调查、挖掘或交互，再依据原方向和最新调查回执决定续行。普通目的地导航直接等待原生终态。
+自主模式复用主决策观察中的 120×68 格资源基线，聊天 Lua 在出发前读取基线。每段导航结束并释放输入后，宿主再次扫描资源，记录实际位移和沿途发现。省略 `seek` 会沿原方向继续；指定 `chest`、矿石的 contentKey 或 `passage` 等目标时，段末观察匹配即返回。模型可以接着调查、挖掘或继续探索。
 
 探索回执的 `returnReason` 区分 discovery、blocked、segment_time_limit、budget_reached、interrupted、observation_incomplete 与 outcome_unknown。单段 12 秒先到时，宿主取消该段，确认终态和输入释放，进行一次段末观察，再以 segment_time_limit 交回主决策；段末发现仍保存在 findings 中。整趟 45 秒预算或 6 段上限耗尽时返回 budget_reached。回执保留实际位移（世界像素）、各段目标、子任务 ID、终态和释放证据。用 `tests/verify_server_ai_native.ps1 -DirectionalExplore investigate -Atomic -KeepProfile` 可在复制世界复现采矿续行；参数 continue 验证忽略及接管，live 使用项目配置的实际模型。每个隔离目录的 autonomy.json 记录主决策输入、模型输出、各段回执和资源覆盖。探索回执把复用的 baseline 与段末 coverage 分开记录。每项的 requestedTiles、scannedTiles、unknownCells 和 unknownByReason 说明覆盖情况，samplingBudgetReached 与 objectGroupingTruncated 区分采样超时和对象分组上限，truncated 来自资源层。
 

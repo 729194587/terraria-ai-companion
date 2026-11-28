@@ -39,7 +39,7 @@
 
 服务器 AI 可用 `set_inventory_favorite(sourceSlot, sourceToken, favorited)` 设置主背包非空槽的收藏状态。令牌来自当前 `inspect_inventory` 槽位观察。设为目标状态后，执行端核对同一物品、堆叠数、前缀和收藏位。实际变更会使旧令牌失效；若物品本来就处于目标状态，则保持当前令牌。收藏后，按数量丢物会拒绝该槽；取消收藏后，重新观察即可用新令牌丢物。隔离服务器已走通收藏、拒绝丢弃、取消收藏和成功丢弃。
 
-服务器 AI 已接入按数量丢物。用 `inspect_inventory` 取得来源槽及令牌，再调用 `drop_inventory_item`。例如从十支火把丢三支，完成回执须同时给出源槽剩七支和新掉落三支的实体引用。当前支持主背包中未收藏的原版可堆叠非钱币物品，数量不足时整次拒绝。指定 `list_teammates` 返回的 `teammateRef` 时，AI 按队友当前横坐标转身，以原版丢物速度短抛；横坐标相同时保持朝向。在该查询的队友记录中，`lastDrop.confirmedReceived` 只累计服务器直接观察到的同一掉落实体拾取量与该队友库存增量相符的部分。客户端独立完成拾取、第三人拾取或掉落消失都不能据此确认收件。双协议客户端隔离场景已核验十支丢三支、源槽剩七支。真人客户端实际拾取仍待验。
+服务器 AI 已接入按数量丢物。用 `inspect_inventory` 取得来源槽及令牌，再调用 `drop_inventory_item`。例如从十支火把丢三支，完成回执须同时给出源槽剩七支和新掉落三支的实体引用。当前支持主背包中未收藏的原版可堆叠非钱币物品，数量不足时整次拒绝。指定 `list_teammates` 返回的 `teammateRef` 时，AI 按队友当前横坐标转身，以原版丢物速度短抛；横坐标相同时保持朝向。Agent 用本次丢物回执的 `entityRef` 对上该队友的 `lastDrop`，读取 `confirmedReceived`。联机客户端在原生拾取前后核对同种、同前缀物品的入包量；专服核对接收者会话、这次抛物的标识及同一地面掉落实际减少的数量。两端匹配时累计实收，部分拾取后可以继续累计。`stillOnGround` 表示原掉落是否仍在地上，没有指定玩家收件证据时保持 `unconfirmed`。这项查询跟踪最近一次丢物，多次短抛可逐次核对。[两场交付实测](DEVELOPMENT_ROADMAP.md#给一起下矿的玩家备火把2026-11-28)
 
 接口参考 Numen 的按数量丢物。TerraBot 的 `BotDropCompatibility.cs` 走玩家丢物路径，`BotInventoryInteraction.cs` 另有直接向接收者背包转移的方法。本项目选择在 AI 面前生成掉落，让队友通过游戏本身拾取。[Numen InvApi.java](https://github.com/Dwinovo/minecraft-numen/blob/ce047ffb08541798ae95757877233e1a4039ff8a/numen/common/src/main/java/com/dwinovo/numen/tools/inventory/InvApi.java) · [服务器实现](../CompanionBridge/ServerIpc/ServerItemDrop.cs)
 

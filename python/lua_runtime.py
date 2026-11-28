@@ -17,6 +17,8 @@ import action_recovery
 import navigation_recovery
 import lua_modules
 import program_tasks
+import directional_explorer as explorer
+from sensed_resources import ResourceHistory
 from control import Bridge, BridgeError, command_owner
 from lua_limits import Limits
 from lua_worker import (worker, encode, decode, ValueLimit, SOURCE_BYTES,
@@ -25,6 +27,81 @@ from lua_worker import (worker, encode, decode, ValueLimit, SOURCE_BYTES,
 
 class Interrupted(Exception):
     pass
+
+
+class LuaExplorer(explorer.OwnedExplorer):
+    def __init__(self, runtime, owner, origin, out, limits, recovery, on_result):
+        self.agent = runtime
+        self.owner = owner
+        self.origin = origin
+        self.out = out
+        self.limits = limits
+        self.recovery = recovery
+        self.on_result = on_result
+        self.binding = dict(runtime.bridge.binding)
+        self.mailbox = program_tasks.coordinator(runtime.bridge)
+        self.resources = ResourceHistory()
+        self.progress = {}
+        self.task_id = None
+        self.reported = None
+        self.revoked = False
+
+    @property
+    def version(self):
+        if not self.revoked and self.agent.bridge._lua_owner is self.owner and self.agent.bridge.binding == self.binding:
+            return self.owner
+
+    def charge(self):
+        if self.out['calls'] >= self.limits.calls:
+            raise Interrupted('call_limit')
+        self.out['calls'] += 1
+
+    async def read_scene(self, args):
+        self.charge()
+        return await atomic.dispatch(self.agent.bridge, 'observe_scene', args, owner=self.owner)
+
+    async def submit_owned(self, operation, args, version):
+        if self.recovery.blocked(operation, args):
+            return None, atomic.not_admitted_result(operation, 'unchanged_ineffective_action')
+        if self.out['actions'] >= self.limits.actions:
+            raise Interrupted('action_limit')
+        self.charge()
+        chat_id = self.origin['chatId']
+        if (self.task_id is None and self.agent.player_instruction and chat_id is not None
+                and not await self.mailbox.release_previous_follow(chat_id)):
+            raise Interrupted('previous_follow_release_unconfirmed')
+        self.out['actions'] += 1
+        return await super().submit_owned(operation, args, version)
+
+    async def terminal(self, record):
+        await record['done'].wait()
+        receipt = record['view']['result']
+        if self.reported != self.task_id:
+            self.reported = self.task_id
+            released = (receipt.get('actionId') == self.task_id and safe_terminal(receipt)
+                        and receipt.get('inputsReleased') and receipt.get('endEvidenceStatus') == 'known')
+            refused = receipt.get('dispatchState') == 'not_admitted' and receipt.get('inputsAcquired') is False
+            self.out['actionState'] = 'released' if released or refused else 'unknown'
+            self.out['lastAction'] = bounded_action(receipt)
+            self.recovery.observe('navigate_to', record['args']['arguments'], receipt)
+            if self.on_result:
+                self.on_result('navigate_to', record['args']['arguments'], receipt)
+        if self.out['actionState'] == 'unknown':
+            return {**receipt, 'status': 'unknown', 'dispatchState': 'unknown'}
+        return receipt
+
+    async def travel(self, direction, seek):
+        self.objective = direction
+        try:
+            baseline = await self.resource_scan(self.owner)
+            return await explorer.run(self, direction, self.owner, baseline, seek=seek)
+        finally:
+            self.revoked = True
+            try:
+                await self.stop_child()
+            except BaseException:
+                self.out['actionState'] = 'unknown'
+                raise
 
 
 def safe_terminal(result):
@@ -149,7 +226,7 @@ class LuaRuntime:
         self.bridge = bridge
         self.evidence_root = evidence_root
         self.last_result = None
-        self.before_player_action = None
+        self.player_instruction = True
 
     async def execute(self, source, *, chat_id=None, limits=Limits(), cancel=None,
                       allow_actions=True, on_result=None):
@@ -264,7 +341,7 @@ class LuaRuntime:
                     return task.result()
                 # A worker may exit after publishing its final frame while the
                 # preceding send's thread is still completing. Drain the pipe.
-                if process is not None and active_role == 'dispatch' and not process.is_alive():
+                if process is not None and active_role in ('dispatch','explore') and not process.is_alive():
                     raise Interrupted('worker_error')
                 await asyncio.sleep(.01)
 
@@ -330,6 +407,7 @@ class LuaRuntime:
             finally:
                 child.close()
             sequence, halted = 0, not allow_actions
+            explored = False
             while True:
                 if call_token is not None:
                     tracing.context.reset(call_token)
@@ -389,6 +467,32 @@ class LuaRuntime:
                     raise Interrupted('bad_argument')
                 if type(message.get('protected', False)) is not bool:
                     raise Interrupted('protocol_error')
+                if name == '_directional_explore':
+                    if explored or halted or handoff is not None or not explorer.available(self.bridge):
+                        raise Interrupted('exploration_unavailable')
+                    if not explorer.valid_options(args):
+                        raise ValueError('explore requires a direction and optional seek')
+                    origin = {k:v for k,v in tracing.context.get().items() if k in tracing.MCP_CORRELATION}
+                    origin.update(chatId=chat_id, programId=out['runId'], source='lua_explore')
+                    trip = LuaExplorer(self, owner, origin, out, limits, recovery, on_result)
+                    explored = True
+                    active = asyncio.create_task(trip.travel(args['direction'], args.get('seek')))
+                    active_role = 'explore'
+                    result = await watch(active)
+                    active = None
+                    call_end(result['status'], result=result)
+                    if out['actionState'] == 'unknown' or result['status'] == 'unknown':
+                        await poison()
+                        out['status'] = 'action_unknown'
+                        break
+                    # A failed child stops this program's later mutations.
+                    halted = not result['completed']
+                    frame = encode(dict(type='result', id=sequence, value=explorer.brief(result['explorationResult'])))
+                    active = asyncio.create_task(asyncio.to_thread(connection.send_bytes, frame))
+                    active_role = 'send'
+                    await watch(active)
+                    active = None
+                    continue
                 if name == 'help':
                     # Host-local metadata uses the same bounded Worker reply
                     # path, without dispatch or changing observation/continuation state.
@@ -431,11 +535,11 @@ class LuaRuntime:
                     active = None
                     continue
                 synchronous_task = name == 'mine_target' and program_tasks.available(self.bridge)
-                if (self.before_player_action and allow_actions and not halted
+                if (allow_actions and not halted
                         and out['actions'] < limits.actions and (name in atomic.BUDGETED_ACTIONS or name in ('submit_task','resume_task'))):
-                    if not await self.before_player_action():
-                        raise Interrupted('previous_task_release_unconfirmed')
-                    self.before_player_action = None
+                    if (self.player_instruction and chat_id is not None and program_tasks.available(self.bridge)
+                            and not await program_tasks.coordinator(self.bridge).release_previous_follow(chat_id)):
+                        raise Interrupted('previous_follow_release_unconfirmed')
                 if name == 'cancel_task' and not allow_actions:
                     raise Interrupted('read_only_turn')
                 if (allow_actions and not halted and handoff is None and name in atomic.BUDGETED_ACTIONS
@@ -595,7 +699,7 @@ class LuaRuntime:
                         if lifecycle.get('uncertain') or not (rejected_before_dispatch or safe_terminal(result)):
                             out['actionState'] = 'unknown'
                             out['status'] = 'action_unknown'
-                            if module == 'crafting':
+                            if module in ('crafting', 'container', 'inventory'):
                                 await report_terminal('action_unknown', {**result,'status':'unknown','completed':False})
                                 continue
                             break
@@ -609,7 +713,7 @@ class LuaRuntime:
                     # cannot resume after this receipt, including inside pcall.
                     out['status'] = result['status']
                     failure_call = dict(call_meta)
-                    if module == 'crafting':
+                    if module in ('crafting', 'container', 'inventory'):
                         await report_terminal(out['status'], result)
                         continue
                     break
@@ -618,8 +722,10 @@ class LuaRuntime:
                 except ValueLimit:
                     out['status'] = 'result_limit'
                     break
-                active = asyncio.create_task(asyncio.to_thread(connection.send_bytes,
-                    encode({'type': 'result', 'id': sequence, 'value': result})))
+                frame = {'type': 'result', 'id': sequence, 'value': result}
+                if module == 'inventory' or (module == 'container' and name == 'inspect_container'):
+                    frame['remainingBudget'] = dict(actions=limits.actions-out['actions'], calls=limits.calls-out['calls'])
+                active = asyncio.create_task(asyncio.to_thread(connection.send_bytes, encode(frame)))
                 active_role = 'send'
                 await watch(active)
                 active = None

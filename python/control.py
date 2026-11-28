@@ -18,6 +18,34 @@ autonomy_version = ContextVar('autonomy_version', default=None)
 command_owner = ContextVar('bridge_command_owner', default=None)
 
 
+# Local-player operations and the TCP hello flags their execution paths require.
+# wait is host-local. The terrain reads predate the atomic protocol.
+_CLIENT_ATOMIC_GROUPS = {
+    (): ('wait', 'observe_terrain', 'get_player_state'),
+    ('viewport_observation_v1',): ('observe_exploration',),
+    ('item_info_v1',): ('query_item_info',),
+    ('item_sources_v1',): ('query_item_sources',),
+    ('atomic_operations_v1',): ('get_world_state', 'inspect_tile', 'scan_entities', 'navigate_to_x',
+                                'attack_entity', 'mine_tile', 'place_tile', 'use_item', 'stop_action'),
+    ('atomic_operations_v1', 'atomic_extensions_v1'): ('inspect_inventory', 'scan_tiles'),
+    ('atomic_operations_v1', 'atomic_extensions_v1', 'server_confirmed_interactions_v1'):
+        ('mine_wall', 'place_wall', 'hammer_tile', 'interact_tile'),
+    ('atomic_operations_v1', 'atomic_foundations_v1'): ('get_player_status', 'resolve_content'),
+    ('atomic_operations_v1', 'hotbar_keys_v1'): ('select_hotbar_slot',),
+    ('atomic_operations_v1', 'platform_drop_v1'): ('drop_through_platform',),
+    ('atomic_operations_v1', 'landing_region_navigation_v1'): ('navigate_to_landing_region',),
+    ('atomic_operations_v1', 'inventory_operations_v1'):
+        ('inspect_inventory', 'transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'),
+}
+CLIENT_ATOMIC_OPERATIONS = frozenset().union(*_CLIENT_ATOMIC_GROUPS.values())
+
+
+def client_atomic_operations(capabilities):
+    caps = set(capabilities)
+    return frozenset(name for required, names in _CLIENT_ATOMIC_GROUPS.items()
+                     if caps.issuperset(required) for name in names)
+
+
 class BridgeError(Exception):
     def __init__(self, message, diagnostic=None, status=None):
         super().__init__(message)
@@ -51,6 +79,7 @@ class Bridge:
             self.hello = self._read()
             if self.hello.get("v") != 1 or self.hello.get("type") != "hello":
                 raise BridgeError("Unsupported Bridge handshake")
+            self.supported_atomic_operations = client_atomic_operations(self.hello.get('capabilities', ()))
         except TimeoutError as error:
             self.close()
             raise BridgeError("Handshake timeout: TCP connected but no Bridge hello received; "

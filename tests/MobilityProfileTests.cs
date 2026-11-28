@@ -8,16 +8,19 @@ public static class MobilityProfileTests
     public static void Run()
     {
         MovementSnapshotTests.Run();
-        var budget=new TravelHealthBudget();
-        foreach(int life in new[]{100,90,80,70,60})
+        var health=new TravelHealth();
+        Check(TravelHealth.IsLow(25,80)&&!TravelHealth.IsLow(26,80)
+            &&TravelHealth.IsLow(100,400)&&!TravelHealth.IsLow(101,400),"inclusive low life floor and scaled threshold");
+        foreach(int life in new[]{100,90,80,70,60,40,75,30,26,25})
         {
-            budget.Begin(0,0,life);
-            Check(TravelHealthBudget.Exceeded(budget.StartLife,life,100)==(life==60),"accumulate separate travel hits");
+            health.Begin(0,0,life);
+            Check(health.Observe(life,100)==(life==25),"travel uses current health after damage or healing");
         }
-        budget.Begin(0,1,60);
-        Check(budget.StartLife==60,"new generation starts a fresh budget");
-        budget.Begin(1,1,80);
-        Check(budget.StartLife==80,"new session starts a fresh budget");
+        health.Begin(0,1,15);
+        Check(!health.Observe(15,100)&&!health.Observe(65,100)&&health.Observe(24,100),
+            "wounded start can move, then healing before another low-health hit counts");
+        health.Begin(1,1,10);
+        Check(!health.Observe(10,100)&&health.Observe(9,100),"new session ignores damage from a prior run");
         var tracker=new MobilityTracker();var p=PhysicsParameters.Basic;
         var a=tracker.Sample(p,20,42,false,Array.Empty<string>(),10,1,7);
         var b=tracker.Sample(p,20,42,false,Array.Empty<string>(),11,1,7);

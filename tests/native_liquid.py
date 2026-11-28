@@ -10,6 +10,7 @@ from native_direct_input import wait_file
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 from lua_runtime import Limits, LuaRuntime
 from server_ai import ServerAiBridge
+from program_tasks import coordinator
 
 
 async def verify_puddle(args):
@@ -156,7 +157,9 @@ async def verify_wading(args, mode):
 async def verify(args):
     await wait_file(args.profile / "action-fixture.json", 90)
     for mode in args.scenes or ("puddle", "bridge", "detour", "mine", "hazard", "flood", "wade_one", "wade_deep", "wade_long", "wade_pool", "bridge_long"):
-        if mode == "puddle":
+        if mode.startswith("breath_"):
+            await verify_breath(args, mode)
+        elif mode == "puddle":
             await verify_puddle(args)
         elif mode.startswith("wade_"):
             await verify_wading(args, mode)
@@ -164,9 +167,81 @@ async def verify(args):
             await verify_edits(args, mode)
 
 
+async def verify_breath(args, mode):
+    ready = args.profile / "liquid-edit-ready.json"
+    ready.unlink(missing_ok=True)
+    bridge = ServerAiBridge(args.port)
+    try:
+        assert "server_ai_breath_reflex_v1" in bridge.hello["capabilities"]
+        with_work = mode in ("breath_work", "breath_cluster")
+        request = args.profile / "liquid-request"
+        temp = request.with_suffix(".tmp")
+        temp.write_text(mode)
+        temp.replace(request)
+        scene = await wait_file(ready)
+        if with_work:
+            manager = coordinator(bridge)
+            target = {"x":scene["x"]+3,"y":scene["floor"]-1}
+            if mode=="breath_cluster":
+                target["cluster"] = True
+            mining = await manager.invoke("submit_task", {"operation":"mine_target", "arguments":target})
+            assert mining["status"]=="running", mining
+        trace = args.profile / f"liquid-edit-{mode}.jsonl"
+        notices = []
+        paused = False
+        for _ in range(250):
+            await asyncio.sleep(.12)
+            state = await asyncio.to_thread(bridge.life_status)
+            notices.extend(i["text"] for i in (state.get("messages") or {}).get("items", []))
+            rows = [json.loads(line) for line in trace.read_text().splitlines() if line.endswith("}")] if trace.exists() else []
+            if with_work:
+                work = await asyncio.to_thread(bridge.task_request, "action", mining["taskId"])
+                paused |= work["executionState"]=="paused" and work["reason"]=="task_interrupt_breath"
+            if mode in ("breath_gills", "breath_full"):
+                if len(rows)>=14:
+                    assert not any("换气" in n for n in notices), notices
+                    break
+            elif mode=="breath_sealed" and any("没找到能到达的透气口" in n for n in notices) and rows:
+                assert "已恢复呼吸。" not in notices and all(r["roofRemaining"]==3 for r in rows), notices
+                break
+            elif "已恢复呼吸。" in notices:
+                if with_work:
+                    done = await manager.invoke("await_task", {"taskId":mining["taskId"],"milliseconds":15000})
+                    assert paused and done["completed"], (paused, done)
+                    if mode=="breath_cluster":
+                        cells = done["result"]["task"]["result"]["evidence"]["targets"]
+                        assert len(cells)==3 and all(c["status"]=="verified" for c in cells), cells
+                    else:
+                        assert done["result"]["reason"]=="mine_target_verified", done
+                assert all(r["statLife"]>0 for r in rows), rows[-3:]
+                assert any(not r["headWet"] and r["breath"]>=r["breathMax"]-8 for r in rows), rows[-3:]
+                if mode in ("breath_build", "breath_existing", "breath_nearby", "breath_timing"):
+                    assert any(r["pulley"] for r in rows), rows[-3:]
+                if mode in ("breath_build", "breath_timing"):
+                    assert rows[-1]["ropeCount"]<26, rows[-1]
+                if mode=="breath_nearby":
+                    assert rows[-1]["x"]>rows[0]["x"]+32, rows[-1]
+                if mode=="breath_timing":
+                    assert rows[0]["breath"]>=90 and rows[0]["ropeCount"]==30, rows[0]
+                    first_placement = next(r for r in rows if r["ropeCount"]<30)
+                    assert 0 < first_placement["breath"] < rows[0]["breath"], first_placement
+                if mode=="breath_roof":
+                    assert rows[-1]["roofRemaining"]<3, rows[-1]
+                if mode=="breath_side":
+                    assert rows[-1]["x"]>rows[0]["x"]+32 and rows[-1]["roofRemaining"]==3, rows[-1]
+                break
+            if mode!="breath_sealed":
+                assert not any("行动结束" in n for n in notices), (mode,notices,rows[-3:])
+        else:
+            raise AssertionError((mode,notices,rows[-3:]))
+        print(f"Native {mode} passed",flush=True)
+    finally:
+        bridge.close()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--scenes", nargs="+", choices=("puddle", "bridge", "detour", "mine", "hazard", "flood", "wade_one", "wade_deep", "wade_long", "wade_pool", "bridge_long"))
+    parser.add_argument("--scenes", nargs="+", choices=("puddle", "bridge", "detour", "hazard", "mine", "flood", "wade_one", "wade_deep", "wade_long", "wade_pool", "bridge_long", "breath_shallow", "breath_roof", "breath_side", "breath_existing", "breath_build", "breath_gills", "breath_full", "breath_nearby", "breath_timing", "breath_sealed", "breath_work", "breath_cluster"))
     asyncio.run(verify(parser.parse_args()))

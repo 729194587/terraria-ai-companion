@@ -71,6 +71,12 @@ internal sealed class CollectDropsTask(string id, JsonElement args, AiAtomicActi
     }
 
     internal override void Start(AiReadOnlyProtocol.Identity frame) => ServerDrops.Current = this;
+    internal override void Resume(AiReadOnlyProtocol.Identity frame,ulong pausedUpdates)
+    {
+        initialLife=player.statLife;navigation=null;target=null;settleUntil=null;
+        foreach(var row in targets)row.BlockedSince=null;
+        ServerDrops.Current=this;
+    }
     internal bool Allows(Item item) => targets.Any(row => row.Reason == null && ReferenceEquals(row.Drop.Item, item) && ServerDrops.Live(row.Drop));
 
     internal void Credit(int slot, Item item, int type, int count)

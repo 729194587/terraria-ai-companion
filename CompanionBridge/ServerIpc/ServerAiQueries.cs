@@ -27,6 +27,15 @@ internal static class ServerAiQueries
         NetworkStateSync.Require((Player)expected.Actor);
     }
     private static JsonElement Snapshot(Player p) => JsonSerializer.SerializeToElement(ObservationReader.ReadPlayer(p, "server_ai_player"), Json);
+    // Player.UpdateBiomes uses the actor's center tile and these world boundaries.
+    private static string DepthLayer(Player p)
+    {
+        int y = p.Center.ToTileCoordinates().Y;
+        if (y > Main.UnderworldLayer) return "underworld";
+        if (y > Main.rockLayer) return "cavern";
+        if (y > Main.worldSurface) return "underground";
+        return y > Main.worldSurface * 0.35f ? "surface" : "space";
+    }
     internal static object Read(AiReadOnlyProtocol.Identity expected, string operation, JsonElement arguments)
     {
         try { return ReadBound(expected, operation, arguments); }
@@ -41,7 +50,7 @@ internal static class ServerAiQueries
 
     private static object ReadBound(AiReadOnlyProtocol.Identity expected, string operation, JsonElement arguments)
     {
-        if (operation is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "plan_materials" or "query_item_sources" or "query_item_info" or "resolve_content" or "observe_scene" or "query_recipes" or "look_around" or "query_map" or "query_combat_loadout" or "list_pylons" or "list_teammates" or "discover_bosses" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase" or "quote_npc_sale" or "quote_nurse_heal" or "quote_reforge")) throw new FormatException("Unsupported server AI query.");
+        if (operation is not ("get_player_state" or "get_world_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "plan_materials" or "query_item_sources" or "query_item_info" or "resolve_content" or "observe_scene" or "query_recipes" or "look_around" or "query_map" or "query_combat_loadout" or "list_pylons" or "list_teammates" or "discover_bosses" or "list_base_chests" or "find_container_item" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase" or "quote_npc_sale" or "quote_nurse_heal" or "quote_reforge")) throw new FormatException("Unsupported server AI query.");
         if (operation != "build_diff") AtomicParameters.Validate(operation, arguments, true);
         Require(expected);
         bool regional=operation=="observe_scene"&&arguments.TryGetProperty("scale",out var scale)&&scale.GetString()=="region";
@@ -49,14 +58,20 @@ internal static class ServerAiQueries
         long allocated=regional?GC.GetAllocatedBytesForCurrentThread():0;
         var p = (Player)expected.Actor;
         object data;
-        if (operation is "look_around" or "inspect_container" or "query_combat_loadout" or "list_pylons" or "list_teammates" or "discover_bosses")
+        if (operation is "get_world_state" or "look_around" or "list_base_chests" or "find_container_item" or "inspect_container" or "query_combat_loadout" or "list_pylons" or "list_teammates" or "discover_bosses")
         {
             data = operation switch
             {
+                "get_world_state" => AtomicOperations.ReadWorldState(p, DepthLayer(p)),
                 "look_around" => ServerAiSystem.Lighting?.ReadTerrain(p) ?? throw new QueryUnavailableException("tile_light_map_unavailable"),
                 "list_pylons" => ServerPylons.List(expected),
                 "list_teammates" => ServerRegroup.Discover(expected),
                 "discover_bosses" => BossMembers.Discover(expected,p),
+                "find_container_item" => ActorContainer.FindItem(p, arguments.GetProperty("item").GetString(),
+                    arguments.TryGetProperty("radiusTiles", out var radius) ? radius.GetInt32() : 32,
+                    arguments.TryGetProperty("offset", out var offset) ? offset.GetInt32() : 0),
+                "list_base_chests" => ActorContainer.FindItem(p, arguments.TryGetProperty("item", out var itemKey) ? itemKey.GetString() : null,
+                    AtomicOperations.BaseRadiusTiles, arguments.TryGetProperty("offset", out var start) ? start.GetInt32() : 0, atBase: true),
                 "inspect_container" => ActorContainer.Inspect(expected),
                 _ => NativeCombatWorld.Loadout(expected)
             };

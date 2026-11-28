@@ -31,3 +31,25 @@ class GoblinReforgeTests(unittest.TestCase):
                        dict(itemVerified=False), dict(sourceSlot=1), dict(quoteToken='c' * 64)):
             with self.subTest(change=change):
                 self.assertFalse(atomic.verified_reforge(target, dict(proof, **change)))
+
+    def test_target_rolls_and_preexisting_prefix(self):
+        target = dict(entityRef='g', sourceSlot=2, sourceToken='a'*64, quoteToken='b'*64, targetPrefix=81)
+        proof = dict(**target, itemType=24, beforePrefix=3, afterPrefix=81, rolls=4, rolled=True,
+                     priceCopper=137, beforeFunds=funds(200), afterFunds=funds(63),
+                     paymentsVerified=True, itemVerified=True, bankNonCurrencyUnchanged=True)
+        self.assertTrue(atomic.verified_reforge(target, proof))
+        self.assertFalse(atomic.verified_reforge(target, dict(proof, afterPrefix=3)))
+        self.assertFalse(atomic.verified_reforge(target, dict(proof, paymentsVerified=False)))
+        idle = dict(proof, rolls=0, rolled=False, beforePrefix=81, priceCopper=0, afterFunds=funds(200))
+        self.assertTrue(atomic.verified_reforge(target, idle))
+        self.assertFalse(atomic.verified_reforge(target, dict(idle, priceCopper=1)))
+        self.assertFalse(atomic.verified_reforge(target, dict(idle, beforePrefix=3)))
+        with self.assertRaises(atomic.PreDispatchRejected):
+            atomic.validate_backend(bridge(BASE | {'server_ai_reforge_v1'}), 'reforge_item', target)
+
+    def test_cannot_claim_target_after_running_out_of_money(self):
+        target = dict(entityRef='g', sourceSlot=2, sourceToken='a'*64, quoteToken='b'*64, targetPrefix=81)
+        proof = dict(**target, itemType=24, beforePrefix=3, afterPrefix=8, rolls=2, rolled=True,
+                     priceCopper=200, beforeFunds=funds(200), afterFunds=funds(0),
+                     paymentsVerified=True, itemVerified=True, bankNonCurrencyUnchanged=True)
+        self.assertFalse(atomic.verified_reforge(target, proof))

@@ -14,6 +14,7 @@ namespace CompanionBridge.ServerIpc;
 internal static class ServerContainerFixture
 {
     private static bool ready;
+    private static NPC followThreat;
     private static int x, y, index;
     internal static bool TransferEnabled => Program.LaunchParameters.ContainsKey("-companioncontainertransfertest")
         && Program.LaunchParameters.ContainsKey("-companionaiipctest");
@@ -24,7 +25,7 @@ internal static class ServerContainerFixture
     internal static bool SortEnabled => Program.LaunchParameters.ContainsKey("-companioncontainersorttest")
         && Program.LaunchParameters.ContainsKey("-companionaiipctest");
 
-    internal static void Reset() => ready = false;
+    internal static void Reset() { ready = false; followThreat = null; }
 
     internal static void Tick(AiReadOnlyProtocol.Identity identity)
     {
@@ -32,6 +33,9 @@ internal static class ServerContainerFixture
             || !Program.LaunchParameters.ContainsKey("-companioncontainertest")
             || !File.Exists(Path.Combine(Main.SavePath, "isolated-container-fixture"))) return;
         var player = (Player)identity.Actor;
+        if (Program.LaunchParameters.ContainsKey("-companionhandofftest"))
+            foreach (var npc in Main.ActiveNPCs)
+                if (!npc.friendly && !npc.townNPC && !ReferenceEquals(npc, followThreat)) npc.active = false;
         if (!ready)
         {
             x = Main.spawnTileX + 3;
@@ -61,6 +65,33 @@ internal static class ServerContainerFixture
         if (!File.Exists(request)) return;
         string command = File.ReadAllText(request);
         File.Delete(request);
+        if (Program.LaunchParameters.ContainsKey("-companionfollowtest"))
+        {
+            if (command == "follow-ledge")
+            {
+                for (int column = x + 13; column <= x + 18; column++)
+                for (int row = y - 1; row <= y + 1; row++)
+                {
+                    var tile = Main.tile[column, row];
+                    tile.HasTile = true;
+                    tile.TileType = TileID.Dirt;
+                }
+            }
+            if (command == "follow-ambush")
+            {
+                int slot = NPC.NewNPC(player.GetSource_Misc("follow_test"), (int)player.Center.X + 16,
+                    (int)player.Bottom.Y, NPCID.GreenSlime, Target: player.whoAmI);
+                followThreat = Main.npc[slot];
+                followThreat.Bottom = player.Bottom + new Vector2(16, 0);
+                followThreat.aiStyle = -1;
+                followThreat.damage = 1;
+            }
+            if (command == "follow-clear" && followThreat != null)
+            {
+                followThreat.active = false;
+                followThreat = null;
+            }
+        }
         if(command.StartsWith("personal-") && Program.LaunchParameters.ContainsKey("-companionpersonaltest"))
         {
             int type=command switch {"personal-safe"=>TileID.Safes,"personal-forge"=>TileID.DefendersForge,
@@ -111,6 +142,8 @@ internal static class ServerContainerFixture
         if (command == "restore-actor") player.ghost = false;
         if (TransferEnabled || BatchEnabled || SortEnabled)
         {
+            // Use a material absent from the test world's loose pickups for exact quantity checks.
+            int material = command.StartsWith("amount-") ? ItemID.Silk : ItemID.Wood;
             switch (command)
             {
                 case "seed-sort":
@@ -144,32 +177,63 @@ internal static class ServerContainerFixture
                     for (int slot = 0; slot < 59; slot++) player.inventory[slot] = new Item();
                     for (int slot = 0; slot < 40; slot++) Main.chest[index].item[slot] = new Item();
                     break;
+                case "seed-rope-storage":
+                case "seed-torch-search":
+                case "seed-handoff":
+                case "seed-torches-stocked":
+                case "seed-torches-short":
                 case "seed-batch":
                     for (int slot = 0; slot < 59; slot++) player.inventory[slot] = new Item();
                     for (int slot = 0; slot < 40; slot++) Main.chest[index].item[slot] = new Item();
+                    if (command == "seed-rope-storage") player.inventory[10] = new Item(ItemID.Rope, 20);
+                    if (command == "seed-torch-search")
+                    {
+                        Main.chest[index].item[0] = new Item(ItemID.Torch, 6);
+                        foreach (var (offset, amount) in new[] { (4, 5), (8, 40), (16, 7), (42, 70) })
+                            Main.chest[Chest.FindChest(x + offset, y)].item[1] = new Item(ItemID.Torch, amount);
+                        Main.chest[Chest.FindChest(x + 16, y)].item[2] = new Item(ItemID.Torch, 6);
+                    }
+                    if (command == "seed-handoff")
+                    {
+                        player.inventory[10] = new Item(ItemID.Torch, 12);
+                        player.inventory[13] = new Item(ItemID.WormholePotion);
+                    }
+                    if (command is "seed-torches-stocked" or "seed-torches-short")
+                    {
+                        Main.chest[index].item[0] = new Item(ItemID.Torch, command == "seed-torches-short" ? 6 : 12);
+                        if (command == "seed-torches-short")
+                        {
+                            player.inventory[11] = new Item(ItemID.Wood, 2);
+                            player.inventory[12] = new Item(ItemID.Gel, 2);
+                            player.inventory[13] = new Item(ItemID.WormholePotion, 1);
+                        }
+                    }
                     break;
                 case "seed-nearby":
-                    player.inventory[0] = new Item(ItemID.Wood, 2);
-                    player.inventory[10] = new Item(ItemID.Wood, 11);
-                    player.inventory[11] = new Item(ItemID.Wood, 3) { favorited = true };
+                case "amount-favorites":
+                    player.inventory[0] = new Item(material, 2);
+                    player.inventory[10] = new Item(material, 11);
+                    player.inventory[11] = new Item(material, 3) { favorited = true };
                     player.inventory[12] = new Item(ItemID.CopperCoin, 4);
                     player.inventory[13] = new Item(ItemID.StoneBlock, 13);
-                    Main.chest[index].item[0] = new Item(ItemID.Wood, 9997);
-                    Main.chest[index].item[1] = new Item(ItemID.Wood, 9998);
+                    Main.chest[index].item[0] = new Item(material, 9997);
+                    Main.chest[index].item[1] = new Item(material, 9998);
                     Main.chest[Chest.FindChest(x + 16, y)].item[1] = new Item(ItemID.StoneBlock, 5);
                     foreach (int offset in new[]{8, 20, 42})
                         Main.chest[Chest.FindChest(x + offset, y)].item[1] = new Item(ItemID.StoneBlock, 5);
                     break;
                 case "batch-fit-bag":
                 case "batch-fill-bag":
+                case "amount-fill-bag":
                     for (int slot = 0; slot < 50; slot++) player.inventory[slot] = new Item(ItemID.StoneBlock, 9999);
-                    player.inventory[10] = new Item(ItemID.Wood, 9997);
-                    Main.chest[index].item[0] = new Item(ItemID.Wood, command == "batch-fit-bag" ? 2 : 9);
+                    player.inventory[10] = new Item(material, 9997);
+                    Main.chest[index].item[0] = new Item(material, command == "batch-fit-bag" ? 2 : 9);
                     break;
                 case "batch-fill-chest":
+                case "amount-fill-chest":
                     for (int slot = 0; slot < 40; slot++) Main.chest[index].item[slot] = new Item(ItemID.StoneBlock, 9999);
-                    Main.chest[index].item[0] = new Item(ItemID.Wood, 9997);
-                    player.inventory[10] = new Item(ItemID.Wood, 9);
+                    Main.chest[index].item[0] = new Item(material, 9997);
+                    player.inventory[10] = new Item(material, 9);
                     break;
                 case "batch-roundtrip":
                     Main.chest[index].item[0] = new Item(ItemID.Lens, 7);
@@ -229,6 +293,8 @@ internal static class ServerContainerFixture
         File.WriteAllText(Path.Combine(Main.SavePath, "container-state.json"), JsonSerializer.Serialize(new
         {
             command, clients, actorChest = player.chest, gameUpdate = Main.GameUpdateCount,
+            groundTorches = command == "handoff-snapshot" ? Main.item.Take(Main.maxItems)
+                .Where(i => i.active && i.type == ItemID.Torch).Select(i => new { slot = i.whoAmI, i.stack }).ToArray() : null,
             batchInventory = BatchEnabled ? player.inventory.Select(item => new { item.type, item.stack, item.prefix, item.favorited }).ToArray() : null,
             batchChests = BatchEnabled ? new[]{index, Chest.FindChest(x + 16, y), Chest.FindChest(x + 20, y), Chest.FindChest(x + 8, y), Chest.FindChest(x + 42, y)}.Where(slot => slot >= 0 && Main.chest[slot] != null)
                 .Select(slot => new { index = slot, slots = Main.chest[slot].item.Select(item => new { item.type, item.stack, item.prefix }).ToArray() }).ToArray() : null,

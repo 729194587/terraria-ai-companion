@@ -48,6 +48,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsHammer => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
     public bool SupportsTileInteraction => ServerTileInteraction.Available;
     public bool SupportsDoors=>true;
+    public bool SupportsWaterBucket=>TargetEngine;
     private static bool TargetEngine => VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.Engine?.Selected == "2026.09.3.1";
     public bool SupportsPylons=>TargetEngine;
     public bool SupportsRegroup=>TargetEngine;
@@ -67,7 +68,15 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     public bool SupportsCrafting => ActorCrafting.Initialized;
     public bool SupportsSorting=>ActorSorting.Available;
     public bool SupportsCollection => TargetEngine && VirtualPlayerEngineProbe.VirtualPlayerEngineProbe.ItemReceiptSupported;
-    public bool SupportsExploration=>TargetEngine;
+    public bool SupportsFollow => TargetEngine && SupportsRegroup;
+    public void OfferFollowDefense(object handle, AiReadOnlyProtocol.Identity frame, string target, string threat, string dangerRef)
+    {
+        if (handle is not Handle { Context: TaskSlot { Task: FollowTeammateTask follow } slot } ||
+            !slot.Record.Started || slot.Record.Result != null) return;
+        follow.OfferDefense(() => new CombatController(new NativeCombatWorld(frame, navigation, slot.Record.Id,
+            target, ReflexTargetAllowed, new(frame.GameUpdate, slot.Record.Id, CapturePrimary(frame), WorkVelocityX(frame), dangerRef)),
+            "reflex", threat), () => frame.Autonomy?.Valid != false);
+    }
     public bool SupportsReforge => MerchantShop.VanillaServicesSupported;
     public bool SupportsNurse => NurseService.Supported;
     public bool SupportsMerchantSale => SupportsMerchantPurchase && MerchantShop.SaleSupported;
@@ -84,8 +93,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         =>StartCore(id,"place_tile",JsonSerializer.SerializeToElement(new{x=at.X,y=at.Y}),"auto-torch",true);
     private object StartCore(AiReadOnlyProtocol.Identity identity,string operation,JsonElement args,string actionId,bool child,bool continuous=false,
         NavigationKnowledge knowledge=null,AiAtomicActions.CombatAdmission admission=null,AiAtomicActions.RespawnPlan rejoin=null,
-        bool buildTravel=false,MapWindow? explorationWindow=null,
-        NavigationQuote explorationQuote=null)
+        bool buildTravel=false)
     {
         Require(identity);var p=(Player)identity.Actor;
         Handle Reject(string reason,string detail=null)=>new(identity,operation,null,new("failed",reason,
@@ -101,6 +109,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         try
         {
             object context;
+            if(operation==AiAtomicActions.Surface)
+                return active=new Handle(identity,operation,new BreathRescue(identity,new ChildExecutor(this,false),actionId));
             if(operation=="dismiss_summon")
             {
                 int type=args.GetProperty("itemType").GetInt32();
@@ -119,7 +129,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     true,absent,InputsAcquired:false));
             }
             if(operation=="sell_npc_item") return new Handle(identity,operation,null,MerchantShop.Sell(identity,args));
-            if(operation=="reforge_item") return new Handle(identity,operation,null,GoblinReforge.Execute(identity,args));
+            if(operation=="reforge_item")
+            {
+                var result=GoblinReforge.Start(identity,args,out var batch);
+                return new Handle(identity,operation,batch,result.Status=="running"?null:result);
+            }
             if(operation=="heal_at_nurse") return new Handle(identity,operation,null,NurseService.Heal(identity,args));
             if(operation is "open_npc_dialogue" or "close_npc_dialogue")
                 return new Handle(identity,operation,null,NpcDialogue.Dialogue(identity,args,operation=="open_npc_dialogue"));
@@ -170,7 +184,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
             if(AiAtomicActions.IsTask(operation))
             {
                 if(child)throw new InvalidOperationException("Nested root task denied");
-                bool pureTravel=operation is "build_place" or "explore_frontier";
+                bool pureTravel=operation is "build_place" or "follow_teammate";
                 var executor=new ChildExecutor(this,continuous:!pureTravel,buildTravel:pureTravel);
                 CompanionTask task=operation==CombatProtocol.Operation
                     ?new CombatController(new NativeCombatWorld(identity,navigation,actionId,args.GetProperty("entityRef").GetString(),
@@ -185,15 +199,20 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                             ?new ExcavationTask(actionId,identity,args,executor,executor.Knowledge,singleOre:true)
                             :new MineTargetTask(actionId,new NativeMineTargetWorld(identity,args),executor)
                     :operation=="collect_drops" ? new CollectDropsTask(actionId,args,executor)
-                    :operation=="explore_frontier" ? new FrontierExplorationTask(actionId,identity,args,executor)
+                    :operation=="follow_teammate" ? new FollowTeammateTask(actionId,args,executor)
                     :operation=="build_place" ? new BuildPlaceTask(actionId,args,executor)
                     :operation=="place_item" ? new NativeActionTask(executor,"place_item_native",args,actionId,operation)
                     :new AutonomousNavigationTask(actionId,new NativeNavigationWorld(identity,args,executor.Knowledge),executor);
-                ulong budget=operation switch {CombatProtocol.Boss=>BossEncounterTask.Budget,CombatProtocol.Operation=>CombatController.Budget,"collect_drops"=>CollectDropsTask.Budget,
-                    "explore_frontier"=>FrontierExplorationTask.Budget,"build_place"=>10800,"place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
+                ulong? budget=operation switch {CombatProtocol.Boss=>BossEncounterTask.Budget,CombatProtocol.Operation=>CombatController.Budget,"collect_drops"=>CollectDropsTask.Budget,
+                    "follow_teammate"=>FollowTeammateTask.DurationUpdates(args)+60,
+                    "build_place"=>10800,"place_item"=>660,_=>AutonomousNavigationTask.TripUpdates};
                 context=new TaskSlot(task,actionId,null,identity with{GameUpdate=Main.GameUpdateCount},budget);
             }
-            else if(operation=="move_input"){context=directInput.Start(identity,args,actionId);ActorControl.Driver=directInput;}
+            else if(operation=="move_input" || child && operation=="breath_climb")
+            {
+                context=directInput.Start(identity,args,actionId,earlyPulley:operation=="breath_climb");
+                operation="move_input";ActorControl.Driver=directInput;
+            }
             else if(operation=="move_on_rope")
             {
                 if(rope.Start(identity,args,out var run,child) is {} reason)return Reject(reason);
@@ -210,7 +229,6 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 movementOnly:child && args.TryGetProperty("movementOnly",out var movementOnly) && movementOnly.GetBoolean());ActorControl.Driver=navigation;}
             else if(operation=="navigate_to_landing_region"){context=navigation.Start(identity,AtomicParameters.ReadLandingRegion(args),actionId,continuous,preferFlatRegion:child,knowledge:knowledge,
                 movementOnly:buildTravel);
-                if(child&&explorationWindow is {} window)navigation.RestrictToExplored(window,explorationQuote);
                 ActorControl.Driver=navigation;}
             else if(operation=="place_rope")
             {
@@ -252,6 +270,14 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                 if(reason!=null)return Reject(reason);
                 context=hammer;
             }
+            else if(operation=="use_water_bucket")
+            {
+                var bucket=new WaterBucket(args.GetProperty("x").GetInt32(),args.GetProperty("y").GetInt32(),
+                    args.GetProperty("mode").GetString()=="scoop");
+                if(p.HeldItem.type!=bucket.Source)return Reject("wrong_bucket_held");
+                ActorItemUse.StartBucket(p,identity.World,identity.Generation,bucket);
+                context=ActorItemUse.Current;
+            }
             else if(operation=="use_item" && NativeCombatWorld.MinionStaff(p.HeldItem))
             {
                 if(NativeCombatWorld.SummonRefusal(p,p.HeldItem,true) is string error) return Reject(error);
@@ -288,6 +314,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if(h.Context is GoblinReforge.Batch reforging)return reforging.Step();
+        if(h.Context is BreathRescue breath)return breath.Tick(identity);
         if (h.Context is NativeCombatWorld summon) return summon.PollSummon();
         if (h.Context is ActorContainer.SortAction sort) return sort.Poll();
         if (h.Context is ActorContainer.Batch batch) return batch.Poll();
@@ -375,6 +403,14 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
                     targetPresent=present,targetChanged=tile.ExternalChange,effectStatus=verified?(tile.Rope!=null?"native_rope_placed":tile.Object?"native_object_placed":"native_tile_placed"):"not_confirmed"},
                 Released(p)&&p.itemAnimation==0&&p.itemTime==0&&(!tile.Object||p.releaseUseItem&&p.reuseDelay==0),verified,InputsAcquired:c.Ticks>0);
         }
+        if(h.Operation=="use_water_bucket")
+        {
+            if(h.Context is not ActorItemUse.Context c || !ReferenceEquals(ActorItemUse.Current,c))
+                return new("unknown","native_context_changed",null,false);
+            string status=c.Phase switch {"stale"=>"unknown","rejected"=>"failed",_=>c.Phase};
+            return new(status,c.Reason,c.Bucket.Evidence(),Released(p),status=="completed" && c.Bucket.Verified,
+                InputsAcquired:c.Ticks>0);
+        }
         if(h.Operation=="use_item")
         {
             if(!ReferenceEquals(ActorItemUse.Current,h.Context))return new("unknown","native_context_changed",null,false);
@@ -412,6 +448,8 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
     {
         var h=(Handle)value;Require(h.Identity);
         if(h.Rejection!=null)return h.Rejection;
+        if(h.Context is BreathRescue breath)return breath.Stop(identity);
+        if (h.Context is GoblinReforge.Batch reforging) return reforging.Cancel();
         if (h.Context is NativeCombatWorld summon) return summon.PollSummon(cancel:true);
         if (h.Context is ActorContainer.SortAction sort) return sort.Poll(cancel: true);
         if (h.Context is ActorContainer.Batch batch) return batch.Poll(cancel: true);
@@ -446,7 +484,7 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         if(h.Operation=="move_input")directInput.Stop("cancelled","explicit_stop");
         else if(h.Operation=="move_on_rope")rope.Stop("cancelled","explicit_stop");
         else if(IsNavigation(h.Operation))navigation.Stop("cancelled","explicit_stop");
-        else if(h.Operation is "use_item" or "place_tile" or "place_object" or "place_rope")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
+        else if(h.Operation is "use_water_bucket" or "use_item" or "place_tile" or "place_object" or "place_rope")ActorItemUse.Stop(p,h.Identity.World,h.Identity.Generation);
         else ActorMining.Stop(p,h.Identity.World,h.Identity.Generation);
         return Poll(h.Identity,h);
     }
@@ -456,6 +494,26 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         handle is Handle {Context:TaskSlot {Task:BossEncounterTask boss}} h && TaskSlot.Same(frame,h.Identity)
             ?boss.RequestRetreat(frame,x,y):"boss_not_started";
 
+    public Result PauseWork(AiReadOnlyProtocol.Identity frame,object value,string reason)
+    {
+        var h=(Handle)value;Require(h.Identity);
+        if(h.Rejection!=null)return h.Rejection;
+        var slot=(TaskSlot)h.Context;
+        var release=slot.Pause(frame,reason);
+        return TaskResult(slot,release,h.Identity);
+    }
+    public void ResumeWork(AiReadOnlyProtocol.Identity frame,object value)
+    {
+        var h=(Handle)value;Require(h.Identity);
+        ((TaskSlot)h.Context).Resume(frame);
+        active=h;
+    }
+    public Result ClosePaused(object value,string status,string reason)
+    {
+        var slot=(TaskSlot)((Handle)value).Context;
+        var end=slot.ClosePaused(status,reason);
+        return end with{Evidence=new{task=slot.View()}};
+    }
     public Result CancelWithReason(AiReadOnlyProtocol.Identity identity,object value,string status,string reason)
     {
         var h=(Handle)value;Require(h.Identity);
@@ -493,13 +551,11 @@ internal sealed class ServerAiNativeActions : AiAtomicActions.IExecutor
         private readonly NavigationKnowledge knowledge=new();
         internal NavigationKnowledge Knowledge=>knowledge;
         private readonly bool buildTravel;
-        internal NavigationQuote ExplorationQuote {get;set;}
-        internal MapWindow? ExplorationWindow {get;set;}
         internal ChildExecutor(ServerAiNativeActions owner,bool continuous,bool buildTravel=false){this.owner=owner;this.continuous=continuous;this.buildTravel=buildTravel;}
         public string Validate(string op,JsonElement args)=>owner.Validate(op,args);
         public ulong ProgressVersion(object handle)=>handle is Handle {Context:ServerAiNavigation.Run run}?run.ProgressVersion:0;
         public object Start(AiReadOnlyProtocol.Identity id,string op,JsonElement args,string taskId)=>
-            owner.StartCore(id,op,args,taskId,true,continuous,knowledge,buildTravel:buildTravel,explorationWindow:ExplorationWindow,explorationQuote:ExplorationQuote);
+            owner.StartCore(id,op,args,taskId,true,continuous,knowledge,buildTravel:buildTravel);
         public Result Poll(AiReadOnlyProtocol.Identity id,object value)
         {
             var r=owner.Poll(id,value);

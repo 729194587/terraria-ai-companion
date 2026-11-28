@@ -397,6 +397,7 @@ public sealed class ProbePlayer : ModPlayer
     public override void PostUpdateMiscEffects()
     {
         if(ActorControl.Driver is CompanionBridge.ServerIpc.ServerAiRope rope)rope.BeforePulley(Player);
+        else if(ActorControl.Driver is CompanionBridge.ServerIpc.ServerAiDirectInput input)input.BeforePulley(Player);
     }
     public override bool PreItemCheck(){if (VirtualPlayerEngineProbe.Instance?.Name == "VirtualPlayerEngineProbe") ProbeTargeting.Capture(Player);return true;}
     public override void PostItemCheck(){if (VirtualPlayerEngineProbe.Instance?.Name == "VirtualPlayerEngineProbe") ProbeTargeting.Observe(Player);}

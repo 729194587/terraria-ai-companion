@@ -80,6 +80,7 @@ public sealed class ServerAiSystem : ModSystem
             int port = AiReadOnlyServer.ParsePort(aiArg ?? Environment.GetEnvironmentVariable("COMPANION_AI_PORT"), TcpControlServer.ParseLaunchPort(humanArg));
             var native=new ServerAiNativeActions();
             actions=new(native);
+            actions.BreathEnabled=!ServerAiActionFixture.Enabled || Program.LaunchParameters.ContainsKey("-companionbreathtest");
             native.ReflexTargetAllowed=actions.ReflexTargetAllowed;
             try{Lighting=new();}
             catch(Exception e){Mod.Logger.Error("Dedicated tile lighting unavailable.",e);}
@@ -115,6 +116,8 @@ public sealed class ServerAiSystem : ModSystem
             WorldCharacterSelfTest.Tick();
             var actor=Capture();
             server.ObserveAutonomyIdentity(actor);
+            if(simulationUpdate && actor?.CanAct==true && actor.GameUpdate%15==0 && actions.AllowsQuickHeal(actor))
+                NativeSurvival.TryQuickHeal((Player)actor.Actor);
             ActorContainer.Tick(actor);
             ServerContainerFixture.Tick(actor);
             ServerCollectFixture.Tick(actor);
@@ -123,17 +126,17 @@ public sealed class ServerAiSystem : ModSystem
             if(reflex && !actions.HasActive && !actions.BodyBlocked(actor) && torches?.Busy!=true)
                 NativeCombatWorld.AutoEquip(actor);
             bool threatened=false;
-            server.Tick(Capture, Select, ServerAiQueries.Read, Say, reflex?() =>
+            server.Tick(Capture, Select, ServerAiQueries.Read, Say, simulationUpdate && actor!=null && (reflex||actions.BreathEnabled)?() =>
             {
                 try
                 {
-                    if(actions.CombatActive)return;
+                    if(server.SurfaceForAir(actor,()=>BreathRescue.NeedsAir(actor)) || !reflex || actions.CombatActive)return;
                     var threat=NativeCombatWorld.Threat(actor,r=>actions.ReflexTargetAllowed(actor,r));
                     threatened=threat.HasValue;
                     if (threat.HasValue)
                         server.Reflex(actor with { Autonomy = NativeCombatWorld.LoadoutGrant(actor) },threat.Value.entityRef,threat.Value.threat,threat.Value.dangerRef);
                 }
-                catch(Exception e){Mod.Logger.Error("Combat threat evaluation failed.",e);}
+                catch(Exception e){Mod.Logger.Error("Survival reflex evaluation failed.",e);}
             }:null);
             if(simulationUpdate)
                 NativeCombatWorld.TickMaintenance(actor,actions.HasActive||actions.BodyBlocked(actor)||torches?.Busy==true||threatened);

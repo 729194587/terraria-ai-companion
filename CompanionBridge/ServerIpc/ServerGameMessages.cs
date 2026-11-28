@@ -42,6 +42,7 @@ internal static class ServerGameMessages
             Remember(text,"server_direct");
     }
     internal static void InventoryFull(string text) => Remember(text, "inventory_full", ProbeSession.ActorGeneration);
+    internal static void Breath(string text) => Remember(text, "server_direct", ProbeSession.ActorGeneration);
     private static void Remember(NetworkText message,string source)
     {
         if(!Program.IsMainThread)return;
@@ -58,7 +59,8 @@ internal static class ServerGameMessages
         if(cursor==Sequence || ProbeSession.Actor is not {} player)return null;
         return new {through=Sequence,dropped=Math.Max(0,Sequence-recent.Count-cursor),
             scene=new {life=player.statLife,maxLife=player.statLifeMax2,x=player.position.X,y=player.position.Y,
-                heldItem=player.HeldItem.Name,activity=ServerAiSystem.CurrentActivity},
+                heldItem=player.HeldItem.Name,activity=ServerAiSystem.CurrentActivity,
+                timeOfDay=Common.Systems.ObservationReader.TimeOfDay()},
             items=recent.Where(e=>e.sequence>cursor && (e.generation==null || e.generation==ProbeSession.ActorGeneration))
                 .Select(e=>new {e.sequence,e.text,e.source,e.tick,e.truncated}).ToArray()};
     }

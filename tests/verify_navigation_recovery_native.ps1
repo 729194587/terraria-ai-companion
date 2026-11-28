@@ -1,8 +1,8 @@
 param([string]$TModLoaderPath,[string]$EngineProfile,
     [string]$WorldPath, [string]$PackagePath, [int]$Port=27991, [int]$IpcPort=27992, [switch]$Baseline,[string[]]$Scenes,[switch]$Mobility,[switch]$Probe,[switch]$Region,
-    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation,[switch]$Frontier,[switch]$Wings,[switch]$ExtraJump,[switch]$Grapple,[switch]$Liquid,[switch]$Rope,[switch]$RopeMotion,[switch]$Loadout,[string]$PythonExecutable)
+    [ValidateRange(1,20)][int]$RegionIterations=8,[switch]$Environment,[switch]$AutonomousNavigation,[switch]$Wings,[switch]$ExtraJump,[switch]$Grapple,[switch]$Liquid,[switch]$Rope,[switch]$RopeMotion,[switch]$Loadout,[string]$PythonExecutable)
 $ErrorActionPreference='Stop'
-if($ExtraJump -or $Wings -or $Frontier){$Mobility=$true}
+if($ExtraJump -or $Wings){$Mobility=$true}
 if($Loadout){$Mobility=$true}
 . (Join-Path $PSScriptRoot '../scripts/engine-profile.ps1')
 $selectedEngine=Resolve-CompanionEngine -Name $EngineProfile -Path $TModLoaderPath
@@ -36,9 +36,10 @@ foreach($arg in @('tModLoader.dll','-server','-world',"$profile/Worlds/test.wld"
     '-companionactionstest','-companionterraintest','-companionnavrecoverytest')){$info.ArgumentList.Add($arg)}
 if($Mobility -or $Region){$info.ArgumentList.Add('-companionmobilitytest')}
 if($Loadout){$info.ArgumentList.Add('-companionloadouttest');$info.ArgumentList.Add('-companionextrajumptest')}
-if($ExtraJump -or $Wings -or $Frontier){$info.ArgumentList.Add('-companionextrajumptest')}
+if($ExtraJump -or $Wings){$info.ArgumentList.Add('-companionextrajumptest')}
 if($Grapple){$info.ArgumentList.Add('-companiongrappletest')}
 if($Liquid){$info.ArgumentList.Add('-companionliquidtest')}
+if($Liquid -and ($Scenes -like 'breath_*')){$info.ArgumentList.Add('-companionbreathtest')}
 if($Rope){$info.ArgumentList.Add('-companionropetest')}
 if($RopeMotion){$info.ArgumentList.Add('-companionropemotiontest')}
 if($Region){$info.ArgumentList.Add('-companionregiontest')}
@@ -46,7 +47,7 @@ if($Environment){$info.ArgumentList.Add('-companionenvironmenttest')}
 $process=[Diagnostics.Process]::Start($info)
 $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
 try {
-    $testScript=if($Loadout){'native_navigation_loadout.py'}elseif($Frontier){'native_frontier_navigation.py'}elseif($RopeMotion){'native_rope_motion.py'}elseif($Rope){'native_rope.py'}elseif($Liquid){'native_liquid.py'}elseif($Grapple){'native_grapple.py'}elseif($Wings){'native_wings.py'}elseif($ExtraJump){'native_extra_jump.py'}elseif($Region){'native_scene_region.py'}elseif($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
+    $testScript=if($Loadout){'native_navigation_loadout.py'}elseif($RopeMotion){'native_rope_motion.py'}elseif($Rope){'native_rope.py'}elseif($Liquid){'native_liquid.py'}elseif($Grapple){'native_grapple.py'}elseif($Wings){'native_wings.py'}elseif($ExtraJump){'native_extra_jump.py'}elseif($Region){'native_scene_region.py'}elseif($Mobility){'native_mobility.py'}else{'native_navigation_recovery.py'}
     $probeArgs=@('-B',(Join-Path $PSScriptRoot $testScript),'--port',"$IpcPort",'--profile',$profile)
     if($Region){$probeArgs+=@('--iterations',"$RegionIterations")}
     if($Environment){$probeArgs+='--environment'}

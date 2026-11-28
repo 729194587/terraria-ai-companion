@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 
@@ -90,11 +90,11 @@ class StoreTests(unittest.TestCase):
     def test_model_contract_uses_existing_atomic_schemas(self):
         self.assertIn(TOOL, TOOLS)
         description = TOOL['function']['description']
-        server_only = {'observe_scene', 'query_recipes', 'craft_recipe', 'place_object'}
-        for name in set(atomic.SCHEMAS) - server_only:
-            self.assertIn(name, description)
-        for name in server_only:
-            self.assertNotIn(name, description)
+        listed = set(description.split('可调用的 API：', 1)[1].split('。', 1)[0].split(', '))
+        direct = {t['function']['name'] for t in TOOLS}
+        self.assertEqual(direct & atomic.SCHEMAS.keys(), listed)
+        self.assertTrue({'inspect_inventory', 'inspect_tile', 'place_tile'} <= listed)
+        self.assertTrue({'query_map', 'loot_all', 'plan_materials'}.isdisjoint(listed))
         self.assertIn('json.null', SYSTEM)
         self.assertIn('受控pcall', SYSTEM)
         for args in ({}, {'source': ''}, {'source': 'return 1', 'seconds': 300},
@@ -104,6 +104,24 @@ class StoreTests(unittest.TestCase):
 
 
 class AgentLuaTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stop_follow_chat_only_stops_follow_and_acknowledges_release(self):
+        game, model = RuntimeGame(), Model()
+        agent = Agent(game, model, lua_store=self.store)
+        follow = {'taskId': 'a' * 32, 'operation': 'follow_teammate', 'status': 'running'}
+        receipt = dict(actionId=follow['taskId'], operation='follow_teammate', status='cancelled',
+                       valid=True, inputsReleased=True)
+        manager = agent.program_tasks = Mock()
+        manager.projection.return_value = dict(results=[], active=[], throughSequence=0)
+        manager.active_follow.side_effect = [follow, None]
+        manager.stop_follow = AsyncMock(return_value={**follow, 'status':'cancelled', 'valid': True, 'result':receipt})
+        for chat_id, expected in ((1, '已停止跟随。'), (2, '当前没有跟随任务。')):
+            agent.receive(event(chat_id, text='别跟了'))
+            await agent.task
+            self.assertEqual(expected, agent.history[-1]['content'])
+        manager.stop_follow.assert_awaited_once_with(follow)
+        manager.stop_all.assert_not_called()
+        self.assertFalse(model.requests)
+
     async def test_inventory_missing_mode_returns_structured_bad_argument(self):
         _, model, game = await self.run_agent(tool('inspect_inventory', '{}'), final('需要明确查询范围。'))
         result = next(json.loads(m['content']) for m in model.requests[1] if m.get('role') == 'tool')

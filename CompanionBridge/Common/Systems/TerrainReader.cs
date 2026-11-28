@@ -76,6 +76,9 @@ internal static class TerrainReader
         tile.LiquidAmount==0?default:new(tile.LiquidType,tile.LiquidAmount),
         tile.HasTile?tile.TileType:null,tile.HasTile&&tile.IsActuated);
 
+    internal static bool PressurePlate(Tile tile) => tile.HasUnactuatedTile &&
+        tile.TileType is TileID.PressurePlates or TileID.WeightedPressurePlate;
+
     private static char ReadShape(Tile tile)
     {
         int type = tile.TileType;

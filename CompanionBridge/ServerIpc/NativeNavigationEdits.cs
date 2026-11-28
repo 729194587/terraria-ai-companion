@@ -401,6 +401,39 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
         return new("mine_tile",JsonSerializer.SerializeToElement(new{x=action.X,y=action.Y,plannedToolSlot=action.Slot}));
     }
 
+    // Only clear plates in the next few walking tiles toward this destination.
+    internal static (int X,int Y)? PlateAhead(AiReadOnlyProtocol.Identity id,float goalLeft)
+    {
+        var p=(Player)id.Actor;
+        int direction=Math.Sign(goalLeft-p.position.X);
+        int start=(int)(p.Center.X/16), feet=(int)Math.Floor((p.Bottom.Y-1)/16);
+        int end=(int)((goalLeft+(direction>0?p.width-1:0))/16);
+        for(int i=0;i<=4;i++)
+        {
+            int x=start+i*direction;
+            if(i>0 && (direction==0 || (x-end)*direction>0))break;
+            if(!WorldGen.InWorld(x,feet,3))break;
+            for(int y=feet-1;y<=feet+1;y++)
+                if(TerrainReader.PressurePlate(Main.tile[x,y]) &&
+                    Collision.CanHitLine(p.position,p.width,p.height,new Microsoft.Xna.Framework.Vector2(x*16+7,y*16+6),2,2) &&
+                    ActorMining.ChooseTool(p,id.World,id.Generation,x,y,true,out _,out _)==ActorMining.Failure.None)
+                    return (x,y);
+            var wall=Main.tile[x,feet];
+            if(wall.HasUnactuatedTile && Main.tileSolid[wall.TileType] && !Main.tileSolidTop[wall.TileType])break;
+        }
+        return null;
+    }
+
+    internal NavigationStep PlanPlate(int x,int y)
+    {
+        var observed=ServerAiNavigation.Observe(Player);
+        if(!observed.Settled || !TerrainReader.PressurePlate(Main.tile[x,y]))return null;
+        openingOrigin=observed.State;
+        placement=null;armedInventory=null;openingRun=false;
+        expectedDrop=false;expectedLanding=observed.State;
+        return PlanCut(new[]{(x,y)},1);
+    }
+
     private NavigationStep PlanCut((int X,int Y)[] blocks,int remainingTiles)
     {
         if(blocks.Length>remainingTiles)
@@ -433,6 +466,8 @@ internal sealed class NativeNavigationEdits : ILocalEditSource
     internal static bool SafeExcavation(int x,int y,LocalTerrainView view,bool shaped=false)
     {
         var target=view.Environment(x,y);
+        if(target.TileType is TileID.PressurePlates or TileID.WeightedPressurePlate && !target.Actuated)
+            return true;
         bool solid=target.DryShape=='#'||shaped&&target.DryShape is ('h' or >= '1' and <= '4');
         if(!solid||target.TileType is not int type
             ||Main.tileFrameImportant[type]||TileID.Sets.Falling[type])return false;

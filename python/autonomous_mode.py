@@ -258,7 +258,7 @@ class AutonomousMode(explorer.ExplorerContext):
         for row in server_definitions(self.agent.bridge):
             f = row['function']
             name = f['name']
-            if name in program_tasks.NAMES - {'submit_task'} or name in ('wait','stop_action','explore_frontier'):
+            if name in program_tasks.NAMES - {'submit_task'} or name in ('wait','stop_action'):
                 continue
             if name not in atomic.READS:
                 schema = f['parameters']
@@ -369,8 +369,6 @@ class AutonomousMode(explorer.ExplorerContext):
                 objective = args.pop('objective', args.get('direction') if name=='explore' else None)
                 if not isinstance(objective,str) or not 0<len(objective.strip())<=240:
                     raise ValueError('Expected a short objective')
-                if name=='submit_task' and args.get('operation')=='explore_frontier':
-                    raise ValueError('Choose an explicit exploration destination')
                 operation, arguments = (args['operation'],args['arguments']) if name=='submit_task' else (name,args)
                 repeats = sum(row['operation']==operation and row['arguments']==arguments for row in self.stalled)
                 if repeats >= 2 or len(self.stalled)==self.stalled.maxlen:

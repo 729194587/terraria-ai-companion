@@ -10,6 +10,7 @@ using MonoMod.Utils;
 using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
+using CompanionBridge.Common.Systems;
 using CompanionBridge.ServerIpc;
 
 namespace VirtualPlayerEngineProbe;
@@ -128,31 +129,36 @@ internal static class ActorCrafting
         }
         return false;
     }
-    private static string Available(Recipe r,Player p)
+    private static string Available(Recipe r,Player p,bool explainInputs=false)
     {
         string unsupported=Storage(p)??Support(r);if(unsupported!=null)return unsupported;
         if(r.Disabled)return "recipe_disabled";
-        if(!tileRequirements(p,r))return "missing_crafting_station";
+        bool atStation=tileRequirements(p,r);
+        if(!atStation&&!explainInputs)return "missing_crafting_station";
         if(!environmentRequirements(p,r)||r.Conditions.Any(c=>!conditions[c]()))return "environment_not_met";
         if(!Materials(r,p))return "insufficient_materials";
-        return null;
+        return atStation ? null : "missing_crafting_station";
     }
     private static object ItemInfo(Item i)=>new{typeId=i.type,contentKey=i.ModItem?.FullName??"Terraria/"+ItemID.Search.GetName(i.type),name=i.Name,count=i.stack};
     internal static object ReadRecipes(AiReadOnlyProtocol.Identity id,JsonElement args)=>InScope(id,p=>
     {
         int limit=args.TryGetProperty("limit",out var n)?n.GetInt32():12,offset=args.TryGetProperty("offset",out n)?n.GetInt32():0;
         int? resultType=args.TryGetProperty("resultType",out n)?n.GetInt32():null;
-        bool availableOnly=!args.TryGetProperty("availableOnly",out n)||n.GetBoolean();
+        int? ingredientType=args.TryGetProperty("ingredientType",out n)?n.GetInt32():null;
+        bool availableOnly=args.TryGetProperty("availableOnly",out n)?n.GetBoolean():ingredientType==null;
         var list=new List<object>();int matched=0,unsupported=0;
         for(int index=0;index<Recipe.numRecipes;index++)
         {
             var r=Main.recipe[index];if(r.createItem.IsAir||resultType.HasValue&&r.createItem.type!=resultType)continue;
-            string support=Support(r),reason=Available(r,p);if(support!=null)unsupported++;
+            if (ingredientType is int material && (r.Disabled || material >= ItemLoader.ItemCount ||
+                !r.requiredItem.Any(i => i.type == material || r.AcceptedByItemGroups(material, i.type)))) continue;
+            string support=Support(r),reason=Available(r,p,explainInputs:resultType.HasValue&&!availableOnly);if(support!=null)unsupported++;
             if(availableOnly&&reason!=null)continue;
             int position=matched++;if(position<offset||list.Count>=limit)continue;
+            bool hasOutputSpace = Fits(p,r.createItem);
             list.Add(new{recipeId=index,recipeToken=Token(id,index,r),output=ItemInfo(r.createItem),supported=support==null,available=reason==null,reason,
-                hasOutputSpace=Fits(p,r.createItem),ingredients=r.requiredItem.Select(i=>new{item=ItemInfo(i),acceptedGroups=r.acceptedGroups.Where(g=>RecipeGroup.recipeGroups[g].ContainsItem(i.type)).Select(g=>new{id=g,name=RecipeGroup.recipeGroups[g].GetText(),typeIds=RecipeGroup.recipeGroups[g].ValidItems.OrderBy(t=>t).ToArray()}).ToArray()}).ToArray(),
-                stations=r.requiredTile.Select(t=>new{typeId=t,contentKey="Terraria/"+TileID.Search.GetName(t),adjacent=p.adjTile[t]}).ToArray(),
+                hasOutputSpace,ingredients=r.requiredItem.Select(i=>new{item=ItemInfo(i),acceptedGroups=r.acceptedGroups.Where(g=>RecipeGroup.recipeGroups[g].ContainsItem(i.type)).Select(g=>new{id=g,name=RecipeGroup.recipeGroups[g].GetText(),typeIds=RecipeGroup.recipeGroups[g].ValidItems.OrderBy(t=>t).ToArray()}).ToArray()}).ToArray(),
+                stations=r.requiredTile.Select(t=>new{typeId=t,contentKey=AtomicQueries.Key("tile",t),adjacent=p.adjTile[t]}).ToArray(),
                 conditions=r.Conditions.Select(c=>new{description=c.Description.Value,supported=conditions.ContainsKey(c),met=conditions.ContainsKey(c)?(bool?)conditions[c]():null}).ToArray()});
         }
         return (object)new{items=list,matchedCount=matched,returnedCount=list.Count,offset,truncated=offset+list.Count<matched,unsupportedCount=unsupported,

@@ -45,7 +45,7 @@ $sources = @(
     (Join-Path $repo 'CompanionBridge/Motion/PhysicsSimulator.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/ExtraJumpModel.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/AirMotionModel.cs'),
-    (Join-Path $repo 'CompanionBridge/Motion/TravelHealthBudget.cs'),
+    (Join-Path $repo 'CompanionBridge/Motion/TravelHealth.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MobilityProfile.cs'),
     (Join-Path $repo 'CompanionBridge/Motion/MovementSnapshot.cs'),
     (Join-Path $PSScriptRoot 'MovementSnapshotTests.cs'),

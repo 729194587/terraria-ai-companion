@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
 using Terraria.DataStructures;
+using Terraria.ModLoader;
 using CompanionBridge.Common.Systems;
 using CompanionBridge.Motion;
 using VirtualPlayerEngineProbe;
@@ -255,7 +256,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
         if(first!=null && first.Key==second?.Key || staff!=null && (staff.Key==first?.Key || staff.Key==second?.Key))
             return "combat_duplicate_weapon_slot";
         SetLoadout(frame,first,second,staff,false);
-        dismissedActor=null;
+        if(staff!=null)dismissedActor=null;
         return null;
     }
 
@@ -276,11 +277,13 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
         if(frame?.CanAct!=true || frame.GameUpdate<nextInventoryCheck || !ServerAiNativeActions.BodyIdle(frame))return;
         nextInventoryCheck=frame.GameUpdate+30;
         bool bound=MatchesLoadout(frame);
-        if(bound && (!automaticLoadout || maintenanceUnknown))return;
+        if(bound && (maintenanceUnknown || configuredActor.Autonomy is {Valid:false} or {InputsReleased:false}))return;
+        bool manual=bound && !automaticLoadout;
+        if(manual && (summonRole!=null || primary==null && secondary==null))return;
         var player=(Player)frame.Actor;
         WeaponRole Keep(WeaponRole role)=>bound && role!=null &&
             player.inventory[HotbarSlots.ToInventorySlot(role.Key)].type==role.Type?role:null;
-        var first=Keep(primary);
+        var first=manual?primary:Keep(primary);
         var staff=Keep(summonRole);
         if(first!=null && staff!=null)return;
         for(int n=-1;n<10;n++)
@@ -288,11 +291,21 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
             int slot=n<0?player.selectedItem:n;
             if(HotbarSlots.KeyForInventorySlot(slot) is not int key)continue;
             var candidate=player.inventory[slot];
-            if(first==null && SupportedRole(candidate))first=new(key,candidate.type);
+            if(!manual && first==null && SupportedRole(candidate))first=new(key,candidate.type);
             if(staff==null && MinionStaff(candidate) && WeaponSupported(candidate))staff=new(key,candidate.type);
         }
+        if(staff==null)
+        {
+            int source=FindMinionStaff(player);
+            if(source>=0)
+            {
+                int dest=ReadySlot(frame,source,first);
+                staff=new(HotbarSlots.KeyForInventorySlot(dest).Value,player.inventory[dest].type);
+                NetworkStateSync.Full(player);
+            }
+        }
         if(first!=primary || staff!=summonRole || !bound && (first!=null || staff!=null))
-            SetLoadout(frame,first,null,staff,true);
+            SetLoadout(bound?configuredActor:frame,first,manual?secondary:null,staff,!manual);
     }
 
     internal static void PauseSummon(Identity frame,int type)
@@ -306,6 +319,70 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
         && frame.World==dismissedActor.World && frame.Generation==dismissedActor.Generation;
 
     private readonly record struct Candidate(int Slot,Item Item,string Error);
+
+    // Terraria can only use a held hotbar item. Leave the selected tool and assigned roles in place.
+    private static int ReadySlot(Identity frame,int source,WeaponRole reserve=null)
+    {
+        if(source<10)return source;
+        var p=(Player)frame.Actor;
+        int dest=-1;
+        for(int i=0;i<10;i++)
+        {
+            int key=HotbarSlots.KeyForInventorySlot(i).Value;
+            if(i==p.selectedItem || reserve?.Key==key || MatchesLoadout(frame) &&
+                (primary?.Key==key || secondary?.Key==key || summonRole?.Key==key))continue;
+            if(p.inventory[i].IsAir){dest=i;break;}
+            if(dest<0 || p.inventory[dest].favorited && !p.inventory[i].favorited)dest=i;
+        }
+        Utils.Swap(ref p.inventory[source],ref p.inventory[dest]);
+        ActorInventory.InvalidateSlot(frame,source);
+        ActorInventory.InvalidateSlot(frame,dest);
+        return dest;
+    }
+
+    private static int FindMinionStaff(Player p)
+    {
+        int best=-1;
+        for(int i=10;i<50;i++)
+        {
+            var staff=p.inventory[i];
+            if(MinionStaff(staff) && WeaponSupported(staff) &&
+                (best<0 || p.GetWeaponDamage(staff)>p.GetWeaponDamage(p.inventory[best])))best=i;
+        }
+        return best;
+    }
+
+    private static Candidate ChooseDefense(Identity frame,NPC enemy,int currentSlot=-1)
+    {
+        var p=(Player)frame.Actor;
+        var configured=Choose(frame,enemy,currentSlot);
+        bool manual=Configured(frame) && !automaticLoadout;
+        if(manual && configured.Error==null)return configured;
+        if(!manual && p.selectedItem is >=0 and <10 && SupportedRole(p.HeldItem) && ShotRefusal(p,p.HeldItem)==null)
+            return new(p.selectedItem,p.HeldItem,null);
+
+        // A configured primary still identifies the player's class when its ammo or mana runs out.
+        DamageClass preferred=null;
+        if(manual && primary!=null && ContentSamples.ItemsByType.TryGetValue(primary.Type,out var original))
+        {
+            foreach(var family in new[]{DamageClass.Melee,DamageClass.Ranged,DamageClass.Magic,DamageClass.Summon})
+                if(original.CountsAsClass(family)){preferred=family;break;}
+        }
+        Candidate best=default;
+        (bool ClassMatch,float ClassBonus,float Power) bestRank=default;
+        for(int i=0;i<50;i++)
+        {
+            if(i==10 && best.Item!=null)break;
+            var weapon=p.inventory[i];
+            if(!SupportedRole(weapon) || ShotRefusal(p,weapon)!=null)continue;
+            var rank=(preferred!=null && weapon.CountsAsClass(preferred),
+                p.GetTotalDamage(weapon.DamageType).ApplyTo(100f),
+                (float)p.GetWeaponDamage(weapon)/Math.Max(1,weapon.useTime));
+            if(best.Item==null || rank.CompareTo(bestRank)>0){best=new(i,weapon,null);bestRank=rank;}
+        }
+        return best.Item!=null?best:new(-1,null,configured.Error??"combat_attack_weapon_unconfigured");
+    }
+
     private static Candidate Inspect(Player player,WeaponRole role,string name,Identity handoff=null)
     {
         int slot=HotbarSlots.ToInventorySlot(role.Key);
@@ -549,7 +626,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
 
     private static bool InWeaponReach(Identity frame,NPC n)
     {
-        var choice=Choose(frame,n);
+        var choice=ChooseDefense(frame,n);
         return choice.Error==null && Effective((Player)frame.Actor,n,choice,false);
     }
 
@@ -591,7 +668,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
         if (!ServerAiNativeActions.BodyIdle(identity)) return "actor_busy";
         if(npc==null)return null;
         BindTarget(npc,Reference(identity,npc));
-        var choice=Choose(identity,npc,preferHeld:reflexAllowed==null && !bossEncounter);
+        var choice=reflexAllowed!=null?ChooseDefense(identity,npc):Choose(identity,npc,preferHeld:!bossEncounter);
         if(choice.Error!=null)
         {
             if(reflexAllowed==null)return choice.Error;
@@ -621,6 +698,8 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     private void SelectWeapon()
     {
         int previousSlot=player.selectedItem;
+        slot=ReadySlot(identity,slot);
+        Weapon=Weapon with {Slot=slot};
         if(player.selectedItem!=slot)ActorItemUse.Select(player,identity.World,identity.Generation,slot);
         if(!ValidWeapon())throw new InvalidOperationException("Combat weapon selection unconfirmed.");
         RecordSelection(previousSlot);
@@ -639,9 +718,10 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
     private string ReassessWeapon(out bool waiting)
     {
         waiting=waitingSwitch=false;
-        if(!MatchesLoadout(identity) || secondary==null || primary==null)return null;
+        bool dual=MatchesLoadout(identity) && primary!=null && secondary!=null;
+        if(!dual && (reflexAllowed==null || !spentLast && ShotRefusal(player,item)==null))return null;
         if(admission?.SameWeapon?.Invoke()==false)return "combat_weapon_changed";
-        var choice=Choose(identity,npc,slot);
+        var choice=reflexAllowed!=null?ChooseDefense(identity,npc,slot):Choose(identity,npc,slot);
         if(choice.Error!=null || choice.Slot==slot)
         {
             pendingSlot=-1;
@@ -667,13 +747,11 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
         if(approach?.Status=="running")navigation.Stop("cancelled","combat_weapon_switch");
         if(approach?.Status=="unknown")return "combat_native_unconfirmed";
         approach=null;
-        int previous=slot;
-        ActorItemUse.Select(player,identity.World,identity.Generation,choice.Slot);
         slot=choice.Slot;
         item=choice.Item;
         Weapon=new(slot,item.type,item.Name);
-        if(!ValidWeapon())return "combat_native_unconfirmed";
-        RecordSelection(previous);
+        spentLast=false;
+        SelectWeapon();
         pendingSlot=-1;
         missedSwings=0;
         attemptedFiringPositions.Clear();
@@ -786,7 +864,7 @@ internal sealed partial class NativeCombatWorld(Identity identity, ServerAiNavig
         }
         if(item==null && !clearSince.HasValue)
         {
-            var choice=Choose(identity,npc);
+            var choice=reflexAllowed!=null?ChooseDefense(identity,npc):Choose(identity,npc);
             if(choice.Error==null && player.itemAnimation==0 && player.itemTime==0 && player.reuseDelay==0)
             {
                 slot=choice.Slot;

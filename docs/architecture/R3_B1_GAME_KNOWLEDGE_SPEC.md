@@ -1,6 +1,6 @@
 # R3-B1 · 游戏知识最小闭环实施规格
 
-第一阶段已实现：[升级 Skill 与版本化规则](../../skills/tool_upgrades/SKILL.md) 通过 `read_skill` 加载，[只读材料计算](../../python/lua/modules/material_plan.lua) 使用会话原生配方和背包 0–57 号槽位。[离线样本](../../tests/test_material_plan.py) 覆盖下表的五种库存。仓库交互、探索与制作的整链验收留待后续阶段。
+第一阶段的升级 Skill 与版本化规则通过 `read_skill` 加载。当前使用通用材料规划，按会话原生配方和背包 0–57 号槽位计算。下表保留当时的库存场景，仓库交互、探索与制作的整链验收留待后续阶段。[升级 Skill](../../skills/tool_upgrades/SKILL.md) · [通用规划入口](../../python/lua/modules/material_plan.lua)
 
 依据 [R3-B0 研究](R3_B0_GAME_KNOWLEDGE.md)，首个目标选用 Terraria 1.4.4.9 独立服务器 AI Player 的玩家委托“制作一把熔岩镐”。成功条件是**本次新制一把，且在绑定角色的背包中核实净增一把**。即使原先已有一把，也要按新增数量计算。只问“怎么制作”时可复用同一知识链，验收要求游戏变更次数为零。
 

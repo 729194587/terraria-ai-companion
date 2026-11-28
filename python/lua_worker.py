@@ -108,27 +108,32 @@ BOOTSTRAP = '''
         env.log = function(message) return progress(message, current_line) end
         env.pcall = function(f, ...) return protected(f, ...) end
         local helper = assert(load(exploration_source, "exploration.lua", "t", env))
-        env.explore = helper(string.sub)
+        env.explore = helper()
         env.sense_world = assert(load(semantic_source, "semantic.lua", "t", env))()
         env.terraria = {}
         for _, m in ipairs(modules or {}) do
             local private = {api=function(name,args) return callback(name, args or {}, current_line, m.name) end}
-            for _, k in ipairs({"type","assert","ipairs","pairs","math","json"}) do
+            for _, k in ipairs({"type","assert","ipairs","pairs","math","string","json"}) do
                 if type(env[k]) == "table" then
                     private[k] = {}
                     for key,v in pairs(env[k]) do private[k][key] = v end
                 else private[k] = env[k] end
             end
             local exports = assert(load(m.source, "terraria."..m.name, "t", private))()
-            assert(type(exports) == "table" and type(exports[m.export]) == "function", "invalid module exports")
-            for k in pairs(exports) do assert(k == m.export, "unregistered module export") end
+            assert(type(exports) == "table", "invalid module exports")
             env.terraria[m.namespace] = env.terraria[m.namespace] or {}
-            assert(env.terraria[m.namespace][m.export] == nil, "duplicate module export")
-            env.terraria[m.namespace][m.export] = function(...)
-                local report = exports[m.export](...)
-                module_done(report)
-                return report
+            for _, name in ipairs(m.exports) do
+                local f = exports[name]
+                assert(type(f) == "function", "invalid module export")
+                assert(env.terraria[m.namespace][name] == nil, "duplicate module export")
+                env.terraria[m.namespace][name] = function(...)
+                    local report = f(...)
+                    module_done(report)
+                    return report
+                end
+                exports[name] = nil
             end
+            assert(next(exports) == nil, "unregistered module export")
         end
         local f, err = load(source, "companion.lua", "t", env)
         if not f then error(err, 0) end
@@ -299,6 +304,8 @@ def worker(connection, source, limits, helper_source=None, module_names=()):
             terminal_module = True
         elif reply.get('type') != 'result':
             raise ValueLimit('protocol_error')
+        if 'remainingBudget' in reply:
+            return to_lua(reply['value']), to_lua(reply['remainingBudget'])
         return to_lua(reply['value'])
 
     logs = 0

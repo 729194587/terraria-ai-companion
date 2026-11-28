@@ -32,6 +32,38 @@ async def verify(args):
             assert r['status']=='completed',(case,r)
         print(json.dumps(dict(case=case,calls=r['calls'],actions=r['actions'],status=r['status'])),flush=True)
         return r
+    await fixture('insufficient')  # Nine ordinary wood, no gel or boreal wood.
+    uses = await program('ingredient-uses', """
+local function recipes(args)
+    local q = api('query_recipes', args)
+    assert(q.valid and q.available)
+    return q.data
+end
+local gel = recipes({ingredientType=23, resultType=8})
+local boreal = recipes({ingredientType=2503, resultType=8})
+local row = boreal.items[1]
+assert(gel.matchedCount > 0 and gel.availableOnly == false and not gel.items[1].available)
+assert(row and row.output.contentKey == 'Terraria/Torch')
+local substitute = false
+for _, ingredient in ipairs(row.ingredients) do
+    for _, group in ipairs(ingredient.acceptedGroups) do
+        for _, id in ipairs(group.typeIds) do
+            if id == 2503 and ingredient.item.typeId ~= id then substitute = true end
+        end
+    end
+end
+assert(substitute)
+assert(recipes({ingredientType=23, resultType=8, availableOnly=true}).matchedCount == 0)
+assert(recipes({resultType=8}).availableOnly == true)
+assert(recipes({ingredientType=23, resultType=36}).matchedCount == 0)
+assert(recipes({ingredientType=2147483647}).matchedCount == 0)
+local first = recipes({ingredientType=23, limit=1})
+local second = recipes({ingredientType=23, limit=1, offset=1})
+assert(first.truncated and first.matchedCount == second.matchedCount)
+assert(first.items[1].recipeId < second.items[1].recipeId)
+return {gelTorch=gel.items[1], borealTorch=row, gelRecipes=first.matchedCount}
+""", actions=0)
+    assert uses['actions'] == 0
     # Item type IDs are diagnostic selectors, never recipe IDs; resolve recipe registry live.
     query="local q=api('query_recipes',{resultType=OUTPUT,availableOnly=false}); assert(q.valid and #q.data.items>0); local r=q.data.items[1]; "
     craft="local a=api('craft_recipe',{recipeId=r.recipeId,recipeToken=r.recipeToken,crafts=COUNT}); "
@@ -55,6 +87,16 @@ async def verify(args):
     made=await program('module-group','return terraria.crafting.make(8, 7)')
     assert made['value']['status']=='completed' and made['value']['producedCount']==9
     assert made['actions']==1 and made['value']['remaining']==0
+    await fixture('station_out_of_reach')
+    at_base = await program('module-station-out-of-reach', """
+local home=api('get_world_state',{}).data.homeBase
+local result=terraria.crafting.make(24,1)
+return {home=home,craft=result}
+""", actions=0)
+    assert at_base['actions'] == 0 and at_base['value']['home']['atBase'], at_base
+    craft = at_base['value']['craft']
+    assert craft['reason'] == 'missing_crafting_station' and craft['remaining'] == 1, craft
+    assert any(s['contentKey']=='Terraria/WorkBenches' and not s['adjacent'] for s in craft['stations']), craft
     await fixture('partial_space')
     partial=await program('module-partial','local r=terraria.crafting.make(94, 200); error("unexpected continuation")',
                           expected_failure='insufficient_inventory_space')

@@ -103,12 +103,7 @@ internal static class AtomicOperations
                 var types = a.GetProperty("tileTypes").EnumerateArray().Select(t => t.GetInt32()).ToHashSet();
                 if (types.Any(t => t >= TileLoader.TileCount)) return new { available = false, reason = "invalid_tile_type" };
                 data = AtomicQueries.ScanTiles(p, a); break;
-            case "get_world_state": data = new { environment = ObservationReader.ReadEnvironment(p),
-                progression = new { Main.hardMode, Main.expertMode, Main.masterMode,
-                    NPC.downedBoss1, NPC.downedBoss2, NPC.downedBoss3,
-                    scope = "Client-known difficulty and first three boss flags; not a complete progression ledger" },
-                depth = new { tileY = p.Center.Y / 16, Main.worldSurface, Main.rockLayer, Main.maxTilesX, Main.maxTilesY },
-                depthLayer = p.ZoneUnderworldHeight ? "underworld" : p.ZoneRockLayerHeight ? "cavern" : p.ZoneDirtLayerHeight ? "underground" : p.ZoneSkyHeight ? "space" : "surface" }; break;
+            case "get_world_state": data = ReadWorldState(p); break;
             case "inspect_tile":
                 int x = a.GetProperty("x").GetInt32(), y = a.GetProperty("y").GetInt32();
                 data = AtomicQueries.InspectTile(p, x, y); break;
@@ -125,6 +120,23 @@ internal static class AtomicOperations
         }
         return new { available = true, worldSessionId = ObservationReader.WorldSessionId, gameUpdate = Main.GameUpdateCount, data };
     }
+
+    internal const int BaseRadiusTiles = 64;
+    internal static Vector2 WorldSpawnTiles => new(Main.spawnTileX, Main.spawnTileY);
+    internal static bool IsAtBase(Vector2 tilePosition) =>
+        Vector2.DistanceSquared(tilePosition, WorldSpawnTiles) <= BaseRadiusTiles * BaseRadiusTiles;
+
+    internal static object ReadWorldState(Player p, string depthLayer = null) => new {
+        homeBase = new { spawnTile = new { x = Main.spawnTileX, y = Main.spawnTileY },
+            radiusTiles = BaseRadiusTiles, atBase = IsAtBase(p.Center / 16f) },
+        environment = ObservationReader.ReadEnvironment(p),
+        progression = new { Main.hardMode, Main.expertMode, Main.masterMode,
+            NPC.downedBoss1, NPC.downedBoss2, NPC.downedBoss3,
+            scope = "World difficulty and vanilla downedBoss1/2/3 flags" },
+        depth = new { tileY = p.Center.Y / 16, Main.worldSurface, Main.rockLayer, Main.maxTilesX, Main.maxTilesY },
+        depthLayer = depthLayer ?? (p.ZoneUnderworldHeight ? "underworld" : p.ZoneRockLayerHeight ? "cavern" :
+            p.ZoneDirtLayerHeight ? "underground" : p.ZoneSkyHeight ? "space" : "surface")
+    };
 
     internal static object CompactItem(Item item, int slot) => CompactItem(item, slot, AtomicInventory.Token);
     internal static object CompactItem(Item item, int slot, Func<Item,int,string> token) => new { slot, hotbarKey = HotbarSlots.KeyForInventorySlot(slot),
@@ -166,6 +178,11 @@ internal static class AtomicOperations
     private static object Inventory(Player p, System.Text.Json.JsonElement args)
         => ReadInventory(p, args, AtomicInventory.Token, () => ObservationReader.ReadPlayer(p));
 
+    internal static Item[] MatchItem(string wanted) =>
+        ContentSamples.ItemsByType.Values.Where(i => !i.IsAir &&
+            (string.Equals(i.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(i.type), wanted, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(i.Name, wanted, StringComparison.OrdinalIgnoreCase))).ToArray();
+
     // Shared read-only projection. The caller supplies its own identity/token scope.
     internal static object ReadInventory(Player p, System.Text.Json.JsonElement args, Func<Item,int,string> token, Func<object> snapshot)
     {
@@ -175,9 +192,7 @@ internal static class AtomicOperations
         if (mode == "item")
         {
             string wanted = args.GetProperty("item").GetString();
-            var candidates = ContentSamples.ItemsByType.Values.Where(i => !i.IsAir &&
-                (string.Equals(i.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(i.type), wanted, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(i.Name, wanted, StringComparison.OrdinalIgnoreCase))).ToArray();
+            var candidates = MatchItem(wanted);
             if (candidates.Length != 1) return new { status = candidates.Length == 0 ? "unknown_item" : "ambiguous_item",
                 candidates = candidates.Take(32).Select(i => new { typeId = i.type, contentKey = i.ModItem?.FullName ?? "Terraria/" + ItemID.Search.GetName(i.type), name = i.Name }).ToArray(),
                 truncated = candidates.Length > 32,inspectedSlots=Array.Empty<int>(),inventoryScope=InventoryScope(mode,Array.Empty<int>()) };

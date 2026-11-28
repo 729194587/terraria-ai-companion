@@ -37,9 +37,10 @@ internal static class ServerCraftingFixture
         void Give(int slot,int type,int count){p.inventory[slot].SetDefaults(type);p.inventory[slot].stack=count;}
         int resultType=0;
         Give(0,ItemID.Wood,kind=="insufficient"?9:50);
-        if(kind is "station_present" or "station_absent")
+        if(kind is "station_present" or "station_absent" or "station_out_of_reach")
         {
-            if(kind=="station_present"&&(!TileObject.CanPlace(left+2,floor-1,TileID.WorkBenches,0,1,out var data)||!TileObject.Place(data)))throw new InvalidOperationException("Native workbench fixture placement failed");
+            int stationX = kind == "station_out_of_reach" ? left - 7 : left + 2;
+            if(kind!="station_absent"&&(!TileObject.CanPlace(stationX,floor-1,TileID.WorkBenches,0,1,out var data)||!TileObject.Place(data)))throw new InvalidOperationException("Native workbench fixture placement failed");
         }
         else if(kind is "harvest" or "workbench_seven" or "workbench_ten")
         {

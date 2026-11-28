@@ -30,16 +30,16 @@ FULL = BASE | set(OPTIONAL) | {
     'server_ai_scene_region_v1', 'server_ai_program_tasks_v1', 'server_ai_navigation_v1',
     'server_ai_equipment_v1', 'server_ai_place_rope_v1', 'server_ai_move_on_rope_v1',
 }
-FULL_ACTIONS = FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_v1',
-                       'server_ai_container_batch_v1', 'server_ai_sorting_v1'} | {
+FULL_ACTIONS = FULL | {'server_ai_containers_v1', 'server_ai_container_search_v1', 'server_ai_base_containers_v1', 'server_ai_container_transfer_v1',
+                       'server_ai_container_batch_v1', 'server_ai_container_amount_v1', 'server_ai_sorting_v1'} | {
             'server_ai_combat_v1', 'server_ai_weapon_button_v1', 'server_ai_combat_primary_v1',
             'server_ai_boss_encounter_v1', 'server_ai_boss_strategy_v1', 'server_ai_open_item_v1', 'server_ai_drop_item_v1', 'server_ai_inventory_favorite_v1', 'server_ai_personal_inventory_v1',
             'server_ai_pylons_v1', 'server_ai_regroup_v1', 'server_ai_dismiss_summon_v1', 'server_ai_doors_v1', 'server_ai_interact_tile_v1', 'server_ai_hammer_v1',
             'server_ai_collect_drops_v1', 'server_ai_place_item_v1', 'server_ai_build_place_v1',
-            'server_ai_frontier_exploration_v1', 'server_ai_lit_terrain_v1',
+            'server_ai_follow_v2', 'server_ai_lit_terrain_v1', 'server_ai_world_state_v1',
             'server_ai_material_plan_v1', 'server_ai_item_sources_v1', 'server_ai_item_info_v1', 'server_ai_build_diff_v1', 'server_ai_merchant_shop_v1', 'server_ai_merchant_purchase_v1',
             'server_ai_merchant_sale_v1', 'server_ai_npc_dialogue_v1', 'server_ai_merchant_bulk_purchase_v1',
-            'server_ai_nurse_v1', 'server_ai_reforge_v1',
+            'server_ai_nurse_v1', 'server_ai_reforge_v1', 'server_ai_target_reforge_v1', 'server_ai_water_bucket_v1',
             'server_ai_npc_housing_v1', 'server_ai_housing_assignment_v1', 'server_ai_housing_inspect_v1'}
 
 
@@ -136,8 +136,51 @@ class ApiHelpTests(unittest.IsolatedAsyncioTestCase):
         client = await LuaRuntime(self.runtime_bridge(set())).execute("return api('help')")
         self.assertEqual('not_exposed', client['value']['status'])
 
+    async def test_worker_reads_projected_module_and_runtime_guides_locally(self):
+        b = self.runtime_bridge(FULL_ACTIONS)
+        result = await LuaRuntime(b).execute("""
+            return {api('help',{module='container'}), api('help',{topic='lua'}), api('help',{topic='tasks'})}
+        """, allow_actions=False)
+        self.assertEqual('completed', result['status'], result)
+        module, lua, tasks = result['value']
+        for name in ('find', 'put', 'take'):
+            self.assertIn('terraria.container.' + name + '(', module['reference'])
+        self.assertIn('moved、remaining', module['reference'])
+        self.assertIn('受控pcall', lua['reference'])
+        self.assertIn('summaryOnly', tasks['reference'])
+        self.assertEqual((3, 0, None), (result['calls'], result['actions'], result['lastObservation']))
+        b.command.assert_called_once_with('get_movement')
+        b.task_request.assert_not_called()
+
+    def test_scoped_help_requires_one_valid_selector(self):
+        b = bridge(BASE)
+        for args in ({'module': ''}, {'topic': 1}, {'topic': 'missing'}, {'category': []},
+                     {'category': '容器', 'module': 'container'}, {'topic': 'lua', 'forArgs': {}}):
+            with self.subTest(args=args):
+                self.assertEqual('bad_argument', api_help(b, args)['status'])
+        for args in ({'category': '容器'}, {'module': 'container'}, {'topic': 'tasks'}):
+            self.assertEqual({'valid': False, 'status': 'not_exposed'}, api_help(b, args))
+
 
 class ResultRegistryTests(unittest.TestCase):
+    def test_follow_completion_requires_matching_target_time_range_and_release(self):
+        teammate = 'a' * 32
+        evidence = dict(teammateRef=teammate, durationUpdates=120, elapsedUpdates=120, withinRange=True, distancePixels=47)
+        receipt = dict(status='completed', reason='follow_duration_verified', inputsReleased=True, effectVerified=True, evidence=evidence)
+        task = dict(taskName='follow_teammate', taskId='b' * 32, worldSessionId='world', actorGeneration=1, actorSlot=2,
+                    phase='terminal', currentChild=None, status='completed', result=receipt)
+        action = dict(actionId=task['taskId'], worldSessionId='world', generation=1, actorSlot=2,
+                      task=task, targetTask=dict(teammateRef=teammate, durationSeconds=2))
+        self.assertTrue(atomic.verified_follow(action, task))
+        receipt['evidence'] = {**evidence, 'durationUpdates':3600, 'elapsedUpdates':3600}
+        self.assertFalse(atomic.verified_follow({**action, 'targetTask': {'teammateRef':teammate}}, task))
+        for invalid in (dict(teammateRef='c' * 32), dict(elapsedUpdates=119), dict(withinRange=False), dict(distancePixels=81)):
+            with self.subTest(invalid=invalid):
+                receipt['evidence'] = {**evidence, **invalid}
+                self.assertFalse(atomic.verified_follow(action, task))
+        receipt.update(evidence=evidence, inputsReleased=False)
+        self.assertFalse(atomic.verified_follow(action, task))
+
     def test_inventory_favorite_requires_requested_state(self):
         self.assertIn('set_inventory_favorite', operations_for_capabilities(FULL_ACTIONS))
         self.assertNotIn('set_inventory_favorite', operations_for_capabilities(
@@ -168,9 +211,9 @@ class ResultRegistryTests(unittest.TestCase):
 
     def test_registry_index_and_full_help(self):
         # Shared/client names intentionally unavailable to Server AI, even with all capabilities.
-        unavailable = {'attack_entity', 'drop_through_platform', 'get_player_status', 'get_world_state',
+        unavailable = {'attack_entity', 'drop_through_platform', 'get_player_status',
                        'observe_exploration', 'place_wall'}
-        task_only = {'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place'}
+        task_only = {'combat_attack', 'boss_encounter', 'collect_drops', 'follow_teammate', 'place_item', 'build_place'}
         scoped = {'inspect_inventory', 'observe_scene', 'query_map', 'scan_entities'}
         registered = [entry['function']['name'] for entry in atomic.TOOLS] + sorted(program_tasks.NAMES)
         self.assertCountEqual(registered, set(registered))
@@ -213,7 +256,7 @@ class ResultRegistryTests(unittest.TestCase):
     def test_guide_only_advertises_available_argument_help(self):
         for caps, names in [(BASE, set()), (BASE | {'server_ai_map_v1'}, {'query_map'}),
                             (FULL_ACTIONS, {'query_map', 'observe_scene', 'inspect_inventory', 'scan_entities'})]:
-            guide, _ = server_contract(bridge(caps), compact=True)
+            guide = api_help(bridge(caps), {'topic': 'api'})['reference']
             if names:
                 self.assertIn('、'.join(sorted(names)) + ' 可用 forArgs', guide)
             else:
@@ -285,7 +328,7 @@ class ResultRegistryTests(unittest.TestCase):
         containers = atomic.CONTAINER_OPERATIONS | {'inspect_container'}
         self.assertTrue(containers.isdisjoint(definitions))
         p0 = bridge(FULL | {'server_ai_containers_v1'})
-        enabled = bridge(FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_v1', 'server_ai_container_batch_v1', 'server_ai_sorting_v1'})
+        enabled = bridge(FULL | {'server_ai_containers_v1', 'server_ai_container_transfer_v1', 'server_ai_container_batch_v1', 'server_ai_container_amount_v1', 'server_ai_sorting_v1'})
         self.assertTrue((atomic.CONTAINER_TRANSFERS | atomic.CONTAINER_BATCHES | atomic.SORT_OPERATIONS).isdisjoint(p0.supported_atomic_operations))
         for name in containers:
             self.assertEqual('not_exposed', api_help(b, {'name': name})['status'])
@@ -309,17 +352,77 @@ class ResultRegistryTests(unittest.TestCase):
 
 
 class ManifestTests(unittest.TestCase):
-    def test_compact_guide_and_help_share_projected_signatures(self):
+    def test_automatic_behavior_guidance_tracks_server_capabilities(self):
+        for caps, defense, summon, torch in (
+            (BASE, False, False, False),
+            (BASE | {'server_ai_combat_v1'}, True, False, False),
+            (BASE | {'server_ai_combat_primary_v1', 'server_ai_combat_summon_loadout_v1'}, False, True, False),
+            (BASE | {'server_ai_lit_terrain_v1'}, False, False, False),
+            (FULL | {'server_ai_lit_terrain_v1'}, False, False, True),
+        ):
+            with self.subTest(caps=caps):
+                prompt, _ = server_contract(bridge(caps), compact=True)
+                self.assertEqual(defense, '自行闪避或反击' in prompt)
+                self.assertEqual(summon, '尝试补召' in prompt)
+                self.assertEqual(torch, '尝试插火把' in prompt)
+                self.assertEqual(any((defense, summon, torch)), '角色的自动行为' in prompt)
+        for enabled in (False, True):
+            caps = BASE | ({'server_ai_half_health_heal_v1'} if enabled else set())
+            guide, _ = server_contract(bridge(caps), compact=True)
+            self.assertEqual(enabled, '半血及以下' in guide)
+        for enabled in (False, True):
+            caps = BASE | ({'server_ai_critical_heal_v1'} if enabled else set())
+            guide, _ = server_contract(bridge(caps), compact=True)
+            self.assertEqual(enabled, '尝试快捷治疗' in guide)
+        for enabled in (False, True):
+            caps = BASE | ({'server_ai_combat_backpack_defense_v1'} if enabled else set())
+            guide, _ = server_contract(bridge(caps), compact=True)
+            self.assertEqual(enabled, '从背包取武器' in guide)
+        for enabled in (False, True):
+            caps = BASE | ({'server_ai_breath_reflex_v1'} if enabled else set())
+            guide, _ = server_contract(bridge(caps), compact=True)
+            self.assertEqual(enabled, '中断工作去换气' in guide)
+        for enabled in (False, True):
+            caps = FULL_ACTIONS | ({'server_ai_task_reflex_resume_v1'} if enabled else set())
+            server = bridge(caps)
+            guide, _ = server_contract(server, compact=True)
+            self.assertEqual(enabled, '用原 taskId 等待或叫停' in guide)
+            self.assertEqual(enabled, '根任务保持 running' in api_help(server, {'topic':'tasks'})['reference'])
+
+    def test_follow_uses_task_entry_and_requires_new_handshake(self):
+        from lua_modules import available
+        for enabled in (False, True):
+            caps = FULL_ACTIONS if enabled else FULL_ACTIONS - {'server_ai_follow_v2'}
+            server = bridge(caps)
+            tools = {row['function']['name']: row['function'] for row in server_definitions(server)}
+            self.assertNotIn('follow_teammate', tools)
+            self.assertEqual(enabled, 'follow_teammate' in tools['submit_task']['parameters']['properties']['operation']['enum'])
+            self.assertEqual(enabled, 'move' in {module.name for module in available(server)})
+            prompt, _ = server_contract(server, compact=True)
+            task_line = next(line for line in prompt.splitlines() if line.startswith('可持续执行的任务'))
+            self.assertEqual(enabled, '跟随队友' in task_line)
+        args = dict(operation='follow_teammate', arguments=dict(teammateRef='a' * 32))
+        self.assertEqual(args, program_tasks.validate('submit_task', args))
+        for invalid in (dict(teammateRef='A' * 32), dict(durationSeconds=601), dict(distanceTiles=0)):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                program_tasks.validate('submit_task', {**args, 'arguments': {**args['arguments'], **invalid}})
+
+    def test_compact_guide_links_to_projected_signatures(self):
         for caps in (FULL_ACTIONS, FULL_ACTIONS - {'server_ai_scene_region_v1'}):
             backend = bridge(caps)
             guide, _ = server_contract(backend, compact=True)
-            self.assertIn('没看到所需参数或返回字段时，先查该函数的 help，不要猜', guide)
+            self.assertIn('任务受理只表示已提交', guide)
+            self.assertIn('实际效果和数量', guide)
+            self.assertNotIn('受控pcall', guide)
+            self.assertNotIn('terraria.container.take(', guide)
             signatures = {}
             for row in api_help(backend, {})['categories']:
-                self.assertEqual(len(row['apis']), len(row['signatures']))
+                self.assertIn(row['category'], guide)
+                scoped = api_help(backend, {'category': row['category']})
+                self.assertEqual(row['signatures'], scoped['signatures'])
                 for name, signature in zip(row['apis'], row['signatures']):
                     self.assertTrue(signature.startswith(name + '({'))
-                    self.assertIn(signature, guide)
+                    self.assertNotIn(signature, guide)
                     signatures[name] = signature
             self.assertIn('mode:"selected"|"hotbar"|"item"|"full"|"slots"', signatures['inspect_inventory'])
             self.assertIn('slots?:integer[]', signatures['inspect_inventory'])
@@ -492,10 +595,13 @@ class ManifestTests(unittest.TestCase):
         for current,expected in ((modern,False),(with_button,True)):
             variants=api_help(current,{'name':'submit_task'})['parameters']['properties']['arguments']['anyOf']
             self.assertEqual(any('button' in v['properties'] for v in variants),expected)
-        for compact in (False,True):
-            guide,_ = server_contract(modern,compact=compact)
-            for term in ('combatCandidates','task_interrupt_combat','configure_combat_loadout','整份替换'):
-                self.assertIn(term,guide)
+        compact, _ = server_contract(modern, compact=True)
+        full, _ = server_contract(modern)
+        tasks = api_help(modern, {'topic': 'tasks'})['reference']
+        for term in ('combatCandidates','task_interrupt_combat','configure_combat_loadout','整份替换'):
+            self.assertIn(term, full)
+            self.assertIn(term, tasks)
+            self.assertNotIn(term, compact)
         info = api_help(modern,{'name':'configure_combat_loadout'})
         self.assertEqual(set(info['parameters']['properties']),{'primary','secondary','summon'})
         self.assertIn('expectedTypeId=row.typeId',info['example'])
@@ -689,17 +795,15 @@ class ManifestTests(unittest.TestCase):
     def test_helper_dependencies_and_runtime_limits(self):
         minimal = helper_reference(exposed_operations(bridge(BASE)))
         self.assertNotIn('sense_world(options)', minimal)
-        self.assertNotIn('explore(options)', minimal)
+        self.assertNotIn('explore(direction', minimal)
         full = helper_reference(exposed_operations(bridge(BASE | set(OPTIONAL))))
         self.assertIn('oreNames', full)
         self.assertIn('dropTypes', full)
-        self.assertIn('不是默认或必经方案', full)
-        with patch('server_ai_contract.SCENE_HELPER_AVAILABLE', False):
-            legacy = helper_reference(exposed_operations(bridge(BASE | set(OPTIONAL))))
-            self.assertIn('水平局部候选', legacy)
-            self.assertNotIn('scene_landing_regions', legacy)
-            scene_only = {'get_player_state', 'observe_scene', 'scan_entities', 'navigate_to_landing_region'}
-            self.assertNotIn('explore(options)', helper_reference(scene_only))
+        from directional_explorer import REQUIRED_CAPABILITIES
+        caps = BASE | REQUIRED_CAPABILITIES | {'server_ai_program_tasks_v1','server_ai_tasks_v1','server_ai_actions_v1'}
+        supported = {'mine_target','navigate_to','observe_scene'}
+        self.assertIn('explore(direction', helper_reference(supported, caps))
+        self.assertNotIn('explore(direction', helper_reference(supported, caps-{'server_ai_region_resources_v1'}))
         for fact in ('64次', '8次', '60秒', 'runtimeLua', '无跨程序可写持久化', 'continuationAllowed=true', 'unknown保持unknown'):
             self.assertIn(fact, runtime_reference(set()))
 

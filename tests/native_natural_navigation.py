@@ -13,10 +13,10 @@ from server_ai import ServerAiBridge
 
 def completed_segments(mode, report, calls):
     # A worker may withhold its value after unknown; keep known earlier native
-    # completions. A post-filter control is not an explore report step.
+    # completions from the same navigation operation.
     if mode=='explore' and report:
-        return len(report.get('steps',[]))
-    return sum(c['operation']=='navigate_to_x' and c['result'].get('completed') is True for c in calls)
+        return report['progress']['completedSegments']
+    return sum(c['operation']==('navigate_to' if mode=='explore' else 'navigate_to_x') and c['result'].get('completed') is True for c in calls)
 
 async def wait_file(path, seconds=15):
     end=time.monotonic()+seconds
@@ -58,10 +58,7 @@ async def verify(args):
                         assert end.get('inputsReleased'), 'completed natural navigation lacks release evidence'
                 try:
                     if mode=='explore':
-                        source="local before=api('observe_terrain',{}); local report=explore({direction='"+('right' if direction>0 else 'left')+"',maxSteps=6,stepPixels=128,maxDistance=900}); local after=api('observe_terrain',{}); local probe=json.null; "
-                        # Only a read-only filter rejection permits this diagnostic control.
-                        # Never probe after failed/timeout/cancelled/unknown actions.
-                        source+="if report.reason=='no_safe_direction' then local p=api('get_player_state',{}); probe={before=p,terrain=api('observe_terrain',{}),action=api('navigate_to_x',{targetX=p.player.position.x+"+str(direction*128)+"})}; probe.after=api('observe_terrain',{}) end; return {before=before,report=report,after=after,probe=probe}"
+                        source="return {report=explore('"+('right' if direction>0 else 'left')+"')}"
                     else:
                         source="""local report={steps=json.array(),observations=json.array(),reason='step_limit'}
 for step=1,6 do
@@ -86,14 +83,13 @@ return {report=report}""".replace('DIRECTION',str(direction))
                 e=action.get('evidence') or {}
                 row=dict(case=case,offsetTiles=offset,direction=direction,mode=mode,fixture=fixture,result=result,
                     completedSegments=completed_segments(mode,report,calls),
-                    probeCompleted=((result.get('value') or {}).get('probe') or {}).get('action',{}).get('completed'),
-                    stop=report.get('reason') or result['status'],nativeReason=action.get('reason'),nativeDetail=action.get('reasonDetail'),
+                    stop=report.get('returnReason') or report.get('reason') or result['status'],nativeReason=action.get('reason'),nativeDetail=action.get('reasonDetail'),
                     settled=e.get('settled'),frames=len(trace),minY=min((f['y'] for f in trace),default=None),
                     maxY=max((f['y'] for f in trace),default=None),maxPredictionError=max((f.get('maxError') or 0 for f in trace),default=0))
                 rows.append(row)
                 (profile/f'natural-calls-{case}.json').write_text(json.dumps(calls,ensure_ascii=False,indent=2),encoding='utf-8')
                 (profile/'natural-results.json').write_text(json.dumps(dict(scenarios=rows),ensure_ascii=False,indent=2),encoding='utf-8')
-                print(json.dumps({k:row[k] for k in ('case','completedSegments','stop','probeCompleted','nativeReason','nativeDetail','minY','maxY')}),flush=True)
+                print(json.dumps({k:row[k] for k in ('case','completedSegments','stop','nativeReason','nativeDetail','minY','maxY')}),flush=True)
                 # Unknown outcomes cannot be followed by a reset/reconnect in this world.
                 if result['actionState']=='unknown': return
 

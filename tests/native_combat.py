@@ -320,9 +320,9 @@ async def verify(args):
                     if mode == 'dead':
                         assert seed['sourceDead'], seed
                 if case=='work-bolt':
-                    old = await asyncio.to_thread(bridge.task_request, 'action', work['taskId'])
-                    assert old['status']=='cancelled' and old['reason']=='task_interrupt_combat', old
-                    assert old['endEvidence']['inputsReleased'] and trace['workBoltUpdate'] <= old['endEvidence']['gameUpdate'] <= evidence['acquiredAt'], old
+                    old = await manager.invoke('await_task', {'taskId':work['taskId'],'milliseconds':30000})
+                    assert old['completed'] and old['result']['endEvidence']['inputsReleased'], old
+                    assert trace['workBoltUpdate'] <= evidence['acquiredAt'] <= old['result']['endEvidence']['gameUpdate'], old
                     assert action['targetTask']['entityRef'] is None and not proof['encounters'], proof
                     results[mode]['interrupted'] = old
                 if mode in ('ground', 'flyer', 'archer', 'mixed', 'boundary'):
@@ -434,6 +434,58 @@ async def verify(args):
                 results[family]['after']={k:after[k] for k in ('live','channel','heldProj','selectedItem','itemTime','itemAnimation')}
                 assert after['itemTime']==0 and after['itemAnimation']==0, after
             return
+        if case == 'critical-heal':
+            for mode in ('heal-above', 'heal-boundary', 'heal-cooldown'):
+                start = await scene(mode)
+                for _ in range(90):
+                    after = await scene('heal-observe')
+                    if after['tick'] >= start['tick'] + 32:
+                        break
+                    await asyncio.sleep(.04)
+                else:
+                    raise AssertionError(after)
+                assert after['maximum'] == 400 and after['selectedItem'] == start['selectedItem'], after
+                if mode == 'heal-above':
+                    assert after['stack'] == 2 and after['potionDelay'] == 0, after
+                elif mode == 'heal-boundary':
+                    assert after['stack'] == 1 and after['life'] >= 250 and after['potionDelay'] > 0, after
+                else:
+                    assert after['stack'] == 1 and after['life'] < 250 and after['potionDelay'] > 0, after
+                results[mode] = after
+            return
+        if case == 'backpack-defense':
+            for mode in ('bag-sword', 'bar-sword', 'empty-bow'):
+                setup = await scene(mode)
+                action = await wait_for(lambda a: a['targetTask']['entityRef'] == setup['entityRef'])
+                done = await manager.invoke('await_task', {'taskId': action['actionId'], 'milliseconds': 30000})
+                proof = completed(done)
+                weapon = proof['weapon']
+                assert proof['source'] == 'reflex' and weapon['TypeId'] == setup['expected'], proof
+                assert 0 < weapon['Slot'] < 10, weapon
+                query = await lua.execute("return api('inspect_inventory',{mode='slots',slots={0,1,2,3,4,5,6,7,8,9,16}})")
+                slots = {r['slot']: r for r in query['value']['data']['inventory']}
+                assert slots[0]['typeId'] == setup['pick'] and slots[weapon['Slot']]['typeId'] == setup['expected']
+                assert sum(r.get('typeId') == setup['sword'] for r in slots.values()) == 1, slots
+                if mode == 'bar-sword':
+                    assert slots[16]['typeId'] == setup['sword'], slots
+                elif mode == 'empty-bow':
+                    assert slots[16]['typeId'] == 3 and slots[4]['typeId'] == 39, slots
+                else:
+                    assert slots[16]['empty'], slots
+                results[mode] = weapon
+            ranger = await scene('bag-ranger')
+            configured = await lua.execute("""
+local bow=api('inspect_inventory',{mode='slots',slots={4}}).data.inventory[1]
+return api('configure_combat_loadout',{primary={hotbarKey=bow.hotbarKey,expectedTypeId=bow.typeId,inventoryToken=bow.inventoryToken}})
+""")
+            assert configured['value']['completed'], configured
+            enemy = await scene('bag-ranger-contact')
+            action = await wait_for(lambda a: a['targetTask']['entityRef'] == enemy['entityRef'])
+            done = await manager.invoke('await_task', {'taskId': action['actionId'], 'milliseconds': 30000})
+            proof = completed(done)
+            assert proof['weapon']['TypeId'] == proof['lastHit']['Projectile']['Weapon'] == ranger['gun'], proof
+            results['bag-ranger'] = proof['weapon']
+            return
         if case == 'auto-loadout':
             await scene('auto-loadout-setup')
             async def loadout():
@@ -447,7 +499,9 @@ async def verify(args):
                 await asyncio.sleep(.1)
             else:
                 raise AssertionError((kit,sample))
-            assert kit['primary']['expectedTypeId']==3507 and kit['summon']['hotbarKey']==7, kit
+            assert kit['primary']['expectedTypeId']==3507 and kit['summon']['expectedTypeId']==5114, kit
+            bag=await lua.execute("return api('inspect_inventory',{mode='slots',slots={18}})")
+            assert bag['value']['data']['inventory'][0]['empty'], bag
             results['automatic']=kit
             dismissed=await lua.execute("return api('dismiss_summon',{itemType=5114})")
             assert dismissed['value']['completed'], dismissed
@@ -459,7 +513,8 @@ async def verify(args):
             assert manual['value']['completed'], manual
             await asyncio.sleep(1)
             kit=await loadout()
-            assert not kit.get('summon') and kit['primary']['expectedTypeId']==3507, kit
+            assert kit['summon']['expectedTypeId']==5114 and kit['primary']['expectedTypeId']==3507, kit
+            assert kit['maintenance']['status']=='summon_paused', kit
             results['manual']=kit
             return
         if case == 'shortsword-defense':
@@ -697,9 +752,11 @@ return candidates
             assert arrival['Swings']>0 and arrival['SourceSlot']>=10 and arrival['displaced']==roles['primary']['actualTypeId']
             defense = await wait_for(lambda a:a['targetTask']['entityRef']==arrival['entityRef'])
             interrupted = await asyncio.to_thread(bridge.task_request,'action',start['taskId'])
-            assert interrupted['reason']=='task_interrupt_combat' and interrupted['endEvidence']['inputsReleased']
+            assert interrupted['executionState']=='paused' and interrupted['reason']=='task_interrupt_combat', interrupted
             done = await manager.invoke('await_task',{'taskId':defense['actionId'],'milliseconds':30000})
             proof = completed(done)
+            continued = await manager.invoke('await_task',{'taskId':start['taskId'],'milliseconds':30000})
+            assert continued['completed'], continued
             results['fight'] = {'arrival':arrival,'interrupted':interrupted,'combat':done}
             assert proof['source']=='reflex' and proof['weapon']['TypeId']==roles['primary']['actualTypeId']
             for _ in range(220):
@@ -745,7 +802,7 @@ return {configured,api('query_combat_loadout',{})}
             reflex = await wait_for(lambda a:a['targetTask']['entityRef']==spawn['entityRef'])
             interrupted = await asyncio.to_thread(bridge.task_request,'action',mining['taskId'])
             results['interrupted'] = interrupted
-            assert interrupted['reason']=='task_interrupt_combat' and interrupted['endEvidence']['inputsReleased'], interrupted
+            assert interrupted['executionState']=='paused' and interrupted['task']['lastResult']['inputsReleased'], interrupted
             result = await manager.invoke('await_task', {'taskId':reflex['actionId'],'milliseconds':30000})
             results['reflex'] = result
             proof = completed(result)
@@ -754,7 +811,10 @@ return {configured,api('query_combat_loadout',{})}
             assert proof['source']=='reflex' and proof['weapon']['Slot']==9 and proof['weapon']['TypeId']==sword
             hit = sample['hitTrace'][0]
             assert hit['nativeDamage'] and hit['weapon']==sword and hit['selectedItem']==9 and hit['entityRef']==spawn['entityRef']
-            assert spawn['spawn']<=interrupted['endEvidence']['gameUpdate']<=sample['firstPress']<=hit['tick']
+            assert spawn['spawn']<=interrupted['task']['observedGameUpdate']<=sample['firstPress']<=hit['tick']
+            continued = await manager.invoke('await_task',{'taskId':mining['taskId'],'milliseconds':30000})
+            assert continued['completed'] and continued['result']['reason']=='mine_target_verified', continued
+            results['resumedMining'] = continued
             held = await lua.execute("return api('select_hotbar_slot',{slot=2})")
             assert held['value']['completed'], held
             enemy = await scene('agent')
@@ -771,11 +831,12 @@ return {configured,api('query_combat_loadout',{})}
             tile = await scene('arm-invalid-primary')
             mining = await manager.invoke('submit_task', {'operation':'mine_target','arguments':tile})
             invalid_spawn = await wait_file(profile/'ambush.json',20)
-            finished = await manager.invoke('await_task',{'taskId':mining['taskId'],'milliseconds':30000})
-            results['unarmedMining'] = finished
-            assert finished['status']=='cancelled' and finished['result']['reason']=='task_interrupt_combat', finished
             unarmed = await wait_for(lambda a: a['targetTask']['entityRef']==invalid_spawn['entityRef']
                 and ((a['task'].get('progress') or {}).get('defense') or {}).get('acquiredAt') is not None)
+            # A player changing their mind while the body is defending cancels only the parked work.
+            finished = await manager.invoke('cancel_task',{'taskId':mining['taskId']})
+            assert finished['status']=='cancelled' and finished['result']['reason']=='explicit_cancel', finished
+            results['unarmedMining'] = finished
             await scene('despawn')
             cleared_defense = await manager.invoke('await_task',{'taskId':unarmed['actionId'],'milliseconds':5000})
             assert cleared_defense['completed'] and cleared_defense['result']['inputsReleased'], cleared_defense

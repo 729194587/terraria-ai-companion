@@ -30,7 +30,13 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
     private ActorMining.FurnitureCell[] furniture;
     private string shape;
     private long revision;
-    private readonly int initialLife;
+    private int initialLife;
+    private bool chooseToolAfterReflex;
+    public void AfterReflex()
+    {
+        initialLife=Player.statLife;
+        chooseToolAfterReflex=true;
+    }
     private NativeNavigationEdits edits;
     public string SearchDetail { get; private set; }
     public object OpeningEvidence=>edits?.OpeningEvidence;
@@ -72,6 +78,11 @@ internal sealed class NativeMineTargetWorld : IMineTargetWorld
         if(!ActorMining.Healthy(Player))return "actor_cannot_mine";
         if(SceneMineTargets.NavigationShape(x,y)!=shape||SceneMineTargets.Revision(x,y)!=revision
             ||furniture.Any(cell=>!ActorMining.SameFurnitureCell(type,cell)))return "task_target_changed";
+        if(chooseToolAfterReflex)
+        {
+            chooseToolAfterReflex=false;
+            return RefreshTool();
+        }
         if(toolStats!=(item.type,item.prefix,item.pick,item.axe,item.tileBoost))return "task_tool_changed";
         if(ActorMining.HoldsBorrowedTool(Player,identity.World,identity.Generation,slot,item))return null;
         if(!ReferenceEquals(Player.inventory[slot],item))return "task_tool_changed";

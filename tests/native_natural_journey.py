@@ -191,7 +191,7 @@ async def verify(profile, port, reference=False, watch=False, shore_starts=False
             continue
         if death_feedback:
             from native_death_feedback import exercise
-            rows.append(await exercise(profile,port,bridge,name))
+            rows.append(await exercise(profile,port,bridge,name,target))
             (profile/'natural-finish').write_text(name)
             await wait_file(profile/f'natural-motion-{name}.json')
             (profile/'natural-results.json').write_text(json.dumps(dict(scenarios=rows),ensure_ascii=False))
@@ -307,12 +307,15 @@ async def verify(profile, port, reference=False, watch=False, shore_starts=False
             assert result["completed"] and row["placed"]==0 and row["bankAirUpdates"]>0, row
             assert row["cloudActivations"] and row["poweredWingTicks"], row
         if travel_contact:
-            loss=frames[0]['life']-min(f['life'] for f in frames)
-            assert loss>0, row
-            if name=='contact-light':
-                assert result['completed'], row
-            else:
+            start_life=frames[0]['life']
+            lowest_life=min(f['life'] for f in frames)
+            assert lowest_life<start_life, row
+            if name=='contact-heavy':
+                assert start_life-lowest_life>=start_life//3, (row,lowest_life)
+            if lowest_life<=start_life//4:
                 assert result['status']=='cancelled' and result['reason']=='task_interrupt_health_decreased',row
+            else:
+                assert result['completed'], row
         if east_wall:
             assert result['completed'] and 0<row['placed']<=4 and first is not None and not frames[first]['Grounded'], row
             placements=[c['result']['evidence'] for c in result['task']['progress']['children']

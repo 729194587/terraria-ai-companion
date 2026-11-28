@@ -16,7 +16,7 @@ Terraria AI Companion 的模型通过 `execute_lua` 提交 Lua 程序。Lua 使�
 
 Server AI 的 API 集合由 IPC bind 握手能力、服务端白名单和模型契约共同形成。能力清单随连接生成，客户端控制与独立服务器 AI Player 分别投影。
 
-模型可以通过 `api("help")` 查看当前可用 API，通过 `api("help", {name="..."})` 查询单项参数、返回结构、状态语义和示例。Help 来自当前连接的契约投影。
+控制本地玩家时，Python 按 TCP 握手声明的能力生成直接工具清单和 `execute_lua` 的可调用 API 列表。Lua 参数可查同名直接工具的定义。独立服务器 AI 可以通过 `api("help")` 查看当前可用 API，通过 `api("help", {name="..."})` 查询单项参数、返回结构、状态语义和示例。
 
 ## 调用流程
 

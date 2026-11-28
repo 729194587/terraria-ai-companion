@@ -94,16 +94,9 @@ def _observation_summary(name, result):
 
 def exploration_report(value):
     """Bounded Lua self-report for diagnostics; never upgrades task/action evidence."""
-    if not isinstance(value,dict) or value.get('kind')!='exploration_report':
+    if not isinstance(value,dict) or 'returnReason' not in value or 'progress' not in value:
         return
-    summary=_fields(value,('kind','status','reason','distancePixels','reversals','noNovelSteps','start','finish','visited','identity','lastTileCoverage','lastThreatCheck','actionStatus','actionReason'))
-    for collection,limit,fields in (
-        ('steps',8,('step','direction','targetX','fromX','toX','movedPixels','newHorizontalPixels','gameUpdate')),
-        ('decisions',8,('step','direction','targetX','basis')),
-        ('landmarks',32,('x','y','typeId','contentKey','gameUpdate','observedAtUnixMs'))):
-        items=value.get(collection)
-        if isinstance(items,list):
-            summary[collection]=[_fields(item,fields) for item in items[:limit]]
+    summary=_fields(value,('direction','returnReason','reason','progress','finish','findingCount','partialResourceScan'))
     emit('lua_exploration_report', authority='script_self_report; correlate lua_api_result/endEvidence', report=summary)
 
 

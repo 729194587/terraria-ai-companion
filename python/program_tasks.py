@@ -13,7 +13,7 @@ from control import BridgeError, NotAdmittedError, autonomy_version
 from lua_action_results import action_results
 
 NAMES = frozenset({'submit_task', 'query_task', 'await_task', 'cancel_task', 'resume_task'})
-OPERATIONS = ('mine_target', 'navigate_to', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')
+OPERATIONS = ('mine_target', 'navigate_to', 'combat_attack', 'boss_encounter', 'collect_drops', 'follow_teammate', 'place_item', 'build_place')
 
 
 def available(bridge):
@@ -46,7 +46,7 @@ def validate(name, args):
     return args
 
 
-def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=False, boss=False, members=False, strategy=False, collection=False, navigation=False, exploration=False, placement=False, building=False):
+def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=False, boss=False, members=False, strategy=False, collection=False, navigation=False, follow=False, placement=False, building=False):
     rows = []
     for name in sorted(NAMES):
         properties = {'taskId': {'type': 'string', 'pattern': '^[0-9a-f]{32}$'}}
@@ -70,11 +70,11 @@ def definitions(*, regroup=False, excavation=False, combat=False, weapon_button=
             if navigation:
                 operations.append('navigate_to')
                 description += ' 远途导航用 navigate_to，一次提交最终落脚点 x/y（世界像素），可在 Program 结束后继续赶路。'
+            if follow:
+                operations.append('follow_teammate')
+                description += ' follow_teammate 接收 list_teammates 的 teammateRef。默认一直跟随，玩家指定时长才传 durationSeconds。到队友身边后待命，走远继续跟随，可用 cancel_task 停止。'
             if collection:
                 operations.append('collect_drops')
-            if exploration:
-                operations.append('explore_frontier')
-                description += ' explore_frontier 按 radiusTiles/maxSegments 寻找可返回的未知边界，沿途复核，返回后报告 newTiles；默认禁止挖掘。'
             if placement:
                 operations.append('place_item')
                 description += ' place_item 使用当前选中的快捷栏物品在绝对 Tile 坐标 x/y 放置。终态回执核验占地、消耗和箱子存储记录。'
@@ -124,6 +124,25 @@ class TaskCoordinator:
     def blocked(self):
         return any(r['view']['status'] in ('submitting', 'running', 'unknown') for r in self.records.values())
 
+    def active_follow(self):
+        return next((r['view'] for r in self.records.values() if r['view']['operation'] == 'follow_teammate'
+                     and r['view']['status'] in ('submitting', 'running', 'unknown')), None)
+
+    async def stop_follow(self, follow):
+        view = await self.invoke('cancel_task', {'taskId': follow['taskId']})
+        if view['status'] == 'running':
+            view = await self.invoke('await_task', {'taskId': follow['taskId'], 'milliseconds': 1500})
+        return view
+
+    async def release_previous_follow(self, chat_id):
+        follow = self.active_follow()
+        if follow is None or chat_id is None or (follow.get('origin') or {}).get('chatId') == chat_id:
+            return True
+        view = await self.stop_follow(follow)
+        result = view.get('result') or {}
+        return (result.get('valid') is True and result.get('status') in ('cancelled', 'completed', 'timeout', 'failed')
+                and (result.get('endEvidence') or {}).get('inputsReleased') is True)
+
     def projection(self):
         pending = sorted((r for r in self.records.values() if r.get('sequence', 0) > self.consumed), key=lambda r:r['sequence'])
         batch = pending[:8]
@@ -133,15 +152,7 @@ class TaskCoordinator:
             view = {k:copy.deepcopy(v) for k,v in batch[item['sequence']-1]['view'].items() if k not in ('action','result')}
             view.update(result=item['result'], resultSummaryOnly=item['summaryOnly'])
             results.append(view)
-        def active_view(record):
-            view = record['view']
-            if view['operation'] != 'explore_frontier':
-                return copy.deepcopy(view)
-            task = (view.get('action') or {}).get('task') or {}
-            summary = {k: copy.deepcopy(v) for k, v in view.items() if k not in ('action', 'result')}
-            summary.update(phase=task.get('phase'), exploration=copy.deepcopy(task.get('progress')))
-            return summary
-        return {'active': [active_view(r) for r in self.records.values()
+        return {'active': [copy.deepcopy(r['view']) for r in self.records.values()
                            if not r['done'].is_set() or r['view']['status'] == 'unknown'],
                 'results': results, 'throughSequence': batch[-1]['sequence'] if batch else self.consumed,
                 'latestSequence': self.sequence, 'remainingResultCount': len(pending)-len(results),
@@ -167,8 +178,6 @@ class TaskCoordinator:
 
     async def submit(self, args, origin=None, *, task_id=None, authorize=None, dispatch_guard=None):
         operation = args['operation']
-        if operation == 'explore_frontier' and operation not in self.bridge.supported_atomic_operations:
-            return atomic.not_admitted_result(operation, 'exploration_capability_unavailable')
         if operation in ('collect_drops', 'place_item', 'build_place') and operation not in getattr(self.bridge, 'supported_atomic_operations', ()):
             return atomic.not_admitted_result('submit_task', 'collection_capability_unavailable' if operation == 'collect_drops' else 'placement_capability_unavailable')
         try:

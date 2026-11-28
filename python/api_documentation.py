@@ -78,7 +78,9 @@ def help_result_contract(name):
         return returns, 'valid/available表示是否取得当前观察；同时检查具体数据的状态、时效、覆盖和截断。'
     statuses = ('只有valid、completed和已知结束证据才支持动作完成；'
                 '核对操作专属effect，unknown停止变更，不自动重试。失败可能使宿主直接终止Lua。')
-    if name in atomic.CONTAINER_BATCHES:
+    if name == 'transfer_container_amount':
+        statuses += 'completed 表示本次按上限搬运并核验。实际数量读 evidence.movedCount，少于请求量时检查 reason。'
+    elif name in atomic.CONTAINER_BATCHES:
         statuses += 'moves列出每次已核验的搬运。blocked列出剩余源槽及原因。部分效果返回failed和effectStatus=partial。无符合条件的物品时completed且effectStatus=none。每次最多128次槽位搬运。'
     if name in atomic.CONTAINER_TRANSFERS:
         statuses += '容量部分满足时返回failed且evidence.effectStatus=partial，并提供movedCount、remainingCount和blockedSlot。再次操作前重新观察两侧。'
@@ -89,6 +91,10 @@ def help_result_contract(name):
 
 
 READ_EXAMPLES = {
+    'get_world_state': '''local w=api("get_world_state",{})
+if not w.valid then return w end
+local e=w.data.environment
+return {time=e.timeOfDay,day=e.dayTime,raining=e.raining,bloodMoon=e.bloodMoon}''',
     'look_around': '''local q=api("look_around",{})
 if not q.valid then return q end
 return {actor=q.data.actor,visible=q.data.visibleTiles,rows=q.data.rows}''',
@@ -113,6 +119,8 @@ return counts''',
 if not q.valid or not q.available then return q end
 return {status=q.data.status,first=q.data.items[1],matched=q.data.matchedCount,truncated=q.data.truncated}''',
     'inspect_container': 'return api("inspect_container",{})',
+    'find_container_item': 'return api("find_container_item",{item="Terraria/Torch",radiusTiles=32})',
+    'list_base_chests': 'return api("list_base_chests",{item="Terraria/Torch"})',
     'inspect_housing': 'return api("inspect_housing",{x=100,y=200})',
     'build_diff': 'return api("build_diff",{blueprint={origin={x=100,y=200},tiles={{x=0,y=0,itemType=9}}}})',
     'observe_scene': '''local q=api("observe_scene",{layers={"objects"}})
@@ -217,7 +225,7 @@ RETURN_NOTES = {
     'query_item_sources': 'sources 每行是 NPC 专属掉落表的一条原生报告。probability 为规则条件成立时的报告概率（1 为必掉），数量含两端。同一 NPC 可有多行。条件附类型和可用的本地化文本，未判定当前是否满足。排除全局掉落和开袋奖励。空数组表示没有匹配报告。',
     'query_item_info': 'typeId 取自 resolve_content 当前候选。data.tooltip 是普通本地化描述行数组，data.extraTooltip 仅有扩展时返回，可含多行。stats.valueCopper 以铜币为单位。未注册的 ID 返回 available=false。',
     'resolve_content': '检查 data.status 和 data.candidates；唯一精确匹配时取 typeId。',
-    'query_recipes': 'data.items 含 output.count、ingredients、stations、conditions 和 hasOutputSpace；检查 truncated 和 offset。',
+    'query_recipes': 'data.items 含 output.count、ingredients、stations、conditions 和 hasOutputSpace。stations[].adjacent 是角色当前位置的原生制作站判定。检查 truncated 和 offset。',
     'craft_recipe': 'evidence.completedCrafts 为完成次数，producedCount 为件数；完成时核对 inventoryVerified。部分制作保留原生回执。',
     'inspect_container': 'data.status=open 时 data.container 含 containerToken 和 slots；每行含 slot、stack 和 slotToken。',
     'scan_entities': 'data.items 内城镇 NPC 的 name 是个人名字，details.contentKey 和 details.typeName 分别是注册键和本地化种类名（旧后端可能缺失），centerWorldPixels.x/y 是世界像素中心；details.entityRef 是当前实例引用。检查范围与 truncated。',
@@ -368,6 +376,8 @@ def documentation(name, schema, definitions, capabilities):
     prerequisite = PREREQUISITES.get(name, '')
     if name == 'craft_recipe':
         example = CRAFT
+    elif name == 'query_recipes' and 'ingredientType' in schema['properties']:
+        example = 'return api("query_recipes",{ingredientType=23,limit=8}) -- 凝胶的直接合成用途'
     elif name == 'equip_item':
         prerequisite = ('例子把矿工头盔穿到功能头部槽。sourceToken 来自背包来源格的 inventoryToken，'
                         'targetToken 来自要穿入的装备槽；空装备槽也有令牌。购买后重新读槽位。')

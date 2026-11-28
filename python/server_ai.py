@@ -13,7 +13,7 @@ from control import BridgeError, NotAdmittedError, command_owner, autonomy_versi
 import agent_trace as tracing
 
 
-CONTAINER_READS = frozenset(("inspect_container",))
+CONTAINER_READS = frozenset(("inspect_container", "find_container_item", "list_base_chests"))
 REFORGE_READS = frozenset(("quote_reforge",))
 NURSE_READS = frozenset(("quote_nurse_heal",))
 SALE_READS = frozenset(("quote_npc_sale",))
@@ -36,6 +36,7 @@ def operations_for_capabilities(capabilities):
     operations = {'select_hotbar_slot', 'stop_action', 'wait'}
     for capability, names in (
         ('server_ai_reads_v1', {'get_player_state', 'inspect_inventory'}),
+        ('server_ai_world_state_v1', {'get_world_state'}),
         ('server_ai_material_plan_v1', {'plan_materials'}),
         ('server_ai_item_sources_v1', {'query_item_sources'}),
         ('server_ai_item_info_v1', {'query_item_info'}),
@@ -50,7 +51,9 @@ def operations_for_capabilities(capabilities):
         ('server_ai_pylons_v1', PYLON_READS),
         ('server_ai_map_v1', MAP_READS),
         ('server_ai_lit_terrain_v1', {'look_around'}),
-        ('server_ai_containers_v1', CONTAINER_READS),
+        ('server_ai_containers_v1', {'inspect_container'}),
+        ('server_ai_base_containers_v1', {'list_base_chests'}),
+        ('server_ai_container_search_v1', {'find_container_item'}),
         ('server_ai_combat_v1', {'query_combat'}),
         ('server_ai_regroup_v1', {'list_teammates'}),
         ('server_ai_boss_strategy_v1', {'discover_bosses'}),
@@ -65,7 +68,7 @@ def operations_for_capabilities(capabilities):
         for capability, operation in (
             ('server_ai_direct_input_v1', 'move_input'),
             ('server_ai_tasks_v1', 'mine_target'),
-            ('server_ai_frontier_exploration_v1', 'explore_frontier'),
+            ('server_ai_follow_v2', 'follow_teammate'),
             ('server_ai_collect_drops_v1', 'collect_drops'),
             ('server_ai_place_item_v1', 'place_item'),
             ('server_ai_build_place_v1', 'build_place'),
@@ -87,6 +90,7 @@ def operations_for_capabilities(capabilities):
             ('server_ai_merchant_sale_v1', 'sell_npc_item'),
             ('server_ai_nurse_v1', 'heal_at_nurse'),
             ('server_ai_reforge_v1', 'reforge_item'),
+            ('server_ai_water_bucket_v1', 'use_water_bucket'),
             ('server_ai_housing_assignment_v1', 'assign_npc_home'),
             ('server_ai_pylons_v1', 'teleport_to_pylon'),
             ('server_ai_regroup_v1', 'set_team'),
@@ -113,6 +117,8 @@ def operations_for_capabilities(capabilities):
             operations.update(('sort_inventory', 'sort_container'))
         if 'server_ai_container_batch_v1' in caps:
             operations.update(('quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'))
+            if 'server_ai_container_amount_v1' in caps:
+                operations.add('transfer_container_amount')
         if 'server_ai_container_transfer_v1' in caps:
             operations.update(('deposit_container_item', 'withdraw_container_item'))
     return frozenset(operations)
@@ -281,7 +287,7 @@ class ServerAiBridge:
                     raise
             if cmd == "query_atomic":
                 operation = parameters.get("operation")
-                if operation not in {"get_player_state", "inspect_inventory", "plan_materials", "query_item_sources", "query_item_info"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | BUILD_READS | SHOP_READS | SALE_READS | NURSE_READS | REFORGE_READS | HOUSING_READS | PYLON_READS | MAP_READS | {'look_around'} | COMBAT_READS | CONTAINER_READS or operation not in self.supported_atomic_operations:
+                if operation not in {"get_player_state", "get_world_state", "inspect_inventory", "plan_materials", "query_item_sources", "query_item_info"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | BUILD_READS | SHOP_READS | SALE_READS | NURSE_READS | REFORGE_READS | HOUSING_READS | PYLON_READS | MAP_READS | {'look_around'} | COMBAT_READS | CONTAINER_READS or operation not in self.supported_atomic_operations:
                     raise BridgeError("Query unsupported by server AI backend", status="unsupported_operation")
                 reply = self._request("query", operation=operation, arguments=parameters.get("arguments", {}))
                 data = reply.get("data")
@@ -316,7 +322,7 @@ class ServerAiBridge:
                 return self._movement(self._request("action", actionId=self._action_id)["data"]["action"])
             if cmd == "start_atomic":
                 operation = parameters.get("operation")
-                if operation not in self.supported_atomic_operations - ({"plan_materials", "query_item_sources", "query_item_info", "wait", "stop_action", "get_player_state", "inspect_inventory", "combat_attack", "boss_encounter", "collect_drops", "explore_frontier", "place_item", "build_place"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | BUILD_READS | SHOP_READS | SALE_READS | NURSE_READS | REFORGE_READS | HOUSING_READS | PYLON_READS | MAP_READS | {'look_around'} | COMBAT_READS | CONTAINER_READS):
+                if operation not in self.supported_atomic_operations - ({"plan_materials", "query_item_sources", "query_item_info", "wait", "stop_action", "get_player_state", "get_world_state", "inspect_inventory", "combat_attack", "boss_encounter", "collect_drops", "follow_teammate", "place_item", "build_place"} | PERCEPTION_OPERATIONS | SCENE_OPERATIONS | CRAFT_READS | BUILD_READS | SHOP_READS | SALE_READS | NURSE_READS | REFORGE_READS | HOUSING_READS | PYLON_READS | MAP_READS | {'look_around'} | COMBAT_READS | CONTAINER_READS):
                     raise BridgeError("Operation unsupported by server AI backend", status="unsupported_operation")
                 if parameters.get("expectedGeneration") != self.binding["generation"]:
                     raise BridgeError("AI generation changed", status="stale_binding")
@@ -343,7 +349,7 @@ class ServerAiBridge:
         """
         if op=='retreat' and 'server_ai_boss_strategy_v1' not in self.hello.get('capabilities',()):raise ValueError('Retreat unavailable')
         if op not in ('start', 'action', 'cancel','retreat') or (op == 'start' and (
-                parameters.get('operation') not in ('mine_target', 'navigate_to', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')
+                parameters.get('operation') not in ('mine_target', 'navigate_to', 'combat_attack', 'boss_encounter', 'collect_drops', 'follow_teammate', 'place_item', 'build_place')
                 or parameters['operation'] not in self.supported_atomic_operations)):
             raise ValueError('Unsupported task request')
         if not {'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_tasks_v1', 'server_ai_program_tasks_v1'} <= set(self.hello.get('capabilities', ())):

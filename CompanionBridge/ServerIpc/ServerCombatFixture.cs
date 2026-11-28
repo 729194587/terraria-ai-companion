@@ -373,11 +373,62 @@ internal static partial class ServerCombatFixture
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),"{}");
             return;
         }
+        if(mode is "heal-above" or "heal-boundary" or "heal-cooldown" or "heal-observe")
+        {
+            if(mode=="heal-above")
+            {
+                p.ConsumedLifeCrystals=15;
+                p.statLifeMax=p.statLifeMax2=400;
+                p.inventory[17].SetDefaults(ItemID.LesserHealingPotion);
+                p.inventory[17].stack=2;
+                p.statLife=201;
+            }
+            if(mode is "heal-boundary" or "heal-cooldown")p.statLife=200;
+            if(mode!="heal-observe"){p.lifeRegenTime=0;p.lifeRegenCount=0;}
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                tick=Main.GameUpdateCount,life=p.statLife,maximum=p.statLifeMax2,stack=p.inventory[17].stack,p.potionDelay,p.selectedItem}));
+            return;
+        }
+        if(mode=="bag-ranger-contact")
+        {
+            target=SpawnDefense(p,-85,8);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(DefenseIdentity(p,target)));
+            return;
+        }
+        if(mode is "bag-sword" or "bar-sword" or "empty-bow" or "bag-ranger")
+        {
+            for(int i=0;i<58;i++)p.inventory[i].TurnToAir();
+            p.selectedItem=0;
+            p.inventory[0].SetDefaults(ItemID.CopperPickaxe);
+            p.inventory[16].SetDefaults(ItemID.PlatinumBroadsword);
+            if(mode=="bag-ranger")
+            {
+                p.inventory[4].SetDefaults(ItemID.WoodenBow);
+                p.inventory[16].SetDefaults(ItemID.AdamantiteSword);
+                p.inventory[17].SetDefaults(ItemID.FlintlockPistol);
+                p.inventory[54].SetDefaults(ItemID.MusketBall);
+                p.inventory[54].stack=30;
+                File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{gun=p.inventory[17].type}));
+                return;
+            }
+            if(mode=="bar-sword")p.inventory[4].SetDefaults(ItemID.WoodenSword);
+            if(mode=="empty-bow")
+            {
+                for(int i=1;i<10;i++)p.inventory[i].SetDefaults(ItemID.StoneBlock);
+                p.inventory[4].SetDefaults(ItemID.WoodenBow);
+            }
+            target=SpawnDefense(p,26,8);
+            File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),JsonSerializer.Serialize(new{
+                entityRef=NativeCombatWorld.Reference(Bound(p),target),pick=p.inventory[0].type,
+                sword=p.inventory[16].type,expected=mode=="bar-sword"?p.inventory[4].type:p.inventory[16].type}));
+            return;
+        }
         if(mode=="auto-loadout-setup")
         {
             manualSummonScene=true;
             p.inventory[0].SetDefaults(ItemID.CopperShortsword);
-            p.inventory[6].SetDefaults(ItemID.AbigailsFlower);
+            p.inventory[6].TurnToAir();
+            p.inventory[18].SetDefaults(ItemID.AbigailsFlower);
             p.selectedItem=0;
             ManaPool(p,200,200);
             File.WriteAllText(Path.Combine(Main.SavePath,"combat-ready.json"),"{}");

@@ -51,6 +51,12 @@ Token 使用 core-only 表示，不调用 ItemIO/TagIO/SaveData 等可能触发 
 - unknown 后不得自动重试；先重新观察并由 Agent 决定后续策略。
 - 取消/断连时，先按原动作生命周期释放输入并读取结束证据。释放输入不证明库存目标达成。
 
+## 基地箱子
+
+专服 Lua 用 `terraria.container.base()` 列出世界出生点 64 格半径内的未锁普通箱，包括空箱。传 `terraria.container.base("Terraria/Torch")` 会按实时箱内数量筛选。返回行的 x、y 是箱子的格坐标，可直接传给 `terraria.container.take` 或 `terraria.container.put`。基地以箱子中心到世界出生点的直线距离判定，角色床位和当前位置不影响结果。查角色附近则继续使用 `terraria.container.find`，新专服的每一行会附上 isBase。两种查询都以 32 箱分页。
+
+实际取货时先确认需求和背包缺口。如果 `get_world_state` 的 `data.homeBase.atBase` 为 false，先回基地，抵达后再查箱内数量并取货。若玩家只问库存，可直接远程查询。
+
 ## 代码入口
 
 - Python Schema/分发：`python/atomic_operations.py`、`python/server_ai.py`

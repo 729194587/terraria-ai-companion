@@ -50,6 +50,10 @@ public static class CombatOfflineTests
         public string Validate(string op, JsonElement args) => null;
         public object Start(Identity id, string op, JsonElement args, string actionId) => new object();
         public Result Poll(Identity id, object handle) => PollResult;
+        internal int Resumes;
+        public Result PauseWork(Identity id,object handle,string reason)
+        {StopReason=reason;return new("running",reason,null,Released);}
+        public void ResumeWork(Identity id,object handle)=>Resumes++;
         public Result Cancel(Identity id, object handle) => CancelWithReason(id,handle,"cancelled","explicit_cancel");
         public Result CancelWithReason(Identity id, object handle, string status, string reason)
         { StopReason = reason; return new(status,reason,null,Released); }
@@ -200,6 +204,8 @@ public static class CombatOfflineTests
             }
         }
         VerifyWorkHandoff(frame);
+        VerifyBreathHandoff(frame);
+        VerifyNestedReflex(frame);
         Console.WriteLine("Combat offline lifecycle and priority passed.");
     }
 
@@ -228,15 +234,62 @@ public static class CombatOfflineTests
         Tick();Tick();
         executor.PollResult=new("completed","combat_threats_cleared",null,true,true);
         Tick();
-        Check(!actions.HasActive,"cleared defense releases body without replaying mining");
-        Check(actions.Handle(owner,"start",mining,frame,binding,default).Error=="duplicate_action","old mining admission stays terminal");
-        var nextMining=Mine();
-        Check(actions.Handle(owner,"start",nextMining,frame,binding,default).Error==null,"fresh mining task admitted after release");
-        Tick();Tick();
+        Check(actions.HasActive && executor.Resumes==1,"cleared defense returns the body to the same mining task");
+        Check(actions.Handle(owner,"start",mining,frame,binding,default).Error=="duplicate_action","root ID is retained");
         actions.Reflex(frame,"actor","eye","projected_npc_contact");
         var nextDefense=JsonSerializer.SerializeToElement(actions.CombatState(frame)).GetProperty("action");
         Check(nextDefense.GetProperty("status").GetString()=="running"
             && nextDefense.GetProperty("targetTask").GetProperty("entityRef").GetString()=="eye",
             "same live eye can interrupt again on the next dive");
+    }
+
+    private static void VerifyNestedReflex(Identity frame)
+    {
+        foreach(string outcome in new[]{"success","failed","disconnect","new_life","cancel"})
+        {
+            var executor=new Executor();
+            var actions=new AiAtomicActions(executor){BreathEnabled=true};
+            var owner=Guid.NewGuid();
+            var binding=new AiReadOnlyProtocol.Binding("actor",frame.World,frame.Generation,frame.Slot);
+            var mine=JsonSerializer.SerializeToElement(new{actionId=Guid.NewGuid().ToString("N"),operation="mine_target",
+                arguments=new{x=7,y=8},expiresAtUnixMs=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()+1500});
+            var current=frame;
+            void Tick(){current=current with{GameUpdate=current.GameUpdate+1};actions.Tick(()=>current,null);}
+            Check(actions.Handle(owner,"start",mine,current,binding,default).Error==null,"nested admission");
+            Tick();Tick();actions.Reflex(current,"actor","eye","contact");
+            Tick();Tick();
+            Check(actions.SurfaceForAir(current,"actor",()=>true)&&executor.Resumes==0,"oxygen supersedes defense while work remains parked");
+            Tick();Tick();
+            if(outcome=="disconnect")actions.Forget(owner);
+            if(outcome=="new_life")current=current with{Generation=current.Generation+1};
+            if(outcome=="cancel")actions.Handle(owner,"cancel",mine,current,binding,default);
+            executor.PollResult=outcome=="failed"?new("failed","breath_no_opening",null,true):new("completed","breath_recovered",null,true,true);
+            Tick();
+            Check(executor.Resumes==(outcome=="success"?1:0) && actions.HasActive==(outcome=="success"),"nested reflex outcome "+outcome);
+        }
+    }
+    private static void VerifyBreathHandoff(Identity frame)
+    {
+        foreach(bool released in new[]{false,true})
+        {
+            var executor=new Executor {Released=released};
+            var actions=new AiAtomicActions(executor){BreathEnabled=true};
+            var owner=Guid.NewGuid();
+            var binding=new AiReadOnlyProtocol.Binding("actor",frame.World,frame.Generation,frame.Slot);
+            var mine=JsonSerializer.SerializeToElement(new{actionId=Guid.NewGuid().ToString("N"),
+                operation="mine_target",arguments=new{x=1,y=2},expiresAtUnixMs=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()+1500});
+            Check(actions.Handle(owner,"start",mine,frame,binding,default).Error==null,"mining accepted before low air");
+            actions.Tick(()=>frame,null);actions.Tick(()=>frame,null);
+            Check(!actions.SurfaceForAir(frame,"actor",()=>false)&&executor.StopReason==null,"enough air preserves work");
+            Check(actions.SurfaceForAir(frame,"actor",()=>true)==released,"breathing takes over only after verified release");
+            Check(executor.StopReason=="task_interrupt_breath","interrupted task records the cause");
+            if(!released){Check(actions.BodyBlocked(frame),"unknown release blocks breathing");continue;}
+            actions.Reflex(frame,"actor","enemy","contact");
+            Check(!actions.CombatActive,"combat cannot steal the breathing body's controls");
+            actions.Tick(()=>frame,null);actions.Tick(()=>frame,null);
+            executor.PollResult=new("completed","breath_recovered",null,true,true);
+            actions.Tick(()=>frame,null);
+            Check(actions.HasActive && executor.Resumes==1,"full air returns control to original mining");
+        }
     }
 }

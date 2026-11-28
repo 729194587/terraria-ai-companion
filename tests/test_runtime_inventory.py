@@ -25,7 +25,7 @@ def snapshot():
     for entry in (item(0), item(9, count=4), item(10, "Example/Tool", 1), item(11, "Example/Tool", 2)):
         slots[entry["slot"]] = entry
     return {"available": True, "worldSessionId": "world-a", "gameUpdate": 7,
-            "data": {"inventory": slots, "selectedSlot": 9, "selectedHotbarKey": 0,
+            "data": {"timeOfDay": "23:59", "inventory": slots, "selectedSlot": 9, "selectedHotbarKey": 0,
                      "hotbarKeyBindings": [{"key": (s + 1) % 10, "inventorySlot": s} for s in range(10)],
                      "equipment": [item(0, "Example/Excluded", 99)]}}
 
@@ -49,7 +49,7 @@ class InventoryGame(Game):
     def get_state(self):
         self.current["gameUpdate"] += 1
         self.current["data"]["inventory"][9]["stack"] = 1
-        self.current["data"].update(selectedSlot=0, selectedHotbarKey=1)
+        self.current["data"].update(selectedSlot=0, selectedHotbarKey=1, timeOfDay="00:00")
         return super().get_state()
 
 
@@ -80,22 +80,18 @@ class RuntimeInventoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(p == {"operation": "inspect_inventory", "arguments": {"mode": "full"}}
                             for p in game.inventory_reads))
         first, second = (runtime(r) for r in model.requests[:2])
+        self.assertEqual(["23:59", "00:00"], [json.loads(r[-1]["content"])["runtimeWorldTime"]
+                                               for r in model.requests[:2]])
+        self.assertFalse(any("runtimeWorldTime" in (m.get("content") or "") for m in agent.history[1:]))
         self.assertEqual((first["status"], first["worldSessionId"], first["gameUpdate"]), ("available", "world-a", 7))
         self.assertEqual(first["items"][0]["count"], 7)
-        self.assertEqual(first["items"][0]["stacks"], [
-            {"inventorySlot": 0, "hotbarKey": 1, "count": 3},
-            {"inventorySlot": 9, "hotbarKey": 0, "count": 4}])
-        self.assertEqual(first["selected"]["hotbarKey"], 0)
-        self.assertEqual(first["selected"]["inventorySlot"], 9)
+        self.assertTrue(all("stacks" not in entry for entry in first["items"]))
         self.assertEqual(first["selected"], {
-            "inventorySlot": 9, "hotbarKey": 0, "empty": False,
-            "contentKey": "Terraria/StoneBlock", "name": "stone", "count": 4, "prefix": 0})
+            "hotbarKey": 0, "empty": False,
+            "contentKey": "Terraria/StoneBlock", "name": "stone", "prefix": 0})
         self.assertNotIn('"use":', json.dumps(first))
         self.assertNotIn('"damage":', json.dumps(first))
-        self.assertEqual(first["items"][1]["stacks"],
-                         [{"inventorySlot": 10, "hotbarKey": None, "count": 1}])
-        self.assertEqual(first["items"][2]["stacks"],
-                         [{"inventorySlot": 11, "hotbarKey": None, "count": 2}])
+        self.assertFalse({'scope','hotbarNumbering','details'}.intersection(first))
         self.assertEqual(first["emptySlots"], 8)
         self.assertEqual(len(first["items"]), 3)
         self.assertEqual([i["count"] for i in first["items"][1:]], [1, 2])
@@ -103,12 +99,12 @@ class RuntimeInventoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Example/Excluded", json.dumps(first))
         self.assertEqual((second["gameUpdate"], second["items"][0]["count"]), (9, 4))
         self.assertEqual(second["selected"]["hotbarKey"], 1)
-        self.assertEqual([m["role"] for m in model.requests[1]], ["system", "user", "assistant", "tool", "user"])
-        self.assertEqual(model.requests[1][2]["tool_calls"][0]["id"], model.requests[1][3]["tool_call_id"])
+        self.assertEqual([m["role"] for m in model.requests[1]], ["system", "user", "user", "assistant", "tool", "user"])
+        self.assertEqual(model.requests[1][3]["tool_calls"][0]["id"], model.requests[1][4]["tool_call_id"])
         self.assertEqual(agent.history[1], original_user)
         self.assertEqual(agent.history[:len(persisted)], persisted)
         self.assertTrue(all("runtimeInventory" not in (m.get("content") or "") for m in agent.history[1:]))
-        self.assertIn("recentGameEvents", model.requests[0][1]["content"])
+        self.assertIn("recentGameEvents", model.requests[0][2]["content"])
         self.assertNotIn("recentGameEvents", agent.history[1]["content"])
         self.assertEqual(len(agent.bridge.sent), 2)
 
@@ -132,6 +128,7 @@ class RuntimeInventoryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(runtime(model.requests[0])["status"], "available")
             unavailable = runtime(model.requests[1])
             self.assertEqual(unavailable["status"], "unavailable")
+            self.assertNotIn("runtimeWorldTime", json.loads(model.requests[1][-1]["content"]))
             self.assertNotIn("items", unavailable)
             self.assertNotIn("emptySlots", unavailable)
             self.assertEqual(len(game.inventory_reads), 2)
@@ -150,7 +147,7 @@ class RuntimeInventoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((current["worldSessionId"], current["gameUpdate"]), ("world-b", 0))
         self.assertEqual(current["items"], [])
         self.assertEqual(current["emptySlots"], 12)
-        self.assertEqual(current["selected"], {"empty": True, "inventorySlot": 9, "hotbarKey": 0})
+        self.assertEqual(current["selected"], {"empty": True, "hotbarKey": 0})
 
     async def test_cancel_during_refresh_and_budget_preserve_history(self):
         started = asyncio.Event()

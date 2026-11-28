@@ -15,6 +15,7 @@ import directional_explorer as explorer
 import evidence
 import gameplay_skills
 import lua_agent
+import lua_modules
 import program_tasks
 from sensed_resources import ResourceHistory
 from server_ai_contract import callable_categories, server_definitions
@@ -30,12 +31,8 @@ EXPLORER_GUIDE = (
 
 def explorer_available(agent):
     bridge = agent.bridge
-    required = {'server_ai_navigation_v1', 'server_ai_perception_v1', 'server_ai_scene_v1', 'server_ai_scene_region_v1',
-                'server_ai_resources_v1', 'server_ai_region_resources_v1', 'server_ai_directional_landings_v1'}
     tasks = agent.program_tasks
-    return (tasks is not None and tasks.bridge is bridge and not tasks.closed and program_tasks.available(bridge)
-            and required.issubset(bridge.hello['capabilities'])
-            and {'observe_scene', 'navigate_to'}.issubset(bridge.supported_atomic_operations))
+    return tasks is not None and tasks.bridge is bridge and not tasks.closed and explorer.available(bridge)
 
 
 def exploration_map_help(bridge):
@@ -47,7 +44,7 @@ def exploration_map_help(bridge):
     return hints
 
 
-class ExternalExplorer(explorer.ExplorerContext):
+class ExternalExplorer(explorer.OwnedExplorer):
     """One MCP trip using the current lease's navigation and resource observations."""
 
     def __init__(self, host, objective):
@@ -70,20 +67,6 @@ class ExternalExplorer(explorer.ExplorerContext):
                 and self.mailbox is self.agent.program_tasks):
             return host.lease_version
 
-    async def submit_owned(self, operation, arguments, version):
-        task = program_tasks.validate('submit_task', dict(operation=operation, arguments=arguments))
-        # submit registers this ID before its first cancellable wait for native acknowledgement.
-        self.task_id = uuid.uuid4().hex
-        origin = dict(self.origin, segment=len(self.progress['explorationResult']['segments']) + 1)
-        def authorized():
-            return self.version == version
-        view = await self.mailbox.submit(task, origin, task_id=self.task_id,
-                                         authorize=authorized, dispatch_guard=authorized)
-        if not view.get('taskId'):
-            self.task_id = None
-            return None, view
-        return self.mailbox.records[self.task_id], None
-
     async def terminal(self, record):
         # After a stop request the native monitor must still produce a terminal receipt.
         await asyncio.wait_for(record['done'].wait(), self.host.bridge.timeout + 2)
@@ -104,9 +87,7 @@ class ExternalExplorer(explorer.ExplorerContext):
         if record is None:
             return  # Cancellation while waiting for the admission lock: never registered.
         try:
-            if not record['done'].is_set():
-                await self.mailbox.invoke('cancel_task', dict(taskId=self.task_id))
-            receipt = await self.terminal(record)
+            receipt = await self.stop_child()
             safe = self.released(receipt)
         except Exception as error:
             receipt = dict(status='unknown', reason=str(error))
@@ -317,11 +298,14 @@ class BrainHost:
                 return {'functions': [definitions[n] for n in names if n in definitions],
                         'unavailable': [n for n in names if n not in definitions]}
             if args.get('full'):
-                instructions = self.agent.history[0]['content']
+                instructions = self.agent.server_contract(compact=False)[0]
             else:
                 names = {row['function']['name'] for row in server_definitions(self.bridge)}
                 groups = callable_categories(self.bridge, names)
                 instructions = '\n'.join(f"{row['category']}  {', '.join(row['apis'])}" for row in groups)
+                modules = lua_modules.index(self.bridge)
+                if modules:
+                    instructions += '\n' + modules
                 instructions += '\n用 guide(names=[...]) 查参数。可用攻略由 read_skill 按名称加载。\n' + gameplay_skills.bundled_skills().render_index()
             if explorer_available(self.agent):
                 instructions = EXPLORER_GUIDE + exploration_map_help(self.bridge) + '\n' + instructions
@@ -384,6 +368,8 @@ class BrainHost:
                 if (not explorer.valid_options({k:v for k,v in args.items() if k!='objective'})
                         or not isinstance(objective,str) or not 0<len(objective.strip())<=240):
                     raise ValueError('Expected direction and optional objective or seek')
+                if not await self.agent.program_tasks.release_previous_follow(self.agent._active_turn_id):
+                    raise BridgeError('Previous follow release unconfirmed')
                 trip = ExternalExplorer(self, objective)
                 result = await trip.run(args['direction'],args.get('seek'))
                 self.last_trip = result['explorationResult']
@@ -463,6 +449,8 @@ class BrainHost:
             'interruptedRuns': copy.deepcopy(list(self.agent._interrupted)),
             'interruptedRunCoverage': {'omittedCount': self.agent._interrupted_total - len(self.agent._interrupted)},
         }
+        if 'timeOfDay' in inventory:
+            context['runtimeWorldTime'] = inventory.pop('timeOfDay')
         if self.active_program is not None or self.last_outcome is not None:
             context['runtimeOutcome'] = self.active_program or self.last_outcome
         if self.agent.program_tasks is not None:

@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'python'))
 import atomic_operations as atomic
-from control import BridgeError
+from control import BridgeError, CLIENT_ATOMIC_OPERATIONS
 from agent import Agent, TOOLS
 from test_agent import Model, event
 
@@ -56,10 +56,8 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(set(atomic.SCHEMAS), {t['function']['name'] for t in atomic.TOOLS})
         self.assertEqual(set(atomic.SCHEMAS), atomic.HOST_OPERATIONS | atomic.NATIVE_OPERATIONS)
         self.assertFalse(atomic.HOST_OPERATIONS & atomic.NATIVE_OPERATIONS)
-        server_only={'observe_scene','query_recipes','craft_recipe','place_object'}
         client_names={t['function']['name'] for t in TOOLS}
-        self.assertTrue(set(atomic.SCHEMAS)-server_only <= client_names)
-        self.assertTrue(server_only.isdisjoint(client_names))
+        self.assertEqual(CLIENT_ATOMIC_OPERATIONS, client_names & atomic.SCHEMAS.keys())
         for name, args in [('mine_tile', {'x': 1.5, 'y': 2}), ('place_tile', {'x': True, 'y': 2}),
                            ('select_hotbar_slot', {'slot': 10}), ('navigate_to_x', {'targetX': float('nan')}),
                            ('attack_entity', {'entityRef': 1}), ('scan_entities', {'category': 'bad', 'radius': 10}),

@@ -61,6 +61,20 @@ internal static class AtomicParameters
         {
             switch (op)
             {
+                case "list_base_chests":
+                    if (keys.Except(new[] { "item", "offset" }).Any()
+                        || args.TryGetProperty("item", out var baseItem) && (baseItem.ValueKind != JsonValueKind.String || CharacterCount(baseItem) is < 1 or > 150))
+                        throw new FormatException("Invalid base chest search.");
+                    if (keys.Contains("offset")) Integer("offset", 0, int.MaxValue);
+                    break;
+                case "find_container_item":
+                    if (keys.Except(new[] { "item", "radiusTiles", "offset" }).Any()
+                        || args.GetProperty("item").ValueKind != JsonValueKind.String
+                        || CharacterCount(args.GetProperty("item")) is < 1 or > 150)
+                        throw new FormatException("Invalid container item search.");
+                    if (keys.Contains("radiusTiles")) Integer("radiusTiles", 1, 64);
+                    if (keys.Contains("offset")) Integer("offset", 0, int.MaxValue);
+                    break;
                 case "list_pylons": case "list_teammates": case "discover_bosses": case "query_combat_loadout": case "inspect_container": case "observe_terrain": case "look_around": case "get_player_state": case "get_world_state": case "get_player_status": Fields(); break;
                 case "observe_scene":
                     if(keys.Except(new[]{"maxObjects","maxRegions","maxPlacements","maxHazards","layers","scale","width","height","landingDirection","includePassages"}).Any())throw new FormatException("Unexpected scene parameter.");
@@ -81,8 +95,9 @@ internal static class AtomicParameters
                     if(keys.Contains("cellSize")){Integer("cellSize",1,4);if(args.GetProperty("cellSize").GetInt32()==3)throw new FormatException("cellSize must be 1,2,4.");}
                     break;
                 case "query_recipes":
-                    if(keys.Except(new[]{"resultType","availableOnly","limit","offset"}).Any())throw new FormatException("Unexpected recipe parameter.");
+                    if(keys.Except(new[]{"resultType","ingredientType","availableOnly","limit","offset"}).Any())throw new FormatException("Unexpected recipe parameter.");
                     if(keys.Contains("resultType"))Integer("resultType",1,int.MaxValue);
+                    if(keys.Contains("ingredientType"))Integer("ingredientType",1,int.MaxValue);
                     if(keys.Contains("limit"))Integer("limit",1,24);
                     if(keys.Contains("offset"))Integer("offset",0,100000);
                     if(keys.Contains("availableOnly")&&args.GetProperty("availableOnly").ValueKind is not (JsonValueKind.True or JsonValueKind.False))throw new FormatException("Invalid availableOnly.");
@@ -167,6 +182,13 @@ internal static class AtomicParameters
         switch (op)
         {
             case "open_container": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
+            case "transfer_container_amount":
+                Fields("direction", "typeId", "count", "containerToken");
+                Integer("typeId", 1, int.MaxValue);
+                if (args.GetProperty("direction").GetString() is not ("put" or "take")
+                    || !args.GetProperty("count").TryGetInt64(out long amount) || amount < 1)
+                    throw new FormatException("Invalid container transfer amount.");
+                Token("containerToken"); break;
             case "deposit_container_item": case "withdraw_container_item":
                 Fields("inventorySlot", "containerSlot", "count", "inventoryToken", "containerToken", "slotToken");
                 Integer("inventorySlot", 0, 49); Integer("containerSlot", 0, 39); Integer("count", 1, 9999);
@@ -259,13 +281,21 @@ internal static class AtomicParameters
             case "drop_inventory_item":
                 if(keys.Contains("teammateRef"))
                 {
-                    Fields("sourceSlot","sourceToken","count","teammateRef");
+                    if(keys.Contains("nearbyOnly"))
+                    {
+                        Fields("sourceSlot","sourceToken","count","teammateRef","nearbyOnly");
+                        args.GetProperty("nearbyOnly").GetBoolean();
+                    }
+                    else Fields("sourceSlot","sourceToken","count","teammateRef");
                     if(!Guid.TryParseExact(args.GetProperty("teammateRef").GetString(),"N",out _))throw new FormatException("Invalid teammate reference.");
                 }
                 else Fields("sourceSlot","sourceToken","count");
                 Integer("sourceSlot",0,49);Token("sourceToken");Integer("count",1,9999);break;
             case "open_inventory_item": Fields("sourceSlot","sourceToken"); Integer("sourceSlot",0,49); Token("sourceToken"); break;
             case "dismiss_summon": Fields("itemType"); Integer("itemType",1,int.MaxValue); break;
+            case "reforge_item" when keys.Contains("targetPrefix"):
+                Fields("entityRef","sourceSlot","sourceToken","quoteToken","targetPrefix");
+                EntityRef(); Integer("sourceSlot",0,49); Token("sourceToken"); Token("quoteToken"); Integer("targetPrefix",1,255); break;
             case "reforge_item":
             case "sell_npc_item":
                 Fields("entityRef","sourceSlot","sourceToken","quoteToken"); EntityRef(); Integer("sourceSlot",0,49); Token("sourceToken"); Token("quoteToken"); break;
@@ -279,12 +309,16 @@ internal static class AtomicParameters
             case "assign_npc_home": Fields("entityRef","x","y"); EntityRef(); Integer("x",0,100000); Integer("y",0,100000); break;
             case "set_team": Fields("team"); Integer("team",0,5); break;
             case "teleport_to_pylon": Fields("pylonRef"); if(!Guid.TryParseExact(args.GetProperty("pylonRef").GetString(),"N",out _))throw new FormatException("Invalid pylon reference."); break;
+            case "follow_teammate":
+                if (keys.Except(new[]{"teammateRef","durationSeconds","distanceTiles"}).Any()) throw new FormatException("Unexpected follow parameter.");
+                string teammate = args.GetProperty("teammateRef").GetString();
+                if (!Guid.TryParseExact(teammate, "N", out var session) || session.ToString("N") != teammate)
+                    throw new FormatException("Invalid teammate reference.");
+                if (keys.Contains("durationSeconds")) Integer("durationSeconds", 1, 600);
+                if (keys.Contains("distanceTiles")) Integer("distanceTiles", 1, 12);
+                break;
             case "teleport_to_teammate": Fields("teammateRef"); if(!Guid.TryParseExact(args.GetProperty("teammateRef").GetString(),"N",out _))throw new FormatException("Invalid teammate reference."); break;
             case "open_door": case "close_door": case "place_item": case "place_object": case "place_rope": goto case "place_tile";
-            case "explore_frontier":
-                if(keys.Except(new[]{"radiusTiles","maxSegments","allowDig"}).Any())throw new FormatException("Unexpected exploration parameter.");
-                Integer("radiusTiles",4,64);Integer("maxSegments",1,64);
-                if(keys.Contains("allowDig"))args.GetProperty("allowDig").GetBoolean();break;
             case "collect_drops":
                 if (keys.Except(new[]{"radiusPixels","typeIds","entityRef"}).Any()) throw new FormatException("Unexpected collect_drops parameter.");
                 if (keys.Contains("radiusPixels")) Integer("radiusPixels", 16, 960);
@@ -328,6 +362,10 @@ internal static class AtomicParameters
                 if(mineTarget.GetProperty("x").GetInt64()>100000||mineTarget.GetProperty("y").GetInt64()>100000||mineTarget.GetProperty("typeId").GetInt64()>65535||mineTarget.GetProperty("actorSlot").GetInt64()>254)throw new FormatException("Invalid target range");
                 break;
             }
+            case "use_water_bucket":
+                Fields("x","y","mode"); Integer("x",0,100000); Integer("y",0,100000);
+                if(args.GetProperty("mode").GetString() is not ("scoop" or "pour"))throw new FormatException("Invalid bucket mode.");
+                break;
             case "mine_tile": case "place_tile": case "interact_tile": case "mine_wall": case "place_wall": case "hammer_tile": Fields("x", "y"); Integer("x", 0, 100000); Integer("y", 0, 100000); break;
             case "boss_encounter": case "combat_attack": case "attack_entity":
                 if(op=="combat_attack" && keys.Remove("button") && args.GetProperty("button").GetString() is not ("left" or "right"))throw new FormatException("Invalid weapon button.");

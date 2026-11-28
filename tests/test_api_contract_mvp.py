@@ -1,5 +1,6 @@
 """M2 ownership, backend projection and actual Python/C# parameter agreement."""
 import copy
+import asyncio
 import json
 from pathlib import Path
 import subprocess
@@ -11,14 +12,42 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'python'))
 import atomic_operations as atomic
 from agent import Agent, TOOLS
+from control import Bridge
 from lua_agent import TOOL_NAME
 from test_agent import Game, Model
+from test_control import FakeServer
 
 ROOT=Path(__file__).resolve().parents[1]
 VECTORS=ROOT/'tests/fixtures/api-contract-vectors.json'
 
 
 class ApiContractTests(unittest.TestCase):
+    def test_client_hello_projects_direct_and_lua_tools_and_guards_dispatch(self):
+        unavailable = {
+            'query_map': {'mode': 'overview'},
+            'plan_materials': {'typeId': 8, 'count': 12},
+            'loot_all': {'containerToken': 'a' * 64},
+        }
+        rich = ['atomic_operations_v1', 'atomic_extensions_v1', 'server_confirmed_interactions_v1',
+                'inventory_operations_v1', 'viewport_observation_v1', 'movement_loop_v1', 'bounded_movement_v1']
+        for caps in (rich, ['atomic_operations_v1'], None):
+            with self.subTest(caps=caps), FakeServer(capabilities=caps) as server, Bridge(server.port) as bridge:
+                definitions = {t['function']['name']: t['function'] for t in Agent(bridge, Model()).tools}
+                listed = definitions[TOOL_NAME]['description'].split('可调用的 API：', 1)[1].split('。', 1)[0]
+                exposed = set(listed.split(', '))
+                self.assertEqual(bridge.supported_atomic_operations, exposed)
+                self.assertEqual(definitions.keys() & atomic.SCHEMAS.keys(), exposed)
+                self.assertTrue(unavailable.keys().isdisjoint(exposed))
+                for name in ('inspect_inventory', 'interact_tile', 'hold_inventory_item', 'move', 'get_observation'):
+                    self.assertEqual(caps == rich, name in definitions, name)
+                self.assertEqual(bool(caps), 'mine_tile' in exposed)
+                for name, args in unavailable.items():
+                    with self.assertRaises(atomic.PreDispatchRejected):
+                        asyncio.run(atomic.dispatch(bridge, name, args))
+                self.assertEqual([], server.requests)
+                self.assertTrue(asyncio.run(atomic.dispatch(bridge, 'get_player_state', {}))['valid'])
+                self.assertEqual(['get_terrain'], [r['cmd'] for r in server.requests])
+
     def test_shared_vectors_and_native_host_ownership(self):
         vectors=json.loads(VECTORS.read_text(encoding='utf-8'))
         self.assertEqual(set(vectors['hostOperations']),atomic.HOST_OPERATIONS)

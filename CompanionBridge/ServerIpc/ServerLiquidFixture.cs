@@ -15,7 +15,8 @@ namespace CompanionBridge.ServerIpc;
 internal static class ServerLiquidFixture
 {
     private static string scene;
-    private static bool gateOpened;
+    private static bool gateOpened, floodDrained;
+    private static bool FloodedWork(string mode)=>mode is "breath_work" or "breath_cluster";
     private static int samples;
     private static float minY;
 
@@ -32,6 +33,11 @@ internal static class ServerLiquidFixture
         File.Delete(request);
         int x=Main.spawnTileX,floor=Main.spawnTileY+8;
         scene=null;
+        if(mode.StartsWith("breath_",StringComparison.Ordinal)&&Program.LaunchParameters.ContainsKey("-companionbreathtest"))
+        {
+            PrepareBreath(p,mode,x,floor);
+            return;
+        }
         if(mode is "bridge" or "detour" or "hazard" or "mine" or "flood" or "wade_one" or "wade_deep" or "wade_long" or "wade_pool" or "bridge_long")
         {
             PrepareScene(p,mode,x,floor);
@@ -200,6 +206,22 @@ internal static class ServerLiquidFixture
     {
         int x=Main.spawnTileX,floor=Main.spawnTileY+8;
         minY=Math.Min(minY,p.position.Y);
+        if(FloodedWork(scene) && !gateOpened && VirtualPlayerEngineProbe.ActorMining.Current is {Swings:>0} mining && p.itemAnimation>0
+            && (scene!="breath_cluster" || mining.Batch?.Verified.Count>0))
+        {
+            gateOpened=true;
+            for(int tx=x-8;tx<=x+8;tx++)
+                for(int ty=floor-4;ty<floor;ty++)
+                    if(!Main.tile[tx,ty].HasTile)Main.tile[tx,ty].LiquidAmount=255;
+            p.breath=14;
+        }
+        if(FloodedWork(scene) && gateOpened && !floodDrained && p.breath>30 && !Collision.DrownCollision(p.position,p.width,p.height,p.gravDir,false))
+        {
+            floodDrained=true;
+            // A receding flood leaves the original worksite accessible after the native jump for air.
+            for(int tx=x-8;tx<=x+8;tx++)
+                for(int ty=floor-4;ty<floor;ty++)Main.tile[tx,ty].LiquidAmount=0;
+        }
         if(scene=="flood"&&!gateOpened&&Enumerable.Range(floor-3,3).Any(y=>!Main.tile[x+3,y].HasTile))
         {
             // Release a pre-existing upstream reservoir after observing a real
@@ -214,11 +236,51 @@ internal static class ServerLiquidFixture
         File.AppendAllText(path,JsonSerializer.Serialize(new
         {
             minY,x=p.position.X,y=p.position.Y,p.wet,p.lavaWet,p.honeyWet,p.shimmerWet,vy=p.velocity.Y,p.statLife,p.breath,p.breathMax,gateOpened,
+            p.pulley,headWet=Collision.DrownCollision(p.position,p.width,p.height,p.gravDir,false),
+            ropeCount=p.inventory.Take(50).Where(i=>i.type==ItemID.Rope).Sum(i=>i.stack),
+            roofRemaining=Enumerable.Range(x-1,3).Count(tx=>Main.tile[tx,floor-4].HasTile&&Main.tile[tx,floor-4].TileType==TileID.Stone),
             inflow=Main.tile[x+4,floor-1].LiquidAmount,
             wetCorridor=gateOpened&&NativeLiquidRisk.WaterContact(new((x+4)*16,floor*16-42,0,0,true)),
             platforms=Enumerable.Range(x+3,6).Count(tx=>Main.tile[tx,floor].HasTile&&Main.tile[tx,floor].TileType==TileID.Platforms),
             waterPlatforms=Enumerable.Range(x+3,6).Count(tx=>Main.tile[tx,floor].HasTile&&Main.tile[tx,floor].TileType==TileID.Platforms
                 &&Main.tile[tx,floor].LiquidAmount>0)
         })+Environment.NewLine);
+    }
+
+    private static void PrepareBreath(Player p,string mode,int x,int floor)
+    {
+        scene=mode;samples=0;gateOpened=false;floodDrained=false;
+        int depth=mode is "breath_shallow" or "breath_roof" or "breath_side" or "breath_sealed"?4:12;
+        for(int tx=x-12;tx<=x+12;tx++)
+            for(int ty=floor-20;ty<=floor+3;ty++)
+            {
+                var t=Main.tile[tx,ty];t.ClearEverything();
+                if(ty>=floor||Math.Abs(tx-x)>=9||mode=="breath_sealed"&&ty<=floor-depth||
+                   (mode=="breath_roof" || mode=="breath_side"&&tx<x+4) && ty==floor-depth)
+                {t.HasTile=true;t.TileType=TileID.Stone;}
+                else if(!FloodedWork(mode) && ty>=floor-depth){t.LiquidType=LiquidID.Water;t.LiquidAmount=255;}
+                bool ropeColumn=mode=="breath_existing"&&tx==x || mode=="breath_nearby"&&tx==x+4;
+                if(ropeColumn&&ty<floor&&ty>=floor-depth-3)
+                {t.HasTile=true;t.TileType=TileID.Rope;}
+            }
+        for(int i=0;i<50;i++)p.inventory[i].TurnToAir();
+        p.inventory[0].SetDefaults(ItemID.CopperPickaxe);
+        if(mode is "breath_build" or "breath_timing"){p.inventory[17].SetDefaults(ItemID.Rope);p.inventory[17].stack=30;}
+        p.selectedItem=0;p.pulley=false;p.velocity=Vector2.Zero;
+        p.position=new(x*16+8-p.width/2,floor*16-p.height);
+        p.statLife=p.statLifeMax2;p.breath=mode=="breath_full"?p.breathMax:mode=="breath_timing"?100:14;
+        if(FloodedWork(mode))
+        {
+            for(int tx=x+3;tx<=x+(mode=="breath_cluster"?5:3);tx++)
+            {
+                var target=Main.tile[tx,floor-1];target.HasTile=true;
+                target.TileType=mode=="breath_cluster"?TileID.Copper:TileID.Stone;
+            }
+            p.breath=p.breathMax;
+        }
+        if(mode=="breath_gills")p.AddBuff(BuffID.Gills,600);
+        else p.ClearBuff(BuffID.Gills);
+        minY=p.position.Y;
+        File.WriteAllText(Path.Combine(Main.SavePath,"liquid-edit-ready.json"),JsonSerializer.Serialize(new{x,floor,depth}));
     }
 }

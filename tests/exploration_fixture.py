@@ -1,80 +1,48 @@
-"""Socket fixture with synthetic terrain/kinematics. Not native Terraria physics."""
-import math
+"""Loopback fixture with observed landings and native task receipts."""
 from test_server_ai_agent import AiHost
 
 
-class ExplorationHost(AiHost):
+class ExplorerGame(AiHost):
+    extra_capabilities = ('server_ai_navigation_v1', 'server_ai_program_tasks_v1', 'server_ai_tasks_v1',
+                          'server_ai_region_resources_v1', 'server_ai_scene_region_v1',
+                          'server_ai_resources_v1', 'server_ai_directional_landings_v1')
+
     def __init__(self):
         super().__init__()
-        self.perception = self.actions = self.chat = True
-        self.x = 1600.0
-        self.y = 3158.0
-        self.life = 100
-        self.terrain_mode = 'flat'
-        self.frozen = self.damage = self.threat = False
-        self.entities = []
-        self.applied = set()
-        self.tick = 1
+        self.actions = self.scene = self.perception = True
+        self.complete = True
+        self.hits = []
+        self.x = 100
+        self.action_transform = self.arrive
+
+    def arrive(self, action):
+        if action['operation'] != 'navigate_to' or action['status'] != 'completed':
+            return
+        target = action['targetTask']
+        self.x = target['x'] - 10
+        arrival = dict(target=target, arrived=True, grounded=True, safeSupport=True, settled=True,
+                       x=self.x, feetY=target['y'])
+        action['evidence']['task'] = dict(taskId=action['actionId'], taskName='navigate_to', status='completed',
+            currentChild=None, result=dict(inputsReleased=True, effectVerified=True, evidence=arrival))
 
     def query(self, operation, args):
-        self.tick += 1
-        if self.action and self.action['status'] == 'completed' and self.action['actionId'] not in self.applied:
-            self.applied.add(self.action['actionId'])
-            request = next(r for r in self.sent if r['op'] == 'start' and r['actionId'] == self.action['actionId'])
-            if not self.frozen:
-                self.x = request['arguments']['targetX']
-            if self.damage:
-                self.life -= self.damage
-        base = super().query(operation, args)
-        base.update(gameUpdate=self.tick, observedAtUnixMs=1793080000000+self.tick, clock='server_utc_at_projection')
-        if operation == 'get_player_state':
-            base['data']['player'].update(position=dict(x=self.x, y=self.y), life=self.life, lifeMax=100, dead=False)
-        elif operation == 'observe_terrain':
-            left = math.floor((self.x+10)/16)-22
-            top = math.floor((self.y+42)/16)-17
-            def cell(tx, ty):
-                if self.terrain_mode in ('short_gap','wide_gap','gap_at_target'):
-                    end={'short_gap':105,'wide_gap':107,'gap_at_target':109}[self.terrain_mode]
-                    if 103 <= tx <= end: return '.'
-                if self.terrain_mode in ('slope_up','slope_down','half_step') and tx>=103:
-                    if self.terrain_mode=='half_step':
-                        return 'h' if ty==199 else '#' if ty>=200 else '.'
-                    up=self.terrain_mode=='slope_up'
-                    surface=200-min(tx-102,4) if up else 200+min(tx-103,4)
-                    return ('2' if up else '1') if ty==surface and tx<107 else '#' if ty>=surface else '.'
-                if self.terrain_mode == 'both_walls' and (tx in (99, 102)) and ty < 200:
-                    return '#'
-                if self.terrain_mode == 'corridor' and tx in (98,110) and ty < 200:
-                    return '#'
-                if self.terrain_mode == 'right_soon_wall' and tx == 106 and ty < 200:
-                    return '#'
-                if self.terrain_mode == 'right_wall' and tx == 102 and ty < 200:
-                    return '#'
-                if self.terrain_mode == 'obstacle' and 104 <= tx <= 105 and 198 <= ty < 200:
-                    return '#'
-                if self.terrain_mode == 'right_unknown' and tx >= 102:
-                    return '?'
-                if self.terrain_mode == 'right_hazard' and tx >= 102:
-                    return '!'
-                if self.terrain_mode == 'right_gap' and tx >= 102:
-                    return '.'
-                return '#' if ty >= 200 else '.'
-            rows = [''.join(cell(left+x, top+y) for x in range(45)) for y in range(29)]
-            base['data'] = dict(terrain=dict(originX=left, originY=top, rows=rows, tileSize=16,
-                playerWidth=20, playerHeight=42, grounded=True, supported=True),
-                bounds=dict(minX=left,minY=top,maxX=left+44,maxY=top+28))
-        elif operation == 'resolve_content':
-            base['data'] = dict(status='ok', candidates=[dict(typeId=5,contentKey='Terraria/Trees')])
-        elif operation == 'scan_entities':
-            entities=self.entities + ([dict(distancePixels=64,classification='hostile_creature')] if self.threat else [])
-            matches=sorted((e for e in entities if e['distancePixels'] <= args['radius']
-                and (args.get('npcFilter','all') == 'all' or e['classification'] == args['npcFilter'])),
-                key=lambda e:e['distancePixels'])
-            limit=args.get('maxResults',128)
-            base['data'] = dict(matchedCount=len(matches),items=matches[:limit],returnedCount=min(limit,len(matches)),
-                               complete=True,truncated=len(matches)>limit,radiusPixels=args['radius'])
-        elif operation == 'scan_tiles':
-            base['data'] = dict(items=[dict(x=args['minX']+4,y=198,typeId=5,contentKey='Terraria/Trees')],
-                matchedCount=1,returnedCount=1,truncated=False,unknownCount=0,complete=True,
-                bounds={key:args[key] for key in ('minX','minY','maxX','maxY')})
-        return base
+        if operation != 'observe_scene':
+            return super().query(operation, args)
+        data = dict(actor=dict(boundsWorldPixels=dict(x=self.x, width=20), feetY=200))
+        if args.get('scale') == 'region':
+            assert (args['width'], args['height'], args['layers']) == (120, 68, ['resources'])
+            data.update(resources=dict(items=self.hits, gameUpdate=33, complete=self.complete, truncated=False,
+                unknownCells=int(not self.complete), bounds=dict(minX=0, maxX=119, minY=0, maxY=67)),
+                coverage=dict(requestedTiles=8160, unknownByReason={}),
+                sample=dict(elapsedMilliseconds=1, samplingBudgetReached=False))
+        else:
+            data['coverage'] = dict(geometryComplete=True)
+            data['landingRegions'] = dict(truncated=False, items=[dict(target=dict(
+                minPlayerLeftX=self.x, maxPlayerLeftX=self.x+600, surfaceY=200))])
+            if args.get('includePassages'):
+                data.update(gameUpdate=33,hazards={},passages=dict(originResolved=True,junction=False,
+                    returnTarget=dict(x=self.x+10,y=200),exits=[],routes=[dict(direction='right',kind='lateral_landing',
+                        target=dict(x=self.x+330,y=200),visitState='no_recent_visit',unknownNearbyTiles=24)]))
+        return dict(available=True, worldSessionId=self.binding['world'], actorGeneration=self.binding['generation'],
+                    actorSlot=self.binding['slot'], gameUpdate=33, clock='server_utc_at_projection',
+                    observedAtUnixMs=1793070000123, data=data)

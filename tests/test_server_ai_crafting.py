@@ -6,6 +6,7 @@ import agent
 import lua_agent
 from lua_runtime import LuaRuntime, Limits
 from server_ai import ServerAiBridge
+from server_ai_contract import api_help
 
 GOAL=dict(recipeId=3,recipeToken='a'*64,crafts=2)
 
@@ -35,6 +36,24 @@ class CraftTests(unittest.IsolatedAsyncioTestCase):
         self.enable()
         r=await LuaRuntime(self.bridge,evidence_root=self.directory.name).execute("return api('query_recipes',{})",limits=Limits(actions=0,seconds=8))
         self.assertEqual('completed',r['status'],r);self.assertEqual(0,r['actions']);self.assertTrue(r['value']['data']['truncated'])
+
+    async def test_ingredient_filter_follows_handshake_and_uses_read_only_rpc(self):
+        self.enable()
+        def help_row():
+            return api_help(self.bridge, {'name': 'query_recipes'})
+        self.assertNotIn('ingredientType', help_row()['parameters']['properties'])
+        with self.assertRaises(atomic.PreDispatchRejected):
+            await atomic.dispatch(self.bridge, 'query_recipes', {'ingredientType':23})
+        self.assertFalse(any(q['op'] == 'query' for q in self.host.sent))
+        self.host.extra_capabilities = ['server_ai_recipe_uses_v1']
+        self.bridge.close()
+        self.bridge = ServerAiBridge(self.host.server_address[1], timeout=1)
+        self.assertIn('ingredientType', help_row()['parameters']['properties'])
+        result = await LuaRuntime(self.bridge, evidence_root=self.directory.name).execute(
+            "return api('query_recipes',{ingredientType=23,limit=1}).data.truncated", limits=Limits(actions=0))
+        self.assertEqual(('completed', 0, True), (result['status'], result['actions'], result['value']))
+        query, = [q for q in self.host.sent if q['op'] == 'query']
+        self.assertEqual({'ingredientType':23, 'limit':1}, query['arguments'])
 
     async def test_worker_selects_queried_recipe_and_passes_batch_count(self):
         self.enable()

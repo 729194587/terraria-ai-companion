@@ -60,7 +60,7 @@ class RequestContextTests(unittest.IsolatedAsyncioTestCase):
                         [t["result_utf8_bytes"] for t in measured["tool_results"]])
                 self.assertFalse(costs[-1]["tool_results"][0]["full_observation"])
 
-    async def test_events_preserve_prefix_and_never_persist_across_outcomes(self):
+    async def test_events_enter_history_once_even_if_request_is_interrupted(self):
         for mode in ("normal", "failed", "budget", "cancelled"):
             with self.subTest(mode=mode):
                 entered = asyncio.Event()
@@ -87,11 +87,11 @@ class RequestContextTests(unittest.IsolatedAsyncioTestCase):
                 for request in model.requests:
                     self.assertEqual(request[:len(before)], before)
                     user = json.loads(request[len(before)]["content"])
-                    self.assertEqual(len(user["recentGameEvents"]), 1)
-                    self.assertEqual(user["coverage"]["serverDroppedCount"], 2)
                     self.assertEqual(user["text"], "hello 1")
-                for message in agent.history[1:]:
-                    self.assertNotIn("recentGameEvents", message.get("content") or "")
+                    delivered = json.loads(request[len(before)+1]["content"])
+                    self.assertEqual(len(delivered["recentGameEvents"]), 1)
+                    self.assertEqual(delivered["coverage"]["serverDroppedCount"], 2)
+                self.assertEqual(sum('recentGameEvents' in (m.get('content') or '') for m in agent.history[1:]), 1)
 
 
 class ReceiptTests(unittest.TestCase):

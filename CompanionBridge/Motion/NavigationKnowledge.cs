@@ -38,12 +38,9 @@ internal sealed class NavigationKnowledge
     }
 }
 
-// Exact-state prediction cache. Normal movement retains rejections only.
-// A batch of frontier quotes also shares successes and replays the chosen route.
+// Cache rejected predictions for the same observed physics and terrain.
 internal sealed class NavigationSearchMemory
 {
-    private readonly bool cacheSafe;
-    internal NavigationSearchMemory(bool cacheSafe=false){this.cacheSafe=cacheSafe;}
     internal const int Capacity=256,LifetimeUpdates=120;
     private readonly record struct Key(PhysicsState State,int Direction,int Hold,int Stride,int ExtraFrame,int AirStart,int AirHold);
     private sealed record Entry(Prediction Prediction,long Expires);
@@ -89,7 +86,7 @@ internal sealed class NavigationSearchMemory
         }
         var prediction=PhysicsSimulator.Predict(state,direction,hold,profile,world,
             walkFrames:stride,rollingJump:true,extraJumpFrame:extraFrame,airStartFrame:airStart,airHoldFrames:airHold);
-        if((cacheSafe||!prediction.Safe)&&prediction.Landing.Py-state.Py<=StateSpacePlanner.StandardVerticalSpan)
+        if(!prediction.Safe&&prediction.Landing.Py-state.Py<=StateSpacePlanner.StandardVerticalSpan)
         {
             while(order.Count>0&&(predictions.Count>=Capacity||order.Count>=Capacity))
                 predictions.Remove(order.Dequeue());

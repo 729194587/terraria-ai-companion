@@ -56,6 +56,7 @@ public sealed class AtomicMultiplayer : ModSystem
         try
         {
             int length=reader.ReadUInt16();
+            if(length == HandoffObservation.PacketPrefix) { HandoffObservation.Receive(reader, sender); return; }
             if(length == ushort.MaxValue) { spectator?.Invoke(reader, sender); return; }
             if(length is <2 or >AuthorityCodec.MaxBytes || Incoming.Count>=256) return;
             byte[] bytes=reader.ReadBytes(length);

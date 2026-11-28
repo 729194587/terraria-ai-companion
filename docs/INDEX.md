@@ -43,7 +43,7 @@
 | [Server AI 语义场景](LOCAL_SEMANTIC_SCENE.md) | 局部与区域场景观察 |
 | [局部语义世界](L1_SEMANTIC_WORLD.md) | Tile、实体和内容的组合查询 |
 | [Server AI 地图记忆](AI_MAP_V1.md) | 持久化探索地图 |
-| [自主探索实现与验收](architecture/R3_AUTONOMOUS_EXPLORATION_IMPLEMENTATION.md) | Frontier、局部通行成本、往返委托和离线回放 |
+| [自主探索实现与验收](architecture/R3_AUTONOMOUS_EXPLORATION_IMPLEMENTATION.md) | 定向探索、分段导航和实地验收记录 |
 | [模型状态投影](MODEL_STATE_PROJECTION.md) | 模型请求中的观察投影与历史压缩 |
 | [游戏系统消息](GAME_MESSAGES.md) | Terraria 系统提示事件 |
 

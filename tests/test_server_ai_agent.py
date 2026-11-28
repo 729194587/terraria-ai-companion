@@ -132,8 +132,10 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.answers = [call(dict(command='recall',name='基地')),dict(role='assistant',content='东侧仓库。')]
         await self.receive(id='next',text='家在哪？')
         await self.agent.task
-        runtime = json.loads(self.requests[0]['messages'][-1]['content'])
-        self.assertEqual([{'name':'基地','description':'玩家称东侧仓库为家'}],runtime['privateNotes'])
+        for request in self.requests:
+            indices = [json.loads(m['content'])['privateNotes'] for m in request['messages']
+                       if m['role']=='user' and 'privateNotes' in json.loads(m['content'])]
+            self.assertEqual([[{'name':'基地','description':'玩家称东侧仓库为家'}]], indices)
         note = json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role']=='tool'))['note']
         self.assertEqual('Local player',note['origin']['senderName'])
         self.assertEqual('东侧仓库是家',note['origin']['quote'])
@@ -219,7 +221,9 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
                 result['data']=dict(operation=operation,complete=True)
             return result
         self.aihost.query=query
-        self.answers=[self.program("""
+        lookup = self.program('return api("help",{category="世界感知"})')
+        lookup['tool_calls'][0]['id'] = 'lookup'
+        self.answers=[lookup, self.program("""
             local a=api('observe_terrain',{})
             local b=api('resolve_content',{kind='tile',query='Terraria/Dirt'})
             local s=api('get_player_state',{})
@@ -232,13 +236,17 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
             return {observedAtUnixMs=a.observedAtUnixMs,slot=a.actorSlot}
         """),dict(role='assistant',content='已读取当前服务器AI附近世界。')]
         await self.receive('perception','观察你周围');await self.agent.task
-        self.assertEqual(2,len(self.requests))
+        self.assertEqual(3,len(self.requests))
         prompt=self.requests[0]['messages'][0]['content']
-        for name in PERCEPTION_OPERATIONS:self.assertIn(name,prompt)
+        self.assertIn('世界感知', prompt)
+        self.assertNotIn('observe_terrain({', prompt)
+        help_result = json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role']=='tool'))
+        signatures = help_result['value']['signatures']
+        self.assertLessEqual(PERCEPTION_OPERATIONS, {s.partition('(')[0] for s in signatures})
         queried={r['operation'] for r in self.aihost.sent if r['op']=='query'}
         self.assertTrue(PERCEPTION_OPERATIONS <= queried)
         self.assertFalse(any(r['op']=='start' for r in self.aihost.sent))
-        result=json.loads(next(m['content'] for m in self.requests[1]['messages'] if m['role']=='tool'))
+        result=json.loads([m['content'] for m in self.requests[2]['messages'] if m['role']=='tool'][-1])
         self.assertTrue(result['programCompleted'])
         self.assertEqual(254,result['value']['slot'])
         self.assertEqual(1793070000123,result['value']['observedAtUnixMs'])
@@ -282,6 +290,7 @@ class ServerAiAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(r['op']=='start' for r in self.aihost.sent))
         self.assertEqual(['authorize_ai_reply'],[r['cmd'] for r in self.chathost.sent])
     async def test_backend_contract_contains_only_negotiated_apis(self):
+        self.assertEqual(server_contract(self.ai, compact=True)[0], self.agent.history[0]['content'])
         prompt,tools=server_contract(self.ai)
         definitions=json.loads(prompt.split('\nAPI Contract\n',1)[1].split('\nLua Runtime Reference\n',1)[0].split('\n',1)[1])
         self.assertEqual(set(self.ai.supported_atomic_operations),{t['function']['name'] for t in definitions})

@@ -309,6 +309,13 @@ internal sealed class BuildPlaceTask : AbstractCompanionTask
         return Running();
     }
 
+    internal override void Resume(AiReadOnlyProtocol.Identity frame,ulong pausedUpdates)
+    {
+        if(active!=null && results.TryGetValue(active,out var entry) && entry.status=="cancelled")
+            results.Remove(active);
+        leaf=null;search=null;active=null;atSite=false;held=false;settlingTicks=0;
+        startTick+=pausedUpdates;RefreshPending((Player)frame.Actor);PhaseTo("replan");
+    }
     internal override void Abandon(){search?.Dispose();base.Abandon();}
 
     internal override Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)

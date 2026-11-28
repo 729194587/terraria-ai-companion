@@ -21,14 +21,16 @@ internal sealed class ServerAiDirectInput : ActorControl.IMovementDriver
     }
     internal Run Current;
     private bool executing, injected;
+    private bool earlyPulley;
     public bool Running=>Current?.Status=="running";
     public bool Matches(Player p)=>Current!=null&&ReferenceEquals(Current.Identity.Actor,p);
-    internal Run Start(AiReadOnlyProtocol.Identity identity,JsonElement args,string actionId)
+    internal Run Start(AiReadOnlyProtocol.Identity identity,JsonElement args,string actionId,bool earlyPulley=false)
     {
         ServerAiNativeActions.Require(identity);
         AtomicParameters.Validate("move_input",args,false);
         if(ActorControl.Running||ActorItemUse.Running||ActorMining.Running)throw new InvalidOperationException("Actor busy.");
         var p=(Player)identity.Actor;
+        this.earlyPulley=earlyPulley;
         Current=new Run{Identity=identity,ActionId=actionId,Horizontal=args.GetProperty("horizontal").GetString(),
             Vertical=args.GetProperty("vertical").GetString(),MaxUpdates=args.GetProperty("maxUpdates").GetInt32(),
             JumpHoldUpdates=args.GetProperty("jumpHoldUpdates").GetInt32(),StartPosition=new(p.position.X,p.position.Y),
@@ -39,6 +41,14 @@ internal sealed class ServerAiDirectInput : ActorControl.IMovementDriver
     private static bool SupportedState(Player p)=>!p.mount.Active&&p.gravDir==1&&!p.frozen&&!p.stoned&&!p.webbed&&!p.tongued&&!p.shimmering
         &&!p.isControlledByFilm&&!p.sleeping.isSleeping&&!p.sitting.isSitting;
     public void BeforeMovement(Player p)
+    {
+        if(!earlyPulley)Inject(p);
+    }
+    internal void BeforePulley(Player p)
+    {
+        if(earlyPulley&&executing&&Running&&Matches(p))Inject(p);
+    }
+    private void Inject(Player p)
     {
         if(!executing||!Running||!Matches(p)||!NativeSurvival.Owns(p))throw new InvalidOperationException("No owned direct-input scope.");
         ServerAiNativeActions.Require(Current.Identity);

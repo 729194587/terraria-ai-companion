@@ -1,5 +1,7 @@
 # Lua Agent
 
+专服聊天中的 Lua 可以调用 `explore("right")` 或 `explore("down", "chest")`。支持 left、right、up、down；省略 seek 会继续走，指定资源、passage 或 any 时会在段后观察匹配时停下。返回 progress、findings、routes 和 returnReason。脚本、主动模式和 MCP 外脑共用 Python 定向探索，每段由 C# 原生导航执行；调用仍受当前程序的时间、动作与观察预算约束。
+
 Lua Agent 是模型与 Terraria 游戏 API 之间的程序执行接口。模型通过一次 `execute_lua` 提交 Lua 源码，在 Worker 中组织观察、查询和动作，并根据返回结果决定后续策略。
 
 ## 程序模型
@@ -17,6 +19,18 @@ Server AI 还提供：
 ## API 发现
 
 Server AI 在连接时根据 IPC 能力握手和服务端白名单生成可用 API。模型通过 Help 查询具体参数、返回字段和示例。不同服务器实例可能开放不同能力，因此帮助内容与当前连接保持一致。
+
+专服聊天的常驻目录列出能力类别、模块名和用途。在 `execute_lua` 中按当前任务读取对应帮助。例如，玩家要从附近箱子取 12 支火把时，`return api("help", {module="container"})` 给出当前可用的查库存、按数量存取函数及各自的回执字段。查到的数量用于选箱，最终按实际搬运数量报告进度。
+
+| Lua Help 参数 | 返回内容 |
+| --- | --- |
+| `{category="容器"}` | 该类当前开放的原子操作签名 |
+| `{name="函数名"}` | 单项参数、返回结构和示例 |
+| `{module="模块名"}` | 可直接调用的 `terraria` 模块函数及用法 |
+| `{topic="lua"}` | Lua 运行手册，包括库、辅助函数、预算与错误恢复 |
+| `{topic="api"}`、`{topic="tasks"}` | API 帮助与观察约定，或当前连接的任务协作细节 |
+
+无参数的 `api("help")` 仍返回全部已开放接口的分类签名索引。帮助在宿主本地读取，计一次 Lua API 调用。
 
 ## 任务协作
 

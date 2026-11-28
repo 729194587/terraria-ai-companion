@@ -1,6 +1,9 @@
 """Host-side short trips using native navigate_to and observation-scoped landing candidates."""
 import asyncio
 import time
+import uuid
+
+import program_tasks
 
 import atomic_operations as atomic
 from control import BridgeError
@@ -19,6 +22,22 @@ EXPLORE_TOOL = atomic.tool('explore', 'Travel in short hops in one direction, ob
               'description':('To find a treasure chest (宝箱), use "chest". After each hop, check for the exact '
                              'resource kind or contentKey (e.g. "Terraria/Iron"). Use "passage" for a passage '
                              'or "any" for any finding. Omit to keep exploring.')}}, ['direction'])
+
+
+REQUIRED_CAPABILITIES = frozenset({
+    'server_ai_atomic_v1', 'server_ai_actions_v1', 'server_ai_tasks_v1', 'server_ai_program_tasks_v1',
+    'server_ai_navigation_v1', 'server_ai_perception_v1', 'server_ai_scene_v1',
+    'server_ai_scene_region_v1', 'server_ai_resources_v1', 'server_ai_region_resources_v1',
+    'server_ai_directional_landings_v1',
+})
+
+
+def supported(operations, capabilities):
+    return REQUIRED_CAPABILITIES.issubset(capabilities) and {'observe_scene', 'navigate_to', 'mine_target'} <= set(operations)
+
+
+def available(bridge):
+    return program_tasks.available(bridge) and supported(bridge.supported_atomic_operations, bridge.hello['capabilities'])
 
 
 def valid_options(args):
@@ -43,8 +62,11 @@ class ExplorerContext:
         local['widerSample'] = dict(**scan_coverage(scan), discoveries=scan['discoveries'], changes=scan['changes'])
         return local
 
+    async def read_scene(self, args):
+        return await atomic.dispatch(self.agent.bridge, 'observe_scene', args)
+
     async def _resource_window(self, version, width, height):
-        reply = await atomic.dispatch(self.agent.bridge, 'observe_scene',
+        reply = await self.read_scene(
             dict(scale='region', width=width, height=height, layers=['resources'], maxObjects=32))
         if version != self.version:
             raise asyncio.CancelledError
@@ -57,6 +79,32 @@ class ExplorerContext:
                     samplingBudgetReached=data['sample']['samplingBudgetReached'],
                     unknownByReason=data['coverage']['unknownByReason'],
                     objectGroupingTruncated=data['resources'].get('objectGroupingTruncated'))
+
+
+class OwnedExplorer(ExplorerContext):
+    """A trip owns one identified child at a time, including during admission."""
+
+    async def submit_owned(self, operation, arguments, version):
+        task = program_tasks.validate('submit_task', dict(operation=operation, arguments=arguments))
+        # submit registers this ID before its first cancellable wait for native acknowledgement.
+        self.task_id = uuid.uuid4().hex
+        origin = dict(self.origin, segment=len(self.progress['explorationResult']['segments']) + 1)
+        def authorized():
+            return self.version == version
+        view = await self.mailbox.submit(task, origin, task_id=self.task_id,
+                                         authorize=authorized, dispatch_guard=authorized)
+        if not view.get('taskId'):
+            self.task_id = None
+            return None, view
+        return self.mailbox.records[self.task_id], None
+
+    async def stop_child(self):
+        record = self.mailbox.records.get(self.task_id)
+        if record is None:
+            return None
+        if not record['done'].is_set():
+            await self.mailbox.invoke('cancel_task', dict(taskId=self.task_id))
+        return await self.terminal(record)
 
 
 def position(actor):
@@ -103,13 +151,14 @@ def scan_coverage(scan):
     return coverage
 
 
-async def landing_scene(bridge, direction):
+async def landing_scene(bridge, direction, read_scene=None):
     args = dict(layers=['landingRegions'])
     if 'server_ai_passages_v1' in bridge.hello.get('capabilities', ()):
         args['includePassages'] = True
     if 'server_ai_directional_landings_v1' in bridge.hello.get('capabilities', ()):
         args['landingDirection'] = direction
-    reply = await atomic.dispatch(bridge, 'observe_scene', dict(args, maxRegions=24))
+    args['maxRegions'] = 24
+    reply = await read_scene(args) if read_scene else await atomic.dispatch(bridge, 'observe_scene', args)
     if not reply.get('valid'):
         raise BridgeError('local landing observation unavailable')
     return reply['data']
@@ -157,6 +206,7 @@ def brief(result):
 
 async def run(mode, direction, version, baseline, *, seek=None):
     bridge = mode.agent.bridge
+    read_scene = getattr(mode, 'read_scene', None)
     binding = dict(bridge.binding)
     deadline = time.monotonic() + TRIP_SECONDS
     segments, samples, findings = [], [], []
@@ -189,7 +239,7 @@ async def run(mode, direction, version, baseline, *, seek=None):
         authorized()
         try:
             if scene is None:
-                scene = await landing_scene(bridge, direction)
+                scene = await landing_scene(bridge, direction, read_scene)
         except (BridgeError, OSError) as error:
             reason, detail = 'observation_incomplete', str(error)
             break
@@ -281,7 +331,7 @@ async def run(mode, direction, version, baseline, *, seek=None):
             reason, detail = 'blocked', 'no observed forward displacement'
             break
         try:
-            scene = await landing_scene(bridge, direction)
+            scene = await landing_scene(bridge, direction, read_scene)
             authorized()
         except (BridgeError, OSError) as error:
             reason, detail = 'observation_incomplete', str(error)

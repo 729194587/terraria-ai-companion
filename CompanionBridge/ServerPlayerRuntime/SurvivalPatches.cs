@@ -33,6 +33,15 @@ public static class SurvivalPatches
         il.InsertBefore(entry,guard);il.InsertBefore(entry,Instruction.Create(OpCodes.Call,owns));
         il.InsertBefore(entry,Instruction.Create(OpCodes.Brtrue,target));
     }
+    internal static void PlayerSwitches(MethodDefinition m,MethodReference owns)
+    {
+        var hit=m.Body.Instructions.Single(i=>Call(i,"SwitchTiles"));
+        var gate=hit;
+        while(gate!=null && !(NotEqual(gate) && Local(gate.Previous)))gate=gate.Previous;
+        Require(gate!=null && Target(gate)==hit.Next.Next && Call(hit.Next.Next.Next,"UpdatePlayerPosition"),"pressure plate authority");
+        Guard(m,gate.Previous.Previous.Previous,gate.Next,owns);
+    }
+
     internal static void PickupFilter(MethodDefinition m, MethodReference allows)
     {
         var entry = At(m, 0x1a);

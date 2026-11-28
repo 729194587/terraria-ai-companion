@@ -15,7 +15,7 @@ internal sealed class NativeNavigation
     private readonly NavigationDiagnostics Diagnostics;
     internal NavigationSnapshot Snapshot => CoreSnapshot with {Mobility=_profile};
     private bool _navigation;
-    private readonly TravelHealthBudget _health=new();
+    private readonly TravelHealth _health=new();
     private NativeMotionWorld _world;
     private bool _paired;
     private readonly MobilityTracker _mobility=new();
@@ -100,9 +100,6 @@ internal sealed class NativeNavigation
 
     internal static FallSafety FallProfile(Player p)=>new(p.extraFall,p.noFallDmg||p.equippedWings!=null,p.statLife);
 
-    internal static bool ExceedsTravelBudget(Player p,int startLife,int projectedDamage=0)
-        =>TravelHealthBudget.Exceeded(startLife,p.statLife-projectedDamage,p.statLifeMax2);
-
     internal PhysicsInput Before(Player p, int session, int direction, int generation, float? targetX = null,
         LandingRegion region = null, bool combatSwing = false)
     {
@@ -131,7 +128,7 @@ internal sealed class NativeNavigation
             ph.Air!=null&&(_navigation?Task.ExpectedState:Controller.ExpectedState) is {} expected&&!AirMotionModel.Matches(expected,State(p),true),
             ph.Air==null?null:new(p.runAcceleration,p.maxRunSpeed,p.accRunSpeed,p.runSlowdown,p.gravity,p.maxFallSpeed,Player.jumpSpeed,Player.jumpHeight));
         if(!_profile.Supported)return Fail("unsupported navigation state: "+string.Join("; ",_profile.UnsupportedEffects));
-        if (!combatSwing && ExceedsTravelBudget(p,_health.StartLife)) return Fail("travel damage budget exhausted");
+        if (!combatSwing && _health.Observe(p.statLife,p.statLifeMax2)) return Fail("travel health low after damage");
         var state = State(p);
         if(_planRevision!=_profile.Revision)
         {
@@ -161,7 +158,8 @@ internal sealed class NativeNavigation
     {
         if (!_paired) return;
         _paired = false;
-        if ((!combatSwing && ExceedsTravelBudget(p,_health.StartLife)) || p.dead) { Fail("life decreased/dead"); return; }
+        if (p.dead) { Fail("actor dead"); return; }
+        if (!combatSwing && _health.Observe(p.statLife,p.statLifeMax2)) { Fail("travel health low after damage"); return; }
         if (_navigation) { Task.After(State(p), _world, inputsReleased: !p.controlLeft && !p.controlRight && !p.controlJump
             && !p.controlDown && !p.controlUp && !p.controlUseItem && !p.controlUseTile); Diagnostics.Observe(Snapshot); }
         else Controller.After(State(p), _world);

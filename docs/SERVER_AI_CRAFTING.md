@@ -11,14 +11,24 @@ Server AI 提供只读配方查询 `query_recipes` 和原生合成 `craft_recipe
 | 参数 | 含义 |
 | --- | --- |
 | `resultType` | 可选产物 Item 类型 ID；先用 `resolve_content` 解析 |
-| `availableOnly` | 默认 true，仅返回当前执行端支持且满足条件的配方；false 可查看不可用/不支持原因 |
+| `ingredientType` | 可选材料 Item 类型 ID，要求 `server_ai_recipe_uses_v1`。匹配直接用料和配方组接受的替代材料，可与 `resultType` 一起使用 |
+| `availableOnly` | 指定材料时默认 false，列出所有匹配的已启用配方。其他查询默认 true，只列当前支持且满足材料、制作站和环境条件的配方 |
 | `limit` / `offset` | 分页，默认 12/0，每页最多 24 |
 
 每条配方包含运行时 `recipeId`、绑定定义的 `recipeToken`、产物数量、材料/原生配方组、制作站和环境条件，以及 `supported`、`available`、`reason`。不支持条件以未知/不支持表达，不会通过读取真人玩家状态猜测。空页不证明整个注册表没有该配方。
 
+例如，捡到凝胶后可以查它能做什么。即使背包里没有木材，结果里也能看到普通火把及其用料。
+
+```lua
+local material = api("resolve_content", {kind="item", query="Terraria/Gel"})
+return api("query_recipes", {ingredientType=material.data.candidates[1].typeId, limit=8})
+```
+
+读取 `data.items` 获取当前页。若 `data.truncated` 为 true，下一页传 `offset=data.offset+data.returnedCount`。同一产物的不同配方分别列出。`ingredients[].acceptedGroups` 说明每种材料可由哪些物品替代。
+
 ## 递归材料规划
 
-Server AI 握手包含 `server_ai_material_plan_v1` 时，调用 `terraria.material_plan.plan(typeId, count)` 或 `api("plan_materials", {typeId=id, count=n})`。两种写法都只发一次只读请求。数量表示背包内最终希望持有的总数。原有的 `molten_pickaxe()` 仍用于要求额外新制一把镐的任务。
+Server AI 握手包含 `server_ai_material_plan_v1` 时，调用 `terraria.material_plan.plan(typeId, count)` 或 `api("plan_materials", {typeId=id, count=n})`。两种写法都只发一次只读请求。数量表示背包内最终希望持有的总数。委托要求额外新制 N 件时，以当前背包槽 0–57 的目标物总量加 N 做规划。
 
 - `steps` 是展开后的合成树，按先材料后产物排列。每步有物品键、选中配方 ID、该产物的候选配方 ID、批次数、单批产量、实际选用的输入材料和数量、制作站及条件。
 - `inventoryUsed` 汇总本次分配的背包物品（槽位 0–57）。`deficits` 汇总还需从合成链外取得的物品。没有启用配方记作 `no_recipe`；仅靠当前循环不能取得的起始材料记作 `cycle`。目标数量已经够时，步骤和缺口都为空。
@@ -83,3 +93,5 @@ return api('craft_recipe', {
 `terraria.crafting.make(resultType, desiredCount, {maxBatches=8})` 中，`resultType` 为物品类型 ID，`desiredCount` 为本次期望新增的件数。模块逐页查询候选，检查可制作性及产物空间，以配方单次产量换算执行次数。每批最多执行 20 次，重新查询下一批的配方令牌。批数上限允许 1 至 32，仍受当前 Lua 预算约束。
 
 查看报告的 `producedCount`、`remaining`、`batches` 和原始 `receipt`。单次产量可能使实际件数超过目标。无可用候选时，`recipes` 保留最后一页观察，可查材料、工作站和空间。隔离专服用每次产出三件的配方请求七件，实得九件；空间不足场景保留了实际部分产量，随后停止。
+
+模块在角色当前位置制作。各页都没有可用配方，而有候选只缺工作站时，返回 `missing_crafting_station`、该候选的 `stations` 和还要制作的 `remaining`。站点是否生效由原生配方判定。返程由 Agent 安排。在野外缺站就回基地制作区，已经在基地边缘时也可前往已知的制作区。抵达后按剩余数量再调用 `make`，仍缺站时说明当前位置需要哪种站。

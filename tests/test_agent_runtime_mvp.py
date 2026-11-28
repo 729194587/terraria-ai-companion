@@ -52,6 +52,22 @@ class ContextTests(unittest.TestCase):
         self.assertLess(len(result), len(history))
         self.assertEqual('reactive_overflow', context.last_metrics['reason'])
 
+    def test_compaction_keeps_the_latest_note_index_and_bounded_event_facts(self):
+        context = ContextManager(input_budget=2000, keep_recent_turns=0)
+        notes = [dict(name='仓库', description='火把在东箱')]
+        update = lambda **data: dict(role='user', content=json.dumps(dict(source='host_context', **data)))
+        events = [dict(eventId=str(i), text='blood moon ' + 'x'*400, gameUpdate=i, source='server_broadcast')
+                  for i in (1, 2)]
+        history = [dict(role='system', content='test'), dict(role='user', content='old'+'x'*12000),
+                   update(privateNotes=notes, recentGameEvents=events), final(), dict(role='user', content='current')]
+        for suffix, expected in (([], notes), ([update(privateNotes=[])], [])):
+            projected = context.prepare(history + suffix, [], current_start=4)
+            payloads = [json.loads(m['content']) for m in projected if m['content'].startswith('{')]
+            self.assertEqual([p['privateNotes'] for p in payloads if 'privateNotes' in p], [expected])
+            facts = [r for r in payloads[0]['historicalSummary']['records'] if 'gameEvent' in r]
+            self.assertEqual([r['gameEvent'] for r in facts], ['1','2'])
+            self.assertTrue(all(r['truncated'] and len(r['text']) == 384 for r in facts))
+
     def test_summary_failure_and_current_turn_overflow_never_mutate_history(self):
         history = self.history(); before = copy.deepcopy(history)
         context = ContextManager(input_budget=256)

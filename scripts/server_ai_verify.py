@@ -16,6 +16,7 @@ async def verify(port, key):
     bridge = ServerAiBridge(port=port)
     try:
         source = 'local testKey = ' + ('nil' if key is None else str(key)) + '\n'
+        source += 'local testWorld = ' + ('true' if 'get_world_state' in bridge.supported_atomic_operations else 'false') + '\n'
         source += (ROOT / 'scripts/lua/server_ai_reads.lua').read_text(encoding='utf-8')
         return await LuaRuntime(bridge, evidence_root=ROOT / '.local/g82-lua-evidence').execute(
             source, limits=Limits(seconds=15, calls=12, actions=0 if key is None else 1))

@@ -38,11 +38,16 @@ internal static partial class MerchantShop
     }
     private sealed record Quote(string Token, Player Actor, NPC Merchant, string Reference, string World, long Generation,
         int Slot, int Type, int Quantity, long Price, ulong Expires, long DeadlineMs, string Inventory, MerchantPayment.Funds Funds, string Catalog);
-    private static string Name => NPCShopDatabase.GetShopName(NPCID.Merchant, "Shop");
+    private static string ShopName(NPC npc) => NPCShopDatabase.GetShopName(npc.type, "Shop");
+
+    // These NPCs open a standard, single coin shop from their ordinary shop button.
+    private static bool OrdinaryVendor(int type) => type is NPCID.Merchant or NPCID.Demolitionist
+        or NPCID.ArmsDealer or NPCID.GoblinTinkerer or NPCID.Mechanic or NPCID.Wizard
+        or NPCID.Dryad or NPCID.DyeTrader or NPCID.Steampunker or NPCID.WitchDoctor or NPCID.Pirate;
 
     private static string Resolve(Identity id, string reference, out NPC merchant, bool reading = false)
     {
-        var error = ResolveService(id, reference, NPCID.Merchant, Supported, out merchant, reading);
+        var error = ResolveService(id, reference, -1, Supported, out merchant, reading);
         if (error != null) return error;
         if (id.RequestLease?.Dialogue is NpcDialogue.Conversation session && session.Reference == reference && session.IsCurrent)
             return null;
@@ -55,11 +60,11 @@ internal static partial class MerchantShop
         if (reading && id.RequestLease == null) throw new ShopReadException("not_bound");
         merchant = NpcDialogue.Resolve(id, reference);
         if (merchant == null || merchant.life <= 0) return "stale_entity_ref";
-        if (!supported || merchant.type != npcType) return npcType == NPCID.Merchant ? "unsupported_merchant" : "unsupported_npc_service";
+        if (!supported || (npcType == -1 ? !OrdinaryVendor(merchant.type) : merchant.type != npcType)) return npcType == -1 ? "unsupported_merchant" : "unsupported_npc_service";
         string unavailable = NpcDialogue.UnavailableReason((Player)id.Actor, merchant);
         if (unavailable == null) return null;
         if (reading) throw new QueryUnavailableException(unavailable);
-        return npcType == NPCID.Merchant ? "merchant_not_in_range_or_busy" : "npc_not_in_range_or_busy";
+        return npcType == -1 ? "merchant_not_in_range_or_busy" : "npc_not_in_range_or_busy";
     }
 
     private static Listing Inspect(NPCShop.Entry entry, Item item, Player player)
@@ -91,7 +96,7 @@ internal static partial class MerchantShop
         try
         {
             p.currentShoppingSettings = Main.ShopHelper.GetShoppingSettings(p, merchant);
-            if (!NPCShopDatabase.TryGetNPCShop(Name, out var shop) || shop is not NPCShop ordinary)
+            if (!NPCShopDatabase.TryGetNPCShop(ShopName(merchant), out var shop) || shop is not NPCShop ordinary)
                 throw new InvalidOperationException("Merchant shop unavailable.");
             var entries = ordinary.Entries.ToArray();
             var offers = entries.Select(e =>
@@ -129,7 +134,7 @@ internal static partial class MerchantShop
         var p = (Player)id.Actor;
         var funds = MerchantPayment.Balance(p);
         var (entries, _) = Catalog(p,merchant);
-        if (!quote) return new { entityRef, shopName = Name, funds.carriedCopper, funds, entries };
+        if (!quote) return new { entityRef, shopName = ShopName(merchant), funds.carriedCopper, funds, entries };
         var lease = id.RequestLease ?? throw new ShopReadException("not_bound");
         lease.MerchantQuote = null;
         Quote current = null;

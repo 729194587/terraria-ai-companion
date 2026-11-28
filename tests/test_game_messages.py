@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 from agent import Agent
 from control import Bridge, BridgeError
-from test_agent import Game, Model, event, final
+from test_agent import Game, Model, event, final, tool
 
 
 def notice(number, text="50 slimes defeated", **extra):
@@ -33,12 +33,16 @@ class GameMessageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(agent.generation, 0)
             self.assertEqual(len(agent.history), 1)
             agent.receive(event(1)); await agent.task
-            context = json.loads(model.requests[0][1]["content"])
+            context = json.loads(model.requests[0][2]["content"])
             self.assertEqual([e["text"] for e in context["recentGameEvents"]], ["50 slimes defeated", "test drowned"])
             self.assertEqual(context["coverage"]["evictedCount"], 0)
-            self.assertFalse(any("recentGameEvents" in m.get("content", "") for m in agent.history[1:]))
+            self.assertEqual(agent.history[2], model.requests[0][2])
+            agent.receive(notice(3, "blood moon"))
             agent.receive(event(2)); await agent.task
-            self.assertEqual(sum("recentGameEvents" in m.get("content", "") for m in model.requests[1][1:]), 1)
+            batches = [json.loads(m['content'])['recentGameEvents'] for m in model.requests[1][1:]
+                       if 'recentGameEvents' in (m.get('content') or '')]
+            self.assertEqual([[e['eventId'] for e in batch] for batch in batches],
+                             [['system:1','system:2'], ['system:3']])
         finally:
             await agent.close()
 
@@ -53,6 +57,31 @@ class GameMessageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(agent.llm.requests, [])
             self.assertEqual(len(agent.history), 1)
             self.assertEqual(agent._seen, set())
+            agent.llm = Model(final())
+            agent.receive(event(1)); await agent.task
+            delivered = json.loads(agent.history[2]['content'])
+            self.assertEqual([row['eventId'] for row in delivered['recentGameEvents']],
+                             [f'system:{i}' for i in range(968, 1000)])
+            self.assertEqual(delivered['coverage']['missedBeforeDelivery'], 968)
+        finally:
+            await agent.close()
+
+    async def test_new_notice_between_tool_calls_follows_the_completed_batch(self):
+        model = Model(tool(), final())
+        class GameWithNotice(Game):
+            def get_state(self):
+                agent.receive(notice(2, 'blood moon'))
+                return super().get_state()
+        agent = Agent(GameWithNotice(), model)
+        try:
+            agent.receive(notice(1))
+            agent.receive(event(1)); await agent.task
+            messages = model.requests[-1]
+            self.assertEqual([m['role'] for m in messages],
+                             ['system','user','user','assistant','tool','user','user'])
+            self.assertEqual([json.loads(messages[i]['content'])['recentGameEvents'][0]['eventId'] for i in (2,5)],
+                             ['system:1','system:2'])
+            self.assertEqual(messages[5], agent.history[5])
         finally:
             await agent.close()
 

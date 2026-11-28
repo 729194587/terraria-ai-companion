@@ -226,7 +226,7 @@ DeepSeek Harness 的 MCP Client 不支持 MCP Prompts，因此 Guide 使用普�
 
 默认沿途记录资源和通道。可选 `seek` 是每段走完后检查的停止条件，例如 `chest`、`Terraria/Iron`、`passage`，或用 `any` 遇发现就停。可选 `objective` 记录此次意图。是否采集、下行、折返或继续由模型选择。路线和落点使用世界像素，资源锚点使用 Tile 坐标。
 
-`explorationResult` 默认只给出终点、位移、段数、结束原因、最多八个资源线索、近期通道线索及当前位置的出路。去重后的线索超过八条时，先为每种 `kind` 选一条，再优先覆盖同类中的不同 `contentKey`，最后按观察顺序补足。`findingCount` 是去重后的总数。`partialResourceScan` 标记有未完整覆盖的资源观察。资源窗口采样超时后会尝试一次近区扫描，局部落点通过检查时可以继续。用 `exploration_status({"lastTrip":true})` 读取当前租约最近结束行程的逐段回执和采样覆盖；用 `exploration_status({})` 读取现场详情。需实际返回的委托可使用 `explore_frontier`。
+`explorationResult` 默认只给出终点、位移、段数、结束原因、最多八个资源线索、近期通道线索及当前位置的出路。去重后的线索超过八条时，先为每种 `kind` 选一条，再优先覆盖同类中的不同 `contentKey`，最后按观察顺序补足。`findingCount` 是去重后的总数。`partialResourceScan` 标记有未完整覆盖的资源观察。资源窗口采样超时后会尝试一次近区扫描，局部落点通过检查时可以继续。用 `exploration_status({"lastTrip":true})` 读取当前租约最近结束行程的逐段回执和采样覆盖；用 `exploration_status({})` 读取现场详情。
 
 矿脉线索的 `anchor` 标识观察到的矿簇。需要采矿时，把 `targetTile` 的格坐标传给 `mine_target`。该坐标来自实际观测到的矿格；专服仍会核验矿格与采矿站位。已经确认消失的矿脉省略 `targetTile`。
 

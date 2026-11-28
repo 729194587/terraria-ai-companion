@@ -12,11 +12,12 @@ from control import Bridge, BridgeError, main
 
 
 class FakeServer:
-    def __init__(self, reject=False, in_world=True, silent=False, silent_hello=False):
+    def __init__(self, reject=False, in_world=True, silent=False, silent_hello=False, capabilities=None):
         self.reject = reject
         self.in_world = in_world
         self.silent = silent
         self.silent_hello = silent_hello
+        self.capabilities = capabilities
         self.requests = []
         self.error = None
         self.listener = socket.socket()
@@ -39,8 +40,12 @@ class FakeServer:
                     connection.recv(1)
                     return
                 # Deliberately split the hello across writes.
-                connection.sendall(b'{"v":1,"type":"hel')
-                connection.sendall(b'lo","instance":"offline","lease_ms":750}\n')
+                hello = {'v': 1, 'type': 'hello', 'instance': 'offline', 'lease_ms': 750}
+                if self.capabilities is not None:
+                    hello['capabilities'] = self.capabilities
+                wire = (json.dumps(hello) + '\n').encode()
+                connection.sendall(wire[:16])
+                connection.sendall(wire[16:])
                 with connection.makefile("rb") as reader:
                     for line in reader:
                         request = json.loads(line)

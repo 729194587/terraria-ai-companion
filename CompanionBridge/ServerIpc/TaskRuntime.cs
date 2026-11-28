@@ -8,11 +8,11 @@ namespace CompanionBridge.ServerIpc;
 internal sealed class TaskRecord
 {
     internal readonly string Id,Name,ParentId;
-    internal ulong Deadline;
+    internal ulong? Deadline;
     internal string Status="running",Phase="accepted",Reason="accepted";
     internal bool Started;
     internal Result Result;
-    internal TaskRecord(string id,string name,string parent,ulong deadline){Id=id;Name=name;ParentId=parent;Deadline=deadline;}
+    internal TaskRecord(string id,string name,string parent,ulong? deadline){Id=id;Name=name;ParentId=parent;Deadline=deadline;}
 }
 internal abstract class CompanionTask
 {
@@ -25,6 +25,7 @@ internal abstract class CompanionTask
     internal abstract string Name{get;}
     internal virtual Result Prepare(AiReadOnlyProtocol.Identity frame)=>null;
     internal virtual void Start(AiReadOnlyProtocol.Identity frame){}
+    internal virtual void Resume(AiReadOnlyProtocol.Identity frame,ulong pausedUpdates){}
     internal abstract Result Tick(AiReadOnlyProtocol.Identity frame);
     internal abstract Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason);
     internal virtual object AbandonEvidence=>null;
@@ -38,13 +39,15 @@ internal sealed class TaskSlot
     internal readonly CompanionTask Task;
     private readonly AiReadOnlyProtocol.Identity identity;
     private ulong lastTick;
+    private ulong? pausedAt;
+    private Result pausedRelease;
     private ulong observedProgress;
     private readonly ulong leaseUpdates;
-    internal TaskSlot(CompanionTask task,string id,string parent,AiReadOnlyProtocol.Identity identity,ulong budget)
+    internal TaskSlot(CompanionTask task,string id,string parent,AiReadOnlyProtocol.Identity identity,ulong? budget)
     {
         Task=task;this.identity=identity;lastTick=identity.GameUpdate;
         Record=new(id,task.Name,parent,checked(identity.GameUpdate+budget));
-        leaseUpdates=task.Name is "navigate_to" or "navigate_to_landing_region"?budget:0;
+        leaseUpdates=task.Name is "navigate_to" or "navigate_to_landing_region"?budget.GetValueOrDefault():0;
     }
     private void RenewOnProgress(ulong tick)
     {
@@ -88,6 +91,26 @@ internal sealed class TaskSlot
         if(r.Status!="unknown"&&(!r.InputsReleased||r.Status=="completed"&&!r.EffectVerified))r=r with{Status="unknown",Reason="task_effect_or_release_unconfirmed",EffectVerified=false};
         Record.Result=r;Record.Status=r.Status;Record.Phase="terminal";Record.Reason=r.Reason;return r;
     }
+    internal Result Pause(AiReadOnlyProtocol.Identity frame,string reason)
+    {
+        if(Record.Result!=null)return Record.Result;
+        if(!Same(identity,frame))return Abandon();
+        var release=Record.Started?Task.Stop(frame,"cancelled",reason):new Result("cancelled",reason,null,true,InputsAcquired:false);
+        if(release.Status!="cancelled" || !release.InputsReleased)return Finish(release);
+        pausedRelease=release;pausedAt=lastTick=frame.GameUpdate;
+        Record.Phase="paused";Record.Reason=reason;
+        return release with{Status="running",Reason=reason,EffectVerified=false};
+    }
+    internal void Resume(AiReadOnlyProtocol.Identity frame)
+    {
+        ulong elapsed=frame.GameUpdate-pausedAt.Value;
+        Record.Deadline+=elapsed;
+        if(Record.Started)Task.Resume(frame,elapsed);
+        pausedRelease=null;pausedAt=null;lastTick=frame.GameUpdate;
+        Record.Phase=Record.Started?Task.Phase:"accepted";Record.Reason="task_resumed";
+    }
+    internal Result ClosePaused(string status,string reason)=>
+        Finish(pausedRelease with{Status=status,Reason=reason,EffectVerified=false});
     internal Result Stop(AiReadOnlyProtocol.Identity frame,string status,string reason)
     {
         if(Record.Result!=null)return Record.Result;

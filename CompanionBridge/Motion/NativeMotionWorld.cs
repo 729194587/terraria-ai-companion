@@ -88,6 +88,8 @@ internal sealed class NativeMotionWorld : IMotionWorld, ISurfaceTerrain, IPoolMo
                     throw new UnsafeMotionException($"outside local prediction window at ({x},{y})");
                 char cell = TerrainReader.ReadCell(x, y);
                 if (cell == '?') throw new UnsafeMotionException($"unknown terrain at ({x},{y})");
+                if (hazards && TerrainReader.PressurePlate(Main.tile[x,y]))
+                    throw new UnsafeMotionException($"pressure plate blocks movement at ({x},{y})");
                 if (hazards && cell == '!') throw new UnsafeMotionException($"hazard terrain at ({x},{y})");
             }
     }

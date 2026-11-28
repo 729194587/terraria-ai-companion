@@ -52,6 +52,10 @@ internal static class ServerRegroup
     internal static Player Recipient(Identity frame,string token) =>
         Online(frame).FirstOrDefault(s=>s.Token==token && Eligibility((Player)frame.Actor,s.Player)==null)?.Player;
 
+    internal static bool InHandoffRange(Player actor, Player other) =>
+        Vector2.DistanceSquared(actor.Center, other.Center) <= 48 * 48 &&
+        Collision.CanHitLine(actor.Center, 1, 1, other.Center, 1, 1);
+
     internal static object ActiveTeamBosses(Identity frame)
     {
         var actor = (Player)frame.Actor;
@@ -68,9 +72,12 @@ internal static class ServerRegroup
     internal static object Discover(Identity frame)
     {
         var p = (Player)frame.Actor;
-        return new { actorTeam = p.team, players = Online(frame).Select(s => new {
+        return new { actorTeam = p.team, hasWormholePotion = p.HasUnityPotion(), players = Online(frame).Select(s => new {
             teammateRef = s.Token, name = s.Player.name, team = s.Player.team,
-            reason = Eligibility(p, s.Player), lastDrop = ServerItemDrop.Status(frame,s.Token) }).ToArray() };
+            reason = Eligibility(p, s.Player),
+            handoff = Eligibility(p, s.Player) == null ? new { x = s.Player.Bottom.X, y = s.Player.Bottom.Y,
+                inRange = InHandoffRange(p, s.Player) } : null,
+            lastDrop = ServerItemDrop.Status(frame,s.Token) }).ToArray() };
     }
 
     internal static Result SetTeam(Identity frame, int team)

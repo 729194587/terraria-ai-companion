@@ -16,6 +16,16 @@ def estimate_tokens(value):
     return math.ceil(len(json.dumps(value, ensure_ascii=False).encode('utf-8')) / 3)
 
 
+def _host_context(message):
+    if message.get('role') != 'user':
+        return None
+    try:
+        data = json.loads(message['content'])
+    except (KeyError, ValueError, TypeError):
+        return None
+    return data if isinstance(data, dict) and data.get('source') == 'host_context' else None
+
+
 class ContextManager:
     def __init__(self, input_budget=48_000, keep_recent_turns=2):
         if type(input_budget) is not int or input_budget < 256:
@@ -50,8 +60,19 @@ class ContextManager:
                 fact['toolCallId'] = message.get('tool_call_id')
                 records.append({'role': 'tool', 'receiptIndex': fact})
             elif not message.get('tool_calls'):
-                records.append({'role': message.get('role'), 'excerpt': content[:384],
-                                'truncated': len(content) > 384})
+                context = _host_context(message)
+                if context is None:
+                    records.append({'role': message.get('role'), 'excerpt': content[:384],
+                                    'truncated': len(content) > 384})
+                else:
+                    for event in context.get('recentGameEvents', ()):
+                        text = event['text']
+                        records.append({'gameEvent': event['eventId'], 'gameUpdate': event.get('gameUpdate'),
+                                        'source': event['source'], 'text': text[:384],
+                                        'truncated': bool(event.get('truncated') or event.get('textTruncated') or len(text) > 384)})
+                    coverage = context.get('coverage', {})
+                    if coverage.get('evictedCount') or coverage.get('serverDroppedCount'):
+                        records.append({'eventCoverage': coverage})
         kept = []
         for record in reversed(records):
             if len(json.dumps([record, *kept], ensure_ascii=False).encode('utf-8')) > 12_000:
@@ -69,15 +90,20 @@ class ContextManager:
         compacted = False
         try:
             if reactive or before > self.input_budget:
+                updates = {i: data for i, message in enumerate(messages)
+                           if (data := _host_context(message)) is not None}
+                last_notes = next((i for i in reversed(updates) if 'privateNotes' in updates[i]), None)
                 # Split only at user-turn boundaries, never within assistant/tool batches.
                 boundaries = [i for i, m in enumerate(messages[:current_start])
-                              if i > 0 and m.get('role') == 'user']
+                              if i > 0 and m.get('role') == 'user' and i not in updates]
                 preferred = boundaries[-self.keep_recent_turns:] if self.keep_recent_turns else []
                 splits = sorted(set([*preferred, current_start]))
                 for split in splits:
                     if split <= 1:
                         continue
                     summary = self.summarize(copy.deepcopy(messages[1:split]))
+                    if last_notes is not None and last_notes < split:
+                        summary['privateNotes'] = updates[last_notes]['privateNotes']
                     projected = [copy.deepcopy(messages[0]),
                                  {'role': 'user', 'content': json.dumps(summary, ensure_ascii=False)},
                                  *copy.deepcopy(messages[split:])]

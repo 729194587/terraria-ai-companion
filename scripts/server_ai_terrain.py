@@ -24,25 +24,31 @@ async def verify(args):
             deadline=time.monotonic()+10
             while not ready.exists() and time.monotonic()<deadline: await asyncio.sleep(.05)
             fixture=json.loads(ready.read_text())
-            goal=fixture['startX']+direction*(128 if mode=='explore' else 192)
             bridge=ServerAiBridge(port=args.port)
             try:
                 source=f"local before=api('get_player_state',{{}}); local action=api('navigate_to_x',{{targetX={fixture['targetX']}}}); return {{before=before,action=action,after=api('get_player_state',{{}})}}"
                 if mode=='explore':
-                    source='return explore({direction="'+('right' if direction==1 else 'left')+'",maxSteps=1,stepPixels=128})'
-                r=await LuaRuntime(bridge,evidence_root=profile/'terrain-lua').execute(source,limits=Limits(seconds=35,calls=12,actions=1))
+                    source='return explore("'+('right' if direction==1 else 'left')+'")'
+                r=await LuaRuntime(bridge,evidence_root=profile/'terrain-lua').execute(source,limits=Limits() if mode=='explore' else Limits(seconds=35,calls=12,actions=1))
             finally: bridge.close()
             action=(r.get('value') or {}).get('action') or r.get('lastAction') or {}
             e=action.get('evidence') or {}
             expected=scene not in ('wide_gap','high_wall')
-            passed=(action.get('completed') is True and e.get('settled') is True and direction*(e['x']-goal)>=-12) if expected else (action.get('status')=='failed' and e.get('settled') is True and any(reason in (action.get('reasonDetail') or '') for reason in ('no safe local route','navigation progress/action budget exhausted')))
+            if mode=='explore':
+                report=r.get('value') or {}
+                progress=report.get('progress',{})
+                passed=(report.get('returnReason') in ('budget_reached','blocked') and progress.get('completedSegments',0)>0
+                        and direction*progress.get('dx',0)>=128)
+            elif expected:
+                passed=action.get('completed') is True and e.get('settled') is True and direction*(e['x']-fixture['targetX'])>=-12
+            else:
+                passed=action.get('status')=='failed' and e.get('settled') is True and any(reason in (action.get('reasonDetail') or '') for reason in ('no safe local route','navigation progress/action budget exhausted'))
             passed=passed and (action.get('endEvidence') or {}).get('inputsReleased') is True
             await asyncio.sleep(.1)
             trace_path=profile/f'terrain-motion-{scene}-{direction}.json'
             trace=json.loads(trace_path.read_text()) if trace_path.exists() else []
             motion=dict(frames=len(trace),minY=min((f['y'] for f in trace),default=None),maxY=max((f['y'] for f in trace),default=None),
                 airborneFrames=sum(not f['Grounded'] for f in trace),maxPredictionError=max((f.get('maxError') or 0 for f in trace),default=0))
-            if mode=='explore': passed=passed and (r.get('value') or {}).get('reason')=='step_limit'
             passed=passed and bool(trace) and trace[-1]['Settled'] and motion['maxPredictionError']<=16
             if scene in ('short_gap','low_obstacle'): passed=passed and motion['airborneFrames']>0
             saved_trace=profile/f'terrain-motion-{scene}-{direction}-{mode}.json'

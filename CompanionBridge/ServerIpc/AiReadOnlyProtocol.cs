@@ -153,7 +153,7 @@ internal sealed class AiReadOnlyProtocol
                 if(!Guid.TryParseExact(messageId,"N",out _)||string.IsNullOrWhiteSpace(text)||text.Length>400
                     ||text.IndexOfAny(new[]{'\r','\n','\0'})>=0)throw new FormatException();
             }
-            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "plan_materials" or "query_item_sources" or "query_item_info" or "resolve_content" or "observe_scene" or "query_recipes" or "look_around" or "query_map" or "query_combat" or "query_combat_loadout" or "list_pylons" or "list_teammates" or "discover_bosses" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase" or "quote_npc_sale" or "quote_nurse_heal" or "quote_reforge"))
+            if (reading && root.GetProperty("operation").GetString() is not ("get_player_state" or "get_world_state" or "inspect_inventory" or "observe_terrain" or "scan_tiles" or "scan_entities" or "inspect_tile" or "plan_materials" or "query_item_sources" or "query_item_info" or "resolve_content" or "observe_scene" or "query_recipes" or "look_around" or "query_map" or "query_combat" or "query_combat_loadout" or "list_pylons" or "list_teammates" or "discover_bosses" or "list_base_chests" or "find_container_item" or "inspect_container" or "build_diff" or "inspect_housing" or "inspect_npc_housing" or "inspect_npc_shop" or "quote_npc_purchase" or "quote_npc_sale" or "quote_nurse_heal" or "quote_reforge"))
                 return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
             if (op == "bind" && root.TryGetProperty("binding", out _)) throw new FormatException();
             // Reject malformed bindings before invoking the engine adapter.
@@ -187,7 +187,7 @@ internal sealed class AiReadOnlyProtocol
                 var binding = new Binding(ActorId(current), current.World, current.Generation, current.Slot);
                 leases.Add(connection, new(current, binding));
                 var capabilities=actions?.Capabilities.ToList();
-                if(query!=null){capabilities ??= new(); capabilities.Add("server_ai_material_plan_v1");capabilities.Add("server_ai_item_sources_v1");capabilities.Add("server_ai_item_info_v1");capabilities.Add("server_ai_build_diff_v1");capabilities.Add("server_ai_housing_inspect_v1");capabilities.Add("server_ai_npc_housing_v1");if (actions?.SupportsMerchantShop == true) capabilities.Add("server_ai_merchant_shop_v1");capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_scene_region_v1");capabilities?.Add("server_ai_map_v1");capabilities.Add("server_ai_map_chunks_v1");capabilities.Add("server_ai_resources_v1");capabilities.Add("server_ai_region_resources_v1");capabilities.Add("server_ai_directional_landings_v1");capabilities.Add("server_ai_passages_v1");capabilities.Add("server_ai_lit_terrain_v1");}
+                if(query!=null){capabilities ??= new(); capabilities.Add("server_ai_world_state_v1");capabilities.Add("server_ai_material_plan_v1");capabilities.Add("server_ai_item_sources_v1");capabilities.Add("server_ai_item_info_v1");capabilities.Add("server_ai_build_diff_v1");capabilities.Add("server_ai_housing_inspect_v1");capabilities.Add("server_ai_npc_housing_v1");if (actions?.SupportsMerchantShop == true) capabilities.Add("server_ai_merchant_shop_v1");capabilities?.Add("server_ai_reads_v1");capabilities?.Add("server_ai_perception_v1");capabilities?.Add("server_ai_scene_v1");capabilities?.Add("server_ai_scene_region_v1");capabilities?.Add("server_ai_map_v1");capabilities.Add("server_ai_map_chunks_v1");capabilities.Add("server_ai_resources_v1");capabilities.Add("server_ai_region_resources_v1");capabilities.Add("server_ai_directional_landings_v1");capabilities.Add("server_ai_passages_v1");capabilities.Add("server_ai_lit_terrain_v1");}
                 if (actions != null && query != null && say != null) capabilities.Add("server_ai_autonomy_v1");
                 if(current.ReadMessages!=null)capabilities?.Add("server_ai_messages_v1");
                 if(say!=null){capabilities?.Add("server_ai_chat_v2");capabilities?.Add("server_ai_life_status_v1");}
@@ -244,7 +244,7 @@ internal sealed class AiReadOnlyProtocol
             {
                 var arguments = root.GetProperty("arguments");
                 if (arguments.ValueKind != JsonValueKind.Object) throw new FormatException();
-                if (root.GetProperty("operation").GetString() == "inspect_container" && actions?.SupportsContainers != true)
+                if (root.GetProperty("operation").GetString() is ("inspect_container" or "find_container_item" or "list_base_chests") && actions?.SupportsContainers != true)
                     return JsonSerializer.Serialize(Reply(false, error: "unsupported_operation"));
                 if (root.GetProperty("operation").GetString() == "quote_reforge" && actions?.Capabilities.Contains("server_ai_reforge_v1") != true)
                     return JsonSerializer.Serialize(Reply(false,error:"unsupported_operation"));

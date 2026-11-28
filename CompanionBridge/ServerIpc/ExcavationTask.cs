@@ -41,7 +41,7 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
     private (int Left,int Right,int Top,int Bottom) departureBounds;
     private (int Left,int Right,int Top,int Bottom) workBounds;
     private readonly Player player=(Player)identity.Actor;
-    private readonly int initialLife=((Player)identity.Actor).statLife;
+    private int initialLife=((Player)identity.Actor).statLife;
     private CompanionTask active;
     private NativeExcavation.Plan activePlan;
     private int? continuationSlot;
@@ -76,6 +76,13 @@ internal sealed partial class ExcavationTask(string id,AiReadOnlyProtocol.Identi
         return null;
     }
 
+    internal override void Resume(AiReadOnlyProtocol.Identity frame,ulong pausedUpdates)
+    {
+        lastUpdate=frame.GameUpdate;initialLife=player.statLife;
+        directTarget?.AfterReflex();
+        selected=null;openingTarget=null;activePlan=null;continuationSlot=null;exhaustedAt=null;
+        localRouteProbes.Clear();outcome="running";stage=stage=="discover"||frontier.Count>0?"discover":"observe";
+    }
     private void AddTarget(int x,int y)
     {
         targets.Add(new(ExcavationCell.Capture(x,y)));

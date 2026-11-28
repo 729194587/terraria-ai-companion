@@ -6,8 +6,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from jsonschema import Draft202012Validator
 
 from test_agent import Model, final, event, tool
@@ -38,8 +39,6 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.ready=Path(self.directory.name)/'ready'
         self.stop=Path(self.directory.name)/'stop'
         Path(str(self.ready)+'.live').touch()
-        if self._testMethodName.startswith('test_frontier_'):
-            Path(str(self.ready)+'.advance.frontier').touch()
         self.process=subprocess.Popen(['pwsh','-NoProfile','-File',str(Path(__file__).with_name('run_api_contract_host.ps1')),
             '-ReadyPath',str(self.ready),'-StopPath',str(self.stop)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,
             creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -66,6 +65,21 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
 
     async def starts(self):
         return (await asyncio.to_thread(self.bridge._request,'state'))['data']['starts']
+
+    async def test_removed_exploration_cannot_start(self):
+        operation = 'explore_frontier'
+        self.assertNotIn(operation, self.bridge.supported_atomic_operations)
+        self.assertNotIn('server_ai_frontier_exploration_v1', self.bridge.hello['capabilities'])
+        result = await self.runtime.execute(
+            "return api('submit_task',{operation='explore_frontier',arguments={radiusTiles=10,maxSegments=2}})")
+        self.assertEqual('bad_argument', result['failure']['kind'], result)
+        self.assertEqual(0, result['actions'])
+        with self.assertRaises(BridgeError) as rejected:
+            await asyncio.to_thread(self.bridge._request, 'start', actionId='a'*32, operation=operation,
+                                    arguments={'radiusTiles':10,'maxSegments':2},
+                                    expiresAtUnixMs=int(time.time()*1000)+1500)
+        self.assertEqual('unsupported_operation', rejected.exception.status)
+        self.assertEqual(0, await self.starts())
 
     async def wait_for(self, predicate):
         async def wait():
@@ -341,60 +355,6 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual('[AI] 生命值为73。',self.bridge.reply_receipts[-1]['text'])
         self.assertEqual(1,await self.starts())
 
-    async def test_frontier_goal_wakes_and_reports_verified_return(self):
-        args = {'radiusTiles': 10, 'maxSegments': 6}
-        model = Model(tool('schedule_exploration', json.dumps(args)), final('已登记'), final('已返回'))
-        store = GoalStore(Path(self.directory.name) / 'goals.sqlite3')
-        self.agent = Agent(self.bridge, model, chat_bridge=Authorizer(), goal_store=store,
-                           lua_store=ProgramStore(Path(self.directory.name)/'programs'))
-        self.receive(self.agent, 1, '探索附近十格并安全返回，最多向外走六段')
-        await self.agent.task
-        await self.wait_for(lambda: any(r['ack'].is_set() for r in self.manager.records.values()))
-        self.assertEqual('running', store.latest()['state'])
-        self.complete()
-        await self.wait_for(lambda: store.latest()['state'] == 'completed')
-        view = next(iter(self.manager.records.values()))['view']
-        Draft202012Validator(schema_for('query_task')).validate(view)
-        self.assertIn('探索新增 3 格', facts_reply([view['result']]))
-        self.assertEqual(1, await self.starts())
-
-    async def test_frontier_lua_missing_return_is_unknown(self):
-        await self.assert_frontier_unconfirmed('no_return')
-
-    async def test_frontier_completed_off_anchor_is_unknown(self):
-        await self.assert_frontier_unconfirmed('off_anchor')
-
-    async def assert_frontier_unconfirmed(self, fixture):
-        Path(str(self.ready)+'.advance.'+fixture).touch()
-        run = await self.runtime.execute("return api('submit_task',{operation='explore_frontier',arguments={radiusTiles=6,maxSegments=2}})")
-        self.assertEqual('completed',run['status'],run)
-        task_id = run['value']['taskId']
-        self.complete()
-        view = await self.manager.invoke('await_task', {'taskId':task_id, 'milliseconds':5000})
-        self.assertEqual('unknown',view['result']['status'],view)
-        self.assertFalse(view['result']['completed'])
-        self.assertEqual(1, await self.starts())
-
-    async def test_frontier_releases_before_new_player_commission(self):
-        steps = [{'operation':'mine_target','arguments':{'x':x,'y':20}} for x in (10,11)]
-        model = Model(tool('schedule_exploration','{"radiusTiles":8,"maxSegments":4}'),final('已登记'),
-                      tool('schedule_player_goal',json.dumps({'steps':steps})),final('已登记'),final('回执'),final('回执'))
-        store = GoalStore(Path(self.directory.name)/'goals.sqlite3')
-        self.agent = Agent(self.bridge,model,chat_bridge=Authorizer(),goal_store=store,
-                           lua_store=ProgramStore(Path(self.directory.name)/'programs'))
-        self.receive(self.agent,1,'自主探索并返回')
-        await self.agent.task
-        await self.wait_for(lambda: any(r['ack'].is_set() for r in self.manager.records.values()))
-        first = next(iter(self.manager.records.values()))
-        self.assertNotIn('action',self.manager.projection()['active'][0])
-        self.receive(self.agent,2,'改为依次挖除 (10,20) 和 (11,20)')
-        await self.agent.task
-        self.assertTrue(first['view']['result']['inputsReleased'])
-        self.assertEqual('cancelled',first['view']['status'])
-        self.complete()
-        await self.wait_for(lambda:store.latest()['state']=='completed')
-        self.assertEqual(3,await self.starts())
-
     async def start_commission(self):
         steps = [{'operation':'mine_target','arguments':{'x':x,'y':20}} for x in (10,11)]
         model = Model(tool('schedule_player_goal', json.dumps({'steps':steps})),
@@ -489,6 +449,48 @@ class M3ProtocolTests(unittest.IsolatedAsyncioTestCase):
 
 
 class M3ResultTests(unittest.TestCase):
+    def test_mixed_commission_after_reopen_requires_confirmed_pickup(self):
+        route = {'operation':'navigate_to','arguments':{'x':180.5,'y':320}}
+        gather = {'operation':'collect_drops','arguments':{'typeIds':[8]}}
+        for pickup, expected in [('collected','completed'), ('none','blocked'), ('partial','blocked')]:
+            with self.subTest(pickup=pickup), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'goals.sqlite3'
+                store = GoalStore(path)
+                store.create({'steps':[route,gather]}, 'world', 'chat', 1, '去拾取火把',
+                             {'navigate_to','collect_drops'}, 2)
+                for step in (route,gather):
+                    store = GoalStore(path)
+                    next_step = store.next_step('world')
+                    self.assertEqual(step, next_step['args'])
+                    self.assertTrue(store.claim(next_step, 'world'))
+                    receipt = dict(valid=True, actionId=next_step['task'], operation=step['operation'],
+                                   targetTask=step['arguments'], effectVerified=True, inputsReleased=True,
+                                   completed=True, status='completed')
+                    if step == gather:
+                        receipt['task'] = {'result':{'evidence':{'outcome':pickup}}}
+                    else:
+                        # A legitimately long first task may finish after its original dispatch window.
+                        with store.connect() as db:
+                            db.execute('UPDATE goals SET expires=0')
+                        db.close()
+                    store.settle(next_step['task'], receipt)
+                self.assertEqual(expected,store.latest()['state'])
+                self.assertEqual(2 if expected=='completed' else 1, store.latest()['progress'])
+
+    def test_retired_goal_releases_slot_on_upgrade(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'goals.sqlite3'
+            store = GoalStore(path)
+            with store.connect() as db:
+                db.execute("INSERT INTO goals(id,binding,chat,sender,instruction,expires,total,state) "
+                           "VALUES('old','world','chat','player','explore',0,1,'reconcile')")
+                db.execute('INSERT INTO steps(goal,ordinal,task,args) VALUES(?,?,?,?)',
+                           ('old',0,'task',json.dumps({'operation':'explore_frontier','arguments':{}})))
+            db.close()
+            reopened = GoalStore(path)
+            self.assertFalse(reopened.holds_body())
+            self.assertEqual('cancelled', reopened.latest()['state'])
+
     def test_task_contract_requires_capabilities_and_explicit_transport(self):
         from types import SimpleNamespace
         from lua_agent import server_contract
@@ -522,6 +524,23 @@ class M3ResultTests(unittest.TestCase):
 
 
 class M3MailboxTests(unittest.IsolatedAsyncioTestCase):
+    async def test_follow_replacement_requires_a_new_instruction_and_verified_release(self):
+        manager = TaskCoordinator(object())
+        key = 'a' * 32
+        manager.records[key] = {'view': {'taskId': key, 'operation': 'follow_teammate',
+                                         'origin': {'chatId': 1}, 'status': 'running'}}
+        with patch.object(manager, 'invoke', new_callable=AsyncMock) as invoke:
+            self.assertTrue(await manager.release_previous_follow(1))
+            self.assertTrue(await manager.release_previous_follow(None))
+            invoke.assert_not_awaited()
+            invoke.return_value = {'status': 'unknown', 'result': {'valid': False}}
+            self.assertFalse(await manager.release_previous_follow(2))
+            invoke.assert_awaited_once_with('cancel_task', {'taskId': key})
+            invoke.side_effect = [{'status': 'running'}, {'status': 'cancelled', 'result': {
+                'valid': True, 'status': 'cancelled', 'endEvidence': {'inputsReleased': True}}}]
+            self.assertTrue(await manager.release_previous_follow(2))
+            invoke.assert_awaited_with('await_task', {'taskId': key, 'milliseconds': 1500})
+
     async def test_ordinary_monitor_exceptions_set_unknown_keep_identity_and_never_replay(self):
         from types import SimpleNamespace
         for phase in ('start', 'action'):

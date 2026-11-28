@@ -4,6 +4,7 @@ using System.Text.Json;
 using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
+using CompanionBridge.Common.Systems;
 using VirtualPlayerEngineProbe;
 using Identity = CompanionBridge.ServerIpc.AiReadOnlyProtocol.Identity;
 using Result = CompanionBridge.ServerIpc.AiAtomicActions.NativeResult;
@@ -15,6 +16,9 @@ internal static class ServerItemDrop
     // The native pickup callback is conclusive only for the same session and item incarnation.
     private sealed record Handoff(Identity Actor, string Teammate, ServerDrops.Drop Drop, int Count)
     {
+        internal readonly Guid Token = Guid.NewGuid();
+        internal ServerDrops.Drop Ground = Drop;
+        internal (int Sender, int Before, int Left)? PickupSync;
         internal int Received;
     }
     private static Handoff latest;
@@ -38,6 +42,8 @@ internal static class ServerItemDrop
         var teammate=args.TryGetProperty("teammateRef",out var value)?value.GetString():null;
         var recipient=teammate==null?null:ServerRegroup.Recipient(id,teammate);
         if(teammate!=null && recipient==null)return Refuse("teammate_unavailable");
+        if(args.TryGetProperty("nearbyOnly",out var nearby) && nearby.GetBoolean()
+            && (recipient==null || !ServerRegroup.InHandoffRange(p,recipient)))return Refuse("teammate_out_of_reach");
 
         // NewItem can recycle an active world slot when the pool is full. Only admit with free space.
         var free=Enumerable.Range(0,Main.maxItems)
@@ -72,16 +78,19 @@ internal static class ServerItemDrop
             world.velocity.X=p.velocity.X+4*p.direction;
             world.ownIgnore=p.whoAmI;
             world.ownTime=100;
+            string entityRef=ServerDrops.Reference(id,index,world);
+            var drop=new ServerDrops.Drop(index,world,entityRef,type,prefix);
+            var handoff = recipient == null ? null : new Handoff(id,teammate,drop,count);
+            if (handoff != null)
+                HandoffObservation.Watch(recipient.whoAmI, handoff.Token, index, type, prefix);
             world.FindOwner(index);
             NetMessage.SendData(MessageID.SyncItem,-1,-1,null,index);
             NetMessage.SendData(MessageID.ItemOwner,-1,-1,null,index);
             NetMessage.SendData(MessageID.SyncEquipment,-1,-1,null,p.whoAmI,slot,remainder.prefix);
-            string entityRef=ServerDrops.Reference(id,index,world);
-            var drop=new ServerDrops.Drop(index,world,entityRef,type,prefix);
             int after=p.inventory[slot].IsAir?0:p.inventory[slot].stack;
             if(!ServerDrops.Live(drop) || world.stack!=count || !ReferenceEquals(p.inventory[slot],remainder) || after!=before-count)
                 throw new InvalidOperationException("Drop changed before confirmation");
-            latest=teammate==null?null:new(id,teammate,drop,count);
+            latest=handoff;
             return new("completed","world_drop_verified",new{sourceSlot=slot,typeId=type,prefix,beforeStack=before,
                 afterStack=after,spawnedCount=count,entityRef,teammateRef=teammate,receiptStatus="unconfirmed"},
                 true,true,InputsAcquired:false);
@@ -103,7 +112,51 @@ internal static class ServerItemDrop
         if(h==null || h.Teammate!=teammate || !ReferenceEquals(h.Actor.Actor,id.Actor) ||
             h.Actor.Generation!=id.Generation || h.Actor.World!=id.World || h.Actor.Slot!=id.Slot)return null;
         return new{entityRef=h.Drop.Reference,typeId=h.Drop.Type,spawnedCount=h.Count,confirmedReceived=h.Received,
-            stillOnGround=ServerDrops.Live(h.Drop),receiptStatus=h.Received==h.Count?"received":h.Received>0?"partial":"unconfirmed"};
+            stillOnGround=ServerDrops.Live(h.Ground),receiptStatus=h.Received==h.Count?"received":h.Received>0?"partial":"unconfirmed"};
+    }
+
+    // Native PickupItem sends SyncItem before the client's pickup witness. Capture the
+    // accepted world change while we can still identify the original item incarnation.
+    internal static void SyncItem(On_MessageBuffer.orig_GetData orig, MessageBuffer buffer, int start, int length, out int messageType)
+    {
+        var h = latest;
+        if (h == null || !Program.IsMainThread || length < 3 || buffer.readBuffer[start] != MessageID.SyncItem
+            || BitConverter.ToInt16(buffer.readBuffer, start + 1) != h.Drop.Slot)
+        {
+            orig(buffer, start, length, out messageType);
+            return;
+        }
+        // The next native update for this slot on the same connection supersedes
+        // its pending report, even if the old ground slot has since been reused.
+        if (h.PickupSync?.Sender == buffer.whoAmI) h.PickupSync = null;
+        if (!ServerDrops.Live(h.Ground))
+        {
+            orig(buffer, start, length, out messageType);
+            return;
+        }
+        var item = h.Ground.Item;
+        int before = item.stack;
+        orig(buffer, start, length, out messageType);
+        if (!ReferenceEquals(h, latest) || messageType != MessageID.SyncItem) return;
+        if (!ReferenceEquals(Main.item[h.Drop.Slot], item)) return;
+        int left = item.active ? item.stack : 0;
+        if (left > before || left < 0 || before > h.Count - h.Received
+            || left > 0 && (item.type != h.Drop.Type || item.prefix != h.Drop.Prefix)) return;
+        // Even an unchanged SyncItem runs netDefaults on the live object. Preserve its
+        // identity for this handoff if it still holds the same stack or a remainder.
+        if (left > 0)
+            h.Ground = h.Ground with { Reference = ServerDrops.Reference(h.Actor, h.Drop.Slot, item) };
+        if (left < before && ServerAiNativeActions.Owned(h.Actor) && ServerRegroup.Recipient(h.Actor,h.Teammate)?.whoAmI == buffer.whoAmI)
+            h.PickupSync = (buffer.whoAmI, before, left);
+    }
+
+    internal static void ObserveReceipt(int sender, Guid token, int before, int left)
+    {
+        var h = latest;
+        if (h == null || h.Token != token || h.PickupSync != (sender, before, left)
+            || !ServerAiNativeActions.Owned(h.Actor) || ServerRegroup.Recipient(h.Actor,h.Teammate)?.whoAmI != sender) return;
+        h.PickupSync = null;
+        h.Received += before - left;
     }
 
     internal static Item Pickup(On_Player.orig_PickupItem orig,Player player,int playerIndex,int index,Item item)
@@ -121,8 +174,8 @@ internal static class ServerItemDrop
     private static Action<Item> BeforePickup(Player player,int index,Item item)
     {
         var h=latest;
-        if(h==null || h.Received==h.Count || index!=h.Drop.Slot || !ReferenceEquals(item,h.Drop.Item) ||
-            !ServerDrops.Live(h.Drop) || item.stack!=h.Count-h.Received || !ServerAiNativeActions.Owned(h.Actor) ||
+        if(h==null || h.Received==h.Count || index!=h.Drop.Slot || !ReferenceEquals(item,h.Ground.Item) ||
+            !ServerDrops.Live(h.Ground) || item.stack>h.Count-h.Received || !ServerAiNativeActions.Owned(h.Actor) ||
             !ReferenceEquals(ServerRegroup.Recipient(h.Actor,h.Teammate),player))return null;
         int stack=item.stack;
         long InInventory()=>player.inventory.Concat(player.bank4.item)

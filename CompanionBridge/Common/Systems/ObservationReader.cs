@@ -109,20 +109,37 @@ internal static class ObservationReader
             Stopwatch.GetElapsedTime(started).TotalMilliseconds);
     }
 
-    internal static object ReadEnvironment(Player p) => new {
-                source = "client_known; server synchronization age unknown", Main.dayTime, Main.time,
-                timeUnit = "Terraria day/night time units, not UTC", Main.raining, Main.rainTime,
-                Main.maxRaining, Main.windSpeedCurrent, Main.cloudAlpha, Main.bloodMoon, Main.eclipse,
-                Main.snowMoon, Main.pumpkinMoon,
-                sandstorm = Terraria.GameContent.Events.Sandstorm.Happening,
-                invasionTypeClientKnown = Main.invasionType,
-                serverEventProgress = "unknown; no authoritative event progress requested",
-                localPlayerBiomes = Biomes.ToDictionary(prop => prop.Name, prop => (bool)prop.GetValue(p)),
-                biomeScope = "local player's vanilla flags, not per-tile viewport biome or all mod biomes"
-            };
+    internal static string TimeOfDay()
+    {
+        // Main.time counts game seconds since 04:30 or 19:30. Keep minute boundaries exact.
+        int minutes = ((int)(Main.time / 60) + (Main.dayTime ? 270 : 1170)) % 1440;
+        return FormattableString.Invariant($"{minutes / 60:00}:{minutes % 60:00}");
+    }
+
+    internal static object ReadEnvironment(Player p)
+    {
+        bool server = Main.netMode == NetmodeID.Server;
+        bool hasBiomeFlags = !server || p.ZoneSkyHeight || p.ZoneOverworldHeight || p.ZoneDirtLayerHeight
+            || p.ZoneRockLayerHeight || p.ZoneUnderworldHeight;
+        var environment = new Dictionary<string, object> {
+            ["source"] = server ? "server_world" : "client_known; server synchronization age unknown",
+            ["dayTime"] = Main.dayTime, ["time"] = Main.time, ["timeOfDay"] = TimeOfDay(),
+            ["timeUnit"] = "Terraria day/night time units, not UTC",
+            ["raining"] = Main.raining, ["rainTime"] = Main.rainTime, ["maxRaining"] = Main.maxRaining,
+            ["windSpeedCurrent"] = Main.windSpeedCurrent, ["cloudAlpha"] = Main.cloudAlpha,
+            ["bloodMoon"] = Main.bloodMoon, ["eclipse"] = Main.eclipse, ["snowMoon"] = Main.snowMoon,
+            ["pumpkinMoon"] = Main.pumpkinMoon, ["sandstorm"] = Terraria.GameContent.Events.Sandstorm.Happening,
+            ["invasionType"] = Main.invasionType,
+            ["serverEventProgress"] = "unknown; event wave progress not sampled",
+            ["localPlayerBiomes"] = hasBiomeFlags ? Biomes.ToDictionary(prop => prop.Name, prop => (bool)prop.GetValue(p)) : null,
+            ["biomeScope"] = hasBiomeFlags ? "Vanilla Zone flags on the observed player" : "Actor biome flags unavailable"
+        };
+        if (!server) environment["invasionTypeClientKnown"] = Main.invasionType;
+        return environment;
+    }
 
     internal static object ReadPlayer(Player p, string source = "local_player") => new {
-        id = p.whoAmI, source, positionWorldPixels = new StateVector(p.position.X, p.position.Y),
+        id = p.whoAmI, source, timeOfDay = TimeOfDay(), positionWorldPixels = new StateVector(p.position.X, p.position.Y),
         boundsWorldPixels = Bounds(p), velocityPixelsPerTick = new StateVector(p.velocity.X, p.velocity.Y),
         life = p.statLife, lifeMax = p.statLifeMax2, mana = p.statMana, manaMax = p.statManaMax2,
         p.name, p.statDefense, p.breath, p.breathMax, p.immune, p.immuneTime,

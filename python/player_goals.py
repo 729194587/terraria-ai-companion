@@ -10,26 +10,27 @@ from agent_run import task_outcome
 
 
 MAX_STEPS = 8
-SUPPORTED = {'mine_target', 'place_item'}
+DISPATCH_WINDOW_SECONDS = 300
+STEP_ARGUMENTS = {
+    'mine_target': atomic.SCHEMAS['place_item'],  # Durable mining targets use absolute tile coordinates.
+    'place_item': atomic.SCHEMAS['place_item'],
+    'navigate_to': atomic.SCHEMAS['navigate_to'],
+    'collect_drops': atomic.SCHEMAS['collect_drops'],
+    # The full blueprint format is available on demand through build_diff / build_place help.
+    'build_place': {'type':'object', 'properties':{'blueprint':{'type':'object',
+                    'description':'使用 build_diff 已调查的 blueprint'}}, 'required':['blueprint'], 'additionalProperties':False},
+}
 
 
 def definition(operations):
-    step = {'type': 'object', 'additionalProperties': False, 'required': ['operation','arguments'],
-            'properties': {'operation': {'enum': sorted(SUPPORTED.intersection(operations))},
-                           'arguments': {'type':'object','properties':atomic.TILE,'required':['x','y'],
-                                         'additionalProperties':False}}}
+    step = {'oneOf': [
+        {'type': 'object', 'additionalProperties': False, 'required': ['operation', 'arguments'],
+         'properties': {'operation': {'const': name}, 'arguments': schema}}
+        for name, schema in STEP_ARGUMENTS.items() if name in operations]}
     return atomic.tool('schedule_player_goal',
-        '登记玩家明确要求的有序指定格任务。坐标来自玩家或现场观察。每步原生验证效果、释放后才继续。'
-        'mine_target 证明该格挖除；place_item 使用当前选中的放置物品。不能用于证明入包。'
+        '登记玩家交代的有序步骤。导航用落脚点世界像素，挖格和放置用 Tile 坐标。'
+        '各步等原生终态、核验效果并释放身体后继续。'
         '登记后只报告已排队。', {'steps': {'type':'array', 'minItems':2, 'maxItems':MAX_STEPS, 'items':step}}, ['steps'])
-
-
-def exploration_definition():
-    schema = atomic.SCHEMAS['explore_frontier']
-    return atomic.tool('schedule_exploration',
-        '玩家明确授权自主探索时登记一次有界往返。radiusTiles 是以出发点为中心的 Tile 半径，'
-        'maxSegments 是外出尝试上限。默认仅移动，玩家明确允许清障才开启 allowDig。'
-        '完成要求实际开图、返回安全锚点并释放输入。', schema['properties'], schema['required'])
 
 
 class GoalStore:
@@ -48,6 +49,10 @@ class GoalStore:
                 CREATE TABLE IF NOT EXISTS steps(
                     goal TEXT NOT NULL, ordinal INTEGER NOT NULL, task TEXT NOT NULL UNIQUE,
                     args TEXT NOT NULL, receipt TEXT, uncertainty TEXT, PRIMARY KEY(goal,ordinal));
+                UPDATE goals SET state='cancelled', revoked=1
+                    WHERE state IN ('ready','running','reconcile') AND EXISTS (
+                        SELECT 1 FROM steps WHERE goal=goals.id AND ordinal=goals.progress
+                        AND json_extract(args,'$.operation')='explore_frontier');
             """)
 
     def connect(self):
@@ -63,23 +68,16 @@ class GoalStore:
             raise ValueError('Goal exceeds available step budget')
         for step in steps:
             if (not isinstance(step, dict) or set(step) != {'operation','arguments'}
-                    or step['operation'] not in SUPPORTED.intersection(operations)
-                    or not isinstance(step['arguments'], dict) or set(step['arguments']) != {'x','y'}):
-                raise ValueError('Expected an available task and absolute Tile x/y')
+                    or not isinstance(step['operation'], str) or step['operation'] not in STEP_ARGUMENTS
+                    or step['operation'] not in operations or not isinstance(step['arguments'], dict)):
+                raise ValueError('Expected an available commission step and its arguments')
+            if step['operation'] == 'mine_target' and set(step['arguments']) != {'x','y'}:
+                raise ValueError('A mining step requires absolute Tile x/y')
             atomic.validate(step['operation'], step['arguments'])
-        return self._save(steps, binding, chat, sender, instruction)
-
-    def create_exploration(self, args, binding, chat, sender, instruction, operations, budget):
-        if 'explore_frontier' not in operations or budget < 1:
-            raise ValueError('Exploration admission unavailable')
-        step = {'operation': 'explore_frontier', 'arguments': atomic.validate('explore_frontier', args)}
-        return self._save([step], binding, chat, sender, instruction)
-
-    def _save(self, steps, binding, chat, sender, instruction):
         goal = uuid.uuid4().hex
         with closing(self.connect()) as db, db:
             db.execute("INSERT INTO goals(id,binding,chat,sender,instruction,expires,total,state) VALUES(?,?,?,?,?,?,?,'ready')",
-                       (goal, binding, chat, str(sender), instruction, time.time()+300, len(steps)))
+                       (goal, binding, chat, str(sender), instruction, time.time()+DISPATCH_WINDOW_SECONDS, len(steps)))
             db.executemany('INSERT INTO steps(goal,ordinal,task,args) VALUES(?,?,?,?)',
                            [(goal, n, uuid.uuid4().hex, json.dumps(step)) for n, step in enumerate(steps)])
         return {'valid': True, 'goalId': goal, 'status': 'ready', 'stepCount': len(steps)}
@@ -108,19 +106,6 @@ class GoalStore:
         with closing(self.connect()) as db:
             return db.execute("SELECT 1 FROM goals WHERE state IN ('ready','running','reconcile')").fetchone() is not None
 
-    def exploration_owner(self, binding):
-        with closing(self.connect()) as db:
-            row = db.execute("""SELECT g.id,s.task,s.args FROM goals g JOIN steps s
-                ON s.goal=g.id AND s.ordinal=g.progress WHERE g.binding=?
-                AND g.state IN ('ready','running','reconcile')""", (binding,)).fetchone()
-            if row and json.loads(row['args'])['operation'] == 'explore_frontier':
-                return row['id'], row['task']
-
-    def revoke_goal(self, goal):
-        with closing(self.connect()) as db, db:
-            db.execute("""UPDATE goals SET revoked=1, state=CASE WHEN state='ready' THEN 'cancelled' ELSE state END
-                WHERE id=? AND state IN ('ready','running','reconcile')""", (goal,))
-
     def claim(self, step, binding):
         with closing(self.connect()) as db, db:
             return db.execute("""UPDATE goals SET state='running' WHERE id=? AND state='ready' AND revoked=0
@@ -147,8 +132,14 @@ class GoalStore:
                         and result.get('targetTask') == step['arguments'] and result.get('valid') is True
                         and result.get('completed') is True and result.get('status') == 'completed'
                         and result.get('effectVerified') is True and result.get('inputsReleased') is True
-                        and (step['operation'] not in ('mine_target','explore_frontier') or task_outcome([result]) == 'completed'))
-            if verified:
+                        and (step['operation'] != 'mine_target' or task_outcome([result]) == 'completed'))
+            pickup = ((result.get('task') or {}).get('result') or {}).get('evidence') or {}
+            if verified and step['operation'] == 'collect_drops' and pickup.get('outcome') in ('none', 'partial'):
+                # A successful native scan or capped batch cannot certify the collection step.
+                state, verified = 'blocked', False
+            elif verified and step['operation'] == 'collect_drops' and pickup.get('outcome') != 'collected':
+                state, verified = 'reconcile', False
+            elif verified:
                 state = 'completed' if row['progress'] + 1 == row['total'] else 'ready'
             elif result.get('dispatchState') == 'not_admitted' or (
                     result.get('valid') is True and result.get('actionId') == task and result.get('inputsReleased') is True
@@ -162,5 +153,6 @@ class GoalStore:
                     state = 'cancelled'
             else:
                 db.execute('UPDATE steps SET uncertainty=? WHERE task=?', (json.dumps(result), task))
-            db.execute('UPDATE goals SET state=?,progress=progress+? WHERE id=?',
-                       (state, int(verified), row['id']))
+            expires = time.time() + DISPATCH_WINDOW_SECONDS if state == 'ready' else row['expires']
+            db.execute('UPDATE goals SET state=?,progress=progress+?,expires=? WHERE id=?',
+                       (state, int(verified), expires, row['id']))

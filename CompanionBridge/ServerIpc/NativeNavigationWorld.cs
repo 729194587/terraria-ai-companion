@@ -19,7 +19,8 @@ internal sealed class NativeNavigationWorld : INavigationWorld
     private readonly JsonElement target;
     private readonly float x,y;
     private readonly LandingRegion destination;
-    private readonly int initialLife;
+    private int previousLife;
+    public void AfterReflex()=>previousLife=player.statLife;
     private NativeNavigationEdits edits;
     private readonly NavigationKnowledge knowledge;
     private LocalEditEvaluation evaluation;
@@ -50,7 +51,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
         this.identity=identity;
         this.target=target.Clone();
         player=(Player)identity.Actor;
-        initialLife=player.statLife;
+        previousLife=player.statLife;
         x=target.GetProperty("x").GetSingle();
         y=target.GetProperty("y").GetSingle();
         destination=LandingRegion.AtDestination(x,y);
@@ -78,13 +79,20 @@ internal sealed class NativeNavigationWorld : INavigationWorld
     public string SearchDetail=>planningDetail??edits?.SearchDetail;
     public object OpeningEvidence=>edits?.OpeningEvidence;
     public object ArrivalEvidence{get;private set;}
-    public string InterruptionReason()=>CheckHazards(identity,initialLife,travelling:true);
+    public string InterruptionReason()=>CheckTravelHazards(identity,ref previousLife);
 
-    internal static string CheckHazards(AiReadOnlyProtocol.Identity identity,int initialLife,bool travelling=false)
+    internal static string CheckTravelHazards(AiReadOnlyProtocol.Identity identity,ref int previousLife)
+    {
+        var before=previousLife;
+        previousLife=((Player)identity.Actor).statLife;
+        return CheckHazards(identity,before,travelling:true);
+    }
+
+    internal static string CheckHazards(AiReadOnlyProtocol.Identity identity,int referenceLife,bool travelling=false)
     {
         var player=(Player)identity.Actor;
         ServerAiNativeActions.Require(identity);
-        if(travelling?NativeNavigation.ExceedsTravelBudget(player,initialLife):player.statLife<initialLife)return "task_interrupt_health_decreased";
+        if(travelling?TravelHealth.LowAfterDamage(referenceLife,player.statLife,player.statLifeMax2):player.statLife<referenceLife)return "task_interrupt_health_decreased";
         if(player.lavaWet)return "task_interrupt_lava_contact";
         // Bounded native safety check, on the game thread; no model/TCP wait.
         foreach(var npc in Main.npc)
@@ -94,7 +102,7 @@ internal sealed class NativeNavigationWorld : INavigationWorld
             if(contact>1 && (!npc.HasValidTarget||npc.target!=player.whoAmI))continue;
             if(contact>0 && !npc.noTileCollide && !Collision.CanHitLine(npc.position,npc.width,npc.height,player.position,player.width,player.height))continue;
             int cooldown=-1;
-            if((!travelling||npc.boss||NativeNavigation.ExceedsTravelBudget(player,initialLife,npc.damage))
+            if((!travelling||npc.boss||TravelHealth.LowAfterDamage(player.statLife,player.statLife-npc.damage,player.statLifeMax2))
                 &&NPCLoader.CanHitPlayer(npc,player,ref cooldown))return "task_interrupt_nearby_hostile";
         }
         return null;
@@ -173,6 +181,12 @@ internal sealed class NativeNavigationWorld : INavigationWorld
 
     public NavigationStep FindOpening(int remainingTiles)
     {
+        if(RoutePlate() is {} plate)
+        {
+            ReleasePlanning();
+            planningDetail="mine pressure plate on walking route";
+            return edits.PlanPlate(plate.X,plate.Y);
+        }
         if(wallPlatform!=null && !wallPlacementIssued)
         {
             if(ValidateWallPlacement()!=null)
@@ -486,8 +500,12 @@ internal sealed class NativeNavigationWorld : INavigationWorld
         return PlanningPending || bankCrossing!=null;
     }
 
+    private (int X,int Y)? RoutePlate() => NativeNavigationEdits.PlateAhead(identity,
+        Math.Clamp(player.position.X,destination.MinPlayerLeftX,destination.MaxPlayerLeftX));
+
     public bool PreferEdit(int remainingTiles)
     {
+        if(RoutePlate()!=null && ServerAiNavigation.Observe(player).Settled){ReleasePlanning();return true;}
         if(wallPlatform==null && CheckBankAir())return false;
         if(wallPlatform!=null || PlanWallPlatform()!=null)return true;
         bridgeStep=ContinueBridge();

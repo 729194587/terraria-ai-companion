@@ -28,7 +28,7 @@ public static class ItemUsePatches
         il.InsertBefore(entry,Instruction.Create(OpCodes.Brtrue,target));
     }
     public static void Patch(MethodDefinition m,string operation,MethodReference predicate,MethodReference miningDispatch=null,
-        MethodReference miningOnly=null,MethodReference combatOnly=null,MethodReference miningScope=null)
+        MethodReference miningOnly=null,MethodReference combatOnly=null,MethodReference miningScope=null,MethodReference waterBucket=null)
     {
         Require(!m.Body.Instructions.Any(i=>i.Operand is MethodReference r&&r.FullName==predicate.FullName));
         if(operation=="wrapper")
@@ -46,6 +46,12 @@ public static class ItemUsePatches
             Guard(m,0,0x0076,predicate);
             Guard(m,0x00b1,0x00d0,predicate);
             Guard(m,0x00b7,0x00d0,predicate);
+        }
+        else if(operation=="bucket-ui")
+        {
+            Require(m.Name.Contains("ItemCheck_UseBuckets") && Call(At(m,0x015d),"get_GamepadDisableCursorItemIcon")
+                && Call(At(m,0x0171),"ItemIconCacheUpdate") && At(m,0x0176)?.OpCode==OpCodes.Ldarg_0);
+            Guard(m,0x015d,0x0176,predicate);
         }
         else if(operation=="mining-ui")
         {
@@ -106,6 +112,11 @@ public static class ItemUsePatches
                 &&At(m,0x01ef)?.OpCode==OpCodes.Ldarg_0&&Call(At(m,0x01f1),"ItemCheck_UseMiningTools")
                 &&At(m,0x01f6)?.OpCode==OpCodes.Ldarg_0&&Call(At(m,0x01f8),"ItemCheck_UseTeleportRod"));
             // Mining uses only the native mining call in this cursor block.
+            if(waterBucket!=null)
+            {
+                Require(At(m,0x01a0)?.OpCode==OpCodes.Ldarg_0 && Call(At(m,0x01a2),"ItemCheck_UseBuckets"));
+                Guard(m,0x017d,0x01a0,waterBucket);
+            }
             Guard(m,0x017d,0x01a7,predicate);
             Guard(m,0x01e8,0x044d,miningDispatch??predicate);
             if(miningScope!=null)

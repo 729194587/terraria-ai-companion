@@ -230,6 +230,9 @@ try {
         $null=& $PythonExecutable (Join-Path $repo 'scripts/server_ai_verify.py') --port $IpcPort --output "$profile/lua-read-result.json"
         if($LASTEXITCODE -ne 0){throw 'Existing Lua worker did not complete native player/inventory reads'}
         $readResult=Get-Content -LiteralPath "$profile/lua-read-result.json" -Raw|ConvertFrom-Json
+        if (!$readResult.value.world.environment.timeOfDay -or !$readResult.value.before.timeOfDay) {
+            throw 'Expected a game clock in both world and actor snapshots'
+        }
         $rawQuery=Request @{v=1;id='native-player-query';op='query';binding=$bound.binding;operation='get_player_state';arguments=@{}}
         $rawState=Request @{v=1;id='native-state-after-reads';op='state';binding=$bound.binding}
         if(!$rawQuery.ok -or !$rawState.ok -or $readResult.actions -ne 0 -or $readResult.value.fullInventorySlots -ne 59 `

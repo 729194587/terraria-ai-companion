@@ -12,7 +12,7 @@ local function make(resultType, desiredCount, options)
     local last
     while batches < limit do
         local offset = 0
-        local recipe, observation
+        local recipe, observation, stations
         repeat
             observation = api("query_recipes", {resultType=resultType, availableOnly=false, limit=24, offset=offset})
             if not observation.valid or not observation.available then
@@ -20,13 +20,19 @@ local function make(resultType, desiredCount, options)
             end
             local page = observation.data
             for _, row in ipairs(page.items) do
-                if row.output.typeId == resultType and row.supported and row.available and row.hasOutputSpace then
-                    recipe = row
-                    break
+                if row.output.typeId == resultType and row.supported and row.hasOutputSpace then
+                    if row.available then
+                        recipe = row
+                        break
+                    end
+                    if row.reason == "missing_crafting_station" then stations = stations or row.stations end
                 end
             end
             if not recipe and (not page.truncated or #page.items == 0) then
-                return report(made > 0 and "partial" or "unavailable", "no_available_recipe", last, observation)
+                local result = report(made > 0 and "partial" or "unavailable",
+                    stations and "missing_crafting_station" or "no_available_recipe", last, observation)
+                result.stations = stations
+                return result
             end
             offset = offset + #page.items
         until recipe

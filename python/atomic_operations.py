@@ -81,7 +81,8 @@ SALE_SOURCE = {"entityRef": MERCHANT_REF, "sourceSlot": INVENTORY_SLOT, "sourceT
 LIT_TERRAIN = tool("look_around", "观察角色周围当前照亮的地形。视窗 119×67 格，含远处有光的通道。data.rows 按行从左到右，? 暗区，. 空地，# 实心，= 平台，~ 水，L 岩浆，H 蜂蜜，S 微光，t 火把，c 箱子，o 矿石。data.actor 和 originX/Y 为世界格坐标。")
 TOOLS = [LIT_TERRAIN, tool("query_map", "查询AI独立探索记忆，绝非实时地形。Tile坐标；overview自动适配世界<=128x48，方格比例，为战略地图；region默认角色中心、120x68 Tile、cellSize=2，支持1/2/4。返回data.rows、originX/Y、cellSize、exploredRatio、legend；?未知，空格已知空地，#实心，=平台，:混合/部分已知，~水/L岩浆/H蜂蜜/S微光表示存在。混合格需cellSize=1放大，不能据此判通路。记忆可能过时；地形记忆与实际脚印分开；光照揭示规则见返回的visibility。",
     {"mode":{"type":"string","enum":["overview","region"]},"centerX":{"type":"integer","minimum":0,"maximum":100000},"centerY":{"type":"integer","minimum":0,"maximum":100000},"width":{"type":"integer","minimum":1,"maximum":128},"height":{"type":"integer","minimum":1,"maximum":96},"cellSize":{"type":"integer","enum":[1,2,4]},"includeChunks":{"type":"boolean"}},["mode"]),tool("query_recipes", "查询当前加载原生配方及AI背包/附近制作站/已支持环境条件。默认只返回可制作配方；resultType来自resolve_content；availableOnly=false可查缺失/不支持原因。检查分页、supported及hasOutputSpace。",
-    {"resultType":{"type":"integer","minimum":1},"availableOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":24},"offset":{"type":"integer","minimum":0,"maximum":100000}}),
+    {"resultType":{"type":"integer","minimum":1},"ingredientType":{"type":"integer","minimum":1,"maximum":2147483647,
+     "description":"材料的物品 typeId；匹配直接用料和配方组替代材料。"},"availableOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":24},"offset":{"type":"integer","minimum":0,"maximum":100000}}),
     tool("craft_recipe", "按新鲜query_recipes的recipeId/recipeToken原生合成，crafts是配方执行次数1..20，不是产物件数；每次重查材料/制作站/空间。可能部分完成，不回滚或失败后自动重试。",
     {"recipeId":{"type":"integer","minimum":0,"maximum":100000},"recipeToken":INVENTORY_TOKEN,"crafts":{"type":"integer","minimum":1,"maximum":20}},["recipeId","recipeToken","crafts"]),tool("observe_scene", "服务器AI局部45×29二维侧视语义图：几何/对象/危险来源、可直接用于导航的landingRegions.items[].target和相互独立的placementCandidates（单格place_tile）/objectPlacementCandidates（工作台place_object，含完整footprint/support）候选。geometry/map共用originX/originY，Lua用string.sub解析行。单次游戏线程采样；候选不保证可达/放置成功，树组件不是整树计数；检查coverage与各集合truncated。可选layers为非空、无重复的白名单数组，未传返回全部七层；data.includedLayers列出实际层，未请求字段省略。objects附带objectCounts，放置候选附带对应Material；身份、范围、角色、coverage和sample始终保留。objectPlacementCandidates.diagnostics区分已检查排除、unknownCount及notCheckedCount；matchedCount仍为通过筛选且截断前的数目。" + SCENE_TEXT_CONTRACT,
     {**{key:{"type":"integer","minimum":1,"maximum":64 if key=="maxHazards" else 24 if key=="maxRegions" else 32}
@@ -110,15 +111,15 @@ TOOLS = [LIT_TERRAIN, tool("query_map", "查询AI独立探索记忆，绝非实�
     tool("wait", "可取消的宿主真实时间等待，milliseconds为1..10000。不会推进游戏时间、持有按键或确认游戏效果；受Lua总时限和工具次数预算约束。",
          {"milliseconds": {"type": "integer", "minimum": 1, "maximum": 10000}}, ["milliseconds"]),
     tool("observe_terrain", "复用get_terrain读取45×29局部碰撞及同次玩家状态；Tile为16像素。"),
-    tool("inspect_npc_shop", "读取有交互资格的普通商人商品列表。未知条件或未支持的商品应按返回状态处理。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
+    tool("inspect_npc_shop", "读取当前对话的原版城镇商店商品列表（普通钱币）。未知条件或未支持的商品应按返回状态处理。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
     tool("open_npc_dialogue", "与附近的普通商人交谈，成功时从 evidence.text 读取台词。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
     tool("close_npc_dialogue", "结束绑定 AI 与普通商人的交谈。", {}, []),
     tool("quote_npc_purchase", "按绑定 AI 的当前购物状态报价，返回短时购买令牌、单价与支付能力。默认一件，支持批量的服务器每次最多 50 件。", {"entityRef": MERCHANT_REF, "itemType": {"type": "integer", "minimum": 1, "maximum": 2147483647}, "quantity": {"type": "integer", "minimum": 1, "maximum": 50}}, ["entityRef", "itemType"]),
     tool("quote_nurse_heal", "读取附近护士的治疗量、诊金（铜）、可清除减益和短时报价。", {"entityRef": MERCHANT_REF}, ["entityRef"]),
     tool("heal_at_nurse", "使用同一护士的报价治疗绑定 AI 并清除可治疗减益，使用随身及四个银行的钱币支付。", {"entityRef": MERCHANT_REF,"quoteToken": SHOP_TOKEN}, ["entityRef","quoteToken"]),
     tool("quote_reforge", "凭主背包槽令牌向哥布林工匠查询当前前缀和一次重铸的铜币费用。", SALE_SOURCE, list(SALE_SOURCE)),
-    tool("reforge_item", "使用同一工匠和槽位的新鲜报价进行一次原生随机重铸，可能抽回原前缀。", {**SALE_SOURCE, "quoteToken": SHOP_TOKEN}, [*SALE_SOURCE, "quoteToken"]),
-    tool("quote_npc_sale", "使用主背包指定槽的新鲜 inventoryToken 查询向普通商人出售一件的预计铜币收入。", SALE_SOURCE, list(SALE_SOURCE)),
+    tool("reforge_item", "使用同一工匠和槽位的新鲜报价重铸。可传报价 prefixes 中的 targetPrefix ID，自动连续重铸直到命中或付不起下一次；省略则只抽一次。", {**SALE_SOURCE, "quoteToken": SHOP_TOKEN, "targetPrefix": {"type":"integer","minimum":1,"maximum":255}}, [*SALE_SOURCE, "quoteToken"]),
+    tool("quote_npc_sale", "使用主背包指定槽的新鲜 inventoryToken 查询向当前城镇商店出售一件的预计铜币收入。", SALE_SOURCE, list(SALE_SOURCE)),
     tool("sell_npc_item", "使用同一商人和背包槽的有效出售报价卖出一件，核验实收钱币和库存。", {**SALE_SOURCE, "quoteToken": SHOP_TOKEN}, [*SALE_SOURCE, "quoteToken"]),
     tool("buy_npc_item", "使用同一商人的新鲜报价令牌购买报价指定数量的商品。核验随身及四个银行的钱币总额与入包数量；过期后须重新查询报价。", {"entityRef": MERCHANT_REF, "quoteToken": SHOP_TOKEN}, ["entityRef", "quoteToken"]),
     tool("inspect_npc_housing", "读取新鲜 NPC 引用对应的原生住所和房间管理器登记。", {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
@@ -135,17 +136,28 @@ TOOLS = [LIT_TERRAIN, tool("query_map", "查询AI独立探索记忆，绝非实�
           "maxResults": {"type": "integer", "minimum": 1, "maximum": 256}}, ['minX', 'minY', 'maxX', 'maxY', 'tileTypes']),
     tool("open_container", "仅服务器AI。指定原版箱子或已放置的猪猪储蓄罐、保险箱、护卫熔炉、虚空保险库任一格的 Tile 坐标。个人仓库绑定当前 AI。需在原生范围内且箱子未锁、无人占用；已有打开的箱子时先关闭。带机关的原版箱子可能触发机关。", TILE, ["x", "y"]),
     tool("inspect_container", "观察 AI 当前打开的箱子或个人仓库。返回锚点、类型、Chest索引及40个槽位，签发新的容器和槽位Token。未打开或上下文失效时返回不可用。"),
+    tool("list_base_chests", "查看世界出生点 64 格内未锁的普通箱子，按距出生点由近到远分页。传 item 时只列有该物品的箱子和实时数量，省略则列出包括空箱的全部基地箱，count 为各箱物品件数。", {
+        "item": {"type": "string", "minLength": 1, "maxLength": 150},
+        "offset": {"type": "integer", "minimum": 0, "maximum": 2147483647}}),
+    tool("find_container_item", "从 AI 原地按物品查询附近未锁的普通箱子，半径默认 32 格。每箱合计所有槽，按距离由近到远返回锚点 x、y 和 count。每页最多 32 箱，truncated 时用 offset 翻页。totalCount 是整个半径内的匹配物品总数。",
+         {"item": {"type": "string", "minLength": 1, "maxLength": 150},
+          "radiusTiles": {"type": "integer", "minimum": 1, "maximum": 64},
+          "offset": {"type": "integer", "minimum": 0, "maximum": 2147483647}}, ["item"]),
     tool("deposit_container_item", "仅服务器AI。从指定普通背包槽存入当前箱子的指定槽。传最新 inspect_inventory(mode=slots) 和 inspect_container 的三种Token。目标容量不足时，只搬入可容纳数量，回执failed且effectStatus=partial。", CONTAINER_TRANSFER_ARGS, list(CONTAINER_TRANSFER_ARGS)),
     tool("withdraw_container_item", "仅服务器AI。从当前箱子的指定槽取到指定普通背包槽。传最新 inspect_inventory(mode=slots) 和 inspect_container 的三种Token。目标容量不足时，只取出可容纳数量，回执failed且effectStatus=partial。", CONTAINER_TRANSFER_ARGS, list(CONTAINER_TRANSFER_ARGS)),
     tool("quick_stack_nearby", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到600像素内已有同类物品且无人占用的原版箱子。"),
     tool("quick_stack_container", "服务器AI。将普通背包10..49中未收藏的非钱币快速堆叠到当前箱子的已有同类物品。需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("loot_all", "服务器AI。按拾取规则从当前箱子批量取出，需要新鲜容器Token。movedCount 是实际取出数，blocked 是仍留在原箱的物资。容量不足时可腾出空间，重新检查原箱后补拿。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
     tool("deposit_all", "服务器AI。批量存入普通背包10..49中未收藏物品，需要新鲜容器Token。", {"containerToken": INVENTORY_TOKEN}, ["containerToken"]),
-    tool("explore_frontier", "有界调查未知区域并回到出发落区。仅在玩家要求探索时提交。范围与行程预算必填，allowDig 默认关闭，开启需要玩家允许清障。", {
-        "radiusTiles": {"type":"integer","minimum":4,"maximum":64},
-        "maxSegments": {"type":"integer","minimum":1,"maximum":64},
-        "allowDig": {"type":"boolean","default":False},
-    }, ["radiusTiles","maxSegments"]),
+    tool("transfer_container_amount", "在已打开的普通箱子和背包间按物品最多搬运 count 件。put 存入，take 取出。核验后返回实际 movedCount；不足时 reason 标明来源不足或目标装不下。",
+         {"direction": {"type": "string", "enum": ["put", "take"]},
+          "typeId": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+          "count": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+          "containerToken": INVENTORY_TOKEN}, ["direction", "typeId", "count", "containerToken"]),
+    tool("follow_teammate", "持续跟随 list_teammates 中指定的同队玩家。通过 submit_task 提交。默认一直跟随，保持约 3 格距离。只有玩家指定时长时才传 durationSeconds。",
+         {"teammateRef": {"type":"string","pattern":"^[0-9a-f]{32}$"},
+          "distanceTiles": {"type":"integer","minimum":1,"maximum":12},
+          "durationSeconds": {"type":"integer","minimum":1,"maximum":600}}, ["teammateRef"]),
     tool("collect_drops", "通过 submit_task 收集本轮观察到的附近掉落物。默认320像素，最多16个。可用 typeIds 筛选，或用 scan_entities 返回的掉落物 entityRef 指定目标。", {
         "radiusPixels": {"type": "integer", "minimum": 16, "maximum": 960, "default": 320},
         "typeIds": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": True,
@@ -177,7 +189,7 @@ TOOLS = [LIT_TERRAIN, tool("query_map", "查询AI独立探索记忆，绝非实�
     tool("unequip_item", "仅服务器AI：从功能装备槽卸下一件装备。用inspect_inventory(mode='full')取得targetSlotId和targetToken。可指定0..49的空背包槽，省略时使用首个空槽。后续游戏更新确认，unknown后先观察。",
          {"targetSlotId": EQUIPMENT_SLOT, "targetToken": INVENTORY_TOKEN, "destinationSlot": INVENTORY_SLOT},
          ["targetSlotId", "targetToken"]),
-    tool("get_world_state", "读取客户端昼夜、天气、事件、生物群系和深度。"),
+    tool("get_world_state", "读取时间、天气、事件、群系、深度与早期 Boss 进度。homeBase 提供世界出生点格坐标、基地半径以及角色是否已在基地。"),
     tool("move_input", "仅服务器AI：持续注入原生A/D、W/S及Space；horizontal/vertical各自互斥，none为松开。maxUpdates是1..600次游戏更新，不是距离；jumpHoldUpdates为最初0..maxUpdates次按住跳跃。无需落地、支撑或路径预测，可空中转向/走下边缘；Down按原生平台下穿语义，Down+Jump可能先跳起再在下降时下穿。完成只表示输入时长结束，撞墙/下落/受伤是正常结果。取消只释放输入，保留惯性；不自动装备/飞行/恢复。",
          {"horizontal":{"type":"string","enum":["none","left","right"]},
           "vertical":{"type":"string","enum":["none","up","down"]},
@@ -200,7 +212,7 @@ TOOLS = [LIT_TERRAIN, tool("query_map", "查询AI独立探索记忆，绝非实�
     tool("configure_combat_loadout", "配置服务器 AI 的主副武器。primary 和 secondary 各自使用快捷键 1..9、0、预期 typeId 和新鲜 inventoryToken。完整替换配置，省略角色即清除该角色；配置不换手。", {"primary": COMBAT_ROLE, "secondary": COMBAT_ROLE, "summon": COMBAT_ROLE}),
     tool("list_pylons", "列出本世界登记的晶塔及其目的地引用和格坐标。", {}),
     tool("teleport_to_pylon", "对 list_pylons 返回的目的地发起一次原生传送，由当前游戏和 Mod 裁决。", {"pylonRef":{"type":"string","pattern":"^[0-9a-f]{32}$"}}, ["pylonRef"]),
-    tool("list_teammates", "查看 AI 的队伍和在线真人的队伍、当次上线引用和传送限制。", {}),
+    tool("list_teammates", "查看 AI 与在线玩家的队伍、当次上线引用和传送限制。定向丢物后，用 entityRef 对上该队友的 lastDrop，读取 confirmedReceived 实收件数及 receiptStatus（received 全收、partial 部分、unconfirmed 待确认）。stillOnGround 表示原掉落是否仍在地上。", {}),
     tool("set_team", "设置 AI 自己的队伍。0 离队，1..5 为游戏队伍编号。", {"team":{"type":"integer","minimum":0,"maximum":5}}, ["team"]),
     tool("teleport_to_teammate", "消耗自己的虫洞药水，传送到指定的在线同队存活玩家。teammateRef 来自 list_teammates。", {"teammateRef":{"type":"string","pattern":"^[0-9a-f]{32}$"}}, ["teammateRef"]),
     tool("discover_bosses", "发现 640 像素内的 Boss 种子、策略及拒绝原因。用 admissible 行的 entityRef 提交 boss_encounter。", {}),
@@ -213,13 +225,15 @@ TOOLS = [LIT_TERRAIN, tool("query_map", "查询AI独立探索记忆，绝非实�
           "y": {**TILE["y"], "description": "目标格的绝对 Tile Y 坐标"}}, ["x", "y"]),
     tool("attack_entity", "以当前物品攻击scan_entities给出的NPC entityRef；80像素内，生命下降才成功，失活但无伤害证据失败，其他伤害来源可能存在。10秒上限。",
          {"entityRef": {"type": "string", "minLength": 1, "maxLength": 150}}, ["entityRef"]),
+    tool("use_water_bucket", "手持空桶取水（scoop）或水桶倒水（pour）。x、y 为世界格坐标，需在角色原生用桶范围内。",
+         {**TILE, "mode":{"type":"string","enum":["scoop","pour"]}}, ["x","y","mode"]),
     tool("mine_wall", "选中纯锤原生挖背景墙；80像素内，前景必须为空；实际墙消失才成功。多人需同版本服务器确认；10秒上限，可取消。", TILE, ['x', 'y']),
     tool("place_wall", "选中原版消耗型墙物品，在80像素内无墙格原生放置；正确墙类型和消耗一件共同核验，多人需服务器确认；自动补邻墙或自动涂漆不支持，10秒上限。", TILE, ['x', 'y']),
     tool("hammer_tile", "选中纯锤对80像素内原版普通方块/平台原生锤击；目标无背景墙，实际形状变化才成功，多人需服务器确认。不支持家具/破坏型锤目标。10秒上限。", TILE, ['x', 'y']),
     tool("manage_trash", "操作自己的垃圾槽。discard 将非收藏的整堆放入垃圾槽并永久替换旧垃圾；retrieve 取回到指定空槽。用 full 观察 trash.trashToken，slots 观察 slotToken。", {"mode":{"type":"string","enum":["discard","retrieve"]},"slot":INVENTORY_SLOT,"slotToken":INVENTORY_TOKEN,"trashToken":INVENTORY_TOKEN}, ["mode","slot","slotToken","trashToken"]),
     tool("switch_equipment_loadout", "切换原版装备套装 1..3。expectedLoadout 来自 inspect_inventory(full).currentLoadout。", {"expectedLoadout":{"type":"integer","minimum":1,"maximum":3},"loadout":{"type":"integer","minimum":1,"maximum":3}}, ["expectedLoadout","loadout"]),
     tool("set_inventory_favorite", "设置主背包非空槽的收藏状态。sourceToken 来自 inspect_inventory；favorited=true 收藏，false 取消。变更后操作该槽需重新观察。", {"sourceSlot":INVENTORY_SLOT,"sourceToken":INVENTORY_TOKEN,"favorited":{"type":"boolean"}}, ["sourceSlot","sourceToken","favorited"]),
-    tool("drop_inventory_item", "从已观察的普通槽向面前丢出恰好 count 件原版可堆叠非钱币物品。收藏、数量不足和陈旧令牌会拒绝。可选 teammateRef 来自 list_teammates，指定后朝该队友所在的左侧或右侧短抛，横坐标相同时保持朝向；该队友的 lastDrop 单独记录拾取证据。completed 仅确认扣除和生成，不保证收件。", {"sourceSlot":INVENTORY_SLOT,"sourceToken":INVENTORY_TOKEN,"count":{"type":"integer","minimum":1,"maximum":9999},"teammateRef":{"type":"string","pattern":"^[0-9a-f]{32}$"}}, ["sourceSlot","sourceToken","count"]),
+    tool("drop_inventory_item", "从已观察的普通槽向面前丢出恰好 count 件原版可堆叠非钱币物品。收藏、数量不足和陈旧令牌会拒绝。可选 teammateRef 来自 list_teammates，指定后朝该队友所在的左侧或右侧短抛，横坐标相同时保持朝向；该队友的 lastDrop 单独记录拾取证据。completed 仅确认扣除和生成，不保证收件。", {"sourceSlot":INVENTORY_SLOT,"sourceToken":INVENTORY_TOKEN,"count":{"type":"integer","minimum":1,"maximum":9999},"teammateRef":{"type":"string","pattern":"^[0-9a-f]{32}$"},"nearbyOnly":{"type":"boolean","description":"要求同队目标在三格内且抛物方向无遮挡，超出则不出手。"}}, ["sourceSlot","sourceToken","count"]),
     tool("open_inventory_item", "打开一件普通背包中的原版 Boss 宝藏袋或钓鱼板条箱。sourceToken 取自 inspect_inventory。返回已观察的生成掉落；拾取需另行核验。", {"sourceSlot": INVENTORY_SLOT, "sourceToken": INVENTORY_TOKEN}, ["sourceSlot","sourceToken"]),
     tool("dismiss_summon", "按召唤武器的类型 ID 解除绑定 AI 自己的对应随从增益。核验增益消失；已配置的自动补召仍可再次施法。", {"itemType":{"type":"integer","minimum":1,"maximum":2147483647}}, ["itemType"]),
     tool("open_door", "打开80像素内已观察的普通木门。x/y 为门占用的绝对 Tile。已打开时核验现状。", TILE, ["x","y"]),
@@ -340,12 +354,18 @@ SCENE_REGION_CONTRACT = ('支持server_ai_scene_region_v1时，指定width或hei
     'L1用于区域知识，当前动作仍需L0/原生碰撞；query_map复用既有历史地图，查询时间不是逐格新鲜度，不证明当前可达。')
 
 
-def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=False, bed_spawn=False, scene_region=False, directional_landings=False, passages=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False):
+def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=False, bed_spawn=False, scene_region=False, directional_landings=False, passages=False, general_operations=True, mining_opening=False, excavation=False, dual_weapons=False, summon_loadout=False, combat_inventory=False, general_dialogue=False, nearby_handoff=False, recipe_uses=False, target_reforge=False):
     """Reuse shared schemas; narrow server use_item and attach backend-specific semantics."""
-    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place')]
+    definitions = [copy.deepcopy(t) for t in TOOLS if t['function']['name'] in supported and t['function']['name'] not in ('combat_attack', 'boss_encounter', 'collect_drops', 'follow_teammate', 'place_item', 'build_place')]
     for definition in definitions:
         f = definition['function']
         name = f['name']
+        if name == 'query_recipes':
+            if recipe_uses:
+                f['description'] = ('按产物 resultType 查配方，默认只列当前可做的。按材料 ingredientType 查直接合成用途，'
+                                    '含配方组替代材料，默认列出所有匹配的已启用配方。可组合两种过滤，availableOnly=true 只看当前可做的。')
+            else:
+                f['parameters']['properties'].pop('ingredientType')
         if name == 'quote_npc_purchase' and not bulk_purchase:
             f['parameters']['properties']['quantity']['maximum'] = 1
             f['description'] = '按绑定 AI 的当前购物状态为一件商品报价。'
@@ -363,6 +383,11 @@ def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=
                 f["description"] += " 对原版床脚使用同一操作可设置或清除自己的出生点；interaction.active 表示此床已绑定。先核对目标状态。"
         if name == 'query_map' and not map_chunks:
             f['parameters']['properties'].pop('includeChunks', None)
+        if name == 'drop_inventory_item' and not nearby_handoff:
+            f['parameters']['properties'].pop('nearbyOnly', None)
+        if name == 'reforge_item' and not target_reforge:
+            f['parameters']['properties'].pop('targetPrefix', None)
+            f['description'] = '使用新鲜报价重铸一次。'
         if name == 'use_item':
             f['parameters'] = {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}
         f['description'] = SERVER_DESCRIPTIONS.get(name, f['description'])
@@ -415,7 +440,7 @@ def server_tools(supported, *, resources=False, map_chunks=False, bulk_purchase=
             f['description'] += '已确认可恢复失败仍返回failed及实际位置/速度/支撑/释放证据；只有宿主continuationAllowed=true且continuationScope=observe_scene_then_move_input时，才可重新observe_scene后尝试一次有界move_input，不能按reason文字自行放行或重试导航。'
     return definitions
 
-READS = {'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
+READS = {'list_base_chests', 'find_container_item', 'inspect_container', 'get_player_state', 'observe_terrain', 'inspect_tile', 'scan_tiles', 'scan_entities', 'inspect_inventory', 'get_world_state'}
 READS |= {'look_around', 'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'list_pylons', 'list_teammates','query_map', 'query_recipes', 'observe_scene', 'get_player_status', 'query_item_info', 'query_item_sources', 'plan_materials', 'resolve_content', 'observe_exploration', 'query_combat', 'query_combat_loadout','discover_bosses'}
 UTILITIES = {'wait'}
 ACTIONS = set(SCHEMAS) - READS - UTILITIES
@@ -429,12 +454,25 @@ def validate_backend(bridge, name, arguments):
     if name == 'build_place' and 'server_ai_build_place_v1' not in getattr(bridge, 'hello', {}).get('capabilities', ()):
         raise PreDispatchRejected('Requires server_ai_build_place_v1')
     capabilities = getattr(bridge, 'hello', {}).get('capabilities', ())
+    if name == 'reforge_item' and 'targetPrefix' in arguments and 'server_ai_target_reforge_v1' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_target_reforge_v1', status='unsupported_operation')
+    if name == 'use_water_bucket' and 'server_ai_water_bucket_v1' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_water_bucket_v1', status='unsupported_operation')
+    if name == 'query_recipes' and 'ingredientType' in arguments and 'server_ai_recipe_uses_v1' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_recipe_uses_v1', status='unsupported_operation')
+    if name == 'list_base_chests' and 'server_ai_base_containers_v1' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_base_containers_v1', status='unsupported_operation')
+    if name == 'find_container_item' and 'server_ai_container_search_v1' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_container_search_v1', status='unsupported_operation')
+    if name == 'drop_inventory_item' and 'nearbyOnly' in arguments:
+        if 'server_ai_nearby_handoff_v1' not in capabilities or not arguments.get('teammateRef'):
+            raise PreDispatchRejected('nearbyOnly requires teammateRef and server_ai_nearby_handoff_v1')
     if name == 'look_around' and 'server_ai_lit_terrain_v1' not in capabilities:
         raise PreDispatchRejected('Requires server_ai_lit_terrain_v1')
     if name == 'query_map' and 'includeChunks' in arguments and 'server_ai_map_chunks_v1' not in capabilities:
         raise PreDispatchRejected('Requires server_ai_map_chunks_v1')
-    if name == 'explore_frontier' and 'server_ai_frontier_exploration_v1' not in capabilities:
-        raise PreDispatchRejected('Requires server_ai_frontier_exploration_v1')
+    if name == 'follow_teammate' and 'server_ai_follow_v2' not in capabilities:
+        raise PreDispatchRejected('Requires server_ai_follow_v2')
     if name in ('open_npc_dialogue', 'close_npc_dialogue') and 'server_ai_npc_dialogue_v1' not in capabilities:
         raise PreDispatchRejected('Requires server_ai_npc_dialogue_v1')
     if name == 'quote_npc_purchase' and arguments.get('quantity', 1) > 1 and 'server_ai_merchant_bulk_purchase_v1' not in capabilities:
@@ -518,17 +556,43 @@ def verified_purchase(target, proof):
             and proof['afterCount'] - proof['beforeCount'] == proof['quantity'])
 
 
+def verified_bucket(target, proof):
+    if not isinstance(target, dict) or not isinstance(proof, dict):
+        return False
+    if not all(k in target and proof.get(k) == target[k] for k in ('x', 'y', 'mode')):
+        return False
+    counts = ('beforeWater', 'afterWater', 'beforeEmpty', 'afterEmpty', 'beforeFilled', 'afterFilled')
+    if not all(type(proof.get(k)) is int and proof[k] >= 0 for k in counts):
+        return False
+    sign = 1 if target['mode'] == 'scoop' else -1
+    return (target['mode'] in ('scoop', 'pour') and proof.get('verified') is True
+            and sign * (proof['beforeWater'] - proof['afterWater']) > 0
+            and proof['afterFilled'] - proof['beforeFilled'] == sign
+            and proof['beforeEmpty'] - proof['afterEmpty'] == sign)
+
+
 def verified_reforge(target, proof):
     if not isinstance(target, dict) or not isinstance(proof, dict):
         return False
     if any(key not in target or target[key] != proof.get(key)
            for key in ('entityRef', 'sourceSlot', 'sourceToken', 'quoteToken')):
         return False
+    rolled = proof.get('rolled') is True
+    if 'targetPrefix' in target:
+        rolls = proof.get('rolls')
+        if (proof.get('targetPrefix') != target['targetPrefix'] or proof.get('afterPrefix') != target['targetPrefix']
+                or type(rolls) is not int or rolls < 0 or rolled != (rolls > 0)):
+            return False
+        if not rolled and (proof.get('beforePrefix') != target['targetPrefix'] or proof.get('priceCopper') != 0):
+            return False
+    elif not rolled:
+        return False
     fields = ('itemType','beforePrefix','afterPrefix','priceCopper')
     return (all(type(proof.get(k)) is int and proof[k] >= 0 for k in fields)
             and proof['itemType'] > 0 and proof['afterPrefix'] > 0
-            and verified_payment(proof, proof['priceCopper'])
-            and all(proof.get(k) is True for k in ('rolled','itemVerified')))
+            and (verified_payment(proof, proof['priceCopper']) if 'targetPrefix' not in target else
+                 proof.get('paymentsVerified') is True and proof.get('bankNonCurrencyUnchanged') is True)
+            and proof.get('itemVerified') is True)
 
 
 def verified_treatment(target, proof):
@@ -799,7 +863,7 @@ def verified_server_object(action, evidence, *, general_objects=False):
 
 
 CONTAINER_TRANSFERS = frozenset(('deposit_container_item', 'withdraw_container_item'))
-CONTAINER_BATCHES = frozenset(('quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock'))
+CONTAINER_BATCHES = frozenset(('quick_stack_nearby', 'quick_stack_container', 'loot_all', 'deposit_all', 'restock', 'transfer_container_amount'))
 SORT_OPERATIONS = frozenset(('sort_inventory', 'sort_container'))
 CONTAINER_OPERATIONS = frozenset(('open_container', 'close_container')) | CONTAINER_TRANSFERS | CONTAINER_BATCHES | SORT_OPERATIONS
 INVENTORY_OPERATIONS = frozenset(('transfer_inventory_item', 'swap_inventory_slots', 'hold_inventory_item'))
@@ -1183,6 +1247,18 @@ def verified_container_batch(action, evidence, end):
         return False
     if sum(move['count'] for move in moves) != evidence['movedCount']:
         return False
+    if action.get('operation') == 'transfer_container_amount':
+        goal = action.get('targetContainer')
+        if not isinstance(goal, dict):
+            return False
+        requested = goal.get('count')
+        if (type(requested) is not int or not 0 <= evidence['movedCount'] <= requested or blocked
+                or len({m['chestIndex'] for m in moves}) > 1
+                or any(m['typeId'] != goal.get('typeId') or m['inventorySlot'] >= 50 or m['chestIndex'] < 0 for m in moves)):
+            return False
+        if evidence['movedCount'] < requested and action.get('reason') not in (
+                'insufficient_items', 'destination_full', 'container_stacking_denied'):
+            return False
     expected = 'partial' if moves and blocked else 'complete' if moves else 'none'
     return (evidence.get('effectStatus') == expected
             and action.get('status') == ('failed' if blocked else 'completed'))
@@ -1309,21 +1385,33 @@ def verified_sort(action, evidence, end):
             and len({row['slot'] for row in slots}) == len(slots))
 
 
-def verified_exploration(action, task):
-    if not isinstance(task, dict) or task.get('taskName') != 'explore_frontier':
+def verified_follow(action, task):
+    if not isinstance(task, dict) or task.get('taskName') != 'follow_teammate':
         return False
+    goal = action.get('targetTask') or {}
     receipt = task.get('result') or {}
-    proof = receipt.get('evidence') or {}
-    return (task.get('taskId') == action.get('actionId') and task == action.get('task')
+    if not isinstance(goal, dict) or not isinstance(receipt, dict):
+        return False
+    proof = receipt.get('evidence')
+    teammate = goal.get('teammateRef')
+    seconds = goal.get('durationSeconds')
+    tiles = goal.get('distanceTiles', 3)
+    if (not isinstance(proof, dict) or not isinstance(teammate, str) or not re.fullmatch('[0-9a-f]{32}', teammate)
+            or type(seconds) is not int or not 1 <= seconds <= 600
+            or type(tiles) is not int or not 1 <= tiles <= 12):
+        return False
+    duration = seconds * 60
+    return (task == action.get('task') and task.get('taskId') == action.get('actionId')
             and task.get('worldSessionId') == action.get('worldSessionId')
             and task.get('actorGeneration') == action.get('generation') and task.get('actorSlot') == action.get('actorSlot')
-            and task.get('status') == receipt.get('status') == 'completed' and task.get('phase') == 'terminal'
-            and receipt.get('inputsReleased') is True and receipt.get('effectVerified') is True
-            and task.get('currentChild') is None and isinstance(proof, dict) and proof.get('returned') is True
-            and type(proof.get('newTiles')) is int and proof['newTiles'] > 0
-            and type(proof.get('segments')) is int and proof['segments'] > 0
-            and all(type(proof.get(k)) in (int, float) for k in ('actualLeft','anchorLeft','actualFeetY','anchorFeetY'))
-            and abs(proof['actualLeft']-proof['anchorLeft']) <= 2 and abs(proof['actualFeetY']-proof['anchorFeetY']) <= .5)
+            and task.get('phase') == 'terminal' and task.get('currentChild') is None
+            and task.get('status') == receipt.get('status') == 'completed'
+            and receipt.get('reason') == 'follow_duration_verified' and receipt.get('inputsReleased') is True
+            and receipt.get('effectVerified') is True and proof.get('teammateRef') == teammate
+            and proof.get('withinRange') is True and proof.get('durationUpdates') == duration
+            and type(proof.get('elapsedUpdates')) is int and proof['elapsedUpdates'] >= duration
+            and type(proof.get('distancePixels')) in (int, float)
+            and 0 <= proof['distancePixels'] <= 16 * tiles + 32)
 
 
 async def terminal(bridge, action, generation):
@@ -1384,7 +1472,7 @@ async def terminal(bridge, action, generation):
                        and pickup.get('targetChanged') is False and pickup.get('uncertainNativeEffect') is False
                        and pickup.get('nativePlacementEvents') == 1 and pickup.get('consumedCount') == 1
                        and (pickup.get('kind') != 'chest' or pickup.get('chestVerified') is True)),
-        'explore_frontier': verified_exploration(action, combat),
+        'follow_teammate': verified_follow(action, combat),
         'collect_drops': (combat.get('taskName') == 'collect_drops' and combat.get('taskId') == action.get('actionId')
                           and combat == action.get('task') and combat.get('status') == 'completed'
                           and combat_result.get('effectVerified') is True and combat_result.get('inputsReleased') is True
@@ -1442,6 +1530,7 @@ async def terminal(bridge, action, generation):
                                 and type(native_evidence.get('typeId')) is int and native_evidence['typeId']>0
                                 and isinstance(native_evidence.get('drops'),list) and bool(native_evidence['drops'])
                                 and all(isinstance(d,dict) and all(type(d.get(k)) is int and d[k]>0 for k in ('typeId','stack')) for d in native_evidence['drops'])),
+        'use_water_bucket': verified_bucket(action.get('targetTask'), native_evidence),
         'reforge_item': verified_reforge(action.get('targetTask'), native_evidence),
         'heal_at_nurse': verified_treatment(action.get('targetTask'), native_evidence),
         'sell_npc_item': verified_sale(action.get('targetTask'), native_evidence),
@@ -1514,7 +1603,7 @@ async def terminal(bridge, action, generation):
         and isinstance(end,dict) and retreat.get('update')==end.get('gameUpdate')))
     native_end = (retreat_verified and isinstance(end, dict)
                   and 'server_ai_actions_v1' in bridge.hello.get('capabilities', [])
-                  and action.get('operation') in ('reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','dismiss_summon','set_team','teleport_to_pylon','teleport_to_teammate','manage_trash','switch_equipment_loadout','set_inventory_favorite','drop_inventory_item','open_inventory_item','mine_wall','hammer_tile','interact_tile','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'explore_frontier', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
+                  and action.get('operation') in ('use_water_bucket','reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','dismiss_summon','set_team','teleport_to_pylon','teleport_to_teammate','manage_trash','switch_equipment_loadout','set_inventory_favorite','drop_inventory_item','open_inventory_item','mine_wall','hammer_tile','interact_tile','open_door','close_door','move_input', 'move_on_rope', 'navigate_to', 'navigate_to_x', 'navigate_to_landing_region', 'use_item', 'mine_tile', 'place_tile', 'place_object', 'place_rope', 'craft_recipe', 'mine_target', 'combat_attack', 'boss_encounter', 'collect_drops', 'follow_teammate', 'place_item', 'build_place', 'configure_combat_loadout', *INVENTORY_OPERATIONS, *EQUIPMENT_OPERATIONS, *CONTAINER_OPERATIONS)
                   and end.get('phase') == 'ServerAI_game_thread_inputs_released'
                   and end.get('operation') == action.get('operation')
                   and end.get('inputsReleased') is True
@@ -1581,7 +1670,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     server = "server_ai_atomic_v1" in bridge.hello.get("capabilities", ())
     arguments = validate(name, arguments, server=server)
     validate_backend(bridge, name, arguments)
-    if name in ('collect_drops', 'explore_frontier', 'place_item', 'build_place'):
+    if name in ('collect_drops', 'follow_teammate', 'place_item', 'build_place'):
         raise PreDispatchRejected(f'Use submit_task for {name}')
     if name == 'navigate_to' and 'server_ai_navigation_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_navigation_v1; no navigation task submitted')
@@ -1639,6 +1728,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         raise PreDispatchRejected('Requires server_ai_sorting_v1')
     if name in CONTAINER_BATCHES and 'server_ai_container_batch_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_container_batch_v1')
+    if name == 'transfer_container_amount' and 'server_ai_container_amount_v1' not in bridge.hello.get('capabilities', []):
+        raise PreDispatchRejected('Requires server_ai_container_amount_v1')
     if name in CONTAINER_TRANSFERS and 'server_ai_container_transfer_v1' not in bridge.hello.get('capabilities', []):
         raise PreDispatchRejected('Requires server_ai_container_transfer_v1')
     if name in CONTAINER_OPERATIONS | {'inspect_container'} and 'server_ai_containers_v1' not in bridge.hello.get('capabilities', []):
@@ -1649,7 +1740,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
         capability = ('server_ai_' if server else '') + name.removeprefix('query_') + '_v1'
         if capability not in bridge.hello.get('capabilities', []):
             raise PreDispatchRejected(f'Requires {capability}', status='unsupported_operation')
-    if name in ('look_around', 'query_item_info', 'query_item_sources', 'plan_materials', 'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container'):
+    if name in ('look_around', 'query_recipes', 'query_item_info', 'query_item_sources', 'plan_materials', 'inspect_npc_shop', 'quote_npc_purchase', 'quote_npc_sale', 'quote_reforge', 'quote_nurse_heal', 'inspect_npc_housing', 'inspect_housing', 'build_diff', 'inspect_container', 'find_container_item', 'list_base_chests'):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):
@@ -1658,7 +1749,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
     if name == 'query_map':
         if 'server_ai_map_v1' not in bridge.hello.get('capabilities', []):
             raise PreDispatchRejected('AI map unavailable', status='unsupported_operation')
-    if name in {'query_map', 'query_recipes', 'observe_scene', 'observe_terrain', 'scan_tiles', 'scan_entities', 'inspect_tile', 'resolve_content'} and 'server_ai_perception_v1' in bridge.hello.get('capabilities', []):
+    if name in {'query_map', 'observe_scene', 'observe_terrain', 'scan_tiles', 'scan_entities', 'inspect_tile', 'resolve_content'} and 'server_ai_perception_v1' in bridge.hello.get('capabilities', []):
         reply = await command(bridge, 'query_atomic', operation=name, arguments=arguments)
         envelope = reply.get('data')
         if not isinstance(envelope, dict):
@@ -1763,7 +1854,7 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
                 raise BridgeError('Container target missing or different in start receipt')
             placement_invalid = False
             placement_identity = dict(action)
-        if (server and name == 'interact_tile') or name in ('reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','set_team','teleport_to_pylon','teleport_to_teammate','mine_target', 'navigate_to'):
+        if (server and name == 'interact_tile') or name in ('use_water_bucket','reforge_item','heal_at_nurse','sell_npc_item','buy_npc_item','open_npc_dialogue','close_npc_dialogue','assign_npc_home','set_team','teleport_to_pylon','teleport_to_teammate','mine_target', 'navigate_to'):
             placement_invalid = True
             if action.get('targetTask') != arguments:
                 raise BridgeError('Task target missing or changed in start receipt')
@@ -1787,7 +1878,8 @@ async def _dispatch(bridge, name, arguments, chat_id, *, lifecycle):
             placement_identity = dict(action)
         action_id = action['actionId']
         track(dispatchState='admitted')
-        deadline = asyncio.get_running_loop().time() + action['durationMs'] / 1000 + 1
+        deadline = (float('inf') if name == 'reforge_item' and 'targetPrefix' in arguments and action['durationMs'] is None
+                    else asyncio.get_running_loop().time() + action['durationMs'] / 1000 + 1)
         navigation_lease = 0
         while action['status'] == 'running':
             if server and name == 'navigate_to':

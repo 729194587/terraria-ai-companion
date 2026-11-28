@@ -15,6 +15,7 @@ internal static partial class ActorItemUse
         internal int Slot,Type,InitialStack,Ticks,AnimationPeak,TimePeak,ToolPeak,UsesPeak,Starts;
         internal string Phase="running",Reason="native_item_pending";internal bool Consumed;
         internal ActorPlacement.Context Placement;
+        internal WaterBucket Bucket;
     }
     internal static Context Current;
     private static Context executing;
@@ -67,20 +68,25 @@ internal static partial class ActorItemUse
     {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation);}}
     internal static void StartPlacement(Player p,string world,long generation,ActorPlacement.Context placement)
     {lock(ProbeSession.Reservation.Gate){StartCore(p,world,generation,placement);}}
-    private static void StartCore(Player p,string world,long generation,ActorPlacement.Context placement=null)
+    internal static void StartBucket(Player p,string world,long generation,WaterBucket bucket)
+    {
+        lock(ProbeSession.Reservation.Gate)StartCore(p,world,generation,bucket:bucket);
+    }
+    private static void StartCore(Player p,string world,long generation,ActorPlacement.Context placement=null,WaterBucket bucket=null)
     {
         Capture(p,world,generation);Idle(p);
-        if(p.selectedItem<0||p.selectedItem>9||(placement==null?!Supported(p.HeldItem):!ActorPlacement.SupportedFor(placement,p.HeldItem))||p.HeldItem.IsAir)
+        if(p.selectedItem<0||p.selectedItem>9||(bucket!=null?p.HeldItem.type!=bucket.Source:placement==null?!Supported(p.HeldItem):!ActorPlacement.SupportedFor(placement,p.HeldItem))||p.HeldItem.IsAir)
             throw new InvalidOperationException("Select an item in hotbar 1–10 that can use a single press without a world target.");
         if(p.CCed||p.noItems||p.frozen||p.stoned||p.mount.Active)throw new InvalidOperationException("AI cannot use an item in this state.");
-        Current=new Context{Actor=p,World=world,Generation=generation,Slot=p.selectedItem,Item=p.HeldItem,Type=p.HeldItem.type,InitialStack=p.HeldItem.stack,Placement=placement};
+        Current=new Context{Actor=p,World=world,Generation=generation,Slot=p.selectedItem,Item=p.HeldItem,Type=p.HeldItem.type,InitialStack=p.HeldItem.stack,Placement=placement,Bucket=bucket};
         // Release an old input; the next natural ItemCheck supplies one press.
         p.controlUseItem=false;p.releaseUseItem=true;
     }
     public static bool Allowed(Player p)=>NativeCombatWorld.AllowsItem(p)||ActorMining.Allowed(p)||(executing!=null&&ReferenceEquals(executing.Actor,p)&&NativeSurvival.Owns(p)
-        &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&(executing.Placement!=null?ActorPlacement.SupportedFor(executing.Placement,executing.Item)||executing.Placement.Placed&&executing.Item.IsAir:(executing.Item.type==executing.Type||executing.Consumed&&executing.Item.IsAir)));
+        &&Binding(executing)&&!p.dead&&p.selectedItem==executing.Slot&&ReferenceEquals(p.inventory[executing.Slot],executing.Item)&&(executing.Placement!=null?ActorPlacement.SupportedFor(executing.Placement,executing.Item)||executing.Placement.Placed&&executing.Item.IsAir:(executing.Item.type==executing.Type||executing.Bucket?.Verified==true||executing.Consumed&&executing.Item.IsAir)));
     internal static bool Placing(Player p)=>executing?.Placement!=null&&Allowed(p);
-    public static bool SkipMelee(Player p)=>ActorMining.InInputScope(p)||Placing(p);
+    public static bool UsingBucket(Player p)=>executing?.Bucket!=null && Allowed(p);
+    public static bool SkipMelee(Player p)=>ActorMining.InInputScope(p)||Placing(p)||UsingBucket(p);
     public static bool SkipCursor(Player p)=>!ActorMining.InInputScope(p)&&!Placing(p)&&Allowed(p);
     internal static void Install(Action<Action,Action> install)
     {
@@ -90,9 +96,15 @@ internal static partial class ActorItemUse
         ILContext.Manipulator melee=il=>ItemUsePatches.Patch(il.Method,"melee",il.Module.ImportReference(predicate),
             il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipCursor))),
             il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(SkipMelee))),il.Module.ImportReference(combat),
-            il.Module.ImportReference(typeof(ActorMining).GetMethod(nameof(ActorMining.InInputScope))));
+            il.Module.ImportReference(typeof(ActorMining).GetMethod(nameof(ActorMining.InInputScope))),
+            VirtualPlayerEngineProbe.Engine.Selected=="2026.09.3.1"
+                ?il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(UsingBucket))):null);
         ILContext.Manipulator combatPose=il=>ItemUsePatches.Patch(il.Method,"combat-pose",
             il.Module.ImportReference(combat));
+        ILContext.Manipulator bucketUi=il=>ItemUsePatches.Patch(il.Method,"bucket-ui",
+            il.Module.ImportReference(typeof(ActorItemUse).GetMethod(nameof(UsingBucket))));
+        if(VirtualPlayerEngineProbe.Engine.Selected=="2026.09.3.1")
+            install(()=>IL_Player.ItemCheck_UseBuckets+=bucketUi,()=>IL_Player.ItemCheck_UseBuckets-=bucketUi);
         install(()=>IL_Player.ItemCheck_Inner+=inner,()=>IL_Player.ItemCheck_Inner-=inner);
         install(()=>IL_Player.ItemCheck_OwnerOnlyCode+=melee,()=>IL_Player.ItemCheck_OwnerOnlyCode-=melee);
         install(()=>IL_Player.ItemCheck_ApplyUseStyle_Inner+=combatPose,()=>IL_Player.ItemCheck_ApplyUseStyle_Inner-=combatPose);
@@ -130,7 +142,7 @@ internal static partial class ActorItemUse
         {Retire(p);if(c.Phase=="unknown")return;c.Phase=(c.Placement.Placed||c.Placement.ConsumedCount!=0||c.Placement.UncertainNativeEffect)?"unknown":"failed";c.Reason=invalid;return;}
         bool nativeEmpty=c.Consumed&&c.Item.IsAir;
         if(p.dead||p.ghost||p.CCed||p.noItems){Retire(p);return;}
-        if(p.selectedItem!=c.Slot||!ReferenceEquals(p.inventory[c.Slot],c.Item)||c.Item.type!=c.Type&&!nativeEmpty)
+        if(p.selectedItem!=c.Slot||!ReferenceEquals(p.inventory[c.Slot],c.Item)||c.Item.type!=c.Type&&!nativeEmpty&&c.Bucket?.Verified!=true)
         {Retire(p);if(c.Placement!=null&&c.Phase=="unknown")return;c.Phase="cancelled";c.Reason="selected_item_changed";return;}
         if(++c.Ticks>(c.Placement!=null?600:180)){Retire(p);if(c.Placement!=null&&c.Phase=="unknown")return;c.Phase="timeout";c.Reason=c.Placement!=null?"native_placement_deadline":"native_item_timeout";return;}
         try
@@ -139,10 +151,25 @@ internal static partial class ActorItemUse
             int before=p.itemAnimation,beforeStack=c.Item.stack;
             var placement=c.Placement;
             bool press=c.Ticks==1;
-            var input=placement==null?NativeItemInput.Intent.Untargeted(p,press):ActorPlacement.Input(placement,press);
+            if(press && c.Bucket?.Prepare(p) is {} refusal)
+            { Retire(p);c.Phase="failed";c.Reason=refusal;return; }
+            var input=c.Bucket is {} bucket?NativeItemInput.Intent.AtTile(bucket.X,bucket.Y,press):placement==null?NativeItemInput.Intent.Untargeted(p,press):ActorPlacement.Input(placement,press);
             var observation=placement==null?default:ActorPlacement.BeforeCheck(placement,press);
             runNative(input);
             if(!Binding(c)||!NativeSurvival.Owns(p)||p.selectedItem!=c.Slot)throw new InvalidOperationException("AI binding changed during ItemCheck.");
+            if(press && c.Bucket!=null)
+            {
+                c.Bucket.Observe(p);
+                if(!c.Bucket.Verified)
+                {
+                    Retire(p);
+                    c.Phase=c.Bucket.Changed?"unknown":"failed";
+                    c.Reason=c.Bucket.Changed?"bucket_effect_unconfirmed":"native_bucket_refused";
+                    NetworkStateSync.Full(p);
+                    return;
+                }
+                c.Item=p.inventory[c.Slot];
+            }
             if(placement!=null)ActorPlacement.AfterCheck(c,beforeStack,observation);
             if(c.Phase!="running"||p.dead)return;
             if(c.Placement==null&&c.Item.stack<beforeStack)c.Consumed=true;
@@ -159,7 +186,7 @@ internal static partial class ActorItemUse
                 else {c.Phase="rejected";c.Reason=c.Placement?.Rope!=null?"native_rope_placement_refused":"native_use_refused";}
             }
             else if(p.itemAnimation==0&&p.itemTime==0&&p.reuseDelay==0&&!p.channel)
-            {if(c.Placement!=null)ActorPlacement.Complete(c);else {c.Phase="completed";c.Reason="native_item_cycle_verified";}}
+            {if(c.Placement!=null)ActorPlacement.Complete(c);else {c.Phase="completed";c.Reason=c.Bucket!=null?"water_bucket_verified":"native_item_cycle_verified";}}
             if(c.Phase!="running")
             {
                 p.controlUseItem=false;p.releaseUseItem=true;Sync(p);NetworkStateSync.Full(p);

@@ -48,7 +48,12 @@ internal static class NativeSurvival
                 () => On_Player.PickupItem -= CompanionBridge.ServerIpc.ServerItemDrop.Pickup);
         var breath=Patch("breath");
         ILContext.Manipulator countdown = il => SurvivalPatches.BuffClock(il.Method, il.Module.ImportReference(predicate), true);
-        ILContext.Manipulator expired = il => SurvivalPatches.BuffClock(il.Method, il.Module.ImportReference(predicate), false);
+        ILContext.Manipulator expired = il =>
+        {
+            var owns=il.Module.ImportReference(predicate);
+            SurvivalPatches.BuffClock(il.Method, owns, false);
+            if(VirtualPlayerEngineProbe.Engine.Selected=="2026.09.3.1")SurvivalPatches.PlayerSwitches(il.Method, owns);
+        };
         install(() => IL_Player.UpdateBuffs += countdown, () => IL_Player.UpdateBuffs -= countdown);
         install(() => IL_Player.Update += expired, () => IL_Player.Update -= expired);
         install(()=>IL_Player.CheckDrowning+=breath,()=>IL_Player.CheckDrowning-=breath);
@@ -138,6 +143,23 @@ internal static class NativeSurvival
             }
         }
     }
+    internal static void TryQuickHeal(Player p)
+    {
+        if(p.dead || p.ghost || p.statLife<=0 || p.statLife>p.statLifeMax2/2 || p.potionDelay>0 ||
+            p.CCed || p.cursed || p.noItems)return;
+        Run(p,()=>
+        {
+            int local=Main.myPlayer,before=p.statLife;
+            try
+            {
+                Main.myPlayer=p.whoAmI;
+                p.QuickHeal();
+            }
+            finally { Main.myPlayer=local; }
+            if(p.statLife!=before || p.potionDelay>0)NetworkStateSync.Full(p);
+        });
+    }
+
     internal static void Update(On_Player.orig_Update orig,Player p,int index)
     {
         if(!Main.dedServ||!ReferenceEquals(p,ProbeSession.Actor)||ProbeSession.Quarantined||VirtualPlayerEngineProbe.Fault!=null)

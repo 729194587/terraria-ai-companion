@@ -104,7 +104,7 @@ def wait_for(predicate, seconds=20):
     raise TimeoutError("Native test condition timed out")
 
 
-async def verify(profile, bridge, first, second, *, transfers=False, batches=False, sorting=False, personal=False):
+async def verify(profile, bridge, first, second, *, transfers=False, batches=False, sorting=False, personal=False, search=False):
     ready = json.loads((profile / "container-ready.json").read_text())
     x, y, index, other = (ready[key] for key in ("x", "y", "index", "other"))
     actor = bridge.binding["slot"]
@@ -152,6 +152,54 @@ async def verify(profile, bridge, first, second, *, transfers=False, batches=Fal
             except (FileNotFoundError, json.JSONDecodeError):
                 return None
         return wait_for(read)
+
+    if search:
+        from lua_runtime import LuaRuntime
+        runtime = LuaRuntime(bridge)
+        seed = fixture("seed-torch-search")
+        item = {"item": "Terraria/Torch"}
+        found = (await api("find_container_item", item, status="ok"))["data"]
+        assert [(c["x"], c["y"], c["count"]) for c in found["chests"]] == [
+            (x, y, 6), (x+4, y, 5), (x+16, y, 13)], found
+        assert found["totalCount"] == 24 and found["matchedChests"] == 3 and not found["truncated"], found
+        base = (await runtime.execute('return terraria.container.base("Terraria/Torch")'))["value"]
+        base_counts = {(c["x"],c["y"]): c["count"] for c in base["chests"]}
+        assert all(c["isBase"] and base_counts[c["x"],c["y"]] == c["count"] for c in found["chests"])
+        assert base_counts[x+42,y] == 70 and (x+8,y) not in base_counts
+        assert all(c["isBase"] and c["distanceTiles"] <= 64 for c in base["chests"])
+        all_base = (await runtime.execute('return terraria.container.base()'))["value"]
+        assert any((c["x"], c["y"], c["count"]) == (x+20, y, 0) for c in all_base["chests"])
+        page = (await api("find_container_item", {**item, "offset": 2}, status="ok"))["data"]
+        assert page["chests"] == found["chests"][2:] and page["totalCount"] == 24
+        local = (await api("find_container_item", {**item, "radiusTiles": 3}, status="ok"))["data"]
+        assert local["chests"] == found["chests"][:1] and local["totalCount"] == 6
+        empty = await runtime.execute('return terraria.container.find("Terraria/BrokenHeroSword", 3)')
+        assert empty["value"]["status"] == "ok" and empty["value"]["chests"] == [], empty
+        unknown = await runtime.execute('return terraria.container.find("Terraria/MissingItemForSearchTest")')
+        assert unknown["value"] == {"status": "unavailable", "reason": "unknown_item"}, unknown
+        snapshot = fixture("snapshot")
+        assert seed["actorChest"] == snapshot["actorChest"] == -1
+        assert all(snapshot[k] == seed[k] for k in ("batchInventory", "batchChests"))
+        # A search must also preserve the token issued for an already open chest.
+        await open_at(x)
+        token = (await inspect())["containerToken"]
+        await api("find_container_item", item, status="ok")
+        await close(token)
+        result = await runtime.execute("""
+local found = terraria.container.find("Terraria/Torch")
+for _, chest in ipairs(found.chests) do
+    if chest.count >= 12 then return terraria.container.take(chest, "Terraria/Torch", 12) end
+end""")
+        receipt = result.get("value")
+        assert receipt and receipt["status"] == "completed" and receipt["moved"] == 12, result
+        assert (receipt["x"], receipt["y"]) == (x+16, y)
+        fresh = (await api("find_container_item", {"item": "Terraria/Torch", "radiusTiles": 20}, status="ok"))["data"]
+        assert next(c["count"] for c in fresh["chests"] if c["x"] == x+16 and c["y"] == y) == 1
+        after = fixture("snapshot")
+        assert sum(s["stack"] for s in after["batchInventory"] if s["type"] == found["typeId"]) == 12
+        assert after["actorChest"] == -1
+        report["take"] = receipt
+        return report
 
     if personal:
         async def bag(slot):
@@ -766,6 +814,11 @@ def main():
     mode.add_argument("--sorting", action="store_true")
     mode.add_argument("--personal", action="store_true")
     mode.add_argument("--collect", action="store_true")
+    mode.add_argument("--storage-memory", action="store_true", help="Verify two MCP commissions against the same base chest")
+    mode.add_argument("--search", action="store_true", help="Find nearby torch stocks, choose a chest and withdraw through Lua")
+    mode.add_argument("--follow", action="store_true", help="Follow a moving player in the isolated multiplayer arena")
+    mode.add_argument("--torch-recipient", type=Path, metavar="PLAYER.plr",
+                      help="Verify stock and craft delivery to a native client using a copy of this player")
     parser.add_argument("--pickup-feedback", action="store_true",
                         help="Run just the scripted MCP capacity cases for --collect or --batches")
     parser.add_argument("--port", default=27941, type=int)
@@ -800,7 +853,10 @@ def main():
              "-modpath", str(mods), "-companionserverai", "-companionaiport", str(args.ipc_port),
              "-companionaiipctest", "-companioncontainertest"]
             + (["-companioncontainertransfertest"] if args.transfers else [])
-            + (["-companioncontainerbatchtest"] if args.batches else [])
+            + (["-companioncontainerbatchtest"] if args.batches or args.storage_memory or args.torch_recipient or args.search else [])
+            # Both inventory commissions use the fixture's quiet arena.
+            + (["-companionhandofftest"] if args.torch_recipient or args.storage_memory or args.search or args.follow else [])
+            + (["-companionfollowtest"] if args.follow else [])
             + (["-companioncontainersorttest"] if args.sorting else [])
             + (["-companionpersonaltest"] if args.personal else [])
             + (["-companioncollecttest"] if args.collect else []),
@@ -813,16 +869,27 @@ def main():
                     raise RuntimeError(f"Dedicated server exited: {process.returncode}")
                 return (profile / "container-ready.json").exists()
             wait_for(ready, 90)
-            clients.append(Client(args.port, "ChestObserverA"))
-            clients.append(Client(args.port, "ChestObserverB"))
-            bridge = ServerAiBridge(port=args.ipc_port)
-            if args.pickup_feedback:
+            if not args.torch_recipient:
+                clients.append(Client(args.port, "ChestObserverA"))
+                clients.append(Client(args.port, "ChestObserverB"))
+            if not (args.storage_memory or args.torch_recipient):
+                bridge = ServerAiBridge(port=args.ipc_port)
+            if args.torch_recipient:
+                from native_torch_delivery import verify_delivery
+                report = asyncio.run(verify_delivery(profile, args))
+            elif args.storage_memory:
+                from native_storage_memory import verify_storage_memory
+                report = asyncio.run(verify_storage_memory(profile, args.ipc_port, clients[0]))
+            elif args.follow:
+                from native_follow import verify_follow
+                report = asyncio.run(verify_follow(profile, bridge, clients[0]))
+            elif args.pickup_feedback:
                 from native_pickup_feedback import verify_feedback
                 report = asyncio.run(verify_feedback(profile, args.ipc_port, ground=args.collect))
             elif args.collect:
                 report = asyncio.run(verify_collect(profile, bridge, clients, args.engine / "tModLoader-Logs/server.log"))
             else:
-                report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches, sorting=args.sorting, personal=args.personal))
+                report = asyncio.run(verify(profile, bridge, *clients, transfers=args.transfers, batches=args.batches, sorting=args.sorting, personal=args.personal, search=args.search))
             if "openAtWorldUnload" in report:
                 (profile / "g81-test-stop").touch()
                 for client in clients:
@@ -847,7 +914,7 @@ def main():
     report["engineVersion"] = "2026.9.3.1"
     report["serverExitCode"] = process.returncode
     (profile / "container-results.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"Passed with two joined wire clients. Evidence: {profile / 'container-results.json'}")
+    print(f"Passed. Evidence: {profile / 'container-results.json'}")
 
 if __name__ == "__main__":
     main()

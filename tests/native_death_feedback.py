@@ -1,4 +1,4 @@
-"""Native lethal encounter during frontier exploration with deterministic model responses."""
+"""Native lethal encounter during navigation with deterministic model responses."""
 import asyncio
 import json
 import time
@@ -16,7 +16,7 @@ class TestChat:
         return {'status':'authorized','data':{'chatId':chatId,'replyTurn':replyTurn}}
 
 
-async def exercise(profile, port, bridge, name):
+async def exercise(profile, port, bridge, name, target):
     def connect():
         return ServerAiBridge(port)
     def chat(identifier, text):
@@ -30,11 +30,11 @@ async def exercise(profile, port, bridge, name):
         if life:=context.get('runtimeLife'):
             feedback.append(life)
         message={'role':'assistant','content':'已核验当前状态。'}
-        stage='respawn' if life else 'exploration'
+        stage='respawn' if life else 'navigation'
         if stage not in requested:
             requested.add(stage)
             source=("return api('select_hotbar_slot',{slot=2})" if life else
-                    "return api('submit_task',{operation='explore_frontier',arguments={radiusTiles=18,maxSegments=3,allowDig=false}})")
+                    "return api('submit_task',{operation='navigate_to',arguments={x=%s,y=%s}})" % (target['x'],target['y']))
             message.update(content=None,tool_calls=[dict(id='probe',type='function',function={
                 'name':'execute_lua','arguments':json.dumps({'source':source})})])
         return httpx.Response(200,json={'choices':[{'message':message,'finish_reason':'tool_calls' if message.get('tool_calls') else 'stop'}]})
@@ -68,7 +68,7 @@ async def exercise(profile, port, bridge, name):
         await asyncio.wait_for(agent.task,15)
         await agent.observe_life(await asyncio.to_thread(reader.life_status),connect)
         event=agent._death_context['death']
-        assert event['npcIndex']>=0 and event['description'] and event['activity']['operation']=='explore_frontier',event
+        assert event['npcIndex']>=0 and event['description'] and event['activity']['operation']=='navigate_to',event
         assert agent._death_context['playerRequest']['text']=='探索附近地形'
         if name=='death-stop':
             assert event['coinsLostCopper']==0,event

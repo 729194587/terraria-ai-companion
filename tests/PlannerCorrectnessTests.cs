@@ -99,39 +99,18 @@ public static class PlannerCorrectnessTests
             $"roof detour: {task.Snapshot.Reason}, x={state.Px}, rightmost={rightmost}, highest={highest}");
     }
 
-    private static void CheckExplorationQuotes()
+    private static void CheckExactLanding()
     {
         var terrain=new SurfaceGraphTests.Terrain{ReadOverride=(x,y)=>y>=(x is >=105 and <=111?112:100)?'#':'.'};
-        LandingRouteQuote Quote(PhysicsState s,LandingRegion target,PhysicsParameters physics,IMotionWorld world)
-        {
-            var query=new LandingRouteQuote();
-            foreach(var _ in query.Find(s,target,physics,_=>world,(_,_)=>false)){}
-            return query;
-        }
         var alignment=new LandingRegion(Start.Px+1.5f,Start.Px+2.5f,1600);
         var precise=SafeGroundWalk.TryPlan(Start,Start.Px+2,1,Ph,terrain,alignment);
         Check(precise?.ReachedGoal==true && alignment.Arrived(precise.Actions[^1].Landing,terrain),
             "short walk settles inside the final anchor tolerance");
-        var bank=new LandingRegion(112*16,116*16,1600);
-        var outward=Quote(Start,bank,Ph,terrain).Route;
-        Check(outward?.ReachedGoal==true && outward.Actions.Any(a=>a.Jump),"running gap crossing quote");
-        Replay(outward,Start,terrain);
-        var landing=outward.Actions[^1].Landing;
-        var back=Quote(landing,new(Start.Px-1,Start.Px+1,1600),Ph,terrain).Route;
-        Check(back?.ReachedGoal==true,"reverse quote starts at actual predicted bank landing");
-        Replay(back,landing,terrain);
-
-        var high=new MotionOfflineTests.World{WallX=1696,WallWidth=512,WallHeight=128,AllowWallLanding=true};
-        var ledge=new LandingRegion(1712,1760,1472);
-        var ordinary=Quote(Start,ledge,Ph,high);
-        var equipped=Quote(Start with{ExtraAvailable=true},ledge,Ph with{ExtraJump=ExtraJumpModel.Cloud},high);
-        Check(ordinary.Route==null && equipped.Route?.Actions.Any(a=>a.ExtraJumpFrame>=0)==true,
-            "same high ledge requires a supported extra jump");
     }
 
     public static void Run()
     {
-        CheckExplorationQuotes();
+        CheckExactLanding();
         CheckTurnaround();
         var w = new MotionOfflineTests.RegionWorld();
         w.Collision.WallX = 1632; w.Collision.WallHeight = 32;

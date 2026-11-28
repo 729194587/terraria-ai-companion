@@ -16,24 +16,33 @@ internal static class CombatProtocol
 // A bounded server execution adapter, not a scheduler. No Terraria access here.
 internal sealed class AiAtomicActions
 {
+    internal const string Surface = "surface_for_air";
+    internal bool BreathEnabled { get; set; }
+    private Entry lastBreath;
+    private ulong breathEndedAt;
     private static readonly string[] basicCapabilities = { "server_ai_atomic_v1", "atomic_operations_v1", "hotbar_keys_v1" };
     internal object Compatibility => executor?.Compatibility;
     internal bool SupportsCrafting => executor?.SupportsCrafting == true;
     internal bool SupportsMerchantShop => executor?.SupportsMerchantPurchase == true;
     internal string[] Capabilities => executor == null ? basicCapabilities : basicCapabilities.Concat(new[]{"server_ai_actions_v1","server_ai_general_operations_v1","server_ai_direct_input_v1","landing_region_navigation_v1","server_ai_place_tile_v1","server_ai_place_object_workbench_v1","server_ai_place_rope_v1","server_ai_move_on_rope_v1","server_ai_inventory_v1","server_ai_equipment_v1","server_ai_tasks_v1","server_ai_mining_opening_v1","server_ai_excavation_v1","server_ai_program_tasks_v1","server_ai_navigation_v1"})
-        .Concat(SupportsCrafting ? new[]{"server_ai_crafting_v1"} : Array.Empty<string>())
+        .Append("server_ai_half_health_heal_v1")
+        .Concat(BreathEnabled ? new[]{"server_ai_breath_reflex_v1"} : Array.Empty<string>())
+        .Concat(BreathEnabled || SupportsCombat ? new[]{"server_ai_task_reflex_resume_v1"} : Array.Empty<string>())
+        .Concat(SupportsCrafting ? new[]{"server_ai_crafting_v1","server_ai_recipe_uses_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsPersonalInventory ? new[]{"server_ai_personal_inventory_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsInventoryFavorite ? new[]{"server_ai_inventory_favorite_v1"} : Array.Empty<string>())
-        .Concat(executor.SupportsItemDrop ? new[]{"server_ai_drop_item_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsItemDrop ? new[]{"server_ai_drop_item_v1","server_ai_nearby_handoff_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsOpening ? new[]{"server_ai_open_item_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsPylons ? new[]{"server_ai_pylons_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsRegroup ? new[]{"server_ai_regroup_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsFollow ? new[]{"server_ai_follow_v2"} : Array.Empty<string>())
         .Concat(executor.SupportsDismissSummon ? new[]{"server_ai_dismiss_summon_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsHammer ? new[]{"server_ai_hammer_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsTileInteraction ? new[]{"server_ai_interact_tile_v1","server_ai_bed_spawn_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsWaterBucket ? new[]{"server_ai_water_bucket_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsDoors ? new[]{"server_ai_doors_v1"} : Array.Empty<string>())
-        .Concat(SupportsContainers ? new[]{"server_ai_containers_v1","server_ai_container_transfer_v1","server_ai_container_batch_v1"} : Array.Empty<string>())
-        .Concat(executor.SupportsReforge ? new[]{"server_ai_reforge_v1"} : Array.Empty<string>())
+        .Concat(SupportsContainers ? new[]{"server_ai_containers_v1","server_ai_container_search_v1","server_ai_base_containers_v1","server_ai_container_transfer_v1","server_ai_container_batch_v1","server_ai_container_amount_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsReforge ? new[]{"server_ai_reforge_v1","server_ai_target_reforge_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsNurse ? new[]{"server_ai_nurse_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsMerchantSale ? new[]{"server_ai_merchant_sale_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsNpcDialogue ? new[]{"server_ai_npc_dialogue_v1","server_ai_general_npc_dialogue_v1"} : Array.Empty<string>())
@@ -42,9 +51,8 @@ internal sealed class AiAtomicActions
         .Concat(executor.SupportsBuildPlace ? new[]{"server_ai_build_place_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsPlacement ? new[]{"server_ai_place_item_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsCollection ? new[]{"server_ai_collect_drops_v1"} : Array.Empty<string>())
-        .Concat(executor.SupportsExploration ? new[]{"server_ai_frontier_exploration_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsSorting ? new[]{"server_ai_sorting_v1"} : Array.Empty<string>())
-        .Concat(executor.SupportsLoadout ? new[]{"server_ai_combat_primary_v1","server_ai_combat_secondary_v1","server_ai_combat_summon_loadout_v1","server_ai_combat_inventory_v1"} : Array.Empty<string>())
+        .Concat(executor.SupportsLoadout ? new[]{"server_ai_combat_primary_v1","server_ai_combat_secondary_v1","server_ai_combat_summon_loadout_v1","server_ai_combat_inventory_v1","server_ai_combat_backpack_defense_v1"} : Array.Empty<string>())
         .Concat(executor.SupportsBossEncounter ? new[]{"server_ai_boss_encounter_v1","server_ai_boss_members_v1","server_ai_boss_strategy_v1"} : Array.Empty<string>())
         .Concat(SupportsCombat?new[]{"server_ai_combat_v1","server_ai_weapon_button_v1"}:Array.Empty<string>()).ToArray();
     internal sealed record RespawnPlan(string PreviousTaskId,string EntityRef, Func<AiReadOnlyProtocol.Identity, NativeResult> Prepare);
@@ -52,6 +60,9 @@ internal sealed class AiAtomicActions
     internal sealed record NativeResult(string Status, string Reason, object Evidence, bool InputsReleased, bool EffectVerified = false, bool InputsAcquired = true, string ReasonDetail = null);
     internal interface IExecutor
     {
+        NativeResult PauseWork(AiReadOnlyProtocol.Identity frame,object handle,string reason)=>throw new NotSupportedException();
+        void ResumeWork(AiReadOnlyProtocol.Identity frame,object handle){}
+        NativeResult ClosePaused(object handle,string status,string reason)=>new(status,reason,null,true,InputsAcquired:false);
         string Validate(string operation, JsonElement arguments);
         object Start(AiReadOnlyProtocol.Identity identity, string operation, JsonElement arguments, string actionId);
         NativeResult Poll(AiReadOnlyProtocol.Identity identity, object handle);
@@ -70,10 +81,13 @@ internal sealed class AiAtomicActions
         bool SupportsHammer=>false;
         bool SupportsTileInteraction=>false;
         bool SupportsDoors=>false;
+        bool SupportsWaterBucket=>false;
         object Compatibility=>null;
         bool SupportsCrafting=>false;
         bool SupportsPylons=>false;
         bool SupportsRegroup=>false;
+        bool SupportsFollow=>false;
+        void OfferFollowDefense(object handle, AiReadOnlyProtocol.Identity frame, string target, string threat, string dangerRef) {}
         RespawnPlan AfterRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>null;
         object StartRejoin(AiReadOnlyProtocol.Identity frame,JsonElement args,string id,RespawnPlan plan)=>throw new NotSupportedException();
         bool WaitingForRespawn(object handle,AiReadOnlyProtocol.Identity frame)=>false;
@@ -84,7 +98,6 @@ internal sealed class AiAtomicActions
         bool SupportsContainers=>false;
         bool SupportsSorting=>false;
         bool SupportsCollection=>false;
-        bool SupportsExploration=>false;
         bool SupportsPlacement=>false;
         bool SupportsNpcDialogue=>false;
         bool SupportsMerchantPurchase=>false;
@@ -108,7 +121,9 @@ internal sealed class AiAtomicActions
         internal Guid Owner;
         internal string Id, World, ActorId, Phase = "accepted", Status = "running", Reason = "accepted";
         internal object Actor;
-        internal long Generation, Deadline;
+        internal long Generation;
+        internal long? Deadline;
+        internal long PausedAt;
         internal int Slot, Key, Target, Before;
         internal bool Cancel, Applied, Attempted;
         internal CancellationToken Disconnected;
@@ -116,7 +131,7 @@ internal sealed class AiAtomicActions
         internal object End;
         internal string Operation;
         internal JsonElement Arguments;
-        internal int Duration;
+        internal int? Duration;
         internal ulong NavigationProgress;
         internal object Handle;
         internal CombatAdmission Combat;
@@ -133,12 +148,15 @@ internal sealed class AiAtomicActions
     // Retained IDs reject duplicates; evicted IDs query as unknown_action.
     private const int RegistryCapacity = 1024;
     private readonly Queue<string> terminalEntries = new();
-    private Entry active, lastCombat, blockedBody, reflexBackoff;
+    private Entry active, pausedWork, lastCombat, blockedBody, reflexBackoff;
     private string suppressedRef, cancelledCombatRef;
     private ulong suppressUntil, reflexBackoffUntil;
     private long sequence;
     internal object CurrentActivity => active == null ? null : new { actionId=active.Id, operation=active.Operation, phase=active.Phase, arguments=active.Arguments.ValueKind==JsonValueKind.Undefined?(JsonElement?)null:active.Arguments };
     internal bool HasActive=>active!=null;
+    internal bool AllowsQuickHeal(AiReadOnlyProtocol.Identity frame)=>
+        !BodyBlocked(frame) && !Matches(uncertainManual,frame) && (active==null || IsTask(active.Operation)
+            || active.Operation is "navigate_to_x" or "navigate_to_landing_region" or "move_input" or "move_on_rope");
     private Entry uncertainManual;
     internal bool CanSchedule(AiReadOnlyProtocol.Identity frame) =>
         active == null && !BodyBlocked(frame) && !Matches(uncertainManual,frame);
@@ -147,21 +165,88 @@ internal sealed class AiAtomicActions
     internal bool SupportsContainers=>executor?.SupportsContainers==true;
     internal bool CombatActive=>active?.Operation is CombatProtocol.Operation or CombatProtocol.Boss;
     internal Func<bool> MaintenanceBusy {get;set;}
-    internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = lastCombat = blockedBody = reflexBackoff = uncertainManual = null; suppressedRef=cancelledCombatRef=null; }
-    internal void Forget(Guid connection) { if (active?.Owner == connection) active.Cancel = true; }
+    internal void Clear() { executor?.Shutdown(); entries.Clear(); terminalEntries.Clear(); active = pausedWork = lastCombat = lastBreath = blockedBody = reflexBackoff = uncertainManual = null; suppressedRef=cancelledCombatRef=null; }
+    internal void Forget(Guid connection) { if (active?.Owner == connection) active.Cancel = true; if(pausedWork?.Owner==connection)pausedWork.Cancel=true; }
     private static bool Matches(Entry e, AiReadOnlyProtocol.Identity current) => e!=null && current != null
         && ReferenceEquals(e.Actor, current.Actor) && e.World == current.World && e.Generation == current.Generation && e.Slot == current.Slot;
     private static bool IsContainerOperation(string operation) =>
         operation is "open_container" or "close_container" or "deposit_container_item" or "withdraw_container_item"
-        or "sort_inventory" or "sort_container" or "quick_stack_nearby" or "quick_stack_container" or "loot_all" or "deposit_all" or "restock";
-    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to" or "collect_drops" or "explore_frontier" or "build_place" or "place_item" or CombatProtocol.Operation or CombatProtocol.Boss;
+        or "sort_inventory" or "sort_container" or "quick_stack_nearby" or "quick_stack_container" or "loot_all" or "deposit_all" or "restock" or "transfer_container_amount";
+    internal static bool IsTask(string operation)=>operation is "mine_target" or "navigate_to" or "collect_drops" or "follow_teammate" or "build_place" or "place_item" or CombatProtocol.Operation or CombatProtocol.Boss;
     internal object CombatState(AiReadOnlyProtocol.Identity current) =>
         new{action=Matches(lastCombat,current)?Snapshot(lastCombat):null};
+
+    private bool YieldForReflex(Entry work,string reason,AiReadOnlyProtocol.Identity frame)
+    {
+        if(work.Operation is not ("mine_target" or "navigate_to" or "follow_teammate" or "collect_drops" or "build_place"))
+        {
+            Stop(work,"cancelled",reason,frame);
+            return work.Status!="unknown" && work.End!=null;
+        }
+        try
+        {
+            work.Result=work.Handle==null?new("running",reason,null,true,InputsAcquired:false)
+                :executor.PauseWork(frame,work.Handle,reason);
+        }
+        catch {End(work,"unknown","task_pause_unconfirmed",frame,false);return false;}
+        if(!work.Result.InputsReleased || work.Result.Status=="unknown")
+        {End(work,"unknown",work.Result.Reason,frame,work.Result.InputsReleased);return false;}
+        if(work.Result.Status!="running")
+        {
+            bool verified=work.Result.Status!="completed"||work.Result.EffectVerified;
+            End(work,verified?work.Result.Status:"unknown",work.Result.Reason,frame,true);
+            return verified;
+        }
+        work.Phase="paused";work.Reason=reason;work.PausedAt=clock();
+        pausedWork=work;active=null;
+        return true;
+    }
+
+    // The parked task has already released its child. Closing it must never
+    // send cancellation to the reflex that currently controls the same player.
+    private void ClosePaused(string status,string reason,AiReadOnlyProtocol.Identity frame)
+    {
+        var work=pausedWork;
+        if(work==null)return;
+        bool same=Matches(work,frame);
+        try
+        {
+            work.Result=same && work.Handle!=null?executor.ClosePaused(work.Handle,status,reason):
+                new(status,reason,null,true,InputsAcquired:false);
+        }
+        catch
+        {
+            status="unknown";reason="task_pause_evidence_unconfirmed";
+            work.Result=new(status,reason,null,true,InputsAcquired:false);
+        }
+        End(work,status,reason,frame,same);
+        pausedWork=null;
+    }
+
+    private void FinishReflex(Entry reflex,AiReadOnlyProtocol.Identity frame)
+    {
+        var work=pausedWork;
+        if(work==null)return;
+        if(!Matches(work,frame)){ClosePaused("unknown","actor_binding_changed",frame);return;}
+        if(work.Cancel||work.Disconnected.IsCancellationRequested||!frame.CanAct||work.Autonomy?.Valid==false ||
+            reflex.Status!="completed"||reflex.Result?.EffectVerified!=true||reflex.Result.InputsReleased!=true)
+        {ClosePaused("cancelled",reflex.Status=="completed"?"task_owner_unavailable":"reflex_"+reflex.Reason,frame);return;}
+        try
+        {
+            if(work.Handle!=null)executor.ResumeWork(frame with{Autonomy=work.Autonomy},work.Handle);
+        }
+        catch {ClosePaused("unknown","task_resume_unconfirmed",frame);return;}
+        work.Deadline+=clock()-work.PausedAt;
+        work.Phase="running";work.Reason="task_resumed";work.Result=null;
+        if(work.Autonomy!=null)work.Autonomy.Released=false;
+        pausedWork=null;active=work;
+    }
 
     private string CombatConflict(AiReadOnlyProtocol.Identity current, string target,out CombatAdmission admission,string dangerRef=null)
     {
         admission=null;
         if (BodyBlocked(current)) return "body_release_unconfirmed";
+        if (active?.Operation == Surface) return "action_busy";
         if (MaintenanceBusy?.Invoke()==true) return "action_busy";
         admission=new(current.GameUpdate,active?.Id,executor.CapturePrimary(current),executor.WorkVelocityX(current),dangerRef);
         if (active==null) return executor.CanTransferBody(current)?null:"actor_busy";
@@ -172,9 +257,12 @@ internal sealed class AiAtomicActions
         string invalid=dangerRef==null?executor.ValidateCombatAdmission(current,target):null;
         if(invalid!=null)return invalid;
         var previous=active;
-        Stop(previous,"cancelled",CombatProtocol.Interrupt,current);
-        if(previous.Status=="unknown" || previous.End==null || !executor.CanTransferBody(current))
+        bool released;
+        if(dangerRef!=null)released=YieldForReflex(previous,CombatProtocol.Interrupt,current);
+        else {Stop(previous,"cancelled",CombatProtocol.Interrupt,current);released=previous.Status!="unknown"&&previous.End!=null;}
+        if(!released || !executor.CanTransferBody(current))
         {
+            ClosePaused("cancelled","body_release_unconfirmed",current);
             blockedBody=previous;
             return "body_release_unconfirmed";
         }
@@ -183,6 +271,30 @@ internal sealed class AiAtomicActions
 
     internal bool ReflexTargetAllowed(AiReadOnlyProtocol.Identity current,string entityRef)
         =>entityRef!=cancelledCombatRef&&(entityRef!=suppressedRef||current.GameUpdate>=suppressUntil);
+
+    internal bool SurfaceForAir(AiReadOnlyProtocol.Identity frame,string actorId,Func<bool> needsAir)
+    {
+        if(active?.Operation==Surface)return true;
+        if(!BreathEnabled || !frame.CanAct || BodyBlocked(frame) || Matches(uncertainManual,frame)
+            || MaintenanceBusy?.Invoke()==true || Matches(lastBreath,frame) && lastBreath.Status!="completed" && frame.GameUpdate<breathEndedAt+120
+            || !needsAir())return false;
+        if(active is {} previous)
+        {
+            if(!Matches(previous,frame)||previous.Cancel||previous.Disconnected.IsCancellationRequested)return false;
+            if(previous.Autonomy is {} grant)
+            {
+                if(!grant.Valid || grant.BackgroundBusy)return false;
+                frame=frame with { Autonomy=grant };
+            }
+            if(!YieldForReflex(previous,"task_interrupt_breath",frame)){blockedBody=previous;ClosePaused("cancelled","body_release_unconfirmed",frame);return false;}
+        }
+        if(!executor.CanTransferBody(frame)){ClosePaused("cancelled","actor_busy",frame);return false;}
+        var admitted=Admit(Guid.Empty,Guid.NewGuid().ToString("N"),actorId,frame,Surface,
+            JsonSerializer.SerializeToElement(new {}),35000,default);
+        if(admitted.Error!=null){ClosePaused("cancelled",admitted.Error,frame);return false;}
+        lastBreath=active;
+        return true;
+    }
 
     internal void Reflex(AiReadOnlyProtocol.Identity current,string actorId,string entityRef,string threat,string dangerRef=null)
     {
@@ -196,9 +308,16 @@ internal sealed class AiAtomicActions
             if (!owner.Valid || owner.Binding.generation != current.Generation || owner.BackgroundBusy) return;
             current = current with { Autonomy = owner };
         }
+        if (active?.Operation == "follow_teammate")
+        {
+            if (Matches(active,current) && !active.Cancel && !active.Disconnected.IsCancellationRequested)
+                executor.OfferFollowDefense(active.Handle, current, entityRef, threat, dangerRef);
+            return;
+        }
         if(CombatConflict(current,entityRef,out var admission,dangerRef)!=null)return;
-        Admit(Guid.Empty,Guid.NewGuid().ToString("N"),actorId,current,CombatProtocol.Operation,
+        var defense=Admit(Guid.Empty,Guid.NewGuid().ToString("N"),actorId,current,CombatProtocol.Operation,
             JsonSerializer.SerializeToElement(new{entityRef,threat}),35000,default,admission:admission);
+        if(defense.Error!=null)ClosePaused("cancelled",defense.Error,current);
     }
     private static object TaskState(Entry e)
     {
@@ -217,7 +336,7 @@ internal sealed class AiAtomicActions
         worldSessionId = e.World, actorId = e.ActorId, actorSlot = e.Slot, durationMs = e.Duration,
         targetTile = e.Operation is "mine_wall" or "hammer_tile" or "open_door" or "close_door" or "place_tile" or "place_object" or "place_rope" ? (JsonElement?)e.Arguments : null,
         targetInventory = e.Operation is "dismiss_summon" or "manage_trash" or "switch_equipment_loadout" or "set_inventory_favorite" or "drop_inventory_item" or "open_inventory_item" or "configure_combat_loadout" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" ? (JsonElement?)e.Arguments : null,
-        targetTask = IsTask(e.Operation) || e.Operation is "interact_tile" or "reforge_item" or "heal_at_nurse" or "sell_npc_item" or "buy_npc_item" or "open_npc_dialogue" or "close_npc_dialogue" or "assign_npc_home" or "set_team" or "teleport_to_pylon" or "teleport_to_teammate" ? (JsonElement?)e.Arguments : null,
+        targetTask = IsTask(e.Operation) || e.Operation is "interact_tile" or "use_water_bucket" or "reforge_item" or "heal_at_nurse" or "sell_npc_item" or "buy_npc_item" or "open_npc_dialogue" or "close_npc_dialogue" or "assign_npc_home" or "set_team" or "teleport_to_pylon" or "teleport_to_teammate" ? (JsonElement?)e.Arguments : null,
         targetContainer = IsContainerOperation(e.Operation) ? (JsonElement?)e.Arguments : null,
         targetRecipe = e.Operation == "craft_recipe" ? (JsonElement?)e.Arguments : null,
         requestedInputs = e.Operation is "move_input" or "move_on_rope" ? (JsonElement?)e.Arguments : null,
@@ -249,7 +368,11 @@ internal sealed class AiAtomicActions
                     || !dest.TryGetProperty("feetY",out var y) || !y.TryGetInt32(out int py))return new(Error:"invalid_destination");
                 if(executor.Retreat(current,known.Handle,px,py) is {} error)return new(Error:error);
             }
-            if (op == "cancel" && known.Status == "running") Stop(known, "cancelled", "explicit_cancel", current);
+            if (op == "cancel" && known.Status == "running")
+            {
+                if(known==pausedWork)ClosePaused("cancelled","explicit_cancel",current);
+                else Stop(known,"cancelled","explicit_cancel",current);
+            }
             return new(new { action = Snapshot(known) });
         }
         // A retained ID may already have effects. Reject replay without claiming no admission.
@@ -279,6 +402,7 @@ internal sealed class AiAtomicActions
         if(operation=="interact_tile" && executor?.SupportsTileInteraction!=true)return new(Error:"unsupported_operation");
         if(operation is ("open_door" or "close_door") && executor?.SupportsDoors!=true)return new(Error:"unsupported_operation");
         if(operation=="configure_combat_loadout" && executor?.SupportsLoadout!=true)return new(Error:"unsupported_operation");
+        if (operation == "use_water_bucket" && executor?.SupportsWaterBucket != true) return new(Error: "unsupported_operation");
         if (operation == "reforge_item" && executor?.SupportsReforge != true) return new(Error: "unsupported_operation");
         if (operation == "heal_at_nurse" && executor?.SupportsNurse != true) return new(Error: "unsupported_operation");
         if (operation == "sell_npc_item" && executor?.SupportsMerchantSale != true) return new(Error: "unsupported_operation");
@@ -288,8 +412,8 @@ internal sealed class AiAtomicActions
         if (operation == "build_place" && executor?.SupportsBuildPlace != true) return new(Error: "unsupported_operation");
         if (operation == "place_item" && executor?.SupportsPlacement != true) return new(Error: "unsupported_operation");
         if (operation == "collect_drops" && executor?.SupportsCollection != true) return new(Error: "unsupported_operation");
-        if (operation == "explore_frontier" && executor?.SupportsExploration != true) return new(Error: "unsupported_operation");
-        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("interact_tile" or "reforge_item" or "heal_at_nurse" or "sell_npc_item" or "buy_npc_item" or "open_npc_dialogue" or "close_npc_dialogue" or "assign_npc_home" or "dismiss_summon" or "set_team" or "teleport_to_pylon" or "teleport_to_teammate" or "manage_trash" or "switch_equipment_loadout" or "set_inventory_favorite" or "drop_inventory_item" or "open_inventory_item" or "open_door" or "close_door" or "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "explore_frontier" or "build_place" or "place_item" or CombatProtocol.Boss or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
+        if (operation == "follow_teammate" && executor?.SupportsFollow != true) return new(Error: "unsupported_operation");
+        if (!container && !selecting && (executor == null || (combat ? !SupportsCombat : operation is not ("interact_tile" or "use_water_bucket" or "reforge_item" or "heal_at_nurse" or "sell_npc_item" or "buy_npc_item" or "open_npc_dialogue" or "close_npc_dialogue" or "assign_npc_home" or "dismiss_summon" or "set_team" or "teleport_to_pylon" or "teleport_to_teammate" or "manage_trash" or "switch_equipment_loadout" or "set_inventory_favorite" or "drop_inventory_item" or "open_inventory_item" or "open_door" or "close_door" or "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" or "use_item" or "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" or "craft_recipe" or "transfer_inventory_item" or "swap_inventory_slots" or "hold_inventory_item" or "equip_item" or "unequip_item" or "mine_target" or "navigate_to" or "collect_drops" or "follow_teammate" or "build_place" or "place_item" or CombatProtocol.Boss or "configure_combat_loadout")))) return new(Error: "unsupported_operation");
         int key = 0;
         if (selecting)
         {
@@ -313,7 +437,7 @@ internal sealed class AiAtomicActions
         long remaining = root.GetProperty("expiresAtUnixMs").GetInt64() - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (remaining <= 0) return new(Error: "request_expired");
         if (remaining > 2000) return new(Error: "invalid_deadline");
-        int duration = operation switch { CombatProtocol.Boss => arguments.TryGetProperty("durationSeconds",out var seconds)?seconds.GetInt32()*1000:300000, CombatProtocol.Operation=>35000, "explore_frontier"=>120000, "navigate_to"=>180000, "mine_target"=>55000, "collect_drops"=>35000, "build_place"=>180000, "place_item"=>12000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" => 3000, "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
+        int? duration = operation switch { "reforge_item" when arguments.TryGetProperty("targetPrefix",out _) => null, CombatProtocol.Boss => arguments.TryGetProperty("durationSeconds",out var seconds)?seconds.GetInt32()*1000:300000, CombatProtocol.Operation=>35000, "follow_teammate"=>arguments.TryGetProperty("durationSeconds",out var followSeconds)?followSeconds.GetInt32()*2000+5000:null, "navigate_to"=>180000, "mine_target"=>55000, "collect_drops"=>35000, "build_place"=>180000, "place_item"=>12000, "move_input" or "move_on_rope" or "navigate_to_x" or "navigate_to_landing_region" => 30000, "use_item" or "use_water_bucket" => 3000, "mine_tile" or "mine_wall" or "hammer_tile" or "place_tile" or "place_object" or "place_rope" => 10000, _ => 2000 };
         CombatAdmission admission=null;
         if(combat&&CombatConflict(current,arguments.GetProperty("entityRef").GetString(),out admission) is {} conflict)
             return new(Error:conflict);
@@ -321,7 +445,7 @@ internal sealed class AiAtomicActions
     }
 
     private Reply Admit(Guid owner,string id,string actorId,AiReadOnlyProtocol.Identity current,string operation,
-        JsonElement arguments,int duration,CancellationToken disconnected,int key=0,long? lease=null,CombatAdmission admission=null)
+        JsonElement arguments,int? duration,CancellationToken disconnected,int key=0,long? lease=null,CombatAdmission admission=null)
     {
         while (entries.Count >= RegistryCapacity && terminalEntries.TryDequeue(out var oldest))
             if (entries.TryGetValue(oldest, out var terminal) && terminal.Status != "running") entries.Remove(oldest);
@@ -339,6 +463,11 @@ internal sealed class AiAtomicActions
     }
     private void End(Entry e, string status, string reason, AiReadOnlyProtocol.Identity current, bool known)
     {
+        if(e.Operation==Surface)
+        {
+            breathEndedAt=current?.GameUpdate??0;
+            if(status=="unknown")blockedBody=e;
+        }
         e.PurchaseLease = null;
         e.Status = status; e.Reason = reason; e.Phase = "terminal";
         e.ReasonDetail = e.Result?.ReasonDetail;
@@ -353,7 +482,7 @@ internal sealed class AiAtomicActions
             inputsAcquired = e.Handle != null && e.Result?.InputsAcquired != false, inputsReleased = e.Handle == null || e.Result?.InputsReleased == true,
             effectVerified = e.Result?.EffectVerified == true, operation = e.Operation, observationSequence = sequence };
         if (e.Autonomy == null && status == "unknown") uncertainManual = e;
-        if (e.Autonomy != null) e.Autonomy.Released = known && (e.Handle == null || e.Result?.InputsReleased == true);
+        if (e.Autonomy != null && e!=pausedWork) e.Autonomy.Released = known && (e.Handle == null || e.Result?.InputsReleased == true);
         if (ReferenceEquals(active, e)) active = null;
         if(e.Operation==CombatProtocol.Operation)
         {
@@ -373,6 +502,9 @@ internal sealed class AiAtomicActions
         }
         else if(SupportsCombat&&status=="unknown"&&(e.StopReason==CombatProtocol.Interrupt||!known))blockedBody=e;
         terminalEntries.Enqueue(e.Id);
+        if(e.Owner==Guid.Empty && e.Operation is (CombatProtocol.Operation or Surface)
+            && !(e.Operation==CombatProtocol.Operation && e.StopReason=="task_interrupt_breath"))
+            FinishReflex(e,current);
     }
     private void Stop(Entry e, string status, string reason, AiReadOnlyProtocol.Identity current)
     {
@@ -391,7 +523,7 @@ internal sealed class AiAtomicActions
             { End(e, "unknown", "native_effect_unconfirmed", current, true); return; }
             // The stop trigger is metadata. A reliable native terminal wins all races.
             status = e.Result.Status; reason = e.Result.Reason;
-            if(status=="cancelled"&&e.StopReason==CombatProtocol.Interrupt)reason=e.StopReason;
+            if(status=="cancelled"&&e.StopReason is CombatProtocol.Interrupt or "task_interrupt_breath")reason=e.StopReason;
         }
         End(e, status, reason, current, true);
     }
@@ -401,6 +533,12 @@ internal sealed class AiAtomicActions
         var e = active; if (e == null) return;
         AiReadOnlyProtocol.Identity current;
         try { current = capture(); } catch { current = null; }
+        if(pausedWork is {} work)
+        {
+            if(!Matches(work,current))ClosePaused("unknown","actor_binding_changed",current);
+            else if(work.Cancel||work.Disconnected.IsCancellationRequested)ClosePaused("cancelled","connection_cancelled",current);
+            else if(!current.CanAct||work.Autonomy?.Valid==false)ClosePaused("cancelled",current.CanAct?"autonomy_revoked":"actor_not_alive",current);
+        }
         if (!Matches(e, current))
         {
             if(e.Autonomy == null && e.ReleasedLife is {} old && current?.CanAct==true && ReferenceEquals(old.Actor,current.Actor)
@@ -412,7 +550,7 @@ internal sealed class AiAtomicActions
                 End(e,"cancelled","life_ended",old,true);
                 var args=JsonSerializer.SerializeToElement(new { entityRef=plan.EntityRef,
                     regroupTeammateRef=e.Arguments.GetProperty("regroupTeammateRef").GetString() });
-                int remaining=(int)Math.Clamp(e.Deadline-clock(),1,e.Duration);
+                int remaining=(int)Math.Clamp(e.Deadline.Value-clock(),1,e.Duration.Value);
                 var next=Admit(Guid.Empty,Guid.NewGuid().ToString("N"),e.ActorId,current,CombatProtocol.Boss,args,
                     remaining,e.Disconnected);
                 if(next.Error==null)active.Rejoin=plan;

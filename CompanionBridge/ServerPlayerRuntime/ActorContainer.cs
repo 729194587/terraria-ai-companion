@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
+using CompanionBridge.Common.Systems;
+using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
 using CompanionBridge.ServerIpc;
@@ -32,7 +35,7 @@ internal static partial class ActorContainer
 
     private static bool Vanilla(Tile tile) => tile.HasTile && tile.TileType is TileID.Containers or TileID.Containers2;
 
-    private static string Resolve(Player player, int x, int y, out Target target, bool requireReach = true)
+    private static string Resolve(Player player, int x, int y, out Target target, bool requireReach = true, int? knownIndex = null)
     {
         target = null;
         if (!WorldGen.InWorld(x, y, 1)) return "invalid_target";
@@ -57,11 +60,44 @@ internal static partial class ActorContainer
         }
         if (Chest.IsLocked(x, y)) return "container_locked";
         if (requireReach && !player.IsInInteractionRangeToMultiTileHitbox(x, y)) return "out_of_native_interaction_range";
-        int index = Chest.FindChest(x, y);
-        if (index < 0 || Main.chest[index] is not { item.Length: 40 } chest || chest.item.Any(item => item == null))
+        int index = knownIndex ?? Chest.FindChest(x, y);
+        if (index < 0 || Main.chest[index] is not { item.Length: 40 } chest || chest.x != x || chest.y != y
+            || chest.item.Any(item => item == null))
             return "container_record_missing";
         target = new(index, chest, x, y, anchor.TileType, anchor.TileFrameX);
         return null;
+    }
+
+    internal static object FindItem(Player player, string item, int radiusTiles, int offset, bool atBase = false)
+    {
+        int? type = null;
+        if (item != null)
+        {
+            var candidates = AtomicOperations.MatchItem(item);
+            if (candidates.Length != 1)
+                throw new QueryUnavailableException(candidates.Length == 0 ? "unknown_item" : "ambiguous_item");
+            type = candidates[0].type;
+        }
+        var matches = new List<(float distanceSquared, int x, int y, long count)>();
+        Vector2 center = atBase ? AtomicOperations.WorldSpawnTiles : player.Center / 16f;
+        for (int i = 0; i < Main.chest.Length; i++)
+        {
+            var chest = Main.chest[i];
+            if (chest == null) continue;
+            float distanceSquared = Vector2.DistanceSquared(center, new Vector2(chest.x + 1, chest.y + 1));
+            if (distanceSquared > radiusTiles * radiusTiles || !WorldGen.InWorld(chest.x, chest.y, 1)
+                || !Vanilla(Main.tile[chest.x, chest.y])
+                || Resolve(player, chest.x, chest.y, out _, requireReach: false, knownIndex: i) != null) continue;
+            long count = 0;
+            foreach (var stack in chest.item)
+                if (!stack.IsAir && (type == null || stack.type == type)) count += stack.stack;
+            if (type == null || count > 0) matches.Add((distanceSquared, chest.x, chest.y, count));
+        }
+        var chests = matches.OrderBy(m => m.distanceSquared).ThenBy(m => m.x).ThenBy(m => m.y)
+            .Skip(offset).Take(32).Select(m => new { m.x, m.y, m.count, distanceTiles = Math.Sqrt(m.distanceSquared),
+                isBase = AtomicOperations.IsAtBase(new Vector2(m.x + 1, m.y + 1)) }).ToArray();
+        return new { status = "ok", typeId = type, radiusTiles, offset, chests, matchedChests = matches.Count,
+            totalCount = matches.Sum(m => m.count), truncated = matches.Count - offset > chests.Length };
     }
 
     private static string ResolveBank(Player p,int x,int y,out Target target)
