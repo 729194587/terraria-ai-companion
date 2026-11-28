@@ -26,6 +26,8 @@ pwsh -NoProfile -File scripts/prepare-companion-host-play.ps1 -EngineProfile 202
 
 迁移与回滚完成后，可移除相应启动参数。专用服务器日志中的 `world-character-engine-upgraded`、`world-character-engine-rollback` 和 `world-character-ready` 分别记录切换及就绪结果。
 
+地图格式随角色正常保存自动升级。当前构建可读取 V1、V2 和 V3 的 `map.bin`，保存时在新世代写入 V3，以 Brotli 压缩地图格子。旧世代仍与原清单的哈希匹配。
+
 ## 定向验证入口
 
 ```powershell

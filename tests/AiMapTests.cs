@@ -33,6 +33,20 @@ public static class AiMapTests
         Check(changed==1 && prior.Revision==changed && prior.ChunkRevision(31,0)==0 &&
             metadata[1].GetProperty("lastSeenTick").GetInt64()==5 && metadata[1].GetProperty("knownCount").GetInt32()==2,"chunk age or revision");
         string upgraded=Path.Combine(root,"upgraded.bin");prior.Save(upgraded);
+        string v2=Path.Combine(root,"v2.bin");
+        using(var writer=new BinaryWriter(File.Create(v2)))
+        {
+            writer.Write("CompanionBridge/AiMap");writer.Write(2);writer.Write(world.ToString("N"));writer.Write("legacy");
+            writer.Write(64);writer.Write(1);var raw=new byte[64];raw[31]=3;writer.Write(raw);
+            writer.Write(7L);writer.Write(1);writer.Write(0);writer.Write(0);writer.Write(6L);
+            writer.Write(world.ToByteArray());writer.Write(9L);
+        }
+        var converted=Path.Combine(root,"converted.bin");
+        AiMap.Load(v2,world,"legacy",64,1).Save(converted);
+        using(var header=new BinaryReader(File.OpenRead(converted)))
+            Check(header.ReadString()=="CompanionBridge/AiMap" && header.ReadInt32()==3,"v2 was not upgraded");
+        var migrated=AiMap.Load(converted,world,"legacy",64,1);
+        Check(migrated.Get(31,0)==3 && migrated.Revision==7 && migrated.ChunkRevision(31,0)==6,"v2 migration lost state");
         var reload=AiMap.Load(upgraded,world,"legacy",64,1);
         Check(reload.Revision==1 && reload.ChunkRevision(32,0)==1 && reload.Get(31,0)==3,"metadata restore");
         var unknown=Data(Query(map,new{mode="region",centerX=1,centerY=1,width=2,height=2,cellSize=2}));
@@ -50,6 +64,7 @@ public static class AiMapTests
         Check(new AiMap(world,"character-b",8400,2400).Get(0,0)==0,"character shared memory");
         Check(new AiMap(Guid.NewGuid(),"character-a",8400,2400).Get(0,0)==0,"world shared memory");
         string path=Path.Combine(root,"map.bin");map.Save(path);
+        Check(new FileInfo(path).Length<100000,"sparse map saved at world size");
         map.Save(Path.Combine(root,"cross.bin"));File.WriteAllText(Path.Combine(root,"identity"),world.ToString());
         var restored=AiMap.Load(path,world,"character-a",8400,2400);Check(restored.Get(1,0)==4&&restored.Get(8000,1000)==0,"restore differs");
         Reject(()=>AiMap.Load(path,Guid.NewGuid(),"character-a",8400,2400));Reject(()=>AiMap.Load(path,world,"other",8400,2400));

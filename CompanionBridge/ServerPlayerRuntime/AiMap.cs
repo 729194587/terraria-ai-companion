@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -15,7 +16,7 @@ public sealed class AiMap
     public int Width { get; }
     public int Height { get; }
     private readonly byte[] cells;
-    private const int FileVersion=2;
+    private const int FileVersion=3;
     public const int ChunkSize=32;
     private readonly Guid session=Guid.NewGuid();
     private readonly Dictionary<(int X,int Y),Chunk> chunks=new();
@@ -89,7 +90,15 @@ public sealed class AiMap
         using var stream=new FileStream(path,FileMode.CreateNew,FileAccess.Write,FileShare.None);
         using var writer=new BinaryWriter(stream);
         writer.Write("CompanionBridge/AiMap");writer.Write(FileVersion);writer.Write(World.ToString("N"));writer.Write(Character);
-        writer.Write(Width);writer.Write(Height);writer.Write(cells);
+        writer.Write(Width);writer.Write(Height);
+        long lengthAt=stream.Position;
+        writer.Write(0);
+        using(var compressed=new BrotliStream(stream,CompressionLevel.Fastest,leaveOpen:true))
+            compressed.Write(cells);
+        long end=stream.Position;
+        stream.Position=lengthAt;
+        writer.Write(checked((int)(end-lengthAt-sizeof(int))));
+        stream.Position=end;
         writer.Write(revision);writer.Write(chunks.Count);
         foreach(var (key,chunk) in chunks)
         {
@@ -101,14 +110,27 @@ public sealed class AiMap
     public static AiMap Load(string path,Guid world,string character,int width,int height)
     {
         long maxChunks=((width+31L)/32)*((height+31L)/32);
-        if(new FileInfo(path).Length>(long)width*height+40*maxChunks+1012)throw new IOException("Map exceeds size limit.");
+        long cellCount=(long)width*height;
+        if(width<1||height<1||cellCount>40000000)throw new IOException("Invalid map dimensions.");
+        int maxPacked=BrotliEncoder.GetMaxCompressedLength((int)cellCount);
+        if(new FileInfo(path).Length>Math.Max(cellCount,maxPacked)+40*maxChunks+1016)throw new IOException("Map exceeds size limit.");
         using var reader=new BinaryReader(File.OpenRead(path));
         if(reader.ReadString()!="CompanionBridge/AiMap")throw new IOException("Invalid map header.");
         int format=reader.ReadInt32();
-        if(format is not (1 or FileVersion)||reader.ReadString()!=world.ToString("N")||reader.ReadString()!=character
+        if(format is not (1 or 2 or FileVersion)||reader.ReadString()!=world.ToString("N")||reader.ReadString()!=character
             ||reader.ReadInt32()!=width||reader.ReadInt32()!=height)throw new IOException("Incompatible map or identity mismatch.");
         var map=new AiMap(world,character,width,height);
-        reader.BaseStream.ReadExactly(map.cells);
+        if(format==FileVersion)
+        {
+            int length=reader.ReadInt32();
+            if(length<1||length>maxPacked||length>reader.BaseStream.Length-reader.BaseStream.Position)
+                throw new IOException("Invalid compressed map length.");
+            var packed=reader.ReadBytes(length);
+            using var decoder=new BrotliDecoder();
+            if(decoder.Decompress(packed,map.cells,out int consumed,out int written)!=System.Buffers.OperationStatus.Done
+                ||consumed!=length||written!=map.cells.Length)throw new IOException("Invalid compressed map cells.");
+        }
+        else reader.BaseStream.ReadExactly(map.cells);
         for(int i=0;i<map.cells.Length;i++)
         {
             byte b=map.cells[i];
@@ -118,7 +140,7 @@ public sealed class AiMap
             if(!map.chunks.TryGetValue(key,out var chunk))map.chunks[key]=chunk=new();
             chunk.Counts[b]++;
         }
-        if(format==FileVersion)
+        if(format>=2)
         {
             map.revision=reader.ReadInt64();
             int count=reader.ReadInt32();
